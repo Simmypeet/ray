@@ -1545,6 +1545,7 @@ dependencies = [
  "rayc_type",
  "rayc_typed_ast",
  "qbice",
+ "tokio",
 ]
 
 [[package]]

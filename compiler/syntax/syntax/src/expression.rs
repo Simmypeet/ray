@@ -1,10 +1,10 @@
+use qbice::{Decode, Encode, StableHash};
 use rayc_lexical::tree::DelimiterKind;
 use rayc_parser::{
     abstract_tree,
     expect::{self, Fragment},
     parser::{ParserExt, ast},
 };
-use qbice::{Decode, Encode, StableHash};
 
 use crate::{Identifier, Keyword, Numeric, Punctuation};
 
@@ -61,6 +61,7 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub enum BinaryOperator {
+        Assign(Punctuation = '='),
         Plus(Punctuation = '+'),
         Minus(Punctuation = '-'),
         Multiply(Punctuation = '*'),
@@ -114,6 +115,7 @@ abstract_tree::abstract_tree! {
     pub struct RefOf {
         pub dot: Punctuation = '.',
         pub asterisk: Punctuation = '&',
+        pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
     }
 }
 
@@ -290,3 +292,6 @@ abstract_tree::abstract_tree! {
         pub arguments: Parenthesized = ast::<Parenthesized>()
     }
 }
+
+#[cfg(test)]
+mod test;

@@ -4,9 +4,9 @@
 
 use std::path::Path;
 
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_lexical::{kind, token::Token, tree::RelativeLocation};
 use rayc_target::TargetID;
-use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 use crate::module::ModuleContent;
 
@@ -16,6 +16,9 @@ pub mod irrefutable_pattern;
 pub mod module;
 pub mod statement;
 pub mod r#type;
+
+#[cfg(test)]
+mod test;
 
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
 pub type Keyword = Token<kind::Keyword, RelativeLocation>;

@@ -1,10 +1,10 @@
+use qbice::{Decode, Encode, StableHash};
 use rayc_lexical::tree::DelimiterKind;
 use rayc_parser::{
     abstract_tree,
     expect::{self, Fragment},
     parser::{ParserExt, ast},
 };
-use qbice::{Decode, Encode, StableHash};
 
 use crate::{Keyword, Punctuation};
 
@@ -44,6 +44,7 @@ abstract_tree::abstract_tree! {
     )]
     pub struct Pointer {
         pub asterisk: Punctuation = '*',
+        pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
         pub pointed_type: Type = ast::<Type>()
     }
 }
@@ -87,3 +88,6 @@ abstract_tree::abstract_tree! {
         Tuple(Tuple = ast::<Tuple>())
     }
 }
+
+#[cfg(test)]
+mod test;
