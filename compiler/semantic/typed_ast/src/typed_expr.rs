@@ -1,12 +1,15 @@
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_lexical::tree::RelativeSpan;
-use rayc_type::ty::Ty;
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use rayc_type::ty::{Ty, TyApplicationView};
 
-use crate::typed_expr::{
-    binary::Binary, call::Call, deref::Deref, errored::Errored, identifier::Identifier,
-    literal::Literal, paren::Paren, ref_of::RefOf, r#return::Return, tuple::Tuple,
-    tuple_index::TupleIndex,
+use crate::{
+    name_binding::NameBindingID,
+    typed_expr::{
+        binary::Binary, call::Call, deref::Deref, errored::Errored, identifier::Identifier,
+        literal::Literal, paren::Paren, ref_of::RefOf, r#return::Return, tuple::Tuple,
+        tuple_index::TupleIndex,
+    },
 };
 
 pub mod binary;
@@ -34,6 +37,19 @@ pub enum TypedExprKind {
     Paren(Paren),
     Return(Return),
     Errored(Errored),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LvalueRoot {
+    NameBinding(NameBindingID),
+    Dereference(TypedExprID),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LvalueClassification {
+    Lvalue(LvalueRoot),
+    NotLvalue,
+    Errored,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
@@ -68,6 +84,9 @@ impl TypedExpr {
 
     #[must_use]
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
+
+    #[must_use]
+    pub const fn kind(&self) -> &TypedExprKind { &self.kind }
 }
 
 pub type TypedExprID = ID<TypedExpr>;
@@ -86,5 +105,35 @@ impl TypedExprMap {
     #[must_use]
     pub fn insert_expression(&mut self, expression: TypedExpr) -> TypedExprID {
         self.typed_exprs.insert(expression)
+    }
+
+    #[must_use]
+    pub fn classify_lvalue(&self, id: TypedExprID) -> LvalueClassification {
+        let expression = self.get_expression(id);
+
+        if matches!(
+            &*expression.ty,
+            Ty::Application(application) if application.view() == TyApplicationView::Error
+        ) {
+            return LvalueClassification::Errored;
+        }
+
+        match &expression.kind {
+            TypedExprKind::Identifier(identifier) => {
+                LvalueClassification::Lvalue(LvalueRoot::NameBinding(identifier.name_binding()))
+            }
+            TypedExprKind::TupleIndex(tuple_index) => self.classify_lvalue(tuple_index.operand()),
+            TypedExprKind::Deref(deref) => {
+                LvalueClassification::Lvalue(LvalueRoot::Dereference(deref.pointee()))
+            }
+            TypedExprKind::Paren(paren) => self.classify_lvalue(paren.expression()),
+            TypedExprKind::Errored(_) => LvalueClassification::Errored,
+            TypedExprKind::Literal(_)
+            | TypedExprKind::Tuple(_)
+            | TypedExprKind::Call(_)
+            | TypedExprKind::Binary(_)
+            | TypedExprKind::RefOf(_)
+            | TypedExprKind::Return(_) => LvalueClassification::NotLvalue,
+        }
     }
 }

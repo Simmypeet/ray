@@ -10,4 +10,7 @@ pub struct Paren {
 impl Paren {
     #[must_use]
     pub const fn new(expr: TypedExprID) -> Self { Self { expr } }
+
+    #[must_use]
+    pub const fn expression(&self) -> TypedExprID { self.expr }
 }

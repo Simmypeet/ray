@@ -6,7 +6,7 @@ use crate::{
         NameBinding, NameBindingGroup, NameBindingGroupID, NameBindingID, NameBindingMap,
     },
     statement::Statement,
-    typed_expr::{TypedExpr, TypedExprID, TypedExprMap},
+    typed_expr::{LvalueClassification, TypedExpr, TypedExprID, TypedExprMap},
     variable::{Variable, VariableID, VariableMap},
 };
 
@@ -39,6 +39,11 @@ impl Function {
     #[must_use]
     pub fn get_expression(&self, id: TypedExprID) -> &TypedExpr {
         self.typed_expr_map.get_expression(id)
+    }
+
+    #[must_use]
+    pub fn classify_lvalue(&self, id: TypedExprID) -> LvalueClassification {
+        self.typed_expr_map.classify_lvalue(id)
     }
 
     #[must_use]

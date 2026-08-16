@@ -11,4 +11,7 @@ pub struct TupleIndex {
 impl TupleIndex {
     #[must_use]
     pub const fn new(operand: TypedExprID, index: usize) -> Self { Self { operand, index } }
+
+    #[must_use]
+    pub const fn operand(&self) -> TypedExprID { self.operand }
 }

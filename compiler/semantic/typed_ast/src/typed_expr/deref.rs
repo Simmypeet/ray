@@ -10,4 +10,7 @@ pub struct Deref {
 impl Deref {
     #[must_use]
     pub const fn new(pointee: TypedExprID) -> Self { Self { pointee } }
+
+    #[must_use]
+    pub const fn pointee(&self) -> TypedExprID { self.pointee }
 }

@@ -1,12 +1,12 @@
 use std::collections::hash_map::Entry;
 
 use bon::Builder;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_semantic_element::parameter::Parameter;
 use rayc_type::ty::Ty;
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::variable::Variable;
 
@@ -33,6 +33,9 @@ impl NameBinding {
 
     #[must_use]
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
+
+    #[must_use]
+    pub const fn is_mutable(&self) -> bool { self.mutable }
 }
 
 pub type NameBindingID = ID<NameBinding>;
