@@ -1,0 +1,35 @@
+[package]
+name = "rayc_symbol"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+arbitrary = ["dep:proptest", "rayc_target/arbitrary"]
+
+[dependencies]
+rayc_target = { path = "../../base/target" }
+rayc_arena = { path = "../../base/arena" }
+rayc_extend = { path = "../../base/extend" }
+rayc_hash = { path = "../../base/hash" }
+rayc_diagnostic = { path = "../../base/diagnostic" }
+rayc_source_file = { path = "../../base/source_file" }
+rayc_syntax = { path = "../../syntax/syntax" }
+rayc_lexical = { path = "../../syntax/lexical" }
+rayc_qbice.path = "../../base/qbice"
+qbice.workspace = true
+linkme.workspace = true
+siphasher = { workspace = true }
+enum-as-inner = { workspace = true }
+derive_more = { workspace = true }
+derive-new = { workspace = true }
+proptest = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rayc_target = { path = "../../base/target", features = ["arbitrary"] }
+
+[lints]
+workspace = true

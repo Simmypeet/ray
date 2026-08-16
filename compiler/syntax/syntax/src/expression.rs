@@ -1,0 +1,292 @@
+use rayc_lexical::tree::DelimiterKind;
+use rayc_parser::{
+    abstract_tree,
+    expect::{self, Fragment},
+    parser::{ParserExt, ast},
+};
+use qbice::{Decode, Encode, StableHash};
+
+use crate::{Identifier, Keyword, Numeric, Punctuation};
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct Binary {
+        pub postfix: Postfix = ast::<Postfix>(),
+        pub subsequent: #[multi] BinarySubsequent = ast::<BinarySubsequent>()
+            .repeat()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct BinarySubsequent {
+        pub operator: BinaryOperator = ast::<BinaryOperator>(),
+        pub postfix: Postfix = ast::<Postfix>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub enum BinaryOperator {
+        Plus(Punctuation = '+'),
+        Minus(Punctuation = '-'),
+        Multiply(Punctuation = '*'),
+        Divide(Punctuation = '/'),
+        And(Keyword = expect::Keyword::And),
+        Or(Keyword = expect::Keyword::Or),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub enum Literal {
+        Boolean(Boolean = ast::<Boolean>()),
+        Numeric(Numeric = expect::Numeric)
+    }
+}
+
+abstract_tree::abstract_tree! {
+    pub enum Leaf {
+        Call(Call = ast::<Call>()),
+        Identifier(Identifier = expect::Identifier),
+        Literal(Literal = ast::<Literal>()),
+        Parenthesized(Parenthesized = ast::<Parenthesized>()),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct RefOf {
+        pub dot: Punctuation = '.',
+        pub asterisk: Punctuation = '&',
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct Deref {
+        pub dot: Punctuation = '.',
+        pub asterisk: Punctuation = '*',
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub enum PostfixOperator {
+        RefOf(RefOf = ast::<RefOf>()),
+        Deref(Deref = ast::<Deref>()),
+        TupleIndex(TupleIndex = ast::<TupleIndex>())
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct TupleIndex {
+        pub dot: Punctuation = '.',
+        pub numeric: Numeric = expect::Numeric,
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct Postfix {
+        pub leaf: Leaf = ast::<Leaf>(),
+        pub postfixes: #[multi] PostfixOperator = ast::<PostfixOperator>()
+            .repeat()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub enum Boolean {
+        True(Keyword = expect::Keyword::True),
+        False(Keyword = expect::Keyword::False),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct Return {
+        pub return_keyword: Keyword = expect::Keyword::Return,
+        pub expression: Expression = ast::<Expression>()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub enum Expression {
+        Binary(Binary = ast::<Binary>()),
+        Return(Return = ast::<Return>())
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
+    pub struct Parenthesized {
+        pub expressions: #[multi] Expression = ast::<Expression>()
+            .repeat_all_with_separator(',')
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct Call {
+        pub def_name: Identifier = expect::Identifier,
+        pub arguments: Parenthesized = ast::<Parenthesized>()
+    }
+}

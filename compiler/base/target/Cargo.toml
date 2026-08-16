@@ -1,0 +1,29 @@
+[package]
+name = "rayc_target"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+arbitrary = ["dep:proptest"]
+
+[dependencies]
+rayc_hash = { path = "../hash" }
+rayc_extend = { path = "../extend" }
+rayc_qbice.path = "../qbice"
+linkme.workspace = true
+derive-new = { workspace = true }
+clap = { workspace = true }
+enum-as-inner = { workspace = true }
+rand = { workspace = true }
+siphasher = { workspace = true }
+proptest = { workspace = true, optional = true }
+qbice.workspace = true
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

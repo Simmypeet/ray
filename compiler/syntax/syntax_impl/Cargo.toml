@@ -1,0 +1,19 @@
+[package]
+name = "rayc_syntax_impl"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_syntax.path = "../syntax"
+rayc_qbice.path = "../../base/qbice"
+rayc_parser.path = "../parser"
+rayc_source_file.path = "../../base/source_file"
+rayc_lexical.path = "../lexical"
+qbice.workspace = true
+linkme.workspace = true
+
+[lints]
+workspace = true

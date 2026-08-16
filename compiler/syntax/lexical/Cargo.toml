@@ -1,0 +1,40 @@
+[package]
+name = "rayc_lexical"
+version = { workspace = true }
+description = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+rust-version.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+arbitrary = ["dep:proptest"]
+
+[dependencies]
+rayc_source_file = { path = "../../base/source_file" }
+rayc_diagnostic = { path = "../../base/diagnostic" }
+rayc_handler = { path = "../../base/handler" }
+rayc_arena = { path = "../../base/arena" }
+rayc_target = { path = "../../base/target" }
+rayc_test_input = { path = "../../base/test_input" }
+rayc_qbice.path = "../../base/qbice"
+qbice.workspace = true
+getset = { workspace = true }
+enum-as-inner = { workspace = true }
+thiserror = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
+derive_more = { workspace = true }
+bimap = { workspace = true }
+proptest = { workspace = true, optional = true }
+fxhash = { workspace = true }
+dashmap.workspace = true
+siphasher.workspace = true
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+
+[lints]
+workspace = true

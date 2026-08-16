@@ -1,0 +1,21 @@
+[package]
+name = "rayc_semantic_element_impl"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+qbice.workspace = true
+linkme.workspace = true
+rayc_qbice.path = "../../base/qbice"
+rayc_semantic_element.path = "../semantic_element"
+rayc_symbol.path = "../symbol"
+rayc_syntax.path = "../../syntax/syntax"
+rayc_type.path = "../type"
+rayc_extend.path = "../../base/extend"
+rayc_source_file.path = "../../base/source_file"
+
+[lints]
+workspace = true

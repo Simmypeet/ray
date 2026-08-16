@@ -1,0 +1,17 @@
+[package]
+name = "rayc_diagnostic"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_source_file = { path = "../source_file" }
+rayc_qbice.path = "../qbice"
+qbice.workspace = true
+derive-new = { workspace = true }
+bon = { workspace = true }
+
+[lints]
+workspace = true

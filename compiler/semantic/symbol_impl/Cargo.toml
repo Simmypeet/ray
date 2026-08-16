@@ -1,0 +1,31 @@
+[package]
+name = "rayc_symbol_impl"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_symbol = { path = "../symbol" }
+rayc_target = { path = "../../base/target" }
+rayc_extend = { path = "../../base/extend" }
+rayc_handler = { path = "../../base/handler" }
+rayc_hash = { path = "../../base/hash" }
+rayc_diagnostic = { path = "../../base/diagnostic" }
+rayc_source_file = { path = "../../base/source_file" }
+rayc_syntax = { path = "../../syntax/syntax" }
+rayc_lexical = { path = "../../syntax/lexical" }
+rayc_arena = { path = "../../base/arena" }
+rayc_tokio = { path = "../../base/tokio" }
+rayc_parser = { path = "../../syntax/parser" }
+rayc_qbice = { path = "../../base/qbice" }
+qbice = { workspace = true }
+linkme = { workspace = true }
+tokio = { workspace = true }
+rayon = { workspace = true }
+bon = { workspace = true }
+
+
+[lints]
+workspace = true

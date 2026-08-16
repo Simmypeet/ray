@@ -1,0 +1,280 @@
+use rayc_lexical::tree::RelativeSpan;
+use rayc_qbice::TrackedEngine;
+use rayc_type::{
+    constraint::{self, Constraint, Step, subtype::Subtype},
+    subst::{Subst, Substitutable},
+    ty::Ty,
+};
+use rayc_typed_ast::typed_expr::TypedExprID;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+
+use crate::{
+    diagnostic::{Diagnostic, ResidualSubtype},
+    tast_builder::TAstBuilder,
+};
+
+/// Describes the origin of a constraint, which can be used for better error
+/// reporting and debugging.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Provenance {
+    Subtype(SubtypeProvenance),
+}
+
+impl Substitutable for Provenance {
+    fn apply_subst(&self, subst: &Subst, engine: &rayc_qbice::TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match self {
+            Self::Subtype(subtype_provenance) => {
+                subtype_provenance.apply_subst(subst, engine).map(Self::Subtype)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum SubtypeSource {
+    FunctioncCall,
+    Deref,
+    VariableAssignment,
+    BinaryOperator,
+    ReturnType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub struct SubtypeProvenance {
+    original_subtype: Subtype,
+    span: RelativeSpan,
+    source: SubtypeSource,
+}
+
+impl SubtypeProvenance {
+    #[must_use]
+    pub const fn original_subtype(&self) -> &Subtype { &self.original_subtype }
+
+    #[must_use]
+    pub const fn source(&self) -> SubtypeSource { self.source }
+
+    #[must_use]
+    pub const fn span(&self) -> &RelativeSpan { &self.span }
+}
+
+impl Substitutable for SubtypeProvenance {
+    fn apply_subst(&self, subst: &Subst, engine: &rayc_qbice::TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        self.original_subtype.apply_subst(subst, engine).map(|new_subtype| Self {
+            original_subtype: new_subtype,
+            span: self.span,
+            source: self.source,
+        })
+    }
+}
+
+/// A constraint equipped with its provenance
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ProvenancedConstraint {
+    provenance: Provenance,
+    constraint: Constraint,
+}
+
+impl Substitutable for ProvenancedConstraint {
+    fn apply_subst(&self, subst: &Subst, engine: &rayc_qbice::TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match (
+            self.provenance.apply_subst(subst, engine),
+            self.constraint.apply_subst(subst, engine),
+        ) {
+            (Some(new_provenance), Some(new_constraint)) => {
+                Some(Self { provenance: new_provenance, constraint: new_constraint })
+            }
+            (Some(new_provenance), None) => {
+                Some(Self { provenance: new_provenance, constraint: self.constraint.clone() })
+            }
+            (None, Some(new_constraint)) => {
+                Some(Self { provenance: self.provenance.clone(), constraint: new_constraint })
+            }
+            (None, None) => None,
+        }
+    }
+}
+
+impl ProvenancedConstraint {
+    #[must_use]
+    pub const fn new(provenance: Provenance, constraint: Constraint) -> Self {
+        Self { provenance, constraint }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ConstraintSolver {
+    residual_constraints: Vec<ProvenancedConstraint>,
+    errored_constraints: Vec<(constraint::Error, ProvenancedConstraint)>,
+    subst: Subst,
+}
+
+impl ConstraintSolver {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            residual_constraints: Vec::new(),
+            errored_constraints: Vec::new(),
+            subst: Subst::new_empty(),
+        }
+    }
+}
+
+impl TAstBuilder {
+    pub fn latest_type(&self, ty: &Interned<Ty>) -> Interned<Ty> {
+        ty.apply_subst(&self.constraint_solver.subst, &self.engine).unwrap_or_else(|| ty.clone())
+    }
+
+    pub fn push_variable_assignment_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(
+            expression,
+            expected_ty,
+            SubtypeSource::VariableAssignment,
+        );
+    }
+
+    pub fn push_deref_constarint(&mut self, expected_ty: &Interned<Ty>, expression: TypedExprID) {
+        self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::Deref);
+    }
+
+    pub async fn push_return_type_constraint(&mut self, expression: TypedExprID) {
+        self.push_subtype_constraint_with_expr(
+            expression,
+            &self.return_type_of_current_function().await,
+            SubtypeSource::ReturnType,
+        );
+    }
+
+    pub fn push_function_call_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(
+            expression,
+            expected_ty,
+            SubtypeSource::FunctioncCall,
+        );
+    }
+
+    pub fn push_binary_operator_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(
+            expression,
+            expected_ty,
+            SubtypeSource::BinaryOperator,
+        );
+    }
+
+    fn push_subtype_constraint_with_expr(
+        &mut self,
+        arg: TypedExprID,
+        expected_ty: &Interned<Ty>,
+        source: SubtypeSource,
+    ) {
+        let ty_of_expression = self.latest_type(&self.type_of_expression(arg));
+        let expected_ty = self.latest_type(expected_ty);
+        let subtype = Subtype::new(expected_ty, ty_of_expression);
+        let provenance = Provenance::Subtype(SubtypeProvenance {
+            original_subtype: subtype.clone(),
+            span: self.span_of_expression(arg),
+            source,
+        });
+
+        let constraint = Constraint::Subtype(subtype);
+        let provenanced_constraint = ProvenancedConstraint::new(provenance, constraint);
+
+        self.push_constraint(provenanced_constraint);
+    }
+
+    fn push_constraint(&mut self, provenanced_constraint: ProvenancedConstraint) {
+        let mut queued = vec![provenanced_constraint];
+
+        while let Some(provenanced_constraint) = queued.pop() {
+            match self.solver.entail(&provenanced_constraint.constraint) {
+                Ok(Step::Simplified(constrs)) => {
+                    queued.extend(constrs.into_iter().map(|x| ProvenancedConstraint {
+                        provenance: provenanced_constraint.provenance.clone(),
+                        constraint: x,
+                    }));
+                }
+
+                Ok(Step::Subst(subst)) => {
+                    self.move_constraints_from_residual(&subst, &mut queued);
+
+                    self.constraint_solver.subst.compose(&subst, &self.engine);
+                }
+
+                Ok(Step::NoProgress) => {
+                    self.constraint_solver.residual_constraints.push(provenanced_constraint);
+                }
+
+                Err(err) => {
+                    self.constraint_solver.errored_constraints.push((err, provenanced_constraint));
+                }
+            }
+        }
+    }
+
+    fn move_constraints_from_residual(
+        &mut self,
+        subst: &Subst,
+        queued: &mut Vec<ProvenancedConstraint>,
+    ) {
+        let mut i = 0;
+
+        while i < self.constraint_solver.residual_constraints.len() {
+            let new_constraint =
+                self.constraint_solver.residual_constraints[i].apply_subst(subst, self.engine());
+
+            match new_constraint {
+                Some(new_constraint) => {
+                    queued.push(new_constraint);
+                    self.constraint_solver.residual_constraints.remove(i);
+                }
+                None => {
+                    i += 1;
+                }
+            }
+        }
+    }
+}
+
+impl ConstraintSolver {
+    #[must_use]
+    pub fn residual_into_diags(mut self, engine: &TrackedEngine) -> Vec<Diagnostic> {
+        for (_, provenanced_constraint) in &mut self.errored_constraints {
+            provenanced_constraint.apply_in_place(&self.subst, engine);
+        }
+
+        let mut diags = self
+            .residual_constraints
+            .into_iter()
+            .chain(self.errored_constraints.into_iter().map(|x| x.1))
+            .map(|x| match x.provenance {
+                Provenance::Subtype(subtype_provenance) => Diagnostic::ResidualSubtype(
+                    ResidualSubtype::builder().provenance(subtype_provenance).build(),
+                ),
+            })
+            .collect::<Vec<_>>();
+
+        diags.dedup();
+
+        diags
+    }
+}

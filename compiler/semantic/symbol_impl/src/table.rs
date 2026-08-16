@@ -1,0 +1,294 @@
+use std::{collections::hash_map::Entry, path::Path, sync::Arc};
+
+use bon::Builder;
+use linkme::distributed_slice;
+use rayc_hash::FxHashMap;
+use rayc_lexical::tree::RelativeSpan;
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
+use rayc_source_file::{LocalSourceID, get_stable_path_id};
+use rayc_symbol::{
+    GlobalSymbolID, SymbolID, calculate_qualified_name_id, get_target_root_module_id,
+    member::{Insertion, Member},
+    symbol_kind::SymbolKind,
+};
+use rayc_syntax::{
+    def::{ParameterList, ReturnType},
+    statement::Block,
+};
+use rayc_target::{TargetID, get_invocation_arguments};
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
+};
+
+use crate::diagnostic::{Diagnostic, ItemRedefinition, SourceFileLoadFail};
+
+type Map<V> = FxHashMap<SymbolID, V>;
+
+#[derive(Debug, Builder)]
+#[allow(clippy::option_option)]
+pub struct Infos {
+    name: Interned<str>,
+    span: Option<RelativeSpan>,
+    symbol_kind: SymbolKind,
+    def_signature: Option<(Option<ParameterList>, Option<ReturnType>)>,
+    member: Option<MemberBuilder>,
+    def_body: Option<Option<Block>>,
+}
+
+#[derive(Debug, Default, StableHash, Encode, Decode)]
+struct SyntaxTable {
+    def_signatures: Map<(Option<ParameterList>, Option<ReturnType>)>,
+    def_bodies: Map<Option<Block>>,
+}
+
+/// Stores the symbol information. It maps the symbol ID to its related
+/// information.
+#[derive(Debug, Default, StableHash, Encode, Decode)]
+pub struct Table {
+    symbol_kinds: Map<SymbolKind>,
+    members: Map<Member>,
+    parents: Map<Option<SymbolID>>,
+    spans: Map<Option<RelativeSpan>>,
+    names: Map<Interned<str>>,
+
+    syntaxes: SyntaxTable,
+    source_id: Option<LocalSourceID>,
+
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl Table {
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] { &self.diagnostics }
+}
+
+#[derive(Debug, Default)]
+pub struct MemberBuilder {
+    current_id: GlobalSymbolID,
+    current_qualified_name: Vec<Interned<str>>,
+
+    member: Member,
+    occurrences: FxHashMap<Interned<str>, usize>,
+
+    redef_errors: Vec<ItemRedefinition>,
+}
+
+impl MemberBuilder {
+    pub async fn new_root_module_id(
+        target_id: TargetID,
+        target_name: Interned<str>,
+        engine: &TrackedEngine,
+    ) -> Self {
+        Self {
+            current_id: target_id.make_global(engine.get_target_root_module_id(target_id).await),
+
+            current_qualified_name: vec![target_name],
+            member: Member::default(),
+            occurrences: FxHashMap::default(),
+            redef_errors: Vec::new(),
+        }
+    }
+}
+
+impl MemberBuilder {
+    #[must_use]
+    pub fn new(current_id: GlobalSymbolID, current_qualified_name: Vec<Interned<str>>) -> Self {
+        Self {
+            current_id,
+            current_qualified_name,
+            member: Member::default(),
+            occurrences: FxHashMap::default(),
+            redef_errors: Vec::new(),
+        }
+    }
+}
+
+impl Table {
+    #[must_use]
+    pub fn new() -> Self { Self::default() }
+
+    #[must_use]
+    pub fn get_symbol_kind(&self, symbol_id: SymbolID) -> SymbolKind {
+        self.symbol_kinds.get(&symbol_id).copied().unwrap()
+    }
+
+    #[must_use]
+    pub fn get_span(&self, symbol_id: SymbolID) -> Option<RelativeSpan> {
+        self.spans.get(&symbol_id).copied().unwrap()
+    }
+
+    #[must_use]
+    pub fn get_name(&self, symbol_id: SymbolID) -> Interned<str> {
+        self.names.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
+    pub fn get_parent(&self, symbol_id: SymbolID) -> Option<SymbolID> {
+        self.parents.get(&symbol_id).copied().unwrap()
+    }
+
+    #[must_use]
+    pub fn get_def_signature_syntax(
+        &self,
+        symbol_id: SymbolID,
+    ) -> (Option<ParameterList>, Option<ReturnType>) {
+        self.syntaxes.def_signatures.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
+    pub fn get_def_body_syntax(&self, symbol_id: SymbolID) -> Option<Block> {
+        self.syntaxes.def_bodies.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
+    pub const fn source_id(&self) -> Option<LocalSourceID> { self.source_id }
+
+    fn insert_member_as_root_module(&mut self, member: MemberBuilder) {
+        self.insert_info(
+            member.current_id.id,
+            None,
+            Infos::builder()
+                .symbol_kind(SymbolKind::Module)
+                .name(member.current_qualified_name[0].clone())
+                .member(member)
+                .build(),
+        );
+    }
+
+    fn insert_info(&mut self, symbol_id: SymbolID, parent: Option<SymbolID>, info: Infos) {
+        self.spans.insert(symbol_id, info.span);
+        self.names.insert(symbol_id, info.name);
+        self.parents.insert(symbol_id, parent);
+        self.symbol_kinds.insert(symbol_id, info.symbol_kind);
+
+        if let Some(def_sig) = info.def_signature {
+            self.syntaxes.def_signatures.insert(symbol_id, def_sig);
+        }
+
+        if let Some(def_body) = info.def_body {
+            self.syntaxes.def_bodies.insert(symbol_id, def_body);
+        }
+
+        if let Some(member) = info.member {
+            self.members.insert(symbol_id, member.member);
+            self.diagnostics
+                .extend(member.redef_errors.into_iter().map(Diagnostic::ItemRedefinition));
+        }
+    }
+
+    pub async fn insert_symbol(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        info: Infos,
+        engine: &TrackedEngine,
+    ) {
+        // retrieves the occurrence count of the member name. normally,
+        // this `count` should be 0 if no redefinition has been encountered.
+        let count = match member_builder.occurrences.entry(info.name.clone()) {
+            Entry::Occupied(mut occupied_entry) => {
+                let result = *occupied_entry.get();
+                *occupied_entry.get_mut() += 1;
+                result + 1
+            }
+            Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(0);
+                0
+            }
+        };
+
+        // generating the symbol ID for the member
+        let id = engine
+            .calculate_qualified_name_id(
+                member_builder
+                    .current_qualified_name
+                    .iter()
+                    .map(|x| &**x)
+                    .chain(std::iter::once(&*info.name)),
+                member_builder.current_id.target_id,
+                Some(member_builder.current_id.id),
+                count,
+            )
+            .await;
+
+        match member_builder.member.insert(info.name.clone(), id) {
+            // cool
+            Insertion::Inserted => {}
+
+            // a redefinition has been encountered
+            Insertion::Conflicted(symbol_id) => {
+                member_builder.redef_errors.push(
+                    ItemRedefinition::builder()
+                        .existing_id(member_builder.current_id.target_id.make_global(symbol_id))
+                        .redefinition_span(info.span.expect("should have a span"))
+                        .in_id(member_builder.current_id)
+                        .build(),
+                );
+            }
+        }
+
+        // finally, insert the symbol information into the table
+        self.insert_info(id, Some(member_builder.current_id.id), info);
+    }
+}
+
+impl Table {
+    pub fn all_symbol_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
+        self.symbol_kinds.keys().copied()
+    }
+
+    pub fn all_def_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
+        self.syntaxes.def_signatures.keys().copied()
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Arc<Table>)]
+#[extend(name = get_table, by_val)]
+pub struct Key {
+    pub target_id: TargetID,
+}
+
+#[executor(config = Config)]
+pub async fn table_executor(&Key { target_id }: &Key, engine: &TrackedEngine) -> Arc<Table> {
+    let mut table = Table::default();
+
+    let arg = engine.get_invocation_arguments(target_id).await;
+    let internred_path: Interned<Path> = engine.intern_unsized(arg.file_path().to_path_buf());
+
+    let target_name = arg.target_name();
+
+    let syntax_key =
+        engine.query(&rayc_syntax::Key { path: internred_path.clone(), target_id }).await;
+
+    let stable_path_id = engine.get_stable_path_id(internred_path.clone(), target_id).await.ok();
+
+    let mut member =
+        MemberBuilder::new_root_module_id(target_id, engine.intern_unsized(target_name), engine)
+            .await;
+
+    match syntax_key {
+        Ok((Some(syntax), _)) => {
+            table.register_module_members(&mut member, &syntax, engine).await;
+        }
+
+        Ok((None, _)) => {}
+
+        Err(err) => {
+            table.diagnostics.push(Diagnostic::SourceFileLoadFail(SourceFileLoadFail {
+                error_message: err.to_string(),
+                path: internred_path,
+                submodule_span: None,
+            }));
+        }
+    }
+
+    table.source_id = stable_path_id;
+    table.insert_member_as_root_module(member);
+
+    Arc::new(table)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static TABLE_EXECUTOR: Registration<Config> = Registration::new::<Key, TableExecutor>();

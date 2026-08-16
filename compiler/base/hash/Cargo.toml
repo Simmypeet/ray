@@ -1,0 +1,16 @@
+[package]
+name = "rayc_hash"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fxhash = { workspace = true }
+dashmap = { workspace = true }
+im.workspace = true
+qbice.workspace = true
+
+[lints]
+workspace = true

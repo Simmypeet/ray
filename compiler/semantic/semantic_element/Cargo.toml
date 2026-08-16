@@ -1,0 +1,19 @@
+[package]
+name = "rayc_semantic_element"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+qbice.workspace = true
+bon.workspace = true
+rayc_qbice.path = "../../base/qbice"
+rayc_type.path = "../type"
+rayc_symbol.path = "../symbol"
+rayc_lexical.path = "../../syntax/lexical"
+rayc_arena.path = "../../base/arena"
+
+[lints]
+workspace = true

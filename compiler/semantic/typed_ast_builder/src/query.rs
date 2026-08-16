@@ -1,0 +1,126 @@
+use linkme::distributed_slice;
+use rayc_diagnostic::{ByteIndex, Rendered, Report};
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
+use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
+use rayc_target::TargetID;
+use rayc_typed_ast::{function::Function, name_binding::Source};
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
+};
+
+use crate::{diagnostic::Diagnostic, tast_builder::TAstBuilder};
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
+)]
+#[value((Interned<Function>, Interned<[Diagnostic]>))]
+pub struct BuildTAst {
+    pub def_id: GlobalSymbolID,
+}
+
+#[executor(config = Config)]
+pub async fn build_tast_executor(
+    &BuildTAst { def_id }: &BuildTAst,
+    engine: &TrackedEngine,
+) -> (Interned<Function>, Interned<[Diagnostic]>) {
+    let mut tast_builder = TAstBuilder::new(engine.clone(), def_id);
+
+    tast_builder.build_parameter_pattern().await;
+    tast_builder.build_body().await;
+
+    let (func, diags) = tast_builder.finish();
+
+    (engine.intern(func), engine.intern_unsized(diags))
+}
+
+impl TAstBuilder {
+    async fn build_parameter_pattern(&mut self) {
+        let parameter_name_binding_group = self.parameter_name_binding_group();
+        let parameter_map = self.parameter_map_of_current_function().await;
+
+        if let Some(parameter_syn) = self.parameter_list_syntax_of_current_function().await {
+            for ((param_id, parameter), syn) in parameter_map.iter().zip(parameter_syn.parameters())
+            {
+                let Some(pat) = syn.irrefutable_pattern() else {
+                    continue;
+                };
+
+                self.insert_name_binding_to_group_from_pattern(
+                    parameter_name_binding_group,
+                    &pat,
+                    parameter.ty(),
+                    Source::Parameter(param_id),
+                );
+            }
+        }
+    }
+
+    async fn build_body(&mut self) {
+        let Some(body_syn) = self.def_body_syntax_of_current_function().await else {
+            return;
+        };
+
+        for stmt in body_syn.statements() {
+            self.bind_statement(&stmt).await;
+        }
+    }
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static BUILD_TAST_EXECUTOR: Registration<Config> =
+    Registration::new::<BuildTAst, BuildTastExecutor>();
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
+)]
+#[value(Interned<[Rendered<ByteIndex>]>)]
+pub struct SingleRenderedKey {
+    pub def_id: GlobalSymbolID,
+}
+
+#[executor(config = Config)]
+pub async fn single_rendered_executor(
+    &SingleRenderedKey { def_id }: &SingleRenderedKey,
+    engine: &TrackedEngine,
+) -> Interned<[Rendered<ByteIndex>]> {
+    let (_, diags) = engine.query(&BuildTAst { def_id }).await;
+    let mut rendered = Vec::new();
+
+    for diag in diags.iter() {
+        rendered.push(diag.report(engine).await);
+    }
+
+    engine.intern_unsized(rendered)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static SINGLE_RENDERED_EXECUTOR: Registration<Config> =
+    Registration::new::<SingleRenderedKey, SingleRenderedExecutor>();
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
+)]
+#[value(Interned<[Interned<[Rendered<ByteIndex>]>]>)]
+pub struct RenderedKey {
+    pub target_id: TargetID,
+}
+
+#[executor(config = Config)]
+pub async fn rendered_executor(
+    &RenderedKey { target_id }: &RenderedKey,
+    engine: &TrackedEngine,
+) -> Interned<[Interned<[Rendered<ByteIndex>]>]> {
+    let mut rendered = Vec::new();
+    let def_ids = engine.get_all_def_ids(target_id).await;
+
+    for def_id in def_ids.iter().copied() {
+        rendered
+            .push(engine.query(&SingleRenderedKey { def_id: target_id.make_global(def_id) }).await);
+    }
+
+    engine.intern_unsized(rendered)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static RENDERED_EXECUTOR: Registration<Config> =
+    Registration::new::<RenderedKey, RenderedExecutor>();

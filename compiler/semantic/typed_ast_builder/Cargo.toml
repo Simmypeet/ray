@@ -1,0 +1,28 @@
+[package]
+name = "rayc_typed_ast_builder"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_arena.path = "../../base/arena"
+rayc_type.path = "../type"
+rayc_lexical.path = "../../syntax/lexical"
+rayc_syntax.path = "../../syntax/syntax"
+rayc_qbice.path = "../../base/qbice"
+rayc_source_file.path = "../../base/source_file"
+rayc_hash.path = "../../base/hash"
+rayc_handler.path = "../../base/handler"
+rayc_diagnostic.path = "../../base/diagnostic"
+rayc_symbol.path = "../symbol"
+rayc_semantic_element.path = "../semantic_element"
+rayc_typed_ast.path = "../typed_ast"
+rayc_target.path = "../../base/target"
+linkme.workspace = true
+qbice.workspace = true
+bon.workspace = true
+
+[lints]
+workspace = true

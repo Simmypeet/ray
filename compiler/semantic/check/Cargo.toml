@@ -1,0 +1,23 @@
+[package]
+name = "rayc_check"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_diagnostic = { path = "../../base/diagnostic" }
+rayc_target = { path = "../../base/target" }
+rayc_syntax = { path = "../../syntax/syntax" }
+rayc_symbol_impl = { path = "../symbol_impl" }
+rayc_qbice.path = "../../base/qbice"
+rayc_tokio.path = "../../base/tokio"
+rayc_typed_ast_builder.path = "../typed_ast_builder"
+qbice.workspace = true
+linkme.workspace = true
+
+tokio = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,21 @@
+[package]
+name = "rayc_typed_ast"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_type.path = "../type"
+rayc_arena.path = "../../base/arena"
+rayc_hash.path = "../../base/hash"
+rayc_lexical.path = "../../syntax/lexical"
+rayc_semantic_element.path = "../semantic_element"
+rayc_symbol.path = "../symbol"
+bon.workspace = true
+qbice.workspace = true
+
+
+[lints]
+workspace = true

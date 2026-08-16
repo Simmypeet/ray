@@ -1,0 +1,232 @@
+//! Contains the logic for building the symbol table from the syntax tree.
+
+use std::hash::Hash;
+
+use rayc_extend::extend;
+use rayc_lexical::tree::RelativeSpan;
+use rayc_qbice::TrackedEngine;
+use rayc_target::{
+    CORE_TARGET_SEED, Global, TargetID, get_invocation_arguments, get_target_seed,
+};
+use qbice::{Decode, Encode, Identifiable, StableHash};
+use siphasher::sip128::Hasher128;
+
+pub mod member;
+pub mod name;
+pub mod parent;
+pub mod source_map;
+pub mod span;
+pub mod symbol_kind;
+pub mod syntax;
+
+/// Represents a unique identifier for the symbols in the compilation target.
+/// This ID is only unique within the context of a single target. If wants to
+/// use identifier across multiple targets, it should be combined with the
+/// [`Global`]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Encode,
+    Decode,
+    StableHash,
+    Identifiable,
+)]
+pub struct SymbolID {
+    lo: u64,
+    hi: u64,
+}
+
+impl SymbolID {
+    /// Creates a new ID from the given u128 value.
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
+    pub const fn from_u128(value: u128) -> Self {
+        Self { lo: value as u64, hi: (value >> 64) as u64 }
+    }
+
+    /// Creates a new ID from the given low and high u64 values.
+    #[must_use]
+    pub const fn from_lo_hi(lo: u64, hi: u64) -> Self { Self { lo, hi } }
+}
+
+/// A global symbol ID that uniquely identifies a symbol across all targets.
+pub type GlobalSymbolID = Global<SymbolID>;
+
+/// A kind of ID used to unique identify a symbol inside a particular global
+/// symbol.
+///
+/// For example, we can use this struct to uniquely identify a generic parameter
+/// inside a particular function symbol. Where the [`Self::parent_id`] is the ID
+/// of the function symbol and the [`Self::id`] is the ID of the generic
+/// parameter.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    derive_new::new,
+)]
+pub struct MemberID<InnerID> {
+    /// The parent ID of the member, which is the ID of the symbol that
+    /// contains this member.
+    parent_id: Global<SymbolID>,
+
+    /// The ID of the member.
+    id: InnerID,
+}
+
+impl<InnerID> MemberID<InnerID> {
+    /// Returns the parent ID of the member, which is the ID of the symbol that
+    /// contains this member.
+    #[must_use]
+    pub const fn parent_id(&self) -> Global<SymbolID> { self.parent_id }
+
+    /// Returns the ID of the member.
+    #[must_use]
+    pub const fn id(&self) -> InnerID
+    where
+        InnerID: Copy,
+    {
+        self.id
+    }
+}
+
+/// Calculates the ID of the symbol with the given sequence of qualified names
+/// and the target ID.
+///
+/// The ID is calculated by hashing the sequence of names, the target ID, and
+/// the declaration order.
+///
+/// The declaration order is used to handle cases of the redefinition of symbols
+/// with the same name in the same scope. In case of the symbol with no
+/// redefinition, passing `0` as the declaration order is sufficient.
+#[extend]
+#[allow(clippy::collection_is_never_read)]
+pub async fn calculate_qualified_name_id<'a>(
+    self: &TrackedEngine,
+    qualified_name_sequence: impl IntoIterator<Item = &'a str>,
+    target_id: TargetID,
+    parent_id: Option<SymbolID>,
+    declaration_order: usize,
+) -> SymbolID {
+    let target_seed = self.get_target_seed(target_id).await;
+
+    calculate_qualified_name_id_with_given_seed(
+        qualified_name_sequence,
+        parent_id,
+        declaration_order,
+        target_seed,
+    )
+}
+
+/// Calculates the ID of the core root module symbol.
+#[must_use]
+pub fn calculate_core_root_target_module_id() -> SymbolID {
+    calculate_qualified_name_id_with_given_seed(std::iter::once("core"), None, 0, CORE_TARGET_SEED)
+}
+
+/// Calculates the ID of the symbol with the given sequence of qualified names
+/// and the target ID, using the given target seed.
+pub fn calculate_qualified_name_id_with_given_seed<'a>(
+    qualified_name_sequence: impl IntoIterator<Item = &'a str>,
+    parent_id: Option<SymbolID>,
+    declaration_order: usize,
+    target_seed: u64,
+) -> SymbolID {
+    let mut hasher = siphasher::sip128::SipHasher24::default();
+    target_seed.hash(&mut hasher);
+
+    // signify that we're generating ID for the qualified name
+    true.hash(&mut hasher);
+    parent_id.hash(&mut hasher);
+
+    for name in qualified_name_sequence {
+        // hash the name of the symbol
+        name.hash(&mut hasher);
+    }
+
+    declaration_order.hash(&mut hasher);
+
+    SymbolID::from_u128(hasher.finish128().into())
+}
+
+/// Calculates a symbol [`ID`] for the implements at the given qualified
+/// identifier span.
+#[extend]
+pub async fn calculate_implements_id(
+    self: &TrackedEngine,
+    qualified_identifier_span: &RelativeSpan,
+    target_id: TargetID,
+) -> SymbolID {
+    let mut hasher = siphasher::sip128::SipHasher24::default();
+    let target_seed = self.get_target_seed(target_id).await;
+
+    target_seed.hash(&mut hasher);
+
+    // signify that we're generating ID for the qualified name
+    false.hash(&mut hasher);
+
+    // relative span where the qualified identifier of the implements located
+    // is unique for each implements
+    qualified_identifier_span.hash(&mut hasher);
+
+    SymbolID::from_u128(hasher.finish128().into())
+}
+
+/// Calculates a symbol [`ID`] for the implements with the given unique name.
+#[extend]
+pub async fn calculate_implements_id_by_unique_name(
+    self: &TrackedEngine,
+    unique_name: &str,
+    target_id: TargetID,
+) -> SymbolID {
+    let target_seed = self.get_target_seed(target_id).await;
+
+    calculate_implements_id_by_unique_name_with_given_seed(unique_name, target_seed)
+}
+
+/// Calculates a symbol [`ID`] for the implements with the given unique name,
+/// using the given target seed.
+#[must_use]
+pub fn calculate_implements_id_by_unique_name_with_given_seed(
+    unique_name: &str,
+    target_seed: u64,
+) -> SymbolID {
+    let mut hasher = siphasher::sip128::SipHasher24::default();
+
+    target_seed.hash(&mut hasher);
+
+    // signify that we're generating ID for the qualified name
+    false.hash(&mut hasher);
+    unique_name.hash(&mut hasher);
+
+    SymbolID::from_u128(hasher.finish128().into())
+}
+
+/// Returns the root module ID for the given target ID.
+#[extend]
+pub async fn get_target_root_module_id(self: &TrackedEngine, target_id: TargetID) -> SymbolID {
+    if target_id == TargetID::CORE {
+        self.calculate_qualified_name_id(std::iter::once("core"), target_id, None, 0).await
+    } else {
+        let invocation_arguments = self.get_invocation_arguments(target_id).await;
+        let target_name = invocation_arguments.target_name();
+
+        self.calculate_qualified_name_id(std::iter::once(target_name.as_str()), target_id, None, 0)
+            .await
+    }
+}

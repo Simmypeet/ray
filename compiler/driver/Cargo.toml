@@ -1,0 +1,35 @@
+[package]
+name = "rayc_driver"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rayc_source_file = { path = "../base/source_file" }
+rayc_diagnostic = { path = "../base/diagnostic" }
+rayc_handler = { path = "../base/handler" }
+rayc_target = { path = "../base/target" }
+rayc_hash = { path = "../base/hash" }
+# rayc_corelib_impl = { path = "../semantic/corelib_impl" }
+# rayc_symbol = { path = "../semantic/symbol" }
+rayc_symbol_impl = { path = "../semantic/symbol_impl" }
+rayc_check = { path = "../semantic/check" }
+# rayc_llvm = { path = "../codegen/llvm" }
+rayc_qbice.path = "../base/qbice"
+rayc_source_file_impl.path = "../base/source_file_impl"
+rayc_lexical_impl.path = "../syntax/lexical_impl"
+rayc_syntax_impl.path = "../syntax/syntax_impl"
+rayc_semantic_element_impl.path = "../semantic/semantic_element_impl"
+qbice.workspace = true
+linkme.workspace = true
+inkwell = { workspace = true }
+tracing = { workspace = true }
+annotate-snippets.workspace = true
+ansi_term.workspace = true
+
+[lints]
+workspace = true
