@@ -1,0 +1,12 @@
+def firstCase() -> ():
+    32 = 64
+    return ()
+
+
+def secondCase() -> ():
+    (1, 2).0 = 3
+    return ()
+
+
+def thirdCase() -> ():
+    let a = 1.&

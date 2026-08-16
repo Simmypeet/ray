@@ -1,0 +1,25 @@
+def firstCase(a: int32) -> ():
+    a = 32
+    return ()
+
+
+def secondCase(a: (int32, int32)) -> ():
+    a.0 = 32
+    return ()
+
+
+def thirdCase(a: *int32) -> ():
+    a.* = 32
+    return ()
+
+
+def fourthCase(a: *int32) -> ():
+    let b = a.*.&mut
+    return ()
+
+
+def okCase(mut a: int32, mut b: (int32, int32), c: *mut int32) -> ():
+    a = 32
+    b.0 = 32
+    c.* = 32
+    return ()
