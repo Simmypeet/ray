@@ -1,4 +1,5 @@
 use bon::Builder;
+use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
@@ -7,7 +8,6 @@ use rayc_symbol::{
     symbol_kind::get_symbol_kind,
 };
 use rayc_type::ty::Ty;
-use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 
 use crate::tast_builder::constraint_solver::{SubtypeProvenance, SubtypeSource};
 
@@ -122,6 +122,88 @@ pub struct ExpectedTupleType {
     span: RelativeSpan,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct ExpectedPointerType {
+    ty: Interned<Ty>,
+    span: RelativeSpan,
+}
+
+impl Report for ExpectedPointerType {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let abs_span = engine.to_absolute_span(&self.span).await;
+
+        Rendered::builder()
+            .message(format!("expected a pointer type, but found `{}`", &*self.ty))
+            .primary_highlight(Highlight::builder().span(abs_span).build())
+            .build()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum LvalueOperation {
+    Assignment,
+    Reference,
+    MutableReference,
+}
+
+impl LvalueOperation {
+    const fn description(self) -> &'static str {
+        match self {
+            Self::Assignment => "assignment",
+            Self::Reference => "reference-of operation",
+            Self::MutableReference => "mutable reference-of operation",
+        }
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
+)]
+pub struct ExpectedLvalue {
+    operation: LvalueOperation,
+    span: RelativeSpan,
+}
+
+impl Report for ExpectedLvalue {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let abs_span = engine.to_absolute_span(&self.span).await;
+
+        Rendered::builder()
+            .message(format!("{} requires an lvalue", self.operation.description()))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(abs_span)
+                    .message("this expression is not addressable")
+                    .build(),
+            )
+            .build()
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
+)]
+pub struct ImmutableLvalue {
+    operation: LvalueOperation,
+    span: RelativeSpan,
+}
+
+impl Report for ImmutableLvalue {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let abs_span = engine.to_absolute_span(&self.span).await;
+
+        Rendered::builder()
+            .message(format!("{} requires a mutable lvalue", self.operation.description()))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(abs_span)
+                    .message("this destination is immutable")
+                    .build(),
+            )
+            .build()
+    }
+}
+
 impl Report for ExpectedTupleType {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let abs_span = engine.to_absolute_span(&self.span).await;
@@ -195,7 +277,6 @@ impl Report for ResidualSubtype {
     async fn report(&self, parameter: &TrackedEngine) -> Rendered<ByteIndex> {
         let header_msg = match self.provenance.source() {
             SubtypeSource::FunctioncCall => "mismatched argument types in function call",
-            SubtypeSource::Deref => "mismatched types in dereference operation",
             SubtypeSource::VariableAssignment => "mismatched types in variable assignment",
             SubtypeSource::BinaryOperator => "mismatched types in binary operation",
             SubtypeSource::ReturnType => "mismatched types in return expression",
@@ -224,6 +305,9 @@ pub enum Diagnostic {
     MismatchedArgumentCount(MismatchedArgumentCount),
     TypeMustBeKnownAtThisPoint(TypeMustBeKnownAtThisPoint),
     ExpectedTupleType(ExpectedTupleType),
+    ExpectedPointerType(ExpectedPointerType),
+    ExpectedLvalue(ExpectedLvalue),
+    ImmutableLvalue(ImmutableLvalue),
     OutOfBoundsTupleIndex(OutOfBoundsTupleIndex),
     DuplicateNameBinding(DuplicateNameBinding),
     ResidualSubtype(ResidualSubtype),
@@ -246,6 +330,11 @@ impl Report for Diagnostic {
             Self::ExpectedTupleType(expected_tuple_type) => {
                 expected_tuple_type.report(engine).await
             }
+            Self::ExpectedPointerType(expected_pointer_type) => {
+                expected_pointer_type.report(engine).await
+            }
+            Self::ExpectedLvalue(expected_lvalue) => expected_lvalue.report(engine).await,
+            Self::ImmutableLvalue(immutable_lvalue) => immutable_lvalue.report(engine).await,
             Self::OutOfBoundsTupleIndex(out_of_bounds_tuple_index) => {
                 out_of_bounds_tuple_index.report(engine).await
             }

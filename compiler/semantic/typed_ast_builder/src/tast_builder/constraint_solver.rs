@@ -1,3 +1,4 @@
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{
@@ -6,7 +7,6 @@ use rayc_type::{
     ty::Ty,
 };
 use rayc_typed_ast::typed_expr::TypedExprID;
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
     diagnostic::{Diagnostic, ResidualSubtype},
@@ -36,7 +36,6 @@ impl Substitutable for Provenance {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum SubtypeSource {
     FunctioncCall,
-    Deref,
     VariableAssignment,
     BinaryOperator,
     ReturnType,
@@ -143,10 +142,6 @@ impl TAstBuilder {
             expected_ty,
             SubtypeSource::VariableAssignment,
         );
-    }
-
-    pub fn push_deref_constarint(&mut self, expected_ty: &Interned<Ty>, expression: TypedExprID) {
-        self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::Deref);
     }
 
     pub async fn push_return_type_constraint(&mut self, expression: TypedExprID) {

@@ -1,3 +1,4 @@
+use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
@@ -21,14 +22,17 @@ use rayc_typed_ast::{
     typed_expr::{TypedExpr, TypedExprID},
     variable::{Variable, VariableID},
 };
-use qbice::storage::intern::Interned;
 
 use crate::{
     diagnostic::{Diagnostic, FunctionNotFound},
-    tast_builder::{constraint_solver::ConstraintSolver, name_env::NameEnv},
+    tast_builder::{
+        constraint_solver::ConstraintSolver, lvalue_requirements::LvalueRequirements,
+        name_env::NameEnv,
+    },
 };
 
 pub mod constraint_solver;
+pub mod lvalue_requirements;
 pub mod name_env;
 
 #[derive(Debug)]
@@ -40,6 +44,7 @@ pub struct TAstBuilder {
     solver: Solver,
 
     constraint_solver: ConstraintSolver,
+    lvalue_requirements: LvalueRequirements,
 
     diagnostics: Vec<Diagnostic>,
     engine: TrackedEngine,
@@ -57,6 +62,7 @@ impl TAstBuilder {
             current_function_id,
             solver: Solver::new(engine.clone()),
             constraint_solver: ConstraintSolver::new(),
+            lvalue_requirements: LvalueRequirements::new(),
             diagnostics: Vec::new(),
             engine,
         }
@@ -179,6 +185,7 @@ impl TAstBuilder {
 impl TAstBuilder {
     #[must_use]
     pub fn finish(mut self) -> (Function, Vec<Diagnostic>) {
+        self.validate_lvalue_requirements();
         let constr_diags = self.constraint_solver.residual_into_diags(&self.engine);
         self.diagnostics.extend(constr_diags);
 

@@ -26,6 +26,8 @@ impl TAstBuilder {
                     pattern.as_ref().map_or_else(|| l.span(), SourceElement::span),
                 ));
 
+                self.push_variable_assignment_constraint(&var_ty, expr_id);
+
                 let name_binding_group_id = self.push_new_name_binding_group();
 
                 if let Some(pat) = pattern {

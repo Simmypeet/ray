@@ -3,10 +3,10 @@ use rayc_syntax::expression::{Binary as BinarySyntax, BinaryOperator as BinaryOp
 use rayc_type::ty::{Primitive, Ty};
 use rayc_typed_ast::typed_expr::{
     TypedExpr, TypedExprID, TypedExprKind,
-    binary::{Binary, BinaryOp},
+    binary::{Associativity, Binary, BinaryOp},
 };
 
-use crate::{bind::Bind, tast_builder::TAstBuilder};
+use crate::{bind::Bind, diagnostic::LvalueOperation, tast_builder::TAstBuilder};
 
 impl Bind<BinarySyntax> for TAstBuilder {
     async fn bind(&mut self, syn: BinarySyntax) -> TypedExprID {
@@ -52,10 +52,10 @@ impl TAstBuilder {
     /// `operands` stores the roots of the typed-AST subtrees built so far,
     /// while `operators` stores the operators that are still waiting for their
     /// right-hand subtree. Before pushing an incoming operator, every pending
-    /// operator with higher or equal precedence is reduced into one operand
-    /// subtree. Using `>=` is what makes operators at the same precedence
-    /// left-associative: `a - b + c` first becomes `(a - b)`, which is then
-    /// used as the left operand of `+`.
+    /// operator with higher precedence is reduced into one operand subtree.
+    /// Equal precedence is reduced only when the incoming operator is
+    /// left-associative: `a - b + c` becomes `(a - b) + c`, while assignment
+    /// remains queued so `a = b = c` becomes `a = (b = c)`.
     ///
     /// After all flat pairs have been visited, draining the operator stack
     /// joins the remaining subtrees into one typed-AST expression.
@@ -102,14 +102,25 @@ impl TAstBuilder {
         right: TypedExprID,
     ) -> TypedExprID {
         let ty = match operator {
-            BinaryOp::Plus | BinaryOp::Minus | BinaryOp::Multiply | BinaryOp::Divide => {
-                self.new_numeric_type_inference()
+            BinaryOp::Assign => {
+                let ty = self.type_of_expression(left);
+                self.push_variable_assignment_constraint(&ty, right);
+                self.require_lvalue(left, true, LvalueOperation::Assignment);
+                ty
             }
-            BinaryOp::And | BinaryOp::Or => Ty::new_primitive(Primitive::Bool, self.engine()),
+            BinaryOp::Plus | BinaryOp::Minus | BinaryOp::Multiply | BinaryOp::Divide => {
+                let ty = self.new_numeric_type_inference();
+                self.push_binary_operator_constraint(&ty, left);
+                self.push_binary_operator_constraint(&ty, right);
+                ty
+            }
+            BinaryOp::And | BinaryOp::Or => {
+                let ty = Ty::new_primitive(Primitive::Bool, self.engine());
+                self.push_binary_operator_constraint(&ty, left);
+                self.push_binary_operator_constraint(&ty, right);
+                ty
+            }
         };
-
-        self.push_binary_operator_constraint(&ty, left);
-        self.push_binary_operator_constraint(&ty, right);
 
         let span = self.span_of_expression(left).join(&self.span_of_expression(right));
 
@@ -123,6 +134,7 @@ impl TAstBuilder {
 
 const fn map_operator(operator: &BinaryOperatorSyntax) -> BinaryOp {
     match operator {
+        BinaryOperatorSyntax::Assign(_) => BinaryOp::Assign,
         BinaryOperatorSyntax::Plus(_) => BinaryOp::Plus,
         BinaryOperatorSyntax::Minus(_) => BinaryOp::Minus,
         BinaryOperatorSyntax::Multiply(_) => BinaryOp::Multiply,
@@ -132,15 +144,11 @@ const fn map_operator(operator: &BinaryOperatorSyntax) -> BinaryOp {
     }
 }
 
-const fn precedence(operator: BinaryOp) -> u8 {
-    match operator {
-        BinaryOp::Or => 0,
-        BinaryOp::And => 1,
-        BinaryOp::Plus | BinaryOp::Minus => 2,
-        BinaryOp::Multiply | BinaryOp::Divide => 3,
-    }
+const fn should_reduce(pending: BinaryOp, incoming: BinaryOp) -> bool {
+    pending.precedence() > incoming.precedence()
+        || (pending.precedence() == incoming.precedence()
+            && matches!(incoming.associativity(), Associativity::Left))
 }
 
-const fn should_reduce(pending: BinaryOp, incoming: BinaryOp) -> bool {
-    precedence(pending) >= precedence(incoming)
-}
+#[cfg(test)]
+mod test;

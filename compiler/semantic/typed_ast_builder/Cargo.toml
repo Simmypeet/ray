@@ -24,5 +24,8 @@ linkme.workspace = true
 qbice.workspace = true
 bon.workspace = true
 
+[dev-dependencies]
+tokio.workspace = true
+
 [lints]
 workspace = true
