@@ -1138,417 +1138,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
-name = "rayc"
-version = "0.1.0-beta.2"
-dependencies = [
- "backtrace",
- "clap",
- "rayc_driver",
- "rayc_source_file",
- "rayc_target",
- "serde",
- "tikv-jemalloc-ctl",
- "tikv-jemallocator",
- "tokio",
- "toml",
- "tracing-chrome",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "rayc_arena"
-version = "0.1.0-beta.2"
-dependencies = [
- "rayc_hash",
- "proptest",
- "qbice",
-]
-
-[[package]]
-name = "rayc_check"
-version = "0.1.0-beta.2"
-dependencies = [
- "linkme",
- "rayc_diagnostic",
- "rayc_qbice",
- "rayc_symbol_impl",
- "rayc_syntax",
- "rayc_target",
- "rayc_tokio",
- "rayc_typed_ast_builder",
- "qbice",
- "tokio",
-]
-
-[[package]]
-name = "rayc_diagnostic"
-version = "0.1.0-beta.2"
-dependencies = [
- "bon",
- "derive-new",
- "rayc_qbice",
- "rayc_source_file",
- "qbice",
-]
-
-[[package]]
-name = "rayc_driver"
-version = "0.1.0-beta.2"
-dependencies = [
- "annotate-snippets",
- "ansi_term",
- "inkwell",
- "linkme",
- "rayc_check",
- "rayc_diagnostic",
- "rayc_handler",
- "rayc_hash",
- "rayc_lexical_impl",
- "rayc_qbice",
- "rayc_semantic_element_impl",
- "rayc_source_file",
- "rayc_source_file_impl",
- "rayc_symbol_impl",
- "rayc_syntax_impl",
- "rayc_target",
- "qbice",
- "tracing",
-]
-
-[[package]]
-name = "rayc_extend"
-version = "0.1.0-beta.2"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "rayc_handler"
-version = "0.1.0-beta.2"
-dependencies = [
- "derive_more",
- "parking_lot",
-]
-
-[[package]]
-name = "rayc_hash"
-version = "0.1.0-beta.2"
-dependencies = [
- "dashmap",
- "fxhash",
- "im",
- "qbice",
-]
-
-[[package]]
-name = "rayc_ir"
-version = "0.1.0-beta.2"
-dependencies = [
- "rayc_arena",
- "rayc_lexical",
- "rayc_qbice",
- "rayc_semantic_element",
- "rayc_symbol",
- "rayc_type",
- "qbice",
-]
-
-[[package]]
-name = "rayc_lexical"
-version = "0.1.0-beta.2"
-dependencies = [
- "bimap",
- "dashmap",
- "derive_more",
- "enum-as-inner",
- "fxhash",
- "getset",
- "rayc_arena",
- "rayc_diagnostic",
- "rayc_handler",
- "rayc_qbice",
- "rayc_source_file",
- "rayc_target",
- "rayc_test_input",
- "proptest",
- "qbice",
- "siphasher",
- "strum",
- "strum_macros",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "rayc_lexical_impl"
-version = "0.1.0-beta.2"
-dependencies = [
- "linkme",
- "rayc_handler",
- "rayc_lexical",
- "rayc_qbice",
- "rayc_source_file",
- "qbice",
-]
-
-[[package]]
-name = "rayc_parser"
-version = "0.1.0-beta.2"
-dependencies = [
- "derive_more",
- "enum-as-inner",
- "getset",
- "rayc_arena",
- "rayc_diagnostic",
- "rayc_handler",
- "rayc_hash",
- "rayc_lexical",
- "rayc_qbice",
- "rayc_source_file",
- "rayc_target",
- "rayc_test_input",
- "proptest",
- "qbice",
- "rayon",
- "siphasher",
-]
-
-[[package]]
-name = "rayc_qbice"
-version = "0.1.0-beta.2"
-dependencies = [
- "enum-as-inner",
- "fxhash",
- "linkme",
- "qbice",
- "tokio",
-]
-
-[[package]]
-name = "rayc_semantic_element"
-version = "0.1.0-beta.2"
-dependencies = [
- "bon",
- "rayc_arena",
- "rayc_lexical",
- "rayc_qbice",
- "rayc_symbol",
- "rayc_type",
- "qbice",
-]
-
-[[package]]
-name = "rayc_semantic_element_impl"
-version = "0.1.0-beta.2"
-dependencies = [
- "linkme",
- "rayc_extend",
- "rayc_qbice",
- "rayc_semantic_element",
- "rayc_source_file",
- "rayc_symbol",
- "rayc_syntax",
- "rayc_type",
- "qbice",
-]
-
-[[package]]
-name = "rayc_source_file"
-version = "0.1.0-beta.2"
-dependencies = [
- "dashmap",
- "fxhash",
- "getset",
- "rayc_arena",
- "rayc_extend",
- "rayc_qbice",
- "rayc_target",
- "qbice",
- "rayon",
- "ropey",
- "siphasher",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "rayc_source_file_impl"
-version = "0.1.0-beta.2"
-dependencies = [
- "linkme",
- "rayc_qbice",
- "rayc_source_file",
- "rayc_target",
- "qbice",
- "siphasher",
-]
-
-[[package]]
-name = "rayc_symbol"
-version = "0.1.0-beta.2"
-dependencies = [
- "derive-new",
- "derive_more",
- "enum-as-inner",
- "linkme",
- "rayc_arena",
- "rayc_diagnostic",
- "rayc_extend",
- "rayc_hash",
- "rayc_lexical",
- "rayc_qbice",
- "rayc_source_file",
- "rayc_syntax",
- "rayc_target",
- "proptest",
- "qbice",
- "siphasher",
-]
-
-[[package]]
-name = "rayc_symbol_impl"
-version = "0.1.0-beta.2"
-dependencies = [
- "bon",
- "linkme",
- "rayc_arena",
- "rayc_diagnostic",
- "rayc_extend",
- "rayc_handler",
- "rayc_hash",
- "rayc_lexical",
- "rayc_parser",
- "rayc_qbice",
- "rayc_source_file",
- "rayc_symbol",
- "rayc_syntax",
- "rayc_target",
- "rayc_tokio",
- "qbice",
- "rayon",
- "tokio",
-]
-
-[[package]]
-name = "rayc_syntax"
-version = "0.1.0-beta.2"
-dependencies = [
- "derive_more",
- "enum-as-inner",
- "rayc_handler",
- "rayc_lexical",
- "rayc_parser",
- "rayc_qbice",
- "rayc_source_file",
- "rayc_target",
- "rayc_test_input",
- "proptest",
- "qbice",
- "rayon",
-]
-
-[[package]]
-name = "rayc_syntax_impl"
-version = "0.1.0-beta.2"
-dependencies = [
- "linkme",
- "rayc_lexical",
- "rayc_parser",
- "rayc_qbice",
- "rayc_source_file",
- "rayc_syntax",
- "qbice",
-]
-
-[[package]]
-name = "rayc_target"
-version = "0.1.0-beta.2"
-dependencies = [
- "clap",
- "derive-new",
- "enum-as-inner",
- "linkme",
- "rayc_extend",
- "rayc_hash",
- "rayc_qbice",
- "proptest",
- "qbice",
- "rand",
- "siphasher",
-]
-
-[[package]]
-name = "rayc_test_input"
-version = "0.1.0-beta.2"
-dependencies = [
- "proptest",
-]
-
-[[package]]
-name = "rayc_tokio"
-version = "0.1.0-beta.2"
-dependencies = [
- "rayc_extend",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "rayc_transitive_closure"
-version = "0.1.0-beta.2"
-dependencies = [
- "getset",
-]
-
-[[package]]
-name = "rayc_type"
-version = "0.1.0-beta.2"
-dependencies = [
- "im",
- "rayc_hash",
- "rayc_qbice",
- "qbice",
- "tokio",
-]
-
-[[package]]
-name = "rayc_typed_ast"
-version = "0.1.0-beta.2"
-dependencies = [
- "bon",
- "rayc_arena",
- "rayc_hash",
- "rayc_lexical",
- "rayc_semantic_element",
- "rayc_symbol",
- "rayc_type",
- "qbice",
-]
-
-[[package]]
-name = "rayc_typed_ast_builder"
-version = "0.1.0-beta.2"
-dependencies = [
- "bon",
- "linkme",
- "rayc_arena",
- "rayc_diagnostic",
- "rayc_handler",
- "rayc_hash",
- "rayc_lexical",
- "rayc_qbice",
- "rayc_semantic_element",
- "rayc_source_file",
- "rayc_symbol",
- "rayc_syntax",
- "rayc_target",
- "rayc_type",
- "rayc_typed_ast",
- "qbice",
- "tokio",
-]
-
-[[package]]
 name = "pin-project-lite"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1867,6 +1456,417 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f97cdb2a36ed4183de61b2f824cc45c9f1037f28afe0a322e9fff4c108b5aaa"
 dependencies = [
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rayc"
+version = "0.1.0-beta.2"
+dependencies = [
+ "backtrace",
+ "clap",
+ "rayc_driver",
+ "rayc_source_file",
+ "rayc_target",
+ "serde",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
+ "tokio",
+ "toml",
+ "tracing-chrome",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "rayc_arena"
+version = "0.1.0-beta.2"
+dependencies = [
+ "proptest",
+ "qbice",
+ "rayc_hash",
+]
+
+[[package]]
+name = "rayc_check"
+version = "0.1.0-beta.2"
+dependencies = [
+ "linkme",
+ "qbice",
+ "rayc_diagnostic",
+ "rayc_qbice",
+ "rayc_symbol_impl",
+ "rayc_syntax",
+ "rayc_target",
+ "rayc_tokio",
+ "rayc_typed_ast_builder",
+ "tokio",
+]
+
+[[package]]
+name = "rayc_diagnostic"
+version = "0.1.0-beta.2"
+dependencies = [
+ "bon",
+ "derive-new",
+ "qbice",
+ "rayc_qbice",
+ "rayc_source_file",
+]
+
+[[package]]
+name = "rayc_driver"
+version = "0.1.0-beta.2"
+dependencies = [
+ "annotate-snippets",
+ "ansi_term",
+ "inkwell",
+ "linkme",
+ "qbice",
+ "rayc_check",
+ "rayc_diagnostic",
+ "rayc_handler",
+ "rayc_hash",
+ "rayc_lexical_impl",
+ "rayc_qbice",
+ "rayc_semantic_element_impl",
+ "rayc_source_file",
+ "rayc_source_file_impl",
+ "rayc_symbol_impl",
+ "rayc_syntax_impl",
+ "rayc_target",
+ "tracing",
+]
+
+[[package]]
+name = "rayc_extend"
+version = "0.1.0-beta.2"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "rayc_handler"
+version = "0.1.0-beta.2"
+dependencies = [
+ "derive_more",
+ "parking_lot",
+]
+
+[[package]]
+name = "rayc_hash"
+version = "0.1.0-beta.2"
+dependencies = [
+ "dashmap",
+ "fxhash",
+ "im",
+ "qbice",
+]
+
+[[package]]
+name = "rayc_ir"
+version = "0.1.0-beta.2"
+dependencies = [
+ "qbice",
+ "rayc_arena",
+ "rayc_lexical",
+ "rayc_qbice",
+ "rayc_semantic_element",
+ "rayc_symbol",
+ "rayc_type",
+]
+
+[[package]]
+name = "rayc_lexical"
+version = "0.1.0-beta.2"
+dependencies = [
+ "bimap",
+ "dashmap",
+ "derive_more",
+ "enum-as-inner",
+ "fxhash",
+ "getset",
+ "proptest",
+ "qbice",
+ "rayc_arena",
+ "rayc_diagnostic",
+ "rayc_handler",
+ "rayc_qbice",
+ "rayc_source_file",
+ "rayc_target",
+ "rayc_test_input",
+ "siphasher",
+ "strum",
+ "strum_macros",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "rayc_lexical_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "linkme",
+ "qbice",
+ "rayc_handler",
+ "rayc_lexical",
+ "rayc_qbice",
+ "rayc_source_file",
+]
+
+[[package]]
+name = "rayc_parser"
+version = "0.1.0-beta.2"
+dependencies = [
+ "derive_more",
+ "enum-as-inner",
+ "getset",
+ "proptest",
+ "qbice",
+ "rayc_arena",
+ "rayc_diagnostic",
+ "rayc_handler",
+ "rayc_hash",
+ "rayc_lexical",
+ "rayc_qbice",
+ "rayc_source_file",
+ "rayc_target",
+ "rayc_test_input",
+ "rayon",
+ "siphasher",
+]
+
+[[package]]
+name = "rayc_qbice"
+version = "0.1.0-beta.2"
+dependencies = [
+ "enum-as-inner",
+ "fxhash",
+ "linkme",
+ "qbice",
+ "tokio",
+]
+
+[[package]]
+name = "rayc_semantic_element"
+version = "0.1.0-beta.2"
+dependencies = [
+ "bon",
+ "qbice",
+ "rayc_arena",
+ "rayc_lexical",
+ "rayc_qbice",
+ "rayc_symbol",
+ "rayc_type",
+]
+
+[[package]]
+name = "rayc_semantic_element_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "linkme",
+ "qbice",
+ "rayc_extend",
+ "rayc_qbice",
+ "rayc_semantic_element",
+ "rayc_source_file",
+ "rayc_symbol",
+ "rayc_syntax",
+ "rayc_type",
+]
+
+[[package]]
+name = "rayc_source_file"
+version = "0.1.0-beta.2"
+dependencies = [
+ "dashmap",
+ "fxhash",
+ "getset",
+ "qbice",
+ "rayc_arena",
+ "rayc_extend",
+ "rayc_qbice",
+ "rayc_target",
+ "rayon",
+ "ropey",
+ "siphasher",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "rayc_source_file_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "linkme",
+ "qbice",
+ "rayc_qbice",
+ "rayc_source_file",
+ "rayc_target",
+ "siphasher",
+]
+
+[[package]]
+name = "rayc_symbol"
+version = "0.1.0-beta.2"
+dependencies = [
+ "derive-new",
+ "derive_more",
+ "enum-as-inner",
+ "linkme",
+ "proptest",
+ "qbice",
+ "rayc_arena",
+ "rayc_diagnostic",
+ "rayc_extend",
+ "rayc_hash",
+ "rayc_lexical",
+ "rayc_qbice",
+ "rayc_source_file",
+ "rayc_syntax",
+ "rayc_target",
+ "siphasher",
+]
+
+[[package]]
+name = "rayc_symbol_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "bon",
+ "linkme",
+ "qbice",
+ "rayc_arena",
+ "rayc_diagnostic",
+ "rayc_extend",
+ "rayc_handler",
+ "rayc_hash",
+ "rayc_lexical",
+ "rayc_parser",
+ "rayc_qbice",
+ "rayc_source_file",
+ "rayc_symbol",
+ "rayc_syntax",
+ "rayc_target",
+ "rayc_tokio",
+ "rayon",
+ "tokio",
+]
+
+[[package]]
+name = "rayc_syntax"
+version = "0.1.0-beta.2"
+dependencies = [
+ "derive_more",
+ "enum-as-inner",
+ "proptest",
+ "qbice",
+ "rayc_handler",
+ "rayc_lexical",
+ "rayc_parser",
+ "rayc_qbice",
+ "rayc_source_file",
+ "rayc_target",
+ "rayc_test_input",
+ "rayon",
+]
+
+[[package]]
+name = "rayc_syntax_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "linkme",
+ "qbice",
+ "rayc_lexical",
+ "rayc_parser",
+ "rayc_qbice",
+ "rayc_source_file",
+ "rayc_syntax",
+]
+
+[[package]]
+name = "rayc_target"
+version = "0.1.0-beta.2"
+dependencies = [
+ "clap",
+ "derive-new",
+ "enum-as-inner",
+ "linkme",
+ "proptest",
+ "qbice",
+ "rand",
+ "rayc_extend",
+ "rayc_hash",
+ "rayc_qbice",
+ "siphasher",
+]
+
+[[package]]
+name = "rayc_test_input"
+version = "0.1.0-beta.2"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
+name = "rayc_tokio"
+version = "0.1.0-beta.2"
+dependencies = [
+ "rayc_extend",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "rayc_transitive_closure"
+version = "0.1.0-beta.2"
+dependencies = [
+ "getset",
+]
+
+[[package]]
+name = "rayc_type"
+version = "0.1.0-beta.2"
+dependencies = [
+ "im",
+ "qbice",
+ "rayc_hash",
+ "rayc_qbice",
+ "tokio",
+]
+
+[[package]]
+name = "rayc_typed_ast"
+version = "0.1.0-beta.2"
+dependencies = [
+ "bon",
+ "qbice",
+ "rayc_arena",
+ "rayc_hash",
+ "rayc_lexical",
+ "rayc_semantic_element",
+ "rayc_symbol",
+ "rayc_type",
+]
+
+[[package]]
+name = "rayc_typed_ast_builder"
+version = "0.1.0-beta.2"
+dependencies = [
+ "bon",
+ "linkme",
+ "qbice",
+ "rayc_arena",
+ "rayc_diagnostic",
+ "rayc_handler",
+ "rayc_hash",
+ "rayc_lexical",
+ "rayc_qbice",
+ "rayc_semantic_element",
+ "rayc_source_file",
+ "rayc_symbol",
+ "rayc_syntax",
+ "rayc_target",
+ "rayc_type",
+ "rayc_typed_ast",
+ "tokio",
 ]
 
 [[package]]
