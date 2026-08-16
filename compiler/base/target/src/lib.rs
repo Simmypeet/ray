@@ -6,16 +6,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use bon::Builder;
 use clap::{Args, Subcommand, builder::styling};
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use linkme::distributed_slice;
-use rayc_hash::FxHashSet;
-use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use qbice::{
     Decode, Encode, Identifiable, StableHash, program::Registration, storage::intern::Interned,
 };
 use rand::Rng;
+use rayc_hash::FxHashSet;
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use siphasher::sip128::Hasher128;
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -123,7 +124,9 @@ pub struct Global<ID> {
 }
 
 /// The input to the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args, Encode, Decode, StableHash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args, Encode, Decode, StableHash, Builder,
+)]
 pub struct Input {
     /// The input file to compile.
     ///
@@ -138,6 +141,7 @@ pub struct Input {
 
     /// The paths to the `plib` library to link to the target.
     #[clap(short = 'l', long = "link")]
+    #[builder(default = Vec::new())]
     library_paths: Vec<PathBuf>,
 
     /// The path to the incremental compilation data.
@@ -149,6 +153,7 @@ pub struct Input {
     /// This is primarily used for debugging purposes and can be viewed in
     /// the Chrome browser.
     #[clap(long = "chrome")]
+    #[builder(default = false)]
     chrome_tracing: bool,
 
     /// The seed for the compiler internal ID generation.
@@ -161,6 +166,7 @@ pub struct Input {
     /// Displays the diagnostics in a fancy format with unicode characters and
     /// colors.
     #[clap(long = "no-fancy", default_value = "true", action = clap::ArgAction::SetFalse)]
+    #[builder(default = true)]
     fancy: bool,
 
     /// Enables IR verification after function IR finalization.
@@ -168,6 +174,7 @@ pub struct Input {
     /// This is an internal configuration knob used by tests and tooling. It
     /// is intentionally not exposed as a user-facing CLI flag.
     #[clap(skip = false)]
+    #[builder(default = false)]
     verify_ir: bool,
 }
 
@@ -385,6 +392,13 @@ pub struct Arguments {
     /// The subcommand to run.
     #[clap(subcommand, flatten = true)]
     command: Command,
+}
+
+impl Arguments {
+    #[must_use]
+    pub const fn new_check(input: Input) -> Self {
+        Self { command: Command::Check(Check { input }) }
+    }
 }
 
 impl Arguments {

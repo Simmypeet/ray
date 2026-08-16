@@ -21,6 +21,7 @@ rand = { workspace = true }
 siphasher = { workspace = true }
 proptest = { workspace = true, optional = true }
 qbice.workspace = true
+bon.workspace = true
 
 [dev-dependencies]
 proptest = { workspace = true }

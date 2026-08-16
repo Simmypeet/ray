@@ -29,6 +29,8 @@ members = [
     "compiler/semantic/semantic_element",
     "compiler/semantic/check",
 
+    "compiler/e2e",
+
     "compiler/driver",
     "compiler/main",
     "compiler/semantic/semantic_element_impl",
