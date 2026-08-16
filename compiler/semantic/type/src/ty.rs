@@ -1,7 +1,7 @@
 use std::fmt::{Display, Write};
 
-use rayc_qbice::TrackedEngine;
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use rayc_qbice::TrackedEngine;
 
 use crate::subst::{Subst, Substitutable};
 
@@ -13,10 +13,16 @@ pub enum Primitive {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum Mutability {
+    Immutable,
+    Mutable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum TyConstant {
     Primitive(Primitive),
     Tuple,
-    Pointer,
+    Pointer(Mutability),
     Error,
 }
 
@@ -33,11 +39,15 @@ impl TupleView<'_> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PointerView<'x> {
     arg: &'x Interned<Ty>,
+    mutability: Mutability,
 }
 
 impl PointerView<'_> {
     #[must_use]
     pub const fn pointee(&self) -> &Interned<Ty> { self.arg }
+
+    #[must_use]
+    pub const fn mutability(&self) -> Mutability { self.mutability }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -54,7 +64,9 @@ impl TyApplication {
         match self.constant {
             TyConstant::Primitive(primitive) => TyApplicationView::Primitive(primitive),
             TyConstant::Tuple => TyApplicationView::Tuple(TupleView { args: &self.args }),
-            TyConstant::Pointer => TyApplicationView::Pointer(PointerView { arg: &self.args[0] }),
+            TyConstant::Pointer(mutability) => {
+                TyApplicationView::Pointer(PointerView { arg: &self.args[0], mutability })
+            }
             TyConstant::Error => TyApplicationView::Error,
         }
     }
@@ -224,9 +236,13 @@ impl Ty {
     }
 
     #[must_use]
-    pub fn new_pointer(arg: Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
+    pub fn new_pointer(
+        arg: Interned<Self>,
+        mutability: Mutability,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
         engine.intern(Self::Application(TyApplication {
-            constant: TyConstant::Pointer,
+            constant: TyConstant::Pointer(mutability),
             args: engine.intern_unsized([arg]),
         }))
     }
@@ -271,6 +287,9 @@ impl Display for Ty {
                 }
                 TyApplicationView::Pointer(pointer) => {
                     f.write_char('*')?;
+                    if pointer.mutability() == Mutability::Mutable {
+                        f.write_str("mut ")?;
+                    }
                     write!(f, "{}", **pointer.pointee())
                 }
                 TyApplicationView::Error => write!(f, "<error>"),
@@ -285,3 +304,6 @@ impl Display for Ty {
         }
     }
 }
+
+#[cfg(test)]
+mod test;

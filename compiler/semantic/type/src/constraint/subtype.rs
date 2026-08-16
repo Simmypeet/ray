@@ -1,5 +1,5 @@
-use rayc_qbice::TrackedEngine;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use rayc_qbice::TrackedEngine;
 
 use crate::{
     constraint::{Constraint, Error, Step},
@@ -98,3 +98,6 @@ impl Solver {
         }
     }
 }
+
+#[cfg(test)]
+mod test;
