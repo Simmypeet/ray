@@ -1,8 +1,8 @@
+use qbice::storage::intern::Interned;
 use rayc_extend::extend;
 use rayc_qbice::TrackedEngine;
 use rayc_syntax::r#type::{Primitive as PrimitiveSyntax, Type as TySyntax};
-use rayc_type::ty::{Primitive, Ty};
-use qbice::storage::intern::Interned;
+use rayc_type::ty::{Mutability, Primitive, Ty};
 
 #[extend]
 #[allow(clippy::similar_names)]
@@ -22,7 +22,13 @@ pub fn resolve_ty(self: &TrackedEngine, ty: &TySyntax) -> Interned<Ty> {
                 .pointed_type()
                 .map_or_else(|| Ty::new_error(self), |pointed_ty| self.resolve_ty(&pointed_ty));
 
-            Ty::new_pointer(pointee_ty, self)
+            let mutability = if pointer.mut_keyword().is_some() {
+                Mutability::Mutable
+            } else {
+                Mutability::Immutable
+            };
+
+            Ty::new_pointer(pointee_ty, mutability, self)
         }
 
         TySyntax::Tuple(tuple) => {
