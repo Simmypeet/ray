@@ -56,6 +56,10 @@ pub trait Substitutable {
     }
 }
 
+pub trait MutSubstitutable {
+    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine);
+}
+
 impl FromIterator<(TyInference, Interned<Ty>)> for Subst {
     fn from_iter<T: IntoIterator<Item = (TyInference, Interned<Ty>)>>(iter: T) -> Self {
         Self(FxImHashMap::from_iter(iter))
