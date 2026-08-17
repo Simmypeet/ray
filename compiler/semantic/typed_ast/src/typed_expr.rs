@@ -1,7 +1,11 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_lexical::tree::RelativeSpan;
-use rayc_type::ty::{Ty, TyApplicationView};
+use rayc_qbice::TrackedEngine;
+use rayc_type::{
+    subst::{MutSubstitutable, Subst, Substitutable},
+    ty::{Ty, TyApplicationView},
+};
 
 use crate::{
     name_binding::NameBindingID,
@@ -89,6 +93,12 @@ impl TypedExpr {
     pub const fn kind(&self) -> &TypedExprKind { &self.kind }
 }
 
+impl MutSubstitutable for TypedExpr {
+    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.ty.apply_in_place(subst, engine);
+    }
+}
+
 pub type TypedExprID = ID<TypedExpr>;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
@@ -134,6 +144,14 @@ impl TypedExprMap {
             | TypedExprKind::Binary(_)
             | TypedExprKind::RefOf(_)
             | TypedExprKind::Return(_) => LvalueClassification::NotLvalue,
+        }
+    }
+}
+
+impl MutSubstitutable for TypedExprMap {
+    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        for expression in self.typed_exprs.items_mut() {
+            expression.apply_mut_subst(subst, engine);
         }
     }
 }

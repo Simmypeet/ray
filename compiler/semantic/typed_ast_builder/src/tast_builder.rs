@@ -13,6 +13,7 @@ use rayc_symbol::{
 use rayc_syntax::{Identifier, def::ParameterList};
 use rayc_type::{
     solver::Solver,
+    subst::MutSubstitutable,
     ty::{InferenceConstraint, Ty, TyKind},
 };
 use rayc_typed_ast::{
@@ -186,8 +187,11 @@ impl TAstBuilder {
     #[must_use]
     pub fn finish(mut self) -> (Function, Vec<Diagnostic>) {
         self.validate_lvalue_requirements();
-        let constr_diags = self.constraint_solver.residual_into_diags(&self.engine);
+
+        let (constr_diags, subst) = self.constraint_solver.residual_into_diags(&self.engine);
+
         self.diagnostics.extend(constr_diags);
+        self.building_function.apply_mut_subst(&subst, &self.engine);
 
         (self.building_function, self.diagnostics)
     }

@@ -11,10 +11,16 @@ rayc_type.path = "../type"
 rayc_arena.path = "../../base/arena"
 rayc_hash.path = "../../base/hash"
 rayc_lexical.path = "../../syntax/lexical"
+rayc_qbice.path = "../../base/qbice"
 rayc_semantic_element.path = "../semantic_element"
 rayc_symbol.path = "../symbol"
 bon.workspace = true
 qbice.workspace = true
+
+[dev-dependencies]
+rayc_source_file.path = "../../base/source_file"
+rayc_target.path = "../../base/target"
+tokio.workspace = true
 
 
 [lints]

@@ -1,4 +1,6 @@
 use qbice::{Decode, Encode, Identifiable, StableHash};
+use rayc_qbice::TrackedEngine;
+use rayc_type::subst::{MutSubstitutable, Subst};
 
 use crate::{
     block::Block,
@@ -105,3 +107,14 @@ impl Function {
         self.name_binding_map.get_name_binding(id)
     }
 }
+
+impl MutSubstitutable for Function {
+    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.variable_map.apply_mut_subst(subst, engine);
+        self.name_binding_map.apply_mut_subst(subst, engine);
+        self.typed_expr_map.apply_mut_subst(subst, engine);
+    }
+}
+
+#[cfg(test)]
+mod test;

@@ -5,8 +5,12 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
+use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::Parameter;
-use rayc_type::ty::Ty;
+use rayc_type::{
+    subst::{MutSubstitutable, Subst, Substitutable},
+    ty::Ty,
+};
 
 use crate::variable::Variable;
 
@@ -36,6 +40,12 @@ impl NameBinding {
 
     #[must_use]
     pub const fn is_mutable(&self) -> bool { self.mutable }
+}
+
+impl MutSubstitutable for NameBinding {
+    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.ty.apply_in_place(subst, engine);
+    }
 }
 
 pub type NameBindingID = ID<NameBinding>;
@@ -97,6 +107,14 @@ impl NameBindingMap {
     #[must_use]
     pub fn get_name_binding(&self, id: NameBindingID) -> &NameBinding {
         self.name_bindings.get(id).expect("NameBindingID should be valid")
+    }
+}
+
+impl MutSubstitutable for NameBindingMap {
+    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        for name_binding in self.name_bindings.items_mut() {
+            name_binding.apply_mut_subst(subst, engine);
+        }
     }
 }
 

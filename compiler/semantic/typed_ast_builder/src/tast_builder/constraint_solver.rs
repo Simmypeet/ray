@@ -252,7 +252,7 @@ impl TAstBuilder {
 
 impl ConstraintSolver {
     #[must_use]
-    pub fn residual_into_diags(mut self, engine: &TrackedEngine) -> Vec<Diagnostic> {
+    pub fn residual_into_diags(mut self, engine: &TrackedEngine) -> (Vec<Diagnostic>, Subst) {
         for (_, provenanced_constraint) in &mut self.errored_constraints {
             provenanced_constraint.apply_in_place(&self.subst, engine);
         }
@@ -270,6 +270,6 @@ impl ConstraintSolver {
 
         diags.dedup();
 
-        diags
+        (diags, self.subst)
     }
 }
