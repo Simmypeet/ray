@@ -3,11 +3,11 @@
 
 use derive_more::{Display, From};
 use enum_as_inner::EnumAsInner;
+use qbice::{Decode, Encode, StableHash};
 use rayc_lexical::{
     kind, token,
     tree::{DelimiterKind, RelativeLocation},
 };
-use qbice::{Decode, Encode, StableHash};
 
 use crate::output::{One, Output};
 

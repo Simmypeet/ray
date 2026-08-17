@@ -5,6 +5,13 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
+use proptest::{
+    prelude::{Arbitrary, BoxedStrategy, Just, TestCaseError},
+    prop_assert, prop_assert_eq, prop_oneof,
+    strategy::Strategy,
+    test_runner::TestCaseResult,
+};
+use qbice::storage::intern::Interned;
 use rayc_lexical::{
     token,
     tree::{DelimiterKind, RelativeLocation},
@@ -13,13 +20,6 @@ use rayc_qbice::DuplicatingInterner;
 use rayc_source_file::{GlobalSourceID, SourceFile, simple_source_map::SimpleSourceMap};
 use rayc_target::TargetID;
 use rayc_test_input::Input;
-use proptest::{
-    prelude::{Arbitrary, BoxedStrategy, Just, TestCaseError},
-    prop_assert, prop_assert_eq, prop_oneof,
-    strategy::Strategy,
-    test_runner::TestCaseResult,
-};
-use qbice::storage::intern::Interned;
 
 use crate::{
     abstract_tree::{AbstractTree, First, Second, Tag, abstract_tree},

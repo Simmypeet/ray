@@ -1,6 +1,6 @@
 use bon::Builder;
-use rayc_lexical::tree::RelativeSpan;
 use qbice::{Decode, Encode, StableHash};
+use rayc_lexical::tree::RelativeSpan;
 
 use crate::{name_binding::NameBindingGroupID, typed_expr::TypedExprID, variable::VariableID};
 

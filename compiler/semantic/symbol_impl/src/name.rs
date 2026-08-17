@@ -1,7 +1,7 @@
 use linkme::distributed_slice;
+use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::name::Key;
-use qbice::{executor, program::Registration, storage::intern::Interned};
 
 use crate::table::get_table;
 

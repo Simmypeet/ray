@@ -5,6 +5,11 @@ pub use std as __std;
 use std::marker::PhantomData;
 
 #[doc(hidden)]
+pub use qbice::stable_type_id as __stable_type_id;
+#[doc(hidden)]
+pub use qbice::storage::intern::Interned as __Interned;
+use qbice::{Decode, Encode};
+#[doc(hidden)]
 pub use rayc_lexical::tree::RelativeLocation;
 #[doc(hidden)]
 pub use rayc_lexical::tree::RelativeSpan;
@@ -13,11 +18,6 @@ use rayc_qbice::Interner;
 pub use rayc_qbice::Interner as __Interner;
 #[doc(hidden)]
 pub use rayc_source_file::SourceElement;
-#[doc(hidden)]
-pub use qbice::stable_type_id as __stable_type_id;
-#[doc(hidden)]
-pub use qbice::storage::intern::Interned as __Interned;
-use qbice::{Decode, Encode};
 
 use crate::{
     cache, error, expect,

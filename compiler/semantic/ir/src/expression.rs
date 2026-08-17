@@ -1,7 +1,7 @@
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::expression::{
     binary::Binary, call::Call, literal::Literal, load::Load, ref_of::RefOf, tuple::Tuple,

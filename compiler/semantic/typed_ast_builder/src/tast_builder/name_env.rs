@@ -1,8 +1,8 @@
+use qbice::storage::intern::Interned;
 use rayc_source_file::SourceElement;
 use rayc_syntax::irrefutable_pattern::IrrefutablePattern as IrrefutablePatternSyntax;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::name_binding::{NameBinding, NameBindingGroupID, NameBindingID, Source};
-use qbice::storage::intern::Interned;
 
 use crate::{
     diagnostic::{Diagnostic, DuplicateNameBinding},

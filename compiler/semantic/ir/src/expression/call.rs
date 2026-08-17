@@ -1,6 +1,6 @@
+use qbice::{Decode, Encode, StableHash};
 use rayc_arena::ID;
 use rayc_symbol::GlobalSymbolID;
-use qbice::{Decode, Encode, StableHash};
 
 use crate::expression::Expression;
 

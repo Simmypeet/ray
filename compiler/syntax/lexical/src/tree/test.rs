@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
+use proptest::{prop_assert, proptest, test_runner::TestCaseResult};
+use qbice::storage::intern::Interned;
 use rayc_arena::ID;
 use rayc_handler::Storage;
 use rayc_qbice::DuplicatingInterner;
 use rayc_source_file::{SourceFile, simple_source_map::SimpleSourceMap};
 use rayc_target::TargetID;
 use rayc_test_input::Input;
-use proptest::{prop_assert, proptest, test_runner::TestCaseResult};
-use qbice::storage::intern::Interned;
 
 use super::{ROOT_BRANCH_ID, Tree, arbitrary};
 use crate::{

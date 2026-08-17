@@ -1,5 +1,5 @@
-use rayc_arena::{Arena, ID};
 use qbice::{Decode, Encode, StableHash};
+use rayc_arena::{Arena, ID};
 
 use crate::{address::Address, expression::Expression};
 

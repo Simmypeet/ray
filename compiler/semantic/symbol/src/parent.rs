@@ -1,10 +1,10 @@
 //! Contains the definition of the [`Parent`] component.
 
 use derive_more::{Deref, DerefMut};
+use qbice::{Decode, Encode, Query, StableHash};
 use rayc_extend::extend;
 use rayc_qbice::TrackedEngine;
 use rayc_target::{Global, TargetID};
-use qbice::{Decode, Encode, Query, StableHash};
 
 use crate::{
     SymbolID,

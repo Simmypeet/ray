@@ -1,8 +1,8 @@
 use linkme::distributed_slice;
+use qbice::{executor, program::Registration};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::span::Key;
-use qbice::{executor, program::Registration};
 
 use crate::table::get_table;
 

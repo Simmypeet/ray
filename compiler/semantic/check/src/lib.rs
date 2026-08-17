@@ -1,11 +1,11 @@
 //! Crate for collecting all semantic analysis checks.
 
 use linkme::distributed_slice;
-use rayc_diagnostic::Rendered;
-use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
 };
+use rayc_diagnostic::Rendered;
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 /// The main data structure collecting all diagnostics for semantic analysis
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Check {

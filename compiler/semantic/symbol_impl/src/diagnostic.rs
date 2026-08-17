@@ -5,6 +5,10 @@ use std::path::Path;
 
 use bon::Builder;
 use linkme::distributed_slice;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 use rayc_diagnostic::{Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
@@ -16,10 +20,6 @@ use rayc_symbol::{
     span::get_span,
 };
 use rayc_target::{TargetID, get_invocation_arguments};
-use qbice::{
-    Decode, Encode, Identifiable, Query, StableHash, executor, program::Registration,
-    storage::intern::Interned,
-};
 
 use crate::table;
 

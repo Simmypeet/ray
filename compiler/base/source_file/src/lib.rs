@@ -11,13 +11,13 @@ use std::{
 };
 
 use getset::{CopyGetters, Getters};
-use rayc_qbice::TrackedEngine;
-use rayc_target::{Global, TargetID};
 use qbice::{
     Decode, Encode, Identifiable, Query, StableHash,
     stable_hash::{StableHasher, Value},
     storage::intern::Interned,
 };
+use rayc_qbice::TrackedEngine;
+use rayc_target::{Global, TargetID};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use ropey::{Rope, RopeSlice, iter::Chunks};
 

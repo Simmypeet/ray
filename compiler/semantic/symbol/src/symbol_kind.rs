@@ -2,8 +2,8 @@
 
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
-use rayc_target::{Global, TargetID};
 use qbice::{Decode, Encode, Identifiable, Query, StableHash};
+use rayc_target::{Global, TargetID};
 
 use crate::SymbolID;
 

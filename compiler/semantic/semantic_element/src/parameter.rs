@@ -1,9 +1,9 @@
 use bon::Builder;
+use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_arena::{ID, OrderedArena};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::Ty;
-use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Builder,

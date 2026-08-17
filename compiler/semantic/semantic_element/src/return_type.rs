@@ -1,6 +1,6 @@
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::Ty;
-use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 /// Retrieves the return type of a function symbol
 #[derive(

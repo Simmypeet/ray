@@ -1,11 +1,11 @@
 //! Contains the queries for retrieving syntax items defined to a particular
 //! symbol.
 
+use qbice::{Decode, Encode, Query, StableHash};
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
     statement::Block,
 };
-use qbice::{Decode, Encode, Query, StableHash};
 
 use crate::GlobalSymbolID;
 

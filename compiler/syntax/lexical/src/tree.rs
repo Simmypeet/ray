@@ -9,11 +9,11 @@ use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
 use fxhash::FxHasher;
 use getset::CopyGetters;
+use qbice::{Decode, Encode, Identifiable, StableHash, stable_hash::StableHasher};
 use rayc_arena::{Arena, ID, state};
 use rayc_handler::Handler;
 use rayc_qbice::Interner;
 use rayc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID, Location, SourceFile, Span};
-use qbice::{Decode, Encode, Identifiable, StableHash, stable_hash::StableHasher};
 use strum_macros::EnumIter;
 
 use crate::{

@@ -2,16 +2,16 @@
 //! concrete tree which contains the full source code fidelity.
 
 use enum_as_inner::EnumAsInner;
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, stable_hash::Sip128Hasher,
+    stable_type_id::StableTypeID, storage::intern::Interned,
+};
 use rayc_arena::ID;
 use rayc_lexical::{
     token,
     tree::{OffsetMode, RelativeLocation, RelativeSpan},
 };
 use rayc_source_file::{GlobalSourceID, SourceElement, Span};
-use qbice::{
-    Decode, Encode, Identifiable, StableHash, stable_hash::Sip128Hasher,
-    stable_type_id::StableTypeID, storage::intern::Interned,
-};
 use siphasher::sip128::Hasher128;
 
 use crate::abstract_tree::AbstractTree;

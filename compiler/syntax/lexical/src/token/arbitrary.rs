@@ -3,13 +3,13 @@
 use std::fmt::{Debug, Display};
 
 use enum_as_inner::EnumAsInner;
-use rayc_source_file::{Location, Span, simple_source_map::SimpleSourceMap};
-use rayc_test_input::Input;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Strategy},
     prop_assert_eq, prop_oneof,
     test_runner::TestCaseError,
 };
+use rayc_source_file::{Location, Span, simple_source_map::SimpleSourceMap};
+use rayc_test_input::Input;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum PriorInsignificant {

@@ -3,10 +3,10 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::AbsoluteSpan;
-use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::tree::DelimiterKind;
 

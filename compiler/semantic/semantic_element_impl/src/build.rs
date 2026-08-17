@@ -1,7 +1,7 @@
 use std::{borrow::Borrow, fmt::Debug, hash::Hash, marker::PhantomData, sync::Arc};
 
-use rayc_qbice::{Config, TrackedEngine};
 use qbice::{Decode, Encode, Executor, Identifiable, Query, StableHash, storage::intern::Interned};
+use rayc_qbice::{Config, TrackedEngine};
 
 macro_rules! impl_key {
     ($k:ident, $key:ident, $value:ty) => {
@@ -186,12 +186,11 @@ macro_rules! register_build {
                 >();
 
             #[::linkme::distributed_slice(::rayc_qbice::RAY_PROGRAM)]
-            static ELEMENT_EXTRACT_EXECUTOR: ::qbice::program::Registration<
-                ::rayc_qbice::Config,
-            > = ::qbice::program::Registration::<::rayc_qbice::Config>::new::<
-                $ty,
-                $crate::build::ElementExtractExecutor,
-            >();
+            static ELEMENT_EXTRACT_EXECUTOR: ::qbice::program::Registration<::rayc_qbice::Config> =
+                ::qbice::program::Registration::<::rayc_qbice::Config>::new::<
+                    $ty,
+                    $crate::build::ElementExtractExecutor,
+                >();
         };
     };
 }

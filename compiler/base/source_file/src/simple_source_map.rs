@@ -6,8 +6,8 @@ use dashmap::{
     DashMap,
     mapref::one::{Ref, RefMut},
 };
-use rayc_target::TargetID;
 use qbice::{Decode, Encode};
+use rayc_target::TargetID;
 use siphasher::sip128::Hasher128;
 
 use crate::{GlobalSourceID, LocalSourceID, SourceFile};

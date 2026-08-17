@@ -8,12 +8,12 @@ use std::{
 };
 
 use bimap::BiHashMap;
+use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_handler::Handler;
 use rayc_qbice::Interner;
 use rayc_source_file::{
     AbsoluteSpan, ByteIndex, GlobalSourceID, SourceElement, SourceFile, SourceFileCharIndices, Span,
 };
-use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     error::{self, InvalidEscapeSequence},

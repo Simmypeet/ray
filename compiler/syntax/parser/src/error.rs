@@ -1,5 +1,6 @@
 //! Contains the definition of [`Error`] struct
 
+use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_arena::ID;
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_hash::FxHashSet;
@@ -12,7 +13,6 @@ use rayc_lexical::{
 };
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::{AbsoluteSpan, GlobalSourceID, Span, get_source_file_path};
-use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     expect::{self, Expected},

@@ -1,9 +1,9 @@
+use qbice::{Decode, Encode, StableHash};
 use rayc_parser::{
     abstract_tree,
     expect::{self, Fragment},
     parser::{ParserExt, ast},
 };
-use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Keyword, Punctuation, expression::Expression, irrefutable_pattern::IrrefutablePattern,

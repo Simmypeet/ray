@@ -4,10 +4,10 @@ use std::collections::HashSet;
 
 use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
+use qbice::{Decode, Encode, StableHash};
 use rayc_arena::ID;
 use rayc_lexical::{kind::Kind, token::Token, tree::ROOT_BRANCH_ID};
 use rayc_qbice::Interner;
-use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     abstract_tree::AbstractTree,

@@ -1,7 +1,7 @@
+use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::ID;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::Parameter;
-use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 
 use crate::variable::Variable;
 

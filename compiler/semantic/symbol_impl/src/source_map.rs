@@ -3,11 +3,11 @@
 use std::{collections::HashMap, path::Path};
 
 use linkme::distributed_slice;
+use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_extend::extend;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_source_file::{FilePathKey, GlobalSourceID, SourceFile, get_stable_path_id};
 use rayc_target::{TargetID, get_invocation_arguments};
-use qbice::{executor, program::Registration, storage::intern::Interned};
 
 use crate::table;
 

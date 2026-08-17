@@ -3,13 +3,13 @@
 use std::{hash::Hash, path::Path};
 
 use linkme::distributed_slice;
-use rayc_qbice::{Config, InputSession, RAY_PROGRAM, TrackedEngine};
-use rayc_source_file::{Error, LocalSourceID, SourceFile};
-use rayc_target::{get_invocation_arguments, get_target_seed};
 use qbice::{
     Decode, Encode, ExecutionStyle, Query, StableHash, executor, program::Registration,
     storage::intern::Interned,
 };
+use rayc_qbice::{Config, InputSession, RAY_PROGRAM, TrackedEngine};
+use rayc_source_file::{Error, LocalSourceID, SourceFile};
+use rayc_target::{get_invocation_arguments, get_target_seed};
 use siphasher::sip128::Hasher128;
 
 /// An implementation of an executor that loads a source file from the file

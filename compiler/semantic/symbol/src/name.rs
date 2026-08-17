@@ -1,10 +1,10 @@
 //! Contains the definition of query related to naming symbols and provides
 //! basic naming resolution functionality.
 
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_extend::extend;
 use rayc_qbice::TrackedEngine;
 use rayc_target::{Global, get_target_map};
-use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 use crate::{
     SymbolID, get_target_root_module_id, member::get_members, parent::get_parent,

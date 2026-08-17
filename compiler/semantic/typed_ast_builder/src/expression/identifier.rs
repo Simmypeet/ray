@@ -1,8 +1,6 @@
 use rayc_source_file::SourceElement;
 use rayc_syntax::Identifier as IdentifierSyn;
-use rayc_typed_ast::typed_expr::{
-    TypedExpr, TypedExprID, TypedExprKind, identifier::Identifier,
-};
+use rayc_typed_ast::typed_expr::{TypedExpr, TypedExprID, TypedExprKind, identifier::Identifier};
 
 use crate::{
     bind::Bind,

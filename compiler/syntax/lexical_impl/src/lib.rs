@@ -1,11 +1,11 @@
 //! Contains the implementation of the lexical analysis executor.
 
 use linkme::distributed_slice;
+use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_handler::Storage;
 use rayc_lexical::{DiagnosticKey, Key, error, tree::Tree};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_source_file::get_stable_path_id;
-use qbice::{executor, program::Registration, storage::intern::Interned};
 
 #[executor(config = Config)]
 #[allow(clippy::type_complexity)]

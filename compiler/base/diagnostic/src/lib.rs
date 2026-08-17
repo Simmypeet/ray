@@ -3,11 +3,11 @@
 use std::future::Future;
 
 use bon::{Builder, bon};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_qbice::TrackedEngine;
 // re-export
 pub use rayc_source_file::ByteIndex;
 use rayc_source_file::Span;
-use qbice::{Decode, Encode, Identifiable, StableHash};
 
 /// Implement this trait for a type that can report a diagnostic.
 ///

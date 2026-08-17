@@ -1,9 +1,9 @@
 //! Contains the definition of the [`Span`] query.
 
 use derive_more::{Deref, DerefMut};
+use qbice::{Decode, Encode, Query, StableHash};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_target::Global;
-use qbice::{Decode, Encode, Query, StableHash};
 
 use crate::SymbolID;
 

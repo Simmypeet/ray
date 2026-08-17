@@ -1,8 +1,8 @@
+use qbice::{Decode, Encode, StableHash};
 use rayc_parser::{
     abstract_tree, expect,
     parser::{ParserExt, ast},
 };
-use qbice::{Decode, Encode, StableHash};
 
 use crate::{Identifier, Keyword};
 

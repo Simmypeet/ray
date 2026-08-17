@@ -2,10 +2,10 @@
 
 use std::{io::Write, process::ExitCode, sync::Arc};
 
+use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use rayc_qbice::{Engine, InMemoryFactory, IncrementalStorageEngine};
 use rayc_symbol_impl::source_map::create_source_map;
 use rayc_target::{Arguments, TargetID};
-use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use tracing::instrument;
 
 use crate::term::ReportTerm;

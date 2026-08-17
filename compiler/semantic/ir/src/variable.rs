@@ -1,7 +1,7 @@
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct Variable {

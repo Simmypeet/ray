@@ -4,13 +4,13 @@ use std::fmt::{Display, Formatter};
 
 use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
-use rayc_arena::ID;
-use rayc_source_file::simple_source_map::SimpleSourceMap;
-use rayc_test_input::Input;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, Strategy, TestCaseError},
     prop_assert, prop_assert_eq, prop_oneof,
 };
+use rayc_arena::ID;
+use rayc_source_file::simple_source_map::SimpleSourceMap;
+use rayc_test_input::Input;
 
 use super::{DelimiterKind, Tree};
 use crate::{

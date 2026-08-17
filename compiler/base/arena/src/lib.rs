@@ -10,8 +10,8 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use rayc_hash::FxHashMap;
 use qbice::{Decode, Encode, Identifiable, StableHash, stable_hash::StableHasher};
+use rayc_hash::FxHashMap;
 use state::{Generator, Rebind, State};
 
 use crate::state::FreeGenerator;

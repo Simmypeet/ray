@@ -2,8 +2,8 @@
 
 use std::marker::PhantomData;
 
-use rayc_hash::FxHashMap;
 use qbice::{Decode, Encode, Identifiable, StableHash};
+use rayc_hash::FxHashMap;
 
 use crate::ID;
 

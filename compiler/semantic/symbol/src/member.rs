@@ -2,11 +2,11 @@
 
 use std::collections::hash_map::Entry;
 
+use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_extend::extend;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_qbice::TrackedEngine;
 use rayc_target::Global;
-use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 
 use crate::{SymbolID, symbol_kind::get_symbol_kind};
 

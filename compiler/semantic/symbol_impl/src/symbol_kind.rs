@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use linkme::distributed_slice;
+use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{
     SymbolID,
     symbol_kind::{AllDefIDs, AllSymbolIDs, Key, SymbolKind},
 };
-use qbice::{executor, program::Registration};
 
 use crate::table::get_table;
 

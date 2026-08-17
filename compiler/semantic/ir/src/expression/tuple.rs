@@ -1,5 +1,5 @@
-use rayc_arena::ID;
 use qbice::{Decode, Encode, StableHash};
+use rayc_arena::ID;
 
 use crate::expression::Expression;
 

@@ -1,5 +1,5 @@
-use rayc_symbol::GlobalSymbolID;
 use qbice::{Decode, Encode, StableHash};
+use rayc_symbol::GlobalSymbolID;
 
 use crate::typed_expr::TypedExprID;
 

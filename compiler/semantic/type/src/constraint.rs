@@ -1,5 +1,5 @@
-use rayc_qbice::TrackedEngine;
 use qbice::{Decode, Encode, StableHash};
+use rayc_qbice::TrackedEngine;
 
 use crate::{
     constraint::subtype::Subtype,

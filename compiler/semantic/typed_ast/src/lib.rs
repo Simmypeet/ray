@@ -1,5 +1,5 @@
-use rayc_symbol::GlobalSymbolID;
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
+use rayc_symbol::GlobalSymbolID;
 
 use crate::function::Function;
 

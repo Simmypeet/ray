@@ -9,13 +9,13 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
-use rayc_test_input::Input;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, Strategy, TestCaseError},
     prop_assert, prop_assert_eq, prop_oneof,
     test_runner::TestCaseResult,
 };
 use qbice::storage::intern::Interned;
+use rayc_test_input::Input;
 use strum::IntoEnumIterator as _;
 
 pub use super::{Identifier, Keyword, Numeric, Punctuation};

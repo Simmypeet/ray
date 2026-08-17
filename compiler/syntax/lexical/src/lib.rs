@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use rayc_target::TargetID;
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
+use rayc_target::TargetID;
 
 pub mod error;
 pub mod kind;

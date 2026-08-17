@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
+use proptest::{
+    prelude::Arbitrary, prop_assert, prop_assert_eq, proptest, test_runner::TestCaseError,
+};
+use qbice::storage::intern::Interned;
 use rayc_handler::Storage;
 use rayc_qbice::DuplicatingInterner;
 use rayc_source_file::{ByteIndex, SourceFile, simple_source_map::SimpleSourceMap};
 use rayc_target::TargetID;
 use rayc_test_input::Input;
-use proptest::{
-    prelude::Arbitrary, prop_assert, prop_assert_eq, proptest, test_runner::TestCaseError,
-};
-use qbice::storage::intern::Interned;
 
 use super::error::Error;
 use crate::{

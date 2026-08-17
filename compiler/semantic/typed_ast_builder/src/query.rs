@@ -1,12 +1,12 @@
 use linkme::distributed_slice;
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
+};
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
 use rayc_target::TargetID;
 use rayc_typed_ast::{function::Function, name_binding::Source};
-use qbice::{
-    Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
-};
 
 use crate::{diagnostic::Diagnostic, tast_builder::TAstBuilder};
 

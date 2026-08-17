@@ -1,10 +1,10 @@
+use qbice::{Decode, Encode, StableHash};
 use rayc_lexical::tree::DelimiterKind;
 use rayc_parser::{
     abstract_tree,
     expect::{self, Ext, Fragment},
     parser::{ParserExt, ast},
 };
-use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Identifier, Keyword, Punctuation, irrefutable_pattern::IrrefutablePattern, statement::Block,

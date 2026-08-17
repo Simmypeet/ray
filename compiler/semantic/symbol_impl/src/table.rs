@@ -2,6 +2,9 @@ use std::{collections::hash_map::Entry, path::Path, sync::Arc};
 
 use bon::Builder;
 use linkme::distributed_slice;
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
+};
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
@@ -16,9 +19,6 @@ use rayc_syntax::{
     statement::Block,
 };
 use rayc_target::{TargetID, get_invocation_arguments};
-use qbice::{
-    Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
-};
 
 use crate::diagnostic::{Diagnostic, ItemRedefinition, SourceFileLoadFail};
 
