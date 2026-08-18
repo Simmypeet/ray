@@ -1,3 +1,5 @@
+use std::io;
+
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_type::ty::{Ty, TyApplicationView};
 
@@ -27,21 +29,19 @@ pub enum CTy {
 }
 
 impl Generator {
-    pub fn write_cty(&self, cty: &CTy, buf: &mut std::fmt::Formatter) {
+    pub fn write_cty(&self, cty: &CTy, buf: &mut impl io::Write) -> std::io::Result<()> {
         match cty {
             CTy::Primitive(primitive) => match primitive {
-                Primitive::Bool => write!(buf, "bool").unwrap(),
-                Primitive::Float32 => write!(buf, "float").unwrap(),
-                Primitive::Int32 => write!(buf, "int32_t").unwrap(),
+                Primitive::Bool => write!(buf, "bool"),
+                Primitive::Float32 => write!(buf, "float"),
+                Primitive::Int32 => write!(buf, "int32_t"),
             },
 
-            CTy::Tuple(id) => {
-                self.write_ctuple(*id, buf);
-            }
+            CTy::Tuple(id) => self.write_ctuple(*id, buf),
 
             CTy::Pointer(pointer) => {
                 write!(buf, "{}*", if pointer.constness { "const " } else { "" }).unwrap();
-                self.write_cty(&pointer.element_ty, buf);
+                self.write_cty(&pointer.element_ty, buf)
             }
         }
     }

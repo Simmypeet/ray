@@ -1,3 +1,5 @@
+use std::io;
+
 use bon::Builder;
 use qbice::{
     StableHash,
@@ -103,37 +105,48 @@ impl Generator {
         id
     }
 
-    pub fn write_ctuple(&self, id: CTupleID, buf: &mut std::fmt::Formatter) {
+    pub fn write_ctuple(&self, id: CTupleID, buf: &mut impl io::Write) -> std::io::Result<()> {
         let decl = self.inst_table.tuple_decls.get(&id).unwrap();
-        write!(buf, "ray_tuple_{:X}", decl.hash).unwrap();
+
+        write!(buf, "ray_tuple_{:X}", decl.hash)
     }
 
-    pub async fn write_cdef_decl(&self, id: CDefID, buf: &mut std::fmt::Formatter<'_>) {
+    pub async fn write_cdef_decl(
+        &self,
+        id: CDefID,
+        buf: &mut impl io::Write,
+    ) -> std::io::Result<()> {
         let cdecl = self.inst_table.def_decls.get(&id).unwrap();
 
-        self.write_cty(&cdecl.return_type, buf);
+        self.write_cty(&cdecl.return_type, buf)?;
 
         let name = self.engine.get_name(cdecl.def_id).await;
 
-        write!(buf, " ray_{}", &*name).unwrap();
+        write!(buf, " ray_{}", &*name)?;
 
-        self.write_parameter_list(cdecl, buf);
+        self.write_parameter_list(cdecl, buf)
     }
 
-    fn write_parameter_list(&self, cdef_decl: &CDefDecl, buf: &mut std::fmt::Formatter<'_>) {
-        write!(buf, "(").unwrap();
+    fn write_parameter_list(
+        &self,
+        cdef_decl: &CDefDecl,
+        buf: &mut impl io::Write,
+    ) -> std::io::Result<()> {
+        write!(buf, "(")?;
         let mut first = true;
 
         for (param_id, param_ty) in cdef_decl.parameters.iter() {
             if !first {
-                write!(buf, ", ").unwrap();
+                write!(buf, ", ")?;
             }
 
-            self.write_cty(param_ty, buf);
+            self.write_cty(param_ty, buf)?;
 
-            write!(buf, " param_{:X}", param_id.index()).unwrap();
+            write!(buf, " param_{:X}", param_id.index())?;
 
             first = false;
         }
+
+        Ok(())
     }
 }
