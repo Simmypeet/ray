@@ -1,22 +1,18 @@
 use std::io;
 
 use bon::Builder;
-use qbice::{
-    StableHash,
-    stable_hash::{Sip128Hasher, StableHasher},
-    storage::intern::Interned,
-};
+use qbice::storage::intern::Interned;
 use rayc_arena::ID;
 use rayc_hash::FxHashMap;
 use rayc_semantic_element::{
     parameter::{ParameterID, get_parameter_map},
     return_type::get_return_type,
 };
-use rayc_symbol::{GlobalSymbolID, name::get_name};
+use rayc_symbol::GlobalSymbolID;
 
 use crate::{generator::Generator, ty::CTy};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Builder)]
 pub struct CDef {
     def_id: GlobalSymbolID,
 }
@@ -29,6 +25,18 @@ pub struct CDefDecl {
     return_type: Interned<CTy>,
 }
 
+impl CDefDecl {
+    #[must_use]
+    pub const fn def_id(&self) -> GlobalSymbolID { self.def_id }
+
+    #[must_use]
+    pub const fn return_type(&self) -> &Interned<CTy> { &self.return_type }
+
+    pub fn parameters(&self) -> impl Iterator<Item = (ParameterID, &'_ Interned<CTy>)> {
+        self.parameters.iter().map(|(param_id, param_ty)| (*param_id, param_ty))
+    }
+}
+
 pub type CDefID = ID<CDef>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Builder)]
@@ -39,12 +47,15 @@ pub struct CTuple {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CTupleDecl {
     args: Interned<[Interned<CTy>]>,
-    hash: u128,
+}
+
+impl CTupleDecl {
+    pub fn args(&self) -> impl Iterator<Item = &'_ Interned<CTy>> { self.args.iter() }
 }
 
 pub type CTupleID = ID<CTuple>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct InstantiationTable {
     def_table: FxHashMap<CDef, CDefID>,
     tuple_table: FxHashMap<CTuple, CTupleID>,
@@ -64,13 +75,7 @@ impl Generator {
 
         self.inst_table.tuple_table.insert(ctuple.clone(), id);
 
-        let hash = {
-            let mut hasher = Sip128Hasher::new();
-            ctuple.args.stable_hash(&mut hasher);
-            hasher.finish()
-        };
-
-        let decl = CTupleDecl { args: ctuple.args, hash };
+        let decl = CTupleDecl { args: ctuple.args };
         self.inst_table.tuple_decls.insert(id, decl);
 
         id
@@ -105,48 +110,31 @@ impl Generator {
         id
     }
 
-    pub fn write_ctuple(&self, id: CTupleID, buf: &mut impl io::Write) -> std::io::Result<()> {
-        let decl = self.inst_table.tuple_decls.get(&id).unwrap();
-
-        write!(buf, "ray_tuple_{:X}", decl.hash)
+    pub fn write_ctuple_t(&self, id: CTupleID, buf: &mut impl io::Write) -> std::io::Result<()> {
+        write!(buf, "RayTuple{:X}_t", id.index())
     }
 
-    pub async fn write_cdef_decl(
+    pub fn write_ctuple_struct(
         &self,
-        id: CDefID,
+        id: CTupleID,
         buf: &mut impl io::Write,
     ) -> std::io::Result<()> {
-        let cdecl = self.inst_table.def_decls.get(&id).unwrap();
-
-        self.write_cty(&cdecl.return_type, buf)?;
-
-        let name = self.engine.get_name(cdecl.def_id).await;
-
-        write!(buf, " ray_{}", &*name)?;
-
-        self.write_parameter_list(cdecl, buf)
+        write!(buf, "RayTuple{:X}", id.index())
     }
 
-    fn write_parameter_list(
-        &self,
-        cdef_decl: &CDefDecl,
-        buf: &mut impl io::Write,
-    ) -> std::io::Result<()> {
-        write!(buf, "(")?;
-        let mut first = true;
+    pub fn cdef_decl_ids(&self) -> impl Iterator<Item = CDefID> + '_ {
+        self.inst_table.def_decls.keys().copied()
+    }
 
-        for (param_id, param_ty) in cdef_decl.parameters.iter() {
-            if !first {
-                write!(buf, ", ")?;
-            }
+    pub fn ctuple_decl_ids(&self) -> impl Iterator<Item = CTupleID> + '_ {
+        self.inst_table.tuple_decls.keys().copied()
+    }
 
-            self.write_cty(param_ty, buf)?;
+    pub fn get_cdef_decl(&self, id: CDefID) -> &CDefDecl {
+        self.inst_table.def_decls.get(&id).unwrap()
+    }
 
-            write!(buf, " param_{:X}", param_id.index())?;
-
-            first = false;
-        }
-
-        Ok(())
+    pub fn get_ctuple_decl(&self, id: CTupleID) -> &CTupleDecl {
+        self.inst_table.tuple_decls.get(&id).unwrap()
     }
 }

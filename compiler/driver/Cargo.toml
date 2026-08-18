@@ -14,16 +14,15 @@ rayc_diagnostic = { path = "../base/diagnostic" }
 rayc_handler = { path = "../base/handler" }
 rayc_target = { path = "../base/target" }
 rayc_hash = { path = "../base/hash" }
-# rayc_corelib_impl = { path = "../semantic/corelib_impl" }
-# rayc_symbol = { path = "../semantic/symbol" }
+rayc_symbol = { path = "../semantic/symbol" }
 rayc_symbol_impl = { path = "../semantic/symbol_impl" }
 rayc_check = { path = "../semantic/check" }
-# rayc_llvm = { path = "../codegen/llvm" }
 rayc_qbice.path = "../base/qbice"
 rayc_source_file_impl.path = "../base/source_file_impl"
 rayc_lexical_impl.path = "../syntax/lexical_impl"
 rayc_syntax_impl.path = "../syntax/syntax_impl"
 rayc_semantic_element_impl.path = "../semantic/semantic_element_impl"
+rayc_c.path = "../codegen/c"
 qbice.workspace = true
 linkme.workspace = true
 inkwell = { workspace = true }

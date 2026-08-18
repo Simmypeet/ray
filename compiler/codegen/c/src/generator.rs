@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::{GlobalSymbolID, name::get_name};
 
 use crate::generator::instantiation::InstantiationTable;
 
@@ -11,6 +12,12 @@ pub mod instantiation;
 pub struct Generator {
     inst_table: InstantiationTable,
     engine: TrackedEngine,
+}
+
+impl Generator {
+    pub fn new(engine: TrackedEngine) -> Self {
+        Self { inst_table: InstantiationTable::default(), engine }
+    }
 }
 
 impl Generator {
@@ -32,5 +39,9 @@ impl Generator {
         Arc<T>: From<Q>,
     {
         self.engine.intern_unsized(value)
+    }
+
+    pub async fn get_def_name(&self, def_id: GlobalSymbolID) -> Interned<str> {
+        self.engine.get_name(def_id).await
     }
 }

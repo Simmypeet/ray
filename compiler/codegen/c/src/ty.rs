@@ -37,11 +37,12 @@ impl Generator {
                 Primitive::Int32 => write!(buf, "int32_t"),
             },
 
-            CTy::Tuple(id) => self.write_ctuple(*id, buf),
+            CTy::Tuple(id) => self.write_ctuple_t(*id, buf),
 
             CTy::Pointer(pointer) => {
-                write!(buf, "{}*", if pointer.constness { "const " } else { "" }).unwrap();
-                self.write_cty(&pointer.element_ty, buf)
+                write!(buf, "{}", if pointer.constness { "const " } else { "" })?;
+                self.write_cty(&pointer.element_ty, buf)?;
+                write!(buf, "*")
             }
         }
     }
