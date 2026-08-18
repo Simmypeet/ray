@@ -18,20 +18,20 @@ pub struct Function {
     name_binding_map: NameBindingMap,
     typed_expr_map: TypedExprMap,
 
-    parameter_name_binding_group: NameBindingGroupID,
+    parameter_name_binding_group_id: NameBindingGroupID,
     block: Block,
 }
 
 impl Default for Function {
     fn default() -> Self {
         let mut name_binding_map = NameBindingMap::default();
-        let parameter_name_binding_group = name_binding_map.new_name_binding_group();
+        let parameter_name_binding_group_id = name_binding_map.new_name_binding_group();
 
         Self {
             variable_map: VariableMap::default(),
             name_binding_map,
             typed_expr_map: TypedExprMap::default(),
-            parameter_name_binding_group,
+            parameter_name_binding_group_id,
             block: Block::default(),
         }
     }
@@ -49,8 +49,8 @@ impl Function {
     }
 
     #[must_use]
-    pub const fn parameter_name_binding_group(&self) -> NameBindingGroupID {
-        self.parameter_name_binding_group
+    pub const fn parameter_name_binding_group_id(&self) -> NameBindingGroupID {
+        self.parameter_name_binding_group_id
     }
 
     #[must_use]

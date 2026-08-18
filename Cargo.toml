@@ -33,7 +33,7 @@ members = [
 
     "compiler/driver",
     "compiler/main",
-    "compiler/semantic/semantic_element_impl",
+    "compiler/semantic/semantic_element_impl", "compiler/codegen/c",
 
     # tidy-alphabetical-end
 ]

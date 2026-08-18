@@ -18,6 +18,16 @@ pub enum Mutability {
     Mutable,
 }
 
+impl Mutability {
+    #[must_use]
+    pub const fn constness(&self) -> bool {
+        match self {
+            Self::Immutable => true,
+            Self::Mutable => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum TyConstant {
     Primitive(Primitive),

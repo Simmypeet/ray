@@ -16,6 +16,7 @@ pub mod variable;
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
 #[value(Interned<Function>)]
+#[extend(by_val, name = get_typed_ast)]
 pub struct Key {
     pub def_id: GlobalSymbolID,
 }

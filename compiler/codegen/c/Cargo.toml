@@ -1,0 +1,22 @@
+[package]
+name = "rayc_c"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_hash.path = "../../base/hash"
+rayc_target.path = "../../base/target"
+rayc_symbol.path = "../../semantic/symbol"
+rayc_arena.path = "../../base/arena"
+rayc_qbice.path = "../../base/qbice"
+rayc_typed_ast.path = "../../semantic/typed_ast"
+rayc_type.path = "../../semantic/type"
+rayc_semantic_element.path = "../../semantic/semantic_element"
+qbice.workspace = true
+bon.workspace = true
+
+[lints]
+workspace = true

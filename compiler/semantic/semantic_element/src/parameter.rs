@@ -6,7 +6,18 @@ use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::Ty;
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Builder,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+    Builder,
 )]
 pub struct Parameter {
     span: Option<RelativeSpan>,
@@ -17,6 +28,8 @@ impl Parameter {
     #[must_use]
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
 }
+
+pub type ParameterID = ID<Parameter>;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
 pub struct ParameterMap {

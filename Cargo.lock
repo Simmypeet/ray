@@ -1643,6 +1643,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayc_c"
+version = "0.1.0-beta.2"
+dependencies = [
+ "bon",
+ "qbice",
+ "rayc_arena",
+ "rayc_hash",
+ "rayc_qbice",
+ "rayc_semantic_element",
+ "rayc_symbol",
+ "rayc_target",
+ "rayc_type",
+ "rayc_typed_ast",
+]
+
+[[package]]
 name = "rayc_check"
 version = "0.1.0-beta.2"
 dependencies = [
