@@ -13,6 +13,9 @@ pub struct ExprCtx {
 
 impl ExprCtx {
     #[must_use]
+    pub const fn new(func: Interned<Function>) -> Self { Self { func } }
+
+    #[must_use]
     pub fn get_name_binding(&self, name_binding_id: NameBindingID) -> &NameBinding {
         self.func.get_name_binding(name_binding_id)
     }

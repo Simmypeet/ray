@@ -24,6 +24,11 @@ pub enum EnclosingPair {
     Brackets,
 }
 
+impl<'w> Writer<'w> {
+    #[must_use]
+    pub fn new(buf: &'w mut dyn std::io::Write) -> Self { Self { indent_step: 0, buf } }
+}
+
 impl Writer<'_> {
     pub async fn write_enclosing_pair<A>(
         &mut self,

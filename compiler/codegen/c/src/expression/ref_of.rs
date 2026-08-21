@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use rayc_typed_ast::typed_expr::{TypedExprID, tuple_index::TupleIndex};
+use rayc_typed_ast::typed_expr::{TypedExprID, ref_of::RefOf};
 
 use crate::{
     context::Context,
@@ -9,19 +9,22 @@ use crate::{
     writer::{EnclosingPair, Writer},
 };
 
-impl Generate<TupleIndex> for Writer<'_> {
+impl Generate<RefOf> for Writer<'_> {
     async fn generate(
         &mut self,
-        expr: &TupleIndex,
+        expr: &RefOf,
         _: TypedExprID,
         expr_ctx: &ExprCtx,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
         Box::pin(self.write_enclosing_pair(EnclosingPair::Parens, async |writer| {
-            writer.generate_typed_expr(expr.operand(), expr_ctx, ctx).await
+            write!(writer, "&")?;
+            writer
+                .write_enclosing_pair(EnclosingPair::Parens, async |writer| {
+                    writer.generate_typed_expr(expr.pointee(), expr_ctx, ctx).await
+                })
+                .await
         }))
-        .await?;
-
-        write!(self, ".elem{:X}", expr.index())
+        .await
     }
 }
