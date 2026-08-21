@@ -16,5 +16,8 @@ impl RefOf {
     }
 
     #[must_use]
+    pub const fn pointee(&self) -> TypedExprID { self.pointee }
+
+    #[must_use]
     pub const fn mutability(&self) -> Mutability { self.mutability }
 }

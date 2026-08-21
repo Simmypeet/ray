@@ -14,4 +14,10 @@ impl Call {
     pub const fn new(function_id: GlobalSymbolID, arguments: Vec<TypedExprID>) -> Self {
         Self { function_id, arguments }
     }
+
+    #[must_use]
+    pub const fn function_id(&self) -> GlobalSymbolID { self.function_id }
+
+    #[must_use]
+    pub fn arguments(&self) -> &[TypedExprID] { &self.arguments }
 }
