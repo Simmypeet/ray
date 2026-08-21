@@ -229,28 +229,8 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
-    pub struct Return {
-        pub return_keyword: Keyword = expect::Keyword::Return,
-        pub expression: Expression = ast::<Expression>()
-    }
-}
-
-abstract_tree::abstract_tree! {
-    #[derive(
-        Debug,
-        Clone,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Hash,
-        StableHash,
-        Encode,
-        Decode
-    )]
     pub enum Expression {
         Binary(Binary = ast::<Binary>()),
-        Return(Return = ast::<Return>())
     }
 }
 

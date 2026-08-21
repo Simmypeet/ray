@@ -68,6 +68,17 @@ pub enum TyApplicationView<'x> {
     Error,
 }
 
+impl<'x> TyApplicationView<'x> {
+    #[must_use]
+    pub fn unwrap_into_tuple_view(self) -> TupleView<'x> {
+        let Self::Tuple(tuple_view) = self else {
+            panic!("Expected TyApplicationView::Tuple, found {self:?}");
+        };
+
+        tuple_view
+    }
+}
+
 impl TyApplication {
     #[must_use]
     pub fn view(&self) -> TyApplicationView<'_> {
@@ -312,6 +323,17 @@ impl Display for Ty {
                 }
             },
         }
+    }
+}
+
+impl Ty {
+    #[must_use]
+    pub fn unwrap_as_application_view(&self) -> TyApplicationView<'_> {
+        let Self::Application(ty_application) = self else {
+            panic!("Expected Ty::Application, found {self:?}");
+        };
+
+        ty_application.view()
     }
 }
 

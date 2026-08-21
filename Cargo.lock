@@ -2021,6 +2021,7 @@ dependencies = [
 name = "rayc_type"
 version = "0.1.0-beta.2"
 dependencies = [
+ "enum-as-inner",
  "im",
  "qbice",
  "rayc_hash",

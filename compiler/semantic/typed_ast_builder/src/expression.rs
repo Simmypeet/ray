@@ -16,7 +16,6 @@ impl Bind<Expression> for TAstBuilder {
     async fn bind(&mut self, syn: Expression) -> TypedExprID {
         match syn {
             Expression::Binary(binary) => Box::pin(self.bind(binary)).await,
-            Expression::Return(ret) => Box::pin(self.bind(ret)).await,
         }
     }
 }

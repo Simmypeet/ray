@@ -10,4 +10,7 @@ pub struct Tuple {
 impl Tuple {
     #[must_use]
     pub const fn new(elements: Vec<TypedExprID>) -> Self { Self { elements } }
+
+    #[must_use]
+    pub fn elements(&self) -> &[TypedExprID] { &self.elements }
 }

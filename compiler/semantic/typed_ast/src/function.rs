@@ -1,6 +1,9 @@
-use qbice::{Decode, Encode, Identifiable, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
-use rayc_type::subst::{MutSubstitutable, Subst};
+use rayc_type::{
+    subst::{MutSubstitutable, Subst},
+    ty::Ty,
+};
 
 use crate::{
     block::Block,
@@ -105,6 +108,11 @@ impl Function {
     #[must_use]
     pub fn get_name_binding(&self, id: NameBindingID) -> &NameBinding {
         self.name_binding_map.get_name_binding(id)
+    }
+
+    #[must_use]
+    pub fn get_type_of_expr_id(&self, expr_id: TypedExprID) -> &Interned<Ty> {
+        self.typed_expr_map.get_expression(expr_id).ty()
     }
 }
 

@@ -43,9 +43,29 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
+    pub struct Return {
+        pub return_keyword: Keyword = expect::Keyword::Return,
+        pub expression: Expression = ast::<Expression>().optional(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
     pub enum Statement {
         Let(Let = ast::<Let>()),
         Expression(Expression = ast::<Expression>()),
+        Return(Return = ast::<Return>())
     }
 }
 

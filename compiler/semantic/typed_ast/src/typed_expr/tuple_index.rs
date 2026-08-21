@@ -13,5 +13,8 @@ impl TupleIndex {
     pub const fn new(operand: TypedExprID, index: usize) -> Self { Self { operand, index } }
 
     #[must_use]
+    pub const fn index(&self) -> usize { self.index }
+
+    #[must_use]
     pub const fn operand(&self) -> TypedExprID { self.operand }
 }

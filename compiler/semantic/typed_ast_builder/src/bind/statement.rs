@@ -54,6 +54,10 @@ impl TAstBuilder {
 
                 self.push_statement(Statement::Expression(expr));
             }
+
+            StatementSyntax::Return(_ret) => {
+                todo!()
+            }
         }
     }
 }

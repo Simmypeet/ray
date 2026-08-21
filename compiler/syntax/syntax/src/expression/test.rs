@@ -7,9 +7,7 @@ use super::{BinaryOperator, Expression, PostfixOperator};
 fn assignment_operator_is_parsed() {
     let tree = crate::test::parse_token_tree("a = b");
     let (expression, errors) = Expression::parse(&tree, &DuplicatingInterner);
-    let Expression::Binary(binary) = expression.unwrap() else {
-        panic!("expected a binary expression");
-    };
+    let Expression::Binary(binary) = expression.unwrap();
     let subsequent = binary.subsequent().collect::<Vec<_>>();
 
     assert!(errors.is_empty());
@@ -21,9 +19,7 @@ fn assignment_operator_is_parsed() {
 fn mutable_reference_of_is_parsed() {
     let tree = crate::test::parse_token_tree("value.&mut");
     let (expression, errors) = Expression::parse(&tree, &DuplicatingInterner);
-    let Expression::Binary(binary) = expression.unwrap() else {
-        panic!("expected a binary expression");
-    };
+    let Expression::Binary(binary) = expression.unwrap();
     let postfix = binary.postfix().unwrap();
     let postfixes = postfix.postfixes().collect::<Vec<_>>();
 
@@ -39,9 +35,7 @@ fn mutable_reference_of_is_parsed() {
 fn immutable_reference_of_is_parsed() {
     let tree = crate::test::parse_token_tree("value.&");
     let (expression, errors) = Expression::parse(&tree, &DuplicatingInterner);
-    let Expression::Binary(binary) = expression.unwrap() else {
-        panic!("expected a binary expression");
-    };
+    let Expression::Binary(binary) = expression.unwrap();
     let postfix = binary.postfix().unwrap();
     let postfixes = postfix.postfixes().collect::<Vec<_>>();
 
