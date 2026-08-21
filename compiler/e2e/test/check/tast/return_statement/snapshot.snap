@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched types in return expression: expected `int32`, but found `()`
+   ╭▸ compiler/e2e/test/check/tast/return_statement/main.ray:10:5
+   │
+10 │     return
+   ╰╴    ━━━━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

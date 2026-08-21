@@ -1,0 +1,10 @@
+def unitReturn() -> ():
+    return
+
+
+def valueReturn() -> int32:
+    return 1
+
+
+def mismatchedUnitReturn() -> int32:
+    return

@@ -152,6 +152,16 @@ impl TAstBuilder {
         );
     }
 
+    pub async fn push_unit_return_type_constraint(&mut self, span: RelativeSpan) {
+        let unit_ty = Ty::new_unit(self.engine());
+        self.push_subtype_constraint(
+            &unit_ty,
+            &self.return_type_of_current_function().await,
+            span,
+            SubtypeSource::ReturnType,
+        );
+    }
+
     pub fn push_function_call_constraint(
         &mut self,
         expected_ty: &Interned<Ty>,
@@ -183,11 +193,25 @@ impl TAstBuilder {
         source: SubtypeSource,
     ) {
         let ty_of_expression = self.latest_type(&self.type_of_expression(arg));
-        let expected_ty = self.latest_type(expected_ty);
-        let subtype = Subtype::new(expected_ty, ty_of_expression);
+        self.push_subtype_constraint(
+            &ty_of_expression,
+            expected_ty,
+            self.span_of_expression(arg),
+            source,
+        );
+    }
+
+    fn push_subtype_constraint(
+        &mut self,
+        actual_ty: &Interned<Ty>,
+        expected_ty: &Interned<Ty>,
+        span: RelativeSpan,
+        source: SubtypeSource,
+    ) {
+        let subtype = Subtype::new(expected_ty.clone(), actual_ty.clone());
         let provenance = Provenance::Subtype(SubtypeProvenance {
             original_subtype: subtype.clone(),
-            span: self.span_of_expression(arg),
+            span,
             source,
         });
 

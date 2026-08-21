@@ -2,7 +2,7 @@ use rayc_source_file::SourceElement;
 use rayc_syntax::statement::Statement as StatementSyntax;
 use rayc_typed_ast::{
     name_binding::Source,
-    statement::{Let, Statement},
+    statement::{Let, Return, Statement},
     variable::Variable,
 };
 
@@ -55,8 +55,19 @@ impl TAstBuilder {
                 self.push_statement(Statement::Expression(expr));
             }
 
-            StatementSyntax::Return(_ret) => {
-                todo!()
+            StatementSyntax::Return(ret) => {
+                let ret = if let Some(expression) = ret.expression() {
+                    let expression = self.bind(expression).await;
+                    self.push_return_type_constraint(expression).await;
+
+                    Return::new_with_value(expression)
+                } else {
+                    self.push_unit_return_type_constraint(ret.span()).await;
+
+                    Return::new_unit()
+                };
+
+                self.push_statement(Statement::Return(ret));
             }
         }
     }
