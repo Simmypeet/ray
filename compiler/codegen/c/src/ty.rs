@@ -47,6 +47,19 @@ impl Context {
         }
     }
 
+    pub fn unwrap_ty_as_ctuple_id(&mut self, ty: &Interned<Ty>) -> CTupleID {
+        let view = ty.unwrap_as_application_view().unwrap_into_tuple_view();
+        let mut args = Vec::with_capacity(view.args().len());
+        for arg in view.args() {
+            let cty = self.ty_to_cty(arg);
+            args.push(cty);
+        }
+
+        let args = self.intern_unsized(args);
+
+        self.get_ctuple_id(CTuple::builder().args(args).build())
+    }
+
     pub fn ty_to_cty(&mut self, ty: &Interned<Ty>) -> Interned<CTy> {
         match &**ty {
             Ty::Application(ty_application) => match ty_application.view() {

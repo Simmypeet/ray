@@ -94,7 +94,7 @@ impl Context {
             write!(buf, "{}", Self::TAB)?;
             self.write_cty(arg, buf)?;
 
-            writeln!(buf, " elem{i};")?;
+            writeln!(buf, " elem{i:X};")?;
         }
 
         write!(buf, "}};")
