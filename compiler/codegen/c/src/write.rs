@@ -1,11 +1,11 @@
 use std::io;
 
-use crate::generator::{
-    Generator,
+use crate::context::{
+    Context,
     instantiation::{CDefDecl, CDefID, CTupleID},
 };
 
-impl Generator {
+impl Context {
     const TAB: &'static str = "    ";
 
     pub fn write_forward_decl_tuples(&self, buf: &mut impl std::io::Write) -> std::io::Result<()> {

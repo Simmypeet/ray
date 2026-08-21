@@ -3,8 +3,8 @@ use std::io;
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_type::ty::{Ty, TyApplicationView};
 
-use crate::generator::{
-    Generator,
+use crate::context::{
+    Context,
     instantiation::{CTuple, CTupleID},
 };
 
@@ -28,7 +28,7 @@ pub enum CTy {
     Pointer(Pointer),
 }
 
-impl Generator {
+impl Context {
     pub fn write_cty(&self, cty: &CTy, buf: &mut impl io::Write) -> std::io::Result<()> {
         match cty {
             CTy::Primitive(primitive) => match primitive {

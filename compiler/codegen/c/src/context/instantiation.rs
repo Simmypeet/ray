@@ -10,7 +10,7 @@ use rayc_semantic_element::{
 };
 use rayc_symbol::GlobalSymbolID;
 
-use crate::{generator::Generator, ty::CTy};
+use crate::{context::Context, ty::CTy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Builder)]
 pub struct CDef {
@@ -64,7 +64,7 @@ pub struct InstantiationTable {
     tuple_decls: FxHashMap<CTupleID, CTupleDecl>,
 }
 
-impl Generator {
+impl Context {
     pub fn get_ctuple_id(&mut self, ctuple: CTuple) -> CTupleID {
         if let Some(id) = self.inst_table.tuple_table.get(&ctuple) {
             return *id;

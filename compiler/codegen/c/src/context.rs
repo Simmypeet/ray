@@ -4,23 +4,23 @@ use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_name};
 
-use crate::generator::instantiation::InstantiationTable;
+use crate::context::instantiation::InstantiationTable;
 
 pub mod instantiation;
 
 #[derive(Debug, Clone)]
-pub struct Generator {
+pub struct Context {
     inst_table: InstantiationTable,
     engine: TrackedEngine,
 }
 
-impl Generator {
+impl Context {
     pub fn new(engine: TrackedEngine) -> Self {
         Self { inst_table: InstantiationTable::default(), engine }
     }
 }
 
-impl Generator {
+impl Context {
     pub fn intern<T>(&self, value: T) -> Interned<T>
     where
         T: StableHash + Identifiable + Send + Sync + 'static,
