@@ -72,7 +72,7 @@ impl Context {
 
             self.write_cty(param_ty, buf)?;
 
-            write!(buf, " param_{:X}", param_id.index())?;
+            write!(buf, " ray_param_{:X}", param_id.index())?;
 
             first = false;
         }

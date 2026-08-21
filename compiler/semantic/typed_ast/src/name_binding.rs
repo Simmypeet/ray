@@ -40,6 +40,9 @@ impl NameBinding {
 
     #[must_use]
     pub const fn is_mutable(&self) -> bool { self.mutable }
+
+    #[must_use]
+    pub const fn source(&self) -> &Source { &self.source }
 }
 
 impl MutSubstitutable for NameBinding {
