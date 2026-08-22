@@ -4,8 +4,8 @@ use rayc_typed_ast::typed_expr::{TypedExprID, call::Call};
 
 use crate::{
     context::Context,
-    expr_ctx::ExprCtx,
     expression::Generate,
+    function_ctx::FunctionCtx,
     writer::{EnclosingPair, Writer},
 };
 
@@ -14,7 +14,7 @@ impl Generate<Call> for Writer<'_> {
         &mut self,
         expr: &Call,
         _: TypedExprID,
-        expr_ctx: &ExprCtx,
+        function_ctx: &FunctionCtx,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
         let name = ctx.get_def_name(expr.function_id()).await;
@@ -24,7 +24,7 @@ impl Generate<Call> for Writer<'_> {
             EnclosingPair::Parens,
             expr.arguments().iter().copied(),
             ", ",
-            async |writer, argument| writer.generate_typed_expr(argument, expr_ctx, ctx).await,
+            async |writer, argument| writer.generate_typed_expr(argument, function_ctx, ctx).await,
         ))
         .await
     }

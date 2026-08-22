@@ -5,17 +5,17 @@ use rayc_typed_ast::{
     typed_expr::{TypedExprID, identifier::Identifier},
 };
 
-use crate::{context::Context, expr_ctx::ExprCtx, expression::Generate, writer::Writer};
+use crate::{context::Context, expression::Generate, function_ctx::FunctionCtx, writer::Writer};
 
 impl Generate<Identifier> for Writer<'_> {
     async fn generate(
         &mut self,
         expr: &Identifier,
         _: TypedExprID,
-        expr_ctx: &ExprCtx,
+        function_ctx: &FunctionCtx,
         _: &mut Context,
     ) -> std::io::Result<()> {
-        match expr_ctx.get_name_binding(expr.name_binding()).source() {
+        match function_ctx.get_name_binding(expr.name_binding()).source() {
             Source::Variable(id) => {
                 write!(self, "ray_var_{:X}", id.index())
             }

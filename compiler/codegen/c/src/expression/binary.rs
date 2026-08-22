@@ -7,8 +7,8 @@ use rayc_typed_ast::typed_expr::{
 
 use crate::{
     context::Context,
-    expr_ctx::ExprCtx,
     expression::Generate,
+    function_ctx::FunctionCtx,
     writer::{EnclosingPair, Writer},
 };
 
@@ -17,7 +17,7 @@ impl Generate<Binary> for Writer<'_> {
         &mut self,
         expr: &Binary,
         _: TypedExprID,
-        expr_ctx: &ExprCtx,
+        function_ctx: &FunctionCtx,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
         let operator = match expr.operator() {
@@ -31,9 +31,9 @@ impl Generate<Binary> for Writer<'_> {
         };
 
         Box::pin(self.write_enclosing_pair(EnclosingPair::Parens, async |writer| {
-            writer.generate_typed_expr(expr.left(), expr_ctx, ctx).await?;
+            writer.generate_typed_expr(expr.left(), function_ctx, ctx).await?;
             write!(writer, "{operator}")?;
-            writer.generate_typed_expr(expr.right(), expr_ctx, ctx).await
+            writer.generate_typed_expr(expr.right(), function_ctx, ctx).await
         }))
         .await
     }

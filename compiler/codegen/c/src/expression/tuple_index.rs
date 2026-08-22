@@ -4,8 +4,8 @@ use rayc_typed_ast::typed_expr::{TypedExprID, tuple_index::TupleIndex};
 
 use crate::{
     context::Context,
-    expr_ctx::ExprCtx,
     expression::Generate,
+    function_ctx::FunctionCtx,
     writer::{EnclosingPair, Writer},
 };
 
@@ -14,11 +14,11 @@ impl Generate<TupleIndex> for Writer<'_> {
         &mut self,
         expr: &TupleIndex,
         _: TypedExprID,
-        expr_ctx: &ExprCtx,
+        function_ctx: &FunctionCtx,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
         Box::pin(self.write_enclosing_pair(EnclosingPair::Parens, async |writer| {
-            writer.generate_typed_expr(expr.operand(), expr_ctx, ctx).await
+            writer.generate_typed_expr(expr.operand(), function_ctx, ctx).await
         }))
         .await?;
 

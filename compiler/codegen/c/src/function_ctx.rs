@@ -3,17 +3,26 @@ use rayc_type::ty::Ty;
 use rayc_typed_ast::{
     function::Function,
     name_binding::{NameBinding, NameBindingID},
+    statement::Statement,
     typed_expr::{TypedExpr, TypedExprID},
+    variable::{Variable, VariableID},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExprCtx {
+pub struct FunctionCtx {
     func: Interned<Function>,
 }
 
-impl ExprCtx {
+impl FunctionCtx {
     #[must_use]
     pub const fn new(func: Interned<Function>) -> Self { Self { func } }
+
+    pub fn statements(&self) -> impl Iterator<Item = &Statement> { self.func.statements() }
+
+    #[must_use]
+    pub fn get_variable(&self, variable_id: VariableID) -> &Variable {
+        self.func.get_variable(variable_id)
+    }
 
     #[must_use]
     pub fn get_name_binding(&self, name_binding_id: NameBindingID) -> &NameBinding {
