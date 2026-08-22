@@ -30,8 +30,7 @@ impl FunctionLayout {
             })
             .collect();
 
-        let mut variables: Vec<_> = function.variables().map(|(id, _)| id).collect();
-        variables.sort_unstable_by_key(VariableID::index);
+        let variables: Vec<_> = function.variables().map(|(id, _)| id).collect();
 
         Self { reachables, variables, phis }
     }
