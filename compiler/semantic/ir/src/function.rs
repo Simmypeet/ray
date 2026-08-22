@@ -1,4 +1,4 @@
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     address::Address,
@@ -7,7 +7,7 @@ use crate::{
     variable::{Variable, VariableID, VariableMap},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
 pub struct Function {
     cfg: Cfg,
     variable_map: VariableMap,
@@ -25,6 +25,14 @@ impl Function {
 
     #[must_use]
     pub fn get_variable(&self, id: VariableID) -> &Variable { self.variable_map.get_variable(id) }
+
+    /// Iterates over function-local storage and its IDs.
+    ///
+    /// The iteration order is not stable.
+    #[must_use]
+    pub fn variables(&self) -> impl ExactSizeIterator<Item = (VariableID, &Variable)> {
+        self.variable_map.variables()
+    }
 
     #[must_use]
     pub const fn entry_block(&self) -> BlockID { self.cfg.entry_block() }

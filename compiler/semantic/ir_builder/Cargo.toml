@@ -15,6 +15,14 @@ rayc_semantic_element.path = "../semantic_element"
 rayc_typed_ast.path = "../typed_ast"
 rayc_type.path = "../type"
 qbice.workspace = true
+linkme.workspace = true
+
+[dev-dependencies]
+rayc_arena.path = "../../base/arena"
+rayc_source_file.path = "../../base/source_file"
+rayc_symbol.path = "../symbol"
+rayc_target.path = "../../base/target"
+tokio.workspace = true
 
 [lints]
 workspace = true

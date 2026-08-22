@@ -7,7 +7,11 @@ use crate::builder::Builder;
 mod address;
 mod builder;
 mod expression;
+mod query;
 mod statement;
+
+/// Keeps this crate linked so its distributed query registration is retained.
+pub const fn black_box() {}
 
 /// Lowers one typed function into control-flow IR.
 #[must_use]

@@ -38,4 +38,9 @@ impl VariableMap {
     pub fn get_variable(&self, id: VariableID) -> &Variable {
         self.variables.get(id).expect("Variable should exist")
     }
+
+    #[must_use]
+    pub fn variables(&self) -> impl ExactSizeIterator<Item = (VariableID, &Variable)> {
+        self.variables.iter()
+    }
 }

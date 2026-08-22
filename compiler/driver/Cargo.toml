@@ -21,6 +21,7 @@ rayc_source_file_impl.path = "../base/source_file_impl"
 rayc_lexical_impl.path = "../syntax/lexical_impl"
 rayc_syntax_impl.path = "../syntax/syntax_impl"
 rayc_semantic_element_impl.path = "../semantic/semantic_element_impl"
+rayc_ir_builder.path = "../semantic/ir_builder"
 rayc_c.path = "../codegen/c"
 qbice.workspace = true
 linkme.workspace = true

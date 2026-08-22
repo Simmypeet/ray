@@ -1699,6 +1699,7 @@ dependencies = [
  "rayc_diagnostic",
  "rayc_handler",
  "rayc_hash",
+ "rayc_ir_builder",
  "rayc_lexical_impl",
  "rayc_qbice",
  "rayc_semantic_element_impl",
@@ -1767,22 +1768,31 @@ dependencies = [
  "rayc_lexical",
  "rayc_qbice",
  "rayc_semantic_element",
+ "rayc_source_file",
  "rayc_symbol",
+ "rayc_target",
  "rayc_type",
+ "tokio",
 ]
 
 [[package]]
 name = "rayc_ir_builder"
 version = "0.1.0-beta.2"
 dependencies = [
+ "linkme",
  "qbice",
+ "rayc_arena",
  "rayc_hash",
  "rayc_ir",
  "rayc_lexical",
  "rayc_qbice",
  "rayc_semantic_element",
+ "rayc_source_file",
+ "rayc_symbol",
+ "rayc_target",
  "rayc_type",
  "rayc_typed_ast",
+ "tokio",
 ]
 
 [[package]]

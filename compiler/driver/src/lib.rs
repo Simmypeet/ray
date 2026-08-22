@@ -63,6 +63,7 @@ pub async fn run(
     rayc_lexical_impl::black_box();
     rayc_syntax_impl::black_box();
     rayc_semantic_element_impl::black_box();
+    rayc_ir_builder::black_box();
 
     engine.register_program(rayc_qbice::RAY_PROGRAM);
 
