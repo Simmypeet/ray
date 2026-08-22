@@ -1772,6 +1772,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayc_ir_builder"
+version = "0.1.0-beta.2"
+dependencies = [
+ "qbice",
+ "rayc_hash",
+ "rayc_ir",
+ "rayc_lexical",
+ "rayc_qbice",
+ "rayc_semantic_element",
+ "rayc_type",
+ "rayc_typed_ast",
+]
+
+[[package]]
 name = "rayc_lexical"
 version = "0.1.0-beta.2"
 dependencies = [
