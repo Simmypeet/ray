@@ -94,7 +94,7 @@ impl Writer<'_> {
 
             for block_id in layout.reachable_blocks() {
                 writer
-                    .write_indent_line(async |writer| {
+                    .write_outdented_line(async |writer| {
                         write!(writer, "{}:", Identifier::block(block_id))
                     })
                     .await?;

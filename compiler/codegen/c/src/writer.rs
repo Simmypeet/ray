@@ -35,19 +35,30 @@ impl<'w> Writer<'w> {
 }
 
 impl Writer<'_> {
-    fn write_indent(&mut self) -> io::Result<()> {
-        for _ in 0..self.indent_step {
+    fn write_indent_steps(&mut self, steps: usize) -> io::Result<()> {
+        for _ in 0..steps {
             self.write_all(INDENT.as_bytes())?;
         }
 
         Ok(())
     }
 
+    fn write_indent(&mut self) -> io::Result<()> { self.write_indent_steps(self.indent_step) }
+
     pub(crate) async fn write_indent_line(
         &mut self,
         write_line: impl AsyncFnOnce(&mut Writer) -> io::Result<()>,
     ) -> io::Result<()> {
         self.write_indent()?;
+        write_line(self).await?;
+        writeln!(self)
+    }
+
+    pub(crate) async fn write_outdented_line(
+        &mut self,
+        write_line: impl AsyncFnOnce(&mut Writer) -> io::Result<()>,
+    ) -> io::Result<()> {
+        self.write_indent_steps(self.indent_step.saturating_sub(1))?;
         write_line(self).await?;
         writeln!(self)
     }
@@ -111,5 +122,26 @@ impl Writer<'_> {
             Ok(())
         })
         .await
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn outdented_line_uses_one_less_indentation_level() {
+        let mut output = Vec::new();
+        let mut writer = Writer::new(&mut output);
+
+        writer
+            .write_braced_block(async |writer| {
+                writer.write_outdented_line(async |writer| write!(writer, "label:")).await?;
+                writer.write_indent_line(async |writer| write!(writer, "statement;")).await
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(String::from_utf8(output).unwrap(), "{\nlabel:\n    statement;\n}");
     }
 }
