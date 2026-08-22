@@ -1,25 +1,23 @@
-use qbice::storage::intern::Interned;
 use rayc_ir::expression::{
     Expression, ExpressionID, ExpressionKind, literal::Literal as IrLiteral,
 };
-use rayc_lexical::tree::RelativeSpan;
-use rayc_type::ty::Ty;
-use rayc_typed_ast::{
-    function::Function as TypedFunction,
-    typed_expr::{TypedExprID, literal::Literal},
+use rayc_typed_ast::{function::Function as TypedFunction, typed_expr::literal::Literal};
+
+use crate::{
+    builder::Builder,
+    expression::{LowerExpression, TypedExprWithID},
 };
 
-use crate::{builder::Builder, expression::LowerExpression};
-
-impl LowerExpression<Literal> for Builder {
+impl<'a> LowerExpression<TypedExprWithID<&'a Literal>> for Builder {
     fn lower_expression(
         &mut self,
-        _typed_function: &TypedFunction,
-        _expression_id: TypedExprID,
-        literal: &Literal,
-        span: RelativeSpan,
-        ty: Interned<Ty>,
+        expression: TypedExprWithID<&'a Literal>,
+        typed_function: &TypedFunction,
     ) -> ExpressionID {
+        let typed_expression = typed_function.get_expression(expression.id());
+        let span = typed_expression.span();
+        let ty = typed_expression.ty().clone();
+        let literal = expression.node();
         let literal = match literal {
             Literal::Numeric(value) => IrLiteral::Numeric(*value),
             Literal::Bool(value) => IrLiteral::Bool(*value),

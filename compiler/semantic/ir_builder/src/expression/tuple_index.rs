@@ -7,17 +7,22 @@ use rayc_typed_ast::{
     typed_expr::{LvalueClassification, TypedExprID, tuple_index::TupleIndex},
 };
 
-use crate::{builder::Builder, expression::LowerExpression};
+use crate::{
+    builder::Builder,
+    expression::{LowerExpression, TypedExprWithID},
+};
 
-impl LowerExpression<TupleIndex> for Builder {
+impl<'a> LowerExpression<TypedExprWithID<&'a TupleIndex>> for Builder {
     fn lower_expression(
         &mut self,
+        expression: TypedExprWithID<&'a TupleIndex>,
         typed_function: &TypedFunction,
-        expression_id: TypedExprID,
-        tuple_index: &TupleIndex,
-        span: RelativeSpan,
-        ty: Interned<Ty>,
     ) -> ExpressionID {
+        let typed_expression = typed_function.get_expression(expression.id());
+        let span = typed_expression.span();
+        let ty = typed_expression.ty().clone();
+        let tuple_index = expression.node();
+        let expression_id = expression.id();
         match typed_function.classify_lvalue(expression_id) {
             LvalueClassification::Lvalue(_) => {
                 emit_load(self, typed_function, expression_id, span, ty)

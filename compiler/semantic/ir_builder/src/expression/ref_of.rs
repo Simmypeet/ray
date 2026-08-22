@@ -1,23 +1,21 @@
-use qbice::storage::intern::Interned;
 use rayc_ir::expression::{Expression, ExpressionID, ExpressionKind, ref_of::RefOf as IrRefOf};
-use rayc_lexical::tree::RelativeSpan;
-use rayc_type::ty::Ty;
-use rayc_typed_ast::{
-    function::Function as TypedFunction,
-    typed_expr::{TypedExprID, ref_of::RefOf},
+use rayc_typed_ast::{function::Function as TypedFunction, typed_expr::ref_of::RefOf};
+
+use crate::{
+    builder::Builder,
+    expression::{LowerExpression, TypedExprWithID},
 };
 
-use crate::{builder::Builder, expression::LowerExpression};
-
-impl LowerExpression<RefOf> for Builder {
+impl<'a> LowerExpression<TypedExprWithID<&'a RefOf>> for Builder {
     fn lower_expression(
         &mut self,
+        expression: TypedExprWithID<&'a RefOf>,
         typed_function: &TypedFunction,
-        _expression_id: TypedExprID,
-        reference: &RefOf,
-        span: RelativeSpan,
-        ty: Interned<Ty>,
     ) -> ExpressionID {
+        let typed_expression = typed_function.get_expression(expression.id());
+        let span = typed_expression.span();
+        let ty = typed_expression.ty().clone();
+        let reference = expression.node();
         let address = self.lower_address_by_id(typed_function, reference.pointee());
         self.emit_expression(Expression::new(
             ExpressionKind::RefOf(IrRefOf::new(address)),

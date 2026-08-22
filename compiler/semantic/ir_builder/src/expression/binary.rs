@@ -12,23 +12,24 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{
     function::Function as TypedFunction,
-    typed_expr::{
-        TypedExprID,
-        binary::{Binary, BinaryOp},
-    },
+    typed_expr::binary::{Binary, BinaryOp},
 };
 
-use crate::{builder::Builder, expression::LowerExpression};
+use crate::{
+    builder::Builder,
+    expression::{LowerExpression, TypedExprWithID},
+};
 
-impl LowerExpression<Binary> for Builder {
+impl<'a> LowerExpression<TypedExprWithID<&'a Binary>> for Builder {
     fn lower_expression(
         &mut self,
+        expression: TypedExprWithID<&'a Binary>,
         typed_function: &TypedFunction,
-        _expression_id: TypedExprID,
-        binary: &Binary,
-        span: RelativeSpan,
-        ty: Interned<Ty>,
     ) -> ExpressionID {
+        let typed_expression = typed_function.get_expression(expression.id());
+        let span = typed_expression.span();
+        let ty = typed_expression.ty().clone();
+        let binary = expression.node();
         match binary.operator() {
             BinaryOp::Assign => lower_assignment(self, typed_function, binary),
             BinaryOp::Plus => {
