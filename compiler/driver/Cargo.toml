@@ -14,7 +14,6 @@ rayc_diagnostic = { path = "../base/diagnostic" }
 rayc_handler = { path = "../base/handler" }
 rayc_target = { path = "../base/target" }
 rayc_hash = { path = "../base/hash" }
-rayc_symbol = { path = "../semantic/symbol" }
 rayc_symbol_impl = { path = "../semantic/symbol_impl" }
 rayc_check = { path = "../semantic/check" }
 rayc_qbice.path = "../base/qbice"

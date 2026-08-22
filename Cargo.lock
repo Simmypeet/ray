@@ -1704,7 +1704,6 @@ dependencies = [
  "rayc_semantic_element_impl",
  "rayc_source_file",
  "rayc_source_file_impl",
- "rayc_symbol",
  "rayc_symbol_impl",
  "rayc_syntax_impl",
  "rayc_target",
