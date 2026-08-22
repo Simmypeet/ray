@@ -45,10 +45,12 @@ pub struct CDefID(u128);
 
 impl CDefID {
     fn for_cdef(cdef: &CDef) -> Self { Self(stable_codegen_id("rayc_c::CDefID:v1", cdef)) }
+
+    pub(crate) const fn base62(self) -> Base62 { Base62(self.0) }
 }
 
-impl fmt::UpperHex for CDefID {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::UpperHex::fmt(&self.0, f) }
+impl fmt::Display for CDefID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.base62().fmt(f) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Builder)]
@@ -73,10 +75,36 @@ pub struct CTupleID(u128);
 
 impl CTupleID {
     fn for_ctuple(tuple: &CTuple) -> Self { Self(stable_codegen_id("rayc_c::CTupleID:v1", tuple)) }
+
+    pub(crate) const fn base62(self) -> Base62 { Base62(self.0) }
 }
 
-impl fmt::UpperHex for CTupleID {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::UpperHex::fmt(&self.0, f) }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Base62(u128);
+
+impl fmt::Display for Base62 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const ALPHABET: &[u8; 62] =
+            b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+        const MAX_ENCODED_LEN: usize = 22;
+
+        let mut value = self.0;
+        let mut encoded = [0; MAX_ENCODED_LEN];
+        let mut start = encoded.len();
+
+        loop {
+            start -= 1;
+            encoded[start] = ALPHABET[(value % 62) as usize];
+            value /= 62;
+
+            if value == 0 {
+                break;
+            }
+        }
+
+        let encoded = str::from_utf8(&encoded[start..]).map_err(|_| fmt::Error)?;
+        f.write_str(encoded)
+    }
 }
 
 fn stable_codegen_id<T: StableHash>(domain: &'static str, value: &T) -> u128 {
@@ -155,7 +183,7 @@ impl Context {
     }
 
     pub fn write_ctuple_t(&self, id: CTupleID, buf: &mut impl io::Write) -> std::io::Result<()> {
-        write!(buf, "RayTuple{id:X}_t")
+        write!(buf, "RayTuple_{}_t", id.base62())
     }
 
     pub fn write_ctuple_struct(
@@ -163,7 +191,7 @@ impl Context {
         id: CTupleID,
         buf: &mut impl io::Write,
     ) -> std::io::Result<()> {
-        write!(buf, "RayTuple{id:X}")
+        write!(buf, "RayTuple_{}", id.base62())
     }
 
     pub fn cdef_decl_ids(&self) -> impl Iterator<Item = CDefID> + '_ {
@@ -180,5 +208,110 @@ impl Context {
 
     pub fn get_ctuple_decl(&self, id: CTupleID) -> &CTupleDecl {
         self.inst_table.tuple_decls.get(&id).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{Base62, CDefID, CTuple, CTupleID};
+    use crate::{
+        context::Context,
+        ty::{CTy, Primitive},
+    };
+
+    async fn context_with_int32_tuple() -> (Context, CTupleID) {
+        let mut context = Context::new(rayc_qbice::create_minimal_engine().await);
+        let int32 = context.intern(CTy::Primitive(Primitive::Int32));
+        let args = context.intern_unsized([int32]);
+        let id = context.get_ctuple_id(CTuple::builder().args(args).build());
+
+        (context, id)
+    }
+
+    #[test]
+    fn base62_uses_canonical_encoding() {
+        let cases = [
+            (0, "0"),
+            (1, "1"),
+            (9, "9"),
+            (10, "A"),
+            (35, "Z"),
+            (36, "a"),
+            (61, "z"),
+            (62, "10"),
+            (62_u128.pow(2) - 1, "zz"),
+            (62_u128.pow(2), "100"),
+            (u128::MAX, "7n42DGM5Tflk9n8mt7Fhc7"),
+        ];
+
+        for (value, expected) in cases {
+            assert_eq!(Base62(value).to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn base62_output_is_a_portable_c_identifier_suffix() {
+        let values = [0, 1, 61, 62, 62_u128.pow(2) - 1, 62_u128.pow(2), u64::MAX.into(), u128::MAX];
+
+        for value in values {
+            let encoded = Base62(value).to_string();
+
+            assert!(!encoded.is_empty());
+            assert!(encoded.len() <= 22);
+            assert!(encoded.bytes().all(|byte| byte.is_ascii_alphanumeric()));
+
+            if value == 0 {
+                assert_eq!(encoded, "0");
+            } else {
+                assert!(!encoded.starts_with('0'));
+            }
+        }
+    }
+
+    #[test]
+    fn instantiation_ids_share_base62_formatting() {
+        let value = u128::MAX;
+
+        assert_eq!(CDefID(value).base62().to_string(), "7n42DGM5Tflk9n8mt7Fhc7");
+        assert_eq!(CTupleID(value).base62().to_string(), "7n42DGM5Tflk9n8mt7Fhc7");
+        assert_eq!(CDefID(value).to_string(), "7n42DGM5Tflk9n8mt7Fhc7");
+    }
+
+    #[tokio::test]
+    async fn tuple_names_are_stable_portable_c_identifiers() {
+        let (first_context, first_id) = context_with_int32_tuple().await;
+        let (second_context, second_id) = context_with_int32_tuple().await;
+        let mut struct_name = Vec::new();
+        let mut type_name = Vec::new();
+        let mut second_struct_name = Vec::new();
+
+        first_context.write_ctuple_struct(first_id, &mut struct_name).unwrap();
+        first_context.write_ctuple_t(first_id, &mut type_name).unwrap();
+        second_context.write_ctuple_struct(second_id, &mut second_struct_name).unwrap();
+
+        let struct_name = String::from_utf8(struct_name).unwrap();
+        let type_name = String::from_utf8(type_name).unwrap();
+        let second_struct_name = String::from_utf8(second_struct_name).unwrap();
+
+        assert_eq!(first_id, second_id);
+        assert_eq!(struct_name, second_struct_name);
+        assert!(struct_name.starts_with("RayTuple_"));
+        assert!(type_name.starts_with("RayTuple_"));
+        assert!(type_name.ends_with("_t"));
+
+        for name in [struct_name, type_name] {
+            let mut bytes = name.bytes();
+            assert!(bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_'));
+            assert!(bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'));
+        }
+    }
+
+    #[test]
+    fn base62_rendering_does_not_define_numeric_order() {
+        let mut ids = [CTupleID(62), CTupleID(61)];
+        ids.sort_unstable();
+
+        assert_eq!(ids, [CTupleID(61), CTupleID(62)]);
+        assert_eq!(ids.map(|id| id.base62().to_string()), ["z", "10"]);
     }
 }

@@ -17,5 +17,8 @@ rayc_semantic_element.path = "../../semantic/semantic_element"
 qbice.workspace = true
 bon.workspace = true
 
+[dev-dependencies]
+tokio.workspace = true
+
 [lints]
 workspace = true
