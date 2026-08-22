@@ -70,6 +70,18 @@ impl TAstBuilder {
 static BUILD_TAST_EXECUTOR: Registration<Config> =
     Registration::new::<BuildTAst, BuildTastExecutor>();
 
+#[executor(config = Config)]
+async fn typed_ast_executor(
+    &rayc_typed_ast::Key { def_id }: &rayc_typed_ast::Key,
+    engine: &TrackedEngine,
+) -> Interned<Function> {
+    engine.query(&BuildTAst { def_id }).await.0
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static TYPED_AST_EXECUTOR: Registration<Config> =
+    Registration::new::<rayc_typed_ast::Key, TypedAstExecutor>();
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
 )]
