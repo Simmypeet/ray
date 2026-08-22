@@ -1,19 +1,19 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{fs::File, io::Write, process::ExitCode, sync::Arc};
+use std::{io::Write, process::ExitCode, sync::Arc};
 
 use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
-use rayc_c::CTranslationUnitOptions;
 use rayc_diagnostic::Report;
-use rayc_qbice::{Engine, InMemoryFactory, IncrementalStorageEngine, TrackedEngine};
-use rayc_symbol::GlobalSymbolID;
+use rayc_qbice::{Engine, InMemoryFactory, IncrementalStorageEngine};
 use rayc_symbol_impl::source_map::create_source_map;
 use rayc_target::{Arguments, TargetID};
 use tracing::instrument;
 
-use crate::{entry_point::validate_entry_point, term::ReportTerm};
+use crate::{artifact::execute, entry_point::validate_entry_point, term::ReportTerm};
 
+mod artifact;
 mod entry_point;
+mod native;
 pub mod term;
 
 async fn create_engine(argument: &Arguments, report_term: &mut ReportTerm<'_>) -> Option<Engine> {
@@ -163,6 +163,10 @@ pub async fn run(
         return ExitCode::FAILURE;
     }
 
+    if argument.is_check_only() {
+        return ExitCode::SUCCESS;
+    }
+
     let entry_point = if argument.requires_entry_point() {
         match validate_entry_point(&tracked_engine, local_target_id).await {
             Ok(entry_point) => Some(entry_point),
@@ -176,32 +180,11 @@ pub async fn run(
         None
     };
 
-    write_c(&tracked_engine, local_target_id, entry_point, &mut report_term).await
-}
-
-async fn write_c(
-    engine: &TrackedEngine,
-    target_id: TargetID,
-    entry_point: Option<GlobalSymbolID>,
-    report_term: &mut ReportTerm<'_>,
-) -> ExitCode {
-    let mut file = match File::create_new("output.c") {
-        Ok(file) => file,
+    match execute(&tracked_engine, local_target_id, &argument, entry_point).await {
+        Ok(exit_code) => exit_code,
         Err(error) => {
-            report_term.report_simple_error(format!("Failed to create output.c: {error}"));
-            return ExitCode::FAILURE;
+            report_term.report_simple_error(error.to_string());
+            ExitCode::FAILURE
         }
-    };
-
-    let options = entry_point
-        .map_or_else(CTranslationUnitOptions::ordinary, CTranslationUnitOptions::executable);
-
-    if let Err(error) =
-        rayc_c::write_c_translation_unit(engine, target_id, options, &mut file).await
-    {
-        report_term.report_simple_error(format!("Failed to generate C output: {error}"));
-        return ExitCode::FAILURE;
     }
-
-    ExitCode::SUCCESS
 }

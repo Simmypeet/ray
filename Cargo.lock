@@ -1714,6 +1714,7 @@ dependencies = [
  "rayc_syntax_impl",
  "rayc_target",
  "rayc_type",
+ "tempfile",
  "tracing",
 ]
 
