@@ -52,6 +52,7 @@ async fn substitution_rewrites_all_types_in_a_function() {
     function.apply_mut_subst(&subst, &engine);
 
     assert_eq!(function.get_variable(variable_id).ty(), &int32);
+    assert_eq!(function.get_variable(variable_id).span(), span());
     assert_eq!(function.get_name_binding(name_binding_id).ty(), &pointer_to_int32);
     assert_eq!(function.get_expression(expression_id).ty(), &pointer_to_int32);
 }

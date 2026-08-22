@@ -21,6 +21,9 @@ impl Variable {
 
     #[must_use]
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
+
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
 impl MutSubstitutable for Variable {
