@@ -16,28 +16,12 @@ mod paren;
 mod ref_of;
 mod tuple;
 mod tuple_index;
+mod typed_expr_id;
+
+pub(crate) use typed_expr_id::TypedExprWithID;
 
 pub(crate) trait LowerExpression<S> {
     fn lower_expression(&mut self, expression: S, typed_function: &TypedFunction) -> ExpressionID;
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct TypedExprWithID<E> {
-    node: E,
-    id: TypedExprID,
-}
-
-impl<E> TypedExprWithID<E> {
-    pub(crate) const fn new(node: E, id: TypedExprID) -> Self { Self { node, id } }
-
-    pub(crate) const fn id(&self) -> TypedExprID { self.id }
-
-    pub(crate) const fn node(&self) -> E
-    where
-        E: Copy,
-    {
-        self.node
-    }
 }
 
 impl Builder {
