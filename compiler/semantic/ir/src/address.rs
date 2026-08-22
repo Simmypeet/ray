@@ -3,12 +3,13 @@ use rayc_arena::ID;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::Parameter;
 
-use crate::variable::Variable;
+use crate::{expression::Expression, variable::Variable};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum AddressRoot {
     Variable(ID<Variable>),
     Parameter(ID<Parameter>),
+    Deref(ID<Expression>),
 }
 
 #[derive(
