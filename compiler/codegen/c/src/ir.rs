@@ -2,7 +2,7 @@ use std::io::Write;
 
 use rayc_hash::FxHashSet;
 use rayc_ir::{
-    cfg::{BlockID, Instruction, Terminator},
+    cfg::{BlockID, Instruction, Reachables, Terminator},
     expression::{ExpressionID, ExpressionKind},
     function::Function,
     variable::VariableID,
@@ -15,76 +15,31 @@ use crate::{
 
 #[derive(Debug)]
 struct FunctionLayout {
-    reachable_blocks: Vec<BlockID>,
-    reachable_expressions: Vec<ExpressionID>,
+    reachables: Reachables,
     variables: Vec<VariableID>,
     phis: FxHashSet<ExpressionID>,
 }
 
 impl FunctionLayout {
     fn new(function: &Function) -> Self {
-        function.validate().unwrap_or_else(|error| {
-            panic!("invalid IR reached C codegen: {error:?}");
-        });
-
-        let mut pending = vec![function.entry_block()];
-        let mut reachable_blocks = FxHashSet::default();
-
-        while let Some(block_id) = pending.pop() {
-            if !reachable_blocks.insert(block_id) {
-                continue;
-            }
-
-            match function
-                .block_terminator(block_id)
-                .expect("validated reachable IR block should have a terminator")
-            {
-                Terminator::Jump(successor) => pending.push(*successor),
-                Terminator::Conditional(conditional) => {
-                    pending.push(conditional.then_block());
-                    pending.push(conditional.else_block());
-                }
-                Terminator::Return(_) => {}
-            }
-        }
-
-        let mut blocks: Vec<_> = reachable_blocks.into_iter().collect();
-        blocks.sort_unstable_by_key(BlockID::index);
-
-        let mut reachable_expressions = FxHashSet::default();
-        let mut phis = FxHashSet::default();
-        for block_id in &blocks {
-            for instruction in function.block_instructions(*block_id) {
-                let Instruction::Expression(expression_id) = instruction else {
-                    continue;
-                };
-
-                if reachable_expressions.insert(*expression_id)
-                    && matches!(
-                        function.get_expression(*expression_id).kind(),
-                        ExpressionKind::Phi(_)
-                    )
-                {
-                    phis.insert(*expression_id);
-                }
-            }
-        }
-
-        let mut expressions: Vec<_> = reachable_expressions.into_iter().collect();
-        expressions.sort_unstable_by_key(ExpressionID::index);
+        let reachables = function.reachables();
+        let phis = reachables
+            .expressions()
+            .filter(|expression_id| {
+                matches!(function.get_expression(*expression_id).kind(), ExpressionKind::Phi(_))
+            })
+            .collect();
 
         let mut variables: Vec<_> = function.variables().map(|(id, _)| id).collect();
         variables.sort_unstable_by_key(VariableID::index);
 
-        Self { reachable_blocks: blocks, reachable_expressions: expressions, variables, phis }
+        Self { reachables, variables, phis }
     }
 
-    fn reachable_blocks(&self) -> impl Iterator<Item = BlockID> + '_ {
-        self.reachable_blocks.iter().copied()
-    }
+    fn reachable_blocks(&self) -> impl Iterator<Item = BlockID> + '_ { self.reachables.blocks() }
 
     fn reachable_expressions(&self) -> impl Iterator<Item = ExpressionID> + '_ {
-        self.reachable_expressions.iter().copied()
+        self.reachables.expressions()
     }
 
     fn variables(&self) -> impl Iterator<Item = VariableID> + '_ { self.variables.iter().copied() }
@@ -153,7 +108,7 @@ impl Writer<'_> {
                         block_id,
                         function
                             .block_terminator(block_id)
-                            .expect("validated reachable IR block should have a terminator"),
+                            .expect("reachable IR block should have a terminator"),
                         function,
                         ctx,
                     )
@@ -748,14 +703,15 @@ mod test {
         let body = render_short_circuit(true).await;
         assert_eq!(
             body,
-            "{\n    bool ray_expr_0;\n    bool ray_expr_1;\n    bool ray_expr_2;\n    bool \
+            "{\n    bool ray_expr_0;\n    bool ray_expr_2;\n    bool ray_expr_1;\n    bool \
              ray_expr_3;\n    ray_block_0:\n    ray_expr_0 = false;\n    if (ray_expr_0) \
              {\n        goto ray_block_2;\n    } else {\n        goto ray_block_1;\n    }\n    \
-             ray_block_1:\n    ray_expr_1 = ray_rhs();\n    {\n        bool ray_phi_in_1_3_3 \
-             = ray_expr_1;\n        ray_expr_3 = ray_phi_in_1_3_3;\n        goto \
-             ray_block_3;\n    }\n    ray_block_2:\n    ray_expr_2 = true;\n    {\n        bool \
+             ray_block_2:\n    ray_expr_2 = true;\n    {\n        bool \
              ray_phi_in_2_3_3 = ray_expr_2;\n        ray_expr_3 = \
-             ray_phi_in_2_3_3;\n        goto ray_block_3;\n    }\n    ray_block_3:\n    \
+             ray_phi_in_2_3_3;\n        goto ray_block_3;\n    }\n    ray_block_1:\n    \
+             ray_expr_1 = ray_rhs();\n    {\n        bool ray_phi_in_1_3_3 = \
+             ray_expr_1;\n        ray_expr_3 = ray_phi_in_1_3_3;\n        goto \
+             ray_block_3;\n    }\n    ray_block_3:\n    \
              return ray_expr_3;\n}"
         );
         assert_eq!(body.matches("ray_rhs()").count(), 1);

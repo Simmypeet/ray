@@ -13,7 +13,6 @@ async fn ir_executor(
 ) -> Interned<Function> {
     let typed_function = engine.get_typed_ast(def_id).await;
     let function = lower_function(engine, &typed_function);
-    function.validate().expect("queried IR should be structurally valid");
     engine.intern(function)
 }
 
@@ -100,8 +99,6 @@ mod test {
 
         assert_eq!(first, second);
         assert!(std::ptr::eq(first.as_ref(), second.as_ref()));
-        assert_eq!(first.validate(), Ok(()));
-
         let mut pending = vec![first.entry_block()];
         let mut visited = Vec::new();
         let mut found_phi = false;

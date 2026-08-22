@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use qbice::{Decode, Encode, StableHash};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashSet;
@@ -77,19 +79,30 @@ pub enum Terminator {
     Return(Option<ExpressionID>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ValidationError {
-    InvalidEntryBlock(BlockID),
-    InvalidSuccessor { block: BlockID, successor: BlockID },
-    UnterminatedBlock(BlockID),
+/// The blocks and expression instructions reachable from a control-flow
+/// graph's entry block, in breadth-first visit order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reachables {
+    reachable_blocks: Vec<BlockID>,
+    reachable_expressions: Vec<ExpressionID>,
+}
+
+impl Reachables {
+    #[must_use]
+    pub fn blocks(&self) -> impl ExactSizeIterator<Item = BlockID> + '_ {
+        self.reachable_blocks.iter().copied()
+    }
+
+    #[must_use]
+    pub fn expressions(&self) -> impl ExactSizeIterator<Item = ExpressionID> + '_ {
+        self.reachable_expressions.iter().copied()
+    }
 }
 
 /// A function's control-flow graph.
 ///
-/// Every block reachable from the entry block must have exactly one terminator
-/// before the graph is considered complete. [`Cfg::validate`] checks this
-/// requirement and verifies that reachable successors identify blocks in this
-/// graph.
+/// Every block reachable from the entry block is expected to have exactly one
+/// terminator whose successors identify blocks in this graph.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct Cfg {
     blocks: Arena<Block>,
@@ -142,50 +155,96 @@ impl Cfg {
         self.blocks.get(block_id).expect("Block should exist").terminator.as_ref()
     }
 
-    /// Checks the structural invariants required of a completed graph.
-    pub fn validate(&self) -> Result<(), ValidationError> {
-        if !self.blocks.contains_id(self.entry_block) {
-            return Err(ValidationError::InvalidEntryBlock(self.entry_block));
-        }
-
-        let mut pending = vec![self.entry_block];
-        let mut visited = FxHashSet::default();
-        while let Some(block_id) = pending.pop() {
-            if !visited.insert(block_id) {
+    /// Calculates the blocks and expression instructions reachable from the
+    /// entry block.
+    #[must_use]
+    pub fn reachables(&self) -> Reachables {
+        let mut pending = VecDeque::from([self.entry_block]);
+        let mut visited_blocks = FxHashSet::default();
+        let mut visited_expressions = FxHashSet::default();
+        let mut reachable_blocks = Vec::new();
+        let mut reachable_expressions = Vec::new();
+        while let Some(block_id) = pending.pop_front() {
+            if !visited_blocks.insert(block_id) {
                 continue;
             }
+            reachable_blocks.push(block_id);
 
-            let block = self.blocks.get(block_id).expect("Visited block should exist");
+            let block = self.blocks.get(block_id).expect("Reachable block should exist");
+            for instruction in &block.instructions {
+                if let Instruction::Expression(expression_id) = instruction
+                    && visited_expressions.insert(*expression_id)
+                {
+                    reachable_expressions.push(*expression_id);
+                }
+            }
             let terminator =
-                block.terminator.as_ref().ok_or(ValidationError::UnterminatedBlock(block_id))?;
+                block.terminator.as_ref().expect("Reachable block should have a terminator");
 
             match terminator {
                 Terminator::Jump(successor) => {
-                    self.validate_successor(block_id, *successor)?;
-                    pending.push(*successor);
+                    pending.push_back(*successor);
                 }
                 Terminator::Conditional(conditional) => {
-                    self.validate_successor(block_id, conditional.then_block)?;
-                    self.validate_successor(block_id, conditional.else_block)?;
-                    pending.push(conditional.then_block);
-                    pending.push(conditional.else_block);
+                    pending.push_back(conditional.then_block);
+                    pending.push_back(conditional.else_block);
                 }
                 Terminator::Return(_) => {}
             }
         }
 
-        Ok(())
+        Reachables { reachable_blocks, reachable_expressions }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn reachables_preserve_breadth_first_order_and_exclude_unreachable_blocks() {
+        let mut cfg = Cfg::new();
+        let entry = cfg.entry_block();
+        let loop_block = cfg.create_block();
+        let exit_block = cfg.create_block();
+        let unreachable_block = cfg.create_block();
+        let repeated_expression = ExpressionID::new(4);
+        let loop_expression = ExpressionID::new(2);
+
+        cfg.push_expression(entry, repeated_expression);
+        cfg.set_terminator(entry, Terminator::Jump(loop_block));
+        cfg.push_expression(loop_block, loop_expression);
+        cfg.push_expression(loop_block, repeated_expression);
+        cfg.set_terminator(
+            loop_block,
+            Terminator::Conditional(Conditional::new(loop_expression, loop_block, exit_block)),
+        );
+        cfg.set_terminator(exit_block, Terminator::Return(Some(repeated_expression)));
+        cfg.push_expression(unreachable_block, ExpressionID::new(1));
+
+        let reachables = cfg.reachables();
+
+        assert_eq!(reachables.blocks().collect::<Vec<_>>(), [entry, loop_block, exit_block]);
+        assert_eq!(reachables.expressions().collect::<Vec<_>>(), [
+            repeated_expression,
+            loop_expression
+        ]);
     }
 
-    fn validate_successor(
-        &self,
-        block: BlockID,
-        successor: BlockID,
-    ) -> Result<(), ValidationError> {
-        if self.blocks.contains_id(successor) {
-            Ok(())
-        } else {
-            Err(ValidationError::InvalidSuccessor { block, successor })
-        }
+    #[test]
+    #[should_panic(expected = "Reachable block should exist")]
+    fn missing_reachable_block_panics() {
+        let mut cfg = Cfg::new();
+        cfg.set_terminator(cfg.entry_block(), Terminator::Jump(BlockID::new(1)));
+
+        let _ = cfg.reachables();
+    }
+
+    #[test]
+    #[should_panic(expected = "Reachable block should have a terminator")]
+    fn unterminated_reachable_block_panics() {
+        let cfg = Cfg::new();
+
+        let _ = cfg.reachables();
     }
 }

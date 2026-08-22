@@ -2,7 +2,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     address::Address,
-    cfg::{BlockID, Cfg, Instruction, Terminator, ValidationError},
+    cfg::{BlockID, Cfg, Instruction, Reachables, Terminator},
     expression::{Expression, ExpressionID, ExpressionMap},
     variable::{Variable, VariableID, VariableMap},
 };
@@ -72,5 +72,6 @@ impl Function {
         self.cfg.terminator(block_id)
     }
 
-    pub fn validate(&self) -> Result<(), ValidationError> { self.cfg.validate() }
+    #[must_use]
+    pub fn reachables(&self) -> Reachables { self.cfg.reachables() }
 }

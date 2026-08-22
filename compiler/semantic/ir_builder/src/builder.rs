@@ -31,7 +31,6 @@ impl Builder {
 
     pub fn lower(mut self, typed_function: &TypedFunction) -> IrFunction {
         self.lower_statements(typed_function);
-        self.function.validate().expect("lowering should produce structurally valid IR");
         self.function
     }
 
