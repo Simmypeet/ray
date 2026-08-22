@@ -13,6 +13,7 @@ rayc_lexical.path = "../../syntax/lexical"
 rayc_type.path = "../type"
 rayc_symbol.path = "../symbol"
 rayc_semantic_element.path = "../semantic_element"
+rayc_hash.path = "../../base/hash"
 qbice.workspace = true
 
 [lints]

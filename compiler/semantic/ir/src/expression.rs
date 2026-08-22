@@ -14,6 +14,9 @@ pub mod load;
 pub mod ref_of;
 pub mod tuple;
 
+/// Identifies an expression value stored in a function's expression arena.
+pub type ExpressionID = ID<Expression>;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum ExpressionKind {
     Error,
@@ -55,11 +58,11 @@ impl ExpressionMap {
     pub fn new() -> Self { Self::default() }
 
     #[must_use]
-    pub fn get_expression(&self, id: ID<Expression>) -> &Expression {
+    pub fn get_expression(&self, id: ExpressionID) -> &Expression {
         self.expressions.get(id).unwrap()
     }
 
-    pub fn insert_expression(&mut self, expression: Expression) -> ID<Expression> {
+    pub fn insert_expression(&mut self, expression: Expression) -> ExpressionID {
         self.expressions.insert(expression)
     }
 }

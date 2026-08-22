@@ -1763,6 +1763,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "qbice",
  "rayc_arena",
+ "rayc_hash",
  "rayc_lexical",
  "rayc_qbice",
  "rayc_semantic_element",
