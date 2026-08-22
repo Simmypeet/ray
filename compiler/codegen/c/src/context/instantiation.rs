@@ -13,7 +13,7 @@ use rayc_semantic_element::{
 };
 use rayc_symbol::GlobalSymbolID;
 
-use crate::{context::Context, identifier::Identifier, ty::CTy};
+use crate::{c_ty::CTy, context::Context, identifier::Identifier};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Builder)]
 pub struct CDef {

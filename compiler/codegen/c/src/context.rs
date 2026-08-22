@@ -51,7 +51,7 @@ impl Context {
     }
 
     pub fn get_unit_ctuple_id(&mut self) -> CTupleID {
-        let args: Interned<[Interned<crate::ty::CTy>]> = self.intern_unsized([]);
+        let args: Interned<[Interned<crate::c_ty::CTy>]> = self.intern_unsized([]);
         self.get_ctuple_id(CTuple::builder().args(args).build())
     }
 }
