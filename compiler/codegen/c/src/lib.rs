@@ -1,4 +1,5 @@
 pub mod context;
+mod expression;
 pub mod function;
 mod ir;
 mod translation_unit;

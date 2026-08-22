@@ -2,9 +2,8 @@ use std::io::Write;
 
 use rayc_hash::FxHashSet;
 use rayc_ir::{
-    address::{Address, AddressRoot, Projection},
     cfg::{BlockID, Instruction, Terminator},
-    expression::{ExpressionID, ExpressionKind, binary::BinaryOp, literal::Literal},
+    expression::{ExpressionID, ExpressionKind},
     function::Function,
     variable::VariableID,
 };
@@ -16,8 +15,8 @@ use crate::{
 
 #[derive(Debug)]
 struct FunctionLayout {
-    blocks: Vec<BlockID>,
-    expressions: Vec<ExpressionID>,
+    reachable_blocks: Vec<BlockID>,
+    reachable_expressions: Vec<ExpressionID>,
     variables: Vec<VariableID>,
     phis: FxHashSet<ExpressionID>,
 }
@@ -77,8 +76,18 @@ impl FunctionLayout {
         let mut variables: Vec<_> = function.variables().map(|(id, _)| id).collect();
         variables.sort_unstable_by_key(VariableID::index);
 
-        Self { blocks, expressions, variables, phis }
+        Self { reachable_blocks: blocks, reachable_expressions: expressions, variables, phis }
     }
+
+    fn reachable_blocks(&self) -> impl Iterator<Item = BlockID> + '_ {
+        self.reachable_blocks.iter().copied()
+    }
+
+    fn reachable_expressions(&self) -> impl Iterator<Item = ExpressionID> + '_ {
+        self.reachable_expressions.iter().copied()
+    }
+
+    fn variables(&self) -> impl Iterator<Item = VariableID> + '_ { self.variables.iter().copied() }
 
     fn is_phi(&self, expression_id: ExpressionID) -> bool { self.phis.contains(&expression_id) }
 }
@@ -108,42 +117,42 @@ impl Writer<'_> {
         let layout = FunctionLayout::new(function);
 
         self.write_braced_block(async |writer| {
-            for variable_id in &layout.variables {
+            for variable_id in layout.variables() {
                 writer
                     .write_indent_line(async |writer| {
-                        let cty = ctx.ty_to_cty(function.get_variable(*variable_id).ty());
+                        let cty = ctx.ty_to_cty(function.get_variable(variable_id).ty());
                         ctx.write_cty(&cty, writer)?;
                         write!(writer, " ray_var_{:X};", variable_id.index())
                     })
                     .await?;
             }
 
-            for expression_id in &layout.expressions {
+            for expression_id in layout.reachable_expressions() {
                 writer
                     .write_indent_line(async |writer| {
-                        let cty = ctx.ty_to_cty(function.get_expression(*expression_id).ty());
+                        let cty = ctx.ty_to_cty(function.get_expression(expression_id).ty());
                         ctx.write_cty(&cty, writer)?;
                         write!(writer, " ray_expr_{:X};", expression_id.index())
                     })
                     .await?;
             }
 
-            for block_id in &layout.blocks {
+            for block_id in layout.reachable_blocks() {
                 writer
                     .write_indent_line(async |writer| {
                         write!(writer, "ray_block_{:X}:", block_id.index())
                     })
                     .await?;
 
-                for instruction in function.block_instructions(*block_id) {
+                for instruction in function.block_instructions(block_id) {
                     writer.write_ir_instruction(instruction, function, &layout, ctx).await?;
                 }
 
                 writer
                     .write_ir_terminator(
-                        *block_id,
+                        block_id,
                         function
-                            .block_terminator(*block_id)
+                            .block_terminator(block_id)
                             .expect("validated reachable IR block should have a terminator"),
                         function,
                         ctx,
@@ -320,103 +329,6 @@ impl Writer<'_> {
             write!(writer, "goto ray_block_{:X};", successor.index())
         })
         .await
-    }
-
-    async fn write_expression_value(
-        &mut self,
-        expression_id: ExpressionID,
-        function: &Function,
-        ctx: &mut Context,
-    ) -> std::io::Result<()> {
-        let expression = function.get_expression(expression_id);
-        match expression.kind() {
-            ExpressionKind::Error => {
-                panic!("error expression reached codegen, this should have been caught earlier")
-            }
-            ExpressionKind::Literal(literal) => match literal {
-                Literal::Numeric(value) => write!(self, "{value}"),
-                Literal::Bool(true) => write!(self, "true"),
-                Literal::Bool(false) => write!(self, "false"),
-            },
-            ExpressionKind::RefOf(ref_of) => {
-                write!(self, "&(")?;
-                self.write_address(ref_of.address())?;
-                write!(self, ")")
-            }
-            ExpressionKind::Load(load) => self.write_address(load.address()),
-            ExpressionKind::Phi(_) => {
-                panic!("phi expression cannot be emitted as an ordinary C expression")
-            }
-            ExpressionKind::Binary(binary) => {
-                let operator = match binary.operator() {
-                    BinaryOp::Plus => "+",
-                    BinaryOp::Minus => "-",
-                    BinaryOp::Multiply => "*",
-                    BinaryOp::Divide => "/",
-                };
-                write!(
-                    self,
-                    "(ray_expr_{:X} {operator} ray_expr_{:X})",
-                    binary.left().index(),
-                    binary.right().index()
-                )
-            }
-            ExpressionKind::Call(call) => {
-                let name = ctx.get_def_name(call.function_id()).await;
-                write!(self, "ray_{}(", &*name)?;
-                for (index, argument) in call.arguments().iter().enumerate() {
-                    if index != 0 {
-                        write!(self, ", ")?;
-                    }
-                    write!(self, "ray_expr_{:X}", argument.index())?;
-                }
-                write!(self, ")")
-            }
-            ExpressionKind::Tuple(tuple) => {
-                write!(self, "((")?;
-                let tuple_id = ctx.unwrap_ty_as_ctuple_id(expression.ty());
-                ctx.write_ctuple_t(tuple_id, self)?;
-                write!(self, "){{")?;
-
-                if tuple.elements().is_empty() {
-                    write!(self, "0")?;
-                } else {
-                    for (index, element) in tuple.elements().iter().enumerate() {
-                        if index != 0 {
-                            write!(self, ",")?;
-                        }
-                        write!(self, ".elem{index:X} = ray_expr_{:X}", element.index())?;
-                    }
-                }
-
-                write!(self, "}})")
-            }
-        }
-    }
-
-    fn write_address(&mut self, address: &Address) -> std::io::Result<()> {
-        match address.root() {
-            AddressRoot::Error => {
-                panic!("error address reached codegen, this should have been caught earlier")
-            }
-            AddressRoot::Variable(variable_id) => {
-                write!(self, "ray_var_{:X}", variable_id.index())?;
-            }
-            AddressRoot::Parameter(parameter_id) => {
-                write!(self, "ray_param_{:X}", parameter_id.index())?;
-            }
-            AddressRoot::Deref(expression_id) => {
-                write!(self, "(*ray_expr_{:X})", expression_id.index())?;
-            }
-        }
-
-        for projection in address.projections() {
-            match projection {
-                Projection::Tuple(index) => write!(self, ".elem{index:X}")?,
-            }
-        }
-
-        Ok(())
     }
 }
 
