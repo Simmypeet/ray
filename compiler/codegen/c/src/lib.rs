@@ -1,8 +1,8 @@
 pub mod context;
-mod expression;
+pub mod expression;
 pub mod function;
-mod ir;
-mod translation_unit;
+pub mod ir;
+pub mod translation_unit;
 pub mod ty;
 pub mod write;
 pub mod writer;

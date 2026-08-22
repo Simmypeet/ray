@@ -1,3 +1,4 @@
+pub use expression_with_id::ExpressionWithID;
 use rayc_ir::{
     expression::{ExpressionID, ExpressionKind},
     function::Function,
@@ -5,36 +6,19 @@ use rayc_ir::{
 
 use crate::{context::Context, writer::Writer};
 
-mod address;
-mod binary;
-mod call;
-mod error;
-mod literal;
-mod load;
-mod phi;
-mod ref_of;
-mod tuple;
-
-#[derive(Debug, Clone, Copy)]
-pub struct ExpressionWithID<E> {
-    node: E,
-    id: ExpressionID,
-}
-
-impl<E> ExpressionWithID<E> {
-    pub const fn new(node: E, id: ExpressionID) -> Self { Self { node, id } }
-
-    pub const fn id(&self) -> ExpressionID { self.id }
-
-    pub const fn node(&self) -> E
-    where
-        E: Copy,
-    {
-        self.node
-    }
-}
+pub mod address;
+pub mod binary;
+pub mod call;
+pub mod error;
+pub mod expression_with_id;
+pub mod literal;
+pub mod load;
+pub mod phi;
+pub mod ref_of;
+pub mod tuple;
 
 pub trait WriteExpression<E> {
+    #[expect(async_fn_in_trait)]
     async fn write_expression(
         &mut self,
         expression: ExpressionWithID<E>,
