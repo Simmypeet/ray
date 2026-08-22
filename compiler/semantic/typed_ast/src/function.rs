@@ -41,6 +41,8 @@ impl Default for Function {
 }
 
 impl Function {
+    pub fn statements(&self) -> impl Iterator<Item = &Statement> { self.block.statements() }
+
     #[must_use]
     pub fn get_expression(&self, id: TypedExprID) -> &TypedExpr {
         self.typed_expr_map.get_expression(id)

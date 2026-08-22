@@ -14,6 +14,14 @@ pub struct Let {
     span: RelativeSpan,
 }
 
+impl Let {
+    #[must_use]
+    pub const fn variable_id(&self) -> VariableID { self.variable_id }
+
+    #[must_use]
+    pub const fn expression(&self) -> TypedExprID { self.expression }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Return {
     value: Option<TypedExprID>,

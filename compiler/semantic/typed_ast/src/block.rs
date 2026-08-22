@@ -10,5 +10,7 @@ pub struct Block {
 }
 
 impl Block {
+    pub fn statements(&self) -> impl Iterator<Item = &Statement> { self.statements.iter() }
+
     pub fn push_statement(&mut self, statement: Statement) { self.statements.push(statement); }
 }
