@@ -1,4 +1,9 @@
-use std::{fmt::Display, io::Write};
+use std::{
+    fmt::Display,
+    io::{self, Write},
+};
+
+const INDENT: &str = "    ";
 
 pub struct Writer<'w> {
     indent_step: usize,
@@ -30,6 +35,41 @@ impl<'w> Writer<'w> {
 }
 
 impl Writer<'_> {
+    fn write_indent(&mut self) -> io::Result<()> {
+        for _ in 0..self.indent_step {
+            self.write_all(INDENT.as_bytes())?;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn write_indent_line(
+        &mut self,
+        write_line: impl AsyncFnOnce(&mut Writer) -> io::Result<()>,
+    ) -> io::Result<()> {
+        self.write_indent()?;
+        write_line(self).await?;
+        writeln!(self)
+    }
+
+    pub(crate) async fn write_braced_block<A>(
+        &mut self,
+        write_inner: impl AsyncFnOnce(&mut Writer) -> io::Result<A>,
+    ) -> io::Result<A> {
+        writeln!(self, "{{")?;
+        self.indent_step += 1;
+
+        let result = write_inner(self).await;
+
+        self.indent_step -= 1;
+        let result = result?;
+
+        self.write_indent()?;
+        write!(self, "}}")?;
+
+        Ok(result)
+    }
+
     pub async fn write_enclosing_pair<A>(
         &mut self,
         delim_pair: EnclosingPair,
