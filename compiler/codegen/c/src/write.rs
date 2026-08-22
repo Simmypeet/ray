@@ -77,6 +77,10 @@ impl Context {
             first = false;
         }
 
+        if first {
+            write!(buf, "void")?;
+        }
+
         write!(buf, ")")
     }
 
@@ -90,7 +94,14 @@ impl Context {
 
         writeln!(buf, " {{")?;
 
-        for (i, arg) in self.get_ctuple_decl(id).args().enumerate() {
+        let tuple_decl = self.get_ctuple_decl(id);
+
+        if tuple_decl.is_unit() {
+            write!(buf, "{}", Self::TAB)?;
+            writeln!(buf, "uint8_t _unit;")?;
+        }
+
+        for (i, arg) in tuple_decl.args().enumerate() {
             write!(buf, "{}", Self::TAB)?;
             self.write_cty(arg, buf)?;
 
