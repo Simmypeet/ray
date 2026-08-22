@@ -405,6 +405,87 @@ impl Arguments {
     #[must_use]
     pub fn file_path(&self) -> &Path { self.command.input().file_path() }
 
+    /// Returns whether this invocation only checks the input program.
+    #[must_use]
+    pub const fn is_check_only(&self) -> bool {
+        match &self.command {
+            Command::Run(_) | Command::Build(_) => false,
+            Command::Check(_) => true,
+        }
+    }
+
+    /// Returns the artifact requested by this invocation.
+    ///
+    /// Check-only invocations do not produce an artifact.
+    #[must_use]
+    pub const fn artifact_kind(&self) -> Option<TargetKind> {
+        match &self.command {
+            Command::Run(_) => Some(TargetKind::Executable),
+            Command::Check(_) => None,
+            Command::Build(build) => Some(build.kind),
+        }
+    }
+
+    /// Returns whether this invocation requires an executable entry point.
+    #[must_use]
+    pub const fn requires_entry_point(&self) -> bool {
+        match self.artifact_kind() {
+            Some(TargetKind::Executable) => true,
+            None
+            | Some(TargetKind::Library | TargetKind::LLvmIR | TargetKind::Object | TargetKind::C) => {
+                false
+            }
+        }
+    }
+
+    /// Returns whether the produced executable should be launched.
+    #[must_use]
+    pub const fn should_run(&self) -> bool {
+        match &self.command {
+            Command::Run(_) => true,
+            Command::Check(_) | Command::Build(_) => false,
+        }
+    }
+
+    /// Returns the optimization level that applies to this invocation.
+    ///
+    /// Check-only invocations do not have an optimization level.
+    #[must_use]
+    pub const fn optimization_level(&self) -> Option<OptimizationLevel> {
+        match &self.command {
+            Command::Run(run) => Some(run.opt_level),
+            Command::Check(_) => None,
+            Command::Build(build) => Some(build.opt_level),
+        }
+    }
+
+    /// Returns the explicitly requested output path, if one was supplied.
+    #[must_use]
+    pub fn requested_output_path(&self) -> Option<&Path> {
+        match &self.command {
+            Command::Run(run) => run.output.output.as_deref(),
+            Command::Check(_) => None,
+            Command::Build(build) => build.output.output.as_deref(),
+        }
+    }
+
+    /// Resolves the effective output path without creating it.
+    ///
+    /// Unsupported legacy artifact kinds have no default output path, but an
+    /// explicitly requested path is still preserved for downstream reporting.
+    #[must_use]
+    pub fn resolve_output_path(&self) -> Option<PathBuf> {
+        if self.is_check_only() {
+            return None;
+        }
+
+        if let Some(output_path) = self.requested_output_path() {
+            return Some(output_path.to_owned());
+        }
+
+        default_output_path(&self.target_name(), self.artifact_kind()?)
+    }
+
     #[must_use]
     pub fn incremental_path(&self) -> Option<&Path> {
         self.command.input().incremental_path.as_deref()
@@ -425,6 +506,19 @@ impl Arguments {
     #[must_use]
     pub const fn target_seed(&self) -> Option<u64> { self.command.input().target_seed }
 }
+
+fn default_output_path(target_name: &str, kind: TargetKind) -> Option<PathBuf> {
+    match kind {
+        TargetKind::Executable => {
+            Some(PathBuf::from(format!("{target_name}{}", std::env::consts::EXE_SUFFIX)))
+        }
+        TargetKind::Library | TargetKind::LLvmIR => None,
+        TargetKind::Object => Some(PathBuf::from(format!("{target_name}{}", object_suffix()))),
+        TargetKind::C => Some(PathBuf::from(format!("{target_name}.c"))),
+    }
+}
+
+const fn object_suffix() -> &'static str { ".o" }
 
 /// The key used for retrieving the [`Arguments`]
 #[derive(
