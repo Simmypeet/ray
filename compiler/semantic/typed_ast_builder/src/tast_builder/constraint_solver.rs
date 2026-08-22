@@ -208,7 +208,9 @@ impl TAstBuilder {
         span: RelativeSpan,
         source: SubtypeSource,
     ) {
-        let subtype = Subtype::new(expected_ty.clone(), actual_ty.clone());
+        let actual_ty = self.latest_type(actual_ty);
+        let expected_ty = self.latest_type(expected_ty);
+        let subtype = Subtype::new(expected_ty, actual_ty);
         let provenance = Provenance::Subtype(SubtypeProvenance {
             original_subtype: subtype.clone(),
             span,
