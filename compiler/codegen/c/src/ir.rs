@@ -88,12 +88,6 @@ impl Writer<'_> {
     ) -> std::io::Result<()> {
         let layout = FunctionLayout::new(function);
 
-        assert_eq!(
-            layout.blocks.len(),
-            1,
-            "control-flow IR reached straight-line C codegen before CFG emission was implemented"
-        );
-
         self.write_braced_block(async |writer| {
             for variable_id in &layout.variables {
                 writer
@@ -115,19 +109,30 @@ impl Writer<'_> {
                     .await?;
             }
 
-            let block_id = layout.blocks[0];
-            for instruction in function.block_instructions(block_id) {
-                writer.write_ir_instruction(instruction, function, &layout, ctx).await?;
+            for block_id in &layout.blocks {
+                writer
+                    .write_indent_line(async |writer| {
+                        write!(writer, "ray_block_{:X}:", block_id.index())
+                    })
+                    .await?;
+
+                for instruction in function.block_instructions(*block_id) {
+                    writer.write_ir_instruction(instruction, function, &layout, ctx).await?;
+                }
+
+                writer
+                    .write_ir_terminator(
+                        *block_id,
+                        function
+                            .block_terminator(*block_id)
+                            .expect("validated reachable IR block should have a terminator"),
+                        function,
+                        ctx,
+                    )
+                    .await?;
             }
 
-            writer
-                .write_ir_terminator(
-                    function
-                        .block_terminator(block_id)
-                        .expect("validated reachable IR block should have a terminator"),
-                    ctx,
-                )
-                .await
+            Ok(())
         })
         .await
     }
@@ -164,10 +169,50 @@ impl Writer<'_> {
 
     async fn write_ir_terminator(
         &mut self,
+        block_id: BlockID,
         terminator: &Terminator,
+        function: &Function,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
         match terminator {
+            Terminator::Jump(successor) => {
+                if Self::block_has_phis(*successor, function) {
+                    self.write_indent_line(async |writer| {
+                        writer
+                            .write_braced_block(async |writer| {
+                                writer.write_ir_edge(block_id, *successor, function, ctx).await
+                            })
+                            .await
+                    })
+                    .await
+                } else {
+                    self.write_indent_line(async |writer| {
+                        write!(writer, "goto ray_block_{:X};", successor.index())
+                    })
+                    .await
+                }
+            }
+            Terminator::Conditional(conditional) => {
+                self.write_indent_line(async |writer| {
+                    write!(writer, "if (ray_expr_{:X}) ", conditional.condition().index())?;
+                    writer
+                        .write_braced_block(async |writer| {
+                            writer
+                                .write_ir_edge(block_id, conditional.then_block(), function, ctx)
+                                .await
+                        })
+                        .await?;
+                    write!(writer, " else ")?;
+                    writer
+                        .write_braced_block(async |writer| {
+                            writer
+                                .write_ir_edge(block_id, conditional.else_block(), function, ctx)
+                                .await
+                        })
+                        .await
+                })
+                .await
+            }
             Terminator::Return(value) => {
                 self.write_indent_line(async |writer| {
                     write!(writer, "return ")?;
@@ -180,10 +225,82 @@ impl Writer<'_> {
                 })
                 .await
             }
-            Terminator::Jump(_) | Terminator::Conditional(_) => {
-                panic!("control-flow terminator reached straight-line C codegen")
-            }
         }
+    }
+
+    fn block_has_phis(block_id: BlockID, function: &Function) -> bool {
+        function.block_instructions(block_id).iter().any(|instruction| {
+            let Instruction::Expression(expression_id) = instruction else {
+                return false;
+            };
+            matches!(function.get_expression(*expression_id).kind(), ExpressionKind::Phi(_))
+        })
+    }
+
+    async fn write_ir_edge(
+        &mut self,
+        predecessor: BlockID,
+        successor: BlockID,
+        function: &Function,
+        ctx: &mut Context,
+    ) -> std::io::Result<()> {
+        for instruction in function.block_instructions(successor) {
+            let Instruction::Expression(phi_id) = instruction else {
+                continue;
+            };
+            let ExpressionKind::Phi(phi) = function.get_expression(*phi_id).kind() else {
+                continue;
+            };
+            let incoming = phi.value_from(predecessor).unwrap_or_else(|| {
+                panic!(
+                    "invalid IR reached C codegen: phi {} in block {} has no incoming value from \
+                     predecessor {}",
+                    phi_id.index(),
+                    successor.index(),
+                    predecessor.index()
+                )
+            });
+
+            self.write_indent_line(async |writer| {
+                let cty = ctx.ty_to_cty(function.get_expression(*phi_id).ty());
+                ctx.write_cty(&cty, writer)?;
+                write!(
+                    writer,
+                    " ray_phi_in_{:X}_{:X}_{:X} = ray_expr_{:X};",
+                    predecessor.index(),
+                    successor.index(),
+                    phi_id.index(),
+                    incoming.index()
+                )
+            })
+            .await?;
+        }
+
+        for instruction in function.block_instructions(successor) {
+            let Instruction::Expression(phi_id) = instruction else {
+                continue;
+            };
+            if !matches!(function.get_expression(*phi_id).kind(), ExpressionKind::Phi(_)) {
+                continue;
+            }
+
+            self.write_indent_line(async |writer| {
+                write!(
+                    writer,
+                    "ray_expr_{:X} = ray_phi_in_{:X}_{:X}_{:X};",
+                    phi_id.index(),
+                    predecessor.index(),
+                    successor.index(),
+                    phi_id.index()
+                )
+            })
+            .await?;
+        }
+
+        self.write_indent_line(async |writer| {
+            write!(writer, "goto ray_block_{:X};", successor.index())
+        })
+        .await
     }
 
     async fn write_expression_value(
@@ -292,7 +409,7 @@ mod test {
     use rayc_arena::ID;
     use rayc_ir::{
         address::Address,
-        cfg::Terminator,
+        cfg::{BlockID, Conditional, Terminator},
         expression::{
             Expression, ExpressionID, ExpressionKind,
             binary::{Binary, BinaryOp},
@@ -355,8 +472,17 @@ mod test {
         kind: ExpressionKind,
         ty: qbice::storage::intern::Interned<Ty>,
     ) -> ExpressionID {
+        expression_in(function, function.entry_block(), kind, ty)
+    }
+
+    fn expression_in(
+        function: &mut Function,
+        block_id: BlockID,
+        kind: ExpressionKind,
+        ty: qbice::storage::intern::Interned<Ty>,
+    ) -> ExpressionID {
         let id = function.insert_expression(Expression::new(kind, span(), ty));
-        function.push_expression(function.entry_block(), id);
+        function.push_expression(block_id, id);
         id
     }
 
@@ -388,8 +514,9 @@ mod test {
         assert_eq!(
             render(&function, &mut context).await,
             "{\n    int32_t ray_expr_0;\n    int32_t ray_expr_1;\n    int32_t ray_expr_2;\n    \
-             bool ray_expr_3;\n    ray_expr_0 = 1;\n    ray_expr_1 = 2;\n    ray_expr_2 = \
-             (ray_expr_0 + ray_expr_1);\n    ray_expr_3 = true;\n    return ray_expr_2;\n}"
+             bool ray_expr_3;\n    ray_block_0:\n    ray_expr_0 = 1;\n    ray_expr_1 = 2;\n    \
+             ray_expr_2 = (ray_expr_0 + ray_expr_1);\n    ray_expr_3 = true;\n    return \
+             ray_expr_2;\n}"
         );
 
         let _ = boolean;
@@ -416,8 +543,8 @@ mod test {
         let body = render(&function, &mut context).await;
         assert_eq!(
             body,
-            "{\n    int32_t ray_expr_0;\n    int32_t ray_expr_1;\n    ray_expr_0 = \
-             ray_produce();\n    ray_expr_1 = (ray_expr_0 + ray_expr_0);\n    return \
+            "{\n    int32_t ray_expr_0;\n    int32_t ray_expr_1;\n    ray_block_0:\n    \
+             ray_expr_0 = ray_produce();\n    ray_expr_1 = (ray_expr_0 + ray_expr_0);\n    return \
              ray_expr_1;\n}"
         );
         assert_eq!(body.matches("ray_produce()").count(), 1);
@@ -455,9 +582,9 @@ mod test {
             render(&function, &mut context).await,
             format!(
                 "{{\n    {tuple_name} ray_var_0;\n    int32_t ray_expr_0;\n    int32_t \
-                 ray_expr_1;\n    int32_t ray_expr_2;\n    ray_expr_0 = 7;\n    ray_var_0.elem0 = \
-                 ray_expr_0;\n    ray_expr_1 = ray_var_0.elem0;\n    ray_expr_2 = \
-                 ray_param_3.elem1.elemA;\n    return ray_expr_2;\n}}"
+                 ray_expr_1;\n    int32_t ray_expr_2;\n    ray_block_0:\n    ray_expr_0 = 7;\n    \
+                 ray_var_0.elem0 = ray_expr_0;\n    ray_expr_1 = ray_var_0.elem0;\n    ray_expr_2 \
+                 = ray_param_3.elem1.elemA;\n    return ray_expr_2;\n}}"
             )
         );
 
@@ -486,8 +613,8 @@ mod test {
         assert_eq!(
             render(&function, &mut context).await,
             "{\n    int32_t ray_var_0;\n    int32_t* ray_expr_0;\n    int32_t ray_expr_1;\n    \
-             ray_expr_0 = &(ray_var_0);\n    ray_expr_1 = (*ray_expr_0);\n    return \
-             ray_expr_1;\n}"
+             ray_block_0:\n    ray_expr_0 = &(ray_var_0);\n    ray_expr_1 = (*ray_expr_0);\n    \
+             return ray_expr_1;\n}"
         );
     }
 
@@ -525,9 +652,9 @@ mod test {
             render(&function, &mut context).await,
             format!(
                 "{{\n    int32_t ray_expr_0;\n    int32_t ray_expr_1;\n    {unit_name} \
-                 ray_expr_2;\n    {pair_name} ray_expr_3;\n    ray_expr_0 = 1;\n    ray_expr_1 = \
-                 2;\n    ray_expr_2 = (({unit_name}){{0}});\n    ray_expr_3 = \
-                 (({pair_name}){{.elem0 = ray_expr_0,.elem1 = ray_expr_1}});\n    return \
+                 ray_expr_2;\n    {pair_name} ray_expr_3;\n    ray_block_0:\n    ray_expr_0 = \
+                 1;\n    ray_expr_1 = 2;\n    ray_expr_2 = (({unit_name}){{0}});\n    ray_expr_3 \
+                 = (({pair_name}){{.elem0 = ray_expr_0,.elem1 = ray_expr_1}});\n    return \
                  ray_expr_3;\n}}"
             )
         );
@@ -548,7 +675,7 @@ mod test {
         let unit_name = String::from_utf8(unit_name).unwrap();
         assert_eq!(
             render(&function, &mut context).await,
-            format!("{{\n    return (({unit_name}){{0}});\n}}")
+            format!("{{\n    ray_block_0:\n    return (({unit_name}){{0}});\n}}")
         );
     }
 
@@ -566,8 +693,356 @@ mod test {
 
         assert_eq!(
             render(&function, &mut context).await,
-            "{\n    int32_t ray_expr_0;\n    return ray_expr_0;\n}"
+            "{\n    int32_t ray_expr_0;\n    ray_block_0:\n    return ray_expr_0;\n}"
         );
+    }
+
+    #[tokio::test]
+    async fn diamond_assigns_phi_on_each_incoming_edge() {
+        let (engine, mut context) = setup().await;
+        let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
+        let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+        let mut function = Function::new();
+        let then_block = function.create_block();
+        let else_block = function.create_block();
+        let merge_block = function.create_block();
+        let condition =
+            expression(&mut function, ExpressionKind::Literal(Literal::Bool(true)), bool_ty);
+        let then_value = expression_in(
+            &mut function,
+            then_block,
+            ExpressionKind::Literal(Literal::Numeric(10)),
+            int32.clone(),
+        );
+        let else_value = expression_in(
+            &mut function,
+            else_block,
+            ExpressionKind::Literal(Literal::Numeric(20)),
+            int32.clone(),
+        );
+        let phi = expression_in(
+            &mut function,
+            merge_block,
+            ExpressionKind::Phi(Phi::new(
+                [(then_block, then_value), (else_block, else_value)].into_iter().collect(),
+            )),
+            int32,
+        );
+        function.set_terminator(
+            function.entry_block(),
+            Terminator::Conditional(Conditional::new(condition, then_block, else_block)),
+        );
+        function.set_terminator(then_block, Terminator::Jump(merge_block));
+        function.set_terminator(else_block, Terminator::Jump(merge_block));
+        function.set_terminator(merge_block, Terminator::Return(Some(phi)));
+
+        assert_eq!(
+            render(&function, &mut context).await,
+            "{\n    bool ray_expr_0;\n    int32_t ray_expr_1;\n    int32_t ray_expr_2;\n    \
+             int32_t ray_expr_3;\n    ray_block_0:\n    ray_expr_0 = true;\n    if (ray_expr_0) \
+             {\n        goto ray_block_1;\n    } else {\n        goto ray_block_2;\n    }\n    \
+             ray_block_1:\n    ray_expr_1 = 10;\n    {\n        int32_t ray_phi_in_1_3_3 = \
+             ray_expr_1;\n        ray_expr_3 = ray_phi_in_1_3_3;\n        goto ray_block_3;\n    \
+             }\n    ray_block_2:\n    ray_expr_2 = 20;\n    {\n        int32_t ray_phi_in_2_3_3 = \
+             ray_expr_2;\n        ray_expr_3 = ray_phi_in_2_3_3;\n        goto ray_block_3;\n    \
+             }\n    ray_block_3:\n    return ray_expr_3;\n}"
+        );
+    }
+
+    async fn render_short_circuit(short_circuit_value: bool) -> String {
+        let def_id = TargetID::TEST.make_global(SymbolID::default());
+        let (engine, mut context) = setup_with_name(def_id, "rhs").await;
+        let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
+        let mut function = Function::new();
+        let rhs_block = function.create_block();
+        let short_block = function.create_block();
+        let merge_block = function.create_block();
+        let left = expression(
+            &mut function,
+            ExpressionKind::Literal(Literal::Bool(!short_circuit_value)),
+            bool_ty.clone(),
+        );
+        let rhs = expression_in(
+            &mut function,
+            rhs_block,
+            ExpressionKind::Call(Call::new(def_id, Vec::new())),
+            bool_ty.clone(),
+        );
+        let short = expression_in(
+            &mut function,
+            short_block,
+            ExpressionKind::Literal(Literal::Bool(short_circuit_value)),
+            bool_ty.clone(),
+        );
+        let result = expression_in(
+            &mut function,
+            merge_block,
+            ExpressionKind::Phi(Phi::new(
+                [(rhs_block, rhs), (short_block, short)].into_iter().collect(),
+            )),
+            bool_ty,
+        );
+        let (then_block, else_block) =
+            if short_circuit_value { (short_block, rhs_block) } else { (rhs_block, short_block) };
+        function.set_terminator(
+            function.entry_block(),
+            Terminator::Conditional(Conditional::new(left, then_block, else_block)),
+        );
+        function.set_terminator(rhs_block, Terminator::Jump(merge_block));
+        function.set_terminator(short_block, Terminator::Jump(merge_block));
+        function.set_terminator(merge_block, Terminator::Return(Some(result)));
+
+        render(&function, &mut context).await
+    }
+
+    #[tokio::test]
+    async fn logical_and_keeps_rhs_call_in_the_rhs_block() {
+        let body = render_short_circuit(false).await;
+        assert_eq!(
+            body,
+            "{\n    bool ray_expr_0;\n    bool ray_expr_1;\n    bool ray_expr_2;\n    bool \
+             ray_expr_3;\n    ray_block_0:\n    ray_expr_0 = true;\n    if (ray_expr_0) {\n        \
+             goto ray_block_1;\n    } else {\n        goto ray_block_2;\n    }\n    \
+             ray_block_1:\n    ray_expr_1 = ray_rhs();\n    {\n        bool ray_phi_in_1_3_3 = \
+             ray_expr_1;\n        ray_expr_3 = ray_phi_in_1_3_3;\n        goto ray_block_3;\n    \
+             }\n    ray_block_2:\n    ray_expr_2 = false;\n    {\n        bool ray_phi_in_2_3_3 = \
+             ray_expr_2;\n        ray_expr_3 = ray_phi_in_2_3_3;\n        goto ray_block_3;\n    \
+             }\n    ray_block_3:\n    return ray_expr_3;\n}"
+        );
+        assert_eq!(body.matches("ray_rhs()").count(), 1);
+    }
+
+    #[tokio::test]
+    async fn logical_or_keeps_rhs_call_in_the_rhs_block() {
+        let body = render_short_circuit(true).await;
+        assert_eq!(
+            body,
+            "{\n    bool ray_expr_0;\n    bool ray_expr_1;\n    bool ray_expr_2;\n    bool \
+             ray_expr_3;\n    ray_block_0:\n    ray_expr_0 = false;\n    if (ray_expr_0) \
+             {\n        goto ray_block_2;\n    } else {\n        goto ray_block_1;\n    }\n    \
+             ray_block_1:\n    ray_expr_1 = ray_rhs();\n    {\n        bool ray_phi_in_1_3_3 \
+             = ray_expr_1;\n        ray_expr_3 = ray_phi_in_1_3_3;\n        goto \
+             ray_block_3;\n    }\n    ray_block_2:\n    ray_expr_2 = true;\n    {\n        bool \
+             ray_phi_in_2_3_3 = ray_expr_2;\n        ray_expr_3 = \
+             ray_phi_in_2_3_3;\n        goto ray_block_3;\n    }\n    ray_block_3:\n    \
+             return ray_expr_3;\n}"
+        );
+        assert_eq!(body.matches("ray_rhs()").count(), 1);
+    }
+
+    #[tokio::test]
+    async fn same_target_conditional_emits_edge_copies_in_both_arms() {
+        let (engine, mut context) = setup().await;
+        let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
+        let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+        let mut function = Function::new();
+        let entry_block = function.entry_block();
+        let merge_block = function.create_block();
+        let condition =
+            expression(&mut function, ExpressionKind::Literal(Literal::Bool(true)), bool_ty);
+        let value =
+            expression(&mut function, ExpressionKind::Literal(Literal::Numeric(7)), int32.clone());
+        let phi = expression_in(
+            &mut function,
+            merge_block,
+            ExpressionKind::Phi(Phi::new(std::iter::once((entry_block, value)).collect())),
+            int32,
+        );
+        function.set_terminator(
+            function.entry_block(),
+            Terminator::Conditional(Conditional::new(condition, merge_block, merge_block)),
+        );
+        function.set_terminator(merge_block, Terminator::Return(Some(phi)));
+
+        let body = render(&function, &mut context).await;
+        assert_eq!(
+            body,
+            "{\n    bool ray_expr_0;\n    int32_t ray_expr_1;\n    int32_t ray_expr_2;\n    \
+             ray_block_0:\n    ray_expr_0 = true;\n    ray_expr_1 = 7;\n    if (ray_expr_0) \
+             {\n        int32_t ray_phi_in_0_1_2 = ray_expr_1;\n        ray_expr_2 = \
+             ray_phi_in_0_1_2;\n        goto ray_block_1;\n    } else {\n        int32_t \
+             ray_phi_in_0_1_2 = ray_expr_1;\n        ray_expr_2 = ray_phi_in_0_1_2;\n        \
+             goto ray_block_1;\n    }\n    ray_block_1:\n    return ray_expr_2;\n}"
+        );
+        assert_eq!(body.matches("ray_phi_in_0_1_2 = ray_expr_1").count(), 2);
+    }
+
+    #[tokio::test]
+    async fn multiple_phis_stage_all_sources_before_assigning_destinations() {
+        let (engine, mut context) = setup().await;
+        let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+        let mut function = Function::new();
+        let entry_block = function.entry_block();
+        let merge_block = function.create_block();
+        let first =
+            expression(&mut function, ExpressionKind::Literal(Literal::Numeric(1)), int32.clone());
+        let second =
+            expression(&mut function, ExpressionKind::Literal(Literal::Numeric(2)), int32.clone());
+        let first_phi = expression_in(
+            &mut function,
+            merge_block,
+            ExpressionKind::Phi(Phi::new(std::iter::once((entry_block, first)).collect())),
+            int32.clone(),
+        );
+        let second_phi = expression_in(
+            &mut function,
+            merge_block,
+            ExpressionKind::Phi(Phi::new(std::iter::once((entry_block, second)).collect())),
+            int32,
+        );
+        function.set_terminator(function.entry_block(), Terminator::Jump(merge_block));
+        function.set_terminator(merge_block, Terminator::Return(Some(second_phi)));
+
+        assert_eq!(
+            render(&function, &mut context).await,
+            "{\n    int32_t ray_expr_0;\n    int32_t ray_expr_1;\n    int32_t ray_expr_2;\n    \
+             int32_t ray_expr_3;\n    ray_block_0:\n    ray_expr_0 = 1;\n    ray_expr_1 = 2;\n    \
+             {\n        int32_t ray_phi_in_0_1_2 = ray_expr_0;\n        int32_t ray_phi_in_0_1_3 \
+             = ray_expr_1;\n        ray_expr_2 = ray_phi_in_0_1_2;\n        ray_expr_3 = \
+             ray_phi_in_0_1_3;\n        goto ray_block_1;\n    }\n    ray_block_1:\n    return \
+             ray_expr_3;\n}"
+        );
+
+        let _ = first_phi;
+    }
+
+    #[tokio::test]
+    async fn loop_carries_phi_value_across_the_back_edge() {
+        let (engine, mut context) = setup().await;
+        let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+        let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
+        let mut function = Function::new();
+        let entry_block = function.entry_block();
+        let header_block = function.create_block();
+        let body_block = function.create_block();
+        let exit_block = function.create_block();
+        let initial =
+            expression(&mut function, ExpressionKind::Literal(Literal::Numeric(1)), int32.clone());
+        let next_id = ExpressionID::new(3);
+        let carried = expression_in(
+            &mut function,
+            header_block,
+            ExpressionKind::Phi(Phi::new(
+                [(entry_block, initial), (body_block, next_id)].into_iter().collect(),
+            )),
+            int32.clone(),
+        );
+        let condition = expression_in(
+            &mut function,
+            header_block,
+            ExpressionKind::Literal(Literal::Bool(false)),
+            bool_ty,
+        );
+        let next = expression_in(
+            &mut function,
+            body_block,
+            ExpressionKind::Binary(Binary::new(carried, BinaryOp::Plus, initial)),
+            int32,
+        );
+        assert_eq!(next, next_id);
+        function.set_terminator(entry_block, Terminator::Jump(header_block));
+        function.set_terminator(
+            header_block,
+            Terminator::Conditional(Conditional::new(condition, body_block, exit_block)),
+        );
+        function.set_terminator(body_block, Terminator::Jump(header_block));
+        function.set_terminator(exit_block, Terminator::Return(Some(carried)));
+
+        assert_eq!(
+            render(&function, &mut context).await,
+            "{\n    int32_t ray_expr_0;\n    int32_t ray_expr_1;\n    bool ray_expr_2;\n    \
+             int32_t ray_expr_3;\n    ray_block_0:\n    ray_expr_0 = 1;\n    {\n        int32_t \
+             ray_phi_in_0_1_1 = ray_expr_0;\n        ray_expr_1 = ray_phi_in_0_1_1;\n        goto \
+             ray_block_1;\n    }\n    ray_block_1:\n    ray_expr_2 = false;\n    if (ray_expr_2) \
+             {\n        goto ray_block_2;\n    } else {\n        goto ray_block_3;\n    }\n    \
+             ray_block_2:\n    ray_expr_3 = (ray_expr_1 + ray_expr_0);\n    {\n        int32_t \
+             ray_phi_in_2_1_1 = ray_expr_3;\n        ray_expr_1 = ray_phi_in_2_1_1;\n        goto \
+             ray_block_1;\n    }\n    ray_block_3:\n    return ray_expr_1;\n}"
+        );
+    }
+
+    #[tokio::test]
+    async fn loop_carried_swap_stages_both_sources_before_either_destination() {
+        let (engine, mut context) = setup().await;
+        let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+        let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
+        let mut function = Function::new();
+        let entry_block = function.entry_block();
+        let header_block = function.create_block();
+        let body_block = function.create_block();
+        let exit_block = function.create_block();
+        let initial_a =
+            expression(&mut function, ExpressionKind::Literal(Literal::Numeric(1)), int32.clone());
+        let initial_b =
+            expression(&mut function, ExpressionKind::Literal(Literal::Numeric(2)), int32.clone());
+        let phi_b_id = ExpressionID::new(3);
+        let phi_a = expression_in(
+            &mut function,
+            header_block,
+            ExpressionKind::Phi(Phi::new(
+                [(entry_block, initial_a), (body_block, phi_b_id)].into_iter().collect(),
+            )),
+            int32.clone(),
+        );
+        let phi_b = expression_in(
+            &mut function,
+            header_block,
+            ExpressionKind::Phi(Phi::new(
+                [(entry_block, initial_b), (body_block, phi_a)].into_iter().collect(),
+            )),
+            int32,
+        );
+        assert_eq!(phi_b, phi_b_id);
+        let condition = expression_in(
+            &mut function,
+            header_block,
+            ExpressionKind::Literal(Literal::Bool(false)),
+            bool_ty,
+        );
+        function.set_terminator(entry_block, Terminator::Jump(header_block));
+        function.set_terminator(
+            header_block,
+            Terminator::Conditional(Conditional::new(condition, body_block, exit_block)),
+        );
+        function.set_terminator(body_block, Terminator::Jump(header_block));
+        function.set_terminator(exit_block, Terminator::Return(Some(phi_a)));
+
+        assert_eq!(
+            render(&function, &mut context).await,
+            "{\n    int32_t ray_expr_0;\n    int32_t ray_expr_1;\n    int32_t ray_expr_2;\n    \
+             int32_t ray_expr_3;\n    bool ray_expr_4;\n    ray_block_0:\n    ray_expr_0 = \
+             1;\n    ray_expr_1 = 2;\n    {\n        int32_t ray_phi_in_0_1_2 = \
+             ray_expr_0;\n        int32_t ray_phi_in_0_1_3 = ray_expr_1;\n        \
+             ray_expr_2 = ray_phi_in_0_1_2;\n        ray_expr_3 = ray_phi_in_0_1_3;\n        \
+             goto ray_block_1;\n    }\n    ray_block_1:\n    ray_expr_4 = false;\n    if \
+             (ray_expr_4) {\n        goto ray_block_2;\n    } else {\n        goto \
+             ray_block_3;\n    }\n    ray_block_2:\n    {\n        int32_t ray_phi_in_2_1_2 = \
+             ray_expr_3;\n        int32_t ray_phi_in_2_1_3 = ray_expr_2;\n        \
+             ray_expr_2 = ray_phi_in_2_1_2;\n        ray_expr_3 = ray_phi_in_2_1_3;\n        \
+             goto ray_block_1;\n    }\n    ray_block_3:\n    return ray_expr_2;\n}"
+        );
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "invalid IR reached C codegen: phi 1 in block 1 has no incoming \
+                               value from predecessor 0")]
+    async fn phi_missing_predecessor_input_panics() {
+        let (engine, mut context) = setup().await;
+        let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+        let mut function = Function::new();
+        let merge_block = function.create_block();
+        let _value =
+            expression(&mut function, ExpressionKind::Literal(Literal::Numeric(1)), int32.clone());
+        let phi = expression_in(
+            &mut function,
+            merge_block,
+            ExpressionKind::Phi(Phi::new(rayc_hash::FxHashMap::default())),
+            int32,
+        );
+        function.set_terminator(function.entry_block(), Terminator::Jump(merge_block));
+        function.set_terminator(merge_block, Terminator::Return(Some(phi)));
+
+        let _ = render(&function, &mut context).await;
     }
 
     #[tokio::test]
