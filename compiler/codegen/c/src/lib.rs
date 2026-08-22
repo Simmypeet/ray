@@ -1,6 +1,7 @@
 pub mod context;
 pub mod expression;
 pub mod function;
+pub mod identifier;
 pub mod ir;
 pub mod translation_unit;
 pub mod ty;

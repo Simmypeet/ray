@@ -3,7 +3,7 @@ use std::io::Write;
 use rayc_ir::{expression::tuple::Tuple, function::Function};
 
 use super::{ExpressionWithID, WriteExpression};
-use crate::{context::Context, writer::Writer};
+use crate::{context::Context, identifier::Identifier, writer::Writer};
 
 impl WriteExpression<&Tuple> for Writer<'_> {
     async fn write_expression(
@@ -25,7 +25,12 @@ impl WriteExpression<&Tuple> for Writer<'_> {
                 if index != 0 {
                     write!(self, ",")?;
                 }
-                write!(self, ".elem{index:X} = ray_expr_{:X}", element.index())?;
+                write!(
+                    self,
+                    ".{} = {}",
+                    Identifier::tuple_elem(index),
+                    Identifier::expr(*element)
+                )?;
             }
         }
 

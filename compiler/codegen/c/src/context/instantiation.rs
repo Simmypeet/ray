@@ -13,7 +13,7 @@ use rayc_semantic_element::{
 };
 use rayc_symbol::GlobalSymbolID;
 
-use crate::{context::Context, ty::CTy};
+use crate::{context::Context, identifier::Identifier, ty::CTy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Builder)]
 pub struct CDef {
@@ -183,7 +183,7 @@ impl Context {
     }
 
     pub fn write_ctuple_t(&self, id: CTupleID, buf: &mut impl io::Write) -> std::io::Result<()> {
-        write!(buf, "RayTuple_{}_t", id.base62())
+        write!(buf, "{}", Identifier::tuple_t(id))
     }
 
     pub fn write_ctuple_struct(
@@ -191,7 +191,7 @@ impl Context {
         id: CTupleID,
         buf: &mut impl io::Write,
     ) -> std::io::Result<()> {
-        write!(buf, "RayTuple_{}", id.base62())
+        write!(buf, "{}", Identifier::tuple_struct(id))
     }
 
     pub fn cdef_decl_ids(&self) -> impl Iterator<Item = CDefID> + '_ {

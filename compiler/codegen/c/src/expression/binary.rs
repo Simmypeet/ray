@@ -6,7 +6,7 @@ use rayc_ir::{
 };
 
 use super::{ExpressionWithID, WriteExpression};
-use crate::{context::Context, writer::Writer};
+use crate::{context::Context, identifier::Identifier, writer::Writer};
 
 impl WriteExpression<&Binary> for Writer<'_> {
     async fn write_expression(
@@ -24,9 +24,9 @@ impl WriteExpression<&Binary> for Writer<'_> {
         };
         write!(
             self,
-            "(ray_expr_{:X} {operator} ray_expr_{:X})",
-            binary.left().index(),
-            binary.right().index()
+            "({} {operator} {})",
+            Identifier::expr(binary.left()),
+            Identifier::expr(binary.right())
         )
     }
 }

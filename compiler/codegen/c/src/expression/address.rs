@@ -2,7 +2,7 @@ use std::io::Write;
 
 use rayc_ir::address::{Address, AddressRoot, Projection};
 
-use crate::writer::Writer;
+use crate::{identifier::Identifier, writer::Writer};
 
 impl Writer<'_> {
     pub(crate) fn write_address(&mut self, address: &Address) -> std::io::Result<()> {
@@ -11,19 +11,19 @@ impl Writer<'_> {
                 panic!("error address reached codegen, this should have been caught earlier")
             }
             AddressRoot::Variable(variable_id) => {
-                write!(self, "ray_var_{:X}", variable_id.index())?;
+                write!(self, "{}", Identifier::var(variable_id))?;
             }
             AddressRoot::Parameter(parameter_id) => {
-                write!(self, "ray_param_{:X}", parameter_id.index())?;
+                write!(self, "{}", Identifier::param(parameter_id))?;
             }
             AddressRoot::Deref(expression_id) => {
-                write!(self, "(*ray_expr_{:X})", expression_id.index())?;
+                write!(self, "(*{})", Identifier::expr(expression_id))?;
             }
         }
 
         for projection in address.projections() {
             match projection {
-                Projection::Tuple(index) => write!(self, ".elem{index:X}")?,
+                Projection::Tuple(index) => write!(self, ".{}", Identifier::tuple_elem(*index))?,
             }
         }
 

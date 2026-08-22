@@ -1,8 +1,11 @@
 use std::io;
 
-use crate::context::{
-    Context,
-    instantiation::{CDefDecl, CDefID, CTupleID},
+use crate::{
+    context::{
+        Context,
+        instantiation::{CDefDecl, CDefID, CTupleID},
+    },
+    identifier::Identifier,
 };
 
 impl Context {
@@ -52,7 +55,7 @@ impl Context {
 
         let name = self.get_def_name(cdecl.def_id()).await;
 
-        write!(buf, " ray_{}", &*name)?;
+        write!(buf, " {}", Identifier::def(&name))?;
 
         self.write_parameter_list(cdecl, buf)
     }
@@ -72,7 +75,7 @@ impl Context {
 
             self.write_cty(param_ty, buf)?;
 
-            write!(buf, " ray_param_{:X}", param_id.index())?;
+            write!(buf, " {}", Identifier::param(param_id))?;
 
             first = false;
         }
@@ -98,14 +101,14 @@ impl Context {
 
         if tuple_decl.is_unit() {
             write!(buf, "{}", Self::TAB)?;
-            writeln!(buf, "uint8_t _unit;")?;
+            writeln!(buf, "uint8_t {};", Identifier::unit_field())?;
         }
 
         for (i, arg) in tuple_decl.args().enumerate() {
             write!(buf, "{}", Self::TAB)?;
             self.write_cty(arg, buf)?;
 
-            writeln!(buf, " elem{i:X};")?;
+            writeln!(buf, " {};", Identifier::tuple_elem(i))?;
         }
 
         write!(buf, "}};")

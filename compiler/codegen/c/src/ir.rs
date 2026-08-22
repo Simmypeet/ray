@@ -10,6 +10,7 @@ use rayc_ir::{
 
 use crate::{
     context::Context,
+    identifier::Identifier,
     writer::{EnclosingPair, Writer},
 };
 
@@ -76,7 +77,7 @@ impl Writer<'_> {
                     .write_indent_line(async |writer| {
                         let cty = ctx.ty_to_cty(function.get_variable(variable_id).ty());
                         ctx.write_cty(&cty, writer)?;
-                        write!(writer, " ray_var_{:X};", variable_id.index())
+                        write!(writer, " {};", Identifier::var(variable_id))
                     })
                     .await?;
             }
@@ -86,7 +87,7 @@ impl Writer<'_> {
                     .write_indent_line(async |writer| {
                         let cty = ctx.ty_to_cty(function.get_expression(expression_id).ty());
                         ctx.write_cty(&cty, writer)?;
-                        write!(writer, " ray_expr_{:X};", expression_id.index())
+                        write!(writer, " {};", Identifier::expr(expression_id))
                     })
                     .await?;
             }
@@ -94,7 +95,7 @@ impl Writer<'_> {
             for block_id in layout.reachable_blocks() {
                 writer
                     .write_indent_line(async |writer| {
-                        write!(writer, "ray_block_{:X}:", block_id.index())
+                        write!(writer, "{}:", Identifier::block(block_id))
                     })
                     .await?;
 
@@ -133,7 +134,7 @@ impl Writer<'_> {
                 }
 
                 self.write_indent_line(async |writer| {
-                    write!(writer, "ray_expr_{:X} = ", expression_id.index())?;
+                    write!(writer, "{} = ", Identifier::expr(*expression_id))?;
                     writer.write_expression_value(*expression_id, function, ctx).await?;
                     write!(writer, ";")
                 })
@@ -142,7 +143,7 @@ impl Writer<'_> {
             Instruction::Store(store) => {
                 self.write_indent_line(async |writer| {
                     writer.write_address(store.address())?;
-                    write!(writer, " = ray_expr_{:X};", store.expression().index())
+                    write!(writer, " = {};", Identifier::expr(store.expression()))
                 })
                 .await
             }
@@ -169,14 +170,14 @@ impl Writer<'_> {
                     .await
                 } else {
                     self.write_indent_line(async |writer| {
-                        write!(writer, "goto ray_block_{:X};", successor.index())
+                        write!(writer, "goto {};", Identifier::block(*successor))
                     })
                     .await
                 }
             }
             Terminator::Conditional(conditional) => {
                 self.write_indent_line(async |writer| {
-                    write!(writer, "if (ray_expr_{:X}) ", conditional.condition().index())?;
+                    write!(writer, "if ({}) ", Identifier::expr(conditional.condition()))?;
                     writer
                         .write_braced_block(async |writer| {
                             writer
@@ -199,7 +200,7 @@ impl Writer<'_> {
                 self.write_indent_line(async |writer| {
                     write!(writer, "return ")?;
                     if let Some(expression_id) = value {
-                        write!(writer, "ray_expr_{:X}", expression_id.index())?;
+                        write!(writer, "{}", Identifier::expr(*expression_id))?;
                     } else {
                         writer.generate_unit_value(ctx).await?;
                     }
@@ -248,11 +249,9 @@ impl Writer<'_> {
                 ctx.write_cty(&cty, writer)?;
                 write!(
                     writer,
-                    " ray_phi_in_{:X}_{:X}_{:X} = ray_expr_{:X};",
-                    predecessor.index(),
-                    successor.index(),
-                    phi_id.index(),
-                    incoming.index()
+                    " {} = {};",
+                    Identifier::phi_input(predecessor, successor, *phi_id),
+                    Identifier::expr(incoming)
                 )
             })
             .await?;
@@ -269,18 +268,16 @@ impl Writer<'_> {
             self.write_indent_line(async |writer| {
                 write!(
                     writer,
-                    "ray_expr_{:X} = ray_phi_in_{:X}_{:X}_{:X};",
-                    phi_id.index(),
-                    predecessor.index(),
-                    successor.index(),
-                    phi_id.index()
+                    "{} = {};",
+                    Identifier::expr(*phi_id),
+                    Identifier::phi_input(predecessor, successor, *phi_id)
                 )
             })
             .await?;
         }
 
         self.write_indent_line(async |writer| {
-            write!(writer, "goto ray_block_{:X};", successor.index())
+            write!(writer, "goto {};", Identifier::block(successor))
         })
         .await
     }
