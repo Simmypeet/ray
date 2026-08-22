@@ -366,10 +366,10 @@ pub enum TargetKind {
     #[clap(name = "obj")]
     Object,
 
-    /// Emits the whole information of the target in a human readable
-    /// format.
-    #[clap(name = "ron")]
-    Ron,
+    /// Compiles as a C source file which can be later compiled to an object
+    /// file or an executable.
+    #[clap(name = "c")]
+    C,
 }
 
 /// Represents a CLI arguments invoking the compilation process.
