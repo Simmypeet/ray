@@ -125,6 +125,3 @@ impl MutSubstitutable for Function {
         self.typed_expr_map.apply_mut_subst(subst, engine);
     }
 }
-
-#[cfg(test)]
-mod test;

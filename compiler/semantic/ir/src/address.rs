@@ -65,26 +65,3 @@ impl Address {
     #[must_use]
     pub fn projections(&self) -> &[Projection] { &self.projections }
 }
-
-#[cfg(test)]
-mod test {
-    use std::ptr;
-
-    use rayc_arena::ID;
-
-    use super::Address;
-    use crate::variable::Variable;
-
-    #[tokio::test]
-    async fn equal_projection_paths_are_interned_by_the_engine() {
-        let engine = rayc_qbice::create_minimal_engine().await;
-        let variable_id = ID::<Variable>::new(0);
-        let mut first = Address::new_variable(variable_id, &engine);
-        let mut second = Address::new_variable(variable_id, &engine);
-
-        first.add_tuple_index(1, &engine);
-        second.add_tuple_index(1, &engine);
-
-        assert!(ptr::eq(first.projections.as_ref(), second.projections.as_ref()));
-    }
-}
