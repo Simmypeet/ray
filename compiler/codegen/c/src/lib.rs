@@ -2,6 +2,8 @@ pub mod context;
 pub mod expression;
 pub mod function;
 pub mod function_ctx;
+#[allow(dead_code, reason = "the parallel IR path is wired to production in migration stage 4")]
+mod ir;
 pub mod statement;
 mod translation_unit;
 pub mod ty;
