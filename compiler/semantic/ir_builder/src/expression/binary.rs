@@ -5,7 +5,7 @@ use rayc_ir::{
         Expression, ExpressionID, ExpressionKind,
         binary::{Binary as IrBinary, BinaryOp as IrBinaryOp},
         literal::Literal,
-        load::Load,
+        phi::Phi,
     },
 };
 use rayc_lexical::tree::RelativeSpan;
@@ -86,7 +86,6 @@ fn lower_logical(
     ty: Interned<Ty>,
 ) -> ExpressionID {
     let left = builder.lower_expression_by_id(typed_function, binary.left());
-    let result = builder.create_temporary(ty.clone(), span);
     let rhs_block = builder.create_block();
     let short_circuit_block = builder.create_block();
     let merge_block = builder.create_block();
@@ -104,18 +103,14 @@ fn lower_logical(
         span,
         ty.clone(),
     ));
-    builder.emit_store(builder.variable_address(result), constant);
-    builder.terminate(Terminator::Jump(merge_block));
+    let short_circuit_predecessor = builder.jump_to(merge_block);
 
     builder.select_block(rhs_block);
     let rhs = builder.lower_expression_by_id(typed_function, binary.right());
-    builder.emit_store(builder.variable_address(result), rhs);
-    builder.terminate(Terminator::Jump(merge_block));
+    let rhs_predecessor = builder.jump_to(merge_block);
 
     builder.select_block(merge_block);
-    builder.emit_expression(Expression::new(
-        ExpressionKind::Load(Load::new(builder.variable_address(result))),
-        span,
-        ty,
-    ))
+    let incoming =
+        [(short_circuit_predecessor, constant), (rhs_predecessor, rhs)].into_iter().collect();
+    builder.emit_expression(Expression::new(ExpressionKind::Phi(Phi::new(incoming)), span, ty))
 }

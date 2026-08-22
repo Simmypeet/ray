@@ -1,0 +1,45 @@
+use std::cmp::Ordering;
+
+use qbice::{Decode, Encode, StableHash};
+use rayc_hash::FxHashMap;
+
+use crate::{cfg::BlockID, expression::ExpressionID};
+
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
+pub struct Phi {
+    incoming: FxHashMap<BlockID, ExpressionID>,
+}
+
+impl Phi {
+    #[must_use]
+    pub const fn new(incoming: FxHashMap<BlockID, ExpressionID>) -> Self { Self { incoming } }
+
+    #[must_use]
+    pub fn value_from(&self, predecessor: BlockID) -> Option<ExpressionID> {
+        self.incoming.get(&predecessor).copied()
+    }
+
+    pub fn incoming(&self) -> impl Iterator<Item = (BlockID, ExpressionID)> + '_ {
+        self.incoming.iter().map(|(block, value)| (*block, *value))
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize { self.incoming.len() }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.incoming.is_empty() }
+
+    fn sorted_incoming(&self) -> Vec<(BlockID, ExpressionID)> {
+        let mut incoming: Vec<_> = self.incoming().collect();
+        incoming.sort_unstable();
+        incoming
+    }
+}
+
+impl PartialOrd for Phi {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+}
+
+impl Ord for Phi {
+    fn cmp(&self, other: &Self) -> Ordering { self.sorted_incoming().cmp(&other.sorted_incoming()) }
+}

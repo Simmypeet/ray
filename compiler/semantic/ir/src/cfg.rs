@@ -10,10 +10,11 @@ pub type BlockID = ID<Block>;
 /// A basic block whose instructions execute in insertion order.
 ///
 /// Expression instructions define their value exactly once at their position in
-/// the block. All operands must already be defined on every path reaching that
-/// instruction. Store instructions consume an already-defined value and perform
-/// their write at their position in the block. A block is sealed when its
-/// single terminator is set and cannot then be changed or extended.
+/// the block. Non-phi operands must already be defined on every path reaching
+/// that instruction. Phi operands are instead defined on their corresponding
+/// incoming predecessor. Store instructions consume an already-defined value
+/// and perform their write at their position in the block. A block is sealed
+/// when its single terminator is set and cannot then be changed or extended.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Default)]
 pub struct Block {
     instructions: Vec<Instruction>,

@@ -65,6 +65,12 @@ impl Builder {
         self.function.set_terminator(self.current_block, terminator);
     }
 
+    pub(crate) fn jump_to(&mut self, target: BlockID) -> BlockID {
+        let predecessor = self.current_block;
+        self.terminate(Terminator::Jump(target));
+        predecessor
+    }
+
     pub(crate) fn is_terminated(&self) -> bool {
         self.function.block_terminator(self.current_block).is_some()
     }
