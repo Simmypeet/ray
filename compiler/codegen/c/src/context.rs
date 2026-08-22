@@ -3,8 +3,9 @@ use std::sync::Arc;
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_name};
+use rayc_typed_ast::{function::Function, get_typed_ast};
 
-use crate::context::instantiation::InstantiationTable;
+use crate::context::instantiation::{CTuple, CTupleID, InstantiationTable};
 
 pub mod instantiation;
 
@@ -43,5 +44,14 @@ impl Context {
 
     pub async fn get_def_name(&self, def_id: GlobalSymbolID) -> Interned<str> {
         self.engine.get_name(def_id).await
+    }
+
+    pub async fn get_typed_ast(&self, def_id: GlobalSymbolID) -> Interned<Function> {
+        self.engine.get_typed_ast(def_id).await
+    }
+
+    pub fn get_unit_ctuple_id(&mut self) -> CTupleID {
+        let args: Interned<[Interned<crate::ty::CTy>]> = self.intern_unsized([]);
+        self.get_ctuple_id(CTuple::builder().args(args).build())
     }
 }

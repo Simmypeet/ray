@@ -51,6 +51,9 @@ pub struct CTupleDecl {
 
 impl CTupleDecl {
     pub fn args(&self) -> impl Iterator<Item = &'_ Interned<CTy>> { self.args.iter() }
+
+    #[must_use]
+    pub fn is_unit(&self) -> bool { self.args.is_empty() }
 }
 
 pub type CTupleID = ID<CTuple>;
