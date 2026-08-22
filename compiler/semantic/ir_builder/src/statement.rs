@@ -4,7 +4,7 @@ use rayc_typed_ast::{function::Function as TypedFunction, statement::Statement};
 use crate::builder::Builder;
 
 impl Builder {
-    pub(crate) fn lower_statements(&mut self, typed_function: &TypedFunction) {
+    pub fn lower_statements(&mut self, typed_function: &TypedFunction) {
         for statement in typed_function.statements() {
             if self.is_terminated() {
                 break;

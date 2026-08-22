@@ -11,12 +11,12 @@ mod identifier;
 mod paren;
 mod tuple_index;
 
-pub(crate) trait LowerAddress<S> {
+pub trait LowerAddress<S> {
     fn lower_address(&mut self, typed_function: &TypedFunction, expression: &S) -> Address;
 }
 
 impl Builder {
-    pub(crate) fn lower_address_by_id(
+    pub fn lower_address_by_id(
         &mut self,
         typed_function: &TypedFunction,
         expression_id: TypedExprID,

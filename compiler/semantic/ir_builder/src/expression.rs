@@ -18,14 +18,14 @@ mod tuple;
 mod tuple_index;
 mod typed_expr_id;
 
-pub(crate) use typed_expr_id::TypedExprWithID;
+pub use typed_expr_id::TypedExprWithID;
 
-pub(crate) trait LowerExpression<S> {
+pub trait LowerExpression<S> {
     fn lower_expression(&mut self, expression: S, typed_function: &TypedFunction) -> ExpressionID;
 }
 
 impl Builder {
-    pub(crate) fn lower_expression_by_id(
+    pub fn lower_expression_by_id(
         &mut self,
         typed_function: &TypedFunction,
         expression_id: TypedExprID,
