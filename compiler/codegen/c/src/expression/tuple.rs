@@ -28,18 +28,24 @@ impl Generate<Tuple> for Writer<'_> {
                 })
                 .await?;
 
-            // write the tuple elements like `{ .elem0 = <expr>, ... }`
-            writer
-                .write_separated_list(
-                    EnclosingPair::Braces,
-                    expr.elements().iter().enumerate(),
-                    ',',
-                    async |writer, (n, expr_id)| {
-                        write!(writer, ".elem{n:X} = ")?;
-                        writer.generate_typed_expr(*expr_id, function_ctx, ctx).await
-                    },
-                )
-                .await
+            if expr.elements().is_empty() {
+                writer
+                    .write_enclosing_pair(EnclosingPair::Braces, async |writer| write!(writer, "0"))
+                    .await
+            } else {
+                // write the tuple elements like `{ .elem0 = <expr>, ... }`
+                writer
+                    .write_separated_list(
+                        EnclosingPair::Braces,
+                        expr.elements().iter().enumerate(),
+                        ',',
+                        async |writer, (n, expr_id)| {
+                            write!(writer, ".elem{n:X} = ")?;
+                            writer.generate_typed_expr(*expr_id, function_ctx, ctx).await
+                        },
+                    )
+                    .await
+            }
         }))
         .await
     }
