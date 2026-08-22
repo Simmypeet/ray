@@ -16,5 +16,10 @@ rayc_semantic_element.path = "../semantic_element"
 rayc_hash.path = "../../base/hash"
 qbice.workspace = true
 
+[dev-dependencies]
+rayc_source_file.path = "../../base/source_file"
+rayc_target.path = "../../base/target"
+tokio.workspace = true
+
 [lints]
 workspace = true

@@ -1,7 +1,6 @@
 use qbice::{Decode, Encode, StableHash};
-use rayc_arena::ID;
 
-use crate::expression::Expression;
+use crate::expression::ExpressionID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum BinaryOp {
@@ -13,7 +12,23 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Binary {
-    left: ID<Expression>,
+    left: ExpressionID,
     operator: BinaryOp,
-    right: ID<Expression>,
+    right: ExpressionID,
+}
+
+impl Binary {
+    #[must_use]
+    pub const fn new(left: ExpressionID, operator: BinaryOp, right: ExpressionID) -> Self {
+        Self { left, operator, right }
+    }
+
+    #[must_use]
+    pub const fn left(&self) -> ExpressionID { self.left }
+
+    #[must_use]
+    pub const fn operator(&self) -> BinaryOp { self.operator }
+
+    #[must_use]
+    pub const fn right(&self) -> ExpressionID { self.right }
 }

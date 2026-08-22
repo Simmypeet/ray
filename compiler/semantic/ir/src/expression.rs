@@ -5,6 +5,7 @@ use rayc_type::ty::Ty;
 
 use crate::expression::{
     binary::Binary, call::Call, literal::Literal, load::Load, ref_of::RefOf, tuple::Tuple,
+    tuple_index::TupleIndex,
 };
 
 pub mod binary;
@@ -13,6 +14,7 @@ pub mod literal;
 pub mod load;
 pub mod ref_of;
 pub mod tuple;
+pub mod tuple_index;
 
 /// Identifies an expression value stored in a function's expression arena.
 pub type ExpressionID = ID<Expression>;
@@ -26,23 +28,32 @@ pub enum ExpressionKind {
     Binary(Binary),
     Call(Call),
     Tuple(Tuple),
+    TupleIndex(TupleIndex),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct Expression {
     kind: ExpressionKind,
-    span: Option<RelativeSpan>,
+    span: RelativeSpan,
     ty: Interned<Ty>,
 }
 
 impl Expression {
     #[must_use]
     pub const fn new(kind: ExpressionKind, span: RelativeSpan, ty: Interned<Ty>) -> Self {
-        Self { kind, span: Some(span), ty }
+        Self { kind, span, ty }
     }
 
     #[must_use]
-    pub const fn span(&self) -> RelativeSpan { self.span.expect("Expression span should be set") }
+    pub const fn new_error(span: RelativeSpan, ty: Interned<Ty>) -> Self {
+        Self::new(ExpressionKind::Error, span, ty)
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> &ExpressionKind { &self.kind }
+
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
 
     #[must_use]
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }

@@ -1,22 +1,21 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
-use rayc_arena::ID;
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::parameter::Parameter;
+use rayc_semantic_element::parameter::ParameterID;
 
-use crate::{expression::Expression, variable::Variable};
+use crate::{expression::ExpressionID, variable::VariableID};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum AddressRoot {
-    Variable(ID<Variable>),
-    Parameter(ID<Parameter>),
-    Deref(ID<Expression>),
+    Error,
+    Variable(VariableID),
+    Parameter(ParameterID),
+    Deref(ExpressionID),
 }
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum Projection {
-    Deref,
     Tuple(usize),
 }
 
@@ -27,26 +26,65 @@ pub struct Address {
 }
 
 impl Address {
-    pub fn new_root(root: AddressRoot, engine: &TrackedEngine) -> Self {
+    fn new_root(root: AddressRoot, engine: &TrackedEngine) -> Self {
         Self { root, projections: engine.intern_unsized([]) }
     }
 
-    pub fn new_variable(var_id: ID<Variable>, engine: &TrackedEngine) -> Self {
+    #[must_use]
+    pub fn new_error(engine: &TrackedEngine) -> Self { Self::new_root(AddressRoot::Error, engine) }
+
+    #[must_use]
+    pub fn new_variable(var_id: VariableID, engine: &TrackedEngine) -> Self {
         Self::new_root(AddressRoot::Variable(var_id), engine)
     }
 
-    pub fn add_projection(&mut self, projection: Projection, engine: &TrackedEngine) {
+    #[must_use]
+    pub fn new_parameter(parameter_id: ParameterID, engine: &TrackedEngine) -> Self {
+        Self::new_root(AddressRoot::Parameter(parameter_id), engine)
+    }
+
+    #[must_use]
+    pub fn new_deref(expression_id: ExpressionID, engine: &TrackedEngine) -> Self {
+        Self::new_root(AddressRoot::Deref(expression_id), engine)
+    }
+
+    fn add_projection(&mut self, projection: Projection, engine: &TrackedEngine) {
         let mut new_projections = Vec::with_capacity(self.projections.len() + 1);
         new_projections.extend(self.projections.iter().copied());
         new_projections.push(projection);
         self.projections = engine.intern_unsized(new_projections);
     }
 
-    pub fn add_deref(&mut self, engine: &TrackedEngine) {
-        self.add_projection(Projection::Deref, engine);
-    }
-
     pub fn add_tuple_index(&mut self, index: usize, engine: &TrackedEngine) {
         self.add_projection(Projection::Tuple(index), engine);
+    }
+
+    #[must_use]
+    pub const fn root(&self) -> AddressRoot { self.root }
+
+    #[must_use]
+    pub fn projections(&self) -> &[Projection] { &self.projections }
+}
+
+#[cfg(test)]
+mod test {
+    use std::ptr;
+
+    use rayc_arena::ID;
+
+    use super::Address;
+    use crate::variable::Variable;
+
+    #[tokio::test]
+    async fn equal_projection_paths_are_interned_by_the_engine() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let variable_id = ID::<Variable>::new(0);
+        let mut first = Address::new_variable(variable_id, &engine);
+        let mut second = Address::new_variable(variable_id, &engine);
+
+        first.add_tuple_index(1, &engine);
+        second.add_tuple_index(1, &engine);
+
+        assert!(ptr::eq(first.projections.as_ref(), second.projections.as_ref()));
     }
 }

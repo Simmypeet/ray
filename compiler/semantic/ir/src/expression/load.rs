@@ -10,4 +10,7 @@ pub struct Load {
 impl Load {
     #[must_use]
     pub const fn new(address: Address) -> Self { Self { address } }
+
+    #[must_use]
+    pub const fn address(&self) -> &Address { &self.address }
 }
