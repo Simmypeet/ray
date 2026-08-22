@@ -12,7 +12,6 @@ rayc_target.path = "../../base/target"
 rayc_symbol.path = "../../semantic/symbol"
 rayc_qbice.path = "../../base/qbice"
 rayc_ir.path = "../../semantic/ir"
-rayc_typed_ast.path = "../../semantic/typed_ast"
 rayc_type.path = "../../semantic/type"
 rayc_semantic_element.path = "../../semantic/semantic_element"
 qbice.workspace = true

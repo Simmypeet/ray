@@ -9,7 +9,10 @@ use rayc_ir::{
     variable::VariableID,
 };
 
-use crate::{context::Context, writer::Writer};
+use crate::{
+    context::Context,
+    writer::{EnclosingPair, Writer},
+};
 
 #[derive(Debug)]
 struct FunctionLayout {
@@ -81,6 +84,22 @@ impl FunctionLayout {
 }
 
 impl Writer<'_> {
+    async fn generate_unit_value(&mut self, ctx: &mut Context) -> std::io::Result<()> {
+        let unit_id = ctx.get_unit_ctuple_id();
+
+        self.write_enclosing_pair(EnclosingPair::Parens, async |writer| {
+            writer
+                .write_enclosing_pair(EnclosingPair::Parens, async |writer| {
+                    ctx.write_ctuple_t(unit_id, writer)
+                })
+                .await?;
+            writer
+                .write_enclosing_pair(EnclosingPair::Braces, async |writer| write!(writer, "0"))
+                .await
+        })
+        .await
+    }
+
     pub(crate) async fn write_ir_function_body(
         &mut self,
         function: &Function,

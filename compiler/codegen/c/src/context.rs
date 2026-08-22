@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
+use rayc_ir::{function::Function, get_ir};
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_name};
-use rayc_typed_ast::{function::Function, get_typed_ast};
 
 use crate::context::instantiation::{CTuple, CTupleID, InstantiationTable};
 
@@ -46,8 +46,8 @@ impl Context {
         self.engine.get_name(def_id).await
     }
 
-    pub async fn get_typed_ast(&self, def_id: GlobalSymbolID) -> Interned<Function> {
-        self.engine.get_typed_ast(def_id).await
+    pub async fn get_ir(&self, def_id: GlobalSymbolID) -> Interned<Function> {
+        self.engine.get_ir(def_id).await
     }
 
     pub fn get_unit_ctuple_id(&mut self) -> CTupleID {

@@ -1658,7 +1658,6 @@ dependencies = [
  "rayc_symbol",
  "rayc_target",
  "rayc_type",
- "rayc_typed_ast",
  "tokio",
 ]
 
