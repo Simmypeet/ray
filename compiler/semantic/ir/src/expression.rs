@@ -5,7 +5,6 @@ use rayc_type::ty::Ty;
 
 use crate::expression::{
     binary::Binary, call::Call, literal::Literal, load::Load, ref_of::RefOf, tuple::Tuple,
-    tuple_index::TupleIndex,
 };
 
 pub mod binary;
@@ -14,7 +13,6 @@ pub mod literal;
 pub mod load;
 pub mod ref_of;
 pub mod tuple;
-pub mod tuple_index;
 
 /// Identifies an expression value stored in a function's expression arena.
 pub type ExpressionID = ID<Expression>;
@@ -28,7 +26,6 @@ pub enum ExpressionKind {
     Binary(Binary),
     Call(Call),
     Tuple(Tuple),
-    TupleIndex(TupleIndex),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
