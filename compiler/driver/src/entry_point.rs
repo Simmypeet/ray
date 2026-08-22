@@ -1,6 +1,6 @@
 //! Resolves and validates executable entry points.
 
-use rayc_diagnostic::{ByteIndex, Highlight, Rendered};
+use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
 use rayc_symbol::{
@@ -26,10 +26,9 @@ pub(super) enum EntryPointError {
     InvalidSignature { symbol_id: GlobalSymbolID },
 }
 
-impl EntryPointError {
-    /// Renders this error as a normal compiler diagnostic.
-    pub(super) async fn render(self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        match self {
+impl Report for EntryPointError {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        match *self {
             Self::Missing => Rendered::builder()
                 .message("main function not found; expected def main() -> int32")
                 .help_message("add `def main() -> int32` to the root module")

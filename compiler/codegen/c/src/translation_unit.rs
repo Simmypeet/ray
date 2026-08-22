@@ -1,21 +1,49 @@
 use std::io::{self, Write};
 
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::symbol_kind::get_all_def_ids;
+use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
 use rayc_target::TargetID;
 
 use crate::{
     context::{Context, instantiation::CDef},
+    identifier::Identifier,
     writer::Writer,
 };
+
+/// Options controlling the contents of a generated C translation unit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CTranslationUnitOptions {
+    entry_point: Option<GlobalSymbolID>,
+}
+
+impl CTranslationUnitOptions {
+    /// Creates options for an ordinary translation unit without a C entry
+    /// point wrapper.
+    #[must_use]
+    pub const fn ordinary() -> Self { Self { entry_point: None } }
+
+    /// Creates options for an executable translation unit targeting the given
+    /// validated Ray entry point.
+    #[must_use]
+    pub const fn executable(entry_point: GlobalSymbolID) -> Self {
+        Self { entry_point: Some(entry_point) }
+    }
+}
 
 /// Writes a complete C translation unit for `target_id` to `buf`.
 pub async fn write_c_translation_unit(
     engine: &TrackedEngine,
     target_id: TargetID,
+    options: CTranslationUnitOptions,
     buf: &mut impl Write,
 ) -> io::Result<()> {
     let mut generator = Context::new(engine.clone());
+
+    if let Some(entry_point) = options.entry_point {
+        let entry_point = CDef::builder().def_id(entry_point).build();
+        let _ = generator.get_cdef_id(entry_point).await;
+    }
+
     let def_ids = engine.get_all_def_ids(target_id).await;
 
     for def_id in def_ids.iter().copied() {
@@ -59,6 +87,11 @@ pub async fn write_c_translation_unit(
         buf.write_all(&definition)?;
         writeln!(buf)?;
         writeln!(buf)?;
+    }
+
+    if let Some(entry_point) = options.entry_point {
+        let entry_point_name = generator.get_def_name(entry_point).await;
+        writeln!(buf, "int main(void) {{ return {}(); }}", Identifier::def(&entry_point_name))?;
     }
 
     Ok(())

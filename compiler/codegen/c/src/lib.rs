@@ -8,4 +8,4 @@ pub mod translation_unit;
 pub mod write;
 pub mod writer;
 
-pub use translation_unit::write_c_translation_unit;
+pub use translation_unit::{CTranslationUnitOptions, write_c_translation_unit};

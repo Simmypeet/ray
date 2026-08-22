@@ -3,6 +3,8 @@
 use std::{fs::File, io::Write, process::ExitCode, sync::Arc};
 
 use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
+use rayc_c::CTranslationUnitOptions;
+use rayc_diagnostic::Report;
 use rayc_qbice::{Engine, InMemoryFactory, IncrementalStorageEngine, TrackedEngine};
 use rayc_symbol::GlobalSymbolID;
 use rayc_symbol_impl::source_map::create_source_map;
@@ -165,7 +167,7 @@ pub async fn run(
         match validate_entry_point(&tracked_engine, local_target_id).await {
             Ok(entry_point) => Some(entry_point),
             Err(error) => {
-                report_term.report_rendered(&error.render(&tracked_engine).await);
+                report_term.report_rendered(&error.report(&tracked_engine).await);
                 report_term.report_simple_error("Compilation aborted due to 1 error(s)");
                 return ExitCode::FAILURE;
             }
@@ -180,7 +182,7 @@ pub async fn run(
 async fn write_c(
     engine: &TrackedEngine,
     target_id: TargetID,
-    _entry_point: Option<GlobalSymbolID>,
+    entry_point: Option<GlobalSymbolID>,
     report_term: &mut ReportTerm<'_>,
 ) -> ExitCode {
     let mut file = match File::create_new("output.c") {
@@ -191,7 +193,12 @@ async fn write_c(
         }
     };
 
-    if let Err(error) = rayc_c::write_c_translation_unit(engine, target_id, &mut file).await {
+    let options = entry_point
+        .map_or_else(CTranslationUnitOptions::ordinary, CTranslationUnitOptions::executable);
+
+    if let Err(error) =
+        rayc_c::write_c_translation_unit(engine, target_id, options, &mut file).await
+    {
         report_term.report_simple_error(format!("Failed to generate C output: {error}"));
         return ExitCode::FAILURE;
     }
