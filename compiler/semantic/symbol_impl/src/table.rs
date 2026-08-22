@@ -46,7 +46,7 @@ struct SyntaxTable {
 #[derive(Debug, Default, StableHash, Encode, Decode)]
 pub struct Table {
     symbol_kinds: Map<SymbolKind>,
-    members: Map<Member>,
+    members: Map<Interned<Member>>,
     parents: Map<Option<SymbolID>>,
     spans: Map<Option<RelativeSpan>>,
     names: Map<Interned<str>>,
@@ -60,6 +60,9 @@ pub struct Table {
 impl Table {
     #[must_use]
     pub fn diagnostics(&self) -> &[Diagnostic] { &self.diagnostics }
+
+    #[must_use]
+    pub fn member(&self, id: SymbolID) -> Option<&Interned<Member>> { self.members.get(&id) }
 }
 
 #[derive(Debug, Default)]
@@ -143,7 +146,7 @@ impl Table {
     #[must_use]
     pub const fn source_id(&self) -> Option<LocalSourceID> { self.source_id }
 
-    fn insert_member_as_root_module(&mut self, member: MemberBuilder) {
+    fn insert_member_as_root_module(&mut self, member: MemberBuilder, engine: &TrackedEngine) {
         self.insert_info(
             member.current_id.id,
             None,
@@ -152,10 +155,17 @@ impl Table {
                 .name(member.current_qualified_name[0].clone())
                 .member(member)
                 .build(),
+            engine,
         );
     }
 
-    fn insert_info(&mut self, symbol_id: SymbolID, parent: Option<SymbolID>, info: Infos) {
+    fn insert_info(
+        &mut self,
+        symbol_id: SymbolID,
+        parent: Option<SymbolID>,
+        info: Infos,
+        engine: &TrackedEngine,
+    ) {
         self.spans.insert(symbol_id, info.span);
         self.names.insert(symbol_id, info.name);
         self.parents.insert(symbol_id, parent);
@@ -170,7 +180,7 @@ impl Table {
         }
 
         if let Some(member) = info.member {
-            self.members.insert(symbol_id, member.member);
+            self.members.insert(symbol_id, engine.intern(member.member));
             self.diagnostics
                 .extend(member.redef_errors.into_iter().map(Diagnostic::ItemRedefinition));
         }
@@ -227,7 +237,7 @@ impl Table {
         }
 
         // finally, insert the symbol information into the table
-        self.insert_info(id, Some(member_builder.current_id.id), info);
+        self.insert_info(id, Some(member_builder.current_id.id), info, engine);
     }
 }
 
@@ -250,7 +260,7 @@ pub struct Key {
     pub target_id: TargetID,
 }
 
-#[executor(config = Config)]
+#[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
 pub async fn table_executor(&Key { target_id }: &Key, engine: &TrackedEngine) -> Arc<Table> {
     let mut table = Table::default();
 
@@ -285,7 +295,7 @@ pub async fn table_executor(&Key { target_id }: &Key, engine: &TrackedEngine) ->
     }
 
     table.source_id = stable_path_id;
-    table.insert_member_as_root_module(member);
+    table.insert_member_as_root_module(member, engine);
 
     Arc::new(table)
 }
