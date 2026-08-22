@@ -1705,12 +1705,15 @@ dependencies = [
  "rayc_ir_builder",
  "rayc_lexical_impl",
  "rayc_qbice",
+ "rayc_semantic_element",
  "rayc_semantic_element_impl",
  "rayc_source_file",
  "rayc_source_file_impl",
+ "rayc_symbol",
  "rayc_symbol_impl",
  "rayc_syntax_impl",
  "rayc_target",
+ "rayc_type",
  "tracing",
 ]
 

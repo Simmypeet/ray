@@ -4,12 +4,14 @@ use std::{fs::File, io::Write, process::ExitCode, sync::Arc};
 
 use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use rayc_qbice::{Engine, InMemoryFactory, IncrementalStorageEngine, TrackedEngine};
+use rayc_symbol::GlobalSymbolID;
 use rayc_symbol_impl::source_map::create_source_map;
 use rayc_target::{Arguments, TargetID};
 use tracing::instrument;
 
-use crate::term::ReportTerm;
+use crate::{entry_point::validate_entry_point, term::ReportTerm};
 
+mod entry_point;
 pub mod term;
 
 async fn create_engine(argument: &Arguments, report_term: &mut ReportTerm<'_>) -> Option<Engine> {
@@ -156,15 +158,29 @@ pub async fn run(
         report_term
             .report_simple_error(format!("Compilation aborted due to {diagnostic_count} error(s)"));
 
-        ExitCode::FAILURE
-    } else {
-        write_c(&tracked_engine, local_target_id, &mut report_term).await
+        return ExitCode::FAILURE;
     }
+
+    let entry_point = if argument.requires_entry_point() {
+        match validate_entry_point(&tracked_engine, local_target_id).await {
+            Ok(entry_point) => Some(entry_point),
+            Err(error) => {
+                report_term.report_rendered(&error.render(&tracked_engine).await);
+                report_term.report_simple_error("Compilation aborted due to 1 error(s)");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        None
+    };
+
+    write_c(&tracked_engine, local_target_id, entry_point, &mut report_term).await
 }
 
 async fn write_c(
     engine: &TrackedEngine,
     target_id: TargetID,
+    _entry_point: Option<GlobalSymbolID>,
     report_term: &mut ReportTerm<'_>,
 ) -> ExitCode {
     let mut file = match File::create_new("output.c") {
