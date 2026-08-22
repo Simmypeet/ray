@@ -10,7 +10,6 @@ rust-version.workspace = true
 rayc_hash.path = "../../base/hash"
 rayc_target.path = "../../base/target"
 rayc_symbol.path = "../../semantic/symbol"
-rayc_arena.path = "../../base/arena"
 rayc_qbice.path = "../../base/qbice"
 rayc_typed_ast.path = "../../semantic/typed_ast"
 rayc_type.path = "../../semantic/type"

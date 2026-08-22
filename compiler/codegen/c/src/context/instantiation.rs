@@ -1,8 +1,11 @@
-use std::io;
+use std::{fmt, io};
 
 use bon::Builder;
-use qbice::storage::intern::Interned;
-use rayc_arena::ID;
+use qbice::{
+    StableHash,
+    stable_hash::{Sip128Hasher, StableHasher},
+    storage::intern::Interned,
+};
 use rayc_hash::FxHashMap;
 use rayc_semantic_element::{
     parameter::{ParameterID, get_parameter_map},
@@ -12,7 +15,7 @@ use rayc_symbol::GlobalSymbolID;
 
 use crate::{context::Context, ty::CTy};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Builder)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Builder)]
 pub struct CDef {
     def_id: GlobalSymbolID,
 }
@@ -37,9 +40,18 @@ impl CDefDecl {
     }
 }
 
-pub type CDefID = ID<CDef>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash)]
+pub struct CDefID(u128);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Builder)]
+impl CDefID {
+    fn for_cdef(cdef: &CDef) -> Self { Self(stable_codegen_id("rayc_c::CDefID:v1", cdef)) }
+}
+
+impl fmt::UpperHex for CDefID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::UpperHex::fmt(&self.0, f) }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Builder)]
 pub struct CTuple {
     args: Interned<[Interned<CTy>]>,
 }
@@ -56,7 +68,23 @@ impl CTupleDecl {
     pub fn is_unit(&self) -> bool { self.args.is_empty() }
 }
 
-pub type CTupleID = ID<CTuple>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash)]
+pub struct CTupleID(u128);
+
+impl CTupleID {
+    fn for_ctuple(tuple: &CTuple) -> Self { Self(stable_codegen_id("rayc_c::CTupleID:v1", tuple)) }
+}
+
+impl fmt::UpperHex for CTupleID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::UpperHex::fmt(&self.0, f) }
+}
+
+fn stable_codegen_id<T: StableHash>(domain: &'static str, value: &T) -> u128 {
+    let mut hasher = Sip128Hasher::default();
+    domain.stable_hash(&mut hasher);
+    value.stable_hash(&mut hasher);
+    hasher.finish()
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct InstantiationTable {
@@ -73,13 +101,20 @@ impl Context {
             return *id;
         }
 
-        let id = self.inst_table.tuple_table.len() as u64;
-        let id = ID::new(id);
+        let id = CTupleID::for_ctuple(&ctuple);
 
-        self.inst_table.tuple_table.insert(ctuple.clone(), id);
+        assert!(
+            self.inst_table
+                .tuple_decls
+                .insert(id, CTupleDecl { args: ctuple.args.clone() })
+                .is_none(),
+            "compiler-internal duplicate CTupleID declaration insertion for {id:?}"
+        );
 
-        let decl = CTupleDecl { args: ctuple.args };
-        self.inst_table.tuple_decls.insert(id, decl);
+        assert!(
+            self.inst_table.tuple_table.insert(ctuple, id).is_none(),
+            "compiler-internal duplicate CTuple key insertion for CTupleID {id:?}"
+        );
 
         id
     }
@@ -89,8 +124,7 @@ impl Context {
             return *id;
         }
 
-        let id = self.inst_table.def_table.len() as u64;
-        let id = ID::new(id);
+        let id = CDefID::for_cdef(&cdef);
 
         let return_ty = self.ty_to_cty(&self.engine.get_return_type(cdef.def_id).await);
         let parameters = {
@@ -107,14 +141,21 @@ impl Context {
 
         let decl = CDefDecl { def_id: cdef.def_id, parameters, return_type: return_ty };
 
-        self.inst_table.def_table.insert(cdef, id);
-        self.inst_table.def_decls.insert(id, decl);
+        assert!(
+            self.inst_table.def_decls.insert(id, decl).is_none(),
+            "compiler-internal duplicate CDefID declaration insertion for {id:?}"
+        );
+
+        assert!(
+            self.inst_table.def_table.insert(cdef, id).is_none(),
+            "compiler-internal duplicate CDef key insertion for CDefID {id:?}"
+        );
 
         id
     }
 
     pub fn write_ctuple_t(&self, id: CTupleID, buf: &mut impl io::Write) -> std::io::Result<()> {
-        write!(buf, "RayTuple{:X}_t", id.index())
+        write!(buf, "RayTuple{id:X}_t")
     }
 
     pub fn write_ctuple_struct(
@@ -122,7 +163,7 @@ impl Context {
         id: CTupleID,
         buf: &mut impl io::Write,
     ) -> std::io::Result<()> {
-        write!(buf, "RayTuple{:X}", id.index())
+        write!(buf, "RayTuple{id:X}")
     }
 
     pub fn cdef_decl_ids(&self) -> impl Iterator<Item = CDefID> + '_ {

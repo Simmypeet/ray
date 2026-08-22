@@ -1648,7 +1648,6 @@ version = "0.1.0-beta.2"
 dependencies = [
  "bon",
  "qbice",
- "rayc_arena",
  "rayc_hash",
  "rayc_qbice",
  "rayc_semantic_element",
