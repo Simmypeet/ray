@@ -1,0 +1,2 @@
+def createTuple(first: a, second: b) -> (a, b):
+    return (first, second)

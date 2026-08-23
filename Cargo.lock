@@ -1610,6 +1610,7 @@ dependencies = [
  "qbice",
  "rayc_diagnostic",
  "rayc_qbice",
+ "rayc_semantic_element_impl",
  "rayc_symbol_impl",
  "rayc_syntax",
  "rayc_target",
@@ -1831,12 +1832,14 @@ version = "0.1.0-beta.2"
 dependencies = [
  "linkme",
  "qbice",
- "rayc_extend",
+ "rayc_diagnostic",
+ "rayc_lexical",
  "rayc_qbice",
  "rayc_semantic_element",
  "rayc_source_file",
  "rayc_symbol",
  "rayc_syntax",
+ "rayc_target",
  "rayc_type",
 ]
 

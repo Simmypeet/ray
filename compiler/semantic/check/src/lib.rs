@@ -39,13 +39,11 @@ pub struct Key {
 #[executor(config = Config)]
 async fn check_executor(&Key { target_id }: &Key, engine: &TrackedEngine) -> Check {
     let sym_diags = engine.query(&rayc_symbol_impl::diagnostic::RenderedKey(target_id)).await;
+    let semantic_diags =
+        engine.query(&rayc_semantic_element_impl::diagnostic::RenderedKey { target_id }).await;
     let ir_diags = engine.query(&rayc_typed_ast_builder::query::RenderedKey { target_id }).await;
 
-    Check {
-        symbol_immpl: sym_diags,
-        semantic_impl: engine.intern_unsized(Vec::new()),
-        ir_impl: ir_diags,
-    }
+    Check { symbol_immpl: sym_diags, semantic_impl: semantic_diags, ir_impl: ir_diags }
 }
 
 #[distributed_slice(RAY_PROGRAM)]

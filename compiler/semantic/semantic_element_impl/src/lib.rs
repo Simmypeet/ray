@@ -1,7 +1,6 @@
 pub mod build;
-pub mod parameter;
-pub mod return_type;
-pub mod ty;
+pub mod diagnostic;
+mod function_signature;
 
 /// A dummy function to make sure this crate is linked by the compiler.
 pub const fn black_box() {}
