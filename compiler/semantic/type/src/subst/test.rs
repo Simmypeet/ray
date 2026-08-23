@@ -1,5 +1,11 @@
+use rayc_arena::ID;
+use rayc_symbol::{GlobalSymbolID, MemberID};
+
 use super::*;
-use crate::ty::{Mutability, Primitive, TyKind};
+use crate::{
+    poly_var::PolyVar,
+    ty::{Mutability, Primitive, TyKind},
+};
 
 // input: {T0 -> T1} composed with {T1 -> int32}
 // premise: {}
@@ -60,4 +66,27 @@ async fn compose_rewrites_nested_types() {
     assert_eq!(subst.0.len(), 2);
     assert_eq!(subst.get(&t0), Some(&pointer_to_int32));
     assert_eq!(subst.get(&t1), Some(&int32));
+}
+
+// input: `{T0 -> int32, P0 -> bool}` applied to `T0` and `P0`
+// premise: `T0` is inference; `P0` is global polymorphic
+// output: both variables are replaced by their corresponding primitive types
+#[tokio::test]
+async fn substitutes_inference_and_polymorphic_variables() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let inference = TyInference::new(TyKind::Star, 0);
+    let poly: GlobalPolyVarID = MemberID::new(GlobalSymbolID::default(), ID::<PolyVar>::new(0));
+    let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+    let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
+    let inference_ty = engine.intern(Ty::Inference(inference));
+    let poly_ty = Ty::new_poly_var(poly, &engine);
+    let subst: Subst =
+        [(Var::Inference(inference), int32.clone()), (Var::Poly(poly), bool_ty.clone())]
+            .into_iter()
+            .collect();
+
+    assert_eq!(subst.get(&Var::Inference(inference)), Some(&int32));
+    assert_eq!(subst.get(&Var::Poly(poly)), Some(&bool_ty));
+    assert_eq!(inference_ty.apply_subst(&subst, &engine), Some(int32));
+    assert_eq!(poly_ty.apply_subst(&subst, &engine), Some(bool_ty));
 }

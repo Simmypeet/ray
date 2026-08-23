@@ -243,7 +243,7 @@ impl Substitutable for Interned<Ty> {
             }
 
             Ty::Inference(ty_inference) => subst.get(ty_inference).cloned(),
-            Ty::PolyVar(_) => None,
+            Ty::PolyVar(poly) => subst.get(poly).cloned(),
         }
     }
 }

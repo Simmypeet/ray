@@ -3,19 +3,36 @@ use qbice::storage::intern::Interned;
 use rayc_hash::FxImHashMap;
 use rayc_qbice::TrackedEngine;
 
-use crate::ty::{Ty, TyInference};
+use crate::{
+    poly_var::GlobalPolyVarID,
+    ty::{Ty, TyInference},
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Var {
+    Inference(TyInference),
+    Poly(GlobalPolyVarID),
+}
+
+impl From<TyInference> for Var {
+    fn from(inference: TyInference) -> Self { Self::Inference(inference) }
+}
+
+impl From<GlobalPolyVarID> for Var {
+    fn from(poly: GlobalPolyVarID) -> Self { Self::Poly(poly) }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Subst(FxImHashMap<TyInference, Interned<Ty>>);
+pub struct Subst(FxImHashMap<Var, Interned<Ty>>);
 
 impl Subst {
     #[must_use]
     pub fn new_empty() -> Self { Self(FxImHashMap::default()) }
 
     #[must_use]
-    pub fn new_singleton(inference: TyInference, ty: Interned<Ty>) -> Self {
+    pub fn new_singleton<V: Into<Var>>(var: V, ty: Interned<Ty>) -> Self {
         let mut map = FxImHashMap::default();
-        map.insert(inference, ty);
+        map.insert(var.into(), ty);
         Self(map)
     }
 
@@ -29,15 +46,17 @@ impl Subst {
             }
         }
 
-        for (inference, ty) in &other.0 {
-            if let Entry::Vacant(e) = self.0.entry(*inference) {
+        for (var, ty) in &other.0 {
+            if let Entry::Vacant(e) = self.0.entry(*var) {
                 e.insert(ty.clone());
             }
         }
     }
 
     #[must_use]
-    pub fn get(&self, inference: &TyInference) -> Option<&Interned<Ty>> { self.0.get(inference) }
+    pub fn get<V: Copy + Into<Var>>(&self, var: &V) -> Option<&Interned<Ty>> {
+        self.0.get(&(*var).into())
+    }
 }
 
 pub trait Substitutable {
@@ -60,9 +79,12 @@ pub trait MutSubstitutable {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine);
 }
 
-impl FromIterator<(TyInference, Interned<Ty>)> for Subst {
-    fn from_iter<T: IntoIterator<Item = (TyInference, Interned<Ty>)>>(iter: T) -> Self {
-        Self(FxImHashMap::from_iter(iter))
+impl<V> FromIterator<(V, Interned<Ty>)> for Subst
+where
+    V: Into<Var>,
+{
+    fn from_iter<T: IntoIterator<Item = (V, Interned<Ty>)>>(iter: T) -> Self {
+        Self(iter.into_iter().map(|(var, ty)| (var.into(), ty)).collect())
     }
 }
 
