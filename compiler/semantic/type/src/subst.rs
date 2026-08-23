@@ -1,6 +1,10 @@
-use std::collections::{BTreeMap, btree_map::Entry};
-
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use im::hashmap::Entry;
+use qbice::{
+    Decode, Encode, StableHash,
+    stable_hash::{StableHasher, Value},
+    storage::intern::Interned,
+};
+use rayc_hash::FxImHashMap;
 use rayc_qbice::TrackedEngine;
 
 use crate::{
@@ -22,18 +26,69 @@ impl From<GlobalPolyVarID> for Var {
     fn from(poly: GlobalPolyVarID) -> Self { Self::Poly(poly) }
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Default,
-)]
-pub struct Subst(BTreeMap<Var, Interned<Ty>>);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Subst(FxImHashMap<Var, Interned<Ty>>);
+
+impl Encode for Subst {
+    fn encode<E: qbice::serialize::Encoder + ?Sized>(
+        &self,
+        encoder: &mut E,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<()> {
+        encoder.emit_usize(self.0.len())?;
+
+        for (var, ty) in &self.0 {
+            var.encode(encoder, plugin, session)?;
+            ty.encode(encoder, plugin, session)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Decode for Subst {
+    fn decode<D: qbice::serialize::Decoder + ?Sized>(
+        decoder: &mut D,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<Self> {
+        let len = decoder.read_usize()?;
+        let mut map = FxImHashMap::default();
+
+        for _ in 0..len {
+            let var = Var::decode(decoder, plugin, session)?;
+            let ty = Interned::decode(decoder, plugin, session)?;
+            map.insert(var, ty);
+        }
+
+        Ok(Self(map))
+    }
+}
+
+impl StableHash for Subst {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.0.len().stable_hash(state);
+        let mut combined = H::Hash::default();
+
+        for (var, ty) in &self.0 {
+            combined = combined.wrapping_add(state.sub_hash(&mut |sub| {
+                var.stable_hash(sub);
+                ty.stable_hash(sub);
+            }));
+        }
+
+        combined.stable_hash(state);
+    }
+}
 
 impl Subst {
     #[must_use]
-    pub const fn new_empty() -> Self { Self(BTreeMap::new()) }
+    pub fn new_empty() -> Self { Self(FxImHashMap::default()) }
 
     #[must_use]
     pub fn new_singleton<V: Into<Var>>(var: V, ty: Interned<Ty>) -> Self {
-        let mut map = BTreeMap::new();
+        let mut map = FxImHashMap::default();
         map.insert(var.into(), ty);
         Self(map)
     }
@@ -42,7 +97,7 @@ impl Subst {
     /// updated substitution is equivalent to applying `self` followed by
     /// `other`.
     pub fn compose(&mut self, other: &Self, engine: &TrackedEngine) {
-        for ty in self.0.values_mut() {
+        for (_, ty) in self.0.iter_mut() {
             if let Some(new_ty) = ty.apply_subst(other, engine) {
                 *ty = new_ty;
             }
@@ -91,7 +146,7 @@ pub trait MutSubstitutable {
 
 impl MutSubstitutable for Subst {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        for ty in self.0.values_mut() {
+        for (_, ty) in self.0.iter_mut() {
             ty.apply_in_place(subst, engine);
         }
     }

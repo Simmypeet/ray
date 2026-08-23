@@ -118,7 +118,7 @@ pub struct ConstraintSolver {
 
 impl ConstraintSolver {
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             residual_constraints: Vec::new(),
             errored_constraints: Vec::new(),
