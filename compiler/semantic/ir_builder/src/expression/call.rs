@@ -22,7 +22,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Call>> for Builder {
             .map(|argument| self.lower_expression_by_id(typed_function, *argument))
             .collect();
         self.emit_expression(Expression::new(
-            ExpressionKind::Call(IrCall::new(call.function_id(), arguments)),
+            ExpressionKind::Call(IrCall::new(call.function_id(), arguments, call.subst().clone())),
             span,
             ty,
         ))

@@ -94,6 +94,10 @@ impl TypedExpr {
 impl MutSubstitutable for TypedExpr {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.ty.apply_in_place(subst, engine);
+
+        if let TypedExprKind::Call(call) = &mut self.kind {
+            call.apply_mut_subst(subst, engine);
+        }
     }
 }
 

@@ -105,7 +105,11 @@ impl TAstBuilder {
     pub fn push_diagnostic(&mut self, diagnostic: Diagnostic) { self.diagnostics.push(diagnostic); }
 
     pub fn new_type_inference(&mut self) -> Interned<Ty> {
-        self.engine.intern(Ty::Inference(self.solver.new_inference(TyKind::Star)))
+        self.new_type_inference_with_kind(TyKind::Star)
+    }
+
+    pub fn new_type_inference_with_kind(&mut self, kind: TyKind) -> Interned<Ty> {
+        self.engine.intern(Ty::Inference(self.solver.new_inference(kind)))
     }
 
     pub fn new_numeric_type_inference(&mut self) -> Interned<Ty> {

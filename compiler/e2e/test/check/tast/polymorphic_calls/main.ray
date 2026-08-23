@@ -1,0 +1,8 @@
+def identity(value: a) -> a:
+    return value
+
+
+def test() -> ():
+    let number = identity(1)
+    let boolean = identity(true)
+    return ()
