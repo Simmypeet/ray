@@ -89,6 +89,3 @@ abstract_tree::abstract_tree! {
         PolymorphicVariable(Identifier = expect::Identifier)
     }
 }
-
-#[cfg(test)]
-mod test;

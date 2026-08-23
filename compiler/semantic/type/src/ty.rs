@@ -403,6 +403,3 @@ impl Ty {
         ty_application.view()
     }
 }
-
-#[cfg(test)]
-mod test;

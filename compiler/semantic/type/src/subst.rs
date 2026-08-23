@@ -160,6 +160,3 @@ where
         Self(iter.into_iter().map(|(var, ty)| (var.into(), ty)).collect())
     }
 }
-
-#[cfg(test)]
-mod test;

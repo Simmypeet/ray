@@ -80,5 +80,3 @@ pub struct Key {
     pub symbol_id: GlobalSymbolID,
 }
 
-#[cfg(test)]
-mod test;

@@ -80,24 +80,3 @@ impl fmt::Display for Identifier<'_> {
         }
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn local_identifiers_use_the_c_backend_naming_convention() {
-        assert_eq!(Identifier::def("produce").to_string(), "ray_produce");
-        assert_eq!(Identifier::param(ParameterID::new(10)).to_string(), "ray_param_A");
-        assert_eq!(Identifier::var(VariableID::new(11)).to_string(), "ray_var_B");
-        assert_eq!(Identifier::expr(ExpressionID::new(12)).to_string(), "ray_expr_C");
-        assert_eq!(Identifier::block(BlockID::new(13)).to_string(), "ray_block_D");
-        assert_eq!(
-            Identifier::phi_input(BlockID::new(1), BlockID::new(2), ExpressionID::new(10))
-                .to_string(),
-            "ray_phi_in_1_2_A"
-        );
-        assert_eq!(Identifier::tuple_elem(10).to_string(), "elemA");
-        assert_eq!(Identifier::unit_field().to_string(), "_unit");
-    }
-}

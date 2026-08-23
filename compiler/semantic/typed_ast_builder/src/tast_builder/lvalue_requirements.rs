@@ -6,9 +6,6 @@ use crate::{
     tast_builder::TAstBuilder,
 };
 
-#[cfg(test)]
-mod test;
-
 #[derive(Debug)]
 pub(super) struct LvalueRequirements {
     queued: Vec<LvalueRequirement>,

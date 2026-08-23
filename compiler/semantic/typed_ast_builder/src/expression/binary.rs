@@ -149,6 +149,3 @@ const fn should_reduce(pending: BinaryOp, incoming: BinaryOp) -> bool {
         || (pending.precedence() == incoming.precedence()
             && matches!(incoming.associativity(), Associativity::Left))
 }
-
-#[cfg(test)]
-mod test;

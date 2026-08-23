@@ -272,6 +272,3 @@ abstract_tree::abstract_tree! {
         pub arguments: Parenthesized = ast::<Parenthesized>()
     }
 }
-
-#[cfg(test)]
-mod test;

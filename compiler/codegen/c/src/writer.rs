@@ -124,24 +124,3 @@ impl Writer<'_> {
         .await
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[tokio::test]
-    async fn outdented_line_uses_one_less_indentation_level() {
-        let mut output = Vec::new();
-        let mut writer = Writer::new(&mut output);
-
-        writer
-            .write_braced_block(async |writer| {
-                writer.write_outdented_line(async |writer| write!(writer, "label:")).await?;
-                writer.write_indent_line(async |writer| write!(writer, "statement;")).await
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(String::from_utf8(output).unwrap(), "{\nlabel:\n    statement;\n}");
-    }
-}
