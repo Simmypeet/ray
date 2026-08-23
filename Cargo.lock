@@ -1995,8 +1995,13 @@ dependencies = [
  "enum-as-inner",
  "im",
  "qbice",
+ "rayc_arena",
  "rayc_hash",
+ "rayc_lexical",
  "rayc_qbice",
+ "rayc_source_file",
+ "rayc_symbol",
+ "rayc_target",
  "tokio",
 ]
 

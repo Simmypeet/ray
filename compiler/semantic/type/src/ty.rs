@@ -3,7 +3,10 @@ use std::fmt::{Display, Write};
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 
-use crate::subst::{Subst, Substitutable};
+use crate::{
+    poly_var::GlobalPolyVarID,
+    subst::{Subst, Substitutable},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Primitive {
@@ -191,6 +194,7 @@ impl TyInference {
 pub enum Ty {
     Application(TyApplication),
     Inference(TyInference),
+    PolyVar(GlobalPolyVarID),
 }
 
 impl Ty {
@@ -201,6 +205,7 @@ impl Ty {
                 ty_application.args.iter().any(|arg| arg.has_inference_variable(ty))
             }
             Self::Inference(ty_inference) => ty_inference == ty,
+            Self::PolyVar(_) => false,
         }
     }
 }
@@ -238,6 +243,7 @@ impl Substitutable for Interned<Ty> {
             }
 
             Ty::Inference(ty_inference) => subst.get(ty_inference).cloned(),
+            Ty::PolyVar(_) => None,
         }
     }
 }
@@ -283,6 +289,11 @@ impl Ty {
             args: engine.intern_unsized([]),
         }))
     }
+
+    #[must_use]
+    pub fn new_poly_var(id: GlobalPolyVarID, engine: &TrackedEngine) -> Interned<Self> {
+        engine.intern(Self::PolyVar(id))
+    }
 }
 
 impl Display for Ty {
@@ -322,6 +333,8 @@ impl Display for Ty {
                     write!(f, "{{numeric}}")
                 }
             },
+
+            Self::PolyVar(poly_var) => write!(f, "{{poly#{}}}", poly_var.id().index()),
         }
     }
 }

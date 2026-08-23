@@ -64,6 +64,9 @@ impl Solver {
             (Ty::Inference(var), _) => Ok(Step::Subst(self.bind_var(*var, &substype.greater)?)),
 
             (_, Ty::Inference(var)) => Ok(Step::Subst(self.bind_var(*var, &substype.lesser)?)),
+
+            (Ty::Application(_) | Ty::PolyVar(_), Ty::PolyVar(_))
+            | (Ty::PolyVar(_), Ty::Application(_)) => Err(Error::Conflicted),
         }
     }
 
@@ -94,6 +97,14 @@ impl Solver {
                 let common_var = self.engine().intern(Ty::Inference(common_var));
 
                 Ok([(var, common_var.clone()), (*ty_inference, common_var)].into_iter().collect())
+            }
+
+            Ty::PolyVar(_) => {
+                if var.constraint() == crate::ty::InferenceConstraint::Any {
+                    Ok(Subst::new_singleton(var, ty.clone()))
+                } else {
+                    Err(Error::Conflicted)
+                }
             }
         }
     }

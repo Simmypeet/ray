@@ -96,6 +96,13 @@ impl TAstBuilder {
                 }
             }
 
+            Ty::PolyVar(_) => {
+                self.push_diagnostic(Diagnostic::ExpectedTupleType(
+                    ExpectedTupleType::builder().span(span).ty(ty.clone()).build(),
+                ));
+                return None;
+            }
+
             // the type must be known at this point
             //
             // NOTE: it would be nice to have a constraint system that doesn't
@@ -146,6 +153,12 @@ impl TAstBuilder {
                     Ty::new_error(self.engine())
                 }
             },
+            Ty::PolyVar(_) => {
+                self.push_diagnostic(Diagnostic::ExpectedPointerType(
+                    ExpectedPointerType::builder().ty(ty).span(span).build(),
+                ));
+                Ty::new_error(self.engine())
+            }
             Ty::Inference(_) => {
                 self.push_diagnostic(Diagnostic::TypeMustBeKnownAtThisPoint(
                     TypeMustBeKnownAtThisPoint::builder().span(span).build(),

@@ -8,12 +8,17 @@ rust-version.workspace = true
 
 [dependencies]
 qbice.workspace = true
+rayc_arena.path = "../../base/arena"
 rayc_hash.path = "../../base/hash"
+rayc_lexical.path = "../../syntax/lexical"
 rayc_qbice.path = "../../base/qbice"
+rayc_symbol.path = "../symbol"
 enum-as-inner.workspace = true
 im.workspace = true
 
 [dev-dependencies]
+rayc_source_file.path = "../../base/source_file"
+rayc_target.path = "../../base/target"
 tokio.workspace = true
 
 [lints]

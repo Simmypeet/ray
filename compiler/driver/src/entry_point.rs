@@ -92,7 +92,7 @@ fn is_int32(ty: &Ty) -> bool {
             | TyApplicationView::Pointer(_)
             | TyApplicationView::Error => false,
         },
-        Ty::Inference(_) => false,
+        Ty::Inference(_) | Ty::PolyVar(_) => false,
     }
 }
 

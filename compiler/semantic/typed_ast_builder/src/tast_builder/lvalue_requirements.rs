@@ -83,7 +83,7 @@ impl TAstBuilder {
                         | TyApplicationView::Tuple(_)
                         | TyApplicationView::Error => None,
                     },
-                    Ty::Inference(_) => None,
+                    Ty::Inference(_) | Ty::PolyVar(_) => None,
                 }
             }
         }
