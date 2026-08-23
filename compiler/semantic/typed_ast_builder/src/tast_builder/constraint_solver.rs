@@ -129,7 +129,7 @@ impl ConstraintSolver {
 
 impl TAstBuilder {
     pub fn latest_type(&self, ty: &Interned<Ty>) -> Interned<Ty> {
-        ty.apply_subst(&self.constraint_solver.subst, &self.engine).unwrap_or_else(|| ty.clone())
+        ty.apply_subst_or_clone(&self.constraint_solver.subst, &self.engine)
     }
 
     pub fn push_variable_assignment_constraint(

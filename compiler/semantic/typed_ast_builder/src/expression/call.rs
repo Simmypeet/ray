@@ -64,16 +64,12 @@ impl Bind<CallSyn> for TAstBuilder {
         }
 
         for ((_, param), arg) in parameter_map.iter().zip(args.iter()) {
-            let parameter_ty = param
-                .ty()
-                .apply_subst(&call_subst, self.engine())
-                .unwrap_or_else(|| param.ty().clone());
+            let parameter_ty = param.ty().apply_subst_or_clone(&call_subst, self.engine());
             self.push_function_call_constraint(&parameter_ty, *arg);
         }
 
         let return_type = self.engine().get_return_type(function_id).await;
-        let return_type =
-            return_type.apply_subst(&call_subst, self.engine()).unwrap_or(return_type);
+        let return_type = return_type.apply_subst_or_clone(&call_subst, self.engine());
 
         self.insert_expression(TypedExpr::new(
             TypedExprKind::Call(Call::new(function_id, args, call_subst)),

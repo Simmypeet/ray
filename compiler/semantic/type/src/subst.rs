@@ -67,6 +67,14 @@ pub trait Substitutable {
     where
         Self: Sized;
 
+    #[must_use]
+    fn apply_subst_or_clone(&self, subst: &Subst, engine: &TrackedEngine) -> Self
+    where
+        Self: Sized + Clone,
+    {
+        self.apply_subst(subst, engine).unwrap_or_else(|| self.clone())
+    }
+
     fn apply_in_place(&mut self, subst: &Subst, engine: &TrackedEngine)
     where
         Self: Sized,
