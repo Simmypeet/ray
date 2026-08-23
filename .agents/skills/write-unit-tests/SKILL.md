@@ -1,12 +1,17 @@
 ---
 name: write-unit-tests
-description: Write or update focused unit tests in the Ray compiler codebase. Use when adding Rust test functions, covering a bug or feature with unit tests, or reviewing test clarity. Apply concise input, premise, and output contract comments especially to tests for rayc_type and rayc_solver; inspect and follow local conventions in other crates.
+description: Write or update a specifically requested or otherwise justified unit test in the Ray compiler codebase. Use only after the test-strategy unit-test gate selects unit coverage, or when a programmer explicitly requests unit tests. Apply concise input, premise, and output contract comments especially to tests for rayc_type and rayc_solver.
 ---
 
 # Write Unit Tests
 
 Write each test as a small behavioral specification. Follow nearby test helpers and
 conventions, and make the scenario understandable without tracing its setup code.
+
+Do not use this skill to decide that a change needs unit coverage. Apply the
+`test-strategy` skill first unless the programmer explicitly requested a unit test.
+If that selection points to `check_e2e`, `run_e2e`, or no new test, do not add a
+unit test.
 
 ## Workflow
 
