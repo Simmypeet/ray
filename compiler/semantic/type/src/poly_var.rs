@@ -56,6 +56,11 @@ impl PolyVarMap {
         self.poly_vars.iter().find_map(|(id, poly_var)| (&*poly_var.name == name).then_some(id))
     }
 
+    #[must_use]
+    pub fn name_of(&self, id: PolyVarID) -> &str {
+        self.poly_vars.get(id).expect("polymorphic variable ID should be valid").name()
+    }
+
     pub fn insert(&mut self, poly_var: PolyVar) -> PolyVarID {
         if let Some(id) = self.find_by_name(&poly_var.name) {
             return id;

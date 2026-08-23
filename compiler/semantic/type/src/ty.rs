@@ -1,10 +1,15 @@
-use std::fmt::{Display, Write};
+use std::{
+    collections::hash_map::Entry,
+    fmt::{self, Display, Write},
+};
 
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use rayc_hash::FxHashMap;
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::GlobalSymbolID;
 
 use crate::{
-    poly_var::GlobalPolyVarID,
+    poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap},
     subst::{Subst, Substitutable},
 };
 
@@ -296,10 +301,48 @@ impl Ty {
     }
 }
 
-impl Display for Ty {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Application(ty_application) => match ty_application.view() {
+impl Ty {
+    pub async fn display<'x>(&'x self, engine: &TrackedEngine) -> TyDisplay<'x> {
+        let mut poly_var_maps = FxHashMap::default();
+        self.collect_poly_var_maps(engine, &mut poly_var_maps).await;
+
+        TyDisplay { ty: self, poly_var_maps }
+    }
+
+    async fn collect_poly_var_maps(
+        &self,
+        engine: &TrackedEngine,
+        poly_var_maps: &mut FxHashMap<GlobalSymbolID, Interned<PolyVarMap>>,
+    ) {
+        let mut types = vec![self];
+        while let Some(ty) = types.pop() {
+            match ty {
+                Self::Application(ty_application) => {
+                    types.extend(ty_application.args.iter().map(|arg| &**arg));
+                }
+                Self::Inference(_) => {}
+                Self::PolyVar(poly_var) => {
+                    let symbol_id = poly_var.parent_id();
+                    if let Entry::Vacant(entry) = poly_var_maps.entry(symbol_id) {
+                        let poly_var_map = engine.query(&PolyVarKey { symbol_id }).await;
+                        entry.insert(poly_var_map);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct TyDisplay<'x> {
+    ty: &'x Ty,
+    poly_var_maps: FxHashMap<GlobalSymbolID, Interned<PolyVarMap>>,
+}
+
+impl TyDisplay<'_> {
+    fn fmt_ty(&self, ty: &Ty, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match ty {
+            Ty::Application(ty_application) => match ty_application.view() {
                 TyApplicationView::Primitive(primitive) => match primitive {
                     Primitive::Int32 => write!(f, "int32"),
                     Primitive::Float32 => write!(f, "float32"),
@@ -312,7 +355,7 @@ impl Display for Ty {
                         if i > 0 {
                             f.write_str(", ")?;
                         }
-                        write!(f, "{}", **arg)?;
+                        self.fmt_ty(arg, f)?;
                     }
 
                     f.write_char(')')
@@ -322,21 +365,32 @@ impl Display for Ty {
                     if pointer.mutability() == Mutability::Mutable {
                         f.write_str("mut ")?;
                     }
-                    write!(f, "{}", **pointer.pointee())
+                    self.fmt_ty(pointer.pointee(), f)
                 }
                 TyApplicationView::Error => write!(f, "<error>"),
             },
 
-            Self::Inference(inference) => match inference.constraint {
+            Ty::Inference(inference) => match inference.constraint {
                 InferenceConstraint::Any => write!(f, "{{any}}"),
                 InferenceConstraint::Numeric => {
                     write!(f, "{{numeric}}")
                 }
             },
 
-            Self::PolyVar(poly_var) => write!(f, "{{poly#{}}}", poly_var.id().index()),
+            Ty::PolyVar(poly_var) => {
+                let poly_var_map = self
+                    .poly_var_maps
+                    .get(&poly_var.parent_id())
+                    .expect("should've been collected earlier");
+
+                write!(f, "{{{}}}", poly_var_map.name_of(poly_var.id()))
+            }
         }
     }
+}
+
+impl Display for TyDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.fmt_ty(self.ty, f) }
 }
 
 impl Ty {

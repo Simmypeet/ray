@@ -29,3 +29,14 @@ fn duplicate_name_reuses_existing_id() {
     assert_eq!(map.len(), 1);
     assert_eq!(map.find_by_name("a"), Some(first));
 }
+
+// input: an ID absent from an empty polymorphic variable map
+// premise: `name_of` requires every ID to identify a declared variable
+// output: the lookup panics with an invalid-ID message
+#[test]
+#[should_panic(expected = "polymorphic variable ID should be valid")]
+fn name_of_panics_for_invalid_id() {
+    let map = PolyVarMap::new();
+
+    let _ = map.name_of(ID::<PolyVar>::new(0));
+}

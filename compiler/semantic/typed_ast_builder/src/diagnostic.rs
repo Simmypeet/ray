@@ -133,7 +133,10 @@ impl Report for ExpectedPointerType {
         let abs_span = engine.to_absolute_span(&self.span).await;
 
         Rendered::builder()
-            .message(format!("expected a pointer type, but found `{}`", &*self.ty))
+            .message(format!(
+                "expected a pointer type, but found `{}`",
+                self.ty.display(engine).await
+            ))
             .primary_highlight(Highlight::builder().span(abs_span).build())
             .build()
     }
@@ -209,7 +212,10 @@ impl Report for ExpectedTupleType {
         let abs_span = engine.to_absolute_span(&self.span).await;
 
         Rendered::builder()
-            .message(format!("expected a tuple type, but found `{}`", &*self.ty))
+            .message(format!(
+                "expected a tuple type, but found `{}`",
+                self.ty.display(engine).await
+            ))
             .primary_highlight(Highlight::builder().span(abs_span).build())
             .build()
     }
@@ -285,7 +291,9 @@ impl Report for ResidualSubtype {
         let found = self.provenance.original_subtype().greater();
         let expected = self.provenance.original_subtype().lesser();
 
-        let mismatch_str = format!("expected `{}`, but found `{}`", &**expected, &**found);
+        let expected_display = expected.display(parameter).await;
+        let found_display = found.display(parameter).await;
+        let mismatch_str = format!("expected `{expected_display}`, but found `{found_display}`");
         let abs_span = parameter.to_absolute_span(self.provenance.span()).await;
 
         Rendered::builder()
