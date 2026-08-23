@@ -6,7 +6,7 @@ use rayc_parser::{
     parser::{ParserExt, ast},
 };
 
-use crate::{Keyword, Punctuation};
+use crate::{Identifier, Keyword, Punctuation};
 
 abstract_tree::abstract_tree! {
     #[derive(
@@ -85,7 +85,8 @@ abstract_tree::abstract_tree! {
     pub enum Type {
         Primitive(Primitive = ast::<Primitive>()),
         Pointer(Pointer = ast::<Pointer>()),
-        Tuple(Tuple = ast::<Tuple>())
+        Tuple(Tuple = ast::<Tuple>()),
+        PolymorphicVariable(Identifier = expect::Identifier)
     }
 }
 

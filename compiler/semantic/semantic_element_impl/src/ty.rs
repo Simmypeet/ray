@@ -40,5 +40,7 @@ pub fn resolve_ty(self: &TrackedEngine, ty: &TySyntax) -> Interned<Ty> {
 
             Ty::new_tuple(self.intern_unsized(args), self)
         }
+
+        TySyntax::PolymorphicVariable(_) => todo!(),
     }
 }
