@@ -1,22 +1,20 @@
 use std::io::Write;
 
-use rayc_ir::{expression::tuple::Tuple, function::Function};
-use rayc_mono::MonoFunction;
+use rayc_ir::expression::tuple::Tuple;
 
-use super::{ExpressionWithID, WriteExpression};
+use super::{ExpressionWithID, WriteExpression, function_instance::FunctionInstance};
 use crate::{context::Context, identifier::Identifier, writer::Writer};
 
 impl WriteExpression<&Tuple> for Writer<'_> {
     async fn write_expression(
         &mut self,
         expression: ExpressionWithID<&Tuple>,
-        function: &Function,
-        mono_function: &MonoFunction,
+        function: FunctionInstance<'_>,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
         let tuple = expression.node();
         write!(self, "((")?;
-        let ty = ctx.instantiate_type(function.get_expression(expression.id()).ty(), mono_function);
+        let ty = function.instantiate_expression_type(expression.id(), ctx);
         let tuple_id = ctx.unwrap_ty_as_ctuple_id(&ty);
         ctx.write_ctuple_t(tuple_id, self)?;
         write!(self, "){{")?;

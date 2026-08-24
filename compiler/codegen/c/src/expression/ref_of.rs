@@ -1,17 +1,15 @@
 use std::io::Write;
 
-use rayc_ir::{expression::ref_of::RefOf, function::Function};
-use rayc_mono::MonoFunction;
+use rayc_ir::expression::ref_of::RefOf;
 
-use super::{ExpressionWithID, WriteExpression};
+use super::{ExpressionWithID, WriteExpression, function_instance::FunctionInstance};
 use crate::{context::Context, writer::Writer};
 
 impl WriteExpression<&RefOf> for Writer<'_> {
     async fn write_expression(
         &mut self,
         expression: ExpressionWithID<&RefOf>,
-        _function: &Function,
-        _mono_function: &MonoFunction,
+        _function: FunctionInstance<'_>,
         _ctx: &mut Context,
     ) -> std::io::Result<()> {
         write!(self, "&(")?;

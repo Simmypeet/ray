@@ -11,6 +11,7 @@ use rayc_mono::MonoFunction;
 
 use crate::{
     context::Context,
+    expression::function_instance::FunctionInstance,
     identifier::Identifier,
     writer::{EnclosingPair, Writer},
 };
@@ -149,9 +150,8 @@ impl Writer<'_> {
 
                 self.write_indent_line(async |writer| {
                     write!(writer, "{} = ", Identifier::expr(*expression_id))?;
-                    writer
-                        .write_expression_value(*expression_id, function, mono_function, ctx)
-                        .await?;
+                    let function = FunctionInstance::new(function, mono_function);
+                    writer.write_expression_value(*expression_id, function, ctx).await?;
                     write!(writer, ";")
                 })
                 .await
