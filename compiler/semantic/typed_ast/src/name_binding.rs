@@ -12,7 +12,7 @@ use rayc_type::{
     ty::Ty,
 };
 
-use crate::{function::FunctionLocalID, lambda::LambdaParameterID, variable::VariableID};
+use crate::{typed_function::FunctionLocalID, lambda::LambdaParameterID, variable::VariableID};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Source {

@@ -11,7 +11,7 @@ use rayc_ir::{
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{
-    function::Function as TypedFunction,
+    typed_function::TypedFunction as TypedFunction,
     typed_expr::binary::{Binary, BinaryOp},
 };
 

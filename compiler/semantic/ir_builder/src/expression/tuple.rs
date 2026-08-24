@@ -1,5 +1,5 @@
 use rayc_ir::expression::{Expression, ExpressionID, ExpressionKind, tuple::Tuple as IrTuple};
-use rayc_typed_ast::{function::Function as TypedFunction, typed_expr::tuple::Tuple};
+use rayc_typed_ast::{typed_function::TypedFunction as TypedFunction, typed_expr::tuple::Tuple};
 
 use crate::{
     builder::Builder,

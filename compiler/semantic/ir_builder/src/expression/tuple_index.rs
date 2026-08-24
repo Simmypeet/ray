@@ -3,7 +3,7 @@ use rayc_ir::expression::{Expression, ExpressionID, ExpressionKind, load::Load};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{
-    function::Function as TypedFunction,
+    typed_function::TypedFunction as TypedFunction,
     typed_expr::{LvalueClassification, TypedExprID, tuple_index::TupleIndex},
 };
 

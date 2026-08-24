@@ -1,5 +1,5 @@
 use rayc_ir::address::Address;
-use rayc_typed_ast::{function::Function as TypedFunction, typed_expr::tuple_index::TupleIndex};
+use rayc_typed_ast::{typed_function::TypedFunction as TypedFunction, typed_expr::tuple_index::TupleIndex};
 
 use crate::{address::LowerAddress, builder::Builder};
 

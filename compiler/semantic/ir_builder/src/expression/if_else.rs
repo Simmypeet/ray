@@ -2,7 +2,7 @@ use rayc_ir::{
     cfg::{Conditional, Terminator},
     expression::{Expression, ExpressionID, ExpressionKind, phi::Phi},
 };
-use rayc_typed_ast::{function::Function as TypedFunction, typed_expr::if_else::IfElse};
+use rayc_typed_ast::{typed_function::TypedFunction as TypedFunction, typed_expr::if_else::IfElse};
 
 use crate::{
     builder::Builder,

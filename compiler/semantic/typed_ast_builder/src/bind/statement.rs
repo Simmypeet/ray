@@ -1,7 +1,7 @@
 use rayc_source_file::SourceElement;
 use rayc_syntax::statement::Statement as StatementSyntax;
 use rayc_typed_ast::{
-    function::FunctionLocalID,
+    typed_function::FunctionLocalID,
     name_binding::Source,
     statement::{Let, Return, Statement},
     variable::Variable,

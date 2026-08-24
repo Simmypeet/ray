@@ -7,8 +7,8 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
 use rayc_target::TargetID;
 use rayc_typed_ast::{
-    function::{FunctionLocalID, FunctionMap},
     name_binding::Source,
+    typed_function::{FunctionLocalID, TypedFunctionMap},
 };
 
 use crate::{diagnostic::Diagnostic, tast_builder::TAstBuilder};
@@ -16,7 +16,7 @@ use crate::{diagnostic::Diagnostic, tast_builder::TAstBuilder};
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
 )]
-#[value((Interned<FunctionMap>, Interned<[Diagnostic]>))]
+#[value((Interned<TypedFunctionMap>, Interned<[Diagnostic]>))]
 pub struct BuildTAst {
     pub def_id: GlobalSymbolID,
 }
@@ -25,7 +25,7 @@ pub struct BuildTAst {
 pub async fn build_tast_executor(
     &BuildTAst { def_id }: &BuildTAst,
     engine: &TrackedEngine,
-) -> (Interned<FunctionMap>, Interned<[Diagnostic]>) {
+) -> (Interned<TypedFunctionMap>, Interned<[Diagnostic]>) {
     let mut tast_builder = TAstBuilder::new(engine.clone(), def_id);
 
     tast_builder.build_parameter_pattern().await;
@@ -80,7 +80,7 @@ static BUILD_TAST_EXECUTOR: Registration<Config> =
 async fn typed_ast_executor(
     &rayc_typed_ast::Key { def_id }: &rayc_typed_ast::Key,
     engine: &TrackedEngine,
-) -> Interned<FunctionMap> {
+) -> Interned<TypedFunctionMap> {
     engine.query(&BuildTAst { def_id }).await.0
 }
 

@@ -1,6 +1,6 @@
 use rayc_type::ty::{Mutability, Ty, TyApplicationView};
 use rayc_typed_ast::{
-    function::{FunctionID, FunctionLocalID},
+    typed_function::{FunctionID, FunctionLocalID},
     typed_expr::{LvalueClassification, LvalueRoot, TypedExprID},
 };
 

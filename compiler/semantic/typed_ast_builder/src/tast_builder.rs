@@ -17,11 +17,11 @@ use rayc_type::{
     ty::{InferenceConstraint, Ty, TyKind},
 };
 use rayc_typed_ast::{
-    function::{FunctionID, FunctionLocalID, FunctionMap},
     lambda::{LambdaParameter, LambdaParameterID},
     name_binding::{NameBindingGroupID, NameBindingID},
     statement::Statement,
     typed_expr::{TypedExpr, TypedExprID},
+    typed_function::{FunctionID, FunctionLocalID, TypedFunctionMap},
     variable::{Variable, VariableID},
 };
 
@@ -39,7 +39,7 @@ pub mod name_env;
 
 #[derive(Debug)]
 pub struct TAstBuilder {
-    function_map: FunctionMap,
+    function_map: TypedFunctionMap,
     building_function: FunctionID,
     suspended_functions: Vec<FunctionID>,
     current_def_id: GlobalSymbolID,
@@ -57,7 +57,7 @@ pub struct TAstBuilder {
 impl TAstBuilder {
     #[must_use]
     pub fn new(engine: TrackedEngine, current_def_id: GlobalSymbolID) -> Self {
-        let function_map = FunctionMap::default();
+        let function_map = TypedFunctionMap::default();
         let building_function = function_map.root_id();
         let name_env = NameEnv::new(function_map.parameter_name_binding_group_id_of_root());
 
@@ -231,7 +231,7 @@ impl TAstBuilder {
 
 impl TAstBuilder {
     #[must_use]
-    pub fn finish(mut self) -> (FunctionMap, Vec<Diagnostic>) {
+    pub fn finish(mut self) -> (TypedFunctionMap, Vec<Diagnostic>) {
         assert!(
             self.suspended_functions.is_empty(),
             "all suspended functions should be restored before finishing the typed AST"

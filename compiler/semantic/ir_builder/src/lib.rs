@@ -1,6 +1,6 @@
 use rayc_ir::function::Function as IrFunction;
 use rayc_qbice::TrackedEngine;
-use rayc_typed_ast::function::FunctionMap as TypedFunction;
+use rayc_typed_ast::typed_function::TypedFunctionMap as TypedFunction;
 
 use crate::builder::Builder;
 

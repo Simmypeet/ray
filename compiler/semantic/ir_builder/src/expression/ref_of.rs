@@ -1,5 +1,5 @@
 use rayc_ir::expression::{Expression, ExpressionID, ExpressionKind, ref_of::RefOf as IrRefOf};
-use rayc_typed_ast::{function::Function as TypedFunction, typed_expr::ref_of::RefOf};
+use rayc_typed_ast::{typed_function::TypedFunction as TypedFunction, typed_expr::ref_of::RefOf};
 
 use crate::{
     builder::Builder,

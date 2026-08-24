@@ -1,6 +1,6 @@
 use rayc_ir::expression::{Expression, ExpressionID, ExpressionKind, call::Call as IrCall};
 use rayc_typed_ast::{
-    function::Function as TypedFunction,
+    typed_function::TypedFunction as TypedFunction,
     typed_expr::call::{Call, CallTarget},
 };
 

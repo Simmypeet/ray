@@ -1,7 +1,7 @@
 use rayc_ir::address::Address;
 use rayc_typed_ast::{
-    function::Function as TypedFunction,
     typed_expr::{TypedExprID, TypedExprKind},
+    typed_function::TypedFunction,
 };
 
 use crate::builder::Builder;

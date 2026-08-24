@@ -2,7 +2,7 @@ use rayc_source_file::SourceElement;
 use rayc_syntax::expression::Lambda as LambdaSyntax;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{
-    function::FunctionLocalID,
+    typed_function::FunctionLocalID,
     lambda::LambdaParameter,
     name_binding::Source,
     statement::{Return, Statement},

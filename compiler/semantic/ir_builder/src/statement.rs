@@ -1,5 +1,5 @@
 use rayc_ir::cfg::Terminator;
-use rayc_typed_ast::{function::Function as TypedFunction, statement::Statement};
+use rayc_typed_ast::{typed_function::TypedFunction as TypedFunction, statement::Statement};
 
 use crate::builder::Builder;
 

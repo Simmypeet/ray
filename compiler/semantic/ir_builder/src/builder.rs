@@ -12,7 +12,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::ParameterID;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{
-    function::{Function as TypedFunction, FunctionID as TypedFunctionID},
+    typed_function::{FunctionID as TypedFunctionID, TypedFunction},
     variable::VariableID as TypedVariableID,
 };
 

@@ -1,6 +1,6 @@
 use rayc_ir::address::Address;
 use rayc_typed_ast::{
-    function::Function as TypedFunction, name_binding::Source, typed_expr::identifier::Identifier,
+    name_binding::Source, typed_expr::identifier::Identifier, typed_function::TypedFunction,
 };
 
 use crate::{address::LowerAddress, builder::Builder};

@@ -1,5 +1,5 @@
 use rayc_ir::address::Address;
-use rayc_typed_ast::{function::Function as TypedFunction, typed_expr::deref::Deref};
+use rayc_typed_ast::{typed_expr::deref::Deref, typed_function::TypedFunction};
 
 use crate::{address::LowerAddress, builder::Builder};
 

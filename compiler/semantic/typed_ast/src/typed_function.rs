@@ -18,36 +18,37 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub struct FunctionMap {
+pub struct TypedFunctionMap {
     name_binding_map: NameBindingMap,
-    functions: Arena<Function>,
+    functions: Arena<TypedFunction>,
     root: FunctionID,
 }
 
-impl Default for FunctionMap {
+impl Default for TypedFunctionMap {
     fn default() -> Self {
         let mut name_binding_map = NameBindingMap::default();
         let parameter_name_binding_group_id = name_binding_map.new_name_binding_group();
 
         let mut functions = Arena::default();
-        let root = functions
-            .insert(Function::new(Context::Def(DefContext::new(parameter_name_binding_group_id))));
+        let root = functions.insert(TypedFunction::new(Context::Def(DefContext::new(
+            parameter_name_binding_group_id,
+        ))));
 
         Self { name_binding_map, functions, root }
     }
 }
 
-impl FunctionMap {
+impl TypedFunctionMap {
     #[must_use]
     pub const fn root_id(&self) -> FunctionID { self.root }
 
     #[must_use]
-    pub fn root(&self) -> &Function {
+    pub fn root(&self) -> &TypedFunction {
         self.functions.get(self.root).expect("Root function should exist")
     }
 
     #[must_use]
-    pub fn get_function(&self, id: FunctionID) -> &Function {
+    pub fn get_function(&self, id: FunctionID) -> &TypedFunction {
         self.functions.get(id).expect("FunctionID should be valid")
     }
 
@@ -85,7 +86,7 @@ impl FunctionMap {
     ///
     /// The iteration order is not stable.
     #[must_use]
-    pub fn functions(&self) -> impl ExactSizeIterator<Item = (FunctionID, &Function)> {
+    pub fn functions(&self) -> impl ExactSizeIterator<Item = (FunctionID, &TypedFunction)> {
         self.functions.iter()
     }
 
@@ -93,7 +94,7 @@ impl FunctionMap {
     pub fn insert_lambda(&mut self) -> FunctionID {
         let parameter_name_binding_group_id = self.name_binding_map.new_name_binding_group();
 
-        self.functions.insert(Function::new(Context::Lambda(LambdaContext::new(
+        self.functions.insert(TypedFunction::new(Context::Lambda(LambdaContext::new(
             parameter_name_binding_group_id,
         ))))
     }
@@ -183,7 +184,7 @@ impl FunctionMap {
     }
 }
 
-impl MutSubstitutable for FunctionMap {
+impl MutSubstitutable for TypedFunctionMap {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.name_binding_map.apply_mut_subst(subst, engine);
 
@@ -194,14 +195,14 @@ impl MutSubstitutable for FunctionMap {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub struct Function {
+pub struct TypedFunction {
     variable_map: VariableMap,
     typed_expr_map: TypedExprMap,
     block: Block,
     context: Context,
 }
 
-impl Function {
+impl TypedFunction {
     fn new(context: Context) -> Self {
         Self {
             variable_map: VariableMap::default(),
@@ -247,7 +248,7 @@ impl Function {
     }
 }
 
-impl MutSubstitutable for Function {
+impl MutSubstitutable for TypedFunction {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.variable_map.apply_mut_subst(subst, engine);
         self.typed_expr_map.apply_mut_subst(subst, engine);
@@ -259,7 +260,7 @@ impl MutSubstitutable for Function {
     }
 }
 
-pub type FunctionID = ID<Function>;
+pub type FunctionID = ID<TypedFunction>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct FunctionLocalID<LocalID> {
