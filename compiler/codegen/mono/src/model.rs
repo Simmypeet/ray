@@ -1,7 +1,11 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashSet;
+use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{subst::Subst, ty::Ty};
+use rayc_type::{
+    subst::{MutSubstitutable, Subst},
+    ty::Ty,
+};
 
 /// A concrete instantiation of a Ray function definition.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -22,6 +26,19 @@ impl MonoFunction {
     /// Returns the concrete substitution forming part of this item's identity.
     #[must_use]
     pub const fn subst(&self) -> &Subst { &self.subst }
+
+    /// Instantiates a call made from this concrete function.
+    #[must_use]
+    pub fn instantiate_call(
+        &self,
+        def_id: GlobalSymbolID,
+        call_subst: &Subst,
+        engine: &TrackedEngine,
+    ) -> Self {
+        let mut subst = call_subst.clone();
+        subst.apply_mut_subst(self.subst(), engine);
+        Self::new(def_id, subst)
+    }
 }
 
 /// A concrete Ray tuple type encountered by monomorphization.

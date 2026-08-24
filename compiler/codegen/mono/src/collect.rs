@@ -8,7 +8,7 @@ use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
 use rayc_target::TargetID;
 use rayc_type::{
     poly_var::get_poly_var_map,
-    subst::{MutSubstitutable, Subst, Substitutable},
+    subst::{Subst, Substitutable},
     ty::{Ty, TyApplicationView},
 };
 
@@ -96,9 +96,7 @@ impl<'engine> Collector<'engine> {
     }
 
     fn collect_call(&mut self, def_id: GlobalSymbolID, call_subst: &Subst, caller: &MonoFunction) {
-        let mut subst = call_subst.clone();
-        subst.apply_mut_subst(caller.subst(), self.engine);
-        self.enqueue(MonoFunction::new(def_id, subst));
+        self.enqueue(caller.instantiate_call(def_id, call_subst, self.engine));
     }
 
     fn collect_substituted_type(&mut self, ty: &Interned<Ty>, function: &MonoFunction) {
