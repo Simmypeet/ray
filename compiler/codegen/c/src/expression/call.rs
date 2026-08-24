@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use rayc_ir::expression::call::Call;
+use rayc_ir::expression::call::{Call, CallTarget};
 
 use super::{ExpressionWithID, WriteExpression, function_instance::FunctionInstance};
 use crate::{context::Context, identifier::Identifier, writer::Writer};
@@ -13,10 +13,22 @@ impl WriteExpression<&Call> for Writer<'_> {
         ctx: &mut Context,
     ) -> std::io::Result<()> {
         let call = expression.node();
-        let callee = function.instantiate_call(call, ctx);
-        let name = ctx.get_def_name(callee.def_id()).await;
-        let subst_id = crate::context::instantiation::MonoFunctionSubstID::for_function(&callee);
-        write!(self, "{}(", Identifier::def(&name, subst_id))?;
+        match call.target() {
+            CallTarget::Direct { function_id, subst } => {
+                let callee = function.instantiate_call(*function_id, subst, ctx);
+                let name = ctx.get_def_name(callee.def_id()).await;
+                let subst_id =
+                    crate::context::instantiation::MonoFunctionSubstID::for_function(&callee);
+                write!(self, "{}(", Identifier::def(&name, subst_id))?;
+            }
+            CallTarget::Lambda { callee } => {
+                let callee = Identifier::expr(*callee);
+                write!(self, "{callee}.call({callee}.env")?;
+                if !call.arguments().is_empty() {
+                    write!(self, ", ")?;
+                }
+            }
+        }
         for (index, argument) in call.arguments().iter().enumerate() {
             if index != 0 {
                 write!(self, ", ")?;

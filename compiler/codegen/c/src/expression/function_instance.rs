@@ -1,6 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
-    expression::{Expression, ExpressionID, call::Call},
+    expression::{Expression, ExpressionID},
     function::Function,
 };
 use rayc_mono::MonoFunction;
@@ -26,8 +26,13 @@ impl<'function> FunctionInstance<'function> {
         self.function.get_expression(expression_id)
     }
 
-    pub(super) fn instantiate_call(self, call: &Call, ctx: &Context) -> MonoFunction {
-        ctx.instantiate_call(self.mono_function, call.function_id(), call.subst())
+    pub(super) fn instantiate_call(
+        self,
+        def_id: rayc_symbol::GlobalSymbolID,
+        subst: &rayc_type::subst::Subst,
+        ctx: &Context,
+    ) -> MonoFunction {
+        ctx.instantiate_call(self.mono_function, def_id, subst)
     }
 
     pub(super) fn instantiate_expression_type(

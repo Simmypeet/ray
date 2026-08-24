@@ -1,7 +1,10 @@
 use std::collections::VecDeque;
 
 use qbice::storage::intern::Interned;
-use rayc_ir::{expression::ExpressionKind, get_ir};
+use rayc_ir::{
+    expression::{ExpressionKind, call::CallTarget},
+    get_ir,
+};
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
 use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
@@ -81,9 +84,12 @@ impl<'engine> Collector<'engine> {
             self.collect_substituted_type(expression.ty(), function);
 
             match expression.kind() {
-                ExpressionKind::Call(call) => {
-                    self.collect_call(call.function_id(), call.subst(), function);
-                }
+                ExpressionKind::Call(call) => match call.target() {
+                    CallTarget::Direct { function_id, subst } => {
+                        self.collect_call(*function_id, subst, function);
+                    }
+                    CallTarget::Lambda { .. } => {}
+                },
                 ExpressionKind::Error
                 | ExpressionKind::Literal(_)
                 | ExpressionKind::RefOf(_)
