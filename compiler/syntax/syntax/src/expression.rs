@@ -92,7 +92,6 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     pub enum Leaf {
-        Call(Call = ast::<Call>()),
         Identifier(Identifier = expect::Identifier),
         Literal(Literal = ast::<Literal>()),
         Parenthesized(Parenthesized = ast::<Parenthesized>()),
@@ -152,6 +151,7 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub enum PostfixOperator {
+        Call(Call = ast::<Call>()),
         RefOf(RefOf = ast::<RefOf>()),
         Deref(Deref = ast::<Deref>()),
         TupleIndex(TupleIndex = ast::<TupleIndex>())
@@ -347,7 +347,6 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub struct Call {
-        pub def_name: Identifier = expect::Identifier,
         pub arguments: Parenthesized = ast::<Parenthesized>()
     }
 }
