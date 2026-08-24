@@ -1600,7 +1600,6 @@ dependencies = [
  "rayc_symbol",
  "rayc_target",
  "rayc_type",
- "thiserror 2.0.18",
  "tokio",
 ]
 
@@ -1794,7 +1793,6 @@ dependencies = [
  "rayc_symbol",
  "rayc_target",
  "rayc_type",
- "thiserror 2.0.18",
 ]
 
 [[package]]

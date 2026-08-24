@@ -15,7 +15,6 @@ rayc_symbol.path = "../../semantic/symbol"
 rayc_target.path = "../../base/target"
 rayc_type.path = "../../semantic/type"
 qbice.workspace = true
-thiserror.workspace = true
 
 [lints]
 workspace = true

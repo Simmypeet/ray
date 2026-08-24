@@ -12,14 +12,19 @@ use rayc_type::{
     ty::{Ty, TyApplicationView},
 };
 
-use crate::{MonoError, MonoFunction, MonoProgram};
+use crate::{MonoFunction, MonoProgram};
 
 /// Collects all concrete function and tuple instantiations reachable in a
 /// target.
-pub async fn collect_target(
-    engine: &TrackedEngine,
-    target_id: TargetID,
-) -> Result<MonoProgram, MonoError> {
+///
+/// This phase assumes semantic analysis has already rejected invalid programs.
+///
+/// # Panics
+///
+/// Panics when an error type or a type containing unresolved inference or
+/// polymorphic variables reaches collection. Such a type violates the compiler
+/// pipeline contract and is not a recoverable user error at this phase.
+pub async fn collect_target(engine: &TrackedEngine, target_id: TargetID) -> MonoProgram {
     Collector::new(engine).collect(target_id).await
 }
 
@@ -34,7 +39,7 @@ impl<'engine> Collector<'engine> {
         Self { engine, program: MonoProgram::default(), pending: VecDeque::new() }
     }
 
-    async fn collect(mut self, target_id: TargetID) -> Result<MonoProgram, MonoError> {
+    async fn collect(mut self, target_id: TargetID) -> MonoProgram {
         let def_ids = self.engine.get_all_def_ids(target_id).await;
 
         for def_id in def_ids.iter().copied() {
@@ -45,10 +50,10 @@ impl<'engine> Collector<'engine> {
         }
 
         while let Some(function) = self.pending.pop_front() {
-            self.collect_function(&function).await?;
+            self.collect_function(&function).await;
         }
 
-        Ok(self.program)
+        self.program
     }
 
     fn enqueue(&mut self, function: MonoFunction) {
@@ -57,23 +62,23 @@ impl<'engine> Collector<'engine> {
         }
     }
 
-    async fn collect_function(&mut self, function: &MonoFunction) -> Result<(), MonoError> {
+    async fn collect_function(&mut self, function: &MonoFunction) {
         let parameters = self.engine.get_parameter_map(function.def_id()).await;
         for (_, parameter) in parameters.iter() {
-            self.collect_substituted_type(parameter.ty(), function)?;
+            self.collect_substituted_type(parameter.ty(), function);
         }
 
         let return_type = self.engine.get_return_type(function.def_id()).await;
-        self.collect_substituted_type(&return_type, function)?;
+        self.collect_substituted_type(&return_type, function);
 
         let ir = self.engine.get_ir(function.def_id()).await;
         for (_, variable) in ir.variables() {
-            self.collect_substituted_type(variable.ty(), function)?;
+            self.collect_substituted_type(variable.ty(), function);
         }
 
         for expression_id in ir.reachables().expressions() {
             let expression = ir.get_expression(expression_id);
-            self.collect_substituted_type(expression.ty(), function)?;
+            self.collect_substituted_type(expression.ty(), function);
 
             match expression.kind() {
                 ExpressionKind::Call(call) => {
@@ -88,8 +93,6 @@ impl<'engine> Collector<'engine> {
                 | ExpressionKind::Tuple(_) => {}
             }
         }
-
-        Ok(())
     }
 
     fn collect_call(&mut self, def_id: GlobalSymbolID, call_subst: &Subst, caller: &MonoFunction) {
@@ -98,39 +101,36 @@ impl<'engine> Collector<'engine> {
         self.enqueue(MonoFunction::new(def_id, subst));
     }
 
-    fn collect_substituted_type(
-        &mut self,
-        ty: &Interned<Ty>,
-        function: &MonoFunction,
-    ) -> Result<(), MonoError> {
+    fn collect_substituted_type(&mut self, ty: &Interned<Ty>, function: &MonoFunction) {
         let ty = ty.apply_subst_or_clone(function.subst(), self.engine);
-        self.collect_concrete_type(&ty, function)
+        self.collect_concrete_type(&ty, function);
     }
 
-    fn collect_concrete_type(
-        &mut self,
-        ty: &Interned<Ty>,
-        function: &MonoFunction,
-    ) -> Result<(), MonoError> {
+    fn collect_concrete_type(&mut self, ty: &Interned<Ty>, function: &MonoFunction) {
         match &**ty {
             Ty::Application(application) => match application.view() {
-                TyApplicationView::Primitive(_) => Ok(()),
+                TyApplicationView::Primitive(_) => {}
                 TyApplicationView::Tuple(tuple) => {
                     for arg in tuple.args() {
-                        self.collect_concrete_type(arg, function)?;
+                        self.collect_concrete_type(arg, function);
                     }
                     self.program.insert_tuple(self.engine.intern_unsized(tuple.args().to_vec()));
-                    Ok(())
                 }
                 TyApplicationView::Pointer(pointer) => {
-                    self.collect_concrete_type(pointer.pointee(), function)
+                    self.collect_concrete_type(pointer.pointee(), function);
                 }
                 TyApplicationView::Error => {
-                    Err(MonoError::ErrorType { function: function.clone() })
+                    panic!(
+                        "compiler-internal invariant violation: error type reached \
+                         monomorphization while collecting {function:?}"
+                    );
                 }
             },
             Ty::Inference(_) | Ty::PolyVar(_) => {
-                Err(MonoError::NonConcreteType { function: function.clone(), ty: ty.clone() })
+                panic!(
+                    "compiler-internal invariant violation: non-concrete type reached \
+                     monomorphization while collecting {function:?}: {ty:?}"
+                );
             }
         }
     }
