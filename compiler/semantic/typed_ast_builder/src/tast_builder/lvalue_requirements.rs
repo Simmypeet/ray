@@ -1,5 +1,8 @@
 use rayc_type::ty::{Mutability, Ty, TyApplicationView};
-use rayc_typed_ast::typed_expr::{LvalueClassification, LvalueRoot, TypedExprID};
+use rayc_typed_ast::{
+    function::{FunctionID, FunctionLocalID},
+    typed_expr::{LvalueClassification, LvalueRoot, TypedExprID},
+};
 
 use crate::{
     diagnostic::{Diagnostic, ExpectedLvalue, ImmutableLvalue, LvalueOperation},
@@ -22,7 +25,7 @@ impl LvalueRequirements {
 
 #[derive(Debug, Clone, Copy)]
 struct LvalueRequirement {
-    expression: TypedExprID,
+    expression: FunctionLocalID<TypedExprID>,
     mutable: bool,
     operation: LvalueOperation,
 }
@@ -34,18 +37,28 @@ impl TAstBuilder {
         mutable: bool,
         operation: LvalueOperation,
     ) {
-        self.lvalue_requirements.push(LvalueRequirement { expression, mutable, operation });
+        self.lvalue_requirements.push(LvalueRequirement {
+            expression: FunctionLocalID::new(self.current_typed_function_id(), expression),
+            mutable,
+            operation,
+        });
     }
 
     pub(super) fn validate_lvalue_requirements(&mut self) {
         for requirement in self.lvalue_requirements.take() {
-            match self.building_function.classify_lvalue(requirement.expression) {
+            match self.function_map.classify_lvalue_in(
+                requirement.expression.function_id(),
+                requirement.expression.local_id(),
+            ) {
                 LvalueClassification::Lvalue(root) => {
-                    if requirement.mutable && self.lvalue_root_is_mutable(root) == Some(false) {
+                    if requirement.mutable
+                        && self.lvalue_root_is_mutable(requirement.expression.function_id(), root)
+                            == Some(false)
+                    {
                         self.push_diagnostic(Diagnostic::ImmutableLvalue(
                             ImmutableLvalue::builder()
                                 .operation(requirement.operation)
-                                .span(self.span_of_expression(requirement.expression))
+                                .span(self.span_of_local_expression(requirement.expression))
                                 .build(),
                         ));
                     }
@@ -54,7 +67,7 @@ impl TAstBuilder {
                     self.push_diagnostic(Diagnostic::ExpectedLvalue(
                         ExpectedLvalue::builder()
                             .operation(requirement.operation)
-                            .span(self.span_of_expression(requirement.expression))
+                            .span(self.span_of_local_expression(requirement.expression))
                             .build(),
                     ));
                 }
@@ -63,13 +76,15 @@ impl TAstBuilder {
         }
     }
 
-    fn lvalue_root_is_mutable(&self, root: LvalueRoot) -> Option<bool> {
+    fn lvalue_root_is_mutable(&self, function_id: FunctionID, root: LvalueRoot) -> Option<bool> {
         match root {
             LvalueRoot::NameBinding(name_binding) => {
-                Some(self.building_function.get_name_binding(name_binding).is_mutable())
+                Some(self.function_map.get_name_binding(name_binding).is_mutable())
             }
             LvalueRoot::Dereference(pointer) => {
-                let ty = self.latest_type(&self.type_of_expression(pointer));
+                let ty = self.latest_type(
+                    &self.type_of_local_expression(FunctionLocalID::new(function_id, pointer)),
+                );
 
                 match &*ty {
                     Ty::Application(application) => match application.view() {

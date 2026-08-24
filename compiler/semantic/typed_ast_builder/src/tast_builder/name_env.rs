@@ -27,6 +27,18 @@ impl NameEnv {
     pub fn new(first_name_binding_group: NameBindingGroupID) -> Self {
         Self { name_binding_gruop_stack: vec![vec![first_name_binding_group]] }
     }
+
+    pub(super) fn enter_function(&mut self, parameter_name_binding_group: NameBindingGroupID) {
+        self.name_binding_gruop_stack.push(vec![parameter_name_binding_group]);
+    }
+
+    pub(super) fn exit_function(&mut self) {
+        assert!(
+            self.name_binding_gruop_stack.len() > 1,
+            "the root function name environment cannot be exited"
+        );
+        self.name_binding_gruop_stack.pop();
+    }
 }
 
 impl TAstBuilder {
@@ -34,7 +46,7 @@ impl TAstBuilder {
         for outer in self.name_env.name_binding_gruop_stack.iter().rev() {
             for group_id in outer.iter().rev() {
                 if let Some(name_binding_id) =
-                    self.building_function.lookup_name_binding(*group_id, name)
+                    self.function_map.lookup_name_binding(*group_id, name)
                 {
                     return Some(name_binding_id);
                 }
@@ -65,15 +77,15 @@ impl TAstBuilder {
                     .span(name.span())
                     .build();
 
-                let name_binding_id = self.building_function.insert_name_binding(name_binding);
+                let name_binding_id = self.function_map.insert_name_binding(name_binding);
 
                 if let Err(existing_id) =
-                    self.building_function.insert_name_binding_to_group(group_id, name_binding_id)
+                    self.function_map.insert_name_binding_to_group(group_id, name_binding_id)
                 {
                     self.push_diagnostic(Diagnostic::DuplicateNameBinding(
                         DuplicateNameBinding::builder()
                             .existing_name_binding(
-                                *self.building_function.get_name_binding(existing_id).span(),
+                                *self.function_map.get_name_binding(existing_id).span(),
                             )
                             .new_name_binding(name_ident.span())
                             .new_name(name_ident.kind.0)
@@ -85,7 +97,7 @@ impl TAstBuilder {
     }
 
     pub fn push_new_name_binding_group(&mut self) -> NameBindingGroupID {
-        let name_binding_group_id = self.building_function.new_name_binding_group();
+        let name_binding_group_id = self.function_map.new_name_binding_group();
         self.name_env.name_binding_gruop_stack.last_mut().unwrap().push(name_binding_group_id);
 
         name_binding_group_id

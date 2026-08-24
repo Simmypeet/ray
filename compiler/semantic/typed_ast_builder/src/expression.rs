@@ -7,6 +7,7 @@ pub mod binary;
 pub mod call;
 pub mod identifier;
 pub mod if_else;
+pub mod lambda;
 pub mod leaf;
 pub mod literal;
 pub mod parenthesized;
@@ -18,7 +19,7 @@ impl Bind<Expression> for TAstBuilder {
         match syn {
             Expression::IfElse(if_else) => Box::pin(self.bind(if_else)).await,
             Expression::Binary(binary) => Box::pin(self.bind(binary)).await,
-            Expression::Lambda(_) => todo!(),
+            Expression::Lambda(lambda) => Box::pin(self.bind(lambda)).await,
         }
     }
 }
