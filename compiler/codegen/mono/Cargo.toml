@@ -1,0 +1,21 @@
+[package]
+name = "rayc_mono"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_hash.path = "../../base/hash"
+rayc_ir.path = "../../semantic/ir"
+rayc_qbice.path = "../../base/qbice"
+rayc_semantic_element.path = "../../semantic/semantic_element"
+rayc_symbol.path = "../../semantic/symbol"
+rayc_target.path = "../../base/target"
+rayc_type.path = "../../semantic/type"
+qbice.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

@@ -1781,6 +1781,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayc_mono"
+version = "0.1.0-beta.2"
+dependencies = [
+ "qbice",
+ "rayc_hash",
+ "rayc_ir",
+ "rayc_qbice",
+ "rayc_semantic_element",
+ "rayc_symbol",
+ "rayc_target",
+ "rayc_type",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "rayc_parser"
 version = "0.1.0-beta.2"
 dependencies = [

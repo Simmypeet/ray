@@ -79,4 +79,3 @@ impl PolyVarMap {
 pub struct Key {
     pub symbol_id: GlobalSymbolID,
 }
-
