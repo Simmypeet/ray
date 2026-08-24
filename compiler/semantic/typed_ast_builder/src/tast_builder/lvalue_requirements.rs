@@ -78,6 +78,7 @@ impl TAstBuilder {
                         }
                         TyApplicationView::Primitive(_)
                         | TyApplicationView::Tuple(_)
+                        | TyApplicationView::Lambda(_)
                         | TyApplicationView::Error => None,
                     },
                     Ty::Inference(_) | Ty::PolyVar(_) => None,

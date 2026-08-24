@@ -108,6 +108,18 @@ fn collect_poly_vars_from_ty(ty: &TySyntax, poly_vars: &mut PolyVarMap) {
                 collect_poly_vars_from_ty(&element, poly_vars);
             }
         }
+        TySyntax::Lambda(lambda) => {
+            if let Some(parameters) = lambda.parameters() {
+                for parameter in parameters.parameters() {
+                    collect_poly_vars_from_ty(&parameter, poly_vars);
+                }
+            }
+            if let Some(return_type) = lambda.return_type()
+                && let Some(return_type) = return_type.r#type()
+            {
+                collect_poly_vars_from_ty(&return_type, poly_vars);
+            }
+        }
         TySyntax::PolymorphicVariable(identifier) => {
             if is_poly_var_name(&identifier.kind.0) {
                 poly_vars.insert(PolyVar::new(
@@ -177,6 +189,35 @@ fn resolve_signature_ty(
                 .collect::<Vec<_>>();
 
             Ty::new_tuple(engine.intern_unsized(arguments), engine)
+        }
+        TySyntax::Lambda(lambda) => {
+            let parameters = lambda.parameters().map_or_else(Vec::new, |parameters| {
+                parameters
+                    .parameters()
+                    .map(|parameter| {
+                        resolve_signature_ty(engine, owner, poly_vars, &parameter, diagnostics)
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let return_type = lambda.return_type().map_or_else(
+                || Ty::new_unit(engine),
+                |return_type| {
+                    return_type.r#type().map_or_else(
+                        || Ty::new_error(engine),
+                        |return_type| {
+                            resolve_signature_ty(
+                                engine,
+                                owner,
+                                poly_vars,
+                                &return_type,
+                                diagnostics,
+                            )
+                        },
+                    )
+                },
+            );
+
+            Ty::new_lambda(parameters, return_type, engine)
         }
         TySyntax::PolymorphicVariable(identifier) => {
             if !is_poly_var_name(&identifier.kind.0) {

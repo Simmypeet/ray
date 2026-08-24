@@ -146,7 +146,9 @@ impl TAstBuilder {
             Ty::Application(application) => match application.view() {
                 TyApplicationView::Pointer(pointer) => pointer.pointee().clone(),
                 TyApplicationView::Error => Ty::new_error(self.engine()),
-                TyApplicationView::Primitive(_) | TyApplicationView::Tuple(_) => {
+                TyApplicationView::Primitive(_)
+                | TyApplicationView::Tuple(_)
+                | TyApplicationView::Lambda(_) => {
                     self.push_diagnostic(Diagnostic::ExpectedPointerType(
                         ExpectedPointerType::builder().ty(ty).span(span).build(),
                     ));
