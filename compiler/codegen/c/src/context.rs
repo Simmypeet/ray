@@ -2,24 +2,31 @@ use std::sync::Arc;
 
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_ir::{function::Function, get_ir};
-use rayc_mono::MonoProgram;
+use rayc_mono::{MonoFunction, MonoProgram};
 use rayc_qbice::TrackedEngine;
+use rayc_semantic_element::{
+    parameter::{ParameterID, get_parameter_map},
+    return_type::get_return_type,
+};
 use rayc_symbol::{GlobalSymbolID, name::get_name};
+use rayc_type::{
+    subst::{Subst, Substitutable},
+    ty::Ty,
+};
 
-use crate::context::instantiation::{CTupleID, InstantiationTable};
+use crate::{c_ty::CTy, context::instantiation::CTupleID};
 
 pub mod instantiation;
 
 #[derive(Debug, Clone)]
 pub struct Context {
-    inst_table: InstantiationTable,
     engine: TrackedEngine,
     mono_program: MonoProgram,
 }
 
 impl Context {
-    pub fn new(engine: TrackedEngine, mono_program: MonoProgram) -> Self {
-        Self { inst_table: InstantiationTable::default(), engine, mono_program }
+    pub const fn new(engine: TrackedEngine, mono_program: MonoProgram) -> Self {
+        Self { engine, mono_program }
     }
 }
 
@@ -53,4 +60,41 @@ impl Context {
     }
 
     pub fn get_unit_tuple_id(&self) -> CTupleID { self.get_ctuple_id(&[]) }
+
+    pub(crate) fn instantiate_call(
+        &self,
+        caller: &MonoFunction,
+        def_id: GlobalSymbolID,
+        call_subst: &Subst,
+    ) -> MonoFunction {
+        caller.instantiate_call(def_id, call_subst, &self.engine)
+    }
+
+    pub(crate) async fn get_mono_return_cty(&self, function: &MonoFunction) -> Interned<CTy> {
+        let ty = self.engine.get_return_type(function.def_id()).await;
+        let ty = ty.apply_subst_or_clone(function.subst(), &self.engine);
+        self.ty_to_cty(&ty)
+    }
+
+    pub(crate) async fn get_mono_parameters(
+        &self,
+        function: &MonoFunction,
+    ) -> Vec<(ParameterID, Interned<CTy>)> {
+        let parameters = self.engine.get_parameter_map(function.def_id()).await;
+        parameters
+            .iter()
+            .map(|(parameter_id, parameter)| {
+                let ty = parameter.ty().apply_subst_or_clone(function.subst(), &self.engine);
+                (parameter_id, self.ty_to_cty(&ty))
+            })
+            .collect()
+    }
+
+    pub(crate) fn instantiate_type(
+        &self,
+        ty: &Interned<Ty>,
+        function: &MonoFunction,
+    ) -> Interned<Ty> {
+        ty.apply_subst_or_clone(function.subst(), &self.engine)
+    }
 }

@@ -1587,7 +1587,6 @@ dependencies = [
 name = "rayc_c"
 version = "0.1.0-beta.2"
 dependencies = [
- "bon",
  "qbice",
  "rayc_arena",
  "rayc_hash",

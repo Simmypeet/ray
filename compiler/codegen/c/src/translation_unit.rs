@@ -1,12 +1,13 @@
 use std::io::{self, Write};
 
-use rayc_mono::collect_target;
+use rayc_mono::{MonoFunction, collect_target};
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
+use rayc_symbol::GlobalSymbolID;
 use rayc_target::TargetID;
+use rayc_type::subst::Subst;
 
 use crate::{
-    context::{Context, instantiation::CDef},
+    context::{Context, instantiation::MonoFunctionSubstID},
     identifier::Identifier,
     writer::Writer,
 };
@@ -39,27 +40,14 @@ pub async fn write_c_translation_unit(
     buf: &mut impl Write,
 ) -> io::Result<()> {
     let mono_program = collect_target(engine, target_id).await;
+    let mono_functions = mono_program.functions().cloned().collect::<Vec<_>>();
     let mut generator = Context::new(engine.clone(), mono_program);
+    let mut function_definitions = Vec::with_capacity(mono_functions.len());
 
-    if let Some(entry_point) = options.entry_point {
-        let entry_point = CDef::builder().def_id(entry_point).build();
-        let _ = generator.get_cdef_id(entry_point).await;
-    }
-
-    let def_ids = engine.get_all_def_ids(target_id).await;
-
-    for def_id in def_ids.iter().copied() {
-        let cdef = CDef::builder().def_id(target_id.make_global(def_id)).build();
-        let _ = generator.get_cdef_id(cdef).await;
-    }
-
-    let cdef_ids = generator.cdef_decl_ids().collect::<Vec<_>>();
-    let mut function_definitions = Vec::with_capacity(cdef_ids.len());
-
-    for cdef_id in cdef_ids {
+    for mono_function in &mono_functions {
         let mut definition = Vec::new();
         let mut writer = Writer::new(&mut definition);
-        writer.generate_function_definition(cdef_id, &mut generator).await?;
+        writer.generate_function_definition(mono_function, &mut generator).await?;
         function_definitions.push(definition);
     }
 
@@ -80,7 +68,10 @@ pub async fn write_c_translation_unit(
     writeln!(buf)?;
     writeln!(buf, "/* Function forward declarations */")?;
 
-    generator.write_forward_decl_cdefs(buf).await?;
+    for mono_function in &mono_functions {
+        generator.write_mono_function_decl(mono_function, buf).await?;
+        writeln!(buf, ";")?;
+    }
 
     writeln!(buf)?;
     writeln!(buf, "/* Function definitions */")?;
@@ -92,8 +83,14 @@ pub async fn write_c_translation_unit(
     }
 
     if let Some(entry_point) = options.entry_point {
-        let entry_point_name = generator.get_def_name(entry_point).await;
-        writeln!(buf, "int main(void) {{ return {}(); }}", Identifier::def(&entry_point_name))?;
+        let entry_point = MonoFunction::new(entry_point, Subst::new_empty());
+        let entry_point_name = generator.get_def_name(entry_point.def_id()).await;
+        let subst_id = MonoFunctionSubstID::for_function(&entry_point);
+        writeln!(
+            buf,
+            "int main(void) {{ return {}(); }}",
+            Identifier::def(&entry_point_name, subst_id)
+        )?;
     }
 
     Ok(())

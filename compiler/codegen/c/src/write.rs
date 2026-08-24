@@ -1,11 +1,11 @@
 use std::io;
 
-use rayc_mono::MonoTuple;
+use rayc_mono::{MonoFunction, MonoTuple};
 
 use crate::{
     context::{
         Context,
-        instantiation::{CDefDecl, CDefID, CTupleID},
+        instantiation::{CTupleID, MonoFunctionSubstID},
     },
     identifier::Identifier,
 };
@@ -13,7 +13,7 @@ use crate::{
 impl Context {
     const TAB: &'static str = "    ";
 
-    pub fn write_forward_decl_tuples(&self, buf: &mut impl std::io::Write) -> std::io::Result<()> {
+    pub fn write_forward_decl_tuples(&self, buf: &mut impl io::Write) -> io::Result<()> {
         for (id, _) in self.ctuple_instances() {
             write!(buf, "typedef struct ")?;
             self.write_ctuple_struct(id, buf)?;
@@ -25,7 +25,7 @@ impl Context {
         Ok(())
     }
 
-    pub fn write_tuple_struct_defs(&self, buf: &mut impl std::io::Write) -> std::io::Result<()> {
+    pub fn write_tuple_struct_defs(&self, buf: &mut impl io::Write) -> io::Result<()> {
         for (id, tuple) in self.ctuple_instances() {
             self.write_tuple_struct_def(id, tuple, buf)?;
             writeln!(buf)?;
@@ -34,50 +34,29 @@ impl Context {
         Ok(())
     }
 
-    pub async fn write_forward_decl_cdefs(
+    pub async fn write_mono_function_decl(
         &self,
-        buf: &mut impl std::io::Write,
-    ) -> std::io::Result<()> {
-        for id in self.cdef_decl_ids() {
-            self.write_cdef_decl(id, buf).await?;
-            writeln!(buf, ";")?;
-        }
-
-        Ok(())
-    }
-
-    pub async fn write_cdef_decl(
-        &self,
-        id: CDefID,
+        function: &MonoFunction,
         buf: &mut impl io::Write,
-    ) -> std::io::Result<()> {
-        let cdecl = self.get_cdef_decl(id);
+    ) -> io::Result<()> {
+        let return_type = self.get_mono_return_cty(function).await;
+        self.write_cty(&return_type, buf)?;
 
-        self.write_cty(cdecl.return_type(), buf)?;
+        let name = self.get_def_name(function.def_id()).await;
+        let subst_id = MonoFunctionSubstID::for_function(function);
+        write!(buf, " {}", Identifier::def(&name, subst_id))?;
 
-        let name = self.get_def_name(cdecl.def_id()).await;
-
-        write!(buf, " {}", Identifier::def(&name))?;
-
-        self.write_parameter_list(cdecl, buf)
-    }
-
-    fn write_parameter_list(
-        &self,
-        cdef_decl: &CDefDecl,
-        buf: &mut impl io::Write,
-    ) -> std::io::Result<()> {
         write!(buf, "(")?;
+        let parameters = self.get_mono_parameters(function).await;
         let mut first = true;
 
-        for (param_id, param_ty) in cdef_decl.parameters() {
+        for (parameter_id, parameter_type) in parameters {
             if !first {
                 write!(buf, ", ")?;
             }
 
-            self.write_cty(param_ty, buf)?;
-
-            write!(buf, " {}", Identifier::param(param_id))?;
+            self.write_cty(&parameter_type, buf)?;
+            write!(buf, " {}", Identifier::param(parameter_id))?;
 
             first = false;
         }
@@ -94,7 +73,7 @@ impl Context {
         id: CTupleID,
         tuple: &MonoTuple,
         buf: &mut impl io::Write,
-    ) -> std::io::Result<()> {
+    ) -> io::Result<()> {
         write!(buf, "struct ")?;
         self.write_ctuple_struct(id, buf)?;
 

@@ -7,6 +7,7 @@ use rayc_ir::{
     function::Function,
     variable::VariableID,
 };
+use rayc_mono::MonoFunction;
 
 use crate::{
     context::Context,
@@ -67,6 +68,7 @@ impl Writer<'_> {
     pub(crate) async fn write_ir_function_body(
         &mut self,
         function: &Function,
+        mono_function: &MonoFunction,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
         let layout = FunctionLayout::new(function);
@@ -75,7 +77,11 @@ impl Writer<'_> {
             for variable_id in layout.variables() {
                 writer
                     .write_indent_line(async |writer| {
-                        let cty = ctx.ty_to_cty(function.get_variable(variable_id).ty());
+                        let ty = ctx.instantiate_type(
+                            function.get_variable(variable_id).ty(),
+                            mono_function,
+                        );
+                        let cty = ctx.ty_to_cty(&ty);
                         ctx.write_cty(&cty, writer)?;
                         write!(writer, " {};", Identifier::var(variable_id))
                     })
@@ -85,7 +91,11 @@ impl Writer<'_> {
             for expression_id in layout.reachable_expressions() {
                 writer
                     .write_indent_line(async |writer| {
-                        let cty = ctx.ty_to_cty(function.get_expression(expression_id).ty());
+                        let ty = ctx.instantiate_type(
+                            function.get_expression(expression_id).ty(),
+                            mono_function,
+                        );
+                        let cty = ctx.ty_to_cty(&ty);
                         ctx.write_cty(&cty, writer)?;
                         write!(writer, " {};", Identifier::expr(expression_id))
                     })
@@ -100,7 +110,9 @@ impl Writer<'_> {
                     .await?;
 
                 for instruction in function.block_instructions(block_id) {
-                    writer.write_ir_instruction(instruction, function, &layout, ctx).await?;
+                    writer
+                        .write_ir_instruction(instruction, function, mono_function, &layout, ctx)
+                        .await?;
                 }
 
                 writer
@@ -110,6 +122,7 @@ impl Writer<'_> {
                             .block_terminator(block_id)
                             .expect("reachable IR block should have a terminator"),
                         function,
+                        mono_function,
                         ctx,
                     )
                     .await?;
@@ -124,6 +137,7 @@ impl Writer<'_> {
         &mut self,
         instruction: &Instruction,
         function: &Function,
+        mono_function: &MonoFunction,
         layout: &FunctionLayout,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
@@ -135,7 +149,9 @@ impl Writer<'_> {
 
                 self.write_indent_line(async |writer| {
                     write!(writer, "{} = ", Identifier::expr(*expression_id))?;
-                    writer.write_expression_value(*expression_id, function, ctx).await?;
+                    writer
+                        .write_expression_value(*expression_id, function, mono_function, ctx)
+                        .await?;
                     write!(writer, ";")
                 })
                 .await
@@ -155,6 +171,7 @@ impl Writer<'_> {
         block_id: BlockID,
         terminator: &Terminator,
         function: &Function,
+        mono_function: &MonoFunction,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
         match terminator {
@@ -163,7 +180,15 @@ impl Writer<'_> {
                     self.write_indent_line(async |writer| {
                         writer
                             .write_braced_block(async |writer| {
-                                writer.write_ir_edge(block_id, *successor, function, ctx).await
+                                writer
+                                    .write_ir_edge(
+                                        block_id,
+                                        *successor,
+                                        function,
+                                        mono_function,
+                                        ctx,
+                                    )
+                                    .await
                             })
                             .await
                     })
@@ -181,7 +206,13 @@ impl Writer<'_> {
                     writer
                         .write_braced_block(async |writer| {
                             writer
-                                .write_ir_edge(block_id, conditional.then_block(), function, ctx)
+                                .write_ir_edge(
+                                    block_id,
+                                    conditional.then_block(),
+                                    function,
+                                    mono_function,
+                                    ctx,
+                                )
                                 .await
                         })
                         .await?;
@@ -189,7 +220,13 @@ impl Writer<'_> {
                     writer
                         .write_braced_block(async |writer| {
                             writer
-                                .write_ir_edge(block_id, conditional.else_block(), function, ctx)
+                                .write_ir_edge(
+                                    block_id,
+                                    conditional.else_block(),
+                                    function,
+                                    mono_function,
+                                    ctx,
+                                )
                                 .await
                         })
                         .await
@@ -225,6 +262,7 @@ impl Writer<'_> {
         predecessor: BlockID,
         successor: BlockID,
         function: &Function,
+        mono_function: &MonoFunction,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
         for instruction in function.block_instructions(successor) {
@@ -245,7 +283,8 @@ impl Writer<'_> {
             });
 
             self.write_indent_line(async |writer| {
-                let cty = ctx.ty_to_cty(function.get_expression(*phi_id).ty());
+                let ty = ctx.instantiate_type(function.get_expression(*phi_id).ty(), mono_function);
+                let cty = ctx.ty_to_cty(&ty);
                 ctx.write_cty(&cty, writer)?;
                 write!(
                     writer,

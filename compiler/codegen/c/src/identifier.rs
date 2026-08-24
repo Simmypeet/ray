@@ -3,14 +3,14 @@ use std::fmt;
 use rayc_ir::{cfg::BlockID, expression::ExpressionID, variable::VariableID};
 use rayc_semantic_element::parameter::ParameterID;
 
-use crate::context::instantiation::CTupleID;
+use crate::context::instantiation::{CTupleID, MonoFunctionSubstID};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Identifier<'a>(IdentifierKind<'a>);
 
 #[derive(Debug, Clone, Copy)]
 enum IdentifierKind<'a> {
-    Definition(&'a str),
+    Definition { name: &'a str, subst: MonoFunctionSubstID },
     Parameter(ParameterID),
     Variable(VariableID),
     Expression(ExpressionID),
@@ -24,7 +24,9 @@ enum IdentifierKind<'a> {
 
 impl<'a> Identifier<'a> {
     #[must_use]
-    pub const fn def(name: &'a str) -> Self { Self(IdentifierKind::Definition(name)) }
+    pub(crate) const fn def(name: &'a str, subst: MonoFunctionSubstID) -> Self {
+        Self(IdentifierKind::Definition { name, subst })
+    }
 }
 
 impl Identifier<'static> {
@@ -61,7 +63,9 @@ impl Identifier<'static> {
 impl fmt::Display for Identifier<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            IdentifierKind::Definition(name) => write!(formatter, "ray_{name}"),
+            IdentifierKind::Definition { name, subst } => {
+                write!(formatter, "ray_{name}_{}", subst.base62())
+            }
             IdentifierKind::Parameter(id) => write!(formatter, "ray_param_{:X}", id.index()),
             IdentifierKind::Variable(id) => write!(formatter, "ray_var_{:X}", id.index()),
             IdentifierKind::Expression(id) => write!(formatter, "ray_expr_{:X}", id.index()),

@@ -1,4 +1,5 @@
 use rayc_ir::{expression::phi::Phi, function::Function};
+use rayc_mono::MonoFunction;
 
 use super::{ExpressionWithID, WriteExpression};
 use crate::{context::Context, writer::Writer};
@@ -8,6 +9,7 @@ impl WriteExpression<&Phi> for Writer<'_> {
         &mut self,
         _expression: ExpressionWithID<&Phi>,
         _function: &Function,
+        _mono_function: &MonoFunction,
         _ctx: &mut Context,
     ) -> std::io::Result<()> {
         panic!("phi expression cannot be emitted as an ordinary C expression")

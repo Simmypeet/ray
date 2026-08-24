@@ -1,21 +1,19 @@
 use std::io::Write;
 
-use crate::{
-    context::{Context, instantiation::CDefID},
-    writer::Writer,
-};
+use rayc_mono::MonoFunction;
+
+use crate::{context::Context, writer::Writer};
 
 impl Writer<'_> {
     pub async fn generate_function_definition(
         &mut self,
-        cdef_id: CDefID,
+        mono_function: &MonoFunction,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
-        let def_id = ctx.get_cdef_decl(cdef_id).def_id();
-        let function = ctx.get_ir(def_id).await;
+        let function = ctx.get_ir(mono_function.def_id()).await;
 
-        ctx.write_cdef_decl(cdef_id, self).await?;
+        ctx.write_mono_function_decl(mono_function, self).await?;
         write!(self, " ")?;
-        self.write_ir_function_body(&function, ctx).await
+        self.write_ir_function_body(&function, mono_function, ctx).await
     }
 }

@@ -3,6 +3,7 @@ use rayc_ir::{
     expression::{ExpressionID, ExpressionKind},
     function::Function,
 };
+use rayc_mono::MonoFunction;
 
 use crate::{context::Context, writer::Writer};
 
@@ -23,6 +24,7 @@ pub trait WriteExpression<E> {
         &mut self,
         expression: ExpressionWithID<E>,
         function: &Function,
+        mono_function: &MonoFunction,
         ctx: &mut Context,
     ) -> std::io::Result<()>;
 }
@@ -32,6 +34,7 @@ impl Writer<'_> {
         &mut self,
         expression_id: ExpressionID,
         function: &Function,
+        mono_function: &MonoFunction,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
         let expression = function.get_expression(expression_id);
@@ -40,41 +43,73 @@ impl Writer<'_> {
                 self.write_expression(
                     ExpressionWithID::new(error::Error, expression_id),
                     function,
+                    mono_function,
                     ctx,
                 )
                 .await
             }
             ExpressionKind::Literal(literal) => {
-                self.write_expression(ExpressionWithID::new(literal, expression_id), function, ctx)
-                    .await
+                self.write_expression(
+                    ExpressionWithID::new(literal, expression_id),
+                    function,
+                    mono_function,
+                    ctx,
+                )
+                .await
             }
             ExpressionKind::RefOf(reference) => {
                 self.write_expression(
                     ExpressionWithID::new(reference, expression_id),
                     function,
+                    mono_function,
                     ctx,
                 )
                 .await
             }
             ExpressionKind::Load(load) => {
-                self.write_expression(ExpressionWithID::new(load, expression_id), function, ctx)
-                    .await
+                self.write_expression(
+                    ExpressionWithID::new(load, expression_id),
+                    function,
+                    mono_function,
+                    ctx,
+                )
+                .await
             }
             ExpressionKind::Phi(phi) => {
-                self.write_expression(ExpressionWithID::new(phi, expression_id), function, ctx)
-                    .await
+                self.write_expression(
+                    ExpressionWithID::new(phi, expression_id),
+                    function,
+                    mono_function,
+                    ctx,
+                )
+                .await
             }
             ExpressionKind::Binary(binary) => {
-                self.write_expression(ExpressionWithID::new(binary, expression_id), function, ctx)
-                    .await
+                self.write_expression(
+                    ExpressionWithID::new(binary, expression_id),
+                    function,
+                    mono_function,
+                    ctx,
+                )
+                .await
             }
             ExpressionKind::Call(call) => {
-                self.write_expression(ExpressionWithID::new(call, expression_id), function, ctx)
-                    .await
+                self.write_expression(
+                    ExpressionWithID::new(call, expression_id),
+                    function,
+                    mono_function,
+                    ctx,
+                )
+                .await
             }
             ExpressionKind::Tuple(tuple) => {
-                self.write_expression(ExpressionWithID::new(tuple, expression_id), function, ctx)
-                    .await
+                self.write_expression(
+                    ExpressionWithID::new(tuple, expression_id),
+                    function,
+                    mono_function,
+                    ctx,
+                )
+                .await
             }
         }
     }

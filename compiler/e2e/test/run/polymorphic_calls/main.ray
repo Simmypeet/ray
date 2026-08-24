@@ -1,0 +1,11 @@
+def identity(value: a) -> a:
+    return value
+
+
+def forward(value: a) -> a:
+    return identity(value)
+
+
+def main() -> int32:
+    let boolean = forward(true)
+    return forward(42)

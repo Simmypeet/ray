@@ -4,6 +4,7 @@ use rayc_ir::{
     expression::binary::{Binary, BinaryOp},
     function::Function,
 };
+use rayc_mono::MonoFunction;
 
 use super::{ExpressionWithID, WriteExpression};
 use crate::{context::Context, identifier::Identifier, writer::Writer};
@@ -13,6 +14,7 @@ impl WriteExpression<&Binary> for Writer<'_> {
         &mut self,
         expression: ExpressionWithID<&Binary>,
         _function: &Function,
+        _mono_function: &MonoFunction,
         _ctx: &mut Context,
     ) -> std::io::Result<()> {
         let binary = expression.node();
