@@ -47,7 +47,7 @@ pub(super) enum ArtifactError {
     MissingEntryPoint,
     CreateOutputStaging { path: PathBuf, source: io::Error },
     CreateTemporaryArtifact { artifact: TemporaryArtifact, output_path: PathBuf, source: io::Error },
-    GenerateC { output_path: PathBuf, source: io::Error },
+    GenerateC { output_path: PathBuf, source: rayc_c::CTranslationUnitError },
     FlushC { output_path: PathBuf, source: io::Error },
     PersistOutput { path: PathBuf, source: io::Error },
     Native(NativeError),

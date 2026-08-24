@@ -49,7 +49,7 @@ impl FunctionLayout {
 
 impl Writer<'_> {
     async fn generate_unit_value(&mut self, ctx: &mut Context) -> std::io::Result<()> {
-        let unit_id = ctx.get_unit_ctuple_id();
+        let unit_id = ctx.get_unit_tuple_id();
 
         self.write_enclosing_pair(EnclosingPair::Parens, async |writer| {
             writer

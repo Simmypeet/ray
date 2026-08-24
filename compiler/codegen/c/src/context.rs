@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_ir::{function::Function, get_ir};
+use rayc_mono::MonoProgram;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_name};
 
-use crate::context::instantiation::{CTuple, CTupleID, InstantiationTable};
+use crate::context::instantiation::{CTupleID, InstantiationTable};
 
 pub mod instantiation;
 
@@ -13,11 +14,12 @@ pub mod instantiation;
 pub struct Context {
     inst_table: InstantiationTable,
     engine: TrackedEngine,
+    mono_program: MonoProgram,
 }
 
 impl Context {
-    pub fn new(engine: TrackedEngine) -> Self {
-        Self { inst_table: InstantiationTable::default(), engine }
+    pub fn new(engine: TrackedEngine, mono_program: MonoProgram) -> Self {
+        Self { inst_table: InstantiationTable::default(), engine, mono_program }
     }
 }
 
@@ -50,8 +52,5 @@ impl Context {
         self.engine.get_ir(def_id).await
     }
 
-    pub fn get_unit_ctuple_id(&mut self) -> CTupleID {
-        let args: Interned<[Interned<crate::c_ty::CTy>]> = self.intern_unsized([]);
-        self.get_ctuple_id(CTuple::builder().args(args).build())
-    }
+    pub fn get_unit_tuple_id(&self) -> CTupleID { self.get_ctuple_id(&[]) }
 }

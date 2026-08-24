@@ -12,10 +12,12 @@ rayc_target.path = "../../base/target"
 rayc_symbol.path = "../../semantic/symbol"
 rayc_qbice.path = "../../base/qbice"
 rayc_ir.path = "../../semantic/ir"
+rayc_mono.path = "../mono"
 rayc_type.path = "../../semantic/type"
 rayc_semantic_element.path = "../../semantic/semantic_element"
 qbice.workspace = true
 bon.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 rayc_arena.path = "../../base/arena"

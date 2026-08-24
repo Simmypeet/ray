@@ -7,11 +7,13 @@ use qbice::{
     storage::intern::Interned,
 };
 use rayc_hash::FxHashMap;
+use rayc_mono::MonoTuple;
 use rayc_semantic_element::{
     parameter::{ParameterID, get_parameter_map},
     return_type::get_return_type,
 };
 use rayc_symbol::GlobalSymbolID;
+use rayc_type::ty::{Ty, TyApplicationView};
 
 use crate::{c_ty::CTy, context::Context, identifier::Identifier};
 
@@ -53,28 +55,26 @@ impl fmt::Display for CDefID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.base62().fmt(f) }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Builder)]
-pub struct CTuple {
-    args: Interned<[Interned<CTy>]>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CTupleDecl {
-    args: Interned<[Interned<CTy>]>,
-}
-
-impl CTupleDecl {
-    pub fn args(&self) -> impl Iterator<Item = &'_ Interned<CTy>> { self.args.iter() }
-
-    #[must_use]
-    pub fn is_unit(&self) -> bool { self.args.is_empty() }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash)]
 pub struct CTupleID(u128);
 
 impl CTupleID {
-    fn for_ctuple(tuple: &CTuple) -> Self { Self(stable_codegen_id("rayc_c::CTupleID:v1", tuple)) }
+    fn for_args(args: &[Interned<Ty>]) -> Self {
+        Self(stable_codegen_id("rayc_c::CTupleID:v3", args))
+    }
+
+    fn for_tuple(tuple: &MonoTuple) -> Self {
+        let mut hasher = Sip128Hasher::default();
+        "rayc_c::CTupleID:v3".stable_hash(&mut hasher);
+
+        let args = tuple.args();
+        hasher.write_length_prefix(args.len());
+        for arg in args {
+            arg.stable_hash(&mut hasher);
+        }
+
+        Self(hasher.finish())
+    }
 
     pub(crate) const fn base62(self) -> Base62 { Base62(self.0) }
 }
@@ -107,7 +107,7 @@ impl fmt::Display for Base62 {
     }
 }
 
-fn stable_codegen_id<T: StableHash>(domain: &'static str, value: &T) -> u128 {
+fn stable_codegen_id<T: StableHash + ?Sized>(domain: &'static str, value: &T) -> u128 {
     let mut hasher = Sip128Hasher::default();
     domain.stable_hash(&mut hasher);
     value.stable_hash(&mut hasher);
@@ -117,36 +117,26 @@ fn stable_codegen_id<T: StableHash>(domain: &'static str, value: &T) -> u128 {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct InstantiationTable {
     def_table: FxHashMap<CDef, CDefID>,
-    tuple_table: FxHashMap<CTuple, CTupleID>,
-
     def_decls: FxHashMap<CDefID, CDefDecl>,
-    tuple_decls: FxHashMap<CTupleID, CTupleDecl>,
+}
+
+fn tuple_dependency_depth<'ty>(args: impl Iterator<Item = &'ty Interned<Ty>>) -> usize {
+    1 + args.map(|arg| by_value_tuple_depth(arg)).max().unwrap_or(0)
+}
+
+fn by_value_tuple_depth(ty: &Ty) -> usize {
+    match ty {
+        Ty::Application(application) => match application.view() {
+            TyApplicationView::Tuple(tuple) => tuple_dependency_depth(tuple.args().iter()),
+            TyApplicationView::Primitive(_)
+            | TyApplicationView::Pointer(_)
+            | TyApplicationView::Error => 0,
+        },
+        Ty::Inference(_) | Ty::PolyVar(_) => 0,
+    }
 }
 
 impl Context {
-    pub fn get_ctuple_id(&mut self, ctuple: CTuple) -> CTupleID {
-        if let Some(id) = self.inst_table.tuple_table.get(&ctuple) {
-            return *id;
-        }
-
-        let id = CTupleID::for_ctuple(&ctuple);
-
-        assert!(
-            self.inst_table
-                .tuple_decls
-                .insert(id, CTupleDecl { args: ctuple.args.clone() })
-                .is_none(),
-            "compiler-internal duplicate CTupleID declaration insertion for {id:?}"
-        );
-
-        assert!(
-            self.inst_table.tuple_table.insert(ctuple, id).is_none(),
-            "compiler-internal duplicate CTuple key insertion for CTupleID {id:?}"
-        );
-
-        id
-    }
-
     pub async fn get_cdef_id(&mut self, cdef: CDef) -> CDefID {
         if let Some(id) = self.inst_table.def_table.get(&cdef) {
             return *id;
@@ -198,15 +188,19 @@ impl Context {
         self.inst_table.def_decls.keys().copied()
     }
 
-    pub fn ctuple_decl_ids(&self) -> impl Iterator<Item = CTupleID> + '_ {
-        self.inst_table.tuple_decls.keys().copied()
-    }
-
     pub fn get_cdef_decl(&self, id: CDefID) -> &CDefDecl {
         self.inst_table.def_decls.get(&id).unwrap()
     }
 
-    pub fn get_ctuple_decl(&self, id: CTupleID) -> &CTupleDecl {
-        self.inst_table.tuple_decls.get(&id).unwrap()
+    pub fn ctuple_instances(&self) -> Vec<(CTupleID, &'_ MonoTuple)> {
+        let mut tuples = self
+            .mono_program
+            .tuples()
+            .map(|tuple| (CTupleID::for_tuple(tuple), tuple))
+            .collect::<Vec<_>>();
+        tuples.sort_unstable_by_key(|(id, tuple)| (tuple_dependency_depth(tuple.args()), *id));
+        tuples
     }
+
+    pub fn get_ctuple_id(&self, args: &[Interned<Ty>]) -> CTupleID { CTupleID::for_args(args) }
 }

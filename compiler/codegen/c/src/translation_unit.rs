@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 
+use rayc_mono::{MonoError, collect_target};
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
 use rayc_target::TargetID;
@@ -9,6 +10,18 @@ use crate::{
     identifier::Identifier,
     writer::Writer,
 };
+
+/// An error encountered while collecting or writing a C translation unit.
+#[derive(Debug, thiserror::Error)]
+pub enum CTranslationUnitError {
+    /// Monomorphization could not produce a concrete target inventory.
+    #[error(transparent)]
+    Mono(#[from] MonoError),
+
+    /// Writing the generated C source failed.
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
 
 /// Options controlling the contents of a generated C translation unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,8 +49,9 @@ pub async fn write_c_translation_unit(
     target_id: TargetID,
     options: CTranslationUnitOptions,
     buf: &mut impl Write,
-) -> io::Result<()> {
-    let mut generator = Context::new(engine.clone());
+) -> Result<(), CTranslationUnitError> {
+    let mono_program = collect_target(engine, target_id).await?;
+    let mut generator = Context::new(engine.clone(), mono_program);
 
     if let Some(entry_point) = options.entry_point {
         let entry_point = CDef::builder().def_id(entry_point).build();

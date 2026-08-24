@@ -3,10 +3,7 @@ use std::io;
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_type::ty::{Ty, TyApplicationView};
 
-use crate::context::{
-    Context,
-    instantiation::{CTuple, CTupleID},
-};
+use crate::context::{Context, instantiation::CTupleID};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash)]
 pub enum Primitive {
@@ -47,20 +44,12 @@ impl Context {
         }
     }
 
-    pub fn unwrap_ty_as_ctuple_id(&mut self, ty: &Interned<Ty>) -> CTupleID {
+    pub fn unwrap_ty_as_ctuple_id(&self, ty: &Interned<Ty>) -> CTupleID {
         let view = ty.unwrap_as_application_view().unwrap_into_tuple_view();
-        let mut args = Vec::with_capacity(view.args().len());
-        for arg in view.args() {
-            let cty = self.ty_to_cty(arg);
-            args.push(cty);
-        }
-
-        let args = self.intern_unsized(args);
-
-        self.get_ctuple_id(CTuple::builder().args(args).build())
+        self.get_ctuple_id(view.args())
     }
 
-    pub fn ty_to_cty(&mut self, ty: &Interned<Ty>) -> Interned<CTy> {
+    pub fn ty_to_cty(&self, ty: &Interned<Ty>) -> Interned<CTy> {
         match &**ty {
             Ty::Application(ty_application) => match ty_application.view() {
                 TyApplicationView::Primitive(primitive) => {
@@ -74,15 +63,7 @@ impl Context {
                 }
 
                 TyApplicationView::Tuple(tuple_view) => {
-                    let mut args = Vec::with_capacity(tuple_view.args().len());
-
-                    for arg in tuple_view.args() {
-                        let cty = self.ty_to_cty(arg);
-                        args.push(cty);
-                    }
-
-                    let args = self.intern_unsized(args);
-                    let ctuple_id = self.get_ctuple_id(CTuple::builder().args(args).build());
+                    let ctuple_id = self.get_ctuple_id(tuple_view.args());
 
                     self.intern(CTy::Tuple(ctuple_id))
                 }

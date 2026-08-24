@@ -1,5 +1,7 @@
 use std::io;
 
+use rayc_mono::MonoTuple;
+
 use crate::{
     context::{
         Context,
@@ -12,7 +14,7 @@ impl Context {
     const TAB: &'static str = "    ";
 
     pub fn write_forward_decl_tuples(&self, buf: &mut impl std::io::Write) -> std::io::Result<()> {
-        for id in self.ctuple_decl_ids() {
+        for (id, _) in self.ctuple_instances() {
             write!(buf, "typedef struct ")?;
             self.write_ctuple_struct(id, buf)?;
             write!(buf, " ")?;
@@ -24,8 +26,8 @@ impl Context {
     }
 
     pub fn write_tuple_struct_defs(&self, buf: &mut impl std::io::Write) -> std::io::Result<()> {
-        for id in self.ctuple_decl_ids() {
-            self.write_tuple_struct_def(id, buf)?;
+        for (id, tuple) in self.ctuple_instances() {
+            self.write_tuple_struct_def(id, tuple, buf)?;
             writeln!(buf)?;
         }
 
@@ -90,6 +92,7 @@ impl Context {
     pub fn write_tuple_struct_def(
         &self,
         id: CTupleID,
+        tuple: &MonoTuple,
         buf: &mut impl io::Write,
     ) -> std::io::Result<()> {
         write!(buf, "struct ")?;
@@ -97,16 +100,15 @@ impl Context {
 
         writeln!(buf, " {{")?;
 
-        let tuple_decl = self.get_ctuple_decl(id);
-
-        if tuple_decl.is_unit() {
+        if tuple.args().next().is_none() {
             write!(buf, "{}", Self::TAB)?;
             writeln!(buf, "uint8_t {};", Identifier::unit_field())?;
         }
 
-        for (i, arg) in tuple_decl.args().enumerate() {
+        for (i, arg) in tuple.args().enumerate() {
             write!(buf, "{}", Self::TAB)?;
-            self.write_cty(arg, buf)?;
+            let cty = self.ty_to_cty(arg);
+            self.write_cty(&cty, buf)?;
 
             writeln!(buf, " {};", Identifier::tuple_elem(i))?;
         }
