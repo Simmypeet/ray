@@ -46,6 +46,36 @@ impl FunctionMap {
         self.functions.get(id).expect("FunctionID should be valid")
     }
 
+    #[must_use]
+    pub fn get_expression_in(&self, function_id: FunctionID, id: TypedExprID) -> &TypedExpr {
+        self.get_function(function_id).get_expression(id)
+    }
+
+    #[must_use]
+    pub fn classify_lvalue_in(
+        &self,
+        function_id: FunctionID,
+        id: TypedExprID,
+    ) -> LvalueClassification {
+        self.get_function(function_id).classify_lvalue(id)
+    }
+
+    #[must_use]
+    pub fn parameter_name_binding_group_id_of(
+        &self,
+        function_id: FunctionID,
+    ) -> NameBindingGroupID {
+        match self.get_function(function_id).context() {
+            Context::Def(context) => context.parameter_name_binding_group_id(),
+            Context::Lambda(context) => context.parameter_name_binding_group_id(),
+        }
+    }
+
+    #[must_use]
+    pub fn parameter_name_binding_group_id_of_root(&self) -> NameBindingGroupID {
+        self.parameter_name_binding_group_id_of(self.root)
+    }
+
     /// Iterates over all functions belonging to this def and their IDs.
     ///
     /// The iteration order is not stable.
@@ -145,54 +175,6 @@ impl FunctionMap {
 
     pub fn new_name_binding_group(&mut self) -> NameBindingGroupID {
         self.name_binding_map.new_name_binding_group()
-    }
-
-    // These methods delegate to the root function to keep def-level consumers
-    // source-compatible while they migrate to the multi-function representation.
-    pub fn statements(&self) -> impl Iterator<Item = &Statement> {
-        self.get_function(self.root).statements()
-    }
-
-    #[must_use]
-    pub fn get_expression(&self, id: TypedExprID) -> &TypedExpr {
-        self.get_function(self.root).get_expression(id)
-    }
-
-    #[must_use]
-    pub fn classify_lvalue(&self, id: TypedExprID) -> LvalueClassification {
-        self.get_function(self.root).classify_lvalue(id)
-    }
-
-    #[must_use]
-    pub fn parameter_name_binding_group_id(&self) -> NameBindingGroupID {
-        match self.get_function(self.root).context() {
-            Context::Def(context) => context.parameter_name_binding_group_id(),
-            Context::Lambda(_) => unreachable!(),
-        }
-    }
-
-    #[must_use]
-    pub fn get_variable(&self, id: VariableID) -> &Variable {
-        self.get_function(self.root).get_variable(id)
-    }
-
-    #[must_use]
-    pub fn insert_expression(&mut self, expression: TypedExpr) -> TypedExprID {
-        self.insert_expression_into(self.root, expression)
-    }
-
-    #[must_use]
-    pub fn insert_variable(&mut self, variable: Variable) -> VariableID {
-        self.insert_variable_into(self.root, variable)
-    }
-
-    pub fn push_statement(&mut self, statement: Statement) {
-        self.push_statement_into(self.root, statement);
-    }
-
-    #[must_use]
-    pub fn get_type_of_expr_id(&self, expr_id: TypedExprID) -> &Interned<Ty> {
-        self.get_function(self.root).get_type_of_expr_id(expr_id)
     }
 }
 
