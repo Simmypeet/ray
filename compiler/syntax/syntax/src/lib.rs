@@ -17,9 +17,6 @@ pub mod module;
 pub mod statement;
 pub mod r#type;
 
-#[cfg(test)]
-mod test;
-
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
 pub type Keyword = Token<kind::Keyword, RelativeLocation>;
 

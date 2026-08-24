@@ -35,7 +35,8 @@ impl Substitutable for Provenance {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum SubtypeSource {
-    FunctioncCall,
+    FunctionCall,
+    LambdaInvocation,
     VariableAssignment,
     BinaryOperator,
     IfCondition,
@@ -172,7 +173,19 @@ impl TAstBuilder {
         self.push_subtype_constraint_with_expr(
             expression,
             expected_ty,
-            SubtypeSource::FunctioncCall,
+            SubtypeSource::FunctionCall,
+        );
+    }
+
+    pub fn push_lambda_invocation_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(
+            expression,
+            expected_ty,
+            SubtypeSource::LambdaInvocation,
         );
     }
 

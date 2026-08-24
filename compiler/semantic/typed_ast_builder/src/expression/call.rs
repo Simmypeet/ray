@@ -1,18 +1,28 @@
+use qbice::storage::intern::Interned;
+use rayc_lexical::tree::RelativeSpan;
 use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{GlobalSymbolID, MemberID};
-use rayc_syntax::expression::Call as CallSyn;
+use rayc_syntax::{Identifier, expression::Call as CallSyn};
 use rayc_type::{
     poly_var::{PolyVarMap, get_poly_var_map},
     subst::{Subst, Substitutable},
+    ty::{Ty, TyApplicationView},
 };
 use rayc_typed_ast::typed_expr::{TypedExpr, TypedExprID, TypedExprKind, call::Call};
 
 use crate::{
     bind::Bind,
-    diagnostic::{Diagnostic, MismatchedArgumentCount},
+    diagnostic::{
+        Diagnostic, ExpectedLambdaType, MismatchedArgumentCount, MismatchedIndirectArgumentCount,
+    },
     tast_builder::TAstBuilder,
 };
+
+enum LambdaCallSignature {
+    Callable { parameter_types: Vec<Interned<Ty>>, return_type: Interned<Ty> },
+    Invalid,
+}
 
 impl TAstBuilder {
     fn instantiate_poly_vars(
@@ -27,54 +37,156 @@ impl TAstBuilder {
             })
             .collect()
     }
-}
 
-impl Bind<CallSyn> for TAstBuilder {
-    async fn bind(&mut self, syn: CallSyn) -> TypedExprID {
-        let mut args = Vec::new();
+    async fn bind_call_arguments(&mut self, syn: &CallSyn) -> Vec<TypedExprID> {
+        let mut arguments = Vec::new();
 
-        if let Some(arg) = syn.arguments() {
-            for arg in arg.expressions() {
-                args.push(self.bind(arg).await);
+        if let Some(argument_list) = syn.arguments() {
+            for argument in argument_list.expressions() {
+                arguments.push(self.bind(argument).await);
             }
         }
 
-        let Some(identifier) = syn.def_name() else {
-            return self.push_error_expression_with_children(syn.span(), args);
-        };
+        arguments
+    }
+
+    pub async fn build_bare_identifier_call(
+        &mut self,
+        identifier: Identifier,
+        syn: &CallSyn,
+    ) -> TypedExprID {
+        if self.lookup_name_binding(&identifier.kind.0).is_some() {
+            let callee = self.bind(identifier).await;
+            return self.build_lambda_call(callee, syn).await;
+        }
+
+        self.build_direct_call(identifier, syn).await
+    }
+
+    async fn build_direct_call(&mut self, identifier: Identifier, syn: &CallSyn) -> TypedExprID {
+        let arguments = self.bind_call_arguments(syn).await;
+        let span = identifier.span().join(&syn.span());
 
         let Some(function_id) = self.resolve_function_id(&identifier).await else {
-            return self.push_error_expression_with_children(syn.span(), args);
+            return self.push_error_expression_with_children(span, arguments);
         };
 
         let poly_var_map = self.engine().get_poly_var_map(function_id).await;
         let call_subst = self.instantiate_poly_vars(function_id, &poly_var_map);
-
         let parameter_map = self.engine().get_parameter_map(function_id).await;
 
-        if parameter_map.len() != args.len() {
+        if parameter_map.len() != arguments.len() {
             self.push_diagnostic(Diagnostic::MismatchedArgumentCount(
                 MismatchedArgumentCount::builder()
                     .calling_symbol(function_id)
                     .expected(parameter_map.len())
-                    .found(args.len())
-                    .span(syn.span())
+                    .found(arguments.len())
+                    .span(span)
                     .build(),
             ));
         }
 
-        for ((_, param), arg) in parameter_map.iter().zip(args.iter()) {
-            let parameter_ty = param.ty().apply_subst_or_clone(&call_subst, self.engine());
-            self.push_function_call_constraint(&parameter_ty, *arg);
+        for ((_, parameter), argument) in parameter_map.iter().zip(arguments.iter()) {
+            let parameter_ty = parameter.ty().apply_subst_or_clone(&call_subst, self.engine());
+            self.push_function_call_constraint(&parameter_ty, *argument);
         }
 
         let return_type = self.engine().get_return_type(function_id).await;
         let return_type = return_type.apply_subst_or_clone(&call_subst, self.engine());
 
         self.insert_expression(TypedExpr::new(
-            TypedExprKind::Call(Call::new(function_id, args, call_subst)),
-            syn.span(),
+            TypedExprKind::Call(Call::new_direct(function_id, arguments, call_subst)),
+            span,
             return_type,
         ))
+    }
+
+    pub async fn build_lambda_call(&mut self, callee: TypedExprID, syn: &CallSyn) -> TypedExprID {
+        let arguments = self.bind_call_arguments(syn).await;
+        let callee_span = self.span_of_expression(callee);
+        let span = callee_span.join(&syn.span());
+
+        let return_type =
+            match self.resolve_lambda_call_signature(callee, arguments.len(), callee_span) {
+                LambdaCallSignature::Callable { parameter_types, return_type } => {
+                    self.check_lambda_call_arguments(&parameter_types, &arguments, span);
+                    return_type
+                }
+                LambdaCallSignature::Invalid => Ty::new_error(self.engine()),
+            };
+
+        self.insert_expression(TypedExpr::new(
+            TypedExprKind::Call(Call::new_lambda(callee, arguments)),
+            span,
+            return_type,
+        ))
+    }
+
+    fn resolve_lambda_call_signature(
+        &mut self,
+        callee: TypedExprID,
+        argument_count: usize,
+        callee_span: RelativeSpan,
+    ) -> LambdaCallSignature {
+        let callee_ty = self.latest_type(&self.type_of_expression(callee));
+
+        match &*callee_ty {
+            Ty::Application(application) => match application.view() {
+                TyApplicationView::Lambda(lambda) => LambdaCallSignature::Callable {
+                    parameter_types: lambda.parameter_types().to_vec(),
+                    return_type: lambda.return_type().clone(),
+                },
+                TyApplicationView::Error => LambdaCallSignature::Invalid,
+                TyApplicationView::Primitive(_)
+                | TyApplicationView::Tuple(_)
+                | TyApplicationView::Pointer(_) => {
+                    self.report_expected_lambda(callee_ty, callee_span);
+                    LambdaCallSignature::Invalid
+                }
+            },
+            Ty::Inference(_) => {
+                let parameter_types =
+                    (0..argument_count).map(|_| self.new_type_inference()).collect::<Vec<_>>();
+                let return_type = self.new_type_inference();
+                let expected = Ty::new_lambda(
+                    parameter_types.iter().cloned(),
+                    return_type.clone(),
+                    self.engine(),
+                );
+                self.push_lambda_invocation_constraint(&expected, callee);
+                LambdaCallSignature::Callable { parameter_types, return_type }
+            }
+            Ty::PolyVar(_) => {
+                self.report_expected_lambda(callee_ty, callee_span);
+                LambdaCallSignature::Invalid
+            }
+        }
+    }
+
+    fn report_expected_lambda(&mut self, ty: Interned<Ty>, span: RelativeSpan) {
+        self.push_diagnostic(Diagnostic::ExpectedLambdaType(
+            ExpectedLambdaType::builder().ty(ty).span(span).build(),
+        ));
+    }
+
+    fn check_lambda_call_arguments(
+        &mut self,
+        parameter_types: &[Interned<Ty>],
+        arguments: &[TypedExprID],
+        call_span: RelativeSpan,
+    ) {
+        if parameter_types.len() != arguments.len() {
+            self.push_diagnostic(Diagnostic::MismatchedIndirectArgumentCount(
+                MismatchedIndirectArgumentCount::builder()
+                    .expected(parameter_types.len())
+                    .found(arguments.len())
+                    .span(call_span)
+                    .build(),
+            ));
+        }
+
+        for (parameter_type, argument) in parameter_types.iter().zip(arguments.iter()) {
+            self.push_lambda_invocation_constraint(parameter_type, *argument);
+        }
     }
 }

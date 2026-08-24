@@ -1,0 +1,5 @@
+def callback(value: int32) -> int32:
+    return value
+
+def invoke(callback: int32) -> int32:
+    return callback(1)

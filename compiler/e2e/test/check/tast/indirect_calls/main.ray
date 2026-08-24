@@ -1,0 +1,15 @@
+def global(value: int32) -> int32:
+    return value
+
+def invoke(callback: def(int32) -> int32, value: int32) -> int32:
+    let result = callback(value)
+    return result
+
+def invokeParenthesized(callback: def(int32) -> int32, value: int32) -> int32:
+    return (callback)(value)
+
+def invokeChained(callback: def(int32) -> def(int32) -> bool) -> bool:
+    return callback(1)(2)
+
+def invokeGlobal() -> int32:
+    return global(3)

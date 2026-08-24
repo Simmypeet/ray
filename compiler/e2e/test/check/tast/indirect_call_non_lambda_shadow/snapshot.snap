@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: expected a lambda type, but found `int32`
+  ╭▸ compiler/e2e/test/check/tast/indirect_call_non_lambda_shadow/main.ray:5:12
+  │
+5 │     return callback(1)
+  ╰╴           ━━━━━━━━
+
+[error]: mismatched types in return expression: expected `int32`, but found `<error>`
+  ╭▸ compiler/e2e/test/check/tast/indirect_call_non_lambda_shadow/main.ray:5:12
+  │
+5 │     return callback(1)
+  ╰╴           ━━━━━━━━━━━
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:
