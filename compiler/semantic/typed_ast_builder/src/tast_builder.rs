@@ -17,7 +17,7 @@ use rayc_type::{
     ty::{InferenceConstraint, Ty, TyKind},
 };
 use rayc_typed_ast::{
-    function::Function,
+    function::{FunctionID, FunctionMap},
     name_binding::{NameBindingGroupID, NameBindingID},
     statement::Statement,
     typed_expr::{TypedExpr, TypedExprID},
@@ -38,7 +38,7 @@ pub mod name_env;
 
 #[derive(Debug)]
 pub struct TAstBuilder {
-    building_function: Function,
+    building_function: FunctionMap,
     current_function_id: GlobalSymbolID,
 
     name_env: NameEnv,
@@ -54,7 +54,7 @@ pub struct TAstBuilder {
 impl TAstBuilder {
     #[must_use]
     pub fn new(engine: TrackedEngine, current_function_id: GlobalSymbolID) -> Self {
-        let building_function = Function::default();
+        let building_function = FunctionMap::default();
         let name_env = NameEnv::new(building_function.parameter_name_binding_group_id());
 
         Self {
@@ -87,7 +87,10 @@ impl TAstBuilder {
     }
 
     #[must_use]
-    pub const fn parameter_name_binding_group(&self) -> NameBindingGroupID {
+    pub const fn current_typed_function_id(&self) -> FunctionID { self.building_function.root() }
+
+    #[must_use]
+    pub fn parameter_name_binding_group(&self) -> NameBindingGroupID {
         self.building_function.parameter_name_binding_group_id()
     }
 
@@ -189,7 +192,7 @@ impl TAstBuilder {
 
 impl TAstBuilder {
     #[must_use]
-    pub fn finish(mut self) -> (Function, Vec<Diagnostic>) {
+    pub fn finish(mut self) -> (FunctionMap, Vec<Diagnostic>) {
         self.validate_lvalue_requirements();
 
         let (constr_diags, subst) = self.constraint_solver.residual_into_diags(&self.engine);

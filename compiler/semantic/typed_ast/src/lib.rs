@@ -1,11 +1,12 @@
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_symbol::GlobalSymbolID;
 
-use crate::function::Function;
+use crate::function::FunctionMap;
 
 pub mod block;
 pub mod function;
 pub mod irrefutable_pattern;
+pub mod lambda;
 pub mod name_binding;
 pub mod statement;
 pub mod typed_expr;
@@ -15,7 +16,7 @@ pub mod variable;
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
-#[value(Interned<Function>)]
+#[value(Interned<FunctionMap>)]
 #[extend(by_val, name = get_typed_ast)]
 pub struct Key {
     pub def_id: GlobalSymbolID,

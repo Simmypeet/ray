@@ -6,18 +6,19 @@ use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::parameter::Parameter;
+use rayc_semantic_element::parameter::ParameterID;
 use rayc_type::{
     subst::{MutSubstitutable, Subst, Substitutable},
     ty::Ty,
 };
 
-use crate::variable::Variable;
+use crate::{function::FunctionLocalID, lambda::LambdaParameterID, variable::VariableID};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Source {
-    Variable(ID<Variable>),
-    Parameter(ID<Parameter>),
+    Variable(FunctionLocalID<VariableID>),
+    Parameter(FunctionLocalID<ParameterID>),
+    LambdaParameter(FunctionLocalID<LambdaParameterID>),
 }
 
 #[derive(

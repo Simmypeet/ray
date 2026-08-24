@@ -1,6 +1,7 @@
 use rayc_source_file::SourceElement;
 use rayc_syntax::statement::Statement as StatementSyntax;
 use rayc_typed_ast::{
+    function::FunctionLocalID,
     name_binding::Source,
     statement::{Let, Return, Statement},
     variable::Variable,
@@ -35,7 +36,10 @@ impl TAstBuilder {
                         name_binding_group_id,
                         &pat,
                         &var_ty,
-                        Source::Variable(var_id),
+                        Source::Variable(FunctionLocalID::new(
+                            self.current_typed_function_id(),
+                            var_id,
+                        )),
                     );
                 }
 
