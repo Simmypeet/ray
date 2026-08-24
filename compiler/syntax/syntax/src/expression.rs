@@ -229,7 +229,86 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
+    pub struct IfElseCondition {
+        pub expression: Expression = ast::<Expression>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct IfElseThenArm {
+        pub then_colon: Punctuation = ':',
+        pub expression: Expression = ast::<Expression>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct IfElseElseArm {
+        pub else_keyword: Keyword = expect::Keyword::Else,
+        pub else_colon: Punctuation = ':',
+        pub expression: Expression = ast::<Expression>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct IfElse {
+        pub if_keyword: Keyword = expect::Keyword::If,
+        pub condition: IfElseCondition = ast::<IfElseCondition>(),
+        pub then_arm: IfElseThenArm = ast::<IfElseThenArm>(),
+        pub else_arm: IfElseElseArm = ast::<IfElseElseArm>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
     pub enum Expression {
+        IfElse(IfElse = ast::<IfElse>()),
         Binary(Binary = ast::<Binary>()),
     }
 }

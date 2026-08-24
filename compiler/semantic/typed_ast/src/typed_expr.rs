@@ -11,7 +11,8 @@ use crate::{
     name_binding::NameBindingID,
     typed_expr::{
         binary::Binary, call::Call, deref::Deref, errored::Errored, identifier::Identifier,
-        literal::Literal, paren::Paren, ref_of::RefOf, tuple::Tuple, tuple_index::TupleIndex,
+        if_else::IfElse, literal::Literal, paren::Paren, ref_of::RefOf, tuple::Tuple,
+        tuple_index::TupleIndex,
     },
 };
 
@@ -20,6 +21,7 @@ pub mod call;
 pub mod deref;
 pub mod errored;
 pub mod identifier;
+pub mod if_else;
 pub mod literal;
 pub mod paren;
 pub mod ref_of;
@@ -35,6 +37,7 @@ pub enum TypedExprKind {
     Tuple(Tuple),
     Call(Call),
     Binary(Binary),
+    IfElse(IfElse),
     RefOf(RefOf),
     Deref(Deref),
     Paren(Paren),
@@ -144,6 +147,7 @@ impl TypedExprMap {
             | TypedExprKind::Tuple(_)
             | TypedExprKind::Call(_)
             | TypedExprKind::Binary(_)
+            | TypedExprKind::IfElse(_)
             | TypedExprKind::RefOf(_) => LvalueClassification::NotLvalue,
         }
     }

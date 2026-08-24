@@ -38,6 +38,8 @@ pub enum SubtypeSource {
     FunctioncCall,
     VariableAssignment,
     BinaryOperator,
+    IfCondition,
+    IfBranch,
     ReturnType,
 }
 
@@ -184,6 +186,22 @@ impl TAstBuilder {
             expected_ty,
             SubtypeSource::BinaryOperator,
         );
+    }
+
+    pub fn push_if_condition_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::IfCondition);
+    }
+
+    pub fn push_if_branch_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::IfBranch);
     }
 
     fn push_subtype_constraint_with_expr(

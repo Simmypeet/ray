@@ -285,6 +285,8 @@ impl Report for ResidualSubtype {
             SubtypeSource::FunctioncCall => "mismatched argument types in function call",
             SubtypeSource::VariableAssignment => "mismatched types in variable assignment",
             SubtypeSource::BinaryOperator => "mismatched types in binary operation",
+            SubtypeSource::IfCondition => "if expression condition must be `bool`",
+            SubtypeSource::IfBranch => "mismatched types in if expression branches",
             SubtypeSource::ReturnType => "mismatched types in return expression",
         };
 
