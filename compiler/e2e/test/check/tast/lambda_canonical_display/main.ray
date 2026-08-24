@@ -1,0 +1,2 @@
+def canonical(callback: def(int32)) -> def(bool):
+    return callback

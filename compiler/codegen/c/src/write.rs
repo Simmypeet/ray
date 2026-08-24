@@ -5,7 +5,7 @@ use rayc_mono::{MonoFunction, MonoTuple};
 use crate::{
     context::{
         Context,
-        instantiation::{CTupleID, MonoFunctionSubstID},
+        instantiation::{CLambdaTypeID, CTupleID, MonoFunctionSubstID},
     },
     identifier::Identifier,
 };
@@ -22,6 +22,25 @@ impl Context {
             writeln!(buf, ";")?;
         }
 
+        Ok(())
+    }
+
+    pub fn write_forward_decl_lambda_types(&self, buf: &mut impl io::Write) -> io::Result<()> {
+        for (id, _) in self.clambda_type_instances() {
+            write!(buf, "typedef struct ")?;
+            self.write_clambda_struct(id, buf)?;
+            write!(buf, " ")?;
+            self.write_clambda_t(id, buf)?;
+            writeln!(buf, ";")?;
+        }
+        Ok(())
+    }
+
+    pub fn write_lambda_type_defs(&self, buf: &mut impl io::Write) -> io::Result<()> {
+        for (id, lambda_type) in self.clambda_type_instances() {
+            self.write_lambda_type_def(id, lambda_type, buf)?;
+            writeln!(buf)?;
+        }
         Ok(())
     }
 
@@ -92,6 +111,29 @@ impl Context {
             writeln!(buf, " {};", Identifier::tuple_elem(i))?;
         }
 
+        write!(buf, "}};")
+    }
+
+    pub fn write_lambda_type_def(
+        &self,
+        id: CLambdaTypeID,
+        lambda_type: &rayc_mono::MonoLambdaType,
+        buf: &mut impl io::Write,
+    ) -> io::Result<()> {
+        write!(buf, "struct ")?;
+        self.write_clambda_struct(id, buf)?;
+        writeln!(buf, " {{")?;
+        write!(buf, "{}", Self::TAB)?;
+        let return_type = self.ty_to_cty(lambda_type.return_type());
+        self.write_cty(&return_type, buf)?;
+        write!(buf, " (*call)(void *env")?;
+        for parameter_type in lambda_type.parameter_types() {
+            write!(buf, ", ")?;
+            let parameter_type = self.ty_to_cty(parameter_type);
+            self.write_cty(&parameter_type, buf)?;
+        }
+        writeln!(buf, ");")?;
+        writeln!(buf, "{}void *env;", Self::TAB)?;
         write!(buf, "}};")
     }
 }

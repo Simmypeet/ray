@@ -3,7 +3,10 @@ use std::io;
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_type::ty::{Ty, TyApplicationView};
 
-use crate::context::{Context, instantiation::CTupleID};
+use crate::context::{
+    Context,
+    instantiation::{CLambdaTypeID, CTupleID},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash)]
 pub enum Primitive {
@@ -22,6 +25,7 @@ pub struct Pointer {
 pub enum CTy {
     Primitive(Primitive),
     Tuple(CTupleID),
+    Lambda(CLambdaTypeID),
     Pointer(Pointer),
 }
 
@@ -35,6 +39,8 @@ impl Context {
             },
 
             CTy::Tuple(id) => self.write_ctuple_t(*id, buf),
+
+            CTy::Lambda(id) => self.write_clambda_t(*id, buf),
 
             CTy::Pointer(pointer) => {
                 write!(buf, "{}", if pointer.constness { "const " } else { "" })?;
@@ -66,6 +72,14 @@ impl Context {
                     let ctuple_id = self.get_ctuple_id(tuple_view.args());
 
                     self.intern(CTy::Tuple(ctuple_id))
+                }
+
+                TyApplicationView::Lambda(lambda_view) => {
+                    let id = self.get_clambda_type_id(
+                        lambda_view.parameter_types(),
+                        lambda_view.return_type(),
+                    );
+                    self.intern(CTy::Lambda(id))
                 }
 
                 TyApplicationView::Pointer(pointer_view) => {

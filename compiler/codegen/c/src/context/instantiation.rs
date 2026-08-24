@@ -5,7 +5,7 @@ use qbice::{
     stable_hash::{Sip128Hasher, StableHasher},
     storage::intern::Interned,
 };
-use rayc_mono::{MonoFunction, MonoTuple};
+use rayc_mono::{MonoFunction, MonoLambdaType, MonoTuple};
 use rayc_type::ty::{Ty, TyApplicationView};
 
 use crate::{context::Context, identifier::Identifier};
@@ -39,6 +39,36 @@ impl CTupleID {
             arg.stable_hash(&mut hasher);
         }
 
+        Self(hasher.finish())
+    }
+
+    pub(crate) const fn base62(self) -> Base62 { Base62(self.0) }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash)]
+pub struct CLambdaTypeID(u128);
+
+impl CLambdaTypeID {
+    fn for_signature(parameter_types: &[Interned<Ty>], return_type: &Interned<Ty>) -> Self {
+        let mut hasher = Sip128Hasher::default();
+        "rayc_c::CLambdaTypeID:v1".stable_hash(&mut hasher);
+        hasher.write_length_prefix(parameter_types.len());
+        for parameter_type in parameter_types {
+            parameter_type.stable_hash(&mut hasher);
+        }
+        return_type.stable_hash(&mut hasher);
+        Self(hasher.finish())
+    }
+
+    fn for_lambda_type(lambda_type: &MonoLambdaType) -> Self {
+        let mut hasher = Sip128Hasher::default();
+        "rayc_c::CLambdaTypeID:v1".stable_hash(&mut hasher);
+        let parameter_types = lambda_type.parameter_types();
+        hasher.write_length_prefix(parameter_types.len());
+        for parameter_type in parameter_types {
+            parameter_type.stable_hash(&mut hasher);
+        }
+        lambda_type.return_type().stable_hash(&mut hasher);
         Self(hasher.finish())
     }
 
@@ -89,6 +119,7 @@ fn by_value_tuple_depth(ty: &Ty) -> usize {
         Ty::Application(application) => match application.view() {
             TyApplicationView::Tuple(tuple) => tuple_dependency_depth(tuple.args().iter()),
             TyApplicationView::Primitive(_)
+            | TyApplicationView::Lambda(_)
             | TyApplicationView::Pointer(_)
             | TyApplicationView::Error => 0,
         },
@@ -105,6 +136,18 @@ impl Context {
         write!(buf, "{}", Identifier::tuple_struct(id))
     }
 
+    pub fn write_clambda_t(&self, id: CLambdaTypeID, buf: &mut impl io::Write) -> io::Result<()> {
+        write!(buf, "{}", Identifier::lambda_t(id))
+    }
+
+    pub fn write_clambda_struct(
+        &self,
+        id: CLambdaTypeID,
+        buf: &mut impl io::Write,
+    ) -> io::Result<()> {
+        write!(buf, "{}", Identifier::lambda_struct(id))
+    }
+
     pub fn ctuple_instances(&self) -> Vec<(CTupleID, &'_ MonoTuple)> {
         let mut tuples = self
             .mono_program
@@ -116,4 +159,22 @@ impl Context {
     }
 
     pub fn get_ctuple_id(&self, args: &[Interned<Ty>]) -> CTupleID { CTupleID::for_args(args) }
+
+    pub fn clambda_type_instances(&self) -> Vec<(CLambdaTypeID, &'_ MonoLambdaType)> {
+        let mut lambda_types = self
+            .mono_program
+            .lambda_types()
+            .map(|lambda_type| (CLambdaTypeID::for_lambda_type(lambda_type), lambda_type))
+            .collect::<Vec<_>>();
+        lambda_types.sort_unstable_by_key(|(id, _)| *id);
+        lambda_types
+    }
+
+    pub fn get_clambda_type_id(
+        &self,
+        parameter_types: &[Interned<Ty>],
+        return_type: &Interned<Ty>,
+    ) -> CLambdaTypeID {
+        CLambdaTypeID::for_signature(parameter_types, return_type)
+    }
 }

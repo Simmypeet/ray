@@ -89,6 +89,7 @@ fn is_int32(ty: &Ty) -> bool {
                 Primitive::Float32 | Primitive::Bool => false,
             },
             TyApplicationView::Tuple(_)
+            | TyApplicationView::Lambda(_)
             | TyApplicationView::Pointer(_)
             | TyApplicationView::Error => false,
         },

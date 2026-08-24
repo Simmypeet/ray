@@ -3,7 +3,7 @@ use std::fmt;
 use rayc_ir::{cfg::BlockID, expression::ExpressionID, variable::VariableID};
 use rayc_semantic_element::parameter::ParameterID;
 
-use crate::context::instantiation::{CTupleID, MonoFunctionSubstID};
+use crate::context::instantiation::{CLambdaTypeID, CTupleID, MonoFunctionSubstID};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Identifier<'a>(IdentifierKind<'a>);
@@ -19,6 +19,8 @@ enum IdentifierKind<'a> {
     TupleType(CTupleID),
     TupleStruct(CTupleID),
     TupleElement(usize),
+    LambdaType(CLambdaTypeID),
+    LambdaStruct(CLambdaTypeID),
     UnitField,
 }
 
@@ -57,6 +59,12 @@ impl Identifier<'static> {
     pub const fn tuple_elem(index: usize) -> Self { Self(IdentifierKind::TupleElement(index)) }
 
     #[must_use]
+    pub const fn lambda_t(id: CLambdaTypeID) -> Self { Self(IdentifierKind::LambdaType(id)) }
+
+    #[must_use]
+    pub const fn lambda_struct(id: CLambdaTypeID) -> Self { Self(IdentifierKind::LambdaStruct(id)) }
+
+    #[must_use]
     pub const fn unit_field() -> Self { Self(IdentifierKind::UnitField) }
 }
 
@@ -80,6 +88,12 @@ impl fmt::Display for Identifier<'_> {
             IdentifierKind::TupleType(id) => write!(formatter, "RayTuple_{}_t", id.base62()),
             IdentifierKind::TupleStruct(id) => write!(formatter, "RayTuple_{}", id.base62()),
             IdentifierKind::TupleElement(index) => write!(formatter, "elem{index:X}"),
+            IdentifierKind::LambdaType(id) => {
+                write!(formatter, "RayLambda_{}_t", id.base62())
+            }
+            IdentifierKind::LambdaStruct(id) => {
+                write!(formatter, "RayLambda_{}", id.base62())
+            }
             IdentifierKind::UnitField => formatter.write_str("_unit"),
         }
     }

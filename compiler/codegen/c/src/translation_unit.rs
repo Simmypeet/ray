@@ -59,10 +59,12 @@ pub async fn write_c_translation_unit(
     writeln!(buf, "/* Composite type forward declarations */")?;
 
     generator.write_forward_decl_tuples(buf)?;
+    generator.write_forward_decl_lambda_types(buf)?;
 
     writeln!(buf)?;
     writeln!(buf, "/* Composite type definitions */")?;
 
+    generator.write_lambda_type_defs(buf)?;
     generator.write_tuple_struct_defs(buf)?;
 
     writeln!(buf)?;
