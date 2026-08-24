@@ -6,7 +6,32 @@ use rayc_parser::{
     parser::{ParserExt, ast},
 };
 
-use crate::{Identifier, Keyword, Numeric, Punctuation};
+use crate::{
+    Identifier, Keyword, Numeric, Punctuation, irrefutable_pattern::IrrefutablePattern,
+    r#type::Arrow,
+};
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode
+    )]
+    #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
+    pub struct LambdaParameterList {
+        pub parameters: #[multi] IrrefutablePattern = ast::<IrrefutablePattern>()
+            .repeat_all_with_separator(',')
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode
+    )]
+    pub struct Lambda {
+        pub parameters: LambdaParameterList = ast::<LambdaParameterList>(),
+        pub arrow: Arrow = ast::<Arrow>(),
+        pub body: Expression = ast::<Expression>(),
+    }
+}
 
 abstract_tree::abstract_tree! {
     #[derive(
@@ -308,6 +333,7 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub enum Expression {
+        Lambda(Lambda = ast::<Lambda>()),
         IfElse(IfElse = ast::<IfElse>()),
         Binary(Binary = ast::<Binary>()),
     }
