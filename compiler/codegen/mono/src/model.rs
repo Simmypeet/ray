@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashSet;
 use rayc_symbol::GlobalSymbolID;
@@ -29,17 +27,13 @@ impl MonoFunction {
 /// A concrete Ray tuple type encountered by monomorphization.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MonoTuple {
-    ty: Interned<Ty>,
+    args: Interned<[Interned<Ty>]>,
 }
 
 impl MonoTuple {
-    /// Returns the full concrete Ray tuple type.
+    /// Iterates over the tuple's concrete type arguments.
     #[must_use]
-    pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
-}
-
-impl Borrow<Interned<Ty>> for MonoTuple {
-    fn borrow(&self) -> &Interned<Ty> { &self.ty }
+    pub fn args(&self) -> impl ExactSizeIterator<Item = &'_ Interned<Ty>> { self.args.iter() }
 }
 
 /// The immutable inventory of concrete target instantiations.
@@ -54,8 +48,8 @@ impl MonoProgram {
         self.functions.insert(function)
     }
 
-    pub(crate) fn insert_tuple(&mut self, ty: Interned<Ty>) {
-        self.tuples.insert(MonoTuple { ty });
+    pub(crate) fn insert_tuple(&mut self, args: Interned<[Interned<Ty>]>) {
+        self.tuples.insert(MonoTuple { args });
     }
 
     /// Iterates over the concrete function instantiations.
@@ -67,14 +61,4 @@ impl MonoProgram {
     /// Iterates over the concrete tuple instantiations.
     #[must_use]
     pub fn tuples(&self) -> impl ExactSizeIterator<Item = &'_ MonoTuple> { self.tuples.iter() }
-
-    /// Retrieves a collected function instantiation.
-    #[must_use]
-    pub fn function(&self, function: &MonoFunction) -> Option<&MonoFunction> {
-        self.functions.get(function)
-    }
-
-    /// Retrieves a collected tuple instantiation by its concrete Ray type.
-    #[must_use]
-    pub fn tuple(&self, ty: &Interned<Ty>) -> Option<&MonoTuple> { self.tuples.get(ty) }
 }

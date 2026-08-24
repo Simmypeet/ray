@@ -119,7 +119,7 @@ impl<'engine> Collector<'engine> {
                     for arg in tuple.args() {
                         self.collect_concrete_type(arg, function)?;
                     }
-                    self.program.insert_tuple(ty.clone());
+                    self.program.insert_tuple(self.engine.intern_unsized(tuple.args().to_vec()));
                     Ok(())
                 }
                 TyApplicationView::Pointer(pointer) => {
