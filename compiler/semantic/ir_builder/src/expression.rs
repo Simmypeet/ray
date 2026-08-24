@@ -1,4 +1,4 @@
-use rayc_ir::expression::ExpressionID;
+use rayc_ir::expression::{Expression, ExpressionID};
 use rayc_typed_ast::{
     function::Function as TypedFunction,
     typed_expr::{TypedExprID, TypedExprKind},
@@ -46,6 +46,8 @@ impl Builder {
             TypedExprKind::Call(call) => {
                 self.lower_expression(TypedExprWithID::new(call, expression_id), typed_function)
             }
+            TypedExprKind::Lambda(_) => self
+                .emit_expression(Expression::new_error(expression.span(), expression.ty().clone())),
             TypedExprKind::Binary(binary) => {
                 self.lower_expression(TypedExprWithID::new(binary, expression_id), typed_function)
             }

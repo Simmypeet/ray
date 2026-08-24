@@ -58,7 +58,7 @@ impl TAstBuilder {
     #[must_use]
     pub fn new(engine: TrackedEngine, current_def_id: GlobalSymbolID) -> Self {
         let function_map = FunctionMap::default();
-        let building_function = function_map.root();
+        let building_function = function_map.root_id();
         let name_env = NameEnv::new(function_map.parameter_name_binding_group_id_of_root());
 
         Self {

@@ -12,21 +12,23 @@ use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::ParameterID;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{
-    function::Function as TypedFunction, variable::VariableID as TypedVariableID,
+    function::{Function as TypedFunction, FunctionID as TypedFunctionID},
+    variable::VariableID as TypedVariableID,
 };
 
 pub struct Builder {
     engine: TrackedEngine,
     function: IrFunction,
     current_block: BlockID,
+    typed_function_id: TypedFunctionID,
     variables: FxHashMap<TypedVariableID, VariableID>,
 }
 
 impl Builder {
-    pub fn new(engine: TrackedEngine) -> Self {
+    pub fn new(engine: TrackedEngine, typed_function_id: TypedFunctionID) -> Self {
         let function = IrFunction::new();
         let current_block = function.entry_block();
-        Self { engine, function, current_block, variables: FxHashMap::default() }
+        Self { engine, function, current_block, typed_function_id, variables: FxHashMap::default() }
     }
 
     pub fn lower(mut self, typed_function: &TypedFunction) -> IrFunction {
@@ -81,6 +83,8 @@ impl Builder {
     pub fn source_variable(&self, id: TypedVariableID) -> Option<VariableID> {
         self.variables.get(&id).copied()
     }
+
+    pub const fn typed_function_id(&self) -> TypedFunctionID { self.typed_function_id }
 
     pub fn error_address(&self) -> Address { Address::new_error(&self.engine) }
 

@@ -39,7 +39,12 @@ impl Default for FunctionMap {
 
 impl FunctionMap {
     #[must_use]
-    pub const fn root(&self) -> FunctionID { self.root }
+    pub const fn root_id(&self) -> FunctionID { self.root }
+
+    #[must_use]
+    pub fn root(&self) -> &Function {
+        self.functions.get(self.root).expect("Root function should exist")
+    }
 
     #[must_use]
     pub fn get_function(&self, id: FunctionID) -> &Function {

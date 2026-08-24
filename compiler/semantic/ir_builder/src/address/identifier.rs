@@ -11,11 +11,6 @@ impl LowerAddress<Identifier> for Builder {
         typed_function: &TypedFunction,
         identifier: &Identifier,
     ) -> Address {
-        match typed_function.get_name_binding(identifier.name_binding()).source() {
-            Source::Variable(variable_id) => self
-                .source_variable(*variable_id)
-                .map_or_else(|| self.error_address(), |ir_id| self.variable_address(ir_id)),
-            Source::Parameter(parameter_id) => self.parameter_address(*parameter_id),
-        }
+        todo!("Huge refactor")
     }
 }
