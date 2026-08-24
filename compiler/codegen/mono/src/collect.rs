@@ -114,6 +114,16 @@ impl<'engine> Collector<'engine> {
                     }
                     self.program.insert_tuple(self.engine.intern_unsized(tuple.args().to_vec()));
                 }
+                TyApplicationView::Lambda(lambda) => {
+                    for parameter_type in lambda.parameter_types() {
+                        self.collect_concrete_type(parameter_type, function);
+                    }
+                    self.collect_concrete_type(lambda.return_type(), function);
+                    self.program.insert_lambda_type(
+                        self.engine.intern_unsized(lambda.parameter_types().to_vec()),
+                        lambda.return_type().clone(),
+                    );
+                }
                 TyApplicationView::Pointer(pointer) => {
                     self.collect_concrete_type(pointer.pointee(), function);
                 }

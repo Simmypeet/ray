@@ -47,6 +47,32 @@ pub struct MonoTuple {
     args: Interned<[Interned<Ty>]>,
 }
 
+/// A concrete lambda signature encountered by monomorphization.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MonoLambdaType {
+    parameter_types: Interned<[Interned<Ty>]>,
+    return_type: Interned<Ty>,
+}
+
+impl MonoLambdaType {
+    pub(crate) const fn new(
+        parameter_types: Interned<[Interned<Ty>]>,
+        return_type: Interned<Ty>,
+    ) -> Self {
+        Self { parameter_types, return_type }
+    }
+
+    /// Iterates over the signature's concrete parameter types.
+    #[must_use]
+    pub fn parameter_types(&self) -> impl ExactSizeIterator<Item = &'_ Interned<Ty>> {
+        self.parameter_types.iter()
+    }
+
+    /// Returns the signature's concrete return type.
+    #[must_use]
+    pub const fn return_type(&self) -> &Interned<Ty> { &self.return_type }
+}
+
 impl MonoTuple {
     /// Iterates over the tuple's concrete type arguments.
     #[must_use]
@@ -58,6 +84,7 @@ impl MonoTuple {
 pub struct MonoProgram {
     functions: FxHashSet<MonoFunction>,
     tuples: FxHashSet<MonoTuple>,
+    lambda_types: FxHashSet<MonoLambdaType>,
 }
 
 impl MonoProgram {
@@ -69,6 +96,14 @@ impl MonoProgram {
         self.tuples.insert(MonoTuple { args });
     }
 
+    pub(crate) fn insert_lambda_type(
+        &mut self,
+        parameter_types: Interned<[Interned<Ty>]>,
+        return_type: Interned<Ty>,
+    ) {
+        self.lambda_types.insert(MonoLambdaType::new(parameter_types, return_type));
+    }
+
     /// Iterates over the concrete function instantiations.
     #[must_use]
     pub fn functions(&self) -> impl ExactSizeIterator<Item = &'_ MonoFunction> {
@@ -78,4 +113,10 @@ impl MonoProgram {
     /// Iterates over the concrete tuple instantiations.
     #[must_use]
     pub fn tuples(&self) -> impl ExactSizeIterator<Item = &'_ MonoTuple> { self.tuples.iter() }
+
+    /// Iterates over the concrete lambda signatures.
+    #[must_use]
+    pub fn lambda_types(&self) -> impl ExactSizeIterator<Item = &'_ MonoLambdaType> {
+        self.lambda_types.iter()
+    }
 }
