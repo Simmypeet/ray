@@ -126,14 +126,19 @@ impl Context {
         write!(buf, "{}", Self::TAB)?;
         let return_type = self.ty_to_cty(lambda_type.return_type());
         self.write_cty(&return_type, buf)?;
-        write!(buf, " (*call)(void *env")?;
+        write!(
+            buf,
+            " (*{})(void *{}",
+            Identifier::lambda_call_field(),
+            Identifier::lambda_env_field()
+        )?;
         for parameter_type in lambda_type.parameter_types() {
             write!(buf, ", ")?;
             let parameter_type = self.ty_to_cty(parameter_type);
             self.write_cty(&parameter_type, buf)?;
         }
         writeln!(buf, ");")?;
-        writeln!(buf, "{}void *env;", Self::TAB)?;
+        writeln!(buf, "{}void *{};", Self::TAB, Identifier::lambda_env_field())?;
         write!(buf, "}};")
     }
 }

@@ -23,7 +23,12 @@ impl WriteExpression<&Call> for Writer<'_> {
             }
             CallTarget::Lambda { callee } => {
                 let callee = Identifier::expr(*callee);
-                write!(self, "{callee}.call({callee}.env")?;
+                write!(
+                    self,
+                    "{callee}.{}({callee}.{}",
+                    Identifier::lambda_call_field(),
+                    Identifier::lambda_env_field()
+                )?;
                 if !call.arguments().is_empty() {
                     write!(self, ", ")?;
                 }

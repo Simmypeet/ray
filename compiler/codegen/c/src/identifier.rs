@@ -21,6 +21,8 @@ enum IdentifierKind<'a> {
     TupleElement(usize),
     LambdaType(CLambdaTypeID),
     LambdaStruct(CLambdaTypeID),
+    LambdaCallField,
+    LambdaEnvField,
     UnitField,
 }
 
@@ -65,6 +67,12 @@ impl Identifier<'static> {
     pub const fn lambda_struct(id: CLambdaTypeID) -> Self { Self(IdentifierKind::LambdaStruct(id)) }
 
     #[must_use]
+    pub const fn lambda_call_field() -> Self { Self(IdentifierKind::LambdaCallField) }
+
+    #[must_use]
+    pub const fn lambda_env_field() -> Self { Self(IdentifierKind::LambdaEnvField) }
+
+    #[must_use]
     pub const fn unit_field() -> Self { Self(IdentifierKind::UnitField) }
 }
 
@@ -94,6 +102,8 @@ impl fmt::Display for Identifier<'_> {
             IdentifierKind::LambdaStruct(id) => {
                 write!(formatter, "RayLambda_{}", id.base62())
             }
+            IdentifierKind::LambdaCallField => formatter.write_str("call"),
+            IdentifierKind::LambdaEnvField => formatter.write_str("env"),
             IdentifierKind::UnitField => formatter.write_str("_unit"),
         }
     }
