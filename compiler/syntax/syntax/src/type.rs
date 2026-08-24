@@ -2,11 +2,30 @@ use qbice::{Decode, Encode, StableHash};
 use rayc_lexical::tree::DelimiterKind;
 use rayc_parser::{
     abstract_tree,
-    expect::{self, Fragment},
+    expect::{self, Ext, Fragment},
     parser::{ParserExt, ast},
 };
 
 use crate::{Identifier, Keyword, Punctuation};
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct Arrow {
+        pub hyphen: Punctuation = '-',
+        pub greater_than: Punctuation = '>'.no_prior_insignificant()
+    }
+}
 
 abstract_tree::abstract_tree! {
     #[derive(
@@ -63,8 +82,67 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
-    pub struct Tuple {
+pub struct Tuple {
         pub elements: #[multi] Type = ast::<Type>()
+            .repeat_all_with_separator(',')
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct LambdaReturnType {
+        pub arrow: Arrow = ast::<Arrow>(),
+        pub r#type: Type = ast::<Type>()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct Lambda {
+        pub def_keyword: Keyword = expect::Keyword::Def,
+        pub parameters: LambdaParameterList = ast::<LambdaParameterList>(),
+        pub return_type: LambdaReturnType = ast::<LambdaReturnType>().optional()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
+    pub struct LambdaParameterList {
+        pub parameters: #[multi] Type = ast::<Type>()
             .repeat_all_with_separator(',')
     }
 }
@@ -86,6 +164,7 @@ abstract_tree::abstract_tree! {
         Primitive(Primitive = ast::<Primitive>()),
         Pointer(Pointer = ast::<Pointer>()),
         Tuple(Tuple = ast::<Tuple>()),
+        Lambda(Lambda = ast::<Lambda>()),
         PolymorphicVariable(Identifier = expect::Identifier)
     }
 }

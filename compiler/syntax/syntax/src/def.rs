@@ -2,13 +2,15 @@ use qbice::{Decode, Encode, StableHash};
 use rayc_lexical::tree::DelimiterKind;
 use rayc_parser::{
     abstract_tree,
-    expect::{self, Ext, Fragment},
+    expect::{self, Fragment},
     parser::{ParserExt, ast},
 };
 
 use crate::{
-    Identifier, Keyword, Punctuation, irrefutable_pattern::IrrefutablePattern, statement::Block,
-    r#type::Type,
+    Identifier, Keyword, Punctuation,
+    irrefutable_pattern::IrrefutablePattern,
+    statement::Block,
+    r#type::{Arrow, Type},
 };
 
 abstract_tree::abstract_tree! {
@@ -70,25 +72,6 @@ abstract_tree::abstract_tree! {
             = ast::<IrrefutablePattern>(),
         pub colon: Punctuation = ':',
         pub r#type: Type = ast::<Type>()
-    }
-}
-
-abstract_tree::abstract_tree! {
-    #[derive(
-        Debug,
-        Clone,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Hash,
-        StableHash,
-        Encode,
-        Decode
-    )]
-    pub struct Arrow {
-        pub hyphen: Punctuation = '-',
-        pub greater_than: Punctuation = '>'.no_prior_insignificant()
     }
 }
 
