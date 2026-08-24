@@ -10,10 +10,10 @@ impl Writer<'_> {
         mono_function: &MonoFunction,
         ctx: &mut Context,
     ) -> std::io::Result<()> {
-        let function = ctx.get_ir(mono_function.def_id()).await;
+        let functions = ctx.get_ir(mono_function.def_id()).await;
 
         ctx.write_mono_function_decl(mono_function, self).await?;
         write!(self, " ")?;
-        self.write_ir_function_body(&function, mono_function, ctx).await
+        self.write_ir_function_body(functions.root(), mono_function, ctx).await
     }
 }

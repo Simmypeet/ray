@@ -75,6 +75,9 @@ impl Writer<'_> {
                 self.write_expression(ExpressionWithID::new(tuple, expression_id), function, ctx)
                     .await
             }
+            ExpressionKind::MakeLambda(_) => {
+                panic!("lambda construction reached C codegen before closure codegen was added")
+            }
         }
     }
 }

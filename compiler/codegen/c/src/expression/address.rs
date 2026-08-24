@@ -16,6 +16,14 @@ impl Writer<'_> {
             AddressRoot::Parameter(parameter_id) => {
                 write!(self, "{}", Identifier::param(parameter_id))?;
             }
+            AddressRoot::LambdaParameter(_) => {
+                panic!(
+                    "lambda parameter address reached C codegen before closure codegen was added"
+                )
+            }
+            AddressRoot::Capture(_) => {
+                panic!("capture address reached C codegen before closure codegen was added")
+            }
             AddressRoot::Deref(expression_id) => {
                 write!(self, "(*{})", Identifier::expr(expression_id))?;
             }

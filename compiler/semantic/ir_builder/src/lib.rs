@@ -1,4 +1,4 @@
-use rayc_ir::function::Function as IrFunction;
+use rayc_ir::function::FunctionMap as IrFunctionMap;
 use rayc_qbice::TrackedEngine;
 use rayc_typed_ast::typed_function::TypedFunctionMap as TypedFunction;
 
@@ -15,6 +15,7 @@ pub const fn black_box() {}
 
 /// Lowers one typed function into control-flow IR.
 #[must_use]
-pub fn lower_function(engine: &TrackedEngine, function: &TypedFunction) -> IrFunction {
-    Builder::new(engine.clone(), function.root_id()).lower(function.root())
+pub fn lower_function(engine: &TrackedEngine, function: &TypedFunction) -> IrFunctionMap {
+    let function = Builder::new(engine.clone(), function.root_id()).lower(function.root());
+    IrFunctionMap::new(function)
 }

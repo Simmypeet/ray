@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     expression::{ExpressionKind, call::CallTarget},
+    function::Context as IrFunctionContext,
     get_ir,
 };
 use rayc_qbice::TrackedEngine;
@@ -75,28 +76,43 @@ impl<'engine> Collector<'engine> {
         self.collect_substituted_type(&return_type, function);
 
         let ir = self.engine.get_ir(function.def_id()).await;
-        for (_, variable) in ir.variables() {
-            self.collect_substituted_type(variable.ty(), function);
-        }
-
-        for expression_id in ir.reachables().expressions() {
-            let expression = ir.get_expression(expression_id);
-            self.collect_substituted_type(expression.ty(), function);
-
-            match expression.kind() {
-                ExpressionKind::Call(call) => match call.target() {
-                    CallTarget::Direct { function_id, subst } => {
-                        self.collect_call(*function_id, subst, function);
+        for (_, ir_function) in ir.functions() {
+            match ir_function.context() {
+                IrFunctionContext::Def => {}
+                IrFunctionContext::Lambda(context) => {
+                    for (_, parameter) in context.parameters() {
+                        self.collect_substituted_type(parameter.ty(), function);
                     }
-                    CallTarget::Lambda { .. } => {}
-                },
-                ExpressionKind::Error
-                | ExpressionKind::Literal(_)
-                | ExpressionKind::RefOf(_)
-                | ExpressionKind::Load(_)
-                | ExpressionKind::Phi(_)
-                | ExpressionKind::Binary(_)
-                | ExpressionKind::Tuple(_) => {}
+                    for (_, capture) in context.captures() {
+                        self.collect_substituted_type(capture.pointee_ty(), function);
+                    }
+                }
+            }
+
+            for (_, variable) in ir_function.variables() {
+                self.collect_substituted_type(variable.ty(), function);
+            }
+
+            for expression_id in ir_function.reachables().expressions() {
+                let expression = ir_function.get_expression(expression_id);
+                self.collect_substituted_type(expression.ty(), function);
+
+                match expression.kind() {
+                    ExpressionKind::Call(call) => match call.target() {
+                        CallTarget::Direct { function_id, subst } => {
+                            self.collect_call(*function_id, subst, function);
+                        }
+                        CallTarget::Lambda { .. } => {}
+                    },
+                    ExpressionKind::Error
+                    | ExpressionKind::Literal(_)
+                    | ExpressionKind::RefOf(_)
+                    | ExpressionKind::Load(_)
+                    | ExpressionKind::Phi(_)
+                    | ExpressionKind::Binary(_)
+                    | ExpressionKind::Tuple(_)
+                    | ExpressionKind::MakeLambda(_) => {}
+                }
             }
         }
     }

@@ -4,13 +4,15 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 
 use crate::expression::{
-    binary::Binary, call::Call, literal::Literal, load::Load, phi::Phi, ref_of::RefOf, tuple::Tuple,
+    binary::Binary, call::Call, literal::Literal, load::Load, make_lambda::MakeLambda, phi::Phi,
+    ref_of::RefOf, tuple::Tuple,
 };
 
 pub mod binary;
 pub mod call;
 pub mod literal;
 pub mod load;
+pub mod make_lambda;
 pub mod phi;
 pub mod ref_of;
 pub mod tuple;
@@ -28,6 +30,7 @@ pub enum ExpressionKind {
     Binary(Binary),
     Call(Call),
     Tuple(Tuple),
+    MakeLambda(MakeLambda),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
