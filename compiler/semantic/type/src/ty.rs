@@ -40,6 +40,7 @@ impl Mutability {
 pub enum TyConstant {
     Primitive(Primitive),
     Tuple,
+    Lambda,
     Pointer(Mutability),
     Error,
 }
@@ -52,6 +53,24 @@ pub struct TupleView<'x> {
 impl TupleView<'_> {
     #[must_use]
     pub const fn args(&self) -> &[Interned<Ty>] { self.args }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LambdaView<'x> {
+    args: &'x [Interned<Ty>],
+}
+
+impl LambdaView<'_> {
+    #[must_use]
+    pub const fn parameter_types(&self) -> &[Interned<Ty>] {
+        let (_, parameter_types) = self.args.split_last().expect("lambda has a return type");
+        parameter_types
+    }
+
+    #[must_use]
+    pub const fn return_type(&self) -> &Interned<Ty> {
+        self.args.last().expect("lambda has a return type")
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -72,6 +91,7 @@ impl PointerView<'_> {
 pub enum TyApplicationView<'x> {
     Primitive(Primitive),
     Tuple(TupleView<'x>),
+    Lambda(LambdaView<'x>),
     Pointer(PointerView<'x>),
     Error,
 }
@@ -93,6 +113,7 @@ impl TyApplication {
         match self.constant {
             TyConstant::Primitive(primitive) => TyApplicationView::Primitive(primitive),
             TyConstant::Tuple => TyApplicationView::Tuple(TupleView { args: &self.args }),
+            TyConstant::Lambda => TyApplicationView::Lambda(LambdaView { args: &self.args }),
             TyConstant::Pointer(mutability) => {
                 TyApplicationView::Pointer(PointerView { arg: &self.args[0], mutability })
             }
@@ -112,6 +133,7 @@ impl TyApplication {
 
                 TyApplicationView::Error
                 | TyApplicationView::Tuple(_)
+                | TyApplicationView::Lambda(_)
                 | TyApplicationView::Pointer(_) => false,
             },
         }
@@ -268,6 +290,19 @@ impl Ty {
     }
 
     #[must_use]
+    pub fn new_lambda(
+        parameter_types: impl IntoIterator<Item = Interned<Self>>,
+        return_type: Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        let args = parameter_types.into_iter().chain([return_type]).collect::<Vec<_>>();
+        engine.intern(Self::Application(TyApplication {
+            constant: TyConstant::Lambda,
+            args: engine.intern_unsized(args),
+        }))
+    }
+
+    #[must_use]
     pub fn new_pointer(
         arg: Interned<Self>,
         mutability: Mutability,
@@ -359,6 +394,17 @@ impl TyDisplay<'_> {
                     }
 
                     f.write_char(')')
+                }
+                TyApplicationView::Lambda(lambda) => {
+                    f.write_str("def(")?;
+                    for (index, parameter) in lambda.parameter_types().iter().enumerate() {
+                        if index > 0 {
+                            f.write_str(", ")?;
+                        }
+                        self.fmt_ty(parameter, f)?;
+                    }
+                    f.write_str(") -> ")?;
+                    self.fmt_ty(lambda.return_type(), f)
                 }
                 TyApplicationView::Pointer(pointer) => {
                     f.write_char('*')?;
