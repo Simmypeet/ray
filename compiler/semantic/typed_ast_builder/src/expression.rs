@@ -18,6 +18,7 @@ impl Bind<Expression> for TAstBuilder {
         match syn {
             Expression::IfElse(if_else) => Box::pin(self.bind(if_else)).await,
             Expression::Binary(binary) => Box::pin(self.bind(binary)).await,
+            Expression::Lambda(_) => todo!(),
         }
     }
 }
