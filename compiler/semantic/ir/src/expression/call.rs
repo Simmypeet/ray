@@ -5,28 +5,35 @@ use rayc_type::subst::Subst;
 use crate::expression::ExpressionID;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub enum CallTarget {
+    Direct { function_id: GlobalSymbolID, subst: Subst },
+    Lambda { callee: ExpressionID },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct Call {
-    function_id: GlobalSymbolID,
+    target: CallTarget,
     arguments: Vec<ExpressionID>,
-    subst: Subst,
 }
 
 impl Call {
     #[must_use]
-    pub const fn new(
+    pub const fn new_direct(
         function_id: GlobalSymbolID,
         arguments: Vec<ExpressionID>,
         subst: Subst,
     ) -> Self {
-        Self { function_id, arguments, subst }
+        Self { target: CallTarget::Direct { function_id, subst }, arguments }
     }
 
     #[must_use]
-    pub const fn function_id(&self) -> GlobalSymbolID { self.function_id }
+    pub const fn new_lambda(callee: ExpressionID, arguments: Vec<ExpressionID>) -> Self {
+        Self { target: CallTarget::Lambda { callee }, arguments }
+    }
+
+    #[must_use]
+    pub const fn target(&self) -> &CallTarget { &self.target }
 
     #[must_use]
     pub fn arguments(&self) -> &[ExpressionID] { &self.arguments }
-
-    #[must_use]
-    pub const fn subst(&self) -> &Subst { &self.subst }
 }
