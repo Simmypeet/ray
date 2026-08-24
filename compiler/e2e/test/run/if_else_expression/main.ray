@@ -1,0 +1,6 @@
+def choose(condition: bool) -> int32:
+    return if condition: 42 else: 7
+
+
+def main() -> int32:
+    return choose(true) + choose(false)

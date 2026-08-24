@@ -11,6 +11,7 @@ mod call;
 mod deref;
 mod errored;
 mod identifier;
+mod if_else;
 mod literal;
 mod paren;
 mod ref_of;
@@ -47,6 +48,9 @@ impl Builder {
             }
             TypedExprKind::Binary(binary) => {
                 self.lower_expression(TypedExprWithID::new(binary, expression_id), typed_function)
+            }
+            TypedExprKind::IfElse(if_else) => {
+                self.lower_expression(TypedExprWithID::new(if_else, expression_id), typed_function)
             }
             TypedExprKind::RefOf(reference) => self
                 .lower_expression(TypedExprWithID::new(reference, expression_id), typed_function),

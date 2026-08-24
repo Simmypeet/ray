@@ -34,6 +34,7 @@ impl Builder {
             | TypedExprKind::Tuple(_)
             | TypedExprKind::Call(_)
             | TypedExprKind::Binary(_)
+            | TypedExprKind::IfElse(_)
             | TypedExprKind::RefOf(_)
             | TypedExprKind::Errored(_) => self.error_address(),
         }
