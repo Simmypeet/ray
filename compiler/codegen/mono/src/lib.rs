@@ -10,4 +10,4 @@ mod collect;
 mod model;
 
 pub use collect::collect_target;
-pub use model::{MonoFunction, MonoLambdaType, MonoProgram, MonoTuple};
+pub use model::{MonoFunction, MonoFunctionKind, MonoLambdaType, MonoProgram, MonoTuple};

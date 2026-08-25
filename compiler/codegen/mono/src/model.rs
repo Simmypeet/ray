@@ -1,5 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashSet;
+use rayc_ir::function::FunctionID;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
@@ -7,25 +8,49 @@ use rayc_type::{
     ty::Ty,
 };
 
-/// A concrete instantiation of a Ray function definition.
+/// Selects a function within a concrete source-definition instantiation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MonoFunctionKind {
+    Def,
+    Lambda(FunctionID),
+}
+
+/// A concrete instantiation of a Ray def or one of its lambda functions.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MonoFunction {
     def_id: GlobalSymbolID,
     subst: Subst,
+    kind: MonoFunctionKind,
 }
 
 impl MonoFunction {
-    /// Creates a function-instantiation key.
+    /// Creates a def-level function-instantiation key.
     #[must_use]
-    pub const fn new(def_id: GlobalSymbolID, subst: Subst) -> Self { Self { def_id, subst } }
+    pub const fn new(def_id: GlobalSymbolID, subst: Subst) -> Self {
+        Self { def_id, subst, kind: MonoFunctionKind::Def }
+    }
 
-    /// Returns the source definition instantiated by this item.
+    /// Creates a lambda-function instance under the owner's substitution.
+    #[must_use]
+    pub fn new_lambda(owner: &Self, function_id: FunctionID) -> Self {
+        Self {
+            def_id: owner.def_id,
+            subst: owner.subst.clone(),
+            kind: MonoFunctionKind::Lambda(function_id),
+        }
+    }
+
+    /// Returns the source definition owning this function.
     #[must_use]
     pub const fn def_id(&self) -> GlobalSymbolID { self.def_id }
 
     /// Returns the concrete substitution forming part of this item's identity.
     #[must_use]
     pub const fn subst(&self) -> &Subst { &self.subst }
+
+    /// Returns whether this is the source def or one of its local lambdas.
+    #[must_use]
+    pub const fn kind(&self) -> MonoFunctionKind { self.kind }
 
     /// Instantiates a call made from this concrete function.
     #[must_use]
@@ -104,10 +129,26 @@ impl MonoProgram {
         self.lambda_types.insert(MonoLambdaType::new(parameter_types, return_type));
     }
 
-    /// Iterates over the concrete function instantiations.
+    /// Iterates over all concrete def and lambda function instantiations.
     #[must_use]
     pub fn functions(&self) -> impl ExactSizeIterator<Item = &'_ MonoFunction> {
         self.functions.iter()
+    }
+
+    /// Iterates over the concrete def-level function instantiations.
+    pub fn defs(&self) -> impl Iterator<Item = &'_ MonoFunction> {
+        self.functions.iter().filter(|function| match function.kind() {
+            MonoFunctionKind::Def => true,
+            MonoFunctionKind::Lambda(_) => false,
+        })
+    }
+
+    /// Iterates over the concrete lambda-function instantiations.
+    pub fn lambdas(&self) -> impl Iterator<Item = &'_ MonoFunction> {
+        self.functions.iter().filter(|function| match function.kind() {
+            MonoFunctionKind::Def => false,
+            MonoFunctionKind::Lambda(_) => true,
+        })
     }
 
     /// Iterates over the concrete tuple instantiations.

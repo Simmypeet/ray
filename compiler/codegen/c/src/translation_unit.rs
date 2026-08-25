@@ -40,7 +40,7 @@ pub async fn write_c_translation_unit(
     buf: &mut impl Write,
 ) -> io::Result<()> {
     let mono_program = collect_target(engine, target_id).await;
-    let mono_functions = mono_program.functions().cloned().collect::<Vec<_>>();
+    let mono_functions = mono_program.defs().cloned().collect::<Vec<_>>();
     let mut generator = Context::new(engine.clone(), mono_program);
     let mut function_definitions = Vec::with_capacity(mono_functions.len());
 
