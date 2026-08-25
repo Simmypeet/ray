@@ -9,7 +9,7 @@ impl WriteExpression<Error> for Writer<'_> {
         &mut self,
         _expression: ExpressionWithID<Error>,
         _function: FunctionInstance<'_>,
-        _ctx: &mut Context,
+        _ctx: &Context,
     ) -> std::io::Result<()> {
         panic!("error expression reached codegen, this should have been caught earlier")
     }

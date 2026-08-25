@@ -12,6 +12,7 @@ pub mod expression_with_id;
 pub mod function_instance;
 pub mod literal;
 pub mod load;
+pub mod make_lambda;
 pub mod phi;
 pub mod ref_of;
 pub mod tuple;
@@ -22,7 +23,7 @@ pub trait WriteExpression<E> {
         &mut self,
         expression: ExpressionWithID<E>,
         function: FunctionInstance<'_>,
-        ctx: &mut Context,
+        ctx: &Context,
     ) -> std::io::Result<()>;
 }
 
@@ -31,7 +32,7 @@ impl Writer<'_> {
         &mut self,
         expression_id: ExpressionID,
         function: FunctionInstance<'_>,
-        ctx: &mut Context,
+        ctx: &Context,
     ) -> std::io::Result<()> {
         let expression = function.get_expression(expression_id);
         match expression.kind() {
@@ -75,8 +76,9 @@ impl Writer<'_> {
                 self.write_expression(ExpressionWithID::new(tuple, expression_id), function, ctx)
                     .await
             }
-            ExpressionKind::MakeLambda(_) => {
-                panic!("lambda construction reached C codegen before closure codegen was added")
+            ExpressionKind::MakeLambda(lambda) => {
+                self.write_expression(ExpressionWithID::new(lambda, expression_id), function, ctx)
+                    .await
             }
         }
     }

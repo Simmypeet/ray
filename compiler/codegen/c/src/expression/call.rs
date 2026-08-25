@@ -10,7 +10,7 @@ impl WriteExpression<&Call> for Writer<'_> {
         &mut self,
         expression: ExpressionWithID<&Call>,
         function: FunctionInstance<'_>,
-        ctx: &mut Context,
+        ctx: &Context,
     ) -> std::io::Result<()> {
         let call = expression.node();
         match call.target() {

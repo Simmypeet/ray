@@ -10,7 +10,7 @@ impl WriteExpression<&Tuple> for Writer<'_> {
         &mut self,
         expression: ExpressionWithID<&Tuple>,
         function: FunctionInstance<'_>,
-        ctx: &mut Context,
+        ctx: &Context,
     ) -> std::io::Result<()> {
         let tuple = expression.node();
         write!(self, "((")?;

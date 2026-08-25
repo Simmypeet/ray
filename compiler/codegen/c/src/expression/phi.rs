@@ -8,7 +8,7 @@ impl WriteExpression<&Phi> for Writer<'_> {
         &mut self,
         _expression: ExpressionWithID<&Phi>,
         _function: FunctionInstance<'_>,
-        _ctx: &mut Context,
+        _ctx: &Context,
     ) -> std::io::Result<()> {
         panic!("phi expression cannot be emitted as an ordinary C expression")
     }

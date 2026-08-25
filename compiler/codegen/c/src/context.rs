@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
-use rayc_ir::{function::FunctionMap, get_ir};
+use rayc_ir::{function::FunctionMap, get_ir, lambda::Capture};
 use rayc_mono::{MonoFunction, MonoProgram};
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
@@ -61,7 +61,7 @@ impl Context {
 
     pub fn get_unit_tuple_id(&self) -> CTupleID { self.get_ctuple_id(&[]) }
 
-    pub(crate) fn instantiate_call(
+    pub fn instantiate_call(
         &self,
         caller: &MonoFunction,
         def_id: GlobalSymbolID,
@@ -70,13 +70,13 @@ impl Context {
         caller.instantiate_call(def_id, call_subst, &self.engine)
     }
 
-    pub(crate) async fn get_mono_return_cty(&self, function: &MonoFunction) -> Interned<CTy> {
+    pub async fn get_mono_return_cty(&self, function: &MonoFunction) -> Interned<CTy> {
         let ty = self.engine.get_return_type(function.def_id()).await;
         let ty = ty.apply_subst_or_clone(function.subst(), &self.engine);
         self.ty_to_cty(&ty)
     }
 
-    pub(crate) async fn get_mono_parameters(
+    pub async fn get_mono_parameters(
         &self,
         function: &MonoFunction,
     ) -> Vec<(ParameterID, Interned<CTy>)> {
@@ -90,11 +90,16 @@ impl Context {
             .collect()
     }
 
-    pub(crate) fn instantiate_type(
+    pub fn instantiate_type(&self, ty: &Interned<Ty>, function: &MonoFunction) -> Interned<Ty> {
+        ty.apply_subst_or_clone(function.subst(), &self.engine)
+    }
+
+    pub fn instantiate_capture_pointer_type(
         &self,
-        ty: &Interned<Ty>,
+        capture: &Capture,
         function: &MonoFunction,
     ) -> Interned<Ty> {
-        ty.apply_subst_or_clone(function.subst(), &self.engine)
+        let pointer_ty = capture.pointer_ty(&self.engine);
+        pointer_ty.apply_subst_or_clone(function.subst(), &self.engine)
     }
 }

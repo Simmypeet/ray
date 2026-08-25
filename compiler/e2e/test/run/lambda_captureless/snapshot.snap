@@ -1,0 +1,12 @@
+---
+source: compiler/e2e/test/run/mod.rs
+assertion_line: 73
+expression: rendered
+---
+exit_code: 41
+
+stdout:
+
+
+stderr:
+

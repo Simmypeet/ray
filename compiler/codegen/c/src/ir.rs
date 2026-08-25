@@ -50,7 +50,7 @@ impl FunctionLayout {
 }
 
 impl Writer<'_> {
-    async fn generate_unit_value(&mut self, ctx: &mut Context) -> std::io::Result<()> {
+    async fn generate_unit_value(&mut self, ctx: &Context) -> std::io::Result<()> {
         let unit_id = ctx.get_unit_tuple_id();
 
         self.write_enclosing_pair(EnclosingPair::Parens, async |writer| {
@@ -68,18 +68,37 @@ impl Writer<'_> {
 
     pub(crate) async fn write_ir_function_body(
         &mut self,
-        function: &Function,
-        mono_function: &MonoFunction,
-        ctx: &mut Context,
+        function: FunctionInstance<'_>,
+        ctx: &Context,
     ) -> std::io::Result<()> {
-        let layout = FunctionLayout::new(function);
+        let ir_function = function.function();
+        let mono_function = function.mono_function();
+        let layout = FunctionLayout::new(ir_function);
 
         self.write_braced_block(async |writer| {
+            if function.is_lambda() {
+                let lambda = function.lambda_context();
+                if lambda.captures().next().is_some() {
+                    writer
+                        .write_indent_line(async |writer| {
+                            write!(writer, "struct ")?;
+                            ctx.write_lambda_environment_name(mono_function, writer).await?;
+                            write!(
+                                writer,
+                                " *{} = {};",
+                                Identifier::lambda_typed_environment(),
+                                Identifier::lambda_raw_environment()
+                            )
+                        })
+                        .await?;
+                }
+            }
+
             for variable_id in layout.variables() {
                 writer
                     .write_indent_line(async |writer| {
                         let ty = ctx.instantiate_type(
-                            function.get_variable(variable_id).ty(),
+                            ir_function.get_variable(variable_id).ty(),
                             mono_function,
                         );
                         let cty = ctx.ty_to_cty(&ty);
@@ -93,12 +112,36 @@ impl Writer<'_> {
                 writer
                     .write_indent_line(async |writer| {
                         let ty = ctx.instantiate_type(
-                            function.get_expression(expression_id).ty(),
+                            ir_function.get_expression(expression_id).ty(),
                             mono_function,
                         );
                         let cty = ctx.ty_to_cty(&ty);
                         ctx.write_cty(&cty, writer)?;
                         write!(writer, " {};", Identifier::expr(expression_id))
+                    })
+                    .await?;
+            }
+
+            // Capture environments are function-scope stack objects. This is sound for the
+            // current non-escaping closure subset; semantic lifetime checking must reject a
+            // captureful closure that outlives this invocation.
+            for expression_id in layout.reachable_expressions() {
+                let ExpressionKind::MakeLambda(lambda) =
+                    ir_function.get_expression(expression_id).kind()
+                else {
+                    continue;
+                };
+                if lambda.captures().is_empty() {
+                    continue;
+                }
+                let target = function.target_lambda(lambda.function_id());
+                let _ = function.target_lambda_context(lambda.function_id());
+
+                writer
+                    .write_indent_line(async |writer| {
+                        write!(writer, "struct ")?;
+                        ctx.write_lambda_environment_name(&target, writer).await?;
+                        write!(writer, " {};", Identifier::lambda_environment_value(expression_id))
                     })
                     .await?;
             }
@@ -110,19 +153,17 @@ impl Writer<'_> {
                     })
                     .await?;
 
-                for instruction in function.block_instructions(block_id) {
-                    writer
-                        .write_ir_instruction(instruction, function, mono_function, &layout, ctx)
-                        .await?;
+                for instruction in ir_function.block_instructions(block_id) {
+                    writer.write_ir_instruction(instruction, function, &layout, ctx).await?;
                 }
 
                 writer
                     .write_ir_terminator(
                         block_id,
-                        function
+                        ir_function
                             .block_terminator(block_id)
                             .expect("reachable IR block should have a terminator"),
-                        function,
+                        ir_function,
                         mono_function,
                         ctx,
                     )
@@ -137,20 +178,31 @@ impl Writer<'_> {
     async fn write_ir_instruction(
         &mut self,
         instruction: &Instruction,
-        function: &Function,
-        mono_function: &MonoFunction,
+        function: FunctionInstance<'_>,
         layout: &FunctionLayout,
-        ctx: &mut Context,
+        ctx: &Context,
     ) -> std::io::Result<()> {
+        let ir_function = function.function();
         match instruction {
             Instruction::Expression(expression_id) => {
                 if layout.is_phi(*expression_id) {
                     return Ok(());
                 }
 
+                if let ExpressionKind::MakeLambda(lambda) =
+                    ir_function.get_expression(*expression_id).kind()
+                    && !lambda.captures().is_empty()
+                {
+                    self.write_lambda_environment_assignment(
+                        crate::expression::ExpressionWithID::new(lambda, *expression_id),
+                        function,
+                        ctx,
+                    )
+                    .await?;
+                }
+
                 self.write_indent_line(async |writer| {
                     write!(writer, "{} = ", Identifier::expr(*expression_id))?;
-                    let function = FunctionInstance::new(function, mono_function);
                     writer.write_expression_value(*expression_id, function, ctx).await?;
                     write!(writer, ";")
                 })
@@ -158,7 +210,7 @@ impl Writer<'_> {
             }
             Instruction::Store(store) => {
                 self.write_indent_line(async |writer| {
-                    writer.write_address(store.address())?;
+                    writer.write_address(store.address(), function)?;
                     write!(writer, " = {};", Identifier::expr(store.expression()))
                 })
                 .await
@@ -172,7 +224,7 @@ impl Writer<'_> {
         terminator: &Terminator,
         function: &Function,
         mono_function: &MonoFunction,
-        ctx: &mut Context,
+        ctx: &Context,
     ) -> std::io::Result<()> {
         match terminator {
             Terminator::Jump(successor) => {
@@ -263,7 +315,7 @@ impl Writer<'_> {
         successor: BlockID,
         function: &Function,
         mono_function: &MonoFunction,
-        ctx: &mut Context,
+        ctx: &Context,
     ) -> std::io::Result<()> {
         for instruction in function.block_instructions(successor) {
             let Instruction::Expression(phi_id) = instruction else {

@@ -40,14 +40,13 @@ pub async fn write_c_translation_unit(
     buf: &mut impl Write,
 ) -> io::Result<()> {
     let mono_program = collect_target(engine, target_id).await;
-    let mono_functions = mono_program.defs().cloned().collect::<Vec<_>>();
-    let mut generator = Context::new(engine.clone(), mono_program);
-    let mut function_definitions = Vec::with_capacity(mono_functions.len());
+    let generator = Context::new(engine.clone(), mono_program);
+    let mut function_definitions = Vec::with_capacity(generator.mono_function_instances().len());
 
-    for mono_function in &mono_functions {
+    for mono_function in generator.mono_function_instances() {
         let mut definition = Vec::new();
         let mut writer = Writer::new(&mut definition);
-        writer.generate_function_definition(mono_function, &mut generator).await?;
+        writer.generate_function_definition(mono_function, &generator).await?;
         function_definitions.push(definition);
     }
 
@@ -68,9 +67,14 @@ pub async fn write_c_translation_unit(
     generator.write_tuple_struct_defs(buf)?;
 
     writeln!(buf)?;
+    writeln!(buf, "/* Lambda capture environment definitions */")?;
+
+    generator.write_lambda_environment_defs(buf).await?;
+
+    writeln!(buf)?;
     writeln!(buf, "/* Function forward declarations */")?;
 
-    for mono_function in &mono_functions {
+    for mono_function in generator.mono_function_instances() {
         generator.write_mono_function_decl(mono_function, buf).await?;
         writeln!(buf, ";")?;
     }

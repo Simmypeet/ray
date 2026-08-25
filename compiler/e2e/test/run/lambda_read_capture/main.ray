@@ -1,0 +1,6 @@
+def addOffset(offset: int32) -> int32:
+    let add = (value) -> value + offset
+    return add(40)
+
+def main() -> int32:
+    return addOffset(5)

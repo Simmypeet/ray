@@ -128,6 +128,12 @@ fn by_value_tuple_depth(ty: &Ty) -> usize {
 }
 
 impl Context {
+    pub(crate) fn mono_function_instances(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &'_ MonoFunction> {
+        self.mono_program.functions()
+    }
+
     pub fn write_ctuple_t(&self, id: CTupleID, buf: &mut impl io::Write) -> io::Result<()> {
         write!(buf, "{}", Identifier::tuple_t(id))
     }

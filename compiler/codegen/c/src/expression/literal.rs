@@ -10,7 +10,7 @@ impl WriteExpression<&Literal> for Writer<'_> {
         &mut self,
         expression: ExpressionWithID<&Literal>,
         _function: FunctionInstance<'_>,
-        _ctx: &mut Context,
+        _ctx: &Context,
     ) -> std::io::Result<()> {
         match expression.node() {
             Literal::Numeric(value) => write!(self, "{value}"),

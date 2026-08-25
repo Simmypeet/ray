@@ -9,11 +9,11 @@ impl WriteExpression<&RefOf> for Writer<'_> {
     async fn write_expression(
         &mut self,
         expression: ExpressionWithID<&RefOf>,
-        _function: FunctionInstance<'_>,
-        _ctx: &mut Context,
+        function: FunctionInstance<'_>,
+        _ctx: &Context,
     ) -> std::io::Result<()> {
         write!(self, "&(")?;
-        self.write_address(expression.node().address())?;
+        self.write_address(expression.node().address(), function)?;
         write!(self, ")")
     }
 }

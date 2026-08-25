@@ -10,7 +10,7 @@ impl WriteExpression<&Binary> for Writer<'_> {
         &mut self,
         expression: ExpressionWithID<&Binary>,
         _function: FunctionInstance<'_>,
-        _ctx: &mut Context,
+        _ctx: &Context,
     ) -> std::io::Result<()> {
         let binary = expression.node();
         let operator = match binary.operator() {

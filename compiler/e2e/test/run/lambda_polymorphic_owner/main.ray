@@ -1,0 +1,11 @@
+def identity(value: a) -> a:
+    return value
+
+def recover(value: a) -> a:
+    let captured = () -> identity(value)
+    return captured()
+
+def main() -> int32:
+    let number = recover(40)
+    let condition = recover(true)
+    return if condition: number + 4 else: 1

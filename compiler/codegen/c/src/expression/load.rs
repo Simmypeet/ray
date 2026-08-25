@@ -7,9 +7,9 @@ impl WriteExpression<&Load> for Writer<'_> {
     async fn write_expression(
         &mut self,
         expression: ExpressionWithID<&Load>,
-        _function: FunctionInstance<'_>,
-        _ctx: &mut Context,
+        function: FunctionInstance<'_>,
+        _ctx: &Context,
     ) -> std::io::Result<()> {
-        self.write_address(expression.node().address())
+        self.write_address(expression.node().address(), function)
     }
 }
