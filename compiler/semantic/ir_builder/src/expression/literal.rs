@@ -20,6 +20,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Literal>> for Builder {
         let literal = match literal {
             Literal::Numeric(value) => IrLiteral::Numeric(*value),
             Literal::Bool(value) => IrLiteral::Bool(*value),
+            Literal::String(value) => IrLiteral::String(value.clone()),
         };
         self.emit_expression(IRExpr::new(IRExprKind::Literal(literal), span, ty))
     }

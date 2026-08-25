@@ -1,5 +1,6 @@
 use rayc_source_file::SourceElement;
-use rayc_syntax::statement::Statement as StatementSyntax;
+use rayc_syntax::{statement::Statement as StatementSyntax, r#type::Type as TypeSyntax};
+use rayc_type::poly_var::get_poly_var_map;
 use rayc_typed_ast::{
     name_binding::Source,
     statement::{Let, Return, Statement},
@@ -10,6 +11,24 @@ use rayc_typed_ast::{
 use crate::{bind::Bind, tast_builder::TAstBuilder};
 
 impl TAstBuilder {
+    async fn resolve_local_type_annotation(
+        &mut self,
+        syntax: &TypeSyntax,
+    ) -> qbice::storage::intern::Interned<rayc_type::ty::Ty> {
+        let poly_vars = self.engine().get_poly_var_map(self.current_def_id()).await;
+        let resolution = rayc_resolution::resolve_type_with_poly_vars(
+            self.engine(),
+            self.current_def_id(),
+            &poly_vars,
+            syntax,
+        );
+        let ty = resolution.ty().clone();
+        for diagnostic in resolution.into_diagnostics() {
+            self.push_diagnostic(crate::diagnostic::Diagnostic::Resolution(diagnostic));
+        }
+        ty
+    }
+
     pub async fn bind_statement(&mut self, statement: &StatementSyntax) {
         match statement {
             StatementSyntax::Let(l) => {
@@ -21,7 +40,12 @@ impl TAstBuilder {
 
                 let expr_id = self.bind(expr).await;
 
-                let var_ty = self.new_type_inference();
+                let var_ty = if let Some(annotation) = l.type_annotation().and_then(|a| a.r#type())
+                {
+                    self.resolve_local_type_annotation(&annotation).await
+                } else {
+                    self.new_type_inference()
+                };
                 let var_id = self.insert_variable(TypedVariable::new(
                     var_ty.clone(),
                     pattern.as_ref().map_or_else(|| l.span(), SourceElement::span),

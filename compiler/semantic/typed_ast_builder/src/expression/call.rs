@@ -2,7 +2,7 @@ use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
 use rayc_source_file::SourceElement;
-use rayc_symbol::{GlobalSymbolID, MemberID};
+use rayc_symbol::{GlobalSymbolID, MemberID, syntax::is_variadic_def};
 use rayc_syntax::{Identifier, expression::Call as CallSyn};
 use rayc_type::{
     poly_var::{PolyVarMap, get_poly_var_map},
@@ -75,7 +75,10 @@ impl TAstBuilder {
         let call_subst = self.instantiate_poly_vars(function_id, &poly_var_map);
         let parameter_map = self.engine().get_parameter_map(function_id).await;
 
-        if parameter_map.len() != arguments.len() {
+        let is_variadic = self.engine().is_variadic_def(function_id).await;
+        if (!is_variadic && parameter_map.len() != arguments.len())
+            || (is_variadic && arguments.len() < parameter_map.len())
+        {
             self.push_diagnostic(Diagnostic::MismatchedArgumentCount(
                 MismatchedArgumentCount::builder()
                     .calling_symbol(function_id)

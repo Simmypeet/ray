@@ -122,6 +122,24 @@ pub struct ExpectedLambdaType {
     span: RelativeSpan,
 }
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
+)]
+pub struct EmbeddedNulString {
+    span: RelativeSpan,
+}
+
+impl Report for EmbeddedNulString {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("a C string literal must not contain an embedded NUL byte")
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .build()
+    }
+}
+
 impl Report for ExpectedLambdaType {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let abs_span = engine.to_absolute_span(&self.span).await;
@@ -353,6 +371,7 @@ impl Report for ResidualSubtype {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum Diagnostic {
+    Resolution(rayc_resolution::Diagnostic),
     UnboundName(UnboundName),
     FunctionNotFound(FunctionNotFound),
     SymbolNotCallable(SymbolNotCallable),
@@ -367,11 +386,13 @@ pub enum Diagnostic {
     OutOfBoundsTupleIndex(OutOfBoundsTupleIndex),
     DuplicateNameBinding(DuplicateNameBinding),
     ResidualSubtype(ResidualSubtype),
+    EmbeddedNulString(EmbeddedNulString),
 }
 
 impl Report for Diagnostic {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
+            Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::UnboundName(unbound_name) => unbound_name.report(engine).await,
             Self::FunctionNotFound(function_not_found) => function_not_found.report(engine).await,
             Self::SymbolNotCallable(symbol_not_callable) => {
@@ -404,6 +425,7 @@ impl Report for Diagnostic {
                 duplicate_name_binding.report(engine).await
             }
             Self::ResidualSubtype(residual_subtype) => residual_subtype.report(engine).await,
+            Self::EmbeddedNulString(string) => string.report(engine).await,
         }
     }
 }

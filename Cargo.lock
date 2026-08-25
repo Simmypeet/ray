@@ -1829,6 +1829,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayc_resolution"
+version = "0.1.0-beta.2"
+dependencies = [
+ "qbice",
+ "rayc_diagnostic",
+ "rayc_lexical",
+ "rayc_qbice",
+ "rayc_source_file",
+ "rayc_symbol",
+ "rayc_syntax",
+ "rayc_type",
+]
+
+[[package]]
 name = "rayc_semantic_element"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -1850,6 +1864,7 @@ dependencies = [
  "rayc_diagnostic",
  "rayc_lexical",
  "rayc_qbice",
+ "rayc_resolution",
  "rayc_semantic_element",
  "rayc_source_file",
  "rayc_symbol",
@@ -2068,6 +2083,7 @@ dependencies = [
  "rayc_hash",
  "rayc_lexical",
  "rayc_qbice",
+ "rayc_resolution",
  "rayc_semantic_element",
  "rayc_source_file",
  "rayc_symbol",

@@ -42,7 +42,11 @@ impl TAstBuilder {
         let parameter_map = self.parameter_map_of_current_function().await;
 
         if let Some(parameter_syn) = self.parameter_list_syntax_of_current_function().await {
-            for ((param_id, parameter), syn) in parameter_map.iter().zip(parameter_syn.parameters())
+            for ((param_id, parameter), syn) in
+                parameter_map.iter().zip(parameter_syn.entries().filter_map(|entry| match entry {
+                    rayc_syntax::def::ParameterEntry::Parameter(parameter) => Some(parameter),
+                    rayc_syntax::def::ParameterEntry::Ellipsis(_) => None,
+                }))
             {
                 let Some(pat) = syn.irrefutable_pattern() else {
                     continue;

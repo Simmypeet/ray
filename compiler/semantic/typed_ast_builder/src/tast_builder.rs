@@ -55,6 +55,8 @@ pub struct TAstBuilder {
 }
 
 impl TAstBuilder {
+    pub(crate) const fn current_def_id(&self) -> GlobalSymbolID { self.current_def_id }
+
     #[must_use]
     pub fn new(engine: TrackedEngine, current_def_id: GlobalSymbolID) -> Self {
         let function_map = TypedFunctionMap::default();
@@ -154,9 +156,10 @@ impl TAstBuilder {
     }
 
     pub fn new_numeric_type_inference(&mut self) -> Interned<Ty> {
-        self.engine.intern(Ty::Inference(
-            self.solver.new_inference_with_constraint(TyKind::Star, InferenceConstraint::Numeric),
-        ))
+        let inference =
+            self.solver.new_inference_with_constraint(TyKind::Star, InferenceConstraint::Numeric);
+        self.constraint_solver.register_numeric_inference(inference);
+        self.engine.intern(Ty::Inference(inference))
     }
 
     pub fn push_error_expression(&mut self, span: RelativeSpan) -> TypedExprID {
