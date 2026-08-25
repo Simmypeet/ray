@@ -27,6 +27,7 @@ use crate::SymbolID;
 #[allow(missing_docs)]
 pub enum SymbolKind {
     Def,
+    ExternDef,
     Module,
 }
 
@@ -51,6 +52,7 @@ impl SymbolKind {
     pub const fn str(&self) -> &'static str {
         match self {
             Self::Def => "def",
+            Self::ExternDef => "extern def",
             Self::Module => "module",
         }
     }
@@ -73,5 +75,15 @@ pub struct AllSymbolIDs {
 #[value(Arc<[SymbolID]>)]
 #[extend(name = get_all_def_ids, by_val)]
 pub struct AllDefIDs {
+    pub target: TargetID,
+}
+
+/// Retrieves all ordinary and extern callable definition IDs in a target.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Arc<[SymbolID]>)]
+#[extend(name = get_all_callable_def_ids, by_val)]
+pub struct AllCallableDefIDs {
     pub target: TargetID,
 }

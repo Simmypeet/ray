@@ -26,3 +26,12 @@ pub struct DefSignatureSyntaxKey {
 pub struct DefBodySyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(bool)]
+#[extend(by_val, name = is_variadic_def)]
+pub struct VariadicDefKey {
+    pub symbol_id: GlobalSymbolID,
+}

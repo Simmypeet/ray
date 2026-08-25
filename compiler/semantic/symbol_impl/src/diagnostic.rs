@@ -32,6 +32,7 @@ use crate::table;
 pub enum Diagnostic {
     ItemRedefinition(ItemRedefinition),
     SourceFileLoadFail(SourceFileLoadFail),
+    InvalidDefDeclaration(InvalidDefDeclaration),
 }
 
 impl Report for Diagnostic {
@@ -39,7 +40,47 @@ impl Report for Diagnostic {
         match self {
             Self::ItemRedefinition(diagnostic) => diagnostic.report(engine).await,
             Self::SourceFileLoadFail(diagnostic) => diagnostic.report(engine).await,
+            Self::InvalidDefDeclaration(diagnostic) => diagnostic.report(engine).await,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum InvalidDefDeclarationKind {
+    ExternHasBody,
+    DefMissingBody,
+    NonExternVariadic,
+    VariadicNotLast,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub struct InvalidDefDeclaration {
+    kind: InvalidDefDeclarationKind,
+    span: RelativeSpan,
+}
+
+impl InvalidDefDeclaration {
+    pub(crate) const fn new(kind: InvalidDefDeclarationKind, span: RelativeSpan) -> Self {
+        Self { kind, span }
+    }
+}
+
+impl Report for InvalidDefDeclaration {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let message = match self.kind {
+            InvalidDefDeclarationKind::ExternHasBody => "an extern definition must not have a body",
+            InvalidDefDeclarationKind::DefMissingBody => "a non-extern definition must have a body",
+            InvalidDefDeclarationKind::NonExternVariadic => {
+                "a variadic parameter list is only allowed on an extern definition"
+            }
+            InvalidDefDeclarationKind::VariadicNotLast => {
+                "the variadic marker must be last in the parameter list"
+            }
+        };
+        Rendered::builder()
+            .message(message)
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
     }
 }
 

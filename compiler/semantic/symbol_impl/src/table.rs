@@ -33,12 +33,14 @@ pub struct Infos {
     def_signature: Option<(Option<ParameterList>, Option<ReturnType>)>,
     member: Option<MemberBuilder>,
     def_body: Option<Option<Block>>,
+    variadic: Option<bool>,
 }
 
 #[derive(Debug, Default, StableHash, Encode, Decode)]
 struct SyntaxTable {
     def_signatures: Map<(Option<ParameterList>, Option<ReturnType>)>,
     def_bodies: Map<Option<Block>>,
+    variadic_defs: Map<bool>,
 }
 
 /// Stores the symbol information. It maps the symbol ID to its related
@@ -60,6 +62,10 @@ pub struct Table {
 impl Table {
     #[must_use]
     pub fn diagnostics(&self) -> &[Diagnostic] { &self.diagnostics }
+
+    pub(crate) fn push_diagnostic(&mut self, diagnostic: Diagnostic) {
+        self.diagnostics.push(diagnostic);
+    }
 
     #[must_use]
     pub fn member(&self, id: SymbolID) -> Option<&Interned<Member>> { self.members.get(&id) }
@@ -144,6 +150,11 @@ impl Table {
     }
 
     #[must_use]
+    pub fn is_variadic_def(&self, symbol_id: SymbolID) -> bool {
+        self.syntaxes.variadic_defs.get(&symbol_id).copied().unwrap()
+    }
+
+    #[must_use]
     pub const fn source_id(&self) -> Option<LocalSourceID> { self.source_id }
 
     fn insert_member_as_root_module(&mut self, member: MemberBuilder, engine: &TrackedEngine) {
@@ -177,6 +188,10 @@ impl Table {
 
         if let Some(def_body) = info.def_body {
             self.syntaxes.def_bodies.insert(symbol_id, def_body);
+        }
+
+        if let Some(variadic) = info.variadic {
+            self.syntaxes.variadic_defs.insert(symbol_id, variadic);
         }
 
         if let Some(member) = info.member {
@@ -247,6 +262,10 @@ impl Table {
     }
 
     pub fn all_def_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
+        self.symbol_kinds.iter().filter_map(|(id, kind)| (*kind == SymbolKind::Def).then_some(*id))
+    }
+
+    pub fn all_callable_def_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
         self.syntaxes.def_signatures.keys().copied()
     }
 }
