@@ -2,11 +2,11 @@ use rayc_source_file::SourceElement;
 use rayc_syntax::expression::Lambda as LambdaSyntax;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{
-    typed_function::FunctionLocalID,
     lambda::LambdaParameter,
     name_binding::Source,
     statement::{Return, Statement},
     typed_expr::{TypedExpr, TypedExprID, TypedExprKind, lambda::Lambda as TypedLambda},
+    typed_function::FunctionLocalID,
 };
 
 use crate::{bind::Bind, tast_builder::TAstBuilder};

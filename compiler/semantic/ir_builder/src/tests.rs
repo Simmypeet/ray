@@ -206,7 +206,7 @@ fn pointer_mutability(ty: &Ty) -> Mutability {
 }
 
 #[tokio::test]
-async fn captureless_lambda_copies_parameters_and_uses_lambda_parameter_addresses() {
+async fn captureless_lambda_copies_signature_and_uses_lambda_parameter_addresses() {
     let engine = rayc_qbice::create_minimal_engine().await;
     let mut map = TestMap::new(&engine);
     let root = map.functions.root_id();
@@ -214,7 +214,7 @@ async fn captureless_lambda_copies_parameters_and_uses_lambda_parameter_addresse
     let parameter = map.lambda_parameter(child, "value");
     let parameter_read = map.identifier(child, parameter);
     map.statement(child, parameter_read);
-    let lambda_ty = Ty::new_lambda([map.int_ty.clone()], map.int_ty.clone(), &engine);
+    let lambda_ty = Ty::new_lambda([map.int_ty.clone()], map.unit_ty.clone(), &engine);
     let lambda = map.lambda_expression(root, child, lambda_ty);
     map.statement(root, lambda);
 
@@ -228,6 +228,7 @@ async fn captureless_lambda_copies_parameters_and_uses_lambda_parameter_addresse
     let parameters: Vec<_> = context.parameters().collect();
     assert_eq!(parameters.len(), 1);
     assert_eq!(parameters[0].1.ty(), &map.int_ty);
+    assert_eq!(context.return_ty(), &map.unit_ty);
 
     let read = child.reachables().expressions().next().expect("parameter should be read");
     let ExpressionKind::Load(load) = child.get_expression(read).kind() else {

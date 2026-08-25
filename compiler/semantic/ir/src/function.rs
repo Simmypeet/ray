@@ -1,5 +1,6 @@
-use qbice::{Decode, Encode, Identifiable, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
+use rayc_type::ty::Ty;
 
 use crate::{
     address::Address,
@@ -51,7 +52,9 @@ impl FunctionMap {
     }
 
     #[must_use]
-    pub fn insert_lambda(&mut self) -> FunctionID { self.functions.insert(Function::new_lambda()) }
+    pub fn insert_lambda(&mut self, return_ty: Interned<Ty>) -> FunctionID {
+        self.functions.insert(Function::new_lambda(return_ty))
+    }
 
     #[must_use]
     pub fn insert_lambda_parameter(
@@ -171,12 +174,12 @@ impl Function {
     }
 
     #[must_use]
-    pub fn new_lambda() -> Self {
+    pub fn new_lambda(return_ty: Interned<Ty>) -> Self {
         Self {
             cfg: Cfg::default(),
             variable_map: VariableMap::default(),
             expression_map: ExpressionMap::default(),
-            context: Context::Lambda(LambdaContext::new()),
+            context: Context::Lambda(LambdaContext::new(return_ty)),
         }
     }
 

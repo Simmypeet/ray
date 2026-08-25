@@ -4,14 +4,21 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::ty::{Mutability, Ty};
 
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct LambdaContext {
     parameters: LambdaParameterMap,
+    return_ty: Interned<Ty>,
     captures: CaptureMap,
 }
 
 impl LambdaContext {
-    pub(crate) fn new() -> Self { Self::default() }
+    pub(crate) fn new(return_ty: Interned<Ty>) -> Self {
+        Self {
+            parameters: LambdaParameterMap::default(),
+            return_ty,
+            captures: CaptureMap::default(),
+        }
+    }
 
     #[must_use]
     pub fn parameters(
@@ -24,6 +31,9 @@ impl LambdaContext {
     pub fn get_parameter(&self, id: LambdaParameterID) -> &LambdaParameter {
         self.parameters.get_parameter(id)
     }
+
+    #[must_use]
+    pub const fn return_ty(&self) -> &Interned<Ty> { &self.return_ty }
 
     #[must_use]
     pub(crate) fn insert_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {

@@ -17,7 +17,8 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Lambda>> for Builder {
     ) -> ExpressionID {
         let typed_expression = context.expression(expression.id());
         let lambda = expression.node();
-        let function_id = self.lower_lambda_function(context, lambda.function_id());
+        let return_ty = typed_expression.ty().clone();
+        let function_id = self.lower_lambda_function(context, lambda.function_id(), return_ty);
         let captures = context
             .capture_plan(lambda.function_id())
             .captures()

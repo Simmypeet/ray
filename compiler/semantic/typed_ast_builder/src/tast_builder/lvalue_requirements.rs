@@ -1,7 +1,7 @@
 use rayc_type::ty::{Mutability, Ty, TyApplicationView};
 use rayc_typed_ast::{
-    typed_function::{FunctionID, FunctionLocalID},
     typed_expr::{LvalueClassification, LvalueRoot, TypedExprID},
+    typed_function::{FunctionID, FunctionLocalID},
 };
 
 use crate::{

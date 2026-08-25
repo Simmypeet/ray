@@ -1,9 +1,9 @@
 use rayc_source_file::SourceElement;
 use rayc_syntax::statement::Statement as StatementSyntax;
 use rayc_typed_ast::{
-    typed_function::FunctionLocalID,
     name_binding::Source,
     statement::{Let, Return, Statement},
+    typed_function::FunctionLocalID,
     variable::Variable,
 };
 

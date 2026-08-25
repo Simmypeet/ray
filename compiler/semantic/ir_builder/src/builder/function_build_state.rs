@@ -33,53 +33,72 @@ pub(super) struct FunctionBuildState {
 }
 
 impl FunctionBuildState {
-    fn new(context: &LoweringContext<'_>, ir_functions: &mut FunctionMap) -> Self {
+    fn new_def(context: &LoweringContext<'_>, ir_functions: &mut FunctionMap) -> Self {
         let typed_function_id = context.typed_function_id();
         let capture_plan = context.capture_plan(typed_function_id);
+        match context.typed_function_context() {
+            TypedContext::Def(_) => {}
+            TypedContext::Lambda(_) => panic!("root TypedAST function should be a def"),
+        }
+        assert_eq!(
+            typed_function_id,
+            context.root_typed_function_id(),
+            "only the root TypedAST function should be a def"
+        );
+        assert_eq!(
+            capture_plan.captures().len(),
+            0,
+            "root TypedAST function should not capture a source"
+        );
+        let ir_function_id = ir_functions.root_id();
+        let current_block = ir_functions.entry_block(ir_function_id);
+        Self {
+            ir_function_id,
+            current_block,
+            typed_function_id,
+            variables: FxHashMap::default(),
+            lambda_parameters: FxHashMap::default(),
+            captures: FxHashMap::default(),
+        }
+    }
+
+    fn new_lambda(
+        context: &LoweringContext<'_>,
+        ir_functions: &mut FunctionMap,
+        return_ty: Interned<Ty>,
+    ) -> Self {
+        let typed_function_id = context.typed_function_id();
+        let capture_plan = context.capture_plan(typed_function_id);
+        let lambda_context = match context.typed_function_context() {
+            TypedContext::Def(_) => panic!("nested TypedAST function should be a lambda"),
+            TypedContext::Lambda(lambda_context) => lambda_context,
+        };
+        assert_ne!(
+            typed_function_id,
+            context.root_typed_function_id(),
+            "root TypedAST function should not be a lambda"
+        );
         let mut lambda_parameters = FxHashMap::default();
         let mut captures = FxHashMap::default();
-        let ir_function_id = match context.typed_function_context() {
-            TypedContext::Def(_) => {
-                assert_eq!(
-                    typed_function_id,
-                    context.root_typed_function_id(),
-                    "only the root TypedAST function should be a def"
-                );
-                assert_eq!(
-                    capture_plan.captures().len(),
-                    0,
-                    "root TypedAST function should not capture a source"
-                );
-                ir_functions.root_id()
-            }
-            TypedContext::Lambda(lambda_context) => {
-                assert_ne!(
-                    typed_function_id,
-                    context.root_typed_function_id(),
-                    "root TypedAST function should not be a lambda"
-                );
-                let ir_function_id = ir_functions.insert_lambda();
-                for (typed_id, parameter) in lambda_context.parameters() {
-                    let ir_id = ir_functions.insert_lambda_parameter(
-                        ir_function_id,
-                        IrLambdaParameter::new(parameter.ty().clone(), parameter.span()),
-                    );
-                    assert!(lambda_parameters.insert(typed_id, ir_id).is_none());
-                }
-                for (_, requirement) in capture_plan.captures() {
-                    let ir_id = ir_functions.insert_capture(
-                        ir_function_id,
-                        Capture::new(
-                            requirement.pointee_ty().clone(),
-                            requirement.mutability(),
-                            requirement.span(),
-                        ),
-                    );
-                    assert!(captures.insert(requirement.source(), ir_id).is_none());
-                }
-                ir_function_id
-            }
-        };
+        let ir_function_id = ir_functions.insert_lambda(return_ty);
+        for (typed_id, parameter) in lambda_context.parameters() {
+            let ir_id = ir_functions.insert_lambda_parameter(
+                ir_function_id,
+                IrLambdaParameter::new(parameter.ty().clone(), parameter.span()),
+            );
+            assert!(lambda_parameters.insert(typed_id, ir_id).is_none());
+        }
+        for (_, requirement) in capture_plan.captures() {
+            let ir_id = ir_functions.insert_capture(
+                ir_function_id,
+                Capture::new(
+                    requirement.pointee_ty().clone(),
+                    requirement.mutability(),
+                    requirement.span(),
+                ),
+            );
+            assert!(captures.insert(requirement.source(), ir_id).is_none());
+        }
         let current_block = ir_functions.entry_block(ir_function_id);
         Self {
             ir_function_id,
@@ -95,7 +114,7 @@ impl FunctionBuildState {
 impl Builder {
     pub fn new(engine: TrackedEngine, context: &LoweringContext<'_>) -> Self {
         let mut ir_functions = FunctionMap::new();
-        let building_function = FunctionBuildState::new(context, &mut ir_functions);
+        let building_function = FunctionBuildState::new_def(context, &mut ir_functions);
 
         Self { engine, ir_functions, building_function, suspended_functions: Vec::new() }
     }
@@ -118,9 +137,10 @@ impl Builder {
         &mut self,
         context: &LoweringContext<'_>,
         typed_function_id: TypedFunctionID,
+        return_ty: Interned<Ty>,
     ) -> IrFunctionID {
         let lambda_context = context.for_function(typed_function_id);
-        self.start_lambda(&lambda_context);
+        self.start_lambda(&lambda_context, return_ty);
         self.lower_current_function(&lambda_context);
         self.finish_lambda()
     }
@@ -129,8 +149,8 @@ impl Builder {
         self.lower_statements(context);
     }
 
-    fn start_lambda(&mut self, context: &LoweringContext<'_>) {
-        let lambda = FunctionBuildState::new(context, &mut self.ir_functions);
+    fn start_lambda(&mut self, context: &LoweringContext<'_>, return_ty: Interned<Ty>) {
+        let lambda = FunctionBuildState::new_lambda(context, &mut self.ir_functions, return_ty);
         let enclosing = mem::replace(&mut self.building_function, lambda);
         self.suspended_functions.push(enclosing);
     }
