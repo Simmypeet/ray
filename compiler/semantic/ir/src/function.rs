@@ -19,25 +19,10 @@ pub struct FunctionMap {
 
 impl FunctionMap {
     #[must_use]
-    pub fn new(root: Function) -> Self {
-        match root.context() {
-            Context::Def => {}
-            Context::Lambda(_) => panic!("Root IR function should be a def"),
-        }
-
+    pub fn new() -> Self {
         let mut functions = Arena::new();
-        let root = functions.insert(root);
+        let root = functions.insert(Function::new());
         Self { functions, root }
-    }
-
-    /// Replaces the root function after it has finished lowering.
-    pub fn replace_root(&mut self, root: Function) {
-        match root.context() {
-            Context::Def => {}
-            Context::Lambda(_) => panic!("Root IR function should be a def"),
-        }
-
-        *self.functions.get_mut(self.root).expect("Root IR function should exist") = root;
     }
 
     #[must_use]
@@ -53,6 +38,10 @@ impl FunctionMap {
         self.functions.get(id).expect("IR function should exist")
     }
 
+    fn get_function_mut(&mut self, id: FunctionID) -> &mut Function {
+        self.functions.get_mut(id).expect("IR function should exist")
+    }
+
     /// Iterates over all IR functions belonging to a source def and their IDs.
     ///
     /// The iteration order is not stable.
@@ -62,12 +51,94 @@ impl FunctionMap {
     }
 
     #[must_use]
-    pub fn insert_lambda(&mut self, function: Function) -> FunctionID {
-        match function.context() {
-            Context::Def => panic!("Only the root IR function should be a def"),
-            Context::Lambda(_) => self.functions.insert(function),
+    pub fn insert_lambda(&mut self) -> FunctionID { self.functions.insert(Function::new_lambda()) }
+
+    #[must_use]
+    pub fn insert_lambda_parameter(
+        &mut self,
+        function_id: FunctionID,
+        parameter: LambdaParameter,
+    ) -> LambdaParameterID {
+        self.get_function_mut(function_id).insert_lambda_parameter(parameter)
+    }
+
+    #[must_use]
+    pub fn insert_capture(&mut self, function_id: FunctionID, capture: Capture) -> CaptureID {
+        self.get_function_mut(function_id).insert_capture(capture)
+    }
+
+    #[must_use]
+    pub fn get_capture(&self, function_id: FunctionID, capture_id: CaptureID) -> &Capture {
+        match self.get_function(function_id).context() {
+            Context::Def => panic!("def functions should not contain captures"),
+            Context::Lambda(context) => context.get_capture(capture_id),
         }
     }
+
+    #[must_use]
+    pub fn entry_block(&self, function_id: FunctionID) -> BlockID {
+        self.get_function(function_id).entry_block()
+    }
+
+    #[must_use]
+    pub fn create_block(&mut self, function_id: FunctionID) -> BlockID {
+        self.get_function_mut(function_id).create_block()
+    }
+
+    #[must_use]
+    pub fn insert_expression(
+        &mut self,
+        function_id: FunctionID,
+        expression: Expression,
+    ) -> ExpressionID {
+        self.get_function_mut(function_id).insert_expression(expression)
+    }
+
+    #[must_use]
+    pub fn insert_variable(&mut self, function_id: FunctionID, variable: Variable) -> VariableID {
+        self.get_function_mut(function_id).insert_variable(variable)
+    }
+
+    pub fn push_expression(
+        &mut self,
+        function_id: FunctionID,
+        block_id: BlockID,
+        expression: ExpressionID,
+    ) {
+        self.get_function_mut(function_id).push_expression(block_id, expression);
+    }
+
+    pub fn push_store(
+        &mut self,
+        function_id: FunctionID,
+        block_id: BlockID,
+        address: Address,
+        value: ExpressionID,
+    ) {
+        self.get_function_mut(function_id).push_store(block_id, address, value);
+    }
+
+    pub fn set_terminator(
+        &mut self,
+        function_id: FunctionID,
+        block_id: BlockID,
+        terminator: Terminator,
+    ) {
+        self.get_function_mut(function_id).set_terminator(block_id, terminator);
+    }
+
+    #[must_use]
+    pub fn block_terminator(
+        &self,
+        function_id: FunctionID,
+        block_id: BlockID,
+    ) -> Option<&Terminator> {
+        self.get_function(function_id).block_terminator(block_id)
+    }
+}
+
+impl Default for FunctionMap {
+    fn default() -> Self { Self::new() }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
