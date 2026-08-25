@@ -9,6 +9,7 @@ mod address;
 mod builder;
 mod context;
 mod expression;
+mod function_build_state;
 mod query;
 mod statement;
 
