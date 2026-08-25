@@ -90,6 +90,10 @@ pub enum Keyword {
     Uint64,
     /// `float32` keyword.
     Float32,
+    /// `c_int` keyword.
+    CInt,
+    /// `cstr` keyword.
+    CStr,
     /// `float64` keyword.
     Float64,
     /// `usize` keyword.
@@ -252,6 +256,8 @@ impl Keyword {
             Self::Uint32 => "uint32",
             Self::Uint64 => "uint64",
             Self::Float32 => "float32",
+            Self::CInt => "c_int",
+            Self::CStr => "cstr",
             Self::Float64 => "float64",
             Self::Usize => "usize",
             Self::Isize => "isize",

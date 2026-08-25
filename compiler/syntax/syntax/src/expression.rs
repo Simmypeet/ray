@@ -7,8 +7,8 @@ use rayc_parser::{
 };
 
 use crate::{
-    Identifier, Keyword, Numeric, Punctuation, irrefutable_pattern::IrrefutablePattern,
-    r#type::Arrow,
+    Identifier, Keyword, Numeric, Punctuation, String as StringToken,
+    irrefutable_pattern::IrrefutablePattern, r#type::Arrow,
 };
 
 abstract_tree::abstract_tree! {
@@ -111,7 +111,8 @@ abstract_tree::abstract_tree! {
     )]
     pub enum Literal {
         Boolean(Boolean = ast::<Boolean>()),
-        Numeric(Numeric = expect::Numeric)
+        Numeric(Numeric = expect::Numeric),
+        String(StringToken = expect::String)
     }
 }
 

@@ -7,6 +7,7 @@ use rayc_parser::{
 
 use crate::{
     Keyword, Punctuation, expression::Expression, irrefutable_pattern::IrrefutablePattern,
+    r#type::Type,
 };
 
 abstract_tree::abstract_tree! {
@@ -25,8 +26,17 @@ abstract_tree::abstract_tree! {
     pub struct Let {
         pub let_keyword: Keyword = expect::Keyword::Let,
         pub pattern: IrrefutablePattern = ast::<IrrefutablePattern>(),
+        pub type_annotation: TypeAnnotation = ast::<TypeAnnotation>().optional(),
         pub equals: Punctuation = '=',
         pub expression: Expression = ast::<Expression>()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct TypeAnnotation {
+        pub colon: Punctuation = ':',
+        pub r#type: Type = ast::<Type>()
     }
 }
 
