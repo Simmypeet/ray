@@ -3,6 +3,8 @@ use rayc_arena::{Arena, ID};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 
+use crate::visit::{TypeVisitor, VisitType};
+
 /// Identifies a local variable stored in a function's variable arena.
 pub type VariableID = ID<Variable>;
 
@@ -42,5 +44,17 @@ impl VariableMap {
     #[must_use]
     pub fn variables(&self) -> impl ExactSizeIterator<Item = (VariableID, &Variable)> {
         self.variables.iter()
+    }
+}
+
+impl VisitType for Variable {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) { visitor.visit_type(&self.ty); }
+}
+
+impl VisitType for VariableMap {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        for (_, variable) in self.variables() {
+            variable.visit_types(visitor);
+        }
     }
 }

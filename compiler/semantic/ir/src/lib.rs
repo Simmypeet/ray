@@ -4,6 +4,7 @@ pub mod expression;
 pub mod function;
 pub mod lambda;
 pub mod variable;
+pub mod visit;
 
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_symbol::GlobalSymbolID;

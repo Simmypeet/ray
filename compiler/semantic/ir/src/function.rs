@@ -8,6 +8,7 @@ use crate::{
     expression::{Expression, ExpressionID, ExpressionMap},
     lambda::{Capture, CaptureID, LambdaContext, LambdaParameter, LambdaParameterID},
     variable::{Variable, VariableID, VariableMap},
+    visit::{TypeVisitor, VisitType},
 };
 
 pub type FunctionID = ID<Function>;
@@ -258,4 +259,43 @@ impl Function {
 
     #[must_use]
     pub fn reachables(&self) -> Reachables { self.cfg.reachables() }
+}
+
+impl VisitType for Function {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        self.context.visit_types(visitor);
+        self.variable_map.visit_types(visitor);
+        self.expression_map.visit_types(visitor);
+    }
+}
+
+impl VisitType for Context {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        match self {
+            Self::Def => {}
+            Self::Lambda(context) => context.visit_types(visitor),
+        }
+    }
+}
+
+impl VisitType for LambdaContext {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        for (_, parameter) in self.parameters() {
+            parameter.visit_types(visitor);
+        }
+        visitor.visit_type(self.return_ty());
+        for (_, capture) in self.captures() {
+            capture.visit_types(visitor);
+        }
+    }
+}
+
+impl VisitType for LambdaParameter {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) { visitor.visit_type(self.ty()); }
+}
+
+impl VisitType for Capture {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        visitor.visit_type(self.pointee_ty());
+    }
 }

@@ -2,7 +2,10 @@ use qbice::{Decode, Encode, StableHash};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::subst::Subst;
 
-use crate::expression::ExpressionID;
+use crate::{
+    expression::ExpressionID,
+    visit::{TypeVisitor, VisitType},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum CallTarget {
@@ -14,6 +17,19 @@ pub enum CallTarget {
 pub struct Call {
     target: CallTarget,
     arguments: Vec<ExpressionID>,
+}
+
+impl VisitType for Call {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        match &self.target {
+            CallTarget::Direct { subst, .. } => {
+                for ty in subst.codomain() {
+                    visitor.visit_type(ty);
+                }
+            }
+            CallTarget::Lambda { .. } => {}
+        }
+    }
 }
 
 impl Call {

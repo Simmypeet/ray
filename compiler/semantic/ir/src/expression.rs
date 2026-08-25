@@ -3,9 +3,12 @@ use rayc_arena::{Arena, ID};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 
-use crate::expression::{
-    binary::Binary, call::Call, literal::Literal, load::Load, make_lambda::MakeLambda, phi::Phi,
-    ref_of::RefOf, tuple::Tuple,
+use crate::{
+    expression::{
+        binary::Binary, call::Call, literal::Literal, load::Load, make_lambda::MakeLambda,
+        phi::Phi, ref_of::RefOf, tuple::Tuple,
+    },
+    visit::{TypeVisitor, VisitType},
 };
 
 pub mod binary;
@@ -77,5 +80,32 @@ impl ExpressionMap {
 
     pub fn insert_expression(&mut self, expression: Expression) -> ExpressionID {
         self.expressions.insert(expression)
+    }
+}
+
+impl VisitType for Expression {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        visitor.visit_type(&self.ty);
+
+        match &self.kind {
+            ExpressionKind::Call(call) => call.visit_types(visitor),
+
+            ExpressionKind::Error
+            | ExpressionKind::Literal(_)
+            | ExpressionKind::RefOf(_)
+            | ExpressionKind::Load(_)
+            | ExpressionKind::Phi(_)
+            | ExpressionKind::Binary(_)
+            | ExpressionKind::Tuple(_)
+            | ExpressionKind::MakeLambda(_) => {}
+        }
+    }
+}
+
+impl VisitType for ExpressionMap {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        for (_, expression) in self.expressions.iter() {
+            expression.visit_types(visitor);
+        }
     }
 }

@@ -29,6 +29,11 @@ impl From<GlobalPolyVarID> for Var {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Subst(FxImHashMap<Var, Interned<Ty>>);
 
+impl Subst {
+    #[must_use]
+    pub fn codomain(&self) -> impl ExactSizeIterator<Item = &Interned<Ty>> { self.0.values() }
+}
+
 impl Encode for Subst {
     fn encode<E: qbice::serialize::Encoder + ?Sized>(
         &self,
