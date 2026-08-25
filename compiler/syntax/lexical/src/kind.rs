@@ -146,8 +146,8 @@ pub enum Keyword {
     Final,
     /// `extern` keyword
     Extern,
-    /// `effect` keyword
-    Effect,
+    /// `eff` keyword
+    Eff,
     /// `do` keyword
     Do,
     /// `try` keywrod
@@ -279,7 +279,7 @@ impl Keyword {
             Self::Phantom => "phantom",
             Self::Final => "final",
             Self::Extern => "extern",
-            Self::Effect => "effect",
+            Self::Eff => "eff",
             Self::Do => "do",
             Self::Try => "try",
             Self::With => "with",

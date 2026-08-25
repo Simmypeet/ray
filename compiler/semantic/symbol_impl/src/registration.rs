@@ -1,7 +1,10 @@
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::SourceElement;
 use rayc_symbol::symbol_kind::SymbolKind;
-use rayc_syntax::def::{Def, DefSignature, ParameterEntry};
+use rayc_syntax::{
+    def::{Def, DefSignature, ParameterEntry},
+    module::ModuleMember,
+};
 
 use crate::{
     diagnostic::{Diagnostic, InvalidDefDeclaration, InvalidDefDeclarationKind},
@@ -72,8 +75,13 @@ impl Table {
         module_content: &rayc_syntax::module::ModuleContent,
         engine: &TrackedEngine,
     ) {
-        for member in module_content.defs() {
-            self.register_def(member_builder, member.clone(), engine).await;
+        for member in module_content.members() {
+            match member {
+                ModuleMember::Def(def) => {
+                    self.register_def(member_builder, def.clone(), engine).await;
+                }
+                ModuleMember::Effect(_) => {}
+            }
         }
     }
 }

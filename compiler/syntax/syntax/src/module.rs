@@ -4,7 +4,15 @@ use rayc_parser::{
     parser::{ParserExt, ast},
 };
 
-use crate::def::Def;
+use crate::{def::Def, effect::Effect};
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub enum ModuleMember {
+        Def(Def = ast::<Def>()),
+        Effect(Effect = ast::<Effect>())
+    }
+}
 
 abstract_tree::abstract_tree! {
     #[derive(
@@ -20,6 +28,6 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub struct ModuleContent {
-        pub defs: #[multi] Def = ast::<Def>().repeat_all()
+        pub members: #[multi] ModuleMember = ast::<ModuleMember>().repeat_all()
     }
 }

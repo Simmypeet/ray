@@ -11,6 +11,7 @@ use rayc_target::TargetID;
 use crate::module::ModuleContent;
 
 pub mod def;
+pub mod effect;
 pub mod expression;
 pub mod irrefutable_pattern;
 pub mod module;

@@ -1,0 +1,10 @@
+eff State[s, e]:
+    def get() -> s
+    def put(value: s)
+    def fail(error: e) -> int32
+
+eff Console:
+    def write(value: cstr)
+
+def main() -> int32:
+    return 0
