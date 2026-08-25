@@ -1,23 +1,21 @@
 use rayc_ir::expression::{Expression, ExpressionID, ExpressionKind, call::Call as IrCall};
-use rayc_typed_ast::{
-    typed_function::TypedFunction as TypedFunction,
-    typed_expr::call::{Call, CallTarget},
-};
+use rayc_typed_ast::typed_expr::call::{Call, CallTarget};
 
 use crate::{
     builder::Builder,
+    context::LoweringContext,
     expression::{LowerExpression, TypedExprWithID},
 };
 
 impl Builder {
     fn lower_call_arguments(
         &mut self,
+        context: &LoweringContext<'_>,
         call: &Call,
-        typed_function: &TypedFunction,
     ) -> Vec<ExpressionID> {
         call.arguments()
             .iter()
-            .map(|argument| self.lower_expression_by_id(typed_function, *argument))
+            .map(|argument| self.lower_expression_by_id(context, *argument))
             .collect()
     }
 }
@@ -25,10 +23,10 @@ impl Builder {
 impl<'a> LowerExpression<TypedExprWithID<&'a Call>> for Builder {
     fn lower_expression(
         &mut self,
+        context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Call>,
-        typed_function: &TypedFunction,
     ) -> ExpressionID {
-        let typed_expression = typed_function.get_expression(expression.id());
+        let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
         let call = expression.node();
@@ -36,12 +34,12 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Call>> for Builder {
         // right.
         let lowered_call = match call.target() {
             CallTarget::Direct { function_id, subst } => {
-                let arguments = self.lower_call_arguments(call, typed_function);
+                let arguments = self.lower_call_arguments(context, call);
                 IrCall::new_direct(*function_id, arguments, subst.clone())
             }
             CallTarget::Lambda { callee } => {
-                let callee = self.lower_expression_by_id(typed_function, *callee);
-                let arguments = self.lower_call_arguments(call, typed_function);
+                let callee = self.lower_expression_by_id(context, *callee);
+                let arguments = self.lower_call_arguments(context, call);
                 IrCall::new_lambda(callee, arguments)
             }
         };

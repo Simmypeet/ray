@@ -1738,6 +1738,7 @@ dependencies = [
  "rayc_source_file",
  "rayc_symbol",
  "rayc_target",
+ "rayc_tast_capture_analysis",
  "rayc_type",
  "rayc_typed_ast",
  "tokio",

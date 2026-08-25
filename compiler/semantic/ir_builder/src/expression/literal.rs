@@ -1,20 +1,21 @@
 use rayc_ir::expression::{
     Expression, ExpressionID, ExpressionKind, literal::Literal as IrLiteral,
 };
-use rayc_typed_ast::{typed_function::TypedFunction as TypedFunction, typed_expr::literal::Literal};
+use rayc_typed_ast::typed_expr::literal::Literal;
 
 use crate::{
     builder::Builder,
+    context::LoweringContext,
     expression::{LowerExpression, TypedExprWithID},
 };
 
 impl<'a> LowerExpression<TypedExprWithID<&'a Literal>> for Builder {
     fn lower_expression(
         &mut self,
+        context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Literal>,
-        typed_function: &TypedFunction,
     ) -> ExpressionID {
-        let typed_expression = typed_function.get_expression(expression.id());
+        let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
         let literal = expression.node();

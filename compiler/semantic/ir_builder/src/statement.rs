@@ -1,11 +1,11 @@
 use rayc_ir::cfg::Terminator;
-use rayc_typed_ast::{typed_function::TypedFunction as TypedFunction, statement::Statement};
+use rayc_typed_ast::statement::Statement;
 
-use crate::builder::Builder;
+use crate::{builder::Builder, context::LoweringContext};
 
 impl Builder {
-    pub fn lower_statements(&mut self, typed_function: &TypedFunction) {
-        for statement in typed_function.statements() {
+    pub fn lower_statements(&mut self, context: &LoweringContext<'_>) {
+        for statement in context.statements() {
             if self.is_terminated() {
                 break;
             }
@@ -13,18 +13,17 @@ impl Builder {
             match *statement {
                 Statement::Let(let_statement) => {
                     let typed_id = let_statement.variable_id();
-                    let ir_id = self.register_source_variable(typed_function, typed_id);
-                    let value =
-                        self.lower_expression_by_id(typed_function, let_statement.expression());
+                    let ir_id = self.register_source_variable(context, typed_id);
+                    let value = self.lower_expression_by_id(context, let_statement.expression());
                     self.emit_store(self.variable_address(ir_id), value);
                 }
                 Statement::Expression(expression) => {
-                    self.lower_expression_by_id(typed_function, expression);
+                    self.lower_expression_by_id(context, expression);
                 }
                 Statement::Return(return_statement) => {
                     let value = return_statement
                         .value()
-                        .map(|value| self.lower_expression_by_id(typed_function, value));
+                        .map(|value| self.lower_expression_by_id(context, value));
                     self.terminate(Terminator::Return(value));
                 }
             }

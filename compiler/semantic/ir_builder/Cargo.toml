@@ -12,6 +12,7 @@ rayc_ir.path = "../ir"
 rayc_lexical.path = "../../syntax/lexical"
 rayc_qbice.path = "../../base/qbice"
 rayc_semantic_element.path = "../semantic_element"
+rayc_tast_capture_analysis.path = "../tast_capture_analysis"
 rayc_typed_ast.path = "../typed_ast"
 rayc_type.path = "../type"
 qbice.workspace = true

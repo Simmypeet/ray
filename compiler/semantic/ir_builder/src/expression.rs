@@ -1,10 +1,7 @@
-use rayc_ir::expression::{Expression, ExpressionID};
-use rayc_typed_ast::{
-    typed_function::TypedFunction as TypedFunction,
-    typed_expr::{TypedExprID, TypedExprKind},
-};
+use rayc_ir::expression::ExpressionID;
+use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind};
 
-use crate::builder::Builder;
+use crate::{builder::Builder, context::LoweringContext};
 
 mod binary;
 mod call;
@@ -12,6 +9,7 @@ mod deref;
 mod errored;
 mod identifier;
 mod if_else;
+mod lambda;
 mod literal;
 mod paren;
 mod ref_of;
@@ -22,48 +20,52 @@ mod typed_expr_id;
 pub use typed_expr_id::TypedExprWithID;
 
 pub trait LowerExpression<S> {
-    fn lower_expression(&mut self, expression: S, typed_function: &TypedFunction) -> ExpressionID;
+    fn lower_expression(&mut self, context: &LoweringContext<'_>, expression: S) -> ExpressionID;
 }
 
 impl Builder {
     pub fn lower_expression_by_id(
         &mut self,
-        typed_function: &TypedFunction,
+        context: &LoweringContext<'_>,
         expression_id: TypedExprID,
     ) -> ExpressionID {
-        let expression = typed_function.get_expression(expression_id);
+        let expression = context.expression(expression_id);
         match expression.kind() {
-            TypedExprKind::Identifier(identifier) => self
-                .lower_expression(TypedExprWithID::new(identifier, expression_id), typed_function),
-            TypedExprKind::Literal(literal) => {
-                self.lower_expression(TypedExprWithID::new(literal, expression_id), typed_function)
+            TypedExprKind::Identifier(identifier) => {
+                self.lower_expression(context, TypedExprWithID::new(identifier, expression_id))
             }
-            TypedExprKind::TupleIndex(tuple_index) => self
-                .lower_expression(TypedExprWithID::new(tuple_index, expression_id), typed_function),
+            TypedExprKind::Literal(literal) => {
+                self.lower_expression(context, TypedExprWithID::new(literal, expression_id))
+            }
+            TypedExprKind::TupleIndex(tuple_index) => {
+                self.lower_expression(context, TypedExprWithID::new(tuple_index, expression_id))
+            }
             TypedExprKind::Tuple(tuple) => {
-                self.lower_expression(TypedExprWithID::new(tuple, expression_id), typed_function)
+                self.lower_expression(context, TypedExprWithID::new(tuple, expression_id))
             }
             TypedExprKind::Call(call) => {
-                self.lower_expression(TypedExprWithID::new(call, expression_id), typed_function)
+                self.lower_expression(context, TypedExprWithID::new(call, expression_id))
             }
-            TypedExprKind::Lambda(_) => self
-                .emit_expression(Expression::new_error(expression.span(), expression.ty().clone())),
+            TypedExprKind::Lambda(lambda) => {
+                self.lower_expression(context, TypedExprWithID::new(lambda, expression_id))
+            }
             TypedExprKind::Binary(binary) => {
-                self.lower_expression(TypedExprWithID::new(binary, expression_id), typed_function)
+                self.lower_expression(context, TypedExprWithID::new(binary, expression_id))
             }
             TypedExprKind::IfElse(if_else) => {
-                self.lower_expression(TypedExprWithID::new(if_else, expression_id), typed_function)
+                self.lower_expression(context, TypedExprWithID::new(if_else, expression_id))
             }
-            TypedExprKind::RefOf(reference) => self
-                .lower_expression(TypedExprWithID::new(reference, expression_id), typed_function),
+            TypedExprKind::RefOf(reference) => {
+                self.lower_expression(context, TypedExprWithID::new(reference, expression_id))
+            }
             TypedExprKind::Deref(deref) => {
-                self.lower_expression(TypedExprWithID::new(deref, expression_id), typed_function)
+                self.lower_expression(context, TypedExprWithID::new(deref, expression_id))
             }
             TypedExprKind::Paren(paren) => {
-                self.lower_expression(TypedExprWithID::new(paren, expression_id), typed_function)
+                self.lower_expression(context, TypedExprWithID::new(paren, expression_id))
             }
             TypedExprKind::Errored(errored) => {
-                self.lower_expression(TypedExprWithID::new(errored, expression_id), typed_function)
+                self.lower_expression(context, TypedExprWithID::new(errored, expression_id))
             }
         }
     }

@@ -30,6 +30,16 @@ impl FunctionMap {
         Self { functions, root }
     }
 
+    /// Replaces the root function after it has finished lowering.
+    pub fn replace_root(&mut self, root: Function) {
+        match root.context() {
+            Context::Def => {}
+            Context::Lambda(_) => panic!("Root IR function should be a def"),
+        }
+
+        *self.functions.get_mut(self.root).expect("Root IR function should exist") = root;
+    }
+
     #[must_use]
     pub const fn root_id(&self) -> FunctionID { self.root }
 

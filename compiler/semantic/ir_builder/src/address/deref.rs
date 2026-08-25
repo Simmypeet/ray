@@ -1,11 +1,11 @@
 use rayc_ir::address::Address;
-use rayc_typed_ast::{typed_expr::deref::Deref, typed_function::TypedFunction};
+use rayc_typed_ast::typed_expr::deref::Deref;
 
-use crate::{address::LowerAddress, builder::Builder};
+use crate::{address::LowerAddress, builder::Builder, context::LoweringContext};
 
 impl LowerAddress<Deref> for Builder {
-    fn lower_address(&mut self, typed_function: &TypedFunction, deref: &Deref) -> Address {
-        let pointer = self.lower_expression_by_id(typed_function, deref.pointee());
+    fn lower_address(&mut self, context: &LoweringContext<'_>, deref: &Deref) -> Address {
+        let pointer = self.lower_expression_by_id(context, deref.pointee());
         self.dereference_address(pointer)
     }
 }
