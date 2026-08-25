@@ -13,4 +13,7 @@ impl Errored {
 
     #[must_use]
     pub const fn new(children: Vec<TypedExprID>) -> Self { Self { children } }
+
+    #[must_use]
+    pub fn children(&self) -> &[TypedExprID] { &self.children }
 }

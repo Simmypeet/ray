@@ -22,6 +22,7 @@ members = [
 
     "compiler/semantic/symbol",
     "compiler/semantic/symbol_impl",
+    "compiler/semantic/tast_capture_analysis",
     "compiler/semantic/type",
     "compiler/semantic/typed_ast",
     "compiler/semantic/typed_ast_builder",

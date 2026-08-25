@@ -57,6 +57,10 @@ impl TypedFunctionMap {
         self.get_function(function_id).get_expression(id)
     }
 
+    pub fn statements_in(&self, function_id: FunctionID) -> impl Iterator<Item = &Statement> {
+        self.get_function(function_id).statements()
+    }
+
     #[must_use]
     pub fn classify_lvalue_in(
         &self,

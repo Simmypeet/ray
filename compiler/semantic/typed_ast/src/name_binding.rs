@@ -12,13 +12,28 @@ use rayc_type::{
     ty::Ty,
 };
 
-use crate::{typed_function::FunctionLocalID, lambda::LambdaParameterID, variable::VariableID};
+use crate::{
+    lambda::LambdaParameterID,
+    typed_function::{FunctionID, FunctionLocalID},
+    variable::VariableID,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Source {
     Variable(FunctionLocalID<VariableID>),
     Parameter(FunctionLocalID<ParameterID>),
     LambdaParameter(FunctionLocalID<LambdaParameterID>),
+}
+
+impl Source {
+    #[must_use]
+    pub const fn function_id(self) -> FunctionID {
+        match self {
+            Self::Variable(id) => id.function_id(),
+            Self::Parameter(id) => id.function_id(),
+            Self::LambdaParameter(id) => id.function_id(),
+        }
+    }
 }
 
 #[derive(

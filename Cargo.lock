@@ -1983,6 +1983,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayc_tast_capture_analysis"
+version = "0.1.0-beta.2"
+dependencies = [
+ "qbice",
+ "rayc_arena",
+ "rayc_hash",
+ "rayc_lexical",
+ "rayc_source_file",
+ "rayc_target",
+ "rayc_type",
+ "rayc_typed_ast",
+]
+
+[[package]]
 name = "rayc_test_input"
 version = "0.1.0-beta.2"
 dependencies = [
