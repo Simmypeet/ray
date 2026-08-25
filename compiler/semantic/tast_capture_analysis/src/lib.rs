@@ -343,7 +343,9 @@ impl Analyzer {
                 );
                 self.visit_expression(function_id, functions, binary.right(), UseMode::Value, plan);
             }
-            BinaryOp::Plus
+            BinaryOp::Equal
+            | BinaryOp::NotEqual
+            | BinaryOp::Plus
             | BinaryOp::Minus
             | BinaryOp::Multiply
             | BinaryOp::Divide

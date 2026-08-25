@@ -138,6 +138,19 @@ impl TyApplication {
                 | TyApplicationView::Lambda(_)
                 | TyApplicationView::Pointer(_) => false,
             },
+            InferenceConstraint::EqualityComparable => match self.view() {
+                TyApplicationView::Primitive(primitive) => match primitive {
+                    Primitive::Int32 | Primitive::Float32 | Primitive::Bool | Primitive::CInt => {
+                        true
+                    }
+                    Primitive::CStr => false,
+                },
+
+                TyApplicationView::Error
+                | TyApplicationView::Tuple(_)
+                | TyApplicationView::Lambda(_)
+                | TyApplicationView::Pointer(_) => false,
+            },
         }
     }
 }
@@ -171,6 +184,7 @@ pub enum TyKind {
 pub enum InferenceConstraint {
     Any,
     Numeric,
+    EqualityComparable,
 }
 
 impl InferenceConstraint {
@@ -180,7 +194,13 @@ impl InferenceConstraint {
         match (self, other) {
             (Self::Any, Self::Any) => Some(Self::Any),
             (Self::Any, Self::Numeric) | (Self::Numeric, Self::Any) => Some(Self::Numeric),
+            (Self::Any, Self::EqualityComparable) | (Self::EqualityComparable, Self::Any) => {
+                Some(Self::EqualityComparable)
+            }
             (Self::Numeric, Self::Numeric) => Some(Self::Numeric),
+            (Self::Numeric, Self::EqualityComparable)
+            | (Self::EqualityComparable, Self::Numeric) => Some(Self::Numeric),
+            (Self::EqualityComparable, Self::EqualityComparable) => Some(Self::EqualityComparable),
         }
     }
 }
@@ -471,6 +491,9 @@ impl TyDisplay<'_> {
                 InferenceConstraint::Any => write!(f, "{{any}}"),
                 InferenceConstraint::Numeric => {
                     write!(f, "{{numeric}}")
+                }
+                InferenceConstraint::EqualityComparable => {
+                    write!(f, "{{equality comparable}}")
                 }
             },
 

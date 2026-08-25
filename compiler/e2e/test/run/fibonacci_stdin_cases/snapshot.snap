@@ -7,14 +7,7 @@ case 1:
 exit_code: 0
 
 stdout:
-fibonacci:
-0
-1
-1
-2
-3
-5
-8
+fibonacci(0) = 0
 
 
 stderr:
@@ -25,14 +18,7 @@ case 2:
 exit_code: 0
 
 stdout:
-fibonacci:
-1
-1
-2
-3
-5
-8
-13
+fibonacci(1) = 1
 
 
 stderr:
@@ -43,14 +29,18 @@ case 3:
 exit_code: 0
 
 stdout:
-fibonacci:
-3
-5
-8
-13
-21
-34
-55
+fibonacci(5) = 5
+
+
+stderr:
+
+
+case 4:
+
+exit_code: 0
+
+stdout:
+fibonacci(10) = 55
 
 
 stderr:

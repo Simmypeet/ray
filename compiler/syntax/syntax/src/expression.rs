@@ -2,7 +2,7 @@ use qbice::{Decode, Encode, StableHash};
 use rayc_lexical::tree::DelimiterKind;
 use rayc_parser::{
     abstract_tree,
-    expect::{self, Fragment},
+    expect::{self, Ext, Fragment},
     parser::{ParserExt, ast},
 };
 
@@ -30,6 +30,44 @@ abstract_tree::abstract_tree! {
         pub parameters: LambdaParameterList = ast::<LambdaParameterList>(),
         pub arrow: Arrow = ast::<Arrow>(),
         pub body: Expression = ast::<Expression>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct Equal {
+        pub first: Punctuation = '=',
+        pub second: Punctuation = '='.no_prior_insignificant()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct NotEqual {
+        pub exclamation: Punctuation = '!',
+        pub equals: Punctuation = '='.no_prior_insignificant()
     }
 }
 
@@ -86,6 +124,8 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub enum BinaryOperator {
+        Equal(Equal = ast::<Equal>()),
+        NotEqual(NotEqual = ast::<NotEqual>()),
         Assign(Punctuation = '='),
         Plus(Punctuation = '+'),
         Minus(Punctuation = '-'),

@@ -1,26 +1,21 @@
 ## Case
 ## 0
-## 1
 ## Case
 ## 1
-## 1
 ## Case
-## 3
 ## 5
+## Case
+## 10
 
 extern def scanf(format: cstr, ...) -> c_int
 extern def printf(format: cstr, ...) -> c_int
 
-def printFibonacci(first: c_int, second: c_int, remaining: (bool, bool, bool, bool, bool, bool)) -> ():
-    printf("%d\n", first)
-    return if remaining.0: printFibonacci(second, first + second, (remaining.1, remaining.2, remaining.3, remaining.4, remaining.5, false)) else: ()
+def fibonacci(value: c_int) -> c_int:
+    return if value == 0: 0 else: if value == 1: 1 else: fibonacci(value - 1) + fibonacci(value - 2)
 
 def main() -> int32:
-    let mut first: c_int = 0
-    let mut second: c_int = 0
-    scanf("%d", first.&mut)
-    scanf("%d", second.&mut)
+    let mut value: c_int = 0
+    scanf("%d", value.&mut)
 
-    printf("fibonacci:\n")
-    printFibonacci(first, second, (true, true, true, true, true, true))
+    printf("fibonacci(%d) = %d\n", value, fibonacci(value))
     return 0

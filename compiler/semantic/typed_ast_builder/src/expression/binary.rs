@@ -108,6 +108,12 @@ impl TAstBuilder {
                 self.require_lvalue(left, true, LvalueOperation::Assignment);
                 ty
             }
+            BinaryOp::Equal | BinaryOp::NotEqual => {
+                let operand_ty = self.new_equality_comparable_type_inference();
+                self.push_binary_operator_constraint(&operand_ty, left);
+                self.push_binary_operator_constraint(&operand_ty, right);
+                Ty::new_primitive(Primitive::Bool, self.engine())
+            }
             BinaryOp::Plus | BinaryOp::Minus | BinaryOp::Multiply | BinaryOp::Divide => {
                 let ty = self.new_numeric_type_inference();
                 self.push_binary_operator_constraint(&ty, left);
@@ -134,6 +140,8 @@ impl TAstBuilder {
 
 const fn map_operator(operator: &BinaryOperatorSyntax) -> BinaryOp {
     match operator {
+        BinaryOperatorSyntax::Equal(_) => BinaryOp::Equal,
+        BinaryOperatorSyntax::NotEqual(_) => BinaryOp::NotEqual,
         BinaryOperatorSyntax::Assign(_) => BinaryOp::Assign,
         BinaryOperatorSyntax::Plus(_) => BinaryOp::Plus,
         BinaryOperatorSyntax::Minus(_) => BinaryOp::Minus,

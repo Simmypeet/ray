@@ -4,6 +4,8 @@ use crate::ir_expr::IRExprID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum BinaryOp {
+    Equal,
+    NotEqual,
     Plus,
     Minus,
     Multiply,

@@ -1,0 +1,14 @@
+def tupleEquality() -> bool:
+    return (1, 2) == (1, 2)
+
+def stringEquality() -> bool:
+    return "hello" != "world"
+
+def pointerEquality(value: *int32) -> bool:
+    return value == value
+
+def lambdaEquality(callback: def() -> ()) -> bool:
+    return callback != callback
+
+def mismatchedPrimitiveEquality() -> bool:
+    return true == 1

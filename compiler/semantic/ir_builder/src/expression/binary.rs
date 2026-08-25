@@ -30,14 +30,16 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Binary>> for Builder {
         let binary = expression.node();
         match binary.operator() {
             BinaryOp::Assign => lower_assignment(self, context, binary),
-            BinaryOp::Plus => lower_arithmetic(self, context, binary, IrBinaryOp::Plus, span, ty),
-            BinaryOp::Minus => lower_arithmetic(self, context, binary, IrBinaryOp::Minus, span, ty),
+            BinaryOp::Equal => lower_binary(self, context, binary, IrBinaryOp::Equal, span, ty),
+            BinaryOp::NotEqual => {
+                lower_binary(self, context, binary, IrBinaryOp::NotEqual, span, ty)
+            }
+            BinaryOp::Plus => lower_binary(self, context, binary, IrBinaryOp::Plus, span, ty),
+            BinaryOp::Minus => lower_binary(self, context, binary, IrBinaryOp::Minus, span, ty),
             BinaryOp::Multiply => {
-                lower_arithmetic(self, context, binary, IrBinaryOp::Multiply, span, ty)
+                lower_binary(self, context, binary, IrBinaryOp::Multiply, span, ty)
             }
-            BinaryOp::Divide => {
-                lower_arithmetic(self, context, binary, IrBinaryOp::Divide, span, ty)
-            }
+            BinaryOp::Divide => lower_binary(self, context, binary, IrBinaryOp::Divide, span, ty),
             BinaryOp::And => lower_logical(self, context, binary, false, span, ty),
             BinaryOp::Or => lower_logical(self, context, binary, true, span, ty),
         }
@@ -55,7 +57,7 @@ fn lower_assignment(
     value
 }
 
-fn lower_arithmetic(
+fn lower_binary(
     builder: &mut Builder,
     context: &LoweringContext<'_>,
     binary: &Binary,

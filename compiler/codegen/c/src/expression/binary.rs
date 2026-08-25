@@ -14,6 +14,8 @@ impl WriteExpression<&Binary> for Writer<'_> {
     ) -> std::io::Result<()> {
         let binary = expression.node();
         let operator = match binary.operator() {
+            BinaryOp::Equal => "==",
+            BinaryOp::NotEqual => "!=",
             BinaryOp::Plus => "+",
             BinaryOp::Minus => "-",
             BinaryOp::Multiply => "*",

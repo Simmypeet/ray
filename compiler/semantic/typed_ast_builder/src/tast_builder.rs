@@ -162,6 +162,13 @@ impl TAstBuilder {
         self.engine.intern(Ty::Inference(inference))
     }
 
+    pub fn new_equality_comparable_type_inference(&mut self) -> Interned<Ty> {
+        let inference = self
+            .solver
+            .new_inference_with_constraint(TyKind::Star, InferenceConstraint::EqualityComparable);
+        self.engine.intern(Ty::Inference(inference))
+    }
+
     pub fn push_error_expression(&mut self, span: RelativeSpan) -> TypedExprID {
         let ty = self.new_type_inference();
         let expression = TypedExpr::new_error(span, ty);

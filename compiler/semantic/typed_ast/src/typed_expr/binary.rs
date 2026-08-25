@@ -5,6 +5,8 @@ use crate::typed_expr::TypedExprID;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum BinaryOp {
     Assign,
+    Equal,
+    NotEqual,
     Plus,
     Minus,
     Multiply,
@@ -26,8 +28,9 @@ impl BinaryOp {
             Self::Assign => 0,
             Self::Or => 1,
             Self::And => 2,
-            Self::Plus | Self::Minus => 3,
-            Self::Multiply | Self::Divide => 4,
+            Self::Equal | Self::NotEqual => 3,
+            Self::Plus | Self::Minus => 4,
+            Self::Multiply | Self::Divide => 5,
         }
     }
 
@@ -35,9 +38,14 @@ impl BinaryOp {
     pub const fn associativity(self) -> Associativity {
         match self {
             Self::Assign => Associativity::Right,
-            Self::Plus | Self::Minus | Self::Multiply | Self::Divide | Self::And | Self::Or => {
-                Associativity::Left
-            }
+            Self::Equal
+            | Self::NotEqual
+            | Self::Plus
+            | Self::Minus
+            | Self::Multiply
+            | Self::Divide
+            | Self::And
+            | Self::Or => Associativity::Left,
         }
     }
 }

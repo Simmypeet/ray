@@ -1,0 +1,24 @@
+extern def printf(format: cstr, ...) -> c_int
+
+def main() -> int32:
+    let intEqual = 2 == 2
+    let intNotEqual = 2 != 3
+    let boolEqual = true == true
+    let boolNotEqual = true != false
+
+    let firstFloat: float32 = 4
+    let secondFloat: float32 = 4
+    let floatEqual = firstFloat == secondFloat
+
+    let firstCInt: c_int = 5
+    let secondCInt: c_int = 6
+    let cIntNotEqual = firstCInt != secondCInt
+    let precedence = 1 + 1 == 2 and true != false
+
+    printf("int32: %d %d\n", intEqual, intNotEqual)
+    printf("bool: %d %d\n", boolEqual, boolNotEqual)
+    printf("float32: %d\n", floatEqual)
+    printf("c_int: %d\n", cIntNotEqual)
+    printf("precedence: %d\n", precedence)
+
+    return if intEqual and intNotEqual and boolEqual and boolNotEqual and floatEqual and cIntNotEqual and precedence: 0 else: 1
