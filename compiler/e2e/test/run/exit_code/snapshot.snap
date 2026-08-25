@@ -1,8 +1,9 @@
 ---
 source: compiler/e2e/test/run/mod.rs
-assertion_line: 73
 expression: rendered
 ---
+case 1:
+
 exit_code: 42
 
 stdout:

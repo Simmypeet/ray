@@ -2,8 +2,9 @@
 
 use std::{
     ffi::OsString,
+    io::Write,
     path::Path,
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
 };
 
 use clap::Parser;
@@ -30,6 +31,8 @@ fn main(resource: &str) {
 }
 
 async fn run_fixture(file_path: &Path) {
+    let source = std::fs::read_to_string(file_path).unwrap();
+    let stdin_cases = parse_stdin_cases(&source);
     let temporary_directory = tempfile::tempdir().unwrap();
     let executable_path =
         temporary_directory.path().join(format!("program{}", std::env::consts::EXE_SUFFIX));
@@ -52,11 +55,9 @@ async fn run_fixture(file_path: &Path) {
         file_path.display()
     );
 
-    let output = Command::new(&executable_path)
-        .output()
-        .expect("failed to execute the compiled Ray program");
-
-    let rendered = render_output(&output);
+    let outputs =
+        stdin_cases.iter().map(|stdin| execute(&executable_path, stdin)).collect::<Vec<_>>();
+    let rendered = render_outputs(&outputs);
 
     let mut settings = insta::Settings::clone_current();
 
@@ -71,6 +72,50 @@ async fn run_fixture(file_path: &Path) {
     let _guard = settings.bind_to_scope();
 
     assert_snapshot!("snapshot", rendered);
+}
+
+fn parse_stdin_cases(source: &str) -> Vec<String> {
+    let mut cases = Vec::<String>::new();
+
+    // A leading `## Case` starts a run. Each subsequent `## ` line is one line
+    // of stdin for that run, until the next case or the Ray source begins.
+    for line in source.lines() {
+        let Some(directive) = line.strip_prefix("##") else {
+            break;
+        };
+        let directive = directive.strip_prefix(' ').unwrap_or(directive);
+
+        if directive == "Case" {
+            cases.push(String::new());
+        } else if let Some(stdin) = cases.last_mut() {
+            stdin.push_str(directive);
+            stdin.push('\n');
+        }
+    }
+
+    if cases.is_empty() {
+        cases.push(String::new());
+    }
+
+    cases
+}
+
+fn execute(executable_path: &Path, stdin: &str) -> Output {
+    let mut child = Command::new(executable_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to execute the compiled Ray program");
+
+    child
+        .stdin
+        .take()
+        .expect("failed to open the compiled Ray program's stdin")
+        .write_all(stdin.as_bytes())
+        .expect("failed to write to the compiled Ray program's stdin");
+
+    child.wait_with_output().expect("failed to wait for the compiled Ray program")
 }
 
 fn build_arguments(file_path: &Path, executable_path: &Path) -> Arguments {
@@ -88,11 +133,21 @@ fn build_arguments(file_path: &Path, executable_path: &Path) -> Arguments {
     ])
 }
 
-fn render_output(output: &Output) -> String {
-    let exit_code =
-        output.status.code().map_or_else(|| "<signal>".to_owned(), |code| code.to_string());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+fn render_outputs(outputs: &[Output]) -> String {
+    outputs
+        .iter()
+        .enumerate()
+        .map(|(index, output)| {
+            let exit_code =
+                output.status.code().map_or_else(|| "<signal>".to_owned(), |code| code.to_string());
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
 
-    format!("exit_code: {exit_code}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}")
+            format!(
+                "case {}:\n\nexit_code: {exit_code}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}",
+                index + 1
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }

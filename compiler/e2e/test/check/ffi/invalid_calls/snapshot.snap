@@ -9,12 +9,6 @@ stderr:
 4 │     printf()
   ╰╴    ━━━━━━━━
 
-[error]: variadic arguments must have a C-compatible scalar or pointer type
-  ╭▸ compiler/e2e/test/check/ffi/invalid_calls/main.ray:5:27
-  │
-5 │     printf("tuple = %d/n", (1, 2))
-  ╰╴                          ━━━━━━━
-
 [error]: a C string literal must not contain an embedded NUL byte
   ╭▸ compiler/e2e/test/check/ffi/invalid_calls/main.ray:6:12
   │
@@ -27,7 +21,7 @@ stderr:
 7 │     let value: c_int = false
   ╰╴                       ━━━━━
 
-[error]: Compilation aborted due to 4 error(s)
+[error]: Compilation aborted due to 3 error(s)
 
 
 

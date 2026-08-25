@@ -1,0 +1,56 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+fibonacci:
+0
+1
+1
+2
+3
+5
+8
+
+
+stderr:
+
+
+case 2:
+
+exit_code: 0
+
+stdout:
+fibonacci:
+1
+1
+2
+3
+5
+8
+13
+
+
+stderr:
+
+
+case 3:
+
+exit_code: 0
+
+stdout:
+fibonacci:
+3
+5
+8
+13
+21
+34
+55
+
+
+stderr:
