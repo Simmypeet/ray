@@ -18,6 +18,8 @@ pub enum Primitive {
     Int32,
     Float32,
     Bool,
+    CInt,
+    CStr,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -127,8 +129,8 @@ impl TyApplication {
             InferenceConstraint::Any => true,
             InferenceConstraint::Numeric => match self.view() {
                 TyApplicationView::Primitive(primitive) => match primitive {
-                    Primitive::Int32 | Primitive::Float32 => true,
-                    Primitive::Bool => false,
+                    Primitive::Int32 | Primitive::Float32 | Primitive::CInt => true,
+                    Primitive::Bool | Primitive::CStr => false,
                 },
 
                 TyApplicationView::Error
@@ -429,6 +431,8 @@ impl TyDisplay<'_> {
                     Primitive::Int32 => write!(f, "int32"),
                     Primitive::Float32 => write!(f, "float32"),
                     Primitive::Bool => write!(f, "bool"),
+                    Primitive::CInt => write!(f, "c_int"),
+                    Primitive::CStr => write!(f, "cstr"),
                 },
                 TyApplicationView::Tuple(tuple) => {
                     f.write_char('(')?;
