@@ -13,6 +13,8 @@ pub enum Primitive {
     Bool,
     Float32,
     Int32,
+    CInt,
+    CStr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash)]
@@ -29,6 +31,12 @@ pub enum CTy {
     Pointer(Pointer),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CAbiReturn {
+    Void,
+    Value(Interned<CTy>),
+}
+
 impl Context {
     pub fn write_cty(&self, cty: &CTy, buf: &mut impl io::Write) -> std::io::Result<()> {
         match cty {
@@ -36,6 +44,8 @@ impl Context {
                 Primitive::Bool => write!(buf, "bool"),
                 Primitive::Float32 => write!(buf, "float"),
                 Primitive::Int32 => write!(buf, "int32_t"),
+                Primitive::CInt => write!(buf, "int"),
+                Primitive::CStr => write!(buf, "const char *"),
             },
 
             CTy::Tuple(id) => self.write_ctuple_t(*id, buf),
@@ -63,6 +73,8 @@ impl Context {
                         rayc_type::ty::Primitive::Int32 => Primitive::Int32,
                         rayc_type::ty::Primitive::Float32 => Primitive::Float32,
                         rayc_type::ty::Primitive::Bool => Primitive::Bool,
+                        rayc_type::ty::Primitive::CInt => Primitive::CInt,
+                        rayc_type::ty::Primitive::CStr => Primitive::CStr,
                     };
 
                     self.intern(CTy::Primitive(prim))

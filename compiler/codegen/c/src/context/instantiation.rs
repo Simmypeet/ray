@@ -128,10 +128,15 @@ fn by_value_tuple_depth(ty: &Ty) -> usize {
 }
 
 impl Context {
-    pub(crate) fn mono_function_instances(
-        &self,
-    ) -> impl ExactSizeIterator<Item = &'_ MonoFunction> {
-        self.mono_program.functions()
+    pub(crate) fn mono_function_instances(&self) -> impl Iterator<Item = &'_ MonoFunction> {
+        self.mono_program.functions().filter(|function| match function.kind() {
+            rayc_mono::MonoFunctionKind::Def | rayc_mono::MonoFunctionKind::Lambda(_) => true,
+            rayc_mono::MonoFunctionKind::ExternDef => false,
+        })
+    }
+
+    pub(crate) fn extern_function_instances(&self) -> impl Iterator<Item = &'_ MonoFunction> {
+        self.mono_program.extern_defs()
     }
 
     pub fn write_ctuple_t(&self, id: CTupleID, buf: &mut impl io::Write) -> io::Result<()> {

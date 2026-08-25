@@ -41,7 +41,7 @@ pub async fn write_c_translation_unit(
 ) -> io::Result<()> {
     let mono_program = collect_target(engine, target_id).await;
     let generator = Context::new(engine.clone(), mono_program);
-    let mut function_definitions = Vec::with_capacity(generator.mono_function_instances().len());
+    let mut function_definitions = Vec::new();
 
     for mono_function in generator.mono_function_instances() {
         let mut definition = Vec::new();
@@ -73,6 +73,11 @@ pub async fn write_c_translation_unit(
 
     writeln!(buf)?;
     writeln!(buf, "/* Function forward declarations */")?;
+
+    for extern_function in generator.extern_function_instances() {
+        generator.write_mono_function_decl(extern_function, buf).await?;
+        writeln!(buf, ";")?;
+    }
 
     for mono_function in generator.mono_function_instances() {
         generator.write_mono_function_decl(mono_function, buf).await?;

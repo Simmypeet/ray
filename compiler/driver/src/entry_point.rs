@@ -64,7 +64,7 @@ pub(super) async fn validate_entry_point(
 
     match engine.get_symbol_kind(entry_point_id).await {
         SymbolKind::Def => {}
-        SymbolKind::Module => {
+        SymbolKind::ExternDef | SymbolKind::Module => {
             return Err(EntryPointError::NotDefinition { symbol_id: entry_point_id });
         }
     }
@@ -86,7 +86,7 @@ fn is_int32(ty: &Ty) -> bool {
         Ty::Application(application) => match application.view() {
             TyApplicationView::Primitive(primitive) => match primitive {
                 Primitive::Int32 => true,
-                Primitive::Float32 | Primitive::Bool => false,
+                Primitive::Float32 | Primitive::Bool | Primitive::CInt | Primitive::CStr => false,
             },
             TyApplicationView::Tuple(_)
             | TyApplicationView::Lambda(_)

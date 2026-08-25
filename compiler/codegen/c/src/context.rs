@@ -8,13 +8,21 @@ use rayc_semantic_element::{
     parameter::{ParameterID, get_parameter_map},
     return_type::get_return_type,
 };
-use rayc_symbol::{GlobalSymbolID, name::get_name};
+use rayc_symbol::{
+    GlobalSymbolID,
+    name::get_name,
+    symbol_kind::{SymbolKind, get_symbol_kind},
+    syntax::is_variadic_def,
+};
 use rayc_type::{
     subst::{Subst, Substitutable},
     ty::Ty,
 };
 
-use crate::{c_ty::CTy, context::instantiation::CTupleID};
+use crate::{
+    c_ty::{CAbiReturn, CTy},
+    context::instantiation::CTupleID,
+};
 
 pub mod instantiation;
 
@@ -55,6 +63,14 @@ impl Context {
         self.engine.get_name(def_id).await
     }
 
+    pub async fn get_symbol_kind(&self, def_id: GlobalSymbolID) -> SymbolKind {
+        self.engine.get_symbol_kind(def_id).await
+    }
+
+    pub async fn is_variadic_def(&self, def_id: GlobalSymbolID) -> bool {
+        self.engine.is_variadic_def(def_id).await
+    }
+
     pub async fn get_ir(&self, def_id: GlobalSymbolID) -> Interned<IRFunctionMap> {
         self.engine.get_ir(def_id).await
     }
@@ -74,6 +90,17 @@ impl Context {
         let ty = self.engine.get_return_type(function.def_id()).await;
         let ty = ty.apply_subst_or_clone(function.subst(), &self.engine);
         self.ty_to_cty(&ty)
+    }
+
+    pub async fn get_extern_return(&self, function: &MonoFunction) -> CAbiReturn {
+        let ty = self.engine.get_return_type(function.def_id()).await;
+        let ty = ty.apply_subst_or_clone(function.subst(), &self.engine);
+        let is_unit = matches!(
+            &*ty,
+            Ty::Application(application)
+                if matches!(application.view(), rayc_type::ty::TyApplicationView::Tuple(tuple) if tuple.args().is_empty())
+        );
+        if is_unit { CAbiReturn::Void } else { CAbiReturn::Value(self.ty_to_cty(&ty)) }
     }
 
     pub async fn get_mono_parameters(

@@ -16,6 +16,13 @@ impl WriteExpression<&Literal> for Writer<'_> {
             Literal::Numeric(value) => write!(self, "{value}"),
             Literal::Bool(true) => write!(self, "true"),
             Literal::Bool(false) => write!(self, "false"),
+            Literal::String(value) => {
+                write!(self, "\"")?;
+                for byte in value.as_bytes() {
+                    write!(self, "\\{byte:03o}")?;
+                }
+                write!(self, "\"")
+            }
         }
     }
 }

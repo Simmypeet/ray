@@ -13,6 +13,9 @@ impl Writer<'_> {
         let functions = ctx.get_ir(mono_function.def_id()).await;
         let function_id = match mono_function.kind() {
             MonoFunctionKind::Def => functions.root_id(),
+            MonoFunctionKind::ExternDef => {
+                panic!("compiler-internal invariant violation: extern function has no definition")
+            }
             MonoFunctionKind::Lambda(function_id) => function_id,
         };
         let function = FunctionInstance::new(&functions, function_id, mono_function);

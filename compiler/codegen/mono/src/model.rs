@@ -12,6 +12,7 @@ use rayc_type::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MonoFunctionKind {
     Def,
+    ExternDef,
     Lambda(FunctionID),
 }
 
@@ -28,6 +29,11 @@ impl MonoFunction {
     #[must_use]
     pub const fn new(def_id: GlobalSymbolID, subst: Subst) -> Self {
         Self { def_id, subst, kind: MonoFunctionKind::Def }
+    }
+
+    #[must_use]
+    pub const fn new_extern(def_id: GlobalSymbolID, subst: Subst) -> Self {
+        Self { def_id, subst, kind: MonoFunctionKind::ExternDef }
     }
 
     /// Creates a lambda-function instance under the owner's substitution.
@@ -139,15 +145,23 @@ impl MonoProgram {
     pub fn defs(&self) -> impl Iterator<Item = &'_ MonoFunction> {
         self.functions.iter().filter(|function| match function.kind() {
             MonoFunctionKind::Def => true,
-            MonoFunctionKind::Lambda(_) => false,
+            MonoFunctionKind::ExternDef | MonoFunctionKind::Lambda(_) => false,
         })
     }
 
     /// Iterates over the concrete lambda-function instantiations.
     pub fn lambdas(&self) -> impl Iterator<Item = &'_ MonoFunction> {
         self.functions.iter().filter(|function| match function.kind() {
-            MonoFunctionKind::Def => false,
+            MonoFunctionKind::Def | MonoFunctionKind::ExternDef => false,
             MonoFunctionKind::Lambda(_) => true,
+        })
+    }
+
+    /// Iterates over concrete extern declarations referenced by the program.
+    pub fn extern_defs(&self) -> impl Iterator<Item = &'_ MonoFunction> {
+        self.functions.iter().filter(|function| match function.kind() {
+            MonoFunctionKind::ExternDef => true,
+            MonoFunctionKind::Def | MonoFunctionKind::Lambda(_) => false,
         })
     }
 

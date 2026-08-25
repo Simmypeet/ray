@@ -49,6 +49,9 @@ impl<'function> FunctionInstance<'function> {
     pub(crate) fn is_lambda(self) -> bool {
         match self.mono_function.kind() {
             MonoFunctionKind::Def => false,
+            MonoFunctionKind::ExternDef => {
+                panic!("compiler-internal invariant violation: extern function has no IR body")
+            }
             MonoFunctionKind::Lambda(function_id) => {
                 assert_eq!(
                     function_id, self.function_id,

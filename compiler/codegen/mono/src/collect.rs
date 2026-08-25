@@ -8,7 +8,10 @@ use rayc_ir::{
 };
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
-use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
+use rayc_symbol::{
+    GlobalSymbolID,
+    symbol_kind::{SymbolKind, get_all_def_ids, get_symbol_kind},
+};
 use rayc_target::TargetID;
 use rayc_type::{
     poly_var::get_poly_var_map,
@@ -36,11 +39,17 @@ struct Collector<'engine> {
     engine: &'engine TrackedEngine,
     program: MonoProgram,
     pending: VecDeque<MonoFunction>,
+    seen: rayc_hash::FxHashSet<MonoFunction>,
 }
 
 impl<'engine> Collector<'engine> {
     fn new(engine: &'engine TrackedEngine) -> Self {
-        Self { engine, program: MonoProgram::default(), pending: VecDeque::new() }
+        Self {
+            engine,
+            program: MonoProgram::default(),
+            pending: VecDeque::new(),
+            seen: rayc_hash::FxHashSet::default(),
+        }
     }
 
     async fn collect(mut self, target_id: TargetID) -> MonoProgram {
@@ -54,7 +63,19 @@ impl<'engine> Collector<'engine> {
         }
 
         while let Some(function) = self.pending.pop_front() {
-            self.collect_function(&function).await;
+            match self.engine.get_symbol_kind(function.def_id()).await {
+                SymbolKind::Def => {
+                    self.program.insert_function(function.clone());
+                    self.collect_function(&function).await;
+                }
+                SymbolKind::ExternDef => {
+                    self.program.insert_function(MonoFunction::new_extern(
+                        function.def_id(),
+                        function.subst().clone(),
+                    ));
+                }
+                SymbolKind::Module => panic!("module reached monomorphization as a callable"),
+            }
         }
 
         self.program
@@ -66,7 +87,7 @@ impl<'engine> Collector<'engine> {
             MonoFunctionKind::Def,
             "only def-level functions should enter the global mono work queue"
         );
-        if self.program.insert_function(function.clone()) {
+        if self.seen.insert(function.clone()) {
             self.pending.push_back(function);
         }
     }

@@ -87,6 +87,35 @@ impl Context {
 
                 write!(buf, ")")
             }
+            MonoFunctionKind::ExternDef => {
+                write!(buf, "extern ")?;
+                match self.get_extern_return(function).await {
+                    crate::c_ty::CAbiReturn::Void => write!(buf, "void")?,
+                    crate::c_ty::CAbiReturn::Value(return_type) => {
+                        self.write_cty(&return_type, buf)?;
+                    }
+                }
+                write!(buf, " {}(", &*self.get_def_name(function.def_id()).await)?;
+                let parameters = self.get_mono_parameters(function).await;
+                let mut first = true;
+                for (parameter_id, parameter_type) in parameters {
+                    if !first {
+                        write!(buf, ", ")?;
+                    }
+                    self.write_cty(&parameter_type, buf)?;
+                    write!(buf, " {}", Identifier::param(parameter_id))?;
+                    first = false;
+                }
+                if self.is_variadic_def(function.def_id()).await {
+                    if !first {
+                        write!(buf, ", ")?;
+                    }
+                    write!(buf, "...")?;
+                } else if first {
+                    write!(buf, "void")?;
+                }
+                write!(buf, ")")
+            }
             MonoFunctionKind::Lambda(function_id) => {
                 let functions = self.get_ir(function.def_id()).await;
                 let lambda =
@@ -121,6 +150,7 @@ impl Context {
         let subst = MonoFunctionSubstID::for_function(function);
         match function.kind() {
             MonoFunctionKind::Def => write!(buf, "{}", Identifier::def(&name, subst)),
+            MonoFunctionKind::ExternDef => write!(buf, "{}", &*name),
             MonoFunctionKind::Lambda(function_id) => {
                 write!(buf, "{}", Identifier::lambda_def(&name, subst, function_id))
             }
