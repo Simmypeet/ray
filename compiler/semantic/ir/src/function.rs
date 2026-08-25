@@ -145,6 +145,14 @@ impl Default for FunctionMap {
     fn default() -> Self { Self::new() }
 }
 
+impl VisitType for FunctionMap {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        for (_, function) in self.functions() {
+            function.visit_types(visitor);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub enum Context {
     Def,
