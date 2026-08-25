@@ -4,7 +4,7 @@ use qbice::{Decode, Encode, StableHash};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashSet;
 
-use crate::{address::Address, ir_expr::ExpressionID};
+use crate::{address::Address, ir_expr::IRExprID};
 
 /// Identifies a basic block stored in a function's control-flow graph.
 pub type BlockID = ID<Block>;
@@ -26,7 +26,7 @@ pub struct Block {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct Store {
     address: Address,
-    expression: ExpressionID,
+    expression: IRExprID,
 }
 
 impl Store {
@@ -34,33 +34,33 @@ impl Store {
     pub const fn address(&self) -> &Address { &self.address }
 
     #[must_use]
-    pub const fn expression(&self) -> ExpressionID { self.expression }
+    pub const fn expression(&self) -> IRExprID { self.expression }
 }
 
 /// An operation evaluated at a precise position in a basic block.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum Instruction {
     /// Defines and evaluates the identified expression exactly once.
-    Expression(ExpressionID),
+    Expression(IRExprID),
     /// Writes an already-defined expression value to an address.
     Store(Store),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Conditional {
-    condition: ExpressionID,
+    condition: IRExprID,
     then_block: BlockID,
     else_block: BlockID,
 }
 
 impl Conditional {
     #[must_use]
-    pub const fn new(condition: ExpressionID, then_block: BlockID, else_block: BlockID) -> Self {
+    pub const fn new(condition: IRExprID, then_block: BlockID, else_block: BlockID) -> Self {
         Self { condition, then_block, else_block }
     }
 
     #[must_use]
-    pub const fn condition(&self) -> ExpressionID { self.condition }
+    pub const fn condition(&self) -> IRExprID { self.condition }
 
     #[must_use]
     pub const fn then_block(&self) -> BlockID { self.then_block }
@@ -76,7 +76,7 @@ impl Conditional {
 pub enum Terminator {
     Jump(BlockID),
     Conditional(Conditional),
-    Return(Option<ExpressionID>),
+    Return(Option<IRExprID>),
 }
 
 /// The blocks and expression instructions reachable from a control-flow
@@ -84,7 +84,7 @@ pub enum Terminator {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reachables {
     reachable_blocks: Vec<BlockID>,
-    reachable_expressions: Vec<ExpressionID>,
+    reachable_expressions: Vec<IRExprID>,
 }
 
 impl Reachables {
@@ -94,7 +94,7 @@ impl Reachables {
     }
 
     #[must_use]
-    pub fn expressions(&self) -> impl ExactSizeIterator<Item = ExpressionID> + '_ {
+    pub fn expressions(&self) -> impl ExactSizeIterator<Item = IRExprID> + '_ {
         self.reachable_expressions.iter().copied()
     }
 }
@@ -127,13 +127,13 @@ impl Cfg {
     #[must_use]
     pub fn create_block(&mut self) -> BlockID { self.blocks.insert(Block::default()) }
 
-    pub fn push_expression(&mut self, block_id: BlockID, expression: ExpressionID) {
+    pub fn push_expression(&mut self, block_id: BlockID, expression: IRExprID) {
         let block = self.blocks.get_mut(block_id).expect("Block should exist");
         assert!(block.terminator.is_none(), "Cannot append an instruction to a sealed block");
         block.instructions.push(Instruction::Expression(expression));
     }
 
-    pub fn push_store(&mut self, block_id: BlockID, address: Address, expression: ExpressionID) {
+    pub fn push_store(&mut self, block_id: BlockID, address: Address, expression: IRExprID) {
         let block = self.blocks.get_mut(block_id).expect("Block should exist");
         assert!(block.terminator.is_none(), "Cannot append an instruction to a sealed block");
         block.instructions.push(Instruction::Store(Store { address, expression }));

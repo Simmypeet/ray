@@ -1,6 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
-    ir_expr::{ExpressionID, IRExpr},
+    ir_expr::{IRExpr, IRExprID},
     ir_function::{FunctionID, IRFunction, IRFunctionMap},
     ir_lambda::IRLambdaContext,
 };
@@ -60,7 +60,7 @@ impl<'function> FunctionInstance<'function> {
         }
     }
 
-    pub(super) fn get_expression(self, expression_id: ExpressionID) -> &'function IRExpr {
+    pub(super) fn get_expression(self, expression_id: IRExprID) -> &'function IRExpr {
         self.function().get_expression(expression_id)
     }
 
@@ -75,7 +75,7 @@ impl<'function> FunctionInstance<'function> {
 
     pub(super) fn instantiate_expression_type(
         self,
-        expression_id: ExpressionID,
+        expression_id: IRExprID,
         ctx: &Context,
     ) -> Interned<Ty> {
         ctx.instantiate_type(self.get_expression(expression_id).ty(), self.mono_function)

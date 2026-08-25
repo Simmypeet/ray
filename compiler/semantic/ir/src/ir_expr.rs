@@ -21,7 +21,7 @@ pub mod ref_of;
 pub mod tuple;
 
 /// Identifies an expression value stored in a function's expression arena.
-pub type ExpressionID = ID<IRExpr>;
+pub type IRExprID = ID<IRExpr>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum IRExprKind {
@@ -74,13 +74,13 @@ impl IRExpressionMap {
     pub fn new() -> Self { Self::default() }
 
     #[must_use]
-    pub fn get_expression(&self, id: ExpressionID) -> &IRExpr { self.expressions.get(id).unwrap() }
+    pub fn get_expression(&self, id: IRExprID) -> &IRExpr { self.expressions.get(id).unwrap() }
 
-    pub fn insert_expression(&mut self, expression: IRExpr) -> ExpressionID {
+    pub fn insert_expression(&mut self, expression: IRExpr) -> IRExprID {
         self.expressions.insert(expression)
     }
 
-    pub(crate) fn expressions(&self) -> impl ExactSizeIterator<Item = (ExpressionID, &IRExpr)> {
+    pub(crate) fn expressions(&self) -> impl ExactSizeIterator<Item = (IRExprID, &IRExpr)> {
         self.expressions.iter()
     }
 }

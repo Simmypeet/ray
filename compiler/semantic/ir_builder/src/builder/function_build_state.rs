@@ -5,7 +5,7 @@ use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::Address,
     cfg::{BlockID, Terminator},
-    ir_expr::{ExpressionID, IRExpr, IRExprKind, load::Load},
+    ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load},
     ir_function::{FunctionID as IrFunctionID, IRFunctionMap},
     ir_lambda::{Capture, CaptureID, LambdaParameter as IrLambdaParameter, LambdaParameterID},
     ir_variable::{IRVariable, IRVariableID},
@@ -156,7 +156,7 @@ impl Builder {
         lambda.ir_function_id
     }
 
-    pub fn emit_expression(&mut self, expression: IRExpr) -> ExpressionID {
+    pub fn emit_expression(&mut self, expression: IRExpr) -> IRExprID {
         let function_id = self.building_function.ir_function_id;
         let expression_id = self.ir_functions.insert_expression(function_id, expression);
         self.ir_functions.push_expression(
@@ -167,7 +167,7 @@ impl Builder {
         expression_id
     }
 
-    pub fn emit_store(&mut self, address: Address, value: ExpressionID) {
+    pub fn emit_store(&mut self, address: Address, value: IRExprID) {
         self.ir_functions.push_store(
             self.building_function.ir_function_id,
             self.building_function.current_block,

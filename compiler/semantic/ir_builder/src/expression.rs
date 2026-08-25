@@ -1,4 +1,4 @@
-use rayc_ir::ir_expr::ExpressionID;
+use rayc_ir::ir_expr::IRExprID;
 use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind};
 
 use crate::{builder::Builder, context::LoweringContext};
@@ -20,7 +20,7 @@ mod typed_expr_id;
 pub use typed_expr_id::TypedExprWithID;
 
 pub trait LowerExpression<S> {
-    fn lower_expression(&mut self, context: &LoweringContext<'_>, expression: S) -> ExpressionID;
+    fn lower_expression(&mut self, context: &LoweringContext<'_>, expression: S) -> IRExprID;
 }
 
 impl Builder {
@@ -28,7 +28,7 @@ impl Builder {
         &mut self,
         context: &LoweringContext<'_>,
         expression_id: TypedExprID,
-    ) -> ExpressionID {
+    ) -> IRExprID {
         let expression = context.expression(expression_id);
         match expression.kind() {
             TypedExprKind::Identifier(identifier) => {

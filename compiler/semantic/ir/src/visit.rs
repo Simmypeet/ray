@@ -2,28 +2,23 @@ use qbice::storage::intern::Interned;
 use rayc_type::ty::Ty;
 
 use crate::{
-    ir_expr::{ExpressionID, IRExpr},
+    ir_expr::{IRExpr, IRExprID},
     ir_function::FunctionID,
 };
 
 /// Receives expressions together with their function-local identity.
 pub trait ExprVisitor {
-    fn visit_expr(
-        &mut self,
-        function_id: FunctionID,
-        expression_id: ExpressionID,
-        expression: &IRExpr,
-    );
+    fn visit_expr(&mut self, function_id: FunctionID, expression_id: IRExprID, expression: &IRExpr);
 }
 
 impl<F> ExprVisitor for F
 where
-    F: FnMut(FunctionID, ExpressionID, &IRExpr),
+    F: FnMut(FunctionID, IRExprID, &IRExpr),
 {
     fn visit_expr(
         &mut self,
         function_id: FunctionID,
-        expression_id: ExpressionID,
+        expression_id: IRExprID,
         expression: &IRExpr,
     ) {
         self(function_id, expression_id, expression);

@@ -3,7 +3,7 @@ use std::io::Write;
 use rayc_hash::FxHashSet;
 use rayc_ir::{
     cfg::{BlockID, Instruction, Reachables, Terminator},
-    ir_expr::{ExpressionID, IRExprKind},
+    ir_expr::{IRExprID, IRExprKind},
     ir_function::IRFunction,
     ir_variable::IRVariableID,
 };
@@ -20,7 +20,7 @@ use crate::{
 struct FunctionLayout {
     reachables: Reachables,
     variables: Vec<IRVariableID>,
-    phis: FxHashSet<ExpressionID>,
+    phis: FxHashSet<IRExprID>,
 }
 
 impl FunctionLayout {
@@ -40,7 +40,7 @@ impl FunctionLayout {
 
     fn reachable_blocks(&self) -> impl Iterator<Item = BlockID> + '_ { self.reachables.blocks() }
 
-    fn reachable_expressions(&self) -> impl Iterator<Item = ExpressionID> + '_ {
+    fn reachable_expressions(&self) -> impl Iterator<Item = IRExprID> + '_ {
         self.reachables.expressions()
     }
 
@@ -48,7 +48,7 @@ impl FunctionLayout {
         self.variables.iter().copied()
     }
 
-    fn is_phi(&self, expression_id: ExpressionID) -> bool { self.phis.contains(&expression_id) }
+    fn is_phi(&self, expression_id: IRExprID) -> bool { self.phis.contains(&expression_id) }
 }
 
 impl Writer<'_> {

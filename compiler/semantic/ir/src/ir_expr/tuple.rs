@@ -1,16 +1,16 @@
 use qbice::{Decode, Encode, StableHash};
 
-use crate::ir_expr::ExpressionID;
+use crate::ir_expr::IRExprID;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct Tuple {
-    elements: Vec<ExpressionID>,
+    elements: Vec<IRExprID>,
 }
 
 impl Tuple {
     #[must_use]
-    pub const fn new(elements: Vec<ExpressionID>) -> Self { Self { elements } }
+    pub const fn new(elements: Vec<IRExprID>) -> Self { Self { elements } }
 
     #[must_use]
-    pub fn elements(&self) -> &[ExpressionID] { &self.elements }
+    pub fn elements(&self) -> &[IRExprID] { &self.elements }
 }

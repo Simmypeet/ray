@@ -1,7 +1,7 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     address::Address,
-    ir_expr::ExpressionID,
+    ir_expr::IRExprID,
     ir_function::IRFunctionMap,
     ir_lambda::{CaptureID, LambdaParameterID},
     ir_variable::IRVariableID,
@@ -44,7 +44,7 @@ impl Builder {
         Address::new_capture(id, &self.engine)
     }
 
-    pub fn dereference_address(&self, value: ExpressionID) -> Address {
+    pub fn dereference_address(&self, value: IRExprID) -> Address {
         Address::new_deref(value, &self.engine)
     }
 

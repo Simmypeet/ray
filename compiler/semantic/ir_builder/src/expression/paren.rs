@@ -1,4 +1,4 @@
-use rayc_ir::ir_expr::ExpressionID;
+use rayc_ir::ir_expr::IRExprID;
 use rayc_typed_ast::typed_expr::paren::Paren;
 
 use crate::{
@@ -12,7 +12,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Paren>> for Builder {
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Paren>,
-    ) -> ExpressionID {
+    ) -> IRExprID {
         self.lower_expression_by_id(context, expression.node().expression())
     }
 }

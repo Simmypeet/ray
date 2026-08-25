@@ -5,7 +5,7 @@ use rayc_type::ty::Ty;
 use crate::{
     address::Address,
     cfg::{BlockID, Cfg, Instruction, Reachables, Terminator},
-    ir_expr::{ExpressionID, IRExpr, IRExpressionMap},
+    ir_expr::{IRExpr, IRExprID, IRExpressionMap},
     ir_lambda::{Capture, CaptureID, IRLambdaContext, LambdaParameter, LambdaParameterID},
     ir_variable::{IRVariable, IRVariableID, IRVariableMap},
     visit::{ExprVisitor, TypeVisitor, VisitExpr, VisitType},
@@ -87,11 +87,7 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn insert_expression(
-        &mut self,
-        function_id: FunctionID,
-        expression: IRExpr,
-    ) -> ExpressionID {
+    pub fn insert_expression(&mut self, function_id: FunctionID, expression: IRExpr) -> IRExprID {
         self.get_function_mut(function_id).insert_expression(expression)
     }
 
@@ -108,7 +104,7 @@ impl IRFunctionMap {
         &mut self,
         function_id: FunctionID,
         block_id: BlockID,
-        expression: ExpressionID,
+        expression: IRExprID,
     ) {
         self.get_function_mut(function_id).push_expression(block_id, expression);
     }
@@ -118,7 +114,7 @@ impl IRFunctionMap {
         function_id: FunctionID,
         block_id: BlockID,
         address: Address,
-        value: ExpressionID,
+        value: IRExprID,
     ) {
         self.get_function_mut(function_id).push_store(block_id, address, value);
     }
@@ -244,9 +240,7 @@ impl IRFunction {
     }
 
     #[must_use]
-    pub fn get_expression(&self, id: ExpressionID) -> &IRExpr {
-        self.expression_map.get_expression(id)
-    }
+    pub fn get_expression(&self, id: IRExprID) -> &IRExpr { self.expression_map.get_expression(id) }
 
     #[must_use]
     pub fn get_variable(&self, id: IRVariableID) -> &IRVariable {
@@ -268,7 +262,7 @@ impl IRFunction {
     pub fn create_block(&mut self) -> BlockID { self.cfg.create_block() }
 
     #[must_use]
-    pub fn insert_expression(&mut self, expression: IRExpr) -> ExpressionID {
+    pub fn insert_expression(&mut self, expression: IRExpr) -> IRExprID {
         self.expression_map.insert_expression(expression)
     }
 
@@ -277,11 +271,11 @@ impl IRFunction {
         self.variable_map.insert_variable(variable)
     }
 
-    pub fn push_expression(&mut self, block_id: BlockID, expression: ExpressionID) {
+    pub fn push_expression(&mut self, block_id: BlockID, expression: IRExprID) {
         self.cfg.push_expression(block_id, expression);
     }
 
-    pub fn push_store(&mut self, block_id: BlockID, address: Address, value: ExpressionID) {
+    pub fn push_store(&mut self, block_id: BlockID, address: Address, value: IRExprID) {
         self.cfg.push_store(block_id, address, value);
     }
 

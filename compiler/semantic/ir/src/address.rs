@@ -3,7 +3,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::ParameterID;
 
 use crate::{
-    ir_expr::ExpressionID,
+    ir_expr::IRExprID,
     ir_lambda::{CaptureID, LambdaParameterID},
     ir_variable::IRVariableID,
 };
@@ -15,7 +15,7 @@ pub enum AddressRoot {
     Parameter(ParameterID),
     LambdaParameter(LambdaParameterID),
     Capture(CaptureID),
-    Deref(ExpressionID),
+    Deref(IRExprID),
 }
 
 #[derive(
@@ -60,7 +60,7 @@ impl Address {
     }
 
     #[must_use]
-    pub fn new_deref(expression_id: ExpressionID, engine: &TrackedEngine) -> Self {
+    pub fn new_deref(expression_id: IRExprID, engine: &TrackedEngine) -> Self {
         Self::new_root(AddressRoot::Deref(expression_id), engine)
     }
 

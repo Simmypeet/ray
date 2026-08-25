@@ -1,15 +1,15 @@
-use rayc_ir::ir_expr::ExpressionID;
+use rayc_ir::ir_expr::IRExprID;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ExpressionWithID<E> {
     node: E,
-    id: ExpressionID,
+    id: IRExprID,
 }
 
 impl<E> ExpressionWithID<E> {
-    pub const fn new(node: E, id: ExpressionID) -> Self { Self { node, id } }
+    pub const fn new(node: E, id: IRExprID) -> Self { Self { node, id } }
 
-    pub const fn id(&self) -> ExpressionID { self.id }
+    pub const fn id(&self) -> IRExprID { self.id }
 
     pub const fn node(&self) -> E
     where

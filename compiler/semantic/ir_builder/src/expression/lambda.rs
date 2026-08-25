@@ -1,5 +1,5 @@
 use rayc_ir::ir_expr::{
-    ExpressionID, IRExpr, IRExprKind, make_lambda::MakeLambda, ref_of::RefOf as IrRefOf,
+    IRExpr, IRExprID, IRExprKind, make_lambda::MakeLambda, ref_of::RefOf as IrRefOf,
 };
 use rayc_type::ty::{Ty, TyApplicationView};
 use rayc_typed_ast::typed_expr::lambda::Lambda;
@@ -15,7 +15,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Lambda>> for Builder {
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Lambda>,
-    ) -> ExpressionID {
+    ) -> IRExprID {
         let typed_expression = context.expression(expression.id());
         let lambda = expression.node();
         let return_ty = match &**typed_expression.ty() {

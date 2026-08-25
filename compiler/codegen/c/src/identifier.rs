@@ -2,7 +2,7 @@ use std::fmt;
 
 use rayc_ir::{
     cfg::BlockID,
-    ir_expr::ExpressionID,
+    ir_expr::IRExprID,
     ir_function::FunctionID,
     ir_lambda::{CaptureID, LambdaParameterID},
     ir_variable::IRVariableID,
@@ -21,9 +21,9 @@ enum IdentifierKind<'a> {
     Parameter(ParameterID),
     LambdaParameter(LambdaParameterID),
     Variable(IRVariableID),
-    Expression(ExpressionID),
+    Expression(IRExprID),
     Block(BlockID),
-    PhiInput { predecessor: BlockID, successor: BlockID, phi: ExpressionID },
+    PhiInput { predecessor: BlockID, successor: BlockID, phi: IRExprID },
     TupleType(CTupleID),
     TupleStruct(CTupleID),
     TupleElement(usize),
@@ -32,7 +32,7 @@ enum IdentifierKind<'a> {
     LambdaCallField,
     LambdaEnvField,
     LambdaEnvironment { name: &'a str, subst: MonoFunctionSubstID, function: FunctionID },
-    LambdaEnvironmentValue(ExpressionID),
+    LambdaEnvironmentValue(IRExprID),
     LambdaRawEnvironment,
     LambdaTypedEnvironment,
     CaptureField(CaptureID),
@@ -77,13 +77,13 @@ impl Identifier<'static> {
     pub const fn var(id: IRVariableID) -> Self { Self(IdentifierKind::Variable(id)) }
 
     #[must_use]
-    pub const fn expr(id: ExpressionID) -> Self { Self(IdentifierKind::Expression(id)) }
+    pub const fn expr(id: IRExprID) -> Self { Self(IdentifierKind::Expression(id)) }
 
     #[must_use]
     pub const fn block(id: BlockID) -> Self { Self(IdentifierKind::Block(id)) }
 
     #[must_use]
-    pub const fn phi_input(predecessor: BlockID, successor: BlockID, phi: ExpressionID) -> Self {
+    pub const fn phi_input(predecessor: BlockID, successor: BlockID, phi: IRExprID) -> Self {
         Self(IdentifierKind::PhiInput { predecessor, successor, phi })
     }
 
@@ -109,7 +109,7 @@ impl Identifier<'static> {
     pub const fn lambda_env_field() -> Self { Self(IdentifierKind::LambdaEnvField) }
 
     #[must_use]
-    pub const fn lambda_environment_value(expression: ExpressionID) -> Self {
+    pub const fn lambda_environment_value(expression: IRExprID) -> Self {
         Self(IdentifierKind::LambdaEnvironmentValue(expression))
     }
 

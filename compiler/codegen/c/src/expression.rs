@@ -1,5 +1,5 @@
 pub use expression_with_id::ExpressionWithID;
-use rayc_ir::ir_expr::{ExpressionID, IRExprKind};
+use rayc_ir::ir_expr::{IRExprID, IRExprKind};
 
 use self::function_instance::FunctionInstance;
 use crate::{context::Context, writer::Writer};
@@ -30,7 +30,7 @@ pub trait WriteExpression<E> {
 impl Writer<'_> {
     pub(crate) async fn write_expression_value(
         &mut self,
-        expression_id: ExpressionID,
+        expression_id: IRExprID,
         function: FunctionInstance<'_>,
         ctx: &Context,
     ) -> std::io::Result<()> {

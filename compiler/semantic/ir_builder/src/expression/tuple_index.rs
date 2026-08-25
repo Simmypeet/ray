@@ -1,5 +1,5 @@
 use qbice::storage::intern::Interned;
-use rayc_ir::ir_expr::{ExpressionID, IRExpr, IRExprKind, load::Load};
+use rayc_ir::ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::typed_expr::{LvalueClassification, TypedExprID, tuple_index::TupleIndex};
@@ -15,7 +15,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a TupleIndex>> for Builder {
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a TupleIndex>,
-    ) -> ExpressionID {
+    ) -> IRExprID {
         let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
@@ -43,7 +43,7 @@ fn emit_load(
     expression_id: TypedExprID,
     span: RelativeSpan,
     ty: Interned<Ty>,
-) -> ExpressionID {
+) -> IRExprID {
     let address = builder.lower_address_by_id(context, expression_id);
     builder.emit_expression(IRExpr::new(IRExprKind::Load(Load::new(address)), span, ty))
 }

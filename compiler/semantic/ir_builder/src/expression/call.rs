@@ -1,4 +1,4 @@
-use rayc_ir::ir_expr::{ExpressionID, IRExpr, IRExprKind, call::Call as IrCall};
+use rayc_ir::ir_expr::{IRExpr, IRExprID, IRExprKind, call::Call as IrCall};
 use rayc_typed_ast::typed_expr::call::{Call, CallTarget};
 
 use crate::{
@@ -12,7 +12,7 @@ impl Builder {
         &mut self,
         context: &LoweringContext<'_>,
         call: &Call,
-    ) -> Vec<ExpressionID> {
+    ) -> Vec<IRExprID> {
         call.arguments()
             .iter()
             .map(|argument| self.lower_expression_by_id(context, *argument))
@@ -25,7 +25,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Call>> for Builder {
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Call>,
-    ) -> ExpressionID {
+    ) -> IRExprID {
         let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();

@@ -1,6 +1,6 @@
 use rayc_ir::{
     cfg::{Conditional, Terminator},
-    ir_expr::{ExpressionID, IRExpr, IRExprKind, phi::Phi},
+    ir_expr::{IRExpr, IRExprID, IRExprKind, phi::Phi},
 };
 use rayc_typed_ast::typed_expr::if_else::IfElse;
 
@@ -15,7 +15,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a IfElse>> for Builder {
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a IfElse>,
-    ) -> ExpressionID {
+    ) -> IRExprID {
         let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();

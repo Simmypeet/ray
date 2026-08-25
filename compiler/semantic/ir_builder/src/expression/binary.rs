@@ -2,7 +2,7 @@ use qbice::storage::intern::Interned;
 use rayc_ir::{
     cfg::{Conditional, Terminator},
     ir_expr::{
-        ExpressionID, IRExpr, IRExprKind,
+        IRExpr, IRExprID, IRExprKind,
         binary::{Binary as IrBinary, BinaryOp as IrBinaryOp},
         literal::Literal,
         phi::Phi,
@@ -23,7 +23,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Binary>> for Builder {
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Binary>,
-    ) -> ExpressionID {
+    ) -> IRExprID {
         let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
@@ -48,7 +48,7 @@ fn lower_assignment(
     builder: &mut Builder,
     context: &LoweringContext<'_>,
     binary: &Binary,
-) -> ExpressionID {
+) -> IRExprID {
     let address = builder.lower_address_by_id(context, binary.left());
     let value = builder.lower_expression_by_id(context, binary.right());
     builder.emit_store(address, value);
@@ -62,7 +62,7 @@ fn lower_arithmetic(
     operator: IrBinaryOp,
     span: RelativeSpan,
     ty: Interned<Ty>,
-) -> ExpressionID {
+) -> IRExprID {
     let left = builder.lower_expression_by_id(context, binary.left());
     let right = builder.lower_expression_by_id(context, binary.right());
     builder.emit_expression(IRExpr::new(
@@ -79,7 +79,7 @@ fn lower_logical(
     short_circuit_value: bool,
     span: RelativeSpan,
     ty: Interned<Ty>,
-) -> ExpressionID {
+) -> IRExprID {
     let left = builder.lower_expression_by_id(context, binary.left());
     let rhs_block = builder.create_block();
     let short_circuit_block = builder.create_block();
