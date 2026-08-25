@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 
 use qbice::storage::intern::Interned;
 use rayc_ir::{
-    expression::{Expression, ExpressionKind, call::CallTarget},
     get_ir,
+    ir_expr::{IRExpr, IRExprKind, call::CallTarget},
     visit::{VisitExpr, VisitType},
 };
 use rayc_qbice::TrackedEngine;
@@ -86,27 +86,27 @@ impl<'engine> Collector<'engine> {
             self.collect_substituted_type(ty, function);
         });
 
-        ir.visit_exprs(
-            &mut |_function_id, _expression_id, expression: &Expression| match expression.kind() {
-                ExpressionKind::Call(call) => match call.target() {
-                    CallTarget::Direct { function_id, subst } => {
-                        self.collect_call(*function_id, subst, function);
-                    }
-                    CallTarget::Lambda { .. } => {}
-                },
-                ExpressionKind::MakeLambda(lambda) => {
-                    self.program
-                        .insert_function(MonoFunction::new_lambda(function, lambda.function_id()));
+        ir.visit_exprs(&mut |_function_id, _expression_id, expression: &IRExpr| match expression
+            .kind()
+        {
+            IRExprKind::Call(call) => match call.target() {
+                CallTarget::Direct { function_id, subst } => {
+                    self.collect_call(*function_id, subst, function);
                 }
-                ExpressionKind::Error
-                | ExpressionKind::Literal(_)
-                | ExpressionKind::RefOf(_)
-                | ExpressionKind::Load(_)
-                | ExpressionKind::Phi(_)
-                | ExpressionKind::Binary(_)
-                | ExpressionKind::Tuple(_) => {}
+                CallTarget::Lambda { .. } => {}
             },
-        );
+            IRExprKind::MakeLambda(lambda) => {
+                self.program
+                    .insert_function(MonoFunction::new_lambda(function, lambda.function_id()));
+            }
+            IRExprKind::Error
+            | IRExprKind::Literal(_)
+            | IRExprKind::RefOf(_)
+            | IRExprKind::Load(_)
+            | IRExprKind::Phi(_)
+            | IRExprKind::Binary(_)
+            | IRExprKind::Tuple(_) => {}
+        });
     }
 
     fn collect_call(&mut self, def_id: GlobalSymbolID, call_subst: &Subst, caller: &MonoFunction) {

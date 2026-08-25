@@ -1,5 +1,5 @@
 pub use expression_with_id::ExpressionWithID;
-use rayc_ir::expression::{ExpressionID, ExpressionKind};
+use rayc_ir::ir_expr::{ExpressionID, IRExprKind};
 
 use self::function_instance::FunctionInstance;
 use crate::{context::Context, writer::Writer};
@@ -36,7 +36,7 @@ impl Writer<'_> {
     ) -> std::io::Result<()> {
         let expression = function.get_expression(expression_id);
         match expression.kind() {
-            ExpressionKind::Error => {
+            IRExprKind::Error => {
                 self.write_expression(
                     ExpressionWithID::new(error::Error, expression_id),
                     function,
@@ -44,11 +44,11 @@ impl Writer<'_> {
                 )
                 .await
             }
-            ExpressionKind::Literal(literal) => {
+            IRExprKind::Literal(literal) => {
                 self.write_expression(ExpressionWithID::new(literal, expression_id), function, ctx)
                     .await
             }
-            ExpressionKind::RefOf(reference) => {
+            IRExprKind::RefOf(reference) => {
                 self.write_expression(
                     ExpressionWithID::new(reference, expression_id),
                     function,
@@ -56,27 +56,27 @@ impl Writer<'_> {
                 )
                 .await
             }
-            ExpressionKind::Load(load) => {
+            IRExprKind::Load(load) => {
                 self.write_expression(ExpressionWithID::new(load, expression_id), function, ctx)
                     .await
             }
-            ExpressionKind::Phi(phi) => {
+            IRExprKind::Phi(phi) => {
                 self.write_expression(ExpressionWithID::new(phi, expression_id), function, ctx)
                     .await
             }
-            ExpressionKind::Binary(binary) => {
+            IRExprKind::Binary(binary) => {
                 self.write_expression(ExpressionWithID::new(binary, expression_id), function, ctx)
                     .await
             }
-            ExpressionKind::Call(call) => {
+            IRExprKind::Call(call) => {
                 self.write_expression(ExpressionWithID::new(call, expression_id), function, ctx)
                     .await
             }
-            ExpressionKind::Tuple(tuple) => {
+            IRExprKind::Tuple(tuple) => {
                 self.write_expression(ExpressionWithID::new(tuple, expression_id), function, ctx)
                     .await
             }
-            ExpressionKind::MakeLambda(lambda) => {
+            IRExprKind::MakeLambda(lambda) => {
                 self.write_expression(ExpressionWithID::new(lambda, expression_id), function, ctx)
                     .await
             }

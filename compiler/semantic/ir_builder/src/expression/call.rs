@@ -1,4 +1,4 @@
-use rayc_ir::expression::{Expression, ExpressionID, ExpressionKind, call::Call as IrCall};
+use rayc_ir::ir_expr::{ExpressionID, IRExpr, IRExprKind, call::Call as IrCall};
 use rayc_typed_ast::typed_expr::call::{Call, CallTarget};
 
 use crate::{
@@ -43,6 +43,6 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Call>> for Builder {
                 IrCall::new_lambda(callee, arguments)
             }
         };
-        self.emit_expression(Expression::new(ExpressionKind::Call(lowered_call), span, ty))
+        self.emit_expression(IRExpr::new(IRExprKind::Call(lowered_call), span, ty))
     }
 }

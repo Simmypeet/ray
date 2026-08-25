@@ -1,6 +1,6 @@
 use qbice::{Decode, Encode, StableHash};
 
-use crate::expression::ExpressionID;
+use crate::ir_expr::ExpressionID;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct Tuple {

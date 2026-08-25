@@ -1,4 +1,4 @@
-use rayc_ir::expression::ExpressionID;
+use rayc_ir::ir_expr::ExpressionID;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ExpressionWithID<E> {

@@ -4,7 +4,7 @@ use qbice::{Decode, Encode, StableHash};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashSet;
 
-use crate::{address::Address, expression::ExpressionID};
+use crate::{address::Address, ir_expr::ExpressionID};
 
 /// Identifies a basic block stored in a function's control-flow graph.
 pub type BlockID = ID<Block>;

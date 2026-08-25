@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
-use rayc_ir::{function::FunctionMap, get_ir, lambda::Capture};
+use rayc_ir::{get_ir, ir_function::IRFunctionMap, ir_lambda::Capture};
 use rayc_mono::{MonoFunction, MonoProgram};
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
@@ -55,7 +55,7 @@ impl Context {
         self.engine.get_name(def_id).await
     }
 
-    pub async fn get_ir(&self, def_id: GlobalSymbolID) -> Interned<FunctionMap> {
+    pub async fn get_ir(&self, def_id: GlobalSymbolID) -> Interned<IRFunctionMap> {
         self.engine.get_ir(def_id).await
     }
 

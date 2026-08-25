@@ -2,10 +2,10 @@ use std::fmt;
 
 use rayc_ir::{
     cfg::BlockID,
-    expression::ExpressionID,
-    function::FunctionID,
-    lambda::{CaptureID, LambdaParameterID},
-    variable::VariableID,
+    ir_expr::ExpressionID,
+    ir_function::FunctionID,
+    ir_lambda::{CaptureID, LambdaParameterID},
+    ir_variable::IRVariableID,
 };
 use rayc_semantic_element::parameter::ParameterID;
 
@@ -20,7 +20,7 @@ enum IdentifierKind<'a> {
     LambdaDefinition { name: &'a str, subst: MonoFunctionSubstID, function: FunctionID },
     Parameter(ParameterID),
     LambdaParameter(LambdaParameterID),
-    Variable(VariableID),
+    Variable(IRVariableID),
     Expression(ExpressionID),
     Block(BlockID),
     PhiInput { predecessor: BlockID, successor: BlockID, phi: ExpressionID },
@@ -74,7 +74,7 @@ impl Identifier<'static> {
     }
 
     #[must_use]
-    pub const fn var(id: VariableID) -> Self { Self(IdentifierKind::Variable(id)) }
+    pub const fn var(id: IRVariableID) -> Self { Self(IdentifierKind::Variable(id)) }
 
     #[must_use]
     pub const fn expr(id: ExpressionID) -> Self { Self(IdentifierKind::Expression(id)) }

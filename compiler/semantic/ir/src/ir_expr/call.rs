@@ -3,7 +3,7 @@ use rayc_symbol::GlobalSymbolID;
 use rayc_type::subst::Subst;
 
 use crate::{
-    expression::ExpressionID,
+    ir_expr::ExpressionID,
     visit::{TypeVisitor, VisitType},
 };
 

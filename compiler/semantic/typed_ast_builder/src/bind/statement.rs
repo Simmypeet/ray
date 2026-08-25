@@ -3,8 +3,8 @@ use rayc_syntax::statement::Statement as StatementSyntax;
 use rayc_typed_ast::{
     name_binding::Source,
     statement::{Let, Return, Statement},
-    typed_function::FunctionLocalID,
-    variable::Variable,
+    typed_function::TypedFunctionLocalID,
+    typed_variable::TypedVariable,
 };
 
 use crate::{bind::Bind, tast_builder::TAstBuilder};
@@ -22,7 +22,7 @@ impl TAstBuilder {
                 let expr_id = self.bind(expr).await;
 
                 let var_ty = self.new_type_inference();
-                let var_id = self.insert_variable(Variable::new(
+                let var_id = self.insert_variable(TypedVariable::new(
                     var_ty.clone(),
                     pattern.as_ref().map_or_else(|| l.span(), SourceElement::span),
                 ));
@@ -36,7 +36,7 @@ impl TAstBuilder {
                         name_binding_group_id,
                         &pat,
                         &var_ty,
-                        Source::Variable(FunctionLocalID::new(
+                        Source::Variable(TypedFunctionLocalID::new(
                             self.current_typed_function_id(),
                             var_id,
                         )),

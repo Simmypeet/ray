@@ -1,6 +1,6 @@
 use qbice::{Decode, Encode, StableHash};
 
-use crate::expression::ExpressionID;
+use crate::ir_expr::ExpressionID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum BinaryOp {

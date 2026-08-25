@@ -1,9 +1,9 @@
 use qbice::{Decode, Encode, StableHash};
 
-use crate::variable::VariableID;
+use crate::typed_variable::TypedVariableID;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash, StableHash, Encode, Decode)]
 pub enum IrrefutablePattern {
-    Name(VariableID),
+    Name(TypedVariableID),
     Error,
 }

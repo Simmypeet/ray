@@ -3,8 +3,8 @@ use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::AddressRoot,
     cfg::{Instruction, Terminator},
-    expression::{ExpressionKind, make_lambda::MakeLambda},
-    function::Function as IrFunction,
+    ir_expr::{IRExprKind, make_lambda::MakeLambda},
+    ir_function::IRFunction as IrFunction,
 };
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
 use rayc_qbice::TrackedEngine;
@@ -12,7 +12,6 @@ use rayc_source_file::{GlobalSourceID, LocalSourceID};
 use rayc_target::TargetID;
 use rayc_type::ty::{Mutability, Primitive, Ty, TyApplicationView};
 use rayc_typed_ast::{
-    lambda::LambdaParameter,
     name_binding::{NameBinding, Source},
     statement::{Let, Statement},
     typed_expr::{
@@ -22,8 +21,9 @@ use rayc_typed_ast::{
         lambda::Lambda,
         literal::Literal,
     },
-    typed_function::{FunctionID, FunctionLocalID, TypedFunctionMap},
-    variable::Variable,
+    typed_function::{TypedFunctionID, TypedFunctionLocalID, TypedFunctionMap},
+    typed_lambda::TypedLambdaParameter,
+    typed_variable::TypedVariable,
 };
 
 use crate::lower_function;
@@ -66,23 +66,23 @@ impl TestMap {
         }
     }
 
-    fn variable(&mut self, owner: FunctionID, name: &'static str) -> Source {
+    fn variable(&mut self, owner: TypedFunctionID, name: &'static str) -> Source {
         let span = self.span();
         let variable =
-            self.functions.insert_variable_into(owner, Variable::new(self.int_ty.clone(), span));
-        let source = Source::Variable(FunctionLocalID::new(owner, variable));
+            self.functions.insert_variable(owner, TypedVariable::new(self.int_ty.clone(), span));
+        let source = Source::Variable(TypedFunctionLocalID::new(owner, variable));
         self.insert_binding(source, name, span);
         source
     }
 
-    fn initialize_variable(&mut self, owner: FunctionID, source: Source, value: TypedExprID) {
+    fn initialize_variable(&mut self, owner: TypedFunctionID, source: Source, value: TypedExprID) {
         let Source::Variable(variable) = source else {
             panic!("only variables can be initialized by a let statement");
         };
         assert_eq!(variable.function_id(), owner);
         let name_binding_group_id = self.functions.new_name_binding_group();
         let span = self.span();
-        self.functions.push_statement_into(
+        self.functions.push_statement(
             owner,
             Statement::Let(
                 Let::builder()
@@ -95,12 +95,12 @@ impl TestMap {
         );
     }
 
-    fn lambda_parameter(&mut self, owner: FunctionID, name: &'static str) -> Source {
+    fn lambda_parameter(&mut self, owner: TypedFunctionID, name: &'static str) -> Source {
         let span = self.span();
         let parameter = self
             .functions
-            .insert_lambda_parameter(owner, LambdaParameter::new(self.int_ty.clone(), span));
-        let source = Source::LambdaParameter(FunctionLocalID::new(owner, parameter));
+            .insert_lambda_parameter(owner, TypedLambdaParameter::new(self.int_ty.clone(), span));
+        let source = Source::LambdaParameter(TypedFunctionLocalID::new(owner, parameter));
         self.insert_binding(source, name, span);
         source
     }
@@ -119,19 +119,19 @@ impl TestMap {
 
     fn expression(
         &mut self,
-        owner: FunctionID,
+        owner: TypedFunctionID,
         kind: TypedExprKind,
         ty: Interned<Ty>,
     ) -> TypedExprID {
         let span = self.span();
-        self.functions.insert_expression_into(owner, TypedExpr::new(kind, span, ty))
+        self.functions.insert_expression(owner, TypedExpr::new(kind, span, ty))
     }
 
-    fn literal(&mut self, owner: FunctionID, value: u128) -> TypedExprID {
+    fn literal(&mut self, owner: TypedFunctionID, value: u128) -> TypedExprID {
         self.expression(owner, TypedExprKind::Literal(Literal::Numeric(value)), self.int_ty.clone())
     }
 
-    fn identifier(&mut self, owner: FunctionID, source: Source) -> TypedExprID {
+    fn identifier(&mut self, owner: TypedFunctionID, source: Source) -> TypedExprID {
         let binding_id = *self.bindings.get(&source).expect("test binding should exist");
         self.expression(
             owner,
@@ -142,7 +142,7 @@ impl TestMap {
 
     fn assignment(
         &mut self,
-        owner: FunctionID,
+        owner: TypedFunctionID,
         destination: TypedExprID,
         value: TypedExprID,
     ) -> TypedExprID {
@@ -155,15 +155,15 @@ impl TestMap {
 
     fn lambda_expression(
         &mut self,
-        owner: FunctionID,
-        child: FunctionID,
+        owner: TypedFunctionID,
+        child: TypedFunctionID,
         ty: Interned<Ty>,
     ) -> TypedExprID {
         self.expression(owner, TypedExprKind::Lambda(Lambda::new(child)), ty)
     }
 
-    fn statement(&mut self, owner: FunctionID, expression: TypedExprID) {
-        self.functions.push_statement_into(owner, Statement::Expression(expression));
+    fn statement(&mut self, owner: TypedFunctionID, expression: TypedExprID) {
+        self.functions.push_statement(owner, Statement::Expression(expression));
     }
 }
 
@@ -172,20 +172,20 @@ fn make_lambdas(function: &IrFunction) -> Vec<&MakeLambda> {
         .reachables()
         .expressions()
         .filter_map(|id| match function.get_expression(id).kind() {
-            ExpressionKind::MakeLambda(lambda) => Some(lambda),
-            ExpressionKind::Error
-            | ExpressionKind::Literal(_)
-            | ExpressionKind::RefOf(_)
-            | ExpressionKind::Load(_)
-            | ExpressionKind::Phi(_)
-            | ExpressionKind::Binary(_)
-            | ExpressionKind::Call(_)
-            | ExpressionKind::Tuple(_) => None,
+            IRExprKind::MakeLambda(lambda) => Some(lambda),
+            IRExprKind::Error
+            | IRExprKind::Literal(_)
+            | IRExprKind::RefOf(_)
+            | IRExprKind::Load(_)
+            | IRExprKind::Phi(_)
+            | IRExprKind::Binary(_)
+            | IRExprKind::Call(_)
+            | IRExprKind::Tuple(_) => None,
         })
         .collect()
 }
 
-fn lambda_context(function: &IrFunction) -> &rayc_ir::lambda::LambdaContext {
+fn lambda_context(function: &IrFunction) -> &rayc_ir::ir_lambda::IRLambdaContext {
     function.context().assert_as_lambda_context()
 }
 
@@ -228,7 +228,7 @@ async fn captureless_lambda_copies_signature_and_uses_lambda_parameter_addresses
     assert_eq!(context.return_ty(), &map.unit_ty);
 
     let read = child.reachables().expressions().next().expect("parameter should be read");
-    let ExpressionKind::Load(load) = child.get_expression(read).kind() else {
+    let IRExprKind::Load(load) = child.get_expression(read).kind() else {
         panic!("lambda parameter read should lower to a load");
     };
     assert_eq!(load.address().root(), AddressRoot::LambdaParameter(parameters[0].0));
@@ -258,7 +258,7 @@ async fn mutable_capture_is_passed_by_reference_and_written_through_its_pointer(
     assert_eq!(make_lambda.captures().len(), 1);
     let capture_operand = ir.root().get_expression(make_lambda.captures()[0]);
     assert_eq!(pointer_mutability(capture_operand.ty()), Mutability::Mutable);
-    let ExpressionKind::RefOf(reference) = capture_operand.kind() else {
+    let IRExprKind::RefOf(reference) = capture_operand.kind() else {
         panic!("closure capture operand should be a reference");
     };
     assert!(matches!(reference.address().root(), AddressRoot::Variable(_)));
@@ -281,7 +281,7 @@ async fn mutable_capture_is_passed_by_reference_and_written_through_its_pointer(
     let AddressRoot::Deref(pointer) = store.address().root() else {
         panic!("captured assignment should dereference the capture pointer");
     };
-    let ExpressionKind::Load(load) = child.get_expression(pointer).kind() else {
+    let IRExprKind::Load(load) = child.get_expression(pointer).kind() else {
         panic!("captured assignment should load its capture pointer");
     };
     assert_eq!(load.address().root(), AddressRoot::Capture(capture_id));
@@ -337,13 +337,13 @@ async fn nested_lambdas_reborrow_a_transitive_capture_with_each_childs_mutabilit
 
         let reborrow = outer.get_expression(make_lambda.captures()[0]);
         assert_eq!(pointer_mutability(reborrow.ty()), expected_mutability);
-        let ExpressionKind::RefOf(reference) = reborrow.kind() else {
+        let IRExprKind::RefOf(reference) = reborrow.kind() else {
             panic!("forwarded capture should be explicitly reborrowed");
         };
         let AddressRoot::Deref(pointer) = reference.address().root() else {
             panic!("forwarded capture should reborrow the captured pointee");
         };
-        let ExpressionKind::Load(load) = outer.get_expression(pointer).kind() else {
+        let IRExprKind::Load(load) = outer.get_expression(pointer).kind() else {
             panic!("forwarded capture should load the parent capture pointer");
         };
         assert_eq!(load.address().root(), AddressRoot::Capture(outer_captures[0].0));

@@ -1,6 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashSet;
-use rayc_ir::function::FunctionID;
+use rayc_ir::ir_function::FunctionID;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{

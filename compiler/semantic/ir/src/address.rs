@@ -3,15 +3,15 @@ use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::ParameterID;
 
 use crate::{
-    expression::ExpressionID,
-    lambda::{CaptureID, LambdaParameterID},
-    variable::VariableID,
+    ir_expr::ExpressionID,
+    ir_lambda::{CaptureID, LambdaParameterID},
+    ir_variable::IRVariableID,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum AddressRoot {
     Error,
-    Variable(VariableID),
+    Variable(IRVariableID),
     Parameter(ParameterID),
     LambdaParameter(LambdaParameterID),
     Capture(CaptureID),
@@ -40,7 +40,7 @@ impl Address {
     pub fn new_error(engine: &TrackedEngine) -> Self { Self::new_root(AddressRoot::Error, engine) }
 
     #[must_use]
-    pub fn new_variable(var_id: VariableID, engine: &TrackedEngine) -> Self {
+    pub fn new_variable(var_id: IRVariableID, engine: &TrackedEngine) -> Self {
         Self::new_root(AddressRoot::Variable(var_id), engine)
     }
 

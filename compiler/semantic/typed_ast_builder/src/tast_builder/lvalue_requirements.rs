@@ -1,7 +1,7 @@
 use rayc_type::ty::{Mutability, Ty, TyApplicationView};
 use rayc_typed_ast::{
     typed_expr::{LvalueClassification, LvalueRoot, TypedExprID},
-    typed_function::{FunctionID, FunctionLocalID},
+    typed_function::{TypedFunctionID, TypedFunctionLocalID},
 };
 
 use crate::{
@@ -25,7 +25,7 @@ impl LvalueRequirements {
 
 #[derive(Debug, Clone, Copy)]
 struct LvalueRequirement {
-    expression: FunctionLocalID<TypedExprID>,
+    expression: TypedFunctionLocalID<TypedExprID>,
     mutable: bool,
     operation: LvalueOperation,
 }
@@ -38,7 +38,7 @@ impl TAstBuilder {
         operation: LvalueOperation,
     ) {
         self.lvalue_requirements.push(LvalueRequirement {
-            expression: FunctionLocalID::new(self.current_typed_function_id(), expression),
+            expression: TypedFunctionLocalID::new(self.current_typed_function_id(), expression),
             mutable,
             operation,
         });
@@ -46,7 +46,7 @@ impl TAstBuilder {
 
     pub(super) fn validate_lvalue_requirements(&mut self) {
         for requirement in self.lvalue_requirements.take() {
-            match self.function_map.classify_lvalue_in(
+            match self.function_map.classify_lvalue(
                 requirement.expression.function_id(),
                 requirement.expression.local_id(),
             ) {
@@ -76,14 +76,18 @@ impl TAstBuilder {
         }
     }
 
-    fn lvalue_root_is_mutable(&self, function_id: FunctionID, root: LvalueRoot) -> Option<bool> {
+    fn lvalue_root_is_mutable(
+        &self,
+        function_id: TypedFunctionID,
+        root: LvalueRoot,
+    ) -> Option<bool> {
         match root {
             LvalueRoot::NameBinding(name_binding) => {
                 Some(self.function_map.get_name_binding(name_binding).is_mutable())
             }
             LvalueRoot::Dereference(pointer) => {
                 let ty = self.latest_type(
-                    &self.type_of_local_expression(FunctionLocalID::new(function_id, pointer)),
+                    &self.type_of_local_expression(TypedFunctionLocalID::new(function_id, pointer)),
                 );
 
                 match &*ty {

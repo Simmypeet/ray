@@ -1,6 +1,6 @@
 use rayc_ir::{
     cfg::{Conditional, Terminator},
-    expression::{Expression, ExpressionID, ExpressionKind, phi::Phi},
+    ir_expr::{ExpressionID, IRExpr, IRExprKind, phi::Phi},
 };
 use rayc_typed_ast::typed_expr::if_else::IfElse;
 
@@ -41,6 +41,6 @@ impl<'a> LowerExpression<TypedExprWithID<&'a IfElse>> for Builder {
         let incoming = [(then_predecessor, then_expression), (else_predecessor, else_expression)]
             .into_iter()
             .collect();
-        self.emit_expression(Expression::new(ExpressionKind::Phi(Phi::new(incoming)), span, ty))
+        self.emit_expression(IRExpr::new(IRExprKind::Phi(Phi::new(incoming)), span, ty))
     }
 }

@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use qbice::{Decode, Encode, StableHash};
 use rayc_hash::FxHashMap;
 
-use crate::{cfg::BlockID, expression::ExpressionID};
+use crate::{cfg::BlockID, ir_expr::ExpressionID};
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct Phi {

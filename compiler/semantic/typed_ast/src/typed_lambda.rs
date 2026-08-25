@@ -10,14 +10,14 @@ use rayc_type::{
 use crate::name_binding::NameBindingGroupID;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub struct LambdaContext {
-    parameters: LambdaParameterMap,
+pub struct TypedLambdaContext {
+    parameters: TypedLambdaParameterMap,
     parameter_name_binding_group_id: NameBindingGroupID,
 }
 
-impl LambdaContext {
+impl TypedLambdaContext {
     pub(crate) fn new(parameter_name_binding_group_id: NameBindingGroupID) -> Self {
-        Self { parameters: LambdaParameterMap::new(), parameter_name_binding_group_id }
+        Self { parameters: TypedLambdaParameterMap::new(), parameter_name_binding_group_id }
     }
 
     #[must_use]
@@ -28,21 +28,24 @@ impl LambdaContext {
     #[must_use]
     pub fn parameters(
         &self,
-    ) -> impl ExactSizeIterator<Item = (LambdaParameterID, &LambdaParameter)> {
+    ) -> impl ExactSizeIterator<Item = (LambdaParameterID, &TypedLambdaParameter)> {
         self.parameters.iter()
     }
 
     #[must_use]
-    pub fn get_parameter(&self, id: LambdaParameterID) -> &LambdaParameter {
+    pub fn get_parameter(&self, id: LambdaParameterID) -> &TypedLambdaParameter {
         self.parameters.get_parameter(id)
     }
 
-    pub(crate) fn insert_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
+    pub(crate) fn insert_parameter(
+        &mut self,
+        parameter: TypedLambdaParameter,
+    ) -> LambdaParameterID {
         self.parameters.insert_parameter(parameter)
     }
 }
 
-impl MutSubstitutable for LambdaContext {
+impl MutSubstitutable for TypedLambdaContext {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.parameters.apply_mut_subst(subst, engine);
     }
@@ -51,12 +54,12 @@ impl MutSubstitutable for LambdaContext {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable,
 )]
-pub struct LambdaParameter {
+pub struct TypedLambdaParameter {
     ty: Interned<Ty>,
     span: RelativeSpan,
 }
 
-impl LambdaParameter {
+impl TypedLambdaParameter {
     #[must_use]
     pub const fn new(ty: Interned<Ty>, span: RelativeSpan) -> Self { Self { ty, span } }
 
@@ -67,39 +70,41 @@ impl LambdaParameter {
     pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
-impl MutSubstitutable for LambdaParameter {
+impl MutSubstitutable for TypedLambdaParameter {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.ty.apply_in_place(subst, engine);
     }
 }
 
-pub type LambdaParameterID = ID<LambdaParameter>;
+pub type LambdaParameterID = ID<TypedLambdaParameter>;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
-pub struct LambdaParameterMap {
-    parameters: OrderedArena<LambdaParameter>,
+pub struct TypedLambdaParameterMap {
+    parameters: OrderedArena<TypedLambdaParameter>,
 }
 
-impl LambdaParameterMap {
+impl TypedLambdaParameterMap {
     #[must_use]
     pub fn new() -> Self { Self::default() }
 
     #[must_use]
-    pub fn get_parameter(&self, id: LambdaParameterID) -> &LambdaParameter {
+    pub fn get_parameter(&self, id: LambdaParameterID) -> &TypedLambdaParameter {
         self.parameters.get(id).expect("LambdaParameterID should be valid")
     }
 
-    pub fn insert_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
+    pub fn insert_parameter(&mut self, parameter: TypedLambdaParameter) -> LambdaParameterID {
         self.parameters.insert(parameter)
     }
 
     #[must_use]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (LambdaParameterID, &LambdaParameter)> {
+    pub fn iter(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (LambdaParameterID, &TypedLambdaParameter)> {
         self.parameters.iter()
     }
 }
 
-impl MutSubstitutable for LambdaParameterMap {
+impl MutSubstitutable for TypedLambdaParameterMap {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for (_, parameter) in self.parameters.iter_mut_unordered() {
             parameter.apply_mut_subst(subst, engine);

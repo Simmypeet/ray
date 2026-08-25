@@ -5,12 +5,12 @@ use crate::typed_function::TypedFunctionMap;
 
 pub mod block;
 pub mod irrefutable_pattern;
-pub mod lambda;
 pub mod name_binding;
 pub mod statement;
 pub mod typed_expr;
 pub mod typed_function;
-pub mod variable;
+pub mod typed_lambda;
+pub mod typed_variable;
 
 /// Retrieves the typed AST for a given def ID.
 #[derive(

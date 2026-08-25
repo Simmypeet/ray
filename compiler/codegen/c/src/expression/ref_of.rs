@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use rayc_ir::expression::ref_of::RefOf;
+use rayc_ir::ir_expr::ref_of::RefOf;
 
 use super::{ExpressionWithID, WriteExpression, function_instance::FunctionInstance};
 use crate::{context::Context, writer::Writer};

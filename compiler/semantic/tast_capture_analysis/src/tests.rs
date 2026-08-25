@@ -5,7 +5,6 @@ use rayc_source_file::{GlobalSourceID, LocalSourceID};
 use rayc_target::TargetID;
 use rayc_type::ty::{Mutability, Ty, TyInference, TyKind};
 use rayc_typed_ast::{
-    lambda::LambdaParameter,
     name_binding::{NameBinding, Source},
     statement::Statement,
     typed_expr::{
@@ -20,8 +19,9 @@ use rayc_typed_ast::{
         tuple::Tuple,
         tuple_index::TupleIndex,
     },
-    typed_function::{FunctionID, FunctionLocalID, TypedFunctionMap},
-    variable::Variable,
+    typed_function::{TypedFunctionID, TypedFunctionLocalID, TypedFunctionMap},
+    typed_lambda::TypedLambdaParameter,
+    typed_variable::TypedVariable,
 };
 
 use super::CaptureAnalysis;
@@ -62,21 +62,21 @@ impl TestMap {
         }
     }
 
-    fn variable(&mut self, owner: FunctionID, name: &'static str) -> Source {
+    fn variable(&mut self, owner: TypedFunctionID, name: &'static str) -> Source {
         let span = self.span();
         let variable =
-            self.functions.insert_variable_into(owner, Variable::new(self.ty.clone(), span));
-        let source = Source::Variable(FunctionLocalID::new(owner, variable));
+            self.functions.insert_variable(owner, TypedVariable::new(self.ty.clone(), span));
+        let source = Source::Variable(TypedFunctionLocalID::new(owner, variable));
         self.insert_binding(source, name, span);
         source
     }
 
-    fn lambda_parameter(&mut self, owner: FunctionID, name: &'static str) -> Source {
+    fn lambda_parameter(&mut self, owner: TypedFunctionID, name: &'static str) -> Source {
         let span = self.span();
         let parameter = self
             .functions
-            .insert_lambda_parameter(owner, LambdaParameter::new(self.ty.clone(), span));
-        let source = Source::LambdaParameter(FunctionLocalID::new(owner, parameter));
+            .insert_lambda_parameter(owner, TypedLambdaParameter::new(self.ty.clone(), span));
+        let source = Source::LambdaParameter(TypedFunctionLocalID::new(owner, parameter));
         self.insert_binding(source, name, span);
         source
     }
@@ -97,23 +97,27 @@ impl TestMap {
         *self.bindings.get(&source).expect("test source should have a name binding")
     }
 
-    fn identifier(&mut self, function: FunctionID, source: Source) -> TypedExprID {
+    fn identifier(&mut self, function: TypedFunctionID, source: Source) -> TypedExprID {
         self.expression(
             function,
             TypedExprKind::Identifier(Identifier::new(self.binding_id(source))),
         )
     }
 
-    fn expression(&mut self, function: FunctionID, kind: TypedExprKind) -> TypedExprID {
+    fn expression(&mut self, function: TypedFunctionID, kind: TypedExprKind) -> TypedExprID {
         let span = self.span();
-        self.functions.insert_expression_into(function, TypedExpr::new(kind, span, self.ty.clone()))
+        self.functions.insert_expression(function, TypedExpr::new(kind, span, self.ty.clone()))
     }
 
-    fn statement(&mut self, function: FunctionID, expression: TypedExprID) {
-        self.functions.push_statement_into(function, Statement::Expression(expression));
+    fn statement(&mut self, function: TypedFunctionID, expression: TypedExprID) {
+        self.functions.push_statement(function, Statement::Expression(expression));
     }
 
-    fn lambda_expression(&mut self, parent: FunctionID, child: FunctionID) -> TypedExprID {
+    fn lambda_expression(
+        &mut self,
+        parent: TypedFunctionID,
+        child: TypedFunctionID,
+    ) -> TypedExprID {
         self.expression(parent, TypedExprKind::Lambda(Lambda::new(child)))
     }
 }

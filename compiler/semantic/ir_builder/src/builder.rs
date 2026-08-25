@@ -1,10 +1,10 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     address::Address,
-    expression::ExpressionID,
-    function::FunctionMap,
-    lambda::{CaptureID, LambdaParameterID},
-    variable::VariableID,
+    ir_expr::ExpressionID,
+    ir_function::IRFunctionMap,
+    ir_lambda::{CaptureID, LambdaParameterID},
+    ir_variable::IRVariableID,
 };
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::ParameterID;
@@ -16,7 +16,7 @@ mod function_build_state;
 
 pub struct Builder {
     engine: TrackedEngine,
-    ir_functions: FunctionMap,
+    ir_functions: IRFunctionMap,
     building_function: FunctionBuildState,
     suspended_functions: Vec<FunctionBuildState>,
 }
@@ -28,7 +28,7 @@ impl Builder {
 
     pub fn error_address(&self) -> Address { Address::new_error(&self.engine) }
 
-    pub fn variable_address(&self, id: VariableID) -> Address {
+    pub fn variable_address(&self, id: IRVariableID) -> Address {
         Address::new_variable(id, &self.engine)
     }
 

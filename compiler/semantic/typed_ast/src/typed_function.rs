@@ -8,20 +8,20 @@ use rayc_type::{
 
 use crate::{
     block::Block,
-    lambda::{LambdaContext, LambdaParameter, LambdaParameterID},
     name_binding::{
         NameBinding, NameBindingGroup, NameBindingGroupID, NameBindingID, NameBindingMap,
     },
     statement::Statement,
     typed_expr::{LvalueClassification, TypedExpr, TypedExprID, TypedExprMap},
-    variable::{Variable, VariableID, VariableMap},
+    typed_lambda::{LambdaParameterID, TypedLambdaContext, TypedLambdaParameter},
+    typed_variable::{TypedVariable, TypedVariableID, TypedVariableMap},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct TypedFunctionMap {
     name_binding_map: NameBindingMap,
     functions: Arena<TypedFunction>,
-    root: FunctionID,
+    root: TypedFunctionID,
 }
 
 impl Default for TypedFunctionMap {
@@ -30,7 +30,7 @@ impl Default for TypedFunctionMap {
         let parameter_name_binding_group_id = name_binding_map.new_name_binding_group();
 
         let mut functions = Arena::default();
-        let root = functions.insert(TypedFunction::new(Context::Def(DefContext::new(
+        let root = functions.insert(TypedFunction::new(TypedContext::Def(TypedDefContext::new(
             parameter_name_binding_group_id,
         ))));
 
@@ -40,7 +40,7 @@ impl Default for TypedFunctionMap {
 
 impl TypedFunctionMap {
     #[must_use]
-    pub const fn root_id(&self) -> FunctionID { self.root }
+    pub const fn root_id(&self) -> TypedFunctionID { self.root }
 
     #[must_use]
     pub fn root(&self) -> &TypedFunction {
@@ -48,23 +48,23 @@ impl TypedFunctionMap {
     }
 
     #[must_use]
-    pub fn get_function(&self, id: FunctionID) -> &TypedFunction {
+    pub fn get_function(&self, id: TypedFunctionID) -> &TypedFunction {
         self.functions.get(id).expect("FunctionID should be valid")
     }
 
     #[must_use]
-    pub fn get_expression_in(&self, function_id: FunctionID, id: TypedExprID) -> &TypedExpr {
+    pub fn get_expression(&self, function_id: TypedFunctionID, id: TypedExprID) -> &TypedExpr {
         self.get_function(function_id).get_expression(id)
     }
 
-    pub fn statements_in(&self, function_id: FunctionID) -> impl Iterator<Item = &Statement> {
+    pub fn statements(&self, function_id: TypedFunctionID) -> impl Iterator<Item = &Statement> {
         self.get_function(function_id).statements()
     }
 
     #[must_use]
-    pub fn classify_lvalue_in(
+    pub fn classify_lvalue(
         &self,
-        function_id: FunctionID,
+        function_id: TypedFunctionID,
         id: TypedExprID,
     ) -> LvalueClassification {
         self.get_function(function_id).classify_lvalue(id)
@@ -73,11 +73,11 @@ impl TypedFunctionMap {
     #[must_use]
     pub fn parameter_name_binding_group_id_of(
         &self,
-        function_id: FunctionID,
+        function_id: TypedFunctionID,
     ) -> NameBindingGroupID {
         match self.get_function(function_id).context() {
-            Context::Def(context) => context.parameter_name_binding_group_id(),
-            Context::Lambda(context) => context.parameter_name_binding_group_id(),
+            TypedContext::Def(context) => context.parameter_name_binding_group_id(),
+            TypedContext::Lambda(context) => context.parameter_name_binding_group_id(),
         }
     }
 
@@ -90,15 +90,15 @@ impl TypedFunctionMap {
     ///
     /// The iteration order is not stable.
     #[must_use]
-    pub fn functions(&self) -> impl ExactSizeIterator<Item = (FunctionID, &TypedFunction)> {
+    pub fn functions(&self) -> impl ExactSizeIterator<Item = (TypedFunctionID, &TypedFunction)> {
         self.functions.iter()
     }
 
     #[must_use]
-    pub fn insert_lambda(&mut self) -> FunctionID {
+    pub fn insert_lambda(&mut self) -> TypedFunctionID {
         let parameter_name_binding_group_id = self.name_binding_map.new_name_binding_group();
 
-        self.functions.insert(TypedFunction::new(Context::Lambda(LambdaContext::new(
+        self.functions.insert(TypedFunction::new(TypedContext::Lambda(TypedLambdaContext::new(
             parameter_name_binding_group_id,
         ))))
     }
@@ -106,8 +106,8 @@ impl TypedFunctionMap {
     #[must_use]
     pub fn insert_lambda_parameter(
         &mut self,
-        function_id: FunctionID,
-        parameter: LambdaParameter,
+        function_id: TypedFunctionID,
+        parameter: TypedLambdaParameter,
     ) -> LambdaParameterID {
         let function = self.functions.get_mut(function_id).expect("FunctionID should be valid");
 
@@ -115,9 +115,9 @@ impl TypedFunctionMap {
     }
 
     #[must_use]
-    pub fn insert_expression_into(
+    pub fn insert_expression(
         &mut self,
-        function_id: FunctionID,
+        function_id: TypedFunctionID,
         expression: TypedExpr,
     ) -> TypedExprID {
         self.functions
@@ -127,18 +127,18 @@ impl TypedFunctionMap {
     }
 
     #[must_use]
-    pub fn insert_variable_into(
+    pub fn insert_variable(
         &mut self,
-        function_id: FunctionID,
-        variable: Variable,
-    ) -> VariableID {
+        function_id: TypedFunctionID,
+        variable: TypedVariable,
+    ) -> TypedVariableID {
         self.functions
             .get_mut(function_id)
             .expect("FunctionID should be valid")
             .insert_variable(variable)
     }
 
-    pub fn push_statement_into(&mut self, function_id: FunctionID, statement: Statement) {
+    pub fn push_statement(&mut self, function_id: TypedFunctionID, statement: Statement) {
         self.functions
             .get_mut(function_id)
             .expect("FunctionID should be valid")
@@ -197,16 +197,16 @@ impl MutSubstitutable for TypedFunctionMap {
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct TypedFunction {
-    variable_map: VariableMap,
+    variable_map: TypedVariableMap,
     typed_expr_map: TypedExprMap,
     block: Block,
-    context: Context,
+    context: TypedContext,
 }
 
 impl TypedFunction {
-    fn new(context: Context) -> Self {
+    fn new(context: TypedContext) -> Self {
         Self {
-            variable_map: VariableMap::default(),
+            variable_map: TypedVariableMap::default(),
             typed_expr_map: TypedExprMap::default(),
             block: Block::default(),
             context,
@@ -214,7 +214,7 @@ impl TypedFunction {
     }
 
     #[must_use]
-    pub const fn context(&self) -> &Context { &self.context }
+    pub const fn context(&self) -> &TypedContext { &self.context }
 
     pub fn statements(&self) -> impl Iterator<Item = &Statement> { self.block.statements() }
 
@@ -229,7 +229,9 @@ impl TypedFunction {
     }
 
     #[must_use]
-    pub fn get_variable(&self, id: VariableID) -> &Variable { self.variable_map.get_variable(id) }
+    pub fn get_variable(&self, id: TypedVariableID) -> &TypedVariable {
+        self.variable_map.get_variable(id)
+    }
 
     #[must_use]
     fn insert_expression(&mut self, expression: TypedExpr) -> TypedExprID {
@@ -237,7 +239,7 @@ impl TypedFunction {
     }
 
     #[must_use]
-    fn insert_variable(&mut self, variable: Variable) -> VariableID {
+    fn insert_variable(&mut self, variable: TypedVariable) -> TypedVariableID {
         self.variable_map.insert_variable(variable)
     }
 
@@ -255,28 +257,28 @@ impl MutSubstitutable for TypedFunction {
         self.typed_expr_map.apply_mut_subst(subst, engine);
 
         match &mut self.context {
-            Context::Def(_) => {}
-            Context::Lambda(context) => context.apply_mut_subst(subst, engine),
+            TypedContext::Def(_) => {}
+            TypedContext::Lambda(context) => context.apply_mut_subst(subst, engine),
         }
     }
 }
 
-pub type FunctionID = ID<TypedFunction>;
+pub type TypedFunctionID = ID<TypedFunction>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub struct FunctionLocalID<LocalID> {
-    function_id: FunctionID,
+pub struct TypedFunctionLocalID<LocalID> {
+    function_id: TypedFunctionID,
     local_id: LocalID,
 }
 
-impl<LocalID> FunctionLocalID<LocalID> {
+impl<LocalID> TypedFunctionLocalID<LocalID> {
     #[must_use]
-    pub const fn new(function_id: FunctionID, local_id: LocalID) -> Self {
+    pub const fn new(function_id: TypedFunctionID, local_id: LocalID) -> Self {
         Self { function_id, local_id }
     }
 
     #[must_use]
-    pub const fn function_id(&self) -> FunctionID { self.function_id }
+    pub const fn function_id(&self) -> TypedFunctionID { self.function_id }
 
     #[must_use]
     pub const fn local_id(&self) -> LocalID
@@ -288,15 +290,15 @@ impl<LocalID> FunctionLocalID<LocalID> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
-pub enum Context {
-    Def(DefContext),
-    Lambda(LambdaContext),
+pub enum TypedContext {
+    Def(TypedDefContext),
+    Lambda(TypedLambdaContext),
 }
 
-impl Context {
+impl TypedContext {
     #[must_use]
     #[track_caller]
-    pub fn assert_as_def_context(&self) -> &DefContext {
+    pub fn assert_as_def_context(&self) -> &TypedDefContext {
         match self {
             Self::Def(context) => context,
             Self::Lambda(_) => panic!("expected a def context, found a lambda context"),
@@ -305,7 +307,7 @@ impl Context {
 
     #[must_use]
     #[track_caller]
-    pub fn assert_as_lambda_context(&self) -> &LambdaContext {
+    pub fn assert_as_lambda_context(&self) -> &TypedLambdaContext {
         match self {
             Self::Def(_) => panic!("expected a lambda context, found a def context"),
             Self::Lambda(context) => context,
@@ -313,7 +315,7 @@ impl Context {
     }
 
     #[track_caller]
-    fn assert_as_lambda_context_mut(&mut self) -> &mut LambdaContext {
+    fn assert_as_lambda_context_mut(&mut self) -> &mut TypedLambdaContext {
         match self {
             Self::Def(_) => panic!("expected a lambda context, found a def context"),
             Self::Lambda(context) => context,
@@ -322,11 +324,11 @@ impl Context {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
-pub struct DefContext {
+pub struct TypedDefContext {
     parameter_name_binding_group_id: NameBindingGroupID,
 }
 
-impl DefContext {
+impl TypedDefContext {
     const fn new(parameter_name_binding_group_id: NameBindingGroupID) -> Self {
         Self { parameter_name_binding_group_id }
     }

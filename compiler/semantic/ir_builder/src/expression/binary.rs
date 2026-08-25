@@ -1,8 +1,8 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     cfg::{Conditional, Terminator},
-    expression::{
-        Expression, ExpressionID, ExpressionKind,
+    ir_expr::{
+        ExpressionID, IRExpr, IRExprKind,
         binary::{Binary as IrBinary, BinaryOp as IrBinaryOp},
         literal::Literal,
         phi::Phi,
@@ -65,8 +65,8 @@ fn lower_arithmetic(
 ) -> ExpressionID {
     let left = builder.lower_expression_by_id(context, binary.left());
     let right = builder.lower_expression_by_id(context, binary.right());
-    builder.emit_expression(Expression::new(
-        ExpressionKind::Binary(IrBinary::new(left, operator, right)),
+    builder.emit_expression(IRExpr::new(
+        IRExprKind::Binary(IrBinary::new(left, operator, right)),
         span,
         ty,
     ))
@@ -93,8 +93,8 @@ fn lower_logical(
     builder.terminate(Terminator::Conditional(Conditional::new(left, then_block, else_block)));
 
     builder.select_block(short_circuit_block);
-    let constant = builder.emit_expression(Expression::new(
-        ExpressionKind::Literal(Literal::Bool(short_circuit_value)),
+    let constant = builder.emit_expression(IRExpr::new(
+        IRExprKind::Literal(Literal::Bool(short_circuit_value)),
         span,
         ty.clone(),
     ));
@@ -107,5 +107,5 @@ fn lower_logical(
     builder.select_block(merge_block);
     let incoming =
         [(short_circuit_predecessor, constant), (rhs_predecessor, rhs)].into_iter().collect();
-    builder.emit_expression(Expression::new(ExpressionKind::Phi(Phi::new(incoming)), span, ty))
+    builder.emit_expression(IRExpr::new(IRExprKind::Phi(Phi::new(incoming)), span, ty))
 }

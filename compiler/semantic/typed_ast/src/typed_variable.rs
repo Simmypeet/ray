@@ -8,14 +8,14 @@ use rayc_type::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
-pub struct Variable {
+pub struct TypedVariable {
     ty: Interned<Ty>,
     span: RelativeSpan,
 }
 
-pub type VariableID = ID<Variable>;
+pub type TypedVariableID = ID<TypedVariable>;
 
-impl Variable {
+impl TypedVariable {
     #[must_use]
     pub const fn new(ty: Interned<Ty>, span: RelativeSpan) -> Self { Self { ty, span } }
 
@@ -26,30 +26,30 @@ impl Variable {
     pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
-impl MutSubstitutable for Variable {
+impl MutSubstitutable for TypedVariable {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.ty.apply_in_place(subst, engine);
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
-pub struct VariableMap {
-    variables: Arena<Variable>,
+pub struct TypedVariableMap {
+    variables: Arena<TypedVariable>,
 }
 
-impl VariableMap {
+impl TypedVariableMap {
     #[must_use]
-    pub fn insert_variable(&mut self, variable: Variable) -> ID<Variable> {
+    pub fn insert_variable(&mut self, variable: TypedVariable) -> ID<TypedVariable> {
         self.variables.insert(variable)
     }
 
     #[must_use]
-    pub fn get_variable(&self, id: VariableID) -> &Variable {
+    pub fn get_variable(&self, id: TypedVariableID) -> &TypedVariable {
         self.variables.get(id).expect("VariableID should be valid")
     }
 }
 
-impl MutSubstitutable for VariableMap {
+impl MutSubstitutable for TypedVariableMap {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for variable in self.variables.items_mut() {
             variable.apply_mut_subst(subst, engine);

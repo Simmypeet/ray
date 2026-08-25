@@ -1,6 +1,6 @@
 use qbice::{Decode, Encode, StableHash};
 
-use crate::{expression::ExpressionID, function::FunctionID};
+use crate::{ir_expr::ExpressionID, ir_function::FunctionID};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct MakeLambda {

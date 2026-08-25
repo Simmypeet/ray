@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use rayc_ir::expression::binary::{Binary, BinaryOp};
+use rayc_ir::ir_expr::binary::{Binary, BinaryOp};
 
 use super::{ExpressionWithID, WriteExpression, function_instance::FunctionInstance};
 use crate::{context::Context, identifier::Identifier, writer::Writer};

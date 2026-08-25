@@ -1,4 +1,4 @@
-use rayc_ir::expression::ExpressionID;
+use rayc_ir::ir_expr::ExpressionID;
 use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind};
 
 use crate::{builder::Builder, context::LoweringContext};

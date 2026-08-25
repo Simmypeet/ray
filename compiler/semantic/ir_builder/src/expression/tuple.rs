@@ -1,4 +1,4 @@
-use rayc_ir::expression::{Expression, ExpressionID, ExpressionKind, tuple::Tuple as IrTuple};
+use rayc_ir::ir_expr::{ExpressionID, IRExpr, IRExprKind, tuple::Tuple as IrTuple};
 use rayc_typed_ast::typed_expr::tuple::Tuple;
 
 use crate::{
@@ -22,10 +22,6 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Tuple>> for Builder {
             .iter()
             .map(|element| self.lower_expression_by_id(context, *element))
             .collect();
-        self.emit_expression(Expression::new(
-            ExpressionKind::Tuple(IrTuple::new(elements)),
-            span,
-            ty,
-        ))
+        self.emit_expression(IRExpr::new(IRExprKind::Tuple(IrTuple::new(elements)), span, ty))
     }
 }

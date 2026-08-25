@@ -17,12 +17,12 @@ use rayc_type::{
     ty::{InferenceConstraint, Ty, TyKind},
 };
 use rayc_typed_ast::{
-    lambda::{LambdaParameter, LambdaParameterID},
     name_binding::{NameBindingGroupID, NameBindingID},
     statement::Statement,
     typed_expr::{TypedExpr, TypedExprID},
-    typed_function::{FunctionID, FunctionLocalID, TypedFunctionMap},
-    variable::{Variable, VariableID},
+    typed_function::{TypedFunctionID, TypedFunctionLocalID, TypedFunctionMap},
+    typed_lambda::{LambdaParameterID, TypedLambdaParameter},
+    typed_variable::{TypedVariable, TypedVariableID},
 };
 
 use crate::{
@@ -40,8 +40,8 @@ pub mod name_env;
 #[derive(Debug)]
 pub struct TAstBuilder {
     function_map: TypedFunctionMap,
-    building_function: FunctionID,
-    suspended_functions: Vec<FunctionID>,
+    building_function: TypedFunctionID,
+    suspended_functions: Vec<TypedFunctionID>,
     current_def_id: GlobalSymbolID,
 
     name_env: NameEnv,
@@ -79,12 +79,12 @@ impl TAstBuilder {
 impl TAstBuilder {
     #[must_use]
     pub fn type_of_expression(&self, id: TypedExprID) -> Interned<Ty> {
-        self.function_map.get_expression_in(self.building_function, id).ty().clone()
+        self.function_map.get_expression(self.building_function, id).ty().clone()
     }
 
     #[must_use]
-    pub fn type_of_local_expression(&self, id: FunctionLocalID<TypedExprID>) -> Interned<Ty> {
-        self.function_map.get_expression_in(id.function_id(), id.local_id()).ty().clone()
+    pub fn type_of_local_expression(&self, id: TypedFunctionLocalID<TypedExprID>) -> Interned<Ty> {
+        self.function_map.get_expression(id.function_id(), id.local_id()).ty().clone()
     }
 
     #[must_use]
@@ -93,12 +93,12 @@ impl TAstBuilder {
     }
 
     #[must_use]
-    pub fn insert_variable(&mut self, variable: Variable) -> VariableID {
-        self.function_map.insert_variable_into(self.building_function, variable)
+    pub fn insert_variable(&mut self, variable: TypedVariable) -> TypedVariableID {
+        self.function_map.insert_variable(self.building_function, variable)
     }
 
     #[must_use]
-    pub const fn current_typed_function_id(&self) -> FunctionID { self.building_function }
+    pub const fn current_typed_function_id(&self) -> TypedFunctionID { self.building_function }
 
     #[must_use]
     pub fn parameter_name_binding_group(&self) -> NameBindingGroupID {
@@ -106,7 +106,7 @@ impl TAstBuilder {
     }
 
     #[must_use]
-    pub fn start_lambda(&mut self) -> FunctionID {
+    pub fn start_lambda(&mut self) -> TypedFunctionID {
         let function_id = self.function_map.insert_lambda();
         let parameter_name_binding_group_id =
             self.function_map.parameter_name_binding_group_id_of(function_id);
@@ -125,7 +125,10 @@ impl TAstBuilder {
     }
 
     #[must_use]
-    pub fn insert_lambda_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
+    pub fn insert_lambda_parameter(
+        &mut self,
+        parameter: TypedLambdaParameter,
+    ) -> LambdaParameterID {
         self.function_map.insert_lambda_parameter(self.building_function, parameter)
     }
 
@@ -137,7 +140,7 @@ impl TAstBuilder {
     /// function's expression map.
     #[must_use]
     pub fn insert_expression(&mut self, expr: TypedExpr) -> TypedExprID {
-        self.function_map.insert_expression_into(self.building_function, expr)
+        self.function_map.insert_expression(self.building_function, expr)
     }
 
     pub fn push_diagnostic(&mut self, diagnostic: Diagnostic) { self.diagnostics.push(diagnostic); }
@@ -175,15 +178,15 @@ impl TAstBuilder {
     }
 
     pub fn span_of_expression(&self, id: TypedExprID) -> RelativeSpan {
-        self.function_map.get_expression_in(self.building_function, id).span()
+        self.function_map.get_expression(self.building_function, id).span()
     }
 
-    pub fn span_of_local_expression(&self, id: FunctionLocalID<TypedExprID>) -> RelativeSpan {
-        self.function_map.get_expression_in(id.function_id(), id.local_id()).span()
+    pub fn span_of_local_expression(&self, id: TypedFunctionLocalID<TypedExprID>) -> RelativeSpan {
+        self.function_map.get_expression(id.function_id(), id.local_id()).span()
     }
 
     pub fn push_statement(&mut self, statement: Statement) {
-        self.function_map.push_statement_into(self.building_function, statement);
+        self.function_map.push_statement(self.building_function, statement);
     }
 
     pub async fn resolve_function_id(&mut self, name: &Identifier) -> Option<GlobalSymbolID> {

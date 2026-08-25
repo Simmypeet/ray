@@ -1,4 +1,4 @@
-use rayc_ir::function::FunctionMap as IrFunctionMap;
+use rayc_ir::ir_function::IRFunctionMap as IrFunctionMap;
 use rayc_qbice::TrackedEngine;
 use rayc_tast_capture_analysis::CaptureAnalysis;
 use rayc_typed_ast::typed_function::TypedFunctionMap;

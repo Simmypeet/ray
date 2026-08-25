@@ -1,4 +1,4 @@
-use rayc_ir::expression::load::Load;
+use rayc_ir::ir_expr::load::Load;
 
 use super::{ExpressionWithID, WriteExpression, function_instance::FunctionInstance};
 use crate::{context::Context, writer::Writer};

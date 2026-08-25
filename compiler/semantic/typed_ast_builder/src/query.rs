@@ -8,7 +8,7 @@ use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
 use rayc_target::TargetID;
 use rayc_typed_ast::{
     name_binding::Source,
-    typed_function::{FunctionLocalID, TypedFunctionMap},
+    typed_function::{TypedFunctionLocalID, TypedFunctionMap},
 };
 
 use crate::{diagnostic::Diagnostic, tast_builder::TAstBuilder};
@@ -52,7 +52,7 @@ impl TAstBuilder {
                     parameter_name_binding_group,
                     &pat,
                     parameter.ty(),
-                    Source::Parameter(FunctionLocalID::new(
+                    Source::Parameter(TypedFunctionLocalID::new(
                         self.current_typed_function_id(),
                         param_id,
                     )),

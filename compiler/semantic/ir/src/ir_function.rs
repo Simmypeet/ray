@@ -5,25 +5,25 @@ use rayc_type::ty::Ty;
 use crate::{
     address::Address,
     cfg::{BlockID, Cfg, Instruction, Reachables, Terminator},
-    expression::{Expression, ExpressionID, ExpressionMap},
-    lambda::{Capture, CaptureID, LambdaContext, LambdaParameter, LambdaParameterID},
-    variable::{Variable, VariableID, VariableMap},
+    ir_expr::{ExpressionID, IRExpr, IRExpressionMap},
+    ir_lambda::{Capture, CaptureID, IRLambdaContext, LambdaParameter, LambdaParameterID},
+    ir_variable::{IRVariable, IRVariableID, IRVariableMap},
     visit::{ExprVisitor, TypeVisitor, VisitExpr, VisitType},
 };
 
-pub type FunctionID = ID<Function>;
+pub type FunctionID = ID<IRFunction>;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub struct FunctionMap {
-    functions: Arena<Function>,
+pub struct IRFunctionMap {
+    functions: Arena<IRFunction>,
     root: FunctionID,
 }
 
-impl FunctionMap {
+impl IRFunctionMap {
     #[must_use]
     pub fn new() -> Self {
         let mut functions = Arena::new();
-        let root = functions.insert(Function::new());
+        let root = functions.insert(IRFunction::new());
         Self { functions, root }
     }
 
@@ -31,16 +31,16 @@ impl FunctionMap {
     pub const fn root_id(&self) -> FunctionID { self.root }
 
     #[must_use]
-    pub fn root(&self) -> &Function {
+    pub fn root(&self) -> &IRFunction {
         self.functions.get(self.root).expect("Root IR function should exist")
     }
 
     #[must_use]
-    pub fn get_function(&self, id: FunctionID) -> &Function {
+    pub fn get_function(&self, id: FunctionID) -> &IRFunction {
         self.functions.get(id).expect("IR function should exist")
     }
 
-    fn get_function_mut(&mut self, id: FunctionID) -> &mut Function {
+    fn get_function_mut(&mut self, id: FunctionID) -> &mut IRFunction {
         self.functions.get_mut(id).expect("IR function should exist")
     }
 
@@ -48,13 +48,13 @@ impl FunctionMap {
     ///
     /// The iteration order is not stable.
     #[must_use]
-    pub fn functions(&self) -> impl ExactSizeIterator<Item = (FunctionID, &Function)> {
+    pub fn functions(&self) -> impl ExactSizeIterator<Item = (FunctionID, &IRFunction)> {
         self.functions.iter()
     }
 
     #[must_use]
     pub fn insert_lambda(&mut self, return_ty: Interned<Ty>) -> FunctionID {
-        self.functions.insert(Function::new_lambda(return_ty))
+        self.functions.insert(IRFunction::new_lambda(return_ty))
     }
 
     #[must_use]
@@ -90,13 +90,17 @@ impl FunctionMap {
     pub fn insert_expression(
         &mut self,
         function_id: FunctionID,
-        expression: Expression,
+        expression: IRExpr,
     ) -> ExpressionID {
         self.get_function_mut(function_id).insert_expression(expression)
     }
 
     #[must_use]
-    pub fn insert_variable(&mut self, function_id: FunctionID, variable: Variable) -> VariableID {
+    pub fn insert_variable(
+        &mut self,
+        function_id: FunctionID,
+        variable: IRVariable,
+    ) -> IRVariableID {
         self.get_function_mut(function_id).insert_variable(variable)
     }
 
@@ -138,11 +142,11 @@ impl FunctionMap {
     }
 }
 
-impl Default for FunctionMap {
+impl Default for IRFunctionMap {
     fn default() -> Self { Self::new() }
 }
 
-impl VisitType for FunctionMap {
+impl VisitType for IRFunctionMap {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
         for (_, function) in self.functions() {
             function.visit_types(visitor);
@@ -150,7 +154,7 @@ impl VisitType for FunctionMap {
     }
 }
 
-impl VisitExpr for FunctionMap {
+impl VisitExpr for IRFunctionMap {
     fn visit_exprs<V: ExprVisitor>(&self, visitor: &mut V) {
         for (function_id, function) in self.functions() {
             for (expression_id, expression) in function.expression_map.expressions() {
@@ -161,12 +165,12 @@ impl VisitExpr for FunctionMap {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
-pub enum Context {
+pub enum IRContext {
     Def,
-    Lambda(LambdaContext),
+    Lambda(IRLambdaContext),
 }
 
-impl Context {
+impl IRContext {
     #[track_caller]
     pub fn assert_as_def_context(&self) {
         match self {
@@ -177,7 +181,7 @@ impl Context {
 
     #[must_use]
     #[track_caller]
-    pub fn assert_as_lambda_context(&self) -> &LambdaContext {
+    pub fn assert_as_lambda_context(&self) -> &IRLambdaContext {
         match self {
             Self::Def => panic!("expected a lambda context, found a def context"),
             Self::Lambda(context) => context,
@@ -185,7 +189,7 @@ impl Context {
     }
 
     #[track_caller]
-    fn assert_as_lambda_context_mut(&mut self) -> &mut LambdaContext {
+    fn assert_as_lambda_context_mut(&mut self) -> &mut IRLambdaContext {
         match self {
             Self::Def => panic!("expected a lambda context, found a def context"),
             Self::Lambda(context) => context,
@@ -194,25 +198,25 @@ impl Context {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub struct Function {
+pub struct IRFunction {
     cfg: Cfg,
-    variable_map: VariableMap,
-    expression_map: ExpressionMap,
-    context: Context,
+    variable_map: IRVariableMap,
+    expression_map: IRExpressionMap,
+    context: IRContext,
 }
 
-impl Default for Function {
+impl Default for IRFunction {
     fn default() -> Self { Self::new() }
 }
 
-impl Function {
+impl IRFunction {
     #[must_use]
     pub fn new() -> Self {
         Self {
             cfg: Cfg::default(),
-            variable_map: VariableMap::default(),
-            expression_map: ExpressionMap::default(),
-            context: Context::Def,
+            variable_map: IRVariableMap::default(),
+            expression_map: IRExpressionMap::default(),
+            context: IRContext::Def,
         }
     }
 
@@ -220,14 +224,14 @@ impl Function {
     pub fn new_lambda(return_ty: Interned<Ty>) -> Self {
         Self {
             cfg: Cfg::default(),
-            variable_map: VariableMap::default(),
-            expression_map: ExpressionMap::default(),
-            context: Context::Lambda(LambdaContext::new(return_ty)),
+            variable_map: IRVariableMap::default(),
+            expression_map: IRExpressionMap::default(),
+            context: IRContext::Lambda(IRLambdaContext::new(return_ty)),
         }
     }
 
     #[must_use]
-    pub const fn context(&self) -> &Context { &self.context }
+    pub const fn context(&self) -> &IRContext { &self.context }
 
     #[must_use]
     pub fn insert_lambda_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
@@ -240,18 +244,20 @@ impl Function {
     }
 
     #[must_use]
-    pub fn get_expression(&self, id: ExpressionID) -> &Expression {
+    pub fn get_expression(&self, id: ExpressionID) -> &IRExpr {
         self.expression_map.get_expression(id)
     }
 
     #[must_use]
-    pub fn get_variable(&self, id: VariableID) -> &Variable { self.variable_map.get_variable(id) }
+    pub fn get_variable(&self, id: IRVariableID) -> &IRVariable {
+        self.variable_map.get_variable(id)
+    }
 
     /// Iterates over function-local storage and its IDs.
     ///
     /// The iteration order is not stable.
     #[must_use]
-    pub fn variables(&self) -> impl ExactSizeIterator<Item = (VariableID, &Variable)> {
+    pub fn variables(&self) -> impl ExactSizeIterator<Item = (IRVariableID, &IRVariable)> {
         self.variable_map.variables()
     }
 
@@ -262,12 +268,12 @@ impl Function {
     pub fn create_block(&mut self) -> BlockID { self.cfg.create_block() }
 
     #[must_use]
-    pub fn insert_expression(&mut self, expression: Expression) -> ExpressionID {
+    pub fn insert_expression(&mut self, expression: IRExpr) -> ExpressionID {
         self.expression_map.insert_expression(expression)
     }
 
     #[must_use]
-    pub fn insert_variable(&mut self, variable: Variable) -> VariableID {
+    pub fn insert_variable(&mut self, variable: IRVariable) -> IRVariableID {
         self.variable_map.insert_variable(variable)
     }
 
@@ -297,7 +303,7 @@ impl Function {
     pub fn reachables(&self) -> Reachables { self.cfg.reachables() }
 }
 
-impl VisitType for Function {
+impl VisitType for IRFunction {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
         self.context.visit_types(visitor);
         self.variable_map.visit_types(visitor);
@@ -305,7 +311,7 @@ impl VisitType for Function {
     }
 }
 
-impl VisitType for Context {
+impl VisitType for IRContext {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
         match self {
             Self::Def => {}
@@ -314,7 +320,7 @@ impl VisitType for Context {
     }
 }
 
-impl VisitType for LambdaContext {
+impl VisitType for IRLambdaContext {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
         for (_, parameter) in self.parameters() {
             parameter.visit_types(visitor);

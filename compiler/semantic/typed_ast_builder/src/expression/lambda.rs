@@ -2,11 +2,11 @@ use rayc_source_file::SourceElement;
 use rayc_syntax::expression::Lambda as LambdaSyntax;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{
-    lambda::LambdaParameter,
     name_binding::Source,
     statement::{Return, Statement},
     typed_expr::{TypedExpr, TypedExprID, TypedExprKind, lambda::Lambda as TypedLambda},
-    typed_function::FunctionLocalID,
+    typed_function::TypedFunctionLocalID,
+    typed_lambda::TypedLambdaParameter,
 };
 
 use crate::{bind::Bind, tast_builder::TAstBuilder};
@@ -21,7 +21,7 @@ impl Bind<LambdaSyntax> for TAstBuilder {
         if let Some(parameters) = syn.parameters() {
             for parameter_pattern in parameters.parameters() {
                 let ty = self.new_type_inference();
-                let parameter_id = self.insert_lambda_parameter(LambdaParameter::new(
+                let parameter_id = self.insert_lambda_parameter(TypedLambdaParameter::new(
                     ty.clone(),
                     parameter_pattern.span(),
                 ));
@@ -30,7 +30,7 @@ impl Bind<LambdaSyntax> for TAstBuilder {
                     parameter_name_binding_group,
                     &parameter_pattern,
                     &ty,
-                    Source::LambdaParameter(FunctionLocalID::new(function_id, parameter_id)),
+                    Source::LambdaParameter(TypedFunctionLocalID::new(function_id, parameter_id)),
                 );
                 parameter_types.push(ty);
             }

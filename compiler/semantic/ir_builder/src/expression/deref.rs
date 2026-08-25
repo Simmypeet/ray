@@ -1,4 +1,4 @@
-use rayc_ir::expression::{Expression, ExpressionID, ExpressionKind, load::Load};
+use rayc_ir::ir_expr::{ExpressionID, IRExpr, IRExprKind, load::Load};
 use rayc_typed_ast::typed_expr::deref::Deref;
 
 use crate::{
@@ -17,6 +17,6 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Deref>> for Builder {
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
         let address = self.lower_address_by_id(context, expression.id());
-        self.emit_expression(Expression::new(ExpressionKind::Load(Load::new(address)), span, ty))
+        self.emit_expression(IRExpr::new(IRExprKind::Load(Load::new(address)), span, ty))
     }
 }

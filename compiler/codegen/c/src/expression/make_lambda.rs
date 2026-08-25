@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use rayc_ir::expression::make_lambda::MakeLambda;
+use rayc_ir::ir_expr::make_lambda::MakeLambda;
 
 use super::{ExpressionWithID, WriteExpression, function_instance::FunctionInstance};
 use crate::{c_ty::CTy, context::Context, identifier::Identifier, writer::Writer};

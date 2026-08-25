@@ -1,4 +1,4 @@
-use rayc_ir::expression::{Expression, ExpressionID};
+use rayc_ir::ir_expr::{ExpressionID, IRExpr};
 use rayc_typed_ast::typed_expr::errored::Errored;
 
 use crate::{
@@ -16,6 +16,6 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Errored>> for Builder {
         let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
-        self.emit_expression(Expression::new_error(span, ty))
+        self.emit_expression(IRExpr::new_error(span, ty))
     }
 }

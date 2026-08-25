@@ -11,7 +11,7 @@ use rayc_typed_ast::{
         call::CallTarget,
         lambda::Lambda,
     },
-    typed_function::{FunctionID as TypedFunctionID, TypedFunctionMap},
+    typed_function::{TypedFunctionID, TypedFunctionMap},
 };
 
 /// Complete, temporary closure-conversion analysis for one source def.
@@ -127,7 +127,7 @@ impl Analyzer {
         );
 
         let mut plan = FunctionCapturePlan::new();
-        for statement in functions.statements_in(function_id) {
+        for statement in functions.statements(function_id) {
             self.visit_statement(function_id, functions, statement, &mut plan);
         }
 
@@ -171,7 +171,7 @@ impl Analyzer {
         use_mode: UseMode,
         plan: &mut FunctionCapturePlan,
     ) {
-        match functions.get_expression_in(function_id, expression_id).kind() {
+        match functions.get_expression(function_id, expression_id).kind() {
             TypedExprKind::Identifier(identifier) => {
                 self.visit_identifier(
                     function_id,

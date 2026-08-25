@@ -5,13 +5,13 @@ use rayc_qbice::TrackedEngine;
 use rayc_type::ty::{Mutability, Ty};
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub struct LambdaContext {
+pub struct IRLambdaContext {
     parameters: LambdaParameterMap,
     return_ty: Interned<Ty>,
     captures: CaptureMap,
 }
 
-impl LambdaContext {
+impl IRLambdaContext {
     pub(crate) fn new(return_ty: Interned<Ty>) -> Self {
         Self {
             parameters: LambdaParameterMap::default(),

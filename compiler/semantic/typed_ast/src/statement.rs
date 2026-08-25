@@ -2,13 +2,15 @@ use bon::Builder;
 use qbice::{Decode, Encode, StableHash};
 use rayc_lexical::tree::RelativeSpan;
 
-use crate::{name_binding::NameBindingGroupID, typed_expr::TypedExprID, variable::VariableID};
+use crate::{
+    name_binding::NameBindingGroupID, typed_expr::TypedExprID, typed_variable::TypedVariableID,
+};
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Builder,
 )]
 pub struct Let {
-    variable_id: VariableID,
+    variable_id: TypedVariableID,
     name_binding_group_id: NameBindingGroupID,
     expression: TypedExprID,
     span: RelativeSpan,
@@ -16,7 +18,7 @@ pub struct Let {
 
 impl Let {
     #[must_use]
-    pub const fn variable_id(&self) -> VariableID { self.variable_id }
+    pub const fn variable_id(&self) -> TypedVariableID { self.variable_id }
 
     #[must_use]
     pub const fn expression(&self) -> TypedExprID { self.expression }

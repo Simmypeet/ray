@@ -6,15 +6,15 @@ use rayc_typed_ast::{
     statement::Statement,
     typed_expr::{LvalueClassification, TypedExpr, TypedExprID},
     typed_function::{
-        Context as TypedFunctionContext, FunctionID, TypedFunction, TypedFunctionMap,
+        TypedContext as TypedFunctionContext, TypedFunction, TypedFunctionID, TypedFunctionMap,
     },
-    variable::{Variable, VariableID},
+    typed_variable::{TypedVariable, TypedVariableID},
 };
 
 pub struct LoweringContext<'a> {
     typed_functions: &'a TypedFunctionMap,
     analysis: &'a CaptureAnalysis,
-    typed_function_id: FunctionID,
+    typed_function_id: TypedFunctionID,
     typed_function: &'a TypedFunction,
 }
 
@@ -25,7 +25,7 @@ impl<'a> LoweringContext<'a> {
         Self { typed_functions, analysis, typed_function_id, typed_function }
     }
 
-    pub fn for_function(&self, typed_function_id: FunctionID) -> Self {
+    pub fn for_function(&self, typed_function_id: TypedFunctionID) -> Self {
         Self {
             typed_functions: self.typed_functions,
             analysis: self.analysis,
@@ -34,9 +34,9 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
-    pub const fn root_typed_function_id(&self) -> FunctionID { self.typed_functions.root_id() }
+    pub const fn root_typed_function_id(&self) -> TypedFunctionID { self.typed_functions.root_id() }
 
-    pub const fn typed_function_id(&self) -> FunctionID { self.typed_function_id }
+    pub const fn typed_function_id(&self) -> TypedFunctionID { self.typed_function_id }
 
     pub const fn typed_function_context(&self) -> &TypedFunctionContext {
         self.typed_function.context()
@@ -58,9 +58,13 @@ impl<'a> LoweringContext<'a> {
         self.typed_function.get_type_of_expr_id(id)
     }
 
-    pub fn variable(&self, id: VariableID) -> &Variable { self.typed_function.get_variable(id) }
+    pub fn variable(&self, id: TypedVariableID) -> &TypedVariable {
+        self.typed_function.get_variable(id)
+    }
 
-    pub fn capture_plan(&self, id: FunctionID) -> &FunctionCapturePlan { self.analysis.plan(id) }
+    pub fn capture_plan(&self, id: TypedFunctionID) -> &FunctionCapturePlan {
+        self.analysis.plan(id)
+    }
 
     pub fn name_binding_source(&self, id: NameBindingID) -> Source {
         *self.typed_functions.get_name_binding(id).source()

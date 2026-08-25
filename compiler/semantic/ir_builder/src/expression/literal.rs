@@ -1,6 +1,4 @@
-use rayc_ir::expression::{
-    Expression, ExpressionID, ExpressionKind, literal::Literal as IrLiteral,
-};
+use rayc_ir::ir_expr::{ExpressionID, IRExpr, IRExprKind, literal::Literal as IrLiteral};
 use rayc_typed_ast::typed_expr::literal::Literal;
 
 use crate::{
@@ -23,6 +21,6 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Literal>> for Builder {
             Literal::Numeric(value) => IrLiteral::Numeric(*value),
             Literal::Bool(value) => IrLiteral::Bool(*value),
         };
-        self.emit_expression(Expression::new(ExpressionKind::Literal(literal), span, ty))
+        self.emit_expression(IRExpr::new(IRExprKind::Literal(literal), span, ty))
     }
 }

@@ -1,6 +1,6 @@
 use std::io;
 
-use rayc_ir::function::FunctionMap;
+use rayc_ir::ir_function::IRFunctionMap;
 use rayc_mono::{MonoFunction, MonoFunctionKind, MonoTuple};
 
 use crate::{
@@ -161,7 +161,7 @@ impl Context {
     async fn write_lambda_environment_def(
         &self,
         function: &MonoFunction,
-        functions: &FunctionMap,
+        functions: &IRFunctionMap,
         buf: &mut impl io::Write,
     ) -> io::Result<()> {
         let MonoFunctionKind::Lambda(function_id) = function.kind() else {

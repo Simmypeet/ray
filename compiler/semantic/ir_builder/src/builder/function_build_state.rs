@@ -5,17 +5,17 @@ use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::Address,
     cfg::{BlockID, Terminator},
-    expression::{Expression, ExpressionID, ExpressionKind, load::Load},
-    function::{FunctionID as IrFunctionID, FunctionMap},
-    lambda::{Capture, CaptureID, LambdaParameter as IrLambdaParameter, LambdaParameterID},
-    variable::{Variable, VariableID},
+    ir_expr::{ExpressionID, IRExpr, IRExprKind, load::Load},
+    ir_function::{FunctionID as IrFunctionID, IRFunctionMap},
+    ir_lambda::{Capture, CaptureID, LambdaParameter as IrLambdaParameter, LambdaParameterID},
+    ir_variable::{IRVariable, IRVariableID},
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{
-    lambda::LambdaParameterID as TypedLambdaParameterID, name_binding::Source,
-    typed_function::FunctionID as TypedFunctionID, variable::VariableID as TypedVariableID,
+    name_binding::Source, typed_function::TypedFunctionID,
+    typed_lambda::LambdaParameterID as TypedLambdaParameterID, typed_variable::TypedVariableID,
 };
 
 use super::Builder;
@@ -25,13 +25,13 @@ pub(super) struct FunctionBuildState {
     ir_function_id: IrFunctionID,
     current_block: BlockID,
     typed_function_id: TypedFunctionID,
-    variables: FxHashMap<TypedVariableID, VariableID>,
+    variables: FxHashMap<TypedVariableID, IRVariableID>,
     lambda_parameters: FxHashMap<TypedLambdaParameterID, LambdaParameterID>,
     captures: FxHashMap<Source, CaptureID>,
 }
 
 impl FunctionBuildState {
-    fn new_def(context: &LoweringContext<'_>, ir_functions: &mut FunctionMap) -> Self {
+    fn new_def(context: &LoweringContext<'_>, ir_functions: &mut IRFunctionMap) -> Self {
         let typed_function_id = context.typed_function_id();
         let capture_plan = context.capture_plan(typed_function_id);
         let _def_context = context.typed_function_context().assert_as_def_context();
@@ -59,7 +59,7 @@ impl FunctionBuildState {
 
     fn new_lambda(
         context: &LoweringContext<'_>,
-        ir_functions: &mut FunctionMap,
+        ir_functions: &mut IRFunctionMap,
         return_ty: Interned<Ty>,
     ) -> Self {
         let typed_function_id = context.typed_function_id();
@@ -105,13 +105,13 @@ impl FunctionBuildState {
 
 impl Builder {
     pub fn new(engine: TrackedEngine, context: &LoweringContext<'_>) -> Self {
-        let mut ir_functions = FunctionMap::new();
+        let mut ir_functions = IRFunctionMap::new();
         let building_function = FunctionBuildState::new_def(context, &mut ir_functions);
 
         Self { engine, ir_functions, building_function, suspended_functions: Vec::new() }
     }
 
-    pub fn lower(mut self, context: &LoweringContext<'_>) -> FunctionMap {
+    pub fn lower(mut self, context: &LoweringContext<'_>) -> IRFunctionMap {
         self.lower_current_function(context);
         assert!(
             self.suspended_functions.is_empty(),
@@ -156,7 +156,7 @@ impl Builder {
         lambda.ir_function_id
     }
 
-    pub fn emit_expression(&mut self, expression: Expression) -> ExpressionID {
+    pub fn emit_expression(&mut self, expression: IRExpr) -> ExpressionID {
         let function_id = self.building_function.ir_function_id;
         let expression_id = self.ir_functions.insert_expression(function_id, expression);
         self.ir_functions.push_expression(
@@ -176,20 +176,20 @@ impl Builder {
         );
     }
 
-    pub fn create_temporary(&mut self, ty: Interned<Ty>, span: RelativeSpan) -> VariableID {
+    pub fn create_temporary(&mut self, ty: Interned<Ty>, span: RelativeSpan) -> IRVariableID {
         self.ir_functions
-            .insert_variable(self.building_function.ir_function_id, Variable::new(ty, span))
+            .insert_variable(self.building_function.ir_function_id, IRVariable::new(ty, span))
     }
 
     pub fn register_source_variable(
         &mut self,
         context: &LoweringContext<'_>,
         typed_id: TypedVariableID,
-    ) -> VariableID {
+    ) -> IRVariableID {
         let variable = context.variable(typed_id);
         let ir_id = self.ir_functions.insert_variable(
             self.building_function.ir_function_id,
-            Variable::new(variable.ty().clone(), variable.span()),
+            IRVariable::new(variable.ty().clone(), variable.span()),
         );
         self.building_function.variables.insert(typed_id, ir_id);
         ir_id
@@ -263,8 +263,8 @@ impl Builder {
             (capture.span(), capture.pointee_ty().clone(), capture.mutability())
         };
         let ty = self.pointer_ty(captured_ty, mutability);
-        let pointer = self.emit_expression(Expression::new(
-            ExpressionKind::Load(Load::new(self.capture_address(capture_id))),
+        let pointer = self.emit_expression(IRExpr::new(
+            IRExprKind::Load(Load::new(self.capture_address(capture_id))),
             span,
             ty,
         ));

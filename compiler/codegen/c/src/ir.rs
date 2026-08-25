@@ -3,9 +3,9 @@ use std::io::Write;
 use rayc_hash::FxHashSet;
 use rayc_ir::{
     cfg::{BlockID, Instruction, Reachables, Terminator},
-    expression::{ExpressionID, ExpressionKind},
-    function::Function,
-    variable::VariableID,
+    ir_expr::{ExpressionID, IRExprKind},
+    ir_function::IRFunction,
+    ir_variable::IRVariableID,
 };
 use rayc_mono::MonoFunction;
 
@@ -19,17 +19,17 @@ use crate::{
 #[derive(Debug)]
 struct FunctionLayout {
     reachables: Reachables,
-    variables: Vec<VariableID>,
+    variables: Vec<IRVariableID>,
     phis: FxHashSet<ExpressionID>,
 }
 
 impl FunctionLayout {
-    fn new(function: &Function) -> Self {
+    fn new(function: &IRFunction) -> Self {
         let reachables = function.reachables();
         let phis = reachables
             .expressions()
             .filter(|expression_id| {
-                matches!(function.get_expression(*expression_id).kind(), ExpressionKind::Phi(_))
+                matches!(function.get_expression(*expression_id).kind(), IRExprKind::Phi(_))
             })
             .collect();
 
@@ -44,7 +44,9 @@ impl FunctionLayout {
         self.reachables.expressions()
     }
 
-    fn variables(&self) -> impl Iterator<Item = VariableID> + '_ { self.variables.iter().copied() }
+    fn variables(&self) -> impl Iterator<Item = IRVariableID> + '_ {
+        self.variables.iter().copied()
+    }
 
     fn is_phi(&self, expression_id: ExpressionID) -> bool { self.phis.contains(&expression_id) }
 }
@@ -126,7 +128,7 @@ impl Writer<'_> {
             // current non-escaping closure subset; semantic lifetime checking must reject a
             // captureful closure that outlives this invocation.
             for expression_id in layout.reachable_expressions() {
-                let ExpressionKind::MakeLambda(lambda) =
+                let IRExprKind::MakeLambda(lambda) =
                     ir_function.get_expression(expression_id).kind()
                 else {
                     continue;
@@ -189,7 +191,7 @@ impl Writer<'_> {
                     return Ok(());
                 }
 
-                if let ExpressionKind::MakeLambda(lambda) =
+                if let IRExprKind::MakeLambda(lambda) =
                     ir_function.get_expression(*expression_id).kind()
                     && !lambda.captures().is_empty()
                 {
@@ -222,7 +224,7 @@ impl Writer<'_> {
         &mut self,
         block_id: BlockID,
         terminator: &Terminator,
-        function: &Function,
+        function: &IRFunction,
         mono_function: &MonoFunction,
         ctx: &Context,
     ) -> std::io::Result<()> {
@@ -300,12 +302,12 @@ impl Writer<'_> {
         }
     }
 
-    fn block_has_phis(block_id: BlockID, function: &Function) -> bool {
+    fn block_has_phis(block_id: BlockID, function: &IRFunction) -> bool {
         function.block_instructions(block_id).iter().any(|instruction| {
             let Instruction::Expression(expression_id) = instruction else {
                 return false;
             };
-            matches!(function.get_expression(*expression_id).kind(), ExpressionKind::Phi(_))
+            matches!(function.get_expression(*expression_id).kind(), IRExprKind::Phi(_))
         })
     }
 
@@ -313,7 +315,7 @@ impl Writer<'_> {
         &mut self,
         predecessor: BlockID,
         successor: BlockID,
-        function: &Function,
+        function: &IRFunction,
         mono_function: &MonoFunction,
         ctx: &Context,
     ) -> std::io::Result<()> {
@@ -321,7 +323,7 @@ impl Writer<'_> {
             let Instruction::Expression(phi_id) = instruction else {
                 continue;
             };
-            let ExpressionKind::Phi(phi) = function.get_expression(*phi_id).kind() else {
+            let IRExprKind::Phi(phi) = function.get_expression(*phi_id).kind() else {
                 continue;
             };
             let incoming = phi.value_from(predecessor).unwrap_or_else(|| {
@@ -352,7 +354,7 @@ impl Writer<'_> {
             let Instruction::Expression(phi_id) = instruction else {
                 continue;
             };
-            if !matches!(function.get_expression(*phi_id).kind(), ExpressionKind::Phi(_)) {
+            if !matches!(function.get_expression(*phi_id).kind(), IRExprKind::Phi(_)) {
                 continue;
             }
 

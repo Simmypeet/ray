@@ -1,5 +1,5 @@
 use qbice::storage::intern::Interned;
-use rayc_ir::expression::{Expression, ExpressionID, ExpressionKind, load::Load};
+use rayc_ir::ir_expr::{ExpressionID, IRExpr, IRExprKind, load::Load};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::typed_expr::{LvalueClassification, TypedExprID, tuple_index::TupleIndex};
@@ -30,13 +30,9 @@ impl<'a> LowerExpression<TypedExprWithID<&'a TupleIndex>> for Builder {
                 let mut address = self.variable_address(temporary);
                 self.emit_store(address.clone(), operand_value);
                 self.project_tuple(&mut address, tuple_index.index());
-                self.emit_expression(Expression::new(
-                    ExpressionKind::Load(Load::new(address)),
-                    span,
-                    ty,
-                ))
+                self.emit_expression(IRExpr::new(IRExprKind::Load(Load::new(address)), span, ty))
             }
-            LvalueClassification::Errored => self.emit_expression(Expression::new_error(span, ty)),
+            LvalueClassification::Errored => self.emit_expression(IRExpr::new_error(span, ty)),
         }
     }
 }
@@ -49,5 +45,5 @@ fn emit_load(
     ty: Interned<Ty>,
 ) -> ExpressionID {
     let address = builder.lower_address_by_id(context, expression_id);
-    builder.emit_expression(Expression::new(ExpressionKind::Load(Load::new(address)), span, ty))
+    builder.emit_expression(IRExpr::new(IRExprKind::Load(Load::new(address)), span, ty))
 }
