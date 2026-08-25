@@ -1,13 +1,10 @@
 use std::collections::VecDeque;
 
 use qbice::storage::intern::Interned;
-use rayc_hash::FxHashSet;
 use rayc_ir::{
-    expression::{ExpressionKind, call::CallTarget},
-    function::{Context as IrFunctionContext, FunctionID as IrFunctionID},
+    expression::{Expression, ExpressionKind, call::CallTarget},
     get_ir,
-    lambda::LambdaContext,
-    visit::VisitType,
+    visit::{VisitExpr, VisitType},
 };
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
@@ -84,149 +81,31 @@ impl<'engine> Collector<'engine> {
         self.collect_substituted_type(&return_type, function);
 
         let ir = self.engine.get_ir(function.def_id()).await;
-        match ir.root().context() {
-            IrFunctionContext::Def => {}
-            IrFunctionContext::Lambda(_) => {
-                panic!(
-                    "compiler-internal invariant violation: root IR function should be a def \
-                     while collecting {function:?}"
-                );
-            }
-        }
 
-        let mut visited = FxHashSet::default();
-        let mut pending = VecDeque::from([ir.root_id()]);
-        while let Some(ir_function_id) = pending.pop_front() {
-            if !visited.insert(ir_function_id) {
-                continue;
-            }
+        ir.visit_types(&mut |ty: &Interned<Ty>| {
+            self.collect_substituted_type(ty, function);
+        });
 
-            let ir_function = ir.get_function(ir_function_id);
-            match ir_function.context() {
-                IrFunctionContext::Def => {
-                    assert_eq!(
-                        ir_function_id,
-                        ir.root_id(),
-                        "compiler-internal invariant violation: non-root IR function should be a \
-                         lambda while collecting {function:?}"
-                    );
-                }
-                IrFunctionContext::Lambda(_) => {}
-            }
-
-            {
-                let mut type_visitor = |ty: &Interned<Ty>| {
-                    self.collect_substituted_type(ty, function);
-                };
-                ir_function.visit_types(&mut type_visitor);
-            }
-
-            for expression_id in ir_function.reachables().expressions() {
-                let expression = ir_function.get_expression(expression_id);
-                match expression.kind() {
-                    ExpressionKind::Call(call) => match call.target() {
-                        CallTarget::Direct { function_id, subst } => {
-                            self.collect_call(*function_id, subst, function);
-                        }
-                        CallTarget::Lambda { .. } => {}
-                    },
-                    ExpressionKind::MakeLambda(make_lambda) => {
-                        let target_id = make_lambda.function_id();
-                        let target = ir.get_function(target_id);
-                        let target_context = match target.context() {
-                            IrFunctionContext::Def => {
-                                panic!(
-                                    "compiler-internal invariant violation: MakeLambda target \
-                                     {target_id:?} should be a lambda while collecting \
-                                     {function:?}"
-                                );
-                            }
-                            IrFunctionContext::Lambda(context) => context,
-                        };
-                        assert_eq!(
-                            make_lambda.captures().len(),
-                            target_context.captures().len(),
-                            "compiler-internal invariant violation: MakeLambda targeting \
-                             {target_id:?} has a capture-count mismatch while collecting \
-                             {function:?}"
-                        );
-                        self.validate_lambda_signature(
-                            expression.ty(),
-                            target_context,
-                            function,
-                            target_id,
-                        );
-                        self.program.insert_function(MonoFunction::new_lambda(function, target_id));
-                        pending.push_back(target_id);
+        ir.visit_exprs(
+            &mut |_function_id, _expression_id, expression: &Expression| match expression.kind() {
+                ExpressionKind::Call(call) => match call.target() {
+                    CallTarget::Direct { function_id, subst } => {
+                        self.collect_call(*function_id, subst, function);
                     }
-                    ExpressionKind::Error
-                    | ExpressionKind::Literal(_)
-                    | ExpressionKind::RefOf(_)
-                    | ExpressionKind::Load(_)
-                    | ExpressionKind::Phi(_)
-                    | ExpressionKind::Binary(_)
-                    | ExpressionKind::Tuple(_) => {}
+                    CallTarget::Lambda { .. } => {}
+                },
+                ExpressionKind::MakeLambda(lambda) => {
+                    self.program
+                        .insert_function(MonoFunction::new_lambda(function, lambda.function_id()));
                 }
-            }
-        }
-    }
-
-    fn validate_lambda_signature(
-        &self,
-        expression_ty: &Interned<Ty>,
-        context: &LambdaContext,
-        owner: &MonoFunction,
-        function_id: IrFunctionID,
-    ) {
-        let expression_ty = expression_ty.apply_subst_or_clone(owner.subst(), self.engine);
-        let lambda = match &*expression_ty {
-            Ty::Application(application) => match application.view() {
-                TyApplicationView::Lambda(lambda) => lambda,
-                TyApplicationView::Primitive(_)
-                | TyApplicationView::Tuple(_)
-                | TyApplicationView::Pointer(_)
-                | TyApplicationView::Error => {
-                    panic!(
-                        "compiler-internal invariant violation: MakeLambda targeting \
-                         {function_id:?} should have a lambda expression type while collecting \
-                         {owner:?}, found {expression_ty:?}"
-                    );
-                }
+                ExpressionKind::Error
+                | ExpressionKind::Literal(_)
+                | ExpressionKind::RefOf(_)
+                | ExpressionKind::Load(_)
+                | ExpressionKind::Phi(_)
+                | ExpressionKind::Binary(_)
+                | ExpressionKind::Tuple(_) => {}
             },
-            Ty::Inference(_) | Ty::PolyVar(_) => {
-                panic!(
-                    "compiler-internal invariant violation: MakeLambda targeting {function_id:?} \
-                     should have a concrete lambda expression type while collecting {owner:?}, \
-                     found {expression_ty:?}"
-                );
-            }
-        };
-
-        let parameters = context.parameters();
-        assert_eq!(
-            lambda.parameter_types().len(),
-            parameters.len(),
-            "compiler-internal invariant violation: MakeLambda targeting {function_id:?} has a \
-             parameter-count mismatch while collecting {owner:?}"
-        );
-        for (index, (expression_parameter, (_, target_parameter))) in
-            lambda.parameter_types().iter().zip(parameters).enumerate()
-        {
-            let target_parameter =
-                target_parameter.ty().apply_subst_or_clone(owner.subst(), self.engine);
-            assert_eq!(
-                expression_parameter, &target_parameter,
-                "compiler-internal invariant violation: MakeLambda targeting {function_id:?} has \
-                 a type mismatch for parameter {index} while collecting {owner:?}"
-            );
-        }
-
-        let target_return = context.return_ty().apply_subst_or_clone(owner.subst(), self.engine);
-        assert_eq!(
-            lambda.return_type(),
-            &target_return,
-            "compiler-internal invariant violation: MakeLambda targeting {function_id:?} has a \
-             return-type mismatch while collecting {owner:?}"
         );
     }
 

@@ -8,7 +8,7 @@ use crate::{
     expression::{Expression, ExpressionID, ExpressionMap},
     lambda::{Capture, CaptureID, LambdaContext, LambdaParameter, LambdaParameterID},
     variable::{Variable, VariableID, VariableMap},
-    visit::{TypeVisitor, VisitType},
+    visit::{ExprVisitor, TypeVisitor, VisitExpr, VisitType},
 };
 
 pub type FunctionID = ID<Function>;
@@ -149,6 +149,16 @@ impl VisitType for FunctionMap {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
         for (_, function) in self.functions() {
             function.visit_types(visitor);
+        }
+    }
+}
+
+impl VisitExpr for FunctionMap {
+    fn visit_exprs<V: ExprVisitor>(&self, visitor: &mut V) {
+        for (function_id, function) in self.functions() {
+            for (expression_id, expression) in function.expression_map.expressions() {
+                visitor.visit_expr(function_id, expression_id, expression);
+            }
         }
     }
 }

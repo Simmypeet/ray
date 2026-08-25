@@ -81,6 +81,10 @@ impl ExpressionMap {
     pub fn insert_expression(&mut self, expression: Expression) -> ExpressionID {
         self.expressions.insert(expression)
     }
+
+    pub(crate) fn expressions(&self) -> impl ExactSizeIterator<Item = (ExpressionID, &Expression)> {
+        self.expressions.iter()
+    }
 }
 
 impl VisitType for Expression {
@@ -104,7 +108,7 @@ impl VisitType for Expression {
 
 impl VisitType for ExpressionMap {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
-        for (_, expression) in self.expressions.iter() {
+        for (_, expression) in self.expressions() {
             expression.visit_types(visitor);
         }
     }
