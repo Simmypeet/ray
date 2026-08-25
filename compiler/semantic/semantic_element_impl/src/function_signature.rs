@@ -12,15 +12,19 @@ use rayc_semantic_element::{
 };
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
-    GlobalSymbolID, MemberID, source_map::to_absolute_span, syntax::get_def_signature_syntax,
+    GlobalSymbolID, MemberID,
+    source_map::to_absolute_span,
+    span::get_span,
+    symbol_kind::{SymbolKind, get_symbol_kind},
+    syntax::get_def_signature_syntax,
 };
 use rayc_syntax::{
-    def::{ParameterList, ReturnType as ReturnTypeSyntax},
+    def::{ParameterEntry, ParameterList, ReturnType as ReturnTypeSyntax},
     r#type::{Primitive as PrimitiveSyntax, Type as TySyntax},
 };
 use rayc_type::{
     poly_var::{Key as PolyVarKey, PolyVar, PolyVarMap},
-    ty::{Mutability, Primitive, Ty, TyKind},
+    ty::{Mutability, Primitive, Ty, TyApplicationView, TyKind},
 };
 
 use crate::{
@@ -35,14 +39,94 @@ use crate::{
 pub(crate) enum Diagnostic {
     /// A polymorphic variable was not introduced by a parameter type.
     PolyVarNotFound(PolyVarNotFound),
+    InvalidExternSignature(InvalidExternSignature),
 }
 
 impl Report for Diagnostic {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
             Self::PolyVarNotFound(diagnostic) => diagnostic.report(engine).await,
+            Self::InvalidExternSignature(diagnostic) => diagnostic.report(engine).await,
         }
     }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub(crate) enum InvalidExternSignatureKind {
+    Polymorphic,
+    UnitParameter,
+    UnsupportedParameter,
+    UnsupportedReturn,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub(crate) struct InvalidExternSignature {
+    kind: InvalidExternSignatureKind,
+    span: RelativeSpan,
+}
+
+impl Report for InvalidExternSignature {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let message = match self.kind {
+            InvalidExternSignatureKind::Polymorphic => "an extern definition cannot be polymorphic",
+            InvalidExternSignatureKind::UnitParameter => {
+                "unit is not allowed in an extern parameter"
+            }
+            InvalidExternSignatureKind::UnsupportedParameter => {
+                "this type is not supported in an extern parameter"
+            }
+            InvalidExternSignatureKind::UnsupportedReturn => {
+                "this type is not supported as an extern return type"
+            }
+        };
+        Rendered::builder()
+            .message(message)
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
+    }
+}
+
+fn is_c_abi_value_type(ty: &Ty) -> bool {
+    match ty {
+        Ty::Application(application) => match application.view() {
+            TyApplicationView::Primitive(_) => true,
+            TyApplicationView::Pointer(pointer) => is_c_abi_value_type(pointer.pointee()),
+            TyApplicationView::Tuple(_)
+            | TyApplicationView::Lambda(_)
+            | TyApplicationView::Error => false,
+        },
+        Ty::Inference(_) | Ty::PolyVar(_) => false,
+    }
+}
+
+fn is_unit_type(ty: &Ty) -> bool {
+    matches!(ty, Ty::Application(application) if matches!(application.view(), TyApplicationView::Tuple(tuple) if tuple.args().is_empty()))
 }
 
 /// A polymorphic variable that is not bound by a parameter type.
@@ -136,7 +220,8 @@ fn collect_poly_vars(parameters: Option<&ParameterList>) -> PolyVarMap {
     let mut poly_vars = PolyVarMap::new();
 
     if let Some(parameters) = parameters {
-        for parameter in parameters.parameters() {
+        for entry in parameters.entries() {
+            let ParameterEntry::Parameter(parameter) = entry else { continue };
             if let Some(ty) = parameter.r#type() {
                 collect_poly_vars_from_ty(&ty, &mut poly_vars);
             }
@@ -160,6 +245,8 @@ fn resolve_signature_ty(
                 PrimitiveSyntax::Int32(_) => Primitive::Int32,
                 PrimitiveSyntax::Bool(_) => Primitive::Bool,
                 PrimitiveSyntax::Float32(_) => Primitive::Float32,
+                PrimitiveSyntax::CInt(_) => Primitive::CInt,
+                PrimitiveSyntax::CStr(_) => Primitive::CStr,
             };
 
             Ty::new_primitive(primitive, engine)
@@ -247,7 +334,8 @@ fn build_parameter_map(
     let mut diagnostics = Vec::new();
 
     if let Some(parameters) = parameters {
-        for parameter in parameters.parameters() {
+        for entry in parameters.entries() {
+            let ParameterEntry::Parameter(parameter) = entry else { continue };
             let ty = parameter.r#type().map_or_else(
                 || Ty::new_error(engine),
                 |ty| resolve_signature_ty(engine, owner, poly_vars, &ty, &mut diagnostics),
@@ -308,8 +396,56 @@ impl Build for Key {
 
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
         let (parameters, return_type) = engine.get_def_signature_syntax(symbol_id).await;
-        let (signature, diagnostics) =
+        let (signature, mut diagnostics) =
             build_function_signature(engine, symbol_id, parameters.as_ref(), return_type.as_ref());
+
+        if engine.get_symbol_kind(symbol_id).await == SymbolKind::ExternDef {
+            if !signature.poly_vars.is_empty()
+                && let Some(span) = engine.get_span(symbol_id).await
+            {
+                diagnostics.push(Diagnostic::InvalidExternSignature(InvalidExternSignature {
+                    kind: InvalidExternSignatureKind::Polymorphic,
+                    span,
+                }));
+            }
+
+            if let Some(parameter_syntax) = parameters.as_ref() {
+                for ((_, parameter), entry) in signature.parameters.iter().zip(
+                    parameter_syntax.entries().filter_map(|entry| match entry {
+                        ParameterEntry::Parameter(parameter) => Some(parameter),
+                        ParameterEntry::Ellipsis(_) => None,
+                    }),
+                ) {
+                    let kind = if is_unit_type(parameter.ty()) {
+                        Some(InvalidExternSignatureKind::UnitParameter)
+                    } else if !is_c_abi_value_type(parameter.ty()) {
+                        Some(InvalidExternSignatureKind::UnsupportedParameter)
+                    } else {
+                        None
+                    };
+                    if let Some(kind) = kind {
+                        diagnostics.push(Diagnostic::InvalidExternSignature(
+                            InvalidExternSignature {
+                                kind,
+                                span: entry.r#type().map_or_else(|| entry.span(), |ty| ty.span()),
+                            },
+                        ));
+                    }
+                }
+            }
+
+            if !is_unit_type(&signature.return_type)
+                && !is_c_abi_value_type(&signature.return_type)
+                && let Some(return_syntax) = return_type.as_ref()
+            {
+                diagnostics.push(Diagnostic::InvalidExternSignature(InvalidExternSignature {
+                    kind: InvalidExternSignatureKind::UnsupportedReturn,
+                    span: return_syntax
+                        .r#type()
+                        .map_or_else(|| return_syntax.span(), |ty| ty.span()),
+                }));
+            }
+        }
 
         Output::new_with(engine.intern(signature), diagnostics, engine)
     }

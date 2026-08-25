@@ -6,7 +6,7 @@ use qbice::{
 };
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_symbol::symbol_kind::get_all_def_ids;
+use rayc_symbol::symbol_kind::get_all_callable_def_ids;
 use rayc_target::TargetID;
 
 use crate::{build::DiagnosticKey, function_signature};
@@ -27,7 +27,7 @@ async fn rendered_executor(
     engine: &TrackedEngine,
 ) -> Interned<[Interned<[Rendered<ByteIndex>]>]> {
     let mut rendered_by_def = Vec::new();
-    let def_ids = engine.get_all_def_ids(target_id).await;
+    let def_ids = engine.get_all_callable_def_ids(target_id).await;
 
     for def_id in def_ids.iter().copied() {
         let key = function_signature::Key { symbol_id: target_id.make_global(def_id) };
