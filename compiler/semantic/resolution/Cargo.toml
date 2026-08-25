@@ -1,5 +1,5 @@
 [package]
-name = "rayc_semantic_element_impl"
+name = "rayc_resolution"
 version.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -8,17 +8,13 @@ rust-version.workspace = true
 
 [dependencies]
 qbice.workspace = true
-linkme.workspace = true
 rayc_diagnostic.path = "../../base/diagnostic"
 rayc_lexical.path = "../../syntax/lexical"
 rayc_qbice.path = "../../base/qbice"
-rayc_resolution.path = "../resolution"
-rayc_semantic_element.path = "../semantic_element"
+rayc_source_file.path = "../../base/source_file"
 rayc_symbol.path = "../symbol"
 rayc_syntax.path = "../../syntax/syntax"
 rayc_type.path = "../type"
-rayc_source_file.path = "../../base/source_file"
-rayc_target.path = "../../base/target"
 
 [lints]
 workspace = true

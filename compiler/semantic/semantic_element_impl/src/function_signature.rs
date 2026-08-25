@@ -6,25 +6,23 @@ use qbice::{
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
+use rayc_resolution::resolve_signature;
 use rayc_semantic_element::{
     parameter::{Key as ParameterKey, Parameter, ParameterMap},
     return_type::Key as ReturnTypeKey,
 };
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
-    GlobalSymbolID, MemberID,
+    GlobalSymbolID,
     source_map::to_absolute_span,
     span::get_span,
     symbol_kind::{SymbolKind, get_symbol_kind},
     syntax::get_def_signature_syntax,
 };
-use rayc_syntax::{
-    def::{ParameterEntry, ParameterList, ReturnType as ReturnTypeSyntax},
-    r#type::{Primitive as PrimitiveSyntax, Type as TySyntax},
-};
+use rayc_syntax::def::ParameterEntry;
 use rayc_type::{
-    poly_var::{Key as PolyVarKey, PolyVar, PolyVarMap},
-    ty::{Mutability, Primitive, Ty, TyApplicationView, TyKind},
+    poly_var::{Key as PolyVarKey, PolyVarMap},
+    ty::{Ty, TyApplicationView},
 };
 
 use crate::{
@@ -37,15 +35,14 @@ use crate::{
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub(crate) enum Diagnostic {
-    /// A polymorphic variable was not introduced by a parameter type.
-    PolyVarNotFound(PolyVarNotFound),
+    Resolution(rayc_resolution::Diagnostic),
     InvalidExternSignature(InvalidExternSignature),
 }
 
 impl Report for Diagnostic {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
-            Self::PolyVarNotFound(diagnostic) => diagnostic.report(engine).await,
+            Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::InvalidExternSignature(diagnostic) => diagnostic.report(engine).await,
         }
     }
@@ -129,32 +126,6 @@ fn is_unit_type(ty: &Ty) -> bool {
     matches!(ty, Ty::Application(application) if matches!(application.view(), TyApplicationView::Tuple(tuple) if tuple.args().is_empty()))
 }
 
-/// A polymorphic variable that is not bound by a parameter type.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
-pub(crate) struct PolyVarNotFound {
-    name: Interned<str>,
-    span: RelativeSpan,
-}
-
-impl PolyVarNotFound {
-    const fn new(name: Interned<str>, span: RelativeSpan) -> Self { Self { name, span } }
-}
-
-impl Report for PolyVarNotFound {
-    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        Rendered::builder()
-            .primary_highlight(Highlight::new(
-                engine.to_absolute_span(&self.span).await,
-                Some(format!("type `{}` is not found", &*self.name)),
-            ))
-            .message(format!("type `{}` is not found", &*self.name))
-            .help_message("a polymorphic variable must first appear in a parameter type")
-            .build()
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub(crate) struct FunctionSignature {
     parameters: Interned<ParameterMap>,
@@ -170,223 +141,24 @@ pub(crate) struct Key {
     pub(crate) symbol_id: GlobalSymbolID,
 }
 
-fn is_poly_var_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    let Some(character) = chars.next() else {
-        return false;
-    };
-
-    character.is_ascii_lowercase() && chars.next().is_none()
-}
-
-fn collect_poly_vars_from_ty(ty: &TySyntax, poly_vars: &mut PolyVarMap) {
-    match ty {
-        TySyntax::Primitive(_) => {}
-        TySyntax::Pointer(pointer) => {
-            if let Some(pointed_ty) = pointer.pointed_type() {
-                collect_poly_vars_from_ty(&pointed_ty, poly_vars);
-            }
-        }
-        TySyntax::Tuple(tuple) => {
-            for element in tuple.elements() {
-                collect_poly_vars_from_ty(&element, poly_vars);
-            }
-        }
-        TySyntax::Lambda(lambda) => {
-            if let Some(parameters) = lambda.parameters() {
-                for parameter in parameters.parameters() {
-                    collect_poly_vars_from_ty(&parameter, poly_vars);
-                }
-            }
-            if let Some(return_type) = lambda.return_type()
-                && let Some(return_type) = return_type.r#type()
-            {
-                collect_poly_vars_from_ty(&return_type, poly_vars);
-            }
-        }
-        TySyntax::PolymorphicVariable(identifier) => {
-            if is_poly_var_name(&identifier.kind.0) {
-                poly_vars.insert(PolyVar::new(
-                    identifier.kind.0.clone(),
-                    TyKind::Star,
-                    identifier.span(),
-                ));
-            }
-        }
-    }
-}
-
-fn collect_poly_vars(parameters: Option<&ParameterList>) -> PolyVarMap {
-    let mut poly_vars = PolyVarMap::new();
-
-    if let Some(parameters) = parameters {
-        for entry in parameters.entries() {
-            let ParameterEntry::Parameter(parameter) = entry else { continue };
-            if let Some(ty) = parameter.r#type() {
-                collect_poly_vars_from_ty(&ty, &mut poly_vars);
-            }
-        }
-    }
-
-    poly_vars
-}
-
-#[allow(clippy::similar_names)]
-fn resolve_signature_ty(
-    engine: &TrackedEngine,
-    owner: GlobalSymbolID,
-    poly_vars: &PolyVarMap,
-    ty: &TySyntax,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Interned<Ty> {
-    match ty {
-        TySyntax::Primitive(primitive) => {
-            let primitive = match primitive {
-                PrimitiveSyntax::Int32(_) => Primitive::Int32,
-                PrimitiveSyntax::Bool(_) => Primitive::Bool,
-                PrimitiveSyntax::Float32(_) => Primitive::Float32,
-                PrimitiveSyntax::CInt(_) => Primitive::CInt,
-                PrimitiveSyntax::CStr(_) => Primitive::CStr,
-            };
-
-            Ty::new_primitive(primitive, engine)
-        }
-        TySyntax::Pointer(pointer) => {
-            let pointee = pointer.pointed_type().map_or_else(
-                || Ty::new_error(engine),
-                |pointed_ty| {
-                    resolve_signature_ty(engine, owner, poly_vars, &pointed_ty, diagnostics)
-                },
-            );
-
-            let mutability = if pointer.mut_keyword().is_some() {
-                Mutability::Mutable
-            } else {
-                Mutability::Immutable
-            };
-
-            Ty::new_pointer(pointee, mutability, engine)
-        }
-        TySyntax::Tuple(tuple) => {
-            let arguments = tuple
-                .elements()
-                .map(|element| {
-                    resolve_signature_ty(engine, owner, poly_vars, &element, diagnostics)
-                })
-                .collect::<Vec<_>>();
-
-            Ty::new_tuple(engine.intern_unsized(arguments), engine)
-        }
-        TySyntax::Lambda(lambda) => {
-            let parameters = lambda.parameters().map_or_else(Vec::new, |parameters| {
-                parameters
-                    .parameters()
-                    .map(|parameter| {
-                        resolve_signature_ty(engine, owner, poly_vars, &parameter, diagnostics)
-                    })
-                    .collect::<Vec<_>>()
-            });
-            let return_type = lambda.return_type().map_or_else(
-                || Ty::new_unit(engine),
-                |return_type| {
-                    return_type.r#type().map_or_else(
-                        || Ty::new_error(engine),
-                        |return_type| {
-                            resolve_signature_ty(
-                                engine,
-                                owner,
-                                poly_vars,
-                                &return_type,
-                                diagnostics,
-                            )
-                        },
-                    )
-                },
-            );
-
-            Ty::new_lambda(parameters, return_type, engine)
-        }
-        TySyntax::PolymorphicVariable(identifier) => {
-            if !is_poly_var_name(&identifier.kind.0) {
-                return Ty::new_error(engine);
-            }
-
-            let Some(id) = poly_vars.find_by_name(&identifier.kind.0) else {
-                diagnostics.push(Diagnostic::PolyVarNotFound(PolyVarNotFound::new(
-                    identifier.kind.0.clone(),
-                    identifier.span(),
-                )));
-                return Ty::new_error(engine);
-            };
-
-            Ty::new_poly_var(MemberID::new(owner, id), engine)
-        }
-    }
-}
-
-fn build_parameter_map(
-    engine: &TrackedEngine,
-    owner: GlobalSymbolID,
-    poly_vars: &PolyVarMap,
-    parameters: Option<&ParameterList>,
-) -> (ParameterMap, Vec<Diagnostic>) {
-    let mut parameter_map = ParameterMap::new();
-    let mut diagnostics = Vec::new();
-
-    if let Some(parameters) = parameters {
-        for entry in parameters.entries() {
-            let ParameterEntry::Parameter(parameter) = entry else { continue };
-            let ty = parameter.r#type().map_or_else(
-                || Ty::new_error(engine),
-                |ty| resolve_signature_ty(engine, owner, poly_vars, &ty, &mut diagnostics),
-            );
-
-            parameter_map.push(Parameter::builder().span(parameter.span()).ty(ty).build());
-        }
-    }
-
-    (parameter_map, diagnostics)
-}
-
-fn build_return_type(
-    engine: &TrackedEngine,
-    owner: GlobalSymbolID,
-    poly_vars: &PolyVarMap,
-    return_type: Option<&ReturnTypeSyntax>,
-) -> (Interned<Ty>, Vec<Diagnostic>) {
-    let mut diagnostics = Vec::new();
-
-    let Some(return_type) = return_type else {
-        return (Ty::new_unit(engine), diagnostics);
-    };
-
-    let return_type = return_type.r#type().map_or_else(
-        || Ty::new_error(engine),
-        |ty| resolve_signature_ty(engine, owner, poly_vars, &ty, &mut diagnostics),
-    );
-
-    (return_type, diagnostics)
-}
-
 fn build_function_signature(
     engine: &TrackedEngine,
     owner: GlobalSymbolID,
-    parameters: Option<&ParameterList>,
-    return_type: Option<&ReturnTypeSyntax>,
+    parameters: Option<&rayc_syntax::def::ParameterList>,
+    return_type: Option<&rayc_syntax::def::ReturnType>,
 ) -> (FunctionSignature, Vec<Diagnostic>) {
-    let poly_vars = collect_poly_vars(parameters);
-    let (parameter_map, mut diagnostics) =
-        build_parameter_map(engine, owner, &poly_vars, parameters);
-    let (return_type, return_type_diagnostics) =
-        build_return_type(engine, owner, &poly_vars, return_type);
-    diagnostics.extend(return_type_diagnostics);
+    let resolution = resolve_signature(engine, owner, parameters, return_type);
+    let mut parameter_map = ParameterMap::new();
+    for (ty, span) in resolution.parameters() {
+        parameter_map.push(Parameter::builder().span(span).ty(ty.clone()).build());
+    }
+    let return_type = resolution.return_type().clone();
+    let poly_vars = engine.intern(resolution.poly_vars().clone());
+    let diagnostics =
+        resolution.into_diagnostics().into_iter().map(Diagnostic::Resolution).collect();
 
     (
-        FunctionSignature {
-            parameters: engine.intern(parameter_map),
-            return_type,
-            poly_vars: engine.intern(poly_vars),
-        },
+        FunctionSignature { parameters: engine.intern(parameter_map), return_type, poly_vars },
         diagnostics,
     )
 }
