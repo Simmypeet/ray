@@ -1,0 +1,45 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: an extern definition must not have a body
+  ╭▸ compiler/e2e/test/check/ffi/invalid_declarations/main.ray:1:1
+  │
+1 │ ┏ extern def hasBody() -> ():
+2 │ ┃     return
+  ╰╴┗━━━━━━━━━━┛
+
+[error]: a non-extern definition must have a body
+  ╭▸ compiler/e2e/test/check/ffi/invalid_declarations/main.ray:2:11
+  │
+2 │       return
+  │ ┏━━━━━━━━━━━┛
+3 │ ┃
+4 │ ┃ def missingBody() -> ()
+  ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━┛
+
+[error]: a variadic parameter list is only allowed on an extern definition
+  ╭▸ compiler/e2e/test/check/ffi/invalid_declarations/main.ray:4:24
+  │
+4 │   def missingBody() -> ()
+  │ ┏━━━━━━━━━━━━━━━━━━━━━━━━┛
+5 │ ┃
+6 │ ┃ def rayVariadic(value: int32, ...) -> ():
+7 │ ┃     return
+  ╰╴┗━━━━━━━━━━┛
+
+[error]: the variadic marker must be last in the parameter list
+  ╭▸ compiler/e2e/test/check/ffi/invalid_declarations/main.ray:7:11
+  │
+7 │       return
+  │ ┏━━━━━━━━━━━┛
+8 │ ┃
+9 │ ┃ extern def misplaced(..., value: c_int) -> c_int
+  ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

@@ -1,0 +1,6 @@
+extern def puts(message: cstr) -> c_int
+
+def main() -> int32:
+    puts("hello from Ray")
+    puts("สวัสดี")
+    return 0

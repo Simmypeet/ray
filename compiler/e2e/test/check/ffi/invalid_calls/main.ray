@@ -1,0 +1,8 @@
+extern def printf(format: cstr, ...) -> c_int
+
+def main() -> int32:
+    printf()
+    printf("tuple = %d\n", (1, 2))
+    printf("embedded\0nul")
+    let value: c_int = false
+    return 0

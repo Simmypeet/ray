@@ -1,0 +1,5 @@
+extern def srand(seed: c_int)
+
+def main() -> int32:
+    srand(1)
+    return 0

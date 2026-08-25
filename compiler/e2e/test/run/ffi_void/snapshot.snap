@@ -1,0 +1,10 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+exit_code: 0
+
+stdout:
+
+
+stderr:

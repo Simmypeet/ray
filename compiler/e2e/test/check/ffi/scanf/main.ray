@@ -1,0 +1,6 @@
+extern def scanf(format: cstr, ...) -> c_int
+
+def main() -> int32:
+    let mut value: c_int = 0
+    scanf("%d", value.&mut)
+    return 0

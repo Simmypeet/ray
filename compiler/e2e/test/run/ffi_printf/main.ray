@@ -1,0 +1,7 @@
+extern def printf(format: cstr, ...) -> c_int
+
+def main() -> int32:
+    let answer: c_int = 42
+    printf("value = %d\n", answer)
+    printf("literal = %d\n", 7)
+    return 0

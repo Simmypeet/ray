@@ -1,0 +1,9 @@
+extern def hasBody() -> ():
+    return
+
+def missingBody() -> ()
+
+def rayVariadic(value: int32, ...) -> ():
+    return
+
+extern def misplaced(..., value: c_int) -> c_int

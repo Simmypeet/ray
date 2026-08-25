@@ -1,0 +1,4 @@
+extern def unitParameter(value: ()) -> c_int
+extern def tupleParameter(value: (c_int, c_int)) -> c_int
+extern def lambdaReturn() -> def(c_int) -> c_int
+extern def polymorphic(value: a) -> a
