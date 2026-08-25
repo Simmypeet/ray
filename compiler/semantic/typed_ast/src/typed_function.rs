@@ -111,10 +111,7 @@ impl TypedFunctionMap {
     ) -> LambdaParameterID {
         let function = self.functions.get_mut(function_id).expect("FunctionID should be valid");
 
-        match &mut function.context {
-            Context::Def(_) => panic!("lambda parameters cannot be inserted into a def"),
-            Context::Lambda(context) => context.insert_parameter(parameter),
-        }
+        function.context.assert_as_lambda_context_mut().insert_parameter(parameter)
     }
 
     #[must_use]
@@ -294,6 +291,34 @@ impl<LocalID> FunctionLocalID<LocalID> {
 pub enum Context {
     Def(DefContext),
     Lambda(LambdaContext),
+}
+
+impl Context {
+    #[must_use]
+    #[track_caller]
+    pub fn assert_as_def_context(&self) -> &DefContext {
+        match self {
+            Self::Def(context) => context,
+            Self::Lambda(_) => panic!("expected a def context, found a lambda context"),
+        }
+    }
+
+    #[must_use]
+    #[track_caller]
+    pub fn assert_as_lambda_context(&self) -> &LambdaContext {
+        match self {
+            Self::Def(_) => panic!("expected a lambda context, found a def context"),
+            Self::Lambda(context) => context,
+        }
+    }
+
+    #[track_caller]
+    fn assert_as_lambda_context_mut(&mut self) -> &mut LambdaContext {
+        match self {
+            Self::Def(_) => panic!("expected a lambda context, found a def context"),
+            Self::Lambda(context) => context,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]

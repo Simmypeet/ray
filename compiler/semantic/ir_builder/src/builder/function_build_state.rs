@@ -14,10 +14,8 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{
-    lambda::LambdaParameterID as TypedLambdaParameterID,
-    name_binding::Source,
-    typed_function::{Context as TypedContext, FunctionID as TypedFunctionID},
-    variable::VariableID as TypedVariableID,
+    lambda::LambdaParameterID as TypedLambdaParameterID, name_binding::Source,
+    typed_function::FunctionID as TypedFunctionID, variable::VariableID as TypedVariableID,
 };
 
 use super::Builder;
@@ -36,10 +34,7 @@ impl FunctionBuildState {
     fn new_def(context: &LoweringContext<'_>, ir_functions: &mut FunctionMap) -> Self {
         let typed_function_id = context.typed_function_id();
         let capture_plan = context.capture_plan(typed_function_id);
-        match context.typed_function_context() {
-            TypedContext::Def(_) => {}
-            TypedContext::Lambda(_) => panic!("root TypedAST function should be a def"),
-        }
+        let _def_context = context.typed_function_context().assert_as_def_context();
         assert_eq!(
             typed_function_id,
             context.root_typed_function_id(),
@@ -69,10 +64,7 @@ impl FunctionBuildState {
     ) -> Self {
         let typed_function_id = context.typed_function_id();
         let capture_plan = context.capture_plan(typed_function_id);
-        let lambda_context = match context.typed_function_context() {
-            TypedContext::Def(_) => panic!("nested TypedAST function should be a lambda"),
-            TypedContext::Lambda(lambda_context) => lambda_context,
-        };
+        let lambda_context = context.typed_function_context().assert_as_lambda_context();
         assert_ne!(
             typed_function_id,
             context.root_typed_function_id(),

@@ -4,7 +4,7 @@ use rayc_ir::{
     address::AddressRoot,
     cfg::{Instruction, Terminator},
     expression::{ExpressionKind, make_lambda::MakeLambda},
-    function::{Context as IrContext, Function as IrFunction},
+    function::Function as IrFunction,
 };
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
 use rayc_qbice::TrackedEngine;
@@ -186,10 +186,7 @@ fn make_lambdas(function: &IrFunction) -> Vec<&MakeLambda> {
 }
 
 fn lambda_context(function: &IrFunction) -> &rayc_ir::lambda::LambdaContext {
-    match function.context() {
-        IrContext::Def => panic!("expected an IR lambda function"),
-        IrContext::Lambda(context) => context,
-    }
+    function.context().assert_as_lambda_context()
 }
 
 fn pointer_mutability(ty: &Ty) -> Mutability {

@@ -1,6 +1,6 @@
 use std::io;
 
-use rayc_ir::function::{Context as FunctionContext, FunctionMap};
+use rayc_ir::function::FunctionMap;
 use rayc_mono::{MonoFunction, MonoFunctionKind, MonoTuple};
 
 use crate::{
@@ -89,14 +89,8 @@ impl Context {
             }
             MonoFunctionKind::Lambda(function_id) => {
                 let functions = self.get_ir(function.def_id()).await;
-                let lambda = match functions.get_function(function_id).context() {
-                    FunctionContext::Def => panic!(
-                        "compiler-internal invariant violation: monomorphized lambda {} selects a \
-                         def",
-                        function_id.index()
-                    ),
-                    FunctionContext::Lambda(lambda) => lambda,
-                };
+                let lambda =
+                    functions.get_function(function_id).context().assert_as_lambda_context();
 
                 let return_type = self.instantiate_type(lambda.return_ty(), function);
                 let return_type = self.ty_to_cty(&return_type);
@@ -152,13 +146,7 @@ impl Context {
                 continue;
             };
             let functions = self.get_ir(function.def_id()).await;
-            let lambda = match functions.get_function(function_id).context() {
-                FunctionContext::Def => panic!(
-                    "compiler-internal invariant violation: monomorphized lambda {} selects a def",
-                    function_id.index()
-                ),
-                FunctionContext::Lambda(lambda) => lambda,
-            };
+            let lambda = functions.get_function(function_id).context().assert_as_lambda_context();
             if lambda.captures().next().is_none() {
                 continue;
             }
@@ -179,13 +167,7 @@ impl Context {
         let MonoFunctionKind::Lambda(function_id) = function.kind() else {
             panic!("compiler-internal invariant violation: a def has no lambda environment");
         };
-        let lambda = match functions.get_function(function_id).context() {
-            FunctionContext::Def => panic!(
-                "compiler-internal invariant violation: monomorphized lambda {} selects a def",
-                function_id.index()
-            ),
-            FunctionContext::Lambda(lambda) => lambda,
-        };
+        let lambda = functions.get_function(function_id).context().assert_as_lambda_context();
         assert!(
             lambda.captures().next().is_some(),
             "compiler-internal invariant violation: captureless lambda has an environment struct"

@@ -73,10 +73,7 @@ impl FunctionMap {
 
     #[must_use]
     pub fn get_capture(&self, function_id: FunctionID, capture_id: CaptureID) -> &Capture {
-        match self.get_function(function_id).context() {
-            Context::Def => panic!("def functions should not contain captures"),
-            Context::Lambda(context) => context.get_capture(capture_id),
-        }
+        self.get_function(function_id).context().assert_as_lambda_context().get_capture(capture_id)
     }
 
     #[must_use]
@@ -169,6 +166,33 @@ pub enum Context {
     Lambda(LambdaContext),
 }
 
+impl Context {
+    #[track_caller]
+    pub fn assert_as_def_context(&self) {
+        match self {
+            Self::Def => {}
+            Self::Lambda(_) => panic!("expected a def context, found a lambda context"),
+        }
+    }
+
+    #[must_use]
+    #[track_caller]
+    pub fn assert_as_lambda_context(&self) -> &LambdaContext {
+        match self {
+            Self::Def => panic!("expected a lambda context, found a def context"),
+            Self::Lambda(context) => context,
+        }
+    }
+
+    #[track_caller]
+    fn assert_as_lambda_context_mut(&mut self) -> &mut LambdaContext {
+        match self {
+            Self::Def => panic!("expected a lambda context, found a def context"),
+            Self::Lambda(context) => context,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct Function {
     cfg: Cfg,
@@ -207,18 +231,12 @@ impl Function {
 
     #[must_use]
     pub fn insert_lambda_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
-        match &mut self.context {
-            Context::Def => panic!("lambda parameters cannot be inserted into a def"),
-            Context::Lambda(context) => context.insert_parameter(parameter),
-        }
+        self.context.assert_as_lambda_context_mut().insert_parameter(parameter)
     }
 
     #[must_use]
     pub fn insert_capture(&mut self, capture: Capture) -> CaptureID {
-        match &mut self.context {
-            Context::Def => panic!("captures cannot be inserted into a def"),
-            Context::Lambda(context) => context.insert_capture(capture),
-        }
+        self.context.assert_as_lambda_context_mut().insert_capture(capture)
     }
 
     #[must_use]

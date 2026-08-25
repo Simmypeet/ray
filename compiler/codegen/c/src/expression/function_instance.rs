@@ -1,7 +1,7 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     expression::{Expression, ExpressionID},
-    function::{Context as FunctionContext, Function, FunctionID, FunctionMap},
+    function::{Function, FunctionID, FunctionMap},
     lambda::LambdaContext,
 };
 use rayc_mono::{MonoFunction, MonoFunctionKind};
@@ -32,22 +32,11 @@ impl<'function> FunctionInstance<'function> {
     pub(crate) const fn mono_function(self) -> &'function MonoFunction { self.mono_function }
 
     pub(crate) fn lambda_context(self) -> &'function LambdaContext {
-        match self.function().context() {
-            FunctionContext::Def => {
-                panic!("compiler-internal invariant violation: expected an IR lambda function")
-            }
-            FunctionContext::Lambda(context) => context,
-        }
+        self.function().context().assert_as_lambda_context()
     }
 
     pub(crate) fn target_lambda_context(self, function_id: FunctionID) -> &'function LambdaContext {
-        match self.functions.get_function(function_id).context() {
-            FunctionContext::Def => panic!(
-                "compiler-internal invariant violation: MakeLambda target {} is a def",
-                function_id.index()
-            ),
-            FunctionContext::Lambda(context) => context,
-        }
+        self.functions.get_function(function_id).context().assert_as_lambda_context()
     }
 
     pub(crate) fn target_lambda(self, function_id: FunctionID) -> MonoFunction {
