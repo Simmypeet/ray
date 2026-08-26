@@ -64,7 +64,10 @@ pub(super) async fn validate_entry_point(
 
     match engine.get_symbol_kind(entry_point_id).await {
         SymbolKind::Def => {}
-        SymbolKind::ExternDef | SymbolKind::Module => {
+        SymbolKind::Effect
+        | SymbolKind::EffectOperation
+        | SymbolKind::ExternDef
+        | SymbolKind::Module => {
             return Err(EntryPointError::NotDefinition { symbol_id: entry_point_id });
         }
     }
