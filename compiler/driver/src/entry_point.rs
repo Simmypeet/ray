@@ -11,7 +11,7 @@ use rayc_symbol::{
     symbol_kind::{SymbolKind, get_symbol_kind},
 };
 use rayc_target::TargetID;
-use rayc_type::ty::{Primitive, Ty, TyApplicationView};
+use rayc_type::ty::{Primitive, Ty, application::View as ApplicationView};
 
 /// An error encountered while validating an executable entry point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,16 +87,17 @@ pub(super) async fn validate_entry_point(
 fn is_int32(ty: &Ty) -> bool {
     match ty {
         Ty::Application(application) => match application.view() {
-            TyApplicationView::Primitive(primitive) => match primitive {
+            ApplicationView::Primitive(primitive) => match primitive {
                 Primitive::Int32 => true,
                 Primitive::Float32 | Primitive::Bool | Primitive::CInt | Primitive::CStr => false,
             },
-            TyApplicationView::Tuple(_)
-            | TyApplicationView::Lambda(_)
-            | TyApplicationView::Pointer(_)
-            | TyApplicationView::Error => false,
+            ApplicationView::Tuple(_)
+            | ApplicationView::Lambda(_)
+            | ApplicationView::Pointer(_)
+            | ApplicationView::Error => false,
         },
         Ty::Inference(_) | Ty::PolyVar(_) => false,
+        Ty::EffectRow(_) => todo!("validate an effect-row type as an entry-point return type"),
     }
 }
 

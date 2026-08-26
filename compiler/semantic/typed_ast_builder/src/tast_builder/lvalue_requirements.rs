@@ -1,4 +1,4 @@
-use rayc_type::ty::{Mutability, Ty, TyApplicationView};
+use rayc_type::ty::{Mutability, Ty, application::View as ApplicationView};
 use rayc_typed_ast::{
     typed_expr::{LvalueClassification, LvalueRoot, TypedExprID},
     typed_function::{TypedFunctionID, TypedFunctionLocalID},
@@ -92,15 +92,18 @@ impl TAstBuilder {
 
                 match &*ty {
                     Ty::Application(application) => match application.view() {
-                        TyApplicationView::Pointer(pointer) => {
+                        ApplicationView::Pointer(pointer) => {
                             Some(pointer.mutability() == Mutability::Mutable)
                         }
-                        TyApplicationView::Primitive(_)
-                        | TyApplicationView::Tuple(_)
-                        | TyApplicationView::Lambda(_)
-                        | TyApplicationView::Error => None,
+                        ApplicationView::Primitive(_)
+                        | ApplicationView::Tuple(_)
+                        | ApplicationView::Lambda(_)
+                        | ApplicationView::Error => None,
                     },
                     Ty::Inference(_) | Ty::PolyVar(_) => None,
+                    Ty::EffectRow(_) => {
+                        todo!("determine lvalue mutability for an effect-row type")
+                    }
                 }
             }
         }

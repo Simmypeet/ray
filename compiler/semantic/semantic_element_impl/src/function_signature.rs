@@ -23,7 +23,7 @@ use rayc_symbol::{
 use rayc_syntax::def::ParameterEntry;
 use rayc_type::{
     poly_var::{PolyVarMap, PolyVarStack, get_enclosing_poly_var_maps},
-    ty::{Ty, TyApplicationView},
+    ty::{Ty, application::View as ApplicationView},
 };
 
 use crate::{
@@ -113,18 +113,19 @@ impl Report for InvalidExternSignature {
 fn is_c_abi_value_type(ty: &Ty) -> bool {
     match ty {
         Ty::Application(application) => match application.view() {
-            TyApplicationView::Primitive(_) => true,
-            TyApplicationView::Pointer(pointer) => is_c_abi_value_type(pointer.pointee()),
-            TyApplicationView::Tuple(_)
-            | TyApplicationView::Lambda(_)
-            | TyApplicationView::Error => false,
+            ApplicationView::Primitive(_) => true,
+            ApplicationView::Pointer(pointer) => is_c_abi_value_type(pointer.pointee()),
+            ApplicationView::Tuple(_) | ApplicationView::Lambda(_) | ApplicationView::Error => {
+                false
+            }
         },
         Ty::Inference(_) | Ty::PolyVar(_) => false,
+        Ty::EffectRow(_) => todo!("validate effect-row types in C ABI signatures"),
     }
 }
 
 fn is_unit_type(ty: &Ty) -> bool {
-    matches!(ty, Ty::Application(application) if matches!(application.view(), TyApplicationView::Tuple(tuple) if tuple.args().is_empty()))
+    matches!(ty, Ty::Application(application) if matches!(application.view(), ApplicationView::Tuple(tuple) if tuple.args().is_empty()))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]

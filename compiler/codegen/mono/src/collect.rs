@@ -16,7 +16,7 @@ use rayc_target::TargetID;
 use rayc_type::{
     poly_var::get_poly_var_map,
     subst::{Subst, Substitutable},
-    ty::{Ty, TyApplicationView},
+    ty::{Ty, application::View as ApplicationView},
 };
 
 use crate::{MonoFunction, MonoFunctionKind, MonoProgram};
@@ -143,20 +143,20 @@ impl<'engine> Collector<'engine> {
 
     fn collect_concrete_type(&mut self, ty: &Interned<Ty>, function: &MonoFunction) {
         for ty in Ty::recursive_iter(ty) {
-            match &**ty {
+            match ty {
                 Ty::Application(application) => match application.view() {
-                    TyApplicationView::Primitive(_) | TyApplicationView::Pointer(_) => {}
-                    TyApplicationView::Tuple(tuple) => {
+                    ApplicationView::Primitive(_) | ApplicationView::Pointer(_) => {}
+                    ApplicationView::Tuple(tuple) => {
                         self.program
                             .insert_tuple(self.engine.intern_unsized(tuple.args().to_vec()));
                     }
-                    TyApplicationView::Lambda(lambda) => {
+                    ApplicationView::Lambda(lambda) => {
                         self.program.insert_lambda_type(
                             self.engine.intern_unsized(lambda.parameter_types().to_vec()),
                             lambda.return_type().clone(),
                         );
                     }
-                    TyApplicationView::Error => {
+                    ApplicationView::Error => {
                         panic!(
                             "compiler-internal invariant violation: error type reached \
                              monomorphization while collecting {function:?}"
@@ -168,6 +168,9 @@ impl<'engine> Collector<'engine> {
                         "compiler-internal invariant violation: non-concrete type reached \
                          monomorphization while collecting {function:?}: {ty:?}"
                     );
+                }
+                Ty::EffectRow(_) => {
+                    todo!("collect concrete effect-row types during monomorphization")
                 }
             }
         }

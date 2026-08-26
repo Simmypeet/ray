@@ -11,9 +11,13 @@ use rayc_symbol::{GlobalSymbolID, name::get_name};
 use crate::{
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap},
     subst::{Subst, Substitutable},
-    ty::effect_row::EffectRow,
+    ty::{
+        application::{Application, Constant, View as ApplicationView},
+        effect_row::EffectRow,
+    },
 };
 
+pub mod application;
 pub mod args;
 pub mod effect_row;
 
@@ -38,143 +42,6 @@ impl Mutability {
         match self {
             Self::Immutable => true,
             Self::Mutable => false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub enum TyConstant {
-    Primitive(Primitive),
-    Tuple,
-    Lambda,
-    Pointer(Mutability),
-    Error,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TupleView<'x> {
-    args: &'x [Interned<Ty>],
-}
-
-impl TupleView<'_> {
-    #[must_use]
-    pub const fn args(&self) -> &[Interned<Ty>] { self.args }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LambdaView<'x> {
-    args: &'x [Interned<Ty>],
-}
-
-impl LambdaView<'_> {
-    #[must_use]
-    pub const fn parameter_types(&self) -> &[Interned<Ty>] {
-        let (_, parameter_types) = self.args.split_last().expect("lambda has a return type");
-        parameter_types
-    }
-
-    #[must_use]
-    pub const fn return_type(&self) -> &Interned<Ty> {
-        self.args.last().expect("lambda has a return type")
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PointerView<'x> {
-    arg: &'x Interned<Ty>,
-    mutability: Mutability,
-}
-
-impl PointerView<'_> {
-    #[must_use]
-    pub const fn pointee(&self) -> &Interned<Ty> { self.arg }
-
-    #[must_use]
-    pub const fn mutability(&self) -> Mutability { self.mutability }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TyApplicationView<'x> {
-    Primitive(Primitive),
-    Tuple(TupleView<'x>),
-    Lambda(LambdaView<'x>),
-    Pointer(PointerView<'x>),
-    Error,
-}
-
-impl<'x> TyApplicationView<'x> {
-    #[must_use]
-    pub fn unwrap_into_tuple_view(self) -> TupleView<'x> {
-        let Self::Tuple(tuple_view) = self else {
-            panic!("Expected TyApplicationView::Tuple, found {self:?}");
-        };
-
-        tuple_view
-    }
-}
-
-impl TyApplication {
-    #[must_use]
-    pub fn view(&self) -> TyApplicationView<'_> {
-        match self.constant {
-            TyConstant::Primitive(primitive) => TyApplicationView::Primitive(primitive),
-            TyConstant::Tuple => TyApplicationView::Tuple(TupleView { args: &self.args }),
-            TyConstant::Lambda => TyApplicationView::Lambda(LambdaView { args: &self.args }),
-            TyConstant::Pointer(mutability) => {
-                TyApplicationView::Pointer(PointerView { arg: &self.args[0], mutability })
-            }
-            TyConstant::Error => TyApplicationView::Error,
-        }
-    }
-
-    #[must_use]
-    pub fn satisfies_constraint(&self, con: InferenceConstraint) -> bool {
-        match con {
-            InferenceConstraint::Any => true,
-            InferenceConstraint::Numeric => match self.view() {
-                TyApplicationView::Primitive(primitive) => match primitive {
-                    Primitive::Int32 | Primitive::Float32 | Primitive::CInt => true,
-                    Primitive::Bool | Primitive::CStr => false,
-                },
-
-                TyApplicationView::Error
-                | TyApplicationView::Tuple(_)
-                | TyApplicationView::Lambda(_)
-                | TyApplicationView::Pointer(_) => false,
-            },
-            InferenceConstraint::EqualityComparable => match self.view() {
-                TyApplicationView::Primitive(primitive) => match primitive {
-                    Primitive::Int32 | Primitive::Float32 | Primitive::Bool | Primitive::CInt => {
-                        true
-                    }
-                    Primitive::CStr => false,
-                },
-
-                TyApplicationView::Error
-                | TyApplicationView::Tuple(_)
-                | TyApplicationView::Lambda(_)
-                | TyApplicationView::Pointer(_) => false,
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub struct TyApplication {
-    constant: TyConstant,
-    args: Interned<[Interned<Ty>]>,
-}
-
-impl TyApplication {
-    #[must_use]
-    pub fn structural_match<'a>(
-        &'a self,
-        other: &'a Self,
-    ) -> Option<impl Iterator<Item = (&'a Interned<Ty>, &'a Interned<Ty>)>> {
-        if self.constant == other.constant && self.args.len() == other.args.len() {
-            Some(self.args.iter().zip(other.args.iter()))
-        } else {
-            None
         }
     }
 }
@@ -246,7 +113,7 @@ impl TyInference {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum Ty {
-    Application(TyApplication),
+    Application(Application),
     Inference(TyInference),
     PolyVar(GlobalPolyVarID),
     EffectRow(EffectRow),
@@ -263,7 +130,7 @@ impl Ty {
         std::iter::from_fn(move || {
             let ty = pending.pop_front()?;
             match &**ty {
-                Self::Application(application) => pending.extend(application.args.iter()),
+                Self::Application(application) => pending.extend(application.interned_iter()),
                 Self::EffectRow(row) => pending.extend(row.interned_iter()),
                 Self::Inference(_) | Self::PolyVar(_) => {}
             }
@@ -278,7 +145,7 @@ impl Ty {
             let ty = pending.pop_front()?;
             match ty {
                 Self::Application(application) => {
-                    pending.extend(application.args.iter().map(|x| &**x));
+                    pending.extend(application.iter());
                 }
                 Self::EffectRow(row) => pending.extend(row.iter()),
                 Self::Inference(_) | Self::PolyVar(_) => {}
@@ -290,9 +157,7 @@ impl Ty {
     #[must_use]
     pub fn has_inference_variable(&self, ty: &TyInference) -> bool {
         match self {
-            Self::Application(ty_application) => {
-                ty_application.args.iter().any(|arg| arg.has_inference_variable(ty))
-            }
+            Self::Application(application) => application.has_inference_variable(ty),
             Self::Inference(ty_inference) => ty_inference == ty,
             Self::EffectRow(row) => row.has_inference_variable(ty),
             Self::PolyVar(_) => false,
@@ -306,14 +171,9 @@ impl Substitutable for Interned<Ty> {
         Self: Sized,
     {
         match &**self {
-            Ty::Application(ty_application) => {
-                ty_application.args.apply_subst(subst, engine).map(|args| {
-                    let new_ty_application =
-                        TyApplication { constant: ty_application.constant, args };
-
-                    engine.intern(Ty::Application(new_ty_application))
-                })
-            }
+            Ty::Application(application) => application
+                .apply_subst(subst, engine)
+                .map(|application| engine.intern(Ty::Application(application))),
 
             Ty::Inference(ty_inference) => subst.get(ty_inference).cloned(),
             Ty::PolyVar(poly) => subst.get(poly).cloned(),
@@ -327,15 +187,15 @@ impl Substitutable for Interned<Ty> {
 impl Ty {
     #[must_use]
     pub fn new_primitive(primitive: Primitive, engine: &TrackedEngine) -> Interned<Self> {
-        engine.intern(Self::Application(TyApplication {
-            constant: TyConstant::Primitive(primitive),
-            args: engine.intern_unsized([]),
-        }))
+        engine.intern(Self::Application(Application::new(
+            Constant::Primitive(primitive),
+            engine.intern_unsized([]),
+        )))
     }
 
     #[must_use]
     pub fn new_tuple(args: Interned<[Interned<Self>]>, engine: &TrackedEngine) -> Interned<Self> {
-        engine.intern(Self::Application(TyApplication { constant: TyConstant::Tuple, args }))
+        engine.intern(Self::Application(Application::new(Constant::Tuple, args)))
     }
 
     #[must_use]
@@ -345,10 +205,10 @@ impl Ty {
         engine: &TrackedEngine,
     ) -> Interned<Self> {
         let args = parameter_types.into_iter().chain([return_type]).collect::<Vec<_>>();
-        engine.intern(Self::Application(TyApplication {
-            constant: TyConstant::Lambda,
-            args: engine.intern_unsized(args),
-        }))
+        engine.intern(Self::Application(Application::new(
+            Constant::Lambda,
+            engine.intern_unsized(args),
+        )))
     }
 
     #[must_use]
@@ -357,26 +217,22 @@ impl Ty {
         mutability: Mutability,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
-        engine.intern(Self::Application(TyApplication {
-            constant: TyConstant::Pointer(mutability),
-            args: engine.intern_unsized([arg]),
-        }))
+        engine.intern(Self::Application(Application::new(
+            Constant::Pointer(mutability),
+            engine.intern_unsized([arg]),
+        )))
     }
 
     #[must_use]
     pub fn new_error(engine: &TrackedEngine) -> Interned<Self> {
-        engine.intern(Self::Application(TyApplication {
-            constant: TyConstant::Error,
-            args: engine.intern_unsized([]),
-        }))
+        engine
+            .intern(Self::Application(Application::new(Constant::Error, engine.intern_unsized([]))))
     }
 
     #[must_use]
     pub fn new_unit(engine: &TrackedEngine) -> Interned<Self> {
-        engine.intern(Self::Application(TyApplication {
-            constant: TyConstant::Tuple,
-            args: engine.intern_unsized([]),
-        }))
+        engine
+            .intern(Self::Application(Application::new(Constant::Tuple, engine.intern_unsized([]))))
     }
 
     #[must_use]
@@ -474,14 +330,14 @@ impl TyDisplay<'_> {
     fn fmt_ty(&self, ty: &Ty, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match ty {
             Ty::Application(ty_application) => match ty_application.view() {
-                TyApplicationView::Primitive(primitive) => match primitive {
+                ApplicationView::Primitive(primitive) => match primitive {
                     Primitive::Int32 => write!(f, "int32"),
                     Primitive::Float32 => write!(f, "float32"),
                     Primitive::Bool => write!(f, "bool"),
                     Primitive::CInt => write!(f, "c_int"),
                     Primitive::CStr => write!(f, "cstr"),
                 },
-                TyApplicationView::Tuple(tuple) => {
+                ApplicationView::Tuple(tuple) => {
                     f.write_char('(')?;
 
                     for (i, arg) in tuple.args().iter().enumerate() {
@@ -493,7 +349,7 @@ impl TyDisplay<'_> {
 
                     f.write_char(')')
                 }
-                TyApplicationView::Lambda(lambda) => {
+                ApplicationView::Lambda(lambda) => {
                     f.write_str("def(")?;
                     for (index, parameter) in lambda.parameter_types().iter().enumerate() {
                         if index > 0 {
@@ -504,14 +360,14 @@ impl TyDisplay<'_> {
                     f.write_str(") -> ")?;
                     self.fmt_ty(lambda.return_type(), f)
                 }
-                TyApplicationView::Pointer(pointer) => {
+                ApplicationView::Pointer(pointer) => {
                     f.write_char('*')?;
                     if pointer.mutability() == Mutability::Mutable {
                         f.write_str("mut ")?;
                     }
                     self.fmt_ty(pointer.pointee(), f)
                 }
-                TyApplicationView::Error => write!(f, "<error>"),
+                ApplicationView::Error => write!(f, "<error>"),
             },
 
             Ty::Inference(inference) => match inference.constraint {
@@ -580,7 +436,7 @@ impl Display for TyDisplay<'_> {
 
 impl Ty {
     #[must_use]
-    pub fn unwrap_as_application_view(&self) -> TyApplicationView<'_> {
+    pub fn unwrap_as_application_view(&self) -> ApplicationView<'_> {
         let Self::Application(ty_application) = self else {
             panic!("Expected Ty::Application, found {self:?}");
         };

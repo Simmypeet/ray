@@ -10,7 +10,7 @@ use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeS
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::{GlobalSourceID, LocalSourceID};
 use rayc_target::TargetID;
-use rayc_type::ty::{Mutability, Primitive, Ty, TyApplicationView};
+use rayc_type::ty::{Mutability, Primitive, Ty, application::View as ApplicationView};
 use rayc_typed_ast::{
     name_binding::{NameBinding, Source},
     statement::{Let, Statement},
@@ -192,13 +192,14 @@ fn lambda_context(function: &IrFunction) -> &rayc_ir::ir_lambda::IRLambdaContext
 fn pointer_mutability(ty: &Ty) -> Mutability {
     match ty {
         Ty::Application(application) => match application.view() {
-            TyApplicationView::Pointer(pointer) => pointer.mutability(),
-            TyApplicationView::Primitive(_)
-            | TyApplicationView::Tuple(_)
-            | TyApplicationView::Lambda(_)
-            | TyApplicationView::Error => panic!("expected a pointer type"),
+            ApplicationView::Pointer(pointer) => pointer.mutability(),
+            ApplicationView::Primitive(_)
+            | ApplicationView::Tuple(_)
+            | ApplicationView::Lambda(_)
+            | ApplicationView::Error => panic!("expected a pointer type"),
         },
         Ty::Inference(_) | Ty::PolyVar(_) => panic!("expected a concrete pointer type"),
+        Ty::EffectRow(_) => todo!("extract pointer mutability from an effect-row type"),
     }
 }
 

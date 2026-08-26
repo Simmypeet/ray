@@ -4,7 +4,7 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{
     subst::{MutSubstitutable, Subst, Substitutable},
-    ty::{Ty, TyApplicationView},
+    ty::{Ty, application::View as ApplicationView},
 };
 
 use crate::{
@@ -130,7 +130,7 @@ impl TypedExprMap {
 
         if matches!(
             &*expression.ty,
-            Ty::Application(application) if application.view() == TyApplicationView::Error
+            Ty::Application(application) if application.view() == ApplicationView::Error
         ) {
             return LvalueClassification::Errored;
         }

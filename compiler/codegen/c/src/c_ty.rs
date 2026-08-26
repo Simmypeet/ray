@@ -1,7 +1,7 @@
 use std::io;
 
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
-use rayc_type::ty::{Ty, TyApplicationView};
+use rayc_type::ty::{Ty, application::View as ApplicationView};
 
 use crate::context::{
     Context,
@@ -68,7 +68,7 @@ impl Context {
     pub fn ty_to_cty(&self, ty: &Interned<Ty>) -> Interned<CTy> {
         match &**ty {
             Ty::Application(ty_application) => match ty_application.view() {
-                TyApplicationView::Primitive(primitive) => {
+                ApplicationView::Primitive(primitive) => {
                     let prim = match primitive {
                         rayc_type::ty::Primitive::Int32 => Primitive::Int32,
                         rayc_type::ty::Primitive::Float32 => Primitive::Float32,
@@ -80,13 +80,13 @@ impl Context {
                     self.intern(CTy::Primitive(prim))
                 }
 
-                TyApplicationView::Tuple(tuple_view) => {
+                ApplicationView::Tuple(tuple_view) => {
                     let ctuple_id = self.get_ctuple_id(tuple_view.args());
 
                     self.intern(CTy::Tuple(ctuple_id))
                 }
 
-                TyApplicationView::Lambda(lambda_view) => {
+                ApplicationView::Lambda(lambda_view) => {
                     let id = self.get_clambda_type_id(
                         lambda_view.parameter_types(),
                         lambda_view.return_type(),
@@ -94,7 +94,7 @@ impl Context {
                     self.intern(CTy::Lambda(id))
                 }
 
-                TyApplicationView::Pointer(pointer_view) => {
+                ApplicationView::Pointer(pointer_view) => {
                     let element_ty = self.ty_to_cty(pointer_view.pointee());
 
                     self.intern(CTy::Pointer(Pointer {
@@ -103,7 +103,7 @@ impl Context {
                     }))
                 }
 
-                TyApplicationView::Error => {
+                ApplicationView::Error => {
                     panic!("type error reached codegen, this should have been caught earlier")
                 }
             },
@@ -115,6 +115,8 @@ impl Context {
             Ty::PolyVar(_) => {
                 panic!("polymorphic variables should have been instantiated before codegen")
             }
+
+            Ty::EffectRow(_) => todo!("lower an effect-row type to a C type"),
         }
     }
 }

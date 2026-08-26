@@ -3,7 +3,7 @@ use rayc_syntax::expression::{
     Deref as DerefSyntax, Leaf, Postfix, PostfixOperator, RefOf as RefOfSyntax,
     TupleIndex as TupleIndexSyntax,
 };
-use rayc_type::ty::{Mutability, Ty, TyApplicationView};
+use rayc_type::ty::{Mutability, Ty, application::View as ApplicationView};
 use rayc_typed_ast::typed_expr::{
     TypedExpr, TypedExprID, TypedExprKind, deref::Deref, ref_of::RefOf, tuple_index::TupleIndex,
 };
@@ -102,7 +102,7 @@ impl TAstBuilder {
         // expect a tuple type
         let tuple = match &*ty {
             Ty::Application(ty_application) => {
-                if let TyApplicationView::Tuple(tuple) = ty_application.view() {
+                if let ApplicationView::Tuple(tuple) = ty_application.view() {
                     tuple
                 } else {
                     self.push_diagnostic(Diagnostic::ExpectedTupleType(
@@ -131,6 +131,7 @@ impl TAstBuilder {
 
                 return None;
             }
+            Ty::EffectRow(_) => todo!("type-check tuple indexing on an effect-row type"),
         };
 
         let index = index.kind.parse::<usize>().expect("TODO: handle over flow error");
@@ -160,11 +161,11 @@ impl TAstBuilder {
         let ty = self.latest_type(&self.type_of_expression(expr_id));
         let pointee = match &*ty {
             Ty::Application(application) => match application.view() {
-                TyApplicationView::Pointer(pointer) => pointer.pointee().clone(),
-                TyApplicationView::Error => Ty::new_error(self.engine()),
-                TyApplicationView::Primitive(_)
-                | TyApplicationView::Tuple(_)
-                | TyApplicationView::Lambda(_) => {
+                ApplicationView::Pointer(pointer) => pointer.pointee().clone(),
+                ApplicationView::Error => Ty::new_error(self.engine()),
+                ApplicationView::Primitive(_)
+                | ApplicationView::Tuple(_)
+                | ApplicationView::Lambda(_) => {
                     self.push_diagnostic(Diagnostic::ExpectedPointerType(
                         ExpectedPointerType::builder().ty(ty).span(span).build(),
                     ));
@@ -183,6 +184,7 @@ impl TAstBuilder {
                 ));
                 Ty::new_error(self.engine())
             }
+            Ty::EffectRow(_) => todo!("type-check dereferencing an effect-row type"),
         };
 
         self.insert_expression(TypedExpr::new(

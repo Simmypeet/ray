@@ -6,7 +6,7 @@ use qbice::{
     storage::intern::Interned,
 };
 use rayc_mono::{MonoFunction, MonoLambdaType, MonoTuple};
-use rayc_type::ty::{Ty, TyApplicationView};
+use rayc_type::ty::{Ty, application::View as ApplicationView};
 
 use crate::{context::Context, identifier::Identifier};
 
@@ -117,13 +117,14 @@ fn tuple_dependency_depth<'ty>(args: impl Iterator<Item = &'ty Interned<Ty>>) ->
 fn by_value_tuple_depth(ty: &Ty) -> usize {
     match ty {
         Ty::Application(application) => match application.view() {
-            TyApplicationView::Tuple(tuple) => tuple_dependency_depth(tuple.args().iter()),
-            TyApplicationView::Primitive(_)
-            | TyApplicationView::Lambda(_)
-            | TyApplicationView::Pointer(_)
-            | TyApplicationView::Error => 0,
+            ApplicationView::Tuple(tuple) => tuple_dependency_depth(tuple.args().iter()),
+            ApplicationView::Primitive(_)
+            | ApplicationView::Lambda(_)
+            | ApplicationView::Pointer(_)
+            | ApplicationView::Error => 0,
         },
         Ty::Inference(_) | Ty::PolyVar(_) => 0,
+        Ty::EffectRow(_) => todo!("compute tuple dependency depth for an effect-row type"),
     }
 }
 

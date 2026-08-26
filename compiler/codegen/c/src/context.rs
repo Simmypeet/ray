@@ -98,7 +98,7 @@ impl Context {
         let is_unit = matches!(
             &*ty,
             Ty::Application(application)
-                if matches!(application.view(), rayc_type::ty::TyApplicationView::Tuple(tuple) if tuple.args().is_empty())
+                if matches!(application.view(), rayc_type::ty::application::View::Tuple(tuple) if tuple.args().is_empty())
         );
         if is_unit { CAbiReturn::Void } else { CAbiReturn::Value(self.ty_to_cty(&ty)) }
     }

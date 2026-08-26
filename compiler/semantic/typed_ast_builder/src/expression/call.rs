@@ -7,7 +7,7 @@ use rayc_syntax::{Identifier, expression::Call as CallSyn};
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
     subst::{Subst, Substitutable},
-    ty::{Ty, TyApplicationView},
+    ty::{Ty, application::View as ApplicationView},
 };
 use rayc_typed_ast::typed_expr::{TypedExpr, TypedExprID, TypedExprKind, call::Call};
 
@@ -131,14 +131,14 @@ impl TAstBuilder {
 
         match &*callee_ty {
             Ty::Application(application) => match application.view() {
-                TyApplicationView::Lambda(lambda) => LambdaCallSignature::Callable {
+                ApplicationView::Lambda(lambda) => LambdaCallSignature::Callable {
                     parameter_types: lambda.parameter_types().to_vec(),
                     return_type: lambda.return_type().clone(),
                 },
-                TyApplicationView::Error => LambdaCallSignature::Invalid,
-                TyApplicationView::Primitive(_)
-                | TyApplicationView::Tuple(_)
-                | TyApplicationView::Pointer(_) => {
+                ApplicationView::Error => LambdaCallSignature::Invalid,
+                ApplicationView::Primitive(_)
+                | ApplicationView::Tuple(_)
+                | ApplicationView::Pointer(_) => {
                     self.report_expected_lambda(callee_ty, callee_span);
                     LambdaCallSignature::Invalid
                 }
@@ -158,6 +158,9 @@ impl TAstBuilder {
             Ty::PolyVar(_) => {
                 self.report_expected_lambda(callee_ty, callee_span);
                 LambdaCallSignature::Invalid
+            }
+            Ty::EffectRow(_) => {
+                todo!("resolve a lambda call whose callee has an effect-row type")
             }
         }
     }
