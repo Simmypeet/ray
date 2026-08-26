@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: duplicate polymorphic variable `s`
+  ╭▸ compiler/e2e/test/check/semantic/duplicate_poly_var/main.ray:1:14
+  │
+1 │ eff State[s, s]:
+  │           ┬  ━ this polymorphic variable is duplicated
+  │           │
+  ╰╴          the original polymorphic variable is here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

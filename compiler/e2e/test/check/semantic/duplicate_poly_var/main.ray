@@ -1,0 +1,5 @@
+eff State[s, s]:
+    def get() -> s
+
+def main() -> int32:
+    return 0

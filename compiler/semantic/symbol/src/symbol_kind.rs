@@ -53,6 +53,12 @@ impl SymbolKind {
     #[must_use]
     pub const fn has_poly_var_map(&self) -> bool { matches!(self, Self::Def | Self::Effect) }
 
+    /// Checks if this kind of symbol has a definition signature.
+    #[must_use]
+    pub const fn has_def_signature(&self) -> bool {
+        matches!(self, Self::Def | Self::Effect | Self::ExternDef)
+    }
+
     /// Returns the human-readable string representation of this symbol kind.
     #[must_use]
     pub const fn str(&self) -> &'static str {

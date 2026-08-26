@@ -18,12 +18,12 @@ use rayc_symbol::{
     source_map::to_absolute_span,
     span::get_span,
     symbol_kind::{SymbolKind, get_symbol_kind},
-    syntax::{get_def_signature_syntax, get_effect_type_parameter_syntax},
+    syntax::get_def_signature_syntax,
 };
 use rayc_syntax::def::ParameterEntry;
 use rayc_type::{
-    poly_var::{Key as PolyVarKey, PolyVar, PolyVarMap, PolyVarStack, get_enclosing_poly_var_maps},
-    ty::{Ty, TyApplicationView, TyKind},
+    poly_var::{PolyVarMap, PolyVarStack, get_enclosing_poly_var_maps},
+    ty::{Ty, TyApplicationView},
 };
 
 use crate::{
@@ -132,6 +132,12 @@ pub(crate) struct FunctionSignature {
     parameters: Interned<ParameterMap>,
     return_type: Interned<Ty>,
     poly_vars: Option<Interned<PolyVarMap>>,
+}
+
+impl FunctionSignature {
+    pub(crate) const fn poly_vars(&self) -> Option<&Interned<PolyVarMap>> {
+        self.poly_vars.as_ref()
+    }
 }
 
 #[derive(
@@ -305,44 +311,3 @@ async fn return_type_projection_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static RETURN_TYPE_PROJECTION_EXECUTOR: Registration<Config> =
     Registration::new::<ReturnTypeKey, ReturnTypeProjectionExecutor>();
-
-#[executor(config = Config)]
-async fn poly_var_projection_executor(
-    &PolyVarKey { symbol_id }: &PolyVarKey,
-    engine: &TrackedEngine,
-) -> Interned<PolyVarMap> {
-    match engine.get_symbol_kind(symbol_id).await {
-        SymbolKind::Def => engine
-            .query(&Key { symbol_id })
-            .await
-            .poly_vars
-            .clone()
-            .expect("a definition should own its polymorphic variables"),
-        SymbolKind::Effect => {
-            let mut poly_vars = PolyVarMap::new();
-
-            if let Some(type_parameters) = engine.get_effect_type_parameter_syntax(symbol_id).await
-            {
-                for identifier in type_parameters.parameters() {
-                    poly_vars.insert(PolyVar::new(
-                        identifier.kind.0.clone(),
-                        TyKind::Star,
-                        identifier.span(),
-                    ));
-                }
-            }
-            engine.intern(poly_vars)
-        }
-        SymbolKind::EffectOperation => {
-            panic!("an effect operation does not own a polymorphic-variable map")
-        }
-        SymbolKind::ExternDef => {
-            panic!("an extern definition does not own a polymorphic-variable map")
-        }
-        SymbolKind::Module => panic!("a module does not own a polymorphic-variable map"),
-    }
-}
-
-#[distributed_slice(RAY_PROGRAM)]
-static POLY_VAR_PROJECTION_EXECUTOR: Registration<Config> =
-    Registration::new::<PolyVarKey, PolyVarProjectionExecutor>();
