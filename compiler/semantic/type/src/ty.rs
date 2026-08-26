@@ -14,12 +14,14 @@ use crate::{
     ty::{
         application::{Application, Constant, View as ApplicationView},
         effect_row::EffectRow,
+        inference::Inference,
     },
 };
 
 pub mod application;
 pub mod args;
 pub mod effect_row;
+pub mod inference;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Primitive {
@@ -77,44 +79,12 @@ impl InferenceConstraint {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub struct TyInference {
-    kind: TyKind,
-    constraint: InferenceConstraint,
-    id: u64,
-}
-
-impl TyInference {
-    #[must_use]
-    pub const fn new(kind: TyKind, id: u64) -> Self {
-        Self { kind, constraint: InferenceConstraint::Any, id }
-    }
-
-    #[must_use]
-    pub const fn new_with_constraint(
-        kind: TyKind,
-        constraint: InferenceConstraint,
-        id: u64,
-    ) -> Self {
-        Self { kind, constraint, id }
-    }
-
-    #[must_use]
-    pub const fn kind(&self) -> TyKind { self.kind }
-
-    #[must_use]
-    pub const fn id(&self) -> u64 { self.id }
-
-    #[must_use]
-    pub const fn constraint(&self) -> InferenceConstraint { self.constraint }
-}
-
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum Ty {
     Application(Application),
-    Inference(TyInference),
+    Inference(Inference),
     PolyVar(GlobalPolyVarID),
     EffectRow(EffectRow),
 }
@@ -155,7 +125,7 @@ impl Ty {
     }
 
     #[must_use]
-    pub fn has_inference_variable(&self, ty: &TyInference) -> bool {
+    pub fn has_inference_variable(&self, ty: &Inference) -> bool {
         match self {
             Self::Application(application) => application.has_inference_variable(ty),
             Self::Inference(ty_inference) => ty_inference == ty,
@@ -370,7 +340,7 @@ impl TyDisplay<'_> {
                 ApplicationView::Error => write!(f, "<error>"),
             },
 
-            Ty::Inference(inference) => match inference.constraint {
+            Ty::Inference(inference) => match inference.constraint() {
                 InferenceConstraint::Any => write!(f, "{{any}}"),
                 InferenceConstraint::Numeric => {
                     write!(f, "{{numeric}}")

@@ -9,17 +9,17 @@ use rayc_qbice::TrackedEngine;
 
 use crate::{
     poly_var::GlobalPolyVarID,
-    ty::{Ty, TyInference},
+    ty::{Ty, inference::Inference},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Var {
-    Inference(TyInference),
+    Inference(Inference),
     Poly(GlobalPolyVarID),
 }
 
-impl From<TyInference> for Var {
-    fn from(inference: TyInference) -> Self { Self::Inference(inference) }
+impl From<Inference> for Var {
+    fn from(inference: Inference) -> Self { Self::Inference(inference) }
 }
 
 impl From<GlobalPolyVarID> for Var {

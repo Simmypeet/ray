@@ -2,7 +2,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 
 use crate::{
     subst::Substitutable,
-    ty::{Ty, TyInference},
+    ty::{Ty, inference::Inference},
 };
 
 #[derive(
@@ -39,7 +39,7 @@ impl Args {
     }
 
     #[must_use]
-    pub fn has_inference_variable(&self, ty: &TyInference) -> bool {
+    pub fn has_inference_variable(&self, ty: &Inference) -> bool {
         self.args.iter().any(|x| x.has_inference_variable(ty))
     }
 }

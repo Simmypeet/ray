@@ -3,7 +3,7 @@ use rayc_symbol::GlobalSymbolID;
 
 use crate::{
     subst::Substitutable,
-    ty::{Ty, TyInference, args::Args},
+    ty::{Ty, args::Args, inference::Inference},
 };
 
 #[derive(
@@ -92,7 +92,7 @@ impl EffectRow {
     }
 
     #[must_use]
-    pub fn has_inference_variable(&self, ty: &TyInference) -> bool {
+    pub fn has_inference_variable(&self, ty: &Inference) -> bool {
         self.interned_iter().any(|x| x.has_inference_variable(ty))
     }
 }

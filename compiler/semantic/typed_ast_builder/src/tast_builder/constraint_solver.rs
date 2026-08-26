@@ -4,7 +4,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_type::{
     constraint::{self, Constraint, Step, subtype::Subtype},
     subst::{Subst, Substitutable},
-    ty::{Primitive, Ty, TyInference},
+    ty::{Primitive, Ty, inference::Inference},
 };
 use rayc_typed_ast::typed_expr::TypedExprID;
 
@@ -116,7 +116,7 @@ impl ProvenancedConstraint {
 pub struct ConstraintSolver {
     residual_constraints: Vec<ProvenancedConstraint>,
     errored_constraints: Vec<(constraint::Error, ProvenancedConstraint)>,
-    numeric_inferences: Vec<TyInference>,
+    numeric_inferences: Vec<Inference>,
     subst: Subst,
 }
 
@@ -131,7 +131,7 @@ impl ConstraintSolver {
         }
     }
 
-    pub(super) fn register_numeric_inference(&mut self, inference: TyInference) {
+    pub(super) fn register_numeric_inference(&mut self, inference: Inference) {
         self.numeric_inferences.push(inference);
     }
 }

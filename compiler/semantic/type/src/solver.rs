@@ -1,6 +1,6 @@
 use rayc_qbice::TrackedEngine;
 
-use crate::ty::{InferenceConstraint, TyInference, TyKind};
+use crate::ty::{InferenceConstraint, TyKind, inference::Inference};
 
 #[derive(Debug, Clone)]
 pub struct Solver {
@@ -16,7 +16,7 @@ impl Solver {
     pub const fn engine(&self) -> &TrackedEngine { &self.engine }
 
     #[must_use]
-    pub const fn new_inference(&mut self, kind: TyKind) -> TyInference {
+    pub const fn new_inference(&mut self, kind: TyKind) -> Inference {
         self.new_inference_with_constraint(kind, InferenceConstraint::Any)
     }
 
@@ -25,8 +25,8 @@ impl Solver {
         &mut self,
         kind: TyKind,
         constraint: InferenceConstraint,
-    ) -> TyInference {
-        let inference = TyInference::new_with_constraint(kind, constraint, self.inference_counter);
+    ) -> Inference {
+        let inference = Inference::new_with_constraint(kind, constraint, self.inference_counter);
         self.inference_counter += 1;
         inference
     }

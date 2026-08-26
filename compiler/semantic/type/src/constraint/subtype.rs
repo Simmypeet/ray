@@ -5,7 +5,7 @@ use crate::{
     constraint::{Constraint, Error, Step},
     solver::Solver,
     subst::{Subst, Substitutable},
-    ty::{Ty, TyInference, TyKind, effect_row::EffectRow},
+    ty::{Ty, TyKind, effect_row::EffectRow, inference::Inference},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -175,7 +175,7 @@ impl Solver {
         Ok(Step::Simplified(constraints))
     }
 
-    fn bind_var(&mut self, var: TyInference, ty: &Interned<Ty>) -> Result<Subst, Error> {
+    fn bind_var(&mut self, var: Inference, ty: &Interned<Ty>) -> Result<Subst, Error> {
         if ty.has_inference_variable(&var) {
             return Err(Error::OccursCheckFailed);
         }
@@ -242,7 +242,7 @@ mod tests {
         constraint::{Constraint, Error, Step},
         solver::Solver,
         subst::{Subst, Substitutable},
-        ty::{Primitive, Ty, TyInference, TyKind, args::Args, effect_row::EffectLabel},
+        ty::{Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel, inference::Inference},
     };
 
     fn effect_label(id: u128, engine: &TrackedEngine) -> Interned<EffectLabel> {
@@ -327,7 +327,7 @@ mod tests {
 
         let step = solver.entail(&Constraint::Subtype(Subtype::new(lesser, greater)));
 
-        let e3 = engine.intern(Ty::Inference(TyInference::new(TyKind::EffectRow, 2)));
+        let e3 = engine.intern(Ty::Inference(Inference::new(TyKind::EffectRow, 2)));
         let state_remainder = Ty::new_effect_row([state], Some(e3.clone()), &engine);
         let io_remainder = Ty::new_effect_row([io], Some(e3), &engine);
         assert_eq!(

@@ -3,7 +3,7 @@ use rayc_hash::FxHashMap;
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
 use rayc_source_file::{GlobalSourceID, LocalSourceID};
 use rayc_target::TargetID;
-use rayc_type::ty::{Mutability, Ty, TyInference, TyKind};
+use rayc_type::ty::{Mutability, Ty, TyKind, inference::Inference};
 use rayc_typed_ast::{
     name_binding::{NameBinding, Source},
     statement::Statement,
@@ -37,7 +37,7 @@ impl TestMap {
     fn new() -> Self {
         Self {
             functions: TypedFunctionMap::default(),
-            ty: Interned::new_duplicating(Ty::Inference(TyInference::new(TyKind::Star, 0))),
+            ty: Interned::new_duplicating(Ty::Inference(Inference::new(TyKind::Star, 0))),
             next_span: 0,
             bindings: FxHashMap::default(),
         }
