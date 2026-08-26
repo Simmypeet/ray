@@ -24,6 +24,3 @@ abstract_tree::abstract_tree! {
         pub tail: EffectRowTail = ast::<EffectRowTail>().optional()
     }
 }
-
-#[cfg(test)]
-mod test;

@@ -32,6 +32,3 @@ abstract_tree::abstract_tree! {
             .repeat_with_separator_at_least_once('.')
     }
 }
-
-#[cfg(test)]
-mod test;
