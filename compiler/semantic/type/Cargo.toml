@@ -15,6 +15,7 @@ rayc_qbice.path = "../../base/qbice"
 rayc_symbol.path = "../symbol"
 enum-as-inner.workspace = true
 im.workspace = true
+linkme.workspace = true
 
 [dev-dependencies]
 rayc_source_file.path = "../../base/source_file"

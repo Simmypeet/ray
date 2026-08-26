@@ -1,7 +1,14 @@
-use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
+use linkme::distributed_slice;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 use rayc_arena::{ID, OrderedArena};
 use rayc_lexical::tree::RelativeSpan;
-use rayc_symbol::{GlobalSymbolID, MemberID};
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
+use rayc_symbol::{
+    GlobalSymbolID, MemberID, parent::get_parent_global, symbol_kind::get_symbol_kind,
+};
 
 use crate::ty::TyKind;
 
@@ -79,3 +86,48 @@ impl PolyVarMap {
 pub struct Key {
     pub symbol_id: GlobalSymbolID,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
+pub struct PolyVarStack {
+    poly_var_maps: Vec<Interned<PolyVarMap>>,
+}
+
+impl PolyVarStack {
+    #[must_use]
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Interned<PolyVarMap>> {
+        self.poly_var_maps.iter().rev()
+    }
+}
+
+/// Retrieves polymorphic-variable maps owned by a symbol and its enclosing
+/// symbol hierarchy, ordered from the requested symbol outwards.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Interned<PolyVarStack>)]
+#[extend(by_val, name = get_enclosing_poly_var_maps)]
+pub struct EnclosingMapsKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+#[executor(config = Config)]
+async fn enclosing_poly_var_maps_executor(
+    &EnclosingMapsKey { symbol_id }: &EnclosingMapsKey,
+    engine: &TrackedEngine,
+) -> Interned<PolyVarStack> {
+    let mut maps = Vec::new();
+    let mut current_id = Some(symbol_id);
+
+    while let Some(id) = current_id {
+        if engine.get_symbol_kind(id).await.has_poly_var_map() {
+            maps.push(engine.get_poly_var_map(id).await);
+        }
+        current_id = engine.get_parent_global(id).await;
+    }
+
+    engine.intern(PolyVarStack { poly_var_maps: maps })
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static ENCLOSING_POLY_VAR_MAPS_EXECUTOR: Registration<Config> =
+    Registration::new::<EnclosingMapsKey, EnclosingPolyVarMapsExecutor>();

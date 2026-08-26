@@ -2041,6 +2041,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "enum-as-inner",
  "im",
+ "linkme",
  "qbice",
  "rayc_arena",
  "rayc_hash",
