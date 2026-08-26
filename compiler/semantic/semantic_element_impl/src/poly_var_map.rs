@@ -2,11 +2,12 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_resolution::discover_parameter_poly_vars;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     source_map::to_absolute_span,
     symbol_kind::{SymbolKind, get_symbol_kind},
-    syntax::get_effect_type_parameter_syntax,
+    syntax::{get_effect_type_parameter_syntax, get_parameter_list_syntax},
 };
 use rayc_type::{
     poly_var::{PolyVar, PolyVarMap},
@@ -15,7 +16,7 @@ use rayc_type::{
 
 use crate::{
     build::{Build, Output},
-    function_signature, register_build,
+    register_build,
 };
 
 #[derive(
@@ -69,15 +70,8 @@ impl Build for rayc_type::poly_var::Key {
         let mut diagnostics = Vec::new();
         let poly_vars = match engine.get_symbol_kind(symbol_id).await {
             SymbolKind::Def => {
-                return Output::new(
-                    engine
-                        .query(&function_signature::Key { symbol_id })
-                        .await
-                        .poly_vars()
-                        .cloned()
-                        .expect("a definition should own its polymorphic variables"),
-                    engine,
-                );
+                let parameters = engine.get_parameter_list_syntax(symbol_id).await;
+                discover_parameter_poly_vars(parameters.as_ref())
             }
             SymbolKind::Effect => {
                 let mut poly_vars = PolyVarMap::new();

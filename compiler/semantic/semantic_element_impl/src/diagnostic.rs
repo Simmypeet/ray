@@ -13,7 +13,7 @@ use rayc_symbol::{
 use rayc_target::TargetID;
 use rayc_type::poly_var;
 
-use crate::{build::DiagnosticKey, function_signature};
+use crate::build::DiagnosticKey;
 
 /// Retrieves all rendered semantic-element diagnostics for a target.
 #[derive(
@@ -36,16 +36,23 @@ async fn single_rendered_executor(
     // If the symbol has a definition signature, query for its diagnostics and
     // render them.
     if kind.has_def_signature() {
-        let key = function_signature::Key { symbol_id };
-        let diagnostics = engine.query(&DiagnosticKey::new(key)).await;
+        let parameter_key = rayc_semantic_element::parameter::Key { symbol_id };
+        let diagnostics = engine.query(&DiagnosticKey::new(parameter_key)).await;
+
+        for diagnostic in diagnostics.iter() {
+            rendered.push(diagnostic.report(engine).await);
+        }
+
+        let return_type_key = rayc_semantic_element::return_type::Key { symbol_id };
+        let diagnostics = engine.query(&DiagnosticKey::new(return_type_key)).await;
 
         for diagnostic in diagnostics.iter() {
             rendered.push(diagnostic.report(engine).await);
         }
     }
 
-    // If the symbol is an effect, query for its polymorphic-variable diagnostics
-    // and render them.
+    // If the symbol owns polymorphic variables, query for their diagnostics and
+    // render them.
     if kind.has_poly_var_map() {
         let key = poly_var::Key { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(key)).await;
