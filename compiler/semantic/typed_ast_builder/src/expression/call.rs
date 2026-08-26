@@ -2,10 +2,10 @@ use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
 use rayc_source_file::SourceElement;
-use rayc_symbol::{GlobalSymbolID, MemberID, syntax::is_variadic_def};
+use rayc_symbol::{GlobalSymbolID, syntax::is_variadic_def};
 use rayc_syntax::{Identifier, expression::Call as CallSyn};
 use rayc_type::{
-    poly_var::{PolyVarMap, get_poly_var_map},
+    poly_var::get_enclosing_poly_var_maps,
     subst::{Subst, Substitutable},
     ty::{Ty, TyApplicationView},
 };
@@ -25,15 +25,12 @@ enum LambdaCallSignature {
 }
 
 impl TAstBuilder {
-    fn instantiate_poly_vars(
-        &mut self,
-        function_id: GlobalSymbolID,
-        poly_var_map: &PolyVarMap,
-    ) -> Subst {
-        poly_var_map
-            .iter()
-            .map(|(id, poly_var)| {
-                (MemberID::new(function_id, id), self.new_type_inference_with_kind(poly_var.kind()))
+    async fn instantiate_poly_vars(&mut self, function_id: GlobalSymbolID) -> Subst {
+        let poly_var_stack = self.engine().get_enclosing_poly_var_maps(function_id).await;
+        poly_var_stack
+            .all_poly_vars_with_kind()
+            .map(|(global_poly_var_id, kind)| {
+                (global_poly_var_id, self.new_type_inference_with_kind(kind))
             })
             .collect()
     }
@@ -71,8 +68,7 @@ impl TAstBuilder {
             return self.push_error_expression_with_children(span, arguments);
         };
 
-        let poly_var_map = self.engine().get_poly_var_map(function_id).await;
-        let call_subst = self.instantiate_poly_vars(function_id, &poly_var_map);
+        let call_subst = self.instantiate_poly_vars(function_id).await;
         let parameter_map = self.engine().get_parameter_map(function_id).await;
 
         let is_variadic = self.engine().is_variadic_def(function_id).await;

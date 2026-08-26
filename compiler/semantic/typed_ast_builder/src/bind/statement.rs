@@ -1,6 +1,6 @@
 use rayc_source_file::SourceElement;
 use rayc_syntax::{statement::Statement as StatementSyntax, r#type::Type as TypeSyntax};
-use rayc_type::poly_var::get_poly_var_map;
+use rayc_type::poly_var::get_enclosing_poly_var_maps;
 use rayc_typed_ast::{
     name_binding::Source,
     statement::{Let, Return, Statement},
@@ -15,13 +15,10 @@ impl TAstBuilder {
         &mut self,
         syntax: &TypeSyntax,
     ) -> qbice::storage::intern::Interned<rayc_type::ty::Ty> {
-        let poly_vars = self.engine().get_poly_var_map(self.current_def_id()).await;
-        let resolution = rayc_resolution::resolve_type_with_poly_vars(
-            self.engine(),
-            self.current_def_id(),
-            &poly_vars,
-            syntax,
-        );
+        let poly_vars = self.engine().get_enclosing_poly_var_maps(self.current_def_id()).await;
+        let resolution =
+            rayc_resolution::resolve_type_with_poly_vars(self.engine(), &poly_vars, syntax);
+
         let ty = resolution.ty().clone();
         for diagnostic in resolution.into_diagnostics() {
             self.push_diagnostic(crate::diagnostic::Diagnostic::Resolution(diagnostic));

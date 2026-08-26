@@ -110,6 +110,22 @@ impl PolyVarStack {
     pub fn push(&mut self, symbol_id: GlobalSymbolID, poly_var_map: Interned<PolyVarMap>) {
         self.poly_var_maps.push((symbol_id, poly_var_map));
     }
+
+    pub fn all_poly_vars(&self) -> impl Iterator<Item = GlobalPolyVarID> {
+        self.poly_var_maps.iter().flat_map(|(symbol_id, poly_var_map)| {
+            poly_var_map
+                .iter()
+                .map(move |(poly_var_id, _)| GlobalPolyVarID::new(*symbol_id, poly_var_id))
+        })
+    }
+
+    pub fn all_poly_vars_with_kind(&self) -> impl Iterator<Item = (GlobalPolyVarID, TyKind)> + '_ {
+        self.poly_var_maps.iter().flat_map(|(symbol_id, poly_var_map)| {
+            poly_var_map.iter().map(move |(poly_var_id, poly_var)| {
+                (GlobalPolyVarID::new(*symbol_id, poly_var_id), poly_var.kind())
+            })
+        })
+    }
 }
 
 /// Retrieves polymorphic-variable maps owned by a symbol and its enclosing
