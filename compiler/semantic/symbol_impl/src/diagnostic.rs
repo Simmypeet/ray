@@ -33,6 +33,7 @@ pub enum Diagnostic {
     ItemRedefinition(ItemRedefinition),
     SourceFileLoadFail(SourceFileLoadFail),
     InvalidDefDeclaration(InvalidDefDeclaration),
+    InvalidEffectOperationDeclaration(InvalidEffectOperationDeclaration),
 }
 
 impl Report for Diagnostic {
@@ -41,7 +42,26 @@ impl Report for Diagnostic {
             Self::ItemRedefinition(diagnostic) => diagnostic.report(engine).await,
             Self::SourceFileLoadFail(diagnostic) => diagnostic.report(engine).await,
             Self::InvalidDefDeclaration(diagnostic) => diagnostic.report(engine).await,
+            Self::InvalidEffectOperationDeclaration(diagnostic) => diagnostic.report(engine).await,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub struct InvalidEffectOperationDeclaration {
+    span: RelativeSpan,
+}
+
+impl InvalidEffectOperationDeclaration {
+    pub(crate) const fn new(span: RelativeSpan) -> Self { Self { span } }
+}
+
+impl Report for InvalidEffectOperationDeclaration {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("an effect operation cannot have a variadic parameter")
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
     }
 }
 

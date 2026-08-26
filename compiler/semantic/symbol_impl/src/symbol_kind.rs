@@ -10,7 +10,7 @@ use rayc_symbol::{
 
 use crate::table::get_table;
 
-#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+#[executor(config = Config)]
 pub async fn symbol_kind_executor(&Key { symbol_id }: &Key, engine: &TrackedEngine) -> SymbolKind {
     engine.get_table(symbol_id.target_id).await.get_symbol_kind(symbol_id.id)
 }

@@ -8,7 +8,10 @@ use rayc_syntax::{
 };
 
 use crate::{
-    diagnostic::{Diagnostic, InvalidDefDeclaration, InvalidDefDeclarationKind},
+    diagnostic::{
+        Diagnostic, InvalidDefDeclaration, InvalidDefDeclarationKind,
+        InvalidEffectOperationDeclaration,
+    },
     table::{Infos, MemberBuilder, Table},
 };
 
@@ -81,6 +84,17 @@ impl Table {
         };
         let parameters = operation.parameter_list();
         let return_type = operation.return_type();
+        let ellipsis = parameters.as_ref().and_then(|parameters| {
+            parameters.entries().find_map(|entry| match entry {
+                ParameterEntry::Parameter(_) => None,
+                ParameterEntry::Ellipsis(ellipsis) => Some(ellipsis),
+            })
+        });
+        if let Some(ellipsis) = ellipsis {
+            self.push_diagnostic(Diagnostic::InvalidEffectOperationDeclaration(
+                InvalidEffectOperationDeclaration::new(ellipsis.span()),
+            ));
+        }
 
         self.insert_symbol(
             member_builder,
