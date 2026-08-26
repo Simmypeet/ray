@@ -1,0 +1,9 @@
+eff State[a]:
+    def get() -> a
+    def get() -> a
+
+eff State:
+    def put(value: int32)
+
+def main() -> int32:
+    return 0

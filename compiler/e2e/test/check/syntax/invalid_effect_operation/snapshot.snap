@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: an effect operation cannot have a variadic parameter
+  ╭▸ compiler/e2e/test/check/syntax/invalid_effect_operation/main.ray:2:13
+  │
+2 │     def run(...)
+  ╰╴            ━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
