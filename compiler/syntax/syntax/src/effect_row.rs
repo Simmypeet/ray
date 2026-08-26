@@ -19,8 +19,24 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     #{fragment = Fragment::Delimited(DelimiterKind::Brace)}
-    pub struct EffectRow {
+    pub struct ConcreteEffectRow {
         pub effects: #[multi] Path = ast::<Path>().repeat_with_separator(','),
         pub tail: EffectRowTail = ast::<EffectRowTail>().optional()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub enum EffectRow {
+        PolyVar(Identifier = expect::Identifier),
+        ConcreteEffectRow(ConcreteEffectRow = ast::<ConcreteEffectRow>())
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct EffectRowAnnotation {
+        pub backslash: Punctuation = '\\',
+        pub effect_row: EffectRow = ast::<EffectRow>()
     }
 }

@@ -1,0 +1,8 @@
+eff IO:
+    def perform() -> ()
+
+def polymorphic() -> () \ e:
+    return ()
+
+def concrete() -> () \ {IO | e}:
+    return ()
