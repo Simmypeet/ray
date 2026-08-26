@@ -2,7 +2,8 @@ use linkme::distributed_slice;
 use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
-    DefBodySyntaxKey, DefSignatureSyntaxKey, EffectTypeParameterSyntaxKey, VariadicDefKey,
+    DefBodySyntaxKey, EffectTypeParameterSyntaxKey, ParameterListSyntaxKey, ReturnTypeSyntaxKey,
+    VariadicDefKey,
 };
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
@@ -13,18 +14,32 @@ use rayc_syntax::{
 use crate::table::get_table;
 
 #[executor(config = Config)]
-pub async fn def_signature_syntax_executor(
-    &DefSignatureSyntaxKey { symbol_id }: &DefSignatureSyntaxKey,
+pub async fn parameter_list_syntax_executor(
+    &ParameterListSyntaxKey { symbol_id }: &ParameterListSyntaxKey,
     engine: &TrackedEngine,
-) -> (Option<ParameterList>, Option<ReturnType>) {
+) -> Option<ParameterList> {
     let table = engine.get_table(symbol_id.target_id).await;
 
-    table.get_def_signature_syntax(symbol_id.id)
+    table.get_parameter_list_syntax(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
-static DEF_SIGNATURE_SYNTAX_EXECUTOR: Registration<Config> =
-    Registration::new::<DefSignatureSyntaxKey, DefSignatureSyntaxExecutor>();
+static PARAMETER_LIST_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<ParameterListSyntaxKey, ParameterListSyntaxExecutor>();
+
+#[executor(config = Config)]
+pub async fn return_type_syntax_executor(
+    &ReturnTypeSyntaxKey { symbol_id }: &ReturnTypeSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<ReturnType> {
+    let table = engine.get_table(symbol_id.target_id).await;
+
+    table.get_return_type_syntax(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static RETURN_TYPE_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<ReturnTypeSyntaxKey, ReturnTypeSyntaxExecutor>();
 
 #[executor(config = Config)]
 pub async fn def_body_syntax_executor(

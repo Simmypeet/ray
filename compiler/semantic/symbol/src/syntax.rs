@@ -13,9 +13,18 @@ use crate::GlobalSymbolID;
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
-#[value((Option<ParameterList>, Option<ReturnType>))]
-#[extend(by_val, name = get_def_signature_syntax)]
-pub struct DefSignatureSyntaxKey {
+#[value(Option<ParameterList>)]
+#[extend(by_val, name = get_parameter_list_syntax)]
+pub struct ParameterListSyntaxKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<ReturnType>)]
+#[extend(by_val, name = get_return_type_syntax)]
+pub struct ReturnTypeSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }
 

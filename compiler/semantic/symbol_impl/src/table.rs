@@ -31,7 +31,8 @@ pub struct Infos {
     name: Interned<str>,
     span: Option<RelativeSpan>,
     symbol_kind: SymbolKind,
-    def_signature: Option<(Option<ParameterList>, Option<ReturnType>)>,
+    parameter_list: Option<Option<ParameterList>>,
+    return_type: Option<Option<ReturnType>>,
     member: Option<MemberBuilder>,
     def_body: Option<Option<Block>>,
     variadic: Option<bool>,
@@ -40,7 +41,8 @@ pub struct Infos {
 
 #[derive(Debug, Default, StableHash, Encode, Decode)]
 struct SyntaxTable {
-    def_signatures: Map<(Option<ParameterList>, Option<ReturnType>)>,
+    parameter_lists: Map<Option<ParameterList>>,
+    return_types: Map<Option<ReturnType>>,
     def_bodies: Map<Option<Block>>,
     variadic_defs: Map<bool>,
     effect_type_parameters: Map<Option<TypeParameterList>>,
@@ -147,11 +149,13 @@ impl Table {
     }
 
     #[must_use]
-    pub fn get_def_signature_syntax(
-        &self,
-        symbol_id: SymbolID,
-    ) -> (Option<ParameterList>, Option<ReturnType>) {
-        self.syntaxes.def_signatures.get(&symbol_id).cloned().unwrap()
+    pub fn get_parameter_list_syntax(&self, symbol_id: SymbolID) -> Option<ParameterList> {
+        self.syntaxes.parameter_lists.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
+    pub fn get_return_type_syntax(&self, symbol_id: SymbolID) -> Option<ReturnType> {
+        self.syntaxes.return_types.get(&symbol_id).cloned().unwrap()
     }
 
     #[must_use]
@@ -200,8 +204,12 @@ impl Table {
         self.parents.insert(symbol_id, parent);
         self.symbol_kinds.insert(symbol_id, info.symbol_kind);
 
-        if let Some(def_sig) = info.def_signature {
-            self.syntaxes.def_signatures.insert(symbol_id, def_sig);
+        if let Some(parameter_list) = info.parameter_list {
+            self.syntaxes.parameter_lists.insert(symbol_id, parameter_list);
+        }
+
+        if let Some(return_type) = info.return_type {
+            self.syntaxes.return_types.insert(symbol_id, return_type);
         }
 
         if let Some(def_body) = info.def_body {
@@ -300,7 +308,7 @@ impl Table {
     }
 
     pub fn all_callable_def_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
-        self.syntaxes.def_signatures.keys().copied()
+        self.syntaxes.parameter_lists.keys().copied()
     }
 }
 

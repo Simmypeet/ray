@@ -18,7 +18,7 @@ use rayc_symbol::{
     source_map::to_absolute_span,
     span::get_span,
     symbol_kind::{SymbolKind, get_symbol_kind},
-    syntax::get_def_signature_syntax,
+    syntax::{get_parameter_list_syntax, get_return_type_syntax},
 };
 use rayc_syntax::def::ParameterEntry;
 use rayc_type::{
@@ -208,7 +208,8 @@ impl Build for Key {
     type Diagnostic = Diagnostic;
 
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
-        let (parameters, return_type) = engine.get_def_signature_syntax(symbol_id).await;
+        let parameters = engine.get_parameter_list_syntax(symbol_id).await;
+        let return_type = engine.get_return_type_syntax(symbol_id).await;
         let symbol_kind = engine.get_symbol_kind(symbol_id).await;
 
         let (signature, mut diagnostics) = match symbol_kind {

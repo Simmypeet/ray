@@ -64,7 +64,8 @@ impl Table {
                 .symbol_kind(if is_extern { SymbolKind::ExternDef } else { SymbolKind::Def })
                 .name(ident.kind.0.clone())
                 .span(ident.span)
-                .def_signature((def_param, def_return))
+                .parameter_list(def_param)
+                .return_type(def_return)
                 .def_body(body)
                 .variadic(variadic)
                 .build(),
@@ -102,7 +103,8 @@ impl Table {
                 .symbol_kind(SymbolKind::EffectOperation)
                 .name(ident.kind.0.clone())
                 .span(ident.span)
-                .def_signature((parameters, return_type))
+                .parameter_list(parameters)
+                .return_type(return_type)
                 .build(),
             engine,
         )

@@ -8,7 +8,7 @@ use rayc_semantic_element::{
 use rayc_symbol::{
     GlobalSymbolID, get_target_root_module_id,
     member::get_members,
-    syntax::{get_def_body_syntax, get_def_signature_syntax},
+    syntax::{get_def_body_syntax, get_parameter_list_syntax},
 };
 use rayc_syntax::{Identifier, def::ParameterList};
 use rayc_type::{
@@ -231,7 +231,7 @@ impl TAstBuilder {
 
     #[must_use]
     pub async fn parameter_list_syntax_of_current_function(&self) -> Option<ParameterList> {
-        self.engine.get_def_signature_syntax(self.current_def_id).await.0
+        self.engine.get_parameter_list_syntax(self.current_def_id).await
     }
 
     #[must_use]
