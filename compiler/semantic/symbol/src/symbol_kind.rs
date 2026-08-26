@@ -27,6 +27,8 @@ use crate::SymbolID;
 #[allow(missing_docs)]
 pub enum SymbolKind {
     Def,
+    Effect,
+    EffectOperation,
     ExternDef,
     Module,
 }
@@ -45,13 +47,15 @@ pub struct Key {
 impl SymbolKind {
     /// Checks if this kind of symbol has a [`Member`] component.
     #[must_use]
-    pub const fn has_member(&self) -> bool { matches!(self, Self::Module) }
+    pub const fn has_member(&self) -> bool { matches!(self, Self::Effect | Self::Module) }
 
     /// Returns the human-readable string representation of this symbol kind.
     #[must_use]
     pub const fn str(&self) -> &'static str {
         match self {
             Self::Def => "def",
+            Self::Effect => "effect",
+            Self::EffectOperation => "effect operation",
             Self::ExternDef => "extern def",
             Self::Module => "module",
         }
@@ -78,7 +82,7 @@ pub struct AllDefIDs {
     pub target: TargetID,
 }
 
-/// Retrieves all ordinary and extern callable definition IDs in a target.
+/// Retrieves all callable definition and effect-operation IDs in a target.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]

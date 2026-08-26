@@ -3,6 +3,7 @@ use rayc_source_file::SourceElement;
 use rayc_symbol::symbol_kind::SymbolKind;
 use rayc_syntax::{
     def::{Def, DefSignature, ParameterEntry},
+    effect::{Effect, OperationSignature},
     module::ModuleMember,
 };
 
@@ -69,6 +70,65 @@ impl Table {
         .await;
     }
 
+    async fn register_effect_operation(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        operation: OperationSignature,
+        engine: &TrackedEngine,
+    ) {
+        let Some(ident) = operation.name() else {
+            return;
+        };
+        let parameters = operation.parameter_list();
+        let return_type = operation.return_type();
+
+        self.insert_symbol(
+            member_builder,
+            Infos::builder()
+                .symbol_kind(SymbolKind::EffectOperation)
+                .name(ident.kind.0.clone())
+                .span(ident.span)
+                .def_signature((parameters, return_type))
+                .build(),
+            engine,
+        )
+        .await;
+    }
+
+    async fn register_effect(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        effect: Effect,
+        engine: &TrackedEngine,
+    ) {
+        let Some(ident) = effect.name() else {
+            return;
+        };
+        let name = ident.kind.0.clone();
+        let effect_id = self
+            .insert_symbol(
+                member_builder,
+                Infos::builder()
+                    .symbol_kind(SymbolKind::Effect)
+                    .name(name.clone())
+                    .span(ident.span)
+                    .effect_type_parameters(effect.type_parameters())
+                    .build(),
+                engine,
+            )
+            .await;
+
+        let mut effect_members = member_builder.child(effect_id, name);
+        if let Some(body) = effect.body() {
+            for operation in body.operation_signatures() {
+                self.register_effect_operation(&mut effect_members, operation.clone(), engine)
+                    .await;
+            }
+        }
+
+        self.insert_symbol_members(effect_id.id, effect_members, engine);
+    }
+
     pub(crate) async fn register_module_members(
         &mut self,
         member_builder: &mut MemberBuilder,
@@ -80,7 +140,9 @@ impl Table {
                 ModuleMember::Def(def) => {
                     self.register_def(member_builder, def.clone(), engine).await;
                 }
-                ModuleMember::Effect(_) => {}
+                ModuleMember::Effect(effect) => {
+                    self.register_effect(member_builder, effect.clone(), engine).await;
+                }
             }
         }
     }

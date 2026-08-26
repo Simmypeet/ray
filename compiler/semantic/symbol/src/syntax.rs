@@ -4,6 +4,7 @@
 use qbice::{Decode, Encode, Query, StableHash};
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
+    effect::TypeParameterList,
     statement::Block,
 };
 
@@ -33,5 +34,15 @@ pub struct DefBodySyntaxKey {
 #[value(bool)]
 #[extend(by_val, name = is_variadic_def)]
 pub struct VariadicDefKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+/// Retrieves the explicitly declared type parameters of an effect symbol.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<TypeParameterList>)]
+#[extend(by_val, name = get_effect_type_parameter_syntax)]
+pub struct EffectTypeParameterSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }

@@ -70,7 +70,7 @@ impl PolyVarMap {
     }
 }
 
-/// Retrieves the polymorphic variables declared by a function symbol.
+/// Retrieves the polymorphic variables associated with a symbol.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]

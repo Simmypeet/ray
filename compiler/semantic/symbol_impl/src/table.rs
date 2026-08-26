@@ -16,6 +16,7 @@ use rayc_symbol::{
 };
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
+    effect::TypeParameterList,
     statement::Block,
 };
 use rayc_target::{TargetID, get_invocation_arguments};
@@ -34,6 +35,7 @@ pub struct Infos {
     member: Option<MemberBuilder>,
     def_body: Option<Option<Block>>,
     variadic: Option<bool>,
+    effect_type_parameters: Option<Option<TypeParameterList>>,
 }
 
 #[derive(Debug, Default, StableHash, Encode, Decode)]
@@ -41,6 +43,7 @@ struct SyntaxTable {
     def_signatures: Map<(Option<ParameterList>, Option<ReturnType>)>,
     def_bodies: Map<Option<Block>>,
     variadic_defs: Map<bool>,
+    effect_type_parameters: Map<Option<TypeParameterList>>,
 }
 
 /// Stores the symbol information. It maps the symbol ID to its related
@@ -110,6 +113,13 @@ impl MemberBuilder {
             redef_errors: Vec::new(),
         }
     }
+
+    #[must_use]
+    pub(crate) fn child(&self, current_id: GlobalSymbolID, name: Interned<str>) -> Self {
+        let mut qualified_name = self.current_qualified_name.clone();
+        qualified_name.push(name);
+        Self::new(current_id, qualified_name)
+    }
 }
 
 impl Table {
@@ -155,6 +165,14 @@ impl Table {
     }
 
     #[must_use]
+    pub fn get_effect_type_parameter_syntax(
+        &self,
+        symbol_id: SymbolID,
+    ) -> Option<TypeParameterList> {
+        self.syntaxes.effect_type_parameters.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
     pub const fn source_id(&self) -> Option<LocalSourceID> { self.source_id }
 
     fn insert_member_as_root_module(&mut self, member: MemberBuilder, engine: &TrackedEngine) {
@@ -194,6 +212,10 @@ impl Table {
             self.syntaxes.variadic_defs.insert(symbol_id, variadic);
         }
 
+        if let Some(type_parameters) = info.effect_type_parameters {
+            self.syntaxes.effect_type_parameters.insert(symbol_id, type_parameters);
+        }
+
         if let Some(member) = info.member {
             self.members.insert(symbol_id, engine.intern(member.member));
             self.diagnostics
@@ -206,7 +228,7 @@ impl Table {
         member_builder: &mut MemberBuilder,
         info: Infos,
         engine: &TrackedEngine,
-    ) {
+    ) -> GlobalSymbolID {
         // retrieves the occurrence count of the member name. normally,
         // this `count` should be 0 if no redefinition has been encountered.
         let count = match member_builder.occurrences.entry(info.name.clone()) {
@@ -253,6 +275,18 @@ impl Table {
 
         // finally, insert the symbol information into the table
         self.insert_info(id, Some(member_builder.current_id.id), info, engine);
+
+        member_builder.current_id.target_id.make_global(id)
+    }
+
+    pub fn insert_symbol_members(
+        &mut self,
+        symbol_id: SymbolID,
+        member: MemberBuilder,
+        engine: &TrackedEngine,
+    ) {
+        self.members.insert(symbol_id, engine.intern(member.member));
+        self.diagnostics.extend(member.redef_errors.into_iter().map(Diagnostic::ItemRedefinition));
     }
 }
 
