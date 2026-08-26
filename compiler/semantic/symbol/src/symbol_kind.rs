@@ -56,7 +56,7 @@ impl SymbolKind {
     /// Checks if this kind of symbol has a definition signature.
     #[must_use]
     pub const fn has_def_signature(&self) -> bool {
-        matches!(self, Self::Def | Self::Effect | Self::ExternDef)
+        matches!(self, Self::Def | Self::EffectOperation | Self::ExternDef)
     }
 
     /// Returns the human-readable string representation of this symbol kind.
