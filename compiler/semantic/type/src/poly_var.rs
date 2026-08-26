@@ -87,15 +87,28 @@ pub struct Key {
     pub symbol_id: GlobalSymbolID,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable, Default)]
 pub struct PolyVarStack {
-    poly_var_maps: Vec<Interned<PolyVarMap>>,
+    poly_var_maps: Vec<(GlobalSymbolID, Interned<PolyVarMap>)>,
 }
 
 impl PolyVarStack {
     #[must_use]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Interned<PolyVarMap>> {
-        self.poly_var_maps.iter().rev()
+    pub const fn new() -> Self { Self { poly_var_maps: Vec::new() } }
+
+    #[must_use]
+    pub fn find_by_name(&self, name: &str) -> Option<GlobalPolyVarID> {
+        for (symbol_id, poly_var_map) in &self.poly_var_maps {
+            if let Some(poly_var_id) = poly_var_map.find_by_name(name) {
+                return Some(GlobalPolyVarID::new(*symbol_id, poly_var_id));
+            }
+        }
+
+        None
+    }
+
+    pub fn push(&mut self, symbol_id: GlobalSymbolID, poly_var_map: Interned<PolyVarMap>) {
+        self.poly_var_maps.push((symbol_id, poly_var_map));
     }
 }
 
@@ -120,7 +133,7 @@ async fn enclosing_poly_var_maps_executor(
 
     while let Some(id) = current_id {
         if engine.get_symbol_kind(id).await.has_poly_var_map() {
-            maps.push(engine.get_poly_var_map(id).await);
+            maps.push((id, engine.get_poly_var_map(id).await));
         }
         current_id = engine.get_parent_global(id).await;
     }

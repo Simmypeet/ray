@@ -5,13 +5,13 @@ use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::SourceElement;
-use rayc_symbol::{GlobalSymbolID, MemberID, source_map::to_absolute_span};
+use rayc_symbol::source_map::to_absolute_span;
 use rayc_syntax::{
     def::{ParameterEntry, ParameterList, ReturnType},
     r#type::{Primitive as PrimitiveSyntax, Type as TypeSyntax},
 };
 use rayc_type::{
-    poly_var::{PolyVar, PolyVarMap},
+    poly_var::{PolyVar, PolyVarMap, PolyVarStack},
     ty::{Mutability, Primitive, Ty, TyKind},
 };
 
@@ -60,39 +60,18 @@ impl Report for PolyVarNotFound {
 }
 
 #[derive(Debug, Clone)]
-struct ResolvedParameter {
-    span: RelativeSpan,
-    ty: Interned<Ty>,
+pub struct ResolvedParameter {
+    pub span: RelativeSpan,
+    pub ty: Interned<Ty>,
 }
 
 /// The resolved semantic types and polymorphic environment of a function
 /// signature.
 #[derive(Debug, Clone)]
 pub struct SignatureResolution {
-    parameters: Vec<ResolvedParameter>,
-    return_type: Interned<Ty>,
-    poly_vars: PolyVarMap,
-    diagnostics: Vec<Diagnostic>,
-}
-
-impl SignatureResolution {
-    /// Iterates over the resolved parameter types and their source spans.
-    #[must_use]
-    pub fn parameters(&self) -> impl ExactSizeIterator<Item = (&Interned<Ty>, RelativeSpan)> {
-        self.parameters.iter().map(|parameter| (&parameter.ty, parameter.span))
-    }
-
-    /// Returns the resolved function return type.
-    #[must_use]
-    pub const fn return_type(&self) -> &Interned<Ty> { &self.return_type }
-
-    /// Returns the polymorphic variables declared by the parameter types.
-    #[must_use]
-    pub const fn poly_vars(&self) -> &PolyVarMap { &self.poly_vars }
-
-    /// Consumes the resolution and returns its diagnostics.
-    #[must_use]
-    pub fn into_diagnostics(self) -> Vec<Diagnostic> { self.diagnostics }
+    pub parameters: Vec<ResolvedParameter>,
+    pub return_type: Interned<Ty>,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 /// The result of resolving one type against an existing polymorphic
@@ -159,7 +138,8 @@ fn discover_poly_vars(ty: &TypeSyntax, poly_vars: &mut PolyVarMap) {
     }
 }
 
-fn discover_parameter_poly_vars(parameters: Option<&ParameterList>) -> PolyVarMap {
+#[must_use]
+pub fn discover_parameter_poly_vars(parameters: Option<&ParameterList>) -> PolyVarMap {
     let mut poly_vars = PolyVarMap::new();
 
     if let Some(parameters) = parameters {
@@ -177,8 +157,7 @@ fn discover_parameter_poly_vars(parameters: Option<&ParameterList>) -> PolyVarMa
 #[allow(clippy::similar_names)]
 fn resolve_type(
     engine: &TrackedEngine,
-    owner: GlobalSymbolID,
-    poly_vars: &PolyVarMap,
+    poly_vars: &PolyVarStack,
     syntax: &TypeSyntax,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Interned<Ty> {
@@ -196,7 +175,7 @@ fn resolve_type(
         TypeSyntax::Pointer(pointer) => {
             let pointee = pointer.pointed_type().map_or_else(
                 || Ty::new_error(engine),
-                |pointed_type| resolve_type(engine, owner, poly_vars, &pointed_type, diagnostics),
+                |pointed_type| resolve_type(engine, poly_vars, &pointed_type, diagnostics),
             );
             let mutability = if pointer.mut_keyword().is_some() {
                 Mutability::Mutable
@@ -208,7 +187,7 @@ fn resolve_type(
         TypeSyntax::Tuple(tuple) => {
             let arguments = tuple
                 .elements()
-                .map(|element| resolve_type(engine, owner, poly_vars, &element, diagnostics))
+                .map(|element| resolve_type(engine, poly_vars, &element, diagnostics))
                 .collect::<Vec<_>>();
             Ty::new_tuple(engine.intern_unsized(arguments), engine)
         }
@@ -216,9 +195,7 @@ fn resolve_type(
             let parameters = lambda.parameters().map_or_else(Vec::new, |parameters| {
                 parameters
                     .parameters()
-                    .map(|parameter| {
-                        resolve_type(engine, owner, poly_vars, &parameter, diagnostics)
-                    })
+                    .map(|parameter| resolve_type(engine, poly_vars, &parameter, diagnostics))
                     .collect::<Vec<_>>()
             });
             let return_type = lambda.return_type().map_or_else(
@@ -226,9 +203,7 @@ fn resolve_type(
                 |return_type| {
                     return_type.r#type().map_or_else(
                         || Ty::new_error(engine),
-                        |return_type| {
-                            resolve_type(engine, owner, poly_vars, &return_type, diagnostics)
-                        },
+                        |return_type| resolve_type(engine, poly_vars, &return_type, diagnostics),
                     )
                 },
             );
@@ -247,25 +222,20 @@ fn resolve_type(
                 return Ty::new_error(engine);
             };
 
-            Ty::new_poly_var(MemberID::new(owner, id), engine)
+            Ty::new_poly_var(id, engine)
         }
     }
 }
 
-/// Resolves a complete function signature.
-///
-/// All polymorphic variables appearing in parameter types are discovered before
-/// any parameter is resolved. This allows the first occurrence of `a`, `b`, or
-/// `c` to declare that variable for the entire signature, including earlier
-/// nested types and the return type.
+/// Resolves a complete function signature against polymorphic variables
+/// declared by an enclosing symbol.
 #[must_use]
-pub fn resolve_signature(
+pub fn resolve_signature_with_poly_vars(
     engine: &TrackedEngine,
-    owner: GlobalSymbolID,
     parameters: Option<&ParameterList>,
     return_type: Option<&ReturnType>,
+    poly_vars: &PolyVarStack,
 ) -> SignatureResolution {
-    let poly_vars = discover_parameter_poly_vars(parameters);
     let mut diagnostics = Vec::new();
     let mut resolved_parameters = Vec::new();
 
@@ -274,7 +244,7 @@ pub fn resolve_signature(
             let ParameterEntry::Parameter(parameter) = entry else { continue };
             let ty = parameter.r#type().map_or_else(
                 || Ty::new_error(engine),
-                |syntax| resolve_type(engine, owner, &poly_vars, &syntax, &mut diagnostics),
+                |syntax| resolve_type(engine, poly_vars, &syntax, &mut diagnostics),
             );
             resolved_parameters.push(ResolvedParameter { span: parameter.span(), ty });
         }
@@ -285,23 +255,22 @@ pub fn resolve_signature(
         |return_type| {
             return_type.r#type().map_or_else(
                 || Ty::new_error(engine),
-                |syntax| resolve_type(engine, owner, &poly_vars, &syntax, &mut diagnostics),
+                |syntax| resolve_type(engine, poly_vars, &syntax, &mut diagnostics),
             )
         },
     );
 
-    SignatureResolution { parameters: resolved_parameters, return_type, poly_vars, diagnostics }
+    SignatureResolution { parameters: resolved_parameters, return_type, diagnostics }
 }
 
 /// Resolves one type against polymorphic variables declared by its owner.
 #[must_use]
 pub fn resolve_type_with_poly_vars(
     engine: &TrackedEngine,
-    owner: GlobalSymbolID,
-    poly_vars: &PolyVarMap,
+    poly_vars: &PolyVarStack,
     syntax: &TypeSyntax,
 ) -> TypeResolution {
     let mut diagnostics = Vec::new();
-    let ty = resolve_type(engine, owner, poly_vars, syntax, &mut diagnostics);
+    let ty = resolve_type(engine, poly_vars, syntax, &mut diagnostics);
     TypeResolution { ty, diagnostics }
 }

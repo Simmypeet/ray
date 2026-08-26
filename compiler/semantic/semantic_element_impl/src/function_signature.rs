@@ -6,7 +6,7 @@ use qbice::{
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_resolution::resolve_signature;
+use rayc_resolution::{discover_parameter_poly_vars, resolve_signature_with_poly_vars};
 use rayc_semantic_element::{
     parameter::{Key as ParameterKey, Parameter, ParameterMap},
     return_type::Key as ReturnTypeKey,
@@ -14,15 +14,16 @@ use rayc_semantic_element::{
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID,
+    parent::get_parent_global,
     source_map::to_absolute_span,
     span::get_span,
     symbol_kind::{SymbolKind, get_symbol_kind},
-    syntax::get_def_signature_syntax,
+    syntax::{get_def_signature_syntax, get_effect_type_parameter_syntax},
 };
 use rayc_syntax::def::ParameterEntry;
 use rayc_type::{
-    poly_var::{Key as PolyVarKey, PolyVarMap},
-    ty::{Ty, TyApplicationView},
+    poly_var::{Key as PolyVarKey, PolyVar, PolyVarMap, PolyVarStack, get_enclosing_poly_var_maps},
+    ty::{Ty, TyApplicationView, TyKind},
 };
 
 use crate::{
@@ -130,7 +131,7 @@ fn is_unit_type(ty: &Ty) -> bool {
 pub(crate) struct FunctionSignature {
     parameters: Interned<ParameterMap>,
     return_type: Interned<Ty>,
-    poly_vars: Interned<PolyVarMap>,
+    poly_vars: Option<Interned<PolyVarMap>>,
 }
 
 #[derive(
@@ -147,18 +148,51 @@ fn build_function_signature(
     parameters: Option<&rayc_syntax::def::ParameterList>,
     return_type: Option<&rayc_syntax::def::ReturnType>,
 ) -> (FunctionSignature, Vec<Diagnostic>) {
-    let resolution = resolve_signature(engine, owner, parameters, return_type);
+    let mut poly_var_stack = PolyVarStack::new();
+    let poly_vars = engine.intern(discover_parameter_poly_vars(parameters));
+    poly_var_stack.push(owner, poly_vars.clone());
+
+    let resolution =
+        resolve_signature_with_poly_vars(engine, parameters, return_type, &poly_var_stack);
+
     let mut parameter_map = ParameterMap::new();
-    for (ty, span) in resolution.parameters() {
-        parameter_map.push(Parameter::builder().span(span).ty(ty.clone()).build());
+    for param in resolution.parameters {
+        parameter_map.push(Parameter::builder().span(param.span).ty(param.ty.clone()).build());
     }
-    let return_type = resolution.return_type().clone();
-    let poly_vars = engine.intern(resolution.poly_vars().clone());
-    let diagnostics =
-        resolution.into_diagnostics().into_iter().map(Diagnostic::Resolution).collect();
+
+    let diagnostics = resolution.diagnostics.into_iter().map(Diagnostic::Resolution).collect();
 
     (
-        FunctionSignature { parameters: engine.intern(parameter_map), return_type, poly_vars },
+        FunctionSignature {
+            parameters: engine.intern(parameter_map),
+            return_type: resolution.return_type,
+            poly_vars: Some(poly_vars),
+        },
+        diagnostics,
+    )
+}
+
+fn build_effect_operation_signature(
+    engine: &TrackedEngine,
+    parameters: Option<&rayc_syntax::def::ParameterList>,
+    return_type: Option<&rayc_syntax::def::ReturnType>,
+    poly_vars: &PolyVarStack,
+) -> (FunctionSignature, Vec<Diagnostic>) {
+    let resolution = resolve_signature_with_poly_vars(engine, parameters, return_type, poly_vars);
+
+    let mut parameter_map = ParameterMap::new();
+    for param in resolution.parameters {
+        parameter_map.push(Parameter::builder().span(param.span).ty(param.ty).build());
+    }
+
+    let diagnostics = resolution.diagnostics.into_iter().map(Diagnostic::Resolution).collect();
+
+    (
+        FunctionSignature {
+            parameters: engine.intern(parameter_map),
+            return_type: resolution.return_type,
+            poly_vars: None,
+        },
         diagnostics,
     )
 }
@@ -168,11 +202,34 @@ impl Build for Key {
 
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
         let (parameters, return_type) = engine.get_def_signature_syntax(symbol_id).await;
-        let (signature, mut diagnostics) =
-            build_function_signature(engine, symbol_id, parameters.as_ref(), return_type.as_ref());
+        let symbol_kind = engine.get_symbol_kind(symbol_id).await;
 
-        if engine.get_symbol_kind(symbol_id).await == SymbolKind::ExternDef {
-            if !signature.poly_vars.is_empty()
+        let (signature, mut diagnostics) = match symbol_kind {
+            SymbolKind::Def | SymbolKind::ExternDef => build_function_signature(
+                engine,
+                symbol_id,
+                parameters.as_ref(),
+                return_type.as_ref(),
+            ),
+            SymbolKind::EffectOperation => {
+                let poly_vars = engine
+                    .get_enclosing_poly_var_maps(engine.get_parent_global(symbol_id).await.unwrap())
+                    .await;
+
+                build_effect_operation_signature(
+                    engine,
+                    parameters.as_ref(),
+                    return_type.as_ref(),
+                    &poly_vars,
+                )
+            }
+            SymbolKind::Effect | SymbolKind::Module => {
+                panic!("only callable symbols have function signatures")
+            }
+        };
+
+        if symbol_kind == SymbolKind::ExternDef {
+            if signature.poly_vars.as_ref().is_some_and(|poly_vars| !poly_vars.is_empty())
                 && let Some(span) = engine.get_span(symbol_id).await
             {
                 diagnostics.push(Diagnostic::InvalidExternSignature(InvalidExternSignature {
@@ -249,12 +306,41 @@ async fn return_type_projection_executor(
 static RETURN_TYPE_PROJECTION_EXECUTOR: Registration<Config> =
     Registration::new::<ReturnTypeKey, ReturnTypeProjectionExecutor>();
 
-#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+#[executor(config = Config)]
 async fn poly_var_projection_executor(
     &PolyVarKey { symbol_id }: &PolyVarKey,
     engine: &TrackedEngine,
 ) -> Interned<PolyVarMap> {
-    engine.query(&Key { symbol_id }).await.poly_vars.clone()
+    match engine.get_symbol_kind(symbol_id).await {
+        SymbolKind::Def => engine
+            .query(&Key { symbol_id })
+            .await
+            .poly_vars
+            .clone()
+            .expect("a definition should own its polymorphic variables"),
+        SymbolKind::Effect => {
+            let mut poly_vars = PolyVarMap::new();
+
+            if let Some(type_parameters) = engine.get_effect_type_parameter_syntax(symbol_id).await
+            {
+                for identifier in type_parameters.parameters() {
+                    poly_vars.insert(PolyVar::new(
+                        identifier.kind.0.clone(),
+                        TyKind::Star,
+                        identifier.span(),
+                    ));
+                }
+            }
+            engine.intern(poly_vars)
+        }
+        SymbolKind::EffectOperation => {
+            panic!("an effect operation does not own a polymorphic-variable map")
+        }
+        SymbolKind::ExternDef => {
+            panic!("an extern definition does not own a polymorphic-variable map")
+        }
+        SymbolKind::Module => panic!("a module does not own a polymorphic-variable map"),
+    }
 }
 
 #[distributed_slice(RAY_PROGRAM)]
