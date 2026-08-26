@@ -1,0 +1,123 @@
+use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use rayc_symbol::GlobalSymbolID;
+
+use crate::{
+    subst::Substitutable,
+    ty::{Ty, TyInference, args::Args},
+};
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct EffectLabel {
+    effect_symbol_id: GlobalSymbolID,
+    args: Args,
+}
+
+impl Substitutable for Interned<EffectLabel> {
+    fn apply_subst(
+        &self,
+        subst: &crate::subst::Subst,
+        engine: &rayc_qbice::TrackedEngine,
+    ) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        self.args.apply_subst(subst, engine).map(|args| {
+            engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
+        })
+    }
+}
+
+impl EffectLabel {
+    #[must_use]
+    pub const fn new(effect_symbol_id: GlobalSymbolID, args: Args) -> Self {
+        Self { effect_symbol_id, args }
+    }
+
+    #[must_use]
+    pub const fn effect_symbol_id(&self) -> GlobalSymbolID { self.effect_symbol_id }
+
+    pub fn arguments(&self) -> impl Iterator<Item = &Ty> { self.args.iter() }
+
+    #[must_use]
+    pub fn has_arguments(&self) -> bool { !self.args.is_empty() }
+
+    #[must_use]
+    pub fn structural_match<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> Option<impl Iterator<Item = (&'a Interned<Ty>, &'a Interned<Ty>)>> {
+        (self.effect_symbol_id == other.effect_symbol_id)
+            .then(|| self.args.structural_match(&other.args))
+            .flatten()
+    }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct EffectRow {
+    labels: Interned<[Interned<EffectLabel>]>,
+    tail: Option<Interned<Ty>>,
+}
+
+impl EffectRow {
+    #[must_use]
+    pub fn new(
+        labels: impl IntoIterator<Item = Interned<EffectLabel>>,
+        tail: Option<Interned<Ty>>,
+        engine: &rayc_qbice::TrackedEngine,
+    ) -> Self {
+        Self { labels: engine.intern_unsized(labels.into_iter().collect::<Vec<_>>()), tail }
+    }
+
+    #[must_use]
+    pub fn labels(&self) -> impl ExactSizeIterator<Item = &Interned<EffectLabel>> {
+        self.labels.iter()
+    }
+
+    #[must_use]
+    pub const fn tail(&self) -> Option<&Interned<Ty>> { self.tail.as_ref() }
+
+    pub fn interned_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
+        self.labels.iter().flat_map(|x| x.args.interned_iter()).chain(self.tail.as_ref())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Ty> {
+        self.labels
+            .iter()
+            .flat_map(|x| x.args.iter())
+            .chain(self.tail.as_ref().map(std::convert::AsRef::as_ref))
+    }
+
+    #[must_use]
+    pub fn has_inference_variable(&self, ty: &TyInference) -> bool {
+        self.interned_iter().any(|x| x.has_inference_variable(ty))
+    }
+}
+
+impl Substitutable for EffectRow {
+    fn apply_subst(
+        &self,
+        subst: &crate::subst::Subst,
+        engine: &rayc_qbice::TrackedEngine,
+    ) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        let new_labels = self.labels.apply_subst(subst, engine);
+        let new_tail = self.tail.as_ref().and_then(|x| x.apply_subst(subst, engine));
+
+        match (new_labels, new_tail) {
+            (None, None) => None,
+            (None, Some(new_tail)) => {
+                Some(Self { labels: self.labels.clone(), tail: Some(new_tail) })
+            }
+            (Some(new_labels), None) => Some(Self { labels: new_labels, tail: self.tail.clone() }),
+            (Some(new_labels), Some(new_tail)) => {
+                Some(Self { labels: new_labels, tail: Some(new_tail) })
+            }
+        }
+    }
+}

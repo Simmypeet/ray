@@ -1,6 +1,6 @@
 use im::hashmap::Entry;
 use qbice::{
-    Decode, Encode, StableHash,
+    Decode, Encode, Identifiable, StableHash,
     stable_hash::{StableHasher, Value},
     storage::intern::Interned,
 };
@@ -142,6 +142,33 @@ pub trait Substitutable {
         if let Some(new_self) = self.apply_subst(subst, engine) {
             *self = new_self;
         }
+    }
+}
+
+impl<T: Substitutable + Clone + StableHash + Identifiable + Send + Sync + 'static> Substitutable
+    for Interned<[T]>
+{
+    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        let mut new_vec = None;
+
+        for (i, ty_arg) in self.as_ref().iter().enumerate() {
+            match (new_vec.as_mut(), ty_arg.apply_subst(subst, engine)) {
+                (None, Some(new_ty_arg)) => {
+                    let mut vec = self.as_ref().to_vec();
+                    vec[i] = new_ty_arg;
+                    new_vec = Some(vec);
+                }
+                (Some(vec), Some(new_ty_arg)) => {
+                    vec[i] = new_ty_arg;
+                }
+                _ => {}
+            }
+        }
+
+        new_vec.map(|vec| engine.intern_unsized(vec))
     }
 }
 

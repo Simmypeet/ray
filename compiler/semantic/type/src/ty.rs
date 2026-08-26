@@ -6,12 +6,16 @@ use std::{
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_hash::FxHashMap;
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::GlobalSymbolID;
+use rayc_symbol::{GlobalSymbolID, name::get_name};
 
 use crate::{
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap},
     subst::{Subst, Substitutable},
+    ty::effect_row::EffectRow,
 };
+
+pub mod args;
+pub mod effect_row;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Primitive {
@@ -178,6 +182,7 @@ impl TyApplication {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum TyKind {
     Star,
+    EffectRow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -244,18 +249,38 @@ pub enum Ty {
     Application(TyApplication),
     Inference(TyInference),
     PolyVar(GlobalPolyVarID),
+    EffectRow(EffectRow),
 }
 
 impl Ty {
     /// Iterates over an interned type and all its recursively nested type
     /// arguments in breadth-first order.
-    pub fn recursive_iter(root: &Interned<Self>) -> impl Iterator<Item = &'_ Interned<Self>> {
+    pub fn interned_recursive_iter(
+        root: &Interned<Self>,
+    ) -> impl Iterator<Item = &'_ Interned<Self>> {
         let mut pending = VecDeque::from([root]);
 
         std::iter::from_fn(move || {
             let ty = pending.pop_front()?;
             match &**ty {
                 Self::Application(application) => pending.extend(application.args.iter()),
+                Self::EffectRow(row) => pending.extend(row.interned_iter()),
+                Self::Inference(_) | Self::PolyVar(_) => {}
+            }
+            Some(ty)
+        })
+    }
+
+    pub fn recursive_iter(&self) -> impl Iterator<Item = &Self> {
+        let mut pending = VecDeque::from([self]);
+
+        std::iter::from_fn(move || {
+            let ty = pending.pop_front()?;
+            match ty {
+                Self::Application(application) => {
+                    pending.extend(application.args.iter().map(|x| &**x));
+                }
+                Self::EffectRow(row) => pending.extend(row.iter()),
                 Self::Inference(_) | Self::PolyVar(_) => {}
             }
             Some(ty)
@@ -269,6 +294,7 @@ impl Ty {
                 ty_application.args.iter().any(|arg| arg.has_inference_variable(ty))
             }
             Self::Inference(ty_inference) => ty_inference == ty,
+            Self::EffectRow(row) => row.has_inference_variable(ty),
             Self::PolyVar(_) => false,
         }
     }
@@ -281,26 +307,9 @@ impl Substitutable for Interned<Ty> {
     {
         match &**self {
             Ty::Application(ty_application) => {
-                let mut new_vec = None;
-
-                for (i, ty_arg) in ty_application.args.iter().enumerate() {
-                    match (new_vec.as_mut(), ty_arg.apply_subst(subst, engine)) {
-                        (None, Some(new_ty_arg)) => {
-                            let mut vec = ty_application.args.as_ref().to_vec();
-                            vec[i] = new_ty_arg;
-                            new_vec = Some(vec);
-                        }
-                        (Some(vec), Some(new_ty_arg)) => {
-                            vec[i] = new_ty_arg;
-                        }
-                        _ => {}
-                    }
-                }
-
-                new_vec.map(|vec| {
-                    let new_args = engine.intern_unsized(vec);
+                ty_application.args.apply_subst(subst, engine).map(|args| {
                     let new_ty_application =
-                        TyApplication { constant: ty_application.constant, args: new_args };
+                        TyApplication { constant: ty_application.constant, args };
 
                     engine.intern(Ty::Application(new_ty_application))
                 })
@@ -308,6 +317,9 @@ impl Substitutable for Interned<Ty> {
 
             Ty::Inference(ty_inference) => subst.get(ty_inference).cloned(),
             Ty::PolyVar(poly) => subst.get(poly).cloned(),
+            Ty::EffectRow(row) => {
+                row.apply_subst(subst, engine).map(|new_row| engine.intern(Ty::EffectRow(new_row)))
+            }
         }
     }
 }
@@ -371,6 +383,15 @@ impl Ty {
     pub fn new_poly_var(id: GlobalPolyVarID, engine: &TrackedEngine) -> Interned<Self> {
         engine.intern(Self::PolyVar(id))
     }
+
+    #[must_use]
+    pub fn new_effect_row(
+        labels: impl IntoIterator<Item = Interned<effect_row::EffectLabel>>,
+        tail: Option<Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::EffectRow(EffectRow::new(labels, tail, engine)))
+    }
 }
 
 #[cfg(test)]
@@ -391,7 +412,7 @@ mod tests {
             Ty::new_tuple(engine.intern_unsized([bool_ty.clone(), float_ty.clone()]), &engine);
         let root = Ty::new_lambda([pointer_ty.clone(), tuple_ty.clone()], int_ty.clone(), &engine);
 
-        let recursive_types = Ty::recursive_iter(&root).collect::<Vec<_>>();
+        let recursive_types = Ty::interned_recursive_iter(&root).collect::<Vec<_>>();
 
         assert_eq!(recursive_types, vec![
             &root,
@@ -408,28 +429,33 @@ mod tests {
 impl Ty {
     pub async fn display<'x>(&'x self, engine: &TrackedEngine) -> TyDisplay<'x> {
         let mut poly_var_maps = FxHashMap::default();
-        self.collect_poly_var_maps(engine, &mut poly_var_maps).await;
+        let mut effect_names = FxHashMap::default();
+        self.collect_display_context(engine, &mut poly_var_maps, &mut effect_names).await;
 
-        TyDisplay { ty: self, poly_var_maps }
+        TyDisplay { ty: self, poly_var_maps, effect_names }
     }
 
-    async fn collect_poly_var_maps(
+    async fn collect_display_context(
         &self,
         engine: &TrackedEngine,
         poly_var_maps: &mut FxHashMap<GlobalSymbolID, Interned<PolyVarMap>>,
+        effect_names: &mut FxHashMap<GlobalSymbolID, Interned<str>>,
     ) {
-        let mut types = vec![self];
-        while let Some(ty) = types.pop() {
+        for ty in self.recursive_iter() {
             match ty {
-                Self::Application(ty_application) => {
-                    types.extend(ty_application.args.iter().map(|arg| &**arg));
-                }
-                Self::Inference(_) => {}
+                Self::Application(_) | Self::Inference(_) => {}
                 Self::PolyVar(poly_var) => {
                     let symbol_id = poly_var.parent_id();
                     if let Entry::Vacant(entry) = poly_var_maps.entry(symbol_id) {
                         let poly_var_map = engine.query(&PolyVarKey { symbol_id }).await;
                         entry.insert(poly_var_map);
+                    }
+                }
+                Self::EffectRow(row) => {
+                    for label in row.labels() {
+                        if let Entry::Vacant(entry) = effect_names.entry(label.effect_symbol_id()) {
+                            entry.insert(engine.get_name(label.effect_symbol_id()).await);
+                        }
                     }
                 }
             }
@@ -441,6 +467,7 @@ impl Ty {
 pub struct TyDisplay<'x> {
     ty: &'x Ty,
     poly_var_maps: FxHashMap<GlobalSymbolID, Interned<PolyVarMap>>,
+    effect_names: FxHashMap<GlobalSymbolID, Interned<str>>,
 }
 
 impl TyDisplay<'_> {
@@ -504,6 +531,44 @@ impl TyDisplay<'_> {
                     .expect("should've been collected earlier");
 
                 write!(f, "{{{}}}", poly_var_map.name_of(poly_var.id()))
+            }
+
+            Ty::EffectRow(row) => {
+                f.write_char('{')?;
+
+                for (index, label) in row.labels().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+
+                    let name = self
+                        .effect_names
+                        .get(&label.effect_symbol_id())
+                        .expect("should've been collected earlier");
+                    f.write_str(name)?;
+
+                    if label.has_arguments() {
+                        f.write_char('[')?;
+                        for (argument_index, argument) in label.arguments().enumerate() {
+                            if argument_index > 0 {
+                                f.write_str(", ")?;
+                            }
+                            self.fmt_ty(argument, f)?;
+                        }
+                        f.write_char(']')?;
+                    }
+                }
+
+                if let Some(tail) = row.tail() {
+                    if row.labels().len() > 0 {
+                        f.write_str(" | ")?;
+                    } else {
+                        f.write_str("| ")?;
+                    }
+                    self.fmt_ty(tail, f)?;
+                }
+
+                f.write_char('}')
             }
         }
     }
