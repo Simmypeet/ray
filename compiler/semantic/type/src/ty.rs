@@ -10,6 +10,7 @@ use rayc_symbol::{GlobalSymbolID, name::get_name};
 
 use crate::{
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap},
+    reduce::Reduce,
     subst::{Subst, Substitutable},
     ty::{
         application::{Application, Constant, View as ApplicationView},
@@ -149,6 +150,26 @@ impl Substitutable for Interned<Ty> {
             Ty::PolyVar(poly) => subst.get(poly).cloned(),
             Ty::EffectRow(row) => {
                 row.apply_subst(subst, engine).map(|new_row| engine.intern(Ty::EffectRow(new_row)))
+            }
+        }
+    }
+}
+
+impl Reduce for Interned<Ty> {
+    fn reduce(&self, engine: &TrackedEngine) -> Option<Self> {
+        match &**self {
+            Ty::Application(application) => application
+                .reduce(engine)
+                .map(|application| engine.intern(Ty::Application(application))),
+            Ty::Inference(_) | Ty::PolyVar(_) => None,
+            Ty::EffectRow(row) => {
+                if row.labels().len() == 0
+                    && let Some(tail) = row.tail()
+                {
+                    return Some(tail.clone());
+                }
+
+                row.reduce(engine).map(|row| engine.intern(Ty::EffectRow(row)))
             }
         }
     }

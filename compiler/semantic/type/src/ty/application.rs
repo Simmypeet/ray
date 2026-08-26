@@ -2,7 +2,10 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 
 use super::{InferenceConstraint, Mutability, Primitive, Ty, inference::Inference};
-use crate::subst::{Subst, Substitutable};
+use crate::{
+    reduce::Reduce,
+    subst::{Subst, Substitutable},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Constant {
@@ -146,6 +149,12 @@ impl Application {
     #[must_use]
     pub(super) fn has_inference_variable(&self, ty: &Inference) -> bool {
         self.args.iter().any(|arg| arg.has_inference_variable(ty))
+    }
+}
+
+impl Reduce for Application {
+    fn reduce(&self, engine: &TrackedEngine) -> Option<Self> {
+        self.args.reduce(engine).map(|args| Self { constant: self.constant, args })
     }
 }
 

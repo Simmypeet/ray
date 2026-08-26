@@ -2,6 +2,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
+    reduce::Reduce,
     subst::Substitutable,
     ty::{Ty, args::Args, inference::Inference},
 };
@@ -12,6 +13,14 @@ use crate::{
 pub struct EffectLabel {
     effect_symbol_id: GlobalSymbolID,
     args: Args,
+}
+
+impl Reduce for Interned<EffectLabel> {
+    fn reduce(&self, engine: &rayc_qbice::TrackedEngine) -> Option<Self> {
+        self.args.reduce(engine).map(|args| {
+            engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
+        })
+    }
 }
 
 impl Substitutable for Interned<EffectLabel> {
@@ -94,6 +103,27 @@ impl EffectRow {
     #[must_use]
     pub fn has_inference_variable(&self, ty: &Inference) -> bool {
         self.interned_iter().any(|x| x.has_inference_variable(ty))
+    }
+}
+
+impl Reduce for EffectRow {
+    fn reduce(&self, engine: &rayc_qbice::TrackedEngine) -> Option<Self> {
+        if let Some(Ty::EffectRow(tail_row)) = self.tail.as_deref() {
+            return Some(Self::new(
+                self.labels.iter().cloned().chain(tail_row.labels.iter().cloned()),
+                tail_row.tail.clone(),
+                engine,
+            ));
+        }
+
+        if let Some(labels) = self.labels.reduce(engine) {
+            return Some(Self { labels, tail: self.tail.clone() });
+        }
+
+        self.tail
+            .as_ref()
+            .and_then(|tail| tail.reduce(engine))
+            .map(|tail| Self { labels: self.labels.clone(), tail: Some(tail) })
     }
 }
 

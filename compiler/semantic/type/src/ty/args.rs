@@ -1,6 +1,7 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 
 use crate::{
+    reduce::Reduce,
     subst::Substitutable,
     ty::{Ty, inference::Inference},
 };
@@ -41,6 +42,12 @@ impl Args {
     #[must_use]
     pub fn has_inference_variable(&self, ty: &Inference) -> bool {
         self.args.iter().any(|x| x.has_inference_variable(ty))
+    }
+}
+
+impl Reduce for Args {
+    fn reduce(&self, engine: &rayc_qbice::TrackedEngine) -> Option<Self> {
+        self.args.reduce(engine).map(|args| Self { args })
     }
 }
 
