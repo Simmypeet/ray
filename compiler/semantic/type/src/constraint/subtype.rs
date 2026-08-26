@@ -85,12 +85,8 @@ impl Solver {
         let mut unmatched_greater = greater.labels().cloned().collect::<Vec<_>>();
 
         for lesser_label in lesser.labels() {
-            let exact_match =
-                unmatched_greater.iter().position(|greater_label| greater_label == lesser_label);
-            let matching_effect = exact_match.or_else(|| {
-                unmatched_greater.iter().position(|greater_label| {
-                    greater_label.effect_symbol_id() == lesser_label.effect_symbol_id()
-                })
+            let matching_effect = unmatched_greater.iter().position(|greater_label| {
+                greater_label.effect_symbol_id() == lesser_label.effect_symbol_id()
             });
 
             let Some(matching_effect) = matching_effect else {
@@ -245,16 +241,45 @@ mod tests {
     use crate::{
         constraint::{Constraint, Error, Step},
         solver::Solver,
-        ty::{Ty, TyInference, TyKind, args::Args, effect_row::EffectLabel},
+        subst::{Subst, Substitutable},
+        ty::{Primitive, Ty, TyInference, TyKind, args::Args, effect_row::EffectLabel},
     };
 
     fn effect_label(id: u128, engine: &TrackedEngine) -> Interned<EffectLabel> {
+        effect_label_with_args(id, [], engine)
+    }
+
+    fn effect_label_with_args(
+        id: u128,
+        args: impl IntoIterator<Item = Interned<Ty>>,
+        engine: &TrackedEngine,
+    ) -> Interned<EffectLabel> {
         let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(id));
-        engine.intern(EffectLabel::new(symbol_id, Args::new([], engine)))
+        engine.intern(EffectLabel::new(symbol_id, Args::new(args, engine)))
+    }
+
+    fn solve(
+        solver: &mut Solver,
+        constraint: Constraint,
+        engine: &TrackedEngine,
+    ) -> Result<Subst, Error> {
+        let mut pending = vec![constraint];
+        let mut subst = Subst::new_empty();
+
+        while let Some(constraint) = pending.pop() {
+            let constraint = constraint.apply_subst_or_clone(&subst, engine);
+            match solver.entail(&constraint)? {
+                Step::Subst(new_subst) => subst.compose(&new_subst, engine),
+                Step::Simplified(constraints) => pending.extend(constraints),
+                Step::NoProgress => panic!("effect-row constraint should make progress"),
+            }
+        }
+
+        Ok(subst)
     }
 
     // input: {IO, Exn} <: {Exn, IO}
-    // premise: effect rows are unordered multisets
+    // premise: different effect constructors commute
     // output: {}
     #[tokio::test]
     async fn closed_effect_rows_match_independent_of_label_order() {
@@ -329,5 +354,52 @@ mod tests {
         let step = solver.entail(&Constraint::Subtype(Subtype::new(inference_ty, row.clone())));
 
         assert_eq!(step, Ok(Step::Subst(crate::subst::Subst::new_singleton(inference, row))));
+    }
+
+    // input: {State[int32], State[bool]} = {State[bool], State[int32]}
+    // premise: occurrences of the same effect constructor cannot commute
+    // output: Conflicted
+    #[tokio::test]
+    async fn same_effect_constructor_occurrences_cannot_swap() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+        let bool = Ty::new_primitive(Primitive::Bool, &engine);
+        let state_int32 = effect_label_with_args(1, [int32], &engine);
+        let state_bool = effect_label_with_args(1, [bool], &engine);
+        let lesser = Ty::new_effect_row([state_int32.clone(), state_bool.clone()], None, &engine);
+        let greater = Ty::new_effect_row([state_bool, state_int32], None, &engine);
+        let mut solver = Solver::new(engine.clone());
+
+        let result =
+            solve(&mut solver, Constraint::Subtype(Subtype::new(lesser, greater)), &engine);
+
+        assert_eq!(result, Err(Error::Conflicted));
+    }
+
+    // input: {State[?a], State[?b]} = {State[int32], State[bool]}
+    // premise: same-constructor occurrences match in row order
+    // output: ?a := int32, ?b := bool
+    #[tokio::test]
+    async fn same_effect_constructor_inferences_bind_in_occurrence_order() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+        let bool = Ty::new_primitive(Primitive::Bool, &engine);
+        let mut solver = Solver::new(engine.clone());
+        let a = solver.new_inference(TyKind::Star);
+        let b = solver.new_inference(TyKind::Star);
+        let a_ty = engine.intern(Ty::Inference(a));
+        let b_ty = engine.intern(Ty::Inference(b));
+        let state_a = effect_label_with_args(1, [a_ty], &engine);
+        let state_b = effect_label_with_args(1, [b_ty], &engine);
+        let state_int32 = effect_label_with_args(1, [int32.clone()], &engine);
+        let state_bool = effect_label_with_args(1, [bool.clone()], &engine);
+        let lesser = Ty::new_effect_row([state_a, state_b], None, &engine);
+        let greater = Ty::new_effect_row([state_int32, state_bool], None, &engine);
+
+        let subst = solve(&mut solver, Constraint::Subtype(Subtype::new(lesser, greater)), &engine)
+            .expect("same-constructor occurrences should match positionally");
+
+        assert_eq!(subst.get(&a), Some(&int32));
+        assert_eq!(subst.get(&b), Some(&bool));
     }
 }
