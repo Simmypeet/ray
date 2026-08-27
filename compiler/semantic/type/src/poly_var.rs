@@ -68,6 +68,11 @@ impl PolyVarMap {
         self.poly_vars.get(id).expect("polymorphic variable ID should be valid").name()
     }
 
+    #[must_use]
+    pub fn kind_of(&self, id: PolyVarID) -> TyKind {
+        self.poly_vars.get(id).expect("polymorphic variable ID should be valid").kind()
+    }
+
     pub fn insert(&mut self, poly_var: PolyVar) -> PolyVarID {
         if let Some(id) = self.find_by_name(&poly_var.name) {
             return id;

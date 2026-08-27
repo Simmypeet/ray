@@ -1,7 +1,7 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 
-use super::{InferenceConstraint, Mutability, Primitive, Ty, inference::Inference};
+use super::{InferenceConstraint, Mutability, Primitive, Ty, TyKind, inference::Inference};
 use crate::{
     reduce::Reduce,
     subst::{Subst, Substitutable},
@@ -13,7 +13,7 @@ pub enum Constant {
     Tuple,
     Lambda,
     Pointer(Mutability),
-    Error,
+    Error(TyKind),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -99,7 +99,17 @@ impl Application {
             Constant::Pointer(mutability) => {
                 View::Pointer(PointerView { arg: &self.args[0], mutability })
             }
-            Constant::Error => View::Error,
+            Constant::Error(_) => View::Error,
+        }
+    }
+
+    #[must_use]
+    pub(super) const fn kind_of(&self) -> TyKind {
+        match self.constant {
+            Constant::Primitive(_) | Constant::Tuple | Constant::Lambda | Constant::Pointer(_) => {
+                TyKind::Star
+            }
+            Constant::Error(kind) => kind,
         }
     }
 

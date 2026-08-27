@@ -9,7 +9,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_name};
 
 use crate::{
-    poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap},
+    poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap, get_poly_var_map},
     reduce::Reduce,
     subst::{Subst, Substitutable},
     ty::{
@@ -91,6 +91,18 @@ pub enum Ty {
 }
 
 impl Ty {
+    pub async fn kind_of(&self, engine: &TrackedEngine) -> TyKind {
+        match self {
+            Self::Application(application) => application.kind_of(),
+            Self::Inference(inference) => inference.kind(),
+            Self::PolyVar(poly_var) => {
+                let poly_var_map = engine.get_poly_var_map(poly_var.parent_id()).await;
+                poly_var_map.kind_of(poly_var.id())
+            }
+            Self::EffectRow(_) => TyKind::EffectRow,
+        }
+    }
+
     /// Iterates over an interned type and all its recursively nested type
     /// arguments in breadth-first order.
     pub fn interned_recursive_iter(
@@ -215,9 +227,11 @@ impl Ty {
     }
 
     #[must_use]
-    pub fn new_error(engine: &TrackedEngine) -> Interned<Self> {
-        engine
-            .intern(Self::Application(Application::new(Constant::Error, engine.intern_unsized([]))))
+    pub fn new_error(kind: TyKind, engine: &TrackedEngine) -> Interned<Self> {
+        engine.intern(Self::Application(Application::new(
+            Constant::Error(kind),
+            engine.intern_unsized([]),
+        )))
     }
 
     #[must_use]
