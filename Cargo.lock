@@ -2063,6 +2063,7 @@ name = "rayc_typed_ast"
 version = "0.1.0-beta.2"
 dependencies = [
  "bon",
+ "derive_more",
  "qbice",
  "rayc_arena",
  "rayc_hash",

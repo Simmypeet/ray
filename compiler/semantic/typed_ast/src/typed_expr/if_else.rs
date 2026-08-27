@@ -1,6 +1,6 @@
 use qbice::{Decode, Encode, StableHash};
 
-use crate::typed_expr::TypedExprID;
+use crate::typed_expr::{SubExprs, TypedExprID};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct IfElse {
@@ -27,4 +27,10 @@ impl IfElse {
 
     #[must_use]
     pub const fn else_expression(&self) -> TypedExprID { self.else_expression }
+}
+
+impl SubExprs for IfElse {
+    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
+        [self.condition, self.then_expression, self.else_expression].into_iter()
+    }
 }

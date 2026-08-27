@@ -1,4 +1,5 @@
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use derive_more::From;
+use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
@@ -30,7 +31,12 @@ pub mod r#return;
 pub mod tuple;
 pub mod tuple_index;
 
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
+/// Retrieves the child expressions of the current expression node.
+pub trait SubExprs {
+    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, From)]
 pub enum TypedExprKind {
     Identifier(Identifier),
     Literal(Literal),
@@ -59,7 +65,7 @@ pub enum LvalueClassification {
     Errored,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct TypedExpr {
     kind: TypedExprKind,
     span: RelativeSpan,

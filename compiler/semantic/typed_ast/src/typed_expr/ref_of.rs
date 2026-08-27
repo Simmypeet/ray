@@ -1,7 +1,7 @@
 use qbice::{Decode, Encode, StableHash};
 use rayc_type::ty::Mutability;
 
-use crate::typed_expr::TypedExprID;
+use crate::typed_expr::{SubExprs, TypedExprID};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct RefOf {
@@ -20,4 +20,8 @@ impl RefOf {
 
     #[must_use]
     pub const fn mutability(&self) -> Mutability { self.mutability }
+}
+
+impl SubExprs for RefOf {
+    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> { std::iter::once(self.pointee) }
 }

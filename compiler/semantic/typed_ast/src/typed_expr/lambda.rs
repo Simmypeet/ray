@@ -14,3 +14,7 @@ impl Lambda {
     #[must_use]
     pub const fn function_id(&self) -> TypedFunctionID { self.function_id }
 }
+
+impl Lambda {
+    pub fn sub_exprs(&self) -> impl Iterator<Item = TypedFunctionID> { std::iter::empty() }
+}

@@ -3,7 +3,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::subst::{MutSubstitutable, Subst};
 
-use crate::typed_expr::TypedExprID;
+use crate::typed_expr::{SubExprs, TypedExprID};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum CallTarget {
@@ -47,5 +47,16 @@ impl MutSubstitutable for Call {
             }
             CallTarget::Lambda { .. } => {}
         }
+    }
+}
+
+impl SubExprs for Call {
+    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
+        let target_iter = match &self.target {
+            CallTarget::Direct { .. } => None,
+            CallTarget::Lambda { callee } => Some(*callee),
+        };
+
+        target_iter.into_iter().chain(self.arguments.iter().copied())
     }
 }

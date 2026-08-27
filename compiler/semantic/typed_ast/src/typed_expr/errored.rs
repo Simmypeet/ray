@@ -1,6 +1,6 @@
 use qbice::{Decode, Encode, StableHash};
 
-use crate::typed_expr::TypedExprID;
+use crate::typed_expr::{SubExprs, TypedExprID};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Errored {
@@ -16,4 +16,8 @@ impl Errored {
 
     #[must_use]
     pub fn children(&self) -> &[TypedExprID] { &self.children }
+}
+
+impl SubExprs for Errored {
+    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> { self.children.iter().copied() }
 }

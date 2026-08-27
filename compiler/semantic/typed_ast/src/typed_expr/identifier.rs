@@ -1,6 +1,9 @@
 use qbice::{Decode, Encode, StableHash};
 
-use crate::name_binding::NameBindingID;
+use crate::{
+    name_binding::NameBindingID,
+    typed_expr::{SubExprs, TypedExprID},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Identifier {
@@ -13,4 +16,8 @@ impl Identifier {
 
     #[must_use]
     pub const fn name_binding(&self) -> NameBindingID { self.name_binding }
+}
+
+impl SubExprs for Identifier {
+    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> { std::iter::empty() }
 }

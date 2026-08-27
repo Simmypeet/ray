@@ -1,6 +1,6 @@
 use qbice::{Decode, Encode, StableHash};
 
-use crate::typed_expr::TypedExprID;
+use crate::typed_expr::{SubExprs, TypedExprID};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum BinaryOp {
@@ -71,4 +71,8 @@ impl Binary {
 
     #[must_use]
     pub const fn right(&self) -> TypedExprID { self.right }
+}
+
+impl SubExprs for Binary {
+    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> { [self.left, self.right].into_iter() }
 }
