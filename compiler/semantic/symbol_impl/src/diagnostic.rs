@@ -68,6 +68,7 @@ impl Report for InvalidEffectOperationDeclaration {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum InvalidDefDeclarationKind {
     ExternHasBody,
+    ExternHasEffectRow,
     DefMissingBody,
     NonExternVariadic,
     VariadicNotLast,
@@ -89,6 +90,9 @@ impl Report for InvalidDefDeclaration {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let message = match self.kind {
             InvalidDefDeclarationKind::ExternHasBody => "an extern definition must not have a body",
+            InvalidDefDeclarationKind::ExternHasEffectRow => {
+                "an extern definition must not have an effect-row annotation"
+            }
             InvalidDefDeclarationKind::DefMissingBody => "a non-extern definition must have a body",
             InvalidDefDeclarationKind::NonExternVariadic => {
                 "a variadic parameter list is only allowed on an extern definition"

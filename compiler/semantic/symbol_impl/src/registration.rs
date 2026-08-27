@@ -36,6 +36,13 @@ impl Table {
         let body = def.block();
         let is_extern =
             def_sig.as_ref().is_some_and(|signature| signature.extern_keyword().is_some());
+        if is_extern && let Some(effect_row) = def_effect_row.as_ref() {
+            self.push_diagnostic(Diagnostic::InvalidDefDeclaration(InvalidDefDeclaration::new(
+                InvalidDefDeclarationKind::ExternHasEffectRow,
+                effect_row.span(),
+            )));
+        }
+        let registered_effect_row = if is_extern { None } else { def_effect_row };
         let entries = def_param.as_ref().map(|parameters| parameters.entries().collect::<Vec<_>>());
         let variadic_index = entries.as_ref().and_then(|entries| {
             entries.iter().position(|entry| matches!(entry, ParameterEntry::Ellipsis(_)))
@@ -67,7 +74,7 @@ impl Table {
                 .span(ident.span)
                 .parameter_list(def_param)
                 .return_type(def_return)
-                .effect_row(def_effect_row)
+                .effect_row(registered_effect_row)
                 .def_body(body)
                 .variadic(variadic)
                 .build(),

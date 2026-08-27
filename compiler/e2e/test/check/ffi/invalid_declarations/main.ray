@@ -7,3 +7,5 @@ def rayVariadic(value: int32, ...) -> ():
     return
 
 extern def misplaced(..., value: c_int) -> c_int
+
+extern def effectful() -> () \ {}

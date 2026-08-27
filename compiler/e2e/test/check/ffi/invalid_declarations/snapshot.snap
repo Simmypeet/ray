@@ -38,7 +38,13 @@ stderr:
 9 │ ┃ extern def misplaced(..., value: c_int) -> c_int
   ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-[error]: Compilation aborted due to 4 error(s)
+[error]: an extern definition must not have an effect-row annotation
+   ╭▸ compiler/e2e/test/check/ffi/invalid_declarations/main.ray:11:30
+   │
+11 │ extern def effectful() -> () \ {}
+   ╰╴                             ━━━━
+
+[error]: Compilation aborted due to 5 error(s)
 
 
 
