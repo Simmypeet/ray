@@ -6,7 +6,7 @@ use rayc_parser::{
     parser::{ParserExt, ast},
 };
 
-use crate::{Identifier, Keyword, Punctuation};
+use crate::{Identifier, Keyword, Punctuation, effect_row::EffectRowAnnotation};
 
 abstract_tree::abstract_tree! {
     #[derive(
@@ -125,7 +125,8 @@ abstract_tree::abstract_tree! {
     pub struct Lambda {
         pub def_keyword: Keyword = expect::Keyword::Def,
         pub parameters: LambdaParameterList = ast::<LambdaParameterList>(),
-        pub return_type: LambdaReturnType = ast::<LambdaReturnType>().optional()
+        pub return_type: LambdaReturnType = ast::<LambdaReturnType>().optional(),
+        pub effect_row: EffectRowAnnotation = ast::<EffectRowAnnotation>().optional()
     }
 }
 
