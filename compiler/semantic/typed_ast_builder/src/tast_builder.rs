@@ -11,11 +11,7 @@ use rayc_symbol::{
     syntax::{get_def_body_syntax, get_parameter_list_syntax},
 };
 use rayc_syntax::{Identifier, def::ParameterList};
-use rayc_type::{
-    solver::Solver,
-    subst::MutSubstitutable,
-    ty::{InferenceConstraint, Ty, TyKind},
-};
+use rayc_type::{subst::MutSubstitutable, ty::Ty};
 use rayc_typed_ast::{
     name_binding::{NameBindingGroupID, NameBindingID},
     statement::Statement,
@@ -45,7 +41,6 @@ pub struct TAstBuilder {
     current_def_id: GlobalSymbolID,
 
     name_env: NameEnv,
-    solver: Solver,
 
     constraint_solver: ConstraintSolver,
     lvalue_requirements: LvalueRequirements,
@@ -69,8 +64,7 @@ impl TAstBuilder {
             suspended_functions: Vec::new(),
             name_env,
             current_def_id,
-            solver: Solver::new(engine.clone()),
-            constraint_solver: ConstraintSolver::new(),
+            constraint_solver: ConstraintSolver::new(engine.clone()),
             lvalue_requirements: LvalueRequirements::new(),
             diagnostics: Vec::new(),
             engine,
@@ -154,28 +148,6 @@ impl TAstBuilder {
 
     pub fn extend_diagnostics(&mut self, diagnostics: impl IntoIterator<Item = Diagnostic>) {
         self.diagnostics.extend(diagnostics);
-    }
-
-    pub fn new_type_inference(&mut self) -> Interned<Ty> {
-        self.new_type_inference_with_kind(TyKind::Star)
-    }
-
-    pub fn new_type_inference_with_kind(&mut self, kind: TyKind) -> Interned<Ty> {
-        self.engine.intern(Ty::Inference(self.solver.new_inference(kind)))
-    }
-
-    pub fn new_numeric_type_inference(&mut self) -> Interned<Ty> {
-        let inference =
-            self.solver.new_inference_with_constraint(TyKind::Star, InferenceConstraint::Numeric);
-        self.constraint_solver.register_numeric_inference(inference);
-        self.engine.intern(Ty::Inference(inference))
-    }
-
-    pub fn new_equality_comparable_type_inference(&mut self) -> Interned<Ty> {
-        let inference = self
-            .solver
-            .new_inference_with_constraint(TyKind::Star, InferenceConstraint::EqualityComparable);
-        self.engine.intern(Ty::Inference(inference))
     }
 
     pub fn push_error_expression(&mut self, span: RelativeSpan) -> TypedExprID {

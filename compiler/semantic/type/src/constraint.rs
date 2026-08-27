@@ -3,6 +3,7 @@ use rayc_qbice::TrackedEngine;
 
 use crate::{
     constraint::subtype::Subtype,
+    reduce::Reduce,
     solver::Solver,
     subst::{Subst, Substitutable},
 };
@@ -12,6 +13,17 @@ pub mod subtype;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Constraint {
     Subtype(Subtype),
+}
+
+impl Reduce for Constraint {
+    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match self {
+            Self::Subtype(subtype) => subtype.reduce(engine).map(Constraint::Subtype),
+        }
+    }
 }
 
 impl Substitutable for Constraint {

@@ -3,8 +3,10 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{
     constraint::{self, Constraint, Step, subtype::Subtype},
+    reduce::Reduce,
+    solver::Solver,
     subst::{Subst, Substitutable},
-    ty::{Primitive, Ty, inference::Inference},
+    ty::{InferenceConstraint, Primitive, Ty, TyKind, inference::Inference},
 };
 use rayc_typed_ast::typed_expr::TypedExprID;
 
@@ -28,6 +30,19 @@ impl Substitutable for Provenance {
         match self {
             Self::Subtype(subtype_provenance) => {
                 subtype_provenance.apply_subst(subst, engine).map(Self::Subtype)
+            }
+        }
+    }
+}
+
+impl Reduce for Provenance {
+    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match self {
+            Self::Subtype(subtype_provenance) => {
+                subtype_provenance.reduce(engine).map(Self::Subtype)
             }
         }
     }
@@ -62,6 +77,19 @@ impl SubtypeProvenance {
     pub const fn span(&self) -> &RelativeSpan { &self.span }
 }
 
+impl Reduce for SubtypeProvenance {
+    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        self.original_subtype.reduce(engine).map(|new_subtype| Self {
+            original_subtype: new_subtype,
+            span: self.span,
+            source: self.source,
+        })
+    }
+}
+
 impl Substitutable for SubtypeProvenance {
     fn apply_subst(&self, subst: &Subst, engine: &rayc_qbice::TrackedEngine) -> Option<Self>
     where
@@ -80,6 +108,26 @@ impl Substitutable for SubtypeProvenance {
 pub struct ProvenancedConstraint {
     provenance: Provenance,
     constraint: Constraint,
+}
+
+impl Reduce for ProvenancedConstraint {
+    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match (self.provenance.reduce(engine), self.constraint.reduce(engine)) {
+            (Some(new_provenance), Some(new_constraint)) => {
+                Some(Self { provenance: new_provenance, constraint: new_constraint })
+            }
+            (Some(new_provenance), None) => {
+                Some(Self { provenance: new_provenance, constraint: self.constraint.clone() })
+            }
+            (None, Some(new_constraint)) => {
+                Some(Self { provenance: self.provenance.clone(), constraint: new_constraint })
+            }
+            (None, None) => None,
+        }
+    }
 }
 
 impl Substitutable for ProvenancedConstraint {
@@ -112,27 +160,25 @@ impl ProvenancedConstraint {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ConstraintSolver {
     residual_constraints: Vec<ProvenancedConstraint>,
     errored_constraints: Vec<(constraint::Error, ProvenancedConstraint)>,
     numeric_inferences: Vec<Inference>,
     subst: Subst,
+    solver: Solver,
 }
 
 impl ConstraintSolver {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(engine: TrackedEngine) -> Self {
         Self {
             residual_constraints: Vec::new(),
             errored_constraints: Vec::new(),
             numeric_inferences: Vec::new(),
             subst: Subst::new_empty(),
+            solver: Solver::new(engine),
         }
-    }
-
-    pub(super) fn register_numeric_inference(&mut self, inference: Inference) {
-        self.numeric_inferences.push(inference);
     }
 }
 
@@ -264,7 +310,7 @@ impl TAstBuilder {
         let mut queued = vec![provenanced_constraint];
 
         while let Some(provenanced_constraint) = queued.pop() {
-            match self.solver.entail(&provenanced_constraint.constraint) {
+            match self.constraint_solver.solver.entail(&provenanced_constraint.constraint) {
                 Ok(Step::Simplified(constrs)) => {
                     queued.extend(constrs.into_iter().map(|x| ProvenancedConstraint {
                         provenance: provenanced_constraint.provenance.clone(),
@@ -279,7 +325,11 @@ impl TAstBuilder {
                 }
 
                 Ok(Step::NoProgress) => {
-                    self.constraint_solver.residual_constraints.push(provenanced_constraint);
+                    if let Some(reduced_constraint) = provenanced_constraint.reduce(&self.engine) {
+                        queued.push(reduced_constraint);
+                    } else {
+                        self.constraint_solver.residual_constraints.push(provenanced_constraint);
+                    }
                 }
 
                 Err(err) => {
@@ -343,5 +393,32 @@ impl ConstraintSolver {
         self.subst.compose(&numeric_defaults, engine);
 
         (diags, self.subst)
+    }
+}
+
+impl TAstBuilder {
+    pub fn new_type_inference(&mut self) -> Interned<Ty> {
+        self.new_type_inference_with_kind(TyKind::Star)
+    }
+
+    pub fn new_type_inference_with_kind(&mut self, kind: TyKind) -> Interned<Ty> {
+        self.engine.intern(Ty::Inference(self.constraint_solver.solver.new_inference(kind)))
+    }
+
+    pub fn new_numeric_type_inference(&mut self) -> Interned<Ty> {
+        let inference = self
+            .constraint_solver
+            .solver
+            .new_inference_with_constraint(TyKind::Star, InferenceConstraint::Numeric);
+        self.constraint_solver.numeric_inferences.push(inference);
+        self.engine.intern(Ty::Inference(inference))
+    }
+
+    pub fn new_equality_comparable_type_inference(&mut self) -> Interned<Ty> {
+        let inference = self
+            .constraint_solver
+            .solver
+            .new_inference_with_constraint(TyKind::Star, InferenceConstraint::EqualityComparable);
+        self.engine.intern(Ty::Inference(inference))
     }
 }

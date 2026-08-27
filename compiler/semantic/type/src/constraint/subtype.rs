@@ -3,6 +3,7 @@ use rayc_qbice::TrackedEngine;
 
 use crate::{
     constraint::{Constraint, Error, Step},
+    reduce::Reduce,
     solver::Solver,
     subst::{Subst, Substitutable},
     ty::{Ty, TyKind, effect_row::EffectRow, inference::Inference},
@@ -20,6 +21,20 @@ impl Subtype {
 
     #[must_use]
     pub const fn greater(&self) -> &Interned<Ty> { &self.greater }
+}
+
+impl Reduce for Subtype {
+    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match (self.lesser.reduce(engine), self.greater.reduce(engine)) {
+            (Some(lesser), Some(greater)) => Some(Self { lesser, greater }),
+            (Some(lesser), None) => Some(Self { lesser, greater: self.greater.clone() }),
+            (None, Some(greater)) => Some(Self { lesser: self.lesser.clone(), greater }),
+            (None, None) => None,
+        }
+    }
 }
 
 impl Substitutable for Subtype {
