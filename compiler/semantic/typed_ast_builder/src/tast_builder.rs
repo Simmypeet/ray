@@ -15,7 +15,7 @@ use rayc_type::{subst::MutSubstitutable, ty::Ty};
 use rayc_typed_ast::{
     name_binding::{NameBindingGroupID, NameBindingID},
     statement::Statement,
-    typed_expr::{TypedExpr, TypedExprID},
+    typed_expr::{self, SubExprs, TypedExpr, TypedExprID, TypedExprKind},
     typed_function::{TypedFunctionID, TypedFunctionLocalID, TypedFunctionMap},
     typed_lambda::{LambdaParameterID, TypedLambdaParameter},
     typed_variable::{TypedVariable, TypedVariableID},
@@ -79,6 +79,16 @@ impl TAstBuilder {
     }
 
     #[must_use]
+    pub fn effect_of_expression(&self, id: TypedExprID) -> &Interned<Ty> {
+        self.function_map.get_expression(self.building_function, id).effect()
+    }
+
+    #[must_use]
+    pub fn get_expression(&self, id: TypedExprID) -> &TypedExpr {
+        self.function_map.get_expression(self.building_function, id)
+    }
+
+    #[must_use]
     pub fn type_of_local_expression(&self, id: TypedFunctionLocalID<TypedExprID>) -> Interned<Ty> {
         self.function_map.get_expression(id.function_id(), id.local_id()).ty().clone()
     }
@@ -136,12 +146,25 @@ impl TAstBuilder {
         Ty::new_effect_row([], None, self.engine())
     }
 
-    /// Pushes an expression into the current block of the function being
-    /// built, and returns the [`TypedExprID`] of the expression in the
-    /// function's expression map.
+    /// Inserts an expression into the typed AST and returns its ID.
+    ///
+    /// This function only requires the kind, span, and type of the expression.
+    /// The effect is automatically composed from its sub-expressions.
     #[must_use]
-    pub fn insert_expression(&mut self, expr: TypedExpr) -> TypedExprID {
-        self.function_map.insert_expression(self.building_function, expr)
+    pub fn insert_expression<K: Into<TypedExprKind> + SubExprs>(
+        &mut self,
+        kind: K,
+        span: RelativeSpan,
+        ty: Interned<Ty>,
+    ) -> TypedExprID {
+        let effect = self.new_effect_inference();
+        let expr = TypedExpr::new(kind.into(), span, ty, effect);
+        let id = self.function_map.insert_expression(self.building_function, expr);
+
+        // automatically compose the effect of the expression from its sub-expressions
+        self.compose_effect_from_sub_exprs(id);
+
+        id
     }
 
     pub fn push_diagnostic(&mut self, diagnostic: Diagnostic) { self.diagnostics.push(diagnostic); }
@@ -151,10 +174,8 @@ impl TAstBuilder {
     }
 
     pub fn push_error_expression(&mut self, span: RelativeSpan) -> TypedExprID {
-        let ty = self.new_type_inference();
-        let expression = TypedExpr::new_error(span, ty, self.empty_effect());
-
-        self.insert_expression(expression)
+        let infer = self.new_type_inference();
+        self.insert_expression(typed_expr::errored::Errored::new_empty(), span, infer)
     }
 
     pub fn push_error_expression_with_children(
@@ -162,11 +183,8 @@ impl TAstBuilder {
         span: RelativeSpan,
         children: Vec<TypedExprID>,
     ) -> TypedExprID {
-        let ty = self.new_type_inference();
-        let expression =
-            TypedExpr::new_error_with_children(children, span, ty, self.empty_effect());
-
-        self.insert_expression(expression)
+        let infer = self.new_type_inference();
+        self.insert_expression(typed_expr::errored::Errored::new(children), span, infer)
     }
 
     pub fn span_of_expression(&self, id: TypedExprID) -> RelativeSpan {

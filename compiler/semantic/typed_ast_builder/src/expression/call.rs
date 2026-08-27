@@ -9,7 +9,7 @@ use rayc_type::{
     subst::{Subst, Substitutable},
     ty::{Ty, TyKind, application::View as ApplicationView},
 };
-use rayc_typed_ast::typed_expr::{TypedExpr, TypedExprID, TypedExprKind, call::Call};
+use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, call::Call};
 
 use crate::{
     bind::Bind,
@@ -93,12 +93,11 @@ impl TAstBuilder {
         let return_type = self.engine().get_return_type(function_id).await;
         let return_type = return_type.apply_subst_or_clone(&call_subst, self.engine());
 
-        self.insert_expression(TypedExpr::new(
+        self.insert_expression(
             TypedExprKind::Call(Call::new_direct(function_id, arguments, call_subst)),
             span,
             return_type,
-            self.empty_effect(),
-        ))
+        )
     }
 
     pub async fn build_lambda_call(&mut self, callee: TypedExprID, syn: &CallSyn) -> TypedExprID {
@@ -115,12 +114,11 @@ impl TAstBuilder {
                 LambdaCallSignature::Invalid => Ty::new_star_error(self.engine()),
             };
 
-        self.insert_expression(TypedExpr::new(
+        self.insert_expression(
             TypedExprKind::Call(Call::new_lambda(callee, arguments)),
             span,
             return_type,
-            self.empty_effect(),
-        ))
+        )
     }
 
     fn resolve_lambda_call_signature(

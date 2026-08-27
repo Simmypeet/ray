@@ -1,7 +1,7 @@
 use rayc_source_file::SourceElement;
 use rayc_syntax::expression::IfElse as IfElseSyntax;
 use rayc_type::ty::{Primitive, Ty};
-use rayc_typed_ast::typed_expr::{TypedExpr, TypedExprID, TypedExprKind, if_else::IfElse};
+use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, if_else::IfElse};
 
 use crate::{bind::Bind, tast_builder::TAstBuilder};
 
@@ -40,11 +40,10 @@ impl Bind<IfElseSyntax> for TAstBuilder {
         self.push_if_branch_constraint(&ty, then_expression);
         self.push_if_branch_constraint(&ty, else_expression);
 
-        self.insert_expression(TypedExpr::new(
+        self.insert_expression(
             TypedExprKind::IfElse(IfElse::new(condition, then_expression, else_expression)),
             syn.span(),
             ty,
-            self.empty_effect(),
-        ))
+        )
     }
 }

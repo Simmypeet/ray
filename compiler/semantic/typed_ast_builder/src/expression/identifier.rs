@@ -1,6 +1,6 @@
 use rayc_source_file::SourceElement;
 use rayc_syntax::Identifier as IdentifierSyn;
-use rayc_typed_ast::typed_expr::{TypedExpr, TypedExprID, TypedExprKind, identifier::Identifier};
+use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, identifier::Identifier};
 
 use crate::{
     bind::Bind,
@@ -18,11 +18,10 @@ impl Bind<IdentifierSyn> for TAstBuilder {
             return self.push_error_expression(syn.span());
         };
 
-        self.insert_expression(TypedExpr::new(
+        self.insert_expression(
             TypedExprKind::Identifier(Identifier::new(name_binding_id)),
             syn.span,
             self.type_of_name_binding(name_binding_id),
-            self.empty_effect(),
-        ))
+        )
     }
 }

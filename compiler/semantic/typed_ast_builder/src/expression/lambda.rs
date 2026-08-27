@@ -4,7 +4,7 @@ use rayc_type::ty::Ty;
 use rayc_typed_ast::{
     name_binding::Source,
     statement::{Return, Statement},
-    typed_expr::{TypedExpr, TypedExprID, TypedExprKind, lambda::Lambda as TypedLambda},
+    typed_expr::{TypedExprID, TypedExprKind, lambda::Lambda as TypedLambda},
     typed_function::TypedFunctionLocalID,
     typed_lambda::TypedLambdaParameter,
 };
@@ -48,11 +48,7 @@ impl Bind<LambdaSyntax> for TAstBuilder {
 
         let effect_row = Ty::new_effect_row([], None, self.engine());
         let ty = Ty::new_lambda(parameter_types, return_type, effect_row, self.engine());
-        self.insert_expression(TypedExpr::new(
-            TypedExprKind::Lambda(TypedLambda::new(function_id)),
-            span,
-            ty,
-            self.empty_effect(),
-        ))
+
+        self.insert_expression(TypedExprKind::Lambda(TypedLambda::new(function_id)), span, ty)
     }
 }

@@ -1,7 +1,7 @@
 use rayc_source_file::SourceElement;
 use rayc_syntax::expression::{Boolean, Literal as LiteralSyntax};
 use rayc_type::ty::{Primitive, Ty};
-use rayc_typed_ast::typed_expr::{TypedExpr, TypedExprID, TypedExprKind, literal::Literal};
+use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, literal::Literal};
 
 use crate::{
     bind::Bind,
@@ -41,11 +41,6 @@ impl Bind<LiteralSyntax> for TAstBuilder {
             ),
         };
 
-        self.insert_expression(TypedExpr::new(
-            TypedExprKind::Literal(literal),
-            syn.span(),
-            ty,
-            self.empty_effect(),
-        ))
+        self.insert_expression(TypedExprKind::Literal(literal), syn.span(), ty)
     }
 }

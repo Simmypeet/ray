@@ -5,7 +5,7 @@ use rayc_syntax::expression::{
 };
 use rayc_type::ty::{Mutability, Ty, application::View as ApplicationView};
 use rayc_typed_ast::typed_expr::{
-    TypedExpr, TypedExprID, TypedExprKind, deref::Deref, ref_of::RefOf, tuple_index::TupleIndex,
+    TypedExprID, TypedExprKind, deref::Deref, ref_of::RefOf, tuple_index::TupleIndex,
 };
 
 use crate::{
@@ -82,12 +82,11 @@ impl TAstBuilder {
             },
         );
 
-        self.insert_expression(TypedExpr::new(
+        self.insert_expression(
             TypedExprKind::RefOf(RefOf::new(bound, mutability)),
             span.join(&ref_of.span()),
             pointer_ty,
-            self.empty_effect(),
-        ))
+        )
     }
 
     fn build_tuple_index(
@@ -148,14 +147,11 @@ impl TAstBuilder {
             return None;
         }
 
-        let new_expr = TypedExpr::new(
+        Some(self.insert_expression(
             TypedExprKind::TupleIndex(TupleIndex::new(bound, index)),
             span,
             tuple.args()[index].clone(),
-            self.empty_effect(),
-        );
-
-        Some(self.insert_expression(new_expr))
+        ))
     }
 
     fn build_deref(&mut self, expr_id: TypedExprID, deref: &DerefSyntax) -> TypedExprID {
@@ -189,11 +185,10 @@ impl TAstBuilder {
             Ty::EffectRow(_) => todo!("type-check dereferencing an effect-row type"),
         };
 
-        self.insert_expression(TypedExpr::new(
+        self.insert_expression(
             TypedExprKind::Deref(Deref::new(expr_id)),
             span.join(&deref.span()),
             pointee,
-            self.empty_effect(),
-        ))
+        )
     }
 }

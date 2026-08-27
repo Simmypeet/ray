@@ -1,9 +1,7 @@
 use rayc_source_file::SourceElement;
 use rayc_syntax::expression::Parenthesized;
 use rayc_type::ty::Ty;
-use rayc_typed_ast::typed_expr::{
-    TypedExpr, TypedExprID, TypedExprKind, paren::Paren, tuple::Tuple,
-};
+use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, paren::Paren, tuple::Tuple};
 
 use crate::{bind::Bind, tast_builder::TAstBuilder};
 
@@ -24,12 +22,11 @@ impl Bind<Parenthesized> for TAstBuilder {
         // if contains only one argument and has no comma then it is simply a
         // parenthesized expression, not a tuple
         if args.len() == 1 && !has_comma {
-            self.insert_expression(TypedExpr::new(
+            self.insert_expression(
                 TypedExprKind::Paren(Paren::new(args[0])),
                 syn.span(),
                 self.type_of_expression(args[0]),
-                self.empty_effect(),
-            ))
+            )
         } else {
             let mut tuple_tys = Vec::new();
 
@@ -39,12 +36,7 @@ impl Bind<Parenthesized> for TAstBuilder {
 
             let ty = Ty::new_tuple(self.engine().intern_unsized(tuple_tys), self.engine());
 
-            self.insert_expression(TypedExpr::new(
-                TypedExprKind::Tuple(Tuple::new(args)),
-                syn.span(),
-                ty,
-                self.empty_effect(),
-            ))
+            self.insert_expression(TypedExprKind::Tuple(Tuple::new(args)), syn.span(), ty)
         }
     }
 }

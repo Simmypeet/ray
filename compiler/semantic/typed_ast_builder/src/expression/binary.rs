@@ -2,7 +2,7 @@ use rayc_source_file::SourceElement;
 use rayc_syntax::expression::{Binary as BinarySyntax, BinaryOperator as BinaryOperatorSyntax};
 use rayc_type::ty::{Primitive, Ty};
 use rayc_typed_ast::typed_expr::{
-    TypedExpr, TypedExprID, TypedExprKind,
+    TypedExprID, TypedExprKind,
     binary::{Associativity, Binary, BinaryOp},
 };
 
@@ -130,12 +130,7 @@ impl TAstBuilder {
 
         let span = self.span_of_expression(left).join(&self.span_of_expression(right));
 
-        self.insert_expression(TypedExpr::new(
-            TypedExprKind::Binary(Binary::new(left, operator, right)),
-            span,
-            ty,
-            self.empty_effect(),
-        ))
+        self.insert_expression(TypedExprKind::Binary(Binary::new(left, operator, right)), span, ty)
     }
 }
 

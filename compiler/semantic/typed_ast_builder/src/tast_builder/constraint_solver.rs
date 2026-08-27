@@ -8,7 +8,7 @@ use rayc_type::{
     subst::{Subst, Substitutable},
     ty::{InferenceConstraint, Primitive, Ty, TyKind, inference::Inference},
 };
-use rayc_typed_ast::typed_expr::TypedExprID;
+use rayc_typed_ast::typed_expr::{SubExprs, TypedExprID};
 
 use crate::{
     diagnostic::{Diagnostic, ResidualSubtype},
@@ -20,6 +20,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Provenance {
     Subtype(SubtypeProvenance),
+    EffectCompose(EffectComposeProvenance),
 }
 
 impl Substitutable for Provenance {
@@ -31,6 +32,7 @@ impl Substitutable for Provenance {
             Self::Subtype(subtype_provenance) => {
                 subtype_provenance.apply_subst(subst, engine).map(Self::Subtype)
             }
+            Self::EffectCompose(_) => None,
         }
     }
 }
@@ -44,6 +46,7 @@ impl Reduce for Provenance {
             Self::Subtype(subtype_provenance) => {
                 subtype_provenance.reduce(engine).map(Self::Subtype)
             }
+            Self::EffectCompose(_) => None,
         }
     }
 }
@@ -101,6 +104,17 @@ impl Substitutable for SubtypeProvenance {
             source: self.source,
         })
     }
+}
+
+/// Representing a situation where an effect of an expression is composed of
+/// multiple sub-expressions.
+///
+/// For instance, in a tuple `(a, b)`, the effect of the tuple is composed of
+/// the effects of `a` and `b`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub struct EffectComposeProvenance {
+    sub_exprs: Interned<[TypedExprID]>,
+    dest_expr: TypedExprID,
 }
 
 /// A constraint equipped with its provenance
@@ -183,6 +197,35 @@ impl ConstraintSolver {
 }
 
 impl TAstBuilder {
+    pub(super) fn compose_effect_from_sub_exprs(&mut self, dest_expr: TypedExprID) {
+        let sub_exprs: Interned<[_]> = self
+            .engine
+            .intern_unsized(self.get_expression(dest_expr).kind().sub_exprs().collect::<Vec<_>>());
+
+        let effect_compose_provenance = Provenance::EffectCompose(EffectComposeProvenance {
+            sub_exprs: sub_exprs.clone(),
+            dest_expr,
+        });
+
+        let mut constraints = Vec::new();
+        let dest_eff = self.latest_type(self.effect_of_expression(dest_expr));
+
+        for sub_expr in sub_exprs.iter() {
+            let sub_eff = self.latest_type(self.effect_of_expression(*sub_expr));
+
+            constraints.push(ProvenancedConstraint::new(
+                effect_compose_provenance.clone(),
+                Constraint::Subtype(Subtype::new(sub_eff, dest_eff.clone())),
+            ));
+        }
+
+        self.push_constraints(constraints);
+    }
+
+    pub fn new_effect_inference(&mut self) -> Interned<Ty> {
+        self.new_type_inference_with_kind(TyKind::EffectRow)
+    }
+
     pub fn latest_type(&self, ty: &Interned<Ty>) -> Interned<Ty> {
         ty.apply_subst_or_clone(&self.constraint_solver.subst, &self.engine)
     }
@@ -306,9 +349,11 @@ impl TAstBuilder {
         self.push_constraint(provenanced_constraint);
     }
 
-    fn push_constraint(&mut self, provenanced_constraint: ProvenancedConstraint) {
-        let mut queued = vec![provenanced_constraint];
+    fn push_constraint(&mut self, constr: ProvenancedConstraint) {
+        self.push_constraints(vec![constr]);
+    }
 
+    fn push_constraints(&mut self, mut queued: Vec<ProvenancedConstraint>) {
         while let Some(provenanced_constraint) = queued.pop() {
             match self.constraint_solver.solver.entail(&provenanced_constraint.constraint) {
                 Ok(Step::Simplified(constrs)) => {
@@ -374,10 +419,13 @@ impl ConstraintSolver {
             .residual_constraints
             .into_iter()
             .chain(self.errored_constraints.into_iter().map(|x| x.1))
-            .map(|x| match x.provenance {
-                Provenance::Subtype(subtype_provenance) => Diagnostic::ResidualSubtype(
+            .filter_map(|x| match x.provenance {
+                Provenance::Subtype(subtype_provenance) => Some(Diagnostic::ResidualSubtype(
                     ResidualSubtype::builder().provenance(subtype_provenance).build(),
-                ),
+                )),
+                // TODO: Implement a correct diagnostic for effect composition errors. For now, we
+                // just ignore them.
+                Provenance::EffectCompose(_) => None,
             })
             .collect::<Vec<_>>();
 
