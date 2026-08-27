@@ -7,7 +7,7 @@ use rayc_source_file::SourceElement;
 use rayc_symbol::{
     source_map::to_absolute_span,
     symbol_kind::{SymbolKind, get_symbol_kind},
-    syntax::{get_effect_row_syntax, get_effect_type_parameter_syntax, get_parameter_list_syntax},
+    syntax::{get_effect_type_parameter_syntax, get_parameter_list_syntax},
 };
 use rayc_type::{
     poly_var::{PolyVar, PolyVarMap},
