@@ -52,6 +52,7 @@ impl Bind<LambdaSyntax> for TAstBuilder {
             TypedExprKind::Lambda(TypedLambda::new(function_id)),
             span,
             ty,
+            self.empty_effect(),
         ))
     }
 }

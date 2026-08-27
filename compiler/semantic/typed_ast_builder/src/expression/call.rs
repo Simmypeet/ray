@@ -97,6 +97,7 @@ impl TAstBuilder {
             TypedExprKind::Call(Call::new_direct(function_id, arguments, call_subst)),
             span,
             return_type,
+            self.empty_effect(),
         ))
     }
 
@@ -118,6 +119,7 @@ impl TAstBuilder {
             TypedExprKind::Call(Call::new_lambda(callee, arguments)),
             span,
             return_type,
+            self.empty_effect(),
         ))
     }
 

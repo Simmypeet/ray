@@ -64,17 +64,23 @@ pub struct TypedExpr {
     kind: TypedExprKind,
     span: RelativeSpan,
     ty: Interned<Ty>,
+    effect: Interned<Ty>,
 }
 
 impl TypedExpr {
     #[must_use]
-    pub const fn new(kind: TypedExprKind, span: RelativeSpan, ty: Interned<Ty>) -> Self {
-        Self { kind, span, ty }
+    pub const fn new(
+        kind: TypedExprKind,
+        span: RelativeSpan,
+        ty: Interned<Ty>,
+        effect: Interned<Ty>,
+    ) -> Self {
+        Self { kind, span, ty, effect }
     }
 
     #[must_use]
-    pub const fn new_error(span: RelativeSpan, ty: Interned<Ty>) -> Self {
-        Self { kind: TypedExprKind::Errored(Errored::new_empty()), span, ty }
+    pub const fn new_error(span: RelativeSpan, ty: Interned<Ty>, effect: Interned<Ty>) -> Self {
+        Self { kind: TypedExprKind::Errored(Errored::new_empty()), span, ty, effect }
     }
 
     #[must_use]
@@ -82,8 +88,9 @@ impl TypedExpr {
         children: Vec<TypedExprID>,
         span: RelativeSpan,
         ty: Interned<Ty>,
+        effect: Interned<Ty>,
     ) -> Self {
-        Self { kind: TypedExprKind::Errored(Errored::new(children)), span, ty }
+        Self { kind: TypedExprKind::Errored(Errored::new(children)), span, ty, effect }
     }
 
     #[must_use]
@@ -93,12 +100,16 @@ impl TypedExpr {
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
 
     #[must_use]
+    pub const fn effect(&self) -> &Interned<Ty> { &self.effect }
+
+    #[must_use]
     pub const fn kind(&self) -> &TypedExprKind { &self.kind }
 }
 
 impl MutSubstitutable for TypedExpr {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.ty.apply_in_place(subst, engine);
+        self.effect.apply_in_place(subst, engine);
 
         if let TypedExprKind::Call(call) = &mut self.kind {
             call.apply_mut_subst(subst, engine);

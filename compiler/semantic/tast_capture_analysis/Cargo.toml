@@ -17,6 +17,8 @@ qbice.workspace = true
 rayc_arena.path = "../../base/arena"
 rayc_source_file.path = "../../base/source_file"
 rayc_target.path = "../../base/target"
+rayc_qbice.path = "../../base/qbice"
+tokio.workspace = true
 
 [lints]
 workspace = true

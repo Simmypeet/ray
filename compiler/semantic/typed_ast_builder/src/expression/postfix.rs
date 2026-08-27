@@ -86,6 +86,7 @@ impl TAstBuilder {
             TypedExprKind::RefOf(RefOf::new(bound, mutability)),
             span.join(&ref_of.span()),
             pointer_ty,
+            self.empty_effect(),
         ))
     }
 
@@ -151,6 +152,7 @@ impl TAstBuilder {
             TypedExprKind::TupleIndex(TupleIndex::new(bound, index)),
             span,
             tuple.args()[index].clone(),
+            self.empty_effect(),
         );
 
         Some(self.insert_expression(new_expr))
@@ -191,6 +193,7 @@ impl TAstBuilder {
             TypedExprKind::Deref(Deref::new(expr_id)),
             span.join(&deref.span()),
             pointee,
+            self.empty_effect(),
         ))
     }
 }

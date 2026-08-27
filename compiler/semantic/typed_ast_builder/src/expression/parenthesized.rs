@@ -28,6 +28,7 @@ impl Bind<Parenthesized> for TAstBuilder {
                 TypedExprKind::Paren(Paren::new(args[0])),
                 syn.span(),
                 self.type_of_expression(args[0]),
+                self.empty_effect(),
             ))
         } else {
             let mut tuple_tys = Vec::new();
@@ -42,6 +43,7 @@ impl Bind<Parenthesized> for TAstBuilder {
                 TypedExprKind::Tuple(Tuple::new(args)),
                 syn.span(),
                 ty,
+                self.empty_effect(),
             ))
         }
     }

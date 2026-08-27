@@ -24,21 +24,20 @@ pub struct TypedFunctionMap {
     root: TypedFunctionID,
 }
 
-impl Default for TypedFunctionMap {
-    fn default() -> Self {
+impl TypedFunctionMap {
+    #[must_use]
+    pub fn new(root_effect: Interned<Ty>) -> Self {
         let mut name_binding_map = NameBindingMap::default();
         let parameter_name_binding_group_id = name_binding_map.new_name_binding_group();
 
         let mut functions = Arena::default();
-        let root = functions.insert(TypedFunction::new(TypedContext::Def(TypedDefContext::new(
-            parameter_name_binding_group_id,
-        ))));
+        let root = functions.insert(TypedFunction::new(
+            TypedContext::Def(TypedDefContext::new(parameter_name_binding_group_id)),
+            root_effect,
+        ));
 
         Self { name_binding_map, functions, root }
     }
-}
-
-impl TypedFunctionMap {
     #[must_use]
     pub const fn root_id(&self) -> TypedFunctionID { self.root }
 
@@ -59,6 +58,11 @@ impl TypedFunctionMap {
 
     pub fn statements(&self, function_id: TypedFunctionID) -> impl Iterator<Item = &Statement> {
         self.get_function(function_id).statements()
+    }
+
+    #[must_use]
+    pub fn effect_of(&self, function_id: TypedFunctionID) -> &Interned<Ty> {
+        self.get_function(function_id).effect()
     }
 
     #[must_use]
@@ -95,12 +99,13 @@ impl TypedFunctionMap {
     }
 
     #[must_use]
-    pub fn insert_lambda(&mut self) -> TypedFunctionID {
+    pub fn insert_lambda(&mut self, effect: Interned<Ty>) -> TypedFunctionID {
         let parameter_name_binding_group_id = self.name_binding_map.new_name_binding_group();
 
-        self.functions.insert(TypedFunction::new(TypedContext::Lambda(TypedLambdaContext::new(
-            parameter_name_binding_group_id,
-        ))))
+        self.functions.insert(TypedFunction::new(
+            TypedContext::Lambda(TypedLambdaContext::new(parameter_name_binding_group_id)),
+            effect,
+        ))
     }
 
     #[must_use]
@@ -204,11 +209,11 @@ pub struct TypedFunction {
 }
 
 impl TypedFunction {
-    fn new(context: TypedContext) -> Self {
+    fn new(context: TypedContext, effect: Interned<Ty>) -> Self {
         Self {
             variable_map: TypedVariableMap::default(),
             typed_expr_map: TypedExprMap::default(),
-            block: Block::default(),
+            block: Block::new(effect),
             context,
         }
     }
@@ -217,6 +222,9 @@ impl TypedFunction {
     pub const fn context(&self) -> &TypedContext { &self.context }
 
     pub fn statements(&self) -> impl Iterator<Item = &Statement> { self.block.statements() }
+
+    #[must_use]
+    const fn effect(&self) -> &Interned<Ty> { self.block.effect() }
 
     #[must_use]
     pub fn get_expression(&self, id: TypedExprID) -> &TypedExpr {
@@ -255,6 +263,7 @@ impl MutSubstitutable for TypedFunction {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.variable_map.apply_mut_subst(subst, engine);
         self.typed_expr_map.apply_mut_subst(subst, engine);
+        self.block.apply_mut_subst(subst, engine);
 
         match &mut self.context {
             TypedContext::Def(_) => {}

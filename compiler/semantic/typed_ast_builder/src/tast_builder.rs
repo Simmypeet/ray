@@ -59,7 +59,7 @@ impl TAstBuilder {
 
     #[must_use]
     pub fn new(engine: TrackedEngine, current_def_id: GlobalSymbolID) -> Self {
-        let function_map = TypedFunctionMap::default();
+        let function_map = TypedFunctionMap::new(Ty::new_effect_row([], None, &engine));
         let building_function = function_map.root_id();
         let name_env = NameEnv::new(function_map.parameter_name_binding_group_id_of_root());
 
@@ -109,7 +109,7 @@ impl TAstBuilder {
 
     #[must_use]
     pub fn start_lambda(&mut self) -> TypedFunctionID {
-        let function_id = self.function_map.insert_lambda();
+        let function_id = self.function_map.insert_lambda(self.empty_effect());
         let parameter_name_binding_group_id =
             self.function_map.parameter_name_binding_group_id_of(function_id);
 
@@ -136,6 +136,11 @@ impl TAstBuilder {
 
     #[must_use]
     pub const fn engine(&self) -> &TrackedEngine { &self.engine }
+
+    #[must_use]
+    pub(crate) fn empty_effect(&self) -> Interned<Ty> {
+        Ty::new_effect_row([], None, self.engine())
+    }
 
     /// Pushes an expression into the current block of the function being
     /// built, and returns the [`TypedExprID`] of the expression in the
@@ -175,7 +180,7 @@ impl TAstBuilder {
 
     pub fn push_error_expression(&mut self, span: RelativeSpan) -> TypedExprID {
         let ty = self.new_type_inference();
-        let expression = TypedExpr::new_error(span, ty);
+        let expression = TypedExpr::new_error(span, ty, self.empty_effect());
 
         self.insert_expression(expression)
     }
@@ -186,7 +191,8 @@ impl TAstBuilder {
         children: Vec<TypedExprID>,
     ) -> TypedExprID {
         let ty = self.new_type_inference();
-        let expression = TypedExpr::new_error_with_children(children, span, ty);
+        let expression =
+            TypedExpr::new_error_with_children(children, span, ty, self.empty_effect());
 
         self.insert_expression(expression)
     }

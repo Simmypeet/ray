@@ -32,16 +32,19 @@ struct TestMap {
     functions: TypedFunctionMap,
     int_ty: Interned<Ty>,
     unit_ty: Interned<Ty>,
+    effect: Interned<Ty>,
     next_span: usize,
     bindings: FxHashMap<Source, rayc_typed_ast::name_binding::NameBindingID>,
 }
 
 impl TestMap {
     fn new(engine: &TrackedEngine) -> Self {
+        let effect = Ty::new_effect_row([], None, engine);
         Self {
-            functions: TypedFunctionMap::default(),
+            functions: TypedFunctionMap::new(effect.clone()),
             int_ty: Ty::new_primitive(Primitive::Int32, engine),
             unit_ty: Ty::new_unit(engine),
+            effect,
             next_span: 0,
             bindings: FxHashMap::default(),
         }
@@ -124,8 +127,10 @@ impl TestMap {
         ty: Interned<Ty>,
     ) -> TypedExprID {
         let span = self.span();
-        self.functions.insert_expression(owner, TypedExpr::new(kind, span, ty))
+        self.functions.insert_expression(owner, TypedExpr::new(kind, span, ty, self.effect.clone()))
     }
+
+    fn lambda(&mut self) -> TypedFunctionID { self.functions.insert_lambda(self.effect.clone()) }
 
     fn literal(&mut self, owner: TypedFunctionID, value: u128) -> TypedExprID {
         self.expression(owner, TypedExprKind::Literal(Literal::Numeric(value)), self.int_ty.clone())
@@ -208,7 +213,7 @@ async fn captureless_lambda_copies_signature_and_uses_lambda_parameter_addresses
     let engine = rayc_qbice::create_minimal_engine().await;
     let mut map = TestMap::new(&engine);
     let root = map.functions.root_id();
-    let child = map.functions.insert_lambda();
+    let child = map.lambda();
     let parameter = map.lambda_parameter(child, "value");
     let parameter_read = map.identifier(child, parameter);
     map.statement(child, parameter_read);
@@ -248,7 +253,7 @@ async fn mutable_capture_is_passed_by_reference_and_written_through_its_pointer(
     let initial = map.literal(root, 0);
     let captured = map.variable(root, "captured");
     map.initialize_variable(root, captured, initial);
-    let child = map.functions.insert_lambda();
+    let child = map.lambda();
     let destination = map.identifier(child, captured);
     let value = map.literal(child, 1);
     let assignment = map.assignment(child, destination, value);
@@ -303,9 +308,9 @@ async fn nested_lambdas_reborrow_a_transitive_capture_with_each_childs_mutabilit
     let captured = map.variable(root, "captured");
     map.initialize_variable(root, captured, initial);
 
-    let outer = map.functions.insert_lambda();
-    let reader = map.functions.insert_lambda();
-    let writer = map.functions.insert_lambda();
+    let outer = map.lambda();
+    let reader = map.lambda();
+    let writer = map.lambda();
     let read = map.identifier(reader, captured);
     map.statement(reader, read);
     let destination = map.identifier(writer, captured);

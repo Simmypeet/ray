@@ -44,6 +44,7 @@ impl Bind<IfElseSyntax> for TAstBuilder {
             TypedExprKind::IfElse(IfElse::new(condition, then_expression, else_expression)),
             syn.span(),
             ty,
+            self.empty_effect(),
         ))
     }
 }

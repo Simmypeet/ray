@@ -22,6 +22,7 @@ impl Bind<IdentifierSyn> for TAstBuilder {
             TypedExprKind::Identifier(Identifier::new(name_binding_id)),
             syn.span,
             self.type_of_name_binding(name_binding_id),
+            self.empty_effect(),
         ))
     }
 }

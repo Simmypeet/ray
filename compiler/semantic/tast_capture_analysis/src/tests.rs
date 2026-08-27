@@ -1,6 +1,7 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
+use rayc_qbice::TrackedEngine;
 use rayc_source_file::{GlobalSourceID, LocalSourceID};
 use rayc_target::TargetID;
 use rayc_type::ty::{Mutability, Ty, TyKind, inference::Inference};
@@ -29,15 +30,18 @@ use super::CaptureAnalysis;
 struct TestMap {
     functions: TypedFunctionMap,
     ty: Interned<Ty>,
+    effect: Interned<Ty>,
     next_span: usize,
     bindings: FxHashMap<Source, rayc_typed_ast::name_binding::NameBindingID>,
 }
 
 impl TestMap {
-    fn new() -> Self {
+    fn new(engine: &TrackedEngine) -> Self {
+        let effect = Ty::new_effect_row([], None, engine);
         Self {
-            functions: TypedFunctionMap::default(),
+            functions: TypedFunctionMap::new(effect.clone()),
             ty: Interned::new_duplicating(Ty::Inference(Inference::new(TyKind::Star, 0))),
+            effect,
             next_span: 0,
             bindings: FxHashMap::default(),
         }
@@ -106,8 +110,13 @@ impl TestMap {
 
     fn expression(&mut self, function: TypedFunctionID, kind: TypedExprKind) -> TypedExprID {
         let span = self.span();
-        self.functions.insert_expression(function, TypedExpr::new(kind, span, self.ty.clone()))
+        self.functions.insert_expression(
+            function,
+            TypedExpr::new(kind, span, self.ty.clone(), self.effect.clone()),
+        )
     }
+
+    fn lambda(&mut self) -> TypedFunctionID { self.functions.insert_lambda(self.effect.clone()) }
 
     fn statement(&mut self, function: TypedFunctionID, expression: TypedExprID) {
         self.functions.push_statement(function, Statement::Expression(expression));
@@ -122,11 +131,12 @@ impl TestMap {
     }
 }
 
-#[test]
-fn bindings_owned_by_the_current_function_are_not_captured() {
-    let mut map = TestMap::new();
+#[tokio::test]
+async fn bindings_owned_by_the_current_function_are_not_captured() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let mut map = TestMap::new(&engine);
     let root = map.functions.root_id();
-    let child = map.functions.insert_lambda();
+    let child = map.lambda();
     let local = map.variable(child, "local");
     let parameter = map.lambda_parameter(child, "parameter");
     let local = map.identifier(child, local);
@@ -142,13 +152,14 @@ fn bindings_owned_by_the_current_function_are_not_captured() {
     assert_eq!(analysis.plan(root).captures().len(), 0);
 }
 
-#[test]
-fn repeated_uses_keep_first_encounter_order_and_upgrade_mutability_in_place() {
-    let mut map = TestMap::new();
+#[tokio::test]
+async fn repeated_uses_keep_first_encounter_order_and_upgrade_mutability_in_place() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let mut map = TestMap::new(&engine);
     let root = map.functions.root_id();
     let first = map.variable(root, "first");
     let second = map.variable(root, "second");
-    let child = map.functions.insert_lambda();
+    let child = map.lambda();
 
     let first_read = map.identifier(child, first);
     map.statement(child, first_read);
@@ -176,14 +187,15 @@ fn repeated_uses_keep_first_encounter_order_and_upgrade_mutability_in_place() {
     assert_eq!(captures[1].1.mutability(), Mutability::Immutable);
 }
 
-#[test]
-fn address_modes_follow_projections_references_and_dereferences() {
-    let mut map = TestMap::new();
+#[tokio::test]
+async fn address_modes_follow_projections_references_and_dereferences() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let mut map = TestMap::new(&engine);
     let root = map.functions.root_id();
     let projected = map.variable(root, "projected");
     let referenced = map.variable(root, "referenced");
     let pointer = map.variable(root, "pointer");
-    let child = map.functions.insert_lambda();
+    let child = map.lambda();
 
     let projected_id = map.identifier(child, projected);
     let parenthesized = map.expression(child, TypedExprKind::Paren(Paren::new(projected_id)));
@@ -224,15 +236,16 @@ fn address_modes_follow_projections_references_and_dereferences() {
     ]);
 }
 
-#[test]
-fn nested_children_propagate_only_ancestor_captures_with_joined_mutability() {
-    let mut map = TestMap::new();
+#[tokio::test]
+async fn nested_children_propagate_only_ancestor_captures_with_joined_mutability() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let mut map = TestMap::new(&engine);
     let root = map.functions.root_id();
     let ancestor = map.variable(root, "ancestor");
-    let outer = map.functions.insert_lambda();
+    let outer = map.lambda();
     let parent_local = map.variable(outer, "parent_local");
-    let reader = map.functions.insert_lambda();
-    let writer = map.functions.insert_lambda();
+    let reader = map.lambda();
+    let writer = map.lambda();
 
     let ancestor_read = map.identifier(reader, ancestor);
     map.statement(reader, ancestor_read);

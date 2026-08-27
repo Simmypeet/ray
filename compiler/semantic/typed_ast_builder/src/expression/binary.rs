@@ -134,6 +134,7 @@ impl TAstBuilder {
             TypedExprKind::Binary(Binary::new(left, operator, right)),
             span,
             ty,
+            self.empty_effect(),
         ))
     }
 }
