@@ -53,11 +53,21 @@ impl SymbolKind {
     #[must_use]
     pub const fn has_poly_var_map(&self) -> bool { matches!(self, Self::Def | Self::Effect) }
 
-    /// Checks if this kind of symbol has a definition signature.
+    /// Checks if this kind of symbol has a parameter list
     #[must_use]
-    pub const fn has_def_signature(&self) -> bool {
+    pub const fn has_parameter_list(&self) -> bool {
         matches!(self, Self::Def | Self::EffectOperation | Self::ExternDef)
     }
+
+    /// Checks if this kind of symbol has a parameter list
+    #[must_use]
+    pub const fn has_return_type(&self) -> bool {
+        matches!(self, Self::Def | Self::EffectOperation | Self::ExternDef)
+    }
+
+    /// Checks if this kind of symbol has a parameter list
+    #[must_use]
+    pub const fn has_effect_row_annotation(&self) -> bool { matches!(self, Self::Def) }
 
     /// Returns the human-readable string representation of this symbol kind.
     #[must_use]

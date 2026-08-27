@@ -33,16 +33,25 @@ async fn single_rendered_executor(
     let mut rendered = Vec::new();
     let kind = engine.get_symbol_kind(symbol_id).await;
 
-    // If the symbol has a definition signature, query for its diagnostics and
-    // render them.
-    if kind.has_def_signature() {
+    if kind.has_effect_row_annotation() {
+        let effect_row_key = rayc_semantic_element::effect_row::Key { symbol_id };
+        let diagnostics = engine.query(&DiagnosticKey::new(effect_row_key)).await;
+
+        for diagnostic in diagnostics.iter() {
+            rendered.push(diagnostic.report(engine).await);
+        }
+    }
+
+    if kind.has_parameter_list() {
         let parameter_key = rayc_semantic_element::parameter::Key { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(parameter_key)).await;
 
         for diagnostic in diagnostics.iter() {
             rendered.push(diagnostic.report(engine).await);
         }
+    }
 
+    if kind.has_return_type() {
         let return_type_key = rayc_semantic_element::return_type::Key { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(return_type_key)).await;
 

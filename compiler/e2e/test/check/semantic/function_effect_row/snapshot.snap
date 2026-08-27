@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: expected an effect, found def
+  ╭▸ compiler/e2e/test/check/semantic/function_effect_row/main.ray:4:24
+  │
+4 │ def invalid() -> () \ {value}:
+  ╰╴                       ━━━━━ expected an effect, found def
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

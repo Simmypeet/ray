@@ -9,7 +9,7 @@ use rayc_source_file::SourceElement;
 use rayc_symbol::{GlobalSymbolID, source_map::to_absolute_span, symbol_kind::SymbolKind};
 use rayc_syntax::{
     def::{ParameterEntry, ParameterList, ReturnType},
-    effect_row::EffectRow as EffectRowSyntax,
+    effect_row::{EffectRow as EffectRowSyntax, EffectRowAnnotation},
     r#type::{Primitive as PrimitiveSyntax, Type as TypeSyntax},
 };
 use rayc_type::{
@@ -342,6 +342,28 @@ pub fn discover_parameter_poly_vars(parameters: Option<&ParameterList>) -> PolyV
                 discover_poly_vars(&ty, &mut poly_vars);
             }
         }
+    }
+
+    poly_vars
+}
+
+/// Discovers the polymorphic variables declared by a function signature.
+#[must_use]
+pub fn discover_function_poly_vars(
+    parameters: Option<&ParameterList>,
+    effect_row: Option<&EffectRowAnnotation>,
+) -> PolyVarMap {
+    let mut poly_vars = discover_parameter_poly_vars(parameters);
+    let variable = match effect_row.and_then(EffectRowAnnotation::effect_row) {
+        Some(EffectRowSyntax::PolyVar(variable)) => Some(variable),
+        Some(EffectRowSyntax::ConcreteEffectRow(effect_row)) => {
+            effect_row.tail().and_then(|tail| tail.variable())
+        }
+        None => None,
+    };
+
+    if let Some(variable) = variable {
+        poly_vars.insert(PolyVar::new(variable.kind.0.clone(), TyKind::EffectRow, variable.span()));
     }
 
     poly_vars

@@ -1,5 +1,6 @@
 pub mod build;
 pub mod diagnostic;
+mod effect_row;
 mod extern_signature;
 mod parameter;
 mod poly_var_map;
