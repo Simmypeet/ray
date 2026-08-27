@@ -31,6 +31,10 @@ pub enum Diagnostic {
     PolyVarNotFound(PolyVarNotFound),
     /// A path segment could not be found in its containing symbol.
     PathSegmentNotFound(PathSegmentNotFound),
+    /// A generic symbol was used without its required type arguments.
+    MissingTypeArguments(MissingTypeArguments),
+    /// A type-argument list has the wrong number of arguments.
+    TypeArgumentArityMismatch(TypeArgumentArityMismatch),
     /// An effect-row label resolved to a symbol that is not an effect.
     ExpectedEffect(ExpectedEffect),
 }
@@ -40,6 +44,8 @@ impl Report for Diagnostic {
         match self {
             Self::PolyVarNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::PathSegmentNotFound(diagnostic) => diagnostic.report(engine).await,
+            Self::MissingTypeArguments(diagnostic) => diagnostic.report(engine).await,
+            Self::TypeArgumentArityMismatch(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedEffect(diagnostic) => diagnostic.report(engine).await,
         }
     }
@@ -66,6 +72,73 @@ impl Report for PathSegmentNotFound {
                 Some(format!("symbol `{}` is not found", &*self.name)),
             ))
             .message(format!("symbol `{}` is not found", &*self.name))
+            .build()
+    }
+}
+
+/// A generic symbol used without a type-argument list.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct MissingTypeArguments {
+    name: Interned<str>,
+    span: RelativeSpan,
+    expected: usize,
+}
+
+impl MissingTypeArguments {
+    const fn new(name: Interned<str>, span: RelativeSpan, expected: usize) -> Self {
+        Self { name, span, expected }
+    }
+}
+
+impl Report for MissingTypeArguments {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("expected {} type arguments", self.expected)),
+            ))
+            .message(format!("missing type arguments for `{}`", &*self.name))
+            .build()
+    }
+}
+
+/// A type-argument list whose arity does not match its symbol's parameters.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct TypeArgumentArityMismatch {
+    span: RelativeSpan,
+    expected: usize,
+    actual: usize,
+}
+
+impl TypeArgumentArityMismatch {
+    const fn new(span: RelativeSpan, expected: usize, actual: usize) -> Self {
+        Self { span, expected, actual }
+    }
+}
+
+impl Report for TypeArgumentArityMismatch {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("expected {}, found {}", self.expected, self.actual)),
+            ))
+            .message("type argument arity mismatch")
             .build()
     }
 }
@@ -330,20 +403,11 @@ pub async fn resolve_effect_row(
             let mut labels = Vec::new();
 
             for path in effect_row.effects() {
-                let mut path_resolution = None;
-
-                for segment in path.segments() {
-                    let Ok(resolution) =
-                        resolve_path(engine, poly_vars, site, &segment, path_resolution, handler)
-                            .await
-                    else {
-                        path_resolution = None;
-                        break;
-                    };
-                    path_resolution = Some(resolution);
-                }
-
-                let Some(path_resolution) = path_resolution else { continue };
+                let Ok(path_resolution) =
+                    resolve_path(engine, poly_vars, site, &path, handler).await
+                else {
+                    continue;
+                };
                 let effect_symbol_id = path_resolution.symbol_id();
                 let symbol_kind = path_resolution.symbol_kind(engine).await;
                 let arguments = path_resolution

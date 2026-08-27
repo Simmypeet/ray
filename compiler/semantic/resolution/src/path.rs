@@ -3,16 +3,22 @@
 use qbice::storage::intern::Interned;
 use rayc_handler::Handler;
 use rayc_qbice::TrackedEngine;
+use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID,
     member::{get_member_by_name, try_get_members},
     parent::get_closest_module_id,
     symbol_kind::{SymbolKind, get_symbol_kind},
 };
-use rayc_syntax::path::PathSegment;
-use rayc_type::{poly_var::PolyVarStack, ty::Ty};
+use rayc_syntax::path::{Path, PathSegment};
+use rayc_type::{
+    poly_var::{PolyVarStack, get_poly_var_map},
+    ty::Ty,
+};
 
-use crate::{Diagnostic, PathSegmentNotFound, resolve_type};
+use crate::{
+    Diagnostic, MissingTypeArguments, PathSegmentNotFound, TypeArgumentArityMismatch, resolve_type,
+};
 
 /// The semantic information produced by resolving one path segment.
 #[derive(Debug, Clone)]
@@ -48,6 +54,52 @@ pub enum PathResolutionError {
     SymbolNotFound,
 }
 
+async fn expected_type_argument_count(engine: &TrackedEngine, symbol_id: GlobalSymbolID) -> usize {
+    let symbol_kind = engine.get_symbol_kind(symbol_id).await;
+    if symbol_kind.has_poly_var_map() { engine.get_poly_var_map(symbol_id).await.len() } else { 0 }
+}
+
+fn resolve_type_arguments(
+    engine: &TrackedEngine,
+    poly_vars: &PolyVarStack,
+    path: &PathSegment,
+    identifier: &rayc_syntax::Identifier,
+    expected: usize,
+    handler: &dyn Handler<Diagnostic>,
+) -> Option<Interned<[Interned<Ty>]>> {
+    let Some(arguments) = path.type_arguments() else {
+        if expected == 0 {
+            return None;
+        }
+
+        handler.receive(Diagnostic::MissingTypeArguments(MissingTypeArguments::new(
+            identifier.kind.0.clone(),
+            identifier.span(),
+            expected,
+        )));
+        return Some(engine.intern_unsized(
+            std::iter::repeat_with(|| Ty::new_error(engine)).take(expected).collect::<Vec<_>>(),
+        ));
+    };
+
+    let actual = arguments.arguments().count();
+    if actual != expected {
+        handler.receive(Diagnostic::TypeArgumentArityMismatch(TypeArgumentArityMismatch::new(
+            arguments.span(),
+            expected,
+            actual,
+        )));
+    }
+
+    let mut resolved = arguments
+        .arguments()
+        .map(|argument| resolve_type(engine, poly_vars, &argument, handler))
+        .collect::<Vec<_>>();
+    resolved.truncate(expected);
+    resolved.resize_with(expected, || Ty::new_error(engine));
+    Some(engine.intern_unsized(resolved))
+}
+
 impl PathResolution {
     /// Returns the ID of the symbol resolved by the final segment.
     #[must_use]
@@ -81,7 +133,7 @@ impl PathResolution {
 /// Without a previous resolution, the segment is looked up in the closest
 /// module containing `site`. Otherwise, it is looked up in the previous
 /// symbol's members.
-pub async fn resolve_path(
+pub async fn resolve_path_segment(
     engine: &TrackedEngine,
     poly_vars: &PolyVarStack,
     site: GlobalSymbolID,
@@ -89,14 +141,6 @@ pub async fn resolve_path(
     previous: Option<PathResolution>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<PathResolution, PathResolutionError> {
-    let type_arguments = path.type_arguments().map(|arguments| {
-        let arguments = arguments
-            .arguments()
-            .map(|argument| resolve_type(engine, poly_vars, &argument, handler))
-            .collect::<Vec<_>>();
-        engine.intern_unsized(arguments)
-    });
-
     let Some(identifier) = path.identifier() else {
         return Err(PathResolutionError::MissingIdentifier);
     };
@@ -121,8 +165,42 @@ pub async fn resolve_path(
         return Err(PathResolutionError::SymbolNotFound);
     };
 
+    let expected_type_arguments = expected_type_argument_count(engine, symbol_id).await;
+    let type_arguments = resolve_type_arguments(
+        engine,
+        poly_vars,
+        path,
+        &identifier,
+        expected_type_arguments,
+        handler,
+    );
+
     let segment = PathSegmentResolution { symbol_id, type_arguments };
     let mut resolution = previous.unwrap_or_else(|| PathResolution { segments: Vec::new() });
     resolution.segments.push(segment);
+    Ok(resolution)
+}
+
+/// Resolves every segment in a path from root to final.
+pub async fn resolve_path(
+    engine: &TrackedEngine,
+    poly_vars: &PolyVarStack,
+    site: GlobalSymbolID,
+    path: &Path,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<PathResolution, PathResolutionError> {
+    let mut segments = path.segments();
+    let Some(first) = segments.next() else {
+        return Err(PathResolutionError::MissingIdentifier);
+    };
+    let mut resolution =
+        resolve_path_segment(engine, poly_vars, site, &first, None, handler).await?;
+
+    for segment in segments {
+        resolution =
+            resolve_path_segment(engine, poly_vars, site, &segment, Some(resolution), handler)
+                .await?;
+    }
+
     Ok(resolution)
 }
