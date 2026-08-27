@@ -147,6 +147,10 @@ impl TAstBuilder {
 
     pub fn push_diagnostic(&mut self, diagnostic: Diagnostic) { self.diagnostics.push(diagnostic); }
 
+    pub fn extend_diagnostics(&mut self, diagnostics: impl IntoIterator<Item = Diagnostic>) {
+        self.diagnostics.extend(diagnostics);
+    }
+
     pub fn new_type_inference(&mut self) -> Interned<Ty> {
         self.new_type_inference_with_kind(TyKind::Star)
     }

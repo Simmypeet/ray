@@ -9,7 +9,9 @@ rust-version.workspace = true
 [dependencies]
 qbice.workspace = true
 linkme.workspace = true
+derive_more.workspace = true
 rayc_diagnostic.path = "../../base/diagnostic"
+rayc_handler.path = "../../base/handler"
 rayc_lexical.path = "../../syntax/lexical"
 rayc_qbice.path = "../../base/qbice"
 rayc_resolution.path = "../resolution"

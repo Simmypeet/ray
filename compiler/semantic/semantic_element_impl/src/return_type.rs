@@ -1,5 +1,7 @@
+use derive_more::From;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
+use rayc_handler::{Handler, Storage};
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::resolve_type_with_poly_vars;
 use rayc_semantic_element::return_type::Key;
@@ -19,7 +21,18 @@ use crate::{
 };
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+    From,
 )]
 pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
@@ -42,7 +55,8 @@ impl Build for Key {
         let syntax = engine.get_return_type_syntax(symbol_id).await;
         let symbol_kind = engine.get_symbol_kind(symbol_id).await;
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
-        let mut diagnostics = Vec::new();
+
+        let diagnostics = Storage::new();
 
         let return_type = syntax.as_ref().map_or_else(
             || Ty::new_unit(engine),
@@ -50,12 +64,9 @@ impl Build for Key {
                 return_type.r#type().map_or_else(
                     || Ty::new_error(engine),
                     |syntax| {
-                        let resolution = resolve_type_with_poly_vars(engine, &poly_vars, &syntax);
-                        let ty = resolution.ty().clone();
-                        diagnostics.extend(
-                            resolution.into_diagnostics().into_iter().map(Diagnostic::Resolution),
-                        );
-                        ty
+                        resolve_type_with_poly_vars(engine, &poly_vars, &syntax, &diagnostics)
+                            .ty()
+                            .clone()
                     },
                 )
             },
@@ -66,13 +77,13 @@ impl Build for Key {
             && !is_c_abi_value_type(&return_type)
             && let Some(syntax) = syntax.as_ref()
         {
-            diagnostics.push(Diagnostic::InvalidExternSignature(InvalidExternSignature::new(
+            diagnostics.receive(Diagnostic::InvalidExternSignature(InvalidExternSignature::new(
                 InvalidExternSignatureKind::UnsupportedReturn,
                 syntax.r#type().map_or_else(|| syntax.span(), |ty| ty.span()),
             )));
         }
 
-        Output::new_with(return_type, diagnostics, engine)
+        Output::new_with(return_type, diagnostics.into_vec(), engine)
     }
 }
 

@@ -1834,6 +1834,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "qbice",
  "rayc_diagnostic",
+ "rayc_handler",
  "rayc_lexical",
  "rayc_qbice",
  "rayc_source_file",
@@ -1859,9 +1860,11 @@ dependencies = [
 name = "rayc_semantic_element_impl"
 version = "0.1.0-beta.2"
 dependencies = [
+ "derive_more",
  "linkme",
  "qbice",
  "rayc_diagnostic",
+ "rayc_handler",
  "rayc_lexical",
  "rayc_qbice",
  "rayc_resolution",
@@ -2076,6 +2079,7 @@ name = "rayc_typed_ast_builder"
 version = "0.1.0-beta.2"
 dependencies = [
  "bon",
+ "derive_more",
  "linkme",
  "qbice",
  "rayc_arena",

@@ -1,5 +1,7 @@
+use derive_more::From;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
+use rayc_handler::{Handler, Storage};
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::{discover_parameter_poly_vars, resolve_type_with_poly_vars};
 use rayc_semantic_element::parameter::{Key, Parameter, ParameterMap};
@@ -21,7 +23,18 @@ use crate::{
 };
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+    From,
 )]
 pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
@@ -44,7 +57,7 @@ impl Build for Key {
         let syntax = engine.get_parameter_list_syntax(symbol_id).await;
         let symbol_kind = engine.get_symbol_kind(symbol_id).await;
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
-        let mut diagnostics = Vec::new();
+        let diagnostics = Storage::new();
         let mut parameters = ParameterMap::new();
 
         if let Some(syntax) = syntax.as_ref() {
@@ -53,12 +66,9 @@ impl Build for Key {
                 let ty = parameter.r#type().map_or_else(
                     || Ty::new_error(engine),
                     |syntax| {
-                        let resolution = resolve_type_with_poly_vars(engine, &poly_vars, &syntax);
-                        let ty = resolution.ty().clone();
-                        diagnostics.extend(
-                            resolution.into_diagnostics().into_iter().map(Diagnostic::Resolution),
-                        );
-                        ty
+                        resolve_type_with_poly_vars(engine, &poly_vars, &syntax, &diagnostics)
+                            .ty()
+                            .clone()
                     },
                 );
                 parameters.push(Parameter::builder().span(parameter.span()).ty(ty).build());
@@ -69,10 +79,9 @@ impl Build for Key {
             if !discover_parameter_poly_vars(syntax.as_ref()).is_empty()
                 && let Some(span) = engine.get_span(symbol_id).await
             {
-                diagnostics.push(Diagnostic::InvalidExternSignature(InvalidExternSignature::new(
-                    InvalidExternSignatureKind::Polymorphic,
-                    span,
-                )));
+                diagnostics.receive(Diagnostic::InvalidExternSignature(
+                    InvalidExternSignature::new(InvalidExternSignatureKind::Polymorphic, span),
+                ));
             }
 
             if let Some(syntax) = syntax.as_ref() {
@@ -90,7 +99,7 @@ impl Build for Key {
                         None
                     };
                     if let Some(kind) = kind {
-                        diagnostics.push(Diagnostic::InvalidExternSignature(
+                        diagnostics.receive(Diagnostic::InvalidExternSignature(
                             InvalidExternSignature::new(
                                 kind,
                                 entry.r#type().map_or_else(|| entry.span(), |ty| ty.span()),
@@ -101,7 +110,7 @@ impl Build for Key {
             }
         }
 
-        Output::new_with(engine.intern(parameters), diagnostics, engine)
+        Output::new_with(engine.intern(parameters), diagnostics.into_vec(), engine)
     }
 }
 

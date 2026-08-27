@@ -1,4 +1,5 @@
 use bon::Builder;
+use derive_more::From;
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
@@ -368,7 +369,7 @@ impl Report for ResidualSubtype {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable, From,
 )]
 pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),

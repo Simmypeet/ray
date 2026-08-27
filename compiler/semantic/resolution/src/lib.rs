@@ -2,18 +2,24 @@
 
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
+use rayc_handler::Handler;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::SourceElement;
-use rayc_symbol::source_map::to_absolute_span;
+use rayc_symbol::{GlobalSymbolID, source_map::to_absolute_span, symbol_kind::SymbolKind};
 use rayc_syntax::{
     def::{ParameterEntry, ParameterList, ReturnType},
+    effect_row::EffectRow as EffectRowSyntax,
     r#type::{Primitive as PrimitiveSyntax, Type as TypeSyntax},
 };
 use rayc_type::{
     poly_var::{PolyVar, PolyVarMap, PolyVarStack},
-    ty::{Mutability, Primitive, Ty, TyKind},
+    ty::{Mutability, Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel},
 };
+
+use crate::path::resolve_path;
+
+pub mod path;
 
 /// A diagnostic emitted while resolving type syntax.
 #[derive(
@@ -23,13 +29,80 @@ pub enum Diagnostic {
     /// A polymorphic variable was used without being declared by a parameter
     /// type.
     PolyVarNotFound(PolyVarNotFound),
+    /// A path segment could not be found in its containing symbol.
+    PathSegmentNotFound(PathSegmentNotFound),
+    /// An effect-row label resolved to a symbol that is not an effect.
+    ExpectedEffect(ExpectedEffect),
 }
 
 impl Report for Diagnostic {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
             Self::PolyVarNotFound(diagnostic) => diagnostic.report(engine).await,
+            Self::PathSegmentNotFound(diagnostic) => diagnostic.report(engine).await,
+            Self::ExpectedEffect(diagnostic) => diagnostic.report(engine).await,
         }
+    }
+}
+
+/// A path segment that is not a member of the preceding symbol.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct PathSegmentNotFound {
+    name: Interned<str>,
+    span: RelativeSpan,
+}
+
+impl PathSegmentNotFound {
+    const fn new(name: Interned<str>, span: RelativeSpan) -> Self { Self { name, span } }
+}
+
+impl Report for PathSegmentNotFound {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("symbol `{}` is not found", &*self.name)),
+            ))
+            .message(format!("symbol `{}` is not found", &*self.name))
+            .build()
+    }
+}
+
+/// A symbol used as an effect-row label that is not an effect.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct ExpectedEffect {
+    span: RelativeSpan,
+    actual: SymbolKind,
+}
+
+impl ExpectedEffect {
+    const fn new(span: RelativeSpan, actual: SymbolKind) -> Self { Self { span, actual } }
+}
+
+impl Report for ExpectedEffect {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("expected an effect, found {}", self.actual.str())),
+            ))
+            .message(format!("expected an effect, found {}", self.actual.str()))
+            .build()
     }
 }
 
@@ -71,7 +144,6 @@ pub struct ResolvedParameter {
 pub struct SignatureResolution {
     pub parameters: Vec<ResolvedParameter>,
     pub return_type: Interned<Ty>,
-    pub diagnostics: Vec<Diagnostic>,
 }
 
 /// The result of resolving one type against an existing polymorphic
@@ -79,17 +151,12 @@ pub struct SignatureResolution {
 #[derive(Debug, Clone)]
 pub struct TypeResolution {
     ty: Interned<Ty>,
-    diagnostics: Vec<Diagnostic>,
 }
 
 impl TypeResolution {
     /// Returns the resolved semantic type.
     #[must_use]
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
-
-    /// Consumes the resolution and returns its diagnostics.
-    #[must_use]
-    pub fn into_diagnostics(self) -> Vec<Diagnostic> { self.diagnostics }
 }
 
 fn is_poly_var_name(name: &str) -> bool {
@@ -155,11 +222,11 @@ pub fn discover_parameter_poly_vars(parameters: Option<&ParameterList>) -> PolyV
 }
 
 #[allow(clippy::similar_names)]
-fn resolve_type(
+pub(crate) fn resolve_type(
     engine: &TrackedEngine,
     poly_vars: &PolyVarStack,
     syntax: &TypeSyntax,
-    diagnostics: &mut Vec<Diagnostic>,
+    handler: &dyn Handler<Diagnostic>,
 ) -> Interned<Ty> {
     match syntax {
         TypeSyntax::Primitive(primitive) => {
@@ -175,7 +242,7 @@ fn resolve_type(
         TypeSyntax::Pointer(pointer) => {
             let pointee = pointer.pointed_type().map_or_else(
                 || Ty::new_error(engine),
-                |pointed_type| resolve_type(engine, poly_vars, &pointed_type, diagnostics),
+                |pointed_type| resolve_type(engine, poly_vars, &pointed_type, handler),
             );
             let mutability = if pointer.mut_keyword().is_some() {
                 Mutability::Mutable
@@ -187,7 +254,7 @@ fn resolve_type(
         TypeSyntax::Tuple(tuple) => {
             let arguments = tuple
                 .elements()
-                .map(|element| resolve_type(engine, poly_vars, &element, diagnostics))
+                .map(|element| resolve_type(engine, poly_vars, &element, handler))
                 .collect::<Vec<_>>();
             Ty::new_tuple(engine.intern_unsized(arguments), engine)
         }
@@ -195,7 +262,7 @@ fn resolve_type(
             let parameters = lambda.parameters().map_or_else(Vec::new, |parameters| {
                 parameters
                     .parameters()
-                    .map(|parameter| resolve_type(engine, poly_vars, &parameter, diagnostics))
+                    .map(|parameter| resolve_type(engine, poly_vars, &parameter, handler))
                     .collect::<Vec<_>>()
             });
             let return_type = lambda.return_type().map_or_else(
@@ -203,7 +270,7 @@ fn resolve_type(
                 |return_type| {
                     return_type.r#type().map_or_else(
                         || Ty::new_error(engine),
-                        |return_type| resolve_type(engine, poly_vars, &return_type, diagnostics),
+                        |return_type| resolve_type(engine, poly_vars, &return_type, handler),
                     )
                 },
             );
@@ -215,7 +282,7 @@ fn resolve_type(
             }
 
             let Some(id) = poly_vars.find_by_name(&identifier.kind.0) else {
-                diagnostics.push(Diagnostic::PolyVarNotFound(PolyVarNotFound::new(
+                handler.receive(Diagnostic::PolyVarNotFound(PolyVarNotFound::new(
                     identifier.kind.0.clone(),
                     identifier.span(),
                 )));
@@ -227,6 +294,91 @@ fn resolve_type(
     }
 }
 
+fn resolve_effect_row_poly_var(
+    engine: &TrackedEngine,
+    poly_vars: &PolyVarStack,
+    identifier: &rayc_syntax::Identifier,
+    handler: &dyn Handler<Diagnostic>,
+) -> Option<Interned<Ty>> {
+    let Some(id) = poly_vars.find_by_name(&identifier.kind.0) else {
+        handler.receive(Diagnostic::PolyVarNotFound(PolyVarNotFound::new(
+            identifier.kind.0.clone(),
+            identifier.span(),
+        )));
+        return None;
+    };
+
+    Some(Ty::new_poly_var(id, engine))
+}
+
+/// Resolves effect-row syntax relative to the closest module containing
+/// `site`.
+#[must_use]
+pub async fn resolve_effect_row(
+    engine: &TrackedEngine,
+    poly_vars: &PolyVarStack,
+    site: GlobalSymbolID,
+    syntax: &EffectRowSyntax,
+    handler: &dyn Handler<Diagnostic>,
+) -> TypeResolution {
+    let ty = match syntax {
+        EffectRowSyntax::PolyVar(identifier) => {
+            resolve_effect_row_poly_var(engine, poly_vars, identifier, handler)
+                .unwrap_or_else(|| Ty::new_effect_row([], None, engine))
+        }
+        EffectRowSyntax::ConcreteEffectRow(effect_row) => {
+            let mut labels = Vec::new();
+
+            for path in effect_row.effects() {
+                let mut path_resolution = None;
+
+                for segment in path.segments() {
+                    let resolution =
+                        resolve_path(engine, poly_vars, site, &segment, path_resolution, handler)
+                            .await;
+                    let resolution_failed = resolution.symbol_id().is_none();
+                    path_resolution = Some(resolution);
+                    if resolution_failed {
+                        break;
+                    }
+                }
+
+                let Some(path_resolution) = path_resolution else { continue };
+                let effect_symbol_id = path_resolution.symbol_id();
+                let symbol_kind = path_resolution.symbol_kind(engine).await;
+                let arguments = path_resolution
+                    .type_arguments()
+                    .map_or_else(Vec::new, |arguments| arguments.cloned().collect());
+
+                let (Some(effect_symbol_id), Some(symbol_kind)) = (effect_symbol_id, symbol_kind)
+                else {
+                    continue;
+                };
+                if symbol_kind != SymbolKind::Effect {
+                    handler.receive(Diagnostic::ExpectedEffect(ExpectedEffect::new(
+                        path.span(),
+                        symbol_kind,
+                    )));
+                    continue;
+                }
+                labels.push(
+                    engine.intern(EffectLabel::new(effect_symbol_id, Args::new(arguments, engine))),
+                );
+            }
+
+            let tail = effect_row.tail().and_then(|tail| {
+                tail.variable().and_then(|variable| {
+                    resolve_effect_row_poly_var(engine, poly_vars, &variable, handler)
+                })
+            });
+
+            Ty::new_effect_row(labels, tail, engine)
+        }
+    };
+
+    TypeResolution { ty }
+}
+
 /// Resolves a complete function signature against polymorphic variables
 /// declared by an enclosing symbol.
 #[must_use]
@@ -235,8 +387,8 @@ pub fn resolve_signature_with_poly_vars(
     parameters: Option<&ParameterList>,
     return_type: Option<&ReturnType>,
     poly_vars: &PolyVarStack,
+    handler: &dyn Handler<Diagnostic>,
 ) -> SignatureResolution {
-    let mut diagnostics = Vec::new();
     let mut resolved_parameters = Vec::new();
 
     if let Some(parameters) = parameters {
@@ -244,7 +396,7 @@ pub fn resolve_signature_with_poly_vars(
             let ParameterEntry::Parameter(parameter) = entry else { continue };
             let ty = parameter.r#type().map_or_else(
                 || Ty::new_error(engine),
-                |syntax| resolve_type(engine, poly_vars, &syntax, &mut diagnostics),
+                |syntax| resolve_type(engine, poly_vars, &syntax, handler),
             );
             resolved_parameters.push(ResolvedParameter { span: parameter.span(), ty });
         }
@@ -255,12 +407,12 @@ pub fn resolve_signature_with_poly_vars(
         |return_type| {
             return_type.r#type().map_or_else(
                 || Ty::new_error(engine),
-                |syntax| resolve_type(engine, poly_vars, &syntax, &mut diagnostics),
+                |syntax| resolve_type(engine, poly_vars, &syntax, handler),
             )
         },
     );
 
-    SignatureResolution { parameters: resolved_parameters, return_type, diagnostics }
+    SignatureResolution { parameters: resolved_parameters, return_type }
 }
 
 /// Resolves one type against polymorphic variables declared by its owner.
@@ -269,8 +421,8 @@ pub fn resolve_type_with_poly_vars(
     engine: &TrackedEngine,
     poly_vars: &PolyVarStack,
     syntax: &TypeSyntax,
+    handler: &dyn Handler<Diagnostic>,
 ) -> TypeResolution {
-    let mut diagnostics = Vec::new();
-    let ty = resolve_type(engine, poly_vars, syntax, &mut diagnostics);
-    TypeResolution { ty, diagnostics }
+    let ty = resolve_type(engine, poly_vars, syntax, handler);
+    TypeResolution { ty }
 }

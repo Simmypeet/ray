@@ -21,6 +21,7 @@ rayc_symbol.path = "../symbol"
 rayc_semantic_element.path = "../semantic_element"
 rayc_typed_ast.path = "../typed_ast"
 rayc_target.path = "../../base/target"
+derive_more.workspace = true
 linkme.workspace = true
 qbice.workspace = true
 bon.workspace = true

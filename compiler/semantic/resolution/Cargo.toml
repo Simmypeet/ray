@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 qbice.workspace = true
 rayc_diagnostic.path = "../../base/diagnostic"
+rayc_handler.path = "../../base/handler"
 rayc_lexical.path = "../../syntax/lexical"
 rayc_qbice.path = "../../base/qbice"
 rayc_source_file.path = "../../base/source_file"
