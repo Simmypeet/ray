@@ -1,10 +1,15 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
     reduce::Reduce,
     subst::Substitutable,
-    ty::{Ty, args::Args, inference::Inference},
+    ty::{
+        Ty,
+        args::Args,
+        inference::{GenInfer, Inference},
+    },
 };
 
 #[derive(
@@ -148,6 +153,22 @@ impl Substitutable for EffectRow {
             (Some(new_labels), Some(new_tail)) => {
                 Some(Self { labels: new_labels, tail: Some(new_tail) })
             }
+        }
+    }
+}
+
+impl EffectRow {
+    pub(super) fn open_closed_row(
+        &self,
+        infer_gen: &mut impl GenInfer,
+        engine: &TrackedEngine,
+    ) -> Option<Self> {
+        if let Some(eng) = self.tail.as_ref() {
+            let new_tail = Ty::open_closed_row(eng, infer_gen, engine);
+            new_tail.map(|new_tail| Self { labels: self.labels.clone(), tail: Some(new_tail) })
+        } else {
+            let new_tail = engine.intern(Ty::Inference(infer_gen.gen_effect_row_infer()));
+            Some(Self { labels: self.labels.clone(), tail: Some(new_tail) })
         }
     }
 }

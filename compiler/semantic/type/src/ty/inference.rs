@@ -33,3 +33,11 @@ impl Inference {
     #[must_use]
     pub const fn constraint(&self) -> InferenceConstraint { self.constraint }
 }
+
+pub trait GenInfer {
+    fn gen_infer(&mut self, kind: TyKind, constraint: InferenceConstraint) -> Inference;
+
+    fn gen_effect_row_infer(&mut self) -> Inference {
+        self.gen_infer(TyKind::EffectRow, InferenceConstraint::Any)
+    }
+}
