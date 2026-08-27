@@ -64,7 +64,7 @@ impl Build for Key {
             for entry in syntax.entries() {
                 let ParameterEntry::Parameter(parameter) = entry else { continue };
                 let ty = parameter.r#type().map_or_else(
-                    || Ty::new_error(engine),
+                    || Ty::new_star_error(engine),
                     |syntax| {
                         resolve_type_with_poly_vars(engine, &poly_vars, &syntax, &diagnostics)
                             .ty()

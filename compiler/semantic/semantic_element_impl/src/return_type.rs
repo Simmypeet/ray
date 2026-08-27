@@ -62,7 +62,7 @@ impl Build for Key {
             || Ty::new_unit(engine),
             |return_type| {
                 return_type.r#type().map_or_else(
-                    || Ty::new_error(engine),
+                    || Ty::new_star_error(engine),
                     |syntax| {
                         resolve_type_with_poly_vars(engine, &poly_vars, &syntax, &diagnostics)
                             .ty()

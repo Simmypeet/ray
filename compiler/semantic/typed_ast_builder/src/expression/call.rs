@@ -111,7 +111,7 @@ impl TAstBuilder {
                     self.check_lambda_call_arguments(&parameter_types, &arguments, span);
                     return_type
                 }
-                LambdaCallSignature::Invalid => Ty::new_error(self.engine()),
+                LambdaCallSignature::Invalid => Ty::new_star_error(self.engine()),
             };
 
         self.insert_expression(TypedExpr::new(

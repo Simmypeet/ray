@@ -162,27 +162,27 @@ impl TAstBuilder {
         let pointee = match &*ty {
             Ty::Application(application) => match application.view() {
                 ApplicationView::Pointer(pointer) => pointer.pointee().clone(),
-                ApplicationView::Error => Ty::new_error(self.engine()),
+                ApplicationView::Error => Ty::new_star_error(self.engine()),
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Lambda(_) => {
                     self.push_diagnostic(Diagnostic::ExpectedPointerType(
                         ExpectedPointerType::builder().ty(ty).span(span).build(),
                     ));
-                    Ty::new_error(self.engine())
+                    Ty::new_star_error(self.engine())
                 }
             },
             Ty::PolyVar(_) => {
                 self.push_diagnostic(Diagnostic::ExpectedPointerType(
                     ExpectedPointerType::builder().ty(ty).span(span).build(),
                 ));
-                Ty::new_error(self.engine())
+                Ty::new_star_error(self.engine())
             }
             Ty::Inference(_) => {
                 self.push_diagnostic(Diagnostic::TypeMustBeKnownAtThisPoint(
                     TypeMustBeKnownAtThisPoint::builder().span(span).build(),
                 ));
-                Ty::new_error(self.engine())
+                Ty::new_star_error(self.engine())
             }
             Ty::EffectRow(_) => todo!("type-check dereferencing an effect-row type"),
         };

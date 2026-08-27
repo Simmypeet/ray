@@ -235,6 +235,11 @@ impl Ty {
     }
 
     #[must_use]
+    pub fn new_star_error(engine: &TrackedEngine) -> Interned<Self> {
+        Self::new_error(TyKind::Star, engine)
+    }
+
+    #[must_use]
     pub fn new_unit(engine: &TrackedEngine) -> Interned<Self> {
         engine
             .intern(Self::Application(Application::new(Constant::Tuple, engine.intern_unsized([]))))
