@@ -61,6 +61,10 @@ impl Solver {
                 },
             ),
 
+            // Effect rows use exact Koka-style row unification here. Despite the
+            // enclosing `Subtype` name, this is equality: labels are neither
+            // deduplicated nor accepted through subeffect inclusion, and open
+            // rows are rewritten to a shared tail.
             (Ty::EffectRow(lesser), Ty::EffectRow(greater)) => {
                 self.entail_effect_row_subtype(lesser, greater)
             }
@@ -240,6 +244,7 @@ mod tests {
     use super::Subtype;
     use crate::{
         constraint::{Constraint, Error, Step},
+        poly_var::{GlobalPolyVarID, PolyVarID},
         solver::Solver,
         subst::{Subst, Substitutable},
         ty::{Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel, inference::Inference},
@@ -256,6 +261,11 @@ mod tests {
     ) -> Interned<EffectLabel> {
         let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(id));
         engine.intern(EffectLabel::new(symbol_id, Args::new(args, engine)))
+    }
+
+    fn effect_poly_var(id: u64) -> GlobalPolyVarID {
+        let parent_id = TargetID::TEST.make_global(SymbolID::from_u128(0));
+        GlobalPolyVarID::new(parent_id, PolyVarID::new(id))
     }
 
     fn solve(
@@ -337,6 +347,106 @@ mod tests {
                 Constraint::Subtype(Subtype::new(io_remainder, e2)),
             ]))
         );
+    }
+
+    // input: {IO | e1} = {Exn | e2}
+    // premise: e1 and e2 are distinct open effect-row variables
+    // output: e1 := {Exn | e3}, e2 := {IO | e3}
+    #[tokio::test]
+    async fn distinct_open_effect_rows_have_a_principal_shared_tail_substitution() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let io = effect_label(1, &engine);
+        let exn = effect_label(2, &engine);
+        let mut solver = Solver::new(engine.clone());
+        let e1 = solver.new_inference(TyKind::EffectRow);
+        let e2 = solver.new_inference(TyKind::EffectRow);
+        let e1_ty = engine.intern(Ty::Inference(e1));
+        let e2_ty = engine.intern(Ty::Inference(e2));
+        let lesser = Ty::new_effect_row([io.clone()], Some(e1_ty), &engine);
+        let greater = Ty::new_effect_row([exn.clone()], Some(e2_ty), &engine);
+
+        let subst = solve(&mut solver, Constraint::Subtype(Subtype::new(lesser, greater)), &engine)
+            .expect("distinct open rows should unify through a common tail");
+
+        let e3 = engine.intern(Ty::Inference(Inference::new(TyKind::EffectRow, 2)));
+        assert_eq!(subst.get(&e1), Some(&Ty::new_effect_row([exn], Some(e3.clone()), &engine)));
+        assert_eq!(subst.get(&e2), Some(&Ty::new_effect_row([io], Some(e3), &engine)));
+    }
+
+    // input: {IO | e} = {IO}
+    // premise: e is an open effect-row variable
+    // output: e := {}
+    #[tokio::test]
+    async fn open_effect_row_tail_closes_when_no_labels_remain() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let io = effect_label(1, &engine);
+        let mut solver = Solver::new(engine.clone());
+        let e = solver.new_inference(TyKind::EffectRow);
+        let e_ty = engine.intern(Ty::Inference(e));
+        let open = Ty::new_effect_row([io.clone()], Some(e_ty), &engine);
+        let closed = Ty::new_effect_row([io], None, &engine);
+
+        let subst = solve(&mut solver, Constraint::Subtype(Subtype::new(open, closed)), &engine)
+            .expect("the open tail should close");
+
+        assert_eq!(subst.get(&e), Some(&Ty::new_effect_row([], None, &engine)));
+    }
+
+    // input: {IO | e} = {IO, IO}
+    // premise: duplicate effect labels are significant
+    // output: e := {IO}
+    #[tokio::test]
+    async fn duplicate_effect_label_remains_in_open_tail_solution() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let io = effect_label(1, &engine);
+        let mut solver = Solver::new(engine.clone());
+        let e = solver.new_inference(TyKind::EffectRow);
+        let e_ty = engine.intern(Ty::Inference(e));
+        let open = Ty::new_effect_row([io.clone()], Some(e_ty), &engine);
+        let duplicate = Ty::new_effect_row([io.clone(), io.clone()], None, &engine);
+
+        let subst = solve(&mut solver, Constraint::Subtype(Subtype::new(open, duplicate)), &engine)
+            .expect("the duplicate label should remain in the tail");
+
+        assert_eq!(subst.get(&e), Some(&Ty::new_effect_row([io], None, &engine)));
+    }
+
+    // input: e = {IO | e}
+    // premise: e is an effect-row inference variable
+    // output: OccursCheckFailed
+    #[tokio::test]
+    async fn effect_row_inference_cannot_bind_to_a_row_containing_itself() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let io = effect_label(1, &engine);
+        let mut solver = Solver::new(engine.clone());
+        let e = solver.new_inference(TyKind::EffectRow);
+        let e_ty = engine.intern(Ty::Inference(e));
+        let recursive_row = Ty::new_effect_row([io], Some(e_ty.clone()), &engine);
+
+        let result =
+            solve(&mut solver, Constraint::Subtype(Subtype::new(e_ty, recursive_row)), &engine);
+
+        assert_eq!(result, Err(Error::OccursCheckFailed));
+    }
+
+    // input: e = p
+    // premise: e is unconstrained; p is a rigid effect-row variable
+    // output: e := p, with no substitution for p
+    #[tokio::test]
+    async fn effect_inference_binds_to_rigid_effect_poly_var_without_rebinding_it() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let mut solver = Solver::new(engine.clone());
+        let e = solver.new_inference(TyKind::EffectRow);
+        let e_ty = engine.intern(Ty::Inference(e));
+        let poly = effect_poly_var(0);
+        let poly_ty = Ty::new_poly_var(poly, &engine);
+
+        let subst =
+            solve(&mut solver, Constraint::Subtype(Subtype::new(poly_ty.clone(), e_ty)), &engine)
+                .expect("an unconstrained inference should bind to a rigid variable");
+
+        assert_eq!(subst.get(&e), Some(&poly_ty));
+        assert_eq!(subst.get(&poly), None);
     }
 
     // input: e <: {IO}
