@@ -71,8 +71,7 @@ impl Build for rayc_type::poly_var::Key {
         let poly_vars = match engine.get_symbol_kind(symbol_id).await {
             SymbolKind::Def => {
                 let parameters = engine.get_parameter_list_syntax(symbol_id).await;
-                let effect_row = engine.get_effect_row_syntax(symbol_id).await;
-                discover_function_poly_vars(parameters.as_ref(), effect_row.as_ref())
+                discover_function_poly_vars(parameters.as_ref())
             }
             SymbolKind::Effect => {
                 let mut poly_vars = PolyVarMap::new();

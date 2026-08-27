@@ -367,14 +367,8 @@ pub fn discover_parameter_poly_vars(parameters: Option<&ParameterList>) -> PolyV
 
 /// Discovers the polymorphic variables declared by a function signature.
 #[must_use]
-pub fn discover_function_poly_vars(
-    parameters: Option<&ParameterList>,
-    effect_row: Option<&EffectRowAnnotation>,
-) -> PolyVarMap {
-    let mut poly_vars = discover_parameter_poly_vars(parameters);
-    discover_effect_row_poly_var(effect_row, &mut poly_vars);
-
-    poly_vars
+pub fn discover_function_poly_vars(parameters: Option<&ParameterList>) -> PolyVarMap {
+    discover_parameter_poly_vars(parameters)
 }
 
 #[allow(clippy::similar_names)]
