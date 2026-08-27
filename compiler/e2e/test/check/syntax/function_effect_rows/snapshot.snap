@@ -3,6 +3,14 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
+[error]: symbol `IO` is not found
+  ╭▸ compiler/e2e/test/check/syntax/function_effect_rows/main.ray:4:45
+  │
+4 │ def lambdaConcrete(callback: def() -> () \ {IO}) -> ():
+  ╰╴                                            ━━ symbol `IO` is not found
+
+[error]: Compilation aborted due to 1 error(s)
+
 
 
 stdout:

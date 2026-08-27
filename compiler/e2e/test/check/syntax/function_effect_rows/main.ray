@@ -1,13 +1,4 @@
-eff IO:
-    def perform() -> ()
-
-def polymorphic() -> () \ e:
-    return ()
-
-def concrete() -> () \ {IO | e}:
-    return ()
-
-def lambdaPolymorphic(callback: def() -> () \ e) -> ():
+def lambdaPolymorphic(callback: def() -> () \ e) \ e:
     return ()
 
 def lambdaConcrete(callback: def() -> () \ {IO}) -> ():
