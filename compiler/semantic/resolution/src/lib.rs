@@ -35,6 +35,8 @@ pub enum Diagnostic {
     MissingTypeArguments(MissingTypeArguments),
     /// A type-argument list has the wrong number of arguments.
     TypeArgumentArityMismatch(TypeArgumentArityMismatch),
+    /// A type has a different kind than its context requires.
+    TypeKindMismatch(TypeKindMismatch),
     /// An effect-row label resolved to a symbol that is not an effect.
     ExpectedEffect(ExpectedEffect),
 }
@@ -46,6 +48,7 @@ impl Report for Diagnostic {
             Self::PathSegmentNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::MissingTypeArguments(diagnostic) => diagnostic.report(engine).await,
             Self::TypeArgumentArityMismatch(diagnostic) => diagnostic.report(engine).await,
+            Self::TypeKindMismatch(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedEffect(diagnostic) => diagnostic.report(engine).await,
         }
     }
@@ -139,6 +142,56 @@ impl Report for TypeArgumentArityMismatch {
                 Some(format!("expected {}, found {}", self.expected, self.actual)),
             ))
             .message("type argument arity mismatch")
+            .build()
+    }
+}
+
+/// A type whose kind does not match the kind required by its context.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct TypeKindMismatch {
+    span: RelativeSpan,
+    expected: TyKind,
+    actual: TyKind,
+}
+
+impl TypeKindMismatch {
+    const fn new(span: RelativeSpan, expected: TyKind, actual: TyKind) -> Self {
+        Self { span, expected, actual }
+    }
+}
+
+const fn kind_name(kind: TyKind) -> &'static str {
+    match kind {
+        TyKind::Star => "a value type",
+        TyKind::EffectRow => "an effect row",
+    }
+}
+
+impl Report for TypeKindMismatch {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!(
+                    "expected {}, found {}",
+                    kind_name(self.expected),
+                    kind_name(self.actual)
+                )),
+            ))
+            .message("type kind mismatch")
             .build()
     }
 }
@@ -314,7 +367,7 @@ pub(crate) fn resolve_type(
         }
         TypeSyntax::Pointer(pointer) => {
             let pointee = pointer.pointed_type().map_or_else(
-                || Ty::new_error(engine),
+                || Ty::new_error(TyKind::Star, engine),
                 |pointed_type| resolve_type(engine, poly_vars, &pointed_type, handler),
             );
             let mutability = if pointer.mut_keyword().is_some() {
@@ -342,7 +395,7 @@ pub(crate) fn resolve_type(
                 || Ty::new_unit(engine),
                 |return_type| {
                     return_type.r#type().map_or_else(
-                        || Ty::new_error(engine),
+                        || Ty::new_error(TyKind::Star, engine),
                         |return_type| resolve_type(engine, poly_vars, &return_type, handler),
                     )
                 },
@@ -351,7 +404,7 @@ pub(crate) fn resolve_type(
         }
         TypeSyntax::PolymorphicVariable(identifier) => {
             if !is_poly_var_name(&identifier.kind.0) {
-                return Ty::new_error(engine);
+                return Ty::new_error(TyKind::Star, engine);
             }
 
             let Some(id) = poly_vars.find_by_name(&identifier.kind.0) else {
@@ -359,7 +412,7 @@ pub(crate) fn resolve_type(
                     identifier.kind.0.clone(),
                     identifier.span(),
                 )));
-                return Ty::new_error(engine);
+                return Ty::new_error(TyKind::Star, engine);
             };
 
             Ty::new_poly_var(id, engine)
@@ -367,21 +420,32 @@ pub(crate) fn resolve_type(
     }
 }
 
-fn resolve_effect_row_poly_var(
+async fn resolve_effect_row_poly_var(
     engine: &TrackedEngine,
     poly_vars: &PolyVarStack,
     identifier: &rayc_syntax::Identifier,
     handler: &dyn Handler<Diagnostic>,
-) -> Option<Interned<Ty>> {
+) -> Interned<Ty> {
     let Some(id) = poly_vars.find_by_name(&identifier.kind.0) else {
         handler.receive(Diagnostic::PolyVarNotFound(PolyVarNotFound::new(
             identifier.kind.0.clone(),
             identifier.span(),
         )));
-        return None;
+        return Ty::new_error(TyKind::EffectRow, engine);
     };
 
-    Some(Ty::new_poly_var(id, engine))
+    let ty = Ty::new_poly_var(id, engine);
+    let actual = ty.kind_of(engine).await;
+    if actual != TyKind::EffectRow {
+        handler.receive(Diagnostic::TypeKindMismatch(TypeKindMismatch::new(
+            identifier.span(),
+            TyKind::EffectRow,
+            actual,
+        )));
+        return Ty::new_error(TyKind::EffectRow, engine);
+    }
+
+    ty
 }
 
 /// Resolves effect-row syntax relative to the closest module containing
@@ -396,8 +460,7 @@ pub async fn resolve_effect_row(
 ) -> TypeResolution {
     let ty = match syntax {
         EffectRowSyntax::PolyVar(identifier) => {
-            resolve_effect_row_poly_var(engine, poly_vars, identifier, handler)
-                .unwrap_or_else(|| Ty::new_effect_row([], None, engine))
+            resolve_effect_row_poly_var(engine, poly_vars, identifier, handler).await
         }
         EffectRowSyntax::ConcreteEffectRow(effect_row) => {
             let mut labels = Vec::new();
@@ -426,11 +489,11 @@ pub async fn resolve_effect_row(
                 );
             }
 
-            let tail = effect_row.tail().and_then(|tail| {
-                tail.variable().and_then(|variable| {
-                    resolve_effect_row_poly_var(engine, poly_vars, &variable, handler)
-                })
-            });
+            let tail = if let Some(variable) = effect_row.tail().and_then(|tail| tail.variable()) {
+                Some(resolve_effect_row_poly_var(engine, poly_vars, &variable, handler).await)
+            } else {
+                None
+            };
 
             Ty::new_effect_row(labels, tail, engine)
         }
@@ -455,7 +518,7 @@ pub fn resolve_signature_with_poly_vars(
         for entry in parameters.entries() {
             let ParameterEntry::Parameter(parameter) = entry else { continue };
             let ty = parameter.r#type().map_or_else(
-                || Ty::new_error(engine),
+                || Ty::new_error(TyKind::Star, engine),
                 |syntax| resolve_type(engine, poly_vars, &syntax, handler),
             );
             resolved_parameters.push(ResolvedParameter { span: parameter.span(), ty });
@@ -466,7 +529,7 @@ pub fn resolve_signature_with_poly_vars(
         || Ty::new_unit(engine),
         |return_type| {
             return_type.r#type().map_or_else(
-                || Ty::new_error(engine),
+                || Ty::new_error(TyKind::Star, engine),
                 |syntax| resolve_type(engine, poly_vars, &syntax, handler),
             )
         },

@@ -13,11 +13,12 @@ use rayc_symbol::{
 use rayc_syntax::path::{Path, PathSegment};
 use rayc_type::{
     poly_var::{PolyVarStack, get_poly_var_map},
-    ty::Ty,
+    ty::{Ty, TyKind},
 };
 
 use crate::{
-    Diagnostic, MissingTypeArguments, PathSegmentNotFound, TypeArgumentArityMismatch, resolve_type,
+    Diagnostic, MissingTypeArguments, PathSegmentNotFound, TypeArgumentArityMismatch,
+    TypeKindMismatch, resolve_type,
 };
 
 /// The semantic information produced by resolving one path segment.
@@ -54,49 +55,73 @@ pub enum PathResolutionError {
     SymbolNotFound,
 }
 
-async fn expected_type_argument_count(engine: &TrackedEngine, symbol_id: GlobalSymbolID) -> usize {
+async fn expected_type_argument_kinds(
+    engine: &TrackedEngine,
+    symbol_id: GlobalSymbolID,
+) -> Vec<TyKind> {
     let symbol_kind = engine.get_symbol_kind(symbol_id).await;
-    if symbol_kind.has_poly_var_map() { engine.get_poly_var_map(symbol_id).await.len() } else { 0 }
+    if symbol_kind.has_poly_var_map() {
+        engine
+            .get_poly_var_map(symbol_id)
+            .await
+            .iter()
+            .map(|(_, poly_var)| poly_var.kind())
+            .collect()
+    } else {
+        Vec::new()
+    }
 }
 
-fn resolve_type_arguments(
+async fn resolve_type_arguments(
     engine: &TrackedEngine,
     poly_vars: &PolyVarStack,
     path: &PathSegment,
     identifier: &rayc_syntax::Identifier,
-    expected: usize,
+    expected: &[TyKind],
     handler: &dyn Handler<Diagnostic>,
 ) -> Option<Interned<[Interned<Ty>]>> {
     let Some(arguments) = path.type_arguments() else {
-        if expected == 0 {
+        if expected.is_empty() {
             return None;
         }
 
         handler.receive(Diagnostic::MissingTypeArguments(MissingTypeArguments::new(
             identifier.kind.0.clone(),
             identifier.span(),
-            expected,
+            expected.len(),
         )));
         return Some(engine.intern_unsized(
-            std::iter::repeat_with(|| Ty::new_error(engine)).take(expected).collect::<Vec<_>>(),
+            expected.iter().map(|kind| Ty::new_error(*kind, engine)).collect::<Vec<_>>(),
         ));
     };
 
     let actual = arguments.arguments().count();
-    if actual != expected {
+    if actual != expected.len() {
         handler.receive(Diagnostic::TypeArgumentArityMismatch(TypeArgumentArityMismatch::new(
             arguments.span(),
-            expected,
+            expected.len(),
             actual,
         )));
     }
 
-    let mut resolved = arguments
-        .arguments()
-        .map(|argument| resolve_type(engine, poly_vars, &argument, handler))
-        .collect::<Vec<_>>();
-    resolved.truncate(expected);
-    resolved.resize_with(expected, || Ty::new_error(engine));
+    let mut resolved = Vec::new();
+    for (index, argument) in arguments.arguments().enumerate() {
+        let mut ty = resolve_type(engine, poly_vars, &argument, handler);
+        if let Some(expected) = expected.get(index) {
+            let actual = ty.kind_of(engine).await;
+            if actual != *expected {
+                handler.receive(Diagnostic::TypeKindMismatch(TypeKindMismatch::new(
+                    argument.span(),
+                    *expected,
+                    actual,
+                )));
+                ty = Ty::new_error(*expected, engine);
+            }
+        }
+        resolved.push(ty);
+    }
+    resolved.truncate(expected.len());
+    resolved.extend(expected[resolved.len()..].iter().map(|kind| Ty::new_error(*kind, engine)));
     Some(engine.intern_unsized(resolved))
 }
 
@@ -165,15 +190,16 @@ pub async fn resolve_path_segment(
         return Err(PathResolutionError::SymbolNotFound);
     };
 
-    let expected_type_arguments = expected_type_argument_count(engine, symbol_id).await;
+    let expected_type_argument_kinds = expected_type_argument_kinds(engine, symbol_id).await;
     let type_arguments = resolve_type_arguments(
         engine,
         poly_vars,
         path,
         &identifier,
-        expected_type_arguments,
+        &expected_type_argument_kinds,
         handler,
-    );
+    )
+    .await;
 
     let segment = PathSegmentResolution { symbol_id, type_arguments };
     let mut resolution = previous.unwrap_or_else(|| PathResolution { segments: Vec::new() });
