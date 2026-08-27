@@ -52,6 +52,76 @@ pub enum TypedExprKind {
     Errored(Errored),
 }
 
+impl SubExprs for TypedExprKind {
+    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
+        // There must be a better way to do this while doesn't require boxing the iterator 😭
+        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L> {
+            A(A),
+            B(B),
+            C(C),
+            D(D),
+            E(E),
+            F(F),
+            G(G),
+            H(H),
+            I(I),
+            J(J),
+            K(K),
+            L(L),
+        }
+
+        impl<A, B, C, D, E, F, G, H, I, J, K, L> Iterator for Iter<A, B, C, D, E, F, G, H, I, J, K, L>
+        where
+            A: Iterator<Item = TypedExprID>,
+            B: Iterator<Item = TypedExprID>,
+            C: Iterator<Item = TypedExprID>,
+            D: Iterator<Item = TypedExprID>,
+            E: Iterator<Item = TypedExprID>,
+            F: Iterator<Item = TypedExprID>,
+            G: Iterator<Item = TypedExprID>,
+            H: Iterator<Item = TypedExprID>,
+            I: Iterator<Item = TypedExprID>,
+            J: Iterator<Item = TypedExprID>,
+            K: Iterator<Item = TypedExprID>,
+            L: Iterator<Item = TypedExprID>,
+        {
+            type Item = TypedExprID;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    Self::A(iter) => iter.next(),
+                    Self::B(iter) => iter.next(),
+                    Self::C(iter) => iter.next(),
+                    Self::D(iter) => iter.next(),
+                    Self::E(iter) => iter.next(),
+                    Self::F(iter) => iter.next(),
+                    Self::G(iter) => iter.next(),
+                    Self::H(iter) => iter.next(),
+                    Self::I(iter) => iter.next(),
+                    Self::J(iter) => iter.next(),
+                    Self::K(iter) => iter.next(),
+                    Self::L(iter) => iter.next(),
+                }
+            }
+        }
+
+        match self {
+            Self::Literal(x) => Iter::A(x.sub_exprs()),
+            Self::Identifier(x) => Iter::B(x.sub_exprs()),
+            Self::TupleIndex(x) => Iter::C(x.sub_exprs()),
+            Self::Tuple(x) => Iter::D(x.sub_exprs()),
+            Self::Call(x) => Iter::E(x.sub_exprs()),
+            Self::Lambda(x) => Iter::F(x.sub_exprs()),
+            Self::Binary(x) => Iter::G(x.sub_exprs()),
+            Self::IfElse(x) => Iter::H(x.sub_exprs()),
+            Self::RefOf(x) => Iter::I(x.sub_exprs()),
+            Self::Deref(x) => Iter::J(x.sub_exprs()),
+            Self::Paren(x) => Iter::K(x.sub_exprs()),
+            Self::Errored(x) => Iter::L(x.sub_exprs()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LvalueRoot {
     NameBinding(NameBindingID),
