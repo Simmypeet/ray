@@ -26,6 +26,7 @@ impl Table {
 
         let def_param = def_sig.as_ref().and_then(DefSignature::parameter_list);
         let def_return = def_sig.as_ref().and_then(DefSignature::return_type);
+        let def_effect_row = def_sig.as_ref().and_then(DefSignature::effect_row);
 
         // very, very malformed node
         let Some(ident) = def_sig.as_ref().and_then(DefSignature::name) else {
@@ -66,6 +67,7 @@ impl Table {
                 .span(ident.span)
                 .parameter_list(def_param)
                 .return_type(def_return)
+                .effect_row(def_effect_row)
                 .def_body(body)
                 .variadic(variadic)
                 .build(),

@@ -17,6 +17,7 @@ use rayc_symbol::{
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
     effect::TypeParameterList,
+    effect_row::EffectRowAnnotation,
     statement::Block,
 };
 use rayc_target::{TargetID, get_invocation_arguments};
@@ -33,6 +34,7 @@ pub struct Infos {
     symbol_kind: SymbolKind,
     parameter_list: Option<Option<ParameterList>>,
     return_type: Option<Option<ReturnType>>,
+    effect_row: Option<Option<EffectRowAnnotation>>,
     member: Option<MemberBuilder>,
     def_body: Option<Option<Block>>,
     variadic: Option<bool>,
@@ -43,6 +45,7 @@ pub struct Infos {
 struct SyntaxTable {
     parameter_lists: Map<Option<ParameterList>>,
     return_types: Map<Option<ReturnType>>,
+    effect_rows: Map<Option<EffectRowAnnotation>>,
     def_bodies: Map<Option<Block>>,
     variadic_defs: Map<bool>,
     effect_type_parameters: Map<Option<TypeParameterList>>,
@@ -159,6 +162,11 @@ impl Table {
     }
 
     #[must_use]
+    pub fn get_effect_row_syntax(&self, symbol_id: SymbolID) -> Option<EffectRowAnnotation> {
+        self.syntaxes.effect_rows.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
     pub fn get_def_body_syntax(&self, symbol_id: SymbolID) -> Option<Block> {
         self.syntaxes.def_bodies.get(&symbol_id).cloned().unwrap()
     }
@@ -210,6 +218,10 @@ impl Table {
 
         if let Some(return_type) = info.return_type {
             self.syntaxes.return_types.insert(symbol_id, return_type);
+        }
+
+        if let Some(effect_row) = info.effect_row {
+            self.syntaxes.effect_rows.insert(symbol_id, effect_row);
         }
 
         if let Some(def_body) = info.def_body {

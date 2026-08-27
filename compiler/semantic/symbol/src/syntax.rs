@@ -5,6 +5,7 @@ use qbice::{Decode, Encode, Query, StableHash};
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
     effect::TypeParameterList,
+    effect_row::EffectRowAnnotation,
     statement::Block,
 };
 
@@ -25,6 +26,15 @@ pub struct ParameterListSyntaxKey {
 #[value(Option<ReturnType>)]
 #[extend(by_val, name = get_return_type_syntax)]
 pub struct ReturnTypeSyntaxKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<EffectRowAnnotation>)]
+#[extend(by_val, name = get_effect_row_syntax)]
+pub struct EffectRowSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }
 

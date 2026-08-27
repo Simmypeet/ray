@@ -2,12 +2,13 @@ use linkme::distributed_slice;
 use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
-    DefBodySyntaxKey, EffectTypeParameterSyntaxKey, ParameterListSyntaxKey, ReturnTypeSyntaxKey,
-    VariadicDefKey,
+    DefBodySyntaxKey, EffectRowSyntaxKey, EffectTypeParameterSyntaxKey, ParameterListSyntaxKey,
+    ReturnTypeSyntaxKey, VariadicDefKey,
 };
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
     effect::TypeParameterList,
+    effect_row::EffectRowAnnotation,
     statement::Block,
 };
 
@@ -40,6 +41,20 @@ pub async fn return_type_syntax_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static RETURN_TYPE_SYNTAX_EXECUTOR: Registration<Config> =
     Registration::new::<ReturnTypeSyntaxKey, ReturnTypeSyntaxExecutor>();
+
+#[executor(config = Config)]
+pub async fn effect_row_syntax_executor(
+    &EffectRowSyntaxKey { symbol_id }: &EffectRowSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<EffectRowAnnotation> {
+    let table = engine.get_table(symbol_id.target_id).await;
+
+    table.get_effect_row_syntax(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static EFFECT_ROW_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<EffectRowSyntaxKey, EffectRowSyntaxExecutor>();
 
 #[executor(config = Config)]
 pub async fn def_body_syntax_executor(
