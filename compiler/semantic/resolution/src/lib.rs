@@ -333,14 +333,14 @@ pub async fn resolve_effect_row(
                 let mut path_resolution = None;
 
                 for segment in path.segments() {
-                    let resolution =
+                    let Ok(resolution) =
                         resolve_path(engine, poly_vars, site, &segment, path_resolution, handler)
-                            .await;
-                    let resolution_failed = resolution.symbol_id().is_none();
-                    path_resolution = Some(resolution);
-                    if resolution_failed {
+                            .await
+                    else {
+                        path_resolution = None;
                         break;
-                    }
+                    };
+                    path_resolution = Some(resolution);
                 }
 
                 let Some(path_resolution) = path_resolution else { continue };
@@ -350,10 +350,6 @@ pub async fn resolve_effect_row(
                     .type_arguments()
                     .map_or_else(Vec::new, |arguments| arguments.cloned().collect());
 
-                let (Some(effect_symbol_id), Some(symbol_kind)) = (effect_symbol_id, symbol_kind)
-                else {
-                    continue;
-                };
                 if symbol_kind != SymbolKind::Effect {
                     handler.receive(Diagnostic::ExpectedEffect(ExpectedEffect::new(
                         path.span(),
