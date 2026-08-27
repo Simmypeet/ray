@@ -75,6 +75,7 @@ async fn expected_type_argument_kinds(
 async fn resolve_type_arguments(
     engine: &TrackedEngine,
     poly_vars: &PolyVarStack,
+    site: GlobalSymbolID,
     path: &PathSegment,
     identifier: &rayc_syntax::Identifier,
     expected: &[TyKind],
@@ -106,7 +107,7 @@ async fn resolve_type_arguments(
 
     let mut resolved = Vec::new();
     for (index, argument) in arguments.arguments().enumerate() {
-        let mut ty = resolve_type(engine, poly_vars, &argument, handler);
+        let mut ty = Box::pin(resolve_type(engine, poly_vars, site, &argument, handler)).await;
         if let Some(expected) = expected.get(index) {
             let actual = ty.kind_of(engine).await;
             if actual != *expected {
@@ -194,6 +195,7 @@ pub async fn resolve_path_segment(
     let type_arguments = resolve_type_arguments(
         engine,
         poly_vars,
+        site,
         path,
         &identifier,
         &expected_type_argument_kinds,

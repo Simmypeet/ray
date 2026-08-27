@@ -294,6 +294,23 @@ fn is_poly_var_name(name: &str) -> bool {
     character.is_ascii_lowercase() && chars.next().is_none()
 }
 
+fn discover_effect_row_poly_var(
+    effect_row: Option<&EffectRowAnnotation>,
+    poly_vars: &mut PolyVarMap,
+) {
+    let variable = match effect_row.and_then(EffectRowAnnotation::effect_row) {
+        Some(EffectRowSyntax::PolyVar(variable)) => Some(variable),
+        Some(EffectRowSyntax::ConcreteEffectRow(effect_row)) => {
+            effect_row.tail().and_then(|tail| tail.variable())
+        }
+        None => None,
+    };
+
+    if let Some(variable) = variable {
+        poly_vars.insert(PolyVar::new(variable.kind.0.clone(), TyKind::EffectRow, variable.span()));
+    }
+}
+
 fn discover_poly_vars(ty: &TypeSyntax, poly_vars: &mut PolyVarMap) {
     match ty {
         TypeSyntax::Primitive(_) => {}
@@ -318,6 +335,7 @@ fn discover_poly_vars(ty: &TypeSyntax, poly_vars: &mut PolyVarMap) {
             {
                 discover_poly_vars(&return_type, poly_vars);
             }
+            discover_effect_row_poly_var(lambda.effect_row().as_ref(), poly_vars);
         }
         TypeSyntax::PolymorphicVariable(identifier) => {
             if is_poly_var_name(&identifier.kind.0) {
@@ -354,25 +372,16 @@ pub fn discover_function_poly_vars(
     effect_row: Option<&EffectRowAnnotation>,
 ) -> PolyVarMap {
     let mut poly_vars = discover_parameter_poly_vars(parameters);
-    let variable = match effect_row.and_then(EffectRowAnnotation::effect_row) {
-        Some(EffectRowSyntax::PolyVar(variable)) => Some(variable),
-        Some(EffectRowSyntax::ConcreteEffectRow(effect_row)) => {
-            effect_row.tail().and_then(|tail| tail.variable())
-        }
-        None => None,
-    };
-
-    if let Some(variable) = variable {
-        poly_vars.insert(PolyVar::new(variable.kind.0.clone(), TyKind::EffectRow, variable.span()));
-    }
+    discover_effect_row_poly_var(effect_row, &mut poly_vars);
 
     poly_vars
 }
 
 #[allow(clippy::similar_names)]
-pub(crate) fn resolve_type(
+pub(crate) async fn resolve_type(
     engine: &TrackedEngine,
     poly_vars: &PolyVarStack,
+    site: GlobalSymbolID,
     syntax: &TypeSyntax,
     handler: &dyn Handler<Diagnostic>,
 ) -> Interned<Ty> {
@@ -388,10 +397,11 @@ pub(crate) fn resolve_type(
             Ty::new_primitive(primitive, engine)
         }
         TypeSyntax::Pointer(pointer) => {
-            let pointee = pointer.pointed_type().map_or_else(
-                || Ty::new_error(TyKind::Star, engine),
-                |pointed_type| resolve_type(engine, poly_vars, &pointed_type, handler),
-            );
+            let pointee = if let Some(pointed_type) = pointer.pointed_type() {
+                Box::pin(resolve_type(engine, poly_vars, site, &pointed_type, handler)).await
+            } else {
+                Ty::new_error(TyKind::Star, engine)
+            };
             let mutability = if pointer.mut_keyword().is_some() {
                 Mutability::Mutable
             } else {
@@ -400,29 +410,44 @@ pub(crate) fn resolve_type(
             Ty::new_pointer(pointee, mutability, engine)
         }
         TypeSyntax::Tuple(tuple) => {
-            let arguments = tuple
-                .elements()
-                .map(|element| resolve_type(engine, poly_vars, &element, handler))
-                .collect::<Vec<_>>();
+            let mut arguments = Vec::new();
+            for element in tuple.elements() {
+                arguments
+                    .push(Box::pin(resolve_type(engine, poly_vars, site, &element, handler)).await);
+            }
             Ty::new_tuple(engine.intern_unsized(arguments), engine)
         }
         TypeSyntax::Lambda(lambda) => {
-            let parameters = lambda.parameters().map_or_else(Vec::new, |parameters| {
-                parameters
-                    .parameters()
-                    .map(|parameter| resolve_type(engine, poly_vars, &parameter, handler))
-                    .collect::<Vec<_>>()
-            });
-            let return_type = lambda.return_type().map_or_else(
-                || Ty::new_unit(engine),
-                |return_type| {
-                    return_type.r#type().map_or_else(
-                        || Ty::new_error(TyKind::Star, engine),
-                        |return_type| resolve_type(engine, poly_vars, &return_type, handler),
-                    )
-                },
-            );
-            Ty::new_lambda(parameters, return_type, engine)
+            let mut parameters = Vec::new();
+            if let Some(parameter_list) = lambda.parameters() {
+                for parameter in parameter_list.parameters() {
+                    parameters.push(
+                        Box::pin(resolve_type(engine, poly_vars, site, &parameter, handler)).await,
+                    );
+                }
+            }
+            let return_type = if let Some(return_type) = lambda.return_type() {
+                if let Some(return_type) = return_type.r#type() {
+                    Box::pin(resolve_type(engine, poly_vars, site, &return_type, handler)).await
+                } else {
+                    Ty::new_error(TyKind::Star, engine)
+                }
+            } else {
+                Ty::new_unit(engine)
+            };
+            let effect_row_syntax = lambda.effect_row();
+            let effect_row =
+                match effect_row_syntax.as_ref().and_then(EffectRowAnnotation::effect_row) {
+                    Some(effect_row) => {
+                        resolve_effect_row(engine, poly_vars, site, &effect_row, handler)
+                            .await
+                            .ty()
+                            .clone()
+                    }
+                    None if effect_row_syntax.is_some() => Ty::new_error(TyKind::EffectRow, engine),
+                    None => Ty::new_effect_row([], None, engine),
+                };
+            Ty::new_lambda(parameters, return_type, effect_row, engine)
         }
         TypeSyntax::PolymorphicVariable(identifier) => {
             if !is_poly_var_name(&identifier.kind.0) {
@@ -527,8 +552,9 @@ pub async fn resolve_effect_row(
 /// Resolves a complete function signature against polymorphic variables
 /// declared by an enclosing symbol.
 #[must_use]
-pub fn resolve_signature_with_poly_vars(
+pub async fn resolve_signature_with_poly_vars(
     engine: &TrackedEngine,
+    site: GlobalSymbolID,
     parameters: Option<&ParameterList>,
     return_type: Option<&ReturnType>,
     poly_vars: &PolyVarStack,
@@ -539,35 +565,37 @@ pub fn resolve_signature_with_poly_vars(
     if let Some(parameters) = parameters {
         for entry in parameters.entries() {
             let ParameterEntry::Parameter(parameter) = entry else { continue };
-            let ty = parameter.r#type().map_or_else(
-                || Ty::new_error(TyKind::Star, engine),
-                |syntax| resolve_type(engine, poly_vars, &syntax, handler),
-            );
+            let ty = if let Some(syntax) = parameter.r#type() {
+                resolve_type(engine, poly_vars, site, &syntax, handler).await
+            } else {
+                Ty::new_error(TyKind::Star, engine)
+            };
             resolved_parameters.push(ResolvedParameter { span: parameter.span(), ty });
         }
     }
 
-    let return_type = return_type.map_or_else(
-        || Ty::new_unit(engine),
-        |return_type| {
-            return_type.r#type().map_or_else(
-                || Ty::new_error(TyKind::Star, engine),
-                |syntax| resolve_type(engine, poly_vars, &syntax, handler),
-            )
-        },
-    );
+    let return_type = if let Some(return_type) = return_type {
+        if let Some(syntax) = return_type.r#type() {
+            resolve_type(engine, poly_vars, site, &syntax, handler).await
+        } else {
+            Ty::new_error(TyKind::Star, engine)
+        }
+    } else {
+        Ty::new_unit(engine)
+    };
 
     SignatureResolution { parameters: resolved_parameters, return_type }
 }
 
 /// Resolves one type against polymorphic variables declared by its owner.
 #[must_use]
-pub fn resolve_type_with_poly_vars(
+pub async fn resolve_type_with_poly_vars(
     engine: &TrackedEngine,
+    site: GlobalSymbolID,
     poly_vars: &PolyVarStack,
     syntax: &TypeSyntax,
     handler: &dyn Handler<Diagnostic>,
 ) -> TypeResolution {
-    let ty = resolve_type(engine, poly_vars, syntax, handler);
+    let ty = resolve_type(engine, poly_vars, site, syntax, handler).await;
     TypeResolution { ty }
 }

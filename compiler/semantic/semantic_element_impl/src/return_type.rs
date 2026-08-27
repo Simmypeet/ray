@@ -58,19 +58,18 @@ impl Build for Key {
 
         let diagnostics = Storage::new();
 
-        let return_type = syntax.as_ref().map_or_else(
-            || Ty::new_unit(engine),
-            |return_type| {
-                return_type.r#type().map_or_else(
-                    || Ty::new_star_error(engine),
-                    |syntax| {
-                        resolve_type_with_poly_vars(engine, &poly_vars, &syntax, &diagnostics)
-                            .ty()
-                            .clone()
-                    },
-                )
-            },
-        );
+        let return_type = if let Some(syntax) = syntax.as_ref() {
+            if let Some(syntax) = syntax.r#type() {
+                resolve_type_with_poly_vars(engine, symbol_id, &poly_vars, &syntax, &diagnostics)
+                    .await
+                    .ty()
+                    .clone()
+            } else {
+                Ty::new_star_error(engine)
+            }
+        } else {
+            Ty::new_unit(engine)
+        };
 
         if symbol_kind == SymbolKind::ExternDef
             && !is_unit_type(&return_type)

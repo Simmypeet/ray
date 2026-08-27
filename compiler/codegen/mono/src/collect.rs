@@ -169,9 +169,7 @@ impl<'engine> Collector<'engine> {
                          monomorphization while collecting {function:?}: {ty:?}"
                     );
                 }
-                Ty::EffectRow(_) => {
-                    todo!("collect concrete effect-row types during monomorphization")
-                }
+                Ty::EffectRow(_) => {}
             }
         }
     }

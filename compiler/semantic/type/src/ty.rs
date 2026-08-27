@@ -201,13 +201,15 @@ impl Ty {
         engine.intern(Self::Application(Application::new(Constant::Tuple, args)))
     }
 
+    /// Creates a lambda type with its effect row stored after its return type.
     #[must_use]
     pub fn new_lambda(
         parameter_types: impl IntoIterator<Item = Interned<Self>>,
         return_type: Interned<Self>,
+        effect_row: Interned<Self>,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
-        let args = parameter_types.into_iter().chain([return_type]).collect::<Vec<_>>();
+        let args = parameter_types.into_iter().chain([return_type, effect_row]).collect::<Vec<_>>();
         engine.intern(Self::Application(Application::new(
             Constant::Lambda,
             engine.intern_unsized(args),
@@ -264,9 +266,9 @@ impl Ty {
 mod tests {
     use super::{Mutability, Primitive, Ty};
 
-    // input: def(*int32, (bool, float32)) -> int32
+    // input: def(*int32, (bool, float32)) -> int32 \ {}
     // premise: nested applications are traversed in argument order
-    // output: root, *int32, (bool, float32), int32, int32, bool, float32
+    // output: root, *int32, (bool, float32), int32, {}, int32, bool, float32
     #[tokio::test]
     async fn recursive_iter_yields_root_and_descendants_in_breadth_first_order() {
         let engine = rayc_qbice::create_minimal_engine().await;
@@ -276,7 +278,13 @@ mod tests {
         let pointer_ty = Ty::new_pointer(int_ty.clone(), Mutability::Immutable, &engine);
         let tuple_ty =
             Ty::new_tuple(engine.intern_unsized([bool_ty.clone(), float_ty.clone()]), &engine);
-        let root = Ty::new_lambda([pointer_ty.clone(), tuple_ty.clone()], int_ty.clone(), &engine);
+        let effect_row = Ty::new_effect_row([], None, &engine);
+        let root = Ty::new_lambda(
+            [pointer_ty.clone(), tuple_ty.clone()],
+            int_ty.clone(),
+            effect_row.clone(),
+            &engine,
+        );
 
         let recursive_types = Ty::interned_recursive_iter(&root).collect::<Vec<_>>();
 
@@ -285,6 +293,7 @@ mod tests {
             &pointer_ty,
             &tuple_ty,
             &int_ty,
+            &effect_row,
             &int_ty,
             &bool_ty,
             &float_ty
@@ -368,7 +377,9 @@ impl TyDisplay<'_> {
                         self.fmt_ty(parameter, f)?;
                     }
                     f.write_str(") -> ")?;
-                    self.fmt_ty(lambda.return_type(), f)
+                    self.fmt_ty(lambda.return_type(), f)?;
+                    f.write_str(" \\ ")?;
+                    self.fmt_ty(lambda.effect_row(), f)
                 }
                 ApplicationView::Pointer(pointer) => {
                     f.write_char('*')?;

@@ -212,7 +212,12 @@ async fn captureless_lambda_copies_signature_and_uses_lambda_parameter_addresses
     let parameter = map.lambda_parameter(child, "value");
     let parameter_read = map.identifier(child, parameter);
     map.statement(child, parameter_read);
-    let lambda_ty = Ty::new_lambda([map.int_ty.clone()], map.unit_ty.clone(), &engine);
+    let lambda_ty = Ty::new_lambda(
+        [map.int_ty.clone()],
+        map.unit_ty.clone(),
+        Ty::new_effect_row([], None, &engine),
+        &engine,
+    );
     let lambda = map.lambda_expression(root, child, lambda_ty);
     map.statement(root, lambda);
 
@@ -248,7 +253,8 @@ async fn mutable_capture_is_passed_by_reference_and_written_through_its_pointer(
     let value = map.literal(child, 1);
     let assignment = map.assignment(child, destination, value);
     map.statement(child, assignment);
-    let lambda_ty = Ty::new_lambda([], map.unit_ty.clone(), &engine);
+    let lambda_ty =
+        Ty::new_lambda([], map.unit_ty.clone(), Ty::new_effect_row([], None, &engine), &engine);
     let lambda = map.lambda_expression(root, child, lambda_ty);
     map.statement(root, lambda);
 
@@ -307,12 +313,14 @@ async fn nested_lambdas_reborrow_a_transitive_capture_with_each_childs_mutabilit
     let assignment = map.assignment(writer, destination, value);
     map.statement(writer, assignment);
 
-    let child_ty = Ty::new_lambda([], map.unit_ty.clone(), &engine);
+    let child_ty =
+        Ty::new_lambda([], map.unit_ty.clone(), Ty::new_effect_row([], None, &engine), &engine);
     let reader_lambda = map.lambda_expression(outer, reader, child_ty.clone());
     map.statement(outer, reader_lambda);
     let writer_lambda = map.lambda_expression(outer, writer, child_ty);
     map.statement(outer, writer_lambda);
-    let outer_ty = Ty::new_lambda([], map.unit_ty.clone(), &engine);
+    let outer_ty =
+        Ty::new_lambda([], map.unit_ty.clone(), Ty::new_effect_row([], None, &engine), &engine);
     let outer_lambda = map.lambda_expression(root, outer, outer_ty);
     map.statement(root, outer_lambda);
 

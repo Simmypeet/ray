@@ -21,10 +21,12 @@ impl TAstBuilder {
 
         let resolution = rayc_resolution::resolve_type_with_poly_vars(
             self.engine(),
+            self.current_def_id(),
             &poly_vars,
             syntax,
             &diagnostics,
-        );
+        )
+        .await;
 
         let ty = resolution.ty().clone();
         self.extend_diagnostics(diagnostics.into_vec());

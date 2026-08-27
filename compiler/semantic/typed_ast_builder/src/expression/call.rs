@@ -7,7 +7,7 @@ use rayc_syntax::{Identifier, expression::Call as CallSyn};
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
     subst::{Subst, Substitutable},
-    ty::{Ty, application::View as ApplicationView},
+    ty::{Ty, TyKind, application::View as ApplicationView},
 };
 use rayc_typed_ast::typed_expr::{TypedExpr, TypedExprID, TypedExprKind, call::Call};
 
@@ -147,9 +147,11 @@ impl TAstBuilder {
                 let parameter_types =
                     (0..argument_count).map(|_| self.new_type_inference()).collect::<Vec<_>>();
                 let return_type = self.new_type_inference();
+                let effect_row = self.new_type_inference_with_kind(TyKind::EffectRow);
                 let expected = Ty::new_lambda(
                     parameter_types.iter().cloned(),
                     return_type.clone(),
+                    effect_row,
                     self.engine(),
                 );
                 self.push_lambda_invocation_constraint(&expected, callee);

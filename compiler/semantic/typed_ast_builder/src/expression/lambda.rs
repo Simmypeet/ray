@@ -46,7 +46,8 @@ impl Bind<LambdaSyntax> for TAstBuilder {
 
         self.finish_lambda();
 
-        let ty = Ty::new_lambda(parameter_types, return_type, self.engine());
+        let effect_row = Ty::new_effect_row([], None, self.engine());
+        let ty = Ty::new_lambda(parameter_types, return_type, effect_row, self.engine());
         self.insert_expression(TypedExpr::new(
             TypedExprKind::Lambda(TypedLambda::new(function_id)),
             span,

@@ -11,6 +11,8 @@ use crate::{
 pub enum Constant {
     Primitive(Primitive),
     Tuple,
+    /// A lambda whose arguments are its parameter types, return type, then
+    /// effect row.
     Lambda,
     Pointer(Mutability),
     Error(TyKind),
@@ -34,13 +36,20 @@ pub struct LambdaView<'x> {
 impl LambdaView<'_> {
     #[must_use]
     pub const fn parameter_types(&self) -> &[Interned<Ty>] {
-        let (_, parameter_types) = self.args.split_last().expect("lambda has a return type");
+        let (_, signature) = self.args.split_last().expect("lambda has an effect row");
+        let (_, parameter_types) = signature.split_last().expect("lambda has a return type");
         parameter_types
     }
 
     #[must_use]
     pub const fn return_type(&self) -> &Interned<Ty> {
-        self.args.last().expect("lambda has a return type")
+        let (_, signature) = self.args.split_last().expect("lambda has an effect row");
+        signature.last().expect("lambda has a return type")
+    }
+
+    #[must_use]
+    pub const fn effect_row(&self) -> &Interned<Ty> {
+        self.args.last().expect("lambda has an effect row")
     }
 }
 

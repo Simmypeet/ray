@@ -4,7 +4,7 @@ assertion_line: 112
 expression: run
 ---
 stderr:
-[error]: mismatched types in return expression: expected `def(bool) -> ()`, but found `def(int32) -> ()`
+[error]: mismatched types in return expression: expected `def(bool) -> () \ {}`, but found `def(int32) -> () \ {}`
   ╭▸ compiler/e2e/test/check/tast/lambda_canonical_display/main.ray:2:12
   │
 2 │     return callback
