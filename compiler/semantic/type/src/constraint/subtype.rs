@@ -62,14 +62,14 @@ impl Solver {
     #[allow(clippy::unused_self)]
     pub(super) fn entail_subtype(&mut self, substype: &Subtype) -> Result<Step, Error> {
         if substype.lesser == substype.greater {
-            return Ok(Step::Simplified(Vec::new()));
+            return Ok(Step::Derived(Vec::new()));
         }
 
         match (&*substype.lesser, &*substype.greater) {
             (Ty::Application(l1), Ty::Application(l2)) => l1.structural_match(l2).map_or_else(
                 || Err(Error::Conflicted),
                 |arg| {
-                    Ok(Step::Simplified(
+                    Ok(Step::Derived(
                         arg.map(|(l, g)| Constraint::Subtype(Subtype::new(l.clone(), g.clone())))
                             .collect(),
                     ))
@@ -191,7 +191,7 @@ impl Solver {
             }
         }
 
-        Ok(Step::Simplified(constraints))
+        Ok(Step::Derived(constraints))
     }
 
     fn bind_var(&mut self, var: Inference, ty: &Interned<Ty>) -> Result<Subst, Error> {
@@ -295,7 +295,7 @@ mod tests {
             let constraint = constraint.apply_subst_or_clone(&subst, engine);
             match solver.entail(&constraint)? {
                 Step::Subst(new_subst) => subst.compose(&new_subst, engine),
-                Step::Simplified(constraints) => pending.extend(constraints),
+                Step::Derived(constraints) => pending.extend(constraints),
                 Step::NoProgress => panic!("effect-row constraint should make progress"),
             }
         }
@@ -317,7 +317,7 @@ mod tests {
 
         let step = solver.entail(&Constraint::Subtype(Subtype::new(lesser, greater)));
 
-        assert_eq!(step, Ok(Step::Simplified(Vec::new())));
+        assert_eq!(step, Ok(Step::Derived(Vec::new())));
     }
 
     // input: {Exn, Exn} <: {Exn}
@@ -357,7 +357,7 @@ mod tests {
         let io_remainder = Ty::new_effect_row([io], Some(e3), &engine);
         assert_eq!(
             step,
-            Ok(Step::Simplified(vec![
+            Ok(Step::Derived(vec![
                 Constraint::Subtype(Subtype::new(e1, state_remainder)),
                 Constraint::Subtype(Subtype::new(io_remainder, e2)),
             ]))

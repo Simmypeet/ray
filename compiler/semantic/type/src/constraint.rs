@@ -43,7 +43,7 @@ pub enum Step {
     Subst(Subst),
 
     /// The constraint has been simplified to a set of new constraints
-    Simplified(Vec<Constraint>),
+    Derived(Vec<Constraint>),
 
     /// No applicable rules could be found
     NoProgress,

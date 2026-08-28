@@ -54,7 +54,8 @@ pub enum TypedExprKind {
 
 impl SubExprs for TypedExprKind {
     fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
-        // There must be a better way to do this while doesn't require boxing the iterator 😭
+        // There must be a better way to do this while doesn't require boxing the
+        // iterator 😭
         pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L> {
             A(A),
             B(B),

@@ -356,7 +356,7 @@ impl TAstBuilder {
     fn push_constraints(&mut self, mut queued: Vec<ProvenancedConstraint>) {
         while let Some(provenanced_constraint) = queued.pop() {
             match self.constraint_solver.solver.entail(&provenanced_constraint.constraint) {
-                Ok(Step::Simplified(constrs)) => {
+                Ok(Step::Derived(constrs)) => {
                     queued.extend(constrs.into_iter().map(|x| ProvenancedConstraint {
                         provenance: provenanced_constraint.provenance.clone(),
                         constraint: x,
