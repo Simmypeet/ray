@@ -32,6 +32,13 @@ pub struct Subst(FxImHashMap<Var, Interned<Ty>>);
 impl Subst {
     #[must_use]
     pub fn codomain(&self) -> impl ExactSizeIterator<Item = &Interned<Ty>> { self.0.values() }
+
+    pub fn inference_mappings(&self) -> impl Iterator<Item = (Inference, &Interned<Ty>)> {
+        self.0.iter().filter_map(|(var, ty)| match var {
+            Var::Inference(inference) => Some((*inference, ty)),
+            Var::Poly(_) => None,
+        })
+    }
 }
 
 impl Encode for Subst {

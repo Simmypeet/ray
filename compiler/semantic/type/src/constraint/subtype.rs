@@ -119,8 +119,13 @@ impl Solver {
             let Some(arguments) = lesser_label.structural_match(&greater_label) else {
                 return Err(Error::Conflicted);
             };
-            constraints.extend(arguments.map(|(lesser, greater)| {
-                DerivedConstraint::new_type_application_matching(lesser.clone(), greater.clone())
+            constraints.extend(arguments.enumerate().map(|(argument_index, (lesser, greater))| {
+                DerivedConstraint::new_effect_label_argument_matching(
+                    lesser_label.effect_symbol_id(),
+                    argument_index,
+                    lesser.clone(),
+                    greater.clone(),
+                )
             }));
         }
 

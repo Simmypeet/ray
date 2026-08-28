@@ -1,5 +1,6 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::GlobalSymbolID;
 
 use crate::{
     constraint::subtype::Subtype,
@@ -48,6 +49,7 @@ impl Substitutable for Constraint {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DerivationRule {
     TypeApplicationMatching,
+    EffectLabelArgumentMatching { effect_symbol_id: GlobalSymbolID, argument_index: usize },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -68,6 +70,19 @@ impl DerivedConstraint {
         greater: Interned<Ty>,
     ) -> Self {
         Self::new(DerivationRule::TypeApplicationMatching, Constraint::new_subtype(lesser, greater))
+    }
+
+    #[must_use]
+    pub const fn new_effect_label_argument_matching(
+        effect_symbol_id: GlobalSymbolID,
+        argument_index: usize,
+        lesser: Interned<Ty>,
+        greater: Interned<Ty>,
+    ) -> Self {
+        Self::new(
+            DerivationRule::EffectLabelArgumentMatching { effect_symbol_id, argument_index },
+            Constraint::new_subtype(lesser, greater),
+        )
     }
 }
 
