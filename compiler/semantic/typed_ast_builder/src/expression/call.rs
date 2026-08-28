@@ -1,6 +1,8 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
-use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
+use rayc_semantic_element::{
+    effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
+};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{GlobalSymbolID, syntax::is_variadic_def};
 use rayc_syntax::{Identifier, expression::Call as CallSyn};
@@ -20,7 +22,11 @@ use crate::{
 };
 
 enum LambdaCallSignature {
-    Callable { parameter_types: Vec<Interned<Ty>>, return_type: Interned<Ty> },
+    Callable {
+        parameter_types: Vec<Interned<Ty>>,
+        return_type: Interned<Ty>,
+        effect_row: Interned<Ty>,
+    },
     Invalid,
 }
 
@@ -93,11 +99,19 @@ impl TAstBuilder {
         let return_type = self.engine().get_return_type(function_id).await;
         let return_type = return_type.apply_subst_or_clone(&call_subst, self.engine());
 
-        self.insert_expression(
+        let effect_row = self.engine().get_effect_row(function_id).await;
+        let effect_row = effect_row.apply_subst_or_clone(&call_subst, self.engine());
+
+        let expr_id = self.insert_expression(
             TypedExprKind::Call(Call::new_direct(function_id, arguments, call_subst)),
             span,
             return_type,
-        )
+        );
+
+        // Add the latent effect from the function to the effect of the call expression
+        self.push_effect_introduction(expr_id, &effect_row);
+
+        expr_id
     }
 
     pub async fn build_lambda_call(&mut self, callee: TypedExprID, syn: &CallSyn) -> TypedExprID {
@@ -105,20 +119,29 @@ impl TAstBuilder {
         let callee_span = self.span_of_expression(callee);
         let span = callee_span.join(&syn.span());
 
-        let return_type =
+        let (return_type, effect_row) =
             match self.resolve_lambda_call_signature(callee, arguments.len(), callee_span) {
-                LambdaCallSignature::Callable { parameter_types, return_type } => {
+                LambdaCallSignature::Callable { parameter_types, return_type, effect_row } => {
                     self.check_lambda_call_arguments(&parameter_types, &arguments, span);
-                    return_type
+
+                    (return_type, Some(effect_row))
                 }
-                LambdaCallSignature::Invalid => Ty::new_star_error(self.engine()),
+                LambdaCallSignature::Invalid => (Ty::new_star_error(self.engine()), None),
             };
 
-        self.insert_expression(
+        let expr_id = self.insert_expression(
             TypedExprKind::Call(Call::new_lambda(callee, arguments)),
             span,
             return_type,
-        )
+        );
+
+        // if the lambda effect signature is malformed, don't bother adding the effect
+        // introduction constraint, as it will just add noise to the diagnostics
+        if let Some(effect_row) = effect_row {
+            self.push_effect_introduction(expr_id, &effect_row);
+        }
+
+        expr_id
     }
 
     fn resolve_lambda_call_signature(
@@ -134,6 +157,7 @@ impl TAstBuilder {
                 ApplicationView::Lambda(lambda) => LambdaCallSignature::Callable {
                     parameter_types: lambda.parameter_types().to_vec(),
                     return_type: lambda.return_type().clone(),
+                    effect_row: lambda.effect_row().clone(),
                 },
                 ApplicationView::Error => LambdaCallSignature::Invalid,
                 ApplicationView::Primitive(_)
@@ -146,16 +170,18 @@ impl TAstBuilder {
             Ty::Inference(_) => {
                 let parameter_types =
                     (0..argument_count).map(|_| self.new_type_inference()).collect::<Vec<_>>();
+
                 let return_type = self.new_type_inference();
                 let effect_row = self.new_type_inference_with_kind(TyKind::EffectRow);
                 let expected = Ty::new_lambda(
                     parameter_types.iter().cloned(),
                     return_type.clone(),
-                    effect_row,
+                    effect_row.clone(),
                     self.engine(),
                 );
                 self.push_lambda_invocation_constraint(&expected, callee);
-                LambdaCallSignature::Callable { parameter_types, return_type }
+
+                LambdaCallSignature::Callable { parameter_types, return_type, effect_row }
             }
             Ty::PolyVar(_) => {
                 self.report_expected_lambda(callee_ty, callee_span);

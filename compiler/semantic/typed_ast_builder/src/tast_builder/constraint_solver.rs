@@ -3,12 +3,16 @@ use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashSet;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_syntax::expression::Expression;
 use rayc_type::{
     constraint::{self, Constraint, DerivationRule, DerivedConstraint, Step, subtype::Subtype},
     reduce::Reduce,
     solver::Solver,
     subst::{Subst, Substitutable},
-    ty::{InferenceConstraint, Primitive, Ty, TyKind, inference::Inference},
+    ty::{
+        InferenceConstraint, Primitive, Ty, TyKind,
+        inference::{GenInfer, Inference},
+    },
 };
 use rayc_typed_ast::{
     typed_expr::{SubExprs, TypedExprID},
@@ -38,6 +42,12 @@ pub struct SubtypeConstraintOrigin {
     span: RelativeSpan,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EffectIntroductionConstraintOrigin {
+    expression_id: TypedFunctionLocalID<TypedExprID>,
+    introduced_effect: Interned<Ty>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EffectSharingConstraintOrigin {
     child_expr_id: TypedFunctionLocalID<TypedExprID>,
@@ -48,6 +58,7 @@ pub struct EffectSharingConstraintOrigin {
 pub enum RootCauseOrigin {
     Subtype(SubtypeConstraintOrigin),
     EffectSharing(EffectSharingConstraintOrigin),
+    EffectIntroduction(EffectIntroductionConstraintOrigin),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -125,6 +136,38 @@ impl ConstraintSolver {
 }
 
 impl TAstBuilder {
+    pub fn push_effect_introduction(
+        &mut self,
+        expression_id: TypedExprID,
+        introduced_effect: &Interned<Ty>,
+    ) {
+        let cause_id = self.constraint_solver.causes.insert(Cause::Root(RootCause {
+            origin: RootCauseOrigin::EffectIntroduction(EffectIntroductionConstraintOrigin {
+                expression_id: TypedFunctionLocalID::new(self.building_function, expression_id),
+
+                // we don't pass the oppened effect here because we want to keep the original effect
+                // row for the diagnostic
+                introduced_effect: introduced_effect.clone(),
+            }),
+        }));
+
+        let expr_effect = self.latest_type(self.effect_of_expression(expression_id));
+        let introduced_effect = self.latest_type(introduced_effect);
+
+        // try to open a closed row like `{IO, Exn}` to `{IO, Exn | ?X}` so that it can
+        // unify with other effects
+        let introduced_effect =
+            Ty::open_closed_row(&introduced_effect, &mut self.constraint_solver, &self.engine)
+                .unwrap_or(introduced_effect);
+
+        let pending_constraint = PendingConstraint {
+            constraint: Constraint::Subtype(Subtype::new(introduced_effect, expr_effect)),
+            cause_id,
+        };
+
+        self.push_constraint(pending_constraint);
+    }
+
     pub(super) fn compose_effect_from_sub_exprs(&mut self, dest_expr: TypedExprID) {
         // PERF: can we avoid collecting the sub-expressions into a vector?
         let sub_exprs = self.get_expression(dest_expr).kind().sub_exprs().collect::<Vec<_>>();
@@ -421,7 +464,9 @@ impl ConstraintSolver {
                     }
 
                     // TODO: Implement a correct diagnostic for effect sharing errors.
-                    RootCauseOrigin::EffectSharing(_effect_sharing_constraint_origin) => None,
+                    RootCauseOrigin::EffectIntroduction(_) | RootCauseOrigin::EffectSharing(_) => {
+                        None
+                    }
                 },
                 Cause::Derived(_derived_cause) => None,
             })
@@ -440,29 +485,37 @@ impl ConstraintSolver {
     }
 }
 
+impl GenInfer for ConstraintSolver {
+    fn gen_infer(&mut self, kind: TyKind, constraint: InferenceConstraint) -> Inference {
+        if kind == TyKind::Star && constraint == InferenceConstraint::Numeric {
+            let inference = self.solver.new_inference_with_constraint(kind, constraint);
+            self.numeric_inferences.push(inference);
+            inference
+        } else {
+            self.solver.new_inference_with_constraint(kind, constraint)
+        }
+    }
+}
+
 impl TAstBuilder {
     pub fn new_type_inference(&mut self) -> Interned<Ty> {
         self.new_type_inference_with_kind(TyKind::Star)
     }
 
     pub fn new_type_inference_with_kind(&mut self, kind: TyKind) -> Interned<Ty> {
-        self.engine.intern(Ty::Inference(self.constraint_solver.solver.new_inference(kind)))
+        let inference = self.constraint_solver.gen_infer(kind, InferenceConstraint::Any);
+        self.engine.intern(Ty::Inference(inference))
     }
 
     pub fn new_numeric_type_inference(&mut self) -> Interned<Ty> {
-        let inference = self
-            .constraint_solver
-            .solver
-            .new_inference_with_constraint(TyKind::Star, InferenceConstraint::Numeric);
-        self.constraint_solver.numeric_inferences.push(inference);
+        let inference =
+            self.constraint_solver.gen_infer(TyKind::Star, InferenceConstraint::Numeric);
         self.engine.intern(Ty::Inference(inference))
     }
 
     pub fn new_equality_comparable_type_inference(&mut self) -> Interned<Ty> {
-        let inference = self
-            .constraint_solver
-            .solver
-            .new_inference_with_constraint(TyKind::Star, InferenceConstraint::EqualityComparable);
+        let inference =
+            self.constraint_solver.gen_infer(TyKind::Star, InferenceConstraint::EqualityComparable);
         self.engine.intern(Ty::Inference(inference))
     }
 }
