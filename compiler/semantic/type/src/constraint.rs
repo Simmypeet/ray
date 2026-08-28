@@ -1,4 +1,4 @@
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 
 use crate::{
@@ -6,6 +6,7 @@ use crate::{
     reduce::Reduce,
     solver::Solver,
     subst::{Subst, Substitutable},
+    ty::Ty,
 };
 
 pub mod subtype;
@@ -13,6 +14,13 @@ pub mod subtype;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Constraint {
     Subtype(Subtype),
+}
+
+impl Constraint {
+    #[must_use]
+    pub const fn new_subtype(lesser: Interned<Ty>, greater: Interned<Ty>) -> Self {
+        Self::Subtype(Subtype::new(lesser, greater))
+    }
 }
 
 impl Reduce for Constraint {
@@ -37,13 +45,39 @@ impl Substitutable for Constraint {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DerivationRule {
+    TypeApplicationMatching,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DerivedConstraint {
+    pub rule: DerivationRule,
+    pub constraint: Constraint,
+}
+
+impl DerivedConstraint {
+    #[must_use]
+    pub const fn new(rule: DerivationRule, constraint: Constraint) -> Self {
+        Self { rule, constraint }
+    }
+
+    #[must_use]
+    pub const fn new_type_application_matching(
+        lesser: Interned<Ty>,
+        greater: Interned<Ty>,
+    ) -> Self {
+        Self::new(DerivationRule::TypeApplicationMatching, Constraint::new_subtype(lesser, greater))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Step {
     /// A new substitution has been generated
     Subst(Subst),
 
     /// The constraint has been simplified to a set of new constraints
-    Derived(Vec<Constraint>),
+    Derived(Vec<DerivedConstraint>),
 
     /// No applicable rules could be found
     NoProgress,

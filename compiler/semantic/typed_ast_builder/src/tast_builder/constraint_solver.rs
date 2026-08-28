@@ -1,55 +1,24 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use rayc_arena::{Arena, ID};
+use rayc_hash::FxHashSet;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{
-    constraint::{self, Constraint, Step, subtype::Subtype},
+    constraint::{self, Constraint, DerivationRule, DerivedConstraint, Step, subtype::Subtype},
     reduce::Reduce,
     solver::Solver,
     subst::{Subst, Substitutable},
     ty::{InferenceConstraint, Primitive, Ty, TyKind, inference::Inference},
 };
-use rayc_typed_ast::typed_expr::{SubExprs, TypedExprID};
+use rayc_typed_ast::{
+    typed_expr::{SubExprs, TypedExprID},
+    typed_function::TypedFunctionLocalID,
+};
 
 use crate::{
     diagnostic::{Diagnostic, ResidualSubtype},
     tast_builder::TAstBuilder,
 };
-
-/// Describes the origin of a constraint, which can be used for better error
-/// reporting and debugging.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Provenance {
-    Subtype(SubtypeProvenance),
-    EffectCompose(EffectComposeProvenance),
-}
-
-impl Substitutable for Provenance {
-    fn apply_subst(&self, subst: &Subst, engine: &rayc_qbice::TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match self {
-            Self::Subtype(subtype_provenance) => {
-                subtype_provenance.apply_subst(subst, engine).map(Self::Subtype)
-            }
-            Self::EffectCompose(_) => None,
-        }
-    }
-}
-
-impl Reduce for Provenance {
-    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match self {
-            Self::Subtype(subtype_provenance) => {
-                subtype_provenance.reduce(engine).map(Self::Subtype)
-            }
-            Self::EffectCompose(_) => None,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum SubtypeSource {
@@ -62,123 +31,81 @@ pub enum SubtypeSource {
     ReturnType,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub struct SubtypeProvenance {
-    original_subtype: Subtype,
-    span: RelativeSpan,
-    source: SubtypeSource,
-}
-
-impl SubtypeProvenance {
-    #[must_use]
-    pub const fn original_subtype(&self) -> &Subtype { &self.original_subtype }
-
-    #[must_use]
-    pub const fn source(&self) -> SubtypeSource { self.source }
-
-    #[must_use]
-    pub const fn span(&self) -> &RelativeSpan { &self.span }
-}
-
-impl Reduce for SubtypeProvenance {
-    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        self.original_subtype.reduce(engine).map(|new_subtype| Self {
-            original_subtype: new_subtype,
-            span: self.span,
-            source: self.source,
-        })
-    }
-}
-
-impl Substitutable for SubtypeProvenance {
-    fn apply_subst(&self, subst: &Subst, engine: &rayc_qbice::TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        self.original_subtype.apply_subst(subst, engine).map(|new_subtype| Self {
-            original_subtype: new_subtype,
-            span: self.span,
-            source: self.source,
-        })
-    }
-}
-
-/// Representing a situation where an effect of an expression is composed of
-/// multiple sub-expressions.
-///
-/// For instance, in a tuple `(a, b)`, the effect of the tuple is composed of
-/// the effects of `a` and `b`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub struct EffectComposeProvenance {
-    sub_exprs: Interned<[TypedExprID]>,
-    dest_expr: TypedExprID,
-}
-
-/// A constraint equipped with its provenance
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ProvenancedConstraint {
-    provenance: Provenance,
+pub struct SubtypeConstraintOrigin {
+    original_subtype: Subtype,
+    source: SubtypeSource,
+    span: RelativeSpan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EffectSharingConstraintOrigin {
+    child_expr_id: TypedFunctionLocalID<TypedExprID>,
+    parent_expr_id: TypedFunctionLocalID<TypedExprID>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RootCauseOrigin {
+    Subtype(SubtypeConstraintOrigin),
+    EffectSharing(EffectSharingConstraintOrigin),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RootCause {
+    origin: RootCauseOrigin,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DerivedCause {
+    derivation_rule: DerivationRule,
+    parent_cause: CauseID,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Cause {
+    Root(RootCause),
+    Derived(DerivedCause),
+}
+
+pub type CauseID = ID<Cause>;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PendingConstraint {
     constraint: Constraint,
+    cause_id: CauseID,
 }
 
-impl Reduce for ProvenancedConstraint {
-    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match (self.provenance.reduce(engine), self.constraint.reduce(engine)) {
-            (Some(new_provenance), Some(new_constraint)) => {
-                Some(Self { provenance: new_provenance, constraint: new_constraint })
-            }
-            (Some(new_provenance), None) => {
-                Some(Self { provenance: new_provenance, constraint: self.constraint.clone() })
-            }
-            (None, Some(new_constraint)) => {
-                Some(Self { provenance: self.provenance.clone(), constraint: new_constraint })
-            }
-            (None, None) => None,
-        }
-    }
-}
-
-impl Substitutable for ProvenancedConstraint {
+impl Substitutable for PendingConstraint {
     fn apply_subst(&self, subst: &Subst, engine: &rayc_qbice::TrackedEngine) -> Option<Self>
     where
         Self: Sized,
     {
-        match (
-            self.provenance.apply_subst(subst, engine),
-            self.constraint.apply_subst(subst, engine),
-        ) {
-            (Some(new_provenance), Some(new_constraint)) => {
-                Some(Self { provenance: new_provenance, constraint: new_constraint })
-            }
-            (Some(new_provenance), None) => {
-                Some(Self { provenance: new_provenance, constraint: self.constraint.clone() })
-            }
-            (None, Some(new_constraint)) => {
-                Some(Self { provenance: self.provenance.clone(), constraint: new_constraint })
-            }
-            (None, None) => None,
-        }
+        self.constraint
+            .apply_subst(subst, engine)
+            .map(|new_constraint| Self { constraint: new_constraint, cause_id: self.cause_id })
     }
 }
 
-impl ProvenancedConstraint {
-    #[must_use]
-    pub const fn new(provenance: Provenance, constraint: Constraint) -> Self {
-        Self { provenance, constraint }
+impl Reduce for PendingConstraint {
+    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        self.constraint
+            .reduce(engine)
+            .map(|new_constraint| Self { constraint: new_constraint, cause_id: self.cause_id })
     }
 }
 
 #[derive(Debug)]
 pub struct ConstraintSolver {
-    residual_constraints: Vec<ProvenancedConstraint>,
-    errored_constraints: Vec<(constraint::Error, ProvenancedConstraint)>,
+    causes: Arena<Cause>,
+
+    residual_constraints: Vec<PendingConstraint>,
+    errored_constraints: Vec<(constraint::Error, PendingConstraint)>,
+
     numeric_inferences: Vec<Inference>,
+
     subst: Subst,
     solver: Solver,
 }
@@ -187,6 +114,7 @@ impl ConstraintSolver {
     #[must_use]
     pub fn new(engine: TrackedEngine) -> Self {
         Self {
+            causes: Arena::default(),
             residual_constraints: Vec::new(),
             errored_constraints: Vec::new(),
             numeric_inferences: Vec::new(),
@@ -198,25 +126,28 @@ impl ConstraintSolver {
 
 impl TAstBuilder {
     pub(super) fn compose_effect_from_sub_exprs(&mut self, dest_expr: TypedExprID) {
-        let sub_exprs: Interned<[_]> = self
-            .engine
-            .intern_unsized(self.get_expression(dest_expr).kind().sub_exprs().collect::<Vec<_>>());
-
-        let effect_compose_provenance = Provenance::EffectCompose(EffectComposeProvenance {
-            sub_exprs: sub_exprs.clone(),
-            dest_expr,
-        });
+        // PERF: can we avoid collecting the sub-expressions into a vector?
+        let sub_exprs = self.get_expression(dest_expr).kind().sub_exprs().collect::<Vec<_>>();
 
         let mut constraints = Vec::new();
         let dest_eff = self.latest_type(self.effect_of_expression(dest_expr));
 
-        for sub_expr in sub_exprs.iter() {
-            let sub_eff = self.latest_type(self.effect_of_expression(*sub_expr));
+        for sub_expr in sub_exprs {
+            let sub_eff = self.latest_type(self.effect_of_expression(sub_expr));
 
-            constraints.push(ProvenancedConstraint::new(
-                effect_compose_provenance.clone(),
-                Constraint::Subtype(Subtype::new(sub_eff, dest_eff.clone())),
-            ));
+            let cause_id = self.constraint_solver.causes.insert(Cause::Root(RootCause {
+                origin: RootCauseOrigin::EffectSharing(EffectSharingConstraintOrigin {
+                    child_expr_id: TypedFunctionLocalID::new(self.building_function, sub_expr),
+                    parent_expr_id: TypedFunctionLocalID::new(self.building_function, dest_expr),
+                }),
+            }));
+
+            let pending_constraint = PendingConstraint {
+                constraint: Constraint::Subtype(Subtype::new(sub_eff, dest_eff.clone())),
+                cause_id,
+            };
+
+            constraints.push(pending_constraint);
         }
 
         self.push_constraints(constraints);
@@ -337,30 +268,48 @@ impl TAstBuilder {
         let actual_ty = self.latest_type(actual_ty);
         let expected_ty = self.latest_type(expected_ty);
         let subtype = Subtype::new(expected_ty, actual_ty);
-        let provenance = Provenance::Subtype(SubtypeProvenance {
-            original_subtype: subtype.clone(),
-            span,
-            source,
+
+        let cause = Cause::Root(RootCause {
+            origin: RootCauseOrigin::Subtype(SubtypeConstraintOrigin {
+                original_subtype: subtype.clone(),
+                source,
+                span,
+            }),
         });
 
-        let constraint = Constraint::Subtype(subtype);
-        let provenanced_constraint = ProvenancedConstraint::new(provenance, constraint);
+        let cause_id = self.constraint_solver.causes.insert(cause);
+        let pending_constraint =
+            PendingConstraint { constraint: Constraint::Subtype(subtype), cause_id };
 
-        self.push_constraint(provenanced_constraint);
+        self.push_constraint(pending_constraint);
     }
 
-    fn push_constraint(&mut self, constr: ProvenancedConstraint) {
+    fn push_constraint(&mut self, constr: PendingConstraint) {
         self.push_constraints(vec![constr]);
     }
 
-    fn push_constraints(&mut self, mut queued: Vec<ProvenancedConstraint>) {
-        while let Some(provenanced_constraint) = queued.pop() {
-            match self.constraint_solver.solver.entail(&provenanced_constraint.constraint) {
+    fn register_derived_constraint(
+        &mut self,
+        parent_cause: CauseID,
+        derived_constraint: DerivedConstraint,
+    ) -> PendingConstraint {
+        let cause =
+            Cause::Derived(DerivedCause { derivation_rule: derived_constraint.rule, parent_cause });
+
+        let cause_id = self.constraint_solver.causes.insert(cause);
+
+        PendingConstraint { constraint: derived_constraint.constraint, cause_id }
+    }
+
+    fn push_constraints(&mut self, mut queued: Vec<PendingConstraint>) {
+        while let Some(pending_constraint) = queued.pop() {
+            match self.constraint_solver.solver.entail(&pending_constraint.constraint) {
                 Ok(Step::Derived(constrs)) => {
-                    queued.extend(constrs.into_iter().map(|x| ProvenancedConstraint {
-                        provenance: provenanced_constraint.provenance.clone(),
-                        constraint: x,
-                    }));
+                    queued.extend(
+                        constrs.into_iter().map(|x| {
+                            self.register_derived_constraint(pending_constraint.cause_id, x)
+                        }),
+                    );
                 }
 
                 Ok(Step::Subst(subst)) => {
@@ -370,15 +319,15 @@ impl TAstBuilder {
                 }
 
                 Ok(Step::NoProgress) => {
-                    if let Some(reduced_constraint) = provenanced_constraint.reduce(&self.engine) {
+                    if let Some(reduced_constraint) = pending_constraint.reduce(&self.engine) {
                         queued.push(reduced_constraint);
                     } else {
-                        self.constraint_solver.residual_constraints.push(provenanced_constraint);
+                        self.constraint_solver.residual_constraints.push(pending_constraint);
                     }
                 }
 
                 Err(err) => {
-                    self.constraint_solver.errored_constraints.push((err, provenanced_constraint));
+                    self.constraint_solver.errored_constraints.push((err, pending_constraint));
                 }
             }
         }
@@ -387,7 +336,7 @@ impl TAstBuilder {
     fn move_constraints_from_residual(
         &mut self,
         subst: &Subst,
-        queued: &mut Vec<ProvenancedConstraint>,
+        queued: &mut Vec<PendingConstraint>,
     ) {
         let mut i = 0;
 
@@ -409,27 +358,74 @@ impl TAstBuilder {
 }
 
 impl ConstraintSolver {
-    #[must_use]
-    pub fn residual_into_diags(mut self, engine: &TrackedEngine) -> (Vec<Diagnostic>, Subst) {
-        for (_, provenanced_constraint) in &mut self.errored_constraints {
-            provenanced_constraint.apply_in_place(&self.subst, engine);
+    fn group_constraints_by_root_cause(
+        &self,
+        cause_ids: impl IntoIterator<Item = CauseID>,
+    ) -> FxHashSet<CauseID> {
+        let mut root_cause_ids = FxHashSet::default();
+
+        for cause_id in cause_ids {
+            let root_cause_id = self.traverse_to_root_cause(cause_id);
+            root_cause_ids.insert(root_cause_id);
         }
 
-        let mut diags = self
-            .residual_constraints
-            .into_iter()
-            .chain(self.errored_constraints.into_iter().map(|x| x.1))
-            .filter_map(|x| match x.provenance {
-                Provenance::Subtype(subtype_provenance) => Some(Diagnostic::ResidualSubtype(
-                    ResidualSubtype::builder().provenance(subtype_provenance).build(),
-                )),
-                // TODO: Implement a correct diagnostic for effect composition errors. For now, we
-                // just ignore them.
-                Provenance::EffectCompose(_) => None,
-            })
-            .collect::<Vec<_>>();
+        root_cause_ids
+    }
 
-        diags.dedup();
+    fn traverse_to_root_cause(&self, mut cause_id: CauseID) -> CauseID {
+        loop {
+            match self.causes.get(cause_id) {
+                Some(Cause::Derived(derived_cause)) => {
+                    cause_id = derived_cause.parent_cause;
+                }
+                _ => return cause_id,
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn residual_into_diags(mut self, engine: &TrackedEngine) -> (Vec<Diagnostic>, Subst) {
+        // collect all the root causes of the residual and errored constraints, so that
+        // we can reduce them to ther original form
+        //
+        // actually, we could potentially group the residual and errored constraints by
+        // their root causes like `root_cause_id -> [errored_constraint,
+        // errored_constraint, ...]` and then use these information to generate more
+        // informative diagnostics, but i don't know how :-P
+        //
+        // for now, i'll just generate somewhat generic diagnostics with at least the
+        // original subtype information
+        let root_cause_ids = self.group_constraints_by_root_cause(
+            self.residual_constraints
+                .iter()
+                .map(|x| x.cause_id)
+                .chain(self.errored_constraints.iter().map(|x| x.1.cause_id)),
+        );
+
+        let diags = root_cause_ids
+            .into_iter()
+            .filter_map(|cause_id| match &self.causes[cause_id] {
+                Cause::Root(root) => match &root.origin {
+                    RootCauseOrigin::Subtype(subtype_constraint_origin) => {
+                        let subtype = subtype_constraint_origin
+                            .original_subtype
+                            .apply_subst_or_clone(&self.subst, engine);
+
+                        Some(Diagnostic::ResidualSubtype(
+                            ResidualSubtype::builder()
+                                .source(subtype_constraint_origin.source)
+                                .span(subtype_constraint_origin.span)
+                                .subype(subtype)
+                                .build(),
+                        ))
+                    }
+
+                    // TODO: Implement a correct diagnostic for effect sharing errors.
+                    RootCauseOrigin::EffectSharing(_effect_sharing_constraint_origin) => None,
+                },
+                Cause::Derived(_derived_cause) => None,
+            })
+            .collect();
 
         let int32 = Ty::new_primitive(Primitive::Int32, engine);
         let numeric_defaults = self

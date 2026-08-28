@@ -8,9 +8,9 @@ use rayc_symbol::{
     GlobalSymbolID, name::get_qualified_name, source_map::to_absolute_span,
     symbol_kind::get_symbol_kind,
 };
-use rayc_type::ty::Ty;
+use rayc_type::{constraint::subtype::Subtype, ty::Ty};
 
-use crate::tast_builder::constraint_solver::{SubtypeProvenance, SubtypeSource};
+use crate::tast_builder::constraint_solver::SubtypeSource;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct UnboundName {
@@ -338,12 +338,14 @@ impl Report for DuplicateNameBinding {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct ResidualSubtype {
-    provenance: SubtypeProvenance,
+    span: RelativeSpan,
+    source: SubtypeSource,
+    subype: Subtype,
 }
 
 impl Report for ResidualSubtype {
     async fn report(&self, parameter: &TrackedEngine) -> Rendered<ByteIndex> {
-        let header_msg = match self.provenance.source() {
+        let header_msg = match &self.source {
             SubtypeSource::FunctionCall => "mismatched argument types in function call",
             SubtypeSource::LambdaInvocation => "mismatched argument types in lambda invocation",
             SubtypeSource::VariableAssignment => "mismatched types in variable assignment",
@@ -353,13 +355,13 @@ impl Report for ResidualSubtype {
             SubtypeSource::ReturnType => "mismatched types in return expression",
         };
 
-        let found = self.provenance.original_subtype().greater();
-        let expected = self.provenance.original_subtype().lesser();
+        let found = self.subype.greater();
+        let expected = self.subype.lesser();
 
         let expected_display = expected.display(parameter).await;
         let found_display = found.display(parameter).await;
         let mismatch_str = format!("expected `{expected_display}`, but found `{found_display}`");
-        let abs_span = parameter.to_absolute_span(self.provenance.span()).await;
+        let abs_span = parameter.to_absolute_span(&self.span).await;
 
         Rendered::builder()
             .message(format!("{header_msg}: {mismatch_str}"))

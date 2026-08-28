@@ -2,7 +2,7 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 
 use crate::{
-    constraint::{Constraint, Error, Step},
+    constraint::{DerivedConstraint, Error, Step},
     reduce::Reduce,
     solver::Solver,
     subst::{Subst, Substitutable},
@@ -70,8 +70,10 @@ impl Solver {
                 || Err(Error::Conflicted),
                 |arg| {
                     Ok(Step::Derived(
-                        arg.map(|(l, g)| Constraint::Subtype(Subtype::new(l.clone(), g.clone())))
-                            .collect(),
+                        arg.map(|(l, g)| {
+                            DerivedConstraint::new_type_application_matching(l.clone(), g.clone())
+                        })
+                        .collect(),
                     ))
                 },
             ),
@@ -118,7 +120,7 @@ impl Solver {
                 return Err(Error::Conflicted);
             };
             constraints.extend(arguments.map(|(lesser, greater)| {
-                Constraint::Subtype(Subtype::new(lesser.clone(), greater.clone()))
+                DerivedConstraint::new_type_application_matching(lesser.clone(), greater.clone())
             }));
         }
 
@@ -133,20 +135,20 @@ impl Solver {
                     return Err(Error::Conflicted);
                 }
                 let greater_remainder = Ty::new_effect_row(unmatched_greater, None, self.engine());
-                constraints.push(Constraint::Subtype(Subtype::new(
+                constraints.push(DerivedConstraint::new_type_application_matching(
                     lesser_tail.clone(),
                     greater_remainder,
-                )));
+                ));
             }
             (None, Some(greater_tail)) => {
                 if !unmatched_greater.is_empty() {
                     return Err(Error::Conflicted);
                 }
                 let lesser_remainder = Ty::new_effect_row(unmatched_lesser, None, self.engine());
-                constraints.push(Constraint::Subtype(Subtype::new(
+                constraints.push(DerivedConstraint::new_type_application_matching(
                     lesser_remainder,
                     greater_tail.clone(),
-                )));
+                ));
             }
             (Some(lesser_tail), Some(greater_tail)) => {
                 if lesser_tail == greater_tail {
@@ -159,20 +161,20 @@ impl Solver {
                         Some(greater_tail.clone()),
                         self.engine(),
                     );
-                    constraints.push(Constraint::Subtype(Subtype::new(
+                    constraints.push(DerivedConstraint::new_type_application_matching(
                         lesser_tail.clone(),
                         greater_remainder,
-                    )));
+                    ));
                 } else if unmatched_greater.is_empty() {
                     let lesser_remainder = Ty::new_effect_row(
                         unmatched_lesser,
                         Some(lesser_tail.clone()),
                         self.engine(),
                     );
-                    constraints.push(Constraint::Subtype(Subtype::new(
+                    constraints.push(DerivedConstraint::new_type_application_matching(
                         lesser_remainder,
                         greater_tail.clone(),
-                    )));
+                    ));
                 } else {
                     let common_tail = self.new_inference(TyKind::EffectRow);
                     let common_tail = self.engine().intern(Ty::Inference(common_tail));
@@ -184,8 +186,14 @@ impl Solver {
                     let lesser_remainder =
                         Ty::new_effect_row(unmatched_lesser, Some(common_tail), self.engine());
                     constraints.extend([
-                        Constraint::Subtype(Subtype::new(lesser_tail.clone(), greater_remainder)),
-                        Constraint::Subtype(Subtype::new(lesser_remainder, greater_tail.clone())),
+                        DerivedConstraint::new_type_application_matching(
+                            lesser_tail.clone(),
+                            greater_remainder,
+                        ),
+                        DerivedConstraint::new_type_application_matching(
+                            lesser_remainder,
+                            greater_tail.clone(),
+                        ),
                     ]);
                 }
             }
@@ -258,7 +266,7 @@ mod tests {
 
     use super::Subtype;
     use crate::{
-        constraint::{Constraint, Error, Step},
+        constraint::{Constraint, DerivedConstraint, Error, Step},
         poly_var::{GlobalPolyVarID, PolyVarID},
         solver::Solver,
         subst::{Subst, Substitutable},
@@ -295,7 +303,9 @@ mod tests {
             let constraint = constraint.apply_subst_or_clone(&subst, engine);
             match solver.entail(&constraint)? {
                 Step::Subst(new_subst) => subst.compose(&new_subst, engine),
-                Step::Derived(constraints) => pending.extend(constraints),
+                Step::Derived(constraints) => {
+                    pending.extend(constraints.into_iter().map(|x| x.constraint));
+                }
                 Step::NoProgress => panic!("effect-row constraint should make progress"),
             }
         }
@@ -358,8 +368,8 @@ mod tests {
         assert_eq!(
             step,
             Ok(Step::Derived(vec![
-                Constraint::Subtype(Subtype::new(e1, state_remainder)),
-                Constraint::Subtype(Subtype::new(io_remainder, e2)),
+                DerivedConstraint::new_type_application_matching(e1, state_remainder),
+                DerivedConstraint::new_type_application_matching(io_remainder, e2),
             ]))
         );
     }
