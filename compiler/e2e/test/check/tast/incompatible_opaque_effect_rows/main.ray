@@ -1,0 +1,6 @@
+def compose(
+    left: def() -> () \ a,
+    right: def() -> () \ b,
+) -> () \ b:
+    let result = (left(), right())
+    return ()

@@ -5,7 +5,6 @@ use rayc_arena::{Arena, ID};
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     constraint::{DerivationRule, subtype::Subtype},
     reduce::Reduce,
@@ -59,6 +58,7 @@ pub enum SubtypeSource {
     IfBranch,
     ReturnType,
     FunctionBodyEffect,
+    EffectComposition,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
@@ -134,6 +134,14 @@ pub enum Cause {
 }
 
 pub type CauseID = ID<Cause>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct EffectConflict {
+    pub first_span: RelativeSpan,
+    pub first_effect: Interned<Ty>,
+    pub second_span: RelativeSpan,
+    pub second_effect: Interned<Ty>,
+}
 
 impl Provenance {
     pub fn insert_root_cause(&mut self, root_cause: impl Into<RootCauseOrigin>) -> CauseID {
@@ -230,6 +238,8 @@ impl Provenance {
         }
     }
 
+    /// Traverses the cause graph to collect all the root causes that (including
+    /// binding causes)
     fn collect_root_cause_ids(&self, cause_id: CauseID, roots: &mut FxHashSet<CauseID>) {
         match &self.causes[cause_id] {
             Cause::Root(_root) => {
@@ -249,42 +259,15 @@ impl Provenance {
         }
     }
 
-    pub(super) fn find_effect_symbol_in_cause(&self, cause_id: CauseID) -> Option<GlobalSymbolID> {
-        match &self.causes[cause_id] {
-            Cause::Root(_root) => None,
-            Cause::Derived(derived_cause) => match &derived_cause.rule {
-                StepRule::Derivation(step) => match step.derivation_rule {
-                    DerivationRule::EffectLabelArgumentMatching {
-                        effect_symbol_id,
-                        argument_index: _argument_index,
-                    } => Some(effect_symbol_id),
-                    DerivationRule::TypeApplicationMatching => {
-                        self.find_effect_symbol_in_cause(step.parent_cause_id)
-                    }
-                },
-                StepRule::AppliedSubstitution(step) => {
-                    self.find_effect_symbol_in_cause(step.original_cause_id).or_else(|| {
-                        step.binding_cause_ids
-                            .iter()
-                            .find_map(|cause_id| self.find_effect_symbol_in_cause(*cause_id))
-                    })
-                }
-            },
-        }
-    }
-
-    pub(super) fn effect_introduction_sites(
+    fn resolved_effect_introduction_sites(
         &self,
-        cause_id: CauseID,
-        effect_symbol_id: GlobalSymbolID,
+        root_ids: &FxHashSet<CauseID>,
         engine: &TrackedEngine,
     ) -> Vec<(RelativeSpan, Interned<Ty>)> {
-        let mut roots = FxHashSet::default();
-        self.collect_root_cause_ids(cause_id, &mut roots);
         let mut sites = Vec::new();
 
-        for root_id in roots {
-            let Cause::Root(root) = &self.causes[root_id] else {
+        for root_id in root_ids {
+            let Cause::Root(root) = &self.causes[*root_id] else {
                 continue;
             };
             let RootCauseOrigin::EffectIntroduction(origin) = &root.origin else {
@@ -296,21 +279,70 @@ impl Provenance {
             while let Some(reduced) = introduced_effect.reduce(engine) {
                 introduced_effect = reduced;
             }
-            let Ty::EffectRow(effect_row) = &*introduced_effect else {
-                continue;
-            };
-
-            sites.extend(
-                effect_row
-                    .labels()
-                    .filter(|label| label.effect_symbol_id() == effect_symbol_id)
-                    .map(|label| (origin.span, Ty::new_effect_row([label.clone()], None, engine))),
-            );
+            sites.push((origin.span, introduced_effect));
         }
 
         sites.sort_by_key(|(span, _)| *span);
         sites.dedup();
         sites
+    }
+
+    fn first_distinct_effect_pair(
+        sites: &[(RelativeSpan, Interned<Ty>)],
+    ) -> Option<(RelativeSpan, Interned<Ty>, RelativeSpan, Interned<Ty>)> {
+        for (index, (first_span, first_effect)) in sites.iter().enumerate() {
+            for (second_span, second_effect) in &sites[index + 1..] {
+                if first_effect != second_effect {
+                    return Some((
+                        *first_span,
+                        first_effect.clone(),
+                        *second_span,
+                        second_effect.clone(),
+                    ));
+                }
+            }
+        }
+
+        None
+    }
+
+    fn has_effect_composition_root(&self, root_ids: &FxHashSet<CauseID>) -> bool {
+        root_ids.iter().any(|root_id| {
+            let Cause::Root(root) = &self.causes[*root_id] else {
+                return false;
+            };
+
+            match &root.origin {
+                RootCauseOrigin::EffectSharing(_) => true,
+                RootCauseOrigin::Subtype(origin) => {
+                    origin.source == SubtypeSource::EffectComposition
+                }
+                RootCauseOrigin::EffectIntroduction(_) => false,
+            }
+        })
+    }
+
+    pub(super) fn effect_conflict(
+        &self,
+        cause_id: CauseID,
+        engine: &TrackedEngine,
+    ) -> Option<EffectConflict> {
+        let mut root_ids = FxHashSet::default();
+        // collect all the root causes that contributed to the failure of this cause.
+        self.collect_root_cause_ids(cause_id, &mut root_ids);
+
+        if !self.has_effect_composition_root(&root_ids) {
+            return None;
+        }
+
+        // collect all the effect introduction sites that contributed to the failure of
+        // this cause.
+        let sites = self.resolved_effect_introduction_sites(&root_ids, engine);
+
+        let (first_span, first_effect, second_span, second_effect) =
+            Self::first_distinct_effect_pair(&sites)?;
+
+        Some(EffectConflict { first_span, first_effect, second_span, second_effect })
     }
 
     pub(super) fn resolved_subtype_origin(

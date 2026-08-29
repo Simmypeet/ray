@@ -368,7 +368,7 @@ impl TyDisplay<'_> {
                     .get(&poly_var.parent_id())
                     .expect("should've been collected earlier");
 
-                write!(f, "{{{}}}", poly_var_map.name_of(poly_var.id()))
+                write!(f, "{}", poly_var_map.name_of(poly_var.id()))
             }
 
             Ty::EffectRow(row) => {

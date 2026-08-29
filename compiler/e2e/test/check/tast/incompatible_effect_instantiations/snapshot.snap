@@ -3,7 +3,19 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: incompatible effect instantiations `{State[{numeric}]}` and `{State[bool]}`
+[error]: function body effects do not match its signature: expected `{}`, but found `{State[bool] | {any}}`
+   ╭▸ compiler/e2e/test/check/tast/incompatible_effect_instantiations/main.ray:17:17
+   │
+17 │   def main() -> ():
+   │ ┏━━━━━━━━━━━━━━━━━┛
+18 │ ┃     let varBool = true
+19 │ ┃     let varInt = 42
+20 │ ┃     let conflict = (((withPolyState(varInt), ()), (withPolyState(varBool), ())))
+21 │ ┃     
+22 │ ┃     return ()
+   ╰╴┗━━━━━━━━━━━━━┛
+
+[error]: incompatible effects `{State[{numeric}]}` and `{State[bool]}`
    ╭▸ compiler/e2e/test/check/tast/incompatible_effect_instantiations/main.ray:20:52
    │
 20 │     let conflict = (((withPolyState(varInt), ()), (withPolyState(varBool), ())))
@@ -11,7 +23,7 @@ stderr:
    │                       │
    ╰╴                      `{State[{numeric}]}` was introduced here
 
-[error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 2 error(s)
 
 
 

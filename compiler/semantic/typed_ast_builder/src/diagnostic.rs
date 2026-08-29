@@ -354,6 +354,7 @@ impl Report for ResidualSubtype {
             SubtypeSource::IfBranch => "mismatched types in if expression branches",
             SubtypeSource::ReturnType => "mismatched types in return expression",
             SubtypeSource::FunctionBodyEffect => "function body effects do not match its signature",
+            SubtypeSource::EffectComposition => "effect composition mismatch",
         };
 
         let found = self.subype.greater();
@@ -372,22 +373,20 @@ impl Report for ResidualSubtype {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
-pub struct IncompatibleEffectInstantiations {
+pub struct IncompatibleEffectRows {
     first_span: RelativeSpan,
     first_effect: Interned<Ty>,
     second_span: RelativeSpan,
     second_effect: Interned<Ty>,
 }
 
-impl Report for IncompatibleEffectInstantiations {
+impl Report for IncompatibleEffectRows {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let first_effect = self.first_effect.display(engine).await;
         let second_effect = self.second_effect.display(engine).await;
 
         Rendered::builder()
-            .message(format!(
-                "incompatible effect instantiations `{first_effect}` and `{second_effect}`"
-            ))
+            .message(format!("incompatible effects `{first_effect}` and `{second_effect}`"))
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.second_span).await)
@@ -423,7 +422,7 @@ pub enum Diagnostic {
     OutOfBoundsTupleIndex(OutOfBoundsTupleIndex),
     DuplicateNameBinding(DuplicateNameBinding),
     ResidualSubtype(ResidualSubtype),
-    IncompatibleEffectInstantiations(IncompatibleEffectInstantiations),
+    IncompatibleEffectRows(IncompatibleEffectRows),
     EmbeddedNulString(EmbeddedNulString),
 }
 
@@ -463,7 +462,7 @@ impl Report for Diagnostic {
                 duplicate_name_binding.report(engine).await
             }
             Self::ResidualSubtype(residual_subtype) => residual_subtype.report(engine).await,
-            Self::IncompatibleEffectInstantiations(incompatible_effects) => {
+            Self::IncompatibleEffectRows(incompatible_effects) => {
                 incompatible_effects.report(engine).await
             }
             Self::EmbeddedNulString(string) => string.report(engine).await,
