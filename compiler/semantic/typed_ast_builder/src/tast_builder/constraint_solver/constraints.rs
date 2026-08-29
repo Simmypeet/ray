@@ -2,7 +2,6 @@ use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::{
     constraint::{Constraint, subtype::Subtype},
-    subst::Substitutable,
     ty::{Ty, TyKind},
 };
 use rayc_typed_ast::{
@@ -10,11 +9,16 @@ use rayc_typed_ast::{
     typed_function::TypedFunctionLocalID,
 };
 
-use super::{
-    Cause, EffectIntroductionConstraintOrigin, EffectSharingConstraintOrigin, PendingConstraint,
-    RootCause, RootCauseOrigin, SubtypeConstraintOrigin, SubtypeSource,
+use crate::tast_builder::{
+    TAstBuilder,
+    constraint_solver::{
+        provenance::{
+            EffectIntroductionConstraintOrigin, EffectSharingConstraintOrigin,
+            SubtypeConstraintOrigin, SubtypeSource,
+        },
+        solve::PendingConstraint,
+    },
 };
-use crate::tast_builder::TAstBuilder;
 
 impl TAstBuilder {
     pub fn push_effect_introduction(
@@ -22,16 +26,15 @@ impl TAstBuilder {
         expression_id: TypedExprID,
         introduced_effect: &Interned<Ty>,
     ) {
-        let cause_id = self.constraint_solver.causes.insert(Cause::Root(RootCause {
-            origin: RootCauseOrigin::EffectIntroduction(EffectIntroductionConstraintOrigin {
-                expression_id: TypedFunctionLocalID::new(self.building_function, expression_id),
-                span: self.span_of_expression(expression_id),
-
-                // we don't pass the oppened effect here because we want to keep the original effect
-                // row for the diagnostic
-                introduced_effect: introduced_effect.clone(),
-            }),
-        }));
+        let cause_id = self.constraint_solver.provenance.insert_root_cause(
+            EffectIntroductionConstraintOrigin::builder()
+                .expression_id(TypedFunctionLocalID::new(self.building_function, expression_id))
+                .span(self.span_of_expression(expression_id))
+                // we use the original introduced effect here because we want to track the original
+                // effect that was introduced, not the potentially opened version of it
+                .introduced_effect(introduced_effect.clone())
+                .build(),
+        );
 
         let expr_effect = self.effect_of_expression(expression_id).clone();
         let introduced_effect = introduced_effect.clone();
@@ -42,10 +45,10 @@ impl TAstBuilder {
             Ty::open_closed_row(&introduced_effect, &mut self.constraint_solver, &self.engine)
                 .unwrap_or(introduced_effect);
 
-        let pending_constraint = PendingConstraint {
-            constraint: Constraint::Subtype(Subtype::new(introduced_effect, expr_effect)),
-            cause_id,
-        };
+        let pending_constraint = PendingConstraint::builder()
+            .constraint(Constraint::Subtype(Subtype::new(introduced_effect, expr_effect)))
+            .cause_id(cause_id)
+            .build();
 
         self.push_constraint(pending_constraint);
     }
@@ -63,17 +66,17 @@ impl TAstBuilder {
         for sub_expr in sub_exprs {
             let sub_eff = self.effect_of_expression(sub_expr).clone();
 
-            let cause_id = self.constraint_solver.causes.insert(Cause::Root(RootCause {
-                origin: RootCauseOrigin::EffectSharing(EffectSharingConstraintOrigin {
-                    child_expr_id: TypedFunctionLocalID::new(self.building_function, sub_expr),
-                    parent_expr_id: TypedFunctionLocalID::new(self.building_function, dest_expr),
-                }),
-            }));
+            let cause_id = self.constraint_solver.provenance.insert_root_cause(
+                EffectSharingConstraintOrigin::builder()
+                    .child_expr_id(TypedFunctionLocalID::new(self.building_function, sub_expr))
+                    .parent_expr_id(TypedFunctionLocalID::new(self.building_function, dest_expr))
+                    .build(),
+            );
 
-            let pending_constraint = PendingConstraint {
-                constraint: Constraint::Subtype(Subtype::new(sub_eff, dest_eff.clone())),
-                cause_id,
-            };
+            let pending_constraint = PendingConstraint::builder()
+                .constraint(Constraint::Subtype(Subtype::new(sub_eff, dest_eff.clone())))
+                .cause_id(cause_id)
+                .build();
 
             constraints.push(pending_constraint);
         }
@@ -83,10 +86,6 @@ impl TAstBuilder {
 
     pub fn new_effect_inference(&mut self) -> Interned<Ty> {
         self.new_type_inference_with_kind(TyKind::EffectRow)
-    }
-
-    pub fn latest_type(&self, ty: &Interned<Ty>) -> Interned<Ty> {
-        ty.apply_subst_or_clone(&self.constraint_solver.subst, &self.engine)
     }
 
     pub fn push_variable_assignment_constraint(
@@ -195,17 +194,18 @@ impl TAstBuilder {
     ) {
         let subtype = Subtype::new(expected_ty.clone(), actual_ty.clone());
 
-        let cause = Cause::Root(RootCause {
-            origin: RootCauseOrigin::Subtype(SubtypeConstraintOrigin {
-                original_subtype: subtype.clone(),
-                source,
-                span,
-            }),
-        });
+        let cause_id = self.constraint_solver.provenance.insert_root_cause(
+            SubtypeConstraintOrigin::builder()
+                .original_subtype(subtype.clone())
+                .source(source)
+                .span(span)
+                .build(),
+        );
 
-        let cause_id = self.constraint_solver.causes.insert(cause);
-        let pending_constraint =
-            PendingConstraint { constraint: Constraint::Subtype(subtype), cause_id };
+        let pending_constraint = PendingConstraint::builder()
+            .constraint(Constraint::Subtype(subtype))
+            .cause_id(cause_id)
+            .build();
 
         self.push_constraint(pending_constraint);
     }

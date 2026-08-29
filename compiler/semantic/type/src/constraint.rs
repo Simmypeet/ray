@@ -18,6 +18,14 @@ pub enum Constraint {
 }
 
 impl Constraint {
+    pub fn interned_recursive_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
+        match self {
+            Self::Subtype(subtype) => subtype.interned_recursive_iter(),
+        }
+    }
+}
+
+impl Constraint {
     #[must_use]
     pub const fn new_subtype(lesser: Interned<Ty>, greater: Interned<Ty>) -> Self {
         Self::Subtype(Subtype::new(lesser, greater))

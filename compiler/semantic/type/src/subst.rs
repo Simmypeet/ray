@@ -31,6 +31,11 @@ pub struct Subst(FxImHashMap<Var, Interned<Ty>>);
 
 impl Subst {
     #[must_use]
+    pub fn has_inference_variable(&self, inference: &Inference) -> bool {
+        self.0.contains_key(&Var::Inference(*inference))
+    }
+
+    #[must_use]
     pub fn codomain(&self) -> impl ExactSizeIterator<Item = &Interned<Ty>> { self.0.values() }
 
     pub fn inference_mappings(&self) -> impl Iterator<Item = (Inference, &Interned<Ty>)> {

@@ -1,20 +1,50 @@
+use bon::Builder;
 use qbice::storage::intern::Interned;
-use rayc_arena::Arena;
-use rayc_hash::FxHashMap;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{
-    constraint::{DerivedConstraint, Step},
+    constraint::{self, Constraint, DerivedConstraint, Step},
     reduce::Reduce,
-    solver::Solver,
-    subst::Subst,
     ty::{
         InferenceConstraint, Ty, TyKind,
         inference::{GenInfer, Inference},
     },
 };
 
-use super::{CauseID, ConstraintSolver, ExplanationRule, PendingConstraint};
+use super::{CauseID, ConstraintSolver};
 use crate::tast_builder::TAstBuilder;
+
+#[derive(Debug)]
+pub struct ConstraintSet {
+    residual_constraints: Vec<PendingConstraint>,
+    errored_constraints: Vec<(constraint::Error, PendingConstraint)>,
+    numeric_inferences: Vec<Inference>,
+}
+
+impl ConstraintSet {
+    pub const fn new() -> Self {
+        Self {
+            residual_constraints: Vec::new(),
+            errored_constraints: Vec::new(),
+            numeric_inferences: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
+pub struct PendingConstraint {
+    constraint: Constraint,
+    cause_id: CauseID,
+}
+
+impl PendingConstraint {
+    pub fn cause_id(&self) -> CauseID { self.cause_id }
+
+    pub fn constraint(&self) -> &Constraint { &self.constraint }
+
+    pub fn interned_recursive_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
+        self.constraint.interned_recursive_iter()
+    }
+}
 
 impl Reduce for PendingConstraint {
     fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
@@ -24,21 +54,6 @@ impl Reduce for PendingConstraint {
         self.constraint
             .reduce(engine)
             .map(|new_constraint| Self { constraint: new_constraint, cause_id: self.cause_id })
-    }
-}
-
-impl ConstraintSolver {
-    #[must_use]
-    pub fn new(engine: TrackedEngine) -> Self {
-        Self {
-            causes: Arena::default(),
-            residual_constraints: Vec::new(),
-            errored_constraints: Vec::new(),
-            numeric_inferences: Vec::new(),
-            subst: Subst::new_empty(),
-            subst_causes: FxHashMap::default(),
-            solver: Solver::new(engine),
-        }
     }
 }
 
@@ -52,23 +67,24 @@ impl TAstBuilder {
         parent_cause: CauseID,
         derived_constraint: DerivedConstraint,
     ) -> PendingConstraint {
-        let cause_id = self.constraint_solver.insert_derived_cause(
-            ExplanationRule::ConstraintDerivation(derived_constraint.rule),
-            vec![parent_cause],
-        );
+        let cause_id = self
+            .constraint_solver
+            .provenance
+            .insert_derivation_cause(derived_constraint.rule, parent_cause);
 
         PendingConstraint { constraint: derived_constraint.constraint, cause_id }
     }
 
-    pub(super) fn push_constraints(&mut self, queued: Vec<PendingConstraint>) {
-        let mut normalized = Vec::with_capacity(queued.len());
-        for pending_constraint in queued {
-            normalized.push(
-                self.constraint_solver
-                    .apply_current_subst_or_original(pending_constraint, &self.engine),
-            );
+    pub(super) fn push_constraints(&mut self, mut queued: Vec<PendingConstraint>) {
+        // make sure the new constraints are updated with the latest substitution before
+        // we start processing them
+        for queued in &mut queued {
+            if let Some(new) =
+                self.constraint_solver.provenance.apply_subst_with_causes(queued, &self.engine)
+            {
+                *queued = new;
+            }
         }
-        let mut queued = normalized;
 
         while let Some(pending_constraint) = queued.pop() {
             match self.constraint_solver.solver.entail(&pending_constraint.constraint) {
@@ -81,59 +97,58 @@ impl TAstBuilder {
                 }
 
                 Ok(Step::Subst(subst)) => {
-                    let binding_cause = pending_constraint.cause_id;
-                    self.move_constraints_from_residual(&subst, binding_cause, &mut queued);
+                    self.constraint_solver.provenance.compose_subst(
+                        &subst,
+                        pending_constraint.cause_id,
+                        &self.engine,
+                    );
+                    self.move_constraints_from_residual(&mut queued);
 
                     for queued_constraint in &mut queued {
-                        if let Some(new_constraint) = self.constraint_solver.apply_subst(
-                            queued_constraint,
-                            &subst,
-                            binding_cause,
-                            &self.engine,
-                        ) {
+                        if let Some(new_constraint) = self
+                            .constraint_solver
+                            .provenance
+                            .apply_subst_with_causes(queued_constraint, &self.engine)
+                        {
                             *queued_constraint = new_constraint;
                         }
                     }
-
-                    self.constraint_solver.compose_subst(&subst, binding_cause, &self.engine);
                 }
 
                 Ok(Step::NoProgress) => {
                     if let Some(reduced_constraint) = pending_constraint.reduce(&self.engine) {
                         queued.push(reduced_constraint);
                     } else {
-                        self.constraint_solver.residual_constraints.push(pending_constraint);
+                        self.constraint_solver
+                            .constraint_set
+                            .residual_constraints
+                            .push(pending_constraint);
                     }
                 }
 
                 Err(err) => {
-                    self.constraint_solver.errored_constraints.push((err, pending_constraint));
+                    self.constraint_solver
+                        .constraint_set
+                        .errored_constraints
+                        .push((err, pending_constraint));
                 }
             }
         }
     }
 
-    fn move_constraints_from_residual(
-        &mut self,
-        subst: &Subst,
-        binding_cause: CauseID,
-        queued: &mut Vec<PendingConstraint>,
-    ) {
+    fn move_constraints_from_residual(&mut self, queued: &mut Vec<PendingConstraint>) {
         let mut i = 0;
 
-        while i < self.constraint_solver.residual_constraints.len() {
-            let pending_constraint = self.constraint_solver.residual_constraints[i].clone();
-            let new_constraint = self.constraint_solver.apply_subst(
-                &pending_constraint,
-                subst,
-                binding_cause,
+        while i < self.constraint_solver.constraint_set.residual_constraints.len() {
+            let new_constraint = self.constraint_solver.provenance.apply_subst_with_causes(
+                &self.constraint_solver.constraint_set.residual_constraints[i],
                 &self.engine,
             );
 
             match new_constraint {
                 Some(new_constraint) => {
                     queued.push(new_constraint);
-                    self.constraint_solver.residual_constraints.remove(i);
+                    self.constraint_solver.constraint_set.residual_constraints.remove(i);
                 }
                 None => {
                     i += 1;
@@ -147,7 +162,7 @@ impl GenInfer for ConstraintSolver {
     fn gen_infer(&mut self, kind: TyKind, constraint: InferenceConstraint) -> Inference {
         if kind == TyKind::Star && constraint == InferenceConstraint::Numeric {
             let inference = self.solver.new_inference_with_constraint(kind, constraint);
-            self.numeric_inferences.push(inference);
+            self.constraint_set.numeric_inferences.push(inference);
             inference
         } else {
             self.solver.new_inference_with_constraint(kind, constraint)

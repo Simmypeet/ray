@@ -16,6 +16,12 @@ pub struct Subtype {
 }
 
 impl Subtype {
+    pub fn interned_recursive_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
+        Ty::interned_recursive_iter(&self.lesser).chain(Ty::interned_recursive_iter(&self.greater))
+    }
+}
+
+impl Subtype {
     #[must_use]
     pub const fn lesser(&self) -> &Interned<Ty> { &self.lesser }
 

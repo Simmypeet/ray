@@ -11,7 +11,7 @@ use rayc_type::{
 };
 
 use super::{
-    Cause, CauseID, ConstraintSolver, ExplanationRule, PendingConstraint, RootCauseOrigin,
+    Cause, CauseID, ConstraintSolver, StepRule, PendingConstraint, RootCauseOrigin,
 };
 use crate::diagnostic::{Diagnostic, IncompatibleEffectInstantiations, ResidualSubtype};
 
@@ -62,16 +62,16 @@ impl ConstraintSolver {
             Some(Cause::Root(_root)) => None,
             Some(Cause::Derived(derived_cause)) => {
                 match derived_cause.rule {
-                    ExplanationRule::ConstraintDerivation(
+                    StepRule::ConstraintDerivation(
                         DerivationRule::EffectLabelArgumentMatching {
                             effect_symbol_id,
                             argument_index: _argument_index,
                         },
                     ) => return Some(effect_symbol_id),
-                    ExplanationRule::ConstraintDerivation(
+                    StepRule::ConstraintDerivation(
                         DerivationRule::TypeApplicationMatching,
                     )
-                    | ExplanationRule::AppliedSubstitution => {}
+                    | StepRule::AppliedSubstitution => {}
                 }
 
                 derived_cause

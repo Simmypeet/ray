@@ -438,6 +438,11 @@ impl Ty {
             None
         }
     }
+
+    #[must_use]
+    pub const fn as_inference(&self) -> Option<&Inference> {
+        if let Self::Inference(inference) = self { Some(inference) } else { None }
+    }
 }
 
 #[cfg(test)]
