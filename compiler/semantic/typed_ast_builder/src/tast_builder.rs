@@ -2,6 +2,7 @@ use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
+    effect_row::get_effect_row,
     parameter::{ParameterMap, get_parameter_map},
     return_type::get_return_type,
 };
@@ -11,7 +12,10 @@ use rayc_symbol::{
     syntax::{get_def_body_syntax, get_parameter_list_syntax},
 };
 use rayc_syntax::{Identifier, def::ParameterList};
-use rayc_type::{subst::MutSubstitutable, ty::Ty};
+use rayc_type::{
+    subst::MutSubstitutable,
+    ty::{InferenceConstraint, Ty, TyKind, inference::GenInfer},
+};
 use rayc_typed_ast::{
     name_binding::{NameBindingGroupID, NameBindingID},
     statement::Statement,
@@ -54,7 +58,11 @@ impl TAstBuilder {
 
     #[must_use]
     pub fn new(engine: TrackedEngine, current_def_id: GlobalSymbolID) -> Self {
-        let function_map = TypedFunctionMap::new(Ty::new_effect_row([], None, &engine));
+        let mut constraint_solver = ConstraintSolver::new(engine.clone());
+        let root_effect = engine.intern(Ty::Inference(
+            constraint_solver.gen_infer(TyKind::EffectRow, InferenceConstraint::Any),
+        ));
+        let function_map = TypedFunctionMap::new(root_effect);
         let building_function = function_map.root_id();
         let name_env = NameEnv::new(function_map.parameter_name_binding_group_id_of_root());
 
@@ -64,7 +72,7 @@ impl TAstBuilder {
             suspended_functions: Vec::new(),
             name_env,
             current_def_id,
-            constraint_solver: ConstraintSolver::new(engine.clone()),
+            constraint_solver,
             lvalue_requirements: LvalueRequirements::new(),
             diagnostics: Vec::new(),
             engine,
@@ -113,7 +121,8 @@ impl TAstBuilder {
 
     #[must_use]
     pub fn start_lambda(&mut self) -> TypedFunctionID {
-        let function_id = self.function_map.insert_lambda(self.empty_effect());
+        let effect = self.new_effect_inference();
+        let function_id = self.function_map.insert_lambda(effect);
         let parameter_name_binding_group_id =
             self.function_map.parameter_name_binding_group_id_of(function_id);
 
@@ -124,10 +133,13 @@ impl TAstBuilder {
         function_id
     }
 
-    pub fn finish_lambda(&mut self) {
+    #[must_use]
+    pub fn finish_lambda(&mut self) -> Interned<Ty> {
+        let effect = self.function_map.effect_of(self.building_function).clone();
         self.name_env.exit_function();
         self.building_function =
             self.suspended_functions.pop().expect("a lambda should suspend its enclosing function");
+        effect
     }
 
     #[must_use]
@@ -140,11 +152,6 @@ impl TAstBuilder {
 
     #[must_use]
     pub const fn engine(&self) -> &TrackedEngine { &self.engine }
-
-    #[must_use]
-    pub(crate) fn empty_effect(&self) -> Interned<Ty> {
-        Ty::new_effect_row([], None, self.engine())
-    }
 
     /// Inserts an expression into the typed AST and returns its ID.
     ///
@@ -196,6 +203,7 @@ impl TAstBuilder {
     }
 
     pub fn push_statement(&mut self, statement: Statement) {
+        self.compose_effect_from_statement(&statement);
         self.function_map.push_statement(self.building_function, statement);
     }
 
@@ -222,6 +230,11 @@ impl TAstBuilder {
     #[must_use]
     pub async fn return_type_of_current_function(&self) -> Interned<Ty> {
         self.engine.get_return_type(self.current_def_id).await
+    }
+
+    #[must_use]
+    pub(crate) async fn effect_row_of_current_function(&self) -> Interned<Ty> {
+        self.engine.get_effect_row(self.current_def_id).await
     }
 
     #[must_use]

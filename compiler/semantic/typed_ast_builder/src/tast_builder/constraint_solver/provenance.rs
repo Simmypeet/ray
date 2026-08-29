@@ -58,6 +58,7 @@ pub enum SubtypeSource {
     IfCondition,
     IfBranch,
     ReturnType,
+    FunctionBodyEffect,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]

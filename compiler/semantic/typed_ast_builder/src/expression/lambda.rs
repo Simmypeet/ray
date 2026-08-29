@@ -44,9 +44,7 @@ impl Bind<LambdaSyntax> for TAstBuilder {
         let return_type = self.type_of_expression(body);
         self.push_statement(Statement::Return(Return::new_with_value(body)));
 
-        self.finish_lambda();
-
-        let effect_row = Ty::new_effect_row([], None, self.engine());
+        let effect_row = self.finish_lambda();
         let ty = Ty::new_lambda(parameter_types, return_type, effect_row, self.engine());
 
         self.insert_expression(TypedExprKind::Lambda(TypedLambda::new(function_id)), span, ty)

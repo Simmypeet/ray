@@ -1,0 +1,24 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: function body effects do not match its signature: expected `{}`, but found `{State[int32] | {any}}`
+   ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:9:31
+   │
+ 9 │   def mismatchedTopLevel() -> ():
+   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+10 │ ┃     return withIntState()
+   ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+[error]: mismatched types in variable assignment: expected `def() -> () \ {}`, but found `def() -> () \ {State[int32] | {any}}`
+   ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:18:37
+   │
+18 │     let callback: def() -> () \ {} = () -> withIntState()
+   ╰╴                                    ━━━━━━━━━━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

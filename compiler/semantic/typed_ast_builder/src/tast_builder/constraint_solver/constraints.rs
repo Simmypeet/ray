@@ -5,6 +5,7 @@ use rayc_type::{
     ty::{Ty, TyKind},
 };
 use rayc_typed_ast::{
+    statement::Statement,
     typed_expr::{SubExprs, TypedExprID},
     typed_function::TypedFunctionLocalID,
 };
@@ -82,6 +83,39 @@ impl TAstBuilder {
         }
 
         self.push_constraints(constraints);
+    }
+
+    pub(in crate::tast_builder) fn compose_effect_from_statement(&mut self, statement: &Statement) {
+        let expression = match statement {
+            Statement::Let(statement) => Some(statement.expression()),
+            Statement::Expression(expression) => Some(*expression),
+            Statement::Return(statement) => statement.value(),
+        };
+
+        let Some(expression) = expression else {
+            return;
+        };
+        let expression_effect = self.effect_of_expression(expression).clone();
+        let function_effect = self.function_map.effect_of(self.current_typed_function_id()).clone();
+
+        self.push_subtype_constraint(
+            &expression_effect,
+            &function_effect,
+            self.span_of_expression(expression),
+            SubtypeSource::FunctionBodyEffect,
+        );
+    }
+
+    pub(crate) async fn push_function_effect_constraint(&mut self, body_span: RelativeSpan) {
+        let body_effect = self.function_map.effect_of(self.current_typed_function_id()).clone();
+        let signature_effect = self.effect_row_of_current_function().await;
+
+        self.push_subtype_constraint(
+            &body_effect,
+            &signature_effect,
+            body_span,
+            SubtypeSource::FunctionBodyEffect,
+        );
     }
 
     pub fn new_effect_inference(&mut self) -> Interned<Ty> {

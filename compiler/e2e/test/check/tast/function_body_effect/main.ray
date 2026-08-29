@@ -1,0 +1,24 @@
+eff State[s]:
+    def get() -> s
+
+
+def withIntState() -> () \ {State[int32]}:
+    return ()
+
+
+def mismatchedTopLevel() -> ():
+    return withIntState()
+
+
+def matchingTopLevel() -> () \ {State[int32]}:
+    return withIntState()
+
+
+def mismatchedLambda() -> ():
+    let callback: def() -> () \ {} = () -> withIntState()
+    return ()
+
+
+def matchingLambda() -> ():
+    let callback: def() -> () \ {State[int32]} = () -> withIntState()
+    return ()

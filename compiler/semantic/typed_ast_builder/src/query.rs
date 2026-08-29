@@ -4,6 +4,7 @@ use qbice::{
 };
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
+use rayc_source_file::SourceElement;
 use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
 use rayc_target::TargetID;
 use rayc_typed_ast::{
@@ -69,10 +70,13 @@ impl TAstBuilder {
         let Some(body_syn) = self.def_body_syntax_of_current_function().await else {
             return;
         };
+        let body_span = body_syn.span();
 
         for stmt in body_syn.statements() {
             self.bind_statement(&stmt).await;
         }
+
+        self.push_function_effect_constraint(body_span).await;
     }
 }
 
