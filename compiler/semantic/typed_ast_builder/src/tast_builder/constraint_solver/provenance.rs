@@ -58,7 +58,6 @@ pub enum SubtypeSource {
     IfBranch,
     ReturnType,
     FunctionBodyEffect,
-    EffectComposition,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
@@ -75,16 +74,10 @@ pub struct EffectIntroductionConstraintOrigin {
     introduced_effect: Interned<Ty>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Builder)]
-pub struct EffectSharingConstraintOrigin {
-    child_expr_id: TypedFunctionLocalID<TypedExprID>,
-    parent_expr_id: TypedFunctionLocalID<TypedExprID>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]
 pub enum RootCauseOrigin {
     Subtype(SubtypeConstraintOrigin),
-    EffectSharing(EffectSharingConstraintOrigin),
+    EffectSharing,
     EffectIntroduction(EffectIntroductionConstraintOrigin),
 }
 
@@ -313,11 +306,9 @@ impl Provenance {
             };
 
             match &root.origin {
-                RootCauseOrigin::EffectSharing(_) => true,
-                RootCauseOrigin::Subtype(origin) => {
-                    origin.source == SubtypeSource::EffectComposition
-                }
-                RootCauseOrigin::EffectIntroduction(_) => false,
+                RootCauseOrigin::EffectSharing => true,
+
+                RootCauseOrigin::Subtype(_) | RootCauseOrigin::EffectIntroduction(_) => false,
             }
         })
     }

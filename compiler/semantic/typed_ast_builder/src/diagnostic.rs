@@ -354,7 +354,6 @@ impl Report for ResidualSubtype {
             SubtypeSource::IfBranch => "mismatched types in if expression branches",
             SubtypeSource::ReturnType => "mismatched types in return expression",
             SubtypeSource::FunctionBodyEffect => "function body effects do not match its signature",
-            SubtypeSource::EffectComposition => "effect composition mismatch",
         };
 
         let found = self.subype.greater();

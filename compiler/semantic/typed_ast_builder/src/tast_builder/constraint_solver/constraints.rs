@@ -14,8 +14,8 @@ use crate::tast_builder::{
     TAstBuilder,
     constraint_solver::{
         provenance::{
-            EffectIntroductionConstraintOrigin, EffectSharingConstraintOrigin,
-            SubtypeConstraintOrigin, SubtypeSource,
+            EffectIntroductionConstraintOrigin, RootCauseOrigin, SubtypeConstraintOrigin,
+            SubtypeSource,
         },
         solve::PendingConstraint,
     },
@@ -67,12 +67,8 @@ impl TAstBuilder {
         for sub_expr in sub_exprs {
             let sub_eff = self.effect_of_expression(sub_expr).clone();
 
-            let cause_id = self.constraint_solver.provenance.insert_root_cause(
-                EffectSharingConstraintOrigin::builder()
-                    .child_expr_id(TypedFunctionLocalID::new(self.building_function, sub_expr))
-                    .parent_expr_id(TypedFunctionLocalID::new(self.building_function, dest_expr))
-                    .build(),
-            );
+            let cause_id =
+                self.constraint_solver.provenance.insert_root_cause(RootCauseOrigin::EffectSharing);
 
             let pending_constraint = PendingConstraint::builder()
                 .constraint(Constraint::Subtype(Subtype::new(sub_eff, dest_eff.clone())))
@@ -97,12 +93,14 @@ impl TAstBuilder {
         };
         let expression_effect = self.effect_of_expression(expression).clone();
         let function_effect = self.function_map.effect_of(self.current_typed_function_id()).clone();
+        let cause_id =
+            self.constraint_solver.provenance.insert_root_cause(RootCauseOrigin::EffectSharing);
 
-        self.push_subtype_constraint(
-            &expression_effect,
-            &function_effect,
-            self.span_of_expression(expression),
-            SubtypeSource::EffectComposition,
+        self.push_constraint(
+            PendingConstraint::builder()
+                .constraint(Constraint::Subtype(Subtype::new(expression_effect, function_effect)))
+                .cause_id(cause_id)
+                .build(),
         );
     }
 
