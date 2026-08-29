@@ -102,18 +102,21 @@ impl TAstBuilder {
             &expression_effect,
             &function_effect,
             self.span_of_expression(expression),
-            SubtypeSource::FunctionBodyEffect,
+            SubtypeSource::EffectComposition,
         );
     }
 
-    pub(crate) async fn push_function_effect_constraint(&mut self, body_span: RelativeSpan) {
+    pub(crate) async fn push_function_effect_constraint(
+        &mut self,
+        function_name_span: RelativeSpan,
+    ) {
         let body_effect = self.function_map.effect_of(self.current_typed_function_id()).clone();
         let signature_effect = self.effect_row_of_current_function().await;
 
         self.push_subtype_constraint(
             &body_effect,
             &signature_effect,
-            body_span,
+            function_name_span,
             SubtypeSource::FunctionBodyEffect,
         );
     }
