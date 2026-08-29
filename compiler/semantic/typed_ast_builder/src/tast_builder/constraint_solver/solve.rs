@@ -28,6 +28,21 @@ impl ConstraintSet {
             numeric_inferences: Vec::new(),
         }
     }
+
+    pub(super) fn failed_cause_ids(&self) -> impl Iterator<Item = CauseID> {
+        self.residual_constraints
+            .iter()
+            .map(PendingConstraint::cause_id)
+            .chain(self.errored_constraints.iter().map(|(_, pending)| pending.cause_id()))
+    }
+
+    pub(super) fn errored_pending_constraints(&self) -> impl Iterator<Item = &PendingConstraint> {
+        self.errored_constraints.iter().map(|(_, pending)| pending)
+    }
+
+    pub(super) fn numeric_inferences(&self) -> impl Iterator<Item = Inference> + '_ {
+        self.numeric_inferences.iter().copied()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
@@ -37,9 +52,9 @@ pub struct PendingConstraint {
 }
 
 impl PendingConstraint {
-    pub fn cause_id(&self) -> CauseID { self.cause_id }
+    pub const fn cause_id(&self) -> CauseID { self.cause_id }
 
-    pub fn constraint(&self) -> &Constraint { &self.constraint }
+    pub const fn constraint(&self) -> &Constraint { &self.constraint }
 
     pub fn interned_recursive_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
         self.constraint.interned_recursive_iter()

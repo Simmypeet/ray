@@ -2,11 +2,13 @@ use bon::Builder;
 use derive_more::From;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
-use rayc_hash::FxHashMap;
+use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     constraint::{DerivationRule, subtype::Subtype},
+    reduce::Reduce,
     subst::{Subst, Substitutable},
     ty::{Ty, inference::Inference},
 };
@@ -155,14 +157,10 @@ impl Provenance {
         let constraint = pending_constraint.constraint().apply_subst(&self.subst, engine)?;
 
         let mut binding_cause_ids = pending_constraint
-            .constraint()
             .interned_recursive_iter()
             .filter_map(|x| x.as_inference())
-            .filter_map(|x| {
-                self.subst
-                    .has_inference_variable(x)
-                    .then(|| self.subst_causes.get(x).copied().unwrap())
-            })
+            .filter(|x| self.subst.has_inference_variable(x))
+            .map(|x| self.subst_causes.get(x).copied().unwrap())
             .collect::<Vec<_>>();
 
         // remove duplicates
@@ -176,14 +174,6 @@ impl Provenance {
             }));
 
         Some(PendingConstraint::builder().constraint(constraint).cause_id(cause_id).build())
-    }
-
-    pub fn apply_subst_with_causes_or_original(
-        &mut self,
-        pending_constraint: PendingConstraint,
-        engine: &TrackedEngine,
-    ) -> PendingConstraint {
-        self.apply_subst_with_causes(&pending_constraint, engine).unwrap_or(pending_constraint)
     }
 
     fn insert_derived_cause(&mut self, rule: StepRule) -> CauseID {
@@ -224,6 +214,138 @@ impl Provenance {
         // compose the substitutions, as usual
         self.subst.compose(subst, engine);
     }
+
+    pub(super) fn primary_root_cause_id(&self, mut cause_id: CauseID) -> CauseID {
+        loop {
+            match &self.causes[cause_id] {
+                Cause::Root(_root) => return cause_id,
+                Cause::Derived(derived_cause) => match &derived_cause.rule {
+                    StepRule::Derivation(step) => cause_id = step.parent_cause_id,
+                    StepRule::AppliedSubstitution(step) => {
+                        cause_id = step.original_cause_id;
+                    }
+                },
+            }
+        }
+    }
+
+    fn collect_root_cause_ids(&self, cause_id: CauseID, roots: &mut FxHashSet<CauseID>) {
+        match &self.causes[cause_id] {
+            Cause::Root(_root) => {
+                roots.insert(cause_id);
+            }
+            Cause::Derived(derived_cause) => match &derived_cause.rule {
+                StepRule::Derivation(step) => {
+                    self.collect_root_cause_ids(step.parent_cause_id, roots);
+                }
+                StepRule::AppliedSubstitution(step) => {
+                    self.collect_root_cause_ids(step.original_cause_id, roots);
+                    for binding_cause_id in &step.binding_cause_ids {
+                        self.collect_root_cause_ids(*binding_cause_id, roots);
+                    }
+                }
+            },
+        }
+    }
+
+    pub(super) fn find_effect_symbol_in_cause(&self, cause_id: CauseID) -> Option<GlobalSymbolID> {
+        match &self.causes[cause_id] {
+            Cause::Root(_root) => None,
+            Cause::Derived(derived_cause) => match &derived_cause.rule {
+                StepRule::Derivation(step) => match step.derivation_rule {
+                    DerivationRule::EffectLabelArgumentMatching {
+                        effect_symbol_id,
+                        argument_index: _argument_index,
+                    } => Some(effect_symbol_id),
+                    DerivationRule::TypeApplicationMatching => {
+                        self.find_effect_symbol_in_cause(step.parent_cause_id)
+                    }
+                },
+                StepRule::AppliedSubstitution(step) => {
+                    self.find_effect_symbol_in_cause(step.original_cause_id).or_else(|| {
+                        step.binding_cause_ids
+                            .iter()
+                            .find_map(|cause_id| self.find_effect_symbol_in_cause(*cause_id))
+                    })
+                }
+            },
+        }
+    }
+
+    pub(super) fn effect_introduction_sites(
+        &self,
+        cause_id: CauseID,
+        effect_symbol_id: GlobalSymbolID,
+        engine: &TrackedEngine,
+    ) -> Vec<(RelativeSpan, Interned<Ty>)> {
+        let mut roots = FxHashSet::default();
+        self.collect_root_cause_ids(cause_id, &mut roots);
+        let mut sites = Vec::new();
+
+        for root_id in roots {
+            let Cause::Root(root) = &self.causes[root_id] else {
+                continue;
+            };
+            let RootCauseOrigin::EffectIntroduction(origin) = &root.origin else {
+                continue;
+            };
+
+            let mut introduced_effect =
+                origin.introduced_effect.apply_subst_or_clone(&self.subst, engine);
+            while let Some(reduced) = introduced_effect.reduce(engine) {
+                introduced_effect = reduced;
+            }
+            let Ty::EffectRow(effect_row) = &*introduced_effect else {
+                continue;
+            };
+
+            sites.extend(
+                effect_row
+                    .labels()
+                    .filter(|label| label.effect_symbol_id() == effect_symbol_id)
+                    .map(|label| (origin.span, Ty::new_effect_row([label.clone()], None, engine))),
+            );
+        }
+
+        sites.sort_by_key(|(span, _)| *span);
+        sites.dedup();
+        sites
+    }
+
+    pub(super) fn resolved_subtype_origin(
+        &self,
+        root_cause_id: CauseID,
+        engine: &TrackedEngine,
+    ) -> Option<(SubtypeSource, RelativeSpan, Subtype)> {
+        let Cause::Root(root) = &self.causes[root_cause_id] else {
+            return None;
+        };
+        let RootCauseOrigin::Subtype(origin) = &root.origin else {
+            return None;
+        };
+
+        Some((
+            origin.source,
+            origin.span,
+            origin.original_subtype.apply_subst_or_clone(&self.subst, engine),
+        ))
+    }
+
+    pub(super) fn default_unbound_inferences(
+        &mut self,
+        inferences: impl IntoIterator<Item = Inference>,
+        default: &Interned<Ty>,
+        engine: &TrackedEngine,
+    ) {
+        let defaults = inferences
+            .into_iter()
+            .filter(|inference| self.subst.get(inference).is_none())
+            .map(|inference| (inference, default.clone()))
+            .collect();
+        self.subst.compose(&defaults, engine);
+    }
+
+    pub(super) fn into_subst(self) -> Subst { self.subst }
 }
 
 impl TAstBuilder {
