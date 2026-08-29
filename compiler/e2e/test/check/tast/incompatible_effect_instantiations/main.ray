@@ -1,0 +1,22 @@
+eff State[s]:
+    def get() -> s
+
+
+def withIntState() -> () \ {State[int32]}:
+    return ()
+
+
+def withBoolState() -> () \ {State[bool]}:
+    return ()
+
+
+def withPolyState(arg: s) -> () \ {State[s]}:
+    return ()
+
+
+def main() -> ():
+    let varBool = true
+    let varInt = 42
+    let conflict = (((withPolyState(varInt), ()), (withPolyState(varBool), ())))
+    
+    return ()

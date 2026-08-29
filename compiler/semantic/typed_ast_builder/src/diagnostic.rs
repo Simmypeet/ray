@@ -370,6 +370,39 @@ impl Report for ResidualSubtype {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct IncompatibleEffectInstantiations {
+    first_span: RelativeSpan,
+    first_effect: Interned<Ty>,
+    second_span: RelativeSpan,
+    second_effect: Interned<Ty>,
+}
+
+impl Report for IncompatibleEffectInstantiations {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let first_effect = self.first_effect.display(engine).await;
+        let second_effect = self.second_effect.display(engine).await;
+
+        Rendered::builder()
+            .message(format!(
+                "incompatible effect instantiations `{first_effect}` and `{second_effect}`"
+            ))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.second_span).await)
+                    .message(format!("this expression introduces `{second_effect}`"))
+                    .build(),
+            )
+            .related(vec![
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.first_span).await)
+                    .message(format!("`{first_effect}` was introduced here"))
+                    .build(),
+            ])
+            .build()
+    }
+}
+
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable, From,
 )]
@@ -389,6 +422,7 @@ pub enum Diagnostic {
     OutOfBoundsTupleIndex(OutOfBoundsTupleIndex),
     DuplicateNameBinding(DuplicateNameBinding),
     ResidualSubtype(ResidualSubtype),
+    IncompatibleEffectInstantiations(IncompatibleEffectInstantiations),
     EmbeddedNulString(EmbeddedNulString),
 }
 
@@ -428,6 +462,9 @@ impl Report for Diagnostic {
                 duplicate_name_binding.report(engine).await
             }
             Self::ResidualSubtype(residual_subtype) => residual_subtype.report(engine).await,
+            Self::IncompatibleEffectInstantiations(incompatible_effects) => {
+                incompatible_effects.report(engine).await
+            }
             Self::EmbeddedNulString(string) => string.report(engine).await,
         }
     }

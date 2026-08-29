@@ -1,8 +1,9 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
-use rayc_hash::FxHashSet;
+use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     constraint::{self, Constraint, DerivationRule, DerivedConstraint, Step, subtype::Subtype},
     reduce::Reduce,
@@ -19,7 +20,7 @@ use rayc_typed_ast::{
 };
 
 use crate::{
-    diagnostic::{Diagnostic, ResidualSubtype},
+    diagnostic::{Diagnostic, IncompatibleEffectInstantiations, ResidualSubtype},
     tast_builder::TAstBuilder,
 };
 
@@ -44,6 +45,7 @@ pub struct SubtypeConstraintOrigin {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EffectIntroductionConstraintOrigin {
     expression_id: TypedFunctionLocalID<TypedExprID>,
+    span: RelativeSpan,
     introduced_effect: Interned<Ty>,
 }
 
@@ -66,9 +68,21 @@ pub struct RootCause {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ExplanationRule {
+    ConstraintDerivation(DerivationRule),
+
+    /// The first parent is the constraint that was rewritten. The remaining
+    /// parents explain the inference bindings used to rewrite it.
+    AppliedSubstitution,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DerivedCause {
-    derivation_rule: DerivationRule,
-    parent_cause: CauseID,
+    rule: ExplanationRule,
+
+    // Parent order is significant: the first parent is the primary cause used
+    // for ordinary diagnostics; later parents are contributing explanations.
+    parent_causes: Vec<CauseID>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -83,17 +97,6 @@ pub type CauseID = ID<Cause>;
 pub struct PendingConstraint {
     constraint: Constraint,
     cause_id: CauseID,
-}
-
-impl Substitutable for PendingConstraint {
-    fn apply_subst(&self, subst: &Subst, engine: &rayc_qbice::TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        self.constraint
-            .apply_subst(subst, engine)
-            .map(|new_constraint| Self { constraint: new_constraint, cause_id: self.cause_id })
-    }
 }
 
 impl Reduce for PendingConstraint {
@@ -117,6 +120,16 @@ pub struct ConstraintSolver {
     numeric_inferences: Vec<Inference>,
 
     subst: Subst,
+
+    // `subst` stores what each inference is equal to; this parallel map stores
+    // why that binding exists. For example:
+    //
+    //   subst:        ?parent -> {State[int32] | ?tail}
+    //   subst_causes: ?parent -> the introduction/sharing path from `intCall()`
+    //
+    // Keeping the cause separately lets a later constraint rewritten through
+    // `?parent` retain the source of `State[int32]` in its explanation.
+    subst_causes: FxHashMap<Inference, CauseID>,
     solver: Solver,
 }
 
@@ -129,6 +142,7 @@ impl ConstraintSolver {
             errored_constraints: Vec::new(),
             numeric_inferences: Vec::new(),
             subst: Subst::new_empty(),
+            subst_causes: FxHashMap::default(),
             solver: Solver::new(engine),
         }
     }
@@ -143,6 +157,7 @@ impl TAstBuilder {
         let cause_id = self.constraint_solver.causes.insert(Cause::Root(RootCause {
             origin: RootCauseOrigin::EffectIntroduction(EffectIntroductionConstraintOrigin {
                 expression_id: TypedFunctionLocalID::new(self.building_function, expression_id),
+                span: self.span_of_expression(expression_id),
 
                 // we don't pass the oppened effect here because we want to keep the original effect
                 // row for the diagnostic
@@ -150,8 +165,8 @@ impl TAstBuilder {
             }),
         }));
 
-        let expr_effect = self.latest_type(self.effect_of_expression(expression_id));
-        let introduced_effect = self.latest_type(introduced_effect);
+        let expr_effect = self.effect_of_expression(expression_id).clone();
+        let introduced_effect = introduced_effect.clone();
 
         // try to open a closed row like `{IO, Exn}` to `{IO, Exn | ?X}` so that it can
         // unify with other effects
@@ -172,10 +187,10 @@ impl TAstBuilder {
         let sub_exprs = self.get_expression(dest_expr).kind().sub_exprs().collect::<Vec<_>>();
 
         let mut constraints = Vec::new();
-        let dest_eff = self.latest_type(self.effect_of_expression(dest_expr));
+        let dest_eff = self.effect_of_expression(dest_expr).clone();
 
         for sub_expr in sub_exprs {
-            let sub_eff = self.latest_type(self.effect_of_expression(sub_expr));
+            let sub_eff = self.effect_of_expression(sub_expr).clone();
 
             let cause_id = self.constraint_solver.causes.insert(Cause::Root(RootCause {
                 origin: RootCauseOrigin::EffectSharing(EffectSharingConstraintOrigin {
@@ -291,7 +306,7 @@ impl TAstBuilder {
         expected_ty: &Interned<Ty>,
         source: SubtypeSource,
     ) {
-        let ty_of_expression = self.latest_type(&self.type_of_expression(arg));
+        let ty_of_expression = self.type_of_expression(arg);
         self.push_subtype_constraint(
             &ty_of_expression,
             expected_ty,
@@ -307,9 +322,7 @@ impl TAstBuilder {
         span: RelativeSpan,
         source: SubtypeSource,
     ) {
-        let actual_ty = self.latest_type(actual_ty);
-        let expected_ty = self.latest_type(expected_ty);
-        let subtype = Subtype::new(expected_ty, actual_ty);
+        let subtype = Subtype::new(expected_ty.clone(), actual_ty.clone());
 
         let cause = Cause::Root(RootCause {
             origin: RootCauseOrigin::Subtype(SubtypeConstraintOrigin {
@@ -335,15 +348,24 @@ impl TAstBuilder {
         parent_cause: CauseID,
         derived_constraint: DerivedConstraint,
     ) -> PendingConstraint {
-        let cause =
-            Cause::Derived(DerivedCause { derivation_rule: derived_constraint.rule, parent_cause });
-
-        let cause_id = self.constraint_solver.causes.insert(cause);
+        let cause_id = self.constraint_solver.insert_derived_cause(
+            ExplanationRule::ConstraintDerivation(derived_constraint.rule),
+            vec![parent_cause],
+        );
 
         PendingConstraint { constraint: derived_constraint.constraint, cause_id }
     }
 
-    fn push_constraints(&mut self, mut queued: Vec<PendingConstraint>) {
+    fn push_constraints(&mut self, queued: Vec<PendingConstraint>) {
+        let mut normalized = Vec::with_capacity(queued.len());
+        for pending_constraint in queued {
+            normalized.push(
+                self.constraint_solver
+                    .apply_current_subst_or_original(pending_constraint, &self.engine),
+            );
+        }
+        let mut queued = normalized;
+
         while let Some(pending_constraint) = queued.pop() {
             match self.constraint_solver.solver.entail(&pending_constraint.constraint) {
                 Ok(Step::Derived(constrs)) => {
@@ -355,14 +377,21 @@ impl TAstBuilder {
                 }
 
                 Ok(Step::Subst(subst)) => {
-                    self.move_constraints_from_residual(&subst, &mut queued);
+                    let binding_cause = pending_constraint.cause_id;
+                    self.move_constraints_from_residual(&subst, binding_cause, &mut queued);
 
-                    // NOTE! apply the substitution to the sibling constraints in the queue too
-                    for queued in &mut queued {
-                        queued.constraint.apply_in_place(&subst, &self.engine);
+                    for queued_constraint in &mut queued {
+                        if let Some(new_constraint) = self.constraint_solver.apply_subst(
+                            queued_constraint,
+                            &subst,
+                            binding_cause,
+                            &self.engine,
+                        ) {
+                            *queued_constraint = new_constraint;
+                        }
                     }
 
-                    self.constraint_solver.subst.compose(&subst, &self.engine);
+                    self.constraint_solver.compose_subst(&subst, binding_cause, &self.engine);
                 }
 
                 Ok(Step::NoProgress) => {
@@ -383,13 +412,19 @@ impl TAstBuilder {
     fn move_constraints_from_residual(
         &mut self,
         subst: &Subst,
+        binding_cause: CauseID,
         queued: &mut Vec<PendingConstraint>,
     ) {
         let mut i = 0;
 
         while i < self.constraint_solver.residual_constraints.len() {
-            let new_constraint =
-                self.constraint_solver.residual_constraints[i].apply_subst(subst, self.engine());
+            let pending_constraint = self.constraint_solver.residual_constraints[i].clone();
+            let new_constraint = self.constraint_solver.apply_subst(
+                &pending_constraint,
+                subst,
+                binding_cause,
+                &self.engine,
+            );
 
             match new_constraint {
                 Some(new_constraint) => {
@@ -405,53 +440,278 @@ impl TAstBuilder {
 }
 
 impl ConstraintSolver {
-    fn group_constraints_by_root_cause(
+    fn insert_derived_cause(
+        &mut self,
+        rule: ExplanationRule,
+        mut parent_causes: Vec<CauseID>,
+    ) -> CauseID {
+        let mut seen = FxHashSet::default();
+        parent_causes.retain(|cause_id| seen.insert(*cause_id));
+        self.causes.insert(Cause::Derived(DerivedCause { rule, parent_causes }))
+    }
+
+    fn constraint_has_inference_variable(constraint: &Constraint, inference: &Inference) -> bool {
+        match constraint {
+            Constraint::Subtype(subtype) => {
+                subtype.lesser().has_inference_variable(inference)
+                    || subtype.greater().has_inference_variable(inference)
+            }
+        }
+    }
+
+    fn apply_subst_with_causes(
+        &mut self,
+        pending_constraint: &PendingConstraint,
+        subst: &Subst,
+        binding_causes: &[(Inference, CauseID)],
+        engine: &TrackedEngine,
+    ) -> Option<PendingConstraint> {
+        // Example:
+        //
+        //   pending constraint B: {State[bool] | ?b} ~ ?parent
+        //   known binding A:      ?parent := {State[int32] | ?a}
+        //
+        // Applying A produces `{State[bool] | ?b} ~ {State[int32] | ?a}`.
+        // Its explanation must be `AppliedSubstitution(B, A)`: B tells us where
+        // `State[bool]` came from, while A leads back to `State[int32]`.
+        let constraint = pending_constraint.constraint.apply_subst(subst, engine)?;
+        let mut parent_causes = vec![pending_constraint.cause_id];
+
+        // Only attach causes for bindings that occur in this constraint. Other
+        // entries in the substitution are unrelated and would add diagnostic
+        // noise if they were included.
+        parent_causes.extend(binding_causes.iter().filter_map(|(inference, cause_id)| {
+            Self::constraint_has_inference_variable(&pending_constraint.constraint, inference)
+                .then_some(*cause_id)
+        }));
+        let cause_id =
+            self.insert_derived_cause(ExplanationRule::AppliedSubstitution, parent_causes);
+
+        Some(PendingConstraint { constraint, cause_id })
+    }
+
+    fn apply_subst(
+        &mut self,
+        pending_constraint: &PendingConstraint,
+        subst: &Subst,
+        binding_cause: CauseID,
+        engine: &TrackedEngine,
+    ) -> Option<PendingConstraint> {
+        // Every mapping in this newly produced substitution came from the same
+        // solver step, and therefore has the same cause.
+        let binding_causes = subst
+            .inference_mappings()
+            .map(|(inference, _)| (inference, binding_cause))
+            .collect::<Vec<_>>();
+        self.apply_subst_with_causes(pending_constraint, subst, &binding_causes, engine)
+    }
+
+    fn apply_current_subst_or_original(
+        &mut self,
+        pending_constraint: PendingConstraint,
+        engine: &TrackedEngine,
+    ) -> PendingConstraint {
+        // Normalize newly enqueued constraints here, where applying the current
+        // substitution can also attach provenance. Applying `latest_type` before
+        // creating the PendingConstraint would change the type but lose its cause.
+        let subst = self.subst.clone();
+        let binding_causes = subst
+            .inference_mappings()
+            .filter_map(|(inference, _)| {
+                self.subst_causes.get(&inference).map(|cause_id| (inference, *cause_id))
+            })
+            .collect::<Vec<_>>();
+
+        self.apply_subst_with_causes(&pending_constraint, &subst, &binding_causes, engine)
+            .unwrap_or(pending_constraint)
+    }
+
+    fn compose_subst(&mut self, subst: &Subst, binding_cause: CauseID, engine: &TrackedEngine) {
+        // Provenance must compose along with types. If the existing substitution
+        // is `?a := ?b` with cause A, and this solver step adds `?b := T` with
+        // cause B, the composed `?a := T` depends on both A and B.
+        let new_inferences =
+            subst.inference_mappings().map(|(inference, _)| inference).collect::<Vec<_>>();
+        let existing_bindings = self
+            .subst
+            .inference_mappings()
+            .filter_map(|(inference, ty)| {
+                self.subst_causes.get(&inference).map(|cause_id| (inference, ty.clone(), *cause_id))
+            })
+            .collect::<Vec<_>>();
+
+        for (inference, ty, existing_cause) in existing_bindings {
+            if new_inferences.iter().any(|new_inference| ty.has_inference_variable(new_inference)) {
+                let cause_id =
+                    self.insert_derived_cause(ExplanationRule::AppliedSubstitution, vec![
+                        existing_cause,
+                        binding_cause,
+                    ]);
+                self.subst_causes.insert(inference, cause_id);
+            }
+        }
+
+        for inference in new_inferences {
+            self.subst_causes.entry(inference).or_insert(binding_cause);
+        }
+        self.subst.compose(subst, engine);
+    }
+
+    fn group_constraints_by_primary_root_cause(
         &self,
         cause_ids: impl IntoIterator<Item = CauseID>,
     ) -> FxHashSet<CauseID> {
         let mut root_cause_ids = FxHashSet::default();
 
         for cause_id in cause_ids {
-            let root_cause_id = self.traverse_to_root_cause(cause_id);
-            root_cause_ids.insert(root_cause_id);
+            root_cause_ids.insert(self.primary_root_cause_id(cause_id));
         }
 
         root_cause_ids
     }
 
-    fn traverse_to_root_cause(&self, mut cause_id: CauseID) -> CauseID {
+    fn primary_root_cause_id(&self, mut cause_id: CauseID) -> CauseID {
         loop {
-            match self.causes.get(cause_id) {
-                Some(Cause::Derived(derived_cause)) => {
-                    cause_id = derived_cause.parent_cause;
+            match &self.causes[cause_id] {
+                Cause::Root(_root) => return cause_id,
+                Cause::Derived(derived_cause) => {
+                    cause_id = *derived_cause
+                        .parent_causes
+                        .first()
+                        .expect("a derived cause should have a parent cause");
                 }
-                _ => return cause_id,
             }
         }
     }
 
+    fn collect_root_cause_ids(&self, cause_id: CauseID, roots: &mut FxHashSet<CauseID>) {
+        match self.causes.get(cause_id) {
+            Some(Cause::Root(_root)) => {
+                roots.insert(cause_id);
+            }
+            Some(Cause::Derived(derived_cause)) => {
+                for parent_cause in &derived_cause.parent_causes {
+                    self.collect_root_cause_ids(*parent_cause, roots);
+                }
+            }
+            None => {}
+        }
+    }
+
+    fn find_effect_symbol_in_cause(&self, cause_id: CauseID) -> Option<GlobalSymbolID> {
+        match self.causes.get(cause_id) {
+            Some(Cause::Root(_root)) => None,
+            Some(Cause::Derived(derived_cause)) => {
+                match derived_cause.rule {
+                    ExplanationRule::ConstraintDerivation(
+                        DerivationRule::EffectLabelArgumentMatching {
+                            effect_symbol_id,
+                            argument_index: _argument_index,
+                        },
+                    ) => return Some(effect_symbol_id),
+                    ExplanationRule::ConstraintDerivation(
+                        DerivationRule::TypeApplicationMatching,
+                    )
+                    | ExplanationRule::AppliedSubstitution => {}
+                }
+
+                derived_cause
+                    .parent_causes
+                    .iter()
+                    .find_map(|parent| self.find_effect_symbol_in_cause(*parent))
+            }
+            None => None,
+        }
+    }
+
+    fn effect_introduction_sites(
+        &self,
+        cause_id: CauseID,
+        effect_symbol_id: GlobalSymbolID,
+        engine: &TrackedEngine,
+    ) -> Vec<(RelativeSpan, Interned<Ty>)> {
+        let mut roots = FxHashSet::default();
+        self.collect_root_cause_ids(cause_id, &mut roots);
+        let mut sites = Vec::new();
+
+        for root_id in roots {
+            let Cause::Root(root) = &self.causes[root_id] else {
+                continue;
+            };
+            let RootCauseOrigin::EffectIntroduction(origin) = &root.origin else {
+                continue;
+            };
+
+            let mut introduced_effect =
+                origin.introduced_effect.apply_subst_or_clone(&self.subst, engine);
+            while let Some(reduced) = introduced_effect.reduce(engine) {
+                introduced_effect = reduced;
+            }
+            let Ty::EffectRow(effect_row) = &*introduced_effect else {
+                continue;
+            };
+
+            sites.extend(
+                effect_row
+                    .labels()
+                    .filter(|label| label.effect_symbol_id() == effect_symbol_id)
+                    .map(|label| (origin.span, Ty::new_effect_row([label.clone()], None, engine))),
+            );
+        }
+
+        sites.sort_by_key(|(span, _)| *span);
+        sites.dedup();
+        sites
+    }
+
+    fn incompatible_effect_diagnostic(
+        &self,
+        pending_constraint: &PendingConstraint,
+        engine: &TrackedEngine,
+    ) -> Option<Diagnostic> {
+        let effect_symbol_id = self.find_effect_symbol_in_cause(pending_constraint.cause_id)?;
+        let sites =
+            self.effect_introduction_sites(pending_constraint.cause_id, effect_symbol_id, engine);
+
+        for (index, (first_span, first_effect)) in sites.iter().enumerate() {
+            for (second_span, second_effect) in &sites[index + 1..] {
+                if first_effect == second_effect {
+                    continue;
+                }
+
+                return Some(Diagnostic::IncompatibleEffectInstantiations(
+                    IncompatibleEffectInstantiations::builder()
+                        .first_span(*first_span)
+                        .first_effect(first_effect.clone())
+                        .second_span(*second_span)
+                        .second_effect(second_effect.clone())
+                        .build(),
+                ));
+            }
+        }
+
+        None
+    }
+
     #[must_use]
     pub fn residual_into_diags(mut self, engine: &TrackedEngine) -> (Vec<Diagnostic>, Subst) {
-        // collect all the root causes of the residual and errored constraints, so that
-        // we can reduce them to ther original form
-        //
-        // actually, we could potentially group the residual and errored constraints by
-        // their root causes like `root_cause_id -> [errored_constraint,
-        // errored_constraint, ...]` and then use these information to generate more
-        // informative diagnostics, but i don't know how :-P
-        //
-        // for now, i'll just generate somewhat generic diagnostics with at least the
-        // original subtype information
-        let root_cause_ids = self.group_constraints_by_root_cause(
+        let root_cause_ids = self.group_constraints_by_primary_root_cause(
             self.residual_constraints
                 .iter()
                 .map(|x| x.cause_id)
                 .chain(self.errored_constraints.iter().map(|x| x.1.cause_id)),
         );
 
-        let diags = root_cause_ids
-            .into_iter()
-            .filter_map(|cause_id| match &self.causes[cause_id] {
+        let mut diags = Vec::new();
+        for (_, pending) in &self.errored_constraints {
+            if let Some(diagnostic) = self.incompatible_effect_diagnostic(pending, engine)
+                && !diags.contains(&diagnostic)
+            {
+                diags.push(diagnostic);
+            }
+        }
+        diags.extend(root_cause_ids.into_iter().filter_map(|cause_id| {
+            match &self.causes[cause_id] {
                 Cause::Root(root) => match &root.origin {
                     RootCauseOrigin::Subtype(subtype_constraint_origin) => {
                         let subtype = subtype_constraint_origin
@@ -467,14 +727,13 @@ impl ConstraintSolver {
                         ))
                     }
 
-                    // TODO: Implement a correct diagnostic for effect sharing errors.
                     RootCauseOrigin::EffectIntroduction(_) | RootCauseOrigin::EffectSharing(_) => {
                         None
                     }
                 },
-                Cause::Derived(_derived_cause) => None,
-            })
-            .collect();
+                Cause::Derived(_derived) => None,
+            }
+        }));
 
         let int32 = Ty::new_primitive(Primitive::Int32, engine);
         let numeric_defaults = self
