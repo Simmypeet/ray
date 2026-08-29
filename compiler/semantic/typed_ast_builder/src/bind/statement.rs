@@ -36,13 +36,11 @@ impl TAstBuilder {
     pub async fn bind_statement(&mut self, statement: &StatementSyntax) {
         match statement {
             StatementSyntax::Let(l) => {
-                let Some(expr) = l.expression() else {
-                    return;
-                };
-
+                let expr = l.assignment().and_then(|x| x.expression());
                 let pattern = l.pattern();
 
-                let expr_id = self.bind(expr).await;
+                let expr_id =
+                    if let Some(expr) = expr { Some(self.bind(expr).await) } else { None };
 
                 let var_ty = if let Some(annotation) = l.type_annotation().and_then(|a| a.r#type())
                 {
@@ -55,7 +53,9 @@ impl TAstBuilder {
                     pattern.as_ref().map_or_else(|| l.span(), SourceElement::span),
                 ));
 
-                self.push_variable_assignment_constraint(&var_ty, expr_id);
+                if let Some(expr_id) = expr_id {
+                    self.push_variable_assignment_constraint(&var_ty, expr_id);
+                }
 
                 let name_binding_group_id = self.push_new_name_binding_group();
 
@@ -75,7 +75,7 @@ impl TAstBuilder {
                     Let::builder()
                         .variable_id(var_id)
                         .name_binding_group_id(name_binding_group_id)
-                        .expression(expr_id)
+                        .maybe_expression(expr_id)
                         .span(l.span())
                         .build(),
                 ));

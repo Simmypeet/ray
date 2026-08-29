@@ -1,0 +1,14 @@
+eff State[s]:
+    def get() -> s
+
+
+def withPolyState(arg: s) -> () \ {State[s]}:
+    return ()
+
+
+def main() -> ():
+    let mut var
+    let lambda: def() \ {State[bool]} = () -> withPolyState(var)
+    var = 32
+    
+    return ()

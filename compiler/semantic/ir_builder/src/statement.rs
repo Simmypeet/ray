@@ -14,8 +14,11 @@ impl Builder {
                 Statement::Let(let_statement) => {
                     let typed_id = let_statement.variable_id();
                     let ir_id = self.register_source_variable(context, typed_id);
-                    let value = self.lower_expression_by_id(context, let_statement.expression());
-                    self.emit_store(self.variable_address(ir_id), value);
+
+                    if let Some(expr_id) = let_statement.expression() {
+                        let value = self.lower_expression_by_id(context, expr_id);
+                        self.emit_store(self.variable_address(ir_id), value);
+                    }
                 }
                 Statement::Expression(expression) => {
                     self.lower_expression_by_id(context, expression);

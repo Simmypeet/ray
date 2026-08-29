@@ -12,7 +12,7 @@ use crate::{
 pub struct Let {
     variable_id: TypedVariableID,
     name_binding_group_id: NameBindingGroupID,
-    expression: TypedExprID,
+    expression: Option<TypedExprID>,
     span: RelativeSpan,
 }
 
@@ -21,7 +21,7 @@ impl Let {
     pub const fn variable_id(&self) -> TypedVariableID { self.variable_id }
 
     #[must_use]
-    pub const fn expression(&self) -> TypedExprID { self.expression }
+    pub const fn expression(&self) -> Option<TypedExprID> { self.expression }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]

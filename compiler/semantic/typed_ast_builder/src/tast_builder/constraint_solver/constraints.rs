@@ -83,7 +83,7 @@ impl TAstBuilder {
 
     pub(in crate::tast_builder) fn compose_effect_from_statement(&mut self, statement: &Statement) {
         let expression = match statement {
-            Statement::Let(statement) => Some(statement.expression()),
+            Statement::Let(statement) => statement.expression(),
             Statement::Expression(expression) => Some(*expression),
             Statement::Return(statement) => statement.value(),
         };

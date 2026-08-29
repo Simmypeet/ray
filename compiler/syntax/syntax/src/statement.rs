@@ -27,6 +27,24 @@ abstract_tree::abstract_tree! {
         pub let_keyword: Keyword = expect::Keyword::Let,
         pub pattern: IrrefutablePattern = ast::<IrrefutablePattern>(),
         pub type_annotation: TypeAnnotation = ast::<TypeAnnotation>().optional(),
+        pub assignment: VariableInitialization = ast::<VariableInitialization>().optional(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct VariableInitialization {
         pub equals: Punctuation = '=',
         pub expression: Expression = ast::<Expression>()
     }

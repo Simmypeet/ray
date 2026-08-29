@@ -144,13 +144,9 @@ impl Analyzer {
     ) {
         match statement {
             Statement::Let(statement) => {
-                self.visit_expression(
-                    function_id,
-                    functions,
-                    statement.expression(),
-                    UseMode::Value,
-                    plan,
-                );
+                if let Some(expr_id) = statement.expression() {
+                    self.visit_expression(function_id, functions, expr_id, UseMode::Value, plan);
+                }
             }
             Statement::Expression(expression) => {
                 self.visit_expression(function_id, functions, *expression, UseMode::Value, plan);
