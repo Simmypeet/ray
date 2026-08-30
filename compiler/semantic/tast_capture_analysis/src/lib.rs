@@ -10,6 +10,7 @@ use rayc_typed_ast::{
         binary::{Binary, BinaryOp},
         call::CallTarget,
         lambda::Lambda,
+        run_with::RunWith,
     },
     typed_function::{TypedFunctionID, TypedFunctionMap},
 };
@@ -119,7 +120,7 @@ impl Analyzer {
     fn analyze_function(&mut self, function_id: TypedFunctionID, functions: &TypedFunctionMap) {
         assert!(
             self.visiting.insert(function_id),
-            "TypedAST lambda graph should not contain a cycle"
+            "TypedAST nested-function graph should not contain a cycle"
         );
         assert!(
             !self.plans.contains_key(&function_id),
@@ -177,7 +178,7 @@ impl Analyzer {
                     plan,
                 );
             }
-            TypedExprKind::Literal(_) | TypedExprKind::RunWith(_) => {}
+            TypedExprKind::Literal(_) => {}
             TypedExprKind::TupleIndex(tuple_index) => {
                 self.visit_expression(
                     function_id,
@@ -216,27 +217,11 @@ impl Analyzer {
                 self.visit_binary(function_id, functions, *binary, plan);
             }
             TypedExprKind::IfElse(if_else) => {
-                self.visit_expression(
-                    function_id,
-                    functions,
-                    if_else.condition(),
-                    UseMode::Value,
-                    plan,
-                );
-                self.visit_expression(
-                    function_id,
-                    functions,
-                    if_else.then_expression(),
-                    UseMode::Value,
-                    plan,
-                );
-                self.visit_expression(
-                    function_id,
-                    functions,
-                    if_else.else_expression(),
-                    UseMode::Value,
-                    plan,
-                );
+                for child in
+                    [if_else.condition(), if_else.then_expression(), if_else.else_expression()]
+                {
+                    self.visit_expression(function_id, functions, child, UseMode::Value, plan);
+                }
             }
             TypedExprKind::RefOf(reference) => {
                 self.visit_expression(
@@ -258,6 +243,9 @@ impl Analyzer {
             }
             TypedExprKind::Paren(paren) => {
                 self.visit_expression(function_id, functions, paren.expression(), use_mode, plan);
+            }
+            TypedExprKind::RunWith(run_with) => {
+                self.visit_run_with(function_id, functions, run_with, plan);
             }
             TypedExprKind::Errored(errored) => {
                 for child in errored.children() {
@@ -304,11 +292,33 @@ impl Analyzer {
         lambda: Lambda,
         plan: &mut FunctionCapturePlan,
     ) {
-        let child_id = lambda.function_id();
-        assert_ne!(child_id, functions.root_id(), "the root function cannot be a lambda child");
+        self.visit_nested_function(function_id, functions, lambda.function_id(), plan);
+    }
+
+    fn visit_run_with(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        run_with: &RunWith,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        self.visit_nested_function(function_id, functions, run_with.body(), plan);
+        for handler in run_with.operation_handlers() {
+            self.visit_nested_function(function_id, functions, handler, plan);
+        }
+    }
+
+    fn visit_nested_function(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        child_id: TypedFunctionID,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        assert_ne!(child_id, functions.root_id(), "the root function cannot be a nested child");
         assert!(
             self.parents.insert(child_id, function_id).is_none(),
-            "each TypedAST lambda should have exactly one lexical parent"
+            "each TypedAST nested function should have exactly one lexical parent"
         );
 
         self.analyze_function(child_id, functions);

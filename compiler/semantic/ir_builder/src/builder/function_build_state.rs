@@ -304,6 +304,9 @@ impl Builder {
                         .expect("lambda parameter should be registered before use");
                     self.lambda_parameter_address(parameter_id)
                 }
+                Source::OperationHandlerParameter(_) => {
+                    panic!("operation handler parameter lowering is not implemented yet")
+                }
             };
         }
 
