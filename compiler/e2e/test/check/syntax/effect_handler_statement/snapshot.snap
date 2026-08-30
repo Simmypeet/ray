@@ -1,0 +1,23 @@
+---
+source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
+expression: run
+---
+stderr:
+[error]: effect handler semantics are not implemented yet
+   ╭▸ compiler/e2e/test/check/syntax/effect_handler_statement/main.ray:6:5
+   │
+ 6 │ ┏     run:
+ 7 │ ┃         State.put(1)
+ 8 │ ┃         State.get()
+ 9 │ ┃     with State[int32]:
+   ‡ ┃
+12 │ ┃         def put(value):
+13 │ ┃             return ()
+   ╰╴┗━━━━━━━━━━━━━━━━━━━━━┛
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

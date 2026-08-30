@@ -10,7 +10,11 @@ use rayc_typed_ast::{
     typed_variable::TypedVariable,
 };
 
-use crate::{bind::Bind, tast_builder::TAstBuilder};
+use crate::{
+    bind::Bind,
+    diagnostic::{Diagnostic, EffectHandlerNotSupported},
+    tast_builder::TAstBuilder,
+};
 
 impl TAstBuilder {
     async fn resolve_local_type_annotation(
@@ -31,6 +35,11 @@ impl TAstBuilder {
 
     pub async fn bind_statement(&mut self, statement: &StatementSyntax) {
         match statement {
+            StatementSyntax::Run(run) => {
+                self.push_diagnostic(Diagnostic::EffectHandlerNotSupported(
+                    EffectHandlerNotSupported::builder().span(run.span()).build(),
+                ));
+            }
             StatementSyntax::Let(l) => {
                 let expr = l.assignment().and_then(|x| x.expression());
                 let pattern = l.pattern();

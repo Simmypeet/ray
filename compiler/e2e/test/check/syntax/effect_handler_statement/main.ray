@@ -1,0 +1,15 @@
+eff State[s]:
+    def get() -> s
+    def put(value: s)
+
+def main() -> int32:
+    run:
+        State.put(1)
+        State.get()
+    with State[int32]:
+        def get():
+            return 0
+        def put(value):
+            return ()
+
+    return 0
