@@ -3,7 +3,8 @@ use rayc_ir::{
     address::Address,
     ir_expr::IRExprID,
     ir_function::IRFunctionMap,
-    ir_lambda::{CaptureID, LambdaParameterID, OperationHandlerParameterID},
+    ir_lambda::{CaptureID, LambdaParameterID},
+    ir_operation_handler::OperationHandlerParameterID,
     ir_variable::IRVariableID,
 };
 use rayc_qbice::TrackedEngine;

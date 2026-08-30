@@ -7,8 +7,10 @@ use crate::{
     cfg::{BlockID, Cfg, Instruction, Reachables, Terminator},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
     ir_lambda::{
-        Capture, CaptureID, IRLambdaContext, IROperationHandlerContext, IRThunkContext,
-        LambdaParameter, LambdaParameterID,
+        Capture, CaptureID, IRLambdaContext, IRThunkContext, LambdaParameter, LambdaParameterID,
+    },
+    ir_operation_handler::{
+        IROperationHandlerContext, OperationHandlerParameter, OperationHandlerParameterID,
     },
     ir_variable::{IRVariable, IRVariableID, IRVariableMap},
     visit::{ExprVisitor, TypeVisitor, VisitExpr, VisitType},
@@ -92,8 +94,8 @@ impl IRFunctionMap {
     pub fn insert_operation_handler_parameter(
         &mut self,
         function_id: FunctionID,
-        parameter: LambdaParameter,
-    ) -> LambdaParameterID {
+        parameter: OperationHandlerParameter,
+    ) -> OperationHandlerParameterID {
         self.get_function_mut(function_id).insert_operation_handler_parameter(parameter)
     }
 
@@ -342,8 +344,8 @@ impl IRFunction {
     #[must_use]
     pub fn insert_operation_handler_parameter(
         &mut self,
-        parameter: LambdaParameter,
-    ) -> LambdaParameterID {
+        parameter: OperationHandlerParameter,
+    ) -> OperationHandlerParameterID {
         match &mut self.context {
             IRContext::OperationHandler(context) => context.insert_parameter(parameter),
             IRContext::Def | IRContext::Lambda(_) | IRContext::Thunk(_) => {
@@ -474,6 +476,10 @@ impl VisitType for IRLambdaContext {
 }
 
 impl VisitType for LambdaParameter {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) { visitor.visit_type(self.ty()); }
+}
+
+impl VisitType for OperationHandlerParameter {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) { visitor.visit_type(self.ty()); }
 }
 

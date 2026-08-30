@@ -8,6 +8,10 @@ use rayc_ir::{
     ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load},
     ir_function::{FunctionID as IrFunctionID, IRFunctionMap},
     ir_lambda::{Capture, CaptureID, LambdaParameter as IrLambdaParameter, LambdaParameterID},
+    ir_operation_handler::{
+        OperationHandlerParameter as IrOperationHandlerParameter,
+        OperationHandlerParameterID as IrOperationHandlerParameterID,
+    },
     ir_variable::{IRVariable, IRVariableID},
 };
 use rayc_lexical::tree::RelativeSpan;
@@ -31,7 +35,8 @@ pub(super) struct FunctionBuildState {
     diagnostic_span: Option<RelativeSpan>,
     variables: FxHashMap<TypedVariableID, IRVariableID>,
     lambda_parameters: FxHashMap<TypedLambdaParameterID, LambdaParameterID>,
-    operation_handler_parameters: FxHashMap<TypedOperationHandlerParameterID, LambdaParameterID>,
+    operation_handler_parameters:
+        FxHashMap<TypedOperationHandlerParameterID, IrOperationHandlerParameterID>,
     captures: FxHashMap<Source, CaptureID>,
 }
 
@@ -154,7 +159,7 @@ impl FunctionBuildState {
         for (typed_id, parameter) in handler_context.parameters() {
             let ir_id = ir_functions.insert_operation_handler_parameter(
                 ir_function_id,
-                IrLambdaParameter::new(parameter.ty().clone(), parameter.span()),
+                IrOperationHandlerParameter::new(parameter.ty().clone(), parameter.span()),
             );
             assert!(operation_handler_parameters.insert(typed_id, ir_id).is_none());
         }

@@ -4,7 +4,8 @@ use rayc_semantic_element::parameter::ParameterID;
 
 use crate::{
     ir_expr::IRExprID,
-    ir_lambda::{CaptureID, LambdaParameterID, OperationHandlerParameterID},
+    ir_lambda::{CaptureID, LambdaParameterID},
+    ir_operation_handler::OperationHandlerParameterID,
     ir_variable::IRVariableID,
 };
 
