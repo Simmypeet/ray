@@ -55,10 +55,7 @@ impl TAstBuilder {
             return self.push_error_expression(syn.span());
         };
 
-        let segments = path.segments().collect::<Vec<_>>();
-        if let [segment] = segments.as_slice()
-            && segment.type_arguments().is_none()
-            && let Some(identifier) = segment.identifier()
+        if let Some(identifier) = path.bare_identifier()
             && self.lookup_name_binding(&identifier.kind.0).is_some()
         {
             let callee = self.bind(identifier).await;
