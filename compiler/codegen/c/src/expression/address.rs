@@ -29,6 +29,9 @@ impl Writer<'_> {
                 );
                 write!(self, "{}", Identifier::lambda_param(parameter_id))?;
             }
+            AddressRoot::OperationHandlerParameter(_) => {
+                panic!("operation handler parameter reached C codegen before effect lowering")
+            }
             AddressRoot::Capture(capture_id) => {
                 let _ = function.lambda_context().get_capture(capture_id);
                 write!(

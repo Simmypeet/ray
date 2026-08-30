@@ -80,6 +80,9 @@ impl Writer<'_> {
                 self.write_expression(ExpressionWithID::new(lambda, expression_id), function, ctx)
                     .await
             }
+            IRExprKind::Perform(_) | IRExprKind::Handle(_) => {
+                panic!("high-level effect IR reached C codegen before effect lowering")
+            }
         }
     }
 }
