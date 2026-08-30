@@ -402,6 +402,28 @@ impl Report for IncompatibleEffectRows {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct IncompatibleEffects {
+    span: RelativeSpan,
+    effect: Interned<Ty>,
+}
+
+impl Report for IncompatibleEffects {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let effect = self.effect.display(engine).await;
+
+        Rendered::builder()
+            .message(format!("incompatible effect row `{effect}`"))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("this expression has effects that cannot be composed")
+                    .build(),
+            )
+            .build()
+    }
+}
+
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable, From,
 )]
@@ -422,6 +444,7 @@ pub enum Diagnostic {
     DuplicateNameBinding(DuplicateNameBinding),
     ResidualSubtype(ResidualSubtype),
     IncompatibleEffectRows(IncompatibleEffectRows),
+    IncompatibleEffects(IncompatibleEffects),
     EmbeddedNulString(EmbeddedNulString),
 }
 
@@ -462,6 +485,9 @@ impl Report for Diagnostic {
             }
             Self::ResidualSubtype(residual_subtype) => residual_subtype.report(engine).await,
             Self::IncompatibleEffectRows(incompatible_effects) => {
+                incompatible_effects.report(engine).await
+            }
+            Self::IncompatibleEffects(incompatible_effects) => {
                 incompatible_effects.report(engine).await
             }
             Self::EmbeddedNulString(string) => string.report(engine).await,

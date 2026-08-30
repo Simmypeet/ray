@@ -11,13 +11,25 @@ stderr:
 10 │ ┃     return withIntState()
    ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
+[error]: incompatible effect row `{State[int32] | {any}}`
+   ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:10:12
+   │
+10 │     return withIntState()
+   ╰╴           ━━━━━━━━━━━━━━ this expression has effects that cannot be composed
+
 [error]: mismatched types in variable assignment: expected `def() -> () \ {}`, but found `def() -> () \ {State[int32] | {any}}`
    ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:18:37
    │
 18 │     let callback: def() -> () \ {} = () -> withIntState()
    ╰╴                                    ━━━━━━━━━━━━━━━━━━━━━
 
-[error]: Compilation aborted due to 2 error(s)
+[error]: incompatible effect row `{State[int32] | {any}}`
+   ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:18:44
+   │
+18 │     let callback: def() -> () \ {} = () -> withIntState()
+   ╰╴                                           ━━━━━━━━━━━━━━ this expression has effects that cannot be composed
+
+[error]: Compilation aborted due to 4 error(s)
 
 
 

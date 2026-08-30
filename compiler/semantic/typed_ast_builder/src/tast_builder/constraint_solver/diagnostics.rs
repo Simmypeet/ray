@@ -5,7 +5,7 @@ use rayc_type::{
 };
 
 use super::{ConstraintSolver, provenance::EffectConflict, solve::PendingConstraint};
-use crate::diagnostic::{Diagnostic, IncompatibleEffectRows, ResidualSubtype};
+use crate::diagnostic::{Diagnostic, IncompatibleEffectRows, IncompatibleEffects, ResidualSubtype};
 
 impl ConstraintSolver {
     fn incompatible_effect_diagnostic(
@@ -14,17 +14,21 @@ impl ConstraintSolver {
         engine: &TrackedEngine,
     ) -> Option<Diagnostic> {
         let cause_id = pending_constraint.cause_id();
-        let EffectConflict { first_span, first_effect, second_span, second_effect } =
-            self.provenance.effect_conflict(cause_id, engine)?;
-
-        Some(Diagnostic::IncompatibleEffectRows(
-            IncompatibleEffectRows::builder()
-                .first_span(first_span)
-                .first_effect(first_effect)
-                .second_span(second_span)
-                .second_effect(second_effect)
-                .build(),
-        ))
+        match self.provenance.effect_conflict(cause_id, engine)? {
+            EffectConflict::Distinct { first_span, first_effect, second_span, second_effect } => {
+                Some(Diagnostic::IncompatibleEffectRows(
+                    IncompatibleEffectRows::builder()
+                        .first_span(first_span)
+                        .first_effect(first_effect)
+                        .second_span(second_span)
+                        .second_effect(second_effect)
+                        .build(),
+                ))
+            }
+            EffectConflict::Fallback { span, effect } => Some(Diagnostic::IncompatibleEffects(
+                IncompatibleEffects::builder().span(span).effect(effect).build(),
+            )),
+        }
     }
 
     fn effect_conflict_diagnostics(&self, diags: &mut Vec<Diagnostic>, engine: &TrackedEngine) {

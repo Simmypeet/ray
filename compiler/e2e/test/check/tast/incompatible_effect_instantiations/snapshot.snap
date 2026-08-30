@@ -15,6 +15,12 @@ stderr:
 22 │ ┃     return ()
    ╰╴┗━━━━━━━━━━━━━┛
 
+[error]: incompatible effect row `{State[bool] | {any}}`
+   ╭▸ compiler/e2e/test/check/tast/incompatible_effect_instantiations/main.ray:20:21
+   │
+20 │     let conflict = (((withPolyState(varInt), ()), (withPolyState(varBool), ())))
+   ╰╴                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ this expression has effects that cannot be composed
+
 [error]: incompatible effects `{State[{numeric}]}` and `{State[bool]}`
    ╭▸ compiler/e2e/test/check/tast/incompatible_effect_instantiations/main.ray:20:52
    │
@@ -23,7 +29,7 @@ stderr:
    │                       │
    ╰╴                      `{State[{numeric}]}` was introduced here
 
-[error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 3 error(s)
 
 
 

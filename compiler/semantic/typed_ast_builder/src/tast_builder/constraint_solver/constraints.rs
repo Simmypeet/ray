@@ -14,8 +14,8 @@ use crate::tast_builder::{
     TAstBuilder,
     constraint_solver::{
         provenance::{
-            EffectIntroductionConstraintOrigin, RootCauseOrigin, SubtypeConstraintOrigin,
-            SubtypeSource,
+            EffectIntroductionConstraintOrigin, EffectSharingConstraintOrigin,
+            SubtypeConstraintOrigin, SubtypeSource,
         },
         solve::PendingConstraint,
     },
@@ -67,8 +67,12 @@ impl TAstBuilder {
         for sub_expr in sub_exprs {
             let sub_eff = self.effect_of_expression(sub_expr).clone();
 
-            let cause_id =
-                self.constraint_solver.provenance.insert_root_cause(RootCauseOrigin::EffectSharing);
+            let cause_id = self.constraint_solver.provenance.insert_root_cause(
+                EffectSharingConstraintOrigin::builder()
+                    .span(self.span_of_expression(sub_expr))
+                    .effect(sub_eff.clone())
+                    .build(),
+            );
 
             let pending_constraint = PendingConstraint::builder()
                 .constraint(Constraint::Subtype(Subtype::new(sub_eff, dest_eff.clone())))
@@ -93,8 +97,12 @@ impl TAstBuilder {
         };
         let expression_effect = self.effect_of_expression(expression).clone();
         let function_effect = self.function_map.effect_of(self.current_typed_function_id()).clone();
-        let cause_id =
-            self.constraint_solver.provenance.insert_root_cause(RootCauseOrigin::EffectSharing);
+        let cause_id = self.constraint_solver.provenance.insert_root_cause(
+            EffectSharingConstraintOrigin::builder()
+                .span(self.span_of_expression(expression))
+                .effect(expression_effect.clone())
+                .build(),
+        );
 
         self.push_constraint(
             PendingConstraint::builder()

@@ -74,10 +74,16 @@ pub struct EffectIntroductionConstraintOrigin {
     introduced_effect: Interned<Ty>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
+pub struct EffectSharingConstraintOrigin {
+    span: RelativeSpan,
+    effect: Interned<Ty>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]
 pub enum RootCauseOrigin {
     Subtype(SubtypeConstraintOrigin),
-    EffectSharing,
+    EffectSharing(EffectSharingConstraintOrigin),
     EffectIntroduction(EffectIntroductionConstraintOrigin),
 }
 
@@ -129,11 +135,17 @@ pub enum Cause {
 pub type CauseID = ID<Cause>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct EffectConflict {
-    pub first_span: RelativeSpan,
-    pub first_effect: Interned<Ty>,
-    pub second_span: RelativeSpan,
-    pub second_effect: Interned<Ty>,
+pub(super) enum EffectConflict {
+    Distinct {
+        first_span: RelativeSpan,
+        first_effect: Interned<Ty>,
+        second_span: RelativeSpan,
+        second_effect: Interned<Ty>,
+    },
+    Fallback {
+        span: RelativeSpan,
+        effect: Interned<Ty>,
+    },
 }
 
 impl Provenance {
@@ -299,18 +311,32 @@ impl Provenance {
         None
     }
 
-    fn has_effect_composition_root(&self, root_ids: &FxHashSet<CauseID>) -> bool {
-        root_ids.iter().any(|root_id| {
-            let Cause::Root(root) = &self.causes[*root_id] else {
-                return false;
-            };
+    fn resolved_effect_sharing_origin(
+        &self,
+        root_ids: &FxHashSet<CauseID>,
+        engine: &TrackedEngine,
+    ) -> Option<(RelativeSpan, Interned<Ty>)> {
+        let origin = root_ids
+            .iter()
+            .filter_map(|root_id| {
+                let Cause::Root(root) = &self.causes[*root_id] else {
+                    return None;
+                };
 
-            match &root.origin {
-                RootCauseOrigin::EffectSharing => true,
+                match &root.origin {
+                    RootCauseOrigin::EffectSharing(origin) => Some(origin),
 
-                RootCauseOrigin::Subtype(_) | RootCauseOrigin::EffectIntroduction(_) => false,
-            }
-        })
+                    RootCauseOrigin::Subtype(_) | RootCauseOrigin::EffectIntroduction(_) => None,
+                }
+            })
+            .min_by_key(|origin| origin.span)?;
+
+        let mut effect = origin.effect.apply_subst_or_clone(&self.subst, engine);
+        while let Some(reduced) = effect.reduce(engine) {
+            effect = reduced;
+        }
+
+        Some((origin.span, effect))
     }
 
     pub(super) fn effect_conflict(
@@ -322,18 +348,20 @@ impl Provenance {
         // collect all the root causes that contributed to the failure of this cause.
         self.collect_root_cause_ids(cause_id, &mut root_ids);
 
-        if !self.has_effect_composition_root(&root_ids) {
-            return None;
-        }
+        let (fallback_span, fallback_effect) =
+            self.resolved_effect_sharing_origin(&root_ids, engine)?;
 
         // collect all the effect introduction sites that contributed to the failure of
         // this cause.
         let sites = self.resolved_effect_introduction_sites(&root_ids, engine);
 
-        let (first_span, first_effect, second_span, second_effect) =
-            Self::first_distinct_effect_pair(&sites)?;
+        let Some((first_span, first_effect, second_span, second_effect)) =
+            Self::first_distinct_effect_pair(&sites)
+        else {
+            return Some(EffectConflict::Fallback { span: fallback_span, effect: fallback_effect });
+        };
 
-        Some(EffectConflict { first_span, first_effect, second_span, second_effect })
+        Some(EffectConflict::Distinct { first_span, first_effect, second_span, second_effect })
     }
 
     pub(super) fn resolved_subtype_origin(
