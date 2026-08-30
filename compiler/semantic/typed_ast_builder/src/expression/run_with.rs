@@ -13,7 +13,7 @@ use rayc_syntax::expression::RunWith as RunWithSyntax;
 use rayc_target::TargetID;
 use rayc_type::{
     subst::Substitutable,
-    ty::{Ty, args::Args, effect_row::EffectLabel},
+    ty::{Ty, effect_row::EffectLabel},
 };
 use rayc_typed_ast::{
     name_binding::Source,
@@ -43,12 +43,7 @@ impl Bind<RunWithSyntax> for TAstBuilder {
         };
 
         let effect_id = effect.symbol_id();
-        let effect_arguments =
-            effect.type_arguments().cloned().expect("should have type arguments for effect symbol");
-
-        let effect_label = self
-            .engine()
-            .intern(EffectLabel::new(effect_id, Args::new_with_args(effect_arguments)));
+        let effect_label = self.engine().intern(EffectLabel::new(effect_id, effect.args().clone()));
 
         let effect_substitution = effect.substitution(self.engine()).await;
 

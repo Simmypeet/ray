@@ -1,19 +1,15 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
+use rayc_resolution::path::{Effect, PathResolution};
 use rayc_semantic_element::{
     effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
 };
 use rayc_source_file::SourceElement;
-use rayc_symbol::{
-    GlobalSymbolID,
-    parent::get_parent_global,
-    symbol_kind::{SymbolKind, get_symbol_kind},
-    syntax::is_variadic_def,
-};
+use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind, syntax::is_variadic_def};
 use rayc_syntax::expression::{Call as CallSyn, DirectCall as DirectCallSyn};
 use rayc_type::{
     subst::{Subst, Substitutable},
-    ty::{Ty, TyKind, application::View as ApplicationView, args::Args, effect_row::EffectLabel},
+    ty::{Ty, TyKind, application::View as ApplicationView, effect_row::EffectLabel},
 };
 use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, call::Call};
 
@@ -66,26 +62,32 @@ impl TAstBuilder {
         let Ok(resolution) = self.resolve_path(&path).await else {
             return self.push_error_expression_with_children(syn.span(), arguments);
         };
-        let function_id = resolution.symbol_id();
-        let symbol_kind = self.engine().get_symbol_kind(function_id).await;
-        if !matches!(
-            symbol_kind,
-            SymbolKind::Def | SymbolKind::EffectOperation | SymbolKind::ExternDef
-        ) {
-            self.push_diagnostic(Diagnostic::SymbolNotCallable(
-                crate::diagnostic::SymbolNotCallable::builder()
-                    .name(function_id)
-                    .span(path.span())
-                    .build(),
-            ));
-            return self.push_error_expression_with_children(syn.span(), arguments);
-        }
-
-        let call_subst = resolution.substitution(self.engine()).await;
+        let (function_id, symbol_kind, call_subst, operation_effect) = match &resolution {
+            PathResolution::Def(def) => {
+                (def.symbol_id(), SymbolKind::Def, def.substitution(self.engine()).await, None)
+            }
+            PathResolution::ExternDef(def) => {
+                (def.symbol_id(), SymbolKind::ExternDef, Subst::new_empty(), None)
+            }
+            PathResolution::EffectOperation(operation) => (
+                operation.symbol_id(),
+                SymbolKind::EffectOperation,
+                operation.substitution(self.engine()).await,
+                Some(operation.effect()),
+            ),
+            PathResolution::Module(module) => {
+                self.push_symbol_not_callable(module.symbol_id(), path.span());
+                return self.push_error_expression_with_children(syn.span(), arguments);
+            }
+            PathResolution::Effect(effect) => {
+                self.push_symbol_not_callable(effect.symbol_id(), path.span());
+                return self.push_error_expression_with_children(syn.span(), arguments);
+            }
+        };
         self.build_resolved_direct_call(
             function_id,
             symbol_kind,
-            &resolution,
+            operation_effect,
             arguments,
             call_subst,
             syn.span(),
@@ -97,7 +99,7 @@ impl TAstBuilder {
         &mut self,
         function_id: GlobalSymbolID,
         symbol_kind: SymbolKind,
-        resolution: &rayc_resolution::path::PathResolution,
+        operation_effect: Option<&Effect>,
         arguments: Vec<TypedExprID>,
         call_subst: Subst,
         span: RelativeSpan,
@@ -130,19 +132,9 @@ impl TAstBuilder {
         let return_type = self.engine().get_return_type(function_id).await;
         let return_type = return_type.apply_subst_or_clone(&call_subst, self.engine());
 
-        let effect_row = if symbol_kind == SymbolKind::EffectOperation {
-            let effect_id = self
-                .engine()
-                .get_parent_global(function_id)
-                .await
-                .expect("an effect operation should have a parent effect");
-            let effect_arguments = resolution
-                .type_arguments_for(effect_id)
-                .cloned()
-                .expect("should have type arguments for effect symbol");
-            let label = self
-                .engine()
-                .intern(EffectLabel::new(effect_id, Args::new_with_args(effect_arguments)));
+        let effect_row = if let Some(effect) = operation_effect {
+            let label =
+                self.engine().intern(EffectLabel::new(effect.symbol_id(), effect.args().clone()));
             Ty::new_effect_row([label], None, self.engine())
         } else {
             self.engine()
@@ -158,6 +150,12 @@ impl TAstBuilder {
         );
         self.push_effect_introduction(expr_id, &effect_row);
         expr_id
+    }
+
+    fn push_symbol_not_callable(&mut self, symbol_id: GlobalSymbolID, span: RelativeSpan) {
+        self.push_diagnostic(Diagnostic::SymbolNotCallable(
+            crate::diagnostic::SymbolNotCallable::builder().name(symbol_id).span(span).build(),
+        ));
     }
 
     pub async fn build_lambda_call(&mut self, callee: TypedExprID, syn: &CallSyn) -> TypedExprID {

@@ -10,9 +10,9 @@ stderr:
    │     ──── function body effect `{State[bool] | {any}}` is checked against its signature here
    ‡
 20 │     let conflict = (((withPolyState(varInt), ()), (withPolyState(varBool), ())))
-   │                      ┯┬────────────────────━━━━━   ────────────────────── effect `{State[bool] | {any}}` introduced here
+   │                      ┯┬────────────────────━━━━━   ────────────────────── effect `{State[{any}]}` introduced here
    │                      ││
-   │                      │effect `{State[{numeric}] | {any}}` introduced here
+   │                      │effect `{State[{any}]}` introduced here
    ╰╴                     these effect rows cannot be composed
 
 [error]: Compilation aborted due to 1 error(s)

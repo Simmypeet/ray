@@ -1,6 +1,5 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-assertion_line: 112
 expression: run
 ---
 stderr:
@@ -11,15 +10,15 @@ stderr:
    │     ━━━━ the function body has effects outside its signature
 15 │     run:
 16 │         Handled.first()
-   │         ─────────────── effect `{Handled, BodyResidual, FirstHandlerResidual, SecondHandlerResidual | {any}}` introduced here
+   │         ─────────────── effect `{Handled}` introduced here
 17 │         BodyResidual.perform()
-   │         ────────────────────── effect `{BodyResidual, Handled, FirstHandlerResidual, SecondHandlerResidual | {any}}` introduced here
+   │         ────────────────────── effect `{BodyResidual}` introduced here
    ‡
 20 │             FirstHandlerResidual.perform()
-   │             ────────────────────────────── effect `{FirstHandlerResidual, SecondHandlerResidual, BodyResidual | {any}}` introduced here
+   │             ────────────────────────────── effect `{FirstHandlerResidual}` introduced here
 21 │         def second():
 22 │             SecondHandlerResidual.perform()
-   ╰╴            ─────────────────────────────── effect `{SecondHandlerResidual, FirstHandlerResidual, BodyResidual | {any}}` introduced here
+   ╰╴            ─────────────────────────────── effect `{SecondHandlerResidual}` introduced here
 
 [error]: effect handler semantics are not implemented yet
    ╭▸ compiler/e2e/test/check/tast/run_with_effect/main.ray:15:5

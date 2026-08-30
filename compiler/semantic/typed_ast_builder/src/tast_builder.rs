@@ -3,7 +3,7 @@ use rayc_handler::Storage;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::{
-    path::{PathResolution, PathResolutionError},
+    path::{Effect, PathResolution, PathResolutionError},
     resolver::Resolver,
 };
 use rayc_semantic_element::{
@@ -307,7 +307,7 @@ impl TAstBuilder {
     pub(crate) async fn resolve_effect_path(
         &mut self,
         path: &Path,
-    ) -> Result<PathResolution, PathResolutionError> {
+    ) -> Result<Effect, PathResolutionError> {
         let poly_vars = self.engine.get_enclosing_poly_var_maps(self.current_def_id).await;
         let diagnostics = Storage::<rayc_resolution::Diagnostic>::new();
         let resolution = {

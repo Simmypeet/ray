@@ -100,9 +100,13 @@ impl<'a> Resolver<'a> {
     pub(crate) fn new_effect_label(
         &self,
         effect_id: GlobalSymbolID,
-        arguments: Interned<[Interned<Ty>]>,
+        args: Args,
     ) -> Interned<EffectLabel> {
-        self.engine.intern(EffectLabel::new(effect_id, Args::new_with_args(arguments)))
+        self.engine.intern(EffectLabel::new(effect_id, args))
+    }
+
+    pub(crate) fn new_args(&self, args: impl IntoIterator<Item = Interned<Ty>>) -> Args {
+        Args::new(args, self.engine)
     }
 
     pub(crate) fn new_poly_var_type(
@@ -137,13 +141,6 @@ impl<'a> Resolver<'a> {
     pub(crate) fn new_inference_type(&mut self, kind: TyKind) -> Option<Interned<Ty>> {
         let infer_gen = self.infer_gen.as_deref_mut()?;
         Some(self.engine.intern(Ty::Inference(infer_gen.gen_infer(kind, InferenceConstraint::Any))))
-    }
-
-    pub(crate) fn intern_type_arguments(
-        &self,
-        arguments: Vec<Interned<Ty>>,
-    ) -> Interned<[Interned<Ty>]> {
-        self.engine.intern_unsized(arguments)
     }
 
     pub(crate) async fn type_kind(&self, ty: &Interned<Ty>) -> TyKind {

@@ -32,6 +32,7 @@ impl TAstBuilder {
 
         // try to open a closed row like `{IO, Exn}` to `{IO, Exn | ?X}` so that it can
         // unify with other effects
+        let original_effect = introduced_effect.clone();
         let introduced_effect =
             Ty::open_closed_row(&introduced_effect, &mut self.constraint_solver, &self.engine)
                 .unwrap_or(introduced_effect);
@@ -40,7 +41,10 @@ impl TAstBuilder {
             introduced_effect,
             expr_effect,
             self.span_of_expression(expression_id),
-            EffectUnificationSource::EffectIntroduction,
+            // we pass the original effect before it's openned, so that the user can see
+            // the **actual** effect before it got mixed with other effects in the unification
+            // process
+            EffectUnificationSource::EffectIntroduction { original_effect },
         );
     }
 

@@ -9,7 +9,7 @@ stderr:
  9 │ def mismatchedTopLevel() -> ():
    │     ━━━━━━━━━━━━━━━━━━ the function body has effects outside its signature
 10 │     return withIntState()
-   ╰╴           ────────────── effect `{State[int32] | {any}}` introduced here
+   ╰╴           ────────────── effect `{State[int32]}` introduced here
 
 [error]: mismatched types in variable assignment: expected `def() -> () \ {}`, but found `def() -> () \ {State[int32] | {any}}`
    ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:18:37

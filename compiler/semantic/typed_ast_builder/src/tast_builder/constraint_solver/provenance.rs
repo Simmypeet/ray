@@ -73,10 +73,10 @@ pub struct EffectUnificationOrigin {
     span: RelativeSpan,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum EffectUnificationSource {
     EffectSharing,
-    EffectIntroduction,
+    EffectIntroduction { original_effect: Interned<Ty> },
     FunctionBodyEffect,
 }
 
@@ -301,18 +301,18 @@ impl Provenance {
                 continue;
             }
 
-            match origin.source {
-                EffectUnificationSource::EffectIntroduction => {
+            match &origin.source {
+                EffectUnificationSource::EffectIntroduction { original_effect } => {
                     sites.push(ResolvedEffectUnificationSite {
-                        effect_row: self.resolve_type(&origin.lesser, engine),
-                        source: origin.source,
+                        effect_row: self.resolve_type(original_effect, engine),
+                        source: origin.source.clone(),
                         span: origin.span,
                     });
                 }
                 EffectUnificationSource::FunctionBodyEffect => {
                     sites.push(ResolvedEffectUnificationSite {
                         effect_row: self.resolve_type(&origin.greater, engine),
-                        source: origin.source,
+                        source: origin.source.clone(),
                         span: origin.span,
                     });
                 }
@@ -359,7 +359,7 @@ impl Provenance {
                 ResolvedRootCause::EffectUnification(ResolvedEffectUnification {
                     lesser: self.resolve_type(&origin.lesser, engine),
                     greater: self.resolve_type(&origin.greater, engine),
-                    source: origin.source,
+                    source: origin.source.clone(),
                     span: origin.span,
                     related_sites: self.effect_unification_sites(
                         &root_ids,

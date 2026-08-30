@@ -516,12 +516,13 @@ impl Report for IncompatibleEffectRows {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let lesser = self.lesser.display(engine).await;
         let greater = self.greater.display(engine).await;
-        let message = match self.source {
+        let message = match &self.source {
             EffectUnificationSource::EffectSharing => {
                 format!("incompatible effect rows `{lesser}` and `{greater}`")
             }
-            EffectUnificationSource::EffectIntroduction => {
-                format!("effect `{lesser}` cannot be introduced into `{greater}`")
+            EffectUnificationSource::EffectIntroduction { original_effect } => {
+                let original_effect = original_effect.display(engine).await;
+                format!("effect `{original_effect}` cannot be introduced into `{greater}`")
             }
             EffectUnificationSource::FunctionBodyEffect => {
                 format!(
@@ -533,7 +534,7 @@ impl Report for IncompatibleEffectRows {
 
         let primary_message = match self.source {
             EffectUnificationSource::EffectSharing => "these effect rows cannot be composed",
-            EffectUnificationSource::EffectIntroduction => {
+            EffectUnificationSource::EffectIntroduction { .. } => {
                 "this expression introduces an incompatible effect"
             }
             EffectUnificationSource::FunctionBodyEffect => {
@@ -544,9 +545,10 @@ impl Report for IncompatibleEffectRows {
         let mut related = Vec::with_capacity(self.related_sites.len());
         for site in &self.related_sites {
             let effect_row = site.effect_row.display(engine).await;
-            let message = match site.source {
-                EffectUnificationSource::EffectIntroduction => {
-                    format!("effect `{effect_row}` introduced here")
+            let message = match &site.source {
+                EffectUnificationSource::EffectIntroduction { original_effect } => {
+                    let original_effect = original_effect.display(engine).await;
+                    format!("effect `{original_effect}` introduced here")
                 }
                 EffectUnificationSource::FunctionBodyEffect => {
                     format!(

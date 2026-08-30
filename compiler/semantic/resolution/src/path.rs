@@ -1,50 +1,129 @@
 //! Semantic path-resolution results.
 
-use qbice::storage::intern::Interned;
 use rayc_source_file::SourceElement;
-use rayc_symbol::{
-    GlobalSymbolID,
-    symbol_kind::{SymbolKind, get_symbol_kind},
-};
+use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind};
 use rayc_syntax::path::{Path, PathSegment};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
     subst::Subst,
-    ty::Ty,
+    ty::args::Args,
 };
 
 use crate::resolver::Resolver;
 
-/// The semantic information produced by resolving one path segment.
+/// The semantic result of resolving a path.
 #[derive(Debug, Clone)]
-pub struct PathSegmentResolution {
-    symbol_id: GlobalSymbolID,
-    type_arguments: Option<Interned<[Interned<Ty>]>>,
+pub enum PathResolution {
+    /// A source definition.
+    Def(Def),
+    /// An external definition.
+    ExternDef(ExternDef),
+    /// A module.
+    Module(Module),
+    /// An effect.
+    Effect(Effect),
+    /// An operation belonging to an effect.
+    EffectOperation(EffectOperation),
 }
 
-impl PathSegmentResolution {
-    pub(crate) const fn new(
-        symbol_id: GlobalSymbolID,
-        type_arguments: Option<Interned<[Interned<Ty>]>>,
-    ) -> Self {
-        Self { symbol_id, type_arguments }
-    }
+/// A resolved source definition.
+#[derive(Debug, Clone)]
+pub struct Def {
+    symbol_id: GlobalSymbolID,
+    args: Args,
+}
 
-    /// Returns the ID of the symbol resolved by this segment.
+impl Def {
+    const fn new(symbol_id: GlobalSymbolID, args: Args) -> Self { Self { symbol_id, args } }
+
+    /// Returns the definition's symbol ID.
     #[must_use]
     pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
 
-    /// Iterates over this segment's resolved type arguments.
+    /// Returns the definition's inferred type arguments.
     #[must_use]
-    pub const fn type_arguments(&self) -> Option<&Interned<[Interned<Ty>]>> {
-        self.type_arguments.as_ref()
+    pub const fn args(&self) -> &Args { &self.args }
+
+    /// Builds the definition's polymorphic substitution.
+    pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
+        substitution(self.symbol_id, &self.args, engine).await
     }
 }
 
-/// The ordered semantic resolutions for all segments in a path.
+/// A resolved external definition.
+#[derive(Debug, Clone, Copy)]
+pub struct ExternDef {
+    symbol_id: GlobalSymbolID,
+}
+
+impl ExternDef {
+    const fn new(symbol_id: GlobalSymbolID) -> Self { Self { symbol_id } }
+
+    /// Returns the external definition's symbol ID.
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+}
+
+/// A resolved module.
+#[derive(Debug, Clone, Copy)]
+pub struct Module {
+    symbol_id: GlobalSymbolID,
+}
+
+impl Module {
+    const fn new(symbol_id: GlobalSymbolID) -> Self { Self { symbol_id } }
+
+    /// Returns the module's symbol ID.
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+}
+
+/// A resolved effect and its type arguments.
 #[derive(Debug, Clone)]
-pub struct PathResolution {
-    segments: Vec<PathSegmentResolution>,
+pub struct Effect {
+    symbol_id: GlobalSymbolID,
+    args: Args,
+}
+
+impl Effect {
+    const fn new(symbol_id: GlobalSymbolID, args: Args) -> Self { Self { symbol_id, args } }
+
+    /// Returns the effect's symbol ID.
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+
+    /// Returns the effect's resolved type arguments.
+    #[must_use]
+    pub const fn args(&self) -> &Args { &self.args }
+
+    /// Builds the effect's polymorphic substitution.
+    pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
+        substitution(self.symbol_id, &self.args, engine).await
+    }
+}
+
+/// A resolved effect operation and its resolved parent effect.
+#[derive(Debug, Clone)]
+pub struct EffectOperation {
+    effect: Effect,
+    symbol_id: GlobalSymbolID,
+}
+
+impl EffectOperation {
+    const fn new(effect: Effect, symbol_id: GlobalSymbolID) -> Self { Self { effect, symbol_id } }
+
+    /// Returns the resolved parent effect.
+    #[must_use]
+    pub const fn effect(&self) -> &Effect { &self.effect }
+
+    /// Returns the operation's symbol ID.
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+
+    /// Builds the substitution inherited from the parent effect.
+    pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
+        self.effect.substitution(engine).await
+    }
 }
 
 /// The reason a path segment could not be resolved.
@@ -59,65 +138,34 @@ pub enum PathResolutionError {
 }
 
 impl PathResolution {
-    pub(crate) fn new(segment: PathSegmentResolution) -> Self { Self { segments: vec![segment] } }
-
-    pub(crate) fn push(&mut self, segment: PathSegmentResolution) { self.segments.push(segment); }
-
-    /// Returns the ID of the symbol resolved by the final segment.
-    #[must_use]
-    pub fn symbol_id(&self) -> GlobalSymbolID {
-        self.segments
-            .last()
-            .expect("a path resolution should contain at least one segment")
-            .symbol_id()
-    }
-
-    /// Returns the kind of the symbol resolved by the final segment.
-    pub async fn symbol_kind(&self, engine: &rayc_qbice::TrackedEngine) -> SymbolKind {
-        engine.get_symbol_kind(self.symbol_id()).await
-    }
-
-    /// Iterates over the final segment's resolved type arguments.
-    #[must_use]
-    pub fn type_arguments(&self) -> Option<&Interned<[Interned<Ty>]>> {
-        self.segments.last()?.type_arguments()
-    }
-
-    /// Iterates over segment resolutions in root-to-final order.
-    #[must_use]
-    pub fn segments(&self) -> impl ExactSizeIterator<Item = &PathSegmentResolution> {
-        self.segments.iter()
-    }
-
-    /// Builds the polymorphic substitution introduced by generic path
-    /// segments.
-    pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
-        let mut mappings = Vec::new();
-
-        for segment in &self.segments {
-            let Some(arguments) = segment.type_arguments.as_ref() else { continue };
-            if !engine.get_symbol_kind(segment.symbol_id).await.has_poly_var_map() {
-                continue;
-            }
-            let poly_vars = engine.get_poly_var_map(segment.symbol_id).await;
-            mappings.extend(poly_vars.iter().zip(arguments.iter()).map(
-                |((poly_var_id, _), argument)| {
-                    (GlobalPolyVarID::new(segment.symbol_id, poly_var_id), argument.clone())
-                },
-            ));
+    const fn symbol_id(&self) -> GlobalSymbolID {
+        match self {
+            Self::Def(def) => def.symbol_id(),
+            Self::ExternDef(def) => def.symbol_id(),
+            Self::Module(module) => module.symbol_id(),
+            Self::Effect(effect) => effect.symbol_id(),
+            Self::EffectOperation(operation) => operation.symbol_id(),
         }
+    }
+}
 
-        mappings.into_iter().collect()
+async fn substitution(
+    symbol_id: GlobalSymbolID,
+    args: &Args,
+    engine: &rayc_qbice::TrackedEngine,
+) -> Subst {
+    if args.is_empty() {
+        return Subst::new_empty();
     }
 
-    /// Returns the resolved type arguments attached to `symbol_id`.
-    #[must_use]
-    pub fn type_arguments_for(
-        &self,
-        symbol_id: GlobalSymbolID,
-    ) -> Option<&Interned<[Interned<Ty>]>> {
-        self.segments.iter().find(|segment| segment.symbol_id == symbol_id)?.type_arguments()
-    }
+    let poly_vars = engine.get_poly_var_map(symbol_id).await;
+    poly_vars
+        .iter()
+        .zip(args.interned_iter())
+        .map(|((poly_var_id, _), argument)| {
+            (GlobalPolyVarID::new(symbol_id, poly_var_id), argument.clone())
+        })
+        .collect()
 }
 
 impl Resolver<'_> {
@@ -125,19 +173,31 @@ impl Resolver<'_> {
     pub async fn resolve_effect_path(
         &mut self,
         path: &Path,
-    ) -> Result<PathResolution, PathResolutionError> {
+    ) -> Result<Effect, PathResolutionError> {
         let resolution = self.resolve_path(path).await?;
-        let symbol_kind = self.symbol_kind(resolution.symbol_id()).await;
 
-        if symbol_kind != SymbolKind::Effect {
-            self.report_expected_effect(path.span(), symbol_kind);
-            return Err(PathResolutionError::UnexpectedSymbolKind);
+        match resolution {
+            PathResolution::Effect(effect) => Ok(effect),
+            PathResolution::Def(_) => {
+                self.report_expected_effect(path.span(), SymbolKind::Def);
+                Err(PathResolutionError::UnexpectedSymbolKind)
+            }
+            PathResolution::ExternDef(_) => {
+                self.report_expected_effect(path.span(), SymbolKind::ExternDef);
+                Err(PathResolutionError::UnexpectedSymbolKind)
+            }
+            PathResolution::Module(_) => {
+                self.report_expected_effect(path.span(), SymbolKind::Module);
+                Err(PathResolutionError::UnexpectedSymbolKind)
+            }
+            PathResolution::EffectOperation(_) => {
+                self.report_expected_effect(path.span(), SymbolKind::EffectOperation);
+                Err(PathResolutionError::UnexpectedSymbolKind)
+            }
         }
-
-        Ok(resolution)
     }
 
-    /// Resolves every segment in a path from root to final.
+    /// Resolves a path to a strongly typed semantic result.
     pub async fn resolve_path(
         &mut self,
         path: &Path,
@@ -174,14 +234,19 @@ impl Resolver<'_> {
 
         let symbol_kind = self.symbol_kind(symbol_id).await;
         let expected = self.poly_var_kinds(symbol_id).await;
-        let type_arguments =
-            self.resolve_type_arguments(symbol_kind, path, &identifier, &expected).await;
-        let segment = PathSegmentResolution::new(symbol_id, type_arguments);
+        let args = self.resolve_type_arguments(symbol_kind, path, &identifier, &expected).await;
 
-        let Some(mut resolution) = previous else {
-            return Ok(PathResolution::new(segment));
-        };
-        resolution.push(segment);
-        Ok(resolution)
+        match symbol_kind {
+            SymbolKind::Def => Ok(PathResolution::Def(Def::new(symbol_id, args))),
+            SymbolKind::ExternDef => Ok(PathResolution::ExternDef(ExternDef::new(symbol_id))),
+            SymbolKind::Module => Ok(PathResolution::Module(Module::new(symbol_id))),
+            SymbolKind::Effect => Ok(PathResolution::Effect(Effect::new(symbol_id, args))),
+            SymbolKind::EffectOperation => {
+                let Some(PathResolution::Effect(effect)) = previous else {
+                    unreachable!("an effect operation should be resolved through its parent effect")
+                };
+                Ok(PathResolution::EffectOperation(EffectOperation::new(effect, symbol_id)))
+            }
+        }
     }
 }

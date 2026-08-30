@@ -9,7 +9,7 @@ use rayc_syntax::{
     path::PathSegment,
     r#type::{Primitive as PrimitiveSyntax, Type as TypeSyntax},
 };
-use rayc_type::ty::{Mutability, Primitive, Ty, TyKind};
+use rayc_type::ty::{Mutability, Primitive, Ty, TyKind, args::Args};
 
 use crate::{is_poly_var_name, resolver::Resolver};
 
@@ -32,30 +32,28 @@ impl Resolver<'_> {
         &mut self,
         identifier: &rayc_syntax::Identifier,
         expected: &[TyKind],
-    ) -> Option<Interned<[Interned<Ty>]>> {
+    ) -> Args {
         if expected.is_empty() {
-            return None;
+            return self.new_args([]);
         }
 
         let mut inferred = Vec::with_capacity(expected.len());
         for kind in expected {
             let Some(ty) = self.new_inference_type(*kind) else {
                 self.report_type_inference_not_allowed(identifier, expected.len());
-                return Some(self.intern_type_arguments(
-                    expected.iter().map(|kind| self.new_error_type(*kind)).collect(),
-                ));
+                return self.new_args(expected.iter().map(|kind| self.new_error_type(*kind)));
             };
             inferred.push(ty);
         }
-        Some(self.intern_type_arguments(inferred))
+        self.new_args(inferred)
     }
 
     async fn resolve_explicit_type_arguments(
         &mut self,
         path: &PathSegment,
         expected: &[TyKind],
-    ) -> Option<Interned<[Interned<Ty>]>> {
-        let arguments = path.type_arguments()?;
+    ) -> Args {
+        let arguments = path.type_arguments().expect("type arguments should be present");
         let actual = arguments.arguments().count();
         if actual != expected.len() {
             self.report_type_argument_arity_mismatch(arguments.span(), expected.len(), actual);
@@ -75,7 +73,7 @@ impl Resolver<'_> {
         }
         resolved.truncate(expected.len());
         resolved.extend(expected[resolved.len()..].iter().map(|kind| self.new_error_type(*kind)));
-        Some(self.intern_type_arguments(resolved))
+        self.new_args(resolved)
     }
 
     pub(crate) async fn resolve_type_arguments(
@@ -84,7 +82,7 @@ impl Resolver<'_> {
         path: &PathSegment,
         identifier: &rayc_syntax::Identifier,
         expected: &[TyKind],
-    ) -> Option<Interned<[Interned<Ty>]>> {
+    ) -> Args {
         if symbol_kind == SymbolKind::Def
             && let Some(arguments) = path.type_arguments()
         {
@@ -115,13 +113,10 @@ impl Resolver<'_> {
                     let Ok(path_resolution) = self.resolve_effect_path(&path).await else {
                         continue;
                     };
-                    let effect_symbol_id = path_resolution.symbol_id();
-                    let arguments = path_resolution
-                        .type_arguments()
-                        .cloned()
-                        .expect("should have a type arguments for effect path");
-
-                    labels.push(self.new_effect_label(effect_symbol_id, arguments));
+                    labels.push(self.new_effect_label(
+                        path_resolution.symbol_id(),
+                        path_resolution.args().clone(),
+                    ));
                 }
 
                 let tail =
