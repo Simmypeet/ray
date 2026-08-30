@@ -1,6 +1,4 @@
-use rayc_ir::ir_expr::{
-    IRExpr, IRExprID, IRExprKind, make_lambda::MakeLambda, ref_of::RefOf as IrRefOf,
-};
+use rayc_ir::ir_expr::{IRExpr, IRExprID, IRExprKind, make_lambda::MakeLambda};
 use rayc_type::ty::{Ty, application::View as ApplicationView};
 use rayc_typed_ast::typed_expr::lambda::Lambda;
 
@@ -47,20 +45,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Lambda>> for Builder {
             return_ty,
             typed_expression.span(),
         );
-        let captures = context
-            .capture_plan(lambda.function_id())
-            .captures()
-            .map(|(_, requirement)| {
-                let address = self.source_address(requirement.source());
-                let ty =
-                    self.pointer_ty(requirement.pointee_ty().clone(), requirement.mutability());
-                self.emit_expression(IRExpr::new(
-                    IRExprKind::RefOf(IrRefOf::new(address)),
-                    requirement.span(),
-                    ty,
-                ))
-            })
-            .collect();
+        let captures = self.lower_capture_operands(context, lambda.function_id());
 
         self.emit_expression(IRExpr::new(
             IRExprKind::MakeLambda(MakeLambda::new(function_id, captures)),

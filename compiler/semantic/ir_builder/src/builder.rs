@@ -3,7 +3,7 @@ use rayc_ir::{
     address::Address,
     ir_expr::IRExprID,
     ir_function::IRFunctionMap,
-    ir_lambda::{CaptureID, LambdaParameterID},
+    ir_lambda::{CaptureID, LambdaParameterID, OperationHandlerParameterID},
     ir_variable::IRVariableID,
 };
 use rayc_qbice::TrackedEngine;
@@ -40,6 +40,10 @@ impl Builder {
 
     pub fn lambda_parameter_address(&self, id: LambdaParameterID) -> Address {
         Address::new_lambda_parameter(id, &self.engine)
+    }
+
+    pub fn operation_handler_parameter_address(&self, id: OperationHandlerParameterID) -> Address {
+        Address::new_operation_handler_parameter(id, &self.engine)
     }
 
     pub fn capture_address(&self, id: CaptureID) -> Address {

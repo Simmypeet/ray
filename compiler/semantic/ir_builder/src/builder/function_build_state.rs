@@ -15,7 +15,9 @@ use rayc_qbice::TrackedEngine;
 use rayc_type::ty::{Ty, application::View as ApplicationView};
 use rayc_typed_ast::{
     name_binding::Source, typed_function::TypedFunctionID,
-    typed_lambda::LambdaParameterID as TypedLambdaParameterID, typed_variable::TypedVariableID,
+    typed_lambda::LambdaParameterID as TypedLambdaParameterID,
+    typed_operation_handler::OperationHandlerParameterID as TypedOperationHandlerParameterID,
+    typed_variable::TypedVariableID,
 };
 
 use super::Builder;
@@ -29,6 +31,7 @@ pub(super) struct FunctionBuildState {
     diagnostic_span: Option<RelativeSpan>,
     variables: FxHashMap<TypedVariableID, IRVariableID>,
     lambda_parameters: FxHashMap<TypedLambdaParameterID, LambdaParameterID>,
+    operation_handler_parameters: FxHashMap<TypedOperationHandlerParameterID, LambdaParameterID>,
     captures: FxHashMap<Source, CaptureID>,
 }
 
@@ -62,6 +65,7 @@ impl FunctionBuildState {
             diagnostic_span,
             variables: FxHashMap::default(),
             lambda_parameters: FxHashMap::default(),
+            operation_handler_parameters: FxHashMap::default(),
             captures: FxHashMap::default(),
         }
     }
@@ -81,8 +85,8 @@ impl FunctionBuildState {
             "root TypedAST function should not be a lambda"
         );
         let mut lambda_parameters = FxHashMap::default();
-        let mut captures = FxHashMap::default();
-        let ir_function_id = ir_functions.insert_lambda(return_ty.clone());
+        let ir_function_id =
+            ir_functions.insert_lambda(return_ty.clone(), context.function_effect().clone());
         for (typed_id, parameter) in lambda_context.parameters() {
             let ir_id = ir_functions.insert_lambda_parameter(
                 ir_function_id,
@@ -90,6 +94,91 @@ impl FunctionBuildState {
             );
             assert!(lambda_parameters.insert(typed_id, ir_id).is_none());
         }
+        let captures = Self::insert_captures(capture_plan, ir_functions, ir_function_id);
+        let current_block = ir_functions.entry_block(ir_function_id);
+        Self {
+            ir_function_id,
+            current_block,
+            typed_function_id,
+            return_ty,
+            diagnostic_span: Some(diagnostic_span),
+            variables: FxHashMap::default(),
+            lambda_parameters,
+            operation_handler_parameters: FxHashMap::default(),
+            captures,
+        }
+    }
+
+    fn new_thunk(
+        context: &LoweringContext<'_>,
+        ir_functions: &mut IRFunctionMap,
+        diagnostic_span: RelativeSpan,
+    ) -> Self {
+        let typed_function_id = context.typed_function_id();
+        let capture_plan = context.capture_plan(typed_function_id);
+        let thunk_context = context.typed_function_context().assert_as_thunk_context();
+        let return_ty = thunk_context.return_type().clone();
+        let ir_function_id =
+            ir_functions.insert_thunk(return_ty.clone(), context.function_effect().clone());
+        let captures = Self::insert_captures(capture_plan, ir_functions, ir_function_id);
+        let current_block = ir_functions.entry_block(ir_function_id);
+        Self {
+            ir_function_id,
+            current_block,
+            typed_function_id,
+            return_ty,
+            diagnostic_span: Some(diagnostic_span),
+            variables: FxHashMap::default(),
+            lambda_parameters: FxHashMap::default(),
+            operation_handler_parameters: FxHashMap::default(),
+            captures,
+        }
+    }
+
+    fn new_operation_handler(
+        context: &LoweringContext<'_>,
+        ir_functions: &mut IRFunctionMap,
+        diagnostic_span: RelativeSpan,
+    ) -> Self {
+        let typed_function_id = context.typed_function_id();
+        let capture_plan = context.capture_plan(typed_function_id);
+        let handler_context =
+            context.typed_function_context().assert_as_operation_handler_context();
+        let return_ty = handler_context.return_type().clone();
+        let ir_function_id = ir_functions.insert_operation_handler(
+            handler_context.operation(),
+            return_ty.clone(),
+            context.function_effect().clone(),
+        );
+        let mut operation_handler_parameters = FxHashMap::default();
+        for (typed_id, parameter) in handler_context.parameters() {
+            let ir_id = ir_functions.insert_operation_handler_parameter(
+                ir_function_id,
+                IrLambdaParameter::new(parameter.ty().clone(), parameter.span()),
+            );
+            assert!(operation_handler_parameters.insert(typed_id, ir_id).is_none());
+        }
+        let captures = Self::insert_captures(capture_plan, ir_functions, ir_function_id);
+        let current_block = ir_functions.entry_block(ir_function_id);
+        Self {
+            ir_function_id,
+            current_block,
+            typed_function_id,
+            return_ty,
+            diagnostic_span: Some(diagnostic_span),
+            variables: FxHashMap::default(),
+            lambda_parameters: FxHashMap::default(),
+            operation_handler_parameters,
+            captures,
+        }
+    }
+
+    fn insert_captures(
+        capture_plan: &rayc_tast_capture_analysis::FunctionCapturePlan,
+        ir_functions: &mut IRFunctionMap,
+        ir_function_id: IrFunctionID,
+    ) -> FxHashMap<Source, CaptureID> {
+        let mut captures = FxHashMap::default();
         for (_, requirement) in capture_plan.captures() {
             let ir_id = ir_functions.insert_capture(
                 ir_function_id,
@@ -101,17 +190,7 @@ impl FunctionBuildState {
             );
             assert!(captures.insert(requirement.source(), ir_id).is_none());
         }
-        let current_block = ir_functions.entry_block(ir_function_id);
-        Self {
-            ir_function_id,
-            current_block,
-            typed_function_id,
-            return_ty,
-            diagnostic_span: Some(diagnostic_span),
-            variables: FxHashMap::default(),
-            lambda_parameters,
-            captures,
-        }
+        captures
     }
 }
 
@@ -122,7 +201,7 @@ impl Builder {
         return_ty: Interned<Ty>,
         diagnostic_span: Option<RelativeSpan>,
     ) -> Self {
-        let mut ir_functions = IRFunctionMap::new();
+        let mut ir_functions = IRFunctionMap::new(context.function_effect().clone());
         let building_function =
             FunctionBuildState::new_def(context, &mut ir_functions, return_ty, diagnostic_span);
 
@@ -165,6 +244,30 @@ impl Builder {
         self.finish_lambda()
     }
 
+    pub fn lower_thunk_function(
+        &mut self,
+        context: &LoweringContext<'_>,
+        typed_function_id: TypedFunctionID,
+        diagnostic_span: RelativeSpan,
+    ) -> IrFunctionID {
+        let thunk_context = context.for_function(typed_function_id);
+        self.start_thunk(&thunk_context, diagnostic_span);
+        self.lower_current_function(&thunk_context);
+        self.finish_nested_function()
+    }
+
+    pub fn lower_operation_handler_function(
+        &mut self,
+        context: &LoweringContext<'_>,
+        typed_function_id: TypedFunctionID,
+        diagnostic_span: RelativeSpan,
+    ) -> IrFunctionID {
+        let handler_context = context.for_function(typed_function_id);
+        self.start_operation_handler(&handler_context, diagnostic_span);
+        self.lower_current_function(&handler_context);
+        self.finish_nested_function()
+    }
+
     fn lower_current_function(&mut self, context: &LoweringContext<'_>) {
         self.lower_statements(context);
         self.finish_current_function();
@@ -186,13 +289,56 @@ impl Builder {
         self.suspended_functions.push(enclosing);
     }
 
-    fn finish_lambda(&mut self) -> IrFunctionID {
+    fn start_thunk(&mut self, context: &LoweringContext<'_>, diagnostic_span: RelativeSpan) {
+        let thunk = FunctionBuildState::new_thunk(context, &mut self.ir_functions, diagnostic_span);
+        let enclosing = mem::replace(&mut self.building_function, thunk);
+        self.suspended_functions.push(enclosing);
+    }
+
+    fn start_operation_handler(
+        &mut self,
+        context: &LoweringContext<'_>,
+        diagnostic_span: RelativeSpan,
+    ) {
+        let handler = FunctionBuildState::new_operation_handler(
+            context,
+            &mut self.ir_functions,
+            diagnostic_span,
+        );
+        let enclosing = mem::replace(&mut self.building_function, handler);
+        self.suspended_functions.push(enclosing);
+    }
+
+    fn finish_lambda(&mut self) -> IrFunctionID { self.finish_nested_function() }
+
+    fn finish_nested_function(&mut self) -> IrFunctionID {
         let enclosing = self
             .suspended_functions
             .pop()
             .expect("a lambda should suspend its enclosing IR function");
         let lambda = mem::replace(&mut self.building_function, enclosing);
         lambda.ir_function_id
+    }
+
+    pub fn lower_capture_operands(
+        &mut self,
+        context: &LoweringContext<'_>,
+        typed_function_id: TypedFunctionID,
+    ) -> Vec<IRExprID> {
+        context
+            .capture_plan(typed_function_id)
+            .captures()
+            .map(|(_, requirement)| {
+                let address = self.source_address(requirement.source());
+                let ty =
+                    self.pointer_ty(requirement.pointee_ty().clone(), requirement.mutability());
+                self.emit_expression(IRExpr::new(
+                    IRExprKind::RefOf(rayc_ir::ir_expr::ref_of::RefOf::new(address)),
+                    requirement.span(),
+                    ty,
+                ))
+            })
+            .collect()
     }
 
     fn finish_current_function(&mut self) {
@@ -304,8 +450,14 @@ impl Builder {
                         .expect("lambda parameter should be registered before use");
                     self.lambda_parameter_address(parameter_id)
                 }
-                Source::OperationHandlerParameter(_) => {
-                    panic!("operation handler parameter lowering is not implemented yet")
+                Source::OperationHandlerParameter(id) => {
+                    let parameter_id = self
+                        .building_function
+                        .operation_handler_parameters
+                        .get(&id.local_id())
+                        .copied()
+                        .expect("operation handler parameter should be registered before use");
+                    self.operation_handler_parameter_address(parameter_id)
                 }
             };
         }

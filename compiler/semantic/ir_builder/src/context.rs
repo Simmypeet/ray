@@ -58,6 +58,10 @@ impl<'a> LoweringContext<'a> {
         self.typed_function.get_type_of_expr_id(id)
     }
 
+    pub fn function_effect(&self) -> &Interned<Ty> {
+        self.typed_functions.effect_of(self.typed_function_id)
+    }
+
     pub fn variable(&self, id: TypedVariableID) -> &TypedVariable {
         self.typed_function.get_variable(id)
     }

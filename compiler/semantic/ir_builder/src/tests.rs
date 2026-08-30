@@ -9,20 +9,29 @@ use rayc_ir::{
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::{GlobalSourceID, LocalSourceID};
+use rayc_symbol::SymbolID;
 use rayc_target::TargetID;
-use rayc_type::ty::{Mutability, Primitive, Ty, application::View as ApplicationView};
+use rayc_type::{
+    subst::Subst,
+    ty::{
+        Mutability, Primitive, Ty, application::View as ApplicationView, effect_row::EffectLabel,
+    },
+};
 use rayc_typed_ast::{
     name_binding::{NameBinding, Source},
     statement::{Let, Statement},
     typed_expr::{
         TypedExpr, TypedExprID, TypedExprKind,
         binary::{Binary, BinaryOp},
+        call::Call,
         identifier::Identifier,
         lambda::Lambda,
         literal::Literal,
+        run_with::RunWith,
     },
     typed_function::{TypedFunctionID, TypedFunctionLocalID, TypedFunctionMap},
     typed_lambda::TypedLambdaParameter,
+    typed_operation_handler::TypedOperationHandlerParameter,
     typed_variable::TypedVariable,
 };
 
@@ -108,6 +117,21 @@ impl TestMap {
         source
     }
 
+    fn operation_handler_parameter(
+        &mut self,
+        owner: TypedFunctionID,
+        name: &'static str,
+    ) -> Source {
+        let span = self.span();
+        let parameter = self.functions.insert_operation_handler_parameter(
+            owner,
+            TypedOperationHandlerParameter::new(self.int_ty.clone(), span),
+        );
+        let source = Source::OperationHandlerParameter(TypedFunctionLocalID::new(owner, parameter));
+        self.insert_binding(source, name, span);
+        source
+    }
+
     fn insert_binding(&mut self, source: Source, name: &'static str, span: RelativeSpan) {
         let binding = NameBinding::builder()
             .ty(self.int_ty.clone())
@@ -185,6 +209,8 @@ fn make_lambdas(function: &IrFunction) -> Vec<&MakeLambda> {
             | IRExprKind::Phi(_)
             | IRExprKind::Binary(_)
             | IRExprKind::Call(_)
+            | IRExprKind::Perform(_)
+            | IRExprKind::Handle(_)
             | IRExprKind::Tuple(_) => None,
         })
         .collect()
@@ -367,4 +393,126 @@ async fn nested_lambdas_reborrow_a_transitive_capture_with_each_childs_mutabilit
     }
 
     assert!(matches!(outer.block_terminator(outer.entry_block()), Some(Terminator::Return(None))));
+}
+
+#[tokio::test]
+async fn effect_operation_call_lowers_to_perform_and_preserves_function_effect() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let effect_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    let operation_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
+    let effect_label =
+        engine.intern(EffectLabel::new(effect_id, rayc_type::ty::args::Args::new([], &engine)));
+    let effect = Ty::new_effect_row([effect_label], None, &engine);
+    let mut map = TestMap::new(&engine);
+    map.effect = effect.clone();
+    map.functions = TypedFunctionMap::new(effect.clone());
+    let root = map.functions.root_id();
+    let argument = map.literal(root, 7);
+    let perform = map.expression(
+        root,
+        TypedExprKind::Call(Call::new_effect_operation(
+            effect_id,
+            operation_id,
+            vec![argument],
+            Subst::new_empty(),
+        )),
+        map.int_ty.clone(),
+    );
+    map.statement(root, perform);
+
+    let (ir, diagnostics) = lower_function(&engine, &map.functions, map.unit_ty.clone(), None);
+    assert!(diagnostics.is_empty());
+    assert_eq!(ir.root().effect(), &effect);
+    let perform = ir
+        .root()
+        .reachables()
+        .expressions()
+        .find_map(|id| match ir.root().get_expression(id).kind() {
+            IRExprKind::Perform(perform) => Some(perform),
+            IRExprKind::Error
+            | IRExprKind::Literal(_)
+            | IRExprKind::RefOf(_)
+            | IRExprKind::Load(_)
+            | IRExprKind::Phi(_)
+            | IRExprKind::Binary(_)
+            | IRExprKind::Call(_)
+            | IRExprKind::Handle(_)
+            | IRExprKind::Tuple(_)
+            | IRExprKind::MakeLambda(_) => None,
+        })
+        .expect("effect operation should lower to perform");
+    assert_eq!(perform.effect_id(), effect_id);
+    assert_eq!(perform.operation_id(), operation_id);
+    assert_eq!(perform.arguments().len(), 1);
+}
+
+#[tokio::test]
+async fn run_with_lowers_body_and_handlers_to_explicit_handle_functions() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let mut map = TestMap::new(&engine);
+    let root = map.functions.root_id();
+    let effect_id = TargetID::TEST.make_global(SymbolID::from_u128(10));
+    let operation = SymbolID::from_u128(11);
+    let operation_id = TargetID::TEST.make_global(operation);
+    let effect_label =
+        engine.intern(EffectLabel::new(effect_id, rayc_type::ty::args::Args::new([], &engine)));
+    let body_effect = Ty::new_effect_row([effect_label], None, &engine);
+    let body = map.functions.insert_thunk(map.unit_ty.clone(), body_effect.clone());
+    let handler = map.functions.insert_operation_handler(
+        operation_id,
+        map.unit_ty.clone(),
+        map.effect.clone(),
+    );
+    let parameter = map.operation_handler_parameter(handler, "value");
+    let parameter_read = map.identifier(handler, parameter);
+    map.statement(handler, parameter_read);
+    let mut handlers = FxHashMap::default();
+    handlers.insert(operation, handler);
+    let run_with = map.expression(
+        root,
+        TypedExprKind::RunWith(RunWith::new(effect_id, Subst::new_empty(), body, handlers)),
+        map.unit_ty.clone(),
+    );
+    map.statement(root, run_with);
+
+    let (ir, diagnostics) = lower_function(&engine, &map.functions, map.unit_ty.clone(), None);
+    assert!(diagnostics.is_empty());
+    let handle = ir
+        .root()
+        .reachables()
+        .expressions()
+        .find_map(|id| match ir.root().get_expression(id).kind() {
+            IRExprKind::Handle(handle) => Some(handle),
+            IRExprKind::Error
+            | IRExprKind::Literal(_)
+            | IRExprKind::RefOf(_)
+            | IRExprKind::Load(_)
+            | IRExprKind::Phi(_)
+            | IRExprKind::Binary(_)
+            | IRExprKind::Call(_)
+            | IRExprKind::Perform(_)
+            | IRExprKind::Tuple(_)
+            | IRExprKind::MakeLambda(_) => None,
+        })
+        .expect("run-with should lower to handle");
+    assert_eq!(handle.effect_id(), effect_id);
+    assert_eq!(handle.residual_effect(), &map.effect);
+    assert_eq!(handle.handlers().len(), 1);
+    assert_eq!(handle.handlers()[0].operation_id(), operation_id);
+
+    let body = ir.get_function(handle.body().function_id());
+    assert_eq!(body.effect(), &body_effect);
+    assert_eq!(body.context().assert_as_thunk_context().return_ty(), &map.unit_ty);
+    let handler = ir.get_function(handle.handlers()[0].function().function_id());
+    let handler_context = handler.context().assert_as_operation_handler_context();
+    assert_eq!(handler_context.operation(), operation_id);
+    assert_eq!(handler_context.return_ty(), &map.unit_ty);
+    let parameters = handler_context.parameters().collect::<Vec<_>>();
+    assert_eq!(parameters.len(), 1);
+    assert_eq!(parameters[0].1.ty(), &map.int_ty);
+    let read = handler.reachables().expressions().next().expect("handler parameter should be read");
+    let IRExprKind::Load(load) = handler.get_expression(read).kind() else {
+        panic!("operation handler parameter read should lower to a load");
+    };
+    assert_eq!(load.address().root(), AddressRoot::OperationHandlerParameter(parameters[0].0));
 }
