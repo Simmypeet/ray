@@ -1,6 +1,7 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     subst::{MutSubstitutable, Subst},
     ty::Ty,
@@ -14,6 +15,10 @@ use crate::{
     statement::Statement,
     typed_expr::{LvalueClassification, TypedExpr, TypedExprID, TypedExprMap},
     typed_lambda::{LambdaParameterID, TypedLambdaContext, TypedLambdaParameter},
+    typed_operation_handler::{
+        OperationHandlerParameterID, TypedOperationHandlerContext, TypedOperationHandlerParameter,
+    },
+    typed_thunk::TypedThunkContext,
     typed_variable::{TypedVariable, TypedVariableID, TypedVariableMap},
 };
 
@@ -78,16 +83,21 @@ impl TypedFunctionMap {
     pub fn parameter_name_binding_group_id_of(
         &self,
         function_id: TypedFunctionID,
-    ) -> NameBindingGroupID {
+    ) -> Option<NameBindingGroupID> {
         match self.get_function(function_id).context() {
-            TypedContext::Def(context) => context.parameter_name_binding_group_id(),
-            TypedContext::Lambda(context) => context.parameter_name_binding_group_id(),
+            TypedContext::Def(context) => Some(context.parameter_name_binding_group_id()),
+            TypedContext::Lambda(context) => Some(context.parameter_name_binding_group_id()),
+            TypedContext::OperationHandler(context) => {
+                Some(context.parameter_name_binding_group_id())
+            }
+            TypedContext::Thunk(_) => None,
         }
     }
 
     #[must_use]
     pub fn parameter_name_binding_group_id_of_root(&self) -> NameBindingGroupID {
         self.parameter_name_binding_group_id_of(self.root)
+            .expect("the root function should have a parameter name-binding group")
     }
 
     /// Iterates over all functions belonging to this def and their IDs.
@@ -109,6 +119,37 @@ impl TypedFunctionMap {
     }
 
     #[must_use]
+    pub fn insert_operation_handler(
+        &mut self,
+        operation: GlobalSymbolID,
+        return_type: Interned<Ty>,
+        effect: Interned<Ty>,
+    ) -> TypedFunctionID {
+        let parameter_name_binding_group_id = self.name_binding_map.new_name_binding_group();
+
+        self.functions.insert(TypedFunction::new(
+            TypedContext::OperationHandler(TypedOperationHandlerContext::new(
+                operation,
+                parameter_name_binding_group_id,
+                return_type,
+            )),
+            effect,
+        ))
+    }
+
+    #[must_use]
+    pub fn insert_thunk(
+        &mut self,
+        return_type: Interned<Ty>,
+        effect: Interned<Ty>,
+    ) -> TypedFunctionID {
+        self.functions.insert(TypedFunction::new(
+            TypedContext::Thunk(TypedThunkContext::new(return_type)),
+            effect,
+        ))
+    }
+
+    #[must_use]
     pub fn insert_lambda_parameter(
         &mut self,
         function_id: TypedFunctionID,
@@ -117,6 +158,17 @@ impl TypedFunctionMap {
         let function = self.functions.get_mut(function_id).expect("FunctionID should be valid");
 
         function.context.assert_as_lambda_context_mut().insert_parameter(parameter)
+    }
+
+    #[must_use]
+    pub fn insert_operation_handler_parameter(
+        &mut self,
+        function_id: TypedFunctionID,
+        parameter: TypedOperationHandlerParameter,
+    ) -> OperationHandlerParameterID {
+        let function = self.functions.get_mut(function_id).expect("FunctionID should be valid");
+
+        function.context.assert_as_operation_handler_context_mut().insert_parameter(parameter)
     }
 
     #[must_use]
@@ -268,6 +320,8 @@ impl MutSubstitutable for TypedFunction {
         match &mut self.context {
             TypedContext::Def(_) => {}
             TypedContext::Lambda(context) => context.apply_mut_subst(subst, engine),
+            TypedContext::OperationHandler(context) => context.apply_mut_subst(subst, engine),
+            TypedContext::Thunk(context) => context.apply_mut_subst(subst, engine),
         }
     }
 }
@@ -302,6 +356,8 @@ impl<LocalID> TypedFunctionLocalID<LocalID> {
 pub enum TypedContext {
     Def(TypedDefContext),
     Lambda(TypedLambdaContext),
+    OperationHandler(TypedOperationHandlerContext),
+    Thunk(TypedThunkContext),
 }
 
 impl TypedContext {
@@ -310,7 +366,9 @@ impl TypedContext {
     pub fn assert_as_def_context(&self) -> &TypedDefContext {
         match self {
             Self::Def(context) => context,
-            Self::Lambda(_) => panic!("expected a def context, found a lambda context"),
+            Self::Lambda(_) | Self::OperationHandler(_) | Self::Thunk(_) => {
+                panic!("expected a def context, found a nested function context")
+            }
         }
     }
 
@@ -318,7 +376,9 @@ impl TypedContext {
     #[track_caller]
     pub fn assert_as_lambda_context(&self) -> &TypedLambdaContext {
         match self {
-            Self::Def(_) => panic!("expected a lambda context, found a def context"),
+            Self::Def(_) | Self::OperationHandler(_) | Self::Thunk(_) => {
+                panic!("expected a lambda context, found a non-lambda context")
+            }
             Self::Lambda(context) => context,
         }
     }
@@ -326,8 +386,42 @@ impl TypedContext {
     #[track_caller]
     fn assert_as_lambda_context_mut(&mut self) -> &mut TypedLambdaContext {
         match self {
-            Self::Def(_) => panic!("expected a lambda context, found a def context"),
+            Self::Def(_) | Self::OperationHandler(_) | Self::Thunk(_) => {
+                panic!("expected a lambda context, found a non-lambda context")
+            }
             Self::Lambda(context) => context,
+        }
+    }
+
+    #[must_use]
+    #[track_caller]
+    pub fn assert_as_operation_handler_context(&self) -> &TypedOperationHandlerContext {
+        match self {
+            Self::Def(_) | Self::Lambda(_) | Self::Thunk(_) => {
+                panic!("expected an operation handler context, found another function context")
+            }
+            Self::OperationHandler(context) => context,
+        }
+    }
+
+    #[track_caller]
+    fn assert_as_operation_handler_context_mut(&mut self) -> &mut TypedOperationHandlerContext {
+        match self {
+            Self::Def(_) | Self::Lambda(_) | Self::Thunk(_) => {
+                panic!("expected an operation handler context, found another function context")
+            }
+            Self::OperationHandler(context) => context,
+        }
+    }
+
+    #[must_use]
+    #[track_caller]
+    pub fn assert_as_thunk_context(&self) -> &TypedThunkContext {
+        match self {
+            Self::Def(_) | Self::Lambda(_) | Self::OperationHandler(_) => {
+                panic!("expected a thunk context, found another function context")
+            }
+            Self::Thunk(context) => context,
         }
     }
 }
