@@ -4,10 +4,10 @@ expression: run
 ---
 stderr:
 [error]: an effect operation cannot have a variadic parameter
-  ╭▸ compiler/e2e/test/check/syntax/invalid_effect_operation/main.ray:2:13
+  ╭▸ compiler/e2e/test/check/syntax/invalid_effect_operation/main.ray:2:17
   │
-2 │     def run(...)
-  ╰╴            ━━━
+2 │     def perform(...)
+  ╰╴                ━━━
 
 [error]: Compilation aborted due to 1 error(s)
 

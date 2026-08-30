@@ -36,6 +36,13 @@ impl TAstBuilder {
     pub async fn bind_statement(&mut self, statement: &StatementSyntax) {
         match statement {
             StatementSyntax::Run(run) => {
+                let Some(effect) = run.effect() else {
+                    return;
+                };
+                if self.resolve_effect_path(&effect).await.is_err() {
+                    return;
+                }
+
                 self.push_diagnostic(Diagnostic::EffectHandlerNotSupported(
                     EffectHandlerNotSupported::builder().span(run.span()).build(),
                 ));

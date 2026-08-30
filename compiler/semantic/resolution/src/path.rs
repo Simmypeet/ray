@@ -1,6 +1,7 @@
 //! Semantic path-resolution results.
 
 use qbice::storage::intern::Interned;
+use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID,
     symbol_kind::{SymbolKind, get_symbol_kind},
@@ -53,6 +54,8 @@ pub enum PathResolutionError {
     MissingIdentifier,
     /// The identifier does not name a symbol in the searched scope.
     SymbolNotFound,
+    /// The resolved symbol has a different kind than the path context requires.
+    UnexpectedSymbolKind,
 }
 
 impl PathResolution {
@@ -118,6 +121,22 @@ impl PathResolution {
 }
 
 impl Resolver<'_> {
+    /// Resolves a path and requires its final symbol to be an effect.
+    pub async fn resolve_effect_path(
+        &mut self,
+        path: &Path,
+    ) -> Result<PathResolution, PathResolutionError> {
+        let resolution = self.resolve_path(path).await?;
+        let symbol_kind = self.symbol_kind(resolution.symbol_id()).await;
+
+        if symbol_kind != SymbolKind::Effect {
+            self.report_expected_effect(path.span(), symbol_kind);
+            return Err(PathResolutionError::UnexpectedSymbolKind);
+        }
+
+        Ok(resolution)
+    }
+
     /// Resolves every segment in a path from root to final.
     pub async fn resolve_path(
         &mut self,

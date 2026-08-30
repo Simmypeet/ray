@@ -1,0 +1,20 @@
+def notAnEffect() -> ():
+    return ()
+
+def unresolvedEffect() -> ():
+    run:
+        return ()
+    with Missing:
+        def operation():
+            return ()
+
+    return ()
+
+def wrongSymbolKind() -> ():
+    run:
+        return ()
+    with notAnEffect:
+        def operation():
+            return ()
+
+    return ()

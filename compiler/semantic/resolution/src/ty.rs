@@ -112,19 +112,13 @@ impl Resolver<'_> {
                 let mut labels = Vec::new();
 
                 for path in effect_row.effects() {
-                    let Ok(path_resolution) = self.resolve_path(&path).await else {
+                    let Ok(path_resolution) = self.resolve_effect_path(&path).await else {
                         continue;
                     };
                     let effect_symbol_id = path_resolution.symbol_id();
-                    let symbol_kind = self.symbol_kind(effect_symbol_id).await;
                     let arguments = path_resolution
                         .type_arguments()
                         .map_or_else(Vec::new, |arguments| arguments.cloned().collect());
-
-                    if symbol_kind != SymbolKind::Effect {
-                        self.report_expected_effect(path.span(), symbol_kind);
-                        continue;
-                    }
                     labels.push(self.new_effect_label(effect_symbol_id, arguments));
                 }
 
