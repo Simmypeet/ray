@@ -3,19 +3,13 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: incompatible effect row `{State[bool]}`
-   ╭▸ compiler/e2e/test/check/tast/lambda_annotated_effect_mismatch/main.ray:11:47
-   │
-11 │     let lambda: def() \ {State[bool]} = () -> withPolyState(var)
-   ╰╴                                              ━━━━━━━━━━━━━━━━━━ this expression has effects that cannot be composed
-
 [error]: mismatched types in variable assignment: expected `bool`, but found `{numeric}`
    ╭▸ compiler/e2e/test/check/tast/lambda_annotated_effect_mismatch/main.ray:12:11
    │
 12 │     var = 32
    ╰╴          ━━
 
-[error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

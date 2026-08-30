@@ -3,13 +3,13 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: incompatible effects `a` and `b`
-  ╭▸ compiler/e2e/test/check/tast/incompatible_opaque_effect_rows/main.ray:5:27
+[error]: incompatible effect rows `a` and `b`
+  ╭▸ compiler/e2e/test/check/tast/incompatible_opaque_effect_rows/main.ray:5:19
   │
 5 │     let result = (left(), right())
-  │                   ┬─────  ━━━━━━━ this expression introduces `b`
+  │                   ┯━━━━━  ─────── effect `b` introduced here
   │                   │
-  ╰╴                  `a` was introduced here
+  ╰╴                  these effect rows cannot be composed
 
 [error]: Compilation aborted due to 1 error(s)
 

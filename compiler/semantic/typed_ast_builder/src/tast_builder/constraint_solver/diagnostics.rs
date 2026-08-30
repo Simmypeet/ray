@@ -1,73 +1,164 @@
+use rayc_hash::FxHashSet;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{
     subst::Subst,
     ty::{Primitive, Ty},
 };
 
-use super::{ConstraintSolver, provenance::EffectConflict, solve::PendingConstraint};
-use crate::diagnostic::{Diagnostic, IncompatibleEffectRows, IncompatibleEffects, ResidualSubtype};
+use super::{
+    CauseID, ConstraintSolver,
+    provenance::{ResolvedEffectUnification, ResolvedRootCause},
+    solve::PendingConstraint,
+};
+use crate::diagnostic::{
+    Diagnostic, EffectUnificationSite, IncompatibleEffectRows, ResidualSubtype,
+};
 
 impl ConstraintSolver {
-    fn incompatible_effect_diagnostic(
+    fn incompatible_effect_diagnostic(effect_unification: ResolvedEffectUnification) -> Diagnostic {
+        let related_sites = effect_unification
+            .related_sites
+            .into_iter()
+            .map(|site| {
+                EffectUnificationSite::builder()
+                    .effect_row(site.effect_row)
+                    .source(site.source)
+                    .span(site.span)
+                    .build()
+            })
+            .collect();
+
+        Diagnostic::IncompatibleEffectRows(
+            IncompatibleEffectRows::builder()
+                .primary_span(effect_unification.span)
+                .lesser(effect_unification.lesser)
+                .greater(effect_unification.greater)
+                .source(effect_unification.source)
+                .related_sites(related_sites)
+                .build(),
+        )
+    }
+
+    fn connected_root_ids(
+        initial_root_ids: &FxHashSet<CauseID>,
+        failed_root_ids: &[FxHashSet<CauseID>],
+    ) -> FxHashSet<CauseID> {
+        let mut connected = initial_root_ids.clone();
+
+        // A failed constraint whose provenance overlaps this component can introduce
+        // more roots that overlap another failed constraint. Close the component
+        // transitively so diagnostic coverage does not depend on iteration order.
+        loop {
+            let previous_len = connected.len();
+            for root_ids in failed_root_ids {
+                if !connected.is_disjoint(root_ids) {
+                    connected.extend(root_ids.iter().copied());
+                }
+            }
+
+            if connected.len() == previous_len {
+                return connected;
+            }
+        }
+    }
+
+    fn effect_unification_diagnostics(
         &self,
-        pending_constraint: &PendingConstraint,
+        failed_constraints: &[&PendingConstraint],
+        failed_root_ids: &[FxHashSet<CauseID>],
+        unreported_roots: &mut FxHashSet<CauseID>,
+        diags: &mut Vec<Diagnostic>,
         engine: &TrackedEngine,
-    ) -> Option<Diagnostic> {
-        let cause_id = pending_constraint.cause_id();
-        match self.provenance.effect_conflict(cause_id, engine)? {
-            EffectConflict::Distinct { first_span, first_effect, second_span, second_effect } => {
-                Some(Diagnostic::IncompatibleEffectRows(
-                    IncompatibleEffectRows::builder()
-                        .first_span(first_span)
-                        .first_effect(first_effect)
-                        .second_span(second_span)
-                        .second_effect(second_effect)
-                        .build(),
-                ))
+    ) {
+        for (pending_constraint, root_ids) in failed_constraints.iter().zip(failed_root_ids.iter())
+        {
+            let primary_root_id =
+                self.provenance.primary_root_cause_id(pending_constraint.cause_id());
+            if !unreported_roots.contains(&primary_root_id) {
+                continue;
             }
-            EffectConflict::Fallback { span, effect } => Some(Diagnostic::IncompatibleEffects(
-                IncompatibleEffects::builder().span(span).effect(effect).build(),
-            )),
+
+            let connected_root_ids = Self::connected_root_ids(root_ids, failed_root_ids);
+            let ResolvedRootCause::EffectUnification(effect_unification) =
+                self.provenance.resolved_root_cause(primary_root_id, connected_root_ids, engine)
+            else {
+                continue;
+            };
+
+            for root_id in &effect_unification.root_ids {
+                unreported_roots.remove(root_id);
+            }
+            diags.push(Self::incompatible_effect_diagnostic(effect_unification));
         }
     }
 
-    fn effect_conflict_diagnostics(&self, diags: &mut Vec<Diagnostic>, engine: &TrackedEngine) {
-        for pending_constraint in self.constraint_set.errored_pending_constraints() {
-            if let Some(diagnostic) =
-                self.incompatible_effect_diagnostic(pending_constraint, engine)
-                && !diags.contains(&diagnostic)
-            {
-                diags.push(diagnostic);
+    fn fallback_diagnostics(
+        &self,
+        failed_constraints: &[&PendingConstraint],
+        failed_root_ids: &[FxHashSet<CauseID>],
+        unreported_roots: &mut FxHashSet<CauseID>,
+        diags: &mut Vec<Diagnostic>,
+        engine: &TrackedEngine,
+    ) {
+        for (pending_constraint, root_ids) in failed_constraints.iter().zip(failed_root_ids.iter())
+        {
+            let primary_root_id =
+                self.provenance.primary_root_cause_id(pending_constraint.cause_id());
+            if !unreported_roots.remove(&primary_root_id) {
+                continue;
             }
-        }
-    }
 
-    fn subtype_conflict_diagnostics(&self, diags: &mut Vec<Diagnostic>, engine: &TrackedEngine) {
-        diags.extend(
-            self.constraint_set
-                .failed_cause_ids()
-                .map(|cause_id| self.provenance.primary_root_cause_id(cause_id))
-                .filter_map(|cause_id| {
-                    let (source, span, subtype) =
-                        self.provenance.resolved_subtype_origin(cause_id, engine)?;
-
-                    Some(Diagnostic::ResidualSubtype(
+            match self.provenance.resolved_root_cause(primary_root_id, root_ids.clone(), engine) {
+                ResolvedRootCause::Subtype { source, span, subtype } => {
+                    diags.push(Diagnostic::ResidualSubtype(
                         ResidualSubtype::builder()
                             .source(source)
                             .span(span)
                             .subype(subtype)
                             .build(),
-                    ))
-                }),
-        );
+                    ));
+                }
+                ResolvedRootCause::EffectUnification(effect_unification) => {
+                    diags.push(Self::incompatible_effect_diagnostic(effect_unification));
+                }
+            }
+        }
     }
 
     #[must_use]
     pub fn residual_into_diags(mut self, engine: &TrackedEngine) -> (Vec<Diagnostic>, Subst) {
+        let failed_constraints =
+            self.constraint_set.failed_pending_constraints().collect::<Vec<_>>();
+        let failed_root_ids = failed_constraints
+            .iter()
+            .map(|pending_constraint| self.provenance.root_cause_ids(pending_constraint.cause_id()))
+            .collect::<Vec<_>>();
+        let mut unreported_roots = failed_constraints
+            .iter()
+            .map(|pending_constraint| {
+                self.provenance.primary_root_cause_id(pending_constraint.cause_id())
+            })
+            .collect::<FxHashSet<_>>();
         let mut diags = Vec::new();
 
-        self.effect_conflict_diagnostics(&mut diags, engine);
-        self.subtype_conflict_diagnostics(&mut diags, engine);
+        // Specialized effect diagnostics claim every failed primary root in their
+        // connected provenance component. The fallback pass then reports each root
+        // that has not already been explained by one of those diagnostics.
+        self.effect_unification_diagnostics(
+            &failed_constraints,
+            &failed_root_ids,
+            &mut unreported_roots,
+            &mut diags,
+            engine,
+        );
+        self.fallback_diagnostics(
+            &failed_constraints,
+            &failed_root_ids,
+            &mut unreported_roots,
+            &mut diags,
+            engine,
+        );
+        debug_assert!(unreported_roots.is_empty());
 
         let numeric_inferences = self.constraint_set.numeric_inferences();
         let default_numeric_type = Ty::new_primitive(Primitive::Int32, engine);

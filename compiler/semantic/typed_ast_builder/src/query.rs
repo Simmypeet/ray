@@ -5,7 +5,7 @@ use qbice::{
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_source_file::SourceElement;
-use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_def_ids};
+use rayc_symbol::{GlobalSymbolID, span::get_span, symbol_kind::get_all_def_ids};
 use rayc_target::TargetID;
 use rayc_typed_ast::{
     name_binding::Source,
@@ -76,7 +76,9 @@ impl TAstBuilder {
             self.bind_statement(&stmt).await;
         }
 
-        self.push_function_effect_constraint(body_span).await;
+        let function_name_span =
+            self.engine().get_span(self.current_def_id()).await.unwrap_or(body_span);
+        self.push_function_effect_constraint(function_name_span).await;
     }
 }
 

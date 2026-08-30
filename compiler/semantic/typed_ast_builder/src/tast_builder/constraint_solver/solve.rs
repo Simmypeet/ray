@@ -29,15 +29,11 @@ impl ConstraintSet {
         }
     }
 
-    pub(super) fn failed_cause_ids(&self) -> impl Iterator<Item = CauseID> {
-        self.residual_constraints
+    pub(super) fn failed_pending_constraints(&self) -> impl Iterator<Item = &PendingConstraint> {
+        self.errored_constraints
             .iter()
-            .map(PendingConstraint::cause_id)
-            .chain(self.errored_constraints.iter().map(|(_, pending)| pending.cause_id()))
-    }
-
-    pub(super) fn errored_pending_constraints(&self) -> impl Iterator<Item = &PendingConstraint> {
-        self.errored_constraints.iter().map(|(_, pending)| pending)
+            .map(|(_, pending)| pending)
+            .chain(self.residual_constraints.iter())
     }
 
     pub(super) fn numeric_inferences(&self) -> impl Iterator<Item = Inference> + '_ {

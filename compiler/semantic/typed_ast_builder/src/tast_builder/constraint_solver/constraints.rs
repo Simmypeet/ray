@@ -7,15 +7,14 @@ use rayc_type::{
 use rayc_typed_ast::{
     statement::Statement,
     typed_expr::{SubExprs, TypedExprID},
-    typed_function::TypedFunctionLocalID,
 };
 
 use crate::tast_builder::{
     TAstBuilder,
     constraint_solver::{
         provenance::{
-            EffectIntroductionConstraintOrigin, EffectSharingConstraintOrigin,
-            SubtypeConstraintOrigin, SubtypeSource,
+            EffectUnificationOrigin, EffectUnificationSource, SubtypeConstraintOrigin,
+            SubtypeSource,
         },
         solve::PendingConstraint,
     },
@@ -27,16 +26,6 @@ impl TAstBuilder {
         expression_id: TypedExprID,
         introduced_effect: &Interned<Ty>,
     ) {
-        let cause_id = self.constraint_solver.provenance.insert_root_cause(
-            EffectIntroductionConstraintOrigin::builder()
-                .expression_id(TypedFunctionLocalID::new(self.building_function, expression_id))
-                .span(self.span_of_expression(expression_id))
-                // we use the original introduced effect here because we want to track the original
-                // effect that was introduced, not the potentially opened version of it
-                .introduced_effect(introduced_effect.clone())
-                .build(),
-        );
-
         let expr_effect = self.effect_of_expression(expression_id).clone();
         let introduced_effect = introduced_effect.clone();
 
@@ -46,12 +35,12 @@ impl TAstBuilder {
             Ty::open_closed_row(&introduced_effect, &mut self.constraint_solver, &self.engine)
                 .unwrap_or(introduced_effect);
 
-        let pending_constraint = PendingConstraint::builder()
-            .constraint(Constraint::Subtype(Subtype::new(introduced_effect, expr_effect)))
-            .cause_id(cause_id)
-            .build();
-
-        self.push_constraint(pending_constraint);
+        self.push_effect_unification_constraint(
+            introduced_effect,
+            expr_effect,
+            self.span_of_expression(expression_id),
+            EffectUnificationSource::EffectIntroduction,
+        );
     }
 
     pub(in crate::tast_builder) fn compose_effect_from_sub_exprs(
@@ -67,17 +56,12 @@ impl TAstBuilder {
         for sub_expr in sub_exprs {
             let sub_eff = self.effect_of_expression(sub_expr).clone();
 
-            let cause_id = self.constraint_solver.provenance.insert_root_cause(
-                EffectSharingConstraintOrigin::builder()
-                    .span(self.span_of_expression(sub_expr))
-                    .effect(sub_eff.clone())
-                    .build(),
+            let pending_constraint = self.effect_unification_constraint(
+                sub_eff,
+                dest_eff.clone(),
+                self.span_of_expression(sub_expr),
+                EffectUnificationSource::EffectSharing,
             );
-
-            let pending_constraint = PendingConstraint::builder()
-                .constraint(Constraint::Subtype(Subtype::new(sub_eff, dest_eff.clone())))
-                .cause_id(cause_id)
-                .build();
 
             constraints.push(pending_constraint);
         }
@@ -95,20 +79,11 @@ impl TAstBuilder {
         let Some(expression) = expression else {
             return;
         };
-        let expression_effect = self.effect_of_expression(expression).clone();
-        let function_effect = self.function_map.effect_of(self.current_typed_function_id()).clone();
-        let cause_id = self.constraint_solver.provenance.insert_root_cause(
-            EffectSharingConstraintOrigin::builder()
-                .span(self.span_of_expression(expression))
-                .effect(expression_effect.clone())
-                .build(),
-        );
-
-        self.push_constraint(
-            PendingConstraint::builder()
-                .constraint(Constraint::Subtype(Subtype::new(expression_effect, function_effect)))
-                .cause_id(cause_id)
-                .build(),
+        self.push_effect_unification_constraint(
+            self.effect_of_expression(expression).clone(),
+            self.function_map.effect_of(self.current_typed_function_id()).clone(),
+            self.span_of_expression(expression),
+            EffectUnificationSource::EffectSharing,
         );
     }
 
@@ -119,12 +94,45 @@ impl TAstBuilder {
         let body_effect = self.function_map.effect_of(self.current_typed_function_id()).clone();
         let signature_effect = self.effect_row_of_current_function().await;
 
-        self.push_subtype_constraint(
-            &body_effect,
-            &signature_effect,
+        self.push_effect_unification_constraint(
+            signature_effect,
+            body_effect,
             function_name_span,
-            SubtypeSource::FunctionBodyEffect,
+            EffectUnificationSource::FunctionBodyEffect,
         );
+    }
+
+    fn effect_unification_constraint(
+        &mut self,
+        lesser: Interned<Ty>,
+        greater: Interned<Ty>,
+        span: RelativeSpan,
+        source: EffectUnificationSource,
+    ) -> PendingConstraint {
+        let cause_id = self.constraint_solver.provenance.insert_root_cause(
+            EffectUnificationOrigin::builder()
+                .lesser(lesser.clone())
+                .greater(greater.clone())
+                .source(source)
+                .span(span)
+                .build(),
+        );
+
+        PendingConstraint::builder()
+            .constraint(Constraint::Subtype(Subtype::new(lesser, greater)))
+            .cause_id(cause_id)
+            .build()
+    }
+
+    fn push_effect_unification_constraint(
+        &mut self,
+        lesser: Interned<Ty>,
+        greater: Interned<Ty>,
+        span: RelativeSpan,
+        source: EffectUnificationSource,
+    ) {
+        let pending_constraint = self.effect_unification_constraint(lesser, greater, span, source);
+        self.push_constraint(pending_constraint);
     }
 
     pub fn new_effect_inference(&mut self) -> Interned<Ty> {

@@ -4,18 +4,12 @@ expression: run
 ---
 stderr:
 [error]: function body effects do not match its signature: expected `{}`, but found `{State[int32] | {any}}`
-   ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:9:31
+   ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:9:5
    │
- 9 │   def mismatchedTopLevel() -> ():
-   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-10 │ ┃     return withIntState()
-   ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
-
-[error]: incompatible effect row `{State[int32] | {any}}`
-   ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:10:12
-   │
+ 9 │ def mismatchedTopLevel() -> ():
+   │     ━━━━━━━━━━━━━━━━━━ the function body has effects outside its signature
 10 │     return withIntState()
-   ╰╴           ━━━━━━━━━━━━━━ this expression has effects that cannot be composed
+   ╰╴           ────────────── effect `{State[int32] | {any}}` introduced here
 
 [error]: mismatched types in variable assignment: expected `def() -> () \ {}`, but found `def() -> () \ {State[int32] | {any}}`
    ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:18:37
@@ -23,13 +17,7 @@ stderr:
 18 │     let callback: def() -> () \ {} = () -> withIntState()
    ╰╴                                    ━━━━━━━━━━━━━━━━━━━━━
 
-[error]: incompatible effect row `{State[int32] | {any}}`
-   ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:18:44
-   │
-18 │     let callback: def() -> () \ {} = () -> withIntState()
-   ╰╴                                           ━━━━━━━━━━━━━━ this expression has effects that cannot be composed
-
-[error]: Compilation aborted due to 4 error(s)
+[error]: Compilation aborted due to 2 error(s)
 
 
 

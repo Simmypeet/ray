@@ -11,7 +11,6 @@ use rayc_type::{
     subst::{Subst, Substitutable},
     ty::{Ty, inference::Inference},
 };
-use rayc_typed_ast::{typed_expr::TypedExprID, typed_function::TypedFunctionLocalID};
 
 use crate::tast_builder::{TAstBuilder, constraint_solver::solve::PendingConstraint};
 
@@ -57,7 +56,6 @@ pub enum SubtypeSource {
     IfCondition,
     IfBranch,
     ReturnType,
-    FunctionBodyEffect,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
@@ -68,23 +66,24 @@ pub struct SubtypeConstraintOrigin {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
-pub struct EffectIntroductionConstraintOrigin {
-    expression_id: TypedFunctionLocalID<TypedExprID>,
+pub struct EffectUnificationOrigin {
+    lesser: Interned<Ty>,
+    greater: Interned<Ty>,
+    source: EffectUnificationSource,
     span: RelativeSpan,
-    introduced_effect: Interned<Ty>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
-pub struct EffectSharingConstraintOrigin {
-    span: RelativeSpan,
-    effect: Interned<Ty>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum EffectUnificationSource {
+    EffectSharing,
+    EffectIntroduction,
+    FunctionBodyEffect,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]
 pub enum RootCauseOrigin {
     Subtype(SubtypeConstraintOrigin),
-    EffectSharing(EffectSharingConstraintOrigin),
-    EffectIntroduction(EffectIntroductionConstraintOrigin),
+    EffectUnification(EffectUnificationOrigin),
 }
 
 /// Describes that the constraint was generated from the source code of the
@@ -135,17 +134,25 @@ pub enum Cause {
 pub type CauseID = ID<Cause>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum EffectConflict {
-    Distinct {
-        first_span: RelativeSpan,
-        first_effect: Interned<Ty>,
-        second_span: RelativeSpan,
-        second_effect: Interned<Ty>,
-    },
-    Fallback {
-        span: RelativeSpan,
-        effect: Interned<Ty>,
-    },
+pub(super) struct ResolvedEffectUnification {
+    pub(super) lesser: Interned<Ty>,
+    pub(super) greater: Interned<Ty>,
+    pub(super) source: EffectUnificationSource,
+    pub(super) span: RelativeSpan,
+    pub(super) related_sites: Vec<ResolvedEffectUnificationSite>,
+    pub(super) root_ids: FxHashSet<CauseID>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ResolvedEffectUnificationSite {
+    pub(super) effect_row: Interned<Ty>,
+    pub(super) source: EffectUnificationSource,
+    pub(super) span: RelativeSpan,
+}
+
+pub(super) enum ResolvedRootCause {
+    Subtype { source: SubtypeSource, span: RelativeSpan, subtype: Subtype },
+    EffectUnification(ResolvedEffectUnification),
 }
 
 impl Provenance {
@@ -264,123 +271,106 @@ impl Provenance {
         }
     }
 
-    fn resolved_effect_introduction_sites(
+    pub(super) fn root_cause_ids(&self, cause_id: CauseID) -> FxHashSet<CauseID> {
+        let mut root_ids = FxHashSet::default();
+        self.collect_root_cause_ids(cause_id, &mut root_ids);
+        root_ids
+    }
+
+    fn effect_unification_sites(
         &self,
         root_ids: &FxHashSet<CauseID>,
+        primary_root_id: CauseID,
+        primary_span: RelativeSpan,
         engine: &TrackedEngine,
-    ) -> Vec<(RelativeSpan, Interned<Ty>)> {
+    ) -> Vec<ResolvedEffectUnificationSite> {
         let mut sites = Vec::new();
 
         for root_id in root_ids {
+            if *root_id == primary_root_id {
+                continue;
+            }
+
             let Cause::Root(root) = &self.causes[*root_id] else {
                 continue;
             };
-            let RootCauseOrigin::EffectIntroduction(origin) = &root.origin else {
+            let RootCauseOrigin::EffectUnification(origin) = &root.origin else {
                 continue;
             };
-
-            let mut introduced_effect =
-                origin.introduced_effect.apply_subst_or_clone(&self.subst, engine);
-            while let Some(reduced) = introduced_effect.reduce(engine) {
-                introduced_effect = reduced;
+            if origin.span == primary_span {
+                continue;
             }
-            sites.push((origin.span, introduced_effect));
+
+            match origin.source {
+                EffectUnificationSource::EffectIntroduction => {
+                    sites.push(ResolvedEffectUnificationSite {
+                        effect_row: self.resolve_type(&origin.lesser, engine),
+                        source: origin.source,
+                        span: origin.span,
+                    });
+                }
+                EffectUnificationSource::FunctionBodyEffect => {
+                    sites.push(ResolvedEffectUnificationSite {
+                        effect_row: self.resolve_type(&origin.greater, engine),
+                        source: origin.source,
+                        span: origin.span,
+                    });
+                }
+                EffectUnificationSource::EffectSharing => {}
+            }
         }
 
-        sites.sort_by_key(|(span, _)| *span);
+        sites.sort_by(|first, second| {
+            (&first.span, &first.source, &first.effect_row).cmp(&(
+                &second.span,
+                &second.source,
+                &second.effect_row,
+            ))
+        });
         sites.dedup();
         sites
     }
 
-    fn first_distinct_effect_pair(
-        sites: &[(RelativeSpan, Interned<Ty>)],
-    ) -> Option<(RelativeSpan, Interned<Ty>, RelativeSpan, Interned<Ty>)> {
-        for (index, (first_span, first_effect)) in sites.iter().enumerate() {
-            for (second_span, second_effect) in &sites[index + 1..] {
-                if first_effect != second_effect {
-                    return Some((
-                        *first_span,
-                        first_effect.clone(),
-                        *second_span,
-                        second_effect.clone(),
-                    ));
-                }
+    fn resolve_type(&self, ty: &Interned<Ty>, engine: &TrackedEngine) -> Interned<Ty> {
+        let mut ty = ty.apply_subst_or_clone(&self.subst, engine);
+        while let Some(reduced) = ty.reduce(engine) {
+            ty = reduced;
+        }
+        ty
+    }
+
+    pub(super) fn resolved_root_cause(
+        &self,
+        primary_root_id: CauseID,
+        root_ids: FxHashSet<CauseID>,
+        engine: &TrackedEngine,
+    ) -> ResolvedRootCause {
+        let Cause::Root(root) = &self.causes[primary_root_id] else {
+            unreachable!("the primary root cause ID must identify a root cause")
+        };
+
+        match &root.origin {
+            RootCauseOrigin::Subtype(origin) => ResolvedRootCause::Subtype {
+                source: origin.source,
+                span: origin.span,
+                subtype: origin.original_subtype.apply_subst_or_clone(&self.subst, engine),
+            },
+            RootCauseOrigin::EffectUnification(origin) => {
+                ResolvedRootCause::EffectUnification(ResolvedEffectUnification {
+                    lesser: self.resolve_type(&origin.lesser, engine),
+                    greater: self.resolve_type(&origin.greater, engine),
+                    source: origin.source,
+                    span: origin.span,
+                    related_sites: self.effect_unification_sites(
+                        &root_ids,
+                        primary_root_id,
+                        origin.span,
+                        engine,
+                    ),
+                    root_ids,
+                })
             }
         }
-
-        None
-    }
-
-    fn resolved_effect_sharing_origin(
-        &self,
-        root_ids: &FxHashSet<CauseID>,
-        engine: &TrackedEngine,
-    ) -> Option<(RelativeSpan, Interned<Ty>)> {
-        let origin = root_ids
-            .iter()
-            .filter_map(|root_id| {
-                let Cause::Root(root) = &self.causes[*root_id] else {
-                    return None;
-                };
-
-                match &root.origin {
-                    RootCauseOrigin::EffectSharing(origin) => Some(origin),
-
-                    RootCauseOrigin::Subtype(_) | RootCauseOrigin::EffectIntroduction(_) => None,
-                }
-            })
-            .min_by_key(|origin| origin.span)?;
-
-        let mut effect = origin.effect.apply_subst_or_clone(&self.subst, engine);
-        while let Some(reduced) = effect.reduce(engine) {
-            effect = reduced;
-        }
-
-        Some((origin.span, effect))
-    }
-
-    pub(super) fn effect_conflict(
-        &self,
-        cause_id: CauseID,
-        engine: &TrackedEngine,
-    ) -> Option<EffectConflict> {
-        let mut root_ids = FxHashSet::default();
-        // collect all the root causes that contributed to the failure of this cause.
-        self.collect_root_cause_ids(cause_id, &mut root_ids);
-
-        let (fallback_span, fallback_effect) =
-            self.resolved_effect_sharing_origin(&root_ids, engine)?;
-
-        // collect all the effect introduction sites that contributed to the failure of
-        // this cause.
-        let sites = self.resolved_effect_introduction_sites(&root_ids, engine);
-
-        let Some((first_span, first_effect, second_span, second_effect)) =
-            Self::first_distinct_effect_pair(&sites)
-        else {
-            return Some(EffectConflict::Fallback { span: fallback_span, effect: fallback_effect });
-        };
-
-        Some(EffectConflict::Distinct { first_span, first_effect, second_span, second_effect })
-    }
-
-    pub(super) fn resolved_subtype_origin(
-        &self,
-        root_cause_id: CauseID,
-        engine: &TrackedEngine,
-    ) -> Option<(SubtypeSource, RelativeSpan, Subtype)> {
-        let Cause::Root(root) = &self.causes[root_cause_id] else {
-            return None;
-        };
-        let RootCauseOrigin::Subtype(origin) = &root.origin else {
-            return None;
-        };
-
-        Some((
-            origin.source,
-            origin.span,
-            origin.original_subtype.apply_subst_or_clone(&self.subst, engine),
-        ))
     }
 
     pub(super) fn default_unbound_inferences(

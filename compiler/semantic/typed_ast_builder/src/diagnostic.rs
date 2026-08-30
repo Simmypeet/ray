@@ -10,7 +10,7 @@ use rayc_symbol::{
 };
 use rayc_type::{constraint::subtype::Subtype, ty::Ty};
 
-use crate::tast_builder::constraint_solver::SubtypeSource;
+use crate::tast_builder::constraint_solver::{EffectUnificationSource, SubtypeSource};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct UnboundName {
@@ -353,7 +353,6 @@ impl Report for ResidualSubtype {
             SubtypeSource::IfCondition => "if expression condition must be `bool`",
             SubtypeSource::IfBranch => "mismatched types in if expression branches",
             SubtypeSource::ReturnType => "mismatched types in return expression",
-            SubtypeSource::FunctionBodyEffect => "function body effects do not match its signature",
         };
 
         let found = self.subype.greater();
@@ -372,54 +371,84 @@ impl Report for ResidualSubtype {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct EffectUnificationSite {
+    effect_row: Interned<Ty>,
+    span: RelativeSpan,
+    source: EffectUnificationSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct IncompatibleEffectRows {
-    first_span: RelativeSpan,
-    first_effect: Interned<Ty>,
-    second_span: RelativeSpan,
-    second_effect: Interned<Ty>,
+    primary_span: RelativeSpan,
+    lesser: Interned<Ty>,
+    greater: Interned<Ty>,
+    source: EffectUnificationSource,
+    related_sites: Vec<EffectUnificationSite>,
 }
 
 impl Report for IncompatibleEffectRows {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        let first_effect = self.first_effect.display(engine).await;
-        let second_effect = self.second_effect.display(engine).await;
+        let lesser = self.lesser.display(engine).await;
+        let greater = self.greater.display(engine).await;
+        let message = match self.source {
+            EffectUnificationSource::EffectSharing => {
+                format!("incompatible effect rows `{lesser}` and `{greater}`")
+            }
+            EffectUnificationSource::EffectIntroduction => {
+                format!("effect `{lesser}` cannot be introduced into `{greater}`")
+            }
+            EffectUnificationSource::FunctionBodyEffect => {
+                format!(
+                    "function body effects do not match its signature: expected `{lesser}`, but \
+                     found `{greater}`"
+                )
+            }
+        };
+
+        let primary_message = match self.source {
+            EffectUnificationSource::EffectSharing => "these effect rows cannot be composed",
+            EffectUnificationSource::EffectIntroduction => {
+                "this expression introduces an incompatible effect"
+            }
+            EffectUnificationSource::FunctionBodyEffect => {
+                "the function body has effects outside its signature"
+            }
+        };
+
+        let mut related = Vec::with_capacity(self.related_sites.len());
+        for site in &self.related_sites {
+            let effect_row = site.effect_row.display(engine).await;
+            let message = match site.source {
+                EffectUnificationSource::EffectIntroduction => {
+                    format!("effect `{effect_row}` introduced here")
+                }
+                EffectUnificationSource::FunctionBodyEffect => {
+                    format!(
+                        "function body effect `{effect_row}` is checked against its signature here"
+                    )
+                }
+                EffectUnificationSource::EffectSharing => {
+                    format!("effect row `{effect_row}` is composed here")
+                }
+            };
+
+            related.push(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&site.span).await)
+                    .message(message)
+                    .build(),
+            );
+        }
 
         Rendered::builder()
-            .message(format!("incompatible effects `{first_effect}` and `{second_effect}`"))
+            .message(message)
             .primary_highlight(
                 Highlight::builder()
-                    .span(engine.to_absolute_span(&self.second_span).await)
-                    .message(format!("this expression introduces `{second_effect}`"))
+                    .span(engine.to_absolute_span(&self.primary_span).await)
+                    .message(primary_message)
                     .build(),
             )
-            .related(vec![
-                Highlight::builder()
-                    .span(engine.to_absolute_span(&self.first_span).await)
-                    .message(format!("`{first_effect}` was introduced here"))
-                    .build(),
-            ])
-            .build()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
-pub struct IncompatibleEffects {
-    span: RelativeSpan,
-    effect: Interned<Ty>,
-}
-
-impl Report for IncompatibleEffects {
-    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        let effect = self.effect.display(engine).await;
-
-        Rendered::builder()
-            .message(format!("incompatible effect row `{effect}`"))
-            .primary_highlight(
-                Highlight::builder()
-                    .span(engine.to_absolute_span(&self.span).await)
-                    .message("this expression has effects that cannot be composed")
-                    .build(),
-            )
+            .related(related)
             .build()
     }
 }
@@ -444,7 +473,6 @@ pub enum Diagnostic {
     DuplicateNameBinding(DuplicateNameBinding),
     ResidualSubtype(ResidualSubtype),
     IncompatibleEffectRows(IncompatibleEffectRows),
-    IncompatibleEffects(IncompatibleEffects),
     EmbeddedNulString(EmbeddedNulString),
 }
 
@@ -485,9 +513,6 @@ impl Report for Diagnostic {
             }
             Self::ResidualSubtype(residual_subtype) => residual_subtype.report(engine).await,
             Self::IncompatibleEffectRows(incompatible_effects) => {
-                incompatible_effects.report(engine).await
-            }
-            Self::IncompatibleEffects(incompatible_effects) => {
                 incompatible_effects.report(engine).await
             }
             Self::EmbeddedNulString(string) => string.report(engine).await,

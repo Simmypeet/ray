@@ -1,3 +1,4 @@
+pub(crate) use provenance::EffectUnificationSource;
 pub use provenance::SubtypeSource;
 use rayc_qbice::TrackedEngine;
 use rayc_type::solver::Solver;
