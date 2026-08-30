@@ -34,7 +34,7 @@ impl Inference {
     pub const fn constraint(&self) -> InferenceConstraint { self.constraint }
 }
 
-pub trait GenInfer {
+pub trait GenInfer: Send + Sync {
     fn gen_infer(&mut self, kind: TyKind, constraint: InferenceConstraint) -> Inference;
 
     fn gen_effect_row_infer(&mut self) -> Inference {
