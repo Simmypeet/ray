@@ -3,7 +3,7 @@ eff State[s]:
     def put(value: s)
 
 def main() -> int32:
-    run:
+    let handled = run:
         State.put(1)
         State.get()
     with State[int32]:

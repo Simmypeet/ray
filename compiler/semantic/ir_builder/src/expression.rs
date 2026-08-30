@@ -13,6 +13,7 @@ mod lambda;
 mod literal;
 mod paren;
 mod ref_of;
+mod run_with;
 mod tuple;
 mod tuple_index;
 mod typed_expr_id;
@@ -63,6 +64,9 @@ impl Builder {
             }
             TypedExprKind::Paren(paren) => {
                 self.lower_expression(context, TypedExprWithID::new(paren, expression_id))
+            }
+            TypedExprKind::RunWith(run_with) => {
+                self.lower_expression(context, TypedExprWithID::new(run_with, expression_id))
             }
             TypedExprKind::Errored(errored) => {
                 self.lower_expression(context, TypedExprWithID::new(errored, expression_id))

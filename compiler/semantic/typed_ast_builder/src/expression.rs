@@ -13,10 +13,12 @@ pub mod literal;
 pub mod parenthesized;
 pub mod postfix;
 pub mod r#return;
+pub mod run_with;
 
 impl Bind<Expression> for TAstBuilder {
     async fn bind(&mut self, syn: Expression) -> TypedExprID {
         match syn {
+            Expression::RunWith(run_with) => Box::pin(self.bind(run_with)).await,
             Expression::IfElse(if_else) => Box::pin(self.bind(if_else)).await,
             Expression::Binary(binary) => Box::pin(self.bind(binary)).await,
             Expression::Lambda(lambda) => Box::pin(self.bind(lambda)).await,

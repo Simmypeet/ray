@@ -32,6 +32,7 @@ impl Builder {
             | TypedExprKind::Binary(_)
             | TypedExprKind::IfElse(_)
             | TypedExprKind::RefOf(_)
+            | TypedExprKind::RunWith(_)
             | TypedExprKind::Errored(_) => self.error_address(),
         }
     }

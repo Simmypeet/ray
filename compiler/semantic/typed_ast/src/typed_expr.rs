@@ -13,7 +13,7 @@ use crate::{
     typed_expr::{
         binary::Binary, call::Call, deref::Deref, errored::Errored, identifier::Identifier,
         if_else::IfElse, lambda::Lambda, literal::Literal, paren::Paren, ref_of::RefOf,
-        tuple::Tuple, tuple_index::TupleIndex,
+        run_with::RunWith, tuple::Tuple, tuple_index::TupleIndex,
     },
 };
 
@@ -28,6 +28,7 @@ pub mod literal;
 pub mod paren;
 pub mod ref_of;
 pub mod r#return;
+pub mod run_with;
 pub mod tuple;
 pub mod tuple_index;
 
@@ -49,6 +50,7 @@ pub enum TypedExprKind {
     RefOf(RefOf),
     Deref(Deref),
     Paren(Paren),
+    RunWith(RunWith),
     Errored(Errored),
 }
 
@@ -56,7 +58,7 @@ impl SubExprs for TypedExprKind {
     fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
         // There must be a better way to do this while doesn't require boxing the
         // iterator 😭
-        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L> {
+        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M> {
             A(A),
             B(B),
             C(C),
@@ -69,9 +71,10 @@ impl SubExprs for TypedExprKind {
             J(J),
             K(K),
             L(L),
+            M(M),
         }
 
-        impl<A, B, C, D, E, F, G, H, I, J, K, L> Iterator for Iter<A, B, C, D, E, F, G, H, I, J, K, L>
+        impl<A, B, C, D, E, F, G, H, I, J, K, L, M> Iterator for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M>
         where
             A: Iterator<Item = TypedExprID>,
             B: Iterator<Item = TypedExprID>,
@@ -85,6 +88,7 @@ impl SubExprs for TypedExprKind {
             J: Iterator<Item = TypedExprID>,
             K: Iterator<Item = TypedExprID>,
             L: Iterator<Item = TypedExprID>,
+            M: Iterator<Item = TypedExprID>,
         {
             type Item = TypedExprID;
 
@@ -102,6 +106,7 @@ impl SubExprs for TypedExprKind {
                     Self::J(iter) => iter.next(),
                     Self::K(iter) => iter.next(),
                     Self::L(iter) => iter.next(),
+                    Self::M(iter) => iter.next(),
                 }
             }
         }
@@ -118,7 +123,8 @@ impl SubExprs for TypedExprKind {
             Self::RefOf(x) => Iter::I(x.sub_exprs()),
             Self::Deref(x) => Iter::J(x.sub_exprs()),
             Self::Paren(x) => Iter::K(x.sub_exprs()),
-            Self::Errored(x) => Iter::L(x.sub_exprs()),
+            Self::RunWith(x) => Iter::L(x.sub_exprs()),
+            Self::Errored(x) => Iter::M(x.sub_exprs()),
         }
     }
 }
@@ -239,7 +245,8 @@ impl TypedExprMap {
             | TypedExprKind::Lambda(_)
             | TypedExprKind::Binary(_)
             | TypedExprKind::IfElse(_)
-            | TypedExprKind::RefOf(_) => LvalueClassification::NotLvalue,
+            | TypedExprKind::RefOf(_)
+            | TypedExprKind::RunWith(_) => LvalueClassification::NotLvalue,
         }
     }
 }

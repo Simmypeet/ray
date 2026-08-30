@@ -177,7 +177,7 @@ impl Analyzer {
                     plan,
                 );
             }
-            TypedExprKind::Literal(_) => {}
+            TypedExprKind::Literal(_) | TypedExprKind::RunWith(_) => {}
             TypedExprKind::TupleIndex(tuple_index) => {
                 self.visit_expression(
                     function_id,

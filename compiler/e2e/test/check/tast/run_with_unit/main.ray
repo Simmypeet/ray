@@ -1,0 +1,11 @@
+eff Console:
+    def write()
+
+def test() -> ():
+    let result: int32 = run:
+        Console.write()
+    with Console:
+        def write():
+            return ()
+
+    return ()
