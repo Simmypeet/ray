@@ -114,6 +114,10 @@ impl EffectRow {
 impl Reduce for EffectRow {
     fn reduce(&self, engine: &rayc_qbice::TrackedEngine) -> Option<Self> {
         if let Some(Ty::EffectRow(tail_row)) = self.tail.as_deref() {
+            if tail_row.labels.is_empty() && tail_row.tail.is_none() {
+                return Some(Self { labels: self.labels.clone(), tail: None });
+            }
+
             return Some(Self::new(
                 self.labels.iter().cloned().chain(tail_row.labels.iter().cloned()),
                 tail_row.tail.clone(),

@@ -74,6 +74,20 @@ mod tests {
         assert_eq!(outer.reduce(&engine), Some(expected));
     }
 
+    // input: {IO | {}}
+    // premise: the tail is an empty effect row
+    // output: {IO}
+    #[tokio::test]
+    async fn empty_effect_row_tail_is_removed() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let io = effect_label(1, &engine);
+        let empty = Ty::new_effect_row([], None, &engine);
+        let row = EffectRow::new([io.clone()], Some(empty), &engine);
+        let expected = EffectRow::new([io], None, &engine);
+
+        assert_eq!(row.reduce(&engine), Some(expected));
+    }
+
     // input: ({| int32}, {| bool})
     // premise: reduction is a single, left-to-right step
     // output: (int32, {| bool})
