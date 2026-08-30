@@ -8,6 +8,7 @@ use crate::typed_expr::{SubExprs, TypedExprID};
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum CallTarget {
     Direct { function_id: GlobalSymbolID, subst: Subst },
+    EffectOperation { effect_id: GlobalSymbolID, operation_id: GlobalSymbolID, subst: Subst },
     Lambda { callee: TypedExprID },
 }
 
@@ -33,6 +34,16 @@ impl Call {
     }
 
     #[must_use]
+    pub const fn new_effect_operation(
+        effect_id: GlobalSymbolID,
+        operation_id: GlobalSymbolID,
+        arguments: Vec<TypedExprID>,
+        subst: Subst,
+    ) -> Self {
+        Self { target: CallTarget::EffectOperation { effect_id, operation_id, subst }, arguments }
+    }
+
+    #[must_use]
     pub const fn target(&self) -> &CallTarget { &self.target }
 
     #[must_use]
@@ -42,7 +53,8 @@ impl Call {
 impl MutSubstitutable for Call {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         match &mut self.target {
-            CallTarget::Direct { subst: call_subst, .. } => {
+            CallTarget::Direct { subst: call_subst, .. }
+            | CallTarget::EffectOperation { subst: call_subst, .. } => {
                 call_subst.apply_mut_subst(subst, engine);
             }
             CallTarget::Lambda { .. } => {}
@@ -53,7 +65,7 @@ impl MutSubstitutable for Call {
 impl SubExprs for Call {
     fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
         let target_iter = match &self.target {
-            CallTarget::Direct { .. } => None,
+            CallTarget::Direct { .. } | CallTarget::EffectOperation { .. } => None,
             CallTarget::Lambda { callee } => Some(*callee),
         };
 

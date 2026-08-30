@@ -44,6 +44,13 @@ impl RunWith {
     pub fn operation_handlers(&self) -> impl ExactSizeIterator<Item = TypedFunctionID> + '_ {
         self.operation_handlers.values().copied()
     }
+
+    #[must_use]
+    pub fn operation_handler_entries(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (SymbolID, TypedFunctionID)> + '_ {
+        self.operation_handlers.iter().map(|(operation, function)| (*operation, *function))
+    }
 }
 
 impl SubExprs for RunWith {

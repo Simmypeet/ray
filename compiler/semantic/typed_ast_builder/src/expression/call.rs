@@ -143,11 +143,13 @@ impl TAstBuilder {
                 .apply_subst_or_clone(&call_subst, self.engine())
         };
 
-        let expr_id = self.insert_expression(
-            TypedExprKind::Call(Call::new_direct(function_id, arguments, call_subst)),
-            span,
-            return_type,
-        );
+        let call = match operation_effect {
+            Some(effect) => {
+                Call::new_effect_operation(effect.symbol_id(), function_id, arguments, call_subst)
+            }
+            None => Call::new_direct(function_id, arguments, call_subst),
+        };
+        let expr_id = self.insert_expression(TypedExprKind::Call(call), span, return_type);
         self.push_effect_introduction(expr_id, &effect_row);
         expr_id
     }
