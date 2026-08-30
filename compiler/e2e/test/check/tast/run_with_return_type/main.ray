@@ -1,0 +1,12 @@
+eff Console:
+    def write()
+
+def test() -> ():
+    let result: bool = run:
+        Console.write()
+        return true
+    with Console:
+        def write():
+            return ()
+
+    return ()

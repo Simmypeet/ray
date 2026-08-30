@@ -1,0 +1,16 @@
+eff Convert[t]:
+    def convert(value: t) -> t
+
+def test() -> ():
+    let captured = true
+    let handled: int32 = run:
+        let body_value: bool = 1
+        Convert[int32].convert(1)
+        return 1
+    with Convert[int32]:
+        def convert(value):
+            let copied: bool = value
+            let closure = () -> captured
+            return true
+
+    return ()

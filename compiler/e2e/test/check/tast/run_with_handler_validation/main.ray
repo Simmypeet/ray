@@ -1,0 +1,20 @@
+eff Operations:
+    def another_missing()
+    def missing()
+    def wrong(value: int32)
+    def duplicate()
+
+def test() -> ():
+    let handled = run:
+        ()
+    with Operations:
+        def wrong():
+            return ()
+        def duplicate():
+            return ()
+        def duplicate():
+            return ()
+        def extra():
+            return ()
+
+    return ()

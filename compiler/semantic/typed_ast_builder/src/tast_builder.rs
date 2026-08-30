@@ -25,8 +25,9 @@ use rayc_typed_ast::{
     name_binding::{NameBindingGroupID, NameBindingID},
     statement::Statement,
     typed_expr::{self, SubExprs, TypedExpr, TypedExprID, TypedExprKind},
-    typed_function::{TypedFunctionID, TypedFunctionLocalID, TypedFunctionMap},
+    typed_function::{TypedContext, TypedFunctionID, TypedFunctionLocalID, TypedFunctionMap},
     typed_lambda::{LambdaParameterID, TypedLambdaParameter},
+    typed_operation_handler::{OperationHandlerParameterID, TypedOperationHandlerParameter},
     typed_variable::{TypedVariable, TypedVariableID},
 };
 
@@ -121,7 +122,9 @@ impl TAstBuilder {
 
     #[must_use]
     pub fn parameter_name_binding_group(&self) -> NameBindingGroupID {
-        self.function_map.parameter_name_binding_group_id_of(self.building_function)
+        self.function_map
+            .parameter_name_binding_group_id_of(self.building_function)
+            .expect("the current function should have a parameter name-binding group")
     }
 
     #[must_use]
@@ -148,11 +151,65 @@ impl TAstBuilder {
     }
 
     #[must_use]
+    pub fn start_operation_handler(
+        &mut self,
+        operation: GlobalSymbolID,
+        return_type: Interned<Ty>,
+    ) -> TypedFunctionID {
+        let effect = self.new_effect_inference();
+        let function_id =
+            self.function_map.insert_operation_handler(operation, return_type, effect);
+        let parameter_name_binding_group_id =
+            self.function_map.parameter_name_binding_group_id_of(function_id);
+
+        self.suspended_functions.push(self.building_function);
+        self.building_function = function_id;
+        self.name_env.enter_function(parameter_name_binding_group_id);
+
+        function_id
+    }
+
+    pub fn finish_operation_handler(&mut self) {
+        self.name_env.exit_function();
+        self.building_function = self
+            .suspended_functions
+            .pop()
+            .expect("an operation handler should suspend its enclosing function");
+    }
+
+    #[must_use]
+    pub fn start_thunk(&mut self) -> (TypedFunctionID, Interned<Ty>) {
+        let return_type = self.new_type_inference();
+        let effect = self.new_effect_inference();
+        let function_id = self.function_map.insert_thunk(return_type.clone(), effect);
+
+        self.suspended_functions.push(self.building_function);
+        self.building_function = function_id;
+        self.name_env.enter_function(None);
+
+        (function_id, return_type)
+    }
+
+    pub fn finish_thunk(&mut self) {
+        self.name_env.exit_function();
+        self.building_function =
+            self.suspended_functions.pop().expect("a thunk should suspend its enclosing function");
+    }
+
+    #[must_use]
     pub fn insert_lambda_parameter(
         &mut self,
         parameter: TypedLambdaParameter,
     ) -> LambdaParameterID {
         self.function_map.insert_lambda_parameter(self.building_function, parameter)
+    }
+
+    #[must_use]
+    pub fn insert_operation_handler_parameter(
+        &mut self,
+        parameter: TypedOperationHandlerParameter,
+    ) -> OperationHandlerParameterID {
+        self.function_map.insert_operation_handler_parameter(self.building_function, parameter)
     }
 
     #[must_use]
@@ -256,7 +313,14 @@ impl TAstBuilder {
 
     #[must_use]
     pub async fn return_type_of_current_function(&self) -> Interned<Ty> {
-        self.engine.get_return_type(self.current_def_id).await
+        match self.function_map.get_function(self.building_function).context() {
+            TypedContext::Def(_) => self.engine.get_return_type(self.current_def_id).await,
+            TypedContext::Lambda(_) => {
+                panic!("a lambda expression body should not bind return statements")
+            }
+            TypedContext::OperationHandler(context) => context.return_type().clone(),
+            TypedContext::Thunk(context) => context.return_type().clone(),
+        }
     }
 
     #[must_use]

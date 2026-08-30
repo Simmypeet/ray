@@ -28,8 +28,11 @@ impl NameEnv {
         Self { name_binding_gruop_stack: vec![vec![first_name_binding_group]] }
     }
 
-    pub(super) fn enter_function(&mut self, parameter_name_binding_group: NameBindingGroupID) {
-        self.name_binding_gruop_stack.push(vec![parameter_name_binding_group]);
+    pub(super) fn enter_function(
+        &mut self,
+        parameter_name_binding_group: Option<NameBindingGroupID>,
+    ) {
+        self.name_binding_gruop_stack.push(parameter_name_binding_group.into_iter().collect());
     }
 
     pub(super) fn exit_function(&mut self) {

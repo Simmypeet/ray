@@ -1,0 +1,51 @@
+---
+source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
+expression: run
+---
+stderr:
+[error]: effect handler semantics are not implemented yet
+   ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:8:19
+   │
+ 8 │       let handled = run:
+   │ ┏━━━━━━━━━━━━━━━━━━━┛
+ 9 │ ┃         ()
+10 │ ┃     with Operations:
+11 │ ┃         def wrong():
+   ‡ ┃
+17 │ ┃         def extra():
+18 │ ┃             return ()
+   ╰╴┗━━━━━━━━━━━━━━━━━━━━━┛
+
+[error]: missing handlers for effect operations `main.Operations.another_missing`, `main.Operations.missing`
+   ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:10:10
+   │
+10 │     with Operations:
+   ╰╴         ━━━━━━━━━━ add handlers for `main.Operations.another_missing`, `main.Operations.missing`
+
+[error]: handler for `main.Operations.wrong` expects 1 parameters, but 0 were provided
+   ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:11:18
+   │
+11 │         def wrong():
+   ╰╴                 ━━
+
+[error]: duplicate handler for effect operation `duplicate`
+   ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:15:13
+   │
+13 │         def duplicate():
+   │             ───────── the first handler is here
+14 │             return ()
+15 │         def duplicate():
+   ╰╴            ━━━━━━━━━ duplicate handler
+
+[error]: effect `main.Operations` has no operation named `extra`
+   ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:17:13
+   │
+17 │         def extra():
+   ╰╴            ━━━━━
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

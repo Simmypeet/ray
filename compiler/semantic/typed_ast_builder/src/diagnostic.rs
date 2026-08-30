@@ -137,6 +137,114 @@ pub struct EffectHandlerNotSupported {
     span: RelativeSpan,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct MissingEffectOperationHandler {
+    operations: Vec<GlobalSymbolID>,
+    span: RelativeSpan,
+}
+
+impl Report for MissingEffectOperationHandler {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let mut operations = Vec::with_capacity(self.operations.len());
+        for operation in &self.operations {
+            operations.push(format!("`{}`", engine.get_qualified_name(*operation).await));
+        }
+        let operations = operations.join(", ");
+        let (message, highlight) = if self.operations.len() == 1 {
+            (
+                format!("missing handler for effect operation {operations}"),
+                format!("add a handler for {operations}"),
+            )
+        } else {
+            (
+                format!("missing handlers for effect operations {operations}"),
+                format!("add handlers for {operations}"),
+            )
+        };
+
+        Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message(highlight)
+                    .build(),
+            )
+            .build()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct ExtraneousEffectOperationHandler {
+    effect: GlobalSymbolID,
+    name: Interned<str>,
+    span: RelativeSpan,
+}
+
+impl Report for ExtraneousEffectOperationHandler {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let effect = engine.get_qualified_name(self.effect).await;
+        Rendered::builder()
+            .message(format!("effect `{effect}` has no operation named `{}`", &*self.name))
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .build()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct DuplicateEffectOperationHandler {
+    name: Interned<str>,
+    original_span: RelativeSpan,
+    duplicate_span: RelativeSpan,
+}
+
+impl Report for DuplicateEffectOperationHandler {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message(format!("duplicate handler for effect operation `{}`", &*self.name))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.duplicate_span).await)
+                    .message("duplicate handler")
+                    .build(),
+            )
+            .related(vec![
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.original_span).await)
+                    .message("the first handler is here")
+                    .build(),
+            ])
+            .build()
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
+)]
+pub struct MismatchedEffectOperationHandlerParameterCount {
+    operation: GlobalSymbolID,
+    expected: usize,
+    found: usize,
+    span: RelativeSpan,
+}
+
+impl Report for MismatchedEffectOperationHandlerParameterCount {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let operation = engine.get_qualified_name(self.operation).await;
+        Rendered::builder()
+            .message(format!(
+                "handler for `{operation}` expects {} parameters, but {} were provided",
+                self.expected, self.found
+            ))
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .build()
+    }
+}
+
 impl Report for EffectHandlerNotSupported {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         Rendered::builder()
@@ -493,6 +601,10 @@ pub enum Diagnostic {
     IncompatibleEffectRows(IncompatibleEffectRows),
     EmbeddedNulString(EmbeddedNulString),
     EffectHandlerNotSupported(EffectHandlerNotSupported),
+    MissingEffectOperationHandler(MissingEffectOperationHandler),
+    ExtraneousEffectOperationHandler(ExtraneousEffectOperationHandler),
+    DuplicateEffectOperationHandler(DuplicateEffectOperationHandler),
+    MismatchedEffectOperationHandlerParameterCount(MismatchedEffectOperationHandlerParameterCount),
 }
 
 impl Report for Diagnostic {
@@ -536,6 +648,12 @@ impl Report for Diagnostic {
             }
             Self::EmbeddedNulString(string) => string.report(engine).await,
             Self::EffectHandlerNotSupported(handler) => handler.report(engine).await,
+            Self::MissingEffectOperationHandler(handler) => handler.report(engine).await,
+            Self::ExtraneousEffectOperationHandler(handler) => handler.report(engine).await,
+            Self::DuplicateEffectOperationHandler(handler) => handler.report(engine).await,
+            Self::MismatchedEffectOperationHandlerParameterCount(handler) => {
+                handler.report(engine).await
+            }
         }
     }
 }
