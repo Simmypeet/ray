@@ -129,6 +129,18 @@ impl SubExprs for TypedExprKind {
     }
 }
 
+impl TypedExprKind {
+    #[must_use]
+    pub const fn new_run_with(
+        effect: rayc_symbol::GlobalSymbolID,
+        effect_substitution: rayc_type::subst::Subst,
+        body: crate::typed_function::TypedFunctionID,
+        operation_handlers: Vec<crate::typed_function::TypedFunctionID>,
+    ) -> Self {
+        Self::RunWith(RunWith::new(effect, effect_substitution, body, operation_handlers))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LvalueRoot {
     NameBinding(NameBindingID),
@@ -194,8 +206,20 @@ impl MutSubstitutable for TypedExpr {
         self.ty.apply_in_place(subst, engine);
         self.effect.apply_in_place(subst, engine);
 
-        if let TypedExprKind::Call(call) = &mut self.kind {
-            call.apply_mut_subst(subst, engine);
+        match &mut self.kind {
+            TypedExprKind::Call(call) => call.apply_mut_subst(subst, engine),
+            TypedExprKind::RunWith(run_with) => run_with.apply_mut_subst(subst, engine),
+            TypedExprKind::Identifier(_)
+            | TypedExprKind::Literal(_)
+            | TypedExprKind::TupleIndex(_)
+            | TypedExprKind::Tuple(_)
+            | TypedExprKind::Lambda(_)
+            | TypedExprKind::Binary(_)
+            | TypedExprKind::IfElse(_)
+            | TypedExprKind::RefOf(_)
+            | TypedExprKind::Deref(_)
+            | TypedExprKind::Paren(_)
+            | TypedExprKind::Errored(_) => {}
         }
     }
 }

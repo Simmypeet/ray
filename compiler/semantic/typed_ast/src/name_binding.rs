@@ -15,6 +15,7 @@ use rayc_type::{
 use crate::{
     typed_function::{TypedFunctionID, TypedFunctionLocalID},
     typed_lambda::LambdaParameterID,
+    typed_operation_handler::OperationHandlerParameterID,
     typed_variable::TypedVariableID,
 };
 
@@ -23,6 +24,7 @@ pub enum Source {
     Variable(TypedFunctionLocalID<TypedVariableID>),
     Parameter(TypedFunctionLocalID<ParameterID>),
     LambdaParameter(TypedFunctionLocalID<LambdaParameterID>),
+    OperationHandlerParameter(TypedFunctionLocalID<OperationHandlerParameterID>),
 }
 
 impl Source {
@@ -32,6 +34,7 @@ impl Source {
             Self::Variable(id) => id.function_id(),
             Self::Parameter(id) => id.function_id(),
             Self::LambdaParameter(id) => id.function_id(),
+            Self::OperationHandlerParameter(id) => id.function_id(),
         }
     }
 }

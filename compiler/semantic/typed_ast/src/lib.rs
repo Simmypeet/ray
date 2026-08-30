@@ -10,6 +10,8 @@ pub mod statement;
 pub mod typed_expr;
 pub mod typed_function;
 pub mod typed_lambda;
+pub mod typed_operation_handler;
+pub mod typed_thunk;
 pub mod typed_variable;
 
 /// Retrieves the typed AST for a given def ID.
