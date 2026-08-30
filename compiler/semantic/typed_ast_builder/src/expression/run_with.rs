@@ -1,17 +1,20 @@
+use std::{collections::hash_map::Entry, ops::Not};
+
+use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
+use rayc_lexical::tree::RelativeSpan;
 use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
-    GlobalSymbolID,
-    member::get_members,
-    name::get_name,
-    symbol_kind::{SymbolKind, get_symbol_kind},
+    GlobalSymbolID, SymbolID,
+    member::{Member, get_members},
 };
 use rayc_syntax::expression::RunWith as RunWithSyntax;
+use rayc_target::TargetID;
 use rayc_type::{subst::Substitutable, ty::Ty};
 use rayc_typed_ast::{
     name_binding::Source,
-    typed_expr::{TypedExprID, TypedExprKind, errored::Errored},
+    typed_expr::{TypedExprID, errored::Errored, run_with::RunWith},
     typed_function::{TypedFunctionID, TypedFunctionLocalID},
     typed_operation_handler::TypedOperationHandlerParameter,
 };
@@ -38,54 +41,17 @@ impl Bind<RunWithSyntax> for TAstBuilder {
         let effect_id = effect.symbol_id();
         let effect_substitution = effect.substitution(self.engine()).await;
 
-        let operations = self.effect_operations(effect_id).await;
-        let (seen_handlers, operation_handlers) =
-            self.bind_operation_handlers(&syn, effect_id, &operations, &effect_substitution).await;
+        let operation_handlers =
+            self.bind_operation_handlers(&syn, effect_id, &effect_substitution).await;
 
-        let mut missing_operations = operations
-            .iter()
-            .filter(|(name, _)| !seen_handlers.contains_key(*name))
-            .collect::<Vec<_>>();
-        missing_operations.sort_by(|(left, _), (right, _)| left.as_ref().cmp(right.as_ref()));
-        if !missing_operations.is_empty() {
-            self.push_diagnostic(Diagnostic::MissingEffectOperationHandler(
-                MissingEffectOperationHandler::builder()
-                    .operations(
-                        missing_operations.into_iter().map(|(_, operation)| *operation).collect(),
-                    )
-                    .span(syn.effect().map_or_else(|| syn.span(), |effect| effect.span()))
-                    .build(),
-            ));
-        }
-
-        let (body_function, return_type) = self.start_thunk();
-        let mut has_explicit_return = false;
-        if let Some(body) = syn.block() {
-            for statement in body.statements() {
-                has_explicit_return |=
-                    matches!(&statement, rayc_syntax::statement::Statement::Return(_));
-                Box::pin(self.bind_statement(&statement)).await;
-            }
-        }
-        if !has_explicit_return {
-            self.push_unit_return_type_constraint(
-                syn.block().map_or_else(|| syn.span(), |body| body.span()),
-            )
-            .await;
-        }
-        self.finish_thunk();
+        let (body_function, return_type) = self.build_run_with_body(&syn).await;
 
         self.push_diagnostic(Diagnostic::EffectHandlerNotSupported(
             EffectHandlerNotSupported::builder().span(syn.span()).build(),
         ));
 
         self.insert_expression(
-            TypedExprKind::new_run_with(
-                effect_id,
-                effect_substitution,
-                body_function,
-                operation_handlers,
-            ),
+            RunWith::new(effect_id, effect_substitution, body_function, operation_handlers),
             syn.span(),
             return_type,
         )
@@ -93,54 +59,118 @@ impl Bind<RunWithSyntax> for TAstBuilder {
 }
 
 impl TAstBuilder {
+    fn report_missing_effect_operation_handler(
+        &mut self,
+        operations: &Member,
+        target_id: TargetID,
+        built: &FxHashMap<SymbolID, RelativeSpan>,
+        syn: &RunWithSyntax,
+    ) {
+        let missing_operations = operations
+            .namable_members()
+            .filter_map(|x| built.contains_key(&x).not().then_some(target_id.make_global(x)))
+            .collect::<Vec<_>>();
+
+        if !missing_operations.is_empty() {
+            self.push_diagnostic(Diagnostic::MissingEffectOperationHandler(
+                MissingEffectOperationHandler::builder()
+                    .operations(missing_operations)
+                    .span(syn.effect().map_or_else(|| syn.span(), |effect| effect.span()))
+                    .build(),
+            ));
+        }
+    }
+
+    async fn build_run_with_body(
+        &mut self,
+        syn: &RunWithSyntax,
+    ) -> (TypedFunctionID, Interned<Ty>) {
+        let (body_function, return_type) = self.start_thunk();
+        let mut has_explicit_return = false;
+
+        // TODO: determining return type like this is quite fragile, we should probably
+        // have a more robust way
+        if let Some(body) = syn.block() {
+            for statement in body.statements() {
+                has_explicit_return |=
+                    matches!(&statement, rayc_syntax::statement::Statement::Return(_));
+                Box::pin(self.bind_statement(&statement)).await;
+            }
+        }
+
+        if !has_explicit_return {
+            self.push_unit_return_type_constraint(
+                syn.block().map_or_else(|| syn.span(), |body| body.span()),
+            )
+            .await;
+        }
+
+        self.finish_thunk();
+
+        (body_function, return_type)
+    }
+
     async fn bind_operation_handlers(
         &mut self,
         syntax: &RunWithSyntax,
         effect: GlobalSymbolID,
-        operations: &FxHashMap<qbice::storage::intern::Interned<str>, GlobalSymbolID>,
         substitution: &rayc_type::subst::Subst,
-    ) -> (
-        FxHashMap<qbice::storage::intern::Interned<str>, rayc_lexical::tree::RelativeSpan>,
-        Vec<TypedFunctionID>,
-    ) {
+    ) -> FxHashMap<SymbolID, TypedFunctionID> {
         let mut seen = FxHashMap::default();
-        let mut functions = Vec::new();
-        let Some(handler_body) = syntax.handler_body() else { return (seen, functions) };
+        let mut functions = FxHashMap::default();
+        let operations = self.engine().get_members(effect).await;
+
+        let Some(handler_body) = syntax.handler_body() else { return FxHashMap::default() };
 
         for handler in handler_body.operations() {
             let Some(name) = handler.name() else { continue };
-            if let Some(original_span) = seen.get(&name.kind.0).copied() {
-                let duplicate_span = name.span();
-                self.push_diagnostic(Diagnostic::DuplicateEffectOperationHandler(
-                    DuplicateEffectOperationHandler::builder()
-                        .name(name.kind.0)
-                        .original_span(original_span)
-                        .duplicate_span(duplicate_span)
-                        .build(),
-                ));
-                continue;
-            }
-            seen.insert(name.kind.0.clone(), name.span());
 
-            let Some(operation) = operations.get(&name.kind.0).copied() else {
-                let span = name.span();
+            // first retrieve the operation symbol ID from the name.
+            let Some(operation) = operations.get_by_name(&name.kind) else {
+                // oof, non-existent operation handler, report diagnostic and continue
                 self.push_diagnostic(Diagnostic::ExtraneousEffectOperationHandler(
                     ExtraneousEffectOperationHandler::builder()
                         .effect(effect)
                         .name(name.kind.0)
-                        .span(span)
+                        .span(name.span)
                         .build(),
                 ));
                 continue;
             };
-            if let Some(function) =
-                self.bind_operation_handler(operation, handler, substitution).await
+
+            // if handler for this operation is already seen, report diagnostic and continue
+            match seen.entry(operation) {
+                Entry::Vacant(vacant_entry) => {
+                    vacant_entry.insert(name.span());
+                }
+                Entry::Occupied(occupied_entry) => {
+                    self.push_diagnostic(Diagnostic::DuplicateEffectOperationHandler(
+                        DuplicateEffectOperationHandler::builder()
+                            .name(name.kind.0)
+                            .original_span(*occupied_entry.get())
+                            .duplicate_span(name.span)
+                            .build(),
+                    ));
+                    continue;
+                }
+            }
+
+            if let Some(function) = self
+                .bind_operation_handler(
+                    effect.target_id.make_global(operation),
+                    handler,
+                    substitution,
+                )
+                .await
             {
-                functions.push(function);
+                assert!(functions.insert(operation, function).is_none());
             }
         }
 
-        (seen, functions)
+        // report missing operation handlers before returning the functions
+        self.report_missing_effect_operation_handler(&operations, effect.target_id, &seen, syntax);
+
+        functions
     }
 
     async fn bind_operation_handler(
@@ -153,6 +183,7 @@ impl TAstBuilder {
         let parameter_patterns = handler
             .parameter_list()
             .map_or_else(Vec::new, |parameters| parameters.parameters().collect());
+
         if parameters.len() != parameter_patterns.len() {
             self.push_diagnostic(Diagnostic::MismatchedEffectOperationHandlerParameterCount(
                 MismatchedEffectOperationHandlerParameterCount::builder()
@@ -189,23 +220,6 @@ impl TAstBuilder {
         self.finish_operation_handler();
 
         Some(function_id)
-    }
-
-    async fn effect_operations(
-        &self,
-        effect: GlobalSymbolID,
-    ) -> FxHashMap<qbice::storage::intern::Interned<str>, GlobalSymbolID> {
-        let members = self.engine().get_members(effect).await;
-        let mut operations = FxHashMap::default();
-
-        for member in members.all_ids() {
-            let member = effect.target_id.make_global(member);
-            if self.engine().get_symbol_kind(member).await == SymbolKind::EffectOperation {
-                operations.insert(self.engine().get_name(member).await, member);
-            }
-        }
-
-        operations
     }
 
     fn bind_operation_handler_parameters<'a>(

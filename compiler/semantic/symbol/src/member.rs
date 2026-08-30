@@ -49,6 +49,12 @@ impl Member {
         self.member_ids_by_name.values().copied().chain(self.unnameds.iter().copied())
     }
 
+    /// Retrieves all the member IDs of the symbol that have a name associated
+    /// to it.
+    pub fn namable_members(&self) -> impl Iterator<Item = SymbolID> + '_ {
+        self.member_ids_by_name.values().copied()
+    }
+
     /// Inserts a new symbol ID with the given name into the member.
     #[must_use]
     pub fn insert(&mut self, name: Interned<str>, id: SymbolID) -> Insertion {

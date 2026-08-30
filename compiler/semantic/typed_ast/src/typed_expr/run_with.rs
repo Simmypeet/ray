@@ -1,6 +1,7 @@
 use qbice::{Decode, Encode, StableHash};
+use rayc_hash::FxHashMap;
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::GlobalSymbolID;
+use rayc_symbol::{GlobalSymbolID, SymbolID};
 use rayc_type::subst::{MutSubstitutable, Subst};
 
 use crate::{
@@ -13,16 +14,19 @@ pub struct RunWith {
     effect: GlobalSymbolID,
     effect_substitution: Subst,
     body: TypedFunctionID,
-    operation_handlers: Vec<TypedFunctionID>,
+
+    /// Each of the symbol IDs in this map is the operation handler under the
+    /// `effect`
+    operation_handlers: FxHashMap<SymbolID, TypedFunctionID>,
 }
 
 impl RunWith {
     #[must_use]
-    pub(super) const fn new(
+    pub const fn new(
         effect: GlobalSymbolID,
         effect_substitution: Subst,
         body: TypedFunctionID,
-        operation_handlers: Vec<TypedFunctionID>,
+        operation_handlers: FxHashMap<SymbolID, TypedFunctionID>,
     ) -> Self {
         Self { effect, effect_substitution, body, operation_handlers }
     }
@@ -38,7 +42,7 @@ impl RunWith {
 
     #[must_use]
     pub fn operation_handlers(&self) -> impl ExactSizeIterator<Item = TypedFunctionID> + '_ {
-        self.operation_handlers.iter().copied()
+        self.operation_handlers.values().copied()
     }
 }
 
