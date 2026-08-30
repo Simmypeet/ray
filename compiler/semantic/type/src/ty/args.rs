@@ -22,6 +22,9 @@ impl Args {
         Self { args: engine.intern_unsized(args.into_iter().collect::<Vec<_>>()) }
     }
 
+    #[must_use]
+    pub const fn new_with_args(args: Interned<[Interned<Ty>]>) -> Self { Self { args } }
+
     pub fn interned_iter(&self) -> impl Iterator<Item = &Interned<Ty>> { self.args.iter() }
 
     pub fn iter(&self) -> impl Iterator<Item = &Ty> {

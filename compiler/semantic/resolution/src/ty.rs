@@ -118,7 +118,9 @@ impl Resolver<'_> {
                     let effect_symbol_id = path_resolution.symbol_id();
                     let arguments = path_resolution
                         .type_arguments()
-                        .map_or_else(Vec::new, |arguments| arguments.cloned().collect());
+                        .cloned()
+                        .expect("should have a type arguments for effect path");
+
                     labels.push(self.new_effect_label(effect_symbol_id, arguments));
                 }
 

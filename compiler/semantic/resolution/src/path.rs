@@ -36,8 +36,8 @@ impl PathSegmentResolution {
 
     /// Iterates over this segment's resolved type arguments.
     #[must_use]
-    pub fn type_arguments(&self) -> Option<impl ExactSizeIterator<Item = &Interned<Ty>>> {
-        self.type_arguments.as_ref().map(|arguments| arguments.iter())
+    pub const fn type_arguments(&self) -> Option<&Interned<[Interned<Ty>]>> {
+        self.type_arguments.as_ref()
     }
 }
 
@@ -79,7 +79,7 @@ impl PathResolution {
 
     /// Iterates over the final segment's resolved type arguments.
     #[must_use]
-    pub fn type_arguments(&self) -> Option<impl ExactSizeIterator<Item = &Interned<Ty>>> {
+    pub fn type_arguments(&self) -> Option<&Interned<[Interned<Ty>]>> {
         self.segments.last()?.type_arguments()
     }
 
@@ -115,7 +115,7 @@ impl PathResolution {
     pub fn type_arguments_for(
         &self,
         symbol_id: GlobalSymbolID,
-    ) -> Option<impl ExactSizeIterator<Item = &Interned<Ty>>> {
+    ) -> Option<&Interned<[Interned<Ty>]>> {
         self.segments.iter().find(|segment| segment.symbol_id == symbol_id)?.type_arguments()
     }
 }

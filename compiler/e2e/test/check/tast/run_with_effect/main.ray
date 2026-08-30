@@ -1,0 +1,24 @@
+eff Handled:
+    def first()
+    def second()
+
+eff BodyResidual:
+    def perform()
+
+eff FirstHandlerResidual:
+    def perform()
+
+eff SecondHandlerResidual:
+    def perform()
+
+def test() -> ():
+    run:
+        Handled.first()
+        BodyResidual.perform()
+    with Handled:
+        def first():
+            FirstHandlerResidual.perform()
+        def second():
+            SecondHandlerResidual.perform()
+
+    return ()

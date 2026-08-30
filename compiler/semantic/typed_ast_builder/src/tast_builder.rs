@@ -236,6 +236,20 @@ impl TAstBuilder {
         id
     }
 
+    /// Inserts an expression whose effect requires custom composition rules.
+    #[must_use]
+    pub(super) fn insert_expression_without_effect_composition<K: Into<TypedExprKind>>(
+        &mut self,
+        kind: K,
+        span: RelativeSpan,
+        ty: Interned<Ty>,
+    ) -> TypedExprID {
+        let effect = self.new_effect_inference();
+        let expr = TypedExpr::new(kind.into(), span, ty, effect);
+
+        self.function_map.insert_expression(self.building_function, expr)
+    }
+
     pub fn push_diagnostic(&mut self, diagnostic: Diagnostic) { self.diagnostics.push(diagnostic); }
 
     pub fn extend_diagnostics(&mut self, diagnostics: impl IntoIterator<Item = Diagnostic>) {

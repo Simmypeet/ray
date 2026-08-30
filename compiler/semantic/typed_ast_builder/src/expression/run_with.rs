@@ -11,7 +11,10 @@ use rayc_symbol::{
 };
 use rayc_syntax::expression::RunWith as RunWithSyntax;
 use rayc_target::TargetID;
-use rayc_type::{subst::Substitutable, ty::Ty};
+use rayc_type::{
+    subst::Substitutable,
+    ty::{Ty, args::Args, effect_row::EffectLabel},
+};
 use rayc_typed_ast::{
     name_binding::Source,
     typed_expr::{TypedExprID, errored::Errored, run_with::RunWith},
@@ -38,7 +41,15 @@ impl Bind<RunWithSyntax> for TAstBuilder {
         let Ok(effect) = self.resolve_effect_path(&effect).await else {
             return self.insert_expression(Errored::new_empty(), syn.span(), unit);
         };
+
         let effect_id = effect.symbol_id();
+        let effect_arguments =
+            effect.type_arguments().cloned().expect("should have type arguments for effect symbol");
+
+        let effect_label = self
+            .engine()
+            .intern(EffectLabel::new(effect_id, Args::new_with_args(effect_arguments)));
+
         let effect_substitution = effect.substitution(self.engine()).await;
 
         let operation_handlers =
@@ -50,11 +61,14 @@ impl Bind<RunWithSyntax> for TAstBuilder {
             EffectHandlerNotSupported::builder().span(syn.span()).build(),
         ));
 
-        self.insert_expression(
-            RunWith::new(effect_id, effect_substitution, body_function, operation_handlers),
-            syn.span(),
-            return_type,
-        )
+        let run_with =
+            RunWith::new(effect_id, effect_substitution, body_function, operation_handlers);
+        let handler_functions = run_with.operation_handlers().collect::<Vec<_>>();
+        let expression_id =
+            self.insert_expression_without_effect_composition(run_with, syn.span(), return_type);
+        self.compose_run_with_effect(expression_id, body_function, handler_functions, effect_label);
+
+        expression_id
     }
 }
 

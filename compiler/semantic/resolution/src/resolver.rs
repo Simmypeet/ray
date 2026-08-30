@@ -100,9 +100,9 @@ impl<'a> Resolver<'a> {
     pub(crate) fn new_effect_label(
         &self,
         effect_id: GlobalSymbolID,
-        arguments: Vec<Interned<Ty>>,
+        arguments: Interned<[Interned<Ty>]>,
     ) -> Interned<EffectLabel> {
-        self.engine.intern(EffectLabel::new(effect_id, Args::new(arguments, self.engine)))
+        self.engine.intern(EffectLabel::new(effect_id, Args::new_with_args(arguments)))
     }
 
     pub(crate) fn new_poly_var_type(

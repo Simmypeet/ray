@@ -138,10 +138,11 @@ impl TAstBuilder {
                 .expect("an effect operation should have a parent effect");
             let effect_arguments = resolution
                 .type_arguments_for(effect_id)
-                .map_or_else(Vec::new, |arguments| arguments.cloned().collect());
+                .cloned()
+                .expect("should have type arguments for effect symbol");
             let label = self
                 .engine()
-                .intern(EffectLabel::new(effect_id, Args::new(effect_arguments, self.engine())));
+                .intern(EffectLabel::new(effect_id, Args::new_with_args(effect_arguments)));
             Ty::new_effect_row([label], None, self.engine())
         } else {
             self.engine()

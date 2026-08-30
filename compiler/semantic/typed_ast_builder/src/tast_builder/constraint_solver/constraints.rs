@@ -2,11 +2,12 @@ use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::{
     constraint::{Constraint, subtype::Subtype},
-    ty::{Ty, TyKind},
+    ty::{Ty, TyKind, effect_row::EffectLabel},
 };
 use rayc_typed_ast::{
     statement::Statement,
     typed_expr::{SubExprs, TypedExprID},
+    typed_function::TypedFunctionID,
 };
 
 use crate::tast_builder::{
@@ -85,6 +86,49 @@ impl TAstBuilder {
             self.span_of_expression(expression),
             EffectUnificationSource::EffectSharing,
         );
+    }
+
+    pub(crate) fn compose_run_with_effect(
+        &mut self,
+        run_with_expression: TypedExprID,
+        body_function: TypedFunctionID,
+        operation_handlers: impl IntoIterator<Item = TypedFunctionID>,
+        handled_effect: Interned<EffectLabel>,
+    ) {
+        let span = self.span_of_expression(run_with_expression);
+        let run_with_effect = self.effect_of_expression(run_with_expression).clone();
+        let original_body_effect = self.function_map.effect_of(body_function).clone();
+
+        let handled_body_effect = self.new_effect_inference();
+        let body_effect_with_handled_label =
+            Ty::new_effect_row([handled_effect], Some(handled_body_effect.clone()), self.engine());
+
+        let mut constraints = vec![
+            self.effect_unification_constraint(
+                original_body_effect,
+                body_effect_with_handled_label,
+                span,
+                EffectUnificationSource::EffectSharing,
+            ),
+            self.effect_unification_constraint(
+                handled_body_effect,
+                run_with_effect.clone(),
+                span,
+                EffectUnificationSource::EffectSharing,
+            ),
+        ];
+
+        for operation_handler in operation_handlers {
+            let operation_body_effect = self.function_map.effect_of(operation_handler).clone();
+            constraints.push(self.effect_unification_constraint(
+                operation_body_effect,
+                run_with_effect.clone(),
+                span,
+                EffectUnificationSource::EffectSharing,
+            ));
+        }
+
+        self.push_constraints(constraints);
     }
 
     pub(crate) async fn push_function_effect_constraint(
