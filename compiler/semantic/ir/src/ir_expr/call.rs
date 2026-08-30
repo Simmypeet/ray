@@ -1,6 +1,6 @@
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::subst::Subst;
+use rayc_type::{subst::Subst, ty::Ty};
 
 use crate::{
     ir_expr::IRExprID,
@@ -17,6 +17,7 @@ pub enum CallTarget {
 pub struct Call {
     target: CallTarget,
     arguments: Vec<IRExprID>,
+    effect: Interned<Ty>,
 }
 
 impl VisitType for Call {
@@ -29,6 +30,7 @@ impl VisitType for Call {
             }
             CallTarget::Lambda { .. } => {}
         }
+        visitor.visit_type(&self.effect);
     }
 }
 
@@ -38,13 +40,18 @@ impl Call {
         function_id: GlobalSymbolID,
         arguments: Vec<IRExprID>,
         subst: Subst,
+        effect: Interned<Ty>,
     ) -> Self {
-        Self { target: CallTarget::Direct { function_id, subst }, arguments }
+        Self { target: CallTarget::Direct { function_id, subst }, arguments, effect }
     }
 
     #[must_use]
-    pub const fn new_lambda(callee: IRExprID, arguments: Vec<IRExprID>) -> Self {
-        Self { target: CallTarget::Lambda { callee }, arguments }
+    pub const fn new_lambda(
+        callee: IRExprID,
+        arguments: Vec<IRExprID>,
+        effect: Interned<Ty>,
+    ) -> Self {
+        Self { target: CallTarget::Lambda { callee }, arguments, effect }
     }
 
     #[must_use]
@@ -52,4 +59,8 @@ impl Call {
 
     #[must_use]
     pub fn arguments(&self) -> &[IRExprID] { &self.arguments }
+
+    /// Returns the conservative ambient effect row at this invocation site.
+    #[must_use]
+    pub const fn effect(&self) -> &Interned<Ty> { &self.effect }
 }

@@ -2,6 +2,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_arena::{ID, OrderedArena};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::{Mutability, Ty};
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
@@ -9,6 +10,86 @@ pub struct IRLambdaContext {
     parameters: LambdaParameterMap,
     return_ty: Interned<Ty>,
     captures: CaptureMap,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
+pub struct IRThunkContext {
+    return_ty: Interned<Ty>,
+    captures: CaptureMap,
+}
+
+impl IRThunkContext {
+    pub(crate) fn new(return_ty: Interned<Ty>) -> Self {
+        Self { return_ty, captures: CaptureMap::default() }
+    }
+
+    #[must_use]
+    pub const fn return_ty(&self) -> &Interned<Ty> { &self.return_ty }
+
+    #[must_use]
+    pub fn captures(&self) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
+        self.captures.iter()
+    }
+
+    #[must_use]
+    pub fn get_capture(&self, id: CaptureID) -> &Capture { self.captures.get_capture(id) }
+
+    pub(crate) fn insert_capture(&mut self, capture: Capture) -> CaptureID {
+        self.captures.insert_capture(capture)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
+pub struct IROperationHandlerContext {
+    operation: GlobalSymbolID,
+    parameters: LambdaParameterMap,
+    return_ty: Interned<Ty>,
+    captures: CaptureMap,
+}
+
+impl IROperationHandlerContext {
+    pub(crate) fn new(operation: GlobalSymbolID, return_ty: Interned<Ty>) -> Self {
+        Self {
+            operation,
+            parameters: LambdaParameterMap::default(),
+            return_ty,
+            captures: CaptureMap::default(),
+        }
+    }
+
+    #[must_use]
+    pub const fn operation(&self) -> GlobalSymbolID { self.operation }
+
+    #[must_use]
+    pub fn parameters(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (LambdaParameterID, &LambdaParameter)> {
+        self.parameters.iter()
+    }
+
+    #[must_use]
+    pub fn get_parameter(&self, id: LambdaParameterID) -> &LambdaParameter {
+        self.parameters.get_parameter(id)
+    }
+
+    pub(crate) fn insert_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
+        self.parameters.insert_parameter(parameter)
+    }
+
+    #[must_use]
+    pub const fn return_ty(&self) -> &Interned<Ty> { &self.return_ty }
+
+    #[must_use]
+    pub fn captures(&self) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
+        self.captures.iter()
+    }
+
+    #[must_use]
+    pub fn get_capture(&self, id: CaptureID) -> &Capture { self.captures.get_capture(id) }
+
+    pub(crate) fn insert_capture(&mut self, capture: Capture) -> CaptureID {
+        self.captures.insert_capture(capture)
+    }
 }
 
 impl IRLambdaContext {
@@ -74,6 +155,7 @@ impl LambdaParameter {
 }
 
 pub type LambdaParameterID = ID<LambdaParameter>;
+pub type OperationHandlerParameterID = LambdaParameterID;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
 pub struct LambdaParameterMap {

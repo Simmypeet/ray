@@ -6,7 +6,10 @@ use crate::{
     address::Address,
     cfg::{BlockID, Cfg, Instruction, Reachables, Terminator},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
-    ir_lambda::{Capture, CaptureID, IRLambdaContext, LambdaParameter, LambdaParameterID},
+    ir_lambda::{
+        Capture, CaptureID, IRLambdaContext, IROperationHandlerContext, IRThunkContext,
+        LambdaParameter, LambdaParameterID,
+    },
     ir_variable::{IRVariable, IRVariableID, IRVariableMap},
     visit::{ExprVisitor, TypeVisitor, VisitExpr, VisitType},
 };
@@ -21,9 +24,9 @@ pub struct IRFunctionMap {
 
 impl IRFunctionMap {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(root_effect: Interned<Ty>) -> Self {
         let mut functions = Arena::new();
-        let root = functions.insert(IRFunction::new());
+        let root = functions.insert(IRFunction::new(root_effect));
         Self { functions, root }
     }
 
@@ -57,8 +60,23 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn insert_lambda(&mut self, return_ty: Interned<Ty>) -> FunctionID {
-        self.functions.insert(IRFunction::new_lambda(return_ty))
+    pub fn insert_lambda(&mut self, return_ty: Interned<Ty>, effect: Interned<Ty>) -> FunctionID {
+        self.functions.insert(IRFunction::new_lambda(return_ty, effect))
+    }
+
+    #[must_use]
+    pub fn insert_thunk(&mut self, return_ty: Interned<Ty>, effect: Interned<Ty>) -> FunctionID {
+        self.functions.insert(IRFunction::new_thunk(return_ty, effect))
+    }
+
+    #[must_use]
+    pub fn insert_operation_handler(
+        &mut self,
+        operation: rayc_symbol::GlobalSymbolID,
+        return_ty: Interned<Ty>,
+        effect: Interned<Ty>,
+    ) -> FunctionID {
+        self.functions.insert(IRFunction::new_operation_handler(operation, return_ty, effect))
     }
 
     #[must_use]
@@ -71,13 +89,22 @@ impl IRFunctionMap {
     }
 
     #[must_use]
+    pub fn insert_operation_handler_parameter(
+        &mut self,
+        function_id: FunctionID,
+        parameter: LambdaParameter,
+    ) -> LambdaParameterID {
+        self.get_function_mut(function_id).insert_operation_handler_parameter(parameter)
+    }
+
+    #[must_use]
     pub fn insert_capture(&mut self, function_id: FunctionID, capture: Capture) -> CaptureID {
         self.get_function_mut(function_id).insert_capture(capture)
     }
 
     #[must_use]
     pub fn get_capture(&self, function_id: FunctionID, capture_id: CaptureID) -> &Capture {
-        self.get_function(function_id).context().assert_as_lambda_context().get_capture(capture_id)
+        self.get_function(function_id).context().get_capture(capture_id)
     }
 
     #[must_use]
@@ -142,10 +169,6 @@ impl IRFunctionMap {
     }
 }
 
-impl Default for IRFunctionMap {
-    fn default() -> Self { Self::new() }
-}
-
 impl VisitType for IRFunctionMap {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
         for (_, function) in self.functions() {
@@ -168,6 +191,8 @@ impl VisitExpr for IRFunctionMap {
 pub enum IRContext {
     Def,
     Lambda(IRLambdaContext),
+    Thunk(IRThunkContext),
+    OperationHandler(IROperationHandlerContext),
 }
 
 impl IRContext {
@@ -175,7 +200,9 @@ impl IRContext {
     pub fn assert_as_def_context(&self) {
         match self {
             Self::Def => {}
-            Self::Lambda(_) => panic!("expected a def context, found a lambda context"),
+            Self::Lambda(_) | Self::Thunk(_) | Self::OperationHandler(_) => {
+                panic!("expected a def context, found a nested function context")
+            }
         }
     }
 
@@ -183,7 +210,9 @@ impl IRContext {
     #[track_caller]
     pub fn assert_as_lambda_context(&self) -> &IRLambdaContext {
         match self {
-            Self::Def => panic!("expected a lambda context, found a def context"),
+            Self::Def | Self::Thunk(_) | Self::OperationHandler(_) => {
+                panic!("expected a lambda context, found a non-lambda context")
+            }
             Self::Lambda(context) => context,
         }
     }
@@ -191,8 +220,50 @@ impl IRContext {
     #[track_caller]
     fn assert_as_lambda_context_mut(&mut self) -> &mut IRLambdaContext {
         match self {
-            Self::Def => panic!("expected a lambda context, found a def context"),
+            Self::Def | Self::Thunk(_) | Self::OperationHandler(_) => {
+                panic!("expected a lambda context, found a non-lambda context")
+            }
             Self::Lambda(context) => context,
+        }
+    }
+
+    #[must_use]
+    #[track_caller]
+    pub fn assert_as_thunk_context(&self) -> &IRThunkContext {
+        match self {
+            Self::Thunk(context) => context,
+            Self::Def | Self::Lambda(_) | Self::OperationHandler(_) => {
+                panic!("expected a thunk context, found another function context")
+            }
+        }
+    }
+
+    #[must_use]
+    #[track_caller]
+    pub fn assert_as_operation_handler_context(&self) -> &IROperationHandlerContext {
+        match self {
+            Self::OperationHandler(context) => context,
+            Self::Def | Self::Lambda(_) | Self::Thunk(_) => {
+                panic!("expected an operation handler context, found another function context")
+            }
+        }
+    }
+
+    fn get_capture(&self, id: CaptureID) -> &Capture {
+        match self {
+            Self::Def => panic!("a def context does not have captures"),
+            Self::Lambda(context) => context.get_capture(id),
+            Self::Thunk(context) => context.get_capture(id),
+            Self::OperationHandler(context) => context.get_capture(id),
+        }
+    }
+
+    fn insert_capture(&mut self, capture: Capture) -> CaptureID {
+        match self {
+            Self::Def => panic!("a def context cannot have captures"),
+            Self::Lambda(context) => context.insert_capture(capture),
+            Self::Thunk(context) => context.insert_capture(capture),
+            Self::OperationHandler(context) => context.insert_capture(capture),
         }
     }
 }
@@ -203,30 +274,57 @@ pub struct IRFunction {
     variable_map: IRVariableMap,
     expression_map: IRExpressionMap,
     context: IRContext,
-}
-
-impl Default for IRFunction {
-    fn default() -> Self { Self::new() }
+    effect: Interned<Ty>,
 }
 
 impl IRFunction {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(effect: Interned<Ty>) -> Self {
         Self {
             cfg: Cfg::default(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
             context: IRContext::Def,
+            effect,
         }
     }
 
     #[must_use]
-    pub fn new_lambda(return_ty: Interned<Ty>) -> Self {
+    pub fn new_lambda(return_ty: Interned<Ty>, effect: Interned<Ty>) -> Self {
         Self {
             cfg: Cfg::default(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
             context: IRContext::Lambda(IRLambdaContext::new(return_ty)),
+            effect,
+        }
+    }
+
+    #[must_use]
+    pub fn new_thunk(return_ty: Interned<Ty>, effect: Interned<Ty>) -> Self {
+        Self {
+            cfg: Cfg::default(),
+            variable_map: IRVariableMap::default(),
+            expression_map: IRExpressionMap::default(),
+            context: IRContext::Thunk(IRThunkContext::new(return_ty)),
+            effect,
+        }
+    }
+
+    #[must_use]
+    pub fn new_operation_handler(
+        operation: rayc_symbol::GlobalSymbolID,
+        return_ty: Interned<Ty>,
+        effect: Interned<Ty>,
+    ) -> Self {
+        Self {
+            cfg: Cfg::default(),
+            variable_map: IRVariableMap::default(),
+            expression_map: IRExpressionMap::default(),
+            context: IRContext::OperationHandler(IROperationHandlerContext::new(
+                operation, return_ty,
+            )),
+            effect,
         }
     }
 
@@ -234,13 +332,29 @@ impl IRFunction {
     pub const fn context(&self) -> &IRContext { &self.context }
 
     #[must_use]
+    pub const fn effect(&self) -> &Interned<Ty> { &self.effect }
+
+    #[must_use]
     pub fn insert_lambda_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
         self.context.assert_as_lambda_context_mut().insert_parameter(parameter)
     }
 
     #[must_use]
+    pub fn insert_operation_handler_parameter(
+        &mut self,
+        parameter: LambdaParameter,
+    ) -> LambdaParameterID {
+        match &mut self.context {
+            IRContext::OperationHandler(context) => context.insert_parameter(parameter),
+            IRContext::Def | IRContext::Lambda(_) | IRContext::Thunk(_) => {
+                panic!("operation handler parameters require an operation handler context")
+            }
+        }
+    }
+
+    #[must_use]
     pub fn insert_capture(&mut self, capture: Capture) -> CaptureID {
-        self.context.assert_as_lambda_context_mut().insert_capture(capture)
+        self.context.insert_capture(capture)
     }
 
     #[must_use]
@@ -309,6 +423,7 @@ impl IRFunction {
 impl VisitType for IRFunction {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
         self.context.visit_types(visitor);
+        visitor.visit_type(&self.effect);
         self.variable_map.visit_types(visitor);
         self.expression_map.visit_types(visitor);
     }
@@ -319,6 +434,29 @@ impl VisitType for IRContext {
         match self {
             Self::Def => {}
             Self::Lambda(context) => context.visit_types(visitor),
+            Self::Thunk(context) => context.visit_types(visitor),
+            Self::OperationHandler(context) => context.visit_types(visitor),
+        }
+    }
+}
+
+impl VisitType for IRThunkContext {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        visitor.visit_type(self.return_ty());
+        for (_, capture) in self.captures() {
+            capture.visit_types(visitor);
+        }
+    }
+}
+
+impl VisitType for IROperationHandlerContext {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        for (_, parameter) in self.parameters() {
+            parameter.visit_types(visitor);
+        }
+        visitor.visit_type(self.return_ty());
+        for (_, capture) in self.captures() {
+            capture.visit_types(visitor);
         }
     }
 }

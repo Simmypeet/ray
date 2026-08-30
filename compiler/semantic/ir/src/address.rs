@@ -4,7 +4,7 @@ use rayc_semantic_element::parameter::ParameterID;
 
 use crate::{
     ir_expr::IRExprID,
-    ir_lambda::{CaptureID, LambdaParameterID},
+    ir_lambda::{CaptureID, LambdaParameterID, OperationHandlerParameterID},
     ir_variable::IRVariableID,
 };
 
@@ -14,6 +14,7 @@ pub enum AddressRoot {
     Variable(IRVariableID),
     Parameter(ParameterID),
     LambdaParameter(LambdaParameterID),
+    OperationHandlerParameter(OperationHandlerParameterID),
     Capture(CaptureID),
     Deref(IRExprID),
 }
@@ -52,6 +53,14 @@ impl Address {
     #[must_use]
     pub fn new_lambda_parameter(parameter_id: LambdaParameterID, engine: &TrackedEngine) -> Self {
         Self::new_root(AddressRoot::LambdaParameter(parameter_id), engine)
+    }
+
+    #[must_use]
+    pub fn new_operation_handler_parameter(
+        parameter_id: OperationHandlerParameterID,
+        engine: &TrackedEngine,
+    ) -> Self {
+        Self::new_root(AddressRoot::OperationHandlerParameter(parameter_id), engine)
     }
 
     #[must_use]
