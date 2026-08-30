@@ -1,6 +1,6 @@
 use rayc_source_file::SourceElement;
 use rayc_syntax::expression::{
-    Deref as DerefSyntax, Leaf, Postfix, PostfixOperator, RefOf as RefOfSyntax,
+    Deref as DerefSyntax, Postfix, PostfixOperator, RefOf as RefOfSyntax,
     TupleIndex as TupleIndexSyntax,
 };
 use rayc_type::ty::{Mutability, Ty, application::View as ApplicationView};
@@ -24,24 +24,8 @@ impl Bind<Postfix> for TAstBuilder {
             return self.push_error_expression(syn.span());
         };
 
-        let postfixes = syn.postfixes().collect::<Vec<_>>();
-        let (mut bound, postfix_start) = match (&leaf, postfixes.first()) {
-            (Leaf::Identifier(identifier), Some(PostfixOperator::Call(call))) => {
-                (self.build_bare_identifier_call(identifier.clone(), call).await, 1)
-            }
-            (
-                Leaf::Identifier(_),
-                Some(
-                    PostfixOperator::RefOf(_)
-                    | PostfixOperator::Deref(_)
-                    | PostfixOperator::TupleIndex(_),
-                )
-                | None,
-            )
-            | (Leaf::Literal(_) | Leaf::Parenthesized(_), _) => (self.bind(leaf).await, 0),
-        };
-
-        for postfix in postfixes.into_iter().skip(postfix_start) {
+        let mut bound = self.bind(leaf).await;
+        for postfix in syn.postfixes() {
             let val = match postfix {
                 PostfixOperator::Call(call) => Some(self.build_lambda_call(bound, &call).await),
                 PostfixOperator::RefOf(ref_of) => Some(self.build_ref_of(bound, &ref_of)),

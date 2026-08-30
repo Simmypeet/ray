@@ -1,0 +1,10 @@
+eff Pair[first, second]:
+    def first() -> first
+
+
+def missingAtTopLevel() -> () \ {Pair}:
+    return ()
+
+
+def incompleteInBody() -> int32 \ {Pair[int32, bool]}:
+    return Pair[int32].first()

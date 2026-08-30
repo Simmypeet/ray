@@ -1,18 +1,23 @@
 use qbice::storage::intern::Interned;
+use rayc_handler::Storage;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_resolution::{
+    path::{PathResolution, PathResolutionError},
+    resolver::Resolver,
+};
 use rayc_semantic_element::{
     effect_row::get_effect_row,
     parameter::{ParameterMap, get_parameter_map},
     return_type::get_return_type,
 };
 use rayc_symbol::{
-    GlobalSymbolID, get_target_root_module_id,
-    member::get_members,
+    GlobalSymbolID,
     syntax::{get_def_body_syntax, get_parameter_list_syntax},
 };
-use rayc_syntax::{Identifier, def::ParameterList};
+use rayc_syntax::{def::ParameterList, path::Path};
 use rayc_type::{
+    poly_var::get_enclosing_poly_var_maps,
     subst::MutSubstitutable,
     ty::{InferenceConstraint, Ty, TyKind, inference::GenInfer},
 };
@@ -26,7 +31,7 @@ use rayc_typed_ast::{
 };
 
 use crate::{
-    diagnostic::{Diagnostic, FunctionNotFound},
+    diagnostic::Diagnostic,
     tast_builder::{
         constraint_solver::ConstraintSolver, lvalue_requirements::LvalueRequirements,
         name_env::NameEnv,
@@ -207,24 +212,25 @@ impl TAstBuilder {
         self.function_map.push_statement(self.building_function, statement);
     }
 
-    pub async fn resolve_function_id(&mut self, name: &Identifier) -> Option<GlobalSymbolID> {
-        let root_module_id =
-            self.engine().get_target_root_module_id(self.current_def_id.target_id).await;
-
-        let members = self
-            .engine
-            .get_members(self.current_def_id.target_id.make_global(root_module_id))
-            .await;
-
-        if let Some(id) = members.get_by_name(&name.kind) {
-            Some(self.current_def_id.target_id.make_global(id))
-        } else {
-            self.push_diagnostic(Diagnostic::FunctionNotFound(
-                FunctionNotFound::builder().name(name.kind.0.clone()).span(name.span).build(),
-            ));
-
-            None
-        }
+    pub(crate) async fn resolve_path(
+        &mut self,
+        path: &Path,
+    ) -> Result<PathResolution, PathResolutionError> {
+        let poly_vars = self.engine.get_enclosing_poly_var_maps(self.current_def_id).await;
+        let diagnostics = Storage::<rayc_resolution::Diagnostic>::new();
+        let resolution = {
+            let mut resolver = Resolver::new(
+                &self.engine,
+                &poly_vars,
+                self.current_def_id,
+                &diagnostics,
+                Some(&mut self.constraint_solver),
+            );
+            resolver.resolve_path(path).await
+        };
+        self.diagnostics
+            .extend(diagnostics.into_vec().into_iter().map(crate::diagnostic::Diagnostic::from));
+        resolution
     }
 
     #[must_use]

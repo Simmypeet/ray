@@ -3,7 +3,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::resolve_type_with_poly_vars;
+use rayc_resolution::resolver::Resolver;
 use rayc_semantic_element::return_type::Key;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
@@ -57,13 +57,11 @@ impl Build for Key {
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
 
         let diagnostics = Storage::new();
+        let mut resolver = Resolver::new(engine, &poly_vars, symbol_id, &diagnostics, None);
 
         let return_type = if let Some(syntax) = syntax.as_ref() {
             if let Some(syntax) = syntax.r#type() {
-                resolve_type_with_poly_vars(engine, symbol_id, &poly_vars, &syntax, &diagnostics)
-                    .await
-                    .ty()
-                    .clone()
+                resolver.resolve_type(&syntax).await
             } else {
                 Ty::new_star_error(engine)
             }

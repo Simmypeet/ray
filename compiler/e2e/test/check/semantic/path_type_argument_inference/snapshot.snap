@@ -1,0 +1,38 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: type inference is not allowed for `Pair` here
+  ╭▸ compiler/e2e/test/check/semantic/path_type_argument_inference/main.ray:5:34
+  │
+5 │ def missingAtTopLevel() -> () \ {Pair}:
+  │                                  ━━━━ expected 2 type arguments
+  │
+  ╰ help: provide all type arguments explicitly
+
+[error]: function body effects do not match its signature: expected `{Pair[int32, bool]}`, but found `{Pair[int32, <error>]}`
+   ╭▸ compiler/e2e/test/check/semantic/path_type_argument_inference/main.ray:9:5
+   │
+ 9 │ def incompleteInBody() -> int32 \ {Pair[int32, bool]}:
+   │     ━━━━━━━━━━━━━━━━ the function body has effects outside its signature
+10 │     return Pair[int32].first()
+   ╰╴           ─────────────────── effect `{Pair[int32, <error>]}` introduced here
+
+[error]: mismatched types in return expression: expected `int32`, but found `<error>`
+   ╭▸ compiler/e2e/test/check/semantic/path_type_argument_inference/main.ray:10:12
+   │
+10 │     return Pair[int32].first()
+   ╰╴           ━━━━━━━━━━━━━━━━━━━
+
+[error]: type argument arity mismatch
+   ╭▸ compiler/e2e/test/check/semantic/path_type_argument_inference/main.ray:10:16
+   │
+10 │     return Pair[int32].first()
+   ╰╴               ━━━━━━━ expected 2, found 1
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

@@ -3,7 +3,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_handler::Storage;
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::resolve_effect_row;
+use rayc_resolution::resolver::Resolver;
 use rayc_semantic_element::effect_row::Key;
 use rayc_symbol::syntax::get_effect_row_syntax;
 use rayc_type::{
@@ -49,17 +49,13 @@ impl Build for Key {
         let syntax = engine.get_effect_row_syntax(symbol_id).await;
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
         let diagnostics = Storage::new();
+        let mut resolver = Resolver::new(engine, &poly_vars, symbol_id, &diagnostics, None);
 
         let effect_row = match syntax
             .as_ref()
             .and_then(rayc_syntax::effect_row::EffectRowAnnotation::effect_row)
         {
-            Some(syntax) => {
-                resolve_effect_row(engine, &poly_vars, symbol_id, &syntax, &diagnostics)
-                    .await
-                    .ty()
-                    .clone()
-            }
+            Some(syntax) => resolver.resolve_effect_row(&syntax).await,
             None if syntax.is_some() => Ty::new_error(TyKind::EffectRow, engine),
             None => Ty::new_effect_row([], None, engine),
         };

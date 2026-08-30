@@ -1,0 +1,23 @@
+eff State[s]:
+    def get() -> s
+    def put(value: s)
+
+
+def identity(value: a) -> a:
+    return value
+
+
+def explicitEffectArguments() -> int32 \ {State[int32]}:
+    State[int32].put(1)
+    return State[int32].get()
+
+
+def inferredEffectArguments() -> int32 \ {State[int32]}:
+    State.put(1)
+    return State.get()
+
+
+def inferredDefArguments() -> ():
+    let number = identity(1)
+    let boolean = identity(true)
+    return ()

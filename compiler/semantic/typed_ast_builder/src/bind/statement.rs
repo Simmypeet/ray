@@ -1,4 +1,5 @@
 use rayc_handler::Storage;
+use rayc_resolution::resolver::Resolver;
 use rayc_source_file::SourceElement;
 use rayc_syntax::{statement::Statement as StatementSyntax, r#type::Type as TypeSyntax};
 use rayc_type::poly_var::get_enclosing_poly_var_maps;
@@ -18,18 +19,13 @@ impl TAstBuilder {
     ) -> qbice::storage::intern::Interned<rayc_type::ty::Ty> {
         let poly_vars = self.engine().get_enclosing_poly_var_maps(self.current_def_id()).await;
         let diagnostics = Storage::new();
+        let mut resolver =
+            Resolver::new(self.engine(), &poly_vars, self.current_def_id(), &diagnostics, None);
 
-        let resolution = rayc_resolution::resolve_type_with_poly_vars(
-            self.engine(),
-            self.current_def_id(),
-            &poly_vars,
-            syntax,
-            &diagnostics,
-        )
-        .await;
+        let ty = resolver.resolve_type(syntax).await;
 
-        let ty = resolution.ty().clone();
         self.extend_diagnostics(diagnostics.into_vec());
+
         ty
     }
 

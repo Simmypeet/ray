@@ -4,12 +4,16 @@ use rayc_semantic_element::{
     effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
 };
 use rayc_source_file::SourceElement;
-use rayc_symbol::{GlobalSymbolID, syntax::is_variadic_def};
-use rayc_syntax::{Identifier, expression::Call as CallSyn};
+use rayc_symbol::{
+    GlobalSymbolID,
+    parent::get_parent_global,
+    symbol_kind::{SymbolKind, get_symbol_kind},
+    syntax::is_variadic_def,
+};
+use rayc_syntax::expression::{Call as CallSyn, DirectCall as DirectCallSyn};
 use rayc_type::{
-    poly_var::get_enclosing_poly_var_maps,
     subst::{Subst, Substitutable},
-    ty::{Ty, TyKind, application::View as ApplicationView},
+    ty::{Ty, TyKind, application::View as ApplicationView, args::Args, effect_row::EffectLabel},
 };
 use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, call::Call};
 
@@ -31,16 +35,6 @@ enum LambdaCallSignature {
 }
 
 impl TAstBuilder {
-    async fn instantiate_poly_vars(&mut self, function_id: GlobalSymbolID) -> Subst {
-        let poly_var_stack = self.engine().get_enclosing_poly_var_maps(function_id).await;
-        poly_var_stack
-            .all_poly_vars_with_kind()
-            .map(|(global_poly_var_id, kind)| {
-                (global_poly_var_id, self.new_type_inference_with_kind(kind))
-            })
-            .collect()
-    }
-
     async fn bind_call_arguments(&mut self, syn: &CallSyn) -> Vec<TypedExprID> {
         let mut arguments = Vec::new();
 
@@ -53,31 +47,71 @@ impl TAstBuilder {
         arguments
     }
 
-    pub async fn build_bare_identifier_call(
-        &mut self,
-        identifier: Identifier,
-        syn: &CallSyn,
-    ) -> TypedExprID {
-        if self.lookup_name_binding(&identifier.kind.0).is_some() {
-            let callee = self.bind(identifier).await;
-            return self.build_lambda_call(callee, syn).await;
-        }
-
-        self.build_direct_call(identifier, syn).await
-    }
-
-    async fn build_direct_call(&mut self, identifier: Identifier, syn: &CallSyn) -> TypedExprID {
-        let arguments = self.bind_call_arguments(syn).await;
-        let span = identifier.span().join(&syn.span());
-
-        let Some(function_id) = self.resolve_function_id(&identifier).await else {
-            return self.push_error_expression_with_children(span, arguments);
+    async fn build_path_direct_call(&mut self, syn: &DirectCallSyn) -> TypedExprID {
+        let Some(path) = syn.path() else {
+            return self.push_error_expression(syn.span());
+        };
+        let Some(call) = syn.call() else {
+            return self.push_error_expression(syn.span());
         };
 
-        let call_subst = self.instantiate_poly_vars(function_id).await;
+        let segments = path.segments().collect::<Vec<_>>();
+        if let [segment] = segments.as_slice()
+            && segment.type_arguments().is_none()
+            && let Some(identifier) = segment.identifier()
+            && self.lookup_name_binding(&identifier.kind.0).is_some()
+        {
+            let callee = self.bind(identifier).await;
+            return self.build_lambda_call(callee, &call).await;
+        }
+
+        let arguments = self.bind_call_arguments(&call).await;
+        let Ok(resolution) = self.resolve_path(&path).await else {
+            return self.push_error_expression_with_children(syn.span(), arguments);
+        };
+        let function_id = resolution.symbol_id();
+        let symbol_kind = self.engine().get_symbol_kind(function_id).await;
+        if !matches!(
+            symbol_kind,
+            SymbolKind::Def | SymbolKind::EffectOperation | SymbolKind::ExternDef
+        ) {
+            self.push_diagnostic(Diagnostic::SymbolNotCallable(
+                crate::diagnostic::SymbolNotCallable::builder()
+                    .name(function_id)
+                    .span(path.span())
+                    .build(),
+            ));
+            return self.push_error_expression_with_children(syn.span(), arguments);
+        }
+
+        let call_subst = resolution.substitution(self.engine()).await;
+        self.build_resolved_direct_call(
+            function_id,
+            symbol_kind,
+            &resolution,
+            arguments,
+            call_subst,
+            syn.span(),
+        )
+        .await
+    }
+
+    async fn build_resolved_direct_call(
+        &mut self,
+        function_id: GlobalSymbolID,
+        symbol_kind: SymbolKind,
+        resolution: &rayc_resolution::path::PathResolution,
+        arguments: Vec<TypedExprID>,
+        call_subst: Subst,
+        span: RelativeSpan,
+    ) -> TypedExprID {
         let parameter_map = self.engine().get_parameter_map(function_id).await;
 
-        let is_variadic = self.engine().is_variadic_def(function_id).await;
+        let is_variadic = if matches!(symbol_kind, SymbolKind::Def | SymbolKind::ExternDef) {
+            self.engine().is_variadic_def(function_id).await
+        } else {
+            false
+        };
         if (!is_variadic && parameter_map.len() != arguments.len())
             || (is_variadic && arguments.len() < parameter_map.len())
         {
@@ -99,18 +133,32 @@ impl TAstBuilder {
         let return_type = self.engine().get_return_type(function_id).await;
         let return_type = return_type.apply_subst_or_clone(&call_subst, self.engine());
 
-        let effect_row = self.engine().get_effect_row(function_id).await;
-        let effect_row = effect_row.apply_subst_or_clone(&call_subst, self.engine());
+        let effect_row = if symbol_kind == SymbolKind::EffectOperation {
+            let effect_id = self
+                .engine()
+                .get_parent_global(function_id)
+                .await
+                .expect("an effect operation should have a parent effect");
+            let effect_arguments = resolution
+                .type_arguments_for(effect_id)
+                .map_or_else(Vec::new, |arguments| arguments.cloned().collect());
+            let label = self
+                .engine()
+                .intern(EffectLabel::new(effect_id, Args::new(effect_arguments, self.engine())));
+            Ty::new_effect_row([label], None, self.engine())
+        } else {
+            self.engine()
+                .get_effect_row(function_id)
+                .await
+                .apply_subst_or_clone(&call_subst, self.engine())
+        };
 
         let expr_id = self.insert_expression(
             TypedExprKind::Call(Call::new_direct(function_id, arguments, call_subst)),
             span,
             return_type,
         );
-
-        // Add the latent effect from the function to the effect of the call expression
         self.push_effect_introduction(expr_id, &effect_row);
-
         expr_id
     }
 
@@ -218,5 +266,11 @@ impl TAstBuilder {
         for (parameter_type, argument) in parameter_types.iter().zip(arguments.iter()) {
             self.push_lambda_invocation_constraint(parameter_type, *argument);
         }
+    }
+}
+
+impl Bind<DirectCallSyn> for TAstBuilder {
+    async fn bind(&mut self, syn: DirectCallSyn) -> TypedExprID {
+        self.build_path_direct_call(&syn).await
     }
 }
