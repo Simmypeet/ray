@@ -8,7 +8,7 @@ use rayc_parser::{
 
 use crate::{
     Identifier, Keyword, Numeric, Punctuation, String as StringToken,
-    irrefutable_pattern::IrrefutablePattern, r#type::Arrow,
+    irrefutable_pattern::IrrefutablePattern, path::Path, r#type::Arrow,
 };
 
 abstract_tree::abstract_tree! {
@@ -158,6 +158,7 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     pub enum Leaf {
+        DirectCall(DirectCall = ast::<DirectCall>()),
         Identifier(Identifier = expect::Identifier),
         Literal(Literal = ast::<Literal>()),
         Parenthesized(Parenthesized = ast::<Parenthesized>()),
@@ -415,5 +416,24 @@ abstract_tree::abstract_tree! {
     )]
     pub struct Call {
         pub arguments: Parenthesized = ast::<Parenthesized>()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct DirectCall {
+        pub path: Path = ast::<Path>(),
+        pub call: Call = ast::<Call>()
     }
 }
