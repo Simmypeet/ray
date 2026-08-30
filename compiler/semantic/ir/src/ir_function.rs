@@ -27,6 +27,10 @@ impl IRFunctionMap {
         Self { functions, root }
     }
 
+    pub fn fill_return_on_unterminated_blocks(&mut self, function_id: FunctionID) {
+        self.get_function_mut(function_id).cfg.fill_return_on_unterminated_blocks();
+    }
+
     #[must_use]
     pub const fn root_id(&self) -> FunctionID { self.root }
 
@@ -291,6 +295,11 @@ impl IRFunction {
     #[must_use]
     pub fn block_terminator(&self, block_id: BlockID) -> Option<&Terminator> {
         self.cfg.terminator(block_id)
+    }
+
+    /// Iterates over blocks that do not have a terminator.
+    pub fn unterminated_blocks(&self) -> impl Iterator<Item = BlockID> + '_ {
+        self.cfg.unterminated_blocks()
     }
 
     #[must_use]

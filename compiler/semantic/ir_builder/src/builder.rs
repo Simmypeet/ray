@@ -11,6 +11,7 @@ use rayc_semantic_element::parameter::ParameterID;
 use rayc_type::ty::{Mutability, Ty};
 
 use self::function_build_state::FunctionBuildState;
+use crate::diagnostic::NotAllPathsReturnValue;
 
 mod function_build_state;
 
@@ -19,6 +20,7 @@ pub struct Builder {
     ir_functions: IRFunctionMap,
     building_function: FunctionBuildState,
     suspended_functions: Vec<FunctionBuildState>,
+    diagnostics: Vec<NotAllPathsReturnValue>,
 }
 
 impl Builder {

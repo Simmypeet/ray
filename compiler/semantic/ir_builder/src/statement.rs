@@ -31,9 +31,5 @@ impl Builder {
                 }
             }
         }
-
-        if !self.is_terminated() {
-            self.terminate(Terminator::Return(None));
-        }
     }
 }

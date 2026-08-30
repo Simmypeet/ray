@@ -1,20 +1,107 @@
 use linkme::distributed_slice;
-use qbice::{executor, program::Registration, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
+};
+use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_ir::ir_function::IRFunctionMap;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
+use rayc_semantic_element::return_type::get_return_type;
+use rayc_source_file::SourceElement;
+use rayc_symbol::{span::get_span, symbol_kind::get_all_def_ids, syntax::get_def_body_syntax};
+use rayc_target::TargetID;
 use rayc_typed_ast::get_typed_ast;
 
-use crate::lower_function;
+use crate::{diagnostic::NotAllPathsReturnValue, lower_function};
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
+)]
+#[value((Interned<IRFunctionMap>, Interned<[NotAllPathsReturnValue]>))]
+pub struct BuildIR {
+    pub def_id: rayc_symbol::GlobalSymbolID,
+}
+
+#[executor(config = Config)]
+async fn build_ir_executor(
+    &BuildIR { def_id }: &BuildIR,
+    engine: &TrackedEngine,
+) -> (Interned<IRFunctionMap>, Interned<[NotAllPathsReturnValue]>) {
+    let typed_function = engine.get_typed_ast(def_id).await;
+    let return_ty = engine.get_return_type(def_id).await;
+    let span = if let Some(span) = engine.get_span(def_id).await {
+        Some(span)
+    } else {
+        engine.get_def_body_syntax(def_id).await.map(|body| body.span())
+    };
+    let (function, diagnostics) = lower_function(engine, &typed_function, return_ty, span);
+    (engine.intern(function), engine.intern_unsized(diagnostics))
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static BUILD_IR_EXECUTOR: Registration<Config> = Registration::new::<BuildIR, BuildIrExecutor>();
 
 #[executor(config = Config)]
 async fn ir_executor(
     &rayc_ir::Key { def_id }: &rayc_ir::Key,
     engine: &TrackedEngine,
 ) -> Interned<IRFunctionMap> {
-    let typed_function = engine.get_typed_ast(def_id).await;
-    let function = lower_function(engine, &typed_function);
-    engine.intern(function)
+    engine.query(&BuildIR { def_id }).await.0
 }
 
 #[distributed_slice(RAY_PROGRAM)]
 static IR_EXECUTOR: Registration<Config> = Registration::new::<rayc_ir::Key, IrExecutor>();
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
+)]
+#[value(Interned<[Rendered<ByteIndex>]>)]
+pub struct SingleRenderedKey {
+    pub def_id: rayc_symbol::GlobalSymbolID,
+}
+
+#[executor(config = Config)]
+async fn single_rendered_executor(
+    &SingleRenderedKey { def_id }: &SingleRenderedKey,
+    engine: &TrackedEngine,
+) -> Interned<[Rendered<ByteIndex>]> {
+    if engine.get_def_body_syntax(def_id).await.is_none() {
+        return engine.intern_unsized([]);
+    }
+
+    let (_, diagnostics) = engine.query(&BuildIR { def_id }).await;
+    let mut rendered = Vec::new();
+    for diagnostic in diagnostics.iter() {
+        rendered.push(diagnostic.report(engine).await);
+    }
+    engine.intern_unsized(rendered)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static SINGLE_RENDERED_EXECUTOR: Registration<Config> =
+    Registration::new::<SingleRenderedKey, SingleRenderedExecutor>();
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
+)]
+#[value(Interned<[Interned<[Rendered<ByteIndex>]>]>)]
+pub struct RenderedKey {
+    pub target_id: TargetID,
+}
+
+#[executor(config = Config)]
+async fn rendered_executor(
+    &RenderedKey { target_id }: &RenderedKey,
+    engine: &TrackedEngine,
+) -> Interned<[Interned<[Rendered<ByteIndex>]>]> {
+    let mut rendered = Vec::new();
+    let def_ids = engine.get_all_def_ids(target_id).await;
+    for def_id in def_ids.iter().copied() {
+        rendered
+            .push(engine.query(&SingleRenderedKey { def_id: target_id.make_global(def_id) }).await);
+    }
+    engine.intern_unsized(rendered)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static RENDERED_EXECUTOR: Registration<Config> =
+    Registration::new::<RenderedKey, RenderedExecutor>();

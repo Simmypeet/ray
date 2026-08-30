@@ -1609,6 +1609,7 @@ dependencies = [
  "linkme",
  "qbice",
  "rayc_diagnostic",
+ "rayc_ir_builder",
  "rayc_qbice",
  "rayc_semantic_element_impl",
  "rayc_symbol_impl",
@@ -1727,9 +1728,11 @@ dependencies = [
 name = "rayc_ir_builder"
 version = "0.1.0-beta.2"
 dependencies = [
+ "bon",
  "linkme",
  "qbice",
  "rayc_arena",
+ "rayc_diagnostic",
  "rayc_hash",
  "rayc_ir",
  "rayc_lexical",

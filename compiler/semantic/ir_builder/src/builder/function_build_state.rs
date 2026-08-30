@@ -12,26 +12,33 @@ use rayc_ir::{
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_type::ty::Ty;
+use rayc_type::ty::{Ty, application::View as ApplicationView};
 use rayc_typed_ast::{
     name_binding::Source, typed_function::TypedFunctionID,
     typed_lambda::LambdaParameterID as TypedLambdaParameterID, typed_variable::TypedVariableID,
 };
 
 use super::Builder;
-use crate::context::LoweringContext;
+use crate::{context::LoweringContext, diagnostic::NotAllPathsReturnValue};
 
 pub(super) struct FunctionBuildState {
     ir_function_id: IrFunctionID,
     current_block: BlockID,
     typed_function_id: TypedFunctionID,
+    return_ty: Interned<Ty>,
+    diagnostic_span: Option<RelativeSpan>,
     variables: FxHashMap<TypedVariableID, IRVariableID>,
     lambda_parameters: FxHashMap<TypedLambdaParameterID, LambdaParameterID>,
     captures: FxHashMap<Source, CaptureID>,
 }
 
 impl FunctionBuildState {
-    fn new_def(context: &LoweringContext<'_>, ir_functions: &mut IRFunctionMap) -> Self {
+    fn new_def(
+        context: &LoweringContext<'_>,
+        ir_functions: &mut IRFunctionMap,
+        return_ty: Interned<Ty>,
+        diagnostic_span: Option<RelativeSpan>,
+    ) -> Self {
         let typed_function_id = context.typed_function_id();
         let capture_plan = context.capture_plan(typed_function_id);
         let _def_context = context.typed_function_context().assert_as_def_context();
@@ -51,6 +58,8 @@ impl FunctionBuildState {
             ir_function_id,
             current_block,
             typed_function_id,
+            return_ty,
+            diagnostic_span,
             variables: FxHashMap::default(),
             lambda_parameters: FxHashMap::default(),
             captures: FxHashMap::default(),
@@ -61,6 +70,7 @@ impl FunctionBuildState {
         context: &LoweringContext<'_>,
         ir_functions: &mut IRFunctionMap,
         return_ty: Interned<Ty>,
+        diagnostic_span: RelativeSpan,
     ) -> Self {
         let typed_function_id = context.typed_function_id();
         let capture_plan = context.capture_plan(typed_function_id);
@@ -72,7 +82,7 @@ impl FunctionBuildState {
         );
         let mut lambda_parameters = FxHashMap::default();
         let mut captures = FxHashMap::default();
-        let ir_function_id = ir_functions.insert_lambda(return_ty);
+        let ir_function_id = ir_functions.insert_lambda(return_ty.clone());
         for (typed_id, parameter) in lambda_context.parameters() {
             let ir_id = ir_functions.insert_lambda_parameter(
                 ir_function_id,
@@ -96,6 +106,8 @@ impl FunctionBuildState {
             ir_function_id,
             current_block,
             typed_function_id,
+            return_ty,
+            diagnostic_span: Some(diagnostic_span),
             variables: FxHashMap::default(),
             lambda_parameters,
             captures,
@@ -104,14 +116,29 @@ impl FunctionBuildState {
 }
 
 impl Builder {
-    pub fn new(engine: TrackedEngine, context: &LoweringContext<'_>) -> Self {
+    pub fn new(
+        engine: TrackedEngine,
+        context: &LoweringContext<'_>,
+        return_ty: Interned<Ty>,
+        diagnostic_span: Option<RelativeSpan>,
+    ) -> Self {
         let mut ir_functions = IRFunctionMap::new();
-        let building_function = FunctionBuildState::new_def(context, &mut ir_functions);
+        let building_function =
+            FunctionBuildState::new_def(context, &mut ir_functions, return_ty, diagnostic_span);
 
-        Self { engine, ir_functions, building_function, suspended_functions: Vec::new() }
+        Self {
+            engine,
+            ir_functions,
+            building_function,
+            suspended_functions: Vec::new(),
+            diagnostics: Vec::new(),
+        }
     }
 
-    pub fn lower(mut self, context: &LoweringContext<'_>) -> IRFunctionMap {
+    pub fn lower(
+        mut self,
+        context: &LoweringContext<'_>,
+    ) -> (IRFunctionMap, Vec<NotAllPathsReturnValue>) {
         self.lower_current_function(context);
         assert!(
             self.suspended_functions.is_empty(),
@@ -122,7 +149,7 @@ impl Builder {
             context.root_typed_function_id(),
             "root IR function should be active when lowering finishes"
         );
-        self.ir_functions
+        (self.ir_functions, self.diagnostics)
     }
 
     pub fn lower_lambda_function(
@@ -130,19 +157,31 @@ impl Builder {
         context: &LoweringContext<'_>,
         typed_function_id: TypedFunctionID,
         return_ty: Interned<Ty>,
+        diagnostic_span: RelativeSpan,
     ) -> IrFunctionID {
         let lambda_context = context.for_function(typed_function_id);
-        self.start_lambda(&lambda_context, return_ty);
+        self.start_lambda(&lambda_context, return_ty, diagnostic_span);
         self.lower_current_function(&lambda_context);
         self.finish_lambda()
     }
 
     fn lower_current_function(&mut self, context: &LoweringContext<'_>) {
         self.lower_statements(context);
+        self.finish_current_function();
     }
 
-    fn start_lambda(&mut self, context: &LoweringContext<'_>, return_ty: Interned<Ty>) {
-        let lambda = FunctionBuildState::new_lambda(context, &mut self.ir_functions, return_ty);
+    fn start_lambda(
+        &mut self,
+        context: &LoweringContext<'_>,
+        return_ty: Interned<Ty>,
+        diagnostic_span: RelativeSpan,
+    ) {
+        let lambda = FunctionBuildState::new_lambda(
+            context,
+            &mut self.ir_functions,
+            return_ty,
+            diagnostic_span,
+        );
         let enclosing = mem::replace(&mut self.building_function, lambda);
         self.suspended_functions.push(enclosing);
     }
@@ -154,6 +193,23 @@ impl Builder {
             .expect("a lambda should suspend its enclosing IR function");
         let lambda = mem::replace(&mut self.building_function, enclosing);
         lambda.ir_function_id
+    }
+
+    fn finish_current_function(&mut self) {
+        let function_id = self.building_function.ir_function_id;
+
+        // has no unterminated blocks, so no need to check for return value
+        if self.ir_functions.get_function(function_id).unterminated_blocks().next().is_none() {
+            return;
+        }
+
+        if requires_value_return(&self.building_function.return_ty)
+            && let Some(span) = self.building_function.diagnostic_span
+        {
+            self.diagnostics.push(NotAllPathsReturnValue::builder().span(span).build());
+        }
+
+        self.ir_functions.fill_return_on_unterminated_blocks(function_id);
     }
 
     pub fn emit_expression(&mut self, expression: IRExpr) -> IRExprID {
@@ -269,5 +325,18 @@ impl Builder {
             ty,
         ));
         self.dereference_address(pointer)
+    }
+}
+
+fn requires_value_return(ty: &Ty) -> bool {
+    match ty {
+        Ty::Application(application) => match application.view() {
+            ApplicationView::Tuple(tuple) => !tuple.args().is_empty(),
+            ApplicationView::Primitive(_)
+            | ApplicationView::Lambda(_)
+            | ApplicationView::Pointer(_) => true,
+            ApplicationView::Error => false,
+        },
+        Ty::Inference(_) | Ty::PolyVar(_) | Ty::EffectRow(_) => false,
     }
 }

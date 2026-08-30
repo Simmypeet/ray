@@ -11,6 +11,7 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 pub struct Check {
     symbol_immpl: Interned<[Rendered<usize>]>,
     semantic_impl: Interned<[Interned<[Rendered<usize>]>]>,
+    typed_ast_impl: Interned<[Interned<[Rendered<usize>]>]>,
     ir_impl: Interned<[Interned<[Rendered<usize>]>]>,
 }
 
@@ -20,6 +21,7 @@ impl Check {
         self.symbol_immpl
             .iter()
             .chain(self.semantic_impl.iter().flat_map(|diags| diags.iter()))
+            .chain(self.typed_ast_impl.iter().flat_map(|diags| diags.iter()))
             .chain(self.ir_impl.iter().flat_map(|diags| diags.iter()))
     }
 }
@@ -41,9 +43,16 @@ async fn check_executor(&Key { target_id }: &Key, engine: &TrackedEngine) -> Che
     let sym_diags = engine.query(&rayc_symbol_impl::diagnostic::RenderedKey(target_id)).await;
     let semantic_diags =
         engine.query(&rayc_semantic_element_impl::diagnostic::RenderedKey { target_id }).await;
-    let ir_diags = engine.query(&rayc_typed_ast_builder::query::RenderedKey { target_id }).await;
+    let typed_ast_diags =
+        engine.query(&rayc_typed_ast_builder::query::RenderedKey { target_id }).await;
+    let ir_diags = engine.query(&rayc_ir_builder::query::RenderedKey { target_id }).await;
 
-    Check { symbol_immpl: sym_diags, semantic_impl: semantic_diags, ir_impl: ir_diags }
+    Check {
+        symbol_immpl: sym_diags,
+        semantic_impl: semantic_diags,
+        typed_ast_impl: typed_ast_diags,
+        ir_impl: ir_diags,
+    }
 }
 
 #[distributed_slice(RAY_PROGRAM)]

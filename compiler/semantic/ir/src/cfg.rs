@@ -121,6 +121,13 @@ impl Cfg {
         Self { blocks, entry_block }
     }
 
+    pub fn fill_return_on_unterminated_blocks(&mut self) {
+        self.blocks
+            .iter_mut()
+            .filter(|(_, block)| block.terminator.is_none())
+            .for_each(|(_, block)| block.terminator = Some(Terminator::Return(None)));
+    }
+
     #[must_use]
     pub const fn entry_block(&self) -> BlockID { self.entry_block }
 
@@ -153,6 +160,13 @@ impl Cfg {
     #[must_use]
     pub fn terminator(&self, block_id: BlockID) -> Option<&Terminator> {
         self.blocks.get(block_id).expect("Block should exist").terminator.as_ref()
+    }
+
+    /// Iterates over blocks that do not have a terminator.
+    pub fn unterminated_blocks(&self) -> impl Iterator<Item = BlockID> + '_ {
+        self.blocks
+            .iter()
+            .filter_map(|(block_id, block)| block.terminator.is_none().then_some(block_id))
     }
 
     /// Calculates the blocks and expression instructions reachable from the

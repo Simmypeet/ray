@@ -226,7 +226,8 @@ async fn captureless_lambda_copies_signature_and_uses_lambda_parameter_addresses
     let lambda = map.lambda_expression(root, child, lambda_ty);
     map.statement(root, lambda);
 
-    let ir = lower_function(&engine, &map.functions);
+    let (ir, diagnostics) = lower_function(&engine, &map.functions, map.unit_ty.clone(), None);
+    assert!(diagnostics.is_empty());
     let root_lambdas = make_lambdas(ir.root());
     assert_eq!(root_lambdas.len(), 1);
     assert!(root_lambdas[0].captures().is_empty());
@@ -263,7 +264,8 @@ async fn mutable_capture_is_passed_by_reference_and_written_through_its_pointer(
     let lambda = map.lambda_expression(root, child, lambda_ty);
     map.statement(root, lambda);
 
-    let ir = lower_function(&engine, &map.functions);
+    let (ir, diagnostics) = lower_function(&engine, &map.functions, map.unit_ty.clone(), None);
+    assert!(diagnostics.is_empty());
     let root_lambdas = make_lambdas(ir.root());
     assert_eq!(root_lambdas.len(), 1);
     let make_lambda = root_lambdas[0];
@@ -329,7 +331,8 @@ async fn nested_lambdas_reborrow_a_transitive_capture_with_each_childs_mutabilit
     let outer_lambda = map.lambda_expression(root, outer, outer_ty);
     map.statement(root, outer_lambda);
 
-    let ir = lower_function(&engine, &map.functions);
+    let (ir, diagnostics) = lower_function(&engine, &map.functions, map.unit_ty.clone(), None);
+    assert!(diagnostics.is_empty());
     let root_lambdas = make_lambdas(ir.root());
     assert_eq!(root_lambdas.len(), 1);
     let outer = ir.get_function(root_lambdas[0].function_id());

@@ -1,15 +1,19 @@
+use qbice::storage::intern::Interned;
 use rayc_ir::ir_function::IRFunctionMap as IrFunctionMap;
+use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_tast_capture_analysis::CaptureAnalysis;
+use rayc_type::ty::Ty;
 use rayc_typed_ast::typed_function::TypedFunctionMap;
 
-use crate::{builder::Builder, context::LoweringContext};
+use crate::{builder::Builder, context::LoweringContext, diagnostic::NotAllPathsReturnValue};
 
 mod address;
 mod builder;
 mod context;
+pub mod diagnostic;
 mod expression;
-mod query;
+pub mod query;
 mod statement;
 
 #[cfg(test)]
@@ -20,8 +24,13 @@ pub const fn black_box() {}
 
 /// Lowers one typed function into control-flow IR.
 #[must_use]
-pub fn lower_function(engine: &TrackedEngine, functions: &TypedFunctionMap) -> IrFunctionMap {
+pub fn lower_function(
+    engine: &TrackedEngine,
+    functions: &TypedFunctionMap,
+    return_ty: Interned<Ty>,
+    span: Option<RelativeSpan>,
+) -> (IrFunctionMap, Vec<NotAllPathsReturnValue>) {
     let analysis = CaptureAnalysis::analyze(functions);
     let context = LoweringContext::new(functions, &analysis);
-    Builder::new(engine.clone(), &context).lower(&context)
+    Builder::new(engine.clone(), &context, return_ty, span).lower(&context)
 }

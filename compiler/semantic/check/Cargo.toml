@@ -13,6 +13,7 @@ rayc_syntax = { path = "../../syntax/syntax" }
 rayc_symbol_impl = { path = "../symbol_impl" }
 rayc_qbice.path = "../../base/qbice"
 rayc_semantic_element_impl.path = "../semantic_element_impl"
+rayc_ir_builder.path = "../ir_builder"
 rayc_tokio.path = "../../base/tokio"
 rayc_typed_ast_builder.path = "../typed_ast_builder"
 qbice.workspace = true

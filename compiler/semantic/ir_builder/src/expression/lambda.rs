@@ -41,7 +41,12 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Lambda>> for Builder {
                 todo!("lower a TypedAST lambda expression with an effect-row type")
             }
         };
-        let function_id = self.lower_lambda_function(context, lambda.function_id(), return_ty);
+        let function_id = self.lower_lambda_function(
+            context,
+            lambda.function_id(),
+            return_ty,
+            typed_expression.span(),
+        );
         let captures = context
             .capture_plan(lambda.function_id())
             .captures()

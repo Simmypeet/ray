@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: not all paths return a value
+  ╭▸ compiler/e2e/test/check/ir/not_all_paths_return_value/main.ray:1:5
+  │
+1 │ def missingReturn() -> int32:
+  ╰╴    ━━━━━━━━━━━━━ this function can reach its end without returning a value
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

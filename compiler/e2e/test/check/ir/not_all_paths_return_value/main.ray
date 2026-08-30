@@ -1,0 +1,5 @@
+def missingReturn() -> int32:
+    let value = 42
+
+def unitReturnIsImplicit() -> ():
+    let value = 42
