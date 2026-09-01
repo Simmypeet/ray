@@ -12,9 +12,8 @@ use rayc_mono_ir::{
     instance::FunctionReference,
     instruction::{Call, Instruction},
     operand::{Constant, FunctionOperand, Operand},
-    place::FieldIndex,
     rvalue::Rvalue,
-    ty::{FunctionSignature, MonoType, ReturnType, lower_effects, lower_type},
+    ty::{AggregateType, FunctionSignature, MonoType, ReturnType, lower_effects, lower_type},
 };
 use rayc_semantic_element::{
     effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
@@ -83,23 +82,16 @@ impl Builder {
             CallTarget::Lambda { callee } => {
                 let callee_place = state.expression_place(*callee);
                 let callee_ty = self.lower_type(source.get_expression(*callee).ty()).await;
-                let MonoType::Aggregate(closure) = &*callee_ty else {
+                let MonoType::Aggregate(AggregateType::Closure(closure)) = &*callee_ty else {
                     panic!("lambda callee should have a closure type")
                 };
-                let signature = closure.fields().first().expect("should've first");
-
-                let MonoType::FunctionPointer(signature) = &**signature else {
-                    panic!("closure should contain a function pointer")
-                };
-                let signature = signature.clone();
-                arguments.insert(
-                    0,
-                    Operand::Copy(callee_place.clone().project_field(FieldIndex::new(1))),
-                );
+                let signature = closure.function_signature().clone();
+                arguments
+                    .insert(0, Operand::Copy(callee_place.clone().project_closure_environment()));
                 for effect in self.lambda_effects(source.get_expression(*callee).ty()).await {
                     arguments.push(state.handler_operand(&effect));
                 }
-                let code = Operand::Copy(callee_place.project_field(FieldIndex::new(0)));
+                let code = Operand::Copy(callee_place.project_closure_function_pointer());
                 output.push_instruction(
                     state.target_id,
                     block,

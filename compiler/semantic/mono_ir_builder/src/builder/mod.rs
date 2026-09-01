@@ -6,7 +6,7 @@ use rayc_ir::{
 };
 use rayc_mono_ir::{
     MonoDefInstance, MonoEffectInstance, MonoIR,
-    ty::{AggregateType, FunctionSignature, MonoType, lower_effects, lower_type},
+    ty::{AggregateType, Environment, FunctionSignature, MonoType, lower_effects, lower_type},
 };
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
@@ -72,10 +72,9 @@ impl Builder {
         &self,
         fields: Vec<Interned<MonoType>>,
     ) -> Interned<MonoType> {
-        self.engine.intern(MonoType::Aggregate(AggregateType::new(
-            rayc_mono_ir::ty::AggregateKind::CaptureEnvironment,
-            fields,
-        )))
+        let captures = self.engine.intern_unsized(fields);
+        self.engine
+            .intern(MonoType::Aggregate(AggregateType::Environment(Environment::new(captures))))
     }
 
     pub(crate) fn create_handler_pointer(&self, effect: MonoEffectInstance) -> Interned<MonoType> {

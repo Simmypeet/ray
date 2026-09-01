@@ -7,7 +7,7 @@ use rayc_mono_ir::{
     operand::{Constant, FunctionOperand, Operand},
     place::Place,
     rvalue::{AddressOf, AggregateValue, Cast, Rvalue},
-    ty::{AggregateKind, AggregateType, FunctionSignature, MonoType, PointerMutability},
+    ty::{AggregateType, Closure, FunctionSignature, MonoType, PointerMutability},
 };
 
 use super::{Builder, FunctionState};
@@ -31,11 +31,11 @@ impl Builder {
             block,
             state.expression_place(expression_id),
             Rvalue::Aggregate(AggregateValue::new(closure_type, vec![
+                environment,
                 Operand::Function(FunctionOperand::new(
                     FunctionReference::Local(target_id),
                     abi.signature().clone(),
                 )),
-                environment,
             ])),
             state,
             output,
@@ -52,10 +52,11 @@ impl Builder {
     ) -> Operand {
         assert_eq!(handled.captures().len(), abi.capture_count());
         let environment_type = abi.environment_type();
-        let MonoType::Aggregate(environment) = &*environment_type else {
+        let MonoType::Aggregate(AggregateType::Environment(environment)) = &*environment_type
+        else {
             panic!("nested function environment should be an aggregate")
         };
-        if environment.fields().is_empty() {
+        if environment.captures().is_empty() {
             return Operand::Constant(Constant::NullPointer(MonoType::new_opaque_pointer(
                 &self.engine,
             )));
@@ -111,9 +112,6 @@ impl Builder {
         &self,
         signature: FunctionSignature,
     ) -> qbice::storage::intern::Interned<MonoType> {
-        self.engine.intern(MonoType::Aggregate(AggregateType::new(AggregateKind::Closure, vec![
-            self.engine.intern(MonoType::FunctionPointer(signature)),
-            MonoType::new_opaque_pointer(&self.engine),
-        ])))
+        self.engine.intern(MonoType::Aggregate(AggregateType::Closure(Closure::new(signature))))
     }
 }

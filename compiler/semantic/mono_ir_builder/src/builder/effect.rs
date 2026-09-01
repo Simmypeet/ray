@@ -9,7 +9,10 @@ use rayc_mono_ir::{
     operand::{FunctionOperand, Operand},
     place::{FieldIndex, Place},
     rvalue::{AddressOf, AggregateValue, Rvalue},
-    ty::{MonoType, PointerMutability, build_handler_layout, instantiate_effect},
+    ty::{
+        AggregateType, EffectHandler, MonoType, PointerMutability, build_handler_layout,
+        instantiate_effect,
+    },
 };
 
 use super::{Builder, FunctionState};
@@ -36,8 +39,10 @@ impl Builder {
             .find(|(_, operation)| operation.operation_id() == perform.operation_id())
             .expect("performed operation should belong to its effect");
         let handler = state.handler_place(&instance).dereference();
-        let closure = handler.project_field(FieldIndex::new(slot.try_into().unwrap()));
-        let mut arguments = vec![Operand::Copy(closure.clone().project_field(FieldIndex::new(1)))];
+        let operation_index = FieldIndex::new(slot.try_into().unwrap());
+        let mut arguments = vec![Operand::Copy(
+            handler.clone().project_operation_record_environment(operation_index),
+        )];
         arguments
             .extend(perform.arguments().iter().map(|argument| state.expression_operand(*argument)));
         let _ = operation.signature();
@@ -46,7 +51,7 @@ impl Builder {
             block,
             Instruction::Call(Call::new(
                 Some(state.expression_place(expression_id)),
-                Operand::Copy(closure.project_field(FieldIndex::new(0))),
+                Operand::Copy(handler.project_operation_record_function_pointer(operation_index)),
                 arguments,
             )),
         );
@@ -93,11 +98,11 @@ impl Builder {
                 block,
                 Place::new(closure_local),
                 Rvalue::Aggregate(AggregateValue::new(closure_type, vec![
+                    environment,
                     Operand::Function(FunctionOperand::new(
                         FunctionReference::Local(target_id),
                         abi.signature().clone(),
                     )),
-                    environment,
                 ])),
                 state,
                 output,
@@ -105,7 +110,9 @@ impl Builder {
             slots.push(Operand::Copy(Place::new(closure_local)));
         }
 
-        let handler_type = self.engine.intern(MonoType::EffectHandler(instance.clone()));
+        let handler_type = self.engine.intern(MonoType::Aggregate(AggregateType::EffectHandler(
+            EffectHandler::new(instance.clone()),
+        )));
         let handler_local = output
             .insert_local(state.target_id, Local::new(handler_type.clone(), LocalKind::Temporary));
         Self::assign(

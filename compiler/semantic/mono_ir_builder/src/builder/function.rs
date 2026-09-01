@@ -9,7 +9,7 @@ use rayc_mono_ir::{
     operand::Operand,
     place::{FieldIndex, Place},
     rvalue::{Cast, Rvalue},
-    ty::{MonoType, PointerMutability},
+    ty::{AggregateType, MonoType, PointerMutability},
 };
 
 use super::{Builder, FunctionState};
@@ -159,10 +159,11 @@ impl Builder {
         output: &mut MonoIR,
     ) {
         let environment_type = abi.environment_type();
-        let MonoType::Aggregate(environment) = &*environment_type else {
+        let MonoType::Aggregate(AggregateType::Environment(environment)) = &*environment_type
+        else {
             panic!("nested function environment should be an aggregate")
         };
-        if environment.fields().is_empty() {
+        if environment.captures().is_empty() {
             return;
         }
 
@@ -186,7 +187,9 @@ impl Builder {
         for (index, capture_id) in abi.capture_ids().enumerate() {
             state.captures.insert(
                 capture_id,
-                environment_place.clone().project_field(FieldIndex::new(index.try_into().unwrap())),
+                environment_place
+                    .clone()
+                    .project_environment_field(FieldIndex::new(index.try_into().unwrap())),
             );
         }
         if abi.captures_effect_handlers() {
@@ -196,7 +199,7 @@ impl Builder {
                     effect,
                     environment_place
                         .clone()
-                        .project_field(FieldIndex::new(index.try_into().unwrap())),
+                        .project_environment_field(FieldIndex::new(index.try_into().unwrap())),
                 );
             }
         }

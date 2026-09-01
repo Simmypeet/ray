@@ -30,7 +30,12 @@ impl FieldIndex {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Projection {
     Dereference,
-    Field(FieldIndex),
+    EnvironmentFieldIndex(FieldIndex),
+    TupleFieldIndex(FieldIndex),
+    ClosureEnvironmentField,
+    ClosureFunctionPointerField,
+    OperationRecordEnvironmentField(FieldIndex),
+    OperationRecordFunctionPointerField(FieldIndex),
 }
 
 /// An addressable `MonoIR` location.
@@ -56,8 +61,33 @@ impl Place {
     pub fn dereference(self) -> Self { self.with_projection(Projection::Dereference) }
 
     #[must_use]
-    pub fn project_field(self, field: FieldIndex) -> Self {
-        self.with_projection(Projection::Field(field))
+    pub fn project_environment_field(self, field: FieldIndex) -> Self {
+        self.with_projection(Projection::EnvironmentFieldIndex(field))
+    }
+
+    #[must_use]
+    pub fn project_tuple_field(self, field: FieldIndex) -> Self {
+        self.with_projection(Projection::TupleFieldIndex(field))
+    }
+
+    #[must_use]
+    pub fn project_closure_environment(self) -> Self {
+        self.with_projection(Projection::ClosureEnvironmentField)
+    }
+
+    #[must_use]
+    pub fn project_closure_function_pointer(self) -> Self {
+        self.with_projection(Projection::ClosureFunctionPointerField)
+    }
+
+    #[must_use]
+    pub fn project_operation_record_environment(self, operation: FieldIndex) -> Self {
+        self.with_projection(Projection::OperationRecordEnvironmentField(operation))
+    }
+
+    #[must_use]
+    pub fn project_operation_record_function_pointer(self, operation: FieldIndex) -> Self {
+        self.with_projection(Projection::OperationRecordFunctionPointerField(operation))
     }
 
     #[must_use]

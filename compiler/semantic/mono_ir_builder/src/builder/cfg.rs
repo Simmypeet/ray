@@ -34,7 +34,8 @@ impl Builder {
         for projection in address.projections() {
             match projection {
                 IRProjection::Tuple(index) => {
-                    place = place.project_field(FieldIndex::new((*index).try_into().unwrap()));
+                    place =
+                        place.project_tuple_field(FieldIndex::new((*index).try_into().unwrap()));
                 }
             }
         }

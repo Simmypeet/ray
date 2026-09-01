@@ -26,15 +26,6 @@ pub enum MonoType {
     OpaquePointer(PointerMutability),
     Pointer(PointerType),
     Aggregate(AggregateType),
-    /// The nominal record type for one concrete effect instantiation.
-    ///
-    /// Its fields are described by a corresponding [`HandlerLayout`], which can
-    /// be derived from the concrete effect instance when needed. C code
-    /// generation can emit that layout as a struct of callback closures and
-    /// pass a pointer to the struct as a hidden parameter to effectful
-    /// functions. The type is nominal so a callback that itself uses effects
-    /// does not create a recursively expanded structural type.
-    EffectHandler(MonoEffectInstance),
     FunctionPointer(FunctionSignature),
 }
 
@@ -70,7 +61,8 @@ impl MonoType {
         instance: MonoEffectInstance,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
-        let handler = engine.intern(Self::EffectHandler(instance));
+        let handler = engine
+            .intern(Self::Aggregate(AggregateType::EffectHandler(EffectHandler::new(instance))));
         Self::new_pointer(handler, PointerMutability::Const, engine)
     }
 }
@@ -103,52 +95,85 @@ impl PointerType {
     pub const fn mutability(&self) -> PointerMutability { self.mutability }
 }
 
-/// Describes why an aggregate exists without assigning target-specific names
-/// or layout rules to it.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Encode,
-    Decode,
-    Identifiable,
-)]
-pub enum AggregateKind {
-    Tuple,
-    Closure,
-    CaptureEnvironment,
-}
-
-/// A structural aggregate type.
-///
-/// Structural types keep independently cached `MonoIR` fragments composable:
-/// the future orchestrator can deduplicate equal layouts without remapping
-/// fragment-local type identifiers.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
-pub struct AggregateType {
-    kind: AggregateKind,
-    fields: Vec<Interned<MonoType>>,
+pub struct Closure {
+    function_signature: FunctionSignature,
 }
 
-impl AggregateType {
+impl Closure {
     #[must_use]
-    pub const fn new(kind: AggregateKind, fields: Vec<Interned<MonoType>>) -> Self {
-        Self { kind, fields }
+    pub const fn new(function_signature: FunctionSignature) -> Self { Self { function_signature } }
+
+    #[must_use]
+    pub const fn function_signature(&self) -> &FunctionSignature { &self.function_signature }
+}
+
+/// The nominal record type for one concrete effect instantiation.
+///
+/// Its fields are described by a corresponding [`HandlerLayout`], which can
+/// be derived from the concrete effect instance when needed. C code generation
+/// can emit that layout as a struct of callback closures and pass a pointer to
+/// the struct as a hidden parameter to effectful functions. The type is nominal
+/// so a callback that itself uses effects does not create a recursively
+/// expanded structural type.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct EffectHandler {
+    mono_effect_instance: MonoEffectInstance,
+}
+
+impl EffectHandler {
+    #[must_use]
+    pub const fn new(mono_effect_instance: MonoEffectInstance) -> Self {
+        Self { mono_effect_instance }
     }
 
     #[must_use]
-    pub const fn kind(&self) -> &AggregateKind { &self.kind }
+    pub const fn mono_effect_instance(&self) -> &MonoEffectInstance { &self.mono_effect_instance }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct Tuple {
+    fields: Interned<[Interned<MonoType>]>,
+}
+
+impl Tuple {
+    #[must_use]
+    pub const fn new(fields: Interned<[Interned<MonoType>]>) -> Self { Self { fields } }
 
     #[must_use]
     pub fn fields(&self) -> &[Interned<MonoType>] { &self.fields }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct Environment {
+    captures: Interned<[Interned<MonoType>]>,
+}
+
+impl Environment {
+    #[must_use]
+    pub const fn new(captures: Interned<[Interned<MonoType>]>) -> Self { Self { captures } }
+
+    #[must_use]
+    pub fn captures(&self) -> &[Interned<MonoType>] { &self.captures }
+}
+
+/// An aggregate with a layout determined by its semantic role.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub enum AggregateType {
+    Closure(Closure),
+    EffectHandler(EffectHandler),
+    Tuple(Tuple),
+    Environment(Environment),
 }
 
 #[derive(
@@ -278,7 +303,8 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 for ty in tuple.args() {
                     fields.push(Box::pin(lower_concrete_type(engine, ty)).await);
                 }
-                engine.intern(MonoType::Aggregate(AggregateType::new(AggregateKind::Tuple, fields)))
+                let fields = engine.intern_unsized(fields);
+                engine.intern(MonoType::Aggregate(AggregateType::Tuple(Tuple::new(fields))))
             }
             ApplicationView::Lambda(lambda) => {
                 let mut parameters = vec![MonoType::new_opaque_pointer(engine)];
@@ -290,13 +316,7 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 }
                 let return_type = Box::pin(lower_concrete_type(engine, lambda.return_type())).await;
                 let signature = MonoType::new_function_signature(parameters, return_type, engine);
-                engine.intern(MonoType::Aggregate(AggregateType::new(
-                    AggregateKind::Closure,
-                    vec![
-                        engine.intern(MonoType::FunctionPointer(signature)),
-                        MonoType::new_opaque_pointer(engine),
-                    ],
-                )))
+                engine.intern(MonoType::Aggregate(AggregateType::Closure(Closure::new(signature))))
             }
             ApplicationView::Pointer(pointer) => {
                 let pointee_type = Box::pin(lower_concrete_type(engine, pointer.pointee())).await;

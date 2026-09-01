@@ -160,7 +160,6 @@ fn lower_literal(literal: &Literal, ty: &Interned<MonoType>) -> Constant {
             | MonoType::OpaquePointer(_)
             | MonoType::Pointer(_)
             | MonoType::Aggregate(_)
-            | MonoType::EffectHandler(_)
             | MonoType::FunctionPointer(_) => {
                 panic!("numeric literal has a non-numeric MonoIR type")
             }
