@@ -13,6 +13,7 @@ rayc_hash.path = "../../base/hash"
 rayc_lexical.path = "../../syntax/lexical"
 rayc_qbice.path = "../../base/qbice"
 rayc_symbol.path = "../symbol"
+rayc_extend.path = "../../base/extend"
 enum-as-inner.workspace = true
 im.workspace = true
 linkme.workspace = true

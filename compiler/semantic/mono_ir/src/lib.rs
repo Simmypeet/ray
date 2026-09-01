@@ -37,6 +37,8 @@ pub struct MonoIR {
     functions: Arena<MonoFunction>,
     root: MonoFunctionID,
     /// Layouts required by nominal handler types referenced by this fragment.
+    ///
+    /// TODO: Do we really need this?
     handler_layouts: Vec<HandlerLayout>,
 }
 

@@ -52,7 +52,8 @@ impl EffectLabel {
     #[must_use]
     pub const fn effect_symbol_id(&self) -> GlobalSymbolID { self.effect_symbol_id }
 
-    pub fn arguments(&self) -> impl Iterator<Item = &Ty> { self.args.iter() }
+    #[must_use]
+    pub const fn arguments(&self) -> &Args { &self.args }
 
     #[must_use]
     pub fn has_arguments(&self) -> bool { !self.args.is_empty() }

@@ -387,7 +387,7 @@ impl TyDisplay<'_> {
 
                     if label.has_arguments() {
                         f.write_char('[')?;
-                        for (argument_index, argument) in label.arguments().enumerate() {
+                        for (argument_index, argument) in label.arguments().iter().enumerate() {
                             if argument_index > 0 {
                                 f.write_str(", ")?;
                             }

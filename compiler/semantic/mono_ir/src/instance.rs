@@ -31,6 +31,9 @@ impl MonoDefInstance {
 }
 
 /// Identifies one concrete instantiation of an effect declaration.
+///
+/// It can also be used to represent an effect type that packages up its
+/// operation handlers.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]

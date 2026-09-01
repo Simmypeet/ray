@@ -27,6 +27,9 @@ impl Args {
 
     pub fn interned_iter(&self) -> impl Iterator<Item = &Interned<Ty>> { self.args.iter() }
 
+    #[must_use]
+    pub fn len(&self) -> usize { self.args.len() }
+
     pub fn iter(&self) -> impl Iterator<Item = &Ty> {
         self.args.iter().map(std::convert::AsRef::as_ref)
     }
