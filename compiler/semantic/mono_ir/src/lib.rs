@@ -6,8 +6,8 @@
 //! definitions retain [`MonoDefInstance`] keys so a future incremental
 //! orchestrator can request and reuse their independently cached fragments.
 //!
-//! This crate only models the IR. It intentionally defines neither lowering
-//! nor a qbice query.
+//! This crate models the IR and exposes the cached query for concrete handler
+//! layouts. Definition lowering lives in `rayc_mono_ir_builder`.
 
 use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_arena::Arena;

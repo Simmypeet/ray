@@ -25,7 +25,7 @@ mod expression;
 mod function;
 mod state;
 
-use state::FunctionState;
+use state::BuilderState;
 
 /// Coordinates lowering for one independently cacheable definition instance.
 pub(crate) struct Builder {
@@ -115,7 +115,9 @@ impl Builder {
         }
 
         for source_id in source_functions {
-            self.lower_function(source_id, source_to_target[&source_id], &mut output).await;
+            let mut builder_state =
+                BuilderState::new(&mut output, source_id, source_to_target[&source_id]);
+            self.lower_function(source_id, &mut builder_state).await;
         }
 
         output

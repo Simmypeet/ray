@@ -5,7 +5,6 @@ use rayc_ir::{
     ir_function::IRFunction,
 };
 use rayc_mono_ir::{
-    MonoIR,
     cfg::{BlockID, Branch, Terminator},
     function::{Local, LocalKind},
     instruction::{Assign, Instruction},
@@ -14,22 +13,26 @@ use rayc_mono_ir::{
     rvalue::Rvalue,
 };
 
-use super::{Builder, FunctionState};
+use super::{Builder, BuilderState};
 
 impl Builder {
-    pub(super) fn lower_address(address: &Address, state: &FunctionState) -> Place {
+    pub(super) fn lower_address(address: &Address, builder_state: &BuilderState<'_>) -> Place {
         let mut place = match address.root() {
             AddressRoot::Error => {
                 panic!("compiler-internal invariant violation: error address reached MonoIR")
             }
-            AddressRoot::Variable(variable) => state.variable_place(variable),
-            AddressRoot::Parameter(parameter) => state.parameter_place(parameter),
-            AddressRoot::LambdaParameter(parameter) => state.lambda_parameter_place(parameter),
-            AddressRoot::OperationHandlerParameter(parameter) => {
-                state.operation_parameter_place(parameter)
+            AddressRoot::Variable(variable) => builder_state.variable_place(variable),
+            AddressRoot::Parameter(parameter) => builder_state.parameter_place(parameter),
+            AddressRoot::LambdaParameter(parameter) => {
+                builder_state.lambda_parameter_place(parameter)
             }
-            AddressRoot::Capture(capture) => state.capture_place(capture),
-            AddressRoot::Deref(expression) => state.expression_place(expression).dereference(),
+            AddressRoot::OperationHandlerParameter(parameter) => {
+                builder_state.operation_parameter_place(parameter)
+            }
+            AddressRoot::Capture(capture) => builder_state.capture_place(capture),
+            AddressRoot::Deref(expression) => {
+                builder_state.expression_place(expression).dereference()
+            }
         };
         for projection in address.projections() {
             match projection {
@@ -47,24 +50,23 @@ impl Builder {
         target_block: BlockID,
         terminator: &IRTerminator,
         source: &IRFunction,
-        state: &FunctionState,
-        output: &mut MonoIR,
+        builder_state: &mut BuilderState<'_>,
     ) {
         let terminator = match terminator {
             IRTerminator::Jump(successor) => {
-                Terminator::Goto(Self::lower_edge(source_block, *successor, source, state, output))
+                Terminator::Goto(Self::lower_edge(source_block, *successor, source, builder_state))
             }
             IRTerminator::Conditional(conditional) => Terminator::Branch(Branch::new(
-                state.expression_operand(conditional.condition()),
-                Self::lower_edge(source_block, conditional.then_block(), source, state, output),
-                Self::lower_edge(source_block, conditional.else_block(), source, state, output),
+                builder_state.expression_operand(conditional.condition()),
+                Self::lower_edge(source_block, conditional.then_block(), source, builder_state),
+                Self::lower_edge(source_block, conditional.else_block(), source, builder_state),
             )),
             IRTerminator::Return(value) => Terminator::Return(Some(value.map_or_else(
                 || Operand::Constant(Constant::Unit),
-                |value| state.expression_operand(value),
+                |value| builder_state.expression_operand(value),
             ))),
         };
-        output.set_terminator(state.target_id, target_block, terminator);
+        builder_state.set_terminator(target_block, terminator);
     }
 
     /// Splits an incoming edge when its successor contains phi expressions.
@@ -76,8 +78,7 @@ impl Builder {
         predecessor: IRBlockID,
         successor: IRBlockID,
         source: &IRFunction,
-        state: &FunctionState,
-        output: &mut MonoIR,
+        builder_state: &mut BuilderState<'_>,
     ) -> BlockID {
         let phis = source
             .block_instructions(successor)
@@ -93,33 +94,29 @@ impl Builder {
             })
             .collect::<Vec<_>>();
         if phis.is_empty() {
-            return state.block(successor);
+            return builder_state.block(successor);
         }
 
-        let edge = output.create_block(state.target_id);
+        let edge = builder_state.create_block();
         let mut copies = Vec::with_capacity(phis.len());
         for (phi_id, phi) in &phis {
             let incoming = phi.value_from(predecessor).unwrap_or_else(|| {
                 panic!("phi {phi_id:?} has no input for predecessor {predecessor:?}")
             });
-            let destination = state.expression_place(*phi_id);
-            let ty =
-                output.get_function(state.target_id).get_local(destination.local()).ty().clone();
-            let temporary =
-                output.insert_local(state.target_id, Local::new(ty, LocalKind::Temporary));
-            output.push_instruction(
-                state.target_id,
+            let destination = builder_state.expression_place(*phi_id);
+            let ty = builder_state.local_type(destination.local());
+            let temporary = builder_state.insert_local(Local::new(ty, LocalKind::Temporary));
+            builder_state.push_instruction(
                 edge,
                 Instruction::Assign(Assign::new(
                     Place::new(temporary),
-                    Rvalue::Use(state.expression_operand(incoming)),
+                    Rvalue::Use(builder_state.expression_operand(incoming)),
                 )),
             );
             copies.push((destination, temporary));
         }
         for (destination, temporary) in copies {
-            output.push_instruction(
-                state.target_id,
+            builder_state.push_instruction(
                 edge,
                 Instruction::Assign(Assign::new(
                     destination,
@@ -127,7 +124,7 @@ impl Builder {
                 )),
             );
         }
-        output.set_terminator(state.target_id, edge, Terminator::Goto(state.block(successor)));
+        builder_state.set_terminator(edge, Terminator::Goto(builder_state.block(successor)));
         edge
     }
 }

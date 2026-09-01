@@ -1,6 +1,10 @@
-use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use linkme::distributed_slice;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 use rayc_extend::extend;
-use rayc_qbice::TrackedEngine;
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
 use rayc_symbol::{GlobalSymbolID, member::get_members};
 use rayc_type::{
@@ -95,6 +99,14 @@ impl PointerType {
     pub const fn mutability(&self) -> PointerMutability { self.mutability }
 }
 
+/// ABI of Closure is roughly described as follows:
+///
+/// ```c
+/// typedef struct Closure {
+///     void* environment;
+///     return_type (*function_pointer)(void* environment, parameter_types...)
+/// };
+/// ```
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
@@ -384,12 +396,21 @@ pub fn instantiate_effect(
 }
 
 /// Derives the callback slots for one concrete effect instantiation.
-#[extend]
-pub async fn build_handler_layout(
-    self: &TrackedEngine,
-    instance: &MonoEffectInstance,
-) -> HandlerLayout {
-    let members = self.get_members(instance.effect_id()).await;
+#[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
+#[value(Interned<HandlerLayout>)]
+#[extend(name = build_handler_layout, by_val)]
+pub struct BuildHandlerLayout {
+    /// The concrete effect whose operation signatures determine the layout.
+    pub instance: MonoEffectInstance,
+}
+
+#[executor(config = Config)]
+async fn build_handler_layout_executor(
+    key: &BuildHandlerLayout,
+    engine: &TrackedEngine,
+) -> Interned<HandlerLayout> {
+    let instance = &key.instance;
+    let members = engine.get_members(instance.effect_id()).await;
     let mut operations = members
         .namable_members()
         .map(|operation| instance.effect_id().target_id.make_global(operation))
@@ -398,20 +419,24 @@ pub async fn build_handler_layout(
 
     let mut lowered_operations = Vec::with_capacity(operations.len());
     for operation_id in operations {
-        let parameters = self.get_parameter_map(operation_id).await;
-        let mut parameter_types = vec![MonoType::new_opaque_pointer(self)];
+        let parameters = engine.get_parameter_map(operation_id).await;
+        let mut parameter_types = vec![MonoType::new_opaque_pointer(engine)];
         for (_, parameter) in parameters.iter() {
-            parameter_types.push(self.lower_type(parameter.ty(), instance.substitution()).await);
+            parameter_types.push(engine.lower_type(parameter.ty(), instance.substitution()).await);
         }
-        let return_type = self.get_return_type(operation_id).await;
-        let return_type = self.lower_type(&return_type, instance.substitution()).await;
+        let return_type = engine.get_return_type(operation_id).await;
+        let return_type = engine.lower_type(&return_type, instance.substitution()).await;
         lowered_operations.push(EffectOperation::new(
             operation_id,
-            MonoType::new_function_signature(parameter_types, return_type, self),
+            MonoType::new_function_signature(parameter_types, return_type, engine),
         ));
     }
-    HandlerLayout::new(instance.clone(), lowered_operations)
+    engine.intern(HandlerLayout::new(instance.clone(), lowered_operations))
 }
+
+#[distributed_slice(RAY_PROGRAM)]
+static BUILD_HANDLER_LAYOUT_EXECUTOR: Registration<Config> =
+    Registration::new::<BuildHandlerLayout, BuildHandlerLayoutExecutor>();
 
 const fn lower_mutability(mutability: Mutability) -> PointerMutability {
     match mutability {

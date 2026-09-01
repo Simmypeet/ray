@@ -6,9 +6,7 @@ use rayc_ir::{
     ir_function::IRFunction,
 };
 use rayc_mono_ir::{
-    MonoIR,
     cfg::BlockID,
-    function::MonoFunctionID,
     instruction::{Assign, Instruction},
     operand::{Constant, Operand},
     place::Place,
@@ -16,7 +14,7 @@ use rayc_mono_ir::{
     ty::MonoType,
 };
 
-use super::{Builder, FunctionState};
+use super::{Builder, BuilderState};
 
 impl Builder {
     pub(super) async fn lower_expression(
@@ -24,54 +22,45 @@ impl Builder {
         expression_id: IRExprID,
         block: BlockID,
         source: &IRFunction,
-        target_id: MonoFunctionID,
-        state: &mut FunctionState,
-        output: &mut MonoIR,
+        builder_state: &mut BuilderState<'_>,
     ) {
         let expression = source.get_expression(expression_id);
-        let destination = state.expression_place(expression_id);
+        let destination = builder_state.expression_place(expression_id);
         match expression.kind() {
             IRExprKind::Error => {
                 panic!("compiler-internal invariant violation: error expression reached MonoIR")
             }
             IRExprKind::Literal(literal) => {
-                let ty = output
-                    .get_function(state.target_id)
-                    .get_local(destination.local())
-                    .ty()
-                    .clone();
+                let ty = builder_state.local_type(destination.local());
                 let constant = lower_literal(literal, &ty);
                 Self::assign(
                     block,
                     destination,
                     Rvalue::Use(Operand::Constant(constant)),
-                    state,
-                    output,
+                    builder_state,
                 );
             }
             IRExprKind::RefOf(reference) => {
-                let ty = output.get_function(state.target_id).get_local(destination.local()).ty();
-                let MonoType::Pointer(pointer) = &**ty else {
+                let ty = builder_state.local_type(destination.local());
+                let MonoType::Pointer(pointer) = &*ty else {
                     panic!("RefOf should produce a pointer type")
                 };
                 Self::assign(
                     block,
                     destination,
                     Rvalue::AddressOf(AddressOf::new(
-                        Self::lower_address(reference.address(), state),
+                        Self::lower_address(reference.address(), builder_state),
                         pointer.mutability(),
                     )),
-                    state,
-                    output,
+                    builder_state,
                 );
             }
             IRExprKind::Load(load) => {
                 Self::assign(
                     block,
                     destination,
-                    Rvalue::Use(Operand::Copy(Self::lower_address(load.address(), state))),
-                    state,
-                    output,
+                    Rvalue::Use(Operand::Copy(Self::lower_address(load.address(), builder_state))),
+                    builder_state,
                 );
             }
             IRExprKind::Phi(_) => {}
@@ -88,28 +77,27 @@ impl Builder {
                     block,
                     destination,
                     Rvalue::Binary(Binary::new(
-                        state.expression_operand(binary.left()),
+                        builder_state.expression_operand(binary.left()),
                         operator,
-                        state.expression_operand(binary.right()),
+                        builder_state.expression_operand(binary.right()),
                     )),
-                    state,
-                    output,
+                    builder_state,
                 );
             }
             IRExprKind::Call(call) => {
-                self.lower_call(call, expression_id, block, source, state, output).await;
+                self.lower_call(call, expression_id, block, source, builder_state).await;
             }
             IRExprKind::Perform(perform) => {
-                self.lower_perform(perform, expression_id, block, state, output).await;
+                self.lower_perform(perform, expression_id, block, builder_state).await;
             }
             IRExprKind::Handle(handle) => {
-                self.lower_handle(handle, expression_id, block, target_id, state, output).await;
+                self.lower_handle(handle, expression_id, block, builder_state).await;
             }
             IRExprKind::Tuple(tuple) => {
-                Self::lower_tuple(tuple, block, destination, state, output);
+                Self::lower_tuple(tuple, block, destination, builder_state);
             }
             IRExprKind::MakeLambda(lambda) => {
-                self.lower_make_lambda(lambda, expression_id, block, target_id, state, output);
+                self.lower_make_lambda(lambda, expression_id, block, builder_state);
             }
         }
     }
@@ -118,32 +106,29 @@ impl Builder {
         tuple: &Tuple,
         block: BlockID,
         destination: Place,
-        state: &FunctionState,
-        output: &mut MonoIR,
+        builder_state: &mut BuilderState<'_>,
     ) {
-        let ty = output.get_function(state.target_id).get_local(destination.local()).ty().clone();
+        let ty = builder_state.local_type(destination.local());
         let value = if matches!(&*ty, MonoType::Unit) {
             Rvalue::Use(Operand::Constant(Constant::Unit))
         } else {
-            let fields =
-                tuple.elements().iter().map(|element| state.expression_operand(*element)).collect();
+            let fields = tuple
+                .elements()
+                .iter()
+                .map(|element| builder_state.expression_operand(*element))
+                .collect();
             Rvalue::Aggregate(AggregateValue::new(ty, fields))
         };
-        Self::assign(block, destination, value, state, output);
+        Self::assign(block, destination, value, builder_state);
     }
 
     pub(super) fn assign(
         block: BlockID,
         destination: Place,
         value: Rvalue,
-        state: &FunctionState,
-        output: &mut MonoIR,
+        builder_state: &mut BuilderState<'_>,
     ) {
-        output.push_instruction(
-            state.target_id,
-            block,
-            Instruction::Assign(Assign::new(destination, value)),
-        );
+        builder_state.push_instruction(block, Instruction::Assign(Assign::new(destination, value)));
     }
 }
 

@@ -1,0 +1,1 @@
+- Reorganize the module so that `Builder`, `FunctionState`, `FunctionPlan`' fields are private and expose delegate methods to access or interact with them instead.

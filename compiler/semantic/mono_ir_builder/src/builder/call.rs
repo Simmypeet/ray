@@ -7,7 +7,7 @@ use rayc_ir::{
     ir_function::IRFunction,
 };
 use rayc_mono_ir::{
-    MonoDefInstance, MonoEffectInstance, MonoIR,
+    MonoDefInstance, MonoEffectInstance,
     cfg::BlockID,
     instance::FunctionReference,
     instruction::{Call, Instruction},
@@ -28,7 +28,7 @@ use rayc_type::{
     ty::{Ty, application::View as ApplicationView},
 };
 
-use super::{Builder, FunctionState};
+use super::{Builder, BuilderState};
 
 impl Builder {
     pub(super) async fn lower_call(
@@ -37,13 +37,12 @@ impl Builder {
         expression_id: IRExprID,
         block: BlockID,
         source: &IRFunction,
-        state: &FunctionState,
-        output: &mut MonoIR,
+        builder_state: &mut BuilderState<'_>,
     ) {
         let mut arguments = call
             .arguments()
             .iter()
-            .map(|argument| state.expression_operand(*argument))
+            .map(|argument| builder_state.expression_operand(*argument))
             .collect::<Vec<_>>();
         match call.target() {
             CallTarget::Direct { function_id, subst } => {
@@ -57,30 +56,29 @@ impl Builder {
                     .checked_sub(effects.len())
                     .expect("hidden effect parameters should be part of the signature");
                 for (offset, effect) in effects.into_iter().enumerate() {
-                    arguments.insert(handler_position + offset, state.handler_operand(&effect));
+                    arguments
+                        .insert(handler_position + offset, builder_state.handler_operand(&effect));
                 }
                 let callee = Operand::Function(FunctionOperand::new(
                     FunctionReference::Global(MonoDefInstance::new(*function_id, substitution)),
                     signature,
                 ));
-                let destination = (!is_void).then(|| state.expression_place(expression_id));
-                output.push_instruction(
-                    state.target_id,
+                let destination = (!is_void).then(|| builder_state.expression_place(expression_id));
+                builder_state.push_instruction(
                     block,
                     Instruction::Call(Call::new(destination, callee, arguments)),
                 );
                 if is_void {
                     Self::assign(
                         block,
-                        state.expression_place(expression_id),
+                        builder_state.expression_place(expression_id),
                         Rvalue::Use(Operand::Constant(Constant::Unit)),
-                        state,
-                        output,
+                        builder_state,
                     );
                 }
             }
             CallTarget::Lambda { callee } => {
-                let callee_place = state.expression_place(*callee);
+                let callee_place = builder_state.expression_place(*callee);
                 let callee_ty = self.lower_type(source.get_expression(*callee).ty()).await;
                 let MonoType::Aggregate(AggregateType::Closure(closure)) = &*callee_ty else {
                     panic!("lambda callee should have a closure type")
@@ -89,17 +87,13 @@ impl Builder {
                 arguments
                     .insert(0, Operand::Copy(callee_place.clone().project_closure_environment()));
                 for effect in self.lambda_effects(source.get_expression(*callee).ty()).await {
-                    arguments.push(state.handler_operand(&effect));
+                    arguments.push(builder_state.handler_operand(&effect));
                 }
                 let code = Operand::Copy(callee_place.project_closure_function_pointer());
-                output.push_instruction(
-                    state.target_id,
+                let destination = builder_state.expression_place(expression_id);
+                builder_state.push_instruction(
                     block,
-                    Instruction::Call(Call::new(
-                        Some(state.expression_place(expression_id)),
-                        code,
-                        arguments,
-                    )),
+                    Instruction::Call(Call::new(Some(destination), code, arguments)),
                 );
                 let _ = signature;
             }

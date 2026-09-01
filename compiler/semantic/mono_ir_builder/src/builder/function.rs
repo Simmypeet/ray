@@ -3,8 +3,7 @@ use rayc_ir::{
     ir_function::{FunctionID as IRFunctionID, IRContext, IRFunction},
 };
 use rayc_mono_ir::{
-    MonoIR,
-    function::{Local, LocalID, LocalKind, MonoFunctionID},
+    function::{Local, LocalID, LocalKind},
     instruction::{Assign, Instruction},
     operand::Operand,
     place::{FieldIndex, Place},
@@ -12,41 +11,32 @@ use rayc_mono_ir::{
     ty::{AggregateType, MonoType, PointerMutability},
 };
 
-use super::{Builder, FunctionState};
+use super::{Builder, BuilderState};
 use crate::function_abi::FunctionABI;
 
 impl Builder {
     pub(super) async fn lower_function(
         &mut self,
         source_id: IRFunctionID,
-        target_id: MonoFunctionID,
-        output: &mut MonoIR,
+        builder_state: &mut BuilderState<'_>,
     ) {
         let source = self.source.get_function(source_id).clone();
         let abi = self.function_abi(source_id).clone();
-        let mut state =
-            self.initialize_function_state(source_id, &source, &abi, target_id, output).await;
+        self.initialize_function_state(&source, &abi, builder_state).await;
 
         for source_block in source.reachables().blocks() {
-            let target_block = state.block(source_block);
+            let target_block = builder_state.block(source_block);
             for instruction in source.block_instructions(source_block) {
                 match instruction {
                     IRInstruction::Expression(expression_id) => {
-                        self.lower_expression(
-                            *expression_id,
-                            target_block,
-                            &source,
-                            target_id,
-                            &mut state,
-                            output,
-                        )
-                        .await;
+                        self.lower_expression(*expression_id, target_block, &source, builder_state)
+                            .await;
                     }
                     IRInstruction::Store(store) => {
-                        let destination = Self::lower_address(store.address(), &state);
-                        let value = Rvalue::Use(state.expression_operand(store.expression()));
-                        output.push_instruction(
-                            state.target_id,
+                        let destination = Self::lower_address(store.address(), builder_state);
+                        let value =
+                            Rvalue::Use(builder_state.expression_operand(store.expression()));
+                        builder_state.push_instruction(
                             target_block,
                             Instruction::Assign(Assign::new(destination, value)),
                         );
@@ -56,29 +46,24 @@ impl Builder {
             let terminator = source
                 .block_terminator(source_block)
                 .expect("reachable semantic IR block should be terminated");
-            Self::lower_terminator(source_block, target_block, terminator, &source, &state, output);
+            Self::lower_terminator(source_block, target_block, terminator, &source, builder_state);
         }
     }
 
     async fn initialize_function_state(
         &mut self,
-        source_id: IRFunctionID,
         source: &IRFunction,
         abi: &FunctionABI,
-        target_id: MonoFunctionID,
-        output: &mut MonoIR,
-    ) -> FunctionState {
-        let mut state = FunctionState::new(source_id, target_id);
-
+        builder_state: &mut BuilderState<'_>,
+    ) {
         let environment_parameter = {
-            let function = output.get_function(target_id);
-            let mut parameters = function.parameters();
+            let mut parameters = builder_state.parameter_ids().into_iter();
             let environment_parameter = match source.context() {
                 IRContext::Def => {
                     for ((parameter_id, _), target_id) in
                         self.get_root_parameter_map().await.iter().zip(parameters.by_ref())
                     {
-                        state.parameters.insert(parameter_id, target_id);
+                        builder_state.insert_parameter(parameter_id, target_id);
                     }
                     None
                 }
@@ -87,7 +72,7 @@ impl Builder {
                     for ((parameter_id, _), target_id) in
                         context.parameters().zip(parameters.by_ref())
                     {
-                        state.lambda_parameters.insert(parameter_id, target_id);
+                        builder_state.insert_lambda_parameter(parameter_id, target_id);
                     }
                     Some(environment)
                 }
@@ -100,7 +85,7 @@ impl Builder {
                     for ((parameter_id, _), target_id) in
                         context.parameters().zip(parameters.by_ref())
                     {
-                        state.operation_parameters.insert(parameter_id, target_id);
+                        builder_state.insert_operation_parameter(parameter_id, target_id);
                     }
                     Some(environment)
                 }
@@ -108,7 +93,7 @@ impl Builder {
 
             if !abi.captures_effect_handlers() {
                 for (effect, parameter) in abi.effects().cloned().zip(parameters.by_ref()) {
-                    state.handlers.insert(effect, Place::new(parameter));
+                    builder_state.insert_handler(effect, Place::new(parameter));
                 }
             }
             assert!(parameters.next().is_none(), "MonoIR signature parameters should be consumed");
@@ -117,36 +102,28 @@ impl Builder {
 
         for (variable_id, variable) in source.variables() {
             let ty = self.lower_type(variable.ty()).await;
-            let local = output.insert_local(target_id, Local::new(ty, LocalKind::Variable));
-            state.variables.insert(variable_id, local);
+            let local = builder_state.insert_local(Local::new(ty, LocalKind::Variable));
+            builder_state.insert_variable(variable_id, local);
         }
         for expression_id in source.reachables().expressions() {
             let expression = source.get_expression(expression_id);
             let ty = self.lower_type(expression.ty()).await;
-            let local = output.insert_local(target_id, Local::new(ty, LocalKind::Temporary));
-            state.expressions.insert(expression_id, local);
+            let local = builder_state.insert_local(Local::new(ty, LocalKind::Temporary));
+            builder_state.insert_expression(expression_id, local);
         }
 
         for source_block in source.reachables().blocks() {
             let target_block = if source_block == source.entry_block() {
-                output.entry_block(target_id)
+                builder_state.entry_block()
             } else {
-                output.create_block(target_id)
+                builder_state.create_block()
             };
-            state.blocks.insert(source_block, target_block);
+            builder_state.insert_block(source_block, target_block);
         }
 
         if let Some(environment_parameter) = environment_parameter {
-            self.initialize_environment_access(
-                source,
-                abi,
-                environment_parameter,
-                target_id,
-                &mut state,
-                output,
-            );
+            self.initialize_environment_access(source, abi, environment_parameter, builder_state);
         }
-        state
     }
 
     fn initialize_environment_access(
@@ -154,9 +131,7 @@ impl Builder {
         source: &IRFunction,
         abi: &FunctionABI,
         environment_parameter: LocalID,
-        target_id: MonoFunctionID,
-        state: &mut FunctionState,
-        output: &mut MonoIR,
+        builder_state: &mut BuilderState<'_>,
     ) {
         let environment_type = abi.environment_type();
         let MonoType::Aggregate(AggregateType::Environment(environment)) = &*environment_type
@@ -170,10 +145,9 @@ impl Builder {
         let pointer_type =
             MonoType::new_pointer(environment_type, PointerMutability::Const, &self.engine);
         let pointer_local =
-            output.insert_local(target_id, Local::new(pointer_type.clone(), LocalKind::Temporary));
-        let entry = output.entry_block(target_id);
-        output.push_instruction(
-            target_id,
+            builder_state.insert_local(Local::new(pointer_type.clone(), LocalKind::Temporary));
+        let entry = builder_state.entry_block();
+        builder_state.push_instruction(
             entry,
             Instruction::Assign(Assign::new(
                 Place::new(pointer_local),
@@ -185,7 +159,7 @@ impl Builder {
         );
         let environment_place = Place::new(pointer_local).dereference();
         for (index, capture_id) in abi.capture_ids().enumerate() {
-            state.captures.insert(
+            builder_state.insert_capture(
                 capture_id,
                 environment_place
                     .clone()
@@ -195,7 +169,7 @@ impl Builder {
         if abi.captures_effect_handlers() {
             for (offset, effect) in abi.effects().cloned().enumerate() {
                 let index = abi.capture_count() + offset;
-                state.handlers.insert(
+                builder_state.insert_handler(
                     effect,
                     environment_place
                         .clone()

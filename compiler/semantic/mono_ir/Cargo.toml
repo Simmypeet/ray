@@ -14,6 +14,7 @@ rayc_semantic_element.path = "../semantic_element"
 rayc_symbol.path = "../symbol"
 rayc_type.path = "../type"
 qbice.workspace = true
+linkme.workspace = true
 
 [lints]
 workspace = true
