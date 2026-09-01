@@ -6,7 +6,6 @@ use rayc_ir::{
 };
 use rayc_mono_ir::{
     cfg::{BlockID, Branch, Terminator},
-    function::{Local, LocalKind},
     instruction::{Assign, Instruction},
     operand::{Constant, Operand},
     place::{FieldIndex, Place},
@@ -44,7 +43,6 @@ impl Builder<'_> {
     pub(super) fn lower_terminator(
         &mut self,
         source_block: IRBlockID,
-        target_block: BlockID,
         terminator: &IRTerminator,
         source: &IRFunction,
     ) {
@@ -62,7 +60,7 @@ impl Builder<'_> {
                 |value| self.expression_operand(value),
             ))),
         };
-        self.set_terminator(target_block, terminator);
+        self.set_terminator(terminator);
     }
 
     /// Splits an incoming edge when its successor contains phi expressions.
@@ -76,51 +74,41 @@ impl Builder<'_> {
         successor: IRBlockID,
         source: &IRFunction,
     ) -> BlockID {
-        let phis = source
-            .block_instructions(successor)
-            .iter()
-            .filter_map(|instruction| {
-                let IRInstruction::Expression(expression_id) = instruction else {
-                    return None;
-                };
-                let IRExprKind::Phi(phi) = source.get_expression(*expression_id).kind() else {
-                    return None;
-                };
-                Some((*expression_id, phi))
-            })
-            .collect::<Vec<_>>();
-        if phis.is_empty() {
+        let mut phis = source.block_instructions(successor).iter().filter_map(|instruction| {
+            let IRInstruction::Expression(expression_id) = instruction else {
+                return None;
+            };
+            let IRExprKind::Phi(phi) = source.get_expression(*expression_id).kind() else {
+                return None;
+            };
+            Some((*expression_id, phi))
+        });
+
+        let first = phis.next();
+        if first.is_none() {
             return self.block(successor);
         }
 
+        // create a temporary block between the predecessor and successor to perform the
+        // phi copies
         let edge = self.create_block();
-        let mut copies = Vec::with_capacity(phis.len());
-        for (phi_id, phi) in &phis {
+        self.select_block(edge);
+
+        // place all incoming phi values into their destination locals.
+        for (phi_id, phi) in first.into_iter().chain(phis) {
             let incoming = phi.value_from(predecessor).unwrap_or_else(|| {
                 panic!("phi {phi_id:?} has no input for predecessor {predecessor:?}")
             });
-            let destination = self.expression_place(*phi_id);
-            let ty = self.local_type(destination.local());
-            let temporary = self.insert_local(Local::new(ty, LocalKind::Temporary));
-            self.push_instruction(
-                edge,
-                Instruction::Assign(Assign::new(
-                    Place::new(temporary),
-                    Rvalue::Use(self.expression_operand(incoming)),
-                )),
-            );
-            copies.push((destination, temporary));
+
+            let destination = self.expression_place(phi_id);
+            self.push_instruction(Instruction::Assign(Assign::new(
+                destination,
+                Rvalue::Use(self.expression_operand(incoming)),
+            )));
         }
-        for (destination, temporary) in copies {
-            self.push_instruction(
-                edge,
-                Instruction::Assign(Assign::new(
-                    destination,
-                    Rvalue::Use(Operand::Copy(Place::new(temporary))),
-                )),
-            );
-        }
-        self.set_terminator(edge, Terminator::Goto(self.block(successor)));
+
+        self.set_terminator(Terminator::Goto(self.block(successor)));
+        self.select_block(self.block(predecessor));
         edge
     }
 }

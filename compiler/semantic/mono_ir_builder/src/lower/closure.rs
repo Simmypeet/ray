@@ -1,6 +1,5 @@
 use rayc_ir::ir_expr::{IRExprID, make_lambda::MakeLambda};
 use rayc_mono_ir::{
-    cfg::BlockID,
     function::{Local, LocalKind},
     instance::FunctionReference,
     operand::{Constant, FunctionOperand, Operand},
@@ -17,10 +16,9 @@ impl Builder<'_> {
         context: &Context,
         lambda: &MakeLambda,
         expression_id: IRExprID,
-        block: BlockID,
     ) {
         let abi = context.function_abi(lambda.function_id());
-        let environment = self.emit_environment(context, lambda.captures(), abi, block);
+        let environment = self.emit_environment(context, lambda.captures(), abi);
 
         let function_ref = Operand::Function(FunctionOperand::new(
             FunctionReference::Local(context.target_function_id(lambda.function_id())),
@@ -28,7 +26,6 @@ impl Builder<'_> {
         ));
 
         self.assign(
-            block,
             self.expression_place(expression_id),
             Rvalue::new_closure(Closure::new(abi.signature().clone()), environment, function_ref),
         );
@@ -39,7 +36,6 @@ impl Builder<'_> {
         context: &Context,
         args: &[IRExprID],
         abi: &FunctionABI,
-        block: BlockID,
     ) -> Operand {
         assert_eq!(args.len(), abi.capture_count());
         let environment = abi.environment_type();
@@ -68,7 +64,6 @@ impl Builder<'_> {
         let environment_local =
             self.insert_local(Local::new(environment_ty.clone(), LocalKind::Temporary));
         self.assign(
-            block,
             Place::new(environment_local),
             Rvalue::new_environment(environment.clone(), fields),
         );
@@ -76,7 +71,6 @@ impl Builder<'_> {
         let pointer_type = context.create_pointer(environment_ty, PointerMutability::Const);
         let pointer_local = self.insert_local(Local::new(pointer_type, LocalKind::Temporary));
         self.assign(
-            block,
             Place::new(pointer_local),
             Rvalue::AddressOf(AddressOf::new(
                 Place::new(environment_local),
@@ -87,7 +81,6 @@ impl Builder<'_> {
         let opaque_type = context.create_opaque_pointer();
         let opaque_local = self.insert_local(Local::new(opaque_type.clone(), LocalKind::Temporary));
         self.assign(
-            block,
             Place::new(opaque_local),
             Rvalue::Cast(Cast::new(Operand::Copy(Place::new(pointer_local)), opaque_type)),
         );

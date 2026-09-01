@@ -21,25 +21,23 @@ impl Builder<'_> {
 
         for source_block in source.reachables().blocks() {
             let target_block = self.block(source_block);
+            self.select_block(target_block);
             for instruction in source.block_instructions(source_block) {
                 match instruction {
                     IRInstruction::Expression(expression_id) => {
-                        self.lower_expression(context, *expression_id, target_block, &source).await;
+                        self.lower_expression(context, *expression_id, &source).await;
                     }
                     IRInstruction::Store(store) => {
                         let destination = self.lower_address(store.address());
                         let value = Rvalue::Use(self.expression_operand(store.expression()));
-                        self.push_instruction(
-                            target_block,
-                            Instruction::Assign(Assign::new(destination, value)),
-                        );
+                        self.push_instruction(Instruction::Assign(Assign::new(destination, value)));
                     }
                 }
             }
             let terminator = source
                 .block_terminator(source_block)
                 .expect("reachable semantic IR block should be terminated");
-            self.lower_terminator(source_block, target_block, terminator, &source);
+            self.lower_terminator(source_block, terminator, &source);
         }
     }
 
@@ -136,19 +134,11 @@ impl Builder<'_> {
         let pointer_local =
             self.insert_local(Local::new(pointer_type.clone(), LocalKind::Temporary));
 
-        let entry = self.entry_block();
-
         // Case from the `void* env` parameter to the `Environment* env` local
-        self.push_instruction(
-            entry,
-            Instruction::Assign(Assign::new(
-                Place::new(pointer_local),
-                Rvalue::Cast(Cast::new(
-                    Operand::Copy(Place::new(environment_parameter)),
-                    pointer_type,
-                )),
-            )),
-        );
+        self.push_instruction(Instruction::Assign(Assign::new(
+            Place::new(pointer_local),
+            Rvalue::Cast(Cast::new(Operand::Copy(Place::new(environment_parameter)), pointer_type)),
+        )));
 
         // in order to access the environment fields, we need to dereference the pointer
         // local esentially, we create a `env->field` or `(*env).field` place

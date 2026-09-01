@@ -6,7 +6,6 @@ use rayc_ir::{
     ir_function::IRFunction,
 };
 use rayc_mono_ir::{
-    cfg::BlockID,
     instruction::{Assign, Instruction},
     operand::{Constant, Operand},
     place::Place,
@@ -21,11 +20,11 @@ impl Builder<'_> {
         &mut self,
         context: &Context,
         expression_id: IRExprID,
-        block: BlockID,
         source: &IRFunction,
     ) {
         let expression = source.get_expression(expression_id);
         let destination = self.expression_place(expression_id);
+
         match expression.kind() {
             IRExprKind::Error => {
                 panic!("compiler-internal invariant violation: error expression reached MonoIR")
@@ -33,7 +32,7 @@ impl Builder<'_> {
             IRExprKind::Literal(literal) => {
                 let ty = self.local_type(destination.local());
                 let constant = lower_literal(literal, &ty);
-                self.assign(block, destination, Rvalue::Use(Operand::Constant(constant)));
+                self.assign(destination, Rvalue::Use(Operand::Constant(constant)));
             }
             IRExprKind::RefOf(reference) => {
                 let ty = self.local_type(destination.local());
@@ -41,7 +40,6 @@ impl Builder<'_> {
                     panic!("RefOf should produce a pointer type")
                 };
                 self.assign(
-                    block,
                     destination,
                     Rvalue::AddressOf(AddressOf::new(
                         self.lower_address(reference.address()),
@@ -51,7 +49,6 @@ impl Builder<'_> {
             }
             IRExprKind::Load(load) => {
                 self.assign(
-                    block,
                     destination,
                     Rvalue::Use(Operand::Copy(self.lower_address(load.address()))),
                 );
@@ -67,7 +64,6 @@ impl Builder<'_> {
                     IRBinaryOperator::Divide => BinaryOperator::Divide,
                 };
                 self.assign(
-                    block,
                     destination,
                     Rvalue::Binary(Binary::new(
                         self.expression_operand(binary.left()),
@@ -77,24 +73,24 @@ impl Builder<'_> {
                 );
             }
             IRExprKind::Call(call) => {
-                self.lower_call(context, call, expression_id, block, source).await;
+                self.lower_call(context, call, expression_id, source).await;
             }
             IRExprKind::Perform(perform) => {
-                self.lower_perform(context, perform, expression_id, block);
+                self.lower_perform(context, perform, expression_id);
             }
             IRExprKind::Handle(handle) => {
-                self.lower_handle(context, handle, expression_id, block);
+                self.lower_handle(context, handle, expression_id);
             }
             IRExprKind::Tuple(tuple) => {
-                self.lower_tuple(tuple, block, destination);
+                self.lower_tuple(tuple, destination);
             }
             IRExprKind::MakeLambda(lambda) => {
-                self.lower_make_lambda(context, lambda, expression_id, block);
+                self.lower_make_lambda(context, lambda, expression_id);
             }
         }
     }
 
-    fn lower_tuple(&mut self, tuple: &Tuple, block: BlockID, destination: Place) {
+    fn lower_tuple(&mut self, tuple: &Tuple, destination: Place) {
         let ty = self.local_type(destination.local());
         let ty = ty.assert_as_tuple();
 
@@ -107,11 +103,11 @@ impl Builder<'_> {
             Rvalue::new_tuple(ty.clone(), fields)
         };
 
-        self.assign(block, destination, value);
+        self.assign(destination, value);
     }
 
-    pub(super) fn assign(&mut self, block: BlockID, destination: Place, value: Rvalue) {
-        self.push_instruction(block, Instruction::Assign(Assign::new(destination, value)));
+    pub(super) fn assign(&mut self, destination: Place, value: Rvalue) {
+        self.push_instruction(Instruction::Assign(Assign::new(destination, value)));
     }
 }
 

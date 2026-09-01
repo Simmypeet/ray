@@ -22,6 +22,7 @@ use rayc_semantic_element::parameter::ParameterID;
 pub(crate) struct Builder<'output> {
     output: &'output mut MonoIR,
     state: FunctionState,
+    block: BlockID,
 }
 
 /// Maps semantic IR identities to the locals and blocks of one target function.
@@ -44,6 +45,7 @@ impl<'output> Builder<'output> {
         source_id: IRFunctionID,
         target_id: MonoFunctionID,
     ) -> Self {
+        let block = output.entry_block(target_id);
         Self {
             output,
             state: FunctionState {
@@ -58,6 +60,7 @@ impl<'output> Builder<'output> {
                 captures: FxHashMap::default(),
                 handlers: FxHashMap::default(),
             },
+            block,
         }
     }
 
@@ -79,26 +82,27 @@ impl<'output> Builder<'output> {
 
     pub(crate) fn create_block(&mut self) -> BlockID { self.output.create_block(self.target_id()) }
 
-    pub(crate) fn push_instruction(&mut self, block: BlockID, instruction: Instruction) {
-        self.output.push_instruction(self.target_id(), block, instruction);
+    pub(crate) const fn select_block(&mut self, block: BlockID) { self.block = block; }
+
+    pub(crate) fn push_instruction(&mut self, instruction: Instruction) {
+        self.output.push_instruction(self.target_id(), self.block, instruction);
     }
 
     pub(crate) fn push_call_with_destination(
         &mut self,
-        block: BlockID,
         destination: Place,
         callee: Operand,
         arguments: Vec<Operand>,
     ) {
         self.output.push_instruction(
             self.target_id(),
-            block,
+            self.block,
             Instruction::Call(Call::new(Some(destination), callee, arguments)),
         );
     }
 
-    pub(crate) fn set_terminator(&mut self, block: BlockID, terminator: Terminator) {
-        self.output.set_terminator(self.target_id(), block, terminator);
+    pub(crate) fn set_terminator(&mut self, terminator: Terminator) {
+        self.output.set_terminator(self.target_id(), self.block, terminator);
     }
 
     pub(crate) fn insert_block(&mut self, source: IRBlockID, target: BlockID) {

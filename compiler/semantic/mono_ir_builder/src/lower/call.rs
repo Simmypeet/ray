@@ -7,7 +7,6 @@ use rayc_ir::{
 };
 use rayc_mono_ir::{
     MonoDefInstance,
-    cfg::BlockID,
     instance::FunctionReference,
     instruction::{Call, Instruction},
     operand::{Constant, FunctionOperand, Operand},
@@ -22,7 +21,6 @@ impl Builder<'_> {
         context: &Context,
         call: &IRCall,
         expression_id: IRExprID,
-        block: BlockID,
         source: &IRFunction,
     ) {
         let mut arguments = call
@@ -53,17 +51,13 @@ impl Builder<'_> {
                 // don't need to assign the return value to the destination place
                 let destination = (!is_void).then(|| self.expression_place(expression_id));
 
-                self.push_instruction(
-                    block,
-                    Instruction::Call(Call::new(destination, callee, arguments)),
-                );
+                self.push_instruction(Instruction::Call(Call::new(destination, callee, arguments)));
 
                 // if we are calling a `void`  function, we need to assign "fake" unit value to
                 // the destination place. (Actually, we don't need to assign anything, since
                 // unit type has only one value, and we can just use uninitialized value)
                 if is_void {
                     self.assign(
-                        block,
                         self.expression_place(expression_id),
                         Rvalue::Use(Operand::Constant(Constant::Unit)),
                     );
@@ -83,10 +77,11 @@ impl Builder<'_> {
                 let code = Operand::Copy(callee_place.project_closure_function_pointer());
                 let destination = self.expression_place(expression_id);
 
-                self.push_instruction(
-                    block,
-                    Instruction::Call(Call::new(Some(destination), code, arguments)),
-                );
+                self.push_instruction(Instruction::Call(Call::new(
+                    Some(destination),
+                    code,
+                    arguments,
+                )));
             }
         }
     }
