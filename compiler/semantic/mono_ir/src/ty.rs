@@ -87,7 +87,7 @@ impl AggregateType {
 )]
 pub enum ReturnType {
     Void,
-    Value(Interned<MonoType>),
+    Value(Interned<[Interned<MonoType>]>),
 }
 
 /// A concrete calling signature shared by direct and indirect calls.
