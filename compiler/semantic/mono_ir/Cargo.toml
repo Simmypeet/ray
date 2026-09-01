@@ -1,0 +1,17 @@
+[package]
+name = "rayc_mono_ir"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_qbice.path = "../../base/qbice"
+rayc_arena.path = "../../base/arena"
+rayc_symbol.path = "../symbol"
+rayc_type.path = "../type"
+qbice.workspace = true
+
+[lints]
+workspace = true
