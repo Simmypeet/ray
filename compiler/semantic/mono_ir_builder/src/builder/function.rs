@@ -76,7 +76,7 @@ impl Builder {
             let environment_parameter = match source.context() {
                 IRContext::Def => {
                     for ((parameter_id, _), target_id) in
-                        self.root_parameters.iter().zip(parameters.by_ref())
+                        self.get_root_parameter_map().await.iter().zip(parameters.by_ref())
                     {
                         state.parameters.insert(parameter_id, target_id);
                     }

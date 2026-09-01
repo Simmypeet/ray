@@ -109,8 +109,8 @@ impl Builder {
         signature: FunctionSignature,
     ) -> qbice::storage::intern::Interned<MonoType> {
         self.types.intern(MonoType::Aggregate(AggregateType::new(AggregateKind::Closure, vec![
-            MonoType::FunctionPointer(signature),
-            MonoType::OpaquePointer(PointerMutability::Const),
+            self.types.intern(MonoType::FunctionPointer(signature)),
+            self.types.intern(MonoType::OpaquePointer(PointerMutability::Const)),
         ])))
     }
 }

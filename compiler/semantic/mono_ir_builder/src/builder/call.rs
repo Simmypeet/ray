@@ -89,7 +89,9 @@ impl Builder {
                 let MonoType::Aggregate(closure) = &*callee_ty else {
                     panic!("lambda callee should have a closure type")
                 };
-                let Some(MonoType::FunctionPointer(signature)) = closure.fields().first() else {
+                let signature = closure.fields().first().expect("should've first");
+
+                let MonoType::FunctionPointer(signature) = &**signature else {
                     panic!("closure should contain a function pointer")
                 };
                 let signature = signature.clone();

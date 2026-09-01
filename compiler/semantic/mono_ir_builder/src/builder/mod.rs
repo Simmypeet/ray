@@ -1,9 +1,18 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
-use rayc_ir::ir_function::{FunctionID as IRFunctionID, IRFunctionMap};
-use rayc_mono_ir::{MonoDefInstance, MonoIR};
+use rayc_ir::{
+    ir_function::{FunctionID as IRFunctionID, IRFunctionMap},
+    ir_lambda::Capture,
+};
+use rayc_mono_ir::{
+    MonoDefInstance, MonoEffectInstance, MonoIR,
+    ty::{AggregateType, FunctionSignature, MonoType},
+};
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::parameter::ParameterMap;
+use rayc_semantic_element::{
+    parameter::{ParameterMap, get_parameter_map},
+    return_type::get_return_type,
+};
 use rayc_type::ty::Ty;
 
 use crate::{function_abi::FunctionABI, ty::TypeLowerer};
@@ -20,12 +29,10 @@ use state::FunctionState;
 
 /// Coordinates lowering for one independently cacheable definition instance.
 pub(crate) struct Builder {
-    pub(super) engine: TrackedEngine,
-    pub(super) instance: MonoDefInstance,
+    engine: TrackedEngine,
+    instance: MonoDefInstance,
     source: Interned<IRFunctionMap>,
-    pub(super) root_parameters: Interned<ParameterMap>,
-    pub(super) root_return_type: Interned<Ty>,
-    pub(super) types: TypeLowerer,
+    types: TypeLowerer,
     function_abis: FxHashMap<IRFunctionID, FunctionABI>,
 }
 
@@ -34,19 +41,65 @@ impl Builder {
         engine: TrackedEngine,
         instance: MonoDefInstance,
         source: Interned<IRFunctionMap>,
-        root_parameters: Interned<ParameterMap>,
-        root_return_type: Interned<Ty>,
     ) -> Self {
         Self {
             types: TypeLowerer::new(engine.clone()),
             engine,
             instance,
             source,
-            root_parameters,
-            root_return_type,
             function_abis: FxHashMap::default(),
         }
     }
+
+    pub(crate) async fn get_root_parameter_map(&self) -> Interned<ParameterMap> {
+        self.engine.get_parameter_map(self.instance.def_id()).await
+    }
+
+    pub(crate) async fn get_root_return_type(&self) -> Interned<Ty> {
+        self.engine.get_return_type(self.instance.def_id()).await
+    }
+
+    pub(crate) async fn lower_effects(&mut self, eff: &Interned<Ty>) -> Vec<MonoEffectInstance> {
+        self.types.lower_effects(eff, self.instance.substitution()).await
+    }
+
+    pub(crate) async fn lower_type(&mut self, ty: &Interned<Ty>) -> Interned<MonoType> {
+        self.types.lower_type(ty, self.instance.substitution()).await
+    }
+
+    pub(crate) fn create_function_signature(
+        &mut self,
+        parameter_types: impl IntoIterator<Item = Interned<MonoType>>,
+        return_type: Interned<MonoType>,
+    ) -> FunctionSignature {
+        self.types.create_function_signature(parameter_types, return_type)
+    }
+
+    pub(crate) fn create_aggregate_type_for_capture_environment(
+        &mut self,
+        fields: Vec<Interned<MonoType>>,
+    ) -> Interned<MonoType> {
+        self.engine.intern(MonoType::Aggregate(AggregateType::new(
+            rayc_mono_ir::ty::AggregateKind::CaptureEnvironment,
+            fields,
+        )))
+    }
+
+    pub(crate) fn create_handler_pointer(
+        &mut self,
+        effect: MonoEffectInstance,
+    ) -> Interned<MonoType> {
+        self.types.handler_pointer(effect)
+    }
+
+    pub(crate) async fn lower_pointer_type_for_capture(
+        &mut self,
+        ty: &Capture,
+    ) -> Interned<MonoType> {
+        self.types.lower_type(&ty.pointer_ty(&self.engine), self.instance.substitution()).await
+    }
+
+    pub(crate) fn opaque_pointer(&self) -> Interned<MonoType> { self.types.opaque_pointer() }
 
     pub(crate) async fn lower(mut self) -> MonoIR {
         let root_source_id = self.source.root_id();

@@ -57,7 +57,7 @@ impl TypeLowerer {
         self.intern(MonoType::Pointer(PointerType::new(pointee, mutability)))
     }
 
-    pub(crate) fn signature(
+    pub(crate) fn create_function_signature(
         &self,
         parameter_types: impl IntoIterator<Item = Interned<MonoType>>,
         return_type: Interned<MonoType>,
@@ -99,7 +99,7 @@ impl TypeLowerer {
 
                     Box::pin(async {
                         for ty in tuple.args() {
-                            fields.push((*self.lower_concrete_type(ty).await).clone());
+                            fields.push(self.lower_concrete_type(ty).await);
                         }
                     })
                     .await;
@@ -121,12 +121,13 @@ impl TypeLowerer {
                         }
 
                         let return_type = self.lower_concrete_type(lambda.return_type()).await;
-                        let signature = self.signature(parameters, return_type);
+                        let signature = self.create_function_signature(parameters, return_type);
+
                         self.intern(MonoType::Aggregate(AggregateType::new(
                             AggregateKind::Closure,
                             vec![
-                                MonoType::FunctionPointer(signature),
-                                MonoType::OpaquePointer(PointerMutability::Const),
+                                self.intern(MonoType::FunctionPointer(signature)),
+                                self.intern(MonoType::OpaquePointer(PointerMutability::Const)),
                             ],
                         )))
                     })
@@ -239,7 +240,7 @@ impl TypeLowerer {
             let return_type = self.lower_type(&return_type, instance.substitution()).await;
             lowered_operations.push(EffectOperation::new(
                 operation_id,
-                self.signature(parameter_types, return_type),
+                self.create_function_signature(parameter_types, return_type),
             ));
         }
         HandlerLayout::new(instance.clone(), lowered_operations)

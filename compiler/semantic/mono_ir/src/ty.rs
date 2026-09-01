@@ -89,18 +89,20 @@ pub enum AggregateKind {
 )]
 pub struct AggregateType {
     kind: AggregateKind,
-    fields: Vec<MonoType>,
+    fields: Vec<Interned<MonoType>>,
 }
 
 impl AggregateType {
     #[must_use]
-    pub const fn new(kind: AggregateKind, fields: Vec<MonoType>) -> Self { Self { kind, fields } }
+    pub const fn new(kind: AggregateKind, fields: Vec<Interned<MonoType>>) -> Self {
+        Self { kind, fields }
+    }
 
     #[must_use]
     pub const fn kind(&self) -> &AggregateKind { &self.kind }
 
     #[must_use]
-    pub fn fields(&self) -> &[MonoType] { &self.fields }
+    pub fn fields(&self) -> &[Interned<MonoType>] { &self.fields }
 }
 
 #[derive(

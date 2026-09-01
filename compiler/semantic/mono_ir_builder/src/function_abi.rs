@@ -6,7 +6,7 @@ use rayc_ir::{
 use rayc_mono_ir::{
     MonoEffectInstance,
     function::MonoFunctionKind,
-    ty::{AggregateKind, AggregateType, FunctionSignature, MonoType},
+    ty::{FunctionSignature, MonoType},
 };
 
 use crate::builder::Builder;
@@ -60,7 +60,7 @@ impl FunctionABI {
 
 impl Builder {
     pub(super) async fn plan_function(&mut self, source: &IRFunction) -> FunctionABI {
-        let effects = self.types.lower_effects(source.effect(), self.instance.substitution()).await;
+        let effects = self.lower_effects(source.effect()).await;
 
         let mut parameter_types = Vec::new();
         let mut capture_ids = Vec::new();
@@ -68,73 +68,57 @@ impl Builder {
 
         let (kind, return_type) = match source.context() {
             IRContext::Def => {
-                for (_, parameter) in self.root_parameters.iter() {
-                    parameter_types.push(
-                        self.types.lower_type(parameter.ty(), self.instance.substitution()).await,
-                    );
+                let parameters = self.get_root_parameter_map().await;
+                for (_, parameter) in parameters.iter() {
+                    parameter_types.push(self.lower_type(parameter.ty()).await);
                 }
-                (MonoFunctionKind::Def, self.root_return_type.clone())
+
+                (MonoFunctionKind::Def, self.lower_type(&self.get_root_return_type().await).await)
             }
+
             IRContext::Lambda(context) => {
                 // The first parameter carries the erased capture environment.
-                parameter_types.push(self.types.opaque_pointer());
+                parameter_types.push(self.opaque_pointer());
 
                 for (_, parameter) in context.parameters() {
-                    parameter_types.push(
-                        self.types.lower_type(parameter.ty(), self.instance.substitution()).await,
-                    );
+                    parameter_types.push(self.lower_type(parameter.ty()).await);
                 }
 
                 for (capture_id, capture) in context.captures() {
                     capture_ids.push(capture_id);
-                    environment_fields.push(
-                        self.types
-                            .lower_type(
-                                &capture.pointer_ty(&self.engine),
-                                self.instance.substitution(),
-                            )
-                            .await,
-                    );
+                    environment_fields.push(self.lower_pointer_type_for_capture(capture).await);
                 }
-                (MonoFunctionKind::Lambda, context.return_ty().clone())
+
+                (MonoFunctionKind::Lambda, self.lower_type(context.return_ty()).await)
             }
+
             IRContext::Thunk(context) => {
-                parameter_types.push(self.types.opaque_pointer());
+                // The first parameter carries the erased capture environment.
+                parameter_types.push(self.opaque_pointer());
+
                 for (capture_id, capture) in context.captures() {
                     capture_ids.push(capture_id);
-                    environment_fields.push(
-                        self.types
-                            .lower_type(
-                                &capture.pointer_ty(&self.engine),
-                                self.instance.substitution(),
-                            )
-                            .await,
-                    );
+                    environment_fields.push(self.lower_pointer_type_for_capture(capture).await);
                 }
-                (MonoFunctionKind::Thunk, context.return_ty().clone())
+
+                (MonoFunctionKind::Thunk, self.lower_type(context.return_ty()).await)
             }
             IRContext::OperationHandler(context) => {
-                parameter_types.push(self.types.opaque_pointer());
+                parameter_types.push(self.opaque_pointer());
+
                 for (_, parameter) in context.parameters() {
-                    parameter_types.push(
-                        self.types.lower_type(parameter.ty(), self.instance.substitution()).await,
-                    );
+                    parameter_types.push(self.lower_type(parameter.ty()).await);
                 }
                 for (capture_id, capture) in context.captures() {
                     capture_ids.push(capture_id);
-                    environment_fields.push(
-                        self.types
-                            .lower_type(
-                                &capture.pointer_ty(&self.engine),
-                                self.instance.substitution(),
-                            )
-                            .await,
-                    );
+                    environment_fields.push(self.lower_pointer_type_for_capture(capture).await);
                 }
+
                 for effect in &effects {
-                    environment_fields.push(self.types.handler_pointer(effect.clone()));
+                    environment_fields.push(self.create_handler_pointer(effect.clone()));
                 }
-                (MonoFunctionKind::OperationHandler, context.return_ty().clone())
+
+                (MonoFunctionKind::OperationHandler, self.lower_type(context.return_ty()).await)
             }
         };
 
@@ -143,18 +127,13 @@ impl Builder {
         // their signatures continue to match the effect operation signatures.
         if kind != MonoFunctionKind::OperationHandler {
             for effect in &effects {
-                parameter_types.push(self.types.handler_pointer(effect.clone()));
+                parameter_types.push(self.create_handler_pointer(effect.clone()));
             }
         }
 
-        let return_type = self.types.lower_type(&return_type, self.instance.substitution()).await;
-        let signature = self.types.signature(parameter_types, return_type);
-        let environment_type = (kind != MonoFunctionKind::Def).then(|| {
-            self.types.intern(MonoType::Aggregate(AggregateType::new(
-                AggregateKind::CaptureEnvironment,
-                environment_fields.iter().map(|ty| (**ty).clone()).collect(),
-            )))
-        });
+        let signature = self.create_function_signature(parameter_types, return_type);
+        let environment_type = (kind != MonoFunctionKind::Def)
+            .then(|| self.create_aggregate_type_for_capture_environment(environment_fields));
 
         FunctionABI::new(kind, signature, effects, environment_type, capture_ids)
     }
