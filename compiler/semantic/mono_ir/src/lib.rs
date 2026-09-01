@@ -16,7 +16,7 @@ use crate::{
     cfg::{BlockID, Terminator},
     function::{Local, LocalID, MonoFunction, MonoFunctionID, MonoFunctionKind},
     instruction::Instruction,
-    ty::FunctionSignature,
+    ty::{FunctionSignature, HandlerLayout},
 };
 
 pub mod cfg;
@@ -36,6 +36,8 @@ pub struct MonoIR {
     instance: MonoDefInstance,
     functions: Arena<MonoFunction>,
     root: MonoFunctionID,
+    /// Layouts required by nominal handler types referenced by this fragment.
+    handler_layouts: Vec<HandlerLayout>,
 }
 
 impl MonoIR {
@@ -43,7 +45,7 @@ impl MonoIR {
     pub fn new(instance: MonoDefInstance, root_signature: FunctionSignature) -> Self {
         let mut functions = Arena::new();
         let root = functions.insert(MonoFunction::new(MonoFunctionKind::Def, root_signature));
-        Self { instance, functions, root }
+        Self { instance, functions, root, handler_layouts: Vec::new() }
     }
 
     #[must_use]
@@ -69,6 +71,26 @@ impl MonoIR {
     #[must_use]
     pub fn functions(&self) -> impl ExactSizeIterator<Item = (MonoFunctionID, &MonoFunction)> {
         self.functions.iter()
+    }
+
+    /// Returns the concrete handler-record layouts needed to emit this
+    /// fragment.
+    ///
+    /// Keeping reachable layouts beside the functions makes an independently
+    /// cached fragment self-describing. A program orchestrator may deduplicate
+    /// equal layouts collected from multiple fragments before C code
+    /// generation.
+    #[must_use]
+    pub fn handler_layouts(&self) -> &[HandlerLayout] { &self.handler_layouts }
+
+    pub fn insert_handler_layout(&mut self, layout: HandlerLayout) {
+        if let Some(existing) =
+            self.handler_layouts.iter().find(|existing| existing.instance() == layout.instance())
+        {
+            assert_eq!(existing, &layout, "a concrete effect must have one handler layout");
+            return;
+        }
+        self.handler_layouts.push(layout);
     }
 
     #[must_use]

@@ -26,7 +26,15 @@ impl Constant {
     pub const fn new_float32(value: f32) -> Self { Self::Float32(value.to_bits()) }
 }
 
-/// A function address together with the concrete signature needed to call it.
+/// A function address together with its concrete calling signature.
+///
+/// The signature is intentionally carried with the address even though local
+/// functions also store it. In particular, a global [`FunctionReference`] only
+/// identifies another `(definition, substitution)` fragment. Embedding the
+/// signature lets this caller fragment type a function pointer and emit a C
+/// declaration without loading the referenced function's `MonoIR` body. It also
+/// keeps incremental dependencies on the callee's interface rather than its
+/// implementation.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]

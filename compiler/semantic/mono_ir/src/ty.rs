@@ -1,4 +1,5 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use rayc_symbol::GlobalSymbolID;
 
 use crate::instance::MonoEffectInstance;
 
@@ -13,8 +14,18 @@ pub enum MonoType {
     Float32,
     CInt,
     CStr,
+    OpaquePointer(PointerMutability),
     Pointer(PointerType),
     Aggregate(AggregateType),
+    /// The nominal record type for one concrete effect instantiation.
+    ///
+    /// Its fields are described by the corresponding [`HandlerLayout`] in
+    /// [`crate::MonoIR::handler_layouts`]. C code generation can emit that
+    /// layout as a struct of callback closures and pass a pointer to the struct
+    /// as a hidden parameter to effectful functions. The type is nominal so a
+    /// callback that itself uses effects does not create a recursively expanded
+    /// structural type.
+    EffectHandler(MonoEffectInstance),
     FunctionPointer(FunctionSignature),
 }
 
@@ -49,13 +60,23 @@ impl PointerType {
 /// Describes why an aggregate exists without assigning target-specific names
 /// or layout rules to it.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
 )]
 pub enum AggregateKind {
     Tuple,
     Closure,
     CaptureEnvironment,
-    EffectHandler(MonoEffectInstance),
 }
 
 /// A structural aggregate type.
@@ -97,9 +118,82 @@ pub enum ReturnType {
 pub struct FunctionSignature {
     parameter_types: Interned<[Interned<MonoType>]>,
     return_type: ReturnType,
+    variadic: bool,
 }
 
 impl FunctionSignature {
     #[must_use]
+    pub const fn new(
+        parameter_types: Interned<[Interned<MonoType>]>,
+        return_type: ReturnType,
+    ) -> Self {
+        Self { parameter_types, return_type, variadic: false }
+    }
+
+    #[must_use]
+    pub const fn new_variadic(
+        parameter_types: Interned<[Interned<MonoType>]>,
+        return_type: ReturnType,
+    ) -> Self {
+        Self { parameter_types, return_type, variadic: true }
+    }
+
+    #[must_use]
     pub fn parameter_types(&self) -> &[Interned<MonoType>] { &self.parameter_types }
+
+    #[must_use]
+    pub const fn return_type(&self) -> &ReturnType { &self.return_type }
+
+    #[must_use]
+    pub const fn is_variadic(&self) -> bool { self.variadic }
+}
+
+/// One callback slot in a concrete effect-handler record.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct EffectOperation {
+    operation_id: GlobalSymbolID,
+    signature: FunctionSignature,
+}
+
+impl EffectOperation {
+    #[must_use]
+    pub const fn new(operation_id: GlobalSymbolID, signature: FunctionSignature) -> Self {
+        Self { operation_id, signature }
+    }
+
+    #[must_use]
+    pub const fn operation_id(&self) -> GlobalSymbolID { self.operation_id }
+
+    #[must_use]
+    pub const fn signature(&self) -> &FunctionSignature { &self.signature }
+}
+
+/// The operation slots of one nominal, concrete effect-handler record.
+///
+/// C code generation can represent this as a struct with one closure field per
+/// operation. Each closure consists of a callback address with the operation's
+/// [`FunctionSignature`] and an opaque environment pointer. There is no
+/// continuation or resumption slot: invoking an operation is an ordinary
+/// callback call that returns to its caller.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct HandlerLayout {
+    instance: MonoEffectInstance,
+    operations: Vec<EffectOperation>,
+}
+
+impl HandlerLayout {
+    #[must_use]
+    pub const fn new(instance: MonoEffectInstance, operations: Vec<EffectOperation>) -> Self {
+        Self { instance, operations }
+    }
+
+    #[must_use]
+    pub const fn instance(&self) -> &MonoEffectInstance { &self.instance }
+
+    #[must_use]
+    pub fn operations(&self) -> &[EffectOperation] { &self.operations }
 }

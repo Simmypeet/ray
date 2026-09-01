@@ -3,7 +3,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use crate::{
     operand::Operand,
     place::Place,
-    ty::{AggregateType, MonoType, PointerMutability},
+    ty::{MonoType, PointerMutability},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -127,16 +127,16 @@ impl Cast {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub struct AggregateValue {
-    ty: AggregateType,
+    ty: Interned<MonoType>,
     fields: Vec<Operand>,
 }
 
 impl AggregateValue {
     #[must_use]
-    pub const fn new(ty: AggregateType, fields: Vec<Operand>) -> Self { Self { ty, fields } }
+    pub const fn new(ty: Interned<MonoType>, fields: Vec<Operand>) -> Self { Self { ty, fields } }
 
     #[must_use]
-    pub const fn ty(&self) -> &AggregateType { &self.ty }
+    pub const fn ty(&self) -> &Interned<MonoType> { &self.ty }
 
     #[must_use]
     pub fn fields(&self) -> &[Operand] { &self.fields }
