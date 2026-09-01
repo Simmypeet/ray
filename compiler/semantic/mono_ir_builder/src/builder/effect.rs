@@ -8,45 +8,39 @@ use rayc_mono_ir::{
     operand::{FunctionOperand, Operand},
     place::{FieldIndex, Place},
     rvalue::{AddressOf, AggregateValue, Rvalue},
-    ty::{
-        AggregateType, EffectHandler, MonoType, PointerMutability, build_handler_layout,
-        instantiate_effect,
-    },
+    ty::PointerMutability,
 };
 
-use super::{Builder, BuilderState};
+use super::Builder;
+use crate::context::Context;
 
-impl Builder {
+impl Context {
     pub(super) async fn lower_perform(
-        &mut self,
+        &self,
         perform: &Perform,
         expression_id: IRExprID,
         block: BlockID,
-        builder_state: &mut BuilderState<'_>,
+        builder: &mut Builder<'_>,
     ) {
-        let instance = self.engine.instantiate_effect(
-            perform.effect_id(),
-            perform.substitution(),
-            self.instance.substitution(),
-        );
-        let layout = self.engine.build_handler_layout(instance.clone()).await;
+        let instance = self.instantiate_effect(perform.effect_id(), perform.substitution());
+        let layout = self.build_handler_layout(instance.clone()).await;
         let (slot, operation) = layout
             .operations()
             .iter()
             .enumerate()
             .find(|(_, operation)| operation.operation_id() == perform.operation_id())
             .expect("performed operation should belong to its effect");
-        let handler = builder_state.handler_place(&instance).dereference();
+        let handler = builder.handler_place(&instance).dereference();
         let operation_index = FieldIndex::new(slot.try_into().unwrap());
         let mut arguments = vec![Operand::Copy(
             handler.clone().project_operation_record_environment(operation_index),
         )];
         arguments.extend(
-            perform.arguments().iter().map(|argument| builder_state.expression_operand(*argument)),
+            perform.arguments().iter().map(|argument| builder.expression_operand(*argument)),
         );
         let _ = operation.signature();
-        let destination = builder_state.expression_place(expression_id);
-        builder_state.push_instruction(
+        let destination = builder.expression_place(expression_id);
+        builder.push_instruction(
             block,
             Instruction::Call(Call::new(
                 Some(destination),
@@ -57,18 +51,14 @@ impl Builder {
     }
 
     pub(super) async fn lower_handle(
-        &mut self,
+        &self,
         handle: &Handle,
         expression_id: IRExprID,
         block: BlockID,
-        builder_state: &mut BuilderState<'_>,
+        builder: &mut Builder<'_>,
     ) {
-        let instance = self.engine.instantiate_effect(
-            handle.effect_id(),
-            handle.substitution(),
-            self.instance.substitution(),
-        );
-        let layout = self.engine.build_handler_layout(instance.clone()).await;
+        let instance = self.instantiate_effect(handle.effect_id(), handle.substitution());
+        let layout = self.build_handler_layout(instance.clone()).await;
         let handlers = handle
             .handlers()
             .iter()
@@ -79,70 +69,66 @@ impl Builder {
             let handled = handlers
                 .get(&operation.operation_id())
                 .expect("complete handler should define every operation");
-            let abi = self.function_abi(handled.function_id()).clone();
+            let abi = self.function_abi(handled.function_id());
             assert_eq!(
                 abi.signature(),
                 operation.signature(),
                 "operation handler callback should match its effect operation"
             );
-            let environment = self.emit_environment(handled, &abi, block, builder_state);
-            let closure_type = self.closure_type(abi.signature().clone());
+            let environment = self.emit_environment(handled, &abi, block, builder);
+            let closure_type = self.create_closure_type(abi.signature().clone());
             let closure_local =
-                builder_state.insert_local(Local::new(closure_type.clone(), LocalKind::Temporary));
+                builder.insert_local(Local::new(closure_type.clone(), LocalKind::Temporary));
             Self::assign(
                 block,
                 Place::new(closure_local),
                 Rvalue::Aggregate(AggregateValue::new(closure_type, vec![
                     environment,
                     Operand::Function(FunctionOperand::new(
-                        FunctionReference::Local(builder_state.target_id()),
+                        FunctionReference::Local(builder.target_id()),
                         abi.signature().clone(),
                     )),
                 ])),
-                builder_state,
+                builder,
             );
             slots.push(Operand::Copy(Place::new(closure_local)));
         }
 
-        let handler_type = self.engine.intern(MonoType::Aggregate(AggregateType::EffectHandler(
-            EffectHandler::new(instance.clone()),
-        )));
+        let handler_type = self.create_handler_type(instance.clone());
         let handler_local =
-            builder_state.insert_local(Local::new(handler_type.clone(), LocalKind::Temporary));
+            builder.insert_local(Local::new(handler_type.clone(), LocalKind::Temporary));
         Self::assign(
             block,
             Place::new(handler_local),
             Rvalue::Aggregate(AggregateValue::new(handler_type.clone(), slots)),
-            builder_state,
+            builder,
         );
-        let handler_pointer_type =
-            MonoType::new_pointer(handler_type, PointerMutability::Const, &self.engine);
+        let handler_pointer_type = self.create_pointer(handler_type, PointerMutability::Const);
         let handler_pointer =
-            builder_state.insert_local(Local::new(handler_pointer_type, LocalKind::Temporary));
+            builder.insert_local(Local::new(handler_pointer_type, LocalKind::Temporary));
         Self::assign(
             block,
             Place::new(handler_pointer),
             Rvalue::AddressOf(AddressOf::new(Place::new(handler_local), PointerMutability::Const)),
-            builder_state,
+            builder,
         );
 
-        let body_abi = self.function_abi(handle.body().function_id()).clone();
-        let mut arguments =
-            vec![self.emit_environment(handle.body(), &body_abi, block, builder_state)];
+        let body_abi = self.function_abi(handle.body().function_id());
+        let mut arguments = vec![self.emit_environment(handle.body(), &body_abi, block, builder)];
         for effect in body_abi.effects() {
             if effect == &instance {
                 arguments.push(Operand::Copy(Place::new(handler_pointer)));
             } else {
-                arguments.push(builder_state.handler_operand(effect));
+                arguments.push(builder.handler_operand(effect));
             }
         }
-        let destination = builder_state.expression_place(expression_id);
-        builder_state.push_instruction(
+        let destination = builder.expression_place(expression_id);
+        builder.push_instruction(
             block,
             Instruction::Call(Call::new(
                 Some(destination),
                 Operand::Function(FunctionOperand::new(
-                    FunctionReference::Local(builder_state.target_id()),
+                    FunctionReference::Local(builder.target_id()),
                     body_abi.signature().clone(),
                 )),
                 arguments,

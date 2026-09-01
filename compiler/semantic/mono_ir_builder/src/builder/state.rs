@@ -19,7 +19,7 @@ use rayc_mono_ir::{
 use rayc_semantic_element::parameter::ParameterID;
 
 /// Mutable output and identity mappings for lowering one function.
-pub(super) struct BuilderState<'output> {
+pub(crate) struct Builder<'output> {
     output: &'output mut MonoIR,
     state: FunctionState,
 }
@@ -38,8 +38,8 @@ struct FunctionState {
     handlers: FxHashMap<MonoEffectInstance, Place>,
 }
 
-impl<'output> BuilderState<'output> {
-    pub(super) fn new(
+impl<'output> Builder<'output> {
+    pub(crate) fn new(
         output: &'output mut MonoIR,
         source_id: IRFunctionID,
         target_id: MonoFunctionID,

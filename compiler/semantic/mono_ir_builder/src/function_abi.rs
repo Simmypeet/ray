@@ -9,7 +9,7 @@ use rayc_mono_ir::{
     ty::{FunctionSignature, MonoType},
 };
 
-use crate::builder::Builder;
+use crate::context::Context;
 
 /// The concrete calling convention and environment layout of one function.
 #[derive(Debug, Clone)]
@@ -58,8 +58,8 @@ impl FunctionABI {
     }
 }
 
-impl Builder {
-    pub(super) async fn plan_function(&mut self, source: &IRFunction) -> FunctionABI {
+impl Context {
+    pub(super) async fn plan_function(&self, source: &IRFunction) -> FunctionABI {
         let effects = self.lower_effects(source.effect()).await;
 
         let mut parameter_types = Vec::new();

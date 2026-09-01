@@ -26,7 +26,7 @@ use rayc_type::{
     ty::{Primitive, Ty},
 };
 
-use crate::builder::Builder;
+use crate::context::Context;
 
 fn test_def(id: u128) -> GlobalSymbolID { TargetID::TEST.make_global(SymbolID::from_u128(id)) }
 
@@ -50,7 +50,7 @@ async fn lower_test_ir(
     return_type: Interned<Ty>,
     substitution: Subst,
 ) -> MonoIR {
-    Builder::new(
+    Context::new(
         engine.clone(),
         MonoDefInstance::new(def_id, substitution),
         engine.intern(source),

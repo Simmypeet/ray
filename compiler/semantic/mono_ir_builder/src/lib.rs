@@ -11,9 +11,10 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::subst::Subst;
 
-use crate::builder::Builder;
+use crate::context::Context;
 
 mod builder;
+mod context;
 mod function_abi;
 
 /// Lowers one concrete source-definition instantiation into `MonoIR`.
@@ -24,5 +25,5 @@ pub async fn lower_ir(
     substitution: Subst,
 ) -> MonoIR {
     let source = engine.get_ir(def_id).await;
-    Builder::new(engine.clone(), MonoDefInstance::new(def_id, substitution), source).lower().await
+    Context::new(engine.clone(), MonoDefInstance::new(def_id, substitution), source).lower().await
 }
