@@ -15,6 +15,7 @@ use rayc_type::subst::Subst;
 use crate::builder::Builder;
 
 mod builder;
+mod function_abi;
 mod ty;
 
 /// Lowers one concrete source-definition instantiation into `MonoIR`.

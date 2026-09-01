@@ -1,0 +1,26 @@
+[package]
+name = "rayc_mono_ir_builder"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_hash.path = "../../base/hash"
+rayc_ir.path = "../ir"
+rayc_mono_ir.path = "../mono_ir"
+rayc_qbice.path = "../../base/qbice"
+rayc_semantic_element.path = "../semantic_element"
+rayc_symbol.path = "../symbol"
+rayc_type.path = "../type"
+qbice.workspace = true
+
+[dev-dependencies]
+rayc_lexical.path = "../../syntax/lexical"
+rayc_source_file.path = "../../base/source_file"
+rayc_target.path = "../../base/target"
+tokio.workspace = true
+
+[lints]
+workspace = true
