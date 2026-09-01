@@ -7,8 +7,10 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-rayc_qbice.path = "../../base/qbice"
 rayc_arena.path = "../../base/arena"
+rayc_extend.path = "../../base/extend"
+rayc_qbice.path = "../../base/qbice"
+rayc_semantic_element.path = "../semantic_element"
 rayc_symbol.path = "../symbol"
 rayc_type.path = "../type"
 qbice.workspace = true

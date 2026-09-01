@@ -116,13 +116,13 @@ impl Builder {
         };
 
         for (variable_id, variable) in source.variables() {
-            let ty = self.types.lower_type(variable.ty(), self.instance.substitution()).await;
+            let ty = self.lower_type(variable.ty()).await;
             let local = output.insert_local(target_id, Local::new(ty, LocalKind::Variable));
             state.variables.insert(variable_id, local);
         }
         for expression_id in source.reachables().expressions() {
             let expression = source.get_expression(expression_id);
-            let ty = self.types.lower_type(expression.ty(), self.instance.substitution()).await;
+            let ty = self.lower_type(expression.ty()).await;
             let local = output.insert_local(target_id, Local::new(ty, LocalKind::Temporary));
             state.expressions.insert(expression_id, local);
         }
@@ -166,7 +166,8 @@ impl Builder {
             return;
         }
 
-        let pointer_type = self.types.pointer(environment_type, PointerMutability::Const);
+        let pointer_type =
+            MonoType::new_pointer(environment_type, PointerMutability::Const, &self.engine);
         let pointer_local =
             output.insert_local(target_id, Local::new(pointer_type.clone(), LocalKind::Temporary));
         let entry = output.entry_block(target_id);

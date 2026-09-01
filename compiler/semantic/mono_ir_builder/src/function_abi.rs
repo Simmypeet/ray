@@ -78,7 +78,7 @@ impl Builder {
 
             IRContext::Lambda(context) => {
                 // The first parameter carries the erased capture environment.
-                parameter_types.push(self.opaque_pointer());
+                parameter_types.push(self.create_opaque_pointer());
 
                 for (_, parameter) in context.parameters() {
                     parameter_types.push(self.lower_type(parameter.ty()).await);
@@ -94,7 +94,7 @@ impl Builder {
 
             IRContext::Thunk(context) => {
                 // The first parameter carries the erased capture environment.
-                parameter_types.push(self.opaque_pointer());
+                parameter_types.push(self.create_opaque_pointer());
 
                 for (capture_id, capture) in context.captures() {
                     capture_ids.push(capture_id);
@@ -104,7 +104,7 @@ impl Builder {
                 (MonoFunctionKind::Thunk, self.lower_type(context.return_ty()).await)
             }
             IRContext::OperationHandler(context) => {
-                parameter_types.push(self.opaque_pointer());
+                parameter_types.push(self.create_opaque_pointer());
 
                 for (_, parameter) in context.parameters() {
                     parameter_types.push(self.lower_type(parameter.ty()).await);

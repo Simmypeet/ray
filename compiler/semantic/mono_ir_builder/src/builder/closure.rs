@@ -56,7 +56,9 @@ impl Builder {
             panic!("nested function environment should be an aggregate")
         };
         if environment.fields().is_empty() {
-            return Operand::Constant(Constant::NullPointer(self.types.opaque_pointer()));
+            return Operand::Constant(Constant::NullPointer(MonoType::new_opaque_pointer(
+                &self.engine,
+            )));
         }
 
         let mut fields = handled
@@ -78,7 +80,8 @@ impl Builder {
             state,
             output,
         );
-        let pointer_type = self.types.pointer(environment_type, PointerMutability::Const);
+        let pointer_type =
+            MonoType::new_pointer(environment_type, PointerMutability::Const, &self.engine);
         let pointer_local =
             output.insert_local(state.target_id, Local::new(pointer_type, LocalKind::Temporary));
         Self::assign(
@@ -91,7 +94,7 @@ impl Builder {
             state,
             output,
         );
-        let opaque_type = self.types.opaque_pointer();
+        let opaque_type = MonoType::new_opaque_pointer(&self.engine);
         let opaque_local = output
             .insert_local(state.target_id, Local::new(opaque_type.clone(), LocalKind::Temporary));
         Self::assign(
@@ -108,9 +111,9 @@ impl Builder {
         &self,
         signature: FunctionSignature,
     ) -> qbice::storage::intern::Interned<MonoType> {
-        self.types.intern(MonoType::Aggregate(AggregateType::new(AggregateKind::Closure, vec![
-            self.types.intern(MonoType::FunctionPointer(signature)),
-            self.types.intern(MonoType::OpaquePointer(PointerMutability::Const)),
+        self.engine.intern(MonoType::Aggregate(AggregateType::new(AggregateKind::Closure, vec![
+            self.engine.intern(MonoType::FunctionPointer(signature)),
+            MonoType::new_opaque_pointer(&self.engine),
         ])))
     }
 }

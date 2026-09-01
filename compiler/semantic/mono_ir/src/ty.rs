@@ -1,5 +1,14 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
-use rayc_symbol::GlobalSymbolID;
+use rayc_extend::extend;
+use rayc_qbice::TrackedEngine;
+use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
+use rayc_symbol::{GlobalSymbolID, member::get_members};
+use rayc_type::{
+    poly_var::build_subst_from_args,
+    reduce::Reduce,
+    subst::{MutSubstitutable, Subst, Substitutable},
+    ty::{Mutability, Primitive, Ty, application::View as ApplicationView},
+};
 
 use crate::instance::MonoEffectInstance;
 
@@ -19,14 +28,51 @@ pub enum MonoType {
     Aggregate(AggregateType),
     /// The nominal record type for one concrete effect instantiation.
     ///
-    /// Its fields are described by the corresponding [`HandlerLayout`] in
-    /// [`crate::MonoIR::handler_layouts`]. C code generation can emit that
-    /// layout as a struct of callback closures and pass a pointer to the struct
-    /// as a hidden parameter to effectful functions. The type is nominal so a
-    /// callback that itself uses effects does not create a recursively expanded
-    /// structural type.
+    /// Its fields are described by a corresponding [`HandlerLayout`], which can
+    /// be derived from the concrete effect instance when needed. C code
+    /// generation can emit that layout as a struct of callback closures and
+    /// pass a pointer to the struct as a hidden parameter to effectful
+    /// functions. The type is nominal so a callback that itself uses effects
+    /// does not create a recursively expanded structural type.
     EffectHandler(MonoEffectInstance),
     FunctionPointer(FunctionSignature),
+}
+
+impl MonoType {
+    #[must_use]
+    pub fn new_opaque_pointer(engine: &TrackedEngine) -> Interned<Self> {
+        engine.intern(Self::OpaquePointer(PointerMutability::Const))
+    }
+
+    #[must_use]
+    pub fn new_pointer(
+        pointee: Interned<Self>,
+        mutability: PointerMutability,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::Pointer(PointerType::new(pointee, mutability)))
+    }
+
+    #[must_use]
+    pub fn new_function_signature(
+        parameter_types: impl IntoIterator<Item = Interned<Self>>,
+        return_type: Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> FunctionSignature {
+        FunctionSignature::new(
+            engine.intern_unsized(parameter_types.into_iter().collect::<Vec<_>>()),
+            ReturnType::Value(engine.intern_unsized([return_type])),
+        )
+    }
+
+    #[must_use]
+    pub fn new_handler_pointer(
+        instance: MonoEffectInstance,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        let handler = engine.intern(Self::EffectHandler(instance));
+        Self::new_pointer(handler, PointerMutability::Const, engine)
+    }
 }
 
 /// Whether writes through a pointer are permitted by the `MonoIR` type.
@@ -198,4 +244,165 @@ impl HandlerLayout {
 
     #[must_use]
     pub fn operations(&self) -> &[EffectOperation] { &self.operations }
+}
+
+/// Lowers a type of kind star using the supplied concrete substitution.
+#[extend]
+pub async fn lower_type(
+    self: &TrackedEngine,
+    ty: &Interned<Ty>,
+    substitution: &Subst,
+) -> Interned<MonoType> {
+    let ty = ty.apply_subst_or_clone(substitution, self);
+    lower_concrete_type(self, &ty).await
+}
+
+async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Interned<MonoType> {
+    match &**ty {
+        Ty::Application(application) => match application.view() {
+            ApplicationView::Primitive(primitive) => {
+                let ty = match primitive {
+                    Primitive::Int32 => MonoType::Int32,
+                    Primitive::Float32 => MonoType::Float32,
+                    Primitive::Bool => MonoType::Bool,
+                    Primitive::CInt => MonoType::CInt,
+                    Primitive::CStr => MonoType::CStr,
+                };
+                engine.intern(ty)
+            }
+            ApplicationView::Tuple(tuple) => {
+                if tuple.args().is_empty() {
+                    return engine.intern(MonoType::Unit);
+                }
+                let mut fields = Vec::with_capacity(tuple.args().len());
+                for ty in tuple.args() {
+                    fields.push(Box::pin(lower_concrete_type(engine, ty)).await);
+                }
+                engine.intern(MonoType::Aggregate(AggregateType::new(AggregateKind::Tuple, fields)))
+            }
+            ApplicationView::Lambda(lambda) => {
+                let mut parameters = vec![MonoType::new_opaque_pointer(engine)];
+                for parameter in lambda.parameter_types() {
+                    parameters.push(Box::pin(lower_concrete_type(engine, parameter)).await);
+                }
+                for effect in lower_concrete_effects(engine, lambda.effect_row()).await {
+                    parameters.push(MonoType::new_handler_pointer(effect, engine));
+                }
+                let return_type = Box::pin(lower_concrete_type(engine, lambda.return_type())).await;
+                let signature = MonoType::new_function_signature(parameters, return_type, engine);
+                engine.intern(MonoType::Aggregate(AggregateType::new(
+                    AggregateKind::Closure,
+                    vec![
+                        engine.intern(MonoType::FunctionPointer(signature)),
+                        MonoType::new_opaque_pointer(engine),
+                    ],
+                )))
+            }
+            ApplicationView::Pointer(pointer) => {
+                let pointee_type = Box::pin(lower_concrete_type(engine, pointer.pointee())).await;
+                MonoType::new_pointer(pointee_type, lower_mutability(pointer.mutability()), engine)
+            }
+            ApplicationView::Error => {
+                panic!("compiler-internal invariant violation: error type reached MonoIR")
+            }
+        },
+        Ty::Inference(_) | Ty::PolyVar(_) => {
+            panic!(
+                "compiler-internal invariant violation: non-concrete type reached MonoIR: {ty:?}"
+            )
+        }
+        Ty::EffectRow(_) => {
+            panic!("compiler-internal invariant violation: effect row used as a value type")
+        }
+    }
+}
+
+/// Lowers a concrete, closed effect row using the supplied substitution.
+#[extend]
+pub async fn lower_effects(
+    self: &TrackedEngine,
+    effect: &Interned<Ty>,
+    substitution: &Subst,
+) -> Vec<MonoEffectInstance> {
+    let effect = reduce_fully(effect.apply_subst_or_clone(substitution, self), self);
+    lower_concrete_effects(self, &effect).await
+}
+
+async fn lower_concrete_effects(
+    engine: &TrackedEngine,
+    effect: &Interned<Ty>,
+) -> Vec<MonoEffectInstance> {
+    let Ty::EffectRow(row) = &**effect else {
+        panic!("compiler-internal invariant violation: function effect is not an effect row")
+    };
+    assert!(
+        row.tail().is_none(),
+        "compiler-internal invariant violation: open effect row reached MonoIR"
+    );
+
+    let mut effects = Vec::with_capacity(row.labels().len());
+    for label in row.labels() {
+        let substitution =
+            engine.build_subst_from_args(label.effect_symbol_id(), label.arguments()).await;
+        effects.push(MonoEffectInstance::new(label.effect_symbol_id(), substitution));
+    }
+    effects.sort();
+    effects.dedup();
+    effects
+}
+
+#[extend]
+pub fn instantiate_effect(
+    self: &TrackedEngine,
+    effect_id: GlobalSymbolID,
+    substitution: &Subst,
+    owner_substitution: &Subst,
+) -> MonoEffectInstance {
+    let mut substitution = substitution.clone();
+    substitution.apply_mut_subst(owner_substitution, self);
+    MonoEffectInstance::new(effect_id, substitution)
+}
+
+/// Derives the callback slots for one concrete effect instantiation.
+#[extend]
+pub async fn build_handler_layout(
+    self: &TrackedEngine,
+    instance: &MonoEffectInstance,
+) -> HandlerLayout {
+    let members = self.get_members(instance.effect_id()).await;
+    let mut operations = members
+        .namable_members()
+        .map(|operation| instance.effect_id().target_id.make_global(operation))
+        .collect::<Vec<_>>();
+    operations.sort_unstable();
+
+    let mut lowered_operations = Vec::with_capacity(operations.len());
+    for operation_id in operations {
+        let parameters = self.get_parameter_map(operation_id).await;
+        let mut parameter_types = vec![MonoType::new_opaque_pointer(self)];
+        for (_, parameter) in parameters.iter() {
+            parameter_types.push(self.lower_type(parameter.ty(), instance.substitution()).await);
+        }
+        let return_type = self.get_return_type(operation_id).await;
+        let return_type = self.lower_type(&return_type, instance.substitution()).await;
+        lowered_operations.push(EffectOperation::new(
+            operation_id,
+            MonoType::new_function_signature(parameter_types, return_type, self),
+        ));
+    }
+    HandlerLayout::new(instance.clone(), lowered_operations)
+}
+
+const fn lower_mutability(mutability: Mutability) -> PointerMutability {
+    match mutability {
+        Mutability::Immutable => PointerMutability::Const,
+        Mutability::Mutable => PointerMutability::Mut,
+    }
+}
+
+fn reduce_fully(mut ty: Interned<Ty>, engine: &TrackedEngine) -> Interned<Ty> {
+    while let Some(reduced) = ty.reduce(engine) {
+        ty = reduced;
+    }
+    ty
 }

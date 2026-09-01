@@ -14,7 +14,7 @@ use rayc_mono_ir::{
     operand::{Constant, FunctionOperand, Operand},
     place::FieldIndex,
     rvalue::Rvalue,
-    ty::{FunctionSignature, MonoType, ReturnType},
+    ty::{FunctionSignature, MonoType, ReturnType, lower_effects, lower_type},
 };
 use rayc_semantic_element::{
     effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
@@ -82,10 +82,7 @@ impl Builder {
             }
             CallTarget::Lambda { callee } => {
                 let callee_place = state.expression_place(*callee);
-                let callee_ty = self
-                    .types
-                    .lower_type(source.get_expression(*callee).ty(), self.instance.substitution())
-                    .await;
+                let callee_ty = self.lower_type(source.get_expression(*callee).ty()).await;
                 let MonoType::Aggregate(closure) = &*callee_ty else {
                     panic!("lambda callee should have a closure type")
                 };
@@ -125,33 +122,33 @@ impl Builder {
         let parameters = self.engine.get_parameter_map(function_id).await;
         let mut parameter_types = Vec::new();
         for (_, parameter) in parameters.iter() {
-            parameter_types.push(self.types.lower_type(parameter.ty(), substitution).await);
+            parameter_types.push(self.engine.lower_type(parameter.ty(), substitution).await);
         }
         let symbol_kind = self.engine.get_symbol_kind(function_id).await;
         let effects = if symbol_kind == SymbolKind::Def {
             let effect = self.engine.get_effect_row(function_id).await;
-            self.types.lower_effects(&effect, substitution).await
+            self.engine.lower_effects(&effect, substitution).await
         } else {
             Vec::new()
         };
         for effect in &effects {
-            parameter_types.push(self.types.handler_pointer(effect.clone()));
+            parameter_types.push(MonoType::new_handler_pointer(effect.clone(), &self.engine));
         }
         let return_type = self.engine.get_return_type(function_id).await;
-        let return_type = self.types.lower_type(&return_type, substitution).await;
+        let return_type = self.engine.lower_type(&return_type, substitution).await;
         let is_void =
             symbol_kind == SymbolKind::ExternDef && matches!(&*return_type, MonoType::Unit);
         let return_type = if is_void {
             ReturnType::Void
         } else {
-            ReturnType::Value(self.types.intern_types([return_type]))
+            ReturnType::Value(self.engine.intern_unsized([return_type]))
         };
         let is_variadic = if matches!(symbol_kind, SymbolKind::Def | SymbolKind::ExternDef) {
             self.engine.is_variadic_def(function_id).await
         } else {
             false
         };
-        let parameter_types = self.types.intern_types(parameter_types);
+        let parameter_types = self.engine.intern_unsized(parameter_types);
         let signature = if is_variadic {
             FunctionSignature::new_variadic(parameter_types, return_type)
         } else {
@@ -168,6 +165,6 @@ impl Builder {
         let ApplicationView::Lambda(lambda) = application.view() else {
             panic!("lambda callee should have a lambda type")
         };
-        self.types.lower_effects(lambda.effect_row(), &Subst::new_empty()).await
+        self.engine.lower_effects(lambda.effect_row(), &Subst::new_empty()).await
     }
 }

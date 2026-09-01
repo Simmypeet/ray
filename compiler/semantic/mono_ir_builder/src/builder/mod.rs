@@ -6,7 +6,7 @@ use rayc_ir::{
 };
 use rayc_mono_ir::{
     MonoDefInstance, MonoEffectInstance, MonoIR,
-    ty::{AggregateType, FunctionSignature, MonoType},
+    ty::{AggregateType, FunctionSignature, MonoType, lower_effects, lower_type},
 };
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
@@ -15,7 +15,7 @@ use rayc_semantic_element::{
 };
 use rayc_type::ty::Ty;
 
-use crate::{function_abi::FunctionABI, ty::TypeLowerer};
+use crate::function_abi::FunctionABI;
 
 mod call;
 mod cfg;
@@ -32,7 +32,6 @@ pub(crate) struct Builder {
     engine: TrackedEngine,
     instance: MonoDefInstance,
     source: Interned<IRFunctionMap>,
-    types: TypeLowerer,
     function_abis: FxHashMap<IRFunctionID, FunctionABI>,
 }
 
@@ -42,13 +41,7 @@ impl Builder {
         instance: MonoDefInstance,
         source: Interned<IRFunctionMap>,
     ) -> Self {
-        Self {
-            types: TypeLowerer::new(engine.clone()),
-            engine,
-            instance,
-            source,
-            function_abis: FxHashMap::default(),
-        }
+        Self { engine, instance, source, function_abis: FxHashMap::default() }
     }
 
     pub(crate) async fn get_root_parameter_map(&self) -> Interned<ParameterMap> {
@@ -59,24 +52,24 @@ impl Builder {
         self.engine.get_return_type(self.instance.def_id()).await
     }
 
-    pub(crate) async fn lower_effects(&mut self, eff: &Interned<Ty>) -> Vec<MonoEffectInstance> {
-        self.types.lower_effects(eff, self.instance.substitution()).await
+    pub(crate) async fn lower_effects(&self, eff: &Interned<Ty>) -> Vec<MonoEffectInstance> {
+        self.engine.lower_effects(eff, self.instance.substitution()).await
     }
 
-    pub(crate) async fn lower_type(&mut self, ty: &Interned<Ty>) -> Interned<MonoType> {
-        self.types.lower_type(ty, self.instance.substitution()).await
+    pub(crate) async fn lower_type(&self, ty: &Interned<Ty>) -> Interned<MonoType> {
+        self.engine.lower_type(ty, self.instance.substitution()).await
     }
 
     pub(crate) fn create_function_signature(
-        &mut self,
+        &self,
         parameter_types: impl IntoIterator<Item = Interned<MonoType>>,
         return_type: Interned<MonoType>,
     ) -> FunctionSignature {
-        self.types.create_function_signature(parameter_types, return_type)
+        MonoType::new_function_signature(parameter_types, return_type, &self.engine)
     }
 
     pub(crate) fn create_aggregate_type_for_capture_environment(
-        &mut self,
+        &self,
         fields: Vec<Interned<MonoType>>,
     ) -> Interned<MonoType> {
         self.engine.intern(MonoType::Aggregate(AggregateType::new(
@@ -85,21 +78,17 @@ impl Builder {
         )))
     }
 
-    pub(crate) fn create_handler_pointer(
-        &mut self,
-        effect: MonoEffectInstance,
-    ) -> Interned<MonoType> {
-        self.types.handler_pointer(effect)
+    pub(crate) fn create_handler_pointer(&self, effect: MonoEffectInstance) -> Interned<MonoType> {
+        MonoType::new_handler_pointer(effect, &self.engine)
     }
 
-    pub(crate) async fn lower_pointer_type_for_capture(
-        &mut self,
-        ty: &Capture,
-    ) -> Interned<MonoType> {
-        self.types.lower_type(&ty.pointer_ty(&self.engine), self.instance.substitution()).await
+    pub(crate) fn create_opaque_pointer(&self) -> Interned<MonoType> {
+        MonoType::new_opaque_pointer(&self.engine)
     }
 
-    pub(crate) fn opaque_pointer(&self) -> Interned<MonoType> { self.types.opaque_pointer() }
+    pub(crate) async fn lower_pointer_type_for_capture(&self, ty: &Capture) -> Interned<MonoType> {
+        self.engine.lower_type(&ty.pointer_ty(&self.engine), self.instance.substitution()).await
+    }
 
     pub(crate) async fn lower(mut self) -> MonoIR {
         let root_source_id = self.source.root_id();
@@ -130,10 +119,6 @@ impl Builder {
             self.lower_function(source_id, source_to_target[&source_id], &mut output).await;
         }
 
-        self.types.finish_handler_layouts().await;
-        for layout in self.types.take_handler_layouts() {
-            output.insert_handler_layout(layout);
-        }
         output
     }
 

@@ -8,7 +8,6 @@
 use rayc_ir::get_ir;
 use rayc_mono_ir::{MonoDefInstance, MonoIR};
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::subst::Subst;
 
@@ -16,7 +15,6 @@ use crate::builder::Builder;
 
 mod builder;
 mod function_abi;
-mod ty;
 
 /// Lowers one concrete source-definition instantiation into `MonoIR`.
 #[must_use]

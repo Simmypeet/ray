@@ -9,7 +9,7 @@ use rayc_mono_ir::{
     operand::{FunctionOperand, Operand},
     place::{FieldIndex, Place},
     rvalue::{AddressOf, AggregateValue, Rvalue},
-    ty::{MonoType, PointerMutability},
+    ty::{MonoType, PointerMutability, build_handler_layout, instantiate_effect},
 };
 
 use super::{Builder, FunctionState};
@@ -23,12 +23,12 @@ impl Builder {
         state: &FunctionState,
         output: &mut MonoIR,
     ) {
-        let instance = self.types.effect_instance(
+        let instance = self.engine.instantiate_effect(
             perform.effect_id(),
             perform.substitution(),
             self.instance.substitution(),
         );
-        let layout = self.types.ensure_handler_layout(&instance).await.clone();
+        let layout = self.engine.build_handler_layout(&instance).await;
         let (slot, operation) = layout
             .operations()
             .iter()
@@ -61,12 +61,12 @@ impl Builder {
         state: &mut FunctionState,
         output: &mut MonoIR,
     ) {
-        let instance = self.types.effect_instance(
+        let instance = self.engine.instantiate_effect(
             handle.effect_id(),
             handle.substitution(),
             self.instance.substitution(),
         );
-        let layout = self.types.ensure_handler_layout(&instance).await.clone();
+        let layout = self.engine.build_handler_layout(&instance).await;
         let handlers = handle
             .handlers()
             .iter()
@@ -105,7 +105,7 @@ impl Builder {
             slots.push(Operand::Copy(Place::new(closure_local)));
         }
 
-        let handler_type = self.types.intern(MonoType::EffectHandler(instance.clone()));
+        let handler_type = self.engine.intern(MonoType::EffectHandler(instance.clone()));
         let handler_local = output
             .insert_local(state.target_id, Local::new(handler_type.clone(), LocalKind::Temporary));
         Self::assign(
@@ -115,7 +115,8 @@ impl Builder {
             state,
             output,
         );
-        let handler_pointer_type = self.types.pointer(handler_type, PointerMutability::Const);
+        let handler_pointer_type =
+            MonoType::new_pointer(handler_type, PointerMutability::Const, &self.engine);
         let handler_pointer = output
             .insert_local(state.target_id, Local::new(handler_pointer_type, LocalKind::Temporary));
         Self::assign(
