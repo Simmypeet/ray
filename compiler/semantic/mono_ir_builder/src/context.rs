@@ -6,10 +6,10 @@ use rayc_ir::{
 };
 use rayc_mono_ir::{
     MonoDefInstance, MonoEffectInstance, MonoIR,
+    function::MonoFunctionID,
     ty::{
-        AggregateType, Closure, EffectHandler, Environment, FunctionSignature, HandlerLayout,
-        MonoType, PointerMutability, ReturnType, build_handler_layout, instantiate_effect,
-        lower_effects, lower_type,
+        AggregateType, EffectHandler, Environment, FunctionSignature, MonoType, PointerMutability,
+        ReturnType, instantiate_effect, lower_effects, lower_type,
     },
 };
 use rayc_qbice::TrackedEngine;
@@ -24,7 +24,7 @@ use rayc_symbol::{
     syntax::is_variadic_def,
 };
 use rayc_type::{
-    subst::{MutSubstitutable, Subst, Substitutable},
+    subst::{Subst, Substitutable},
     ty::{Ty, application::View as ApplicationView},
 };
 
@@ -36,6 +36,7 @@ pub(crate) struct Context {
     instance: MonoDefInstance,
     source: Interned<IRFunctionMap>,
     function_abis: FxHashMap<IRFunctionID, FunctionABI>,
+    function_ids: FxHashMap<IRFunctionID, MonoFunctionID>,
 }
 
 impl Context {
@@ -44,7 +45,13 @@ impl Context {
         instance: MonoDefInstance,
         source: Interned<IRFunctionMap>,
     ) -> Self {
-        Self { engine, instance, source, function_abis: FxHashMap::default() }
+        Self {
+            engine,
+            instance,
+            source,
+            function_abis: FxHashMap::default(),
+            function_ids: FxHashMap::default(),
+        }
     }
 
     pub(crate) async fn get_root_parameter_map(&self) -> Interned<ParameterMap> {
@@ -74,10 +81,9 @@ impl Context {
     pub(crate) fn create_aggregate_type_for_capture_environment(
         &self,
         fields: Vec<Interned<MonoType>>,
-    ) -> Interned<MonoType> {
+    ) -> Environment {
         let captures = self.engine.intern_unsized(fields);
-        self.engine
-            .intern(MonoType::Aggregate(AggregateType::Environment(Environment::new(captures))))
+        Environment::new(captures)
     }
 
     pub(crate) fn create_handler_pointer(&self, effect: MonoEffectInstance) -> Interned<MonoType> {
@@ -88,6 +94,10 @@ impl Context {
         MonoType::new_opaque_pointer(&self.engine)
     }
 
+    pub(crate) fn intern_environment_type(&self, environment: Environment) -> Interned<MonoType> {
+        self.engine.intern(MonoType::Aggregate(AggregateType::Environment(environment)))
+    }
+
     pub(crate) fn create_pointer(
         &self,
         pointee: Interned<MonoType>,
@@ -96,11 +106,10 @@ impl Context {
         MonoType::new_pointer(pointee, mutability, &self.engine)
     }
 
-    pub(crate) fn create_closure_type(&self, signature: FunctionSignature) -> Interned<MonoType> {
-        self.engine.intern(MonoType::Aggregate(AggregateType::Closure(Closure::new(signature))))
-    }
-
-    pub(crate) fn create_handler_type(&self, instance: MonoEffectInstance) -> Interned<MonoType> {
+    pub(crate) fn intern_effect_instance(
+        &self,
+        instance: MonoEffectInstance,
+    ) -> Interned<MonoType> {
         self.engine
             .intern(MonoType::Aggregate(AggregateType::EffectHandler(EffectHandler::new(instance))))
     }
@@ -113,15 +122,19 @@ impl Context {
         self.source.get_function(source_id).clone()
     }
 
-    pub(crate) fn function_abi(&self, source_id: IRFunctionID) -> FunctionABI {
-        self.function_abis
+    pub(crate) fn function_abi(&self, source_id: IRFunctionID) -> &FunctionABI {
+        self.function_abis.get(&source_id).expect("nested MonoIR function ABI should be planned")
+    }
+
+    pub(crate) fn target_function_id(&self, source_id: IRFunctionID) -> MonoFunctionID {
+        *self
+            .function_ids
             .get(&source_id)
-            .expect("nested MonoIR function ABI should be planned")
-            .clone()
+            .expect("semantic IR function should be mapped to a MonoIR function")
     }
 
     pub(crate) fn apply_owner_substitution(&self, substitution: &mut Subst) {
-        substitution.apply_mut_subst(self.instance.substitution(), &self.engine);
+        substitution.compose(self.instance.substitution(), &self.engine);
     }
 
     pub(crate) fn instantiate_effect(
@@ -130,13 +143,6 @@ impl Context {
         substitution: &Subst,
     ) -> MonoEffectInstance {
         self.engine.instantiate_effect(effect_id, substitution, self.instance.substitution())
-    }
-
-    pub(crate) async fn build_handler_layout(
-        &self,
-        instance: MonoEffectInstance,
-    ) -> Interned<HandlerLayout> {
-        self.engine.build_handler_layout(instance).await
     }
 
     pub(crate) async fn global_signature(
@@ -159,10 +165,11 @@ impl Context {
         for effect in &effects {
             parameter_types.push(MonoType::new_handler_pointer(effect.clone(), &self.engine));
         }
+
         let return_type = self.engine.get_return_type(function_id).await;
         let return_type = self.engine.lower_type(&return_type, substitution).await;
-        let is_void =
-            symbol_kind == SymbolKind::ExternDef && matches!(&*return_type, MonoType::Unit);
+        let is_void = symbol_kind == SymbolKind::ExternDef && return_type.is_unit();
+
         let return_type = if is_void {
             ReturnType::Void
         } else {
@@ -199,12 +206,10 @@ impl Context {
         let root_abi = self.plan_function(&root_source).await;
         let mut output = MonoIR::new(self.instance.clone(), root_abi.signature().clone());
         self.function_abis.insert(root_source_id, root_abi);
+        self.function_ids.insert(root_source_id, output.root_id());
 
         let mut source_functions = self.source.functions().map(|(id, _)| id).collect::<Vec<_>>();
         source_functions.sort_unstable();
-
-        let mut source_to_target = FxHashMap::default();
-        source_to_target.insert(root_source_id, output.root_id());
 
         for source_id in source_functions.iter().copied() {
             if source_id == root_source_id {
@@ -214,13 +219,13 @@ impl Context {
             let abi = self.plan_function(&source).await;
             let target = output.insert_function(abi.kind(), abi.signature().clone());
             self.function_abis.insert(source_id, abi);
-
-            source_to_target.insert(source_id, target);
+            self.function_ids.insert(source_id, target);
         }
 
         for source_id in source_functions {
-            let mut builder = Builder::new(&mut output, source_id, source_to_target[&source_id]);
-            self.lower_function(source_id, &mut builder).await;
+            let target_id = self.target_function_id(source_id);
+            let mut builder = Builder::new(&mut output, source_id, target_id);
+            builder.lower_function(&self, source_id).await;
         }
 
         output

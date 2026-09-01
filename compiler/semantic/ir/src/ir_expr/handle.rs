@@ -45,6 +45,12 @@ impl OperationHandler {
     pub const fn operation_id(&self) -> GlobalSymbolID { self.operation_id }
 
     #[must_use]
+    pub const fn function_id(&self) -> FunctionID { self.function.function_id() }
+
+    #[must_use]
+    pub fn captures(&self) -> &[IRExprID] { self.function.captures() }
+
+    #[must_use]
     pub const fn function(&self) -> &HandledFunction { &self.function }
 }
 
@@ -81,6 +87,9 @@ impl Handle {
 
     #[must_use]
     pub fn handlers(&self) -> &[OperationHandler] { &self.handlers }
+
+    #[must_use]
+    pub fn captures(&self) -> &[IRExprID] { self.body.captures() }
 
     #[must_use]
     pub const fn residual_effect(&self) -> &Interned<Ty> { &self.residual_effect }

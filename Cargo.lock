@@ -1806,6 +1806,7 @@ dependencies = [
  "qbice",
  "rayc_arena",
  "rayc_extend",
+ "rayc_hash",
  "rayc_qbice",
  "rayc_semantic_element",
  "rayc_symbol",

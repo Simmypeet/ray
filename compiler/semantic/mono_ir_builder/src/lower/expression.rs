@@ -10,53 +10,50 @@ use rayc_mono_ir::{
     instruction::{Assign, Instruction},
     operand::{Constant, Operand},
     place::Place,
-    rvalue::{AddressOf, AggregateValue, Binary, BinaryOperator, Rvalue},
+    rvalue::{AddressOf, Binary, BinaryOperator, Rvalue},
     ty::MonoType,
 };
 
-use super::Builder;
-use crate::context::Context;
+use crate::{builder::Builder, context::Context};
 
-impl Context {
+impl Builder<'_> {
     pub(super) async fn lower_expression(
-        &self,
+        &mut self,
+        context: &Context,
         expression_id: IRExprID,
         block: BlockID,
         source: &IRFunction,
-        builder: &mut Builder<'_>,
     ) {
         let expression = source.get_expression(expression_id);
-        let destination = builder.expression_place(expression_id);
+        let destination = self.expression_place(expression_id);
         match expression.kind() {
             IRExprKind::Error => {
                 panic!("compiler-internal invariant violation: error expression reached MonoIR")
             }
             IRExprKind::Literal(literal) => {
-                let ty = builder.local_type(destination.local());
+                let ty = self.local_type(destination.local());
                 let constant = lower_literal(literal, &ty);
-                Self::assign(block, destination, Rvalue::Use(Operand::Constant(constant)), builder);
+                self.assign(block, destination, Rvalue::Use(Operand::Constant(constant)));
             }
             IRExprKind::RefOf(reference) => {
-                let ty = builder.local_type(destination.local());
+                let ty = self.local_type(destination.local());
                 let MonoType::Pointer(pointer) = &*ty else {
                     panic!("RefOf should produce a pointer type")
                 };
-                Self::assign(
+                self.assign(
                     block,
                     destination,
                     Rvalue::AddressOf(AddressOf::new(
-                        Self::lower_address(reference.address(), builder),
+                        self.lower_address(reference.address()),
                         pointer.mutability(),
                     )),
-                    builder,
                 );
             }
             IRExprKind::Load(load) => {
-                Self::assign(
+                self.assign(
                     block,
                     destination,
-                    Rvalue::Use(Operand::Copy(Self::lower_address(load.address(), builder))),
-                    builder,
+                    Rvalue::Use(Operand::Copy(self.lower_address(load.address()))),
                 );
             }
             IRExprKind::Phi(_) => {}
@@ -69,57 +66,52 @@ impl Context {
                     IRBinaryOperator::Multiply => BinaryOperator::Multiply,
                     IRBinaryOperator::Divide => BinaryOperator::Divide,
                 };
-                Self::assign(
+                self.assign(
                     block,
                     destination,
                     Rvalue::Binary(Binary::new(
-                        builder.expression_operand(binary.left()),
+                        self.expression_operand(binary.left()),
                         operator,
-                        builder.expression_operand(binary.right()),
+                        self.expression_operand(binary.right()),
                     )),
-                    builder,
                 );
             }
             IRExprKind::Call(call) => {
-                self.lower_call(call, expression_id, block, source, builder).await;
+                self.lower_call(context, call, expression_id, block, source).await;
             }
             IRExprKind::Perform(perform) => {
-                self.lower_perform(perform, expression_id, block, builder).await;
+                self.lower_perform(context, perform, expression_id, block);
             }
             IRExprKind::Handle(handle) => {
-                self.lower_handle(handle, expression_id, block, builder).await;
+                self.lower_handle(context, handle, expression_id, block);
             }
             IRExprKind::Tuple(tuple) => {
-                Self::lower_tuple(tuple, block, destination, builder);
+                self.lower_tuple(tuple, block, destination);
             }
             IRExprKind::MakeLambda(lambda) => {
-                self.lower_make_lambda(lambda, expression_id, block, builder);
+                self.lower_make_lambda(context, lambda, expression_id, block);
             }
         }
     }
 
-    fn lower_tuple(tuple: &Tuple, block: BlockID, destination: Place, builder: &mut Builder<'_>) {
-        let ty = builder.local_type(destination.local());
-        let value = if matches!(&*ty, MonoType::Unit) {
+    fn lower_tuple(&mut self, tuple: &Tuple, block: BlockID, destination: Place) {
+        let ty = self.local_type(destination.local());
+        let ty = ty.assert_as_tuple();
+
+        let value = if ty.is_empty() {
             Rvalue::Use(Operand::Constant(Constant::Unit))
         } else {
-            let fields = tuple
-                .elements()
-                .iter()
-                .map(|element| builder.expression_operand(*element))
-                .collect();
-            Rvalue::Aggregate(AggregateValue::new(ty, fields))
+            let fields =
+                tuple.elements().iter().map(|element| self.expression_operand(*element)).collect();
+
+            Rvalue::new_tuple(ty.clone(), fields)
         };
-        Self::assign(block, destination, value, builder);
+
+        self.assign(block, destination, value);
     }
 
-    pub(super) fn assign(
-        block: BlockID,
-        destination: Place,
-        value: Rvalue,
-        builder: &mut Builder<'_>,
-    ) {
-        builder.push_instruction(block, Instruction::Assign(Assign::new(destination, value)));
+    pub(super) fn assign(&mut self, block: BlockID, destination: Place, value: Rvalue) {
+        self.push_instruction(block, Instruction::Assign(Assign::new(destination, value)));
     }
 }
 
@@ -130,8 +122,7 @@ fn lower_literal(literal: &Literal, ty: &Interned<MonoType>) -> Constant {
             MonoType::Int32 => Constant::Int32((*value).try_into().unwrap()),
             MonoType::Float32 => Constant::new_float32(*value as f32),
             MonoType::CInt => Constant::CInt((*value).try_into().unwrap()),
-            MonoType::Unit
-            | MonoType::Bool
+            MonoType::Bool
             | MonoType::CStr
             | MonoType::OpaquePointer(_)
             | MonoType::Pointer(_)

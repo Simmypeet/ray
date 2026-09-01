@@ -2,9 +2,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{operand::Operand, place::Place, rvalue::Rvalue};
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct Assign {
     destination: Place,
     value: Rvalue,
@@ -51,9 +49,7 @@ impl Call {
 }
 
 /// An operation evaluated in sequence within a basic block.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub enum Instruction {
     Assign(Assign),
     Call(Call),

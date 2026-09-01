@@ -1,4 +1,3 @@
-use qbice::storage::intern::Interned;
 use rayc_ir::{
     ir_function::{IRContext, IRFunction},
     ir_lambda::CaptureID,
@@ -6,7 +5,7 @@ use rayc_ir::{
 use rayc_mono_ir::{
     MonoEffectInstance,
     function::MonoFunctionKind,
-    ty::{FunctionSignature, MonoType},
+    ty::{Environment as EnvironmentTy, FunctionSignature},
 };
 
 use crate::context::Context;
@@ -17,7 +16,7 @@ pub(crate) struct FunctionABI {
     kind: MonoFunctionKind,
     signature: FunctionSignature,
     effects: Vec<MonoEffectInstance>,
-    environment_type: Option<Interned<MonoType>>,
+    environment_type: Option<EnvironmentTy>,
     capture_ids: Vec<CaptureID>,
 }
 
@@ -26,7 +25,7 @@ impl FunctionABI {
         kind: MonoFunctionKind,
         signature: FunctionSignature,
         effects: Vec<MonoEffectInstance>,
-        environment_type: Option<Interned<MonoType>>,
+        environment_type: Option<EnvironmentTy>,
         capture_ids: Vec<CaptureID>,
     ) -> Self {
         Self { kind, signature, effects, environment_type, capture_ids }
@@ -40,11 +39,8 @@ impl FunctionABI {
         self.effects.iter()
     }
 
-    pub(crate) fn environment_type(&self) -> Interned<MonoType> {
-        self.environment_type
-            .as_ref()
-            .expect("nested function should have an environment type")
-            .clone()
+    pub(crate) const fn environment_type(&self) -> &EnvironmentTy {
+        self.environment_type.as_ref().expect("should have an environment type")
     }
 
     pub(crate) fn capture_ids(&self) -> impl ExactSizeIterator<Item = CaptureID> + '_ {

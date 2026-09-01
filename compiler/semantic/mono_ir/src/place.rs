@@ -1,4 +1,5 @@
 use qbice::{Decode, Encode, Identifiable, StableHash};
+use rayc_symbol::GlobalSymbolID;
 
 use crate::function::LocalID;
 
@@ -34,8 +35,8 @@ pub enum Projection {
     TupleFieldIndex(FieldIndex),
     ClosureEnvironmentField,
     ClosureFunctionPointerField,
-    OperationRecordEnvironmentField(FieldIndex),
-    OperationRecordFunctionPointerField(FieldIndex),
+    OperationRecordEnvironmentField(GlobalSymbolID),
+    OperationRecordFunctionPointerField(GlobalSymbolID),
 }
 
 /// An addressable `MonoIR` location.
@@ -81,12 +82,12 @@ impl Place {
     }
 
     #[must_use]
-    pub fn project_operation_record_environment(self, operation: FieldIndex) -> Self {
+    pub fn project_operation_record_environment(self, operation: GlobalSymbolID) -> Self {
         self.with_projection(Projection::OperationRecordEnvironmentField(operation))
     }
 
     #[must_use]
-    pub fn project_operation_record_function_pointer(self, operation: FieldIndex) -> Self {
+    pub fn project_operation_record_function_pointer(self, operation: GlobalSymbolID) -> Self {
         self.with_projection(Projection::OperationRecordFunctionPointerField(operation))
     }
 

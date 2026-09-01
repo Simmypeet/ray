@@ -473,11 +473,13 @@ impl Builder {
             .get(&source)
             .copied()
             .expect("non-local source should have an analyzed capture");
+
         let (span, captured_ty, mutability) = {
             let capture =
                 self.ir_functions.get_capture(self.building_function.ir_function_id, capture_id);
             (capture.span(), capture.pointee_ty().clone(), capture.mutability())
         };
+
         let ty = self.pointer_ty(captured_ty, mutability);
         let pointer = self.emit_expression(IRExpr::new(
             IRExprKind::Load(Load::new(self.capture_address(capture_id))),

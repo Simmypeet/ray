@@ -8,29 +8,28 @@ use rayc_mono_ir::{
     operand::Operand,
     place::{FieldIndex, Place},
     rvalue::{Cast, Rvalue},
-    ty::{AggregateType, MonoType, PointerMutability},
+    ty::PointerMutability,
 };
 
-use super::Builder;
-use crate::{context::Context, function_abi::FunctionABI};
+use crate::{builder::Builder, context::Context, function_abi::FunctionABI};
 
-impl Context {
-    pub(crate) async fn lower_function(&self, source_id: IRFunctionID, builder: &mut Builder<'_>) {
-        let source = self.source_function(source_id);
-        let abi = self.function_abi(source_id);
-        self.initialize_function_state(&source, &abi, builder).await;
+impl Builder<'_> {
+    pub(crate) async fn lower_function(&mut self, context: &Context, source_id: IRFunctionID) {
+        let source = context.source_function(source_id);
+        let abi = context.function_abi(source_id);
+        self.initialize_function_state(context, &source, abi).await;
 
         for source_block in source.reachables().blocks() {
-            let target_block = builder.block(source_block);
+            let target_block = self.block(source_block);
             for instruction in source.block_instructions(source_block) {
                 match instruction {
                     IRInstruction::Expression(expression_id) => {
-                        self.lower_expression(*expression_id, target_block, &source, builder).await;
+                        self.lower_expression(context, *expression_id, target_block, &source).await;
                     }
                     IRInstruction::Store(store) => {
-                        let destination = Self::lower_address(store.address(), builder);
-                        let value = Rvalue::Use(builder.expression_operand(store.expression()));
-                        builder.push_instruction(
+                        let destination = self.lower_address(store.address());
+                        let value = Rvalue::Use(self.expression_operand(store.expression()));
+                        self.push_instruction(
                             target_block,
                             Instruction::Assign(Assign::new(destination, value)),
                         );
@@ -40,24 +39,24 @@ impl Context {
             let terminator = source
                 .block_terminator(source_block)
                 .expect("reachable semantic IR block should be terminated");
-            Self::lower_terminator(source_block, target_block, terminator, &source, builder);
+            self.lower_terminator(source_block, target_block, terminator, &source);
         }
     }
 
     async fn initialize_function_state(
-        &self,
+        &mut self,
+        context: &Context,
         source: &IRFunction,
         abi: &FunctionABI,
-        builder: &mut Builder<'_>,
     ) {
         let environment_parameter = {
-            let mut parameters = builder.parameter_ids().into_iter();
+            let mut parameters = self.parameter_ids().into_iter();
             let environment_parameter = match source.context() {
                 IRContext::Def => {
                     for ((parameter_id, _), target_id) in
-                        self.get_root_parameter_map().await.iter().zip(parameters.by_ref())
+                        context.get_root_parameter_map().await.iter().zip(parameters.by_ref())
                     {
-                        builder.insert_parameter(parameter_id, target_id);
+                        self.insert_parameter(parameter_id, target_id);
                     }
                     None
                 }
@@ -66,7 +65,7 @@ impl Context {
                     for ((parameter_id, _), target_id) in
                         context.parameters().zip(parameters.by_ref())
                     {
-                        builder.insert_lambda_parameter(parameter_id, target_id);
+                        self.insert_lambda_parameter(parameter_id, target_id);
                     }
                     Some(environment)
                 }
@@ -79,7 +78,7 @@ impl Context {
                     for ((parameter_id, _), target_id) in
                         context.parameters().zip(parameters.by_ref())
                     {
-                        builder.insert_operation_parameter(parameter_id, target_id);
+                        self.insert_operation_parameter(parameter_id, target_id);
                     }
                     Some(environment)
                 }
@@ -87,7 +86,7 @@ impl Context {
 
             if !abi.captures_effect_handlers() {
                 for (effect, parameter) in abi.effects().cloned().zip(parameters.by_ref()) {
-                    builder.insert_handler(effect, Place::new(parameter));
+                    self.insert_handler(effect, Place::new(parameter));
                 }
             }
             assert!(parameters.next().is_none(), "MonoIR signature parameters should be consumed");
@@ -95,52 +94,52 @@ impl Context {
         };
 
         for (variable_id, variable) in source.variables() {
-            let ty = self.lower_type(variable.ty()).await;
-            let local = builder.insert_local(Local::new(ty, LocalKind::Variable));
-            builder.insert_variable(variable_id, local);
+            let ty = context.lower_type(variable.ty()).await;
+            let local = self.insert_local(Local::new(ty, LocalKind::Variable));
+            self.insert_variable(variable_id, local);
         }
         for expression_id in source.reachables().expressions() {
             let expression = source.get_expression(expression_id);
-            let ty = self.lower_type(expression.ty()).await;
-            let local = builder.insert_local(Local::new(ty, LocalKind::Temporary));
-            builder.insert_expression(expression_id, local);
+            let ty = context.lower_type(expression.ty()).await;
+            let local = self.insert_local(Local::new(ty, LocalKind::Temporary));
+            self.insert_expression(expression_id, local);
         }
 
         for source_block in source.reachables().blocks() {
             let target_block = if source_block == source.entry_block() {
-                builder.entry_block()
+                self.entry_block()
             } else {
-                builder.create_block()
+                self.create_block()
             };
-            builder.insert_block(source_block, target_block);
+            self.insert_block(source_block, target_block);
         }
 
         if let Some(environment_parameter) = environment_parameter {
-            self.initialize_environment_access(source, abi, environment_parameter, builder);
+            self.initialize_environment_access(context, source, abi, environment_parameter);
         }
     }
 
     fn initialize_environment_access(
-        &self,
+        &mut self,
+        context: &Context,
         source: &IRFunction,
         abi: &FunctionABI,
         environment_parameter: LocalID,
-        builder: &mut Builder<'_>,
     ) {
-        let environment_type = abi.environment_type();
-        let MonoType::Aggregate(AggregateType::Environment(environment)) = &*environment_type
-        else {
-            panic!("nested function environment should be an aggregate")
-        };
-        if environment.captures().is_empty() {
+        let env = abi.environment_type();
+        if env.captures().is_empty() {
             return;
         }
 
-        let pointer_type = self.create_pointer(environment_type, PointerMutability::Const);
+        let env_ty = context.intern_environment_type(env.clone());
+        let pointer_type = context.create_pointer(env_ty, PointerMutability::Mut);
         let pointer_local =
-            builder.insert_local(Local::new(pointer_type.clone(), LocalKind::Temporary));
-        let entry = builder.entry_block();
-        builder.push_instruction(
+            self.insert_local(Local::new(pointer_type.clone(), LocalKind::Temporary));
+
+        let entry = self.entry_block();
+
+        // Case from the `void* env` parameter to the `Environment* env` local
+        self.push_instruction(
             entry,
             Instruction::Assign(Assign::new(
                 Place::new(pointer_local),
@@ -150,19 +149,26 @@ impl Context {
                 )),
             )),
         );
+
+        // in order to access the environment fields, we need to dereference the pointer
+        // local esentially, we create a `env->field` or `(*env).field` place
+        // for each capture and handler in the environment
         let environment_place = Place::new(pointer_local).dereference();
         for (index, capture_id) in abi.capture_ids().enumerate() {
-            builder.insert_capture(
+            self.insert_capture(
                 capture_id,
                 environment_place
                     .clone()
                     .project_environment_field(FieldIndex::new(index.try_into().unwrap())),
             );
         }
+
+        // if the environment explicitly captures effect handlers in the environment, we
+        // need to insert them as well
         if abi.captures_effect_handlers() {
             for (offset, effect) in abi.effects().cloned().enumerate() {
                 let index = abi.capture_count() + offset;
-                builder.insert_handler(
+                self.insert_handler(
                     effect,
                     environment_place
                         .clone()
@@ -177,6 +183,7 @@ impl Context {
             IRContext::OperationHandler(context) => context.captures().len(),
             IRContext::Def => 0,
         };
+
         assert_eq!(expected_captures, abi.capture_count());
     }
 }

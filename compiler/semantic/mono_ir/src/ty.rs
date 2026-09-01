@@ -21,7 +21,6 @@ use crate::instance::MonoEffectInstance;
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum MonoType {
-    Unit,
     Bool,
     Int32,
     Float32,
@@ -34,6 +33,24 @@ pub enum MonoType {
 }
 
 impl MonoType {
+    #[must_use]
+    pub const fn is_opauque_mut_pointer(&self) -> bool {
+        matches!(self, Self::OpaquePointer(PointerMutability::Mut))
+    }
+
+    #[must_use]
+    pub fn is_unit(&self) -> bool {
+        matches!(self, Self::Aggregate(AggregateType::Tuple(tuple)) if tuple.is_empty())
+    }
+
+    #[must_use]
+    pub fn assert_as_tuple(&self) -> &Tuple {
+        match self {
+            Self::Aggregate(AggregateType::Tuple(tuple)) => tuple,
+            _ => panic!("compiler-internal invariant violation: expected tuple type, got {self:?}"),
+        }
+    }
+
     #[must_use]
     pub fn new_opaque_pointer(engine: &TrackedEngine) -> Interned<Self> {
         engine.intern(Self::OpaquePointer(PointerMutability::Const))
@@ -111,12 +128,18 @@ impl PointerType {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub struct Closure {
+    /// Invariant: the first parameter of the function signature is always a
+    /// pointer to the environment.
     function_signature: FunctionSignature,
 }
 
 impl Closure {
     #[must_use]
-    pub const fn new(function_signature: FunctionSignature) -> Self { Self { function_signature } }
+    pub fn new(function_signature: FunctionSignature) -> Self {
+        assert!(function_signature.parameter_types()[0].is_opauque_mut_pointer());
+
+        Self { function_signature }
+    }
 
     #[must_use]
     pub const fn function_signature(&self) -> &FunctionSignature { &self.function_signature }
@@ -160,6 +183,12 @@ impl Tuple {
 
     #[must_use]
     pub fn fields(&self) -> &[Interned<MonoType>] { &self.fields }
+
+    #[must_use]
+    pub fn len(&self) -> usize { self.fields.len() }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.fields.is_empty() }
 }
 
 #[derive(
@@ -308,9 +337,6 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 engine.intern(ty)
             }
             ApplicationView::Tuple(tuple) => {
-                if tuple.args().is_empty() {
-                    return engine.intern(MonoType::Unit);
-                }
                 let mut fields = Vec::with_capacity(tuple.args().len());
                 for ty in tuple.args() {
                     fields.push(Box::pin(lower_concrete_type(engine, ty)).await);

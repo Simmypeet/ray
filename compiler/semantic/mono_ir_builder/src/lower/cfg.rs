@@ -13,23 +13,22 @@ use rayc_mono_ir::{
     rvalue::Rvalue,
 };
 
-use super::Builder;
-use crate::context::Context;
+use crate::builder::Builder;
 
-impl Context {
-    pub(super) fn lower_address(address: &Address, builder: &Builder<'_>) -> Place {
+impl Builder<'_> {
+    pub(super) fn lower_address(&self, address: &Address) -> Place {
         let mut place = match address.root() {
             AddressRoot::Error => {
                 panic!("compiler-internal invariant violation: error address reached MonoIR")
             }
-            AddressRoot::Variable(variable) => builder.variable_place(variable),
-            AddressRoot::Parameter(parameter) => builder.parameter_place(parameter),
-            AddressRoot::LambdaParameter(parameter) => builder.lambda_parameter_place(parameter),
+            AddressRoot::Variable(variable) => self.variable_place(variable),
+            AddressRoot::Parameter(parameter) => self.parameter_place(parameter),
+            AddressRoot::LambdaParameter(parameter) => self.lambda_parameter_place(parameter),
             AddressRoot::OperationHandlerParameter(parameter) => {
-                builder.operation_parameter_place(parameter)
+                self.operation_parameter_place(parameter)
             }
-            AddressRoot::Capture(capture) => builder.capture_place(capture),
-            AddressRoot::Deref(expression) => builder.expression_place(expression).dereference(),
+            AddressRoot::Capture(capture) => self.capture_place(capture),
+            AddressRoot::Deref(expression) => self.expression_place(expression).dereference(),
         };
         for projection in address.projections() {
             match projection {
@@ -43,27 +42,27 @@ impl Context {
     }
 
     pub(super) fn lower_terminator(
+        &mut self,
         source_block: IRBlockID,
         target_block: BlockID,
         terminator: &IRTerminator,
         source: &IRFunction,
-        builder: &mut Builder<'_>,
     ) {
         let terminator = match terminator {
             IRTerminator::Jump(successor) => {
-                Terminator::Goto(Self::lower_edge(source_block, *successor, source, builder))
+                Terminator::Goto(self.lower_edge(source_block, *successor, source))
             }
             IRTerminator::Conditional(conditional) => Terminator::Branch(Branch::new(
-                builder.expression_operand(conditional.condition()),
-                Self::lower_edge(source_block, conditional.then_block(), source, builder),
-                Self::lower_edge(source_block, conditional.else_block(), source, builder),
+                self.expression_operand(conditional.condition()),
+                self.lower_edge(source_block, conditional.then_block(), source),
+                self.lower_edge(source_block, conditional.else_block(), source),
             )),
             IRTerminator::Return(value) => Terminator::Return(Some(value.map_or_else(
                 || Operand::Constant(Constant::Unit),
-                |value| builder.expression_operand(value),
+                |value| self.expression_operand(value),
             ))),
         };
-        builder.set_terminator(target_block, terminator);
+        self.set_terminator(target_block, terminator);
     }
 
     /// Splits an incoming edge when its successor contains phi expressions.
@@ -72,10 +71,10 @@ impl Context {
     /// their phi destinations. This preserves parallel-copy semantics when phi
     /// inputs and destinations overlap.
     fn lower_edge(
+        &mut self,
         predecessor: IRBlockID,
         successor: IRBlockID,
         source: &IRFunction,
-        builder: &mut Builder<'_>,
     ) -> BlockID {
         let phis = source
             .block_instructions(successor)
@@ -91,29 +90,29 @@ impl Context {
             })
             .collect::<Vec<_>>();
         if phis.is_empty() {
-            return builder.block(successor);
+            return self.block(successor);
         }
 
-        let edge = builder.create_block();
+        let edge = self.create_block();
         let mut copies = Vec::with_capacity(phis.len());
         for (phi_id, phi) in &phis {
             let incoming = phi.value_from(predecessor).unwrap_or_else(|| {
                 panic!("phi {phi_id:?} has no input for predecessor {predecessor:?}")
             });
-            let destination = builder.expression_place(*phi_id);
-            let ty = builder.local_type(destination.local());
-            let temporary = builder.insert_local(Local::new(ty, LocalKind::Temporary));
-            builder.push_instruction(
+            let destination = self.expression_place(*phi_id);
+            let ty = self.local_type(destination.local());
+            let temporary = self.insert_local(Local::new(ty, LocalKind::Temporary));
+            self.push_instruction(
                 edge,
                 Instruction::Assign(Assign::new(
                     Place::new(temporary),
-                    Rvalue::Use(builder.expression_operand(incoming)),
+                    Rvalue::Use(self.expression_operand(incoming)),
                 )),
             );
             copies.push((destination, temporary));
         }
         for (destination, temporary) in copies {
-            builder.push_instruction(
+            self.push_instruction(
                 edge,
                 Instruction::Assign(Assign::new(
                     destination,
@@ -121,7 +120,7 @@ impl Context {
                 )),
             );
         }
-        builder.set_terminator(edge, Terminator::Goto(builder.block(successor)));
+        self.set_terminator(edge, Terminator::Goto(self.block(successor)));
         edge
     }
 }

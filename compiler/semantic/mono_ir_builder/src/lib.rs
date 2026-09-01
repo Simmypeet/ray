@@ -16,6 +16,7 @@ use crate::context::Context;
 mod builder;
 mod context;
 mod function_abi;
+mod lower;
 
 /// Lowers one concrete source-definition instantiation into `MonoIR`.
 #[must_use]

@@ -13,6 +13,7 @@ rayc_qbice.path = "../../base/qbice"
 rayc_semantic_element.path = "../semantic_element"
 rayc_symbol.path = "../symbol"
 rayc_type.path = "../type"
+rayc_hash.path = "../../base/hash"
 qbice.workspace = true
 linkme.workspace = true
 

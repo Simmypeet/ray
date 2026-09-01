@@ -1,9 +1,15 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use rayc_hash::FxHashMap;
+use rayc_symbol::GlobalSymbolID;
 
 use crate::{
+    MonoEffectInstance,
     operand::Operand,
     place::Place,
-    ty::{MonoType, PointerMutability},
+    ty::{
+        Closure as ClosureTy, Environment as EnvironmentTy, MonoType, PointerMutability,
+        Tuple as TupleTy,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -126,29 +132,68 @@ impl Cast {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
-pub struct AggregateValue {
-    ty: Interned<MonoType>,
+pub struct AggregateTuple {
+    ty: TupleTy,
     fields: Vec<Operand>,
 }
 
-impl AggregateValue {
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct AggregateEnvironment {
+    ty: EnvironmentTy,
+    fields: Vec<Operand>,
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct AggregateClosure {
+    ty: ClosureTy,
+    environment: Operand,
+    function: Operand,
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct OperationHandlerSlot {
+    environment: Operand,
+    function: Operand,
+}
+
+impl OperationHandlerSlot {
     #[must_use]
-    pub const fn new(ty: Interned<MonoType>, fields: Vec<Operand>) -> Self { Self { ty, fields } }
+    pub const fn new(environment: Operand, function: Operand) -> Self {
+        Self { environment, function }
+    }
 
     #[must_use]
-    pub const fn ty(&self) -> &Interned<MonoType> { &self.ty }
+    pub const fn environment(&self) -> &Operand { &self.environment }
 
     #[must_use]
-    pub fn fields(&self) -> &[Operand] { &self.fields }
+    pub const fn function(&self) -> &Operand { &self.function }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
+pub struct AggregateEffectHandler {
+    effect: MonoEffectInstance,
+    slots: FxHashMap<GlobalSymbolID, OperationHandlerSlot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
+pub enum AggregateValue {
+    Tuple(AggregateTuple),
+    Environment(AggregateEnvironment),
+    Closure(AggregateClosure),
+    EffectHandler(AggregateEffectHandler),
 }
 
 /// A pure, shallow value computation.
 ///
 /// Operands cannot contain nested computations. Calls are instructions rather
 /// than rvalues so evaluation order is always explicit in the CFG.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub enum Rvalue {
     Use(Operand),
     AddressOf(AddressOf),
@@ -156,4 +201,31 @@ pub enum Rvalue {
     Binary(Binary),
     Cast(Cast),
     Aggregate(AggregateValue),
+}
+
+impl Rvalue {
+    #[must_use]
+    pub fn new_tuple(ty: TupleTy, fields: Vec<Operand>) -> Self {
+        assert_eq!(ty.len(), fields.len());
+
+        Self::Aggregate(AggregateValue::Tuple(AggregateTuple { ty, fields }))
+    }
+
+    #[must_use]
+    pub const fn new_closure(ty: ClosureTy, environment: Operand, function: Operand) -> Self {
+        Self::Aggregate(AggregateValue::Closure(AggregateClosure { ty, environment, function }))
+    }
+
+    #[must_use]
+    pub const fn new_environment(ty: EnvironmentTy, fields: Vec<Operand>) -> Self {
+        Self::Aggregate(AggregateValue::Environment(AggregateEnvironment { ty, fields }))
+    }
+
+    #[must_use]
+    pub const fn new_effect_handler(
+        effect: MonoEffectInstance,
+        slots: FxHashMap<GlobalSymbolID, OperationHandlerSlot>,
+    ) -> Self {
+        Self::Aggregate(AggregateValue::EffectHandler(AggregateEffectHandler { effect, slots }))
+    }
 }
