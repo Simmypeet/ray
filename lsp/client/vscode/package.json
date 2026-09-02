@@ -1,0 +1,91 @@
+{
+  "name": "ray-language-support",
+  "displayName": "Ray Language Support",
+  "description": "Language support for the Ray programming language.",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "ray-language",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:ray"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ray.restartLanguageServer",
+        "title": "Ray: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "Ray",
+      "properties": {
+        "ray.server.path": {
+          "type": "string",
+          "default": "rayc",
+          "description": "Path to the Ray language server executable."
+        },
+        "ray.server.arguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "lsp"
+          ],
+          "description": "Arguments passed to the Ray language server executable."
+        },
+        "ray.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "scope": "window",
+          "description": "Traces communication between VS Code and the Ray language server."
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "ray",
+        "aliases": [
+          "Ray",
+          "ray"
+        ],
+        "extensions": [
+          ".ray"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ray",
+        "scopeName": "source.ray",
+        "path": "./syntaxes/ray.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "check": "tsc --noEmit -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.5"
+  }
+}
