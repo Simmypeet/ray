@@ -31,12 +31,12 @@ impl Builder<'_> {
             }
             IRExprKind::Literal(literal) => {
                 let ty = self.local_type(destination.local());
-                let constant = lower_literal(literal, &ty);
+                let constant = lower_literal(literal, ty);
                 self.assign(destination, Rvalue::Use(Operand::Constant(constant)));
             }
             IRExprKind::RefOf(reference) => {
                 let ty = self.local_type(destination.local());
-                let MonoType::Pointer(pointer) = &*ty else {
+                let MonoType::Pointer(pointer) = &**ty else {
                     panic!("RefOf should produce a pointer type")
                 };
                 self.assign(
@@ -73,7 +73,7 @@ impl Builder<'_> {
                 );
             }
             IRExprKind::Call(call) => {
-                self.lower_call(context, call, expression_id, source).await;
+                self.lower_call(context, call, expression_id).await;
             }
             IRExprKind::Perform(perform) => {
                 self.lower_perform(context, perform, expression_id);

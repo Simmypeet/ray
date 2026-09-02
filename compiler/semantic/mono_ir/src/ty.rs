@@ -52,6 +52,36 @@ impl MonoType {
     }
 
     #[must_use]
+    pub fn assert_as_closure(&self) -> &Closure {
+        match self {
+            Self::Aggregate(AggregateType::Closure(closure)) => closure,
+            _ => {
+                panic!("compiler-internal invariant violation: expected closure type, got {self:?}")
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn assert_as_pointer(&self) -> &PointerType {
+        match self {
+            Self::Pointer(pointer) => pointer,
+            _ => {
+                panic!("compiler-internal invariant violation: expected pointer type, got {self:?}")
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn assert_as_effect_handler(&self) -> &EffectHandler {
+        match self {
+            Self::Aggregate(AggregateType::EffectHandler(handler)) => handler,
+            _ => panic!(
+                "compiler-internal invariant violation: expected effect handler type, got {self:?}"
+            ),
+        }
+    }
+
+    #[must_use]
     pub fn new_opaque_pointer(engine: &TrackedEngine) -> Interned<Self> {
         engine.intern(Self::OpaquePointer(PointerMutability::Mut))
     }

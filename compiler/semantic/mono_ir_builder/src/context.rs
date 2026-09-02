@@ -23,10 +23,7 @@ use rayc_symbol::{
     symbol_kind::{SymbolKind, get_symbol_kind},
     syntax::is_variadic_def,
 };
-use rayc_type::{
-    subst::{Subst, Substitutable},
-    ty::{Ty, application::View as ApplicationView},
-};
+use rayc_type::{subst::Subst, ty::Ty};
 
 use crate::{builder::Builder, function_abi::FunctionABI};
 
@@ -187,17 +184,6 @@ impl Context {
             FunctionSignature::new(parameter_types, return_type)
         };
         (signature, effects, is_void)
-    }
-
-    pub(crate) async fn lambda_effects(&self, ty: &Interned<Ty>) -> Vec<MonoEffectInstance> {
-        let ty = ty.apply_subst_or_clone(self.instance.substitution(), &self.engine);
-        let Ty::Application(application) = &*ty else {
-            panic!("lambda callee should have an application type")
-        };
-        let ApplicationView::Lambda(lambda) = application.view() else {
-            panic!("lambda callee should have a lambda type")
-        };
-        self.engine.lower_effects(lambda.effect_row(), &Subst::new_empty()).await
     }
 
     pub(crate) async fn lower(mut self) -> MonoIR {

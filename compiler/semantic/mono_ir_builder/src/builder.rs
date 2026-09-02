@@ -1,3 +1,4 @@
+use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
 use rayc_ir::{
     cfg::BlockID as IRBlockID,
@@ -70,8 +71,8 @@ impl<'output> Builder<'output> {
         self.output.get_function(self.target_id()).parameters().collect()
     }
 
-    pub(crate) fn local_type(&self, local: LocalID) -> qbice::storage::intern::Interned<MonoType> {
-        self.output.get_function(self.target_id()).get_local(local).ty().clone()
+    pub(crate) fn local_type(&self, local: LocalID) -> &Interned<MonoType> {
+        self.output.get_function(self.target_id()).get_local(local).ty()
     }
 
     pub(crate) fn insert_local(&mut self, local: Local) -> LocalID {

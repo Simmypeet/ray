@@ -1,9 +1,6 @@
-use rayc_ir::{
-    ir_expr::{
-        IRExprID,
-        call::{Call as IRCall, CallTarget},
-    },
-    ir_function::IRFunction,
+use rayc_ir::ir_expr::{
+    IRExprID,
+    call::{Call as IRCall, CallTarget},
 };
 use rayc_mono_ir::{
     MonoDefInstance,
@@ -21,7 +18,6 @@ impl Builder<'_> {
         context: &Context,
         call: &IRCall,
         expression_id: IRExprID,
-        source: &IRFunction,
     ) {
         let mut arguments = call
             .arguments()
@@ -65,12 +61,27 @@ impl Builder<'_> {
             }
             CallTarget::Lambda { callee } => {
                 let callee_place = self.expression_place(*callee);
+                let callee_type = self.local_type(callee_place.local()).clone();
+                let closure = callee_type.assert_as_closure();
+
+                let handler_offset = 1 + arguments.len();
+                let effects = closure
+                    .function_signature()
+                    .parameter_types()
+                    .iter()
+                    .skip(handler_offset)
+                    .map(|handler_type| {
+                        let pointer = handler_type.assert_as_pointer();
+                        let handler = pointer.pointee().assert_as_effect_handler();
+                        handler.mono_effect_instance().clone()
+                    })
+                    .collect::<Vec<_>>();
 
                 // we're generating something like `callee.environment, ...args`
                 arguments
                     .insert(0, Operand::Copy(callee_place.clone().project_closure_environment()));
 
-                for effect in context.lambda_effects(source.get_expression(*callee).ty()).await {
+                for effect in effects {
                     arguments.push(self.handler_operand(&effect));
                 }
 
