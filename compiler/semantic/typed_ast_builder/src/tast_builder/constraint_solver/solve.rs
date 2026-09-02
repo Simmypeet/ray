@@ -171,13 +171,11 @@ impl TAstBuilder {
 
 impl GenInfer for ConstraintSolver {
     fn gen_infer(&mut self, kind: TyKind, constraint: InferenceConstraint) -> Inference {
+        let inference = self.solver.new_inference_with_constraint(kind, constraint);
         if kind == TyKind::Star && constraint == InferenceConstraint::Numeric {
-            let inference = self.solver.new_inference_with_constraint(kind, constraint);
             self.constraint_set.numeric_inferences.push(inference);
-            inference
-        } else {
-            self.solver.new_inference_with_constraint(kind, constraint)
         }
+        inference
     }
 }
 

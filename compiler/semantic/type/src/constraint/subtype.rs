@@ -6,7 +6,11 @@ use crate::{
     reduce::Reduce,
     solver::Solver,
     subst::{Subst, Substitutable},
-    ty::{Ty, TyKind, effect_row::EffectRow, inference::Inference},
+    ty::{
+        Ty, TyKind,
+        effect_row::{EffectLabel, EffectRow},
+        inference::Inference,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -107,33 +111,8 @@ impl Solver {
         lesser: &EffectRow,
         greater: &EffectRow,
     ) -> Result<Step, Error> {
-        let mut constraints = Vec::new();
-        let mut unmatched_lesser = Vec::new();
-        let mut unmatched_greater = greater.labels().cloned().collect::<Vec<_>>();
-
-        for lesser_label in lesser.labels() {
-            let matching_effect = unmatched_greater.iter().position(|greater_label| {
-                greater_label.effect_symbol_id() == lesser_label.effect_symbol_id()
-            });
-
-            let Some(matching_effect) = matching_effect else {
-                unmatched_lesser.push(lesser_label.clone());
-                continue;
-            };
-
-            let greater_label = unmatched_greater.remove(matching_effect);
-            let Some(arguments) = lesser_label.structural_match(&greater_label) else {
-                return Err(Error::Conflicted);
-            };
-            constraints.extend(arguments.enumerate().map(|(argument_index, (lesser, greater))| {
-                DerivedConstraint::new_effect_label_argument_matching(
-                    lesser_label.effect_symbol_id(),
-                    argument_index,
-                    lesser.clone(),
-                    greater.clone(),
-                )
-            }));
-        }
+        let MatchedEffectRowLabels { mut constraints, unmatched_lesser, unmatched_greater } =
+            match_effect_row_labels(lesser, greater)?;
 
         match (lesser.tail(), greater.tail()) {
             (None, None) => {
@@ -166,6 +145,8 @@ impl Solver {
                     if !unmatched_lesser.is_empty() || !unmatched_greater.is_empty() {
                         return Err(Error::Conflicted);
                     }
+                } else if unmatched_lesser.is_empty() && unmatched_greater.is_empty() {
+                    constraints.push(match_effect_row_tails(lesser_tail, greater_tail));
                 } else if unmatched_lesser.is_empty() {
                     let greater_remainder = Ty::new_effect_row(
                         unmatched_greater,
@@ -266,6 +247,51 @@ impl Solver {
             }
         }
     }
+}
+
+struct MatchedEffectRowLabels {
+    constraints: Vec<DerivedConstraint>,
+    unmatched_lesser: Vec<Interned<EffectLabel>>,
+    unmatched_greater: Vec<Interned<EffectLabel>>,
+}
+
+fn match_effect_row_labels(
+    lesser: &EffectRow,
+    greater: &EffectRow,
+) -> Result<MatchedEffectRowLabels, Error> {
+    let mut constraints = Vec::new();
+    let mut unmatched_lesser = Vec::new();
+    let mut unmatched_greater = greater.labels().cloned().collect::<Vec<_>>();
+
+    for lesser_label in lesser.labels() {
+        let matching_effect = unmatched_greater.iter().position(|greater_label| {
+            greater_label.effect_symbol_id() == lesser_label.effect_symbol_id()
+        });
+
+        let Some(matching_effect) = matching_effect else {
+            unmatched_lesser.push(lesser_label.clone());
+            continue;
+        };
+
+        let greater_label = unmatched_greater.remove(matching_effect);
+        let Some(arguments) = lesser_label.structural_match(&greater_label) else {
+            return Err(Error::Conflicted);
+        };
+        constraints.extend(arguments.enumerate().map(|(argument_index, (lesser, greater))| {
+            DerivedConstraint::new_effect_label_argument_matching(
+                lesser_label.effect_symbol_id(),
+                argument_index,
+                lesser.clone(),
+                greater.clone(),
+            )
+        }));
+    }
+
+    Ok(MatchedEffectRowLabels { constraints, unmatched_lesser, unmatched_greater })
+}
+
+fn match_effect_row_tails(lesser: &Interned<Ty>, greater: &Interned<Ty>) -> DerivedConstraint {
+    DerivedConstraint::new_type_application_matching(lesser.clone(), greater.clone())
 }
 
 #[cfg(test)]
@@ -483,6 +509,27 @@ mod tests {
 
         assert_eq!(subst.get(&e), Some(&poly_ty));
         assert_eq!(subst.get(&poly), None);
+    }
+
+    // input: {IO | p} = {IO | e}
+    // premise: p is rigid; e is an effect-row inference variable
+    // output: e := p
+    #[tokio::test]
+    async fn matching_open_effect_rows_unify_their_tails_directly() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let io = effect_label(1, &engine);
+        let mut solver = Solver::new(engine.clone());
+        let inference = solver.new_inference(TyKind::EffectRow);
+        let inference_ty = engine.intern(Ty::Inference(inference));
+        let poly_ty = Ty::new_poly_var(effect_poly_var(0), &engine);
+        let rigid_row = Ty::new_effect_row([io.clone()], Some(poly_ty.clone()), &engine);
+        let inferred_row = Ty::new_effect_row([io], Some(inference_ty), &engine);
+
+        let subst =
+            solve(&mut solver, Constraint::Subtype(Subtype::new(rigid_row, inferred_row)), &engine)
+                .expect("matching open rows should unify their tails");
+
+        assert_eq!(subst.get(&inference), Some(&poly_ty));
     }
 
     // input: e <: {IO}

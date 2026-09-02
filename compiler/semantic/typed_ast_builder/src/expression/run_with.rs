@@ -25,9 +25,8 @@ use rayc_typed_ast::{
 use crate::{
     bind::Bind,
     diagnostic::{
-        Diagnostic, DuplicateEffectOperationHandler, EffectHandlerNotSupported,
-        ExtraneousEffectOperationHandler, MismatchedEffectOperationHandlerParameterCount,
-        MissingEffectOperationHandler,
+        Diagnostic, DuplicateEffectOperationHandler, ExtraneousEffectOperationHandler,
+        MismatchedEffectOperationHandlerParameterCount, MissingEffectOperationHandler,
     },
     tast_builder::TAstBuilder,
 };
@@ -51,10 +50,6 @@ impl Bind<RunWithSyntax> for TAstBuilder {
             self.bind_operation_handlers(&syn, effect_id, &effect_substitution).await;
 
         let (body_function, return_type) = self.build_run_with_body(&syn).await;
-
-        self.push_diagnostic(Diagnostic::EffectHandlerNotSupported(
-            EffectHandlerNotSupported::builder().span(syn.span()).build(),
-        ));
 
         let run_with =
             RunWith::new(effect_id, effect_substitution, body_function, operation_handlers);

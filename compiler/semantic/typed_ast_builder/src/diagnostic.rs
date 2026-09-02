@@ -130,13 +130,6 @@ pub struct EmbeddedNulString {
     span: RelativeSpan,
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
-)]
-pub struct EffectHandlerNotSupported {
-    span: RelativeSpan,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct MissingEffectOperationHandler {
     operations: Vec<GlobalSymbolID>,
@@ -238,17 +231,6 @@ impl Report for MismatchedEffectOperationHandlerParameterCount {
                 "handler for `{operation}` expects {} parameters, but {} were provided",
                 self.expected, self.found
             ))
-            .primary_highlight(
-                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
-            )
-            .build()
-    }
-}
-
-impl Report for EffectHandlerNotSupported {
-    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        Rendered::builder()
-            .message("effect handler semantics are not implemented yet")
             .primary_highlight(
                 Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
             )
@@ -602,7 +584,6 @@ pub enum Diagnostic {
     ResidualSubtype(ResidualSubtype),
     IncompatibleEffectRows(IncompatibleEffectRows),
     EmbeddedNulString(EmbeddedNulString),
-    EffectHandlerNotSupported(EffectHandlerNotSupported),
     MissingEffectOperationHandler(MissingEffectOperationHandler),
     ExtraneousEffectOperationHandler(ExtraneousEffectOperationHandler),
     DuplicateEffectOperationHandler(DuplicateEffectOperationHandler),
@@ -649,7 +630,6 @@ impl Report for Diagnostic {
                 incompatible_effects.report(engine).await
             }
             Self::EmbeddedNulString(string) => string.report(engine).await,
-            Self::EffectHandlerNotSupported(handler) => handler.report(engine).await,
             Self::MissingEffectOperationHandler(handler) => handler.report(engine).await,
             Self::ExtraneousEffectOperationHandler(handler) => handler.report(engine).await,
             Self::DuplicateEffectOperationHandler(handler) => handler.report(engine).await,
