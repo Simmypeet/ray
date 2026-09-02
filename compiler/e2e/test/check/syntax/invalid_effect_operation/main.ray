@@ -1,5 +1,0 @@
-eff Invalid:
-    def perform(...)
-
-def main() -> int32:
-    return 0

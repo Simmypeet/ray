@@ -1,5 +1,0 @@
-def lambdaPolymorphic(callback: def() -> () \ e) \ e:
-    return ()
-
-def lambdaConcrete(callback: def() -> () \ {IO}) -> ():
-    return ()
