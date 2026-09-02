@@ -1,0 +1,9 @@
+eff Identity[t]:
+    def apply(value: t) -> t
+
+def main() -> int32:
+    return run:
+        return Identity[int32].apply(37)
+    with Identity[int32]:
+        def apply(value):
+            return value

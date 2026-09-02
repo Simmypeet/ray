@@ -1,0 +1,22 @@
+eff Tens:
+    def value() -> int32
+
+eff Ones:
+    def value() -> int32
+
+def combine() -> int32 \ {Tens, Ones}:
+    return Tens.value() * 10 + Ones.value()
+
+def forwardBoth() -> int32 \ {Tens, Ones}:
+    return combine()
+
+def main() -> int32:
+    return run:
+        return run:
+            return forwardBoth()
+        with Ones:
+            def value():
+                return 2
+    with Tens:
+        def value():
+            return 4

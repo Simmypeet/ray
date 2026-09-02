@@ -1,0 +1,32 @@
+eff Scope:
+    def current() -> int32
+
+extern def printf(format: cstr, ...) -> c_int
+
+def readScope() -> int32 \ {Scope}:
+    return Scope.current()
+
+def forwardScope() -> int32 \ {Scope}:
+    return readScope()
+
+def main() -> int32:
+    let result = run:
+        # this is a bummer that we have to explicitly type the callback to a 
+        # closed-row. if we don't, the row tail will be open to a particualr 
+        # variable and will be shared between the two call sites
+        let callback: def() -> int32 \ {Scope} = () -> forwardScope()
+        
+        let outerBefore = callback()
+        let inner = run:
+            return callback()
+        with Scope:
+            def current():
+                return 20
+        let outerAfter = callback()
+        printf("outer-before = %d, inner = %d, outer-after = %d\n", outerBefore, inner, outerAfter)
+        return 0
+    with Scope:
+        def current():
+            return 1
+
+    return result

@@ -11,6 +11,8 @@ use clap::Parser;
 use insta::assert_snapshot;
 use rayc_target::Arguments;
 
+// Each discovered source fixture is compiled to a native executable and
+// checked only by its process-level behavior.
 #[test_generator::test_resources("compiler/e2e/test/run/**/main.ray")]
 fn main(resource: &str) {
     stacker::maybe_grow(3 * 1024 * 1024, 8 * 1024 * 1024, || {

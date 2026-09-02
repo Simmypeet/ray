@@ -4,17 +4,6 @@ assertion_line: 112
 expression: run
 ---
 stderr:
-[error]: effect handler semantics are not implemented yet
-  ╭▸ compiler/e2e/test/check/tast/run_with_unit/main.ray:5:25
-  │
-5 │       let result: int32 = run:
-  │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━┛
-6 │ ┃         Console.write()
-7 │ ┃     with Console:
-8 │ ┃         def write():
-9 │ ┃             return ()
-  ╰╴┗━━━━━━━━━━━━━━━━━━━━━┛
-
 [error]: mismatched types in variable assignment: expected `int32`, but found `()`
   ╭▸ compiler/e2e/test/check/tast/run_with_unit/main.ray:5:25
   │
@@ -26,7 +15,7 @@ stderr:
 9 │ ┃             return ()
   ╰╴┗━━━━━━━━━━━━━━━━━━━━━┛
 
-[error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

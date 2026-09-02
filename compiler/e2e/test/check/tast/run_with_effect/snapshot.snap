@@ -20,19 +20,7 @@ stderr:
 22 │             SecondHandlerResidual.perform()
    ╰╴            ─────────────────────────────── effect `{SecondHandlerResidual}` introduced here
 
-[error]: effect handler semantics are not implemented yet
-   ╭▸ compiler/e2e/test/check/tast/run_with_effect/main.ray:15:5
-   │
-15 │ ┏     run:
-16 │ ┃         Handled.first()
-17 │ ┃         BodyResidual.perform()
-18 │ ┃     with Handled:
-   ‡ ┃
-21 │ ┃         def second():
-22 │ ┃             SecondHandlerResidual.perform()
-   ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-
-[error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

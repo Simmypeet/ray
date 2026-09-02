@@ -1,0 +1,30 @@
+eff Scale:
+    def apply(value: int32) -> int32
+
+eff Offset:
+    def get() -> int32
+
+eff Bonus:
+    def get() -> int32
+
+def handleScale(
+    callback: def(int32) -> int32 \ {Scale | effects},
+    value: int32,
+) -> int32 \ effects:
+    return run:
+        return callback(value)
+    with Scale:
+        def apply(value):
+            return value * 2
+
+def main() -> int32:
+    return run:
+        return run:
+            let callback = (value) -> Scale.apply(value) + Offset.get() + Bonus.get()
+            return handleScale(callback, 10)
+        with Offset:
+            def get():
+                return 3
+    with Bonus:
+        def get():
+            return 4

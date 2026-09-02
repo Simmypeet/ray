@@ -1,0 +1,13 @@
+eff Arithmetic:
+    def double(value: int32) -> int32
+    def add(left: int32, right: int32) -> int32
+
+def main() -> int32:
+    return run:
+        let doubled = Arithmetic.double(10)
+        return Arithmetic.add(doubled, 3)
+    with Arithmetic:
+        def double(value):
+            return value * 2
+        def add(left, right):
+            return left + right

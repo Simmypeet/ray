@@ -1,0 +1,10 @@
+eff Offset:
+    def apply(value: int32) -> int32
+
+def main() -> int32:
+    let offset = 7
+    return run:
+        return Offset.apply(35)
+    with Offset:
+        def apply(value):
+            return value + offset

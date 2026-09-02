@@ -1,0 +1,16 @@
+eff Value:
+    def get() -> int32
+
+def main() -> int32:
+    return run:
+        let before = Value.get()
+        let inner = run:
+            return Value.get()
+        with Value:
+            def get():
+                return 20
+        let after = Value.get()
+        return before + inner + after
+    with Value:
+        def get():
+            return 1

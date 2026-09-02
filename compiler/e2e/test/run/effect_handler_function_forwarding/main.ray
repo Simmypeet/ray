@@ -1,0 +1,22 @@
+eff Source:
+    def read() -> int32
+
+def readDirectly() -> int32 \ {Source}:
+    return Source.read()
+
+def forwardRead() -> int32 \ {Source}:
+    return readDirectly()
+
+def recursiveRead(depth: int32) -> int32 \ {Source}:
+    return if depth == 0: forwardRead() else: recursiveRead(depth - 1)
+
+def invoke(callback: def() -> int32 \ {Source}) -> int32 \ {Source}:
+    return callback()
+
+def main() -> int32:
+    return run:
+        let callback = () -> forwardRead()
+        return readDirectly() + recursiveRead(2) + invoke(callback)
+    with Source:
+        def read():
+            return 10

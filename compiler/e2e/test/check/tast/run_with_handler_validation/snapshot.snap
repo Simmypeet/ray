@@ -4,19 +4,6 @@ assertion_line: 112
 expression: run
 ---
 stderr:
-[error]: effect handler semantics are not implemented yet
-   ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:8:19
-   │
- 8 │       let handled = run:
-   │ ┏━━━━━━━━━━━━━━━━━━━┛
- 9 │ ┃         ()
-10 │ ┃     with Operations:
-11 │ ┃         def wrong():
-   ‡ ┃
-17 │ ┃         def extra():
-18 │ ┃             return ()
-   ╰╴┗━━━━━━━━━━━━━━━━━━━━━┛
-
 [error]: missing handlers for effect operations `main.Operations.another_missing`, `main.Operations.missing`
    ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:10:10
    │
@@ -44,7 +31,7 @@ stderr:
 17 │         def extra():
    ╰╴            ━━━━━
 
-[error]: Compilation aborted due to 5 error(s)
+[error]: Compilation aborted due to 4 error(s)
 
 
 

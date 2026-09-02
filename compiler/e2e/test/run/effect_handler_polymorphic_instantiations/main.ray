@@ -1,0 +1,33 @@
+eff Transform:
+    def apply(value: int32) -> int32
+
+eff Left:
+    def value() -> int32
+
+eff Right:
+    def value() -> int32
+
+def handleTransform(callback: def() -> int32 \ {Transform | effects}) -> int32 \ effects:
+    return run:
+        return callback()
+    with Transform:
+        def apply(value):
+            return value + 10
+
+def main() -> int32:
+    let leftCallback = () -> Transform.apply(5) + Left.value()
+    let rightCallback = () -> Transform.apply(5) + Right.value()
+
+    let left = run:
+        return handleTransform(leftCallback)
+    with Left:
+        def value():
+            return 1
+
+    let right = run:
+        return handleTransform(rightCallback)
+    with Right:
+        def value():
+            return 2
+
+    return left * 10 + right
