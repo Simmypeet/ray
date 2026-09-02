@@ -53,7 +53,7 @@ impl MonoType {
 
     #[must_use]
     pub fn new_opaque_pointer(engine: &TrackedEngine) -> Interned<Self> {
-        engine.intern(Self::OpaquePointer(PointerMutability::Const))
+        engine.intern(Self::OpaquePointer(PointerMutability::Mut))
     }
 
     #[must_use]
@@ -319,7 +319,7 @@ pub async fn lower_type(
     ty: &Interned<Ty>,
     substitution: &Subst,
 ) -> Interned<MonoType> {
-    let ty = ty.apply_subst_or_clone(substitution, self);
+    let ty = reduce_fully(ty.apply_subst_or_clone(substitution, self), self);
     lower_concrete_type(self, &ty).await
 }
 
@@ -346,12 +346,14 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
             }
             ApplicationView::Lambda(lambda) => {
                 let mut parameters = vec![MonoType::new_opaque_pointer(engine)];
+
                 for parameter in lambda.parameter_types() {
                     parameters.push(Box::pin(lower_concrete_type(engine, parameter)).await);
                 }
                 for effect in lower_concrete_effects(engine, lambda.effect_row()).await {
                     parameters.push(MonoType::new_handler_pointer(effect, engine));
                 }
+
                 let return_type = Box::pin(lower_concrete_type(engine, lambda.return_type())).await;
                 let signature = MonoType::new_function_signature(parameters, return_type, engine);
                 engine.intern(MonoType::Aggregate(AggregateType::Closure(Closure::new(signature))))
@@ -395,7 +397,8 @@ async fn lower_concrete_effects(
     };
     assert!(
         row.tail().is_none(),
-        "compiler-internal invariant violation: open effect row reached MonoIR"
+        "compiler-internal invariant violation: open effect row reached MonoIR: {:?}",
+        row.tail()
     );
 
     let mut effects = Vec::with_capacity(row.labels().len());

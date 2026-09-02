@@ -137,12 +137,28 @@ pub struct AggregateTuple {
     fields: Vec<Operand>,
 }
 
+impl AggregateTuple {
+    #[must_use]
+    pub const fn ty(&self) -> &TupleTy { &self.ty }
+
+    #[must_use]
+    pub fn fields(&self) -> &[Operand] { &self.fields }
+}
+
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub struct AggregateEnvironment {
     ty: EnvironmentTy,
     fields: Vec<Operand>,
+}
+
+impl AggregateEnvironment {
+    #[must_use]
+    pub const fn ty(&self) -> &EnvironmentTy { &self.ty }
+
+    #[must_use]
+    pub fn fields(&self) -> &[Operand] { &self.fields }
 }
 
 #[derive(
@@ -152,6 +168,17 @@ pub struct AggregateClosure {
     ty: ClosureTy,
     environment: Operand,
     function: Operand,
+}
+
+impl AggregateClosure {
+    #[must_use]
+    pub const fn ty(&self) -> &ClosureTy { &self.ty }
+
+    #[must_use]
+    pub const fn environment(&self) -> &Operand { &self.environment }
+
+    #[must_use]
+    pub const fn function(&self) -> &Operand { &self.function }
 }
 
 #[derive(
@@ -179,6 +206,14 @@ impl OperationHandlerSlot {
 pub struct AggregateEffectHandler {
     effect: MonoEffectInstance,
     slots: FxHashMap<GlobalSymbolID, OperationHandlerSlot>,
+}
+
+impl AggregateEffectHandler {
+    #[must_use]
+    pub const fn effect(&self) -> &MonoEffectInstance { &self.effect }
+
+    #[must_use]
+    pub const fn slots(&self) -> &FxHashMap<GlobalSymbolID, OperationHandlerSlot> { &self.slots }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
