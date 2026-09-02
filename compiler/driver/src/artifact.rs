@@ -7,7 +7,7 @@ use std::{
     process::ExitCode,
 };
 
-use rayc_c::CTranslationUnitOptions;
+use rayc_c2::CTranslationUnitOptions;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_target::{Arguments, OptimizationLevel, TargetID, TargetKind};
@@ -238,7 +238,7 @@ async fn write_c(
     writer: &mut impl Write,
     output_path: &Path,
 ) -> Result<(), ArtifactError> {
-    rayc_c::write_c_translation_unit(engine, target_id, options, writer).await.map_err(
+    rayc_c2::write_c_translation_unit(engine, target_id, options, writer).await.map_err(
         |source| ArtifactError::GenerateC { output_path: output_path.to_owned(), source },
     )?;
     writer

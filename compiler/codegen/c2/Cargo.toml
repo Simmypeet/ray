@@ -1,0 +1,23 @@
+[package]
+name = "rayc_c2"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+qbice.workspace = true
+rayc_hash.path = "../../base/hash"
+rayc_mono_ir.path = "../../semantic/mono_ir"
+rayc_mono_ir_builder.path = "../../semantic/mono_ir_builder"
+rayc_qbice.path = "../../base/qbice"
+rayc_symbol.path = "../../semantic/symbol"
+rayc_target.path = "../../base/target"
+rayc_type.path = "../../semantic/type"
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

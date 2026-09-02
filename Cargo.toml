@@ -36,6 +36,7 @@ members = [
     "compiler/semantic/check",
 
     "compiler/codegen/c",
+    "compiler/codegen/c2",
     "compiler/codegen/mono",
 
     "compiler/e2e",

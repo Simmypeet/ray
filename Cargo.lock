@@ -1603,6 +1603,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayc_c2"
+version = "0.1.0-beta.2"
+dependencies = [
+ "qbice",
+ "rayc_hash",
+ "rayc_mono_ir",
+ "rayc_mono_ir_builder",
+ "rayc_qbice",
+ "rayc_symbol",
+ "rayc_target",
+ "rayc_type",
+ "tokio",
+]
+
+[[package]]
 name = "rayc_check"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -1640,7 +1655,7 @@ dependencies = [
  "inkwell",
  "linkme",
  "qbice",
- "rayc_c",
+ "rayc_c2",
  "rayc_check",
  "rayc_diagnostic",
  "rayc_handler",
