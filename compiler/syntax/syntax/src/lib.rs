@@ -18,6 +18,7 @@ pub mod irrefutable_pattern;
 pub mod module;
 pub mod path;
 pub mod statement;
+pub mod r#trait;
 pub mod r#type;
 
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].

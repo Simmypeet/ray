@@ -168,6 +168,7 @@ impl Table {
                 ModuleMember::Effect(effect) => {
                     self.register_effect(member_builder, effect.clone(), engine).await;
                 }
+                ModuleMember::Trait(_) => {}
             }
         }
     }

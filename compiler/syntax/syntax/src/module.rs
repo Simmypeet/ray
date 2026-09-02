@@ -4,13 +4,14 @@ use rayc_parser::{
     parser::{ParserExt, ast},
 };
 
-use crate::{def::Def, effect::Effect};
+use crate::{def::Def, effect::Effect, r#trait::TraitSignature};
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub enum ModuleMember {
         Def(Def = ast::<Def>()),
-        Effect(Effect = ast::<Effect>())
+        Effect(Effect = ast::<Effect>()),
+        Trait(TraitSignature = ast::<TraitSignature>())
     }
 }
 
