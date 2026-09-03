@@ -83,6 +83,10 @@ impl TAstBuilder {
                 self.push_symbol_not_callable(effect.symbol_id(), path.span());
                 return self.push_error_expression_with_children(syn.span(), arguments);
             }
+            PathResolution::Trait(trait_ref) => {
+                self.push_symbol_not_callable(trait_ref.trait_id(), path.span());
+                return self.push_error_expression_with_children(syn.span(), arguments);
+            }
         };
         self.build_resolved_direct_call(
             function_id,

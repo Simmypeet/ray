@@ -53,6 +53,7 @@ impl Mutability {
 pub enum TyKind {
     Star,
     EffectRow,
+    Instance,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]

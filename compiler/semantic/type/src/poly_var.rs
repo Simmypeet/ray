@@ -13,27 +13,61 @@ use rayc_symbol::{
 
 use crate::{
     subst::Subst,
+    trait_ref::TraitRef,
     ty::{TyKind, args::Args},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum PolyVarKind {
+    Type(TyKind),
+    Instance(TraitRef),
+}
+
+impl PolyVarKind {
+    #[must_use]
+    pub const fn ty_kind(&self) -> TyKind {
+        match self {
+            Self::Type(kind) => *kind,
+            Self::Instance(_) => TyKind::Instance,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct PolyVar {
     name: Interned<str>,
-    kind: TyKind,
+    kind: PolyVarKind,
     span: RelativeSpan,
 }
 
 impl PolyVar {
     #[must_use]
-    pub const fn new(name: Interned<str>, kind: TyKind, span: RelativeSpan) -> Self {
-        Self { name, kind, span }
+    pub const fn new_type(name: Interned<str>, kind: TyKind, span: RelativeSpan) -> Self {
+        Self { name, kind: PolyVarKind::Type(kind), span }
+    }
+
+    #[must_use]
+    pub const fn new_instance(
+        name: Interned<str>,
+        trait_ref: TraitRef,
+        span: RelativeSpan,
+    ) -> Self {
+        Self { name, kind: PolyVarKind::Instance(trait_ref), span }
     }
 
     #[must_use]
     pub fn name(&self) -> &str { &self.name }
 
     #[must_use]
-    pub const fn kind(&self) -> TyKind { self.kind }
+    pub const fn kind(&self) -> TyKind { self.kind.ty_kind() }
+
+    #[must_use]
+    pub const fn trait_ref(&self) -> Option<&TraitRef> {
+        match &self.kind {
+            PolyVarKind::Type(_) => None,
+            PolyVarKind::Instance(trait_ref) => Some(trait_ref),
+        }
+    }
 
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
@@ -60,6 +94,10 @@ impl PolyVarMap {
     #[must_use]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (PolyVarID, &PolyVar)> {
         self.poly_vars.iter()
+    }
+
+    pub fn type_poly_vars(&self) -> impl Iterator<Item = (PolyVarID, &PolyVar)> {
+        self.poly_vars.iter().filter(|(_, poly_var)| poly_var.trait_ref().is_none())
     }
 
     #[must_use]
@@ -116,8 +154,24 @@ impl PolyVarStack {
         None
     }
 
+    #[must_use]
+    pub fn kind_of(&self, id: GlobalPolyVarID) -> Option<TyKind> {
+        self.poly_var_maps.iter().find_map(|(symbol_id, poly_var_map)| {
+            (*symbol_id == id.parent_id()).then(|| poly_var_map.kind_of(id.id()))
+        })
+    }
+
     pub fn push(&mut self, symbol_id: GlobalSymbolID, poly_var_map: Interned<PolyVarMap>) {
         self.poly_var_maps.push((symbol_id, poly_var_map));
+    }
+
+    #[must_use]
+    pub fn type_poly_var_kinds(&self, symbol_id: GlobalSymbolID) -> Option<Vec<TyKind>> {
+        self.poly_var_maps.iter().find_map(|(candidate, poly_var_map)| {
+            (*candidate == symbol_id).then(|| {
+                poly_var_map.type_poly_vars().map(|(_, poly_var)| poly_var.kind()).collect()
+            })
+        })
     }
 
     pub fn all_poly_vars(&self) -> impl Iterator<Item = GlobalPolyVarID> {
@@ -184,12 +238,12 @@ pub async fn build_subst_from_args(
 
     assert_eq!(
         args.len(),
-        poly_vars.len(),
+        poly_vars.type_poly_vars().count(),
         "number of arguments must match number of polymorphic variables"
     );
 
     poly_vars
-        .iter()
+        .type_poly_vars()
         .zip(args.interned_iter())
         .map(|((poly_var_id, _), argument)| {
             (GlobalPolyVarID::new(symbol_id, poly_var_id), argument.clone())
