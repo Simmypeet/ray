@@ -77,9 +77,10 @@ pub(crate) fn is_c_abi_value_type(ty: &Ty) -> bool {
         Ty::Application(application) => match application.view() {
             ApplicationView::Primitive(_) => true,
             ApplicationView::Pointer(pointer) => is_c_abi_value_type(pointer.pointee()),
-            ApplicationView::Tuple(_) | ApplicationView::Lambda(_) | ApplicationView::Error => {
-                false
-            }
+            ApplicationView::Tuple(_)
+            | ApplicationView::Lambda(_)
+            | ApplicationView::Instance(_)
+            | ApplicationView::Error => false,
         },
         Ty::Inference(_) | Ty::PolyVar(_) => false,
         Ty::EffectRow(_) => todo!("validate effect-row types in C ABI signatures"),

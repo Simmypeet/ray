@@ -87,6 +87,10 @@ impl TAstBuilder {
                 self.push_symbol_not_callable(trait_ref.trait_id(), path.span());
                 return self.push_error_expression_with_children(syn.span(), arguments);
             }
+            PathResolution::Instance(instance) => {
+                self.push_symbol_not_callable(instance.symbol_id(), path.span());
+                return self.push_error_expression_with_children(syn.span(), arguments);
+            }
         };
         self.build_resolved_direct_call(
             function_id,
@@ -212,7 +216,8 @@ impl TAstBuilder {
                 ApplicationView::Error => LambdaCallSignature::Invalid,
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
-                | ApplicationView::Pointer(_) => {
+                | ApplicationView::Pointer(_)
+                | ApplicationView::Instance(_) => {
                     self.report_expected_lambda(callee_ty, callee_span);
                     LambdaCallSignature::Invalid
                 }

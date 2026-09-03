@@ -147,7 +147,8 @@ impl TAstBuilder {
                 ApplicationView::Error => Ty::new_star_error(self.engine()),
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
-                | ApplicationView::Lambda(_) => {
+                | ApplicationView::Lambda(_)
+                | ApplicationView::Instance(_) => {
                     self.push_diagnostic(Diagnostic::ExpectedPointerType(
                         ExpectedPointerType::builder().ty(ty).span(span).build(),
                     ));
