@@ -2,13 +2,14 @@ use linkme::distributed_slice;
 use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
-    DefBodySyntaxKey, EffectRowSyntaxKey, InstanceTraitSyntaxKey, ParameterListSyntaxKey,
-    ReturnTypeSyntaxKey, TypeParameterListSyntaxKey, VariadicDefKey,
+    DefBodySyntaxKey, EffectRowSyntaxKey, GivenParameterListSyntaxKey, InstanceTraitSyntaxKey,
+    ParameterListSyntaxKey, ReturnTypeSyntaxKey, TypeParameterListSyntaxKey, VariadicDefKey,
 };
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
+    given::GivenParameterList,
     path::Path,
     statement::Block,
 };
@@ -94,6 +95,18 @@ pub async fn type_parameter_list_syntax_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static TYPE_PARAMETER_LIST_SYNTAX_EXECUTOR: Registration<Config> =
     Registration::new::<TypeParameterListSyntaxKey, TypeParameterListSyntaxExecutor>();
+
+#[executor(config = Config)]
+pub async fn given_parameter_list_syntax_executor(
+    &GivenParameterListSyntaxKey { symbol_id }: &GivenParameterListSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<GivenParameterList> {
+    engine.get_table(symbol_id.target_id).await.get_given_parameter_list_syntax(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static GIVEN_PARAMETER_LIST_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<GivenParameterListSyntaxKey, GivenParameterListSyntaxExecutor>();
 
 #[executor(config = Config)]
 pub async fn instance_trait_syntax_executor(

@@ -18,6 +18,7 @@ use rayc_syntax::{
     def::{ParameterList, ReturnType},
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
+    given::GivenParameterList,
     path::Path as SyntaxPath,
     statement::Block,
 };
@@ -40,6 +41,7 @@ pub struct Infos {
     def_body: Option<Option<Block>>,
     variadic: Option<bool>,
     type_parameters: Option<Option<TypeParameterList>>,
+    given_parameter_list: Option<Option<GivenParameterList>>,
     instance_trait: Option<Option<SyntaxPath>>,
 }
 
@@ -51,6 +53,7 @@ struct SyntaxTable {
     def_bodies: Map<Option<Block>>,
     variadic_defs: Map<bool>,
     type_parameters: Map<Option<TypeParameterList>>,
+    given_parameter_lists: Map<Option<GivenParameterList>>,
     instance_traits: Map<Option<SyntaxPath>>,
 }
 
@@ -185,6 +188,14 @@ impl Table {
     }
 
     #[must_use]
+    pub fn get_given_parameter_list_syntax(
+        &self,
+        symbol_id: SymbolID,
+    ) -> Option<GivenParameterList> {
+        self.syntaxes.given_parameter_lists.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
     pub fn get_instance_trait_syntax(&self, symbol_id: SymbolID) -> Option<SyntaxPath> {
         self.syntaxes.instance_traits.get(&symbol_id).cloned().unwrap()
     }
@@ -239,6 +250,10 @@ impl Table {
 
         if let Some(type_parameters) = info.type_parameters {
             self.syntaxes.type_parameters.insert(symbol_id, type_parameters);
+        }
+
+        if let Some(given_parameter_list) = info.given_parameter_list {
+            self.syntaxes.given_parameter_lists.insert(symbol_id, given_parameter_list);
         }
 
         if let Some(instance_trait) = info.instance_trait {

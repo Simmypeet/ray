@@ -6,6 +6,7 @@ use rayc_syntax::{
     def::{ParameterList, ReturnType},
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
+    given::GivenParameterList,
     path::Path,
     statement::Block,
 };
@@ -64,6 +65,16 @@ pub struct VariadicDefKey {
 #[value(Option<TypeParameterList>)]
 #[extend(by_val, name = get_type_parameter_list_syntax)]
 pub struct TypeParameterListSyntaxKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+/// Retrieves the explicitly declared given parameters of a symbol.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<GivenParameterList>)]
+#[extend(by_val, name = get_given_parameter_list_syntax)]
+pub struct GivenParameterListSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }
 
