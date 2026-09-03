@@ -5,29 +5,31 @@ use rayc_parser::{
     parser::{ParserExt, ast},
 };
 
-use crate::{Identifier, Keyword, def::DefSignature, effect::TypeParameterList};
+use crate::{Identifier, Keyword, def::Def, effect::TypeParameterList, path::Path};
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    pub struct TraitDef {
-        pub signature: DefSignature = ast::<DefSignature>()
+    pub struct InstanceDef {
+        pub definition: Def = ast::<Def>()
     }
 }
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     #{fragment = Fragment::Indentation}
-    pub struct TraitBody {
-        pub definitions: #[multi] TraitDef = ast::<TraitDef>().line().repeat_all()
+    pub struct InstanceBody {
+        pub definitions: #[multi] InstanceDef = ast::<InstanceDef>().line().repeat_all()
     }
 }
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    pub struct Trait {
-        pub trait_keyword: Keyword = expect::Keyword::Trait,
+    pub struct Instance {
+        pub inst_keyword: Keyword = expect::Keyword::Inst,
         pub name: Identifier = expect::Identifier,
-        pub type_parameters: TypeParameterList = ast::<TypeParameterList>(),
-        pub body: TraitBody = ast::<TraitBody>()
+        pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
+        pub for_keyword: Keyword = expect::Keyword::For,
+        pub trait_reference: Path = ast::<Path>(),
+        pub body: InstanceBody = ast::<InstanceBody>()
     }
 }
