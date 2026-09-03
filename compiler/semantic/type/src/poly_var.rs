@@ -61,7 +61,7 @@ impl PolyVar {
     }
 
     #[must_use]
-    pub fn name(&self) -> &str { &self.name }
+    pub const fn name(&self) -> &Interned<str> { &self.name }
 
     #[must_use]
     pub const fn kind(&self) -> TyKind { self.kind.ty_kind() }
@@ -167,10 +167,17 @@ impl PolyVarStack {
     }
 
     #[must_use]
-    pub fn poly_var_kinds(&self, symbol_id: GlobalSymbolID) -> Option<Vec<TyKind>> {
+    pub fn argument_parameters(
+        &self,
+        symbol_id: GlobalSymbolID,
+    ) -> Option<Vec<(Interned<str>, TyKind)>> {
         self.poly_var_maps.iter().find_map(|(candidate, poly_var_map)| {
-            (*candidate == symbol_id)
-                .then(|| poly_var_map.iter().map(|(_, poly_var)| poly_var.kind()).collect())
+            (*candidate == symbol_id).then(|| {
+                poly_var_map
+                    .iter()
+                    .map(|(_, poly_var)| (poly_var.name.clone(), poly_var.kind()))
+                    .collect()
+            })
         })
     }
 

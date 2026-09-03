@@ -1,5 +1,6 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::GlobalSymbolID;
 
 use super::{InferenceConstraint, Mutability, Primitive, Ty, TyKind, inference::Inference};
 use crate::{
@@ -15,6 +16,7 @@ pub enum Constant {
     /// effect row.
     Lambda,
     Pointer(Mutability),
+    Instance(GlobalSymbolID),
     Error(TyKind),
 }
 
@@ -59,6 +61,20 @@ pub struct PointerView<'x> {
     mutability: Mutability,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InstanceView<'x> {
+    symbol_id: GlobalSymbolID,
+    args: &'x [Interned<Ty>],
+}
+
+impl InstanceView<'_> {
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+
+    #[must_use]
+    pub const fn args(&self) -> &[Interned<Ty>] { self.args }
+}
+
 impl PointerView<'_> {
     #[must_use]
     pub const fn pointee(&self) -> &Interned<Ty> { self.arg }
@@ -73,6 +89,7 @@ pub enum View<'x> {
     Tuple(TupleView<'x>),
     Lambda(LambdaView<'x>),
     Pointer(PointerView<'x>),
+    Instance(InstanceView<'x>),
     Error,
 }
 
@@ -108,6 +125,9 @@ impl Application {
             Constant::Pointer(mutability) => {
                 View::Pointer(PointerView { arg: &self.args[0], mutability })
             }
+            Constant::Instance(symbol_id) => {
+                View::Instance(InstanceView { symbol_id, args: &self.args })
+            }
             Constant::Error(_) => View::Error,
         }
     }
@@ -118,6 +138,7 @@ impl Application {
             Constant::Primitive(_) | Constant::Tuple | Constant::Lambda | Constant::Pointer(_) => {
                 TyKind::Star
             }
+            Constant::Instance(_) => TyKind::Instance,
             Constant::Error(kind) => kind,
         }
     }
@@ -132,7 +153,11 @@ impl Application {
                     Primitive::Bool | Primitive::CStr => false,
                 },
 
-                View::Error | View::Tuple(_) | View::Lambda(_) | View::Pointer(_) => false,
+                View::Error
+                | View::Tuple(_)
+                | View::Lambda(_)
+                | View::Pointer(_)
+                | View::Instance(_) => false,
             },
             InferenceConstraint::EqualityComparable => match self.view() {
                 View::Primitive(primitive) => match primitive {
@@ -142,7 +167,11 @@ impl Application {
                     Primitive::CStr => false,
                 },
 
-                View::Error | View::Tuple(_) | View::Lambda(_) | View::Pointer(_) => false,
+                View::Error
+                | View::Tuple(_)
+                | View::Lambda(_)
+                | View::Pointer(_)
+                | View::Instance(_) => false,
             },
         }
     }

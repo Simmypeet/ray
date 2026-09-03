@@ -14,6 +14,7 @@ use crate::{
     subst::{Subst, Substitutable},
     ty::{
         application::{Application, Constant, View as ApplicationView},
+        args::Args,
         effect_row::EffectRow,
         inference::{GenInfer, Inference},
     },
@@ -230,6 +231,18 @@ impl Ty {
     }
 
     #[must_use]
+    pub fn new_instance(
+        symbol_id: GlobalSymbolID,
+        args: Args,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::Application(Application::new(
+            Constant::Instance(symbol_id),
+            args.into_interned(),
+        )))
+    }
+
+    #[must_use]
     pub fn new_error(kind: TyKind, engine: &TrackedEngine) -> Interned<Self> {
         engine.intern(Self::Application(Application::new(
             Constant::Error(kind),
@@ -349,6 +362,9 @@ impl TyDisplay<'_> {
                         f.write_str("mut ")?;
                     }
                     self.fmt_ty(pointer.pointee(), f)
+                }
+                ApplicationView::Instance(instance) => {
+                    write!(f, "<instance {:?}>", instance.symbol_id())
                 }
                 ApplicationView::Error => write!(f, "<error>"),
             },
