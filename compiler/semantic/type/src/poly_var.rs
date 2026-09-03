@@ -96,10 +96,6 @@ impl PolyVarMap {
         self.poly_vars.iter()
     }
 
-    pub fn type_poly_vars(&self) -> impl Iterator<Item = (PolyVarID, &PolyVar)> {
-        self.poly_vars.iter().filter(|(_, poly_var)| poly_var.trait_ref().is_none())
-    }
-
     #[must_use]
     pub fn find_by_name(&self, name: &str) -> Option<PolyVarID> {
         self.poly_vars.iter().find_map(|(id, poly_var)| (&*poly_var.name == name).then_some(id))
@@ -166,11 +162,10 @@ impl PolyVarStack {
     }
 
     #[must_use]
-    pub fn type_poly_var_kinds(&self, symbol_id: GlobalSymbolID) -> Option<Vec<TyKind>> {
+    pub fn poly_var_kinds(&self, symbol_id: GlobalSymbolID) -> Option<Vec<TyKind>> {
         self.poly_var_maps.iter().find_map(|(candidate, poly_var_map)| {
-            (*candidate == symbol_id).then(|| {
-                poly_var_map.type_poly_vars().map(|(_, poly_var)| poly_var.kind()).collect()
-            })
+            (*candidate == symbol_id)
+                .then(|| poly_var_map.iter().map(|(_, poly_var)| poly_var.kind()).collect())
         })
     }
 
@@ -238,12 +233,12 @@ pub async fn build_subst_from_args(
 
     assert_eq!(
         args.len(),
-        poly_vars.type_poly_vars().count(),
+        poly_vars.len(),
         "number of arguments must match number of polymorphic variables"
     );
 
     poly_vars
-        .type_poly_vars()
+        .iter()
         .zip(args.interned_iter())
         .map(|((poly_var_id, _), argument)| {
             (GlobalPolyVarID::new(symbol_id, poly_var_id), argument.clone())
