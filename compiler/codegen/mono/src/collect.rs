@@ -74,7 +74,13 @@ impl<'engine> Collector<'engine> {
                         function.subst().clone(),
                     ));
                 }
-                SymbolKind::Effect | SymbolKind::EffectOperation | SymbolKind::Module => {
+                SymbolKind::Effect
+                | SymbolKind::EffectOperation
+                | SymbolKind::Instance
+                | SymbolKind::InstanceDef
+                | SymbolKind::Module
+                | SymbolKind::Trait
+                | SymbolKind::TraitDef => {
                     panic!("non-definition symbol reached monomorphization as a callable")
                 }
             }

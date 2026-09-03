@@ -247,6 +247,10 @@ impl Resolver<'_> {
                 };
                 Ok(PathResolution::EffectOperation(EffectOperation::new(effect, symbol_id)))
             }
+            SymbolKind::Instance
+            | SymbolKind::InstanceDef
+            | SymbolKind::Trait
+            | SymbolKind::TraitDef => Err(PathResolutionError::UnexpectedSymbolKind),
         }
     }
 }

@@ -7,7 +7,7 @@ use rayc_source_file::SourceElement;
 use rayc_symbol::{
     source_map::to_absolute_span,
     symbol_kind::{SymbolKind, get_symbol_kind},
-    syntax::{get_effect_type_parameter_syntax, get_parameter_list_syntax},
+    syntax::{get_parameter_list_syntax, get_type_parameter_list_syntax},
 };
 use rayc_type::{
     poly_var::{PolyVar, PolyVarMap},
@@ -73,11 +73,11 @@ impl Build for rayc_type::poly_var::Key {
                 let parameters = engine.get_parameter_list_syntax(symbol_id).await;
                 discover_function_poly_vars(parameters.as_ref())
             }
-            SymbolKind::Effect => {
+            SymbolKind::Effect | SymbolKind::Instance | SymbolKind::Trait => {
                 let mut poly_vars = PolyVarMap::new();
 
                 if let Some(type_parameters) =
-                    engine.get_effect_type_parameter_syntax(symbol_id).await
+                    engine.get_type_parameter_list_syntax(symbol_id).await
                 {
                     for identifier in type_parameters.parameters() {
                         if let Some(existing_id) = poly_vars.find_by_name(&identifier.kind.0) {
@@ -107,6 +107,12 @@ impl Build for rayc_type::poly_var::Key {
             }
             SymbolKind::EffectOperation => {
                 panic!("an effect operation does not own a polymorphic-variable map")
+            }
+            SymbolKind::InstanceDef => {
+                panic!("an instance def does not own a polymorphic-variable map")
+            }
+            SymbolKind::TraitDef => {
+                panic!("a trait def does not own a polymorphic-variable map")
             }
             SymbolKind::ExternDef => {
                 panic!("an extern definition does not own a polymorphic-variable map")

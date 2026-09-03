@@ -61,7 +61,13 @@ pub async fn write_c_translation_unit(
                 }
             }
             SymbolKind::ExternDef => {}
-            SymbolKind::Effect | SymbolKind::EffectOperation | SymbolKind::Module => {
+            SymbolKind::Effect
+            | SymbolKind::EffectOperation
+            | SymbolKind::Instance
+            | SymbolKind::InstanceDef
+            | SymbolKind::Module
+            | SymbolKind::Trait
+            | SymbolKind::TraitDef => {
                 panic!("non-definition symbol returned by the definition inventory")
             }
         }

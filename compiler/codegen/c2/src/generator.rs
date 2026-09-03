@@ -147,7 +147,11 @@ impl<'engine> Generator<'engine> {
             }
             rayc_symbol::symbol_kind::SymbolKind::Effect
             | rayc_symbol::symbol_kind::SymbolKind::EffectOperation
-            | rayc_symbol::symbol_kind::SymbolKind::Module => {
+            | rayc_symbol::symbol_kind::SymbolKind::Instance
+            | rayc_symbol::symbol_kind::SymbolKind::InstanceDef
+            | rayc_symbol::symbol_kind::SymbolKind::Module
+            | rayc_symbol::symbol_kind::SymbolKind::Trait
+            | rayc_symbol::symbol_kind::SymbolKind::TraitDef => {
                 panic!("non-definition symbol reached the C definition worklist")
             }
         }
@@ -459,7 +463,11 @@ impl<'engine> Generator<'engine> {
                     }
                     rayc_symbol::symbol_kind::SymbolKind::Effect
                     | rayc_symbol::symbol_kind::SymbolKind::EffectOperation
-                    | rayc_symbol::symbol_kind::SymbolKind::Module => {
+                    | rayc_symbol::symbol_kind::SymbolKind::Instance
+                    | rayc_symbol::symbol_kind::SymbolKind::InstanceDef
+                    | rayc_symbol::symbol_kind::SymbolKind::Module
+                    | rayc_symbol::symbol_kind::SymbolKind::Trait
+                    | rayc_symbol::symbol_kind::SymbolKind::TraitDef => {
                         panic!("non-callable symbol reached a MonoIR function operand")
                     }
                 }

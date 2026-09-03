@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: a variadic parameter list is only allowed on an extern definition
+  ╭▸ compiler/e2e/test/check/symbol/invalid_variadic_trait_instance_defs/main.ray:2:13
+  │
+2 │     def foo(...)
+  ╰╴            ━━━
+
+[error]: a variadic parameter list is only allowed on an extern definition
+  ╭▸ compiler/e2e/test/check/symbol/invalid_variadic_trait_instance_defs/main.ray:5:13
+  │
+5 │     def foo(...):
+  ╰╴            ━━━
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:
