@@ -5,7 +5,9 @@ use rayc_parser::{
     parser::{ParserExt, ast},
 };
 
-use crate::{Identifier, Keyword, def::DefSignature, effect::TypeParameterList};
+use crate::{
+    Identifier, Keyword, def::DefSignature, effect::TypeParameterList, given::GivenParameterList,
+};
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -28,6 +30,7 @@ abstract_tree::abstract_tree! {
         pub trait_keyword: Keyword = expect::Keyword::Trait,
         pub name: Identifier = expect::Identifier,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>(),
+        pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
         pub body: TraitBody = ast::<TraitBody>()
     }
 }

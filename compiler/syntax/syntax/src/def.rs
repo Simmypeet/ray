@@ -9,6 +9,7 @@ use rayc_parser::{
 use crate::{
     Identifier, Keyword, Punctuation,
     effect_row::EffectRowAnnotation,
+    given::GivenParameterList,
     irrefutable_pattern::IrrefutablePattern,
     statement::Block,
     r#type::{Arrow, Type},
@@ -32,6 +33,7 @@ abstract_tree::abstract_tree! {
         pub def_keyword: Keyword = expect::Keyword::Def,
         pub name: Identifier = expect::Identifier,
         pub parameter_list: ParameterList = ast::<ParameterList>(),
+        pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
         pub return_type: ReturnType = ast::<ReturnType>().optional(),
         pub effect_row: EffectRowAnnotation = ast::<EffectRowAnnotation>().optional()
     }

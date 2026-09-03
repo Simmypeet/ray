@@ -14,6 +14,7 @@ pub mod def;
 pub mod effect;
 pub mod effect_row;
 pub mod expression;
+pub mod given;
 pub mod instance;
 pub mod irrefutable_pattern;
 pub mod module;

@@ -9,6 +9,7 @@ use rayc_parser::{
 use crate::{
     Identifier, Keyword,
     def::{ParameterList, ReturnType},
+    given::GivenParameterList,
 };
 
 abstract_tree::abstract_tree! {
@@ -45,6 +46,7 @@ abstract_tree::abstract_tree! {
         pub eff_keyword: Keyword = expect::Keyword::Eff,
         pub name: Identifier = expect::Identifier,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
+        pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
         pub body: EffectBody = ast::<EffectBody>()
     }
 }
