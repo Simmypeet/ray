@@ -2,13 +2,14 @@ use linkme::distributed_slice;
 use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
-    DefBodySyntaxKey, EffectRowSyntaxKey, EffectTypeParameterSyntaxKey, ParameterListSyntaxKey,
-    ReturnTypeSyntaxKey, VariadicDefKey,
+    DefBodySyntaxKey, EffectRowSyntaxKey, InstanceTraitSyntaxKey, ParameterListSyntaxKey,
+    ReturnTypeSyntaxKey, TypeParameterListSyntaxKey, VariadicDefKey,
 };
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
+    path::Path,
     statement::Block,
 };
 
@@ -83,13 +84,25 @@ static VARIADIC_DEF_EXECUTOR: Registration<Config> =
     Registration::new::<VariadicDefKey, VariadicDefExecutor>();
 
 #[executor(config = Config)]
-pub async fn effect_type_parameter_syntax_executor(
-    &EffectTypeParameterSyntaxKey { symbol_id }: &EffectTypeParameterSyntaxKey,
+pub async fn type_parameter_list_syntax_executor(
+    &TypeParameterListSyntaxKey { symbol_id }: &TypeParameterListSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<TypeParameterList> {
-    engine.get_table(symbol_id.target_id).await.get_effect_type_parameter_syntax(symbol_id.id)
+    engine.get_table(symbol_id.target_id).await.get_type_parameter_list_syntax(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
-static EFFECT_TYPE_PARAMETER_SYNTAX_EXECUTOR: Registration<Config> =
-    Registration::new::<EffectTypeParameterSyntaxKey, EffectTypeParameterSyntaxExecutor>();
+static TYPE_PARAMETER_LIST_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<TypeParameterListSyntaxKey, TypeParameterListSyntaxExecutor>();
+
+#[executor(config = Config)]
+pub async fn instance_trait_syntax_executor(
+    &InstanceTraitSyntaxKey { symbol_id }: &InstanceTraitSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<Path> {
+    engine.get_table(symbol_id.target_id).await.get_instance_trait_syntax(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static INSTANCE_TRAIT_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<InstanceTraitSyntaxKey, InstanceTraitSyntaxExecutor>();

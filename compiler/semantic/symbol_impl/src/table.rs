@@ -18,6 +18,7 @@ use rayc_syntax::{
     def::{ParameterList, ReturnType},
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
+    path::Path as SyntaxPath,
     statement::Block,
 };
 use rayc_target::{TargetID, get_invocation_arguments};
@@ -38,7 +39,8 @@ pub struct Infos {
     member: Option<MemberBuilder>,
     def_body: Option<Option<Block>>,
     variadic: Option<bool>,
-    effect_type_parameters: Option<Option<TypeParameterList>>,
+    type_parameters: Option<Option<TypeParameterList>>,
+    instance_trait: Option<Option<SyntaxPath>>,
 }
 
 #[derive(Debug, Default, StableHash, Encode, Decode)]
@@ -48,7 +50,8 @@ struct SyntaxTable {
     effect_rows: Map<Option<EffectRowAnnotation>>,
     def_bodies: Map<Option<Block>>,
     variadic_defs: Map<bool>,
-    effect_type_parameters: Map<Option<TypeParameterList>>,
+    type_parameters: Map<Option<TypeParameterList>>,
+    instance_traits: Map<Option<SyntaxPath>>,
 }
 
 /// Stores the symbol information. It maps the symbol ID to its related
@@ -177,11 +180,13 @@ impl Table {
     }
 
     #[must_use]
-    pub fn get_effect_type_parameter_syntax(
-        &self,
-        symbol_id: SymbolID,
-    ) -> Option<TypeParameterList> {
-        self.syntaxes.effect_type_parameters.get(&symbol_id).cloned().unwrap()
+    pub fn get_type_parameter_list_syntax(&self, symbol_id: SymbolID) -> Option<TypeParameterList> {
+        self.syntaxes.type_parameters.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
+    pub fn get_instance_trait_syntax(&self, symbol_id: SymbolID) -> Option<SyntaxPath> {
+        self.syntaxes.instance_traits.get(&symbol_id).cloned().unwrap()
     }
 
     #[must_use]
@@ -232,8 +237,12 @@ impl Table {
             self.syntaxes.variadic_defs.insert(symbol_id, variadic);
         }
 
-        if let Some(type_parameters) = info.effect_type_parameters {
-            self.syntaxes.effect_type_parameters.insert(symbol_id, type_parameters);
+        if let Some(type_parameters) = info.type_parameters {
+            self.syntaxes.type_parameters.insert(symbol_id, type_parameters);
+        }
+
+        if let Some(instance_trait) = info.instance_trait {
+            self.syntaxes.instance_traits.insert(symbol_id, instance_trait);
         }
 
         if let Some(member) = info.member {

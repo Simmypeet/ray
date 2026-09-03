@@ -6,6 +6,7 @@ use rayc_syntax::{
     def::{ParameterList, ReturnType},
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
+    path::Path,
     statement::Block,
 };
 
@@ -56,12 +57,22 @@ pub struct VariadicDefKey {
     pub symbol_id: GlobalSymbolID,
 }
 
-/// Retrieves the explicitly declared type parameters of an effect symbol.
+/// Retrieves the explicitly declared type parameters of a symbol.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
 #[value(Option<TypeParameterList>)]
-#[extend(by_val, name = get_effect_type_parameter_syntax)]
-pub struct EffectTypeParameterSyntaxKey {
+#[extend(by_val, name = get_type_parameter_list_syntax)]
+pub struct TypeParameterListSyntaxKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+/// Retrieves the trait reference declared by an instance symbol.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<Path>)]
+#[extend(by_val, name = get_instance_trait_syntax)]
+pub struct InstanceTraitSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }

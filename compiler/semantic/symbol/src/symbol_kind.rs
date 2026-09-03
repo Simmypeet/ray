@@ -30,7 +30,11 @@ pub enum SymbolKind {
     Effect,
     EffectOperation,
     ExternDef,
+    Instance,
+    InstanceDef,
     Module,
+    Trait,
+    TraitDef,
 }
 
 /// The key type used with [`TrackedEngine`] to access the kind of a symbol.
@@ -47,27 +51,47 @@ pub struct Key {
 impl SymbolKind {
     /// Checks if this kind of symbol has a [`Member`] component.
     #[must_use]
-    pub const fn has_member(&self) -> bool { matches!(self, Self::Effect | Self::Module) }
+    pub const fn has_member(&self) -> bool {
+        matches!(self, Self::Effect | Self::Instance | Self::Module | Self::Trait)
+    }
 
     /// Checks if this kind of symbol owns a polymorphic-variable map.
     #[must_use]
-    pub const fn has_poly_var_map(&self) -> bool { matches!(self, Self::Def | Self::Effect) }
+    pub const fn has_poly_var_map(&self) -> bool {
+        matches!(self, Self::Def | Self::Effect | Self::Instance | Self::Trait)
+    }
 
     /// Checks if this kind of symbol has a parameter list
     #[must_use]
     pub const fn has_parameter_list(&self) -> bool {
-        matches!(self, Self::Def | Self::EffectOperation | Self::ExternDef)
+        matches!(
+            self,
+            Self::Def
+                | Self::EffectOperation
+                | Self::ExternDef
+                | Self::InstanceDef
+                | Self::TraitDef
+        )
     }
 
     /// Checks if this kind of symbol has a parameter list
     #[must_use]
     pub const fn has_return_type(&self) -> bool {
-        matches!(self, Self::Def | Self::EffectOperation | Self::ExternDef)
+        matches!(
+            self,
+            Self::Def
+                | Self::EffectOperation
+                | Self::ExternDef
+                | Self::InstanceDef
+                | Self::TraitDef
+        )
     }
 
     /// Checks if this kind of symbol has a parameter list
     #[must_use]
-    pub const fn has_effect_row_annotation(&self) -> bool { matches!(self, Self::Def) }
+    pub const fn has_effect_row_annotation(&self) -> bool {
+        matches!(self, Self::Def | Self::InstanceDef | Self::TraitDef)
+    }
 
     /// Returns the human-readable string representation of this symbol kind.
     #[must_use]
@@ -77,7 +101,11 @@ impl SymbolKind {
             Self::Effect => "effect",
             Self::EffectOperation => "effect operation",
             Self::ExternDef => "extern def",
+            Self::Instance => "instance",
+            Self::InstanceDef => "instance def",
             Self::Module => "module",
+            Self::Trait => "trait",
+            Self::TraitDef => "trait def",
         }
     }
 }
