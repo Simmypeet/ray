@@ -22,8 +22,9 @@ use rayc_type::{
 };
 
 use crate::{
-    Diagnostic, ExpectedEffect, ExplicitTypeArgumentsNotAllowed, PathSegmentNotFound,
-    PolyVarNotFound, TypeArgumentArityMismatch, TypeInferenceNotAllowed, TypeKindMismatch,
+    Diagnostic, ExpectedEffect, ExpectedTrait, ExplicitTypeArgumentsNotAllowed,
+    PathSegmentNotFound, PolyVarNotFound, TypeArgumentArityMismatch, TypeInferenceNotAllowed,
+    TypeKindMismatch,
 };
 
 /// Resolves syntax relative to a symbol and its polymorphic environment.
@@ -130,7 +131,7 @@ impl<'a> Resolver<'a> {
         expected: TyKind,
     ) -> Interned<Ty> {
         let ty = self.new_poly_var_type(identifier, expected);
-        let actual = ty.kind_of(self.engine).await;
+        let actual = self.type_kind(&ty).await;
         if actual != expected {
             self.report_type_kind_mismatch(identifier.span(), expected, actual);
             return self.new_error_type(expected);
@@ -183,6 +184,10 @@ impl<'a> Resolver<'a> {
 
     pub(crate) fn report_expected_effect(&self, span: RelativeSpan, actual: SymbolKind) {
         self.handler.receive(Diagnostic::ExpectedEffect(ExpectedEffect::new(span, actual)));
+    }
+
+    pub(crate) fn report_expected_trait(&self, span: RelativeSpan, actual: SymbolKind) {
+        self.handler.receive(Diagnostic::ExpectedTrait(ExpectedTrait::new(span, actual)));
     }
 
     pub(crate) fn report_path_segment_not_found(&self, identifier: rayc_syntax::Identifier) {

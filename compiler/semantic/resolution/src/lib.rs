@@ -41,6 +41,8 @@ pub enum Diagnostic {
     TypeKindMismatch(TypeKindMismatch),
     /// An effect-row label resolved to a symbol that is not an effect.
     ExpectedEffect(ExpectedEffect),
+    /// A given parameter's reference resolved to a symbol that is not a trait.
+    ExpectedTrait(ExpectedTrait),
 }
 
 impl Report for Diagnostic {
@@ -53,6 +55,7 @@ impl Report for Diagnostic {
             Self::TypeArgumentArityMismatch(diagnostic) => diagnostic.report(engine).await,
             Self::TypeKindMismatch(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedEffect(diagnostic) => diagnostic.report(engine).await,
+            Self::ExpectedTrait(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -216,6 +219,7 @@ const fn kind_name(kind: TyKind) -> &'static str {
     match kind {
         TyKind::Star => "a value type",
         TyKind::EffectRow => "an effect row",
+        TyKind::Instance => "an instance",
     }
 }
 
@@ -271,6 +275,42 @@ impl Report for ExpectedEffect {
     }
 }
 
+/// A symbol used by a given parameter that is not a trait.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct ExpectedTrait {
+    span: RelativeSpan,
+    actual: SymbolKind,
+}
+
+impl ExpectedTrait {
+    const fn new(span: RelativeSpan, actual: SymbolKind) -> Self { Self { span, actual } }
+}
+
+impl Report for ExpectedTrait {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("expected a trait, found {}", self.actual.str())),
+            ))
+            .message(format!("expected a trait, found {}", self.actual.str()))
+            .build()
+    }
+}
+
 /// A polymorphic variable that is not declared by a function parameter type.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
@@ -319,7 +359,7 @@ fn discover_effect_row_poly_var(
     };
 
     if let Some(variable) = variable {
-        poly_vars.insert(PolyVar::new(variable.kind.0.clone(), TyKind::EffectRow, variable.span()));
+        poly_vars.insert(PolyVar::new_type(variable.kind.0.clone(), variable.span()));
     }
 }
 
@@ -351,11 +391,7 @@ fn discover_poly_vars(ty: &TypeSyntax, poly_vars: &mut PolyVarMap) {
         }
         TypeSyntax::PolymorphicVariable(identifier) => {
             if is_poly_var_name(&identifier.kind.0) {
-                poly_vars.insert(PolyVar::new(
-                    identifier.kind.0.clone(),
-                    TyKind::Star,
-                    identifier.span(),
-                ));
+                poly_vars.insert(PolyVar::new_type(identifier.kind.0.clone(), identifier.span()));
             }
         }
     }

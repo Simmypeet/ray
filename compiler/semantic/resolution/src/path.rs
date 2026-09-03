@@ -6,6 +6,7 @@ use rayc_syntax::path::{Path, PathSegment};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
     subst::Subst,
+    trait_ref::TraitRef,
     ty::args::Args,
 };
 
@@ -22,6 +23,8 @@ pub enum PathResolution {
     Module(Module),
     /// An effect.
     Effect(Effect),
+    /// A trait.
+    Trait(TraitRef),
     /// An operation belonging to an effect.
     EffectOperation(EffectOperation),
 }
@@ -144,6 +147,7 @@ impl PathResolution {
             Self::ExternDef(def) => def.symbol_id(),
             Self::Module(module) => module.symbol_id(),
             Self::Effect(effect) => effect.symbol_id(),
+            Self::Trait(trait_ref) => trait_ref.trait_id(),
             Self::EffectOperation(operation) => operation.symbol_id(),
         }
     }
@@ -169,6 +173,30 @@ async fn substitution(
 }
 
 impl Resolver<'_> {
+    /// Resolves a path and requires its final symbol to be a trait.
+    pub async fn resolve_trait_path(
+        &mut self,
+        path: &Path,
+    ) -> Result<TraitRef, PathResolutionError> {
+        let resolution = self.resolve_path(path).await?;
+
+        match resolution {
+            PathResolution::Trait(trait_ref) => Ok(trait_ref),
+            resolution => {
+                let actual = match resolution {
+                    PathResolution::Def(_) => SymbolKind::Def,
+                    PathResolution::ExternDef(_) => SymbolKind::ExternDef,
+                    PathResolution::Module(_) => SymbolKind::Module,
+                    PathResolution::Effect(_) => SymbolKind::Effect,
+                    PathResolution::EffectOperation(_) => SymbolKind::EffectOperation,
+                    PathResolution::Trait(_) => unreachable!("a trait was handled above"),
+                };
+                self.report_expected_trait(path.span(), actual);
+                Err(PathResolutionError::UnexpectedSymbolKind)
+            }
+        }
+    }
+
     /// Resolves a path and requires its final symbol to be an effect.
     pub async fn resolve_effect_path(
         &mut self,
@@ -192,6 +220,10 @@ impl Resolver<'_> {
             }
             PathResolution::EffectOperation(_) => {
                 self.report_expected_effect(path.span(), SymbolKind::EffectOperation);
+                Err(PathResolutionError::UnexpectedSymbolKind)
+            }
+            PathResolution::Trait(_) => {
+                self.report_expected_effect(path.span(), SymbolKind::Trait);
                 Err(PathResolutionError::UnexpectedSymbolKind)
             }
         }
@@ -241,16 +273,16 @@ impl Resolver<'_> {
             SymbolKind::ExternDef => Ok(PathResolution::ExternDef(ExternDef::new(symbol_id))),
             SymbolKind::Module => Ok(PathResolution::Module(Module::new(symbol_id))),
             SymbolKind::Effect => Ok(PathResolution::Effect(Effect::new(symbol_id, args))),
+            SymbolKind::Trait => Ok(PathResolution::Trait(TraitRef::new(symbol_id, args))),
             SymbolKind::EffectOperation => {
                 let Some(PathResolution::Effect(effect)) = previous else {
                     unreachable!("an effect operation should be resolved through its parent effect")
                 };
                 Ok(PathResolution::EffectOperation(EffectOperation::new(effect, symbol_id)))
             }
-            SymbolKind::Instance
-            | SymbolKind::InstanceDef
-            | SymbolKind::Trait
-            | SymbolKind::TraitDef => Err(PathResolutionError::UnexpectedSymbolKind),
+            SymbolKind::Instance | SymbolKind::InstanceDef | SymbolKind::TraitDef => {
+                Err(PathResolutionError::UnexpectedSymbolKind)
+            }
         }
     }
 }
