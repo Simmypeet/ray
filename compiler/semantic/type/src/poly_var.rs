@@ -42,8 +42,13 @@ pub struct PolyVar {
 
 impl PolyVar {
     #[must_use]
-    pub const fn new_type(name: Interned<str>, kind: TyKind, span: RelativeSpan) -> Self {
-        Self { name, kind: PolyVarKind::Type(kind), span }
+    pub const fn new_type(name: Interned<str>, span: RelativeSpan) -> Self {
+        Self { name, kind: PolyVarKind::Type(TyKind::Star), span }
+    }
+
+    #[must_use]
+    pub const fn new_effect(name: Interned<str>, span: RelativeSpan) -> Self {
+        Self { name, kind: PolyVarKind::Type(TyKind::EffectRow), span }
     }
 
     #[must_use]
