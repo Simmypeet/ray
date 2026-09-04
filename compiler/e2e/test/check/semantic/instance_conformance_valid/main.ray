@@ -1,0 +1,16 @@
+trait Eq[a]:
+    def equals(lhs: a, rhs: a) -> bool
+
+inst EqInt for Eq[int32]:
+    def equals(lhs: int32, rhs: int32) -> bool:
+        return lhs == rhs
+
+trait Mapper[a]:
+    def map(value: b, fallback: a) given (equality: Eq[b]) -> b
+
+inst IntMapper for Mapper[int32]:
+    def map(value: c, fallback: int32) given (comparison: Eq[c]) -> c:
+        return value
+
+def main() -> int32:
+    return 0

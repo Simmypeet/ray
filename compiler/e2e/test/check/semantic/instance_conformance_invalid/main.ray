@@ -1,0 +1,19 @@
+eff Logging:
+    def write()
+
+trait Codec[a]:
+    def decode(value: int32) -> a
+    def encode(value: a) -> int32
+    def convert(value: b) -> b
+    def useEffect() -> () \ {Logging}
+
+inst BadCodec for Codec[int32]:
+    def encode(value: bool) -> int32:
+        return 0
+    def convert(value: c) -> bool:
+        return true
+    def useEffect() -> ():
+        return ()
+
+def main() -> int32:
+    return 0

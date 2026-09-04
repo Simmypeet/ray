@@ -103,6 +103,10 @@ impl Context {
                     }))
                 }
 
+                ApplicationView::Instance(_) => {
+                    panic!("an instance argument cannot be lowered as a C value type")
+                }
+
                 ApplicationView::Error => {
                     panic!("type error reached codegen, this should have been caught earlier")
                 }

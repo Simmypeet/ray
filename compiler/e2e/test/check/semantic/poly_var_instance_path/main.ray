@@ -1,0 +1,18 @@
+trait Eq[a]:
+    def equals(lhs: a, rhs: a) -> bool
+
+inst EqInt for Eq[int32]:
+    def equals(lhs: int32, rhs: int32) -> bool:
+        return lhs == rhs
+
+def equalsSelf(value: a) given (equality: Eq[a]) -> bool:
+    return equality.equals(value, value)
+
+def concreteEquals(lhs: int32, rhs: int32) -> bool:
+    return EqInt.equals(lhs, rhs)
+
+def traitEquals(lhs: int32, rhs: int32) -> bool:
+    return Eq[int32].equals(lhs, rhs)
+
+def main() -> int32:
+    return 0

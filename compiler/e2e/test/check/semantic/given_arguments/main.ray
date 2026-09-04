@@ -1,0 +1,24 @@
+trait Eq[a]:
+    def equals(lhs: a, rhs: a) -> bool
+
+inst EqInt for Eq[int32]:
+    def equals(lhs: int32, rhs: int32) -> bool:
+        return lhs == rhs
+
+eff Reader[a] given (f: Eq[a], s: Eq[a]):
+    def read() -> a
+
+def ordered() -> () \ {Reader[int32] given (EqInt, second = EqInt)}:
+    return ()
+
+def omitted() -> () \ {Reader[int32]}:
+    return ()
+
+def positionalAfterNamed() -> () \ {Reader[int32] given (second = EqInt, EqInt)}:
+    return ()
+
+def unknownName() -> () \ {Reader[int32] given (missing = EqInt)}:
+    return ()
+
+def duplicateName() -> () \ {Reader[int32] given (second = EqInt, second = EqInt)}:
+    return ()

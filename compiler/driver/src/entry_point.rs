@@ -98,6 +98,7 @@ fn is_int32(ty: &Ty) -> bool {
             ApplicationView::Tuple(_)
             | ApplicationView::Lambda(_)
             | ApplicationView::Pointer(_)
+            | ApplicationView::Instance(_)
             | ApplicationView::Error => false,
         },
         Ty::Inference(_) | Ty::PolyVar(_) => false,

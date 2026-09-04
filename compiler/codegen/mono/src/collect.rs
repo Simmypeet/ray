@@ -119,11 +119,13 @@ impl<'engine> Collector<'engine> {
             .kind()
         {
             IRExprKind::Call(call) => match call.target() {
+                CallTarget::UnresolvedInstanceAssociated { .. } => todo!(),
                 CallTarget::Direct { function_id, subst } => {
                     self.collect_call(*function_id, subst, function);
                 }
                 CallTarget::Lambda { .. } => {}
             },
+
             IRExprKind::MakeLambda(lambda) => {
                 self.program
                     .insert_function(MonoFunction::new_lambda(function, lambda.function_id()));
@@ -154,7 +156,9 @@ impl<'engine> Collector<'engine> {
         for ty in Ty::recursive_iter(ty) {
             match ty {
                 Ty::Application(application) => match application.view() {
-                    ApplicationView::Primitive(_) | ApplicationView::Pointer(_) => {}
+                    ApplicationView::Primitive(_)
+                    | ApplicationView::Pointer(_)
+                    | ApplicationView::Instance(_) => {}
                     ApplicationView::Tuple(tuple) => {
                         self.program
                             .insert_tuple(self.engine.intern_unsized(tuple.args().to_vec()));

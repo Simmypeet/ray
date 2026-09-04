@@ -16,6 +16,7 @@ impl WriteExpression<&Call> for Writer<'_> {
         let call = expression.node();
         let mut extern_void = false;
         match call.target() {
+            CallTarget::UnresolvedInstanceAssociated { .. } => todo!(),
             CallTarget::Direct { function_id, subst } => {
                 let callee = function.instantiate_call(*function_id, subst, ctx);
                 let name = ctx.get_def_name(callee.def_id()).await;

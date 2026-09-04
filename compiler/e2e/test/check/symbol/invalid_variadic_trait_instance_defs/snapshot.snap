@@ -9,13 +9,21 @@ stderr:
 2 │     def foo(...)
   ╰╴            ━━━
 
+[error]: type inference is not allowed for `Foo` here
+  ╭▸ compiler/e2e/test/check/symbol/invalid_variadic_trait_instance_defs/main.ray:4:22
+  │
+4 │ inst FooInstance for Foo:
+  │                      ━━━ expected 1 type arguments
+  │
+  ╰ help: provide all type arguments explicitly
+
 [error]: a variadic parameter list is only allowed on an extern definition
   ╭▸ compiler/e2e/test/check/symbol/invalid_variadic_trait_instance_defs/main.ray:5:13
   │
 5 │     def foo(...):
   ╰╴            ━━━
 
-[error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 3 error(s)
 
 
 

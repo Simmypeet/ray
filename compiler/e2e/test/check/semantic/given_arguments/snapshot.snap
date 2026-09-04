@@ -1,0 +1,60 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: missing required given argument `first`
+   ╭▸ compiler/e2e/test/check/semantic/given_arguments/main.ray:14:24
+   │
+14 │ def omitted() -> () \ {Reader[int32]}:
+   ╰╴                       ━━━━━━━━━━━━━ supply the required given argument `first`
+
+[error]: missing required given argument `second`
+   ╭▸ compiler/e2e/test/check/semantic/given_arguments/main.ray:14:24
+   │
+14 │ def omitted() -> () \ {Reader[int32]}:
+   ╰╴                       ━━━━━━━━━━━━━ supply the required given argument `second`
+
+[error]: positional given arguments must appear before named arguments
+   ╭▸ compiler/e2e/test/check/semantic/given_arguments/main.ray:17:74
+   │
+17 │ def positionalAfterNamed() -> () \ {Reader[int32] given (second = EqInt, EqInt)}:
+   ╰╴                                                                         ━━━━━ this positional argument appears after a named argument
+
+[error]: missing required given argument `first`
+   ╭▸ compiler/e2e/test/check/semantic/given_arguments/main.ray:20:28
+   │
+20 │ def unknownName() -> () \ {Reader[int32] given (missing = EqInt)}:
+   ╰╴                           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ supply the required given argument `first`
+
+[error]: missing required given argument `second`
+   ╭▸ compiler/e2e/test/check/semantic/given_arguments/main.ray:20:28
+   │
+20 │ def unknownName() -> () \ {Reader[int32] given (missing = EqInt)}:
+   ╰╴                           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ supply the required given argument `second`
+
+[error]: given parameter `missing` is not found
+   ╭▸ compiler/e2e/test/check/semantic/given_arguments/main.ray:20:49
+   │
+20 │ def unknownName() -> () \ {Reader[int32] given (missing = EqInt)}:
+   ╰╴                                                ━━━━━━━ given parameter `missing` is not found
+
+[error]: missing required given argument `first`
+   ╭▸ compiler/e2e/test/check/semantic/given_arguments/main.ray:23:30
+   │
+23 │ def duplicateName() -> () \ {Reader[int32] given (second = EqInt, second = EqInt)}:
+   ╰╴                             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ supply the required given argument `first`
+
+[error]: duplicate given argument `second`
+   ╭▸ compiler/e2e/test/check/semantic/given_arguments/main.ray:23:67
+   │
+23 │ def duplicateName() -> () \ {Reader[int32] given (second = EqInt, second = EqInt)}:
+   │                                                   ┬─────          ━━━━━━ this given argument is duplicated
+   │                                                   │
+   ╰╴                                                  the first argument is here
+
+[error]: Compilation aborted due to 8 error(s)
+
+
+
+stdout:
