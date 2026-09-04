@@ -62,11 +62,12 @@ impl Instance {
 pub struct TraitDef {
     trait_ref: TraitRef,
     symbol_id: GlobalSymbolID,
+    args: Args,
 }
 
 impl TraitDef {
-    const fn new(trait_ref: TraitRef, symbol_id: GlobalSymbolID) -> Self {
-        Self { trait_ref, symbol_id }
+    const fn new(trait_ref: TraitRef, symbol_id: GlobalSymbolID, args: Args) -> Self {
+        Self { trait_ref, symbol_id, args }
     }
 
     #[must_use]
@@ -75,9 +76,12 @@ impl TraitDef {
     #[must_use]
     pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
 
-    /// Builds the substitution inherited from the parent trait.
+    /// Builds the substitution for the parent trait and selected definition.
     pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
-        substitution(self.trait_ref.trait_id(), self.trait_ref.args(), engine).await
+        let mut subst =
+            substitution(self.trait_ref.trait_id(), self.trait_ref.args(), engine).await;
+        subst.compose(&substitution(self.symbol_id, &self.args, engine).await, engine);
+        subst
     }
 }
 
@@ -86,11 +90,12 @@ impl TraitDef {
 pub struct ResolvedInstanceDef {
     instance: Interned<Ty>,
     symbol_id: GlobalSymbolID,
+    args: Args,
 }
 
 impl ResolvedInstanceDef {
-    const fn new(instance: Interned<Ty>, symbol_id: GlobalSymbolID) -> Self {
-        Self { instance, symbol_id }
+    const fn new(instance: Interned<Ty>, symbol_id: GlobalSymbolID, args: Args) -> Self {
+        Self { instance, symbol_id, args }
     }
 
     /// Returns the parent instance type.
@@ -102,7 +107,7 @@ impl ResolvedInstanceDef {
     #[must_use]
     pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
 
-    /// Builds the substitution inherited from the parent instance.
+    /// Builds the substitution for the parent instance and selected definition.
     pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
         let Ty::Application(application) = &*self.instance else {
             unreachable!("a resolved instance definition should have a concrete instance")
@@ -111,20 +116,23 @@ impl ResolvedInstanceDef {
             unreachable!("a resolved instance definition should have instance kind")
         };
         let args = Args::new(instance.args().iter().cloned(), engine);
-        substitution(instance.symbol_id(), &args, engine).await
+        let mut subst = substitution(instance.symbol_id(), &args, engine).await;
+        subst.compose(&substitution(self.symbol_id, &self.args, engine).await, engine);
+        subst
     }
 }
 
 /// A trait definition selected through an instance polymorphic variable.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct UnsolvedInstanceDef {
     instance: GlobalPolyVarID,
     trait_def_id: GlobalSymbolID,
+    args: Args,
 }
 
 impl UnsolvedInstanceDef {
-    const fn new(instance: GlobalPolyVarID, trait_def_id: GlobalSymbolID) -> Self {
-        Self { instance, trait_def_id }
+    const fn new(instance: GlobalPolyVarID, trait_def_id: GlobalSymbolID, args: Args) -> Self {
+        Self { instance, trait_def_id, args }
     }
 
     /// Returns the unresolved parent instance polymorphic variable.
@@ -138,13 +146,16 @@ impl UnsolvedInstanceDef {
     #[must_use]
     pub const fn trait_def_id(&self) -> GlobalSymbolID { self.trait_def_id }
 
-    /// Builds the substitution inherited from the unresolved parent instance.
+    /// Builds the substitution for the unresolved parent trait and selected
+    /// definition.
     pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
         let poly_vars = engine.get_poly_var_map(self.instance.parent_id()).await;
         let trait_ref = poly_vars
             .trait_ref_of(self.instance.id())
             .expect("an unsolved instance definition should have instance kind");
-        substitution(trait_ref.trait_id(), trait_ref.args(), engine).await
+        let mut subst = substitution(trait_ref.trait_id(), trait_ref.args(), engine).await;
+        subst.compose(&substitution(self.trait_def_id, &self.args, engine).await, engine);
+        subst
     }
 }
 
@@ -428,17 +439,18 @@ impl Resolver<'_> {
                 let instance =
                     self.new_instance_type(instance.symbol_id(), instance.args().clone());
                 Ok(PathResolution::ResolvedInstanceDef(ResolvedInstanceDef::new(
-                    instance, symbol_id,
+                    instance, symbol_id, args,
                 )))
             }
             SymbolKind::TraitDef => match previous {
                 Some(PathResolution::Trait(trait_ref)) => {
-                    Ok(PathResolution::TraitDef(TraitDef::new(trait_ref, symbol_id)))
+                    Ok(PathResolution::TraitDef(TraitDef::new(trait_ref, symbol_id, args)))
                 }
                 Some(PathResolution::PolyVar(poly_var_id)) => {
                     Ok(PathResolution::UnsolvedInstanceDef(UnsolvedInstanceDef::new(
                         poly_var_id,
                         symbol_id,
+                        args,
                     )))
                 }
                 Some(

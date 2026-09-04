@@ -184,13 +184,13 @@ impl Resolver<'_> {
         let (type_parameters, given_parameters) = parameters.split_at(type_parameter_count);
         let type_kinds = type_parameters.iter().map(|(_, kind)| *kind).collect::<Vec<_>>();
 
-        if symbol_kind == SymbolKind::Def
-            && let Some(arguments) = path.type_arguments()
-        {
+        let type_arguments_are_implicit =
+            matches!(symbol_kind, SymbolKind::Def | SymbolKind::TraitDef | SymbolKind::InstanceDef);
+        if type_arguments_are_implicit && let Some(arguments) = path.type_arguments() {
             self.report_explicit_type_arguments_not_allowed(arguments.span());
         }
 
-        let mut resolved = if symbol_kind == SymbolKind::Def || path.type_arguments().is_none() {
+        let mut resolved = if type_arguments_are_implicit || path.type_arguments().is_none() {
             self.infer_type_arguments(identifier, &type_kinds).interned_iter().cloned().collect()
         } else {
             self.resolve_explicit_type_arguments(path, &type_kinds).await
