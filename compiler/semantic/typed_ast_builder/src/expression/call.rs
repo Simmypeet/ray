@@ -16,7 +16,8 @@ use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, call::Call};
 use crate::{
     bind::Bind,
     diagnostic::{
-        Diagnostic, ExpectedLambdaType, MismatchedArgumentCount, MismatchedIndirectArgumentCount,
+        AbstractTraitDefinitionCall, Diagnostic, ExpectedLambdaType, MismatchedArgumentCount,
+        MismatchedIndirectArgumentCount,
     },
     tast_builder::TAstBuilder,
 };
@@ -28,6 +29,30 @@ enum LambdaCallSignature {
         effect_row: Interned<Ty>,
     },
     Invalid,
+}
+
+enum ResolvedCallTarget<'a> {
+    Direct { function_id: GlobalSymbolID, symbol_kind: SymbolKind },
+    UnresolvedInstanceAssociated { instance: Interned<Ty>, trait_def_id: GlobalSymbolID },
+    EffectOperation { effect: &'a Effect, operation_id: GlobalSymbolID },
+}
+
+impl ResolvedCallTarget<'_> {
+    const fn function_id(&self) -> GlobalSymbolID {
+        match self {
+            Self::Direct { function_id, .. } => *function_id,
+            Self::UnresolvedInstanceAssociated { trait_def_id, .. } => *trait_def_id,
+            Self::EffectOperation { operation_id, .. } => *operation_id,
+        }
+    }
+
+    const fn symbol_kind(&self) -> SymbolKind {
+        match self {
+            Self::Direct { symbol_kind, .. } => *symbol_kind,
+            Self::UnresolvedInstanceAssociated { .. } => SymbolKind::TraitDef,
+            Self::EffectOperation { .. } => SymbolKind::EffectOperation,
+        }
+    }
 }
 
 impl TAstBuilder {
@@ -62,33 +87,50 @@ impl TAstBuilder {
         let Ok(resolution) = self.resolve_path(&path).await else {
             return self.push_error_expression_with_children(syn.span(), arguments);
         };
-        let (function_id, symbol_kind, call_subst, operation_effect) = match &resolution {
-            PathResolution::Def(def) => {
-                (def.symbol_id(), SymbolKind::Def, def.substitution(self.engine()).await, None)
-            }
-            PathResolution::ExternDef(def) => {
-                (def.symbol_id(), SymbolKind::ExternDef, Subst::new_empty(), None)
-            }
+        let (target, call_subst) = match &resolution {
+            PathResolution::Def(def) => (
+                ResolvedCallTarget::Direct {
+                    function_id: def.symbol_id(),
+                    symbol_kind: SymbolKind::Def,
+                },
+                def.substitution(self.engine()).await,
+            ),
+            PathResolution::ExternDef(def) => (
+                ResolvedCallTarget::Direct {
+                    function_id: def.symbol_id(),
+                    symbol_kind: SymbolKind::ExternDef,
+                },
+                Subst::new_empty(),
+            ),
             PathResolution::EffectOperation(operation) => (
-                operation.symbol_id(),
-                SymbolKind::EffectOperation,
+                ResolvedCallTarget::EffectOperation {
+                    effect: operation.effect(),
+                    operation_id: operation.symbol_id(),
+                },
                 operation.substitution(self.engine()).await,
-                Some(operation.effect()),
             ),
             PathResolution::TraitDef(def) => {
-                (def.symbol_id(), SymbolKind::TraitDef, def.substitution(self.engine()).await, None)
+                self.push_diagnostic(Diagnostic::AbstractTraitDefinitionCall(
+                    AbstractTraitDefinitionCall::builder()
+                        .trait_def_id(def.symbol_id())
+                        .span(path.span())
+                        .build(),
+                ));
+                return self.push_error_expression_with_children(syn.span(), arguments);
             }
             PathResolution::ResolvedInstanceDef(def) => (
-                def.symbol_id(),
-                SymbolKind::InstanceDef,
+                ResolvedCallTarget::Direct {
+                    function_id: def.symbol_id(),
+                    symbol_kind: SymbolKind::InstanceDef,
+                },
                 def.substitution(self.engine()).await,
-                None,
             ),
             PathResolution::UnsolvedInstanceDef(def) => (
-                def.trait_def_id(),
-                SymbolKind::TraitDef,
+                ResolvedCallTarget::UnresolvedInstanceAssociated {
+                    instance: Ty::new_poly_var(def.instance(), self.engine()),
+                    trait_def_id: def.trait_def_id(),
+                },
                 def.substitution(self.engine()).await,
-                None,
             ),
             resolution => {
                 if let Some(symbol_id) = resolution.global_id() {
@@ -97,26 +139,18 @@ impl TAstBuilder {
                 return self.push_error_expression_with_children(syn.span(), arguments);
             }
         };
-        self.build_resolved_direct_call(
-            function_id,
-            symbol_kind,
-            operation_effect,
-            arguments,
-            call_subst,
-            syn.span(),
-        )
-        .await
+        self.build_resolved_direct_call(target, arguments, call_subst, syn.span()).await
     }
 
     async fn build_resolved_direct_call(
         &mut self,
-        function_id: GlobalSymbolID,
-        symbol_kind: SymbolKind,
-        operation_effect: Option<&Effect>,
+        target: ResolvedCallTarget<'_>,
         arguments: Vec<TypedExprID>,
         call_subst: Subst,
         span: RelativeSpan,
     ) -> TypedExprID {
+        let function_id = target.function_id();
+        let symbol_kind = target.symbol_kind();
         let parameter_map = self.engine().get_parameter_map(function_id).await;
 
         let is_variadic = if matches!(symbol_kind, SymbolKind::Def | SymbolKind::ExternDef) {
@@ -145,22 +179,36 @@ impl TAstBuilder {
         let return_type = self.engine().get_return_type(function_id).await;
         let return_type = return_type.apply_subst_or_clone(&call_subst, self.engine());
 
-        let effect_row = if let Some(effect) = operation_effect {
-            let label =
-                self.engine().intern(EffectLabel::new(effect.symbol_id(), effect.args().clone()));
-            Ty::new_effect_row([label], None, self.engine())
-        } else {
-            self.engine()
+        let effect_row = match &target {
+            ResolvedCallTarget::EffectOperation { effect, .. } => {
+                let label = self
+                    .engine()
+                    .intern(EffectLabel::new(effect.symbol_id(), effect.args().clone()));
+                Ty::new_effect_row([label], None, self.engine())
+            }
+            ResolvedCallTarget::Direct { .. }
+            | ResolvedCallTarget::UnresolvedInstanceAssociated { .. } => self
+                .engine()
                 .get_effect_row(function_id)
                 .await
-                .apply_subst_or_clone(&call_subst, self.engine())
+                .apply_subst_or_clone(&call_subst, self.engine()),
         };
 
-        let call = match operation_effect {
-            Some(effect) => {
-                Call::new_effect_operation(effect.symbol_id(), function_id, arguments, call_subst)
+        let call = match target {
+            ResolvedCallTarget::Direct { .. } => {
+                Call::new_direct(function_id, arguments, call_subst)
             }
-            None => Call::new_direct(function_id, arguments, call_subst),
+            ResolvedCallTarget::UnresolvedInstanceAssociated { instance, trait_def_id } => {
+                Call::new_unresolved_instance_associated(
+                    instance,
+                    trait_def_id,
+                    call_subst,
+                    arguments,
+                )
+            }
+            ResolvedCallTarget::EffectOperation { effect, operation_id } => {
+                Call::new_effect_operation(effect.symbol_id(), operation_id, arguments, call_subst)
+            }
         };
         let expr_id = self.insert_expression(TypedExprKind::Call(call), span, return_type);
         self.push_effect_introduction(expr_id, &effect_row);

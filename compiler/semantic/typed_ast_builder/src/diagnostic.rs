@@ -71,6 +71,31 @@ impl Report for SymbolNotCallable {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
 )]
+pub struct AbstractTraitDefinitionCall {
+    trait_def_id: GlobalSymbolID,
+    span: RelativeSpan,
+}
+
+impl Report for AbstractTraitDefinitionCall {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let name = engine.get_qualified_name(self.trait_def_id).await;
+
+        Rendered::builder()
+            .message(format!("trait method `{name}` is abstract and cannot be called directly"))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("this trait method has no definition body")
+                    .build(),
+            )
+            .help_message("call the method through an instance dictionary instead")
+            .build()
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
+)]
 pub struct MismatchedArgumentCount {
     calling_symbol: GlobalSymbolID,
     expected: usize,
@@ -571,6 +596,7 @@ pub enum Diagnostic {
     UnboundName(UnboundName),
     FunctionNotFound(FunctionNotFound),
     SymbolNotCallable(SymbolNotCallable),
+    AbstractTraitDefinitionCall(AbstractTraitDefinitionCall),
     MismatchedArgumentCount(MismatchedArgumentCount),
     MismatchedIndirectArgumentCount(MismatchedIndirectArgumentCount),
     ExpectedLambdaType(ExpectedLambdaType),
@@ -599,6 +625,7 @@ impl Report for Diagnostic {
             Self::SymbolNotCallable(symbol_not_callable) => {
                 symbol_not_callable.report(engine).await
             }
+            Self::AbstractTraitDefinitionCall(call) => call.report(engine).await,
             Self::MismatchedArgumentCount(mismatched_argument_count) => {
                 mismatched_argument_count.report(engine).await
             }
