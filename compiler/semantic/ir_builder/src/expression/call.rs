@@ -40,7 +40,21 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Call>> for Builder {
                 self.emit_expression(IRExpr::new(IRExprKind::Call(call), span, ty))
             }
 
-            CallTarget::UnresolvedInstanceAssociated { .. } => todo!(),
+            CallTarget::UnresolvedInstanceAssociated {
+                instance,
+                trait_def_id,
+                trait_def_subst,
+            } => {
+                let arguments = self.lower_call_arguments(context, call);
+                let call = IrCall::new_unresolved_instance_associated(
+                    instance.clone(),
+                    *trait_def_id,
+                    trait_def_subst.clone(),
+                    arguments,
+                    effect,
+                );
+                self.emit_expression(IRExpr::new(IRExprKind::Call(call), span, ty))
+            }
 
             CallTarget::EffectOperation { effect_id, operation_id, subst } => {
                 let arguments = self.lower_call_arguments(context, call);

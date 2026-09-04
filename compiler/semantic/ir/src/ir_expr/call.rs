@@ -80,6 +80,25 @@ impl Call {
     }
 
     #[must_use]
+    pub const fn new_unresolved_instance_associated(
+        instance: Interned<Ty>,
+        trait_def_id: GlobalSymbolID,
+        trait_def_subst: Subst,
+        arguments: Vec<IRExprID>,
+        effect: Interned<Ty>,
+    ) -> Self {
+        Self {
+            target: CallTarget::UnresolvedInstanceAssociated {
+                instance,
+                trait_def_id,
+                trait_def_subst,
+            },
+            arguments,
+            effect,
+        }
+    }
+
+    #[must_use]
     pub const fn new_lambda(
         callee: IRExprID,
         arguments: Vec<IRExprID>,
