@@ -63,6 +63,23 @@ impl Call {
     }
 
     #[must_use]
+    pub const fn new_unresolved_instance_associated(
+        instance: Interned<Ty>,
+        trait_def_id: GlobalSymbolID,
+        trait_def_subst: Subst,
+        arguments: Vec<TypedExprID>,
+    ) -> Self {
+        Self {
+            target: CallTarget::UnresolvedInstanceAssociated {
+                instance,
+                trait_def_id,
+                trait_def_subst,
+            },
+            arguments,
+        }
+    }
+
+    #[must_use]
     pub const fn new_lambda(callee: TypedExprID, arguments: Vec<TypedExprID>) -> Self {
         Self { target: CallTarget::Lambda { callee }, arguments }
     }
@@ -92,8 +109,6 @@ impl MutSubstitutable for Call {
                 call_subst.apply_mut_subst(subst, engine);
             }
             CallTarget::UnresolvedInstanceAssociated { instance, trait_def_subst, .. } => {
-                // TODO: actually, if we apply the substitution and it's resoled to a concrete
-                // instance, we need to replace this variant to CallTarget::Direct
                 instance.apply_in_place(subst, engine);
                 trait_def_subst.apply_mut_subst(subst, engine);
             }
