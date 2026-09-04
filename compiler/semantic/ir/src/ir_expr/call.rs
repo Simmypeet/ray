@@ -9,8 +9,34 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum CallTarget {
-    Direct { function_id: GlobalSymbolID, subst: Subst },
-    Lambda { callee: IRExprID },
+    Direct {
+        function_id: GlobalSymbolID,
+        subst: Subst,
+    },
+
+    /// Calls a method on an unresolved trait instance (e.g., `i.foo()` where
+    /// `i` is an instance parameter), which is differ from a direct call to an
+    /// instance associated method (e.g., `someInstanceSym.foo()` where
+    /// `someInstanceSym` is a concrete instance symbol).
+    UnresolvedInstanceAssociated {
+        /// The unresolved instance term
+        instance: Interned<Ty>,
+
+        /// The **abstract** [`rayc_symbol::symbol_kind::SymbolKind::TraitDef`]
+        /// symbol of the trait that defines the method being called.
+        ///
+        /// Since the trait def is abstract (has no definition), during
+        /// monomorphization, once the concrete instance dictionary is resolved,
+        trait_def_id: GlobalSymbolID,
+
+        /// The substitution containing all the type parameters of the
+        /// [`trait_def_id`].
+        trait_def_subst: Subst,
+    },
+
+    Lambda {
+        callee: IRExprID,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
@@ -28,6 +54,14 @@ impl VisitType for Call {
                     visitor.visit_type(ty);
                 }
             }
+
+            CallTarget::UnresolvedInstanceAssociated { instance, trait_def_subst, .. } => {
+                visitor.visit_type(instance);
+                for ty in trait_def_subst.codomain() {
+                    visitor.visit_type(ty);
+                }
+            }
+
             CallTarget::Lambda { .. } => {}
         }
         visitor.visit_type(&self.effect);

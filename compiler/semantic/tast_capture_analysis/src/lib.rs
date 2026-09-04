@@ -195,8 +195,10 @@ impl Analyzer {
             }
             TypedExprKind::Call(call) => {
                 match call.target() {
-                    CallTarget::Direct { function_id: _, subst: _ }
-                    | CallTarget::EffectOperation { effect_id: _, operation_id: _, subst: _ } => {}
+                    CallTarget::Direct { .. }
+                    | CallTarget::UnresolvedInstanceAssociated { .. }
+                    | CallTarget::EffectOperation { .. } => {}
+
                     CallTarget::Lambda { callee } => {
                         self.visit_expression(
                             function_id,

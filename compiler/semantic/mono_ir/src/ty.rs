@@ -392,6 +392,9 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 let pointee_type = Box::pin(lower_concrete_type(engine, pointer.pointee())).await;
                 MonoType::new_pointer(pointee_type, lower_mutability(pointer.mutability()), engine)
             }
+            ApplicationView::Instance(_) => {
+                panic!("compiler-internal invariant violation: instance used as a value type")
+            }
             ApplicationView::Error => {
                 panic!("compiler-internal invariant violation: error type reached MonoIR")
             }

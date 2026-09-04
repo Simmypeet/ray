@@ -497,7 +497,7 @@ fn requires_value_return(ty: &Ty) -> bool {
             ApplicationView::Primitive(_)
             | ApplicationView::Lambda(_)
             | ApplicationView::Pointer(_) => true,
-            ApplicationView::Error => false,
+            ApplicationView::Instance(_) | ApplicationView::Error => false,
         },
         Ty::Inference(_) | Ty::PolyVar(_) | Ty::EffectRow(_) => false,
     }

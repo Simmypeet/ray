@@ -75,20 +75,25 @@ impl TAstBuilder {
                 operation.substitution(self.engine()).await,
                 Some(operation.effect()),
             ),
-            PathResolution::Module(module) => {
-                self.push_symbol_not_callable(module.symbol_id(), path.span());
-                return self.push_error_expression_with_children(syn.span(), arguments);
+            PathResolution::TraitDef(def) => {
+                (def.symbol_id(), SymbolKind::TraitDef, def.substitution(self.engine()).await, None)
             }
-            PathResolution::Effect(effect) => {
-                self.push_symbol_not_callable(effect.symbol_id(), path.span());
-                return self.push_error_expression_with_children(syn.span(), arguments);
-            }
-            PathResolution::Trait(trait_ref) => {
-                self.push_symbol_not_callable(trait_ref.trait_id(), path.span());
-                return self.push_error_expression_with_children(syn.span(), arguments);
-            }
-            PathResolution::Instance(instance) => {
-                self.push_symbol_not_callable(instance.symbol_id(), path.span());
+            PathResolution::ResolvedInstanceDef(def) => (
+                def.symbol_id(),
+                SymbolKind::InstanceDef,
+                def.substitution(self.engine()).await,
+                None,
+            ),
+            PathResolution::UnsolvedInstanceDef(def) => (
+                def.trait_def_id(),
+                SymbolKind::TraitDef,
+                def.substitution(self.engine()).await,
+                None,
+            ),
+            resolution => {
+                if let Some(symbol_id) = resolution.global_id() {
+                    self.push_symbol_not_callable(symbol_id, path.span());
+                }
                 return self.push_error_expression_with_children(syn.span(), arguments);
             }
         };

@@ -39,6 +39,9 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Call>> for Builder {
                 let call = IrCall::new_direct(*function_id, arguments, subst.clone(), effect);
                 self.emit_expression(IRExpr::new(IRExprKind::Call(call), span, ty))
             }
+
+            CallTarget::UnresolvedInstanceAssociated { .. } => todo!(),
+
             CallTarget::EffectOperation { effect_id, operation_id, subst } => {
                 let arguments = self.lower_call_arguments(context, call);
                 let perform = Perform::new(*effect_id, *operation_id, arguments, subst.clone());

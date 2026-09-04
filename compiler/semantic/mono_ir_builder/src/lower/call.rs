@@ -59,6 +59,7 @@ impl Builder<'_> {
                     );
                 }
             }
+            CallTarget::UnresolvedInstanceAssociated { .. } => todo!(),
             CallTarget::Lambda { callee } => {
                 let callee_place = self.expression_place(*callee);
                 let callee_type = self.local_type(callee_place.local()).clone();
