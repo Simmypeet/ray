@@ -58,7 +58,15 @@ impl SymbolKind {
     /// Checks if this kind of symbol owns a polymorphic-variable map.
     #[must_use]
     pub const fn has_poly_var_map(&self) -> bool {
-        matches!(self, Self::Def | Self::Effect | Self::Instance | Self::Trait)
+        matches!(
+            self,
+            Self::Def
+                | Self::Effect
+                | Self::Instance
+                | Self::InstanceDef
+                | Self::Trait
+                | Self::TraitDef
+        )
     }
 
     /// Checks if this kind of symbol has a parameter list
