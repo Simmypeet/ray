@@ -3,6 +3,16 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
+[error]: trait method `main.Eq.equals` is abstract and cannot be called directly
+   ╭▸ compiler/e2e/test/check/semantic/poly_var_instance_path/main.ray:15:12
+   │
+15 │     return Eq[int32].equals(lhs, rhs)
+   │            ━━━━━━━━━━━━━━━━ this trait method has no definition body
+   │
+   ╰ help: call the method through an instance dictionary instead
+
+[error]: Compilation aborted due to 1 error(s)
+
 
 
 stdout:

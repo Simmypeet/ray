@@ -1,0 +1,31 @@
+trait Eq[a]:
+    def equals(lhs: a, rhs: a) -> bool
+
+
+inst EqInt for Eq[int32]:
+    def equals(lhs: int32, rhs: int32) -> bool:
+        return lhs == rhs
+
+
+trait Identity[m]:
+    def echo(value: a) -> a
+
+
+inst IdentityImpl for Identity[int32]:
+    def echo(value: b) -> b:
+        return value
+
+
+def equalsSelf(value: a) given (equality: Eq[a]) -> bool:
+    return equality.equals(value, value)
+
+
+def throughIdentity(value: a) given (dictionary: Identity[int32]) -> a:
+    return dictionary.echo(value)
+
+
+def main() -> int32:
+    let value: int32 = 42
+    let identityValue: int32 = 17
+    let result = throughIdentity given (IdentityImpl)(identityValue)
+    return if equalsSelf given (EqInt)(value): result else: 1

@@ -13,6 +13,41 @@ use rayc_mono_ir::{
 use crate::{builder::Builder, context::Context};
 
 impl Builder<'_> {
+    async fn lower_global_call(
+        &mut self,
+        context: &Context,
+        callee: MonoDefInstance,
+        mut arguments: Vec<Operand>,
+        expression_id: IRExprID,
+    ) {
+        let (signature, effects, is_void) =
+            context.global_signature(callee.def_id(), callee.substitution()).await;
+
+        // appends additional effect handler arguments to the call
+        for effect in effects {
+            arguments.push(self.handler_operand(&effect));
+        }
+
+        let callee =
+            Operand::Function(FunctionOperand::new(FunctionReference::Global(callee), signature));
+
+        // if the function has `void` return type, which is mostly from `extern def`, we
+        // don't need to assign the return value to the destination place
+        let destination = (!is_void).then(|| self.expression_place(expression_id));
+
+        self.push_instruction(Instruction::Call(Call::new(destination, callee, arguments)));
+
+        // if we are calling a `void`  function, we need to assign "fake" unit value to
+        // the destination place. (Actually, we don't need to assign anything, since
+        // unit type has only one value, and we can just use uninitialized value)
+        if is_void {
+            self.assign(
+                self.expression_place(expression_id),
+                Rvalue::Use(Operand::Constant(Constant::Unit)),
+            );
+        }
+    }
+
     pub(super) async fn lower_call(
         &mut self,
         context: &Context,
@@ -29,37 +64,18 @@ impl Builder<'_> {
             CallTarget::Direct { function_id, subst } => {
                 let mut substitution = subst.clone();
                 context.apply_owner_substitution(&mut substitution);
-
-                let (signature, effects, is_void) =
-                    context.global_signature(*function_id, &substitution).await;
-
-                // appends additional effect handler arguments to the call
-                for effect in effects {
-                    arguments.push(self.handler_operand(&effect));
-                }
-
-                let callee = Operand::Function(FunctionOperand::new(
-                    FunctionReference::Global(MonoDefInstance::new(*function_id, substitution)),
-                    signature,
-                ));
-
-                // if the function has `void` return type, which is mostly from `extern def`, we
-                // don't need to assign the return value to the destination place
-                let destination = (!is_void).then(|| self.expression_place(expression_id));
-
-                self.push_instruction(Instruction::Call(Call::new(destination, callee, arguments)));
-
-                // if we are calling a `void`  function, we need to assign "fake" unit value to
-                // the destination place. (Actually, we don't need to assign anything, since
-                // unit type has only one value, and we can just use uninitialized value)
-                if is_void {
-                    self.assign(
-                        self.expression_place(expression_id),
-                        Rvalue::Use(Operand::Constant(Constant::Unit)),
-                    );
-                }
+                let callee = MonoDefInstance::new(*function_id, substitution);
+                self.lower_global_call(context, callee, arguments, expression_id).await;
             }
-            CallTarget::UnresolvedInstanceAssociated { .. } => todo!(),
+            CallTarget::UnresolvedInstanceAssociated {
+                instance,
+                trait_def_id,
+                trait_def_subst,
+            } => {
+                let callee =
+                    context.resolve_instance_call(instance, *trait_def_id, trait_def_subst).await;
+                self.lower_global_call(context, callee, arguments, expression_id).await;
+            }
             CallTarget::Lambda { callee } => {
                 let callee_place = self.expression_place(*callee);
                 let callee_type = self.local_type(callee_place.local()).clone();

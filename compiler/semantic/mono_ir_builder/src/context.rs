@@ -15,15 +15,22 @@ use rayc_mono_ir::{
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
     effect_row::get_effect_row,
+    instance_def::get_instance_def,
     parameter::{ParameterMap, get_parameter_map},
     return_type::get_return_type,
 };
 use rayc_symbol::{
     GlobalSymbolID,
+    member::get_member_by_name,
+    name::get_name,
     symbol_kind::{SymbolKind, get_symbol_kind},
     syntax::is_variadic_def,
 };
-use rayc_type::{subst::Subst, ty::Ty};
+use rayc_type::{
+    poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
+    subst::{Subst, Substitutable},
+    ty::{Ty, application::View as ApplicationView, args::Args},
+};
 
 use crate::{builder::Builder, function_abi::FunctionABI};
 
@@ -134,6 +141,84 @@ impl Context {
         substitution.compose(self.instance.substitution(), &self.engine);
     }
 
+    /// Resolves an abstract trait-method call to one concrete instance method.
+    ///
+    /// The semantic IR identifies the dictionary, the trait method, and the
+    /// trait method's call-site substitution. `MonoIR` instead needs an
+    /// ordinary global definition reference whose substitution is expressed
+    /// entirely in the concrete instance and instance-method namespaces.
+    pub(crate) async fn resolve_instance_call(
+        &self,
+        dictionary_ty: &Interned<Ty>,
+        trait_def_id: GlobalSymbolID,
+        trait_call_substitution: &Subst,
+    ) -> MonoDefInstance {
+        // TODO: this is a bit dense, there could be better ways to do this!
+
+        // The dictionary may still be a polymorphic variable owned by the
+        // function being monomorphized. Applying the owner's substitution turns
+        // it into the concrete instance chosen at the caller, such as `EqInt`.
+        let dictionary_ty =
+            dictionary_ty.apply_subst_or_clone(self.instance.substitution(), &self.engine);
+        let Ty::Application(application) = &*dictionary_ty else {
+            panic!("an instance call should resolve to a concrete instance application")
+        };
+        let ApplicationView::Instance(instance) = application.view() else {
+            panic!("an instance call should resolve to a type of instance kind")
+        };
+
+        // Trait and instance methods correspond by name. The InstanceDef query
+        // verifies that correspondence and provides the precomputed mapping
+        // from trait-owned polymorphic variables to instance-owned variables.
+        let trait_def_name = self.engine.get_name(trait_def_id).await;
+        let instance_def_id = self
+            .engine
+            .get_member_by_name(instance.symbol_id(), &trait_def_name)
+            .await
+            .expect("a concrete instance should implement the selected trait definition");
+        let instance_def = self.engine.get_instance_def(instance_def_id).await;
+        assert_eq!(
+            instance_def.trait_def_id(),
+            trait_def_id,
+            "the selected instance definition should implement the called trait definition"
+        );
+
+        // Seed the callee substitution with arguments belonging to the instance
+        // declaration itself. For `SomeInstance[int32]`, this maps the instance's
+        // type variables to `int32`.
+        let instance_args = Args::new(instance.args().iter().cloned(), &self.engine);
+        let mut substitution =
+            self.engine.build_subst_from_args(instance.symbol_id(), &instance_args).await;
+
+        // Method-local variables have different IDs in the trait declaration and
+        // its instance implementation. First make the trait call substitution
+        // concrete, then use InstanceDef's verified mapping to move each value
+        // into the corresponding instance-method variable.
+        let mut trait_call_substitution = trait_call_substitution.clone();
+        self.apply_owner_substitution(&mut trait_call_substitution);
+        let trait_def_poly_vars = self.engine.get_poly_var_map(trait_def_id).await;
+        let local_substitution = trait_def_poly_vars
+            .iter()
+            .filter_map(|(trait_poly_var_id, _)| {
+                let trait_poly_var_id = GlobalPolyVarID::new(trait_def_id, trait_poly_var_id);
+                let concrete_ty = trait_call_substitution.get(&trait_poly_var_id)?;
+                let instance_poly_var =
+                    instance_def.poly_var_substitution().get(&trait_poly_var_id)?;
+                let Ty::PolyVar(instance_poly_var_id) = &**instance_poly_var else {
+                    panic!(
+                        "a trait definition variable should map to an instance definition variable"
+                    )
+                };
+                Some((*instance_poly_var_id, concrete_ty.clone()))
+            })
+            .collect();
+        substitution.compose(&local_substitution, &self.engine);
+
+        // From this point on, the call is indistinguishable from any other
+        // global MonoIR call: a concrete definition ID plus its substitution.
+        MonoDefInstance::new(instance_def_id, substitution)
+    }
+
     pub(crate) fn instantiate_effect(
         &self,
         effect_id: GlobalSymbolID,
@@ -153,7 +238,7 @@ impl Context {
             parameter_types.push(self.engine.lower_type(parameter.ty(), substitution).await);
         }
         let symbol_kind = self.engine.get_symbol_kind(function_id).await;
-        let effects = if symbol_kind == SymbolKind::Def {
+        let effects = if matches!(symbol_kind, SymbolKind::Def | SymbolKind::InstanceDef) {
             let effect = self.engine.get_effect_row(function_id).await;
             self.engine.lower_effects(&effect, substitution).await
         } else {

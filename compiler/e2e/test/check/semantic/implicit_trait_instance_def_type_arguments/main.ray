@@ -1,0 +1,23 @@
+trait Transform[a]:
+    def transform(value: b) -> b
+
+
+inst TransformInt for Transform[int32]:
+    def transform(value: c) -> c:
+        return value
+
+
+def throughGiven(value: a) given (dictionary: Transform[int32]) -> a:
+    return dictionary.transform[bool](value)
+
+
+def throughInstance(value: int32) -> int32:
+    return TransformInt.transform[bool](value)
+
+
+def throughTrait(value: int32) -> int32:
+    return Transform[int32].transform[bool](value)
+
+
+def main() -> int32:
+    return 0

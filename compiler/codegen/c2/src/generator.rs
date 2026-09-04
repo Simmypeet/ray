@@ -125,7 +125,8 @@ impl<'engine> Generator<'engine> {
         }
 
         match self.engine.get_symbol_kind(definition.def_id()).await {
-            rayc_symbol::symbol_kind::SymbolKind::Def => {
+            rayc_symbol::symbol_kind::SymbolKind::Def
+            | rayc_symbol::symbol_kind::SymbolKind::InstanceDef => {
                 self.internal_definitions.insert(definition.clone());
                 let ir =
                     lower_ir(self.engine, definition.def_id(), definition.substitution().clone())
@@ -148,7 +149,6 @@ impl<'engine> Generator<'engine> {
             rayc_symbol::symbol_kind::SymbolKind::Effect
             | rayc_symbol::symbol_kind::SymbolKind::EffectOperation
             | rayc_symbol::symbol_kind::SymbolKind::Instance
-            | rayc_symbol::symbol_kind::SymbolKind::InstanceDef
             | rayc_symbol::symbol_kind::SymbolKind::Module
             | rayc_symbol::symbol_kind::SymbolKind::Trait
             | rayc_symbol::symbol_kind::SymbolKind::TraitDef => {
@@ -457,14 +457,16 @@ impl<'engine> Generator<'engine> {
                     return definition_name(definition);
                 }
                 match self.engine.get_symbol_kind(definition.def_id()).await {
-                    rayc_symbol::symbol_kind::SymbolKind::Def => definition_name(definition),
+                    rayc_symbol::symbol_kind::SymbolKind::Def
+                    | rayc_symbol::symbol_kind::SymbolKind::InstanceDef => {
+                        definition_name(definition)
+                    }
                     rayc_symbol::symbol_kind::SymbolKind::ExternDef => {
                         self.engine.get_name(definition.def_id()).await.to_string()
                     }
                     rayc_symbol::symbol_kind::SymbolKind::Effect
                     | rayc_symbol::symbol_kind::SymbolKind::EffectOperation
                     | rayc_symbol::symbol_kind::SymbolKind::Instance
-                    | rayc_symbol::symbol_kind::SymbolKind::InstanceDef
                     | rayc_symbol::symbol_kind::SymbolKind::Module
                     | rayc_symbol::symbol_kind::SymbolKind::Trait
                     | rayc_symbol::symbol_kind::SymbolKind::TraitDef => {
