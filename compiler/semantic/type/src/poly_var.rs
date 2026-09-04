@@ -84,6 +84,11 @@ impl PolyVar {
 pub type PolyVarID = ID<PolyVar>;
 pub type GlobalPolyVarID = MemberID<PolyVarID>;
 
+/// The polymorphic variables owned by a symbol, in semantic insertion order.
+///
+/// The order returned by [`Self::iter`] is significant. Builders of
+/// corresponding declarations must insert alpha-equivalent variables in the
+/// same order so that consumers can pair variables positionally.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
 pub struct PolyVarMap {
     poly_vars: OrderedArena<PolyVar>,

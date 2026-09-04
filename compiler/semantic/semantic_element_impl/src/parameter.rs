@@ -58,7 +58,12 @@ impl Build for Key {
         let symbol_kind = engine.get_symbol_kind(symbol_id).await;
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
         let diagnostics = Storage::new();
-        let mut resolver = Resolver::new(engine, &poly_vars, symbol_id, &diagnostics, None);
+        let mut resolver = Resolver::builder()
+            .engine(engine)
+            .poly_var_stack(&poly_vars)
+            .site(symbol_id)
+            .handler(&diagnostics)
+            .build();
         let mut parameters = ParameterMap::new();
 
         if let Some(syntax) = syntax.as_ref() {
@@ -74,7 +79,7 @@ impl Build for Key {
         }
 
         if symbol_kind == SymbolKind::ExternDef {
-            if !discover_parameter_poly_vars(syntax.as_ref()).is_empty()
+            if !discover_parameter_poly_vars(syntax.as_ref(), Some(&poly_vars)).is_empty()
                 && let Some(span) = engine.get_span(symbol_id).await
             {
                 diagnostics.receive(Diagnostic::InvalidExternSignature(

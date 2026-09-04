@@ -2,6 +2,7 @@ pub mod build;
 pub mod diagnostic;
 mod effect_row;
 mod extern_signature;
+pub mod instance;
 mod parameter;
 mod poly_var_map;
 mod return_type;

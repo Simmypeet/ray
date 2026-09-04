@@ -57,7 +57,12 @@ impl Build for Key {
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
 
         let diagnostics = Storage::new();
-        let mut resolver = Resolver::new(engine, &poly_vars, symbol_id, &diagnostics, None);
+        let mut resolver = Resolver::builder()
+            .engine(engine)
+            .poly_var_stack(&poly_vars)
+            .site(symbol_id)
+            .handler(&diagnostics)
+            .build();
 
         let return_type = if let Some(syntax) = syntax.as_ref() {
             if let Some(syntax) = syntax.r#type() {
