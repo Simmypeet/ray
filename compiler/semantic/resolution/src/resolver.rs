@@ -32,7 +32,7 @@ use crate::{
 /// Resolves syntax relative to a symbol and its polymorphic environment.
 pub struct Resolver<'a> {
     engine: &'a TrackedEngine,
-    poly_var_stack: &'a PolyVarStack,
+    poly_var_stack: Option<&'a PolyVarStack>,
 
     building_poly_var_map: Option<&'a PolyVarMap>,
 
@@ -46,7 +46,7 @@ impl fmt::Debug for Resolver<'_> {
         formatter
             .debug_struct("Resolver")
             .field("poly_vars", &self.poly_var_stack)
-            .field("building_poly_va_map", self.poly_var_stack)
+            .field("building_poly_va_map", &self.poly_var_stack)
             .field("site", &self.site)
             .field("has_infer_gen", &self.infer_gen.is_some())
             .finish_non_exhaustive()
@@ -57,7 +57,7 @@ impl<'a> Resolver<'a> {
     #[must_use]
     pub const fn new(
         engine: &'a TrackedEngine,
-        poly_var_stack: &'a PolyVarStack,
+        poly_var_stack: Option<&'a PolyVarStack>,
         site: GlobalSymbolID,
         handler: &'a dyn Handler<Diagnostic>,
         infer_gen: Option<&'a mut dyn GenInfer>,
@@ -67,7 +67,7 @@ impl<'a> Resolver<'a> {
 
     pub const fn new_with_building_poly_var_map(
         engine: &'a TrackedEngine,
-        poly_var_stack: &'a PolyVarStack,
+        poly_var_stack: Option<&'a PolyVarStack>,
         building_poly_var_map: &'a PolyVarMap,
         site: GlobalSymbolID,
         handler: &'a dyn Handler<Diagnostic>,
@@ -148,7 +148,7 @@ impl<'a> Resolver<'a> {
             .and_then(|x| {
                 x.find_by_name(&identifier.kind).map(|x| GlobalPolyVarID::new(self.site, x))
             })
-            .or_else(|| self.poly_var_stack.find_by_name(&identifier.kind.0))
+            .or_else(|| self.poly_var_stack.and_then(|x| x.find_by_name(&identifier.kind.0)))
         else {
             self.handler.receive(Diagnostic::PolyVarNotFound(PolyVarNotFound::new(
                 identifier.kind.0.clone(),
@@ -166,7 +166,7 @@ impl<'a> Resolver<'a> {
     pub(crate) fn search_poly_var(&self, name: &str) -> Option<GlobalPolyVarID> {
         self.building_poly_var_map
             .and_then(|x| x.find_by_name(name).map(|x| GlobalPolyVarID::new(self.site, x)))
-            .or_else(|| self.poly_var_stack.find_by_name(name))
+            .or_else(|| self.poly_var_stack.and_then(|x| x.find_by_name(name)))
     }
 
     pub(crate) async fn poly_var_trait_ref(&self, id: GlobalPolyVarID) -> Option<TraitRef> {
@@ -202,7 +202,7 @@ impl<'a> Resolver<'a> {
 
     pub(crate) async fn type_kind(&self, ty: &Interned<Ty>) -> TyKind {
         if let Ty::PolyVar(id) = &**ty
-            && let Some(kind) = self.poly_var_stack.kind_of(*id)
+            && let Some(kind) = self.poly_var_stack.and_then(|x| x.kind_of(*id))
         {
             return kind;
         }
@@ -217,7 +217,8 @@ impl<'a> Resolver<'a> {
         &self,
         symbol_id: GlobalSymbolID,
     ) -> Vec<(Interned<str>, TyKind)> {
-        if let Some(parameters) = self.poly_var_stack.argument_parameters(symbol_id) {
+        if let Some(parameters) = self.poly_var_stack.and_then(|x| x.argument_parameters(symbol_id))
+        {
             return parameters;
         }
 
