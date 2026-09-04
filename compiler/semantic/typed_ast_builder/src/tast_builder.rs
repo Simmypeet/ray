@@ -290,13 +290,13 @@ impl TAstBuilder {
         let poly_vars = self.engine.get_enclosing_poly_var_maps(self.current_def_id).await;
         let diagnostics = Storage::<rayc_resolution::Diagnostic>::new();
         let resolution = {
-            let mut resolver = Resolver::new(
-                &self.engine,
-                &poly_vars,
-                self.current_def_id,
-                &diagnostics,
-                Some(&mut self.constraint_solver),
-            );
+            let mut resolver = Resolver::builder()
+                .engine(&self.engine)
+                .poly_var_stack(&poly_vars)
+                .site(self.current_def_id)
+                .handler(&diagnostics)
+                .infer_gen(&mut self.constraint_solver)
+                .build();
             resolver.resolve_path(path).await
         };
         self.diagnostics
@@ -311,13 +311,13 @@ impl TAstBuilder {
         let poly_vars = self.engine.get_enclosing_poly_var_maps(self.current_def_id).await;
         let diagnostics = Storage::<rayc_resolution::Diagnostic>::new();
         let resolution = {
-            let mut resolver = Resolver::new(
-                &self.engine,
-                &poly_vars,
-                self.current_def_id,
-                &diagnostics,
-                Some(&mut self.constraint_solver),
-            );
+            let mut resolver = Resolver::builder()
+                .engine(&self.engine)
+                .poly_var_stack(&poly_vars)
+                .site(self.current_def_id)
+                .handler(&diagnostics)
+                .infer_gen(&mut self.constraint_solver)
+                .build();
             resolver.resolve_effect_path(path).await
         };
         self.diagnostics

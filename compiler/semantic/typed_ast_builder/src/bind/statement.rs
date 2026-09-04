@@ -19,8 +19,12 @@ impl TAstBuilder {
     ) -> qbice::storage::intern::Interned<rayc_type::ty::Ty> {
         let poly_vars = self.engine().get_enclosing_poly_var_maps(self.current_def_id()).await;
         let diagnostics = Storage::new();
-        let mut resolver =
-            Resolver::new(self.engine(), &poly_vars, self.current_def_id(), &diagnostics, None);
+        let mut resolver = Resolver::builder()
+            .engine(self.engine())
+            .poly_var_stack(&poly_vars)
+            .site(self.current_def_id())
+            .handler(&diagnostics)
+            .build();
 
         let ty = resolver.resolve_type(syntax).await;
 
