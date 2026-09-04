@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use bon::Builder;
 use qbice::storage::intern::Interned;
 use rayc_handler::Handler;
 use rayc_lexical::tree::RelativeSpan;
@@ -30,6 +31,7 @@ use crate::{
 };
 
 /// Resolves syntax relative to a symbol and its polymorphic environment.
+#[derive(Builder)]
 pub struct Resolver<'a> {
     engine: &'a TrackedEngine,
     poly_var_stack: Option<&'a PolyVarStack>,
@@ -53,36 +55,7 @@ impl fmt::Debug for Resolver<'_> {
     }
 }
 
-impl<'a> Resolver<'a> {
-    #[must_use]
-    pub const fn new(
-        engine: &'a TrackedEngine,
-        poly_var_stack: Option<&'a PolyVarStack>,
-        site: GlobalSymbolID,
-        handler: &'a dyn Handler<Diagnostic>,
-        infer_gen: Option<&'a mut dyn GenInfer>,
-    ) -> Self {
-        Self { engine, poly_var_stack, site, building_poly_var_map: None, handler, infer_gen }
-    }
-
-    pub const fn new_with_building_poly_var_map(
-        engine: &'a TrackedEngine,
-        poly_var_stack: Option<&'a PolyVarStack>,
-        building_poly_var_map: &'a PolyVarMap,
-        site: GlobalSymbolID,
-        handler: &'a dyn Handler<Diagnostic>,
-        infer_gen: Option<&'a mut dyn GenInfer>,
-    ) -> Self {
-        Self {
-            engine,
-            poly_var_stack,
-            building_poly_var_map: Some(building_poly_var_map),
-            site,
-            handler,
-            infer_gen,
-        }
-    }
-
+impl Resolver<'_> {
     pub(crate) fn new_primitive_type(&self, primitive: Primitive) -> Interned<Ty> {
         Ty::new_primitive(primitive, self.engine)
     }

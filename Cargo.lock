@@ -1883,6 +1883,7 @@ dependencies = [
 name = "rayc_resolution"
 version = "0.1.0-beta.2"
 dependencies = [
+ "bon",
  "qbice",
  "rayc_diagnostic",
  "rayc_handler",

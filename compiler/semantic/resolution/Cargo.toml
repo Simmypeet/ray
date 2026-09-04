@@ -7,6 +7,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+bon.workspace = true
 qbice.workspace = true
 rayc_diagnostic.path = "../../base/diagnostic"
 rayc_handler.path = "../../base/handler"
