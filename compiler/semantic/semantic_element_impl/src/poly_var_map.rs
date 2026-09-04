@@ -177,6 +177,11 @@ impl Build for rayc_type::poly_var::Key {
             SymbolKind::Module => panic!("a module does not own a polymorphic-variable map"),
         };
 
+        // Function-like symbols order variables by first occurrence in
+        // explicit parameter types; traits and instances order explicit type
+        // parameters by declaration. Given-instance variables then follow in
+        // declaration order. Instance conformance relies on corresponding
+        // trait and instance definitions producing the same order.
         insert_given_parameters(engine, symbol_id, &mut poly_vars, &storage).await;
 
         Output::new_with(engine.intern(poly_vars), storage.into_vec(), engine)

@@ -49,7 +49,12 @@ impl Build for Key {
         let syntax = engine.get_effect_row_syntax(symbol_id).await;
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
         let diagnostics = Storage::new();
-        let mut resolver = Resolver::new(engine, &poly_vars, symbol_id, &diagnostics, None);
+        let mut resolver = Resolver::builder()
+            .engine(engine)
+            .poly_var_stack(&poly_vars)
+            .site(symbol_id)
+            .handler(&diagnostics)
+            .build();
 
         let effect_row = match syntax
             .as_ref()

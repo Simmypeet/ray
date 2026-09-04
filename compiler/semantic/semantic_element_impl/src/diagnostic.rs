@@ -26,6 +26,7 @@ pub struct SingleRenderedKey {
 }
 
 #[executor(config = Config)]
+#[expect(clippy::cognitive_complexity)]
 async fn single_rendered_executor(
     &SingleRenderedKey { symbol_id }: &SingleRenderedKey,
     engine: &TrackedEngine,
@@ -54,6 +55,24 @@ async fn single_rendered_executor(
     if kind.has_return_type() {
         let return_type_key = rayc_semantic_element::return_type::Key { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(return_type_key)).await;
+
+        for diagnostic in diagnostics.iter() {
+            rendered.push(diagnostic.report(engine).await);
+        }
+    }
+
+    if kind == rayc_symbol::symbol_kind::SymbolKind::Instance {
+        let instance_key = rayc_semantic_element::instance_trait_ref::Key { symbol_id };
+        let diagnostics = engine.query(&DiagnosticKey::new(instance_key)).await;
+
+        for diagnostic in diagnostics.iter() {
+            rendered.push(diagnostic.report(engine).await);
+        }
+    }
+
+    if kind == rayc_symbol::symbol_kind::SymbolKind::InstanceDef {
+        let instance_def_key = rayc_semantic_element::instance_def::Key { symbol_id };
+        let diagnostics = engine.query(&DiagnosticKey::new(instance_def_key)).await;
 
         for diagnostic in diagnostics.iter() {
             rendered.push(diagnostic.report(engine).await);
