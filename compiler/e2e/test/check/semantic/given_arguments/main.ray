@@ -5,7 +5,7 @@ inst EqInt for Eq[int32]:
     def equals(lhs: int32, rhs: int32) -> bool:
         return lhs == rhs
 
-eff Reader[a] given (f: Eq[a], s: Eq[a]):
+eff Reader[a] given (first: Eq[a], second: Eq[a]):
     def read() -> a
 
 def ordered() -> () \ {Reader[int32] given (EqInt, second = EqInt)}:

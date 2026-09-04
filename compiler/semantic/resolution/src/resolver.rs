@@ -179,6 +179,14 @@ impl Resolver<'_> {
         {
             return kind;
         }
+
+        if let Ty::PolyVar(id) = &**ty
+            && let Some(building_poly_var_map) = self.building_poly_var_map
+            && id.parent_id() == self.site
+        {
+            return building_poly_var_map.kind_of(id.id());
+        }
+
         ty.kind_of(self.engine).await
     }
 
@@ -190,6 +198,15 @@ impl Resolver<'_> {
         &self,
         symbol_id: GlobalSymbolID,
     ) -> Vec<(Interned<str>, TyKind)> {
+        if let Some(building_poly_var_map) = self.building_poly_var_map
+            && symbol_id == self.site
+        {
+            return building_poly_var_map
+                .iter()
+                .map(|(_, poly_var)| (poly_var.name().to_owned(), poly_var.kind()))
+                .collect();
+        }
+
         if let Some(parameters) = self.poly_var_stack.and_then(|x| x.argument_parameters(symbol_id))
         {
             return parameters;
