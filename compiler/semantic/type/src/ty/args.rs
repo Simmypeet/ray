@@ -52,6 +52,12 @@ impl Args {
     pub fn has_inference_variable(&self, ty: &Inference) -> bool {
         self.args.iter().any(|x| x.has_inference_variable(ty))
     }
+
+    #[must_use]
+    pub fn contains_inference(&self) -> bool { self.iter().any(Ty::contains_inference) }
+
+    #[must_use]
+    pub fn contains_error(&self) -> bool { self.iter().any(Ty::contains_error) }
 }
 
 impl Reduce for Args {

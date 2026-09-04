@@ -201,8 +201,9 @@ impl Solver {
 
         match &**ty {
             Ty::Application(ty_application) => {
-                if var.kind() != TyKind::Star
-                    || !ty_application.satisfies_constraint(var.constraint())
+                if var.kind() != ty_application.kind_of()
+                    || (var.kind() == TyKind::Star
+                        && !ty_application.satisfies_constraint(var.constraint()))
                 {
                     return Err(Error::Conflicted);
                 }
@@ -326,6 +327,120 @@ mod tests {
     fn effect_poly_var(id: u64) -> GlobalPolyVarID {
         let parent_id = TargetID::TEST.make_global(SymbolID::from_u128(0));
         GlobalPolyVarID::new(parent_id, PolyVarID::new(id))
+    }
+
+    // input: ?dict = Instance[int32]
+    // premise: ?dict has kind Instance; equality may put it on either side
+    // output: exactly ?dict := Instance[int32]
+    #[tokio::test]
+    async fn instance_inference_binds_to_concrete_instance() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let symbol = TargetID::TEST.make_global(SymbolID::from_u128(1));
+        let instance = Ty::new_instance(
+            symbol,
+            Args::new([Ty::new_primitive(Primitive::Int32, &engine)], &engine),
+            &engine,
+        );
+        for reverse in [false, true] {
+            let mut solver = Solver::new(engine.clone());
+            let inference = solver.new_inference(TyKind::Instance);
+            let variable = engine.intern(Ty::Inference(inference));
+            let (left, right) =
+                if reverse { (instance.clone(), variable) } else { (variable, instance.clone()) };
+            assert_eq!(
+                solver.entail(&Constraint::Subtype(Subtype::new(left, right))),
+                Ok(Step::Subst(Subst::new_singleton(inference, instance.clone())))
+            );
+        }
+    }
+
+    // input: ?k = Error(k)
+    // premise: ?k is unconstrained and k is Star, Instance, or EffectRow
+    // output: exactly ?k := Error(k)
+    #[tokio::test]
+    async fn inference_binds_to_error_of_its_kind() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        for kind in [TyKind::Star, TyKind::Instance, TyKind::EffectRow] {
+            let mut solver = Solver::new(engine.clone());
+            let inference = solver.new_inference(kind);
+            let variable = engine.intern(Ty::Inference(inference));
+            let error = Ty::new_error(kind, &engine);
+            assert_eq!(
+                solver.entail(&Constraint::Subtype(Subtype::new(variable, error.clone()))),
+                Ok(Step::Subst(Subst::new_singleton(inference, error)))
+            );
+        }
+    }
+
+    // input: ?k = int32, Instance[], {}, or Error(j)
+    // premise: k differs from the concrete type's kind, in either equality
+    // direction output: Conflicted
+    #[tokio::test]
+    async fn inference_rejects_cross_kind_bindings() {
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let symbol = TargetID::TEST.make_global(SymbolID::from_u128(1));
+        let kinds = [TyKind::Star, TyKind::Instance, TyKind::EffectRow];
+        let concrete = [
+            (TyKind::Star, Ty::new_primitive(Primitive::Int32, &engine)),
+            (TyKind::Instance, Ty::new_instance(symbol, Args::new([], &engine), &engine)),
+            (TyKind::EffectRow, Ty::new_effect_row([], None, &engine)),
+        ];
+        for (kind, ty) in
+            concrete.into_iter().chain(kinds.map(|kind| (kind, Ty::new_error(kind, &engine))))
+        {
+            for inference_kind in kinds.into_iter().filter(|other| *other != kind) {
+                for reverse in [false, true] {
+                    let mut solver = Solver::new(engine.clone());
+                    let inference = solver.new_inference(inference_kind);
+                    let variable = engine.intern(Ty::Inference(inference));
+                    let (left, right) =
+                        if reverse { (ty.clone(), variable) } else { (variable, ty.clone()) };
+                    assert_eq!(
+                        solver.entail(&Constraint::Subtype(Subtype::new(left, right))),
+                        Err(Error::Conflicted)
+                    );
+                }
+            }
+        }
+    }
+
+    // input: ?numeric or ?equality = a primitive, tuple, or star error
+    // premise: numeric accepts numbers; equality also accepts bool
+    // output: a singleton substitution for allowed primitives, otherwise Conflicted
+    #[tokio::test]
+    async fn star_application_constraints_remain_enforced() {
+        use crate::ty::InferenceConstraint;
+
+        let engine = rayc_qbice::create_minimal_engine().await;
+        for (constraint, primitive, allowed) in [
+            (InferenceConstraint::Numeric, Primitive::Int32, true),
+            (InferenceConstraint::Numeric, Primitive::Float32, true),
+            (InferenceConstraint::Numeric, Primitive::CInt, true),
+            (InferenceConstraint::Numeric, Primitive::Bool, false),
+            (InferenceConstraint::Numeric, Primitive::CStr, false),
+            (InferenceConstraint::EqualityComparable, Primitive::Bool, true),
+            (InferenceConstraint::EqualityComparable, Primitive::CStr, false),
+        ] {
+            let mut solver = Solver::new(engine.clone());
+            let inference = solver.new_inference_with_constraint(TyKind::Star, constraint);
+            let variable = engine.intern(Ty::Inference(inference));
+            let ty = Ty::new_primitive(primitive, &engine);
+            let expected = if allowed {
+                Ok(Step::Subst(Subst::new_singleton(inference, ty.clone())))
+            } else {
+                Err(Error::Conflicted)
+            };
+            assert_eq!(
+                solver.entail(&Constraint::Subtype(Subtype::new(variable.clone(), ty))),
+                expected
+            );
+            for rejected in [Ty::new_unit(&engine), Ty::new_star_error(&engine)] {
+                assert_eq!(
+                    solver.entail(&Constraint::Subtype(Subtype::new(variable.clone(), rejected))),
+                    Err(Error::Conflicted)
+                );
+            }
+        }
     }
 
     fn solve(

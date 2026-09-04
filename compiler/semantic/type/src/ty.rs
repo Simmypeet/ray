@@ -139,6 +139,31 @@ impl Ty {
         })
     }
 
+    /// Includes the root and all descendants; rigid polyvars are not inference.
+    #[must_use]
+    pub fn contains_inference(&self) -> bool {
+        self.recursive_iter().any(|ty| match ty {
+            Self::Inference(_) => true,
+            Self::Application(_) | Self::EffectRow(_) | Self::PolyVar(_) => false,
+        })
+    }
+
+    /// Includes errors of every kind at the root or in any descendant.
+    #[must_use]
+    pub fn contains_error(&self) -> bool {
+        self.recursive_iter().any(|ty| match ty {
+            Self::Application(application) => match application.view() {
+                ApplicationView::Error => true,
+                ApplicationView::Primitive(_)
+                | ApplicationView::Tuple(_)
+                | ApplicationView::Lambda(_)
+                | ApplicationView::Pointer(_)
+                | ApplicationView::Instance(_) => false,
+            },
+            Self::Inference(_) | Self::EffectRow(_) | Self::PolyVar(_) => false,
+        })
+    }
+
     #[must_use]
     pub fn has_inference_variable(&self, ty: &Inference) -> bool {
         match self {

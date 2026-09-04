@@ -133,7 +133,7 @@ impl Application {
     }
 
     #[must_use]
-    pub(super) const fn kind_of(&self) -> TyKind {
+    pub(crate) const fn kind_of(&self) -> TyKind {
         match self.constant {
             Constant::Primitive(_) | Constant::Tuple | Constant::Lambda | Constant::Pointer(_) => {
                 TyKind::Star

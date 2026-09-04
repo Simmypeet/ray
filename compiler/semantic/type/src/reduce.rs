@@ -9,6 +9,25 @@ pub trait Reduce {
     fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
     where
         Self: Sized;
+
+    /// Reduces this value and all descendants to normal form.
+    ///
+    /// Reduction implementations must make strict progress toward termination.
+    /// Current type reductions remove effect-row wrappers from a finite tree;
+    /// future alias reductions must handle alias cycles before returning a
+    /// step.
+    #[must_use]
+    fn normalize(&self, engine: &TrackedEngine) -> Self
+    where
+        Self: Sized + Clone + PartialEq,
+    {
+        let mut normalized = self.clone();
+        while let Some(reduced) = normalized.reduce(engine) {
+            assert!(reduced != normalized, "reduction must make progress");
+            normalized = reduced;
+        }
+        normalized
+    }
 }
 
 impl<T> Reduce for Interned<[T]>
