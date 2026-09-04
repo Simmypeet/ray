@@ -14,7 +14,8 @@ use rayc_symbol::{
     symbol_kind::{SymbolKind, get_symbol_kind},
 };
 use rayc_type::{
-    poly_var::{PolyVarStack, get_poly_var_map},
+    poly_var::{GlobalPolyVarID, PolyVarStack, get_poly_var_map},
+    trait_ref::TraitRef,
     ty::{
         InferenceConstraint, Mutability, Primitive, Ty, TyKind, args::Args,
         effect_row::EffectLabel, inference::GenInfer,
@@ -22,9 +23,10 @@ use rayc_type::{
 };
 
 use crate::{
-    Diagnostic, ExpectedEffect, ExpectedTrait, ExplicitTypeArgumentsNotAllowed,
-    PathSegmentNotFound, PolyVarNotFound, TypeArgumentArityMismatch, TypeInferenceNotAllowed,
-    TypeKindMismatch,
+    Diagnostic, DuplicateGivenArgument, ExpectedEffect, ExpectedInstance, ExpectedTrait,
+    ExplicitTypeArgumentsNotAllowed, GivenArgumentNotFound, MissingGivenArgument,
+    PathSegmentNotFound, PolyVarNotFound, PositionalGivenArgumentAfterNamed,
+    TypeArgumentArityMismatch, TypeInferenceNotAllowed, TypeKindMismatch,
 };
 
 /// Resolves syntax relative to a symbol and its polymorphic environment.
@@ -110,6 +112,10 @@ impl<'a> Resolver<'a> {
         Args::new(args, self.engine)
     }
 
+    pub(crate) fn new_instance_type(&self, symbol_id: GlobalSymbolID, args: Args) -> Interned<Ty> {
+        Ty::new_instance(symbol_id, args, self.engine)
+    }
+
     pub(crate) fn new_poly_var_type(
         &self,
         identifier: &rayc_syntax::Identifier,
@@ -123,6 +129,18 @@ impl<'a> Resolver<'a> {
             return self.new_error_type(error_kind);
         };
         Ty::new_poly_var(id, self.engine)
+    }
+
+    pub(crate) fn new_poly_var_type_from_id(&self, id: GlobalPolyVarID) -> Interned<Ty> {
+        Ty::new_poly_var(id, self.engine)
+    }
+
+    pub(crate) fn poly_var(&self, name: &str) -> Option<GlobalPolyVarID> {
+        self.poly_vars.find_by_name(name)
+    }
+
+    pub(crate) fn poly_var_trait_ref(&self, id: GlobalPolyVarID) -> Option<&TraitRef> {
+        self.poly_vars.trait_ref_of(id)
     }
 
     pub(crate) async fn new_checked_poly_var_type(
@@ -145,6 +163,11 @@ impl<'a> Resolver<'a> {
     }
 
     pub(crate) async fn type_kind(&self, ty: &Interned<Ty>) -> TyKind {
+        if let Ty::PolyVar(id) = &**ty
+            && let Some(kind) = self.poly_vars.kind_of(*id)
+        {
+            return kind;
+        }
         ty.kind_of(self.engine).await
     }
 
@@ -152,14 +175,21 @@ impl<'a> Resolver<'a> {
         self.engine.get_symbol_kind(symbol_id).await
     }
 
-    pub(crate) async fn poly_var_kinds(&self, symbol_id: GlobalSymbolID) -> Vec<TyKind> {
+    pub(crate) async fn argument_parameters(
+        &self,
+        symbol_id: GlobalSymbolID,
+    ) -> Vec<(Interned<str>, TyKind)> {
+        if let Some(parameters) = self.poly_vars.argument_parameters(symbol_id) {
+            return parameters;
+        }
+
         let symbol_kind = self.engine.get_symbol_kind(symbol_id).await;
         if symbol_kind.has_poly_var_map() {
             self.engine
                 .get_poly_var_map(symbol_id)
                 .await
                 .iter()
-                .map(|(_, poly_var)| poly_var.kind())
+                .map(|(_, poly_var)| (poly_var.name().to_owned(), poly_var.kind()))
                 .collect()
         } else {
             Vec::new()
@@ -188,6 +218,38 @@ impl<'a> Resolver<'a> {
 
     pub(crate) fn report_expected_trait(&self, span: RelativeSpan, actual: SymbolKind) {
         self.handler.receive(Diagnostic::ExpectedTrait(ExpectedTrait::new(span, actual)));
+    }
+
+    pub(crate) fn report_expected_instance(&self, span: RelativeSpan, actual: SymbolKind) {
+        self.handler.receive(Diagnostic::ExpectedInstance(ExpectedInstance::new(span, actual)));
+    }
+
+    pub(crate) fn report_positional_given_argument_after_named(&self, span: RelativeSpan) {
+        self.handler.receive(Diagnostic::PositionalGivenArgumentAfterNamed(
+            PositionalGivenArgumentAfterNamed { span },
+        ));
+    }
+
+    pub(crate) fn report_given_argument_not_found(&self, name: Interned<str>, span: RelativeSpan) {
+        self.handler
+            .receive(Diagnostic::GivenArgumentNotFound(GivenArgumentNotFound { name, span }));
+    }
+
+    pub(crate) fn report_missing_given_argument(&self, name: Interned<str>, span: RelativeSpan) {
+        self.handler.receive(Diagnostic::MissingGivenArgument(MissingGivenArgument { name, span }));
+    }
+
+    pub(crate) fn report_duplicate_given_argument(
+        &self,
+        name: Interned<str>,
+        original_span: RelativeSpan,
+        duplicate_span: RelativeSpan,
+    ) {
+        self.handler.receive(Diagnostic::DuplicateGivenArgument(DuplicateGivenArgument {
+            name,
+            original_span,
+            duplicate_span,
+        }));
     }
 
     pub(crate) fn report_path_segment_not_found(&self, identifier: rayc_syntax::Identifier) {

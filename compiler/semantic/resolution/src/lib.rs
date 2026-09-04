@@ -43,6 +43,16 @@ pub enum Diagnostic {
     ExpectedEffect(ExpectedEffect),
     /// A given parameter's reference resolved to a symbol that is not a trait.
     ExpectedTrait(ExpectedTrait),
+    /// A given argument resolved to a symbol that is not an instance.
+    ExpectedInstance(ExpectedInstance),
+    /// A positional given argument appeared after a named argument.
+    PositionalGivenArgumentAfterNamed(PositionalGivenArgumentAfterNamed),
+    /// A named given argument does not correspond to a given parameter.
+    GivenArgumentNotFound(GivenArgumentNotFound),
+    /// A required given argument was not supplied.
+    MissingGivenArgument(MissingGivenArgument),
+    /// A given parameter was assigned more than once.
+    DuplicateGivenArgument(DuplicateGivenArgument),
 }
 
 impl Report for Diagnostic {
@@ -56,6 +66,11 @@ impl Report for Diagnostic {
             Self::TypeKindMismatch(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedEffect(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedTrait(diagnostic) => diagnostic.report(engine).await,
+            Self::ExpectedInstance(diagnostic) => diagnostic.report(engine).await,
+            Self::PositionalGivenArgumentAfterNamed(diagnostic) => diagnostic.report(engine).await,
+            Self::GivenArgumentNotFound(diagnostic) => diagnostic.report(engine).await,
+            Self::MissingGivenArgument(diagnostic) => diagnostic.report(engine).await,
+            Self::DuplicateGivenArgument(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -311,6 +326,142 @@ impl Report for ExpectedTrait {
     }
 }
 
+/// A symbol used as a given argument that is not an instance.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct ExpectedInstance {
+    span: RelativeSpan,
+    actual: SymbolKind,
+}
+
+impl ExpectedInstance {
+    const fn new(span: RelativeSpan, actual: SymbolKind) -> Self { Self { span, actual } }
+}
+
+impl Report for ExpectedInstance {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("expected an instance, found {}", self.actual.str())),
+            ))
+            .message(format!("expected an instance, found {}", self.actual.str()))
+            .build()
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct PositionalGivenArgumentAfterNamed {
+    span: RelativeSpan,
+}
+
+impl Report for PositionalGivenArgumentAfterNamed {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some("this positional argument appears after a named argument".into()),
+            ))
+            .message("positional given arguments must appear before named arguments")
+            .build()
+    }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct GivenArgumentNotFound {
+    name: Interned<str>,
+    span: RelativeSpan,
+}
+
+impl Report for GivenArgumentNotFound {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("given parameter `{}` is not found", &*self.name)),
+            ))
+            .message(format!("given parameter `{}` is not found", &*self.name))
+            .build()
+    }
+}
+
+/// A required given argument that was not supplied.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct MissingGivenArgument {
+    name: Interned<str>,
+    span: RelativeSpan,
+}
+
+impl Report for MissingGivenArgument {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("supply the required given argument `{}`", &*self.name)),
+            ))
+            .message(format!("missing required given argument `{}`", &*self.name))
+            .build()
+    }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct DuplicateGivenArgument {
+    name: Interned<str>,
+    original_span: RelativeSpan,
+    duplicate_span: RelativeSpan,
+}
+
+impl Report for DuplicateGivenArgument {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.duplicate_span).await)
+                    .message("this given argument is duplicated")
+                    .build(),
+            )
+            .related(vec![
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.original_span).await)
+                    .message("the first argument is here")
+                    .build(),
+            ])
+            .message(format!("duplicate given argument `{}`", &*self.name))
+            .build()
+    }
+}
+
 /// A polymorphic variable that is not declared by a function parameter type.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
@@ -359,7 +510,7 @@ fn discover_effect_row_poly_var(
     };
 
     if let Some(variable) = variable {
-        poly_vars.insert(PolyVar::new_type(variable.kind.0.clone(), variable.span()));
+        poly_vars.insert(PolyVar::new_effect(variable.kind.0.clone(), variable.span()));
     }
 }
 

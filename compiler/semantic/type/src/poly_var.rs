@@ -116,6 +116,11 @@ impl PolyVarMap {
         self.poly_vars.get(id).expect("polymorphic variable ID should be valid").kind()
     }
 
+    #[must_use]
+    pub fn trait_ref_of(&self, id: PolyVarID) -> Option<&TraitRef> {
+        self.poly_vars.get(id).and_then(PolyVar::trait_ref)
+    }
+
     pub fn insert(&mut self, poly_var: PolyVar) -> PolyVarID {
         if let Some(id) = self.find_by_name(&poly_var.name) {
             return id;
@@ -159,6 +164,13 @@ impl PolyVarStack {
     pub fn kind_of(&self, id: GlobalPolyVarID) -> Option<TyKind> {
         self.poly_var_maps.iter().find_map(|(symbol_id, poly_var_map)| {
             (*symbol_id == id.parent_id()).then(|| poly_var_map.kind_of(id.id()))
+        })
+    }
+
+    #[must_use]
+    pub fn trait_ref_of(&self, id: GlobalPolyVarID) -> Option<&TraitRef> {
+        self.poly_var_maps.iter().find_map(|(symbol_id, poly_var_map)| {
+            (*symbol_id == id.parent_id()).then(|| poly_var_map.trait_ref_of(id.id())).flatten()
         })
     }
 
