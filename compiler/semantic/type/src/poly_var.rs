@@ -1,3 +1,5 @@
+use std::{collections::hash_map::Entry, ops::Index};
+
 use linkme::distributed_slice;
 use qbice::{
     Decode, Encode, Identifiable, Query, StableHash, executor, program::Registration,
@@ -5,6 +7,7 @@ use qbice::{
 };
 use rayc_arena::{ID, OrderedArena};
 use rayc_extend::extend;
+use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{
@@ -84,6 +87,7 @@ pub type GlobalPolyVarID = MemberID<PolyVarID>;
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
 pub struct PolyVarMap {
     poly_vars: OrderedArena<PolyVar>,
+    poly_var_ids_by_name: FxHashMap<Interned<str>, PolyVarID>,
 }
 
 impl PolyVarMap {
@@ -103,7 +107,7 @@ impl PolyVarMap {
 
     #[must_use]
     pub fn find_by_name(&self, name: &str) -> Option<PolyVarID> {
-        self.poly_vars.iter().find_map(|(id, poly_var)| (&*poly_var.name == name).then_some(id))
+        self.poly_var_ids_by_name.get(name).copied()
     }
 
     #[must_use]
@@ -121,12 +125,16 @@ impl PolyVarMap {
         self.poly_vars.get(id).and_then(PolyVar::trait_ref)
     }
 
-    pub fn insert(&mut self, poly_var: PolyVar) -> PolyVarID {
-        if let Some(id) = self.find_by_name(&poly_var.name) {
-            return id;
+    #[allow(clippy::result_large_err)]
+    pub fn insert(&mut self, poly_var: PolyVar) -> Result<PolyVarID, (PolyVar, PolyVarID)> {
+        match self.poly_var_ids_by_name.entry(poly_var.name.clone()) {
+            Entry::Occupied(en) => Err((poly_var, *en.get())),
+            Entry::Vacant(vacant_entry) => {
+                let id = self.poly_vars.insert(poly_var);
+                vacant_entry.insert(id);
+                Ok(id)
+            }
         }
-
-        self.poly_vars.insert(poly_var)
     }
 }
 
@@ -268,4 +276,12 @@ pub async fn build_subst_from_args(
             (GlobalPolyVarID::new(symbol_id, poly_var_id), argument.clone())
         })
         .collect()
+}
+
+impl Index<PolyVarID> for PolyVarMap {
+    type Output = PolyVar;
+
+    fn index(&self, index: PolyVarID) -> &Self::Output {
+        self.poly_vars.get(index).expect("polymorphic variable ID should be valid")
+    }
 }
