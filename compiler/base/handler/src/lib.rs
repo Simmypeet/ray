@@ -2,7 +2,6 @@
 
 use std::sync::atomic::AtomicUsize;
 
-use derive_more::{Deref, DerefMut};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// Represents a trait responsible for handling diagnostics in the compiler.
@@ -32,7 +31,7 @@ impl<T, U: From<T>> Handler<T> for &dyn Handler<U> {
 
 /// Is a struct that implements [`Handler`] trait by storing all errors in a
 /// vector.
-#[derive(Debug, Deref, DerefMut)]
+#[derive(Debug)]
 pub struct Storage<T: Send + Sync> {
     errors: RwLock<Vec<T>>,
 }
