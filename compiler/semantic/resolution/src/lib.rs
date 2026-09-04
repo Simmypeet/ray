@@ -12,7 +12,7 @@ use rayc_syntax::{
     r#type::Type as TypeSyntax,
 };
 use rayc_type::{
-    poly_var::{PolyVar, PolyVarMap},
+    poly_var::{PolyVar, PolyVarMap, PolyVarStack},
     ty::TyKind,
 };
 
@@ -510,53 +510,65 @@ fn discover_effect_row_poly_var(
     };
 
     if let Some(variable) = variable {
-        poly_vars.insert(PolyVar::new_effect(variable.kind.0.clone(), variable.span()));
+        let _ = poly_vars.insert(PolyVar::new_effect(variable.kind.0.clone(), variable.span()));
     }
 }
 
-fn discover_poly_vars(ty: &TypeSyntax, poly_vars: &mut PolyVarMap) {
+fn discover_poly_vars(
+    ty: &TypeSyntax,
+    poly_vars: &mut PolyVarMap,
+    poly_var_stack: Option<&PolyVarStack>,
+) {
     match ty {
         TypeSyntax::Primitive(_) => {}
         TypeSyntax::Pointer(pointer) => {
             if let Some(pointed_type) = pointer.pointed_type() {
-                discover_poly_vars(&pointed_type, poly_vars);
+                discover_poly_vars(&pointed_type, poly_vars, poly_var_stack);
             }
         }
         TypeSyntax::Tuple(tuple) => {
             for element in tuple.elements() {
-                discover_poly_vars(&element, poly_vars);
+                discover_poly_vars(&element, poly_vars, poly_var_stack);
             }
         }
         TypeSyntax::Lambda(lambda) => {
             if let Some(parameters) = lambda.parameters() {
                 for parameter in parameters.parameters() {
-                    discover_poly_vars(&parameter, poly_vars);
+                    discover_poly_vars(&parameter, poly_vars, poly_var_stack);
                 }
             }
             if let Some(return_type) = lambda.return_type()
                 && let Some(return_type) = return_type.r#type()
             {
-                discover_poly_vars(&return_type, poly_vars);
+                discover_poly_vars(&return_type, poly_vars, poly_var_stack);
             }
             discover_effect_row_poly_var(lambda.effect_row().as_ref(), poly_vars);
         }
         TypeSyntax::PolymorphicVariable(identifier) => {
-            if is_poly_var_name(&identifier.kind.0) {
-                poly_vars.insert(PolyVar::new_type(identifier.kind.0.clone(), identifier.span()));
+            let existing =
+                poly_var_stack.is_some_and(|x| x.find_by_name(&identifier.kind).is_some());
+
+            if is_poly_var_name(&identifier.kind.0) && !existing {
+                let _ = poly_vars
+                    .insert(PolyVar::new_type(identifier.kind.0.clone(), identifier.span()));
             }
         }
     }
 }
 
 #[must_use]
-pub fn discover_parameter_poly_vars(parameters: Option<&ParameterList>) -> PolyVarMap {
+pub fn discover_parameter_poly_vars(
+    parameters: Option<&ParameterList>,
+    poly_var_stack: Option<&PolyVarStack>,
+) -> PolyVarMap {
     let mut poly_vars = PolyVarMap::new();
 
     if let Some(parameters) = parameters {
         for entry in parameters.entries() {
             let ParameterEntry::Parameter(parameter) = entry else { continue };
+
             if let Some(ty) = parameter.r#type() {
-                discover_poly_vars(&ty, &mut poly_vars);
+                discover_poly_vars(&ty, &mut poly_vars, poly_var_stack);
             }
         }
     }
@@ -566,6 +578,9 @@ pub fn discover_parameter_poly_vars(parameters: Option<&ParameterList>) -> PolyV
 
 /// Discovers the polymorphic variables declared by a function signature.
 #[must_use]
-pub fn discover_function_poly_vars(parameters: Option<&ParameterList>) -> PolyVarMap {
-    discover_parameter_poly_vars(parameters)
+pub fn discover_function_poly_vars(
+    parameters: Option<&ParameterList>,
+    poly_var_stack: Option<&PolyVarStack>,
+) -> PolyVarMap {
+    discover_parameter_poly_vars(parameters, poly_var_stack)
 }

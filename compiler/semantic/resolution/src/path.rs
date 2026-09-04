@@ -380,7 +380,7 @@ impl Resolver<'_> {
         };
 
         if previous.is_none()
-            && let Some(poly_var_id) = self.poly_var(&identifier.kind.0)
+            && let Some(poly_var_id) = self.search_poly_var(&identifier.kind.0)
         {
             return Ok(PathResolution::PolyVar(poly_var_id));
         }
@@ -388,7 +388,8 @@ impl Resolver<'_> {
         let previous_parent = match previous.as_ref() {
             Some(PathResolution::PolyVar(poly_var_id)) => Some(
                 self.poly_var_trait_ref(*poly_var_id)
-                    .map(TraitRef::trait_id)
+                    .await
+                    .map(|x| x.trait_id())
                     .ok_or(PathResolutionError::UnexpectedSymbolKind)?,
             ),
             Some(resolution) => {

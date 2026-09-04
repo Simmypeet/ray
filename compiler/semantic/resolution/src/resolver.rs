@@ -14,7 +14,7 @@ use rayc_symbol::{
     symbol_kind::{SymbolKind, get_symbol_kind},
 };
 use rayc_type::{
-    poly_var::{GlobalPolyVarID, PolyVarStack, get_poly_var_map},
+    poly_var::{GlobalPolyVarID, PolyVarMap, PolyVarStack, get_poly_var_map},
     trait_ref::TraitRef,
     ty::{
         InferenceConstraint, Mutability, Primitive, Ty, TyKind, args::Args,
@@ -32,7 +32,10 @@ use crate::{
 /// Resolves syntax relative to a symbol and its polymorphic environment.
 pub struct Resolver<'a> {
     engine: &'a TrackedEngine,
-    poly_vars: &'a PolyVarStack,
+    poly_var_stack: &'a PolyVarStack,
+
+    building_poly_var_map: Option<&'a PolyVarMap>,
+
     site: GlobalSymbolID,
     handler: &'a dyn Handler<Diagnostic>,
     infer_gen: Option<&'a mut dyn GenInfer>,
@@ -42,7 +45,8 @@ impl fmt::Debug for Resolver<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("Resolver")
-            .field("poly_vars", &self.poly_vars)
+            .field("poly_vars", &self.poly_var_stack)
+            .field("building_poly_va_map", self.poly_var_stack)
             .field("site", &self.site)
             .field("has_infer_gen", &self.infer_gen.is_some())
             .finish_non_exhaustive()
@@ -53,12 +57,30 @@ impl<'a> Resolver<'a> {
     #[must_use]
     pub const fn new(
         engine: &'a TrackedEngine,
-        poly_vars: &'a PolyVarStack,
+        poly_var_stack: &'a PolyVarStack,
         site: GlobalSymbolID,
         handler: &'a dyn Handler<Diagnostic>,
         infer_gen: Option<&'a mut dyn GenInfer>,
     ) -> Self {
-        Self { engine, poly_vars, site, handler, infer_gen }
+        Self { engine, poly_var_stack, site, building_poly_var_map: None, handler, infer_gen }
+    }
+
+    pub const fn new_with_building_poly_var_map(
+        engine: &'a TrackedEngine,
+        poly_var_stack: &'a PolyVarStack,
+        building_poly_var_map: &'a PolyVarMap,
+        site: GlobalSymbolID,
+        handler: &'a dyn Handler<Diagnostic>,
+        infer_gen: Option<&'a mut dyn GenInfer>,
+    ) -> Self {
+        Self {
+            engine,
+            poly_var_stack,
+            building_poly_var_map: Some(building_poly_var_map),
+            site,
+            handler,
+            infer_gen,
+        }
     }
 
     pub(crate) fn new_primitive_type(&self, primitive: Primitive) -> Interned<Ty> {
@@ -121,7 +143,13 @@ impl<'a> Resolver<'a> {
         identifier: &rayc_syntax::Identifier,
         error_kind: TyKind,
     ) -> Interned<Ty> {
-        let Some(id) = self.poly_vars.find_by_name(&identifier.kind.0) else {
+        let Some(id) = self
+            .building_poly_var_map
+            .and_then(|x| {
+                x.find_by_name(&identifier.kind).map(|x| GlobalPolyVarID::new(self.site, x))
+            })
+            .or_else(|| self.poly_var_stack.find_by_name(&identifier.kind.0))
+        else {
             self.handler.receive(Diagnostic::PolyVarNotFound(PolyVarNotFound::new(
                 identifier.kind.0.clone(),
                 identifier.span(),
@@ -135,12 +163,22 @@ impl<'a> Resolver<'a> {
         Ty::new_poly_var(id, self.engine)
     }
 
-    pub(crate) fn poly_var(&self, name: &str) -> Option<GlobalPolyVarID> {
-        self.poly_vars.find_by_name(name)
+    pub(crate) fn search_poly_var(&self, name: &str) -> Option<GlobalPolyVarID> {
+        self.building_poly_var_map
+            .and_then(|x| x.find_by_name(name).map(|x| GlobalPolyVarID::new(self.site, x)))
+            .or_else(|| self.poly_var_stack.find_by_name(name))
     }
 
-    pub(crate) fn poly_var_trait_ref(&self, id: GlobalPolyVarID) -> Option<&TraitRef> {
-        self.poly_vars.trait_ref_of(id)
+    pub(crate) async fn poly_var_trait_ref(&self, id: GlobalPolyVarID) -> Option<TraitRef> {
+        if let Some(building_poly_var_map) = self.building_poly_var_map
+            && id.parent_id() == self.site
+            && let Some(trait_ref) = building_poly_var_map.trait_ref_of(id.id())
+        {
+            return Some(trait_ref.clone());
+        }
+
+        let poly_var_map = self.engine.get_poly_var_map(id.parent_id()).await;
+        poly_var_map.trait_ref_of(id.id()).cloned()
     }
 
     pub(crate) async fn new_checked_poly_var_type(
@@ -164,7 +202,7 @@ impl<'a> Resolver<'a> {
 
     pub(crate) async fn type_kind(&self, ty: &Interned<Ty>) -> TyKind {
         if let Ty::PolyVar(id) = &**ty
-            && let Some(kind) = self.poly_vars.kind_of(*id)
+            && let Some(kind) = self.poly_var_stack.kind_of(*id)
         {
             return kind;
         }
@@ -179,7 +217,7 @@ impl<'a> Resolver<'a> {
         &self,
         symbol_id: GlobalSymbolID,
     ) -> Vec<(Interned<str>, TyKind)> {
-        if let Some(parameters) = self.poly_vars.argument_parameters(symbol_id) {
+        if let Some(parameters) = self.poly_var_stack.argument_parameters(symbol_id) {
             return parameters;
         }
 
