@@ -1918,6 +1918,7 @@ dependencies = [
  "qbice",
  "rayc_diagnostic",
  "rayc_handler",
+ "rayc_hash",
  "rayc_lexical",
  "rayc_qbice",
  "rayc_resolution",

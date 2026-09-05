@@ -12,6 +12,7 @@ linkme.workspace = true
 derive_more.workspace = true
 rayc_diagnostic.path = "../../base/diagnostic"
 rayc_handler.path = "../../base/handler"
+rayc_hash.path = "../../base/hash"
 rayc_lexical.path = "../../syntax/lexical"
 rayc_qbice.path = "../../base/qbice"
 rayc_resolution.path = "../resolution"

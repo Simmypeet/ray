@@ -2,8 +2,13 @@ use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_symbol::GlobalSymbolID;
 use rayc_target::TargetID;
 
-/// Retrieves all instances in a target whose resolved trait reference names the
-/// given trait. Instances with unresolved trait references are omitted.
+/// Retrieves implicitly eligible instances in a target for the given trait.
+///
+/// Every declaration-owned ordinary type/effect parameter must occur in the
+/// normalized trait reference. Given parameters are exempt; their requirements
+/// are resolved during instance search, not by this query. Unresolved heads and
+/// heads containing errors or inference variables are omitted without
+/// additional diagnostics. Ineligible instances remain explicitly usable.
 ///
 /// Only the specified target is scanned; its dependencies are not searched.
 #[derive(
