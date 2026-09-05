@@ -16,6 +16,7 @@ use rayc_symbol::{
 };
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarMap, PolyVarStack, get_poly_var_map},
+    subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{
         InferenceConstraint, Mutability, Primitive, Ty, TyKind, args::Args,
@@ -173,6 +174,22 @@ impl Resolver<'_> {
         Some(self.engine.intern(Ty::Inference(infer_gen.gen_infer(kind, InferenceConstraint::Any))))
     }
 
+    pub(crate) fn new_instance_inference_type(
+        &mut self,
+        expected_trait_ref: &TraitRef,
+    ) -> Option<Interned<Ty>> {
+        let infer_gen = self.infer_gen.as_deref_mut()?;
+        Some(self.engine.intern(Ty::Inference(infer_gen.gen_instance_infer(expected_trait_ref))))
+    }
+
+    pub(crate) fn apply_subst_to_trait_ref(&self, trait_ref: &TraitRef, subst: &Subst) -> TraitRef {
+        trait_ref.apply_subst_or_clone(subst, self.engine)
+    }
+
+    pub(crate) fn compose_subst(&self, subst: &mut Subst, new_subst: &Subst) {
+        subst.compose(new_subst, self.engine);
+    }
+
     pub(crate) async fn type_kind(&self, ty: &Interned<Ty>) -> TyKind {
         if let Ty::PolyVar(id) = &**ty
             && let Some(kind) = self.poly_var_stack.and_then(|x| x.kind_of(*id))
@@ -197,31 +214,12 @@ impl Resolver<'_> {
     pub(crate) async fn argument_parameters(
         &self,
         symbol_id: GlobalSymbolID,
-    ) -> Vec<(Interned<str>, TyKind)> {
-        if let Some(building_poly_var_map) = self.building_poly_var_map
-            && symbol_id == self.site
-        {
-            return building_poly_var_map
-                .iter()
-                .map(|(_, poly_var)| (poly_var.name().to_owned(), poly_var.kind()))
-                .collect();
-        }
-
-        if let Some(parameters) = self.poly_var_stack.and_then(|x| x.argument_parameters(symbol_id))
-        {
-            return parameters;
-        }
-
+    ) -> Option<Interned<PolyVarMap>> {
         let symbol_kind = self.engine.get_symbol_kind(symbol_id).await;
         if symbol_kind.has_poly_var_map() {
-            self.engine
-                .get_poly_var_map(symbol_id)
-                .await
-                .iter()
-                .map(|(_, poly_var)| (poly_var.name().to_owned(), poly_var.kind()))
-                .collect()
+            Some(self.engine.get_poly_var_map(symbol_id).await)
         } else {
-            Vec::new()
+            None
         }
     }
 

@@ -1,0 +1,26 @@
+trait Eq[a]:
+    def equals(lhs: a, rhs: a) -> bool
+
+
+inst EqInt for Eq[int32]:
+    def equals(lhs: int32, rhs: int32) -> bool:
+        return lhs == rhs
+
+
+def acceptsGiven(value: a) given (equality: Eq[a]) -> bool:
+    return true
+
+
+def acceptsFive(value: a) given (
+    first: Eq[a],
+    second: Eq[a],
+    third: Eq[a],
+    fourth: Eq[a],
+    fifth: Eq[a],
+) -> bool:
+    return true
+
+
+def test() -> bool:
+    let implicit = acceptsGiven(1)
+    return acceptsFive given (EqInt, EqInt, fifth = EqInt, third = EqInt)(1)

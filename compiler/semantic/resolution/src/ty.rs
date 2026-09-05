@@ -3,13 +3,17 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
-use rayc_symbol::symbol_kind::SymbolKind;
+use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind};
 use rayc_syntax::{
     effect_row::{EffectRow as EffectRowSyntax, EffectRowAnnotation},
     path::{Path, PathSegment},
     r#type::{Primitive as PrimitiveSyntax, Type as TypeSyntax},
 };
-use rayc_type::ty::{Mutability, Primitive, Ty, TyKind, args::Args};
+use rayc_type::{
+    poly_var::{GlobalPolyVarID, PolyVarMap},
+    subst::Subst,
+    ty::{Mutability, Primitive, Ty, TyKind, args::Args},
+};
 
 use crate::{is_poly_var_name, path::PathResolution, resolver::Resolver};
 
@@ -107,82 +111,106 @@ impl Resolver<'_> {
     async fn resolve_given_arguments(
         &mut self,
         path: &PathSegment,
-        expected: &[(Interned<str>, TyKind)],
+        symbol_id: GlobalSymbolID,
+        parameters: Option<&PolyVarMap>,
+        type_parameter_count: usize,
+        subst: &mut Subst,
     ) -> Vec<Interned<Ty>> {
-        let Some(arguments) = path.given_arguments().and_then(|x| x.arguments()) else {
-            return expected
-                .iter()
-                .map(|(name, kind)| {
-                    self.report_missing_given_argument(name.clone(), path.span());
-                    self.new_error_type(*kind)
-                })
-                .collect();
-        };
-
-        let mut resolved = vec![None; expected.len()];
+        let given_parameter_count =
+            parameters.map_or(0, |parameters| parameters.len() - type_parameter_count);
+        let mut supplied = vec![None; given_parameter_count];
         let mut positional_index = 0;
         let mut saw_named = false;
 
-        for argument in arguments.arguments() {
-            let Some(dictionary) = argument.dictionary() else { continue };
-            let value = Box::pin(self.resolve_given_dictionary(&dictionary)).await;
+        if let Some(arguments) = path.given_arguments().and_then(|x| x.arguments()) {
+            for argument in arguments.arguments() {
+                let Some(dictionary) = argument.dictionary() else { continue };
 
-            if let Some(argument_name) = argument.name() {
-                saw_named = true;
-                let Some(name) = argument_name.name() else { continue };
-                let Some(index) =
-                    expected.iter().position(|(expected, _)| **expected == *name.kind.0)
-                else {
-                    self.report_given_argument_not_found(name.kind.0.clone(), name.span());
-                    continue;
-                };
-                if let Some((_, original_span)) = &resolved[index] {
-                    self.report_duplicate_given_argument(
-                        name.kind.0.clone(),
-                        *original_span,
-                        name.span(),
-                    );
+                if let Some(argument_name) = argument.name() {
+                    saw_named = true;
+                    let Some(name) = argument_name.name() else { continue };
+                    let Some(index) = parameters
+                        .into_iter()
+                        .flat_map(PolyVarMap::iter)
+                        .skip(type_parameter_count)
+                        .position(|(_, expected)| **expected.name() == *name.kind.0)
+                    else {
+                        self.report_given_argument_not_found(name.kind.0.clone(), name.span());
+                        continue;
+                    };
+                    if let Some((_, original_span)) = &supplied[index] {
+                        self.report_duplicate_given_argument(
+                            name.kind.0.clone(),
+                            *original_span,
+                            name.span(),
+                        );
+                        continue;
+                    }
+                    supplied[index] = Some((dictionary, name.span()));
                     continue;
                 }
-                resolved[index] = Some((value, name.span()));
-                continue;
-            }
 
-            if saw_named {
-                self.report_positional_given_argument_after_named(argument.span());
+                if saw_named {
+                    self.report_positional_given_argument_after_named(argument.span());
+                }
+
+                if positional_index < supplied.len() {
+                    supplied[positional_index] = Some((dictionary, argument.span()));
+                }
+                positional_index += 1;
             }
-            if positional_index < resolved.len() {
-                resolved[positional_index] = Some((value, argument.span()));
-            }
-            positional_index += 1;
         }
 
-        resolved
+        let mut arguments = Vec::with_capacity(given_parameter_count);
+        // Resolve the supplied syntax and create missing inferences in parameter order.
+        // Each binding may occur in the requirement of a later given parameter.
+        for (supplied, (parameter_id, parameter)) in supplied
             .into_iter()
-            .zip(expected)
-            .map(|(argument, (name, kind))| {
-                argument.map_or_else(
-                    || {
-                        self.report_missing_given_argument(name.clone(), path.span());
-                        self.new_error_type(*kind)
-                    },
-                    |(argument, _)| argument,
-                )
-            })
-            .collect()
+            .zip(parameters.into_iter().flat_map(PolyVarMap::iter).skip(type_parameter_count))
+        {
+            let value = if let Some((dictionary, _)) = supplied {
+                Box::pin(self.resolve_given_dictionary(&dictionary)).await
+            } else {
+                let expected_trait_ref = self.apply_subst_to_trait_ref(
+                    parameter
+                        .trait_ref()
+                        .expect("a given parameter must have an instance requirement"),
+                    subst,
+                );
+                self.new_instance_inference_type(&expected_trait_ref).unwrap_or_else(|| {
+                    self.report_missing_given_argument(parameter.name().clone(), path.span());
+                    self.new_error_type(TyKind::Instance)
+                })
+            };
+
+            self.compose_subst(
+                subst,
+                &Subst::new_singleton(GlobalPolyVarID::new(symbol_id, parameter_id), value.clone()),
+            );
+            arguments.push(value);
+        }
+        arguments
     }
 
     pub(crate) async fn resolve_arguments(
         &mut self,
+        symbol_id: GlobalSymbolID,
         symbol_kind: SymbolKind,
         path: &PathSegment,
         identifier: &rayc_syntax::Identifier,
-        parameters: &[(Interned<str>, TyKind)],
+        parameters: Option<&PolyVarMap>,
     ) -> Args {
-        let type_parameter_count =
-            parameters.iter().take_while(|(_, kind)| *kind != TyKind::Instance).count();
-        let (type_parameters, given_parameters) = parameters.split_at(type_parameter_count);
-        let type_kinds = type_parameters.iter().map(|(_, kind)| *kind).collect::<Vec<_>>();
+        let type_parameter_count = parameters
+            .into_iter()
+            .flat_map(PolyVarMap::iter)
+            .take_while(|(_, parameter)| parameter.kind() != TyKind::Instance)
+            .count();
+        let type_kinds = parameters
+            .into_iter()
+            .flat_map(PolyVarMap::iter)
+            .take(type_parameter_count)
+            .map(|(_, parameter)| parameter.kind())
+            .collect::<Vec<_>>();
 
         let type_arguments_are_implicit =
             matches!(symbol_kind, SymbolKind::Def | SymbolKind::TraitDef | SymbolKind::InstanceDef);
@@ -195,7 +223,25 @@ impl Resolver<'_> {
         } else {
             self.resolve_explicit_type_arguments(path, &type_kinds).await
         };
-        resolved.extend(self.resolve_given_arguments(path, given_parameters).await);
+        let mut subst = parameters
+            .into_iter()
+            .flat_map(PolyVarMap::iter)
+            .take(type_parameter_count)
+            .zip(&resolved)
+            .map(|((parameter_id, _), argument)| {
+                (GlobalPolyVarID::new(symbol_id, parameter_id), argument.clone())
+            })
+            .collect();
+        resolved.extend(
+            self.resolve_given_arguments(
+                path,
+                symbol_id,
+                parameters,
+                type_parameter_count,
+                &mut subst,
+            )
+            .await,
+        );
         self.new_args(resolved)
     }
 }

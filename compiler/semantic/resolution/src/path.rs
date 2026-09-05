@@ -417,7 +417,9 @@ impl Resolver<'_> {
 
         let symbol_kind = self.symbol_kind(symbol_id).await;
         let parameters = self.argument_parameters(symbol_id).await;
-        let args = self.resolve_arguments(symbol_kind, path, &identifier, &parameters).await;
+        let args = self
+            .resolve_arguments(symbol_id, symbol_kind, path, &identifier, parameters.as_deref())
+            .await;
 
         match symbol_kind {
             SymbolKind::Def => Ok(PathResolution::Def(Def::new(symbol_id, args))),

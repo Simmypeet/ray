@@ -4,6 +4,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_type::{
     constraint::{self, Constraint, DerivedConstraint, Step},
     reduce::Reduce,
+    trait_ref::TraitRef,
     ty::{
         InferenceConstraint, Ty, TyKind,
         inference::{GenInfer, Inference},
@@ -176,6 +177,10 @@ impl GenInfer for ConstraintSolver {
             self.constraint_set.numeric_inferences.push(inference);
         }
         inference
+    }
+
+    fn gen_instance_infer(&mut self, _expected_trait_ref: &TraitRef) -> Inference {
+        self.solver.new_inference(TyKind::Instance)
     }
 }
 
