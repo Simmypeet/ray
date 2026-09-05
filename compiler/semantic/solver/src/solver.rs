@@ -11,7 +11,6 @@ use rayc_type::{
 use crate::solver::instance_resolution_state::{InstanceResolutionLimits, InstanceResolutionState};
 
 mod instance_resolution_state;
-mod ty_relate;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TyRelatingEnvironment {

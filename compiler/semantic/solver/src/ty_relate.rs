@@ -10,7 +10,7 @@ use rayc_type::{
     },
 };
 
-use super::{Solver, TyRelatingEnvironment};
+use crate::solver::{Solver, TyRelatingEnvironment};
 
 #[expect(clippy::trivially_copy_pass_by_ref)]
 const fn can_bind(

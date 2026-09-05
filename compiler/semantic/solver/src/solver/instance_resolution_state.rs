@@ -50,7 +50,7 @@ enum EnteredInstanceGoal {
 
 /// A token proving that a goal was pushed onto the active stack.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct ActiveInstanceGoal {
+pub struct ActiveInstanceGoal {
     depth: usize,
     goal: TraitRef,
 }
@@ -72,7 +72,7 @@ pub(crate) struct InstanceResolutionState {
 
 impl InstanceResolutionState {
     #[must_use]
-    pub(crate) fn new(limits: InstanceResolutionLimits) -> Self {
+    pub fn new(limits: InstanceResolutionLimits) -> Self {
         Self {
             limits,
             remaining_candidate_visits: limits.max_candidate_visits,
@@ -146,7 +146,7 @@ impl InstanceResolutionState {
 
     /// Consumes one unit of shared candidate fuel before a global head is
     /// tried.
-    pub(crate) fn visit_candidate(
+    fn visit_candidate(
         &mut self,
         candidate: GlobalSymbolID,
     ) -> Result<(), InstanceResolutionError> {
@@ -174,23 +174,12 @@ impl InstanceResolutionState {
 
     /// Pops a goal and stores its completion if the active search remained
     /// memoizable.
-    pub(crate) fn complete_goal(
-        &mut self,
-        active: ActiveInstanceGoal,
-        resolution: InstanceResolutionResult,
-    ) {
+    fn complete_goal(&mut self, active: ActiveInstanceGoal, resolution: InstanceResolutionResult) {
         let ActiveInstanceGoal { depth, goal } = active;
         let frame = self.pop_goal(depth, &goal);
         if frame.memo {
             self.memo.insert(goal, resolution);
         }
-    }
-
-    /// Pops a goal whose result must not be memoized.
-    #[cfg(test)]
-    pub(crate) fn leave_goal(&mut self, active: ActiveInstanceGoal) {
-        let ActiveInstanceGoal { depth, goal } = active;
-        self.pop_goal(depth, &goal);
     }
 
     fn pop_goal(&mut self, depth: usize, goal: &TraitRef) -> ActiveGoalFrame {
