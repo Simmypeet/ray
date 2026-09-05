@@ -3,7 +3,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
-    constraint::ty_relate::TyRelate,
+    constraint::ty_relate::{TyRelate, TyRelatingEnvironment},
     reduce::Reduce,
     solver::Solver,
     subst::{Subst, Substitutable},
@@ -116,9 +116,21 @@ pub enum Error {
 }
 
 impl Solver {
-    pub fn entail(&mut self, constraint: &Constraint) -> Result<Step, Error> {
+    pub async fn entail(&mut self, constraint: &Constraint) -> Result<Step, Error> {
         match constraint {
-            Constraint::TyRelate(subtype) => self.entail_subtype(subtype),
+            Constraint::TyRelate(subtype) => {
+                self.entail_subtype(subtype, &TyRelatingEnvironment::Normal).await
+            }
+        }
+    }
+
+    pub async fn entail_with_relate_env(
+        &mut self,
+        constraint: &Constraint,
+        relate_env: &TyRelatingEnvironment,
+    ) -> Result<Step, Error> {
+        match constraint {
+            Constraint::TyRelate(subtype) => self.entail_subtype(subtype, relate_env).await,
         }
     }
 }

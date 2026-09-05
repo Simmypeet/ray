@@ -12,7 +12,7 @@ impl Bind<BinarySyntax> for TAstBuilder {
     async fn bind(&mut self, syn: BinarySyntax) -> TypedExprID {
         let span = syn.span();
         let Some(first) = syn.postfix() else {
-            return self.push_error_expression(span);
+            return self.push_error_expression(span).await;
         };
 
         let first = self.bind(first).await;
@@ -38,10 +38,10 @@ impl Bind<BinarySyntax> for TAstBuilder {
         }
 
         if is_malformed {
-            return self.push_error_expression_with_children(span, bound_operands);
+            return self.push_error_expression_with_children(span, bound_operands).await;
         }
 
-        self.reduce_with_precedence(first, subsequent)
+        self.reduce_with_precedence(first, subsequent).await
     }
 }
 
@@ -59,7 +59,7 @@ impl TAstBuilder {
     ///
     /// After all flat pairs have been visited, draining the operator stack
     /// joins the remaining subtrees into one typed-AST expression.
-    fn reduce_with_precedence(
+    async fn reduce_with_precedence(
         &mut self,
         first: TypedExprID,
         subsequent: impl IntoIterator<Item = (BinaryOp, TypedExprID)>,
@@ -69,7 +69,7 @@ impl TAstBuilder {
 
         for (operator, operand) in subsequent {
             while operators.last().is_some_and(|last| should_reduce(*last, operator)) {
-                self.reduce_last(&mut operands, &mut operators);
+                self.reduce_last(&mut operands, &mut operators).await;
             }
 
             operators.push(operator);
@@ -79,7 +79,7 @@ impl TAstBuilder {
         // No more incoming operators can affect precedence, so reduce from the
         // top of the operator stack until only the complete tree root remains.
         while !operators.is_empty() {
-            self.reduce_last(&mut operands, &mut operators);
+            self.reduce_last(&mut operands, &mut operators).await;
         }
 
         operands.pop().expect("a binary expression should contain its first operand")
@@ -87,15 +87,19 @@ impl TAstBuilder {
 
     /// Replaces the top operator and its two operand subtrees with their
     /// typed-AST parent.
-    fn reduce_last(&mut self, operands: &mut Vec<TypedExprID>, operators: &mut Vec<BinaryOp>) {
+    async fn reduce_last(
+        &mut self,
+        operands: &mut Vec<TypedExprID>,
+        operators: &mut Vec<BinaryOp>,
+    ) {
         let right = operands.pop().expect("an operator should have a right operand");
         let left = operands.pop().expect("an operator should have a left operand");
         let operator = operators.pop().expect("an operand reduction should have an operator");
 
-        operands.push(self.build_binary(left, operator, right));
+        operands.push(self.build_binary(left, operator, right).await);
     }
 
-    fn build_binary(
+    async fn build_binary(
         &mut self,
         left: TypedExprID,
         operator: BinaryOp,
@@ -104,26 +108,26 @@ impl TAstBuilder {
         let ty = match operator {
             BinaryOp::Assign => {
                 let ty = self.type_of_expression(left);
-                self.push_variable_assignment_constraint(&ty, right);
+                self.push_variable_assignment_constraint(&ty, right).await;
                 self.require_lvalue(left, true, LvalueOperation::Assignment);
                 ty
             }
             BinaryOp::Equal | BinaryOp::NotEqual => {
                 let operand_ty = self.new_equality_comparable_type_inference();
-                self.push_binary_operator_constraint(&operand_ty, left);
-                self.push_binary_operator_constraint(&operand_ty, right);
+                self.push_binary_operator_constraint(&operand_ty, left).await;
+                self.push_binary_operator_constraint(&operand_ty, right).await;
                 Ty::new_primitive(Primitive::Bool, self.engine())
             }
             BinaryOp::Plus | BinaryOp::Minus | BinaryOp::Multiply | BinaryOp::Divide => {
                 let ty = self.new_numeric_type_inference();
-                self.push_binary_operator_constraint(&ty, left);
-                self.push_binary_operator_constraint(&ty, right);
+                self.push_binary_operator_constraint(&ty, left).await;
+                self.push_binary_operator_constraint(&ty, right).await;
                 ty
             }
             BinaryOp::And | BinaryOp::Or => {
                 let ty = Ty::new_primitive(Primitive::Bool, self.engine());
-                self.push_binary_operator_constraint(&ty, left);
-                self.push_binary_operator_constraint(&ty, right);
+                self.push_binary_operator_constraint(&ty, left).await;
+                self.push_binary_operator_constraint(&ty, right).await;
                 ty
             }
         };
@@ -131,6 +135,7 @@ impl TAstBuilder {
         let span = self.span_of_expression(left).join(&self.span_of_expression(right));
 
         self.insert_expression(TypedExprKind::Binary(Binary::new(left, operator, right)), span, ty)
+            .await
     }
 }
 

@@ -54,7 +54,7 @@ impl TAstBuilder {
                 ));
 
                 if let Some(expr_id) = expr_id {
-                    self.push_variable_assignment_constraint(&var_ty, expr_id);
+                    self.push_variable_assignment_constraint(&var_ty, expr_id).await;
                 }
 
                 let name_binding_group_id = self.push_new_name_binding_group();
@@ -78,13 +78,14 @@ impl TAstBuilder {
                         .maybe_expression(expr_id)
                         .span(l.span())
                         .build(),
-                ));
+                ))
+                .await;
             }
 
             StatementSyntax::Expression(expression) => {
                 let expr = self.bind(expression.clone()).await;
 
-                self.push_statement(Statement::Expression(expr));
+                self.push_statement(Statement::Expression(expr)).await;
             }
 
             StatementSyntax::Return(ret) => {
@@ -99,7 +100,7 @@ impl TAstBuilder {
                     Return::new_unit()
                 };
 
-                self.push_statement(Statement::Return(ret));
+                self.push_statement(Statement::Return(ret)).await;
             }
         }
     }

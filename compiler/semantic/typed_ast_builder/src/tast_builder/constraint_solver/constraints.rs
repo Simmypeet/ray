@@ -22,7 +22,7 @@ use crate::tast_builder::{
 };
 
 impl TAstBuilder {
-    pub fn push_effect_introduction(
+    pub async fn push_effect_introduction(
         &mut self,
         expression_id: TypedExprID,
         introduced_effect: &Interned<Ty>,
@@ -45,10 +45,11 @@ impl TAstBuilder {
             // the **actual** effect before it got mixed with other effects in the unification
             // process
             EffectUnificationSource::EffectIntroduction { original_effect },
-        );
+        )
+        .await;
     }
 
-    pub(in crate::tast_builder) fn compose_effect_from_sub_exprs(
+    pub(in crate::tast_builder) async fn compose_effect_from_sub_exprs(
         &mut self,
         dest_expr: TypedExprID,
     ) {
@@ -71,10 +72,13 @@ impl TAstBuilder {
             constraints.push(pending_constraint);
         }
 
-        self.push_constraints(constraints);
+        self.push_constraints(constraints).await;
     }
 
-    pub(in crate::tast_builder) fn compose_effect_from_statement(&mut self, statement: &Statement) {
+    pub(in crate::tast_builder) async fn compose_effect_from_statement(
+        &mut self,
+        statement: &Statement,
+    ) {
         let expression = match statement {
             Statement::Let(statement) => statement.expression(),
             Statement::Expression(expression) => Some(*expression),
@@ -89,10 +93,11 @@ impl TAstBuilder {
             self.function_map.effect_of(self.current_typed_function_id()).clone(),
             self.span_of_expression(expression),
             EffectUnificationSource::EffectSharing,
-        );
+        )
+        .await;
     }
 
-    pub(crate) fn compose_run_with_effect(
+    pub(crate) async fn compose_run_with_effect(
         &mut self,
         run_with_expression: TypedExprID,
         body_function: TypedFunctionID,
@@ -132,7 +137,7 @@ impl TAstBuilder {
             ));
         }
 
-        self.push_constraints(constraints);
+        self.push_constraints(constraints).await;
     }
 
     pub(crate) async fn push_function_effect_constraint(
@@ -147,7 +152,8 @@ impl TAstBuilder {
             body_effect,
             function_name_span,
             EffectUnificationSource::FunctionBodyEffect,
-        );
+        )
+        .await;
     }
 
     fn effect_unification_constraint(
@@ -172,7 +178,7 @@ impl TAstBuilder {
             .build()
     }
 
-    fn push_effect_unification_constraint(
+    async fn push_effect_unification_constraint(
         &mut self,
         lesser: Interned<Ty>,
         greater: Interned<Ty>,
@@ -180,14 +186,14 @@ impl TAstBuilder {
         source: EffectUnificationSource,
     ) {
         let pending_constraint = self.effect_unification_constraint(lesser, greater, span, source);
-        self.push_constraint(pending_constraint);
+        self.push_constraint(pending_constraint).await;
     }
 
     pub fn new_effect_inference(&mut self) -> Interned<Ty> {
         self.new_type_inference_with_kind(TyKind::EffectRow)
     }
 
-    pub fn push_variable_assignment_constraint(
+    pub async fn push_variable_assignment_constraint(
         &mut self,
         expected_ty: &Interned<Ty>,
         expression: TypedExprID,
@@ -196,7 +202,8 @@ impl TAstBuilder {
             expression,
             expected_ty,
             SubtypeSource::VariableAssignment,
-        );
+        )
+        .await;
     }
 
     pub async fn push_return_type_constraint(&mut self, expression: TypedExprID) {
@@ -204,7 +211,8 @@ impl TAstBuilder {
             expression,
             &self.return_type_of_current_function().await,
             SubtypeSource::ReturnType,
-        );
+        )
+        .await;
     }
 
     pub async fn push_unit_return_type_constraint(&mut self, span: RelativeSpan) {
@@ -214,10 +222,11 @@ impl TAstBuilder {
             &self.return_type_of_current_function().await,
             span,
             SubtypeSource::ReturnType,
-        );
+        )
+        .await;
     }
 
-    pub fn push_function_call_constraint(
+    pub async fn push_function_call_constraint(
         &mut self,
         expected_ty: &Interned<Ty>,
         expression: TypedExprID,
@@ -226,10 +235,11 @@ impl TAstBuilder {
             expression,
             expected_ty,
             SubtypeSource::FunctionCall,
-        );
+        )
+        .await;
     }
 
-    pub fn push_lambda_invocation_constraint(
+    pub async fn push_lambda_invocation_constraint(
         &mut self,
         expected_ty: &Interned<Ty>,
         expression: TypedExprID,
@@ -238,10 +248,11 @@ impl TAstBuilder {
             expression,
             expected_ty,
             SubtypeSource::LambdaInvocation,
-        );
+        )
+        .await;
     }
 
-    pub fn push_binary_operator_constraint(
+    pub async fn push_binary_operator_constraint(
         &mut self,
         expected_ty: &Interned<Ty>,
         expression: TypedExprID,
@@ -250,26 +261,29 @@ impl TAstBuilder {
             expression,
             expected_ty,
             SubtypeSource::BinaryOperator,
-        );
+        )
+        .await;
     }
 
-    pub fn push_if_condition_constraint(
+    pub async fn push_if_condition_constraint(
         &mut self,
         expected_ty: &Interned<Ty>,
         expression: TypedExprID,
     ) {
-        self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::IfCondition);
+        self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::IfCondition)
+            .await;
     }
 
-    pub fn push_if_branch_constraint(
+    pub async fn push_if_branch_constraint(
         &mut self,
         expected_ty: &Interned<Ty>,
         expression: TypedExprID,
     ) {
-        self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::IfBranch);
+        self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::IfBranch)
+            .await;
     }
 
-    fn push_subtype_constraint_with_expr(
+    async fn push_subtype_constraint_with_expr(
         &mut self,
         arg: TypedExprID,
         expected_ty: &Interned<Ty>,
@@ -281,10 +295,11 @@ impl TAstBuilder {
             expected_ty,
             self.span_of_expression(arg),
             source,
-        );
+        )
+        .await;
     }
 
-    fn push_subtype_constraint(
+    async fn push_subtype_constraint(
         &mut self,
         actual_ty: &Interned<Ty>,
         expected_ty: &Interned<Ty>,
@@ -306,6 +321,6 @@ impl TAstBuilder {
             .cause_id(cause_id)
             .build();
 
-        self.push_constraint(pending_constraint);
+        self.push_constraint(pending_constraint).await;
     }
 }

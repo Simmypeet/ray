@@ -70,10 +70,10 @@ impl TAstBuilder {
 
     async fn build_path_direct_call(&mut self, syn: &DirectCallSyn) -> TypedExprID {
         let Some(path) = syn.path() else {
-            return self.push_error_expression(syn.span());
+            return self.push_error_expression(syn.span()).await;
         };
         let Some(call) = syn.call() else {
-            return self.push_error_expression(syn.span());
+            return self.push_error_expression(syn.span()).await;
         };
 
         if let Some(identifier) = path.bare_identifier()
@@ -85,7 +85,7 @@ impl TAstBuilder {
 
         let arguments = self.bind_call_arguments(&call).await;
         let Ok(resolution) = self.resolve_path(&path).await else {
-            return self.push_error_expression_with_children(syn.span(), arguments);
+            return self.push_error_expression_with_children(syn.span(), arguments).await;
         };
         let (target, call_subst) = match &resolution {
             PathResolution::Def(def) => (
@@ -116,7 +116,7 @@ impl TAstBuilder {
                         .span(path.span())
                         .build(),
                 ));
-                return self.push_error_expression_with_children(syn.span(), arguments);
+                return self.push_error_expression_with_children(syn.span(), arguments).await;
             }
             PathResolution::ResolvedInstanceDef(def) => (
                 ResolvedCallTarget::Direct {
@@ -136,7 +136,7 @@ impl TAstBuilder {
                 if let Some(symbol_id) = resolution.global_id() {
                     self.push_symbol_not_callable(symbol_id, path.span());
                 }
-                return self.push_error_expression_with_children(syn.span(), arguments);
+                return self.push_error_expression_with_children(syn.span(), arguments).await;
             }
         };
         self.build_resolved_direct_call(target, arguments, call_subst, syn.span()).await
@@ -173,7 +173,7 @@ impl TAstBuilder {
 
         for ((_, parameter), argument) in parameter_map.iter().zip(arguments.iter()) {
             let parameter_ty = parameter.ty().apply_subst_or_clone(&call_subst, self.engine());
-            self.push_function_call_constraint(&parameter_ty, *argument);
+            self.push_function_call_constraint(&parameter_ty, *argument).await;
         }
 
         let return_type = self.engine().get_return_type(function_id).await;
@@ -210,8 +210,8 @@ impl TAstBuilder {
                 Call::new_effect_operation(effect.symbol_id(), operation_id, arguments, call_subst)
             }
         };
-        let expr_id = self.insert_expression(TypedExprKind::Call(call), span, return_type);
-        self.push_effect_introduction(expr_id, &effect_row);
+        let expr_id = self.insert_expression(TypedExprKind::Call(call), span, return_type).await;
+        self.push_effect_introduction(expr_id, &effect_row).await;
         expr_id
     }
 
@@ -227,31 +227,33 @@ impl TAstBuilder {
         let span = callee_span.join(&syn.span());
 
         let (return_type, effect_row) =
-            match self.resolve_lambda_call_signature(callee, arguments.len(), callee_span) {
+            match self.resolve_lambda_call_signature(callee, arguments.len(), callee_span).await {
                 LambdaCallSignature::Callable { parameter_types, return_type, effect_row } => {
-                    self.check_lambda_call_arguments(&parameter_types, &arguments, span);
+                    self.check_lambda_call_arguments(&parameter_types, &arguments, span).await;
 
                     (return_type, Some(effect_row))
                 }
                 LambdaCallSignature::Invalid => (Ty::new_star_error(self.engine()), None),
             };
 
-        let expr_id = self.insert_expression(
-            TypedExprKind::Call(Call::new_lambda(callee, arguments)),
-            span,
-            return_type,
-        );
+        let expr_id = self
+            .insert_expression(
+                TypedExprKind::Call(Call::new_lambda(callee, arguments)),
+                span,
+                return_type,
+            )
+            .await;
 
         // if the lambda effect signature is malformed, don't bother adding the effect
         // introduction constraint, as it will just add noise to the diagnostics
         if let Some(effect_row) = effect_row {
-            self.push_effect_introduction(expr_id, &effect_row);
+            self.push_effect_introduction(expr_id, &effect_row).await;
         }
 
         expr_id
     }
 
-    fn resolve_lambda_call_signature(
+    async fn resolve_lambda_call_signature(
         &mut self,
         callee: TypedExprID,
         argument_count: usize,
@@ -287,7 +289,7 @@ impl TAstBuilder {
                     effect_row.clone(),
                     self.engine(),
                 );
-                self.push_lambda_invocation_constraint(&expected, callee);
+                self.push_lambda_invocation_constraint(&expected, callee).await;
 
                 LambdaCallSignature::Callable { parameter_types, return_type, effect_row }
             }
@@ -307,7 +309,7 @@ impl TAstBuilder {
         ));
     }
 
-    fn check_lambda_call_arguments(
+    async fn check_lambda_call_arguments(
         &mut self,
         parameter_types: &[Interned<Ty>],
         arguments: &[TypedExprID],
@@ -324,7 +326,7 @@ impl TAstBuilder {
         }
 
         for (parameter_type, argument) in parameter_types.iter().zip(arguments.iter()) {
-            self.push_lambda_invocation_constraint(parameter_type, *argument);
+            self.push_lambda_invocation_constraint(parameter_type, *argument).await;
         }
     }
 }

@@ -27,6 +27,7 @@ impl Bind<Parenthesized> for TAstBuilder {
                 syn.span(),
                 self.type_of_expression(args[0]),
             )
+            .await
         } else {
             let mut tuple_tys = Vec::new();
 
@@ -36,7 +37,7 @@ impl Bind<Parenthesized> for TAstBuilder {
 
             let ty = Ty::new_tuple(self.engine().intern_unsized(tuple_tys), self.engine());
 
-            self.insert_expression(TypedExprKind::Tuple(Tuple::new(args)), syn.span(), ty)
+            self.insert_expression(TypedExprKind::Tuple(Tuple::new(args)), syn.span(), ty).await
         }
     }
 }

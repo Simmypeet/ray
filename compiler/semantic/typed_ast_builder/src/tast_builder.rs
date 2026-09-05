@@ -220,7 +220,7 @@ impl TAstBuilder {
     /// This function only requires the kind, span, and type of the expression.
     /// The effect is automatically composed from its sub-expressions.
     #[must_use]
-    pub fn insert_expression<K: Into<TypedExprKind> + SubExprs>(
+    pub async fn insert_expression<K: Into<TypedExprKind> + SubExprs>(
         &mut self,
         kind: K,
         span: RelativeSpan,
@@ -231,7 +231,7 @@ impl TAstBuilder {
         let id = self.function_map.insert_expression(self.building_function, expr);
 
         // automatically compose the effect of the expression from its sub-expressions
-        self.compose_effect_from_sub_exprs(id);
+        self.compose_effect_from_sub_exprs(id).await;
 
         id
     }
@@ -256,18 +256,18 @@ impl TAstBuilder {
         self.diagnostics.extend(diagnostics);
     }
 
-    pub fn push_error_expression(&mut self, span: RelativeSpan) -> TypedExprID {
+    pub async fn push_error_expression(&mut self, span: RelativeSpan) -> TypedExprID {
         let infer = self.new_type_inference();
-        self.insert_expression(typed_expr::errored::Errored::new_empty(), span, infer)
+        self.insert_expression(typed_expr::errored::Errored::new_empty(), span, infer).await
     }
 
-    pub fn push_error_expression_with_children(
+    pub async fn push_error_expression_with_children(
         &mut self,
         span: RelativeSpan,
         children: Vec<TypedExprID>,
     ) -> TypedExprID {
         let infer = self.new_type_inference();
-        self.insert_expression(typed_expr::errored::Errored::new(children), span, infer)
+        self.insert_expression(typed_expr::errored::Errored::new(children), span, infer).await
     }
 
     pub fn span_of_expression(&self, id: TypedExprID) -> RelativeSpan {
@@ -278,8 +278,8 @@ impl TAstBuilder {
         self.function_map.get_expression(id.function_id(), id.local_id()).span()
     }
 
-    pub fn push_statement(&mut self, statement: Statement) {
-        self.compose_effect_from_statement(&statement);
+    pub async fn push_statement(&mut self, statement: Statement) {
+        self.compose_effect_from_statement(&statement).await;
         self.function_map.push_statement(self.building_function, statement);
     }
 

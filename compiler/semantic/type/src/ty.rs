@@ -173,6 +173,14 @@ impl Ty {
             Self::PolyVar(_) => false,
         }
     }
+
+    #[must_use]
+    pub fn has_poly_variable(&self, poly_var: &GlobalPolyVarID) -> bool {
+        self.recursive_iter().any(|ty| match ty {
+            Self::PolyVar(ty_poly_var) => ty_poly_var == poly_var,
+            Self::Application(_) | Self::Inference(_) | Self::EffectRow(_) => false,
+        })
+    }
 }
 
 impl Substitutable for Interned<Ty> {

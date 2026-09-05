@@ -21,23 +21,28 @@ impl Bind<Postfix> for TAstBuilder {
     async fn bind(&mut self, syn: Postfix) -> TypedExprID {
         let Some(leaf) = syn.leaf() else {
             // very malformed expressionc
-            return self.push_error_expression(syn.span());
+            return self.push_error_expression(syn.span()).await;
         };
 
         let mut bound = self.bind(leaf).await;
         for postfix in syn.postfixes() {
             let val = match postfix {
                 PostfixOperator::Call(call) => Some(self.build_lambda_call(bound, &call).await),
-                PostfixOperator::RefOf(ref_of) => Some(self.build_ref_of(bound, &ref_of)),
+                PostfixOperator::RefOf(ref_of) => Some(self.build_ref_of(bound, &ref_of).await),
 
-                PostfixOperator::Deref(deref) => Some(self.build_deref(bound, &deref)),
+                PostfixOperator::Deref(deref) => Some(self.build_deref(bound, &deref).await),
 
-                PostfixOperator::TupleIndex(index) => self.build_tuple_index(bound, &index),
+                PostfixOperator::TupleIndex(index) => self.build_tuple_index(bound, &index).await,
             };
 
-            bound = val.unwrap_or_else(|| {
-                self.push_error_expression_with_children(syn.span(), vec![bound])
-            });
+            bound = if let Some(val) = val {
+                val
+            } else {
+                // if the postfix operator failed to bind then we return an error expression
+                // but we still want to keep the children of the expression so that we can
+                // report errors on them as well
+                self.push_error_expression_with_children(syn.span(), vec![bound]).await
+            };
         }
 
         bound
@@ -45,7 +50,7 @@ impl Bind<Postfix> for TAstBuilder {
 }
 
 impl TAstBuilder {
-    fn build_ref_of(&mut self, bound: TypedExprID, ref_of: &RefOfSyntax) -> TypedExprID {
+    async fn build_ref_of(&mut self, bound: TypedExprID, ref_of: &RefOfSyntax) -> TypedExprID {
         let span = self.span_of_expression(bound);
         let ty = self.type_of_expression(bound);
         let mutability = if ref_of.mut_keyword().is_some() {
@@ -71,9 +76,10 @@ impl TAstBuilder {
             span.join(&ref_of.span()),
             pointer_ty,
         )
+        .await
     }
 
-    fn build_tuple_index(
+    async fn build_tuple_index(
         &mut self,
         bound: TypedExprID,
         tuple_index: &TupleIndexSyntax,
@@ -131,14 +137,17 @@ impl TAstBuilder {
             return None;
         }
 
-        Some(self.insert_expression(
-            TypedExprKind::TupleIndex(TupleIndex::new(bound, index)),
-            span,
-            tuple.args()[index].clone(),
-        ))
+        Some(
+            self.insert_expression(
+                TypedExprKind::TupleIndex(TupleIndex::new(bound, index)),
+                span,
+                tuple.args()[index].clone(),
+            )
+            .await,
+        )
     }
 
-    fn build_deref(&mut self, expr_id: TypedExprID, deref: &DerefSyntax) -> TypedExprID {
+    async fn build_deref(&mut self, expr_id: TypedExprID, deref: &DerefSyntax) -> TypedExprID {
         let span = self.span_of_expression(expr_id);
         let ty = self.latest_type(&self.type_of_expression(expr_id));
         let pointee = match &*ty {
@@ -175,5 +184,6 @@ impl TAstBuilder {
             span.join(&deref.span()),
             pointee,
         )
+        .await
     }
 }

@@ -39,14 +39,14 @@ impl Bind<LambdaSyntax> for TAstBuilder {
         let body = if let Some(body) = syn.body() {
             Box::pin(self.bind(body)).await
         } else {
-            self.push_error_expression(span)
+            self.push_error_expression(span).await
         };
         let return_type = self.type_of_expression(body);
-        self.push_statement(Statement::Return(Return::new_with_value(body)));
+        self.push_statement(Statement::Return(Return::new_with_value(body))).await;
 
         let effect_row = self.finish_lambda();
         let ty = Ty::new_lambda(parameter_types, return_type, effect_row, self.engine());
 
-        self.insert_expression(TypedExprKind::Lambda(TypedLambda::new(function_id)), span, ty)
+        self.insert_expression(TypedExprKind::Lambda(TypedLambda::new(function_id)), span, ty).await
     }
 }

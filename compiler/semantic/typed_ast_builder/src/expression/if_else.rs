@@ -30,20 +30,21 @@ impl Bind<IfElseSyntax> for TAstBuilder {
         else {
             let children =
                 [condition, then_expression, else_expression].into_iter().flatten().collect();
-            return self.push_error_expression_with_children(syn.span(), children);
+            return self.push_error_expression_with_children(syn.span(), children).await;
         };
 
         let bool_ty = Ty::new_primitive(Primitive::Bool, self.engine());
-        self.push_if_condition_constraint(&bool_ty, condition);
+        self.push_if_condition_constraint(&bool_ty, condition).await;
 
         let ty = self.new_type_inference();
-        self.push_if_branch_constraint(&ty, then_expression);
-        self.push_if_branch_constraint(&ty, else_expression);
+        self.push_if_branch_constraint(&ty, then_expression).await;
+        self.push_if_branch_constraint(&ty, else_expression).await;
 
         self.insert_expression(
             TypedExprKind::IfElse(IfElse::new(condition, then_expression, else_expression)),
             syn.span(),
             ty,
         )
+        .await
     }
 }

@@ -3,6 +3,7 @@ use rayc_qbice::TrackedEngine;
 
 use crate::{
     constraint::{DerivedConstraint, Error, Step},
+    poly_var::{GlobalPolyVarID, get_poly_var_map},
     reduce::Reduce,
     solver::Solver,
     subst::{Subst, Substitutable},
@@ -12,6 +13,45 @@ use crate::{
         inference::Inference,
     },
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum TyRelatingEnvironment {
+    /// Normal type relation, where the inference variables (both on lesser and
+    /// greater) may only be bound to types of the same kind. This is the
+    /// default behavior for inferring types and effects of the expressions
+    /// in the program.
+    Normal,
+
+    /// One-way matching for where only the polymorphic type variables on the
+    /// lesser side may be bound to types on the greater side. This is used for
+    /// example when checking whether an instance of a trait is compatible with
+    /// a trait reference.
+    TopLevelMatching,
+}
+
+impl TyRelatingEnvironment {
+    #[expect(clippy::trivially_copy_pass_by_ref)]
+    const fn can_bind(&self, side: TyRelatingSide, var_kind: VariableKind) -> bool {
+        #[expect(clippy::match_same_arms)]
+        match (self, side, var_kind) {
+            (Self::Normal, _, VariableKind::Inference) => true,
+            (Self::Normal, _, VariableKind::Poly) => false,
+
+            (Self::TopLevelMatching, TyRelatingSide::Lesser, VariableKind::Poly) => true,
+            (Self::TopLevelMatching, _, _) => false,
+        }
+    }
+}
+
+enum VariableKind {
+    Inference,
+    Poly,
+}
+
+enum TyRelatingSide {
+    Lesser,
+    Greater,
+}
 
 /// Relating two types together.
 ///
@@ -73,8 +113,11 @@ impl TyRelate {
 }
 
 impl Solver {
-    #[allow(clippy::unused_self)]
-    pub(super) fn entail_subtype(&mut self, substype: &TyRelate) -> Result<Step, Error> {
+    pub(super) async fn entail_subtype(
+        &mut self,
+        substype: &TyRelate,
+        relate_env: &TyRelatingEnvironment,
+    ) -> Result<Step, Error> {
         if substype.lesser == substype.greater {
             return Ok(Step::Derived(Vec::new()));
         }
@@ -97,16 +140,38 @@ impl Solver {
             // deduplicated nor accepted through subeffect inclusion, and open
             // rows are rewritten to a shared tail.
             (Ty::EffectRow(lesser), Ty::EffectRow(greater)) => {
-                self.entail_effect_row_subtype(lesser, greater)
+                self.entail_effect_row_subtype(lesser, greater).map(Step::Derived)
             }
 
-            (Ty::Inference(var), _) => Ok(Step::Subst(self.bind_var(*var, &substype.greater)?)),
+            (Ty::Inference(var), _) => Ok(Step::Subst(
+                self.bind_infer_var(*var, &substype.greater, TyRelatingSide::Lesser, relate_env)
+                    .await?,
+            )),
+            (_, Ty::Inference(var)) => Ok(Step::Subst(
+                self.bind_infer_var(*var, &substype.lesser, TyRelatingSide::Greater, relate_env)
+                    .await?,
+            )),
 
-            (_, Ty::Inference(var)) => Ok(Step::Subst(self.bind_var(*var, &substype.lesser)?)),
+            (Ty::PolyVar(poly_var), _) => Ok(Step::Subst(
+                self.bind_poly_var(
+                    *poly_var,
+                    &substype.greater,
+                    TyRelatingSide::Lesser,
+                    relate_env,
+                )
+                .await?,
+            )),
+            (_, Ty::PolyVar(poly_var)) => Ok(Step::Subst(
+                self.bind_poly_var(
+                    *poly_var,
+                    &substype.lesser,
+                    TyRelatingSide::Greater,
+                    relate_env,
+                )
+                .await?,
+            )),
 
-            (Ty::Application(_), Ty::PolyVar(_) | Ty::EffectRow(_))
-            | (Ty::PolyVar(_), Ty::Application(_) | Ty::PolyVar(_) | Ty::EffectRow(_))
-            | (Ty::EffectRow(_), Ty::Application(_) | Ty::PolyVar(_)) => Err(Error::Conflicted),
+            _ => Err(Error::Conflicted),
         }
     }
 
@@ -114,7 +179,7 @@ impl Solver {
         &mut self,
         lesser: &EffectRow,
         greater: &EffectRow,
-    ) -> Result<Step, Error> {
+    ) -> Result<Vec<DerivedConstraint>, Error> {
         let MatchedEffectRowLabels { mut constraints, unmatched_lesser, unmatched_greater } =
             match_effect_row_labels(lesser, greater)?;
 
@@ -195,19 +260,57 @@ impl Solver {
             }
         }
 
-        Ok(Step::Derived(constraints))
+        Ok(constraints)
     }
 
-    fn bind_var(&mut self, var: Inference, ty: &Interned<Ty>) -> Result<Subst, Error> {
+    async fn bind_poly_var(
+        &mut self,
+        poly_var: GlobalPolyVarID,
+        ty: &Interned<Ty>,
+        relating_side: TyRelatingSide,
+        relate_env: &TyRelatingEnvironment,
+    ) -> Result<Subst, Error> {
+        if !relate_env.can_bind(relating_side, VariableKind::Poly) {
+            return Err(Error::Conflicted);
+        }
+
+        if ty.has_poly_variable(&poly_var) {
+            return Err(Error::OccursCheckFailed);
+        }
+
+        let poly_var_map = self.engine().get_poly_var_map(poly_var.parent_id()).await;
+        let kind = poly_var_map[poly_var.id()].kind();
+
+        if kind != ty.kind_of(self.engine()).await {
+            return Err(Error::Conflicted);
+        }
+
+        Ok(Subst::new_singleton(poly_var, ty.clone()))
+    }
+
+    async fn bind_infer_var(
+        &mut self,
+        var: Inference,
+        ty: &Interned<Ty>,
+        relating_side: TyRelatingSide,
+        relate_env: &TyRelatingEnvironment,
+    ) -> Result<Subst, Error> {
+        if !relate_env.can_bind(relating_side, VariableKind::Inference) {
+            return Err(Error::Conflicted);
+        }
+
         if ty.has_inference_variable(&var) {
             return Err(Error::OccursCheckFailed);
         }
 
+        if var.kind() != ty.kind_of(self.engine()).await {
+            return Err(Error::Conflicted);
+        }
+
         match &**ty {
             Ty::Application(ty_application) => {
-                if var.kind() != ty_application.kind_of()
-                    || (var.kind() == TyKind::Star
-                        && !ty_application.satisfies_constraint(var.constraint()))
+                if var.kind() == TyKind::Star
+                    && !ty_application.satisfies_constraint(var.constraint())
                 {
                     return Err(Error::Conflicted);
                 }
@@ -216,10 +319,6 @@ impl Solver {
             }
 
             Ty::Inference(ty_inference) => {
-                if var.kind() != ty_inference.kind() {
-                    return Err(Error::Conflicted);
-                }
-
                 if var.constraint() == ty_inference.constraint() {
                     return Ok(Subst::new_singleton(var, ty.clone()));
                 }
@@ -233,18 +332,8 @@ impl Solver {
                 Ok([(var, common_var.clone()), (*ty_inference, common_var)].into_iter().collect())
             }
 
-            Ty::PolyVar(_) => {
+            Ty::PolyVar(_) | Ty::EffectRow(_) => {
                 if var.constraint() == crate::ty::InferenceConstraint::Any {
-                    Ok(Subst::new_singleton(var, ty.clone()))
-                } else {
-                    Err(Error::Conflicted)
-                }
-            }
-
-            Ty::EffectRow(_) => {
-                if var.kind() == TyKind::EffectRow
-                    && var.constraint() == crate::ty::InferenceConstraint::Any
-                {
                     Ok(Subst::new_singleton(var, ty.clone()))
                 } else {
                     Err(Error::Conflicted)
@@ -352,7 +441,7 @@ mod tests {
             let (left, right) =
                 if reverse { (instance.clone(), variable) } else { (variable, instance.clone()) };
             assert_eq!(
-                solver.entail(&Constraint::TyRelate(TyRelate::new(left, right))),
+                solver.entail(&Constraint::TyRelate(TyRelate::new(left, right))).await,
                 Ok(Step::Subst(Subst::new_singleton(inference, instance.clone())))
             );
         }
@@ -370,7 +459,7 @@ mod tests {
             let variable = engine.intern(Ty::Inference(inference));
             let error = Ty::new_error(kind, &engine);
             assert_eq!(
-                solver.entail(&Constraint::TyRelate(TyRelate::new(variable, error.clone()))),
+                solver.entail(&Constraint::TyRelate(TyRelate::new(variable, error.clone()))).await,
                 Ok(Step::Subst(Subst::new_singleton(inference, error)))
             );
         }
@@ -400,7 +489,7 @@ mod tests {
                     let (left, right) =
                         if reverse { (ty.clone(), variable) } else { (variable, ty.clone()) };
                     assert_eq!(
-                        solver.entail(&Constraint::TyRelate(TyRelate::new(left, right))),
+                        solver.entail(&Constraint::TyRelate(TyRelate::new(left, right))).await,
                         Err(Error::Conflicted)
                     );
                 }
@@ -435,19 +524,21 @@ mod tests {
                 Err(Error::Conflicted)
             };
             assert_eq!(
-                solver.entail(&Constraint::TyRelate(TyRelate::new(variable.clone(), ty))),
+                solver.entail(&Constraint::TyRelate(TyRelate::new(variable.clone(), ty))).await,
                 expected
             );
             for rejected in [Ty::new_unit(&engine), Ty::new_star_error(&engine)] {
                 assert_eq!(
-                    solver.entail(&Constraint::TyRelate(TyRelate::new(variable.clone(), rejected))),
+                    solver
+                        .entail(&Constraint::TyRelate(TyRelate::new(variable.clone(), rejected)))
+                        .await,
                     Err(Error::Conflicted)
                 );
             }
         }
     }
 
-    fn solve(
+    async fn solve(
         solver: &mut Solver,
         constraint: Constraint,
         engine: &TrackedEngine,
@@ -457,7 +548,7 @@ mod tests {
 
         while let Some(constraint) = pending.pop() {
             let constraint = constraint.apply_subst_or_clone(&subst, engine);
-            match solver.entail(&constraint)? {
+            match solver.entail(&constraint).await? {
                 Step::Subst(new_subst) => subst.compose(&new_subst, engine),
                 Step::Derived(constraints) => {
                     pending.extend(constraints.into_iter().map(|x| x.constraint));
@@ -481,7 +572,7 @@ mod tests {
         let greater = Ty::new_effect_row([exn, io], None, &engine);
         let mut solver = Solver::new(engine);
 
-        let step = solver.entail(&Constraint::TyRelate(TyRelate::new(lesser, greater)));
+        let step = solver.entail(&Constraint::TyRelate(TyRelate::new(lesser, greater))).await;
 
         assert_eq!(step, Ok(Step::Derived(Vec::new())));
     }
@@ -497,7 +588,7 @@ mod tests {
         let greater = Ty::new_effect_row([exn], None, &engine);
         let mut solver = Solver::new(engine);
 
-        let step = solver.entail(&Constraint::TyRelate(TyRelate::new(lesser, greater)));
+        let step = solver.entail(&Constraint::TyRelate(TyRelate::new(lesser, greater))).await;
 
         assert_eq!(step, Err(Error::Conflicted));
     }
@@ -516,7 +607,7 @@ mod tests {
         let lesser = Ty::new_effect_row([io.clone()], Some(e1.clone()), &engine);
         let greater = Ty::new_effect_row([state.clone()], Some(e2.clone()), &engine);
 
-        let step = solver.entail(&Constraint::TyRelate(TyRelate::new(lesser, greater)));
+        let step = solver.entail(&Constraint::TyRelate(TyRelate::new(lesser, greater))).await;
 
         let e3 = engine.intern(Ty::Inference(Inference::new(TyKind::EffectRow, 2)));
         let state_remainder = Ty::new_effect_row([state], Some(e3.clone()), &engine);
@@ -548,6 +639,7 @@ mod tests {
 
         let subst =
             solve(&mut solver, Constraint::TyRelate(TyRelate::new(lesser, greater)), &engine)
+                .await
                 .expect("distinct open rows should unify through a common tail");
 
         let e3 = engine.intern(Ty::Inference(Inference::new(TyKind::EffectRow, 2)));
@@ -569,6 +661,7 @@ mod tests {
         let closed = Ty::new_effect_row([io], None, &engine);
 
         let subst = solve(&mut solver, Constraint::TyRelate(TyRelate::new(open, closed)), &engine)
+            .await
             .expect("the open tail should close");
 
         assert_eq!(subst.get(&e), Some(&Ty::new_effect_row([], None, &engine)));
@@ -589,6 +682,7 @@ mod tests {
 
         let subst =
             solve(&mut solver, Constraint::TyRelate(TyRelate::new(open, duplicate)), &engine)
+                .await
                 .expect("the duplicate label should remain in the tail");
 
         assert_eq!(subst.get(&e), Some(&Ty::new_effect_row([io], None, &engine)));
@@ -607,7 +701,8 @@ mod tests {
         let recursive_row = Ty::new_effect_row([io], Some(e_ty.clone()), &engine);
 
         let result =
-            solve(&mut solver, Constraint::TyRelate(TyRelate::new(e_ty, recursive_row)), &engine);
+            solve(&mut solver, Constraint::TyRelate(TyRelate::new(e_ty, recursive_row)), &engine)
+                .await;
 
         assert_eq!(result, Err(Error::OccursCheckFailed));
     }
@@ -626,6 +721,7 @@ mod tests {
 
         let subst =
             solve(&mut solver, Constraint::TyRelate(TyRelate::new(poly_ty.clone(), e_ty)), &engine)
+                .await
                 .expect("an unconstrained inference should bind to a rigid variable");
 
         assert_eq!(subst.get(&e), Some(&poly_ty));
@@ -651,6 +747,7 @@ mod tests {
             Constraint::TyRelate(TyRelate::new(rigid_row, inferred_row)),
             &engine,
         )
+        .await
         .expect("matching open rows should unify their tails");
 
         assert_eq!(subst.get(&inference), Some(&poly_ty));
@@ -668,7 +765,8 @@ mod tests {
         let inference_ty = engine.intern(Ty::Inference(inference));
         let row = Ty::new_effect_row([io], None, &engine);
 
-        let step = solver.entail(&Constraint::TyRelate(TyRelate::new(inference_ty, row.clone())));
+        let step =
+            solver.entail(&Constraint::TyRelate(TyRelate::new(inference_ty, row.clone()))).await;
 
         assert_eq!(step, Ok(Step::Subst(crate::subst::Subst::new_singleton(inference, row))));
     }
@@ -688,7 +786,7 @@ mod tests {
         let mut solver = Solver::new(engine.clone());
 
         let result =
-            solve(&mut solver, Constraint::TyRelate(TyRelate::new(lesser, greater)), &engine);
+            solve(&mut solver, Constraint::TyRelate(TyRelate::new(lesser, greater)), &engine).await;
 
         assert_eq!(result, Err(Error::Conflicted));
     }
@@ -715,6 +813,7 @@ mod tests {
 
         let subst =
             solve(&mut solver, Constraint::TyRelate(TyRelate::new(lesser, greater)), &engine)
+                .await
                 .expect("same-constructor occurrences should match positionally");
 
         assert_eq!(subst.get(&a), Some(&int32));

@@ -69,8 +69,8 @@ impl Reduce for PendingConstraint {
 }
 
 impl TAstBuilder {
-    pub(super) fn push_constraint(&mut self, constr: PendingConstraint) {
-        self.push_constraints(vec![constr]);
+    pub(super) async fn push_constraint(&mut self, constr: PendingConstraint) {
+        self.push_constraints(vec![constr]).await;
     }
 
     fn register_derived_constraint(
@@ -86,7 +86,7 @@ impl TAstBuilder {
         PendingConstraint { constraint: derived_constraint.constraint, cause_id }
     }
 
-    pub(super) fn push_constraints(&mut self, mut queued: Vec<PendingConstraint>) {
+    pub(super) async fn push_constraints(&mut self, mut queued: Vec<PendingConstraint>) {
         // make sure the new constraints are updated with the latest substitution before
         // we start processing them
         for queued in &mut queued {
@@ -98,7 +98,7 @@ impl TAstBuilder {
         }
 
         while let Some(pending_constraint) = queued.pop() {
-            match self.constraint_solver.solver.entail(&pending_constraint.constraint) {
+            match self.constraint_solver.solver.entail(&pending_constraint.constraint).await {
                 Ok(Step::Derived(constrs)) => {
                     queued.extend(
                         constrs.into_iter().map(|x| {

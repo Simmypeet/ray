@@ -35,10 +35,10 @@ impl Bind<RunWithSyntax> for TAstBuilder {
     async fn bind(&mut self, syn: RunWithSyntax) -> TypedExprID {
         let unit = Ty::new_unit(self.engine());
         let Some(effect) = syn.effect() else {
-            return self.insert_expression(Errored::new_empty(), syn.span(), unit);
+            return self.insert_expression(Errored::new_empty(), syn.span(), unit).await;
         };
         let Ok(effect) = self.resolve_effect_path(&effect).await else {
-            return self.insert_expression(Errored::new_empty(), syn.span(), unit);
+            return self.insert_expression(Errored::new_empty(), syn.span(), unit).await;
         };
 
         let effect_id = effect.symbol_id();
@@ -56,7 +56,9 @@ impl Bind<RunWithSyntax> for TAstBuilder {
         let handler_functions = run_with.operation_handlers().collect::<Vec<_>>();
         let expression_id =
             self.insert_expression_without_effect_composition(run_with, syn.span(), return_type);
-        self.compose_run_with_effect(expression_id, body_function, handler_functions, effect_label);
+
+        self.compose_run_with_effect(expression_id, body_function, handler_functions, effect_label)
+            .await;
 
         expression_id
     }

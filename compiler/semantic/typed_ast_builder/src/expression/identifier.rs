@@ -15,7 +15,7 @@ impl Bind<IdentifierSyn> for TAstBuilder {
                 UnboundName::builder().name(syn.kind.0.clone()).span(syn.span).build(),
             ));
 
-            return self.push_error_expression(syn.span());
+            return self.push_error_expression(syn.span()).await;
         };
 
         self.insert_expression(
@@ -23,5 +23,6 @@ impl Bind<IdentifierSyn> for TAstBuilder {
             syn.span,
             self.type_of_name_binding(name_binding_id),
         )
+        .await
     }
 }

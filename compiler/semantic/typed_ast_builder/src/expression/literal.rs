@@ -41,6 +41,6 @@ impl Bind<LiteralSyntax> for TAstBuilder {
             ),
         };
 
-        self.insert_expression(TypedExprKind::Literal(literal), syn.span(), ty)
+        self.insert_expression(TypedExprKind::Literal(literal), syn.span(), ty).await
     }
 }
