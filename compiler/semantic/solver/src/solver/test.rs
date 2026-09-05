@@ -1,22 +1,21 @@
 use rayc_symbol::SymbolID;
 use rayc_target::TargetID;
-
-use super::Solver;
-use crate::{
-    constraint::{Constraint, ty_relate::TyRelatingEnvironment},
+use rayc_type::{
+    constraint::Constraint,
     subst::Subst,
     trait_ref::TraitRef,
     ty::{Primitive, Ty, TyKind, args::Args},
 };
 
-async fn engine_with_type_poly_var() -> (rayc_qbice::TrackedEngine, crate::poly_var::GlobalPolyVarID)
-{
+use super::{Solver, TyRelatingEnvironment};
+
+async fn engine_with_type_poly_var()
+-> (rayc_qbice::TrackedEngine, rayc_type::poly_var::GlobalPolyVarID) {
     use std::{collections::HashMap, sync::Arc};
 
     use rayc_lexical::tree::{OffsetMode, RelativeLocation, RelativeSpan};
     use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor};
-
-    use crate::poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap};
+    use rayc_type::poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap};
 
     let mut engine = Engine::new_with(
         qbice::serialize::Plugin::default(),
@@ -40,7 +39,7 @@ async fn engine_with_type_poly_var() -> (rayc_qbice::TrackedEngine, crate::poly_
         }))
         .unwrap();
     engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-        crate::poly_var::Key { symbol_id: parent_id },
+        rayc_type::poly_var::Key { symbol_id: parent_id },
         engine.intern(poly_vars),
     )]))));
     (Arc::new(engine).tracked().await, GlobalPolyVarID::new(parent_id, id))

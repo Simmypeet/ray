@@ -1,4 +1,3 @@
-use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
     all_instance_implements_trait::get_all_instance_implements_trait,
     instance_trait_ref::get_instance_trait_ref,
@@ -7,12 +6,11 @@ use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     poly_var::{PolyVarID, get_poly_var_map},
     reduce::Reduce,
-    solver::Solver,
     subst::Subst,
     trait_ref::TraitRef,
 };
 
-use super::{InstanceResolutionState, InstanceResolutionStateError};
+use crate::{Solver, instance_resolution::InstanceResolutionError};
 
 /// A global instance whose head matches the requested trait reference.
 #[derive(Debug)]
@@ -33,23 +31,22 @@ impl InstanceCandidate {
 
 /// Collects globally eligible instances whose heads match the required trait.
 pub(super) async fn collect(
-    engine: &TrackedEngine,
     solver: &mut Solver,
-    state: &mut InstanceResolutionState,
-    site: GlobalSymbolID,
     required: &TraitRef,
-) -> Result<Vec<InstanceCandidate>, InstanceResolutionStateError> {
-    let instance_ids =
-        engine.get_all_instance_implements_trait(required.trait_id(), site.target_id).await;
+) -> Result<Vec<InstanceCandidate>, InstanceResolutionError> {
+    let engine = solver.engine().clone();
+    let instance_ids = engine
+        .get_all_instance_implements_trait(required.trait_id(), solver.site().target_id)
+        .await;
 
     let mut candidates = Vec::new();
     for instance_id in instance_ids.iter().copied() {
         let Some(head) = engine.get_instance_trait_ref(instance_id).await else {
             continue;
         };
-        state.visit_candidate(instance_id)?;
+        solver.visit_instance_candidate(instance_id)?;
 
-        let head = head.normalize(engine);
+        let head = head.normalize(&engine);
         let Some(subst) = solver.head_match(&head, required).await else {
             continue;
         };

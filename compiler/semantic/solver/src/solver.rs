@@ -1,20 +1,35 @@
 use rayc_qbice::TrackedEngine;
-
-use crate::{
-    constraint::{Constraint, Step, ty_relate::TyRelatingEnvironment},
+use rayc_symbol::GlobalSymbolID;
+use rayc_type::{
+    constraint::{Constraint, Error, Step},
     reduce::Reduce,
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{InferenceConstraint, TyKind, inference::Inference},
 };
 
-#[cfg(test)]
-mod test;
+use crate::solver::instance_resolution_state::{InstanceResolutionLimits, InstanceResolutionState};
 
-#[derive(Debug, Clone)]
+mod instance_resolution_state;
+mod ty_relate;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TyRelatingEnvironment {
+    /// Normal type relation, where inference variables on either side may be
+    /// bound to types of the same kind.
+    Normal,
+
+    /// One-way matching where only polymorphic variables on the lesser side
+    /// may be bound. Used for matching instance heads.
+    TopLevelMatching,
+}
+
+#[derive(Debug)]
 pub struct Solver {
     inference_counter: u64,
     engine: TrackedEngine,
+    site: GlobalSymbolID,
+    instance_resolution: InstanceResolutionState,
 }
 
 impl Solver {
@@ -80,10 +95,33 @@ impl Solver {
     }
 
     #[must_use]
-    pub const fn new(engine: TrackedEngine) -> Self { Self { inference_counter: 0, engine } }
+    pub fn new(engine: TrackedEngine) -> Self {
+        Self::new_at_site(engine, GlobalSymbolID::default())
+    }
+
+    #[must_use]
+    pub fn new_at_site(engine: TrackedEngine, site: GlobalSymbolID) -> Self {
+        Self::with_limits(engine, site, InstanceResolutionLimits::default())
+    }
+
+    #[must_use]
+    pub fn with_limits(
+        engine: TrackedEngine,
+        site: GlobalSymbolID,
+        limits: InstanceResolutionLimits,
+    ) -> Self {
+        Self {
+            inference_counter: 0,
+            engine,
+            site,
+            instance_resolution: InstanceResolutionState::new(limits),
+        }
+    }
 
     #[must_use]
     pub const fn engine(&self) -> &TrackedEngine { &self.engine }
+
+    pub const fn site(&self) -> GlobalSymbolID { self.site }
 
     #[must_use]
     pub const fn new_inference(&mut self, kind: TyKind) -> Inference {
@@ -100,4 +138,25 @@ impl Solver {
         self.inference_counter += 1;
         inference
     }
+
+    pub async fn entail(&mut self, constraint: &Constraint) -> Result<Step, Error> {
+        match constraint {
+            Constraint::TyRelate(subtype) => {
+                self.entail_subtype(subtype, &TyRelatingEnvironment::Normal).await
+            }
+        }
+    }
+
+    async fn entail_with_relate_env(
+        &mut self,
+        constraint: &Constraint,
+        relate_env: &TyRelatingEnvironment,
+    ) -> Result<Step, Error> {
+        match constraint {
+            Constraint::TyRelate(subtype) => self.entail_subtype(subtype, relate_env).await,
+        }
+    }
 }
+
+#[cfg(test)]
+mod test;

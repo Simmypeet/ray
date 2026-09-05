@@ -1,18 +1,13 @@
 //! Implicit-instance resolution.
 //!
-//! The resolver orchestrates lexical lookup, global candidate collection,
+//! The solver orchestrates lexical lookup, global candidate collection,
 //! recursive premise solving, and final specificity ranking. Search state is
-//! shared across every root resolved by one `InstanceResolver`.
-
-use std::{future::Future, pin::Pin};
+//! shared across every root resolved by one [`Solver`](crate::Solver).
 
 use qbice::storage::intern::Interned;
-use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
-    reduce::Reduce,
-    solver::Solver,
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{Ty, args::Args},
@@ -21,17 +16,12 @@ use rayc_type::{
 mod candidates;
 mod lexical;
 mod ranking;
-mod state;
 
 use candidates::InstanceCandidate;
 use lexical::LexicalResolution;
 use ranking::ViableInstance;
-pub use state::{
-    ActiveInstanceGoal, DEFAULT_MAX_CANDIDATE_VISITS, DEFAULT_MAX_DEPTH, EnteredInstanceGoal,
-    InstanceResolutionCycle, InstanceResolutionEdge, InstanceResolutionFrame,
-    InstanceResolutionLimit, InstanceResolutionLimits, InstanceResolutionResult,
-    InstanceResolutionState, InstanceResolutionStateError,
-};
+
+use crate::Solver;
 
 /// Why one matching global candidate could not construct a dictionary.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +53,70 @@ impl FailedInstanceCandidate {
     pub const fn failure(&self) -> &InstanceCandidateFailure { &self.failure }
 }
 
+/// The candidate premise that caused a recursive goal to be entered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InstanceResolutionEdge {
+    instance_id: GlobalSymbolID,
+    given_parameter: GlobalPolyVarID,
+}
+
+impl InstanceResolutionEdge {
+    #[must_use]
+    pub const fn new(instance_id: GlobalSymbolID, given_parameter: GlobalPolyVarID) -> Self {
+        Self { instance_id, given_parameter }
+    }
+
+    #[must_use]
+    pub const fn instance_id(&self) -> GlobalSymbolID { self.instance_id }
+
+    #[must_use]
+    pub const fn given_parameter(&self) -> GlobalPolyVarID { self.given_parameter }
+}
+
+/// The hard limit that stopped a search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstanceResolutionLimit {
+    Depth { limit: usize },
+    CandidateVisits { limit: usize, candidate: GlobalSymbolID },
+}
+
+/// A complete instance-resolution result eligible for memoization.
+pub type InstanceResolutionResult = Result<Interned<Ty>, InstanceResolutionError>;
+
+/// One canonical goal in a diagnostic search trace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstanceResolutionFrame {
+    goal: TraitRef,
+    introduced_by: Option<InstanceResolutionEdge>,
+}
+
+impl InstanceResolutionFrame {
+    #[must_use]
+    pub const fn new(goal: TraitRef, introduced_by: Option<InstanceResolutionEdge>) -> Self {
+        Self { goal, introduced_by }
+    }
+
+    #[must_use]
+    pub const fn goal(&self) -> &TraitRef { &self.goal }
+
+    #[must_use]
+    pub const fn introduced_by(&self) -> Option<InstanceResolutionEdge> { self.introduced_by }
+}
+
+/// An exact cycle, including the repeated goal as the final frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstanceResolutionCycle {
+    path: Vec<InstanceResolutionFrame>,
+}
+
+impl InstanceResolutionCycle {
+    #[must_use]
+    pub const fn new(path: Vec<InstanceResolutionFrame>) -> Self { Self { path } }
+
+    #[must_use]
+    pub fn path(&self) -> &[InstanceResolutionFrame] { &self.path }
+}
+
 /// A structured failure from implicit-instance resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstanceResolutionError {
@@ -75,40 +129,7 @@ pub enum InstanceResolutionError {
     Limit { limit: InstanceResolutionLimit, recent_goals: Vec<InstanceResolutionFrame> },
 }
 
-impl From<InstanceResolutionStateError> for InstanceResolutionError {
-    fn from(error: InstanceResolutionStateError) -> Self {
-        match error {
-            InstanceResolutionStateError::Cycle(cycle) => Self::Cycle(cycle),
-            InstanceResolutionStateError::Limit { limit, recent_goals } => {
-                Self::Limit { limit, recent_goals }
-            }
-        }
-    }
-}
-
-/// Resolves instance requirements occurring at one semantic site.
-#[derive(Debug)]
-pub struct InstanceResolver {
-    engine: TrackedEngine,
-    site: GlobalSymbolID,
-    state: InstanceResolutionState,
-}
-
-impl InstanceResolver {
-    #[must_use]
-    pub fn new(engine: TrackedEngine, site: GlobalSymbolID) -> Self {
-        Self { engine, site, state: InstanceResolutionState::default() }
-    }
-
-    #[must_use]
-    pub fn with_limits(
-        engine: TrackedEngine,
-        site: GlobalSymbolID,
-        limits: InstanceResolutionLimits,
-    ) -> Self {
-        Self { engine, site, state: InstanceResolutionState::new(limits) }
-    }
-
+impl Solver {
     /// Resolves a normalized, ground trait requirement to a lexical or global
     /// dictionary term.
     ///
@@ -117,69 +138,31 @@ impl InstanceResolver {
     /// recursively, after which the unique most-specific viable head wins.
     pub async fn resolve_instance(
         &mut self,
-        solver: &mut Solver,
         required: TraitRef,
     ) -> Result<Interned<Ty>, InstanceResolutionError> {
-        self.resolve_instance_from(solver, required, None).await
+        self.resolve_instance_from(required, None).await
     }
 
-    fn resolve_instance_from<'b>(
-        &'b mut self,
-        solver: &'b mut Solver,
-        required: TraitRef,
-        introduced_by: Option<InstanceResolutionEdge>,
-    ) -> Pin<Box<dyn Future<Output = Result<Interned<Ty>, InstanceResolutionError>> + 'b>> {
-        Box::pin(async move {
-            let engine = self.engine.clone();
-            let required = required.normalize(&engine);
-            if required.contains_inference() {
-                return Err(InstanceResolutionError::NotReady(required));
-            }
-            if required.contains_error() {
-                return Err(InstanceResolutionError::ContainsError(required));
-            }
-
-            let active = match self.state.enter_goal(required.clone(), introduced_by)? {
-                EnteredInstanceGoal::Memoized(result) => return result,
-                EnteredInstanceGoal::Active(active) => active,
-            };
-
-            let result = self.search_active_goal(solver, &required).await;
-            self.state.complete_goal(active, result.clone());
-            result
-        })
-    }
-
-    async fn search_active_goal(
+    pub async fn search_active_goal(
         &mut self,
-        solver: &mut Solver,
         required: &TraitRef,
     ) -> Result<Interned<Ty>, InstanceResolutionError> {
-        let engine = self.engine.clone();
-        match lexical::resolve(&engine, self.site, required).await {
+        match lexical::resolve(self.engine(), self.site(), required).await {
             Ok(LexicalResolution::NotFound) => {}
             Ok(LexicalResolution::Resolved(term)) => return Ok(term),
             Err(error) => return Err(error),
         }
 
-        let candidates = match candidates::collect(
-            &engine,
-            solver,
-            &mut self.state,
-            self.site,
-            required,
-        )
-        .await
-        {
+        let candidates = match candidates::collect(self, required).await {
             Ok(candidates) => candidates,
-            Err(error) => return Err(error.into()),
+            Err(error) => return Err(error),
         };
         let mut viable = Vec::new();
         let mut failures = Vec::new();
 
         for candidate in candidates {
             let instance_id = candidate.instance_id();
-            match self.resolve_candidate(solver, candidate).await {
+            match self.resolve_candidate(candidate).await {
                 Ok(candidate) => viable.push(candidate),
                 Err(failure) => {
                     if let InstanceCandidateFailure::UnsatisfiedGiven { error, .. } = &failure
@@ -196,40 +179,54 @@ impl InstanceResolver {
         }
 
         if viable.is_empty() {
+            if let Some(cycle) = failures.iter().find_map(|candidate| match candidate.failure() {
+                InstanceCandidateFailure::UnsatisfiedGiven { error, .. } => match &**error {
+                    InstanceResolutionError::Cycle(cycle) => Some(cycle.clone()),
+                    InstanceResolutionError::NotReady(_)
+                    | InstanceResolutionError::ContainsError(_)
+                    | InstanceResolutionError::AmbiguousLexical { .. }
+                    | InstanceResolutionError::NoInstance { .. }
+                    | InstanceResolutionError::AmbiguousGlobal { .. }
+                    | InstanceResolutionError::Limit { .. } => None,
+                },
+                InstanceCandidateFailure::UndeterminedParameter(_) => None,
+            }) {
+                return Err(InstanceResolutionError::Cycle(cycle));
+            }
             return Err(InstanceResolutionError::NoInstance {
                 required: required.clone(),
                 failed_candidates: failures,
             });
         }
 
-        ranking::select(solver, required, &viable).await
+        ranking::select(self, required, &viable).await
     }
 
     async fn resolve_candidate(
         &mut self,
-        solver: &mut Solver,
         candidate: InstanceCandidate,
     ) -> Result<ViableInstance, InstanceCandidateFailure> {
         let (mut subst, instance_id, pending_given_parameters) = candidate.into_parts();
-        let parameters = self.engine.get_poly_var_map(instance_id).await;
+        let parameters = self.engine().get_poly_var_map(instance_id).await;
 
         for parameter_id in pending_given_parameters {
             let global_parameter_id = GlobalPolyVarID::new(instance_id, parameter_id);
             let required = parameters
                 .trait_ref_of(parameter_id)
                 .expect("a pending given parameter must have an instance requirement")
-                .apply_subst_or_clone(&subst, &self.engine);
+                .apply_subst_or_clone(&subst, self.engine());
 
             let edge = InstanceResolutionEdge::new(instance_id, global_parameter_id);
 
-            let argument = self.resolve_instance_from(solver, required, Some(edge)).await.map_err(
-                |error| InstanceCandidateFailure::UnsatisfiedGiven {
-                    parameter: global_parameter_id,
-                    error: Box::new(error),
-                },
-            )?;
+            let argument =
+                self.resolve_instance_from(required, Some(edge)).await.map_err(|error| {
+                    InstanceCandidateFailure::UnsatisfiedGiven {
+                        parameter: global_parameter_id,
+                        error: Box::new(error),
+                    }
+                })?;
 
-            subst.compose(&Subst::new_singleton(global_parameter_id, argument), &self.engine);
+            subst.compose(&Subst::new_singleton(global_parameter_id, argument), self.engine());
         }
 
         let mut arguments = Vec::with_capacity(parameters.len());
@@ -243,7 +240,7 @@ impl InstanceResolver {
 
         Ok(ViableInstance::new(
             instance_id,
-            Ty::new_instance(instance_id, Args::new(arguments, &self.engine), &self.engine),
+            Ty::new_instance(instance_id, Args::new(arguments, self.engine()), self.engine()),
         ))
     }
 }

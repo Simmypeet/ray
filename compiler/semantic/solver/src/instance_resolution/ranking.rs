@@ -1,9 +1,10 @@
 use qbice::storage::intern::Interned;
 use rayc_semantic_element::instance_trait_ref::get_instance_trait_ref;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{reduce::Reduce, solver::Solver, trait_ref::TraitRef, ty::Ty};
+use rayc_type::{reduce::Reduce, trait_ref::TraitRef, ty::Ty};
 
 use super::InstanceResolutionError;
+use crate::Solver;
 
 #[derive(Debug)]
 pub(super) struct ViableInstance {
@@ -39,10 +40,12 @@ pub(super) async fn select(
     match maxima.as_slice() {
         [winner] => Ok(candidates[*winner].term.clone()),
         [] => unreachable!("a non-empty finite partial order has a maximal element"),
-        [_, _, ..] => Err(InstanceResolutionError::AmbiguousGlobal {
-            required: required.clone(),
-            candidates: maxima.iter().map(|index| candidates[*index].instance_id).collect(),
-        }),
+        [_, _, ..] => {
+            let mut candidates =
+                maxima.iter().map(|index| candidates[*index].instance_id).collect::<Vec<_>>();
+            candidates.sort_unstable();
+            Err(InstanceResolutionError::AmbiguousGlobal { required: required.clone(), candidates })
+        }
     }
 }
 

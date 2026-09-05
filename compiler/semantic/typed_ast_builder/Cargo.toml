@@ -19,6 +19,7 @@ rayc_handler.path = "../../base/handler"
 rayc_diagnostic.path = "../../base/diagnostic"
 rayc_symbol.path = "../symbol"
 rayc_semantic_element.path = "../semantic_element"
+rayc_solver.path = "../solver"
 rayc_typed_ast.path = "../typed_ast"
 rayc_target.path = "../../base/target"
 derive_more.workspace = true

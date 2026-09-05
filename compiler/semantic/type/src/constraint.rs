@@ -3,9 +3,8 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
-    constraint::ty_relate::{TyRelate, TyRelatingEnvironment},
+    constraint::ty_relate::TyRelate,
     reduce::Reduce,
-    solver::Solver,
     subst::{Subst, Substitutable},
     ty::Ty,
 };
@@ -113,24 +112,4 @@ pub enum Error {
 
     /// The subtype constraint is unsatisfiable due to a cycle, e.g. `T <: T`
     OccursCheckFailed,
-}
-
-impl Solver {
-    pub async fn entail(&mut self, constraint: &Constraint) -> Result<Step, Error> {
-        match constraint {
-            Constraint::TyRelate(subtype) => {
-                self.entail_subtype(subtype, &TyRelatingEnvironment::Normal).await
-            }
-        }
-    }
-
-    pub async fn entail_with_relate_env(
-        &mut self,
-        constraint: &Constraint,
-        relate_env: &TyRelatingEnvironment,
-    ) -> Result<Step, Error> {
-        match constraint {
-            Constraint::TyRelate(subtype) => self.entail_subtype(subtype, relate_env).await,
-        }
-    }
 }

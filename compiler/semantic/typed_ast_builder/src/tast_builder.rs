@@ -64,7 +64,7 @@ impl TAstBuilder {
 
     #[must_use]
     pub fn new(engine: TrackedEngine, current_def_id: GlobalSymbolID) -> Self {
-        let mut constraint_solver = ConstraintSolver::new(engine.clone());
+        let mut constraint_solver = ConstraintSolver::new(engine.clone(), current_def_id);
         let root_effect = engine.intern(Ty::Inference(
             constraint_solver.gen_infer(TyKind::EffectRow, InferenceConstraint::Any),
         ));

@@ -16,15 +16,17 @@ use rayc_type::{
     poly_var::{
         EnclosingMapsKey, GlobalPolyVarID, Key as PolyVarKey, PolyVar, PolyVarMap, PolyVarStack,
     },
-    solver::Solver,
     trait_ref::TraitRef,
     ty::{Primitive, Ty, TyKind, args::Args},
 };
 
 use super::{
-    EnteredInstanceGoal, InstanceResolutionEdge, InstanceResolutionError, InstanceResolutionLimit,
-    InstanceResolutionLimits, InstanceResolutionState, InstanceResolutionStateError,
-    InstanceResolver,
+    InstanceResolutionEdge, InstanceResolutionError, InstanceResolutionLimit,
+    InstanceResolutionLimits,
+};
+use crate::{
+    Solver,
+    solver::{EnteredInstanceGoal, InstanceResolutionState, InstanceResolutionStateError},
 };
 
 #[derive(Debug)]
@@ -448,13 +450,9 @@ async fn lexical_dictionary_precedes_global_instances() {
     let engine =
         engine_with_candidates_and_lexical(&[global], std::slice::from_ref(&required)).await;
     let lexical = given_id(20, 0);
-    let mut solver = Solver::new(engine.clone());
-    let mut resolver = InstanceResolver::new(engine.clone(), site());
+    let mut solver = Solver::new_at_site(engine.clone(), site());
 
-    assert_eq!(
-        resolver.resolve_instance(&mut solver, required).await,
-        Ok(Ty::new_poly_var(lexical, &engine))
-    );
+    assert_eq!(solver.resolve_instance(required).await, Ok(Ty::new_poly_var(lexical, &engine)));
 }
 
 // input: Show[int32] resolved by ShowInt given Eq[int32]
@@ -473,12 +471,11 @@ async fn global_instance_constructs_recursive_given_arguments() {
             given, eq,
         )]);
     let engine = engine_with_candidates(&[show_candidate, eq_candidate]).await;
-    let mut solver = Solver::new(engine.clone());
-    let mut resolver = InstanceResolver::new(engine.clone(), site());
+    let mut solver = Solver::new_at_site(engine.clone(), site());
     let eq_term = Ty::new_instance(symbol(10), Args::new([], &engine), &engine);
     let expected = Ty::new_instance(symbol(11), Args::new([eq_term], &engine), &engine);
 
-    assert_eq!(resolver.resolve_instance(&mut solver, show).await, Ok(expected));
+    assert_eq!(solver.resolve_instance(show).await, Ok(expected));
 }
 
 // input: Eq[int32] with Eq[a] and Eq[int32] candidates
@@ -497,11 +494,10 @@ async fn unique_most_specific_viable_candidate_wins() {
     );
     let concrete = InstanceCandidate::new(symbol(11), required.clone(), Vec::new());
     let engine = engine_with_candidates(&[generic, concrete]).await;
-    let mut solver = Solver::new(engine.clone());
-    let mut resolver = InstanceResolver::new(engine.clone(), site());
+    let mut solver = Solver::new_at_site(engine.clone(), site());
     let expected = Ty::new_instance(symbol(11), Args::new([], &engine), &engine);
 
-    assert_eq!(resolver.resolve_instance(&mut solver, required).await, Ok(expected));
+    assert_eq!(solver.resolve_instance(required).await, Ok(expected));
 }
 
 // input: Eq[int32] with two identical concrete instance heads
@@ -514,11 +510,10 @@ async fn equivalent_viable_heads_are_ambiguous() {
     let first = InstanceCandidate::new(symbol(11), required.clone(), Vec::new());
     let second = InstanceCandidate::new(symbol(10), required.clone(), Vec::new());
     let engine = engine_with_candidates(&[first, second]).await;
-    let mut solver = Solver::new(engine.clone());
-    let mut resolver = InstanceResolver::new(engine.clone(), site());
+    let mut solver = Solver::new_at_site(engine.clone(), site());
 
     assert_eq!(
-        resolver.resolve_instance(&mut solver, required.clone()).await,
+        solver.resolve_instance(required.clone()).await,
         Err(InstanceResolutionError::AmbiguousGlobal {
             required,
             candidates: vec![symbol(10), symbol(11)],
@@ -537,11 +532,10 @@ async fn recursive_instance_reports_an_exact_cycle() {
         InstanceCandidateParameter::given(given_id(10, 0), required.clone()),
     ]);
     let engine = engine_with_candidates(&[candidate]).await;
-    let mut solver = Solver::new(engine.clone());
-    let mut resolver = InstanceResolver::new(engine.clone(), site());
+    let mut solver = Solver::new_at_site(engine.clone(), site());
 
     assert!(matches!(
-        resolver.resolve_instance(&mut solver, required).await,
+        solver.resolve_instance(required).await,
         Err(InstanceResolutionError::Cycle(_))
     ));
 }
@@ -558,11 +552,10 @@ async fn cycle_failure_does_not_reject_other_candidates() {
     ]);
     let direct = InstanceCandidate::new(symbol(11), required.clone(), Vec::new());
     let engine = engine_with_candidates(&[cyclic, direct]).await;
-    let mut solver = Solver::new(engine.clone());
-    let mut resolver = InstanceResolver::new(engine.clone(), site());
+    let mut solver = Solver::new_at_site(engine.clone(), site());
     let expected = Ty::new_instance(symbol(11), Args::new([], &engine), &engine);
 
-    assert_eq!(resolver.resolve_instance(&mut solver, required).await, Ok(expected));
+    assert_eq!(solver.resolve_instance(required).await, Ok(expected));
 }
 
 // input: resolve Eq[int32] twice through one resolver
@@ -574,13 +567,9 @@ async fn successful_root_resolution_is_memoized_across_calls() {
     let required = trait_ref(1, [Ty::new_primitive(Primitive::Int32, &types)], &types);
     let candidate = InstanceCandidate::new(symbol(10), required.clone(), Vec::new());
     let engine = engine_with_candidates(&[candidate]).await;
-    let mut solver = Solver::new(engine.clone());
-    let mut resolver = InstanceResolver::new(engine.clone(), site());
+    let mut solver = Solver::new_at_site(engine.clone(), site());
     let expected = Ty::new_instance(symbol(10), Args::new([], &engine), &engine);
 
-    assert_eq!(
-        resolver.resolve_instance(&mut solver, required.clone()).await,
-        Ok(expected.clone())
-    );
-    assert_eq!(resolver.resolve_instance(&mut solver, required).await, Ok(expected));
+    assert_eq!(solver.resolve_instance(required.clone()).await, Ok(expected.clone()));
+    assert_eq!(solver.resolve_instance(required).await, Ok(expected));
 }
