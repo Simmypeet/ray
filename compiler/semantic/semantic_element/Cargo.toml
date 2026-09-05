@@ -12,6 +12,7 @@ bon.workspace = true
 rayc_qbice.path = "../../base/qbice"
 rayc_type.path = "../type"
 rayc_symbol.path = "../symbol"
+rayc_target.path = "../../base/target"
 rayc_lexical.path = "../../syntax/lexical"
 rayc_arena.path = "../../base/arena"
 

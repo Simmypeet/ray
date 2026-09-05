@@ -1,3 +1,4 @@
+mod all_instance_implements_trait;
 pub mod build;
 pub mod diagnostic;
 mod effect_row;
