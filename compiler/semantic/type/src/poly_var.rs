@@ -15,6 +15,7 @@ use rayc_symbol::{
 };
 
 use crate::{
+    reduce::Reduce,
     subst::Subst,
     trait_ref::TraitRef,
     ty::{TyKind, args::Args},
@@ -220,6 +221,31 @@ impl PolyVarStack {
                 (GlobalPolyVarID::new(*symbol_id, poly_var_id), poly_var.kind())
             })
         })
+    }
+
+    /// Finds exact instance requirements at the nearest matching lexical scope.
+    #[must_use]
+    pub fn nearest_instance_matches(
+        &self,
+        required: &TraitRef,
+        engine: &TrackedEngine,
+    ) -> Vec<GlobalPolyVarID> {
+        for (symbol_id, poly_var_map) in &self.poly_var_maps {
+            let matches = poly_var_map
+                .iter()
+                .filter(|(_, poly_var)| {
+                    poly_var
+                        .trait_ref()
+                        .is_some_and(|candidate| candidate.normalize(engine) == *required)
+                })
+                .map(|(poly_var_id, _)| GlobalPolyVarID::new(*symbol_id, poly_var_id))
+                .collect::<Vec<_>>();
+            if !matches.is_empty() {
+                return matches;
+            }
+        }
+
+        Vec::new()
     }
 }
 
