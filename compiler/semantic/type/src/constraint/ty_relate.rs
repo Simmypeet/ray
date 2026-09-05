@@ -390,15 +390,18 @@ fn match_effect_row_tails(lesser: &Interned<Ty>, greater: &Interned<Ty>) -> Deri
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
     use qbice::storage::intern::Interned;
-    use rayc_qbice::TrackedEngine;
+    use rayc_lexical::tree::{OffsetMode, RelativeLocation, RelativeSpan};
+    use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor, TrackedEngine};
     use rayc_symbol::SymbolID;
     use rayc_target::TargetID;
 
     use super::TyRelate;
     use crate::{
         constraint::{Constraint, DerivedConstraint, Error, Step},
-        poly_var::{GlobalPolyVarID, PolyVarID},
+        poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap},
         solver::Solver,
         subst::{Subst, Substitutable},
         ty::{Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel, inference::Inference},
@@ -417,9 +420,33 @@ mod tests {
         engine.intern(EffectLabel::new(symbol_id, Args::new(args, engine)))
     }
 
-    fn effect_poly_var(id: u64) -> GlobalPolyVarID {
+    async fn engine_with_effect_poly_var() -> (TrackedEngine, GlobalPolyVarID) {
+        let mut engine = Engine::new_with(
+            qbice::serialize::Plugin::default(),
+            InMemoryFactory,
+            qbice::stable_hash::SeededStableHasherBuilder::new(0),
+        )
+        .await
+        .unwrap();
         let parent_id = TargetID::TEST.make_global(SymbolID::from_u128(0));
-        GlobalPolyVarID::new(parent_id, PolyVarID::new(id))
+        let location = RelativeLocation {
+            offset: 0,
+            mode: OffsetMode::Start,
+            relative_to: rayc_arena::ID::new(0),
+        };
+        let mut poly_vars = PolyVarMap::new();
+        let id = poly_vars
+            .insert(PolyVar::new_effect(engine.intern_unsized("p"), RelativeSpan {
+                start: location,
+                end: location,
+                source_id: TargetID::TEST.make_global(rayc_source_file::LocalSourceID::new(0, 0)),
+            }))
+            .unwrap();
+        engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+            crate::poly_var::Key { symbol_id: parent_id },
+            engine.intern(poly_vars),
+        )]))));
+        (Arc::new(engine).tracked().await, GlobalPolyVarID::new(parent_id, id))
     }
 
     // input: ?dict = Instance[int32]
@@ -712,11 +739,10 @@ mod tests {
     // output: e := p, with no substitution for p
     #[tokio::test]
     async fn effect_inference_binds_to_rigid_effect_poly_var_without_rebinding_it() {
-        let engine = rayc_qbice::create_minimal_engine().await;
+        let (engine, poly) = engine_with_effect_poly_var().await;
         let mut solver = Solver::new(engine.clone());
         let e = solver.new_inference(TyKind::EffectRow);
         let e_ty = engine.intern(Ty::Inference(e));
-        let poly = effect_poly_var(0);
         let poly_ty = Ty::new_poly_var(poly, &engine);
 
         let subst =
@@ -733,12 +759,12 @@ mod tests {
     // output: e := p
     #[tokio::test]
     async fn matching_open_effect_rows_unify_their_tails_directly() {
-        let engine = rayc_qbice::create_minimal_engine().await;
+        let (engine, poly) = engine_with_effect_poly_var().await;
         let io = effect_label(1, &engine);
         let mut solver = Solver::new(engine.clone());
         let inference = solver.new_inference(TyKind::EffectRow);
         let inference_ty = engine.intern(Ty::Inference(inference));
-        let poly_ty = Ty::new_poly_var(effect_poly_var(0), &engine);
+        let poly_ty = Ty::new_poly_var(poly, &engine);
         let rigid_row = Ty::new_effect_row([io.clone()], Some(poly_ty.clone()), &engine);
         let inferred_row = Ty::new_effect_row([io], Some(inference_ty), &engine);
 
