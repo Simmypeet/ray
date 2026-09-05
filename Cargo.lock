@@ -1905,6 +1905,7 @@ dependencies = [
  "rayc_lexical",
  "rayc_qbice",
  "rayc_symbol",
+ "rayc_target",
  "rayc_type",
 ]
 
