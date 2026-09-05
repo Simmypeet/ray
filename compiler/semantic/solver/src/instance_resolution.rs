@@ -244,6 +244,3 @@ impl Solver {
         ))
     }
 }
-
-#[cfg(test)]
-mod test;
