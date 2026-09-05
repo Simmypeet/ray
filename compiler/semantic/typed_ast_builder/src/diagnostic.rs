@@ -8,7 +8,7 @@ use rayc_symbol::{
     GlobalSymbolID, name::get_qualified_name, source_map::to_absolute_span,
     symbol_kind::get_symbol_kind,
 };
-use rayc_type::{constraint::subtype::Subtype, ty::Ty};
+use rayc_type::{constraint::ty_relate::TyRelate, ty::Ty};
 
 use crate::tast_builder::constraint_solver::{EffectUnificationSource, SubtypeSource};
 
@@ -473,7 +473,7 @@ impl Report for DuplicateNameBinding {
 pub struct ResidualSubtype {
     span: RelativeSpan,
     source: SubtypeSource,
-    subype: Subtype,
+    subype: TyRelate,
 }
 
 impl Report for ResidualSubtype {

@@ -13,19 +13,23 @@ use crate::{
     },
 };
 
+/// Relating two types together.
+///
+/// This can be used to implement various flavors of type relations, such as
+/// subtyping, equality, unification, and one-way unification.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub struct Subtype {
+pub struct TyRelate {
     lesser: Interned<Ty>,
     greater: Interned<Ty>,
 }
 
-impl Subtype {
+impl TyRelate {
     pub fn interned_recursive_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
         Ty::interned_recursive_iter(&self.lesser).chain(Ty::interned_recursive_iter(&self.greater))
     }
 }
 
-impl Subtype {
+impl TyRelate {
     #[must_use]
     pub const fn lesser(&self) -> &Interned<Ty> { &self.lesser }
 
@@ -33,7 +37,7 @@ impl Subtype {
     pub const fn greater(&self) -> &Interned<Ty> { &self.greater }
 }
 
-impl Reduce for Subtype {
+impl Reduce for TyRelate {
     fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
     where
         Self: Sized,
@@ -47,7 +51,7 @@ impl Reduce for Subtype {
     }
 }
 
-impl Substitutable for Subtype {
+impl Substitutable for TyRelate {
     fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self>
     where
         Self: Sized,
@@ -61,7 +65,7 @@ impl Substitutable for Subtype {
     }
 }
 
-impl Subtype {
+impl TyRelate {
     #[must_use]
     pub const fn new(lesser: Interned<Ty>, greater: Interned<Ty>) -> Self {
         Self { lesser, greater }
@@ -70,7 +74,7 @@ impl Subtype {
 
 impl Solver {
     #[allow(clippy::unused_self)]
-    pub(super) fn entail_subtype(&mut self, substype: &Subtype) -> Result<Step, Error> {
+    pub(super) fn entail_subtype(&mut self, substype: &TyRelate) -> Result<Step, Error> {
         if substype.lesser == substype.greater {
             return Ok(Step::Derived(Vec::new()));
         }
@@ -302,7 +306,7 @@ mod tests {
     use rayc_symbol::SymbolID;
     use rayc_target::TargetID;
 
-    use super::Subtype;
+    use super::TyRelate;
     use crate::{
         constraint::{Constraint, DerivedConstraint, Error, Step},
         poly_var::{GlobalPolyVarID, PolyVarID},
@@ -348,7 +352,7 @@ mod tests {
             let (left, right) =
                 if reverse { (instance.clone(), variable) } else { (variable, instance.clone()) };
             assert_eq!(
-                solver.entail(&Constraint::Subtype(Subtype::new(left, right))),
+                solver.entail(&Constraint::TyRelate(TyRelate::new(left, right))),
                 Ok(Step::Subst(Subst::new_singleton(inference, instance.clone())))
             );
         }
@@ -366,7 +370,7 @@ mod tests {
             let variable = engine.intern(Ty::Inference(inference));
             let error = Ty::new_error(kind, &engine);
             assert_eq!(
-                solver.entail(&Constraint::Subtype(Subtype::new(variable, error.clone()))),
+                solver.entail(&Constraint::TyRelate(TyRelate::new(variable, error.clone()))),
                 Ok(Step::Subst(Subst::new_singleton(inference, error)))
             );
         }
@@ -396,7 +400,7 @@ mod tests {
                     let (left, right) =
                         if reverse { (ty.clone(), variable) } else { (variable, ty.clone()) };
                     assert_eq!(
-                        solver.entail(&Constraint::Subtype(Subtype::new(left, right))),
+                        solver.entail(&Constraint::TyRelate(TyRelate::new(left, right))),
                         Err(Error::Conflicted)
                     );
                 }
@@ -431,12 +435,12 @@ mod tests {
                 Err(Error::Conflicted)
             };
             assert_eq!(
-                solver.entail(&Constraint::Subtype(Subtype::new(variable.clone(), ty))),
+                solver.entail(&Constraint::TyRelate(TyRelate::new(variable.clone(), ty))),
                 expected
             );
             for rejected in [Ty::new_unit(&engine), Ty::new_star_error(&engine)] {
                 assert_eq!(
-                    solver.entail(&Constraint::Subtype(Subtype::new(variable.clone(), rejected))),
+                    solver.entail(&Constraint::TyRelate(TyRelate::new(variable.clone(), rejected))),
                     Err(Error::Conflicted)
                 );
             }
@@ -477,7 +481,7 @@ mod tests {
         let greater = Ty::new_effect_row([exn, io], None, &engine);
         let mut solver = Solver::new(engine);
 
-        let step = solver.entail(&Constraint::Subtype(Subtype::new(lesser, greater)));
+        let step = solver.entail(&Constraint::TyRelate(TyRelate::new(lesser, greater)));
 
         assert_eq!(step, Ok(Step::Derived(Vec::new())));
     }
@@ -493,7 +497,7 @@ mod tests {
         let greater = Ty::new_effect_row([exn], None, &engine);
         let mut solver = Solver::new(engine);
 
-        let step = solver.entail(&Constraint::Subtype(Subtype::new(lesser, greater)));
+        let step = solver.entail(&Constraint::TyRelate(TyRelate::new(lesser, greater)));
 
         assert_eq!(step, Err(Error::Conflicted));
     }
@@ -512,7 +516,7 @@ mod tests {
         let lesser = Ty::new_effect_row([io.clone()], Some(e1.clone()), &engine);
         let greater = Ty::new_effect_row([state.clone()], Some(e2.clone()), &engine);
 
-        let step = solver.entail(&Constraint::Subtype(Subtype::new(lesser, greater)));
+        let step = solver.entail(&Constraint::TyRelate(TyRelate::new(lesser, greater)));
 
         let e3 = engine.intern(Ty::Inference(Inference::new(TyKind::EffectRow, 2)));
         let state_remainder = Ty::new_effect_row([state], Some(e3.clone()), &engine);
@@ -542,8 +546,9 @@ mod tests {
         let lesser = Ty::new_effect_row([io.clone()], Some(e1_ty), &engine);
         let greater = Ty::new_effect_row([exn.clone()], Some(e2_ty), &engine);
 
-        let subst = solve(&mut solver, Constraint::Subtype(Subtype::new(lesser, greater)), &engine)
-            .expect("distinct open rows should unify through a common tail");
+        let subst =
+            solve(&mut solver, Constraint::TyRelate(TyRelate::new(lesser, greater)), &engine)
+                .expect("distinct open rows should unify through a common tail");
 
         let e3 = engine.intern(Ty::Inference(Inference::new(TyKind::EffectRow, 2)));
         assert_eq!(subst.get(&e1), Some(&Ty::new_effect_row([exn], Some(e3.clone()), &engine)));
@@ -563,7 +568,7 @@ mod tests {
         let open = Ty::new_effect_row([io.clone()], Some(e_ty), &engine);
         let closed = Ty::new_effect_row([io], None, &engine);
 
-        let subst = solve(&mut solver, Constraint::Subtype(Subtype::new(open, closed)), &engine)
+        let subst = solve(&mut solver, Constraint::TyRelate(TyRelate::new(open, closed)), &engine)
             .expect("the open tail should close");
 
         assert_eq!(subst.get(&e), Some(&Ty::new_effect_row([], None, &engine)));
@@ -582,8 +587,9 @@ mod tests {
         let open = Ty::new_effect_row([io.clone()], Some(e_ty), &engine);
         let duplicate = Ty::new_effect_row([io.clone(), io.clone()], None, &engine);
 
-        let subst = solve(&mut solver, Constraint::Subtype(Subtype::new(open, duplicate)), &engine)
-            .expect("the duplicate label should remain in the tail");
+        let subst =
+            solve(&mut solver, Constraint::TyRelate(TyRelate::new(open, duplicate)), &engine)
+                .expect("the duplicate label should remain in the tail");
 
         assert_eq!(subst.get(&e), Some(&Ty::new_effect_row([io], None, &engine)));
     }
@@ -601,7 +607,7 @@ mod tests {
         let recursive_row = Ty::new_effect_row([io], Some(e_ty.clone()), &engine);
 
         let result =
-            solve(&mut solver, Constraint::Subtype(Subtype::new(e_ty, recursive_row)), &engine);
+            solve(&mut solver, Constraint::TyRelate(TyRelate::new(e_ty, recursive_row)), &engine);
 
         assert_eq!(result, Err(Error::OccursCheckFailed));
     }
@@ -619,7 +625,7 @@ mod tests {
         let poly_ty = Ty::new_poly_var(poly, &engine);
 
         let subst =
-            solve(&mut solver, Constraint::Subtype(Subtype::new(poly_ty.clone(), e_ty)), &engine)
+            solve(&mut solver, Constraint::TyRelate(TyRelate::new(poly_ty.clone(), e_ty)), &engine)
                 .expect("an unconstrained inference should bind to a rigid variable");
 
         assert_eq!(subst.get(&e), Some(&poly_ty));
@@ -640,9 +646,12 @@ mod tests {
         let rigid_row = Ty::new_effect_row([io.clone()], Some(poly_ty.clone()), &engine);
         let inferred_row = Ty::new_effect_row([io], Some(inference_ty), &engine);
 
-        let subst =
-            solve(&mut solver, Constraint::Subtype(Subtype::new(rigid_row, inferred_row)), &engine)
-                .expect("matching open rows should unify their tails");
+        let subst = solve(
+            &mut solver,
+            Constraint::TyRelate(TyRelate::new(rigid_row, inferred_row)),
+            &engine,
+        )
+        .expect("matching open rows should unify their tails");
 
         assert_eq!(subst.get(&inference), Some(&poly_ty));
     }
@@ -659,7 +668,7 @@ mod tests {
         let inference_ty = engine.intern(Ty::Inference(inference));
         let row = Ty::new_effect_row([io], None, &engine);
 
-        let step = solver.entail(&Constraint::Subtype(Subtype::new(inference_ty, row.clone())));
+        let step = solver.entail(&Constraint::TyRelate(TyRelate::new(inference_ty, row.clone())));
 
         assert_eq!(step, Ok(Step::Subst(crate::subst::Subst::new_singleton(inference, row))));
     }
@@ -679,7 +688,7 @@ mod tests {
         let mut solver = Solver::new(engine.clone());
 
         let result =
-            solve(&mut solver, Constraint::Subtype(Subtype::new(lesser, greater)), &engine);
+            solve(&mut solver, Constraint::TyRelate(TyRelate::new(lesser, greater)), &engine);
 
         assert_eq!(result, Err(Error::Conflicted));
     }
@@ -704,8 +713,9 @@ mod tests {
         let lesser = Ty::new_effect_row([state_a, state_b], None, &engine);
         let greater = Ty::new_effect_row([state_int32, state_bool], None, &engine);
 
-        let subst = solve(&mut solver, Constraint::Subtype(Subtype::new(lesser, greater)), &engine)
-            .expect("same-constructor occurrences should match positionally");
+        let subst =
+            solve(&mut solver, Constraint::TyRelate(TyRelate::new(lesser, greater)), &engine)
+                .expect("same-constructor occurrences should match positionally");
 
         assert_eq!(subst.get(&a), Some(&int32));
         assert_eq!(subst.get(&b), Some(&bool));

@@ -6,7 +6,7 @@ use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{
-    constraint::{DerivationRule, subtype::Subtype},
+    constraint::{DerivationRule, ty_relate::TyRelate},
     reduce::Reduce,
     subst::{Subst, Substitutable},
     ty::{Ty, inference::Inference},
@@ -60,7 +60,7 @@ pub enum SubtypeSource {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
 pub struct SubtypeConstraintOrigin {
-    original_subtype: Subtype,
+    original_subtype: TyRelate,
     source: SubtypeSource,
     span: RelativeSpan,
 }
@@ -151,7 +151,7 @@ pub(super) struct ResolvedEffectUnificationSite {
 }
 
 pub(super) enum ResolvedRootCause {
-    Subtype { source: SubtypeSource, span: RelativeSpan, subtype: Subtype },
+    Subtype { source: SubtypeSource, span: RelativeSpan, subtype: TyRelate },
     EffectUnification(ResolvedEffectUnification),
 }
 

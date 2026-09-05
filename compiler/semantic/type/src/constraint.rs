@@ -3,24 +3,24 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
-    constraint::subtype::Subtype,
+    constraint::ty_relate::TyRelate,
     reduce::Reduce,
     solver::Solver,
     subst::{Subst, Substitutable},
     ty::Ty,
 };
 
-pub mod subtype;
+pub mod ty_relate;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Constraint {
-    Subtype(Subtype),
+    TyRelate(TyRelate),
 }
 
 impl Constraint {
     pub fn interned_recursive_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
         match self {
-            Self::Subtype(subtype) => subtype.interned_recursive_iter(),
+            Self::TyRelate(subtype) => subtype.interned_recursive_iter(),
         }
     }
 }
@@ -28,7 +28,7 @@ impl Constraint {
 impl Constraint {
     #[must_use]
     pub const fn new_subtype(lesser: Interned<Ty>, greater: Interned<Ty>) -> Self {
-        Self::Subtype(Subtype::new(lesser, greater))
+        Self::TyRelate(TyRelate::new(lesser, greater))
     }
 }
 
@@ -38,7 +38,7 @@ impl Reduce for Constraint {
         Self: Sized,
     {
         match self {
-            Self::Subtype(subtype) => subtype.reduce(engine).map(Constraint::Subtype),
+            Self::TyRelate(subtype) => subtype.reduce(engine).map(Constraint::TyRelate),
         }
     }
 }
@@ -49,7 +49,7 @@ impl Substitutable for Constraint {
         Self: Sized,
     {
         match self {
-            Self::Subtype(subtype) => subtype.apply_subst(subst, engine).map(Constraint::Subtype),
+            Self::TyRelate(subtype) => subtype.apply_subst(subst, engine).map(Constraint::TyRelate),
         }
     }
 }
@@ -118,7 +118,7 @@ pub enum Error {
 impl Solver {
     pub fn entail(&mut self, constraint: &Constraint) -> Result<Step, Error> {
         match constraint {
-            Constraint::Subtype(subtype) => self.entail_subtype(subtype),
+            Constraint::TyRelate(subtype) => self.entail_subtype(subtype),
         }
     }
 }

@@ -1,7 +1,7 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::{
-    constraint::{Constraint, subtype::Subtype},
+    constraint::{Constraint, ty_relate::TyRelate},
     ty::{Ty, TyKind, effect_row::EffectLabel},
 };
 use rayc_typed_ast::{
@@ -167,7 +167,7 @@ impl TAstBuilder {
         );
 
         PendingConstraint::builder()
-            .constraint(Constraint::Subtype(Subtype::new(lesser, greater)))
+            .constraint(Constraint::TyRelate(TyRelate::new(lesser, greater)))
             .cause_id(cause_id)
             .build()
     }
@@ -291,7 +291,7 @@ impl TAstBuilder {
         span: RelativeSpan,
         source: SubtypeSource,
     ) {
-        let subtype = Subtype::new(expected_ty.clone(), actual_ty.clone());
+        let subtype = TyRelate::new(expected_ty.clone(), actual_ty.clone());
 
         let cause_id = self.constraint_solver.provenance.insert_root_cause(
             SubtypeConstraintOrigin::builder()
@@ -302,7 +302,7 @@ impl TAstBuilder {
         );
 
         let pending_constraint = PendingConstraint::builder()
-            .constraint(Constraint::Subtype(subtype))
+            .constraint(Constraint::TyRelate(subtype))
             .cause_id(cause_id)
             .build();
 
