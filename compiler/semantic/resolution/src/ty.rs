@@ -43,7 +43,7 @@ impl Resolver<'_> {
 
         let mut inferred = Vec::with_capacity(expected.len());
         for kind in expected {
-            let Some(ty) = self.new_inference_type(*kind) else {
+            let Some(ty) = self.new_inference_type(*kind, identifier.span()) else {
                 self.report_type_inference_not_allowed(identifier, expected.len());
                 return self.new_args(expected.iter().map(|kind| self.new_error_type(*kind)));
             };
@@ -177,10 +177,12 @@ impl Resolver<'_> {
                         .expect("a given parameter must have an instance requirement"),
                     subst,
                 );
-                self.new_instance_inference_type(&expected_trait_ref).unwrap_or_else(|| {
-                    self.report_missing_given_argument(parameter.name().clone(), path.span());
-                    self.new_error_type(TyKind::Instance)
-                })
+                self.new_instance_inference_type(&expected_trait_ref, path.span()).unwrap_or_else(
+                    || {
+                        self.report_missing_given_argument(parameter.name().clone(), path.span());
+                        self.new_error_type(TyKind::Instance)
+                    },
+                )
             };
 
             self.compose_subst(

@@ -19,14 +19,13 @@ use rayc_type::{
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{
-        InferenceConstraint, Mutability, Primitive, Ty, TyKind, args::Args,
-        effect_row::EffectLabel, inference::GenInfer,
+        InferenceConstraint, Mutability, Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel,
     },
 };
 
 use crate::{
     Diagnostic, DuplicateGivenArgument, ExpectedEffect, ExpectedInstance, ExpectedTrait,
-    ExplicitTypeArgumentsNotAllowed, GivenArgumentNotFound, MissingGivenArgument,
+    ExplicitTypeArgumentsNotAllowed, GenInferWithSpan, GivenArgumentNotFound, MissingGivenArgument,
     PathSegmentNotFound, PolyVarNotFound, PositionalGivenArgumentAfterNamed,
     TypeArgumentArityMismatch, TypeInferenceNotAllowed, TypeKindMismatch,
 };
@@ -41,7 +40,7 @@ pub struct Resolver<'a> {
 
     site: GlobalSymbolID,
     handler: &'a dyn Handler<Diagnostic>,
-    infer_gen: Option<&'a mut dyn GenInfer>,
+    infer_gen: Option<&'a mut dyn GenInferWithSpan>,
 }
 
 impl fmt::Debug for Resolver<'_> {
@@ -169,17 +168,29 @@ impl Resolver<'_> {
         ty
     }
 
-    pub(crate) fn new_inference_type(&mut self, kind: TyKind) -> Option<Interned<Ty>> {
+    pub(crate) fn new_inference_type(
+        &mut self,
+        kind: TyKind,
+        span: RelativeSpan,
+    ) -> Option<Interned<Ty>> {
         let infer_gen = self.infer_gen.as_deref_mut()?;
-        Some(self.engine.intern(Ty::Inference(infer_gen.gen_infer(kind, InferenceConstraint::Any))))
+        Some(self.engine.intern(Ty::Inference(infer_gen.gen_infer(
+            kind,
+            InferenceConstraint::Any,
+            span,
+        ))))
     }
 
     pub(crate) fn new_instance_inference_type(
         &mut self,
         expected_trait_ref: &TraitRef,
+        span: RelativeSpan,
     ) -> Option<Interned<Ty>> {
         let infer_gen = self.infer_gen.as_deref_mut()?;
-        Some(self.engine.intern(Ty::Inference(infer_gen.gen_instance_infer(expected_trait_ref))))
+        Some(
+            self.engine
+                .intern(Ty::Inference(infer_gen.gen_instance_infer(expected_trait_ref, span))),
+        )
     }
 
     pub(crate) fn apply_subst_to_trait_ref(&self, trait_ref: &TraitRef, subst: &Subst) -> TraitRef {

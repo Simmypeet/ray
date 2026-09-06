@@ -16,7 +16,9 @@ use rayc_type::{
     ty::TyKind,
 };
 
+pub mod inference;
 pub mod path;
+pub use inference::GenInferWithSpan;
 pub mod resolver;
 pub mod ty;
 
