@@ -1,14 +1,17 @@
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
-    constraint::{Constraint, Error, Step},
+    constraint::ty_relate::TyRelate,
     reduce::Reduce,
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{InferenceConstraint, TyKind, inference::Inference},
 };
 
-use crate::solver::instance_resolution_state::{InstanceResolutionLimits, InstanceResolutionState};
+use crate::{
+    solver::instance_resolution_state::{InstanceResolutionLimits, InstanceResolutionState},
+    ty_relate::Step,
+};
 
 mod instance_resolution_state;
 
@@ -45,7 +48,7 @@ impl Solver {
         let constrs = head
             .args()
             .structural_match(expected.args())?
-            .map(|(head, expected)| Constraint::new_subtype(head.clone(), expected.clone()))
+            .map(|(head, expected)| TyRelate::new(head.clone(), expected.clone()))
             .collect();
 
         self.exhaustive_solve(constrs, &TyRelatingEnvironment::TopLevelMatching).await
@@ -55,18 +58,18 @@ impl Solver {
     ///
     /// Returns `None` if entailment fails or constraints remain after no
     /// further progress can be made.
-    pub async fn exhaustive_solve(
+    async fn exhaustive_solve(
         &mut self,
-        mut constrs: Vec<Constraint>,
+        mut constrs: Vec<TyRelate>,
         relate_env: &TyRelatingEnvironment,
     ) -> Option<Subst> {
         let mut subst = Subst::new_empty();
-        let mut residual = Vec::<Constraint>::new();
+        let mut residual = Vec::<TyRelate>::new();
 
         while let Some(constraint) = constrs.pop() {
-            match self.entail_with_relate_env(&constraint, relate_env).await.ok()? {
+            match self.entail_ty_relate_with(&constraint, relate_env).await.ok()? {
                 Step::Derived(derived) => {
-                    constrs.extend(derived.into_iter().map(|derived| derived.constraint));
+                    constrs.extend(derived.into_iter().map(|derived| derived.ty_relate));
                 }
                 Step::Subst(new_subst) => {
                     subst.compose(&new_subst, &self.engine);
@@ -136,24 +139,6 @@ impl Solver {
         let inference = Inference::new_with_constraint(kind, constraint, self.inference_counter);
         self.inference_counter += 1;
         inference
-    }
-
-    pub async fn entail(&mut self, constraint: &Constraint) -> Result<Step, Error> {
-        match constraint {
-            Constraint::TyRelate(subtype) => {
-                self.entail_subtype(subtype, &TyRelatingEnvironment::Normal).await
-            }
-        }
-    }
-
-    async fn entail_with_relate_env(
-        &mut self,
-        constraint: &Constraint,
-        relate_env: &TyRelatingEnvironment,
-    ) -> Result<Step, Error> {
-        match constraint {
-            Constraint::TyRelate(subtype) => self.entail_subtype(subtype, relate_env).await,
-        }
     }
 }
 

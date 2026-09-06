@@ -5,8 +5,9 @@ use rayc_arena::{Arena, ID};
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_solver::ty_relate::DerivationRule;
 use rayc_type::{
-    constraint::{DerivationRule, ty_relate::TyRelate},
+    constraint::ty_relate::TyRelate,
     reduce::Reduce,
     subst::{Subst, Substitutable},
     ty::{Ty, inference::Inference},

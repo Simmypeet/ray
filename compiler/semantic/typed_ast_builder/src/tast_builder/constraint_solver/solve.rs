@@ -1,8 +1,9 @@
 use bon::Builder;
 use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
+use rayc_solver::ty_relate::{self, DerivedConstraint, Step};
 use rayc_type::{
-    constraint::{self, Constraint, DerivedConstraint, Step},
+    constraint::ty_relate::TyRelate,
     reduce::Reduce,
     trait_ref::TraitRef,
     ty::{
@@ -12,12 +13,12 @@ use rayc_type::{
 };
 
 use super::{CauseID, ConstraintSolver};
-use crate::tast_builder::TAstBuilder;
+use crate::tast_builder::{TAstBuilder, constraint_solver::constraints::Constraint};
 
 #[derive(Debug)]
 pub struct ConstraintSet {
     residual_constraints: Vec<PendingConstraint>,
-    errored_constraints: Vec<(constraint::Error, PendingConstraint)>,
+    errored_constraints: Vec<(ty_relate::Error, PendingConstraint)>,
     numeric_inferences: Vec<Inference>,
 }
 
@@ -84,7 +85,10 @@ impl TAstBuilder {
             .provenance
             .insert_derivation_cause(derived_constraint.rule, parent_cause);
 
-        PendingConstraint { constraint: derived_constraint.constraint, cause_id }
+        PendingConstraint {
+            constraint: Constraint::TyRelate(derived_constraint.ty_relate),
+            cause_id,
+        }
     }
 
     pub(super) async fn push_constraints(&mut self, mut queued: Vec<PendingConstraint>) {
@@ -99,51 +103,60 @@ impl TAstBuilder {
         }
 
         while let Some(pending_constraint) = queued.pop() {
-            match self.constraint_solver.solver.entail(&pending_constraint.constraint).await {
-                Ok(Step::Derived(constrs)) => {
-                    queued.extend(
-                        constrs.into_iter().map(|x| {
-                            self.register_derived_constraint(pending_constraint.cause_id, x)
-                        }),
-                    );
+            match pending_constraint.constraint {
+                Constraint::TyRelate(ty_relate) => {
+                    self.entail_relate(ty_relate, pending_constraint.cause_id, &mut queued).await;
                 }
+            }
+        }
+    }
 
-                Ok(Step::Subst(subst)) => {
-                    self.constraint_solver.provenance.compose_subst(
-                        &subst,
-                        pending_constraint.cause_id,
-                        &self.engine,
-                    );
-                    self.move_constraints_from_residual(&mut queued);
+    async fn entail_relate(
+        &mut self,
+        ty_relate: TyRelate,
+        cause_id: CauseID,
+        queued: &mut Vec<PendingConstraint>,
+    ) {
+        match self.constraint_solver.solver.entail_ty_relate(&ty_relate).await {
+            Ok(Step::Derived(constrs)) => {
+                queued.extend(
+                    constrs.into_iter().map(|x| self.register_derived_constraint(cause_id, x)),
+                );
+            }
 
-                    for queued_constraint in &mut queued {
-                        if let Some(new_constraint) = self
-                            .constraint_solver
-                            .provenance
-                            .apply_subst_with_causes(queued_constraint, &self.engine)
-                        {
-                            *queued_constraint = new_constraint;
-                        }
+            Ok(Step::Subst(subst)) => {
+                self.constraint_solver.provenance.compose_subst(&subst, cause_id, &self.engine);
+                self.move_constraints_from_residual(queued);
+
+                for queued_constraint in queued {
+                    if let Some(new_constraint) = self
+                        .constraint_solver
+                        .provenance
+                        .apply_subst_with_causes(queued_constraint, &self.engine)
+                    {
+                        *queued_constraint = new_constraint;
                     }
                 }
+            }
 
-                Ok(Step::NoProgress) => {
-                    if let Some(reduced_constraint) = pending_constraint.reduce(&self.engine) {
-                        queued.push(reduced_constraint);
-                    } else {
-                        self.constraint_solver
-                            .constraint_set
-                            .residual_constraints
-                            .push(pending_constraint);
-                    }
+            Ok(Step::NoProgress) => {
+                if let Some(reduced_constraint) = ty_relate.reduce(&self.engine) {
+                    queued.push(PendingConstraint {
+                        constraint: Constraint::TyRelate(reduced_constraint),
+                        cause_id,
+                    });
+                } else {
+                    self.constraint_solver.constraint_set.residual_constraints.push(
+                        PendingConstraint { constraint: Constraint::TyRelate(ty_relate), cause_id },
+                    );
                 }
+            }
 
-                Err(err) => {
-                    self.constraint_solver
-                        .constraint_set
-                        .errored_constraints
-                        .push((err, pending_constraint));
-                }
+            Err(err) => {
+                self.constraint_solver.constraint_set.errored_constraints.push((
+                    err,
+                    PendingConstraint { constraint: Constraint::TyRelate(ty_relate), cause_id },
+                ));
             }
         }
     }

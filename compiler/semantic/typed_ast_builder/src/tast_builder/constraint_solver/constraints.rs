@@ -1,7 +1,10 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
+use rayc_qbice::TrackedEngine;
 use rayc_type::{
-    constraint::{Constraint, ty_relate::TyRelate},
+    constraint::ty_relate::TyRelate,
+    reduce::Reduce,
+    subst::Substitutable,
     ty::{Ty, TyKind, effect_row::EffectLabel},
 };
 use rayc_typed_ast::{
@@ -20,6 +23,43 @@ use crate::tast_builder::{
         solve::PendingConstraint,
     },
 };
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Constraint {
+    TyRelate(TyRelate),
+}
+
+impl Reduce for Constraint {
+    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match self {
+            Self::TyRelate(ty_relate) => ty_relate.reduce(engine).map(Constraint::TyRelate),
+        }
+    }
+}
+
+impl Substitutable for Constraint {
+    fn apply_subst(&self, subst: &rayc_type::subst::Subst, engine: &TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match self {
+            Self::TyRelate(ty_relate) => {
+                ty_relate.apply_subst(subst, engine).map(Constraint::TyRelate)
+            }
+        }
+    }
+}
+
+impl Constraint {
+    pub fn interned_recursive_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
+        match self {
+            Self::TyRelate(ty_relate) => ty_relate.interned_recursive_iter(),
+        }
+    }
+}
 
 impl TAstBuilder {
     pub async fn push_effect_introduction(

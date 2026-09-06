@@ -1,7 +1,7 @@
 use rayc_symbol::SymbolID;
 use rayc_target::TargetID;
 use rayc_type::{
-    constraint::Constraint,
+    constraint::ty_relate::TyRelate,
     subst::Subst,
     trait_ref::TraitRef,
     ty::{Primitive, Ty, TyKind, args::Args},
@@ -139,11 +139,11 @@ async fn exhaustive_solve_composes_bindings_from_derived_constraints() {
     let b_ty = engine.intern(Ty::Inference(b));
     let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
     let constrs = vec![
-        Constraint::new_subtype(
+        TyRelate::new(
             Ty::new_tuple(engine.intern_unsized([a_ty.clone()]), &engine),
             Ty::new_tuple(engine.intern_unsized([int_ty.clone()]), &engine),
         ),
-        Constraint::new_subtype(b_ty, a_ty),
+        TyRelate::new(b_ty, a_ty),
     ];
 
     assert_eq!(
@@ -161,8 +161,8 @@ async fn exhaustive_solve_rejects_conflicting_bindings() {
     let mut solver = Solver::new(engine.clone());
     let a = engine.intern(Ty::Inference(solver.new_inference(TyKind::Star)));
     let constrs = vec![
-        Constraint::new_subtype(a.clone(), Ty::new_primitive(Primitive::Bool, &engine)),
-        Constraint::new_subtype(a, Ty::new_primitive(Primitive::Int32, &engine)),
+        TyRelate::new(a.clone(), Ty::new_primitive(Primitive::Bool, &engine)),
+        TyRelate::new(a, Ty::new_primitive(Primitive::Int32, &engine)),
     ];
 
     assert_eq!(solver.exhaustive_solve(constrs, &TyRelatingEnvironment::Normal).await, None);
@@ -176,7 +176,7 @@ async fn exhaustive_solve_respects_the_relating_environment() {
     let engine = rayc_qbice::create_minimal_engine().await;
     let mut solver = Solver::new(engine.clone());
     let a = engine.intern(Ty::Inference(solver.new_inference(TyKind::Star)));
-    let constrs = vec![Constraint::new_subtype(a, Ty::new_primitive(Primitive::Int32, &engine))];
+    let constrs = vec![TyRelate::new(a, Ty::new_primitive(Primitive::Int32, &engine))];
 
     assert_eq!(
         solver.exhaustive_solve(constrs, &TyRelatingEnvironment::TopLevelMatching).await,
