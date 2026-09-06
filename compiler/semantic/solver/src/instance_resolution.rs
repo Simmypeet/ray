@@ -4,7 +4,7 @@
 //! recursive premise solving, and final specificity ranking. Search state is
 //! shared across every root resolved by one [`Solver`](crate::Solver).
 
-use qbice::storage::intern::Interned;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
@@ -24,14 +24,14 @@ use ranking::ViableInstance;
 use crate::Solver;
 
 /// Why one matching global candidate could not construct a dictionary.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum InstanceCandidateFailure {
     UndeterminedParameter(GlobalPolyVarID),
     UnsatisfiedGiven { parameter: GlobalPolyVarID, error: Box<InstanceResolutionError> },
 }
 
 /// A matching global candidate whose complete prerequisite tree was not viable.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct FailedInstanceCandidate {
     instance_id: GlobalSymbolID,
     failure: InstanceCandidateFailure,
@@ -54,7 +54,7 @@ impl FailedInstanceCandidate {
 }
 
 /// The candidate premise that caused a recursive goal to be entered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct InstanceResolutionEdge {
     instance_id: GlobalSymbolID,
     given_parameter: GlobalPolyVarID,
@@ -74,7 +74,7 @@ impl InstanceResolutionEdge {
 }
 
 /// The hard limit that stopped a search.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum InstanceResolutionLimit {
     Depth { limit: usize },
     CandidateVisits { limit: usize, candidate: GlobalSymbolID },
@@ -84,7 +84,9 @@ pub enum InstanceResolutionLimit {
 pub type InstanceResolutionResult = Result<Interned<Ty>, InstanceResolutionError>;
 
 /// One canonical goal in a diagnostic search trace.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, qbice::StableHash, qbice::Encode, qbice::Decode,
+)]
 pub struct InstanceResolutionFrame {
     goal: TraitRef,
     introduced_by: Option<InstanceResolutionEdge>,
@@ -104,7 +106,7 @@ impl InstanceResolutionFrame {
 }
 
 /// An exact cycle, including the repeated goal as the final frame.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct InstanceResolutionCycle {
     path: Vec<InstanceResolutionFrame>,
 }
@@ -118,7 +120,7 @@ impl InstanceResolutionCycle {
 }
 
 /// A structured failure from implicit-instance resolution.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum InstanceResolutionError {
     NotReady(TraitRef),
     ContainsError(TraitRef),

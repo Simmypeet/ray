@@ -1,4 +1,4 @@
-use qbice::storage::intern::Interned;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     constraint::ty_relate::TyRelate,
@@ -63,7 +63,7 @@ pub enum Step {
     NoProgress,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Error {
     /// The subtype constraint is obviously unsatisfiable, e.g. `Int <: Bool`
     Conflicted,
