@@ -10,7 +10,9 @@ use rayc_symbol::{
 };
 use rayc_type::{constraint::ty_relate::TyRelate, ty::Ty};
 
-use crate::tast_builder::constraint_solver::{EffectUnificationSource, SubtypeSource};
+use crate::tast_builder::constraint_solver::{
+    ConstraintError, EffectUnificationSource, SubtypeSource,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct UnboundName {
@@ -476,6 +478,50 @@ pub struct ResidualSubtype {
     subype: TyRelate,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct InstanceResolution {
+    span: RelativeSpan,
+    trait_ref: rayc_type::trait_ref::TraitRef,
+    error: ConstraintError,
+}
+
+impl Report for InstanceResolution {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        use rayc_solver::{instance_resolution::InstanceResolutionError, ty_relate::Error};
+
+        // Interpret the stored failure only when rendering the diagnostic.
+        let message = match &self.error {
+            ConstraintError::TyRelate(Error::Conflicted) => "conflicting implicit instance",
+            ConstraintError::TyRelate(Error::OccursCheckFailed) => {
+                "implicit instance fails the occurs check"
+            }
+            ConstraintError::InstanceResolve(error) => match error {
+                InstanceResolutionError::NotReady(_) => "cannot infer instance requirement",
+                InstanceResolutionError::ContainsError(_) => {
+                    "instance requirement contains an error"
+                }
+                InstanceResolutionError::NoInstance { .. } => "no implicit instance found",
+                InstanceResolutionError::AmbiguousLexical { .. } => "ambiguous lexical instances",
+                InstanceResolutionError::AmbiguousGlobal { .. } => "ambiguous global instances",
+                InstanceResolutionError::Cycle(_) => "cyclic instance resolution",
+                InstanceResolutionError::Limit { .. } => "instance resolution limit exceeded",
+            },
+        };
+
+        let name = engine.get_qualified_name(self.trait_ref.trait_id()).await;
+        let mut args = Vec::new();
+        for arg in self.trait_ref.args().iter() {
+            args.push(arg.display(engine).await.to_string());
+        }
+        Rendered::builder()
+            .message(format!("{message}: `{name}[{}]`", args.join(", ")))
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .build()
+    }
+}
+
 impl Report for ResidualSubtype {
     async fn report(&self, parameter: &TrackedEngine) -> Rendered<ByteIndex> {
         let header_msg = match &self.source {
@@ -592,6 +638,7 @@ impl Report for IncompatibleEffectRows {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable, From,
 )]
 pub enum Diagnostic {
+    InstanceResolution(InstanceResolution),
     Resolution(rayc_resolution::Diagnostic),
     UnboundName(UnboundName),
     FunctionNotFound(FunctionNotFound),
@@ -619,6 +666,7 @@ pub enum Diagnostic {
 impl Report for Diagnostic {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
+            Self::InstanceResolution(diagnostic) => diagnostic.report(engine).await,
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::UnboundName(unbound_name) => unbound_name.report(engine).await,
             Self::FunctionNotFound(function_not_found) => function_not_found.report(engine).await,
