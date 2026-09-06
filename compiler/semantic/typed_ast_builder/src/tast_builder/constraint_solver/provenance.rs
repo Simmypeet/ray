@@ -83,6 +83,7 @@ pub enum EffectUnificationSource {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]
 pub enum RootCauseOrigin {
+    InstanceResolve { trait_ref: rayc_type::trait_ref::TraitRef, span: RelativeSpan },
     Subtype(SubtypeConstraintOrigin),
     EffectUnification(EffectUnificationOrigin),
 }
@@ -97,6 +98,7 @@ pub struct RootCause {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StepRule {
+    InstanceResolved { parent_cause_id: CauseID },
     Derivation(DerivationStep),
     AppliedSubstitution(AppliedSubstitutionStep),
 }
@@ -152,11 +154,16 @@ pub(super) struct ResolvedEffectUnificationSite {
 }
 
 pub(super) enum ResolvedRootCause {
+    InstanceResolve { trait_ref: rayc_type::trait_ref::TraitRef, span: RelativeSpan },
     Subtype { source: SubtypeSource, span: RelativeSpan, subtype: TyRelate },
     EffectUnification(ResolvedEffectUnification),
 }
 
 impl Provenance {
+    pub fn insert_instance_resolution_cause(&mut self, parent_cause_id: CauseID) -> CauseID {
+        self.insert_derived_cause(StepRule::InstanceResolved { parent_cause_id })
+    }
+
     pub fn insert_root_cause(&mut self, root_cause: impl Into<RootCauseOrigin>) -> CauseID {
         self.causes.insert(Cause::Root(RootCause { origin: root_cause.into() }))
     }
@@ -242,6 +249,7 @@ impl Provenance {
             match &self.causes[cause_id] {
                 Cause::Root(_root) => return cause_id,
                 Cause::Derived(derived_cause) => match &derived_cause.rule {
+                    StepRule::InstanceResolved { parent_cause_id } => cause_id = *parent_cause_id,
                     StepRule::Derivation(step) => cause_id = step.parent_cause_id,
                     StepRule::AppliedSubstitution(step) => {
                         cause_id = step.original_cause_id;
@@ -259,6 +267,9 @@ impl Provenance {
                 roots.insert(cause_id);
             }
             Cause::Derived(derived_cause) => match &derived_cause.rule {
+                StepRule::InstanceResolved { parent_cause_id } => {
+                    self.collect_root_cause_ids(*parent_cause_id, roots);
+                }
                 StepRule::Derivation(step) => {
                     self.collect_root_cause_ids(step.parent_cause_id, roots);
                 }
@@ -351,6 +362,12 @@ impl Provenance {
         };
 
         match &root.origin {
+            RootCauseOrigin::InstanceResolve { trait_ref, span } => {
+                ResolvedRootCause::InstanceResolve {
+                    trait_ref: trait_ref.apply_subst_or_clone(&self.subst, engine),
+                    span: *span,
+                }
+            }
             RootCauseOrigin::Subtype(origin) => ResolvedRootCause::Subtype {
                 source: origin.source,
                 span: origin.span,
