@@ -1,7 +1,6 @@
 use qbice::{Decode, Encode, StableHash};
 
 use super::{InferenceConstraint, TyKind};
-use crate::trait_ref::TraitRef;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Inference {
@@ -37,8 +36,6 @@ impl Inference {
 
 pub trait GenInfer: Send + Sync {
     fn gen_infer(&mut self, kind: TyKind, constraint: InferenceConstraint) -> Inference;
-
-    fn gen_instance_infer(&mut self, expected_trait_ref: &TraitRef) -> Inference;
 
     fn gen_effect_row_infer(&mut self) -> Inference {
         self.gen_infer(TyKind::EffectRow, InferenceConstraint::Any)
