@@ -209,25 +209,30 @@ impl Solver {
         let (mut subst, instance_id, pending_given_parameters) = candidate.into_parts();
         let parameters = self.engine().get_poly_var_map(instance_id).await;
 
-        for parameter_id in pending_given_parameters {
-            let global_parameter_id = GlobalPolyVarID::new(instance_id, parameter_id);
-            let required = parameters
-                .trait_ref_of(parameter_id)
-                .expect("a pending given parameter must have an instance requirement")
-                .apply_subst_or_clone(&subst, self.engine());
+        Box::pin(async {
+            for parameter_id in pending_given_parameters {
+                let global_parameter_id = GlobalPolyVarID::new(instance_id, parameter_id);
+                let required = parameters
+                    .trait_ref_of(parameter_id)
+                    .expect("a pending given parameter must have an instance requirement")
+                    .apply_subst_or_clone(&subst, self.engine());
 
-            let edge = InstanceResolutionEdge::new(instance_id, global_parameter_id);
+                let edge = InstanceResolutionEdge::new(instance_id, global_parameter_id);
 
-            let argument =
-                self.resolve_instance_from(required, Some(edge)).await.map_err(|error| {
-                    InstanceCandidateFailure::UnsatisfiedGiven {
-                        parameter: global_parameter_id,
-                        error: Box::new(error),
-                    }
-                })?;
+                let argument =
+                    self.resolve_instance_from(required, Some(edge)).await.map_err(|error| {
+                        InstanceCandidateFailure::UnsatisfiedGiven {
+                            parameter: global_parameter_id,
+                            error: Box::new(error),
+                        }
+                    })?;
 
-            subst.compose(&Subst::new_singleton(global_parameter_id, argument), self.engine());
-        }
+                subst.compose(&Subst::new_singleton(global_parameter_id, argument), self.engine());
+            }
+
+            Ok(())
+        })
+        .await?;
 
         let mut arguments = Vec::with_capacity(parameters.len());
         for (parameter_id, _) in parameters.iter() {

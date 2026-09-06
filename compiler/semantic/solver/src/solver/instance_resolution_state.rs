@@ -195,29 +195,27 @@ impl InstanceResolutionState {
 }
 
 impl Solver {
-    pub(crate) fn resolve_instance_from<'b>(
-        &'b mut self,
+    pub(crate) async fn resolve_instance_from(
+        &mut self,
         required: TraitRef,
         introduced_by: Option<InstanceResolutionEdge>,
-    ) -> Pin<Box<dyn Future<Output = Result<Interned<Ty>, InstanceResolutionError>> + 'b>> {
-        Box::pin(async move {
-            let required = required.normalize(self.engine());
-            if required.contains_inference() {
-                return Err(InstanceResolutionError::NotReady(required));
-            }
-            if required.contains_error() {
-                return Err(InstanceResolutionError::ContainsError(required));
-            }
+    ) -> Result<Interned<Ty>, InstanceResolutionError> {
+        let required = required.normalize(self.engine());
+        if required.contains_inference() {
+            return Err(InstanceResolutionError::NotReady(required));
+        }
+        if required.contains_error() {
+            return Err(InstanceResolutionError::ContainsError(required));
+        }
 
-            let active = match self.enter_instance_goal(required.clone(), introduced_by)? {
-                EnteredInstanceGoal::Memoized(result) => return result,
-                EnteredInstanceGoal::Active(active) => active,
-            };
+        let active = match self.enter_instance_goal(required.clone(), introduced_by)? {
+            EnteredInstanceGoal::Memoized(result) => return result,
+            EnteredInstanceGoal::Active(active) => active,
+        };
 
-            let result = self.search_active_goal(&required).await;
-            self.complete_instance_goal(active, result.clone());
-            result
-        })
+        let result = self.search_active_goal(&required).await;
+        self.complete_instance_goal(active, result.clone());
+        result
     }
 
     fn enter_instance_goal(
