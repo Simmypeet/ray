@@ -5,6 +5,7 @@ use rayc_type::{
     constraint::ty_relate::TyRelate,
     reduce::Reduce,
     subst::Substitutable,
+    trait_ref::TraitRef,
     ty::{Ty, TyKind, effect_row::EffectLabel},
 };
 use rayc_typed_ast::{
@@ -27,6 +28,7 @@ use crate::tast_builder::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Constraint {
     TyRelate(TyRelate),
+    InstanceResolve { instance: Interned<Ty>, trait_ref: TraitRef },
 }
 
 impl Reduce for Constraint {
@@ -36,6 +38,15 @@ impl Reduce for Constraint {
     {
         match self {
             Self::TyRelate(ty_relate) => ty_relate.reduce(engine).map(Constraint::TyRelate),
+            Self::InstanceResolve { instance, trait_ref } => {
+                match (instance.reduce(engine), trait_ref.reduce(engine)) {
+                    (None, None) => None,
+                    (new_instance, new_trait_ref) => Some(Self::InstanceResolve {
+                        instance: new_instance.unwrap_or_else(|| instance.clone()),
+                        trait_ref: new_trait_ref.unwrap_or_else(|| trait_ref.clone()),
+                    }),
+                }
+            }
         }
     }
 }
@@ -46,6 +57,15 @@ impl Substitutable for Constraint {
         Self: Sized,
     {
         match self {
+            Self::InstanceResolve { instance, trait_ref } => {
+                match (instance.apply_subst(subst, engine), trait_ref.apply_subst(subst, engine)) {
+                    (None, None) => None,
+                    (new_instance, new_trait_ref) => Some(Self::InstanceResolve {
+                        instance: new_instance.unwrap_or_else(|| instance.clone()),
+                        trait_ref: new_trait_ref.unwrap_or_else(|| trait_ref.clone()),
+                    }),
+                }
+            }
             Self::TyRelate(ty_relate) => {
                 ty_relate.apply_subst(subst, engine).map(Constraint::TyRelate)
             }
@@ -54,9 +74,13 @@ impl Substitutable for Constraint {
 }
 
 impl Constraint {
-    pub fn interned_recursive_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
+    pub fn interned_recursive_iter(&self) -> Box<dyn Iterator<Item = &Interned<Ty>> + '_> {
         match self {
-            Self::TyRelate(ty_relate) => ty_relate.interned_recursive_iter(),
+            Self::TyRelate(ty_relate) => Box::new(ty_relate.interned_recursive_iter()),
+            Self::InstanceResolve { instance, trait_ref } => Box::new(
+                Ty::interned_recursive_iter(instance)
+                    .chain(trait_ref.args().interned_iter().flat_map(Ty::interned_recursive_iter)),
+            ),
         }
     }
 }
