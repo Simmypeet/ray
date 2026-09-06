@@ -43,3 +43,16 @@ before pushing code.
 
 **Rationale**: Make the code looks consistent. Again, the CI will fail if the
 code is not formatted properly.
+
+# Adds comments in function body
+
+Inside the function body, if possible, group the code into logical blocks (
+perhaps separated by nicely formatted blank lines) and add a comment above each
+block to explain what it does.
+
+**Rationale**: This makes it easuer for the reviewer to understand the code.
+
+# Adds comments in complex situations
+
+If the code is complex and not so obvious, add a comment to explain what the
+code is doing and why it is doing it that way.
