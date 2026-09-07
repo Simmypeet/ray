@@ -1,0 +1,15 @@
+trait Value[a]:
+    def value(input: a) -> int32
+
+inst IntValue for Value[int32]:
+    def value(input: int32) -> int32:
+        return input
+
+def read(input: a) given (dictionary: Value[a]) -> int32:
+    return dictionary.value(input)
+
+def forward(input: a) given (dictionary: Value[a]) -> int32:
+    return read(input)
+
+def main() -> int32:
+    return forward(42)

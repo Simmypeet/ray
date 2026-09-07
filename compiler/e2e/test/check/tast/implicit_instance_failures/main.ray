@@ -1,0 +1,36 @@
+trait Missing[a]:
+    def value() -> a
+
+trait Choice[a]:
+    def value() -> a
+
+inst First for Choice[bool]:
+    def value() -> bool:
+        return true
+
+inst Second for Choice[bool]:
+    def value() -> bool:
+        return false
+
+def missing(value: a) given (dictionary: Missing[a]) -> bool:
+    return true
+
+def ambiguous(value: a) given (dictionary: Choice[a]) -> bool:
+    return true
+
+def testMissing() -> bool:
+    return missing(true)
+
+def testAmbiguous() -> bool:
+    return ambiguous(true)
+
+def testUnknown() -> bool:
+    let callback = (value) -> missing(value)
+    return true
+
+inst Nested for Choice[int32] given (dictionary: Missing[bool]):
+    def value() -> int32:
+        return 0
+
+def testNested() -> bool:
+    return ambiguous given (Nested)(1)

@@ -1,0 +1,34 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: no implicit instance found: `main.Missing[bool]`
+   ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:22:12
+   │
+22 │     return missing(true)
+   ╰╴           ━━━━━━━
+
+[error]: ambiguous global instances: `main.Choice[bool]`
+   ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:25:12
+   │
+25 │     return ambiguous(true)
+   ╰╴           ━━━━━━━━━
+
+[error]: cannot infer instance requirement: `main.Missing[{any}]`
+   ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:28:31
+   │
+28 │     let callback = (value) -> missing(value)
+   ╰╴                              ━━━━━━━
+
+[error]: no implicit instance found: `main.Missing[bool]`
+   ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:36:29
+   │
+36 │     return ambiguous given (Nested)(1)
+   ╰╴                            ━━━━━━
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:
