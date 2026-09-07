@@ -1,14 +1,12 @@
 use rayc_hash::FxHashSet;
 use rayc_qbice::TrackedEngine;
-use rayc_type::{
-    subst::Subst,
-    ty::{Primitive, Ty},
-};
+use rayc_solver::instance_resolution::InstanceResolutionError;
+use rayc_type::subst::Subst;
 
 use super::{
     CauseID, ConstraintSolver,
     provenance::{ResolvedEffectUnification, ResolvedRootCause},
-    solve::PendingConstraint,
+    solve::{ConstraintError, PendingConstraint},
 };
 use crate::diagnostic::{
     Diagnostic, EffectUnificationSite, IncompatibleEffectRows, ResidualSubtype,
@@ -109,6 +107,23 @@ impl ConstraintSolver {
             }
 
             match self.provenance.resolved_root_cause(primary_root_id, root_ids.clone(), engine) {
+                ResolvedRootCause::InstanceResolve { trait_ref, span } => {
+                    // Preserve the structured failure for rendering at the diagnostic boundary.
+                    let error =
+                        self.error_for_root_cause(primary_root_id).cloned().unwrap_or_else(|| {
+                            ConstraintError::InstanceResolve(InstanceResolutionError::NotReady(
+                                trait_ref.clone(),
+                            ))
+                        });
+                    diags.push(
+                        crate::diagnostic::InstanceResolution::builder()
+                            .span(span)
+                            .trait_ref(trait_ref)
+                            .error(error)
+                            .build()
+                            .into(),
+                    );
+                }
                 ResolvedRootCause::Subtype { source, span, subtype } => {
                     diags.push(Diagnostic::ResidualSubtype(
                         ResidualSubtype::builder()
@@ -126,7 +141,7 @@ impl ConstraintSolver {
     }
 
     #[must_use]
-    pub fn residual_into_diags(mut self, engine: &TrackedEngine) -> (Vec<Diagnostic>, Subst) {
+    pub fn residual_into_diags(self, engine: &TrackedEngine) -> (Vec<Diagnostic>, Subst) {
         let failed_constraints =
             self.constraint_set.failed_pending_constraints().collect::<Vec<_>>();
         let failed_root_ids = failed_constraints
@@ -159,14 +174,6 @@ impl ConstraintSolver {
             engine,
         );
         debug_assert!(unreported_roots.is_empty());
-
-        let numeric_inferences = self.constraint_set.numeric_inferences();
-        let default_numeric_type = Ty::new_primitive(Primitive::Int32, engine);
-        self.provenance.default_unbound_inferences(
-            numeric_inferences,
-            &default_numeric_type,
-            engine,
-        );
 
         (diags, self.provenance.into_subst())
     }

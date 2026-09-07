@@ -1,7 +1,10 @@
 use bon::Builder;
 use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
-use rayc_solver::ty_relate::{self, DerivedConstraint, Step};
+use rayc_solver::{
+    instance_resolution::InstanceResolutionError,
+    ty_relate::{self, DerivedConstraint, Step},
+};
 use rayc_type::{
     constraint::ty_relate::TyRelate,
     reduce::Reduce,
@@ -18,7 +21,7 @@ use crate::tast_builder::{TAstBuilder, constraint_solver::constraints::Constrain
 #[derive(Debug)]
 pub struct ConstraintSet {
     residual_constraints: Vec<PendingConstraint>,
-    errored_constraints: Vec<(ty_relate::Error, PendingConstraint)>,
+    errored_constraints: Vec<(ConstraintError, PendingConstraint)>,
     numeric_inferences: Vec<Inference>,
 }
 
@@ -41,6 +44,14 @@ impl ConstraintSet {
     pub(super) fn numeric_inferences(&self) -> impl Iterator<Item = Inference> + '_ {
         self.numeric_inferences.iter().copied()
     }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, qbice::StableHash, qbice::Encode, qbice::Decode,
+)]
+pub enum ConstraintError {
+    TyRelate(ty_relate::Error),
+    InstanceResolve(InstanceResolutionError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
@@ -91,7 +102,10 @@ impl TAstBuilder {
         }
     }
 
-    pub(super) async fn push_constraints(&mut self, mut queued: Vec<PendingConstraint>) {
+    pub(in crate::tast_builder) async fn push_constraints(
+        &mut self,
+        mut queued: Vec<PendingConstraint>,
+    ) {
         // make sure the new constraints are updated with the latest substitution before
         // we start processing them
         for queued in &mut queued {
@@ -104,9 +118,54 @@ impl TAstBuilder {
 
         while let Some(pending_constraint) = queued.pop() {
             match pending_constraint.constraint {
+                Constraint::InstanceResolve { instance, trait_ref } => {
+                    self.entail_instance_resolve(
+                        instance,
+                        trait_ref,
+                        pending_constraint.cause_id,
+                        &mut queued,
+                    )
+                    .await;
+                }
                 Constraint::TyRelate(ty_relate) => {
                     self.entail_relate(ty_relate, pending_constraint.cause_id, &mut queued).await;
                 }
+            }
+        }
+    }
+
+    async fn entail_instance_resolve(
+        &mut self,
+        instance: Interned<Ty>,
+        trait_ref: TraitRef,
+        cause_id: CauseID,
+        queued: &mut Vec<PendingConstraint>,
+    ) {
+        match self.constraint_solver.solver.resolve_instance(trait_ref.clone()).await {
+            Ok(result) => {
+                let cause_id =
+                    self.constraint_solver.provenance.insert_instance_resolution_cause(cause_id);
+                queued.push(PendingConstraint {
+                    constraint: Constraint::TyRelate(TyRelate::new(instance, result)),
+                    cause_id,
+                });
+            }
+            Err(InstanceResolutionError::NotReady(_)) => {
+                self.constraint_solver.constraint_set.residual_constraints.push(
+                    PendingConstraint {
+                        constraint: Constraint::InstanceResolve { instance, trait_ref },
+                        cause_id,
+                    },
+                );
+            }
+            Err(error) => {
+                self.constraint_solver.constraint_set.errored_constraints.push((
+                    ConstraintError::InstanceResolve(error),
+                    PendingConstraint {
+                        constraint: Constraint::InstanceResolve { instance, trait_ref },
+                        cause_id,
+                    },
+                ));
             }
         }
     }
@@ -154,7 +213,7 @@ impl TAstBuilder {
 
             Err(err) => {
                 self.constraint_solver.constraint_set.errored_constraints.push((
-                    err,
+                    ConstraintError::TyRelate(err),
                     PendingConstraint { constraint: Constraint::TyRelate(ty_relate), cause_id },
                 ));
             }
@@ -183,6 +242,15 @@ impl TAstBuilder {
     }
 }
 
+impl ConstraintSolver {
+    pub(super) fn error_for_root_cause(&self, root_cause_id: CauseID) -> Option<&ConstraintError> {
+        self.constraint_set.errored_constraints.iter().find_map(|(error, pending)| {
+            (self.provenance.primary_root_cause_id(pending.cause_id()) == root_cause_id)
+                .then_some(error)
+        })
+    }
+}
+
 impl GenInfer for ConstraintSolver {
     fn gen_infer(&mut self, kind: TyKind, constraint: InferenceConstraint) -> Inference {
         let inference = self.solver.new_inference_with_constraint(kind, constraint);
@@ -191,31 +259,44 @@ impl GenInfer for ConstraintSolver {
         }
         inference
     }
+}
 
-    fn gen_instance_infer(&mut self, _expected_trait_ref: &TraitRef) -> Inference {
-        self.solver.new_inference(TyKind::Instance)
+impl GenInfer for TAstBuilder {
+    fn gen_infer(&mut self, kind: TyKind, constraint: InferenceConstraint) -> Inference {
+        self.constraint_solver.gen_infer(kind, constraint)
     }
 }
 
 impl TAstBuilder {
+    pub async fn finish_constraints(&mut self) {
+        let numeric =
+            self.constraint_solver.constraint_set.numeric_inferences().collect::<Vec<_>>();
+        self.constraint_solver.provenance.default_unbound_inferences(
+            numeric,
+            &Ty::new_primitive(rayc_type::ty::Primitive::Int32, &self.engine),
+            &self.engine,
+        );
+        let mut queued = Vec::new();
+        self.move_constraints_from_residual(&mut queued);
+        self.push_constraints(queued).await;
+    }
+
     pub fn new_type_inference(&mut self) -> Interned<Ty> {
         self.new_type_inference_with_kind(TyKind::Star)
     }
 
     pub fn new_type_inference_with_kind(&mut self, kind: TyKind) -> Interned<Ty> {
-        let inference = self.constraint_solver.gen_infer(kind, InferenceConstraint::Any);
+        let inference = self.gen_infer(kind, InferenceConstraint::Any);
         self.engine.intern(Ty::Inference(inference))
     }
 
     pub fn new_numeric_type_inference(&mut self) -> Interned<Ty> {
-        let inference =
-            self.constraint_solver.gen_infer(TyKind::Star, InferenceConstraint::Numeric);
+        let inference = self.gen_infer(TyKind::Star, InferenceConstraint::Numeric);
         self.engine.intern(Ty::Inference(inference))
     }
 
     pub fn new_equality_comparable_type_inference(&mut self) -> Interned<Ty> {
-        let inference =
-            self.constraint_solver.gen_infer(TyKind::Star, InferenceConstraint::EqualityComparable);
+        let inference = self.gen_infer(TyKind::Star, InferenceConstraint::EqualityComparable);
         self.engine.intern(Ty::Inference(inference))
     }
 }

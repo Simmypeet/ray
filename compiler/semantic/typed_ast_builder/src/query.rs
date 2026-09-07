@@ -32,7 +32,7 @@ pub async fn build_tast_executor(
     tast_builder.build_parameter_pattern().await;
     tast_builder.build_body().await;
 
-    let (func, diags) = tast_builder.finish();
+    let (func, diags) = tast_builder.finish().await;
 
     (engine.intern(func), engine.intern_unsized(diags))
 }

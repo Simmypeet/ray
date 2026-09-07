@@ -34,7 +34,8 @@ use rayc_typed_ast::{
 use crate::{
     diagnostic::Diagnostic,
     tast_builder::{
-        constraint_solver::ConstraintSolver, lvalue_requirements::LvalueRequirements,
+        constraint_solver::{ConstraintSolver, ResolutionInference},
+        lvalue_requirements::LvalueRequirements,
         name_env::NameEnv,
     },
 };
@@ -289,16 +290,21 @@ impl TAstBuilder {
     ) -> Result<PathResolution, PathResolutionError> {
         let poly_vars = self.engine.get_enclosing_poly_var_maps(self.current_def_id).await;
         let diagnostics = Storage::<rayc_resolution::Diagnostic>::new();
+        let mut inference = ResolutionInference::new(&mut self.constraint_solver);
         let resolution = {
             let mut resolver = Resolver::builder()
                 .engine(&self.engine)
                 .poly_var_stack(&poly_vars)
                 .site(self.current_def_id)
                 .handler(&diagnostics)
-                .infer_gen(&mut self.constraint_solver)
+                .infer_gen(&mut inference)
                 .build();
             resolver.resolve_path(path).await
         };
+        // Submit even on resolution failure: earlier path segments may have generated
+        // obligations.
+        let constraints = inference.into_constraints();
+        self.push_constraints(constraints).await;
         self.diagnostics
             .extend(diagnostics.into_vec().into_iter().map(crate::diagnostic::Diagnostic::from));
         resolution
@@ -310,16 +316,19 @@ impl TAstBuilder {
     ) -> Result<Effect, PathResolutionError> {
         let poly_vars = self.engine.get_enclosing_poly_var_maps(self.current_def_id).await;
         let diagnostics = Storage::<rayc_resolution::Diagnostic>::new();
+        let mut inference = ResolutionInference::new(&mut self.constraint_solver);
         let resolution = {
             let mut resolver = Resolver::builder()
                 .engine(&self.engine)
                 .poly_var_stack(&poly_vars)
                 .site(self.current_def_id)
                 .handler(&diagnostics)
-                .infer_gen(&mut self.constraint_solver)
+                .infer_gen(&mut inference)
                 .build();
             resolver.resolve_effect_path(path).await
         };
+        let constraints = inference.into_constraints();
+        self.push_constraints(constraints).await;
         self.diagnostics
             .extend(diagnostics.into_vec().into_iter().map(crate::diagnostic::Diagnostic::from));
         resolution
@@ -362,12 +371,13 @@ impl TAstBuilder {
 
 impl TAstBuilder {
     #[must_use]
-    pub fn finish(mut self) -> (TypedFunctionMap, Vec<Diagnostic>) {
+    pub async fn finish(mut self) -> (TypedFunctionMap, Vec<Diagnostic>) {
         assert!(
             self.suspended_functions.is_empty(),
             "all suspended functions should be restored before finishing the typed AST"
         );
         self.validate_lvalue_requirements();
+        self.finish_constraints().await;
 
         let (constr_diags, subst) = self.constraint_solver.residual_into_diags(&self.engine);
 

@@ -3,6 +3,7 @@ pub use provenance::SubtypeSource;
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
+pub use solve::ConstraintError;
 
 use crate::tast_builder::constraint_solver::{
     provenance::{CauseID, Provenance},
@@ -12,6 +13,8 @@ use crate::tast_builder::constraint_solver::{
 mod constraints;
 mod diagnostics;
 mod provenance;
+mod resolution_inference;
+pub(super) use resolution_inference::ResolutionInference;
 mod solve;
 
 #[derive(Debug)]
