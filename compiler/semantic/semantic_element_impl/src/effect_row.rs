@@ -49,11 +49,14 @@ impl Build for Key {
         let syntax = engine.get_effect_row_syntax(symbol_id).await;
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
         let diagnostics = Storage::new();
+        let obligations = Storage::new();
+
         let mut resolver = Resolver::builder()
             .engine(engine)
             .poly_var_stack(&poly_vars)
             .site(symbol_id)
             .handler(&diagnostics)
+            .obligation_handler(&obligations)
             .build();
 
         let effect_row = match syntax
@@ -65,7 +68,7 @@ impl Build for Key {
             None => Ty::new_effect_row([], None, engine),
         };
 
-        Output::new_with(effect_row, diagnostics.into_vec(), engine)
+        Output::new_with(effect_row, diagnostics.into_vec(), obligations.into_vec(), engine)
     }
 }
 

@@ -4,7 +4,7 @@ use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::{discover_function_poly_vars, resolver::Resolver};
+use rayc_resolution::{Obligation, discover_function_poly_vars, resolver::Resolver};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID,
@@ -97,6 +97,7 @@ async fn insert_given_parameters(
     site: GlobalSymbolID,
     poly_vars: &mut PolyVarMap,
     storage: &Storage<Diagnostic>,
+    obligations: &Storage<Obligation>,
 ) {
     if let Some(given_parameters) = engine.get_given_parameter_list_syntax(site).await
         && let Some(given_parameters) = given_parameters.parameters()
@@ -114,6 +115,7 @@ async fn insert_given_parameters(
                 .building_poly_var_map(poly_vars)
                 .site(site)
                 .handler(storage)
+                .obligation_handler(obligations)
                 .build();
 
             let (Some(name), Some(trait_ref)) = (parameter.name(), parameter.trait_reference())
@@ -138,6 +140,7 @@ impl Build for rayc_type::poly_var::Key {
 
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
         let storage = Storage::new();
+        let obligations = Storage::new();
 
         let mut poly_vars = match engine.get_symbol_kind(symbol_id).await {
             SymbolKind::Def | SymbolKind::InstanceDef | SymbolKind::TraitDef => {
@@ -182,9 +185,14 @@ impl Build for rayc_type::poly_var::Key {
         // parameters by declaration. Given-instance variables then follow in
         // declaration order. Instance conformance relies on corresponding
         // trait and instance definitions producing the same order.
-        insert_given_parameters(engine, symbol_id, &mut poly_vars, &storage).await;
+        insert_given_parameters(engine, symbol_id, &mut poly_vars, &storage, &obligations).await;
 
-        Output::new_with(engine.intern(poly_vars), storage.into_vec(), engine)
+        Output::new_with(
+            engine.intern(poly_vars),
+            storage.into_vec(),
+            obligations.into_vec(),
+            engine,
+        )
     }
 }
 

@@ -57,11 +57,13 @@ impl Build for Key {
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
 
         let diagnostics = Storage::new();
+        let obligations = Storage::new();
         let mut resolver = Resolver::builder()
             .engine(engine)
             .poly_var_stack(&poly_vars)
             .site(symbol_id)
             .handler(&diagnostics)
+            .obligation_handler(&obligations)
             .build();
 
         let return_type = if let Some(syntax) = syntax.as_ref() {
@@ -85,7 +87,7 @@ impl Build for Key {
             )));
         }
 
-        Output::new_with(return_type, diagnostics.into_vec(), engine)
+        Output::new_with(return_type, diagnostics.into_vec(), obligations.into_vec(), engine)
     }
 }
 

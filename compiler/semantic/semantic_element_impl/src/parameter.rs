@@ -58,11 +58,13 @@ impl Build for Key {
         let symbol_kind = engine.get_symbol_kind(symbol_id).await;
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
         let diagnostics = Storage::new();
+        let obligations = Storage::new();
         let mut resolver = Resolver::builder()
             .engine(engine)
             .poly_var_stack(&poly_vars)
             .site(symbol_id)
             .handler(&diagnostics)
+            .obligation_handler(&obligations)
             .build();
         let mut parameters = ParameterMap::new();
 
@@ -113,7 +115,12 @@ impl Build for Key {
             }
         }
 
-        Output::new_with(engine.intern(parameters), diagnostics.into_vec(), engine)
+        Output::new_with(
+            engine.intern(parameters),
+            diagnostics.into_vec(),
+            obligations.into_vec(),
+            engine,
+        )
     }
 }
 

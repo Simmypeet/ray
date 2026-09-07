@@ -56,6 +56,7 @@ macro_rules! impl_key {
 
 impl_key!(T, Key, Output<T>);
 impl_key!(T, DiagnosticKey, Interned<[T::Diagnostic]>);
+impl_key!(T, ObligationKey, Interned<[rayc_resolution::Obligation]>);
 
 #[derive(Debug, Default)]
 #[allow(missing_copy_implementations)]
@@ -83,6 +84,20 @@ impl<T: Build> Executor<DiagnosticKey<T>, Config> for DiagnosticExecutor {
 
 #[derive(Debug, Default)]
 #[allow(missing_copy_implementations)]
+pub struct ObligationExecutor;
+
+impl<T: Build> Executor<ObligationKey<T>, Config> for ObligationExecutor {
+    async fn execute(
+        &self,
+        key: &ObligationKey<T>,
+        engine: &TrackedEngine,
+    ) -> Interned<[rayc_resolution::Obligation]> {
+        engine.query(&Key::<T>::new(key.id.clone())).await.obligations
+    }
+}
+
+#[derive(Debug, Default)]
+#[allow(missing_copy_implementations)]
 pub struct ElementExtractExecutor;
 
 impl<T: Build> Executor<T, Config> for ElementExtractExecutor {
@@ -103,27 +118,55 @@ pub struct Output<T: Build> {
 
     /// The diagnostics produced while building the query.
     pub diagnostics: Interned<[T::Diagnostic]>,
+
+    /// Deferred obligations generated while building this element.
+    pub obligations: Interned<[rayc_resolution::Obligation]>,
 }
 
 impl<T: Build> Output<T> {
-    /// Creates a new output with the given item and empty diagnostics and
-    /// occurrences.
+    /// Attaches the obligations to be solved after semantic construction.
     #[must_use]
-    pub fn new(item: T::Value, engine: &TrackedEngine) -> Self {
-        Self { item, diagnostics: engine.intern_unsized([]) }
+    pub fn with_obligations(
+        mut self,
+        obligations: Vec<rayc_resolution::Obligation>,
+        engine: &TrackedEngine,
+    ) -> Self {
+        self.obligations = engine.intern_unsized(obligations);
+        self
     }
 
-    /// Creates a new output with the given item, diagnostics and occurrences.
+    /// Creates a new output with the given item and empty diagnostics and
+    /// obligations.
     #[must_use]
-    pub fn new_with<Q: Borrow<[T::Diagnostic]> + Send + Sync + 'static>(
+    pub fn new(item: T::Value, engine: &TrackedEngine) -> Self {
+        Self {
+            item,
+            diagnostics: engine.intern_unsized([]),
+            obligations: engine.intern_unsized::<[rayc_resolution::Obligation], _>([]),
+        }
+    }
+
+    /// Creates a new output with the given item and diagnostics, without
+    /// obligations.
+    #[must_use]
+    pub fn new_with<
+        Q: Borrow<[T::Diagnostic]> + Send + Sync + 'static,
+        R: Borrow<[rayc_resolution::Obligation]> + Send + Sync + 'static,
+    >(
         item: T::Value,
         diagnostics: Q,
+        obligations: R,
         engine: &TrackedEngine,
     ) -> Self
     where
         Arc<[T::Diagnostic]>: From<Q>,
+        Arc<[rayc_resolution::Obligation]>: From<R>,
     {
-        Self { item, diagnostics: engine.intern_unsized(diagnostics) }
+        Self {
+            item,
+            diagnostics: engine.intern_unsized(diagnostics),
+            obligations: engine.intern_unsized(obligations),
+        }
     }
 }
 
@@ -136,6 +179,7 @@ impl<T: Encode + Build> Encode for Output<T> {
     ) -> std::io::Result<()> {
         self.item.encode(encoder, plugin, session)?;
         self.diagnostics.encode(encoder, plugin, session)?;
+        self.obligations.encode(encoder, plugin, session)?;
         Ok(())
     }
 }
@@ -149,13 +193,19 @@ impl<T: Decode + Build> Decode for Output<T> {
         let item = T::Value::decode(decoder, plugin, session)?;
         let diagnostics = Interned::<[T::Diagnostic]>::decode(decoder, plugin, session)?;
 
-        Ok(Self { item, diagnostics })
+        let obligations =
+            Interned::<[rayc_resolution::Obligation]>::decode(decoder, plugin, session)?;
+        Ok(Self { item, diagnostics, obligations })
     }
 }
 
 impl<T: Build> Clone for Output<T> {
     fn clone(&self) -> Self {
-        Self { item: self.item.clone(), diagnostics: self.diagnostics.clone() }
+        Self {
+            item: self.item.clone(),
+            diagnostics: self.diagnostics.clone(),
+            obligations: self.obligations.clone(),
+        }
     }
 }
 
@@ -185,6 +235,13 @@ macro_rules! register_build {
                 ::qbice::program::Registration::<::rayc_qbice::Config>::new::<
                     $crate::build::DiagnosticKey<$ty>,
                     $crate::build::DiagnosticExecutor,
+                >();
+
+            #[::linkme::distributed_slice(::rayc_qbice::RAY_PROGRAM)]
+            static OBLIGATION_EXECUTOR: ::qbice::program::Registration<::rayc_qbice::Config> =
+                ::qbice::program::Registration::<::rayc_qbice::Config>::new::<
+                    $crate::build::ObligationKey<$ty>,
+                    $crate::build::ObligationExecutor,
                 >();
 
             #[::linkme::distributed_slice(::rayc_qbice::RAY_PROGRAM)]

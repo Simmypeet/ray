@@ -82,8 +82,9 @@ impl Build for Key {
 
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
         let diagnostics = Storage::new();
+        let obligations = Storage::new();
         let Some(syntax) = engine.get_instance_trait_syntax(symbol_id).await else {
-            return Output::new_with(None, diagnostics.into_vec(), engine);
+            return Output::new_with(None, diagnostics.into_vec(), obligations.into_vec(), engine);
         };
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
 
@@ -92,9 +93,10 @@ impl Build for Key {
             .poly_var_stack(&poly_vars)
             .site(symbol_id)
             .handler(&diagnostics)
+            .obligation_handler(&obligations)
             .build();
         let Ok(trait_ref) = resolver.resolve_trait_path(&syntax).await else {
-            return Output::new_with(None, diagnostics.into_vec(), engine);
+            return Output::new_with(None, diagnostics.into_vec(), obligations.into_vec(), engine);
         };
 
         let instance_span =
@@ -122,7 +124,7 @@ impl Build for Key {
             }
         }
 
-        Output::new_with(Some(trait_ref), diagnostics.into_vec(), engine)
+        Output::new_with(Some(trait_ref), diagnostics.into_vec(), obligations.into_vec(), engine)
     }
 }
 
