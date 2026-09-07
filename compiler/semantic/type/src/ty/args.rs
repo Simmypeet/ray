@@ -78,3 +78,10 @@ impl Substitutable for Args {
         self.args.apply_subst(subst, engine).map(|args| Self { args })
     }
 }
+
+impl<'x> IntoIterator for &'x Args {
+    type Item = &'x Interned<Ty>;
+    type IntoIter = std::slice::Iter<'x, Interned<Ty>>;
+
+    fn into_iter(self) -> Self::IntoIter { self.args.iter() }
+}

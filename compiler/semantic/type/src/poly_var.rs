@@ -18,7 +18,7 @@ use crate::{
     reduce::Reduce,
     subst::Subst,
     trait_ref::TraitRef,
-    ty::{TyKind, args::Args},
+    ty::{Ty, TyKind, args::Args},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -283,26 +283,16 @@ static ENCLOSING_POLY_VAR_MAPS_EXECUTOR: Registration<Config> =
     Registration::new::<EnclosingMapsKey, EnclosingPolyVarMapsExecutor>();
 
 #[extend]
-pub async fn build_subst_from_args(
+pub async fn build_subst_from_args<'a>(
     self: &TrackedEngine,
     symbol_id: GlobalSymbolID,
-    args: &Args,
+    args: impl IntoIterator<Item = &'a Interned<Ty>>,
 ) -> Subst {
-    if args.is_empty() {
-        return Subst::new_empty();
-    }
-
     let poly_vars = self.get_poly_var_map(symbol_id).await;
-
-    assert_eq!(
-        args.len(),
-        poly_vars.len(),
-        "number of arguments must match number of polymorphic variables"
-    );
 
     poly_vars
         .iter()
-        .zip(args.interned_iter())
+        .zip(args)
         .map(|((poly_var_id, _), argument)| {
             (GlobalPolyVarID::new(symbol_id, poly_var_id), argument.clone())
         })
