@@ -18,7 +18,7 @@ use crate::{
     reduce::Reduce,
     subst::Subst,
     trait_ref::TraitRef,
-    ty::{Ty, TyKind, args::Args},
+    ty::{Ty, TyKind},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
