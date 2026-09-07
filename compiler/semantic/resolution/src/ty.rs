@@ -168,15 +168,19 @@ impl Resolver<'_> {
             .into_iter()
             .zip(parameters.into_iter().flat_map(PolyVarMap::iter).skip(type_parameter_count))
         {
+            let expected_trait_ref = self.apply_subst_to_trait_ref(
+                parameter.trait_ref().expect("a given parameter must have an instance requirement"),
+                subst,
+            );
             let value = if let Some((dictionary, _)) = supplied {
-                Box::pin(self.resolve_given_dictionary(&dictionary)).await
-            } else {
-                let expected_trait_ref = self.apply_subst_to_trait_ref(
-                    parameter
-                        .trait_ref()
-                        .expect("a given parameter must have an instance requirement"),
-                    subst,
+                let instance = Box::pin(self.resolve_given_dictionary(&dictionary)).await;
+                self.require_instance_trait_ref(
+                    instance.clone(),
+                    expected_trait_ref,
+                    dictionary.span(),
                 );
+                instance
+            } else {
                 self.new_instance_inference_type(&expected_trait_ref, path.span()).unwrap_or_else(
                     || {
                         self.report_missing_given_argument(parameter.name().clone(), path.span());
@@ -197,11 +201,12 @@ impl Resolver<'_> {
     pub(crate) async fn resolve_arguments(
         &mut self,
         symbol_id: GlobalSymbolID,
-        symbol_kind: SymbolKind,
         path: &PathSegment,
         identifier: &rayc_syntax::Identifier,
         parameters: Option<&PolyVarMap>,
+        mut subst: Subst,
     ) -> Args {
+        let symbol_kind = self.symbol_kind(symbol_id).await;
         let type_parameter_count = parameters
             .into_iter()
             .flat_map(PolyVarMap::iter)
@@ -225,7 +230,7 @@ impl Resolver<'_> {
         } else {
             self.resolve_explicit_type_arguments(path, &type_kinds).await
         };
-        let mut subst = parameters
+        let own_subst = parameters
             .into_iter()
             .flat_map(PolyVarMap::iter)
             .take(type_parameter_count)
@@ -234,6 +239,7 @@ impl Resolver<'_> {
                 (GlobalPolyVarID::new(symbol_id, parameter_id), argument.clone())
             })
             .collect();
+        self.compose_subst(&mut subst, &own_subst);
         resolved.extend(
             self.resolve_given_arguments(
                 path,

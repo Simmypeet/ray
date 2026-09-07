@@ -271,6 +271,34 @@ pub enum PathResolutionError {
 }
 
 impl PathResolution {
+    /// Builds the substitution for this path, including its enclosing trait,
+    /// instance, or effect where applicable.
+    pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
+        match self {
+            Self::Def(def) => def.substitution(engine).await,
+            Self::ExternDef(_) | Self::Module(_) => Subst::new_empty(),
+            Self::Effect(effect) => effect.substitution(engine).await,
+            Self::Trait(trait_ref) => {
+                substitution(trait_ref.trait_id(), trait_ref.args(), engine).await
+            }
+            Self::Instance(instance) => {
+                substitution(instance.symbol_id(), instance.args(), engine).await
+            }
+            Self::PolyVar(id) => {
+                let poly_vars = engine.get_poly_var_map(id.parent_id()).await;
+                if let Some(trait_ref) = poly_vars.trait_ref_of(id.id()) {
+                    substitution(trait_ref.trait_id(), trait_ref.args(), engine).await
+                } else {
+                    Subst::new_empty()
+                }
+            }
+            Self::TraitDef(def) => def.substitution(engine).await,
+            Self::ResolvedInstanceDef(def) => def.substitution(engine).await,
+            Self::UnsolvedInstanceDef(def) => def.substitution(engine).await,
+            Self::EffectOperation(operation) => operation.substitution(engine).await,
+        }
+    }
+
     /// Returns the kind of the resolved symbol.
     #[must_use]
     pub const fn symbol_kind(&self) -> Option<SymbolKind> {
@@ -396,13 +424,19 @@ impl Resolver<'_> {
             return Ok(PathResolution::PolyVar(poly_var_id));
         }
 
-        let previous_parent = match previous.as_ref() {
-            Some(PathResolution::PolyVar(poly_var_id)) => Some(
-                self.poly_var_trait_ref(*poly_var_id)
+        // Resolve instance parameters using the in-progress map when constructing a
+        // declaration, rather than querying that declaration recursively.
+        let poly_var_trait = if let Some(PathResolution::PolyVar(id)) = previous.as_ref() {
+            Some(PathResolution::Trait(
+                self.poly_var_trait_ref(*id)
                     .await
-                    .map(|x| x.trait_id())
                     .ok_or(PathResolutionError::UnexpectedSymbolKind)?,
-            ),
+            ))
+        } else {
+            None
+        };
+        let parent = poly_var_trait.as_ref().or(previous.as_ref());
+        let previous_parent = match parent {
             Some(resolution) => {
                 Some(resolution.global_id().ok_or(PathResolutionError::UnexpectedSymbolKind)?)
             }
@@ -417,8 +451,13 @@ impl Resolver<'_> {
 
         let symbol_kind = self.symbol_kind(symbol_id).await;
         let parameters = self.argument_parameters(symbol_id).await;
+        // Member requirements may refer to their parent's polymorphic variables.
+        let inherited = match parent {
+            Some(parent) => parent.substitution(self.engine()).await,
+            None => Subst::new_empty(),
+        };
         let args = self
-            .resolve_arguments(symbol_id, symbol_kind, path, &identifier, parameters.as_deref())
+            .resolve_arguments(symbol_id, path, &identifier, parameters.as_deref(), inherited)
             .await;
 
         match symbol_kind {

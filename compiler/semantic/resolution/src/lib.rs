@@ -16,6 +16,8 @@ use rayc_type::{
     ty::TyKind,
 };
 
+pub mod obligation;
+pub use obligation::{Obligation, TraitRefCheck};
 pub mod inference;
 pub mod path;
 pub use inference::GenInferWithSpan;
@@ -27,6 +29,8 @@ pub mod ty;
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum Diagnostic {
+    /// An explicit instance does not satisfy its given parameter.
+    TraitRefCheck(TraitRefCheck),
     /// A polymorphic variable was used without being declared by a parameter
     /// type.
     PolyVarNotFound(PolyVarNotFound),
@@ -60,6 +64,7 @@ pub enum Diagnostic {
 impl Report for Diagnostic {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
+            Self::TraitRefCheck(diagnostic) => diagnostic.report(engine).await,
             Self::PolyVarNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::PathSegmentNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::TypeInferenceNotAllowed(diagnostic) => diagnostic.report(engine).await,

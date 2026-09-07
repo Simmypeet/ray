@@ -40,6 +40,7 @@ pub struct Resolver<'a> {
 
     site: GlobalSymbolID,
     handler: &'a dyn Handler<Diagnostic>,
+    obligation_handler: &'a dyn Handler<crate::Obligation>,
     infer_gen: Option<&'a mut dyn GenInferWithSpan>,
 }
 
@@ -56,6 +57,24 @@ impl fmt::Debug for Resolver<'_> {
 }
 
 impl Resolver<'_> {
+    pub(crate) const fn engine(&self) -> &TrackedEngine { self.engine }
+
+    pub(crate) fn require_instance_trait_ref(
+        &self,
+        instance: Interned<Ty>,
+        expected: TraitRef,
+        span: RelativeSpan,
+    ) {
+        self.obligation_handler.receive(crate::Obligation::TraitRefCheck(
+            crate::TraitRefCheck::new(
+                rayc_type::constraint::instance_trait_ref::InstanceTraitRef::new(
+                    instance, expected,
+                ),
+                span,
+            ),
+        ));
+    }
+
     pub(crate) fn new_primitive_type(&self, primitive: Primitive) -> Interned<Ty> {
         Ty::new_primitive(primitive, self.engine)
     }
