@@ -1,9 +1,6 @@
-pub(crate) use provenance::EffectUnificationSource;
-pub use provenance::SubtypeSource;
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
-pub use solve::ConstraintError;
 
 use crate::tast_builder::constraint_solver::{
     provenance::{CauseID, Provenance},
@@ -14,8 +11,12 @@ mod constraints;
 mod diagnostics;
 mod provenance;
 mod resolution_inference;
-pub(super) use resolution_inference::ResolutionInference;
 mod solve;
+
+// re-exports
+pub use provenance::{EffectUnificationSource, SubtypeSource};
+pub use resolution_inference::ResolutionInference;
+pub use solve::ConstraintError;
 
 #[derive(Debug)]
 pub struct ConstraintSolver {

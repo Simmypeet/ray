@@ -15,7 +15,8 @@ use super::{
 
 /// Collects obligations for one syntactic resolution before asynchronous
 /// solving.
-pub(in crate::tast_builder) struct ResolutionInference<'a> {
+#[derive(Debug)]
+pub struct ResolutionInference<'a> {
     solver: &'a mut ConstraintSolver,
     constraints: Vec<PendingConstraint>,
 }
