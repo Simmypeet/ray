@@ -831,6 +831,103 @@ impl Input<&TypesPlus, ()> for &TypesPlusRef {
     }
 }
 
+abstract_tree! {
+    #[derive(Debug)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
+    struct TypesThenGiven {
+        types: #[multi] Type = ast::<Type>()
+            .repeat_with_separator_and_terminator(',', ';'),
+        given_keyword: token::Keyword<RelativeLocation> =
+            expect::Keyword::Given.optional()
+    }
+}
+
+#[test]
+fn repeat_with_separator_and_terminator_consumes_terminator() {
+    let mut source_map = SimpleSourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "[int32, bool; given]");
+
+    let interner = DuplicatingInterner;
+    let (tree, errors) = TypesThenGiven::parse(&token_tree, &interner);
+    let tree = tree.unwrap();
+
+    assert!(errors.is_empty());
+    assert_eq!(tree.types().count(), 2);
+    assert!(tree.given_keyword().is_some());
+}
+
+#[test]
+fn repeat_with_separator_and_terminator_rejects_separator_before_terminator() {
+    let mut source_map = SimpleSourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "[int32,; given]");
+
+    let interner = DuplicatingInterner;
+    let (_, errors) = TypesThenGiven::parse(&token_tree, &interner);
+
+    assert_eq!(errors.len(), 1);
+}
+
+#[test]
+fn repeat_with_separator_and_terminator_allows_unterminated_trailing_separator() {
+    let mut source_map = SimpleSourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "[int32,]");
+
+    let interner = DuplicatingInterner;
+    let (tree, errors) = TypesThenGiven::parse(&token_tree, &interner);
+    let tree = tree.unwrap();
+
+    assert!(errors.is_empty());
+    assert_eq!(tree.types().count(), 1);
+    assert!(tree.given_keyword().is_none());
+}
+
+#[test]
+fn repeat_with_separator_and_terminator_allows_no_items() {
+    let mut source_map = SimpleSourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "[]");
+
+    let interner = DuplicatingInterner;
+    let (tree, errors) = TypesThenGiven::parse(&token_tree, &interner);
+    let tree = tree.unwrap();
+
+    assert!(errors.is_empty());
+    assert_eq!(tree.types().count(), 0);
+    assert!(tree.given_keyword().is_none());
+}
+
+#[test]
+fn repeat_with_separator_and_terminator_rejects_separator_without_items() {
+    let mut source_map = SimpleSourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "[,]");
+
+    let interner = DuplicatingInterner;
+    let (_, errors) = TypesThenGiven::parse(&token_tree, &interner);
+
+    assert_eq!(errors.len(), 1);
+}
+
+#[test]
+fn repeat_with_separator_and_terminator_rejects_terminator_without_items() {
+    let mut source_map = SimpleSourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "[;]");
+
+    let interner = DuplicatingInterner;
+    let (_, errors) = TypesThenGiven::parse(&token_tree, &interner);
+
+    assert_eq!(errors.len(), 1);
+}
+
+#[test]
+fn repeat_with_separator_and_terminator_rejects_missing_delimiter() {
+    let mut source_map = SimpleSourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "[int32 given]");
+
+    let interner = DuplicatingInterner;
+    let (_, errors) = TypesThenGiven::parse(&token_tree, &interner);
+
+    assert_eq!(errors.len(), 1);
+}
+
 proptest::proptest! {
     #[test]
     fn types_plus(

@@ -1,64 +1,20 @@
 use qbice::{Decode, Encode, StableHash};
-use rayc_lexical::{kind, tree::DelimiterKind};
+use rayc_lexical::tree::DelimiterKind;
 use rayc_parser::{
     abstract_tree,
     expect::{self, Fragment},
-    parser::{Parser, ParserExt, Unexpected, ast},
-    state::State,
+    parser::{ParserExt, ast},
 };
-use rayc_qbice::Interner;
 
-use crate::{Identifier, given::GivenArgumentList, r#type::Type};
-
-#[derive(Debug, Clone, Copy)]
-struct StartsGivenArgumentList;
-
-impl<I: Interner> Parser<I> for StartsGivenArgumentList {
-    fn parse(&self, state: &mut State<'_, '_, I>) -> Result<(), Unexpected> {
-        let Some((given, given_index)) = state.peek() else {
-            return Err(Unexpected);
-        };
-        if !given.as_leaf().is_some_and(|token| {
-            token.kind.as_keyword().is_some_and(|keyword| *keyword == kind::Keyword::Given)
-        }) {
-            return Err(Unexpected);
-        }
-
-        let Some(arguments_id) = state.branch().nodes.get(given_index + 1).and_then(|node| {
-            node.as_branch().copied().filter(|id| {
-                state.tree()[*id]
-                    .kind
-                    .as_fragment()
-                    .and_then(|fragment| fragment.fragment_kind.as_delimiter())
-                    .is_some_and(|delimiter| delimiter.delimiter == DelimiterKind::Parenthesis)
-            })
-        }) else {
-            return Err(Unexpected);
-        };
-        let arguments = &state.tree()[arguments_id];
-
-        let Some(first) = arguments.nodes.first().and_then(|node| node.as_leaf()) else {
-            return Err(Unexpected);
-        };
-        if !first.kind.is_identifier() {
-            return Err(Unexpected);
-        }
-
-        let starts_parameter =
-            arguments.nodes.get(1).and_then(|node| node.as_leaf()).is_some_and(|token| {
-                token.kind.as_punctuation().is_some_and(|punctuation| punctuation.0 == ':')
-            });
-
-        (!starts_parameter).then_some(()).ok_or(Unexpected)
-    }
-}
+use crate::{Identifier, given::GivenArguments, r#type::Type};
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     #{fragment = Fragment::Delimited(DelimiterKind::Bracket)}
-    pub struct TypeArgumentList {
-        pub arguments: #[multi] Type = ast::<Type>()
-            .repeat_all_with_separator(',')
+    pub struct PathArguments {
+        pub type_arguments: #[multi] Type = ast::<Type>()
+            .repeat_with_separator_and_terminator(',', ';'),
+        pub given_arguments: GivenArguments = ast::<GivenArguments>().optional()
     }
 }
 
@@ -66,9 +22,30 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct PathSegment {
         pub identifier: Identifier = expect::Identifier,
-        pub type_arguments: TypeArgumentList = ast::<TypeArgumentList>().optional(),
-        pub given_arguments: GivenArgumentList = ast::<GivenArgumentList>()
-            .commit_if(StartsGivenArgumentList)
+        pub arguments: PathArguments = ast::<PathArguments>().optional()
+    }
+}
+
+impl PathSegment {
+    /// Returns the explicitly supplied type arguments from either path syntax.
+    pub fn supplied_type_arguments(&self) -> impl Iterator<Item = Type> {
+        self.arguments()
+            .into_iter()
+            .flat_map(|arguments| arguments.type_arguments().collect::<Vec<_>>())
+    }
+
+    /// Returns whether this segment explicitly supplies type arguments.
+    #[must_use]
+    pub fn has_explicit_type_arguments(&self) -> bool {
+        self.arguments().is_some_and(|arguments| {
+            arguments.type_arguments().next().is_some() || arguments.given_arguments().is_none()
+        })
+    }
+
+    /// Returns the explicitly supplied given arguments.
+    #[must_use]
+    pub fn supplied_given_arguments(&self) -> Option<GivenArguments> {
+        self.arguments().and_then(|arguments| arguments.given_arguments())
     }
 }
 
@@ -94,7 +71,7 @@ impl Path {
         }
 
         // if the first segment has arguments, then this is not a simple path
-        if first.type_arguments().is_some() || first.given_arguments().is_some() {
+        if first.arguments().is_some() {
             return None;
         }
 

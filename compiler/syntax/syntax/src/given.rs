@@ -52,17 +52,9 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct GivenArguments {
-        pub arguments: #[multi] GivenArgument = ast::<GivenArgument>()
+        pub given: Keyword = expect::Keyword::Given,
+        pub given_arguments: #[multi] GivenArgument = ast::<GivenArgument>()
             .repeat_all_with_separator(',')
-    }
-}
-
-abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    pub struct GivenArgumentList {
-        pub given_keyword: Keyword = expect::Keyword::Given,
-        pub arguments: GivenArguments = ast::<GivenArguments>()
     }
 }

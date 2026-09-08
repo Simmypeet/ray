@@ -110,6 +110,27 @@ pub trait ParserExt {
         RepeatWithSeparator(self, separator)
     }
 
+    /// Repeats the `self` parser with a `separator` parser in between until a
+    /// `terminator` parser succeeds. The terminator is consumed and is not
+    /// included in the output.
+    ///
+    /// If at least one item is parsed, this parser permits either a trailing
+    /// separator at the end of the current branch or a terminator, but not
+    /// both. Neither trailing token is accepted when there are no items.
+    ///
+    /// Grammatically, this is equivalent to
+    /// `(self (separator self)* (separator | terminator)?)?`.
+    fn repeat_with_separator_and_terminator<S, E>(
+        self,
+        separator: S,
+        terminator: E,
+    ) -> RepeatWithSeparatorAndTerminator<Self, S, E>
+    where
+        Self: Sized,
+    {
+        RepeatWithSeparatorAndTerminator(self, separator, terminator)
+    }
+
     /// Similar to [`Parser::repeat_with_separator`], but requires at least one
     /// successful parse of the `self` parser.
     ///
@@ -598,6 +619,55 @@ impl<I: Interner, T: Parser<I>, S: Parser<I>> Parser<I> for RepeatWithSeparator<
 }
 
 impl<T: Output<Extract = One>, S> Output for RepeatWithSeparator<T, S> {
+    type Extract = Multiple;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(&self, node: &'a crate::concrete_tree::Node) -> Option<Self::Output<'a>> {
+        T::output(&self.0, node)
+    }
+}
+
+/// See [`ParserExt::repeat_with_separator_and_terminator`] for more
+/// information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RepeatWithSeparatorAndTerminator<T, S, E>(pub T, pub S, pub E);
+
+impl<I: Interner, T: Parser<I>, S: Parser<I>, E: Parser<I>> Parser<I>
+    for RepeatWithSeparatorAndTerminator<T, S, E>
+{
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
+        let starting_checkpoint = state.checkpoint();
+        if self.0.parse(state) == Err(Unexpected) {
+            state.restore(starting_checkpoint);
+            return Ok(());
+        }
+
+        loop {
+            // A terminator ends the repetition without becoming part of its output.
+            let after_item = state.checkpoint();
+            if self.2.parse(state) == Ok(()) {
+                return Ok(());
+            }
+            state.restore(after_item);
+
+            // Reaching the end after an item is the ordinary unterminated case.
+            if state.peek().is_none() {
+                return Ok(());
+            }
+
+            self.1.parse(state)?;
+
+            // A separator is trailing only when it exhausts the branch.
+            if state.peek().is_none() {
+                return Ok(());
+            }
+
+            self.0.parse(state)?;
+        }
+    }
+}
+
+impl<T: Output<Extract = One>, S, E> Output for RepeatWithSeparatorAndTerminator<T, S, E> {
     type Extract = Multiple;
     type Output<'a> = T::Output<'a>;
 
