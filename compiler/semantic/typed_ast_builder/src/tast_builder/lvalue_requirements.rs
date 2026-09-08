@@ -102,9 +102,11 @@ impl TAstBuilder {
                         | ApplicationView::Instance(_)
                         | ApplicationView::Error => None,
                     },
-                    Ty::Inference(_) | Ty::PolyVar(_) => None,
-                    Ty::EffectRow(_) => {
-                        todo!("determine lvalue mutability for an effect-row type")
+
+                    // EffectRow and SelfInstance are actually sign of ill-kindedness, should have
+                    // been a fatal compiler error!
+                    Ty::EffectRow(_) | Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => {
+                        None
                     }
                 }
             }

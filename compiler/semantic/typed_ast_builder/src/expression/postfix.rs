@@ -102,7 +102,7 @@ impl TAstBuilder {
                 }
             }
 
-            Ty::PolyVar(_) => {
+            Ty::PolyVar(_) | Ty::SelfInstance(_) => {
                 self.push_diagnostic(Diagnostic::ExpectedTupleType(
                     ExpectedTupleType::builder().span(span).ty(ty.clone()).build(),
                 ));
@@ -165,7 +165,7 @@ impl TAstBuilder {
                     Ty::new_star_error(self.engine())
                 }
             },
-            Ty::PolyVar(_) => {
+            Ty::PolyVar(_) | Ty::SelfInstance(_) => {
                 self.push_diagnostic(Diagnostic::ExpectedPointerType(
                     ExpectedPointerType::builder().ty(ty).span(span).build(),
                 ));

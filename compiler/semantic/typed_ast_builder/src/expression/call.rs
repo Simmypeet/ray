@@ -294,12 +294,12 @@ impl TAstBuilder {
 
                 LambdaCallSignature::Callable { parameter_types, return_type, effect_row }
             }
-            Ty::PolyVar(_) => {
+
+            // EffectRow and SelfInstance are actually sign of ill-kindedness, should have been a
+            // fatal compiler error!
+            Ty::EffectRow(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => {
                 self.report_expected_lambda(callee_ty, callee_span);
                 LambdaCallSignature::Invalid
-            }
-            Ty::EffectRow(_) => {
-                todo!("resolve a lambda call whose callee has an effect-row type")
             }
         }
     }
