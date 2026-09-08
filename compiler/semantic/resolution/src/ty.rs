@@ -1,5 +1,7 @@
 //! Type, effect-row, and signature resolution workflows.
 
+use std::ptr::hash;
+
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
@@ -36,20 +38,21 @@ impl Resolver<'_> {
         &mut self,
         identifier: &rayc_syntax::Identifier,
         expected: &[TyKind],
-    ) -> Args {
+    ) -> Vec<Interned<Ty>> {
         if expected.is_empty() {
-            return self.new_args([]);
+            return Vec::new();
         }
 
         let mut inferred = Vec::with_capacity(expected.len());
         for kind in expected {
             let Some(ty) = self.new_inference_type(*kind, identifier.span()) else {
                 self.report_type_inference_not_allowed(identifier, expected.len());
-                return self.new_args(expected.iter().map(|kind| self.new_error_type(*kind)));
+                return expected.iter().map(|kind| self.new_error_type(*kind)).collect();
             };
             inferred.push(ty);
         }
-        self.new_args(inferred)
+
+        inferred
     }
 
     async fn resolve_explicit_type_arguments(
@@ -57,24 +60,33 @@ impl Resolver<'_> {
         path: &PathSegment,
         expected: &[TyKind],
     ) -> Vec<Interned<Ty>> {
-        let arguments = path.type_arguments().expect("type arguments should be present");
-        let actual = arguments.arguments().count();
-        if actual != expected.len() {
-            self.report_type_argument_arity_mismatch(arguments.span(), expected.len(), actual);
-        }
+        let span = path
+            .arguments()
+            .map(|arguments| arguments.span())
+            .expect("type arguments should be present");
 
         let mut resolved = Vec::new();
-        for (index, argument) in arguments.arguments().enumerate() {
-            let mut ty = Box::pin(self.resolve_type(&argument)).await;
-            if let Some(expected) = expected.get(index) {
-                let actual = self.type_kind(&ty).await;
-                if actual != *expected {
-                    self.report_type_kind_mismatch(argument.span(), *expected, actual);
-                    ty = self.new_error_type(*expected);
+
+        if let Some(arguments) = path.arguments() {
+            for (index, argument) in arguments.type_arguments().enumerate() {
+                let mut ty = Box::pin(self.resolve_type(&argument)).await;
+
+                if let Some(expected) = expected.get(index) {
+                    let actual = self.type_kind(&ty).await;
+                    if actual != *expected {
+                        self.report_type_kind_mismatch(argument.span(), *expected, actual);
+                        ty = self.new_error_type(*expected);
+                    }
                 }
+
+                resolved.push(ty);
             }
-            resolved.push(ty);
         }
+
+        if resolved.len() != expected.len() {
+            self.report_type_argument_arity_mismatch(span, expected.len(), resolved.len());
+        }
+
         resolved.truncate(expected.len());
         resolved.extend(expected[resolved.len()..].iter().map(|kind| self.new_error_type(*kind)));
         resolved
@@ -122,8 +134,8 @@ impl Resolver<'_> {
         let mut positional_index = 0;
         let mut saw_named = false;
 
-        if let Some(arguments) = path.given_arguments().and_then(|x| x.arguments()) {
-            for argument in arguments.arguments() {
+        if let Some(arguments) = path.supplied_given_arguments() {
+            for argument in arguments.given_arguments() {
                 let Some(dictionary) = argument.dictionary() else { continue };
 
                 if let Some(argument_name) = argument.name() {
@@ -221,15 +233,21 @@ impl Resolver<'_> {
 
         let type_arguments_are_implicit =
             matches!(symbol_kind, SymbolKind::Def | SymbolKind::TraitDef | SymbolKind::InstanceDef);
-        if type_arguments_are_implicit && let Some(arguments) = path.type_arguments() {
-            self.report_explicit_type_arguments_not_allowed(arguments.span());
+        let has_explicit_type_arguments = path.has_explicit_type_arguments();
+
+        if type_arguments_are_implicit
+            && has_explicit_type_arguments
+            && let Some(span) = path.arguments().map(|arguments| arguments.span())
+        {
+            self.report_explicit_type_arguments_not_allowed(span);
         }
 
-        let mut resolved = if type_arguments_are_implicit || path.type_arguments().is_none() {
-            self.infer_type_arguments(identifier, &type_kinds).interned_iter().cloned().collect()
+        let mut resolved = if type_arguments_are_implicit || !has_explicit_type_arguments {
+            self.infer_type_arguments(identifier, &type_kinds)
         } else {
             self.resolve_explicit_type_arguments(path, &type_kinds).await
         };
+
         let own_subst = parameters
             .into_iter()
             .flat_map(PolyVarMap::iter)

@@ -27,19 +27,10 @@ abstract_tree::abstract_tree! {
 }
 
 impl PathSegment {
-    /// Returns the explicitly supplied type arguments from either path syntax.
-    pub fn supplied_type_arguments(&self) -> impl Iterator<Item = Type> {
-        self.arguments()
-            .into_iter()
-            .flat_map(|arguments| arguments.type_arguments().collect::<Vec<_>>())
-    }
-
     /// Returns whether this segment explicitly supplies type arguments.
     #[must_use]
     pub fn has_explicit_type_arguments(&self) -> bool {
-        self.arguments().is_some_and(|arguments| {
-            arguments.type_arguments().next().is_some() || arguments.given_arguments().is_none()
-        })
+        self.arguments().is_some_and(|arguments| arguments.type_arguments().next().is_some())
     }
 
     /// Returns the explicitly supplied given arguments.
