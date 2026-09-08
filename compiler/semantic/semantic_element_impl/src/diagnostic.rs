@@ -79,10 +79,14 @@ async fn single_rendered_executor(
         }
     }
 
-    if kind == rayc_symbol::symbol_kind::SymbolKind::InstanceDef {
-        let instance_def_key = rayc_semantic_element::instance_def::Key { symbol_id };
-        let diagnostics = engine.query(&DiagnosticKey::new(instance_def_key)).await;
-        let generated = engine.query(&ObligationKey::new(instance_def_key)).await;
+    if matches!(
+        kind,
+        rayc_symbol::symbol_kind::SymbolKind::InstanceDef
+            | rayc_symbol::symbol_kind::SymbolKind::InstanceType
+    ) {
+        let instance_member_key = rayc_semantic_element::instance_member::Key { symbol_id };
+        let diagnostics = engine.query(&DiagnosticKey::new(instance_member_key)).await;
+        let generated = engine.query(&ObligationKey::new(instance_member_key)).await;
 
         obligations.extend(generated.iter().cloned());
         for diagnostic in diagnostics.iter() {

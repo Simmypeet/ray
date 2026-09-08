@@ -3,7 +3,7 @@ pub mod build;
 pub mod diagnostic;
 mod effect_row;
 mod extern_signature;
-pub mod instance_def;
+pub mod instance_member;
 pub mod instance_trait_ref;
 mod parameter;
 mod poly_var_map;

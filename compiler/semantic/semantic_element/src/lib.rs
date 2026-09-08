@@ -1,6 +1,6 @@
 pub mod all_instance_implements_trait;
 pub mod effect_row;
-pub mod instance_def;
+pub mod instance_member;
 pub mod instance_trait_ref;
 pub mod parameter;
 pub mod return_type;

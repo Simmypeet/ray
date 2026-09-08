@@ -1,0 +1,55 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: instance member `Arity`: polymorphic variable count mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:12:10
+   │
+ 5 │     type Arity[b]
+   │          ───── the corresponding trait declaration is here
+   ‡
+12 │     type Arity = int32
+   ╰╴         ━━━━━ expected 1 polymorphic variables, found 0
+
+[error]: instance member `Constraint`: instance parameter at polymorphic position 2 trait reference mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:13:31
+   │
+ 6 │     type Constraint[b] given (relation: Relation[a, b])
+   │                               ──────── the corresponding trait declaration is here
+   ‡
+13 │     type Constraint[c] given (relation: Relation[c, int32]) = c
+   ╰╴                              ━━━━━━━━ expected `main.Relation[int32, c]`, found `main.Relation[c, int32]`
+
+[error]: instance member `Kind`: polymorphic variable 1 kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:14:22
+   │
+ 7 │     type Kind[b]
+   │               ─ the corresponding trait declaration is here
+   ‡
+14 │     type Kind given (relation: Relation[int32, int32]) = int32
+   ╰╴                     ━━━━━━━━ expected type, found instance
+
+[error]: instance member `AsMethod`: member kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:15:9
+   │
+ 8 │     type AsMethod
+   │          ──────── the corresponding trait declaration is here
+   ‡
+15 │     def AsMethod() -> ():
+   ╰╴        ━━━━━━━━ expected an implementation of trait type, found instance def
+
+[error]: instance member `asType`: member kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:17:10
+   │
+ 9 │     def asType() -> ()
+   │         ────── the corresponding trait declaration is here
+   ‡
+17 │     type asType = int32
+   ╰╴         ━━━━━━ expected an implementation of trait def, found instance type
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

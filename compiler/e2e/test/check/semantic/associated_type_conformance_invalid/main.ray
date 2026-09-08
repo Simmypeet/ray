@@ -1,0 +1,20 @@
+trait Relation[a, b]:
+    type Value
+
+trait Container[a]:
+    type Arity[b]
+    type Constraint[b] given (relation: Relation[a, b])
+    type Kind[b]
+    type AsMethod
+    def asType() -> ()
+
+inst BadContainer for Container[int32]:
+    type Arity = int32
+    type Constraint[c] given (relation: Relation[c, int32]) = c
+    type Kind given (relation: Relation[int32, int32]) = int32
+    def AsMethod() -> ():
+        return ()
+    type asType = int32
+
+def main() -> int32:
+    return 0

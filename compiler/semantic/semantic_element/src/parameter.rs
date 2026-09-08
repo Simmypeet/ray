@@ -26,6 +26,9 @@ pub struct Parameter {
 
 impl Parameter {
     #[must_use]
+    pub const fn span(&self) -> Option<RelativeSpan> { self.span }
+
+    #[must_use]
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
 }
 

@@ -1,0 +1,11 @@
+trait Relation[a, b]:
+    type Value
+
+trait Container[a]:
+    type Item[b] given (relation: Relation[a, b])
+
+inst IntContainer for Container[int32]:
+    type Item[c] given (renamed: Relation[int32, c]) = c
+
+def main() -> int32:
+    return 0

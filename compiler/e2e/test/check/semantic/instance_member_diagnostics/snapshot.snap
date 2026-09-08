@@ -1,0 +1,136 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: instance member `count`: parameter count mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:17:9
+   │
+ 8 │     def count(first: int32, second: bool) -> ()
+   │         ───── the corresponding trait declaration is here
+   ‡
+17 │     def count(first: int32) -> ():
+   ╰╴        ━━━━━ expected 2 parameters, found 1
+
+[error]: instance member `signature`: effect row mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:19:9
+   │
+ 9 │     def signature(first: int32, second: bool) -> int32 \ {Logging}
+   │                                                        ─────────── the corresponding trait declaration is here
+   ‡
+19 │     def signature(first: bool, second: int32) -> bool:
+   ╰╴        ━━━━━━━━━ expected `{Logging}`, found `{}`
+
+[error]: instance member `signature`: parameter 1 type mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:19:19
+   │
+ 9 │     def signature(first: int32, second: bool) -> int32 \ {Logging}
+   │                   ──────────── the corresponding trait declaration is here
+   ‡
+19 │     def signature(first: bool, second: int32) -> bool:
+   ╰╴                  ━━━━━━━━━━━ expected `int32`, found `bool`
+
+[error]: instance member `signature`: parameter 2 type mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:19:32
+   │
+ 9 │     def signature(first: int32, second: bool) -> int32 \ {Logging}
+   │                                 ──────────── the corresponding trait declaration is here
+   ‡
+19 │     def signature(first: bool, second: int32) -> bool:
+   ╰╴                               ━━━━━━━━━━━━━ expected `bool`, found `int32`
+
+[error]: instance member `signature`: return type mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:19:47
+   │
+ 9 │     def signature(first: int32, second: bool) -> int32 \ {Logging}
+   │                                               ──────── the corresponding trait declaration is here
+   ‡
+19 │     def signature(first: bool, second: int32) -> bool:
+   ╰╴                                              ━━━━━━━ expected `int32`, found `bool`
+
+[error]: instance member `generics`: polymorphic variable count mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:21:9
+   │
+10 │     def generics(value: b) -> ()
+   │         ──────── the corresponding trait declaration is here
+   ‡
+21 │     def generics(value: int32) -> ():
+   ╰╴        ━━━━━━━━ expected 1 polymorphic variables, found 0
+
+[error]: instance member `kinds`: polymorphic variable 1 kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:23:24
+   │
+11 │     def kinds(first: b, second: c) -> ()
+   │                      ─ the corresponding trait declaration is here
+   ‡
+23 │     def kinds() given (first: Relation[int32, bool], second: Relation[int32, int32]) -> ():
+   ╰╴                       ━━━━━ expected type, found instance
+
+[error]: instance member `kinds`: polymorphic variable 2 kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:23:54
+   │
+11 │     def kinds(first: b, second: c) -> ()
+   │                                 ─ the corresponding trait declaration is here
+   ‡
+23 │     def kinds() given (first: Relation[int32, bool], second: Relation[int32, int32]) -> ():
+   ╰╴                                                     ━━━━━━ expected type, found instance
+
+[error]: instance member `constraints`: instance parameter at polymorphic position 1 trait reference mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:25:30
+   │
+12 │     def constraints() given (first: Relation[a, bool], second: Relation[a, int32]) -> ()
+   │                              ───── the corresponding trait declaration is here
+   ‡
+25 │     def constraints() given (first: Relation[bool, int32], second: Relation[bool, bool]) -> ():
+   ╰╴                             ━━━━━ expected `main.Relation[int32, bool]`, found `main.Relation[bool, int32]`
+
+[error]: instance member `constraints`: instance parameter at polymorphic position 2 trait reference mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:25:60
+   │
+12 │     def constraints() given (first: Relation[a, bool], second: Relation[a, int32]) -> ()
+   │                                                        ────── the corresponding trait declaration is here
+   ‡
+25 │     def constraints() given (first: Relation[bool, int32], second: Relation[bool, bool]) -> ():
+   ╰╴                                                           ━━━━━━ expected `main.Relation[int32, int32]`, found `main.Relation[bool, bool]`
+
+[error]: instance member `Kinds`: polymorphic variable 1 kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:27:23
+   │
+13 │     type Kinds[b, c]
+   │                ─ the corresponding trait declaration is here
+   ‡
+27 │     type Kinds given (first: Relation[int32, bool], second: Relation[int32, int32]) = int32
+   ╰╴                      ━━━━━ expected type, found instance
+
+[error]: instance member `Kinds`: polymorphic variable 2 kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:27:53
+   │
+13 │     type Kinds[b, c]
+   │                   ─ the corresponding trait declaration is here
+   ‡
+27 │     type Kinds given (first: Relation[int32, bool], second: Relation[int32, int32]) = int32
+   ╰╴                                                    ━━━━━━ expected type, found instance
+
+[error]: instance member `Constraints`: instance parameter at polymorphic position 1 trait reference mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:28:29
+   │
+14 │     type Constraints given (first: Relation[a, bool], second: Relation[a, int32])
+   │                             ───── the corresponding trait declaration is here
+   ‡
+28 │     type Constraints given (first: Relation[bool, int32], second: Relation[bool, bool]) = int32
+   ╰╴                            ━━━━━ expected `main.Relation[int32, bool]`, found `main.Relation[bool, int32]`
+
+[error]: instance member `Constraints`: instance parameter at polymorphic position 2 trait reference mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:28:59
+   │
+14 │     type Constraints given (first: Relation[a, bool], second: Relation[a, int32])
+   │                                                       ────── the corresponding trait declaration is here
+   ‡
+28 │     type Constraints given (first: Relation[bool, int32], second: Relation[bool, bool]) = int32
+   ╰╴                                                          ━━━━━━ expected `main.Relation[int32, int32]`, found `main.Relation[bool, bool]`
+
+[error]: Compilation aborted due to 14 error(s)
+
+
+
+stdout:

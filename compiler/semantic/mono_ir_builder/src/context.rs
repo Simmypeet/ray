@@ -15,7 +15,7 @@ use rayc_mono_ir::{
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
     effect_row::get_effect_row,
-    instance_def::get_instance_def,
+    instance_member::get_instance_member,
     parameter::{ParameterMap, get_parameter_map},
     return_type::get_return_type,
 };
@@ -167,7 +167,7 @@ impl Context {
             panic!("an instance call should resolve to a type of instance kind")
         };
 
-        // Trait and instance methods correspond by name. The InstanceDef query
+        // Trait and instance methods correspond by name. The InstanceMember query
         // verifies that correspondence and provides the precomputed mapping
         // from trait-owned polymorphic variables to instance-owned variables.
         let trait_def_name = self.engine.get_name(trait_def_id).await;
@@ -176,9 +176,9 @@ impl Context {
             .get_member_by_name(instance.symbol_id(), &trait_def_name)
             .await
             .expect("a concrete instance should implement the selected trait definition");
-        let instance_def = self.engine.get_instance_def(instance_def_id).await;
+        let instance_def = self.engine.get_instance_member(instance_def_id).await;
         assert_eq!(
-            instance_def.trait_def_id(),
+            instance_def.trait_member_id(),
             trait_def_id,
             "the selected instance definition should implement the called trait definition"
         );
@@ -192,7 +192,7 @@ impl Context {
 
         // Method-local variables have different IDs in the trait declaration and
         // its instance implementation. First make the trait call substitution
-        // concrete, then use InstanceDef's verified mapping to move each value
+        // concrete, then use InstanceMember's mapping to move each value
         // into the corresponding instance-method variable.
         let mut trait_call_substitution = trait_call_substitution.clone();
         self.apply_owner_substitution(&mut trait_call_substitution);

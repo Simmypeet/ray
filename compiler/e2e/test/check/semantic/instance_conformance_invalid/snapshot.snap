@@ -12,32 +12,32 @@ stderr:
 10 │ inst BadCodec for Codec[int32]:
    ╰╴     ━━━━━━━━ implement `decode` in this instance
 
-[error]: instance method `encode` has an incompatible signature
-   ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:11:9
+[error]: instance member `encode`: parameter 1 type mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:11:16
    │
  6 │     def encode(value: a) -> int32
-   │         ────── the trait method is declared here
+   │                ──────── the corresponding trait declaration is here
    ‡
 11 │     def encode(value: bool) -> int32:
-   ╰╴        ━━━━━━ this signature does not match the trait method
+   ╰╴               ━━━━━━━━━━━ expected `int32`, found `bool`
 
-[error]: instance method `convert` has an incompatible signature
-   ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:13:9
+[error]: instance member `convert`: return type mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:13:27
    │
  7 │     def convert(value: b) -> b
-   │         ─────── the trait method is declared here
+   │                           ──── the corresponding trait declaration is here
    ‡
 13 │     def convert(value: c) -> bool:
-   ╰╴        ━━━━━━━ this signature does not match the trait method
+   ╰╴                          ━━━━━━━ expected `c`, found `bool`
 
-[error]: instance method `useEffect` has an incompatible signature
+[error]: instance member `useEffect`: effect row mismatch
    ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:15:9
    │
  8 │     def useEffect() -> () \ {Logging}
-   │         ───────── the trait method is declared here
+   │                           ─────────── the corresponding trait declaration is here
    ‡
 15 │     def useEffect() -> ():
-   ╰╴        ━━━━━━━━━ this signature does not match the trait method
+   ╰╴        ━━━━━━━━━ expected `{Logging}`, found `{}`
 
 [error]: Compilation aborted due to 4 error(s)
 

@@ -1,0 +1,31 @@
+eff Logging:
+    def write()
+
+trait Relation[a, b]:
+    type Value
+
+trait Contract[a]:
+    def count(first: int32, second: bool) -> ()
+    def signature(first: int32, second: bool) -> int32 \ {Logging}
+    def generics(value: b) -> ()
+    def kinds(first: b, second: c) -> ()
+    def constraints() given (first: Relation[a, bool], second: Relation[a, int32]) -> ()
+    type Kinds[b, c]
+    type Constraints given (first: Relation[a, bool], second: Relation[a, int32])
+
+inst BadContract for Contract[int32]:
+    def count(first: int32) -> ():
+        return ()
+    def signature(first: bool, second: int32) -> bool:
+        return true
+    def generics(value: int32) -> ():
+        return ()
+    def kinds() given (first: Relation[int32, bool], second: Relation[int32, int32]) -> ():
+        return ()
+    def constraints() given (first: Relation[bool, int32], second: Relation[bool, bool]) -> ():
+        return ()
+    type Kinds given (first: Relation[int32, bool], second: Relation[int32, int32]) = int32
+    type Constraints given (first: Relation[bool, int32], second: Relation[bool, bool]) = int32
+
+def main() -> int32:
+    return 0
