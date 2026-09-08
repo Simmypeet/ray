@@ -125,7 +125,7 @@ fn by_value_tuple_depth(ty: &Ty) -> usize {
             | ApplicationView::Instance(_)
             | ApplicationView::Error => 0,
         },
-        Ty::Inference(_) | Ty::PolyVar(_) => 0,
+        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => 0,
         Ty::EffectRow(_) => todo!("compute tuple dependency depth for an effect-row type"),
     }
 }

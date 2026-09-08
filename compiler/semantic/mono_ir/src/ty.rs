@@ -402,7 +402,7 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 panic!("compiler-internal invariant violation: error type reached MonoIR")
             }
         },
-        Ty::Inference(_) | Ty::PolyVar(_) => {
+        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => {
             panic!(
                 "compiler-internal invariant violation: non-concrete type reached MonoIR: {ty:?}"
             )

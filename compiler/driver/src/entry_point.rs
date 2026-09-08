@@ -104,7 +104,7 @@ fn is_int32(ty: &Ty) -> bool {
             | ApplicationView::Instance(_)
             | ApplicationView::Error => false,
         },
-        Ty::Inference(_) | Ty::PolyVar(_) => false,
+        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => false,
         Ty::EffectRow(_) => todo!("validate an effect-row type as an entry-point return type"),
     }
 }

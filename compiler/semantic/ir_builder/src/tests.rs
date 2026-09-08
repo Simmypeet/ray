@@ -231,7 +231,9 @@ fn pointer_mutability(ty: &Ty) -> Mutability {
             | ApplicationView::Instance(_)
             | ApplicationView::Error => panic!("expected a pointer type"),
         },
-        Ty::Inference(_) | Ty::PolyVar(_) => panic!("expected a concrete pointer type"),
+        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => {
+            panic!("expected a concrete pointer type")
+        }
         Ty::EffectRow(_) => todo!("extract pointer mutability from an effect-row type"),
     }
 }

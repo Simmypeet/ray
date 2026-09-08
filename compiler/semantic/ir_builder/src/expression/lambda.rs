@@ -31,14 +31,11 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Lambda>> for Builder {
                     )
                 }
             },
-            Ty::Inference(_) | Ty::PolyVar(_) => {
+            Ty::EffectRow(_) | Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => {
                 panic!(
                     "TypedAST lambda expression should have a solved lambda type, found {:?}",
                     typed_expression.ty()
                 )
-            }
-            Ty::EffectRow(_) => {
-                todo!("lower a TypedAST lambda expression with an effect-row type")
             }
         };
         let function_id = self.lower_lambda_function(

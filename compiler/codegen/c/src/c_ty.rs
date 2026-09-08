@@ -119,7 +119,7 @@ impl Context {
                 panic!("type inference should have been resolved before codegen")
             }
 
-            Ty::PolyVar(_) => {
+            Ty::PolyVar(_) | Ty::SelfInstance(_) => {
                 panic!("polymorphic variables should have been instantiated before codegen")
             }
 

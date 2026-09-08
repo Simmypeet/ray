@@ -179,7 +179,7 @@ impl<'engine> Collector<'engine> {
                         );
                     }
                 },
-                Ty::Inference(_) | Ty::PolyVar(_) => {
+                Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => {
                     panic!(
                         "compiler-internal invariant violation: non-concrete type reached \
                          monomorphization while collecting {function:?}: {ty:?}"
