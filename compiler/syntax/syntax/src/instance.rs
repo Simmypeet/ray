@@ -6,13 +6,37 @@ use rayc_parser::{
 };
 
 use crate::{
-    Identifier, Keyword, def::Def, effect::TypeParameterList, given::GivenParameterList, path::Path,
+    Identifier, Keyword, Punctuation, def::Def, effect::TypeParameterList,
+    given::GivenParameterList, path::Path, r#type::Type,
 };
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    pub struct InstanceDef {
-        pub definition: Def = ast::<Def>()
+    pub struct InstanceAssociatedType {
+        pub type_keyword: Keyword = expect::Keyword::Type,
+        pub name: Identifier = expect::Identifier,
+        pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
+        pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
+        pub equals: Punctuation = '=',
+        pub r#type: Type = ast::<Type>()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub enum InstanceDef {
+        Definition(Def = ast::<Def>()),
+        AssociatedType(InstanceAssociatedType = ast::<InstanceAssociatedType>())
+    }
+}
+
+impl InstanceDef {
+    #[must_use]
+    pub fn definition(&self) -> Option<Def> {
+        match self {
+            Self::Definition(definition) => Some(definition.clone()),
+            Self::AssociatedType(_) => None,
+        }
     }
 }
 

@@ -11,8 +11,29 @@ use crate::{
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    pub struct TraitDef {
-        pub signature: DefSignature = ast::<DefSignature>()
+    pub struct TraitAssociatedType {
+        pub type_keyword: Keyword = expect::Keyword::Type,
+        pub name: Identifier = expect::Identifier,
+        pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
+        pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub enum TraitDef {
+        Definition(DefSignature = ast::<DefSignature>()),
+        AssociatedType(TraitAssociatedType = ast::<TraitAssociatedType>())
+    }
+}
+
+impl TraitDef {
+    #[must_use]
+    pub fn signature(&self) -> Option<DefSignature> {
+        match self {
+            Self::Definition(signature) => Some(signature.clone()),
+            Self::AssociatedType(_) => None,
+        }
     }
 }
 
