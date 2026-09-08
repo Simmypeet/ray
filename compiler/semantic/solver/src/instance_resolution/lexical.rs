@@ -17,7 +17,7 @@ pub(super) async fn resolve(
     required: &TraitRef,
 ) -> Result<LexicalResolution, InstanceResolutionError> {
     let lexical_scope = engine.get_enclosing_poly_var_maps(site).await;
-    let candidates = lexical_scope.nearest_instance_matches(required, engine);
+    let candidates = lexical_scope.nearest_instance_matches(required, engine).await;
     match candidates.as_slice() {
         [] => Ok(LexicalResolution::NotFound),
         [candidate] => Ok(LexicalResolution::Resolved(Ty::new_poly_var(*candidate, engine))),

@@ -84,7 +84,7 @@ impl Solver {
                     });
                 }
                 Step::NoProgress => {
-                    if let Some(reduced) = constraint.reduce(&self.engine) {
+                    if let Some(reduced) = constraint.reduce(&self.engine).await {
                         constrs.push(reduced);
                     } else {
                         residual.push(constraint);
