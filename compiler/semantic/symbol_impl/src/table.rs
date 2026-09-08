@@ -21,6 +21,7 @@ use rayc_syntax::{
     given::GivenParameterList,
     path::Path as SyntaxPath,
     statement::Block,
+    r#type::Type,
 };
 use rayc_target::{TargetID, get_invocation_arguments};
 
@@ -43,6 +44,7 @@ pub struct Infos {
     type_parameters: Option<Option<TypeParameterList>>,
     given_parameter_list: Option<Option<GivenParameterList>>,
     instance_trait: Option<Option<SyntaxPath>>,
+    type_definition: Option<Option<Type>>,
 }
 
 #[derive(Debug, Default, StableHash, Encode, Decode)]
@@ -55,6 +57,7 @@ struct SyntaxTable {
     type_parameters: Map<Option<TypeParameterList>>,
     given_parameter_lists: Map<Option<GivenParameterList>>,
     instance_traits: Map<Option<SyntaxPath>>,
+    type_definitions: Map<Option<Type>>,
 }
 
 /// Stores the symbol information. It maps the symbol ID to its related
@@ -201,6 +204,11 @@ impl Table {
     }
 
     #[must_use]
+    pub fn get_type_definition_syntax(&self, symbol_id: SymbolID) -> Option<Type> {
+        self.syntaxes.type_definitions.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
     pub const fn source_id(&self) -> Option<LocalSourceID> { self.source_id }
 
     fn insert_member_as_root_module(&mut self, member: MemberBuilder, engine: &TrackedEngine) {
@@ -258,6 +266,10 @@ impl Table {
 
         if let Some(instance_trait) = info.instance_trait {
             self.syntaxes.instance_traits.insert(symbol_id, instance_trait);
+        }
+
+        if let Some(type_definition) = info.type_definition {
+            self.syntaxes.type_definitions.insert(symbol_id, type_definition);
         }
 
         if let Some(member) = info.member {

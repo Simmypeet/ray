@@ -3,7 +3,8 @@ use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
     DefBodySyntaxKey, EffectRowSyntaxKey, GivenParameterListSyntaxKey, InstanceTraitSyntaxKey,
-    ParameterListSyntaxKey, ReturnTypeSyntaxKey, TypeParameterListSyntaxKey, VariadicDefKey,
+    ParameterListSyntaxKey, ReturnTypeSyntaxKey, TypeDefinitionSyntaxKey,
+    TypeParameterListSyntaxKey, VariadicDefKey,
 };
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
@@ -12,6 +13,7 @@ use rayc_syntax::{
     given::GivenParameterList,
     path::Path,
     statement::Block,
+    r#type::Type,
 };
 
 use crate::table::get_table;
@@ -119,3 +121,15 @@ pub async fn instance_trait_syntax_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static INSTANCE_TRAIT_SYNTAX_EXECUTOR: Registration<Config> =
     Registration::new::<InstanceTraitSyntaxKey, InstanceTraitSyntaxExecutor>();
+
+#[executor(config = Config)]
+pub async fn type_definition_syntax_executor(
+    &TypeDefinitionSyntaxKey { symbol_id }: &TypeDefinitionSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<Type> {
+    engine.get_table(symbol_id.target_id).await.get_type_definition_syntax(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static TYPE_DEFINITION_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<TypeDefinitionSyntaxKey, TypeDefinitionSyntaxExecutor>();

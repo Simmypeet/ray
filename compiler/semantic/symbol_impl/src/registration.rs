@@ -4,9 +4,9 @@ use rayc_symbol::symbol_kind::SymbolKind;
 use rayc_syntax::{
     def::{Def, DefSignature, ParameterEntry},
     effect::{Effect, OperationSignature},
-    instance::Instance,
+    instance::{Instance, InstanceAssociatedType, InstanceDef},
     module::ModuleMember,
-    r#trait::{Trait, TraitDef},
+    r#trait::{Trait, TraitAssociatedType, TraitDef},
 };
 
 use crate::{
@@ -162,12 +162,9 @@ impl Table {
     async fn register_trait_def(
         &mut self,
         member_builder: &mut MemberBuilder,
-        trait_def: TraitDef,
+        signature: DefSignature,
         engine: &TrackedEngine,
     ) {
-        let Some(signature) = trait_def.signature() else {
-            return;
-        };
         let Some(ident) = signature.name() else {
             return;
         };
@@ -201,6 +198,55 @@ impl Table {
         .await;
     }
 
+    async fn register_instance_type(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        ty: InstanceAssociatedType,
+        engine: &TrackedEngine,
+    ) {
+        let Some(ident) = ty.name() else {
+            return;
+        };
+
+        self.insert_symbol(
+            member_builder,
+            Infos::builder()
+                .symbol_kind(SymbolKind::InstanceType)
+                .name(ident.kind.0.clone())
+                .span(ident.span)
+                .type_parameters(ty.type_parameters())
+                .given_parameter_list(ty.given_parameter_list())
+                .type_definition(ty.r#type())
+                .build(),
+            engine,
+        )
+        .await;
+    }
+
+    async fn register_trait_type(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        ty: TraitAssociatedType,
+        engine: &TrackedEngine,
+    ) {
+        let Some(ident) = ty.name() else {
+            return;
+        };
+
+        self.insert_symbol(
+            member_builder,
+            Infos::builder()
+                .symbol_kind(SymbolKind::TraitType)
+                .name(ident.kind.0.clone())
+                .span(ident.span)
+                .type_parameters(ty.type_parameters())
+                .given_parameter_list(ty.given_parameter_list())
+                .build(),
+            engine,
+        )
+        .await;
+    }
+
     async fn register_trait(
         &mut self,
         member_builder: &mut MemberBuilder,
@@ -228,7 +274,15 @@ impl Table {
         let mut trait_members = member_builder.child(trait_id, name);
         if let Some(body) = r#trait.body() {
             for definition in body.definitions() {
-                self.register_trait_def(&mut trait_members, definition.clone(), engine).await;
+                match definition {
+                    TraitDef::Definition(signature) => {
+                        self.register_trait_def(&mut trait_members, signature.clone(), engine)
+                            .await;
+                    }
+                    TraitDef::AssociatedType(ty) => {
+                        self.register_trait_type(&mut trait_members, ty.clone(), engine).await;
+                    }
+                }
             }
         }
 
@@ -263,8 +317,19 @@ impl Table {
         let mut instance_members = member_builder.child(instance_id, name);
         if let Some(body) = instance.body() {
             for instance_def in body.definitions() {
-                if let Some(definition) = instance_def.definition() {
-                    self.register_instance_def(&mut instance_members, definition, engine).await;
+                match instance_def {
+                    InstanceDef::Definition(definition) => {
+                        self.register_instance_def(
+                            &mut instance_members,
+                            definition.clone(),
+                            engine,
+                        )
+                        .await;
+                    }
+                    InstanceDef::AssociatedType(ty) => {
+                        self.register_instance_type(&mut instance_members, ty.clone(), engine)
+                            .await;
+                    }
                 }
             }
         }
