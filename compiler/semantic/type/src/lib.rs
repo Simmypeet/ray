@@ -4,3 +4,6 @@ pub mod reduce;
 pub mod subst;
 pub mod trait_ref;
 pub mod ty;
+
+pub mod instance_member;
+pub mod type_definition;

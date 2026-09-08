@@ -35,11 +35,11 @@ impl TyRelate {
 }
 
 impl Reduce for TyRelate {
-    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    async fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
     where
         Self: Sized,
     {
-        match (self.lesser.reduce(engine), self.greater.reduce(engine)) {
+        match (self.lesser.reduce(engine).await, self.greater.reduce(engine).await) {
             (Some(lesser), Some(greater)) => Some(Self { lesser, greater }),
             (Some(lesser), None) => Some(Self { lesser, greater: self.greater.clone() }),
             (None, Some(greater)) => Some(Self { lesser: self.lesser.clone(), greater }),

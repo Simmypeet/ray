@@ -225,21 +225,20 @@ impl PolyVarStack {
 
     /// Finds exact instance requirements at the nearest matching lexical scope.
     #[must_use]
-    pub fn nearest_instance_matches(
+    pub async fn nearest_instance_matches(
         &self,
         required: &TraitRef,
         engine: &TrackedEngine,
     ) -> Vec<GlobalPolyVarID> {
         for (symbol_id, poly_var_map) in &self.poly_var_maps {
-            let matches = poly_var_map
-                .iter()
-                .filter(|(_, poly_var)| {
-                    poly_var
-                        .trait_ref()
-                        .is_some_and(|candidate| candidate.normalize(engine) == *required)
-                })
-                .map(|(poly_var_id, _)| GlobalPolyVarID::new(*symbol_id, poly_var_id))
-                .collect::<Vec<_>>();
+            let mut matches = Vec::new();
+            for (poly_var_id, poly_var) in poly_var_map.iter() {
+                if let Some(candidate) = poly_var.trait_ref()
+                    && candidate.normalize(engine).await == *required
+                {
+                    matches.push(GlobalPolyVarID::new(*symbol_id, poly_var_id));
+                }
+            }
             if !matches.is_empty() {
                 return matches;
             }

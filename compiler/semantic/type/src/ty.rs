@@ -204,21 +204,37 @@ impl Substitutable for Interned<Ty> {
 }
 
 impl Reduce for Interned<Ty> {
-    fn reduce(&self, engine: &TrackedEngine) -> Option<Self> {
-        match &**self {
-            Ty::Application(application) => application
-                .reduce(engine)
-                .map(|application| engine.intern(Ty::Application(application))),
-            Ty::Inference(_) | Ty::PolyVar(_) => None,
-            Ty::EffectRow(row) => {
-                if row.labels().len() == 0
-                    && let Some(tail) = row.tail()
-                {
-                    return Some(tail.clone());
-                }
+    async fn reduce(&self, engine: &TrackedEngine) -> Option<Self> {
+        reduce_type(self, engine).await
+    }
+}
 
-                row.reduce(engine).map(|row| engine.intern(Ty::EffectRow(row)))
+async fn reduce_type(ty: &Interned<Ty>, engine: &TrackedEngine) -> Option<Interned<Ty>> {
+    match ty.as_ref() {
+        Ty::Application(application) => {
+            Box::pin(async move {
+                if let ApplicationView::InstanceAssociated(associated) = application.view()
+                    && let Some(reduced) =
+                        crate::reduce::reduce_instance_associated(associated, engine).await
+                    && reduced != *ty
+                {
+                    return Some(reduced);
+                }
+                application
+                    .reduce(engine)
+                    .await
+                    .map(|application| engine.intern(Ty::Application(application)))
+            })
+            .await
+        }
+        Ty::Inference(_) | Ty::PolyVar(_) => None,
+        Ty::EffectRow(row) => {
+            if row.labels().len() == 0
+                && let Some(tail) = row.tail()
+            {
+                return Some(tail.clone());
             }
+            Box::pin(row.reduce(engine)).await.map(|row| engine.intern(Ty::EffectRow(row)))
         }
     }
 }

@@ -61,8 +61,8 @@ impl Args {
 }
 
 impl Reduce for Args {
-    fn reduce(&self, engine: &rayc_qbice::TrackedEngine) -> Option<Self> {
-        self.args.reduce(engine).map(|args| Self { args })
+    async fn reduce(&self, engine: &rayc_qbice::TrackedEngine) -> Option<Self> {
+        self.args.reduce(engine).await.map(|args| Self { args })
     }
 }
 

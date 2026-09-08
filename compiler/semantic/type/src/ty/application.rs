@@ -235,8 +235,8 @@ impl Application {
 }
 
 impl Reduce for Application {
-    fn reduce(&self, engine: &TrackedEngine) -> Option<Self> {
-        self.args.reduce(engine).map(|args| Self { constant: self.constant, args })
+    async fn reduce(&self, engine: &TrackedEngine) -> Option<Self> {
+        self.args.reduce(engine).await.map(|args| Self { constant: self.constant, args })
     }
 }
 
