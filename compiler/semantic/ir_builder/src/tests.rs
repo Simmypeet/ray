@@ -227,6 +227,7 @@ fn pointer_mutability(ty: &Ty) -> Mutability {
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Lambda(_)
+            | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Instance(_)
             | ApplicationView::Error => panic!("expected a pointer type"),
         },

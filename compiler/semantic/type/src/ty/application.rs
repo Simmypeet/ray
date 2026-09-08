@@ -17,6 +17,10 @@ pub enum Constant {
     Lambda,
     Pointer(Mutability),
     Instance(GlobalSymbolID),
+    /// An associated type identified by its `SymbolKind::TraitType` symbol.
+    /// Arguments are an instance-kind type followed by the trait type's
+    /// polymorphic arguments in declaration order.
+    InstanceAssociated(GlobalSymbolID),
     Error(TyKind),
 }
 
@@ -75,6 +79,26 @@ impl InstanceView<'_> {
     pub const fn args(&self) -> &[Interned<Ty>] { self.args }
 }
 
+/// A projection of a trait associated type from an instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InstanceAssociatedView<'x> {
+    symbol_id: GlobalSymbolID,
+    instance: &'x Interned<Ty>,
+    args: &'x [Interned<Ty>],
+}
+
+impl InstanceAssociatedView<'_> {
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+
+    #[must_use]
+    pub const fn instance(&self) -> &Interned<Ty> { self.instance }
+
+    /// The associated type's polymorphic arguments, excluding the instance.
+    #[must_use]
+    pub const fn args(&self) -> &[Interned<Ty>] { self.args }
+}
+
 impl PointerView<'_> {
     #[must_use]
     pub const fn pointee(&self) -> &Interned<Ty> { self.arg }
@@ -90,6 +114,7 @@ pub enum View<'x> {
     Lambda(LambdaView<'x>),
     Pointer(PointerView<'x>),
     Instance(InstanceView<'x>),
+    InstanceAssociated(InstanceAssociatedView<'x>),
     Error,
 }
 
@@ -128,6 +153,11 @@ impl Application {
             Constant::Instance(symbol_id) => {
                 View::Instance(InstanceView { symbol_id, args: &self.args })
             }
+            Constant::InstanceAssociated(symbol_id) => {
+                let (instance, args) =
+                    self.args.split_first().expect("associated type has an instance");
+                View::InstanceAssociated(InstanceAssociatedView { symbol_id, instance, args })
+            }
             Constant::Error(_) => View::Error,
         }
     }
@@ -135,9 +165,11 @@ impl Application {
     #[must_use]
     pub(crate) const fn kind_of(&self) -> TyKind {
         match self.constant {
-            Constant::Primitive(_) | Constant::Tuple | Constant::Lambda | Constant::Pointer(_) => {
-                TyKind::Star
-            }
+            Constant::Primitive(_)
+            | Constant::Tuple
+            | Constant::Lambda
+            | Constant::Pointer(_)
+            | Constant::InstanceAssociated(_) => TyKind::Star,
             Constant::Instance(_) => TyKind::Instance,
             Constant::Error(kind) => kind,
         }
@@ -157,7 +189,8 @@ impl Application {
                 | View::Tuple(_)
                 | View::Lambda(_)
                 | View::Pointer(_)
-                | View::Instance(_) => false,
+                | View::Instance(_)
+                | View::InstanceAssociated(_) => false,
             },
             InferenceConstraint::EqualityComparable => match self.view() {
                 View::Primitive(primitive) => match primitive {
@@ -171,7 +204,8 @@ impl Application {
                 | View::Tuple(_)
                 | View::Lambda(_)
                 | View::Pointer(_)
-                | View::Instance(_) => false,
+                | View::Instance(_)
+                | View::InstanceAssociated(_) => false,
             },
         }
     }

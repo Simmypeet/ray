@@ -103,6 +103,9 @@ impl Context {
                     }))
                 }
 
+                ApplicationView::InstanceAssociated(_) => {
+                    panic!("unresolved associated type reached code generation")
+                }
                 ApplicationView::Instance(_) => {
                     panic!("an instance argument cannot be lowered as a C value type")
                 }

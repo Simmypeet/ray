@@ -79,6 +79,7 @@ pub(crate) fn is_c_abi_value_type(ty: &Ty) -> bool {
             ApplicationView::Pointer(pointer) => is_c_abi_value_type(pointer.pointee()),
             ApplicationView::Tuple(_)
             | ApplicationView::Lambda(_)
+            | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Instance(_)
             | ApplicationView::Error => false,
         },

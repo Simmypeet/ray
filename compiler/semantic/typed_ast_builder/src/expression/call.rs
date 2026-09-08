@@ -272,6 +272,7 @@ impl TAstBuilder {
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Instance(_) => {
                     self.report_expected_lambda(callee_ty, callee_span);
                     LambdaCallSignature::Invalid

@@ -157,6 +157,7 @@ impl TAstBuilder {
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Lambda(_)
+                | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Instance(_) => {
                     self.push_diagnostic(Diagnostic::ExpectedPointerType(
                         ExpectedPointerType::builder().ty(ty).span(span).build(),

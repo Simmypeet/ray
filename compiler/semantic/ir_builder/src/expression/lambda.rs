@@ -22,6 +22,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Lambda>> for Builder {
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Instance(_)
                 | ApplicationView::Error => {
                     panic!(

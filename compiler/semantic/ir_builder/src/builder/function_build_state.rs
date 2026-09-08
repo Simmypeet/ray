@@ -494,9 +494,12 @@ fn requires_value_return(ty: &Ty) -> bool {
     match ty {
         Ty::Application(application) => match application.view() {
             ApplicationView::Tuple(tuple) => !tuple.args().is_empty(),
+
             ApplicationView::Primitive(_)
+            | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Lambda(_)
             | ApplicationView::Pointer(_) => true,
+
             ApplicationView::Instance(_) | ApplicationView::Error => false,
         },
         Ty::Inference(_) | Ty::PolyVar(_) | Ty::EffectRow(_) => false,

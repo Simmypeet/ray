@@ -160,6 +160,7 @@ impl<'engine> Collector<'engine> {
                 Ty::Application(application) => match application.view() {
                     ApplicationView::Primitive(_)
                     | ApplicationView::Pointer(_)
+                    | ApplicationView::InstanceAssociated(_)
                     | ApplicationView::Instance(_) => {}
                     ApplicationView::Tuple(tuple) => {
                         self.program

@@ -158,6 +158,7 @@ impl Ty {
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Lambda(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Instance(_) => false,
             },
             Self::Inference(_) | Self::EffectRow(_) | Self::PolyVar(_) => false,
@@ -275,6 +276,24 @@ impl Ty {
         )))
     }
 
+    /// Creates a projection from an instance to a trait associated type.
+    ///
+    /// `symbol_id` must identify a `SymbolKind::TraitType`, `instance` must
+    /// have kind `Instance`, and `args` must match the trait type's poly vars.
+    #[must_use]
+    pub fn new_instance_associated(
+        symbol_id: GlobalSymbolID,
+        instance: Interned<Self>,
+        args: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        let args = std::iter::once(instance).chain(args).collect::<Vec<_>>();
+        engine.intern(Self::Application(Application::new(
+            Constant::InstanceAssociated(symbol_id),
+            engine.intern_unsized(args),
+        )))
+    }
+
     #[must_use]
     pub fn new_error(kind: TyKind, engine: &TrackedEngine) -> Interned<Self> {
         engine.intern(Self::Application(Application::new(
@@ -327,10 +346,21 @@ impl Ty {
         for ty in self.recursive_iter() {
             match ty {
                 Self::Application(application) => {
-                    if let ApplicationView::Instance(instance) = application.view() {
+                    let symbol_id = match application.view() {
+                        ApplicationView::Instance(instance) => Some(instance.symbol_id()),
+                        ApplicationView::InstanceAssociated(associated) => {
+                            Some(associated.symbol_id())
+                        }
+                        ApplicationView::Primitive(_)
+                        | ApplicationView::Tuple(_)
+                        | ApplicationView::Lambda(_)
+                        | ApplicationView::Pointer(_)
+                        | ApplicationView::Error => None,
+                    };
+                    if let Some(symbol_id) = symbol_id {
                         Self::collect_symbol_display_context(
                             engine,
-                            instance.symbol_id(),
+                            symbol_id,
                             poly_var_maps,
                             symbol_names,
                         )
@@ -472,6 +502,11 @@ impl TyDisplay<'_> {
                 }
                 ApplicationView::Instance(instance) => {
                     self.fmt_symbol_application(instance.symbol_id(), instance.args(), f)
+                }
+                ApplicationView::InstanceAssociated(associated) => {
+                    self.fmt_ty(associated.instance(), f)?;
+                    f.write_char('.')?;
+                    self.fmt_symbol_application(associated.symbol_id(), associated.args(), f)
                 }
                 ApplicationView::Error => write!(f, "<error>"),
             },

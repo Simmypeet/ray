@@ -98,6 +98,7 @@ impl TAstBuilder {
                         ApplicationView::Primitive(_)
                         | ApplicationView::Tuple(_)
                         | ApplicationView::Lambda(_)
+                        | ApplicationView::InstanceAssociated(_)
                         | ApplicationView::Instance(_)
                         | ApplicationView::Error => None,
                     },
