@@ -71,6 +71,8 @@ pub(super) async fn validate_entry_point(
         | SymbolKind::InstanceDef
         | SymbolKind::Module
         | SymbolKind::Trait
+        | SymbolKind::TraitType
+        | SymbolKind::InstanceType
         | SymbolKind::TraitDef => {
             return Err(EntryPointError::NotDefinition { symbol_id: entry_point_id });
         }

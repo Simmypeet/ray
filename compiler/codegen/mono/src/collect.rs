@@ -77,6 +77,8 @@ impl<'engine> Collector<'engine> {
                 SymbolKind::Effect
                 | SymbolKind::EffectOperation
                 | SymbolKind::Instance
+                | SymbolKind::InstanceType
+                | SymbolKind::TraitType
                 | SymbolKind::InstanceDef
                 | SymbolKind::Module
                 | SymbolKind::Trait

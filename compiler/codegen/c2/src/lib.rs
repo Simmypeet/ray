@@ -67,6 +67,8 @@ pub async fn write_c_translation_unit(
             | SymbolKind::InstanceDef
             | SymbolKind::Module
             | SymbolKind::Trait
+            | SymbolKind::TraitType
+            | SymbolKind::InstanceType
             | SymbolKind::TraitDef => {
                 panic!("non-definition symbol returned by the definition inventory")
             }

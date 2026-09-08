@@ -461,6 +461,9 @@ impl Resolver<'_> {
             .await;
 
         match symbol_kind {
+            SymbolKind::TraitType | SymbolKind::InstanceType => {
+                Err(PathResolutionError::UnexpectedSymbolKind)
+            }
             SymbolKind::Def => Ok(PathResolution::Def(Def::new(symbol_id, args))),
             SymbolKind::ExternDef => Ok(PathResolution::ExternDef(ExternDef::new(symbol_id))),
             SymbolKind::Module => Ok(PathResolution::Module(Module::new(symbol_id))),

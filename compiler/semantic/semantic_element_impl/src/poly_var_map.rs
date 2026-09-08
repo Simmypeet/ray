@@ -154,7 +154,11 @@ impl Build for rayc_type::poly_var::Key {
 
                 discover_function_poly_vars(parameters.as_ref(), enclosing_poly_var_maps.as_deref())
             }
-            SymbolKind::Effect | SymbolKind::Instance | SymbolKind::Trait => {
+            SymbolKind::Effect
+            | SymbolKind::Instance
+            | SymbolKind::Trait
+            | SymbolKind::TraitType
+            | SymbolKind::InstanceType => {
                 let mut poly_vars = PolyVarMap::new();
 
                 if let Some(type_parameters) =

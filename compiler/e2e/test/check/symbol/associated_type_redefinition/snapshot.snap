@@ -1,0 +1,53 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: symbol `Item` is already defined in the scope `main.Container`
+  ╭▸ compiler/e2e/test/check/symbol/associated_type_redefinition/main.ray:3:10
+  │
+2 │     type Item
+  │          ──── symbol `Item` is already defined here
+3 │     type Item
+  ╰╴         ━━━━ redefinition here
+
+[error]: symbol `Item` is already defined in the scope `main.Container`
+  ╭▸ compiler/e2e/test/check/symbol/associated_type_redefinition/main.ray:4:9
+  │
+2 │     type Item
+  │          ──── symbol `Item` is already defined here
+3 │     type Item
+4 │     def Item() -> ()
+  ╰╴        ━━━━ redefinition here
+
+[error]: symbol `Item` is already defined in the scope `main.IntContainer`
+  ╭▸ compiler/e2e/test/check/symbol/associated_type_redefinition/main.ray:8:10
+  │
+7 │     type Item = int
+  │          ──── symbol `Item` is already defined here
+8 │     type Item = bool
+  ╰╴         ━━━━ redefinition here
+
+[error]: symbol `Item` is already defined in the scope `main.IntContainer`
+  ╭▸ compiler/e2e/test/check/symbol/associated_type_redefinition/main.ray:9:9
+  │
+7 │     type Item = int
+  │          ──── symbol `Item` is already defined here
+8 │     type Item = bool
+9 │     def Item() -> ():
+  ╰╴        ━━━━ redefinition here
+
+[error]: instance method `Item` has an incompatible signature
+  ╭▸ compiler/e2e/test/check/symbol/associated_type_redefinition/main.ray:9:9
+  │
+2 │     type Item
+  │          ──── the trait method is declared here
+  ‡
+9 │     def Item() -> ():
+  ╰╴        ━━━━ this signature does not match the trait method
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

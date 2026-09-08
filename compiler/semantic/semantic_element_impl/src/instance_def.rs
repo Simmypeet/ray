@@ -11,8 +11,13 @@ use rayc_semantic_element::{
     return_type::get_return_type,
 };
 use rayc_symbol::{
-    GlobalSymbolID, member::get_member_by_name, name::get_name, parent::get_parent_global,
-    source_map::to_absolute_span, span::get_span,
+    GlobalSymbolID,
+    member::get_member_by_name,
+    name::get_name,
+    parent::get_parent_global,
+    source_map::to_absolute_span,
+    span::get_span,
+    symbol_kind::{SymbolKind, get_symbol_kind},
 };
 use rayc_type::{
     poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
@@ -196,7 +201,12 @@ impl Build for Key {
             .await
             .expect("a trait definition symbol should have a source span");
 
-        let substitution = poly_var_substitution(engine, &trait_ref, trait_def_id, symbol_id).await;
+        // An associated type with the same name cannot supply a method signature.
+        let substitution = if engine.get_symbol_kind(trait_def_id).await == SymbolKind::TraitDef {
+            poly_var_substitution(engine, &trait_ref, trait_def_id, symbol_id).await
+        } else {
+            None
+        };
 
         let compatible = if let Some(substitution) = &substitution {
             signatures_are_compatible(engine, trait_def_id, symbol_id, substitution).await

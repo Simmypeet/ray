@@ -1,0 +1,10 @@
+trait Container[T]:
+    type Item
+    type Item
+    def Item() -> ()
+
+inst IntContainer for Container[int]:
+    type Item = int
+    type Item = bool
+    def Item() -> ():
+        return ()
