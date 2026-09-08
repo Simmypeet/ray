@@ -1,55 +1,56 @@
 ---
 source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
 expression: run
 ---
 stderr:
 [error]: given argument `main.OrdBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:23:27
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:23:26
    │
-23 │     return accepts given (OrdBool)(value)
-   ╰╴                          ━━━━━━━
+23 │     return accepts[given OrdBool](value)
+   ╰╴                         ━━━━━━━
 
 [error]: mismatched argument types in function call: expected `bool`, but found `int32`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:26:46
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:26:45
    │
-26 │     return accepts given (equality = EqBool)(value)
-   ╰╴                                             ━━━━━
+26 │     return accepts[given equality = EqBool](value)
+   ╰╴                                            ━━━━━
 
 [error]: given argument `ordering` does not implement `main.Eq[a]`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:29:27
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:29:26
    │
-29 │     return accepts given (ordering)(value)
-   ╰╴                          ━━━━━━━━
+29 │     return accepts[given ordering](value)
+   ╰╴                         ━━━━━━━━
 
 [error]: mismatched argument types in function call: expected `bool`, but found `int32`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:45:44
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:45:43
    │
-45 │     return accepts given (GenericEq[bool])(value)
-   ╰╴                                           ━━━━━
+45 │     return accepts[given GenericEq[bool]](value)
+   ╰╴                                          ━━━━━
 
 [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:58:35
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:58:34
    │
-58 │     return IntMember.check given (EqBool)()
-   ╰╴                                  ━━━━━━
+58 │     return IntMember.check[given EqBool]()
+   ╰╴                                 ━━━━━━
 
 [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:64:32
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:64:31
    │
-64 │     return member.check given (EqBool)()
-   ╰╴                               ━━━━━━
+64 │     return member.check[given EqBool]()
+   ╰╴                              ━━━━━━
 
 [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:70:52
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:70:51
    │
-70 │     let local: def() -> () \ {Reader[int32] given (EqBool)} = callback
-   ╰╴                                                   ━━━━━━
+70 │     let local: def() -> () \ {Reader[int32; given EqBool]} = callback
+   ╰╴                                                  ━━━━━━
 
-[error]: mismatched types in variable assignment: expected `def() -> () \ {Reader[int32] given(EqBool)}`, but found `def() -> () \ {Reader[int32] given(EqInt)}`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:70:63
+[error]: mismatched types in variable assignment: expected `def() -> () \ {Reader[int32; given EqBool]}`, but found `def() -> () \ {Reader[int32; given EqInt]}`
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:70:62
    │
-70 │     let local: def() -> () \ {Reader[int32] given (EqBool)} = callback
-   ╰╴                                                              ━━━━━━━━
+70 │     let local: def() -> () \ {Reader[int32; given EqBool]} = callback
+   ╰╴                                                             ━━━━━━━━
 
 [error]: Compilation aborted due to 8 error(s)
 

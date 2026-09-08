@@ -27,5 +27,5 @@ def throughIdentity(value: a) given (dictionary: Identity[int32]) -> a:
 def main() -> int32:
     let value: int32 = 42
     let identityValue: int32 = 17
-    let result = throughIdentity given (IdentityImpl)(identityValue)
-    return if equalsSelf given (EqInt)(value): result else: 1
+    let result = throughIdentity[given IdentityImpl](identityValue)
+    return if equalsSelf[given EqInt](value): result else: 1
