@@ -1,0 +1,58 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: given argument `main.OrdBool` does not implement `main.Eq[int32]`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:22:48
+   │
+22 │ def wrongTrait() -> () \ {Reader[int32] given (OrdBool)}:
+   ╰╴                                               ━━━━━━━
+
+[error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:25:58
+   │
+25 │ def wrongType() -> () \ {Reader[int32] given (equality = EqBool)}:
+   ╰╴                                                         ━━━━━━
+
+[error]: given argument `ordering` does not implement `main.Eq[int32]`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:28:78
+   │
+28 │ def wrongPolyVar() given (ordering: Ord[bool]) -> () \ {Reader[int32] given (ordering)}:
+   ╰╴                                                                             ━━━━━━━━
+
+[error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:40:39
+   │
+40 │ inst BadHead for Nested[int32] given (EqBool):
+   ╰╴                                      ━━━━━━
+
+[error]: given argument `main.OrdBool` does not implement `main.Eq[int32]`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:44:58
+   │
+44 │ def badRequirement() given (nested: Nested[int32] given (OrdBool)) -> ():
+   ╰╴                                                         ━━━━━━━
+
+[error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:47:64
+   │
+47 │ def badParameter(callback: def() -> () \ {Reader[int32] given (EqBool)}) -> ():
+   ╰╴                                                               ━━━━━━
+
+[error]: given argument `main.OrdBool` does not implement `main.Eq[int32]`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:50:109
+   │
+50 │ def badReturn(callback: def() -> () \ {Reader[int32] given (EqInt)}) -> def() -> () \ {Reader[int32] given (OrdBool)}:
+   ╰╴                                                                                                            ━━━━━━━
+
+[error]: mismatched types in return expression: expected `def() -> () \ {Reader[int32, <instance Global { target_id: TargetID { lo: 10994050129174695689, hi: 4887842091030031508 }, id: SymbolID { lo: 18136361714524301870, hi: 10681975415482961846 } }>]}`, but found `def() -> () \ {Reader[int32, <instance Global { target_id: TargetID { lo: 10994050129174695689, hi: 4887842091030031508 }, id: SymbolID { lo: 7790941353157988653, hi: 12577471645892442418 } }>]}`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:51:12
+   │
+51 │     return callback
+   ╰╴           ━━━━━━━━
+
+[error]: Compilation aborted due to 8 error(s)
+
+
+
+stdout:
