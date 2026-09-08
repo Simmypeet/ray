@@ -383,28 +383,6 @@ pub struct TyDisplay<'x> {
 }
 
 impl TyDisplay<'_> {
-    fn fmt_ty_arguments<'x>(
-        &self,
-        arguments: impl IntoIterator<Item = &'x Interned<Ty>>,
-        prefix: &str,
-        suffix: char,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
-        let mut arguments = arguments.into_iter().peekable();
-        if arguments.peek().is_none() {
-            return Ok(());
-        }
-
-        f.write_str(prefix)?;
-        for (index, argument) in arguments.enumerate() {
-            if index > 0 {
-                f.write_str(", ")?;
-            }
-            self.fmt_ty(argument, f)?;
-        }
-        f.write_char(suffix)
-    }
-
     fn fmt_symbol_application<'x>(
         &self,
         symbol_id: GlobalSymbolID,
@@ -421,9 +399,31 @@ impl TyDisplay<'_> {
             .take_while(|(_, poly_var)| poly_var.kind() != TyKind::Instance)
             .count();
 
-        let mut arguments = arguments.into_iter();
-        self.fmt_ty_arguments(arguments.by_ref().take(type_argument_count), "[", ']', f)?;
-        self.fmt_ty_arguments(arguments, " given(", ')', f)?;
+        let mut arguments = arguments.into_iter().peekable();
+        if type_argument_count > 0 {
+            f.write_char('[')?;
+            for (index, argument) in arguments.by_ref().take(type_argument_count).enumerate() {
+                if index > 0 {
+                    f.write_str(", ")?;
+                }
+                self.fmt_ty(argument, f)?;
+            }
+            if arguments.peek().is_some() {
+                f.write_str("; given ")?;
+            }
+        } else if arguments.peek().is_some() {
+            f.write_str("[given ")?;
+        } else {
+            return Ok(());
+        }
+
+        for (index, argument) in arguments.enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            self.fmt_ty(argument, f)?;
+        }
+        f.write_char(']')?;
 
         Ok(())
     }
