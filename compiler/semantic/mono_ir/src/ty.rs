@@ -349,7 +349,7 @@ pub async fn lower_type(
     ty: &Interned<Ty>,
     substitution: &Subst,
 ) -> Interned<MonoType> {
-    let ty = reduce_fully(ty.apply_subst_or_clone(substitution, self), self);
+    let ty = reduce_fully(ty.apply_subst_or_clone(substitution, self), self).await;
     lower_concrete_type(self, &ty).await
 }
 
@@ -420,7 +420,7 @@ pub async fn lower_effects(
     effect: &Interned<Ty>,
     substitution: &Subst,
 ) -> Vec<MonoEffectInstance> {
-    let effect = reduce_fully(effect.apply_subst_or_clone(substitution, self), self);
+    let effect = reduce_fully(effect.apply_subst_or_clone(substitution, self), self).await;
     lower_concrete_effects(self, &effect).await
 }
 
@@ -510,8 +510,8 @@ const fn lower_mutability(mutability: Mutability) -> PointerMutability {
     }
 }
 
-fn reduce_fully(mut ty: Interned<Ty>, engine: &TrackedEngine) -> Interned<Ty> {
-    while let Some(reduced) = ty.reduce(engine) {
+async fn reduce_fully(mut ty: Interned<Ty>, engine: &TrackedEngine) -> Interned<Ty> {
+    while let Some(reduced) = ty.reduce(engine).await {
         ty = reduced;
     }
     ty

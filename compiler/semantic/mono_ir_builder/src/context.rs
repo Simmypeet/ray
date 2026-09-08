@@ -15,7 +15,6 @@ use rayc_mono_ir::{
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
     effect_row::get_effect_row,
-    instance_member::get_instance_member,
     parameter::{ParameterMap, get_parameter_map},
     return_type::get_return_type,
 };
@@ -27,6 +26,7 @@ use rayc_symbol::{
     syntax::is_variadic_def,
 };
 use rayc_type::{
+    instance_member::get_instance_member,
     poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
     subst::{Subst, Substitutable},
     ty::{Ty, application::View as ApplicationView, args::Args},
