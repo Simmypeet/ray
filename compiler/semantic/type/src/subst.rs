@@ -35,6 +35,10 @@ impl Subst {
         self.0.contains_key(&Var::Inference(*inference))
     }
 
+    pub fn insert(&mut self, var: impl Into<Var>, ty: Interned<Ty>) -> Option<Interned<Ty>> {
+        self.0.insert(var.into(), ty)
+    }
+
     #[must_use]
     pub fn codomain(&self) -> impl ExactSizeIterator<Item = &Interned<Ty>> { self.0.values() }
 
