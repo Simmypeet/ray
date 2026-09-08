@@ -323,7 +323,7 @@ impl Solver {
                 Ok([(var, common_var.clone()), (*ty_inference, common_var)].into_iter().collect())
             }
 
-            Ty::PolyVar(_) | Ty::EffectRow(_) => {
+            Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => {
                 if var.constraint() == InferenceConstraint::Any {
                     Ok(Subst::new_singleton(var, ty.clone()))
                 } else {

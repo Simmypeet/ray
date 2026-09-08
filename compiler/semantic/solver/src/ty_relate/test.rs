@@ -435,3 +435,31 @@ async fn same_effect_constructor_inferences_bind_in_occurrence_order() {
     assert_eq!(subst.get(&a), Some(&int32));
     assert_eq!(subst.get(&b), Some(&bool));
 }
+
+// input: ?i = this, this = this, this = another trait's self, this = I
+// premise: self is a rigid instance binder, in either equality direction
+// output: inference binds to self; only identical self binders compare equal
+#[tokio::test]
+async fn self_instance_is_rigid_but_can_be_an_inference_solution() {
+    use rayc_type::ty::self_instance::SelfInstance;
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let id = |n| TargetID::TEST.make_global(SymbolID::from_u128(n));
+    let this = engine.intern(Ty::SelfInstance(SelfInstance::new(id(1))));
+    for reverse in [false, true] {
+        let mut solver = Solver::new(engine.clone());
+        let inference = solver.new_inference(TyKind::Instance);
+        let cases = [
+            (
+                engine.intern(Ty::Inference(inference)),
+                Ok(Step::Subst(Subst::new_singleton(inference, this.clone()))),
+            ),
+            (this.clone(), Ok(Step::Derived(Vec::new()))),
+            (engine.intern(Ty::SelfInstance(SelfInstance::new(id(2)))), Err(Error::Conflicted)),
+            (Ty::new_instance(id(3), Args::new([], &engine), &engine), Err(Error::Conflicted)),
+        ];
+        for (other, expected) in cases {
+            let (left, right) = if reverse { (other, this.clone()) } else { (this.clone(), other) };
+            assert_eq!(solver.entail_ty_relate(&TyRelate::new(left, right)).await, expected);
+        }
+    }
+}

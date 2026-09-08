@@ -26,6 +26,7 @@ impl Solver {
         }
         let actual = match &**check.instance() {
             Ty::Inference(_) => return Ok(Step::NoProgress),
+            Ty::SelfInstance(instance) => Some(instance.trait_ref(engine).await),
             Ty::PolyVar(id) => {
                 engine.get_poly_var_map(id.parent_id()).await.trait_ref_of(id.id()).cloned()
             }

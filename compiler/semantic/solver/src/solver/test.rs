@@ -183,3 +183,45 @@ async fn exhaustive_solve_respects_the_relating_environment() {
         None
     );
 }
+
+// input: self of Trait[a] checked against Trait[a] and Trait[int32]
+// premise: the self dictionary carries the trait's identity parameters
+// output: the identity reference is accepted; specialization without
+// substitution fails
+#[tokio::test]
+async fn self_instance_entails_its_identity_trait_reference() {
+    use rayc_type::{
+        constraint::instance_trait_ref::InstanceTraitRef, ty::self_instance::SelfInstance,
+    };
+
+    use crate::ty_relate::{DerivedConstraint, Error, Step};
+    let (engine, a) = engine_with_type_poly_var().await;
+    let this = SelfInstance::new(a.parent_id());
+    let identity =
+        TraitRef::new(a.parent_id(), Args::new([engine.intern(Ty::PolyVar(a))], &engine));
+    assert_eq!(this.trait_ref(&engine).await, identity);
+    let instance = engine.intern(Ty::SelfInstance(this));
+    let mut solver = Solver::new(engine.clone());
+    let result =
+        solver.entail_instance_trait_ref(&InstanceTraitRef::new(instance.clone(), identity)).await;
+    let a_ty = engine.intern(Ty::PolyVar(a));
+    assert_eq!(
+        result,
+        Ok(Step::Derived(vec![DerivedConstraint::new_type_application_matching(
+            a_ty.clone(),
+            a_ty
+        ),]))
+    );
+    let specialized = TraitRef::new(
+        a.parent_id(),
+        Args::new([Ty::new_primitive(Primitive::Int32, &engine)], &engine),
+    );
+    let result = solver
+        .entail_instance_trait_ref(&InstanceTraitRef::new(instance, specialized))
+        .await
+        .unwrap();
+    let Step::Derived(constraints) = result else { panic!("expected argument constraints") };
+    for constraint in constraints {
+        assert_eq!(solver.entail_ty_relate(&constraint.ty_relate).await, Err(Error::Conflicted));
+    }
+}
