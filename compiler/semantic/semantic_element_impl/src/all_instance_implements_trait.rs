@@ -30,7 +30,7 @@ async fn all_instance_implements_trait_executor(
             continue;
         }
 
-        let head = trait_ref.normalize(engine);
+        let head = trait_ref.normalize(engine).await;
         if head.contains_error() || head.contains_inference() {
             continue;
         }

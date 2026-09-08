@@ -11,3 +11,5 @@ mod return_type;
 
 /// A dummy function to make sure this crate is linked by the compiler.
 pub const fn black_box() {}
+
+mod type_definition;

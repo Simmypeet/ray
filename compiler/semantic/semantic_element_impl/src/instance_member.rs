@@ -4,11 +4,8 @@ use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
-    effect_row::get_effect_row,
-    instance_member::{InstanceMember, Key},
-    instance_trait_ref::get_instance_trait_ref,
-    parameter::get_parameter_map,
-    return_type::get_return_type,
+    effect_row::get_effect_row, instance_trait_ref::get_instance_trait_ref,
+    parameter::get_parameter_map, return_type::get_return_type,
 };
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
@@ -22,6 +19,7 @@ use rayc_symbol::{
     syntax::{get_effect_row_syntax, get_return_type_syntax},
 };
 use rayc_type::{
+    instance_member::{InstanceMember, Key},
     poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
