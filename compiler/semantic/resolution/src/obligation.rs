@@ -34,6 +34,9 @@ impl TraitRefCheck {
 
     #[must_use]
     pub const fn constraint(&self) -> &InstanceTraitRef { &self.constraint }
+
+    #[must_use]
+    pub fn into_constraint(self) -> InstanceTraitRef { self.constraint }
 }
 
 impl Substitutable for TraitRefCheck {
