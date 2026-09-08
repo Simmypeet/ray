@@ -23,7 +23,7 @@ def acceptsFive(value: a) given (
 
 def test() -> bool:
     let implicit = acceptsGiven(1)
-    return acceptsFive given (EqInt, EqInt, fifth = EqInt, third = EqInt)(1)
+    return acceptsFive[given EqInt, EqInt, fifth = EqInt, third = EqInt](1)
 
 
 def lexical(value: a) given (equality: Eq[a]) -> bool:

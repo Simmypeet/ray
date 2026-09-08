@@ -211,6 +211,7 @@ fn expected_string(expected: &Expected) -> String {
                 DelimiterKind::Bracket => "`[ ... ]` block".to_string(),
             },
         },
+        Expected::IndentationEnd(_) => "end of indentation block".to_string(),
     }
 }
 

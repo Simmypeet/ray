@@ -1,7 +1,5 @@
 //! Type, effect-row, and signature resolution workflows.
 
-use std::ptr::hash;
-
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;

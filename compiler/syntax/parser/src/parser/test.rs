@@ -936,3 +936,57 @@ proptest::proptest! {
         verify_type_ref::<TypesPlusRef, TypesPlus>(&types_ref)?;
     }
 }
+
+abstract_tree! {
+    #[derive(Debug)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
+    struct SemiColonInsideBracket {
+        semicolon: token::Punctuation<RelativeLocation> = ';'.optional()
+    }
+}
+
+#[test]
+fn fragment_end_with_closing_delimiter() {
+    let mut source_map = SimpleSourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "[!]");
+
+    let interner = DuplicatingInterner;
+    let (_, errors) = SemiColonInsideBracket::parse(&token_tree, &interner);
+
+    assert_eq!(errors.len(), 1);
+
+    let error = &errors[0];
+    assert!(error.expecteds.contains(&Expected::Punctuation(']')));
+    assert!(token_tree[error.at.branch_id].nodes.get(error.at.node_index).is_some_and(|node| {
+        node.as_leaf()
+            .and_then(|token| token.kind.as_punctuation())
+            .is_some_and(|token| token.0 == '!')
+    }));
+}
+
+abstract_tree! {
+    #[derive(Debug)]
+    #{fragment = expect::Fragment::Indentation}
+    struct SemiColonInsideIndentation {
+        semicolon: token::Punctuation<RelativeLocation> = ';'.optional()
+    }
+}
+
+#[test]
+fn fragment_end_with_dedent() {
+    let mut source_map = SimpleSourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, ":\n    !");
+
+    let interner = DuplicatingInterner;
+    let (_, errors) = SemiColonInsideIndentation::parse(&token_tree, &interner);
+
+    assert_eq!(errors.len(), 1);
+
+    let error = &errors[0];
+    assert!(error.expecteds.contains(&Expected::IndentationEnd(expect::IndentationEnd)));
+    assert!(token_tree[error.at.branch_id].nodes.get(error.at.node_index).is_some_and(|node| {
+        node.as_leaf()
+            .and_then(|token| token.kind.as_punctuation())
+            .is_some_and(|token| token.0 == '!')
+    }));
+}

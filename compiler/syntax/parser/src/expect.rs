@@ -284,6 +284,13 @@ pub enum Fragment {
     Delimited(DelimiterKind),
 }
 
+/// Expects the current indentation fragment to end before the current token.
+///
+/// Unlike a closing delimiter, a dedent is not represented by a token in the
+/// lexical tree, so it needs its own diagnostic-only expectation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash)]
+pub struct IndentationEnd;
+
 /// An enumeration of all the possible expected token types.
 #[derive(
     Debug,
@@ -311,4 +318,5 @@ pub enum Expected {
     NewLine(NewLine),
     Keyword(Keyword),
     Fragment(Fragment),
+    IndentationEnd(IndentationEnd),
 }

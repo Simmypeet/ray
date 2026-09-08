@@ -134,6 +134,7 @@ pub struct DerivedCause {
 pub enum Cause {
     Root(RootCause),
     Derived(DerivedCause),
+    NumericDefault,
 }
 
 pub type CauseID = ID<Cause>;
@@ -258,6 +259,9 @@ impl Provenance {
                         cause_id = step.original_cause_id;
                     }
                 },
+                Cause::NumericDefault => {
+                    unreachable!("a numeric default cannot be a constraint's primary cause")
+                }
             }
         }
     }
@@ -283,6 +287,7 @@ impl Provenance {
                     }
                 }
             },
+            Cause::NumericDefault => {}
         }
     }
 
@@ -403,11 +408,31 @@ impl Provenance {
         default: &Interned<Ty>,
         engine: &TrackedEngine,
     ) {
+        // A constrained inference can be unified with another inference through a
+        // fresh meet variable. Follow those aliases so the unresolved representative
+        // receives the default rather than only considering the original variable.
         let defaults = inferences
             .into_iter()
-            .filter(|inference| self.subst.get(inference).is_none())
+            .filter_map(|mut inference| {
+                loop {
+                    match self.subst.get(&inference).and_then(|ty| ty.as_inference()) {
+                        Some(representative) => inference = *representative,
+                        None if self.subst.get(&inference).is_none() => break Some(inference),
+                        None => break None,
+                    }
+                }
+            })
             .map(|inference| (inference, default.clone()))
-            .collect();
+            .collect::<Subst>();
+
+        // Defaults are not attributable to a source constraint, but provenance still
+        // needs an entry for every substituted inference when retrying residuals.
+        if defaults.inference_mappings().next().is_some() {
+            let default_cause = self.causes.insert(Cause::NumericDefault);
+            for (inference, _) in defaults.inference_mappings() {
+                self.subst_causes.entry(inference).or_insert(default_cause);
+            }
+        }
         self.subst.compose(&defaults, engine);
     }
 

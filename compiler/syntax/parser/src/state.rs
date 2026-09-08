@@ -362,10 +362,10 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
     /// Starts a new node with the given [`AstInfo`] and pushes it onto the
     /// stack. If [`AstInfo::step_into_fragment`] is present, the parser shall
     /// step into the fragment as well.
-    pub fn start_node<A: AbstractTree, T>(
+    pub fn start_node<A: AbstractTree>(
         &mut self,
-        op: impl for<'x> FnOnce(&mut State<'a, 'x, I>) -> T,
-    ) -> (Option<T>, bool) {
+        op: impl for<'x> FnOnce(&mut State<'a, 'x, I>) -> Result<(), crate::parser::Unexpected>,
+    ) -> (Option<Result<(), crate::parser::Unexpected>>, bool) {
         // step into the fragment
         if let Some(some_step_info) = A::step_into_fragment() {
             let starting_node_index = self.cursor.node_index;
@@ -429,6 +429,15 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
             // operate on the inner fragment state
             let result = op(&mut state);
 
+            // A successful fragment parser must stop at the fragment boundary.
+            // Failed parsers already hold a more specific expectation, so only
+            // synthesize the structural boundary diagnostic on success.
+            if result.is_ok()
+                && let Some((_, node_index)) = state.peek()
+            {
+                state.emit_fragment_end_error(Cursor { branch_id: state.branch_id(), node_index });
+            }
+
             self.events.push(Event::Inline(state.events));
             self.current_error = state.current_error;
             self.emitted_erorrs.append(&mut state.emitted_erorrs);
@@ -457,6 +466,29 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
 
             (Some(result), false)
         }
+    }
+
+    /// Emits an error for a successfully parsed fragment that still contains
+    /// a parser-visible token at `at`.
+    fn emit_fragment_end_error(&mut self, at: Cursor) {
+        let fragment = self.tree[at.branch_id]
+            .kind
+            .as_fragment()
+            .expect("fragment end error must point inside a fragment");
+
+        // Delimiter closers have a concrete spelling. Indentation blocks end
+        // structurally at a dedent, which is not represented by a token.
+        let expected = match &fragment.fragment_kind {
+            rayc_lexical::tree::FragmentKind::Delimiter(delimiter) => match delimiter.delimiter {
+                rayc_lexical::tree::DelimiterKind::Parenthesis => ')'.into(),
+                rayc_lexical::tree::DelimiterKind::Brace => '}'.into(),
+                rayc_lexical::tree::DelimiterKind::Bracket => ']'.into(),
+            },
+            rayc_lexical::tree::FragmentKind::Indentation(_) => expect::IndentationEnd.into(),
+        };
+
+        self.add_error(std::iter::once(expected), at);
+        self.emit_error();
     }
 
     /// Removes the results that have been created between the two checkpoints.

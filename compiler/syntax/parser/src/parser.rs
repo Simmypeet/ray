@@ -253,7 +253,7 @@ pub struct Ast<T>(pub PhantomData<T>);
 
 impl<I: Interner, T: AbstractTree> Parser<I> for Ast<T> {
     fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
-        let (result, _) = state.start_node::<T, _>(|state| {
+        let (result, _) = state.start_node::<T>(|state| {
             let parser = T::parser();
             parser.parse(state)
         });
@@ -293,7 +293,7 @@ pub const fn ast_always_step_into_fragment<A: AbstractTree>() -> AstAlwaysStepIn
 
 impl<I: Interner, T: AbstractTree> Parser<I> for AstAlwaysStepIntoFragment<T> {
     fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
-        let (result, stepped_into) = state.start_node::<T, _>(|state| {
+        let (result, stepped_into) = state.start_node::<T>(|state| {
             let parser = T::parser();
             parser.parse(state)
         });
