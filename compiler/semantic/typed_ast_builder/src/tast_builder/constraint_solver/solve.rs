@@ -127,6 +127,35 @@ impl TAstBuilder {
                     )
                     .await;
                 }
+                Constraint::InstanceTraitRef(check) => {
+                    let cause_id = pending_constraint.cause_id;
+                    match self.constraint_solver.solver.entail_instance_trait_ref(&check).await {
+                        Ok(Step::Derived(derived)) => queued.extend(
+                            derived
+                                .into_iter()
+                                .map(|derived| self.register_derived_constraint(cause_id, derived)),
+                        ),
+                        Ok(Step::NoProgress) => {
+                            self.constraint_solver.constraint_set.residual_constraints.push(
+                                PendingConstraint {
+                                    constraint: Constraint::InstanceTraitRef(check),
+                                    cause_id,
+                                },
+                            );
+                        }
+                        Err(error) => self
+                            .constraint_solver
+                            .constraint_set
+                            .errored_constraints
+                            .push((ConstraintError::TyRelate(error), PendingConstraint {
+                                constraint: Constraint::InstanceTraitRef(check),
+                                cause_id,
+                            })),
+                        Ok(Step::Subst(_)) => {
+                            unreachable!("trait checks only derive type relations")
+                        }
+                    }
+                }
                 Constraint::TyRelate(ty_relate) => {
                     self.entail_relate(ty_relate, pending_constraint.cause_id, &mut queued).await;
                 }

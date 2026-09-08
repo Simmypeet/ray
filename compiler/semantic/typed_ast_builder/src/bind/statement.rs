@@ -1,8 +1,5 @@
-use rayc_handler::Storage;
-use rayc_resolution::resolver::Resolver;
 use rayc_source_file::SourceElement;
-use rayc_syntax::{statement::Statement as StatementSyntax, r#type::Type as TypeSyntax};
-use rayc_type::poly_var::get_enclosing_poly_var_maps;
+use rayc_syntax::statement::Statement as StatementSyntax;
 use rayc_typed_ast::{
     name_binding::Source,
     statement::{Let, Return, Statement},
@@ -13,26 +10,6 @@ use rayc_typed_ast::{
 use crate::{bind::Bind, tast_builder::TAstBuilder};
 
 impl TAstBuilder {
-    async fn resolve_local_type_annotation(
-        &mut self,
-        syntax: &TypeSyntax,
-    ) -> qbice::storage::intern::Interned<rayc_type::ty::Ty> {
-        let poly_vars = self.engine().get_enclosing_poly_var_maps(self.current_def_id()).await;
-        let diagnostics = Storage::new();
-        let mut resolver = Resolver::builder()
-            .engine(self.engine())
-            .poly_var_stack(&poly_vars)
-            .site(self.current_def_id())
-            .handler(&diagnostics)
-            .build();
-
-        let ty = resolver.resolve_type(syntax).await;
-
-        self.extend_diagnostics(diagnostics.into_vec());
-
-        ty
-    }
-
     pub async fn bind_statement(&mut self, statement: &StatementSyntax) {
         match statement {
             StatementSyntax::Let(l) => {

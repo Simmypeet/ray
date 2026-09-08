@@ -107,6 +107,9 @@ impl ConstraintSolver {
             }
 
             match self.provenance.resolved_root_cause(primary_root_id, root_ids.clone(), engine) {
+                ResolvedRootCause::TraitRefCheck(check) => {
+                    diags.push(Diagnostic::from(rayc_resolution::Diagnostic::TraitRefCheck(check)));
+                }
                 ResolvedRootCause::InstanceResolve { trait_ref, span } => {
                     // Preserve the structured failure for rendering at the diagnostic boundary.
                     let error =

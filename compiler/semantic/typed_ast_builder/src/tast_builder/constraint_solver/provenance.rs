@@ -5,6 +5,7 @@ use rayc_arena::{Arena, ID};
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_resolution::TraitRefCheck;
 use rayc_solver::ty_relate::DerivationRule;
 use rayc_type::{
     constraint::ty_relate::TyRelate,
@@ -83,6 +84,7 @@ pub enum EffectUnificationSource {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]
 pub enum RootCauseOrigin {
+    TraitRefCheck(TraitRefCheck),
     InstanceResolve { trait_ref: rayc_type::trait_ref::TraitRef, span: RelativeSpan },
     Subtype(SubtypeConstraintOrigin),
     EffectUnification(EffectUnificationOrigin),
@@ -154,6 +156,7 @@ pub(super) struct ResolvedEffectUnificationSite {
 }
 
 pub(super) enum ResolvedRootCause {
+    TraitRefCheck(TraitRefCheck),
     InstanceResolve { trait_ref: rayc_type::trait_ref::TraitRef, span: RelativeSpan },
     Subtype { source: SubtypeSource, span: RelativeSpan, subtype: TyRelate },
     EffectUnification(ResolvedEffectUnification),
@@ -362,6 +365,9 @@ impl Provenance {
         };
 
         match &root.origin {
+            RootCauseOrigin::TraitRefCheck(check) => {
+                ResolvedRootCause::TraitRefCheck(check.apply_subst_or_clone(&self.subst, engine))
+            }
             RootCauseOrigin::InstanceResolve { trait_ref, span } => {
                 ResolvedRootCause::InstanceResolve {
                     trait_ref: trait_ref.apply_subst_or_clone(&self.subst, engine),

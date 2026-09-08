@@ -8,9 +8,9 @@ use rayc_type::{
     },
 };
 
-use super::{
-    ConstraintSolver, constraints::Constraint, provenance::RootCauseOrigin,
-    solve::PendingConstraint,
+use super::ConstraintSolver;
+use crate::tast_builder::constraint_solver::{
+    constraints::Constraint, provenance::RootCauseOrigin, solve::PendingConstraint,
 };
 
 /// Collects obligations for one syntactic resolution before asynchronous
@@ -26,9 +26,8 @@ impl<'a> ResolutionInference<'a> {
         Self { solver, constraints: Vec::new() }
     }
 
-    pub(in crate::tast_builder) fn into_constraints(self) -> Vec<PendingConstraint> {
-        self.constraints
-    }
+    #[must_use]
+    pub fn into_constraints(self) -> Vec<PendingConstraint> { self.constraints }
 }
 
 impl GenInferWithSpan for ResolutionInference<'_> {

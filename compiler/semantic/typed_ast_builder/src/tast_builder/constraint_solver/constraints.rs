@@ -1,8 +1,10 @@
+use derive_more::From;
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_resolution::Obligation;
 use rayc_type::{
-    constraint::ty_relate::TyRelate,
+    constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
     reduce::Reduce,
     subst::Substitutable,
     trait_ref::TraitRef,
@@ -25,8 +27,9 @@ use crate::tast_builder::{
     },
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
 pub enum Constraint {
+    InstanceTraitRef(InstanceTraitRef),
     TyRelate(TyRelate),
     InstanceResolve { instance: Interned<Ty>, trait_ref: TraitRef },
 }
@@ -37,6 +40,7 @@ impl Reduce for Constraint {
         Self: Sized,
     {
         match self {
+            Self::InstanceTraitRef(check) => check.reduce(engine).map(Self::InstanceTraitRef),
             Self::TyRelate(ty_relate) => ty_relate.reduce(engine).map(Constraint::TyRelate),
             Self::InstanceResolve { instance, trait_ref } => {
                 match (instance.reduce(engine), trait_ref.reduce(engine)) {
@@ -66,6 +70,9 @@ impl Substitutable for Constraint {
                     }),
                 }
             }
+            Self::InstanceTraitRef(check) => {
+                check.apply_subst(subst, engine).map(Self::InstanceTraitRef)
+            }
             Self::TyRelate(ty_relate) => {
                 ty_relate.apply_subst(subst, engine).map(Constraint::TyRelate)
             }
@@ -76,6 +83,7 @@ impl Substitutable for Constraint {
 impl Constraint {
     pub fn interned_recursive_iter(&self) -> Box<dyn Iterator<Item = &Interned<Ty>> + '_> {
         match self {
+            Self::InstanceTraitRef(check) => Box::new(check.interned_recursive_iter()),
             Self::TyRelate(ty_relate) => Box::new(ty_relate.interned_recursive_iter()),
             Self::InstanceResolve { instance, trait_ref } => Box::new(
                 Ty::interned_recursive_iter(instance)
@@ -86,6 +94,30 @@ impl Constraint {
 }
 
 impl TAstBuilder {
+    pub async fn push_resolution_obligations(
+        &mut self,
+        obligations: impl IntoIterator<Item = Obligation>,
+    ) {
+        for ob in obligations {
+            match ob {
+                Obligation::TraitRefCheck(trait_ref_check) => {
+                    let root_cause_id = self
+                        .constraint_solver
+                        .provenance
+                        .insert_root_cause(trait_ref_check.clone());
+
+                    self.push_constraint(
+                        PendingConstraint::builder()
+                            .constraint(trait_ref_check.into_constraint().into())
+                            .cause_id(root_cause_id)
+                            .build(),
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+
     pub async fn push_effect_introduction(
         &mut self,
         expression_id: TypedExprID,
