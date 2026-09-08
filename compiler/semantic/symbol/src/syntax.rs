@@ -9,6 +9,7 @@ use rayc_syntax::{
     given::GivenParameterList,
     path::Path,
     statement::Block,
+    r#type::Type,
 };
 
 use crate::GlobalSymbolID;
@@ -85,5 +86,15 @@ pub struct GivenParameterListSyntaxKey {
 #[value(Option<Path>)]
 #[extend(by_val, name = get_instance_trait_syntax)]
 pub struct InstanceTraitSyntaxKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+/// Retrieves the type definition declared by an instance associated type.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<Type>)]
+#[extend(by_val, name = get_type_definition_syntax)]
+pub struct TypeDefinitionSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }

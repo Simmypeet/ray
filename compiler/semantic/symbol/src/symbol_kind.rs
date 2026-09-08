@@ -32,9 +32,11 @@ pub enum SymbolKind {
     ExternDef,
     Instance,
     InstanceDef,
+    InstanceType,
     Module,
     Trait,
     TraitDef,
+    TraitType,
 }
 
 /// The key type used with [`TrackedEngine`] to access the kind of a symbol.
@@ -64,8 +66,10 @@ impl SymbolKind {
                 | Self::Effect
                 | Self::Instance
                 | Self::InstanceDef
+                | Self::InstanceType
                 | Self::Trait
                 | Self::TraitDef
+                | Self::TraitType
         )
     }
 
@@ -111,9 +115,11 @@ impl SymbolKind {
             Self::ExternDef => "extern def",
             Self::Instance => "instance",
             Self::InstanceDef => "instance def",
+            Self::InstanceType => "instance type",
             Self::Module => "module",
             Self::Trait => "trait",
             Self::TraitDef => "trait def",
+            Self::TraitType => "trait type",
         }
     }
 }
