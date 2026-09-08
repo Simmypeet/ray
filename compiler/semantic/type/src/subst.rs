@@ -9,13 +9,19 @@ use rayc_qbice::TrackedEngine;
 
 use crate::{
     poly_var::GlobalPolyVarID,
-    ty::{Ty, inference::Inference},
+    ty::{Ty, inference::Inference, self_instance::SelfInstance},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Var {
     Inference(Inference),
     Poly(GlobalPolyVarID),
+    /// Substitutes a trait’s self dictionary when instantiating its members.
+    SelfInstance(SelfInstance),
+}
+
+impl From<SelfInstance> for Var {
+    fn from(instance: SelfInstance) -> Self { Self::SelfInstance(instance) }
 }
 
 impl From<Inference> for Var {
@@ -45,7 +51,7 @@ impl Subst {
     pub fn inference_mappings(&self) -> impl Iterator<Item = (Inference, &Interned<Ty>)> {
         self.0.iter().filter_map(|(var, ty)| match var {
             Var::Inference(inference) => Some((*inference, ty)),
-            Var::Poly(_) => None,
+            Var::Poly(_) | Var::SelfInstance(_) => None,
         })
     }
 }

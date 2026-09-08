@@ -85,3 +85,38 @@ async fn associated_type_substitution_replaces_instance_and_member_arguments() {
     assert_eq!(associated.instance(), &instance);
     assert_eq!(associated.args(), &[int_ty, bool_ty]);
 }
+
+// input: (this.Item, other.Item), followed by this := ?i and ?i := I
+// premise: self binders are scoped by trait and substitute inside projections
+// output: (I.Item, other.Item), with the unrelated projection still abstract
+#[tokio::test]
+async fn self_instance_substitution_composes_without_capturing_other_traits() {
+    use rayc_symbol::SymbolID;
+    use rayc_target::TargetID;
+
+    use crate::{
+        reduce::Reduce,
+        subst::{Subst, Substitutable},
+        ty::{TyKind, args::Args, inference::Inference, self_instance::SelfInstance},
+    };
+
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let id = |n| TargetID::TEST.make_global(SymbolID::from_u128(n));
+    let this = SelfInstance::new(id(1));
+    let projection = |binder| {
+        Ty::new_instance_associated(id(3), engine.intern(Ty::SelfInstance(binder)), [], &engine)
+    };
+    let original = projection(this);
+    assert_eq!(original.reduce(&engine).await, None);
+    let other = projection(SelfInstance::new(id(2)));
+    let tuple = Ty::new_tuple(engine.intern_unsized([original, other.clone()]), &engine);
+    let inference = Inference::new(TyKind::Instance, 0);
+    let mut subst = Subst::new_singleton(this, engine.intern(Ty::Inference(inference)));
+    let instance = Ty::new_instance(id(4), Args::new([], &engine), &engine);
+    subst.compose(&Subst::new_singleton(inference, instance.clone()), &engine);
+    let expected = Ty::new_tuple(
+        engine.intern_unsized([Ty::new_instance_associated(id(3), instance, [], &engine), other]),
+        &engine,
+    );
+    assert_eq!(tuple.apply_subst_or_clone(&subst, &engine), expected);
+}

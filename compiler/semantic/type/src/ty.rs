@@ -24,6 +24,9 @@ pub mod application;
 pub mod args;
 pub mod effect_row;
 pub mod inference;
+pub mod self_instance;
+
+use self_instance::SelfInstance;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Primitive {
@@ -89,6 +92,8 @@ pub enum Ty {
     Application(Application),
     Inference(Inference),
     PolyVar(GlobalPolyVarID),
+    /// The enclosing trait’s rigid self dictionary; see [`SelfInstance`].
+    SelfInstance(SelfInstance),
     EffectRow(EffectRow),
 }
 
@@ -102,6 +107,7 @@ impl Ty {
                 poly_var_map.kind_of(poly_var.id())
             }
             Self::EffectRow(_) => TyKind::EffectRow,
+            Self::SelfInstance(_) => TyKind::Instance,
         }
     }
 
@@ -117,7 +123,7 @@ impl Ty {
             match &**ty {
                 Self::Application(application) => pending.extend(application.interned_iter()),
                 Self::EffectRow(row) => pending.extend(row.interned_iter()),
-                Self::Inference(_) | Self::PolyVar(_) => {}
+                Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {}
             }
             Some(ty)
         })
@@ -133,7 +139,7 @@ impl Ty {
                     pending.extend(application.iter());
                 }
                 Self::EffectRow(row) => pending.extend(row.iter()),
-                Self::Inference(_) | Self::PolyVar(_) => {}
+                Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {}
             }
             Some(ty)
         })
@@ -144,7 +150,10 @@ impl Ty {
     pub fn contains_inference(&self) -> bool {
         self.recursive_iter().any(|ty| match ty {
             Self::Inference(_) => true,
-            Self::Application(_) | Self::EffectRow(_) | Self::PolyVar(_) => false,
+            Self::Application(_)
+            | Self::EffectRow(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_) => false,
         })
     }
 
@@ -161,7 +170,9 @@ impl Ty {
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Instance(_) => false,
             },
-            Self::Inference(_) | Self::EffectRow(_) | Self::PolyVar(_) => false,
+            Self::Inference(_) | Self::EffectRow(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
+                false
+            }
         })
     }
 
@@ -171,7 +182,7 @@ impl Ty {
             Self::Application(application) => application.has_inference_variable(ty),
             Self::Inference(ty_inference) => ty_inference == ty,
             Self::EffectRow(row) => row.has_inference_variable(ty),
-            Self::PolyVar(_) => false,
+            Self::PolyVar(_) | Self::SelfInstance(_) => false,
         }
     }
 
@@ -179,7 +190,10 @@ impl Ty {
     pub fn has_poly_variable(&self, poly_var: &GlobalPolyVarID) -> bool {
         self.recursive_iter().any(|ty| match ty {
             Self::PolyVar(ty_poly_var) => ty_poly_var == poly_var,
-            Self::Application(_) | Self::Inference(_) | Self::EffectRow(_) => false,
+            Self::Application(_)
+            | Self::Inference(_)
+            | Self::EffectRow(_)
+            | Self::SelfInstance(_) => false,
         })
     }
 }
@@ -196,6 +210,7 @@ impl Substitutable for Interned<Ty> {
 
             Ty::Inference(ty_inference) => subst.get(ty_inference).cloned(),
             Ty::PolyVar(poly) => subst.get(poly).cloned(),
+            Ty::SelfInstance(instance) => subst.get(instance).cloned(),
             Ty::EffectRow(row) => {
                 row.apply_subst(subst, engine).map(|new_row| engine.intern(Ty::EffectRow(new_row)))
             }
@@ -227,7 +242,7 @@ async fn reduce_type(ty: &Interned<Ty>, engine: &TrackedEngine) -> Option<Intern
             })
             .await
         }
-        Ty::Inference(_) | Ty::PolyVar(_) => None,
+        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => None,
         Ty::EffectRow(row) => {
             if row.labels().len() == 0
                 && let Some(tail) = row.tail()
@@ -383,7 +398,7 @@ impl Ty {
                         .await;
                     }
                 }
-                Self::Inference(_) => {}
+                Self::Inference(_) | Self::SelfInstance(_) => {}
                 Self::PolyVar(poly_var) => {
                     let symbol_id = poly_var.parent_id();
                     if let Entry::Vacant(entry) = poly_var_maps.entry(symbol_id) {
@@ -537,6 +552,7 @@ impl TyDisplay<'_> {
                 }
             },
 
+            Ty::SelfInstance(_) => f.write_str("this"),
             Ty::PolyVar(poly_var) => {
                 let poly_var_map = self
                     .poly_var_maps
