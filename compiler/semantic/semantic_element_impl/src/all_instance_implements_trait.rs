@@ -41,7 +41,9 @@ async fn all_instance_implements_trait_executor(
             .flat_map(Ty::recursive_iter)
             .filter_map(|ty| match ty {
                 Ty::PolyVar(id) => Some(*id),
-                Ty::Application(_) | Ty::Inference(_) | Ty::EffectRow(_) => None,
+                Ty::Application(_) | Ty::Inference(_) | Ty::EffectRow(_) | Ty::SelfInstance(_) => {
+                    None
+                }
             })
             .collect();
         let parameters = engine.get_poly_var_map(symbol_id).await;

@@ -83,8 +83,7 @@ pub(crate) fn is_c_abi_value_type(ty: &Ty) -> bool {
             | ApplicationView::Instance(_)
             | ApplicationView::Error => false,
         },
-        Ty::Inference(_) | Ty::PolyVar(_) => false,
-        Ty::EffectRow(_) => todo!("validate effect-row types in C ABI signatures"),
+        Ty::EffectRow(_) | Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => false,
     }
 }
 
