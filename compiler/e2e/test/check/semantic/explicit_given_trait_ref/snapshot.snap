@@ -45,7 +45,7 @@ stderr:
 50 │ def badReturn(callback: def() -> () \ {Reader[int32] given (EqInt)}) -> def() -> () \ {Reader[int32] given (OrdBool)}:
    ╰╴                                                                                                            ━━━━━━━
 
-[error]: mismatched types in return expression: expected `def() -> () \ {Reader[int32, <instance Global { target_id: TargetID { lo: 10994050129174695689, hi: 4887842091030031508 }, id: SymbolID { lo: 18136361714524301870, hi: 10681975415482961846 } }>]}`, but found `def() -> () \ {Reader[int32, <instance Global { target_id: TargetID { lo: 10994050129174695689, hi: 4887842091030031508 }, id: SymbolID { lo: 7790941353157988653, hi: 12577471645892442418 } }>]}`
+[error]: mismatched types in return expression: expected `def() -> () \ {Reader[int32] given(OrdBool)}`, but found `def() -> () \ {Reader[int32] given(EqInt)}`
    ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:51:12
    │
 51 │     return callback

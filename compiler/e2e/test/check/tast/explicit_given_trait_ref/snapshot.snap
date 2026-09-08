@@ -45,7 +45,7 @@ stderr:
 70 │     let local: def() -> () \ {Reader[int32] given (EqBool)} = callback
    ╰╴                                                   ━━━━━━
 
-[error]: mismatched types in variable assignment: expected `def() -> () \ {Reader[int32, <instance Global { target_id: TargetID { lo: 10994050129174695689, hi: 4887842091030031508 }, id: SymbolID { lo: 16890830548480977121, hi: 10194623165850186968 } }>]}`, but found `def() -> () \ {Reader[int32, <instance Global { target_id: TargetID { lo: 10994050129174695689, hi: 4887842091030031508 }, id: SymbolID { lo: 7790941353157988653, hi: 12577471645892442418 } }>]}`
+[error]: mismatched types in variable assignment: expected `def() -> () \ {Reader[int32] given(EqBool)}`, but found `def() -> () \ {Reader[int32] given(EqInt)}`
    ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:70:63
    │
 70 │     let local: def() -> () \ {Reader[int32] given (EqBool)} = callback

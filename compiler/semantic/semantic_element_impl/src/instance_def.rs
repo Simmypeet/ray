@@ -217,7 +217,7 @@ impl Build for Key {
             symbol_id,
             substitution.unwrap_or_else(Subst::new_empty),
         );
-        Output::new_with(engine.intern(definition), diagnostics.into_vec(), engine)
+        Output::new_with(engine.intern(definition), diagnostics.into_vec(), [], engine)
     }
 }
 

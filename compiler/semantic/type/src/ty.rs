@@ -312,21 +312,32 @@ impl Ty {
 impl Ty {
     pub async fn display<'x>(&'x self, engine: &TrackedEngine) -> TyDisplay<'x> {
         let mut poly_var_maps = FxHashMap::default();
-        let mut effect_names = FxHashMap::default();
-        self.collect_display_context(engine, &mut poly_var_maps, &mut effect_names).await;
+        let mut symbol_names = FxHashMap::default();
+        self.collect_display_context(engine, &mut poly_var_maps, &mut symbol_names).await;
 
-        TyDisplay { ty: self, poly_var_maps, effect_names }
+        TyDisplay { ty: self, poly_var_maps, symbol_names }
     }
 
     async fn collect_display_context(
         &self,
         engine: &TrackedEngine,
         poly_var_maps: &mut FxHashMap<GlobalSymbolID, Interned<PolyVarMap>>,
-        effect_names: &mut FxHashMap<GlobalSymbolID, Interned<str>>,
+        symbol_names: &mut FxHashMap<GlobalSymbolID, Interned<str>>,
     ) {
         for ty in self.recursive_iter() {
             match ty {
-                Self::Application(_) | Self::Inference(_) => {}
+                Self::Application(application) => {
+                    if let ApplicationView::Instance(instance) = application.view() {
+                        Self::collect_symbol_display_context(
+                            engine,
+                            instance.symbol_id(),
+                            poly_var_maps,
+                            symbol_names,
+                        )
+                        .await;
+                    }
+                }
+                Self::Inference(_) => {}
                 Self::PolyVar(poly_var) => {
                     let symbol_id = poly_var.parent_id();
                     if let Entry::Vacant(entry) = poly_var_maps.entry(symbol_id) {
@@ -336,12 +347,30 @@ impl Ty {
                 }
                 Self::EffectRow(row) => {
                     for label in row.labels() {
-                        if let Entry::Vacant(entry) = effect_names.entry(label.effect_symbol_id()) {
-                            entry.insert(engine.get_name(label.effect_symbol_id()).await);
-                        }
+                        Self::collect_symbol_display_context(
+                            engine,
+                            label.effect_symbol_id(),
+                            poly_var_maps,
+                            symbol_names,
+                        )
+                        .await;
                     }
                 }
             }
+        }
+    }
+
+    async fn collect_symbol_display_context(
+        engine: &TrackedEngine,
+        symbol_id: GlobalSymbolID,
+        poly_var_maps: &mut FxHashMap<GlobalSymbolID, Interned<PolyVarMap>>,
+        symbol_names: &mut FxHashMap<GlobalSymbolID, Interned<str>>,
+    ) {
+        if let Entry::Vacant(entry) = poly_var_maps.entry(symbol_id) {
+            entry.insert(engine.query(&PolyVarKey { symbol_id }).await);
+        }
+        if let Entry::Vacant(entry) = symbol_names.entry(symbol_id) {
+            entry.insert(engine.get_name(symbol_id).await);
         }
     }
 }
@@ -350,10 +379,55 @@ impl Ty {
 pub struct TyDisplay<'x> {
     ty: &'x Ty,
     poly_var_maps: FxHashMap<GlobalSymbolID, Interned<PolyVarMap>>,
-    effect_names: FxHashMap<GlobalSymbolID, Interned<str>>,
+    symbol_names: FxHashMap<GlobalSymbolID, Interned<str>>,
 }
 
 impl TyDisplay<'_> {
+    fn fmt_ty_arguments<'x>(
+        &self,
+        arguments: impl IntoIterator<Item = &'x Interned<Ty>>,
+        prefix: &str,
+        suffix: char,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let mut arguments = arguments.into_iter().peekable();
+        if arguments.peek().is_none() {
+            return Ok(());
+        }
+
+        f.write_str(prefix)?;
+        for (index, argument) in arguments.enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            self.fmt_ty(argument, f)?;
+        }
+        f.write_char(suffix)
+    }
+
+    fn fmt_symbol_application<'x>(
+        &self,
+        symbol_id: GlobalSymbolID,
+        arguments: impl IntoIterator<Item = &'x Interned<Ty>>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let name = self.symbol_names.get(&symbol_id).expect("should've been collected earlier");
+        f.write_str(name)?;
+
+        let poly_var_map =
+            self.poly_var_maps.get(&symbol_id).expect("should've been collected earlier");
+        let type_argument_count = poly_var_map
+            .iter()
+            .take_while(|(_, poly_var)| poly_var.kind() != TyKind::Instance)
+            .count();
+
+        let mut arguments = arguments.into_iter();
+        self.fmt_ty_arguments(arguments.by_ref().take(type_argument_count), "[", ']', f)?;
+        self.fmt_ty_arguments(arguments, " given(", ')', f)?;
+
+        Ok(())
+    }
+
     fn fmt_ty(&self, ty: &Ty, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match ty {
             Ty::Application(ty_application) => match ty_application.view() {
@@ -397,7 +471,7 @@ impl TyDisplay<'_> {
                     self.fmt_ty(pointer.pointee(), f)
                 }
                 ApplicationView::Instance(instance) => {
-                    write!(f, "<instance {:?}>", instance.symbol_id())
+                    self.fmt_symbol_application(instance.symbol_id(), instance.args(), f)
                 }
                 ApplicationView::Error => write!(f, "<error>"),
             },
@@ -429,22 +503,7 @@ impl TyDisplay<'_> {
                         f.write_str(", ")?;
                     }
 
-                    let name = self
-                        .effect_names
-                        .get(&label.effect_symbol_id())
-                        .expect("should've been collected earlier");
-                    f.write_str(name)?;
-
-                    if label.has_arguments() {
-                        f.write_char('[')?;
-                        for (argument_index, argument) in label.arguments().iter().enumerate() {
-                            if argument_index > 0 {
-                                f.write_str(", ")?;
-                            }
-                            self.fmt_ty(argument, f)?;
-                        }
-                        f.write_char(']')?;
-                    }
+                    self.fmt_symbol_application(label.effect_symbol_id(), label.arguments(), f)?;
                 }
 
                 if let Some(tail) = row.tail() {

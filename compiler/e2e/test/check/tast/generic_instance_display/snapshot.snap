@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched types in variable assignment: expected `def() -> () \ {Reader[bool] given(GenericEq[bool])}`, but found `def() -> () \ {Reader[int32] given(GenericEq[int32])}`
+   ╭▸ compiler/e2e/test/check/tast/generic_instance_display/main.ray:12:71
+   │
+12 │     let local: def() -> () \ {Reader[bool] given (GenericEq[bool])} = callback
+   ╰╴                                                                      ━━━━━━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
