@@ -297,7 +297,7 @@ impl Provenance {
         root_ids
     }
 
-    fn effect_unification_sites(
+    async fn effect_unification_sites(
         &self,
         root_ids: &FxHashSet<CauseID>,
         primary_root_id: CauseID,
@@ -324,14 +324,14 @@ impl Provenance {
             match &origin.source {
                 EffectUnificationSource::EffectIntroduction { original_effect } => {
                     sites.push(ResolvedEffectUnificationSite {
-                        effect_row: self.resolve_type(original_effect, engine),
+                        effect_row: self.resolve_type(original_effect, engine).await,
                         source: origin.source.clone(),
                         span: origin.span,
                     });
                 }
                 EffectUnificationSource::FunctionBodyEffect => {
                     sites.push(ResolvedEffectUnificationSite {
-                        effect_row: self.resolve_type(&origin.greater, engine),
+                        effect_row: self.resolve_type(&origin.greater, engine).await,
                         source: origin.source.clone(),
                         span: origin.span,
                     });
@@ -351,15 +351,15 @@ impl Provenance {
         sites
     }
 
-    fn resolve_type(&self, ty: &Interned<Ty>, engine: &TrackedEngine) -> Interned<Ty> {
+    async fn resolve_type(&self, ty: &Interned<Ty>, engine: &TrackedEngine) -> Interned<Ty> {
         let mut ty = ty.apply_subst_or_clone(&self.subst, engine);
-        while let Some(reduced) = ty.reduce(engine) {
+        while let Some(reduced) = ty.reduce(engine).await {
             ty = reduced;
         }
         ty
     }
 
-    pub(super) fn resolved_root_cause(
+    pub(super) async fn resolved_root_cause(
         &self,
         primary_root_id: CauseID,
         root_ids: FxHashSet<CauseID>,
@@ -386,23 +386,20 @@ impl Provenance {
             },
             RootCauseOrigin::EffectUnification(origin) => {
                 ResolvedRootCause::EffectUnification(ResolvedEffectUnification {
-                    lesser: self.resolve_type(&origin.lesser, engine),
-                    greater: self.resolve_type(&origin.greater, engine),
+                    lesser: self.resolve_type(&origin.lesser, engine).await,
+                    greater: self.resolve_type(&origin.greater, engine).await,
                     source: origin.source.clone(),
                     span: origin.span,
-                    related_sites: self.effect_unification_sites(
-                        &root_ids,
-                        primary_root_id,
-                        origin.span,
-                        engine,
-                    ),
+                    related_sites: self
+                        .effect_unification_sites(&root_ids, primary_root_id, origin.span, engine)
+                        .await,
                     root_ids,
                 })
             }
         }
     }
 
-    pub(super) fn default_unbound_inferences(
+    pub(super) async fn default_unbound_inferences(
         &mut self,
         inferences: impl IntoIterator<Item = Inference>,
         default: &Interned<Ty>,
@@ -414,7 +411,7 @@ impl Provenance {
         let mut defaults = Subst::default();
         for inference in inferences {
             // can we do this without interning?
-            let latest = self.resolve_type(&engine.intern(Ty::Inference(inference)), engine);
+            let latest = self.resolve_type(&engine.intern(Ty::Inference(inference)), engine).await;
 
             if let Ty::Inference(infer) = &*latest {
                 defaults.insert(*infer, default.clone());

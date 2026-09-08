@@ -60,7 +60,7 @@ impl ConstraintSolver {
         }
     }
 
-    fn effect_unification_diagnostics(
+    async fn effect_unification_diagnostics(
         &self,
         failed_constraints: &[&PendingConstraint],
         failed_root_ids: &[FxHashSet<CauseID>],
@@ -77,8 +77,10 @@ impl ConstraintSolver {
             }
 
             let connected_root_ids = Self::connected_root_ids(root_ids, failed_root_ids);
-            let ResolvedRootCause::EffectUnification(effect_unification) =
-                self.provenance.resolved_root_cause(primary_root_id, connected_root_ids, engine)
+            let ResolvedRootCause::EffectUnification(effect_unification) = self
+                .provenance
+                .resolved_root_cause(primary_root_id, connected_root_ids, engine)
+                .await
             else {
                 continue;
             };
@@ -90,7 +92,7 @@ impl ConstraintSolver {
         }
     }
 
-    fn fallback_diagnostics(
+    async fn fallback_diagnostics(
         &self,
         failed_constraints: &[&PendingConstraint],
         failed_root_ids: &[FxHashSet<CauseID>],
@@ -106,7 +108,11 @@ impl ConstraintSolver {
                 continue;
             }
 
-            match self.provenance.resolved_root_cause(primary_root_id, root_ids.clone(), engine) {
+            match self
+                .provenance
+                .resolved_root_cause(primary_root_id, root_ids.clone(), engine)
+                .await
+            {
                 ResolvedRootCause::TraitRefCheck(check) => {
                     diags.push(Diagnostic::from(rayc_resolution::Diagnostic::TraitRefCheck(check)));
                 }
@@ -144,7 +150,7 @@ impl ConstraintSolver {
     }
 
     #[must_use]
-    pub fn residual_into_diags(self, engine: &TrackedEngine) -> (Vec<Diagnostic>, Subst) {
+    pub async fn residual_into_diags(self, engine: &TrackedEngine) -> (Vec<Diagnostic>, Subst) {
         let failed_constraints =
             self.constraint_set.failed_pending_constraints().collect::<Vec<_>>();
         let failed_root_ids = failed_constraints
@@ -168,14 +174,16 @@ impl ConstraintSolver {
             &mut unreported_roots,
             &mut diags,
             engine,
-        );
+        )
+        .await;
         self.fallback_diagnostics(
             &failed_constraints,
             &failed_root_ids,
             &mut unreported_roots,
             &mut diags,
             engine,
-        );
+        )
+        .await;
         debug_assert!(unreported_roots.is_empty());
 
         (diags, self.provenance.into_subst())

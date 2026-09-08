@@ -71,12 +71,13 @@ impl PendingConstraint {
 }
 
 impl Reduce for PendingConstraint {
-    fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    async fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
     where
         Self: Sized,
     {
         self.constraint
             .reduce(engine)
+            .await
             .map(|new_constraint| Self { constraint: new_constraint, cause_id: self.cause_id })
     }
 }
@@ -230,7 +231,7 @@ impl TAstBuilder {
             }
 
             Ok(Step::NoProgress) => {
-                if let Some(reduced_constraint) = ty_relate.reduce(&self.engine) {
+                if let Some(reduced_constraint) = ty_relate.reduce(&self.engine).await {
                     queued.push(PendingConstraint {
                         constraint: Constraint::TyRelate(reduced_constraint),
                         cause_id,
@@ -302,11 +303,14 @@ impl TAstBuilder {
     pub async fn finish_constraints(&mut self) {
         let numeric =
             self.constraint_solver.constraint_set.numeric_inferences().collect::<Vec<_>>();
-        self.constraint_solver.provenance.default_unbound_inferences(
-            numeric,
-            &Ty::new_primitive(rayc_type::ty::Primitive::Int32, &self.engine),
-            &self.engine,
-        );
+        self.constraint_solver
+            .provenance
+            .default_unbound_inferences(
+                numeric,
+                &Ty::new_primitive(rayc_type::ty::Primitive::Int32, &self.engine),
+                &self.engine,
+            )
+            .await;
         let mut queued = Vec::new();
         self.move_constraints_from_residual(&mut queued);
         self.push_constraints(queued).await;
