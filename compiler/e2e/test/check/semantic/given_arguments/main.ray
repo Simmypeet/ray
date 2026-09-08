@@ -8,17 +8,17 @@ inst EqInt for Eq[int32]:
 eff Reader[a] given (first: Eq[a], second: Eq[a]):
     def read() -> a
 
-def ordered() -> () \ {Reader[int32] given (EqInt, second = EqInt)}:
+def ordered() -> () \ {Reader[int32; given EqInt, second = EqInt]}:
     return ()
 
 def omitted() -> () \ {Reader[int32]}:
     return ()
 
-def positionalAfterNamed() -> () \ {Reader[int32] given (second = EqInt, EqInt)}:
+def positionalAfterNamed() -> () \ {Reader[int32; given second = EqInt, EqInt]}:
     return ()
 
-def unknownName() -> () \ {Reader[int32] given (missing = EqInt)}:
+def unknownName() -> () \ {Reader[int32; given missing = EqInt]}:
     return ()
 
-def duplicateName() -> () \ {Reader[int32] given (second = EqInt, second = EqInt)}:
+def duplicateName() -> () \ {Reader[int32; given second = EqInt, second = EqInt]}:
     return ()

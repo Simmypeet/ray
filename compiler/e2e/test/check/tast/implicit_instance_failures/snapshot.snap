@@ -1,5 +1,6 @@
 ---
 source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
 expression: run
 ---
 stderr:
@@ -22,10 +23,10 @@ stderr:
    ╰╴                              ━━━━━━━
 
 [error]: no implicit instance found: `main.Missing[bool]`
-   ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:36:29
+   ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:36:28
    │
-36 │     return ambiguous given (Nested)(1)
-   ╰╴                            ━━━━━━
+36 │     return ambiguous[given Nested](1)
+   ╰╴                           ━━━━━━
 
 [error]: Compilation aborted due to 4 error(s)
 

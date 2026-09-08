@@ -19,43 +19,43 @@ inst OrdBool for Ord[bool]:
 eff Reader[a] given (equality: Eq[a]):
     def read() -> a
 
-def wrongTrait() -> () \ {Reader[int32] given (OrdBool)}:
+def wrongTrait() -> () \ {Reader[int32; given OrdBool]}:
     return ()
 
-def wrongType() -> () \ {Reader[int32] given (equality = EqBool)}:
+def wrongType() -> () \ {Reader[int32; given equality = EqBool]}:
     return ()
 
-def wrongPolyVar() given (ordering: Ord[bool]) -> () \ {Reader[int32] given (ordering)}:
+def wrongPolyVar() given (ordering: Ord[bool]) -> () \ {Reader[int32; given ordering]}:
     return ()
 
-def valid() -> () \ {Reader[int32] given (EqInt)}:
+def valid() -> () \ {Reader[int32; given EqInt]}:
     return ()
 
-def validPolyVar(value: a) given (equality: Eq[a]) -> () \ {Reader[a] given (equality)}:
+def validPolyVar(value: a) given (equality: Eq[a]) -> () \ {Reader[a; given equality]}:
     return ()
 
 trait Nested[a] given (equality: Eq[a]):
     def value() -> a
 
-inst BadHead for Nested[int32] given (EqBool):
+inst BadHead for Nested[int32; given EqBool]:
     def value() -> int32:
         return 0
 
-def badRequirement() given (nested: Nested[int32] given (OrdBool)) -> ():
+def badRequirement() given (nested: Nested[int32; given OrdBool]) -> ():
     return ()
 
-def badParameter(callback: def() -> () \ {Reader[int32] given (EqBool)}) -> ():
+def badParameter(callback: def() -> () \ {Reader[int32; given EqBool]}) -> ():
     return ()
 
-def badReturn(callback: def() -> () \ {Reader[int32] given (EqInt)}) -> def() -> () \ {Reader[int32] given (OrdBool)}:
+def badReturn(callback: def() -> () \ {Reader[int32; given EqInt]}) -> def() -> () \ {Reader[int32; given OrdBool]}:
     return callback
 
-inst NestedInt for Nested[int32] given (EqInt):
+inst NestedInt for Nested[int32; given EqInt]:
     def value() -> int32:
         return 0
 
-eff Both[a] given (equality: Eq[a], nested: Nested[a] given (equality)):
+eff Both[a] given (equality: Eq[a], nested: Nested[a; given equality]):
     def read() -> a
 
-def validDependent() -> () \ {Both[int32] given (nested = NestedInt, equality = EqInt)}:
+def validDependent() -> () \ {Both[int32; given nested = NestedInt, equality = EqInt]}:
     return ()

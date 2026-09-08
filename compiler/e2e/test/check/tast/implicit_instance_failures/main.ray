@@ -33,4 +33,4 @@ inst Nested for Choice[int32] given (dictionary: Missing[bool]):
         return 0
 
 def testNested() -> bool:
-    return ambiguous given (Nested)(1)
+    return ambiguous[given Nested](1)

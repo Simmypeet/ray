@@ -1,51 +1,52 @@
 ---
 source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
 expression: run
 ---
 stderr:
 [error]: given argument `main.OrdBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:22:48
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:22:47
    │
-22 │ def wrongTrait() -> () \ {Reader[int32] given (OrdBool)}:
-   ╰╴                                               ━━━━━━━
+22 │ def wrongTrait() -> () \ {Reader[int32; given OrdBool]}:
+   ╰╴                                              ━━━━━━━
 
 [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:25:58
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:25:57
    │
-25 │ def wrongType() -> () \ {Reader[int32] given (equality = EqBool)}:
-   ╰╴                                                         ━━━━━━
+25 │ def wrongType() -> () \ {Reader[int32; given equality = EqBool]}:
+   ╰╴                                                        ━━━━━━
 
 [error]: given argument `ordering` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:28:78
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:28:77
    │
-28 │ def wrongPolyVar() given (ordering: Ord[bool]) -> () \ {Reader[int32] given (ordering)}:
-   ╰╴                                                                             ━━━━━━━━
+28 │ def wrongPolyVar() given (ordering: Ord[bool]) -> () \ {Reader[int32; given ordering]}:
+   ╰╴                                                                            ━━━━━━━━
 
 [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:40:39
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:40:38
    │
-40 │ inst BadHead for Nested[int32] given (EqBool):
-   ╰╴                                      ━━━━━━
+40 │ inst BadHead for Nested[int32; given EqBool]:
+   ╰╴                                     ━━━━━━
 
 [error]: given argument `main.OrdBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:44:58
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:44:57
    │
-44 │ def badRequirement() given (nested: Nested[int32] given (OrdBool)) -> ():
-   ╰╴                                                         ━━━━━━━
+44 │ def badRequirement() given (nested: Nested[int32; given OrdBool]) -> ():
+   ╰╴                                                        ━━━━━━━
 
 [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:47:64
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:47:63
    │
-47 │ def badParameter(callback: def() -> () \ {Reader[int32] given (EqBool)}) -> ():
-   ╰╴                                                               ━━━━━━
+47 │ def badParameter(callback: def() -> () \ {Reader[int32; given EqBool]}) -> ():
+   ╰╴                                                              ━━━━━━
 
 [error]: given argument `main.OrdBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:50:109
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:50:107
    │
-50 │ def badReturn(callback: def() -> () \ {Reader[int32] given (EqInt)}) -> def() -> () \ {Reader[int32] given (OrdBool)}:
-   ╰╴                                                                                                            ━━━━━━━
+50 │ def badReturn(callback: def() -> () \ {Reader[int32; given EqInt]}) -> def() -> () \ {Reader[int32; given OrdBool]}:
+   ╰╴                                                                                                          ━━━━━━━
 
-[error]: mismatched types in return expression: expected `def() -> () \ {Reader[int32] given(OrdBool)}`, but found `def() -> () \ {Reader[int32] given(EqInt)}`
+[error]: mismatched types in return expression: expected `def() -> () \ {Reader[int32; given OrdBool]}`, but found `def() -> () \ {Reader[int32; given EqInt]}`
    ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:51:12
    │
 51 │     return callback
