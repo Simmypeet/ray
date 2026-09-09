@@ -6,7 +6,7 @@ use rayc_parser::{
     parser::{ParserExt, ast},
 };
 
-use crate::{Identifier, given::GivenArguments, r#type::Type};
+use crate::{Identifier, Keyword, Punctuation, given::GivenArguments, r#type::Type};
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -42,17 +42,45 @@ impl PathSegment {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub enum PathRoot {
+        This(Keyword = expect::Keyword::This),
+        Segment(PathSegment = ast::<PathSegment>())
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct PathContinuation {
+        pub dot: Punctuation = '.',
+        pub segment: PathSegment = ast::<PathSegment>()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct Path {
-        pub segments: #[multi] PathSegment = ast::<PathSegment>()
-            .repeat_with_separator_at_least_once('.')
+        pub root: PathRoot = ast::<PathRoot>(),
+        pub rest: #[multi] PathContinuation = ast::<PathContinuation>().repeat()
     }
 }
 
 impl Path {
-    /// Retursn the `Identifier` if the `Path` is a simple path with a single
+    /// Returns ordinary segments, including an ordinary root.
+    pub fn segments(&self) -> impl Iterator<Item = PathSegment> {
+        let root = match self.root() {
+            Some(PathRoot::Segment(segment)) => Some(segment),
+            Some(PathRoot::This(_)) | None => None,
+        };
+        root.into_iter().chain(self.rest().filter_map(|part| part.segment()))
+    }
+
+    /// Returns the `Identifier` if the `Path` is a simple path with a single
     /// segment and no type or given arguments.
     #[must_use]
     pub fn bare_identifier(&self) -> Option<Identifier> {
+        if !matches!(self.root(), Some(PathRoot::Segment(_))) {
+            return None;
+        }
         let mut segments = self.segments();
         let first = segments.next()?;
 
