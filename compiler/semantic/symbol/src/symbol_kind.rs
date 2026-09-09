@@ -105,6 +105,23 @@ impl SymbolKind {
         matches!(self, Self::Def | Self::InstanceDef | Self::TraitDef)
     }
 
+    /// Checks if this kind of symbol supports a where clause.
+    #[must_use]
+    pub const fn has_where_clause(&self) -> bool {
+        match self {
+            Self::Def
+            | Self::Effect
+            | Self::ExternDef
+            | Self::Instance
+            | Self::InstanceDef
+            | Self::InstanceType
+            | Self::Trait
+            | Self::TraitDef
+            | Self::TraitType => true,
+            Self::EffectOperation | Self::Module => false,
+        }
+    }
+
     /// Returns the human-readable string representation of this symbol kind.
     #[must_use]
     pub const fn str(&self) -> &'static str {

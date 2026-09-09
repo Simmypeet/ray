@@ -22,6 +22,7 @@ use rayc_syntax::{
     path::Path as SyntaxPath,
     statement::Block,
     r#type::Type,
+    where_clause::WhereClause,
 };
 use rayc_target::{TargetID, get_invocation_arguments};
 
@@ -43,6 +44,7 @@ pub struct Infos {
     variadic: Option<bool>,
     type_parameters: Option<Option<TypeParameterList>>,
     given_parameter_list: Option<Option<GivenParameterList>>,
+    where_clause: Option<Option<WhereClause>>,
     instance_trait: Option<Option<SyntaxPath>>,
     type_definition: Option<Option<Type>>,
 }
@@ -56,6 +58,7 @@ struct SyntaxTable {
     variadic_defs: Map<bool>,
     type_parameters: Map<Option<TypeParameterList>>,
     given_parameter_lists: Map<Option<GivenParameterList>>,
+    where_clauses: Map<Option<WhereClause>>,
     instance_traits: Map<Option<SyntaxPath>>,
     type_definitions: Map<Option<Type>>,
 }
@@ -199,6 +202,11 @@ impl Table {
     }
 
     #[must_use]
+    pub fn get_where_clause_syntax(&self, symbol_id: SymbolID) -> Option<WhereClause> {
+        self.syntaxes.where_clauses.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
     pub fn get_instance_trait_syntax(&self, symbol_id: SymbolID) -> Option<SyntaxPath> {
         self.syntaxes.instance_traits.get(&symbol_id).cloned().unwrap()
     }
@@ -262,6 +270,10 @@ impl Table {
 
         if let Some(given_parameter_list) = info.given_parameter_list {
             self.syntaxes.given_parameter_lists.insert(symbol_id, given_parameter_list);
+        }
+
+        if let Some(where_clause) = info.where_clause {
+            self.syntaxes.where_clauses.insert(symbol_id, where_clause);
         }
 
         if let Some(instance_trait) = info.instance_trait {

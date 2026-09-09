@@ -10,6 +10,7 @@ use rayc_syntax::{
     path::Path,
     statement::Block,
     r#type::Type,
+    where_clause::WhereClause,
 };
 
 use crate::GlobalSymbolID;
@@ -96,5 +97,18 @@ pub struct InstanceTraitSyntaxKey {
 #[value(Option<Type>)]
 #[extend(by_val, name = get_type_definition_syntax)]
 pub struct TypeDefinitionSyntaxKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+/// Retrieves the explicitly declared where clause of a symbol.
+///
+/// Only valid for symbol kinds supporting
+/// [`has_where_clause`](crate::symbol_kind::SymbolKind::has_where_clause).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<WhereClause>)]
+#[extend(by_val, name = get_where_clause_syntax)]
+pub struct WhereClauseSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }

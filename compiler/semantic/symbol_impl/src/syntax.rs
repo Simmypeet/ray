@@ -4,7 +4,7 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
     DefBodySyntaxKey, EffectRowSyntaxKey, GivenParameterListSyntaxKey, InstanceTraitSyntaxKey,
     ParameterListSyntaxKey, ReturnTypeSyntaxKey, TypeDefinitionSyntaxKey,
-    TypeParameterListSyntaxKey, VariadicDefKey,
+    TypeParameterListSyntaxKey, VariadicDefKey, WhereClauseSyntaxKey,
 };
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
@@ -14,6 +14,7 @@ use rayc_syntax::{
     path::Path,
     statement::Block,
     r#type::Type,
+    where_clause::WhereClause,
 };
 
 use crate::table::get_table;
@@ -133,3 +134,15 @@ pub async fn type_definition_syntax_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static TYPE_DEFINITION_SYNTAX_EXECUTOR: Registration<Config> =
     Registration::new::<TypeDefinitionSyntaxKey, TypeDefinitionSyntaxExecutor>();
+
+#[executor(config = Config)]
+pub async fn where_clause_syntax_executor(
+    &WhereClauseSyntaxKey { symbol_id }: &WhereClauseSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<WhereClause> {
+    engine.get_table(symbol_id.target_id).await.get_where_clause_syntax(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static WHERE_CLAUSE_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<WhereClauseSyntaxKey, WhereClauseSyntaxExecutor>();

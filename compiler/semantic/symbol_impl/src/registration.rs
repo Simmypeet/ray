@@ -28,6 +28,7 @@ impl Table {
 
         let def_param = def_sig.as_ref().and_then(DefSignature::parameter_list);
         let def_given = def_sig.as_ref().and_then(DefSignature::given_parameter_list);
+        let def_where_clause = def_sig.as_ref().and_then(DefSignature::where_clause);
         let def_return = def_sig.as_ref().and_then(DefSignature::return_type);
         let def_effect_row = def_sig.as_ref().and_then(DefSignature::effect_row);
 
@@ -77,6 +78,7 @@ impl Table {
                 .span(ident.span)
                 .parameter_list(def_param)
                 .given_parameter_list(def_given)
+                .where_clause(def_where_clause)
                 .return_type(def_return)
                 .effect_row(registered_effect_row)
                 .def_body(body)
@@ -143,6 +145,7 @@ impl Table {
                     .span(ident.span)
                     .type_parameters(effect.type_parameters())
                     .given_parameter_list(effect.given_parameter_list())
+                    .where_clause(effect.where_clause())
                     .build(),
                 engine,
             )
@@ -190,6 +193,7 @@ impl Table {
                 .span(ident.span)
                 .parameter_list(parameters)
                 .given_parameter_list(signature.given_parameter_list())
+                .where_clause(signature.where_clause())
                 .return_type(signature.return_type())
                 .effect_row(signature.effect_row())
                 .build(),
@@ -216,6 +220,7 @@ impl Table {
                 .span(ident.span)
                 .type_parameters(ty.type_parameters())
                 .given_parameter_list(ty.given_parameter_list())
+                .where_clause(ty.where_clause())
                 .type_definition(ty.r#type())
                 .build(),
             engine,
@@ -241,6 +246,7 @@ impl Table {
                 .span(ident.span)
                 .type_parameters(ty.type_parameters())
                 .given_parameter_list(ty.given_parameter_list())
+                .where_clause(ty.where_clause())
                 .build(),
             engine,
         )
@@ -266,6 +272,7 @@ impl Table {
                     .span(ident.span)
                     .type_parameters(r#trait.type_parameters())
                     .given_parameter_list(r#trait.given_parameter_list())
+                    .where_clause(r#trait.where_clause())
                     .build(),
                 engine,
             )
@@ -308,6 +315,7 @@ impl Table {
                     .span(ident.span)
                     .type_parameters(instance.type_parameters())
                     .given_parameter_list(instance.given_parameter_list())
+                    .where_clause(instance.where_clause())
                     .instance_trait(instance.trait_reference())
                     .build(),
                 engine,
@@ -371,6 +379,7 @@ impl Table {
                 .span(ident.span)
                 .parameter_list(parameters)
                 .given_parameter_list(signature.given_parameter_list())
+                .where_clause(signature.where_clause())
                 .return_type(signature.return_type())
                 .effect_row(signature.effect_row())
                 .def_body(def.block())
