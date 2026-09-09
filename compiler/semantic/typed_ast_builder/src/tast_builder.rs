@@ -320,7 +320,7 @@ impl TAstBuilder {
             self.suspended_functions.is_empty(),
             "all suspended functions should be restored before finishing the typed AST"
         );
-        self.validate_lvalue_requirements();
+        self.validate_lvalue_requirements().await;
         self.finish_constraints().await;
 
         let (constr_diags, subst) = self.constraint_solver.residual_into_diags(&self.engine).await;

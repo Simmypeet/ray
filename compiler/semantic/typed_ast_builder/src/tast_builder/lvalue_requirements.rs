@@ -44,7 +44,7 @@ impl TAstBuilder {
         });
     }
 
-    pub(super) fn validate_lvalue_requirements(&mut self) {
+    pub(super) async fn validate_lvalue_requirements(&mut self) {
         for requirement in self.lvalue_requirements.take() {
             match self.function_map.classify_lvalue(
                 requirement.expression.function_id(),
@@ -52,7 +52,9 @@ impl TAstBuilder {
             ) {
                 LvalueClassification::Lvalue(root) => {
                     if requirement.mutable
-                        && self.lvalue_root_is_mutable(requirement.expression.function_id(), root)
+                        && self
+                            .lvalue_root_is_mutable(requirement.expression.function_id(), root)
+                            .await
                             == Some(false)
                     {
                         self.push_diagnostic(Diagnostic::ImmutableLvalue(
@@ -76,7 +78,7 @@ impl TAstBuilder {
         }
     }
 
-    fn lvalue_root_is_mutable(
+    async fn lvalue_root_is_mutable(
         &self,
         function_id: TypedFunctionID,
         root: LvalueRoot,
@@ -86,9 +88,14 @@ impl TAstBuilder {
                 Some(self.function_map.get_name_binding(name_binding).is_mutable())
             }
             LvalueRoot::Dereference(pointer) => {
-                let ty = self.latest_type(
-                    &self.type_of_local_expression(TypedFunctionLocalID::new(function_id, pointer)),
-                );
+                let ty = self
+                    .latest_type(
+                        &self.type_of_local_expression(TypedFunctionLocalID::new(
+                            function_id,
+                            pointer,
+                        )),
+                    )
+                    .await;
 
                 match &*ty {
                     Ty::Application(application) => match application.view() {

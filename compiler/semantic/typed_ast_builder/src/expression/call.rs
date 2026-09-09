@@ -109,7 +109,9 @@ impl TAstBuilder {
                 },
                 operation.substitution(self.engine()).await,
             ),
-            PathResolution::TraitDef(def) => {
+            PathResolution::TraitMember(def)
+                if resolution.symbol_kind() == Some(SymbolKind::TraitDef) =>
+            {
                 self.push_diagnostic(Diagnostic::AbstractTraitDefinitionCall(
                     AbstractTraitDefinitionCall::builder()
                         .trait_def_id(def.symbol_id())
@@ -118,20 +120,28 @@ impl TAstBuilder {
                 ));
                 return self.push_error_expression_with_children(syn.span(), arguments).await;
             }
-            PathResolution::ResolvedInstanceDef(def) => (
-                ResolvedCallTarget::Direct {
-                    function_id: def.symbol_id(),
-                    symbol_kind: SymbolKind::InstanceDef,
-                },
-                def.substitution(self.engine()).await,
-            ),
-            PathResolution::UnsolvedInstanceDef(def) => (
-                ResolvedCallTarget::UnresolvedInstanceAssociated {
-                    instance: Ty::new_poly_var(def.instance(), self.engine()),
-                    trait_def_id: def.trait_def_id(),
-                },
-                def.substitution(self.engine()).await,
-            ),
+            PathResolution::ResolvedInstanceMember(def)
+                if resolution.symbol_kind() == Some(SymbolKind::InstanceDef) =>
+            {
+                (
+                    ResolvedCallTarget::Direct {
+                        function_id: def.symbol_id(),
+                        symbol_kind: SymbolKind::InstanceDef,
+                    },
+                    def.substitution(self.engine()).await,
+                )
+            }
+            PathResolution::UnresolvedInstanceMember(def)
+                if resolution.symbol_kind() == Some(SymbolKind::TraitDef) =>
+            {
+                (
+                    ResolvedCallTarget::UnresolvedInstanceAssociated {
+                        instance: Ty::new_poly_var(def.instance(), self.engine()),
+                        trait_def_id: def.trait_member_id(),
+                    },
+                    def.substitution(self.engine()).await,
+                )
+            }
             resolution => {
                 if let Some(symbol_id) = resolution.global_id() {
                     self.push_symbol_not_callable(symbol_id, path.span());
@@ -259,7 +269,7 @@ impl TAstBuilder {
         argument_count: usize,
         callee_span: RelativeSpan,
     ) -> LambdaCallSignature {
-        let callee_ty = self.latest_type(&self.type_of_expression(callee));
+        let callee_ty = self.latest_type(&self.type_of_expression(callee)).await;
 
         match &*callee_ty {
             Ty::Application(application) => match application.view() {

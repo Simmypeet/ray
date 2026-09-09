@@ -87,7 +87,7 @@ impl TAstBuilder {
         let index = tuple_index.numeric()?;
         let span = self.span_of_expression(bound);
 
-        let ty = self.latest_type(&self.type_of_expression(bound));
+        let ty = self.latest_type(&self.type_of_expression(bound)).await;
 
         // expect a tuple type
         let tuple = match &*ty {
@@ -149,7 +149,7 @@ impl TAstBuilder {
 
     async fn build_deref(&mut self, expr_id: TypedExprID, deref: &DerefSyntax) -> TypedExprID {
         let span = self.span_of_expression(expr_id);
-        let ty = self.latest_type(&self.type_of_expression(expr_id));
+        let ty = self.latest_type(&self.type_of_expression(expr_id)).await;
         let pointee = match &*ty {
             Ty::Application(application) => match application.view() {
                 ApplicationView::Pointer(pointer) => pointer.pointee().clone(),

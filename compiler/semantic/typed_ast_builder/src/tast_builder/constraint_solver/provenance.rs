@@ -433,7 +433,9 @@ impl Provenance {
 }
 
 impl TAstBuilder {
-    pub fn latest_type(&self, ty: &Interned<Ty>) -> Interned<Ty> {
+    pub async fn latest_type(&self, ty: &Interned<Ty>) -> Interned<Ty> {
         ty.apply_subst_or_clone(&self.constraint_solver.provenance.subst, &self.engine)
+            .normalize(&self.engine)
+            .await
     }
 }
