@@ -1,0 +1,38 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: the left-hand side of a where equality must be an opaque instance associated type
+   ╭▸ compiler/e2e/test/check/semantic/where_clause_opaque/main.ray:21:5
+   │
+21 │     int32 = c.Item,
+   ╰╴    ━━━━━ expected a projection through a given dictionary or trait `this`
+
+[error]: the left-hand side of a where equality must be an opaque instance associated type
+   ╭▸ compiler/e2e/test/check/semantic/where_clause_opaque/main.ray:21:20
+   │
+21 │       int32 = c.Item,
+   │ ┏━━━━━━━━━━━━━━━━━━━━┛
+22 │ ┃     a = c.Item,
+   ╰╴┗━━━━━┛ expected a projection through a given dictionary or trait `this`
+
+[error]: the left-hand side of a where equality must be an opaque instance associated type
+   ╭▸ compiler/e2e/test/check/semantic/where_clause_opaque/main.ray:23:1
+   │
+23 │     (c.Item, bool) = (int32, bool),
+   ╰╴━━━━━━━━━━━━━━━━━━ expected a projection through a given dictionary or trait `this`
+
+[error]: the left-hand side of a where equality must be an opaque instance associated type
+   ╭▸ compiler/e2e/test/check/semantic/where_clause_opaque/main.ray:23:36
+   │
+23 │       (c.Item, bool) = (int32, bool),
+   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+24 │ ┃     Concrete[a].Item = a,
+   ╰╴┗━━━━━━━━━━━━━━━━━━━━┛ expected a projection through a given dictionary or trait `this`
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

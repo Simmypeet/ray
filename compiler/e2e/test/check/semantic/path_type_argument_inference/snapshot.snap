@@ -19,19 +19,13 @@ stderr:
 10 │     return Pair[int32].first()
    ╰╴           ─────────────────── effect `{Pair[int32, <error>]}` introduced here
 
-[error]: mismatched types in return expression: expected `int32`, but found `<error>`
-   ╭▸ compiler/e2e/test/check/semantic/path_type_argument_inference/main.ray:10:12
-   │
-10 │     return Pair[int32].first()
-   ╰╴           ━━━━━━━━━━━━━━━━━━━
-
 [error]: type argument arity mismatch
    ╭▸ compiler/e2e/test/check/semantic/path_type_argument_inference/main.ray:10:16
    │
 10 │     return Pair[int32].first()
    ╰╴               ━━━━━━━ expected 2, found 1
 
-[error]: Compilation aborted due to 4 error(s)
+[error]: Compilation aborted due to 3 error(s)
 
 
 

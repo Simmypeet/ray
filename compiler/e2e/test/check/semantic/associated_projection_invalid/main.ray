@@ -1,0 +1,32 @@
+trait Container[]:
+    type Item
+    def identity(value: this.Item) -> this.Item
+    def invalid(value: this) -> this.Item
+
+inst Concrete for Container:
+    type Item = int32
+    def identity(value: int32) -> int32:
+        return value
+    def invalid(value: int32) -> int32:
+        return value
+
+def outside(value: this.Item) -> int32:
+    return 0
+
+def named(value: Container.Item) -> int32:
+    return 0
+
+def missing(value: Concrete.Missing) -> int32:
+    return 0
+
+def method(value: Concrete.identity) -> int32:
+    return 0
+
+def bare(value: Concrete) -> int32:
+    return 0
+
+def dictionary(value: dict) given (dict: Container) -> int32:
+    return 0
+
+def main() -> int32:
+    return Concrete.Item()

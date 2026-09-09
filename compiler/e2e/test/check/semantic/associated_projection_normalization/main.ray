@@ -1,0 +1,19 @@
+eff Read[a]:
+    def read() -> a
+
+trait Equal[a]:
+    type Item
+
+trait Container[]:
+    type Item
+    type Identity[a]
+    def consume(value: this.Item) given (eq: Equal[this.Item]) -> this.Item \{Read[this.Item]}
+
+inst Concrete for Container:
+    type Item = Concrete.Identity[int32]
+    type Identity[a] = a
+    def consume(value: Concrete.Identity[Concrete.Identity[int32]]) given (eq: Equal[int32]) -> int32 \{Read[Concrete.Item]}:
+        return value
+
+def main() -> int32:
+    return 0

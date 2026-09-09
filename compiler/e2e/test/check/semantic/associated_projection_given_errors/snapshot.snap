@@ -1,0 +1,40 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: missing required given argument `eq`
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:16:29
+   │
+16 │ def missing(value: Concrete.Item[int32]) -> int32:
+   ╰╴                            ━━━━━━━━━━━ supply the required given argument `eq`
+
+[error]: given argument `main.BoolEqual` does not implement `main.Equal[int32]`
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:19:45
+   │
+19 │ def wrong(value: Concrete.Item[int32; given BoolEqual]) -> int32:
+   ╰╴                                            ━━━━━━━━━
+
+[error]: missing required given argument `eq`
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:22:27
+   │
+22 │ def named(value: Concrete.Item[int32; given absent = IntEqual]) -> int32:
+   ╰╴                          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ supply the required given argument `eq`
+
+[error]: given parameter `absent` is not found
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:22:45
+   │
+22 │ def named(value: Concrete.Item[int32; given absent = IntEqual]) -> int32:
+   ╰╴                                            ━━━━━━ given parameter `absent` is not found
+
+[error]: given argument `main.BoolEqual` does not implement `main.Equal[int32]`
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:25:37
+   │
+25 │ def kind(value: i.Item[int32; given BoolEqual]) given (i: Container) -> int32:
+   ╰╴                                    ━━━━━━━━━
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

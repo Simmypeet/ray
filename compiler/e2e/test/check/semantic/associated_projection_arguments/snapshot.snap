@@ -1,0 +1,36 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: type argument arity mismatch
+  ╭▸ compiler/e2e/test/check/semantic/associated_projection_arguments/main.ray:7:38
+  │
+7 │ def wrong(value: Concrete[int32].Item[int32, bool]) -> int32:
+  ╰╴                                     ━━━━━━━━━━━━━ expected 1, found 2
+
+[error]: type inference is not allowed for `Item` here
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_arguments/main.ray:10:36
+   │
+10 │ def omitted(value: Concrete[int32].Item) -> int32:
+   │                                    ━━━━ expected 1 type arguments
+   │
+   ╰ help: provide all type arguments explicitly
+
+[error]: type argument arity mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_arguments/main.ray:13:25
+   │
+13 │ def root(value: Concrete[int32, bool].Item[int32]) -> int32:
+   ╰╴                        ━━━━━━━━━━━━━ expected 1, found 2
+
+[error]: expected a value type or an associated type projection
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_arguments/main.ray:16:43
+   │
+16 │ def wrongKind(value: Concrete[int32].Item[Concrete[int32]]) -> int32:
+   ╰╴                                          ━━━━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

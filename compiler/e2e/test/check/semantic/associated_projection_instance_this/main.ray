@@ -1,0 +1,11 @@
+trait Container[]:
+    type Item
+
+inst Wrong for Container:
+    type Item = this.Item
+
+inst WrongHead for this:
+    type Item = int32
+
+def main() -> int32:
+    return 0

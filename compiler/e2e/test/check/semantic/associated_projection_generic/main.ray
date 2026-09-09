@@ -1,0 +1,31 @@
+trait Relation[a, b]:
+    type Value
+
+inst RelationImpl[a, b] for Relation[a, b]:
+    type Value = (a, b)
+
+trait Container[a]:
+    type Item[b] given (relation: Relation[a, b])
+    type Copy given (same: Container[a])
+    def identity(value: this.Item[a; given RelationImpl[a, a]]) -> this.Item[a; given RelationImpl[a, a]]
+    def copy(value: this.Copy[given this]) -> this.Copy[given this]
+
+inst Concrete[a] for Container[a]:
+    type Item[b] given (relation: Relation[a, b]) = (a, b)
+    type Copy given (same: Container[a]) = a
+    def identity(value: (a, a)) -> (a, a):
+        return value
+    def copy(value: a) -> a:
+        return value
+
+def nested(value: Concrete[int32].Item[(b, b); given RelationImpl[int32, (b, b)]]) -> (int32, (b, b)):
+    return value
+
+def abstract(value: i.Item[int32; given RelationImpl[int32, int32]]) given (i: Container[int32]) -> i.Item[int32; given RelationImpl[int32, int32]]:
+    return i.identity(value)
+
+def dependent(value: i.Item[int32; given RelationImpl[int32, int32]]) given (i: Container[int32], relation: Relation[i.Item[int32; given RelationImpl[int32, int32]], int32]) -> i.Item[int32; given RelationImpl[int32, int32]]:
+    return value
+
+def main() -> int32:
+    return Concrete[int32].copy(42)

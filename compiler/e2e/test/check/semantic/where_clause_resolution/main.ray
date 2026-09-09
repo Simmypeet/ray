@@ -1,0 +1,17 @@
+trait Container[]:
+    type Item
+
+# Both operands are resolved, including unknown associated members and types.
+def missing(value: int32) given (c: Container) -> int32 where (
+    c.Missing = Unknown,
+    c.Item = MissingType,
+):
+    return value
+
+# A clause uses the enclosing trait's self dictionary.
+trait Checked[]:
+    type Item
+    def check(value: int32) -> int32 where (this.Missing = this.Item)
+
+def main() -> int32:
+    return 0

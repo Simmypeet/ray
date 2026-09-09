@@ -1,0 +1,29 @@
+trait Equal[a]:
+    type Value
+
+inst IntEqual for Equal[int32]:
+    type Value = int32
+
+inst BoolEqual for Equal[bool]:
+    type Value = bool
+
+trait Container[]:
+    type Item[a] given (eq: Equal[a])
+
+inst Concrete for Container:
+    type Item[a] given (eq: Equal[a]) = a
+
+def missing(value: Concrete.Item[int32]) -> int32:
+    return 0
+
+def wrong(value: Concrete.Item[int32; given BoolEqual]) -> int32:
+    return 0
+
+def named(value: Concrete.Item[int32; given absent = IntEqual]) -> int32:
+    return 0
+
+def kind(value: i.Item[int32; given BoolEqual]) given (i: Container) -> int32:
+    return 0
+
+def main() -> int32:
+    return 0

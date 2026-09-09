@@ -1,0 +1,58 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: expected a value type or an associated type projection
+  ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:4:24
+  │
+4 │     def invalid(value: this) -> this.Item
+  ╰╴                       ━━━━
+
+[error]: `this` is only valid within a trait body
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:13:20
+   │
+13 │ def outside(value: this.Item) -> int32:
+   ╰╴                   ━━━━
+
+[error]: an associated type requires an instance dictionary, not a named trait
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:16:18
+   │
+16 │ def named(value: Container.Item) -> int32:
+   ╰╴                 ━━━━━━━━━━━━━━
+
+[error]: symbol `Missing` is not found
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:19:29
+   │
+19 │ def missing(value: Concrete.Missing) -> int32:
+   ╰╴                            ━━━━━━━ symbol `Missing` is not found
+
+[error]: expected a value type or an associated type projection
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:22:19
+   │
+22 │ def method(value: Concrete.identity) -> int32:
+   ╰╴                  ━━━━━━━━━━━━━━━━━
+
+[error]: expected a value type or an associated type projection
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:25:17
+   │
+25 │ def bare(value: Concrete) -> int32:
+   ╰╴                ━━━━━━━━
+
+[error]: type kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:28:23
+   │
+28 │ def dictionary(value: dict) given (dict: Container) -> int32:
+   ╰╴                      ━━━━ expected a value type, found an instance
+
+[error]: symbol `instance type main.Concrete.Item` is not callable
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:32:12
+   │
+32 │     return Concrete.Item()
+   ╰╴           ━━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 8 error(s)
+
+
+
+stdout:

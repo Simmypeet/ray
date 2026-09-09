@@ -1,0 +1,29 @@
+trait Container[]:
+    type Item
+    type Generic[a]
+    def valid(value: int32) -> int32 where (this.Item = int32)
+
+inst Concrete[a] for Container:
+    type Item = a
+    type Generic[b] = b
+    def valid(value: int32) -> int32:
+        return value
+
+# Abstract projections remain valid with generic arguments and arbitrary RHS types.
+def valid(value: a) given (c: Container) -> int32 where (
+    c.Item = (a, bool),
+    c.Generic[a] = Concrete[a].Item,
+):
+    return 0
+
+# Concrete projections are not opaque even when their definition is a type variable.
+def invalid(value: a) given (c: Container) -> int32 where (
+    int32 = c.Item,
+    a = c.Item,
+    (c.Item, bool) = (int32, bool),
+    Concrete[a].Item = a,
+):
+    return 0
+
+def main() -> int32:
+    return 0

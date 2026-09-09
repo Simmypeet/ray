@@ -1,0 +1,34 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: symbol `Missing` is not found
+  ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:6:7
+  │
+6 │     c.Missing = Unknown,
+  ╰╴      ━━━━━━━ symbol `Missing` is not found
+
+[error]: symbol `Unknown` is not found
+  ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:6:17
+  │
+6 │     c.Missing = Unknown,
+  ╰╴                ━━━━━━━ symbol `Unknown` is not found
+
+[error]: symbol `MissingType` is not found
+  ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:7:14
+  │
+7 │     c.Item = MissingType,
+  ╰╴             ━━━━━━━━━━━ symbol `MissingType` is not found
+
+[error]: symbol `Missing` is not found
+   ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:14:50
+   │
+14 │     def check(value: int32) -> int32 where (this.Missing = this.Item)
+   ╰╴                                                 ━━━━━━━ symbol `Missing` is not found
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

@@ -1,0 +1,14 @@
+trait Convert[]:
+    type Item
+    def convert(value: this.Item) -> this.Item
+
+inst Wrong for Convert:
+    type Item = int32
+    def convert(value: bool) -> bool:
+        return value
+
+def distinct(value: i.Item) given (i: Convert, j: Convert) -> j.Item:
+    return value
+
+def main() -> int32:
+    return 0

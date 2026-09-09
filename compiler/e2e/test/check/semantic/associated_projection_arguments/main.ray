@@ -1,0 +1,20 @@
+trait Container[a]:
+    type Item[b]
+
+inst Concrete[a] for Container[a]:
+    type Item[b] = (a, b)
+
+def wrong(value: Concrete[int32].Item[int32, bool]) -> int32:
+    return 0
+
+def omitted(value: Concrete[int32].Item) -> int32:
+    return 0
+
+def root(value: Concrete[int32, bool].Item[int32]) -> int32:
+    return 0
+
+def wrongKind(value: Concrete[int32].Item[Concrete[int32]]) -> int32:
+    return 0
+
+def main() -> int32:
+    return 0

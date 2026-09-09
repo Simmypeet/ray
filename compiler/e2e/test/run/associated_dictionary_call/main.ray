@@ -1,0 +1,21 @@
+trait Convert[a]:
+    type Item
+    def convert(value: this.Item) -> this.Item
+
+inst IntConvert for Convert[int32]:
+    type Item = int32
+    def convert(value: int32) -> int32:
+        return value
+
+inst BoolConvert for Convert[int32]:
+    type Item = bool
+    def convert(value: bool) -> bool:
+        return value
+
+def generic(value: i.Item) given (i: Convert[int32]) -> i.Item:
+    return i.convert(value)
+
+def main() -> int32:
+    let value: IntConvert.Item = 42
+    let flag: BoolConvert.Item = true
+    return if generic[given BoolConvert](BoolConvert.convert(flag)): generic[given IntConvert](IntConvert.convert(value)) else: 1

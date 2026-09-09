@@ -1,6 +1,0 @@
-trait Foo[a]:
-    def foo(...)
-
-inst FooInstance for Foo:
-    def foo(...):
-        return
