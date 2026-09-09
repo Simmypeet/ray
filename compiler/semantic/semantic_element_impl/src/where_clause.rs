@@ -5,7 +5,9 @@ use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::resolver::Resolver;
-use rayc_semantic_element::where_clause::{AssociatedTypeEquality, Key, WhereClause};
+use rayc_semantic_element::where_clause::{
+    AssociatedTypeEquality, Key, Predicate, PredicateKind, WhereClause,
+};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{source_map::to_absolute_span, syntax::get_where_clause_syntax};
 use rayc_syntax::where_clause::Constraint;
@@ -123,7 +125,7 @@ impl Build for Key {
             .obligation_handler(&obligations)
             .build();
 
-        let mut equalities = Vec::new();
+        let mut predicates = Vec::new();
         for constraint in constraints.constraints() {
             match constraint {
                 Constraint::TypeEquality(equality) => {
@@ -144,14 +146,19 @@ impl Build for Key {
                         }
                         None => continue,
                     }
-                    equalities.push(AssociatedTypeEquality::new(left, right, equality.span()));
+                    predicates.push(Predicate::new(
+                        PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
+                            left, right,
+                        )),
+                        equality.span(),
+                    ));
                 }
             }
         }
 
-        // Preserve the equalities as assumptions for later semantic consumers.
+        // Preserve the predicates as assumptions for later semantic consumers.
         Output::new_with(
-            engine.intern(WhereClause::new(engine.intern_unsized(equalities))),
+            engine.intern(WhereClause::new(engine.intern_unsized(predicates))),
             diagnostics.into_vec(),
             obligations.into_vec(),
             engine,
