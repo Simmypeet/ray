@@ -6,10 +6,9 @@ use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::TraitRefCheck;
-use rayc_solver::ty_relate::DerivationRule;
+use rayc_solver::{Solver, ty_relate::DerivationRule};
 use rayc_type::{
     constraint::ty_relate::TyRelate,
-    reduce::Reduce,
     subst::{Subst, Substitutable},
     ty::{Ty, inference::Inference},
 };
@@ -302,7 +301,7 @@ impl Provenance {
         root_ids: &FxHashSet<CauseID>,
         primary_root_id: CauseID,
         primary_span: RelativeSpan,
-        engine: &TrackedEngine,
+        solver: &Solver,
     ) -> Vec<ResolvedEffectUnificationSite> {
         let mut sites = Vec::new();
 
@@ -324,14 +323,14 @@ impl Provenance {
             match &origin.source {
                 EffectUnificationSource::EffectIntroduction { original_effect } => {
                     sites.push(ResolvedEffectUnificationSite {
-                        effect_row: self.resolve_type(original_effect, engine).await,
+                        effect_row: self.resolve_type(original_effect, solver).await,
                         source: origin.source.clone(),
                         span: origin.span,
                     });
                 }
                 EffectUnificationSource::FunctionBodyEffect => {
                     sites.push(ResolvedEffectUnificationSite {
-                        effect_row: self.resolve_type(&origin.greater, engine).await,
+                        effect_row: self.resolve_type(&origin.greater, solver).await,
                         source: origin.source.clone(),
                         span: origin.span,
                     });
@@ -351,20 +350,18 @@ impl Provenance {
         sites
     }
 
-    async fn resolve_type(&self, ty: &Interned<Ty>, engine: &TrackedEngine) -> Interned<Ty> {
-        let mut ty = ty.apply_subst_or_clone(&self.subst, engine);
-        while let Some(reduced) = ty.reduce(engine, &[]).await {
-            ty = reduced;
-        }
-        ty
+    async fn resolve_type(&self, ty: &Interned<Ty>, solver: &Solver) -> Interned<Ty> {
+        let ty = ty.apply_subst_or_clone(&self.subst, solver.engine());
+        solver.normalize(&ty).await
     }
 
     pub(super) async fn resolved_root_cause(
         &self,
         primary_root_id: CauseID,
         root_ids: FxHashSet<CauseID>,
-        engine: &TrackedEngine,
+        solver: &Solver,
     ) -> ResolvedRootCause {
+        let engine = solver.engine();
         let Cause::Root(root) = &self.causes[primary_root_id] else {
             unreachable!("the primary root cause ID must identify a root cause")
         };
@@ -386,12 +383,12 @@ impl Provenance {
             },
             RootCauseOrigin::EffectUnification(origin) => {
                 ResolvedRootCause::EffectUnification(ResolvedEffectUnification {
-                    lesser: self.resolve_type(&origin.lesser, engine).await,
-                    greater: self.resolve_type(&origin.greater, engine).await,
+                    lesser: self.resolve_type(&origin.lesser, solver).await,
+                    greater: self.resolve_type(&origin.greater, solver).await,
                     source: origin.source.clone(),
                     span: origin.span,
                     related_sites: self
-                        .effect_unification_sites(&root_ids, primary_root_id, origin.span, engine)
+                        .effect_unification_sites(&root_ids, primary_root_id, origin.span, solver)
                         .await,
                     root_ids,
                 })
@@ -403,15 +400,16 @@ impl Provenance {
         &mut self,
         inferences: impl IntoIterator<Item = Inference>,
         default: &Interned<Ty>,
-        engine: &TrackedEngine,
+        solver: &Solver,
     ) {
+        let engine = solver.engine();
         // A constrained inference can be unified with another inference through a
         // fresh variable. Follow those aliases so the unresolved representative
         // receives the default rather than only considering the original variable.
         let mut defaults = Subst::default();
         for inference in inferences {
             // can we do this without interning?
-            let latest = self.resolve_type(&engine.intern(Ty::Inference(inference)), engine).await;
+            let latest = self.resolve_type(&engine.intern(Ty::Inference(inference)), solver).await;
 
             if let Ty::Inference(infer) = &*latest {
                 defaults.insert(*infer, default.clone());
@@ -434,8 +432,10 @@ impl Provenance {
 
 impl TAstBuilder {
     pub async fn latest_type(&self, ty: &Interned<Ty>) -> Interned<Ty> {
-        ty.apply_subst_or_clone(&self.constraint_solver.provenance.subst, &self.engine)
-            .normalize(&self.engine, self.constraint_solver.solver.givens())
-            .await
+        let ty = ty.apply_subst_or_clone(
+            &self.constraint_solver.provenance.subst,
+            self.constraint_solver.solver.engine(),
+        );
+        self.constraint_solver.solver.normalize(&ty).await
     }
 }

@@ -309,13 +309,11 @@ impl TAstBuilder {
     pub async fn finish_constraints(&mut self) {
         let numeric =
             self.constraint_solver.constraint_set.numeric_inferences().collect::<Vec<_>>();
+
+        let default = Ty::new_primitive(rayc_type::ty::Primitive::Int32, &self.engine);
         self.constraint_solver
             .provenance
-            .default_unbound_inferences(
-                numeric,
-                &Ty::new_primitive(rayc_type::ty::Primitive::Int32, &self.engine),
-                &self.engine,
-            )
+            .default_unbound_inferences(numeric, &default, &self.constraint_solver.solver)
             .await;
         let mut queued = Vec::new();
         self.move_constraints_from_residual(&mut queued);

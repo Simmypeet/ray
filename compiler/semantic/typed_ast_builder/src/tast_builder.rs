@@ -322,7 +322,7 @@ impl TAstBuilder {
         self.validate_lvalue_requirements().await;
         self.finish_constraints().await;
 
-        let (constr_diags, subst) = self.constraint_solver.residual_into_diags(&self.engine).await;
+        let (constr_diags, subst) = self.constraint_solver.residual_into_diags().await;
 
         self.diagnostics.extend(constr_diags);
         self.function_map.apply_mut_subst(&subst, &self.engine);

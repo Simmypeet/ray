@@ -30,7 +30,7 @@ impl ConstraintSolver {
         Self {
             provenance: Provenance::new(),
             constraint_set: ConstraintSet::new(),
-            solver: Solver::new_at_site(engine, site).await,
+            solver: Solver::new(engine, site).await,
         }
     }
 }
