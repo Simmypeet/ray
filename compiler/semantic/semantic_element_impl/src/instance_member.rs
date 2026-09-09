@@ -1,8 +1,12 @@
-use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use linkme::distributed_slice;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
-use rayc_qbice::TrackedEngine;
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::{
     effect_row::get_effect_row, instance_trait_ref::get_instance_trait_ref,
     parameter::get_parameter_map, return_type::get_return_type,
@@ -21,9 +25,12 @@ use rayc_symbol::{
 use rayc_type::{
     instance_member::{InstanceMember, Key},
     poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
+    reduce::Reduce,
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
-    ty::{Ty, TyKind, application::View as ApplicationView},
+    ty::{
+        Ty, TyKind, application::View as ApplicationView, args::Args, self_instance::SelfInstance,
+    },
 };
 
 use crate::{
@@ -198,6 +205,19 @@ async fn poly_var_substitution(
     let mut substitution =
         engine.build_subst_from_args(trait_ref.trait_id(), trait_ref.args()).await;
 
+    let instance_id = engine.get_parent_global(instance_member_id).await.expect("instance parent");
+    let instance_parameters = engine.get_poly_var_map(instance_id).await;
+    let identity = Args::new(
+        instance_parameters
+            .iter()
+            .map(|(id, _)| Ty::new_poly_var(GlobalPolyVarID::new(instance_id, id), engine)),
+        engine,
+    );
+    substitution.insert(
+        SelfInstance::new(trait_ref.trait_id()),
+        Ty::new_instance(instance_id, identity, engine),
+    );
+
     // Invariant: corresponding trait and instance members discover their
     // local polymorphic variables in the same semantic order: first occurrence
     // in method parameter types, or declaration order for associated types,
@@ -231,33 +251,47 @@ async fn poly_var_substitution(
                 instance_poly_var.span(),
             );
             compatible = false;
-            continue;
-        }
-
-        let trait_constraint = trait_poly_var.trait_ref().map(|trait_ref| {
-            TraitRef::new(
-                trait_ref.trait_id(),
-                trait_ref.args().apply_subst_or_clone(&substitution, engine),
-            )
-        });
-
-        // TODO: we should create and use dedicated type equivalence checking instead of
-        // relying syntactic equality.
-        if let (Some(expected), Some(actual)) = (trait_constraint, instance_poly_var.trait_ref())
-            && !expected.contains_error()
-            && !actual.contains_error()
-            && expected != *actual
-        {
-            compatibility.report_at(
-                Mismatch::InstanceParameterTraitRef { index, expected, actual: actual.clone() },
-                trait_poly_var.span(),
-                instance_poly_var.span(),
-            );
-            compatible = false;
         }
     }
 
     compatible.then_some(substitution)
+}
+
+/// Checks given requirements using the already-validated parameter
+/// correspondence.
+async fn check_given_requirements(
+    engine: &TrackedEngine,
+    member: &InstanceMember,
+    compatibility: &Compatibility<'_>,
+) -> bool {
+    let trait_poly_vars = engine.get_poly_var_map(member.trait_member_id()).await;
+    let instance_poly_vars = engine.get_poly_var_map(member.instance_member_id()).await;
+    let mut compatible = true;
+
+    // Counts and kinds were checked when constructing the correspondence. Only
+    // requirement equivalence needs normalization, which may query correspondence.
+    for (index, ((_, trait_poly_var), (_, instance_poly_var))) in
+        trait_poly_vars.iter().zip(instance_poly_vars.iter()).enumerate()
+    {
+        if let (Some(expected), Some(actual)) =
+            (trait_poly_var.trait_ref(), instance_poly_var.trait_ref())
+        {
+            let expected = expected
+                .apply_subst_or_clone(member.poly_var_substitution(), engine)
+                .normalize(engine)
+                .await;
+            let actual = actual.normalize(engine).await;
+            if !expected.contains_error() && !actual.contains_error() && expected != actual {
+                compatibility.report_at(
+                    Mismatch::InstanceParameterTraitRef { index, expected, actual },
+                    trait_poly_var.span(),
+                    instance_poly_var.span(),
+                );
+                compatible = false;
+            }
+        }
+    }
+    compatible
 }
 
 async fn check_method_signature(
@@ -285,34 +319,34 @@ async fn check_method_signature(
 
         // TODO: we should create and use dedicated type equivalence checking instead of
         // relying syntactic equality.
-        let expected = trait_parameter.ty().apply_subst_or_clone(substitution, engine);
-        if expected != *instance_parameter.ty() {
+        let expected =
+            trait_parameter.ty().apply_subst_or_clone(substitution, engine).normalize(engine).await;
+        let actual = instance_parameter.ty().normalize(engine).await;
+        if !contains_error(&expected) && !contains_error(&actual) && expected != actual {
             compatibility.report_at(
-                Mismatch::ParameterType {
-                    index,
-                    expected,
-                    actual: instance_parameter.ty().clone(),
-                },
+                Mismatch::ParameterType { index, expected, actual },
                 trait_parameter.span().unwrap_or(compatibility.trait_span),
                 instance_parameter.span().unwrap_or(compatibility.instance_span),
             );
         }
     }
 
-    let trait_return = engine.get_return_type(trait_member_id).await;
-    let instance_return = engine.get_return_type(instance_member_id).await;
+    let trait_return = engine
+        .get_return_type(trait_member_id)
+        .await
+        .apply_subst_or_clone(substitution, engine)
+        .normalize(engine)
+        .await;
+    let instance_return = engine.get_return_type(instance_member_id).await.normalize(engine).await;
 
     // TODO: we should create and use dedicated type equivalence checking instead of
     // relying syntactic equality.
     if !contains_error(&trait_return)
         && !contains_error(&instance_return)
-        && trait_return.apply_subst_or_clone(substitution, engine) != instance_return
+        && trait_return != instance_return
     {
         compatibility.report_at(
-            Mismatch::ReturnType {
-                expected: trait_return.apply_subst_or_clone(substitution, engine),
-                actual: instance_return,
-            },
+            Mismatch::ReturnType { expected: trait_return, actual: instance_return },
             engine
                 .get_return_type_syntax(trait_member_id)
                 .await
@@ -326,17 +360,19 @@ async fn check_method_signature(
 
     // TODO: we should create and use dedicated type equivalence checking instead of
     // relying syntactic equality.
-    let trait_effect = engine.get_effect_row(trait_member_id).await;
-    let instance_effect = engine.get_effect_row(instance_member_id).await;
+    let trait_effect = engine
+        .get_effect_row(trait_member_id)
+        .await
+        .apply_subst_or_clone(substitution, engine)
+        .normalize(engine)
+        .await;
+    let instance_effect = engine.get_effect_row(instance_member_id).await.normalize(engine).await;
     if !contains_error(&trait_effect)
         && !contains_error(&instance_effect)
-        && trait_effect.apply_subst_or_clone(substitution, engine) != instance_effect
+        && trait_effect != instance_effect
     {
         compatibility.report_at(
-            Mismatch::EffectRow {
-                expected: trait_effect.apply_subst_or_clone(substitution, engine),
-                actual: instance_effect,
-            },
+            Mismatch::EffectRow { expected: trait_effect, actual: instance_effect },
             engine
                 .get_effect_row_syntax(trait_member_id)
                 .await
@@ -359,17 +395,14 @@ impl Build for Key {
             .get_parent_global(symbol_id)
             .await
             .expect("an instance member symbol should have a parent instance");
-        let trait_ref = engine
-            .get_instance_trait_ref(instance_id)
-            .await
-            .expect("an instance member should only be built for a resolved instance");
-
+        let Some(trait_ref) = engine.get_instance_trait_ref(instance_id).await else {
+            return Output::new_with(None, [], [], engine);
+        };
         let name = engine.get_name(symbol_id).await;
-
-        let trait_member_id = engine
-            .get_member_by_name(trait_ref.trait_id(), &name)
-            .await
-            .expect("an instance member should correspond to a trait member");
+        let Some(trait_member_id) = engine.get_member_by_name(trait_ref.trait_id(), &name).await
+        else {
+            return Output::new_with(None, [], [], engine);
+        };
         let trait_member_span = engine
             .get_span(trait_member_id)
             .await
@@ -401,27 +434,67 @@ impl Build for Key {
             None
         };
 
-        // Method checks depend on a valid correspondence between polymorphic variables.
-        if instance_kind == SymbolKind::InstanceDef
-            && let Some(substitution) = &substitution
-        {
-            check_method_signature(
-                engine,
-                trait_member_id,
-                symbol_id,
-                substitution,
-                &compatibility,
-            )
-            .await;
-        }
-
         let definition = InstanceMember::new(
             trait_member_id,
             symbol_id,
             substitution.unwrap_or_else(Subst::new_empty),
         );
-        Output::new_with(engine.intern(definition), diagnostics.into_vec(), [], engine)
+        Output::new_with(Some(engine.intern(definition)), diagnostics.into_vec(), [], engine)
     }
 }
 
 register_build!(Key);
+
+/// Returns given-requirement and method-signature diagnostics after structural
+/// correspondence has been checked. This query produces no semantic element or
+/// obligations and reuses the substitution stored in [`InstanceMember`].
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Interned<[Diagnostic]>)]
+pub struct ConformanceKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+#[executor(config = Config)]
+async fn conformance_executor(
+    &ConformanceKey { symbol_id }: &ConformanceKey,
+    engine: &TrackedEngine,
+) -> Interned<[Diagnostic]> {
+    use rayc_type::instance_member::get_instance_member;
+
+    // A missing or structurally invalid correspondence has already been
+    // diagnosed. Its recovery substitution cannot be used for conformance.
+    if !engine.query(&crate::build::DiagnosticKey::new(Key { symbol_id })).await.is_empty() {
+        return engine.intern_unsized([]);
+    }
+    let Some(member) = engine.get_instance_member(symbol_id).await else {
+        return engine.intern_unsized([]);
+    };
+
+    let diagnostics = Storage::new();
+    let trait_member_id = member.trait_member_id();
+    let compatibility = Compatibility {
+        name: engine.get_name(symbol_id).await,
+        instance_span: engine.get_span(symbol_id).await.expect("member span"),
+        trait_span: engine.get_span(trait_member_id).await.expect("member span"),
+        diagnostics: &diagnostics,
+    };
+    if check_given_requirements(engine, &member, &compatibility).await
+        && engine.get_symbol_kind(symbol_id).await == SymbolKind::InstanceDef
+    {
+        check_method_signature(
+            engine,
+            trait_member_id,
+            symbol_id,
+            member.poly_var_substitution(),
+            &compatibility,
+        )
+        .await;
+    }
+    engine.intern_unsized(diagnostics.into_vec())
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static CONFORMANCE_EXECUTOR: Registration<Config> =
+    Registration::new::<ConformanceKey, ConformanceExecutor>();

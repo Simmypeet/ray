@@ -176,7 +176,11 @@ impl Context {
             .get_member_by_name(instance.symbol_id(), &trait_def_name)
             .await
             .expect("a concrete instance should implement the selected trait definition");
-        let instance_def = self.engine.get_instance_member(instance_def_id).await;
+        let instance_def = self
+            .engine
+            .get_instance_member(instance_def_id)
+            .await
+            .expect("a checked method has a correspondence");
         assert_eq!(
             instance_def.trait_member_id(),
             trait_def_id,

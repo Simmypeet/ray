@@ -84,6 +84,10 @@ async fn single_rendered_executor(
         rayc_symbol::symbol_kind::SymbolKind::InstanceDef
             | rayc_symbol::symbol_kind::SymbolKind::InstanceType
     ) {
+        let conformance_key = crate::instance_member::ConformanceKey { symbol_id };
+        for diagnostic in engine.query(&conformance_key).await.iter() {
+            rendered.push(diagnostic.report(engine).await);
+        }
         let instance_member_key = rayc_type::instance_member::Key { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(instance_member_key)).await;
         let generated = engine.query(&ObligationKey::new(instance_member_key)).await;
