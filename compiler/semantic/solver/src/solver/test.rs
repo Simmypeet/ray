@@ -225,3 +225,129 @@ async fn self_instance_entails_its_identity_trait_reference() {
         assert_eq!(solver.entail_ty_relate(&constraint.ty_relate).await, Err(Error::Conflicted));
     }
 }
+
+// input: c.Item and the enclosing tuple (c.Item,)
+// premise: c.Item = int32 is given
+// output: c.Item reduces to int32; the tuple has no exact given match
+#[tokio::test]
+async fn reduction_matches_only_the_exact_given_left_operand() {
+    use rayc_semantic_element::where_clause::{AssociatedTypeEquality, PredicateKind};
+    use rayc_type::ty::self_instance::SelfInstance;
+
+    let (engine, _) = engine_with_type_poly_var().await;
+    let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    let member_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
+    let dictionary = engine.intern(Ty::SelfInstance(SelfInstance::new(trait_id)));
+    let projection = Ty::new_instance_associated(member_id, dictionary, [], &engine);
+    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let mut solver = Solver::new(engine.clone());
+    solver.givens = engine.intern_unsized([PredicateKind::AssociatedTypeEquality(
+        AssociatedTypeEquality::new(projection.clone(), int_ty.clone()),
+    )]);
+
+    assert_eq!(solver.reduce(&projection).await, Some(int_ty));
+    let tuple = Ty::new_tuple(engine.intern_unsized([projection]), &engine);
+    assert_eq!(solver.reduce(&tuple).await, None);
+}
+
+// input: an empty effect row with a tail variable
+// premise: a given maps the row to a different row
+// output: ordinary reduction returns the tail before consulting givens
+#[tokio::test]
+async fn reduction_prefers_the_existing_reduce_trait() {
+    use rayc_semantic_element::where_clause::{AssociatedTypeEquality, PredicateKind};
+    use rayc_type::ty::{effect_row::EffectRow, inference::Inference};
+
+    let (engine, _) = engine_with_type_poly_var().await;
+    let tail = engine.intern(Ty::Inference(Inference::new(TyKind::EffectRow, 0)));
+    let row = engine.intern(Ty::EffectRow(EffectRow::new([], Some(tail.clone()), &engine)));
+    let other = engine.intern(Ty::EffectRow(EffectRow::new([], None, &engine)));
+    let mut solver = Solver::new(engine.clone());
+    solver.givens = engine.intern_unsized([PredicateKind::AssociatedTypeEquality(
+        AssociatedTypeEquality::new(row.clone(), other),
+    )]);
+
+    assert_eq!(solver.reduce(&row).await, Some(tail));
+}
+
+// input: a solver at a trait method, nested inside a trait and module
+// premise: method gives Item = int32; trait gives Item = bool and Other = bool
+// output: the local Item equality wins; the inherited Other equality is visible
+#[tokio::test]
+async fn site_givens_include_parents_and_prefer_the_nearest_scope() {
+    use std::{collections::HashMap, sync::Arc};
+
+    use rayc_lexical::tree::{OffsetMode, RelativeLocation, RelativeSpan};
+    use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor};
+    use rayc_semantic_element::where_clause::{
+        AssociatedTypeEquality, Key, Predicate, PredicateKind, WhereClause,
+    };
+    use rayc_symbol::{
+        parent,
+        symbol_kind::{self, SymbolKind},
+    };
+    use rayc_type::ty::self_instance::SelfInstance;
+
+    let (types, _) = engine_with_type_poly_var().await;
+    let module = TargetID::TEST.make_global(SymbolID::from_u128(10));
+    let owner = TargetID::TEST.make_global(SymbolID::from_u128(11));
+    let site = TargetID::TEST.make_global(SymbolID::from_u128(12));
+    let dictionary = types.intern(Ty::SelfInstance(SelfInstance::new(owner)));
+    let item = Ty::new_instance_associated(site, dictionary.clone(), [], &types);
+    let other = Ty::new_instance_associated(module, dictionary, [], &types);
+    let int_ty = Ty::new_primitive(Primitive::Int32, &types);
+    let bool_ty = Ty::new_primitive(Primitive::Bool, &types);
+    let location = RelativeLocation {
+        offset: 0,
+        mode: OffsetMode::Start,
+        relative_to: rayc_arena::ID::new(0),
+    };
+    let span = RelativeSpan {
+        start: location,
+        end: location,
+        source_id: TargetID::TEST.make_global(rayc_source_file::LocalSourceID::new(0, 0)),
+    };
+    let predicate = |left, right| {
+        Predicate::new(
+            PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(left, right)),
+            span,
+        )
+    };
+    let mut engine = Engine::new_with(
+        qbice::serialize::Plugin::default(),
+        InMemoryFactory,
+        qbice::stable_hash::SeededStableHasherBuilder::new(0),
+    )
+    .await
+    .unwrap();
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
+        (parent::Key { symbol_id: site }, Some(owner.id)),
+        (parent::Key { symbol_id: owner }, Some(module.id)),
+        (parent::Key { symbol_id: module }, None),
+    ]))));
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
+        (symbol_kind::Key { symbol_id: site }, SymbolKind::TraitDef),
+        (symbol_kind::Key { symbol_id: owner }, SymbolKind::Trait),
+        (symbol_kind::Key { symbol_id: module }, SymbolKind::Module),
+    ]))));
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
+        (
+            Key { symbol_id: site },
+            types.intern(WhereClause::new(
+                types.intern_unsized([predicate(item.clone(), int_ty.clone())]),
+            )),
+        ),
+        (
+            Key { symbol_id: owner },
+            types.intern(WhereClause::new(types.intern_unsized([
+                predicate(item.clone(), bool_ty.clone()),
+                predicate(other.clone(), bool_ty.clone()),
+            ]))),
+        ),
+    ]))));
+    engine.register_executor(Arc::new(crate::givens::GivensExecutor));
+    let solver = Solver::new_at_site(Arc::new(engine).tracked().await, site).await;
+
+    assert_eq!(solver.reduce(&item).await, Some(int_ty));
+    assert_eq!(solver.reduce(&other).await, Some(bool_ty));
+}

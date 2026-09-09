@@ -1,14 +1,17 @@
+use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
+use rayc_semantic_element::where_clause::PredicateKind;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     constraint::ty_relate::TyRelate,
     reduce::Reduce,
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
-    ty::{InferenceConstraint, TyKind, inference::Inference},
+    ty::{InferenceConstraint, Ty, TyKind, inference::Inference},
 };
 
 use crate::{
+    givens::get_givens,
     solver::instance_resolution_state::{InstanceResolutionLimits, InstanceResolutionState},
     ty_relate::Step,
 };
@@ -32,6 +35,7 @@ pub struct Solver {
     engine: TrackedEngine,
     site: GlobalSymbolID,
     instance_resolution: InstanceResolutionState,
+    givens: Interned<[PredicateKind]>,
 }
 
 impl Solver {
@@ -96,28 +100,50 @@ impl Solver {
         residual.is_empty().then_some(subst)
     }
 
+    /// Creates a solver without a declaration site or visible predicates.
     #[must_use]
     pub fn new(engine: TrackedEngine) -> Self {
-        Self::new_at_site(engine, GlobalSymbolID::default())
+        Self {
+            inference_counter: 0,
+            givens: engine.intern_unsized([]),
+            engine,
+            site: GlobalSymbolID::default(),
+            instance_resolution: InstanceResolutionState::new(InstanceResolutionLimits::default()),
+        }
     }
 
-    #[must_use]
-    pub fn new_at_site(engine: TrackedEngine, site: GlobalSymbolID) -> Self {
-        Self::with_limits(engine, site, InstanceResolutionLimits::default())
+    pub async fn new_at_site(engine: TrackedEngine, site: GlobalSymbolID) -> Self {
+        Self::with_limits(engine, site, InstanceResolutionLimits::default()).await
     }
 
-    #[must_use]
-    pub fn with_limits(
+    pub async fn with_limits(
         engine: TrackedEngine,
         site: GlobalSymbolID,
         limits: InstanceResolutionLimits,
     ) -> Self {
+        let givens = engine.get_givens(site).await;
+
         Self {
             inference_counter: 0,
+            givens,
             engine,
             site,
             instance_resolution: InstanceResolutionState::new(limits),
         }
+    }
+
+    /// Performs one ordinary reduction step, falling back to the first visible
+    /// equality whose left operand is structurally equal to `ty`.
+    pub async fn reduce(&self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
+        if let Some(reduced) = ty.reduce(&self.engine).await {
+            return Some(reduced);
+        }
+
+        self.givens.iter().find_map(|predicate| match predicate {
+            PredicateKind::AssociatedTypeEquality(equality) => {
+                (equality.left() == ty).then(|| equality.right().clone())
+            }
+        })
     }
 
     #[must_use]

@@ -26,12 +26,11 @@ pub struct ConstraintSolver {
 }
 
 impl ConstraintSolver {
-    #[must_use]
-    pub fn new(engine: TrackedEngine, site: GlobalSymbolID) -> Self {
+    pub async fn new(engine: TrackedEngine, site: GlobalSymbolID) -> Self {
         Self {
             provenance: Provenance::new(),
             constraint_set: ConstraintSet::new(),
-            solver: Solver::new_at_site(engine, site),
+            solver: Solver::new_at_site(engine, site).await,
         }
     }
 }

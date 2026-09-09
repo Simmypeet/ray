@@ -27,7 +27,7 @@ pub async fn build_tast_executor(
     &BuildTAst { def_id }: &BuildTAst,
     engine: &TrackedEngine,
 ) -> (Interned<TypedFunctionMap>, Interned<[Diagnostic]>) {
-    let mut tast_builder = TAstBuilder::new(engine.clone(), def_id);
+    let mut tast_builder = TAstBuilder::new(engine.clone(), def_id).await;
 
     tast_builder.build_parameter_pattern().await;
     tast_builder.build_body().await;

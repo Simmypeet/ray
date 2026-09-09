@@ -57,9 +57,8 @@ pub struct TAstBuilder {
 impl TAstBuilder {
     pub(crate) const fn current_def_id(&self) -> GlobalSymbolID { self.current_def_id }
 
-    #[must_use]
-    pub fn new(engine: TrackedEngine, current_def_id: GlobalSymbolID) -> Self {
-        let mut constraint_solver = ConstraintSolver::new(engine.clone(), current_def_id);
+    pub async fn new(engine: TrackedEngine, current_def_id: GlobalSymbolID) -> Self {
+        let mut constraint_solver = ConstraintSolver::new(engine.clone(), current_def_id).await;
         let root_effect = engine.intern(Ty::Inference(
             constraint_solver.gen_infer(TyKind::EffectRow, InferenceConstraint::Any),
         ));
