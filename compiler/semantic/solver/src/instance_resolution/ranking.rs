@@ -32,7 +32,7 @@ pub(super) async fn select(
             .get_instance_trait_ref(candidate.instance_id)
             .await
             .expect("a viable instance candidate must have a trait reference")
-            .normalize(&engine)
+            .normalize(&engine, solver.givens())
             .await;
         heads.push(head);
     }

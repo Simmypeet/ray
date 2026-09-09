@@ -198,7 +198,7 @@ impl Solver {
         required: TraitRef,
         introduced_by: Option<InstanceResolutionEdge>,
     ) -> Result<Interned<Ty>, InstanceResolutionError> {
-        let required = required.normalize(self.engine()).await;
+        let required = required.normalize(self.engine(), self.givens()).await;
         if required.contains_inference() {
             return Err(InstanceResolutionError::NotReady(required));
         }

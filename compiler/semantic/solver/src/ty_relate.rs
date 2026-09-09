@@ -110,7 +110,7 @@ impl Solver {
         substype: &TyRelate,
         relate_env: &TyRelatingEnvironment,
     ) -> Result<Step, Error> {
-        let normalized = substype.normalize(self.engine()).await;
+        let normalized = substype.normalize(self.engine(), self.givens()).await;
         let substype = &normalized;
         if substype.lesser() == substype.greater() {
             return Ok(Step::Derived(Vec::new()));

@@ -1,13 +1,13 @@
 use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::where_clause::PredicateKind;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     constraint::ty_relate::TyRelate,
     reduce::Reduce,
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
-    ty::{InferenceConstraint, Ty, TyKind, inference::Inference},
+    ty::{InferenceConstraint, TyKind, inference::Inference},
+    where_clause::PredicateKind,
 };
 
 use crate::{
@@ -88,7 +88,7 @@ impl Solver {
                     });
                 }
                 Step::NoProgress => {
-                    if let Some(reduced) = constraint.reduce(&self.engine).await {
+                    if let Some(reduced) = constraint.reduce(&self.engine, self.givens()).await {
                         constrs.push(reduced);
                     } else {
                         residual.push(constraint);
@@ -132,19 +132,10 @@ impl Solver {
         }
     }
 
-    /// Performs one ordinary reduction step, falling back to the first visible
-    /// equality whose left operand is structurally equal to `ty`.
-    pub async fn reduce(&self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
-        if let Some(reduced) = ty.reduce(&self.engine).await {
-            return Some(reduced);
-        }
-
-        self.givens.iter().find_map(|predicate| match predicate {
-            PredicateKind::AssociatedTypeEquality(equality) => {
-                (equality.left() == ty).then(|| equality.right().clone())
-            }
-        })
-    }
+    /// Predicates visible at this solver's declaration site, nearest scope
+    /// first.
+    #[must_use]
+    pub fn givens(&self) -> &[PredicateKind] { &self.givens }
 
     #[must_use]
     pub const fn engine(&self) -> &TrackedEngine { &self.engine }

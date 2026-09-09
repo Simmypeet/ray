@@ -5,8 +5,8 @@ use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
 };
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_semantic_element::where_clause::{PredicateKind, get_where_clause};
 use rayc_symbol::{GlobalSymbolID, parent::scope_walker, symbol_kind::get_symbol_kind};
+use rayc_type::where_clause::{PredicateKind, get_where_clause};
 
 /// Collects predicates from the site outward, preserving declaration order
 /// within each clause. Nearer scopes therefore take precedence during

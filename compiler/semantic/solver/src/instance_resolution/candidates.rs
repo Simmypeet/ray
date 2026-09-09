@@ -46,7 +46,7 @@ pub(super) async fn collect(
         };
         solver.visit_instance_candidate(instance_id)?;
 
-        let head = head.normalize(&engine).await;
+        let head = head.normalize(&engine, solver.givens()).await;
         let Some(subst) = solver.head_match(&head, required).await else {
             continue;
         };
