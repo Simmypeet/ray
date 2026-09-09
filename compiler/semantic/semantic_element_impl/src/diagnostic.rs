@@ -35,6 +35,17 @@ async fn single_rendered_executor(
     let mut obligations = Vec::new();
     let kind = engine.get_symbol_kind(symbol_id).await;
 
+    if kind.has_where_clause() {
+        let where_clause_key = rayc_semantic_element::where_clause::Key { symbol_id };
+        let diagnostics = engine.query(&DiagnosticKey::new(where_clause_key)).await;
+        let generated = engine.query(&ObligationKey::new(where_clause_key)).await;
+
+        obligations.extend(generated.iter().cloned());
+        for diagnostic in diagnostics.iter() {
+            rendered.push(diagnostic.report(engine).await);
+        }
+    }
+
     if kind.has_effect_row_annotation() {
         let effect_row_key = rayc_semantic_element::effect_row::Key { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(effect_row_key)).await;

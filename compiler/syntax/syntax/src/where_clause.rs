@@ -21,7 +21,23 @@ abstract_tree::abstract_tree! {
     pub struct TypeEquality {
         pub left: Type = ast::<Type>(),
         pub equals: Punctuation = '=',
-        pub right: Type = ast::<Type>()
+        pub right_operand: EqualityRightOperand = ast::<EqualityRightOperand>()
+    }
+}
+
+// Field extraction selects the first child of a matching syntax type. Wrap
+// the right operand so it remains distinct from the left operand.
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct EqualityRightOperand {
+        pub r#type: Type = ast::<Type>()
+    }
+}
+
+impl TypeEquality {
+    #[must_use]
+    pub fn right(&self) -> Option<Type> {
+        self.right_operand().and_then(|operand| operand.r#type())
     }
 }
 
