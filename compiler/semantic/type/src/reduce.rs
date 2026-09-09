@@ -27,26 +27,6 @@ pub trait Reduce: Sync {
     ) -> Option<Self>
     where
         Self: Sized;
-
-    /// Reduces this value and its descendants until no further step is
-    /// available. Reduction implementations must make progress toward
-    /// termination.
-    #[allow(async_fn_in_trait)]
-    async fn normalize(
-        &self,
-        engine: &TrackedEngine,
-        givens: &[crate::where_clause::PredicateKind],
-    ) -> Self
-    where
-        Self: Sized + Clone + PartialEq + Send,
-    {
-        let mut normalized = self.clone();
-        while let Some(reduced) = normalized.reduce(engine, givens).await {
-            assert!(reduced != normalized, "reduction must make progress");
-            normalized = reduced;
-        }
-        normalized
-    }
 }
 
 impl<T> Reduce for Interned<[T]>

@@ -130,7 +130,7 @@ async fn reduces_associated_types_in_descendants() {
     let (engine, projection, expected) = fixture(false).await;
     let tuple = Ty::new_tuple(engine.intern_unsized([projection]), &engine);
     let expected = Ty::new_tuple(engine.intern_unsized([expected]), &engine);
-    assert_eq!(tuple.normalize(&engine, &[]).await, expected);
+    assert_eq!(tuple.reduce(&engine, &[]).await, Some(expected));
 }
 
 // input: ?instance.Inner[int32]
