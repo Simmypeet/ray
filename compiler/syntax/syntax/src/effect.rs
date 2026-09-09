@@ -10,6 +10,7 @@ use crate::{
     Identifier, Keyword,
     def::{ParameterList, ReturnType},
     given::GivenParameterList,
+    where_clause::WhereClause,
 };
 
 abstract_tree::abstract_tree! {
@@ -47,6 +48,7 @@ abstract_tree::abstract_tree! {
         pub name: Identifier = expect::Identifier,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
         pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
+        pub where_clause: WhereClause = ast::<WhereClause>().optional(),
         pub body: EffectBody = ast::<EffectBody>()
     }
 }

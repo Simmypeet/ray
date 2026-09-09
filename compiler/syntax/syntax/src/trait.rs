@@ -7,6 +7,7 @@ use rayc_parser::{
 
 use crate::{
     Identifier, Keyword, def::DefSignature, effect::TypeParameterList, given::GivenParameterList,
+    where_clause::WhereClause,
 };
 
 abstract_tree::abstract_tree! {
@@ -15,19 +16,20 @@ abstract_tree::abstract_tree! {
         pub type_keyword: Keyword = expect::Keyword::Type,
         pub name: Identifier = expect::Identifier,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
-        pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional()
+        pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
+        pub where_clause: WhereClause = ast::<WhereClause>().optional()
     }
 }
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    pub enum TraitDef {
+    pub enum TraitMember {
         Definition(DefSignature = ast::<DefSignature>()),
         AssociatedType(TraitAssociatedType = ast::<TraitAssociatedType>())
     }
 }
 
-impl TraitDef {
+impl TraitMember {
     #[must_use]
     pub fn signature(&self) -> Option<DefSignature> {
         match self {
@@ -41,7 +43,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     #{fragment = Fragment::Indentation}
     pub struct TraitBody {
-        pub definitions: #[multi] TraitDef = ast::<TraitDef>().line().repeat_all()
+        pub definitions: #[multi] TraitMember = ast::<TraitMember>().line().repeat_all()
     }
 }
 
@@ -52,6 +54,7 @@ abstract_tree::abstract_tree! {
         pub name: Identifier = expect::Identifier,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>(),
         pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
+        pub where_clause: WhereClause = ast::<WhereClause>().optional(),
         pub body: TraitBody = ast::<TraitBody>()
     }
 }

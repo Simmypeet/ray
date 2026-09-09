@@ -7,7 +7,7 @@ use rayc_parser::{
 
 use crate::{
     Identifier, Keyword, Punctuation, def::Def, effect::TypeParameterList,
-    given::GivenParameterList, path::Path, r#type::Type,
+    given::GivenParameterList, path::Path, r#type::Type, where_clause::WhereClause,
 };
 
 abstract_tree::abstract_tree! {
@@ -17,6 +17,7 @@ abstract_tree::abstract_tree! {
         pub name: Identifier = expect::Identifier,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
         pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
+        pub where_clause: WhereClause = ast::<WhereClause>().optional(),
         pub equals: Punctuation = '=',
         pub r#type: Type = ast::<Type>()
     }
@@ -24,13 +25,13 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    pub enum InstanceDef {
+    pub enum InstanceMember {
         Definition(Def = ast::<Def>()),
         AssociatedType(InstanceAssociatedType = ast::<InstanceAssociatedType>())
     }
 }
 
-impl InstanceDef {
+impl InstanceMember {
     #[must_use]
     pub fn definition(&self) -> Option<Def> {
         match self {
@@ -44,7 +45,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     #{fragment = Fragment::Indentation}
     pub struct InstanceBody {
-        pub definitions: #[multi] InstanceDef = ast::<InstanceDef>().line().repeat_all()
+        pub definitions: #[multi] InstanceMember = ast::<InstanceMember>().line().repeat_all()
     }
 }
 
@@ -57,6 +58,7 @@ abstract_tree::abstract_tree! {
         pub for_keyword: Keyword = expect::Keyword::For,
         pub trait_reference: Path = ast::<Path>(),
         pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
+        pub where_clause: WhereClause = ast::<WhereClause>().optional(),
         pub body: InstanceBody = ast::<InstanceBody>()
     }
 }

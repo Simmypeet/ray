@@ -22,6 +22,7 @@ pub mod path;
 pub mod statement;
 pub mod r#trait;
 pub mod r#type;
+pub mod where_clause;
 
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
 pub type Keyword = Token<kind::Keyword, RelativeLocation>;

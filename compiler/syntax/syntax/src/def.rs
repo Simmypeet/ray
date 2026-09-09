@@ -13,6 +13,7 @@ use crate::{
     irrefutable_pattern::IrrefutablePattern,
     statement::Block,
     r#type::{Arrow, Type},
+    where_clause::WhereClause,
 };
 
 abstract_tree::abstract_tree! {
@@ -35,7 +36,8 @@ abstract_tree::abstract_tree! {
         pub parameter_list: ParameterList = ast::<ParameterList>(),
         pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
         pub return_type: ReturnType = ast::<ReturnType>().optional(),
-        pub effect_row: EffectRowAnnotation = ast::<EffectRowAnnotation>().optional()
+        pub effect_row: EffectRowAnnotation = ast::<EffectRowAnnotation>().optional(),
+        pub where_clause: WhereClause = ast::<WhereClause>().optional()
     }
 }
 

@@ -4,9 +4,9 @@ use rayc_symbol::symbol_kind::SymbolKind;
 use rayc_syntax::{
     def::{Def, DefSignature, ParameterEntry},
     effect::{Effect, OperationSignature},
-    instance::{Instance, InstanceAssociatedType, InstanceDef},
+    instance::{Instance, InstanceAssociatedType, InstanceMember},
     module::ModuleMember,
-    r#trait::{Trait, TraitAssociatedType, TraitDef},
+    r#trait::{Trait, TraitAssociatedType, TraitMember},
 };
 
 use crate::{
@@ -275,11 +275,11 @@ impl Table {
         if let Some(body) = r#trait.body() {
             for definition in body.definitions() {
                 match definition {
-                    TraitDef::Definition(signature) => {
+                    TraitMember::Definition(signature) => {
                         self.register_trait_def(&mut trait_members, signature.clone(), engine)
                             .await;
                     }
-                    TraitDef::AssociatedType(ty) => {
+                    TraitMember::AssociatedType(ty) => {
                         self.register_trait_type(&mut trait_members, ty.clone(), engine).await;
                     }
                 }
@@ -318,7 +318,7 @@ impl Table {
         if let Some(body) = instance.body() {
             for instance_def in body.definitions() {
                 match instance_def {
-                    InstanceDef::Definition(definition) => {
+                    InstanceMember::Definition(definition) => {
                         self.register_instance_def(
                             &mut instance_members,
                             definition.clone(),
@@ -326,7 +326,7 @@ impl Table {
                         )
                         .await;
                     }
-                    InstanceDef::AssociatedType(ty) => {
+                    InstanceMember::AssociatedType(ty) => {
                         self.register_instance_type(&mut instance_members, ty.clone(), engine)
                             .await;
                     }

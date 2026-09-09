@@ -1,0 +1,50 @@
+//! Declaration constraints written as `where (left = right, ...)`.
+//!
+//! The keyword and opening parenthesis stay on the declaration header's line.
+//! Inside the parentheses, newlines are insignificant and commas separate
+//! constraints, including an optional trailing comma. Both equality operands
+//! are parsed as types; resolving associated projections and enforcing equality
+//! belong to semantic analysis.
+
+use qbice::{Decode, Encode, StableHash};
+use rayc_lexical::tree::DelimiterKind;
+use rayc_parser::{
+    abstract_tree,
+    expect::{self, Fragment},
+    parser::{ParserExt, ast},
+};
+
+use crate::{Keyword, Punctuation, r#type::Type};
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct TypeEquality {
+        pub left: Type = ast::<Type>(),
+        pub equals: Punctuation = '=',
+        pub right: Type = ast::<Type>()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub enum Constraint {
+        TypeEquality(TypeEquality = ast::<TypeEquality>())
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
+    pub struct Constraints {
+        pub constraints: #[multi] Constraint = ast::<Constraint>()
+            .repeat_all_with_separator(',')
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct WhereClause {
+        pub where_keyword: Keyword = expect::Keyword::Where.new_line_significant(true),
+        pub constraints: Constraints = ast::<Constraints>().new_line_significant(true)
+    }
+}
