@@ -1,5 +1,17 @@
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::{
+    member::get_member_by_name,
+    name::get_name,
+    symbol_kind::{SymbolKind, get_symbol_kind},
+};
+
+use crate::{
+    instance_member::get_instance_member,
+    poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
+    subst::Substitutable,
+    type_definition::get_type_definition,
+};
 
 /// Performs a single reduction step.
 pub trait Reduce: Sync {
@@ -43,31 +55,23 @@ where
 }
 
 /// Expands a projection only when its instance and member correspondence are
-/// known.
+/// known. This performs one definition expansion; further reduction uses the
+/// ordinary [`Reduce`] traversal.
+///
+/// TODO: diagnose recursive associated types during normalization. A future
+/// normalization context could track implementation member IDs on the active
+/// expansion stack, catching direct and mutual recursion even when arguments
+/// grow (for example, `Item[a] = Instance.Item[(a, a)]`). Expand supplied
+/// arguments before entering the definition so finite nesting such as
+/// `Identity.Item[Identity.Item[int32]]` remains valid. Preserve abstract
+/// dictionary projections and report cycles through semantic diagnostics.
+/// Until then, recursive definitions may remain irreducible or fail to
+/// terminate during normalization.
 pub(crate) async fn reduce_instance_associated(
     associated: crate::ty::application::InstanceAssociatedView<'_>,
     engine: &TrackedEngine,
 ) -> Option<Interned<crate::ty::Ty>> {
-    use rayc_symbol::{
-        member::get_member_by_name,
-        name::get_name,
-        symbol_kind::{SymbolKind, get_symbol_kind},
-    };
-
-    use crate::{
-        instance_member::get_instance_member,
-        poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
-        subst::Substitutable,
-        ty::{Ty, application::View},
-        type_definition::get_type_definition,
-    };
-
-    let Ty::Application(instance) = associated.instance().as_ref() else {
-        return None;
-    };
-    let View::Instance(instance) = instance.view() else {
-        return None;
-    };
+    let instance = associated.instance().as_instance_view()?;
 
     // The projection names a trait member, while the definition belongs to its
     // same-named implementation in the concrete instance.
@@ -76,7 +80,7 @@ pub(crate) async fn reduce_instance_associated(
     if engine.get_symbol_kind(member_id).await != SymbolKind::InstanceType {
         return None;
     }
-    let member = engine.get_instance_member(member_id).await;
+    let member = engine.get_instance_member(member_id).await?;
     if member.trait_member_id() != associated.symbol_id() {
         return None;
     }
@@ -90,12 +94,11 @@ pub(crate) async fn reduce_instance_associated(
     // member arguments through the checked trait-to-implementation mapping.
     let mut substitution =
         engine.build_subst_from_args(instance.symbol_id(), instance.args()).await;
+
     for ((id, _), argument) in trait_poly_vars.iter().zip(associated.args()) {
         let trait_var = GlobalPolyVarID::new(associated.symbol_id(), id);
-        let implementation_var = member.poly_var_substitution().get(&trait_var)?;
-        let Ty::PolyVar(implementation_var) = implementation_var.as_ref() else {
-            return None;
-        };
+        let implementation_var = member.poly_var_substitution().get(&trait_var)?.as_poly_var()?;
+
         substitution.insert(*implementation_var, argument.clone());
     }
 

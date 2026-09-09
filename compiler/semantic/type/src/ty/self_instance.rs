@@ -10,19 +10,26 @@ use crate::{
 
 /// The rigid self-instance binder owned by a trait declaration.
 ///
-/// Conceptually, the following Ray declaration uses this binder as the instance
-/// in the associated type projection `this.Item` (syntax is not yet supported):
+/// The following Ray declaration uses this binder as the dictionary in the
+/// associated type projection `this.Item`:
 ///
 /// ```text
-/// trait Iterator[a]
+/// trait Iterator[a]:
 ///     type Item
-///     def next(a: a) -> Option[this.Item]
+///     def next(value: a, previous: this.Item) -> (bool, this.Item)
 /// ```
 ///
 /// Its kind is `TyKind::Instance`, and its trait reference is `Iterator[a]`,
 /// using the owning trait's identity poly variables. Selecting `next` through
-/// instance `i` substitutes this binder with `i`, yielding `Option[i.Item]`.
+/// instance `i` substitutes this binder with `i`, yielding `(bool, i.Item)`.
 /// Until then, the projection remains abstract.
+///
+/// `this` is scoped to trait bodies, including their member signatures. It is
+/// not valid in instance declarations or ordinary function bodies. Bare `this`
+/// can supply an explicit given dictionary inside a trait signature; it is not
+/// a value type, runtime value, or implicit instance-search request. Named
+/// trait paths such as `Iterator[int32].Item` provide no dictionary and are
+/// rejected.
 ///
 /// This binder lives in the trait's original parameter context. Instantiating
 /// a member must substitute both the trait parameters and this binder;

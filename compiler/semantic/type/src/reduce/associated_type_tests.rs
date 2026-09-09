@@ -76,7 +76,7 @@ async fn fixture(local_argument: bool) -> (TrackedEngine, Interned<Ty>, Interned
     );
     engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
         crate::instance_member::Key { symbol_id: member_id },
-        engine.intern(InstanceMember::new(trait_member, member_id, mapping)),
+        Some(engine.intern(InstanceMember::new(trait_member, member_id, mapping))),
     )]))));
 
     let definition_args = engine.intern_unsized([a, second]);

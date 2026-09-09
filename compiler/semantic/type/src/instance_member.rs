@@ -39,15 +39,26 @@ impl InstanceMember {
     pub const fn poly_var_substitution(&self) -> &Subst { &self.poly_var_substitution }
 }
 
-/// Checks compatibility and retrieves an instance associated method or type.
+/// Retrieves structural correspondence for an instance associated method or
+/// type.
 ///
 /// Accepts `SymbolKind::InstanceDef` and `SymbolKind::InstanceType`.
-/// Diagnostics report incompatibility; an incompatible polymorphic signature
-/// yields an empty substitution.
+///
+/// Returns `None` when the parent instance's trait reference failed to resolve,
+/// or when that trait has no member with the implementation member's name.
+/// These are error-recovery cases: callers may request correspondence while
+/// resolving projections in an invalid program.
+///
+/// `Some` means the corresponding trait member was found; it does not guarantee
+/// a valid implementation. Incompatible member kinds or polymorphic parameter
+/// counts/kinds produce diagnostics and an empty substitution inside `Some`.
+/// Given requirements and method signatures are checked separately, so
+/// reduction can retrieve correspondence without recursively requesting
+/// conformance checks.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
-#[value(Interned<InstanceMember>)]
+#[value(Option<Interned<InstanceMember>>)]
 #[extend(by_val, name = get_instance_member)]
 pub struct Key {
     pub symbol_id: GlobalSymbolID,

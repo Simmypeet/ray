@@ -13,7 +13,7 @@ use crate::{
     reduce::Reduce,
     subst::{Subst, Substitutable},
     ty::{
-        application::{Application, Constant, View as ApplicationView},
+        application::{Application, Constant, InstanceView, View as ApplicationView},
         args::Args,
         effect_row::EffectRow,
         inference::{GenInfer, Inference},
@@ -600,6 +600,24 @@ impl Ty {
         };
 
         ty_application.view()
+    }
+
+    #[must_use]
+    pub fn as_instance_view(&self) -> Option<InstanceView<'_>> {
+        let Self::Application(ty_application) = self else {
+            return None;
+        };
+
+        let ApplicationView::Instance(instance_view) = ty_application.view() else {
+            return None;
+        };
+
+        Some(instance_view)
+    }
+
+    #[must_use]
+    pub const fn as_poly_var(&self) -> Option<&GlobalPolyVarID> {
+        if let Self::PolyVar(poly_var) = self { Some(poly_var) } else { None }
     }
 
     #[must_use]
