@@ -132,7 +132,7 @@ async fn single_rendered_executor(
     }
 
     // Solve together after collecting all semantic elements for this symbol.
-    rendered.extend(solve_obligations(obligations, engine).await);
+    rendered.extend(solve_obligations(obligations, symbol_id, engine).await);
     engine.intern_unsized(rendered)
 }
 
@@ -173,6 +173,7 @@ static RENDERED_EXECUTOR: Registration<Config> =
 /// diagnostics.
 async fn solve_obligations(
     obligations: Vec<rayc_resolution::Obligation>,
+    site: GlobalSymbolID,
     engine: &TrackedEngine,
 ) -> Vec<Rendered<ByteIndex>> {
     use rayc_solver::ty_relate::Step;
@@ -181,7 +182,7 @@ async fn solve_obligations(
         subst::{Subst, Substitutable},
     };
 
-    let mut solver = rayc_solver::Solver::new(engine.clone());
+    let mut solver = rayc_solver::Solver::new(engine.clone(), site).await;
     let mut constraints = Vec::new();
     let mut failed = std::collections::BTreeSet::new();
     // Expand trait checks only after all semantic elements are available.
@@ -214,7 +215,7 @@ async fn solve_obligations(
                 }
             }
             Ok(Step::NoProgress) => {
-                if let Some(reduced) = constraint.reduce(engine, &[]).await {
+                if let Some(reduced) = constraint.reduce(solver.engine(), solver.givens()).await {
                     constraints.push((index, reduced));
                 } else {
                     residual.push((index, constraint));

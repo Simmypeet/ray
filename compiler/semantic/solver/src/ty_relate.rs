@@ -3,7 +3,6 @@ use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     constraint::ty_relate::TyRelate,
     poly_var::{GlobalPolyVarID, get_poly_var_map},
-    reduce::Reduce,
     subst::Subst,
     ty::{
         InferenceConstraint, Ty, TyKind,
@@ -110,7 +109,8 @@ impl Solver {
         substype: &TyRelate,
         relate_env: &TyRelatingEnvironment,
     ) -> Result<Step, Error> {
-        let normalized = substype.normalize(self.engine(), self.givens()).await;
+        // TODO: I don't think normalization should be performed here
+        let normalized = self.normalize(substype).await;
         let substype = &normalized;
         if substype.lesser() == substype.greater() {
             return Ok(Step::Derived(Vec::new()));

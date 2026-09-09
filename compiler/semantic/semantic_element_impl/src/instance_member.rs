@@ -11,6 +11,7 @@ use rayc_semantic_element::{
     effect_row::get_effect_row, instance_trait_ref::get_instance_trait_ref,
     parameter::get_parameter_map, return_type::get_return_type,
 };
+use rayc_solver::Solver;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID,
@@ -25,7 +26,6 @@ use rayc_symbol::{
 use rayc_type::{
     instance_member::{InstanceMember, Key},
     poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
-    reduce::Reduce,
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{
@@ -261,6 +261,7 @@ async fn poly_var_substitution(
 /// correspondence.
 async fn check_given_requirements(
     engine: &TrackedEngine,
+    solver: &Solver,
     member: &InstanceMember,
     compatibility: &Compatibility<'_>,
 ) -> bool {
@@ -276,11 +277,9 @@ async fn check_given_requirements(
         if let (Some(expected), Some(actual)) =
             (trait_poly_var.trait_ref(), instance_poly_var.trait_ref())
         {
-            let expected = expected
-                .apply_subst_or_clone(member.poly_var_substitution(), engine)
-                .normalize(engine, &[])
-                .await;
-            let actual = actual.normalize(engine, &[]).await;
+            let expected = expected.apply_subst_or_clone(member.poly_var_substitution(), engine);
+            let expected = solver.normalize(&expected).await;
+            let actual = solver.normalize(actual).await;
             if !expected.contains_error() && !actual.contains_error() && expected != actual {
                 compatibility.report_at(
                     Mismatch::InstanceParameterTraitRef { index, expected, actual },
@@ -296,6 +295,7 @@ async fn check_given_requirements(
 
 async fn check_method_signature(
     engine: &TrackedEngine,
+    solver: &Solver,
     trait_member_id: GlobalSymbolID,
     instance_member_id: GlobalSymbolID,
     substitution: &Subst,
@@ -319,12 +319,9 @@ async fn check_method_signature(
 
         // TODO: we should create and use dedicated type equivalence checking instead of
         // relying syntactic equality.
-        let expected = trait_parameter
-            .ty()
-            .apply_subst_or_clone(substitution, engine)
-            .normalize(engine, &[])
-            .await;
-        let actual = instance_parameter.ty().normalize(engine, &[]).await;
+        let expected = trait_parameter.ty().apply_subst_or_clone(substitution, engine);
+        let expected = solver.normalize(&expected).await;
+        let actual = solver.normalize(instance_parameter.ty()).await;
         if !contains_error(&expected) && !contains_error(&actual) && expected != actual {
             compatibility.report_at(
                 Mismatch::ParameterType { index, expected, actual },
@@ -334,14 +331,11 @@ async fn check_method_signature(
         }
     }
 
-    let trait_return = engine
-        .get_return_type(trait_member_id)
-        .await
-        .apply_subst_or_clone(substitution, engine)
-        .normalize(engine, &[])
-        .await;
-    let instance_return =
-        engine.get_return_type(instance_member_id).await.normalize(engine, &[]).await;
+    let trait_return =
+        engine.get_return_type(trait_member_id).await.apply_subst_or_clone(substitution, engine);
+    let trait_return = solver.normalize(&trait_return).await;
+    let instance_return = engine.get_return_type(instance_member_id).await;
+    let instance_return = solver.normalize(&instance_return).await;
 
     // TODO: we should create and use dedicated type equivalence checking instead of
     // relying syntactic equality.
@@ -364,14 +358,11 @@ async fn check_method_signature(
 
     // TODO: we should create and use dedicated type equivalence checking instead of
     // relying syntactic equality.
-    let trait_effect = engine
-        .get_effect_row(trait_member_id)
-        .await
-        .apply_subst_or_clone(substitution, engine)
-        .normalize(engine, &[])
-        .await;
-    let instance_effect =
-        engine.get_effect_row(instance_member_id).await.normalize(engine, &[]).await;
+    let trait_effect =
+        engine.get_effect_row(trait_member_id).await.apply_subst_or_clone(substitution, engine);
+    let trait_effect = solver.normalize(&trait_effect).await;
+    let instance_effect = engine.get_effect_row(instance_member_id).await;
+    let instance_effect = solver.normalize(&instance_effect).await;
     if !contains_error(&trait_effect)
         && !contains_error(&instance_effect)
         && trait_effect != instance_effect
@@ -485,11 +476,13 @@ async fn conformance_executor(
         trait_span: engine.get_span(trait_member_id).await.expect("member span"),
         diagnostics: &diagnostics,
     };
-    if check_given_requirements(engine, &member, &compatibility).await
+    let solver = Solver::new(engine.clone(), symbol_id).await;
+    if check_given_requirements(engine, &solver, &member, &compatibility).await
         && engine.get_symbol_kind(symbol_id).await == SymbolKind::InstanceDef
     {
         check_method_signature(
             engine,
+            &solver,
             trait_member_id,
             symbol_id,
             member.poly_var_substitution(),

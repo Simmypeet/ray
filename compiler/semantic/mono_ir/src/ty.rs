@@ -6,10 +6,10 @@ use qbice::{
 use rayc_extend::extend;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
+use rayc_solver::Solver;
 use rayc_symbol::{GlobalSymbolID, member::get_members};
 use rayc_type::{
     poly_var::build_subst_from_args,
-    reduce::Reduce,
     subst::{MutSubstitutable, Subst, Substitutable},
     ty::{Mutability, Primitive, Ty, application::View as ApplicationView},
 };
@@ -349,7 +349,8 @@ pub async fn lower_type(
     ty: &Interned<Ty>,
     substitution: &Subst,
 ) -> Interned<MonoType> {
-    let ty = reduce_fully(ty.apply_subst_or_clone(substitution, self), self).await;
+    let ty = ty.apply_subst_or_clone(substitution, self);
+    let ty = Solver::without_givens(self.clone()).normalize(&ty).await;
     lower_concrete_type(self, &ty).await
 }
 
@@ -420,7 +421,8 @@ pub async fn lower_effects(
     effect: &Interned<Ty>,
     substitution: &Subst,
 ) -> Vec<MonoEffectInstance> {
-    let effect = reduce_fully(effect.apply_subst_or_clone(substitution, self), self).await;
+    let effect = effect.apply_subst_or_clone(substitution, self);
+    let effect = Solver::without_givens(self.clone()).normalize(&effect).await;
     lower_concrete_effects(self, &effect).await
 }
 
@@ -508,11 +510,4 @@ const fn lower_mutability(mutability: Mutability) -> PointerMutability {
         Mutability::Immutable => PointerMutability::Const,
         Mutability::Mutable => PointerMutability::Mut,
     }
-}
-
-async fn reduce_fully(mut ty: Interned<Ty>, engine: &TrackedEngine) -> Interned<Ty> {
-    while let Some(reduced) = ty.reduce(engine, &[]).await {
-        ty = reduced;
-    }
-    ty
 }

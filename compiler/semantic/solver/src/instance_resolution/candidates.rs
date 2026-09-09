@@ -5,7 +5,6 @@ use rayc_semantic_element::{
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     poly_var::{PolyVarID, get_poly_var_map},
-    reduce::Reduce,
     subst::Subst,
     trait_ref::TraitRef,
 };
@@ -46,7 +45,7 @@ pub(super) async fn collect(
         };
         solver.visit_instance_candidate(instance_id)?;
 
-        let head = head.normalize(&engine, solver.givens()).await;
+        let head = solver.normalize(&head).await;
         let Some(subst) = solver.head_match(&head, required).await else {
             continue;
         };

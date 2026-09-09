@@ -101,8 +101,11 @@ impl Solver {
     }
 
     /// Creates a solver without a declaration site or visible predicates.
+    ///
+    /// This is only appropriate after monomorphization, where every type is
+    /// concrete, and in focused unit-test fixtures.
     #[must_use]
-    pub fn new(engine: TrackedEngine) -> Self {
+    pub fn without_givens(engine: TrackedEngine) -> Self {
         Self {
             inference_counter: 0,
             givens: engine.intern_unsized([]),
@@ -112,7 +115,8 @@ impl Solver {
         }
     }
 
-    pub async fn new_at_site(engine: TrackedEngine, site: GlobalSymbolID) -> Self {
+    /// Creates a solver with every predicate visible at `site`.
+    pub async fn new(engine: TrackedEngine, site: GlobalSymbolID) -> Self {
         Self::with_limits(engine, site, InstanceResolutionLimits::default()).await
     }
 
@@ -141,6 +145,21 @@ impl Solver {
     pub const fn engine(&self) -> &TrackedEngine { &self.engine }
 
     pub const fn site(&self) -> GlobalSymbolID { self.site }
+
+    /// Reduces a value and its descendants until no further step is available.
+    ///
+    /// Reduction implementations must make progress toward termination.
+    pub async fn normalize<T>(&self, value: &T) -> T
+    where
+        T: Reduce + Clone + PartialEq + Send,
+    {
+        let mut normalized = value.clone();
+        while let Some(reduced) = normalized.reduce(self.engine(), self.givens()).await {
+            assert!(reduced != normalized, "reduction must make progress");
+            normalized = reduced;
+        }
+        normalized
+    }
 
     #[must_use]
     pub const fn new_inference(&mut self, kind: TyKind) -> Inference {

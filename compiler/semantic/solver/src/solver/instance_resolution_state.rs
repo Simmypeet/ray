@@ -1,7 +1,7 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{reduce::Reduce, trait_ref::TraitRef, ty::Ty};
+use rayc_type::{trait_ref::TraitRef, ty::Ty};
 
 use crate::{
     Solver,
@@ -198,7 +198,7 @@ impl Solver {
         required: TraitRef,
         introduced_by: Option<InstanceResolutionEdge>,
     ) -> Result<Interned<Ty>, InstanceResolutionError> {
-        let required = required.normalize(self.engine(), self.givens()).await;
+        let required = self.normalize(&required).await;
         if required.contains_inference() {
             return Err(InstanceResolutionError::NotReady(required));
         }

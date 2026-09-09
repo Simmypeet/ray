@@ -1,7 +1,7 @@
 use qbice::storage::intern::Interned;
 use rayc_semantic_element::instance_trait_ref::get_instance_trait_ref;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{reduce::Reduce, trait_ref::TraitRef, ty::Ty};
+use rayc_type::{trait_ref::TraitRef, ty::Ty};
 
 use super::InstanceResolutionError;
 use crate::Solver;
@@ -31,9 +31,8 @@ pub(super) async fn select(
         let head = engine
             .get_instance_trait_ref(candidate.instance_id)
             .await
-            .expect("a viable instance candidate must have a trait reference")
-            .normalize(&engine, solver.givens())
-            .await;
+            .expect("a viable instance candidate must have a trait reference");
+        let head = solver.normalize(&head).await;
         heads.push(head);
     }
 

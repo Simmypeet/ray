@@ -149,7 +149,7 @@ impl Solver {
         &mut self,
         required: &TraitRef,
     ) -> Result<Interned<Ty>, InstanceResolutionError> {
-        match lexical::resolve(self.engine(), self.site(), required).await {
+        match lexical::resolve(self, required).await {
             Ok(LexicalResolution::NotFound) => {}
             Ok(LexicalResolution::Resolved(term)) => return Ok(term),
             Err(error) => return Err(error),

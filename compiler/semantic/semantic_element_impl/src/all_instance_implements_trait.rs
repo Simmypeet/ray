@@ -6,10 +6,10 @@ use rayc_semantic_element::{
     all_instance_implements_trait::AllInstanceImplementsTrait,
     instance_trait_ref::get_instance_trait_ref,
 };
+use rayc_solver::Solver;
 use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_instance_ids};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
-    reduce::Reduce,
     ty::{Ty, TyKind},
 };
 
@@ -30,7 +30,8 @@ async fn all_instance_implements_trait_executor(
             continue;
         }
 
-        let head = trait_ref.normalize(engine, &[]).await;
+        let solver = Solver::new(engine.clone(), symbol_id).await;
+        let head = solver.normalize(&trait_ref).await;
         if head.contains_error() || head.contains_inference() {
             continue;
         }
