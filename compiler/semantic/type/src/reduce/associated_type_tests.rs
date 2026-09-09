@@ -110,7 +110,7 @@ async fn fixture(local_argument: bool) -> (TrackedEngine, Interned<Ty>, Interned
 #[tokio::test]
 async fn substitutes_enclosing_instance_arguments() {
     let (engine, projection, expected) = fixture(false).await;
-    assert_eq!(projection.reduce(&engine).await, Some(expected));
+    assert_eq!(projection.reduce(&engine, &[]).await, Some(expected));
 }
 
 // input: Test[int32].Inner[bool]
@@ -119,7 +119,7 @@ async fn substitutes_enclosing_instance_arguments() {
 #[tokio::test]
 async fn substitutes_checked_member_mapping_and_instance_arguments() {
     let (engine, projection, expected) = fixture(true).await;
-    assert_eq!(projection.reduce(&engine).await, Some(expected));
+    assert_eq!(projection.reduce(&engine, &[]).await, Some(expected));
 }
 
 // input: (Test[int32].Inner,)
@@ -130,7 +130,7 @@ async fn reduces_associated_types_in_descendants() {
     let (engine, projection, expected) = fixture(false).await;
     let tuple = Ty::new_tuple(engine.intern_unsized([projection]), &engine);
     let expected = Ty::new_tuple(engine.intern_unsized([expected]), &engine);
-    assert_eq!(tuple.normalize(&engine).await, expected);
+    assert_eq!(tuple.normalize(&engine, &[]).await, expected);
 }
 
 // input: ?instance.Inner[int32]
@@ -145,5 +145,5 @@ async fn leaves_unknown_instances_unreduced() {
         [Ty::new_primitive(Primitive::Int32, &engine)],
         &engine,
     );
-    assert_eq!(projection.reduce(&engine).await, None);
+    assert_eq!(projection.reduce(&engine, &[]).await, None);
 }

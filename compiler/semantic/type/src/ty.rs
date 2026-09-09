@@ -219,12 +219,29 @@ impl Substitutable for Interned<Ty> {
 }
 
 impl Reduce for Interned<Ty> {
-    async fn reduce(&self, engine: &TrackedEngine) -> Option<Self> {
-        reduce_type(self, engine).await
+    async fn reduce(
+        &self,
+        engine: &TrackedEngine,
+        givens: &[crate::where_clause::PredicateKind],
+    ) -> Option<Self> {
+        // Prefer structural reduction, then the first matching given equality.
+        if let Some(reduced) = reduce_type(self, engine, givens).await {
+            return Some(reduced);
+        }
+        givens.iter().find_map(|predicate| match predicate {
+            crate::where_clause::PredicateKind::AssociatedTypeEquality(equality) => {
+                (equality.left() == self && equality.right() != self)
+                    .then(|| equality.right().clone())
+            }
+        })
     }
 }
 
-async fn reduce_type(ty: &Interned<Ty>, engine: &TrackedEngine) -> Option<Interned<Ty>> {
+async fn reduce_type(
+    ty: &Interned<Ty>,
+    engine: &TrackedEngine,
+    givens: &[crate::where_clause::PredicateKind],
+) -> Option<Interned<Ty>> {
     match ty.as_ref() {
         Ty::Application(application) => {
             Box::pin(async move {
@@ -236,7 +253,7 @@ async fn reduce_type(ty: &Interned<Ty>, engine: &TrackedEngine) -> Option<Intern
                     return Some(reduced);
                 }
                 application
-                    .reduce(engine)
+                    .reduce(engine, givens)
                     .await
                     .map(|application| engine.intern(Ty::Application(application)))
             })
@@ -249,7 +266,7 @@ async fn reduce_type(ty: &Interned<Ty>, engine: &TrackedEngine) -> Option<Intern
             {
                 return Some(tail.clone());
             }
-            Box::pin(row.reduce(engine)).await.map(|row| engine.intern(Ty::EffectRow(row)))
+            Box::pin(row.reduce(engine, givens)).await.map(|row| engine.intern(Ty::EffectRow(row)))
         }
     }
 }

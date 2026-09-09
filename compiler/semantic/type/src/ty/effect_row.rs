@@ -21,8 +21,12 @@ pub struct EffectLabel {
 }
 
 impl Reduce for Interned<EffectLabel> {
-    async fn reduce(&self, engine: &rayc_qbice::TrackedEngine) -> Option<Self> {
-        self.args.reduce(engine).await.map(|args| {
+    async fn reduce(
+        &self,
+        engine: &rayc_qbice::TrackedEngine,
+        givens: &[crate::where_clause::PredicateKind],
+    ) -> Option<Self> {
+        self.args.reduce(engine, givens).await.map(|args| {
             engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
         })
     }
@@ -113,7 +117,11 @@ impl EffectRow {
 }
 
 impl Reduce for EffectRow {
-    async fn reduce(&self, engine: &rayc_qbice::TrackedEngine) -> Option<Self> {
+    async fn reduce(
+        &self,
+        engine: &rayc_qbice::TrackedEngine,
+        givens: &[crate::where_clause::PredicateKind],
+    ) -> Option<Self> {
         if let Some(Ty::EffectRow(tail_row)) = self.tail.as_deref() {
             // reduce the case like `{A, B | {}}` to `{A, B}`.
             if tail_row.labels.is_empty() && tail_row.tail.is_none() {
@@ -127,12 +135,12 @@ impl Reduce for EffectRow {
             ));
         }
 
-        if let Some(labels) = self.labels.reduce(engine).await {
+        if let Some(labels) = self.labels.reduce(engine, givens).await {
             return Some(Self { labels, tail: self.tail.clone() });
         }
 
         if let Some(tail) = &self.tail
-            && let Some(tail) = tail.reduce(engine).await
+            && let Some(tail) = tail.reduce(engine, givens).await
         {
             return Some(Self { labels: self.labels.clone(), tail: Some(tail) });
         }

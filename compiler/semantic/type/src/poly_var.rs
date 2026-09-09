@@ -234,7 +234,7 @@ impl PolyVarStack {
             let mut matches = Vec::new();
             for (poly_var_id, poly_var) in poly_var_map.iter() {
                 if let Some(candidate) = poly_var.trait_ref()
-                    && candidate.normalize(engine).await == *required
+                    && candidate.normalize(engine, &[]).await == *required
                 {
                     matches.push(GlobalPolyVarID::new(*symbol_id, poly_var_id));
                 }

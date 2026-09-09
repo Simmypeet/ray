@@ -7,3 +7,4 @@ pub mod ty;
 
 pub mod instance_member;
 pub mod type_definition;
+pub mod where_clause;

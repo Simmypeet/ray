@@ -235,8 +235,12 @@ impl Application {
 }
 
 impl Reduce for Application {
-    async fn reduce(&self, engine: &TrackedEngine) -> Option<Self> {
-        self.args.reduce(engine).await.map(|args| Self { constant: self.constant, args })
+    async fn reduce(
+        &self,
+        engine: &TrackedEngine,
+        givens: &[crate::where_clause::PredicateKind],
+    ) -> Option<Self> {
+        self.args.reduce(engine, givens).await.map(|args| Self { constant: self.constant, args })
     }
 }
 

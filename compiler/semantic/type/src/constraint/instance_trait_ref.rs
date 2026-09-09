@@ -37,8 +37,15 @@ impl InstanceTraitRef {
 }
 
 impl Reduce for InstanceTraitRef {
-    async fn reduce(&self, engine: &TrackedEngine) -> Option<Self> {
-        match (self.instance.reduce(engine).await, self.expected.reduce(engine).await) {
+    async fn reduce(
+        &self,
+        engine: &TrackedEngine,
+        givens: &[crate::where_clause::PredicateKind],
+    ) -> Option<Self> {
+        match (
+            self.instance.reduce(engine, givens).await,
+            self.expected.reduce(engine, givens).await,
+        ) {
             (None, None) => None,
             (instance, expected) => Some(Self::new(
                 instance.unwrap_or_else(|| self.instance.clone()),

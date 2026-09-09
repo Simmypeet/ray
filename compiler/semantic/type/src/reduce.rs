@@ -16,8 +16,15 @@ use crate::{
 /// Performs a single reduction step.
 pub trait Reduce: Sync {
     /// Returns the value after one reduction step, or `None` if irreducible.
+    /// Given equalities rewrite exact left operands to their right operands,
+    /// in slice order, after ordinary reduction at each type. Descendants use
+    /// the same givens. Reflexive equalities do not count as progress.
     #[allow(async_fn_in_trait)]
-    async fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    async fn reduce(
+        &self,
+        engine: &TrackedEngine,
+        givens: &[crate::where_clause::PredicateKind],
+    ) -> Option<Self>
     where
         Self: Sized;
 
@@ -25,12 +32,16 @@ pub trait Reduce: Sync {
     /// available. Reduction implementations must make progress toward
     /// termination.
     #[allow(async_fn_in_trait)]
-    async fn normalize(&self, engine: &TrackedEngine) -> Self
+    async fn normalize(
+        &self,
+        engine: &TrackedEngine,
+        givens: &[crate::where_clause::PredicateKind],
+    ) -> Self
     where
         Self: Sized + Clone + PartialEq + Send,
     {
         let mut normalized = self.clone();
-        while let Some(reduced) = normalized.reduce(engine).await {
+        while let Some(reduced) = normalized.reduce(engine, givens).await {
             assert!(reduced != normalized, "reduction must make progress");
             normalized = reduced;
         }
@@ -42,9 +53,13 @@ impl<T> Reduce for Interned<[T]>
 where
     T: Reduce + Clone + StableHash + Identifiable + Send + Sync + 'static,
 {
-    async fn reduce(&self, engine: &TrackedEngine) -> Option<Self> {
+    async fn reduce(
+        &self,
+        engine: &TrackedEngine,
+        givens: &[crate::where_clause::PredicateKind],
+    ) -> Option<Self> {
         for (index, value) in self.iter().enumerate() {
-            if let Some(reduced) = value.reduce(engine).await {
+            if let Some(reduced) = value.reduce(engine, givens).await {
                 let mut values = self.to_vec();
                 values[index] = reduced;
                 return Some(engine.intern_unsized(values));
@@ -135,7 +150,7 @@ mod tests {
         let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
         let row = Ty::new_effect_row([], Some(int_ty.clone()), &engine);
 
-        assert_eq!(row.reduce(&engine).await, Some(int_ty));
+        assert_eq!(row.reduce(&engine, &[]).await, Some(int_ty));
     }
 
     // input: {IO | {State | e}}
@@ -151,7 +166,7 @@ mod tests {
         let outer = EffectRow::new([io.clone()], Some(inner), &engine);
         let expected = EffectRow::new([io, state], Some(tail), &engine);
 
-        assert_eq!(outer.reduce(&engine).await, Some(expected));
+        assert_eq!(outer.reduce(&engine, &[]).await, Some(expected));
     }
 
     // input: {IO | {}}
@@ -165,7 +180,7 @@ mod tests {
         let row = EffectRow::new([io.clone()], Some(empty), &engine);
         let expected = EffectRow::new([io], None, &engine);
 
-        assert_eq!(row.reduce(&engine).await, Some(expected));
+        assert_eq!(row.reduce(&engine, &[]).await, Some(expected));
     }
 
     // input: ({| int32}, {| bool})
@@ -181,7 +196,7 @@ mod tests {
         let tuple = Ty::new_tuple(engine.intern_unsized([first, second.clone()]), &engine);
         let expected = Ty::new_tuple(engine.intern_unsized([int_ty, second]), &engine);
 
-        assert_eq!(tuple.reduce(&engine).await, Some(expected));
+        assert_eq!(tuple.reduce(&engine, &[]).await, Some(expected));
     }
 
     // input: {IO}
@@ -192,7 +207,58 @@ mod tests {
         let engine = rayc_qbice::create_minimal_engine().await;
         let row = Ty::new_effect_row([effect_label(1, &engine)], None, &engine);
 
-        assert_eq!(row.reduce(&engine).await, None);
+        assert_eq!(row.reduce(&engine, &[]).await, None);
+    }
+
+    // input: c.Item and the enclosing tuple (c.Item,)
+    // premise: c.Item = int32 is given
+    // output: c.Item reduces to int32; the tuple reduces to (int32,)
+    #[tokio::test]
+    async fn reduction_uses_givens_in_descendants() {
+        use crate::{
+            ty::self_instance::SelfInstance,
+            where_clause::{AssociatedTypeEquality, PredicateKind},
+        };
+
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
+        let member_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
+        let dictionary = engine.intern(Ty::SelfInstance(SelfInstance::new(trait_id)));
+        let projection = Ty::new_instance_associated(member_id, dictionary, [], &engine);
+        let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+        let givens = [PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
+            projection.clone(),
+            int_ty.clone(),
+        ))];
+
+        assert_eq!(projection.reduce(&engine, &givens).await, Some(int_ty.clone()));
+        let tuple = Ty::new_tuple(engine.intern_unsized([projection]), &engine);
+        assert_eq!(
+            tuple.reduce(&engine, &givens).await,
+            Some(Ty::new_tuple(engine.intern_unsized([int_ty]), &engine))
+        );
+    }
+
+    // input: an empty effect row with a tail variable
+    // premise: a given maps the row to a different row
+    // output: ordinary reduction returns the tail before consulting givens
+    #[tokio::test]
+    async fn reduction_prefers_structural_steps() {
+        use crate::{
+            ty::{effect_row::EffectRow, inference::Inference},
+            where_clause::{AssociatedTypeEquality, PredicateKind},
+        };
+
+        let engine = rayc_qbice::create_minimal_engine().await;
+        let tail = engine.intern(Ty::Inference(Inference::new(TyKind::EffectRow, 0)));
+        let row = engine.intern(Ty::EffectRow(EffectRow::new([], Some(tail.clone()), &engine)));
+        let other = engine.intern(Ty::EffectRow(EffectRow::new([], None, &engine)));
+        let givens = [PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
+            row.clone(),
+            other,
+        ))];
+
+        assert_eq!(row.reduce(&engine, &givens).await, Some(tail));
     }
 }
 
