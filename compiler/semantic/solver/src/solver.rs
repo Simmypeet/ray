@@ -6,7 +6,7 @@ use rayc_type::{
     reduce::Reduce,
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
-    ty::{InferenceConstraint, TyKind, inference::Inference},
+    ty::{InferenceConstraint, Ty, TyKind, inference::Inference},
     where_clause::PredicateKind,
 };
 
@@ -39,6 +39,40 @@ pub struct Solver {
 }
 
 impl Solver {
+    /// Returns whether two types are equal without binding any variables.
+    ///
+    /// This is intended for declaration checking and monomorphized types,
+    /// where inference has already finished. A relation that can only be
+    /// solved by producing a substitution is therefore not equality here.
+    pub async fn eq_without_unify(&mut self, left: &Interned<Ty>, right: &Interned<Ty>) -> bool {
+        let constraint = TyRelate::new(left.clone(), right.clone());
+        let Some(substitution) =
+            self.exhaustive_solve(vec![constraint], &TyRelatingEnvironment::Normal).await
+        else {
+            return false;
+        };
+
+        substitution.is_empty()
+    }
+
+    /// Returns whether two trait references have the same trait and equal
+    /// arguments without binding any variables.
+    pub async fn trait_refs_eq_without_unify(&mut self, left: &TraitRef, right: &TraitRef) -> bool {
+        if left.trait_id() != right.trait_id() {
+            return false;
+        }
+        let Some(arguments) = left.args().structural_match(right.args()) else {
+            return false;
+        };
+
+        for (left, right) in arguments {
+            if !self.eq_without_unify(left, right).await {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Matches an instance head against an expected trait reference, binding
     /// polymorphic variables on the head side using top-level matching.
     ///

@@ -184,6 +184,28 @@ fn contains_error(ty: &Ty) -> bool {
     })
 }
 
+async fn types_are_incompatible(
+    solver: &mut Solver,
+    expected: &Interned<Ty>,
+    actual: &Interned<Ty>,
+) -> bool {
+    if contains_error(expected) || contains_error(actual) {
+        return false;
+    }
+    !solver.eq_without_unify(expected, actual).await
+}
+
+async fn trait_refs_are_incompatible(
+    solver: &mut Solver,
+    expected: &TraitRef,
+    actual: &TraitRef,
+) -> bool {
+    if expected.contains_error() || actual.contains_error() {
+        return false;
+    }
+    !solver.trait_refs_eq_without_unify(expected, actual).await
+}
+
 async fn poly_var_substitution(
     engine: &TrackedEngine,
     trait_ref: &TraitRef,
@@ -261,7 +283,7 @@ async fn poly_var_substitution(
 /// correspondence.
 async fn check_given_requirements(
     engine: &TrackedEngine,
-    solver: &Solver,
+    solver: &mut Solver,
     member: &InstanceMember,
     compatibility: &Compatibility<'_>,
 ) -> bool {
@@ -280,7 +302,7 @@ async fn check_given_requirements(
             let expected = expected.apply_subst_or_clone(member.poly_var_substitution(), engine);
             let expected = solver.normalize(&expected).await;
             let actual = solver.normalize(actual).await;
-            if !expected.contains_error() && !actual.contains_error() && expected != actual {
+            if trait_refs_are_incompatible(solver, &expected, &actual).await {
                 compatibility.report_at(
                     Mismatch::InstanceParameterTraitRef { index, expected, actual },
                     trait_poly_var.span(),
@@ -293,9 +315,9 @@ async fn check_given_requirements(
     compatible
 }
 
-async fn check_method_signature(
+async fn check_method_parameters(
     engine: &TrackedEngine,
-    solver: &Solver,
+    solver: &mut Solver,
     trait_member_id: GlobalSymbolID,
     instance_member_id: GlobalSymbolID,
     substitution: &Subst,
@@ -317,12 +339,10 @@ async fn check_method_signature(
             continue;
         }
 
-        // TODO: we should create and use dedicated type equivalence checking instead of
-        // relying syntactic equality.
         let expected = trait_parameter.ty().apply_subst_or_clone(substitution, engine);
         let expected = solver.normalize(&expected).await;
         let actual = solver.normalize(instance_parameter.ty()).await;
-        if !contains_error(&expected) && !contains_error(&actual) && expected != actual {
+        if types_are_incompatible(solver, &expected, &actual).await {
             compatibility.report_at(
                 Mismatch::ParameterType { index, expected, actual },
                 trait_parameter.span().unwrap_or(compatibility.trait_span),
@@ -330,19 +350,23 @@ async fn check_method_signature(
             );
         }
     }
+}
 
+async fn check_method_return_type(
+    engine: &TrackedEngine,
+    solver: &mut Solver,
+    trait_member_id: GlobalSymbolID,
+    instance_member_id: GlobalSymbolID,
+    substitution: &Subst,
+    compatibility: &Compatibility<'_>,
+) {
     let trait_return =
         engine.get_return_type(trait_member_id).await.apply_subst_or_clone(substitution, engine);
     let trait_return = solver.normalize(&trait_return).await;
     let instance_return = engine.get_return_type(instance_member_id).await;
     let instance_return = solver.normalize(&instance_return).await;
 
-    // TODO: we should create and use dedicated type equivalence checking instead of
-    // relying syntactic equality.
-    if !contains_error(&trait_return)
-        && !contains_error(&instance_return)
-        && trait_return != instance_return
-    {
+    if types_are_incompatible(solver, &trait_return, &instance_return).await {
         compatibility.report_at(
             Mismatch::ReturnType { expected: trait_return, actual: instance_return },
             engine
@@ -355,18 +379,22 @@ async fn check_method_signature(
                 .map_or(compatibility.instance_span, |syntax| syntax.span()),
         );
     }
+}
 
-    // TODO: we should create and use dedicated type equivalence checking instead of
-    // relying syntactic equality.
+async fn check_method_effect_row(
+    engine: &TrackedEngine,
+    solver: &mut Solver,
+    trait_member_id: GlobalSymbolID,
+    instance_member_id: GlobalSymbolID,
+    substitution: &Subst,
+    compatibility: &Compatibility<'_>,
+) {
     let trait_effect =
         engine.get_effect_row(trait_member_id).await.apply_subst_or_clone(substitution, engine);
     let trait_effect = solver.normalize(&trait_effect).await;
     let instance_effect = engine.get_effect_row(instance_member_id).await;
     let instance_effect = solver.normalize(&instance_effect).await;
-    if !contains_error(&trait_effect)
-        && !contains_error(&instance_effect)
-        && trait_effect != instance_effect
-    {
+    if types_are_incompatible(solver, &trait_effect, &instance_effect).await {
         compatibility.report_at(
             Mismatch::EffectRow { expected: trait_effect, actual: instance_effect },
             engine
@@ -379,6 +407,43 @@ async fn check_method_signature(
                 .map_or(compatibility.instance_span, |syntax| syntax.span()),
         );
     }
+}
+
+async fn check_method_signature(
+    engine: &TrackedEngine,
+    solver: &mut Solver,
+    trait_member_id: GlobalSymbolID,
+    instance_member_id: GlobalSymbolID,
+    substitution: &Subst,
+    compatibility: &Compatibility<'_>,
+) {
+    check_method_parameters(
+        engine,
+        solver,
+        trait_member_id,
+        instance_member_id,
+        substitution,
+        compatibility,
+    )
+    .await;
+    check_method_return_type(
+        engine,
+        solver,
+        trait_member_id,
+        instance_member_id,
+        substitution,
+        compatibility,
+    )
+    .await;
+    check_method_effect_row(
+        engine,
+        solver,
+        trait_member_id,
+        instance_member_id,
+        substitution,
+        compatibility,
+    )
+    .await;
 }
 
 impl Build for Key {
@@ -476,13 +541,13 @@ async fn conformance_executor(
         trait_span: engine.get_span(trait_member_id).await.expect("member span"),
         diagnostics: &diagnostics,
     };
-    let solver = Solver::new(engine.clone(), symbol_id).await;
-    if check_given_requirements(engine, &solver, &member, &compatibility).await
+    let mut solver = Solver::new(engine.clone(), symbol_id).await;
+    if check_given_requirements(engine, &mut solver, &member, &compatibility).await
         && engine.get_symbol_kind(symbol_id).await == SymbolKind::InstanceDef
     {
         check_method_signature(
             engine,
-            &solver,
+            &mut solver,
             trait_member_id,
             symbol_id,
             member.poly_var_substitution(),

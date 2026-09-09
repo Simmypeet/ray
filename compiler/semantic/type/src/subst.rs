@@ -37,6 +37,9 @@ pub struct Subst(FxImHashMap<Var, Interned<Ty>>);
 
 impl Subst {
     #[must_use]
+    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+
+    #[must_use]
     pub fn has_inference_variable(&self, inference: &Inference) -> bool {
         self.0.contains_key(&Var::Inference(*inference))
     }

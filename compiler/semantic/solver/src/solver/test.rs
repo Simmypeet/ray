@@ -1,13 +1,19 @@
+use qbice::storage::intern::Interned;
 use rayc_symbol::SymbolID;
 use rayc_target::TargetID;
 use rayc_type::{
     constraint::ty_relate::TyRelate,
     subst::Subst,
     trait_ref::TraitRef,
-    ty::{Primitive, Ty, TyKind, args::Args},
+    ty::{Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel},
 };
 
 use super::{Solver, TyRelatingEnvironment};
+
+fn effect_label(id: u128, engine: &rayc_qbice::TrackedEngine) -> Interned<EffectLabel> {
+    let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(id));
+    engine.intern(EffectLabel::new(symbol_id, Args::new([], engine)))
+}
 
 async fn engine_with_type_poly_var()
 -> (rayc_qbice::TrackedEngine, rayc_type::poly_var::GlobalPolyVarID) {
@@ -43,6 +49,34 @@ async fn engine_with_type_poly_var()
         engine.intern(poly_vars),
     )]))));
     (Arc::new(engine).tracked().await, GlobalPolyVarID::new(parent_id, id))
+}
+
+// input: {IO, State}, {State, IO}
+// premise: closed effect rows compare independently of label order
+// output: true
+#[tokio::test]
+async fn equality_without_unification_accepts_semantically_equal_types() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let io = effect_label(1, &engine);
+    let state = effect_label(2, &engine);
+    let left = Ty::new_effect_row([io.clone(), state.clone()], None, &engine);
+    let right = Ty::new_effect_row([state, io], None, &engine);
+    let mut solver = Solver::without_givens(engine);
+
+    assert!(solver.eq_without_unify(&left, &right).await);
+}
+
+// input: ?a, int32
+// premise: the relation succeeds only by binding ?a to int32
+// output: false
+#[tokio::test]
+async fn equality_without_unification_rejects_a_generated_substitution() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let mut solver = Solver::without_givens(engine.clone());
+    let inference = engine.intern(Ty::Inference(solver.new_inference(TyKind::Star)));
+    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+
+    assert!(!solver.eq_without_unify(&inference, &int_ty).await);
 }
 
 // input: Trait[(a,), a] matched against Trait[(int32,), int32]
