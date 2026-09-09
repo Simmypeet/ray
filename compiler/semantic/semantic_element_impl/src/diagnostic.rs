@@ -36,7 +36,7 @@ async fn single_rendered_executor(
     let kind = engine.get_symbol_kind(symbol_id).await;
 
     if kind.has_where_clause() {
-        let where_clause_key = rayc_semantic_element::where_clause::Key { symbol_id };
+        let where_clause_key = rayc_type::where_clause::Key { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(where_clause_key)).await;
         let generated = engine.query(&ObligationKey::new(where_clause_key)).await;
 
@@ -214,7 +214,7 @@ async fn solve_obligations(
                 }
             }
             Ok(Step::NoProgress) => {
-                if let Some(reduced) = constraint.reduce(engine).await {
+                if let Some(reduced) = constraint.reduce(engine, &[]).await {
                     constraints.push((index, reduced));
                 } else {
                     residual.push((index, constraint));

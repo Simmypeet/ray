@@ -71,12 +71,16 @@ impl PendingConstraint {
 }
 
 impl Reduce for PendingConstraint {
-    async fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    async fn reduce(
+        &self,
+        engine: &TrackedEngine,
+        givens: &[rayc_type::where_clause::PredicateKind],
+    ) -> Option<Self>
     where
         Self: Sized,
     {
         self.constraint
-            .reduce(engine)
+            .reduce(engine, givens)
             .await
             .map(|new_constraint| Self { constraint: new_constraint, cause_id: self.cause_id })
     }
@@ -231,7 +235,9 @@ impl TAstBuilder {
             }
 
             Ok(Step::NoProgress) => {
-                if let Some(reduced_constraint) = ty_relate.reduce(&self.engine).await {
+                if let Some(reduced_constraint) =
+                    ty_relate.reduce(&self.engine, self.constraint_solver.solver.givens()).await
+                {
                     queued.push(PendingConstraint {
                         constraint: Constraint::TyRelate(reduced_constraint),
                         cause_id,

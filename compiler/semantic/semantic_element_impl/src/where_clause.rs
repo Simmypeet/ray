@@ -5,15 +5,13 @@ use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::resolver::Resolver;
-use rayc_semantic_element::where_clause::{
-    AssociatedTypeEquality, Key, Predicate, PredicateKind, WhereClause,
-};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{source_map::to_absolute_span, syntax::get_where_clause_syntax};
 use rayc_syntax::where_clause::Constraint;
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
     ty::{Ty, application::View},
+    where_clause::{AssociatedTypeEquality, Key, Predicate, PredicateKind, WhereClause},
 };
 
 use crate::{

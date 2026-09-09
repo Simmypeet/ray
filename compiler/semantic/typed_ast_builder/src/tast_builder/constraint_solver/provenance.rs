@@ -353,7 +353,7 @@ impl Provenance {
 
     async fn resolve_type(&self, ty: &Interned<Ty>, engine: &TrackedEngine) -> Interned<Ty> {
         let mut ty = ty.apply_subst_or_clone(&self.subst, engine);
-        while let Some(reduced) = ty.reduce(engine).await {
+        while let Some(reduced) = ty.reduce(engine, &[]).await {
             ty = reduced;
         }
         ty
@@ -435,7 +435,7 @@ impl Provenance {
 impl TAstBuilder {
     pub async fn latest_type(&self, ty: &Interned<Ty>) -> Interned<Ty> {
         ty.apply_subst_or_clone(&self.constraint_solver.provenance.subst, &self.engine)
-            .normalize(&self.engine)
+            .normalize(&self.engine, self.constraint_solver.solver.givens())
             .await
     }
 }

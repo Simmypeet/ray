@@ -278,9 +278,9 @@ async fn check_given_requirements(
         {
             let expected = expected
                 .apply_subst_or_clone(member.poly_var_substitution(), engine)
-                .normalize(engine)
+                .normalize(engine, &[])
                 .await;
-            let actual = actual.normalize(engine).await;
+            let actual = actual.normalize(engine, &[]).await;
             if !expected.contains_error() && !actual.contains_error() && expected != actual {
                 compatibility.report_at(
                     Mismatch::InstanceParameterTraitRef { index, expected, actual },
@@ -319,9 +319,12 @@ async fn check_method_signature(
 
         // TODO: we should create and use dedicated type equivalence checking instead of
         // relying syntactic equality.
-        let expected =
-            trait_parameter.ty().apply_subst_or_clone(substitution, engine).normalize(engine).await;
-        let actual = instance_parameter.ty().normalize(engine).await;
+        let expected = trait_parameter
+            .ty()
+            .apply_subst_or_clone(substitution, engine)
+            .normalize(engine, &[])
+            .await;
+        let actual = instance_parameter.ty().normalize(engine, &[]).await;
         if !contains_error(&expected) && !contains_error(&actual) && expected != actual {
             compatibility.report_at(
                 Mismatch::ParameterType { index, expected, actual },
@@ -335,9 +338,10 @@ async fn check_method_signature(
         .get_return_type(trait_member_id)
         .await
         .apply_subst_or_clone(substitution, engine)
-        .normalize(engine)
+        .normalize(engine, &[])
         .await;
-    let instance_return = engine.get_return_type(instance_member_id).await.normalize(engine).await;
+    let instance_return =
+        engine.get_return_type(instance_member_id).await.normalize(engine, &[]).await;
 
     // TODO: we should create and use dedicated type equivalence checking instead of
     // relying syntactic equality.
@@ -364,9 +368,10 @@ async fn check_method_signature(
         .get_effect_row(trait_member_id)
         .await
         .apply_subst_or_clone(substitution, engine)
-        .normalize(engine)
+        .normalize(engine, &[])
         .await;
-    let instance_effect = engine.get_effect_row(instance_member_id).await.normalize(engine).await;
+    let instance_effect =
+        engine.get_effect_row(instance_member_id).await.normalize(engine, &[]).await;
     if !contains_error(&trait_effect)
         && !contains_error(&instance_effect)
         && trait_effect != instance_effect

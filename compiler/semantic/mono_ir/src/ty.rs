@@ -511,7 +511,7 @@ const fn lower_mutability(mutability: Mutability) -> PointerMutability {
 }
 
 async fn reduce_fully(mut ty: Interned<Ty>, engine: &TrackedEngine) -> Interned<Ty> {
-    while let Some(reduced) = ty.reduce(engine).await {
+    while let Some(reduced) = ty.reduce(engine, &[]).await {
         ty = reduced;
     }
     ty

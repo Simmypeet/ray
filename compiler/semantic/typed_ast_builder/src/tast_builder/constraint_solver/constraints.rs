@@ -35,15 +35,26 @@ pub enum Constraint {
 }
 
 impl Reduce for Constraint {
-    async fn reduce(&self, engine: &TrackedEngine) -> Option<Self>
+    async fn reduce(
+        &self,
+        engine: &TrackedEngine,
+        givens: &[rayc_type::where_clause::PredicateKind],
+    ) -> Option<Self>
     where
         Self: Sized,
     {
         match self {
-            Self::InstanceTraitRef(check) => check.reduce(engine).await.map(Self::InstanceTraitRef),
-            Self::TyRelate(ty_relate) => ty_relate.reduce(engine).await.map(Constraint::TyRelate),
+            Self::InstanceTraitRef(check) => {
+                check.reduce(engine, givens).await.map(Self::InstanceTraitRef)
+            }
+            Self::TyRelate(ty_relate) => {
+                ty_relate.reduce(engine, givens).await.map(Constraint::TyRelate)
+            }
             Self::InstanceResolve { instance, trait_ref } => {
-                match (instance.reduce(engine).await, trait_ref.reduce(engine).await) {
+                match (
+                    instance.reduce(engine, givens).await,
+                    trait_ref.reduce(engine, givens).await,
+                ) {
                     (None, None) => None,
                     (new_instance, new_trait_ref) => Some(Self::InstanceResolve {
                         instance: new_instance.unwrap_or_else(|| instance.clone()),
