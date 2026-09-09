@@ -3,12 +3,12 @@
 use qbice::storage::intern::Interned;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind};
-use rayc_syntax::path::{Path, PathSegment};
+use rayc_syntax::path::{Path, PathRoot, PathSegment};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
     subst::Subst,
     trait_ref::TraitRef,
-    ty::{Ty, application::View as ApplicationView, args::Args},
+    ty::{Ty, application::View as ApplicationView, args::Args, self_instance::SelfInstance},
 };
 
 use crate::resolver::Resolver;
@@ -30,12 +30,15 @@ pub enum PathResolution {
     Instance(Instance),
     /// A polymorphic type or instance parameter.
     PolyVar(GlobalPolyVarID),
-    /// A definition selected directly through its parent trait.
-    TraitDef(TraitDef),
-    /// A definition selected through a concrete trait instance.
-    ResolvedInstanceDef(ResolvedInstanceDef),
-    /// A trait definition selected through an instance polymorphic variable.
-    UnsolvedInstanceDef(UnsolvedInstanceDef),
+    /// The enclosing trait dictionary.
+    SelfInstance(SelfInstance),
+    /// A trait member selected through a named trait or its self dictionary.
+    TraitMember(TraitMember),
+    /// A method or associated type selected through a concrete trait instance.
+    ResolvedInstanceMember(ResolvedInstanceMember),
+    /// A method or associated type selected through an instance polymorphic
+    /// variable.
+    UnresolvedInstanceMember(UnresolvedInstanceMember),
     /// An operation belonging to an effect.
     EffectOperation(EffectOperation),
 }
@@ -57,46 +60,76 @@ impl Instance {
     pub const fn args(&self) -> &Args { &self.args }
 }
 
-/// A definition selected directly through its parent trait.
+/// A trait member selected through a named trait or its self dictionary.
 #[derive(Debug, Clone)]
-pub struct TraitDef {
-    trait_ref: TraitRef,
+pub enum TraitMemberParent {
+    /// Trait identity without a dictionary.
+    Named(TraitRef),
+    /// The rigid dictionary supplied by the enclosing trait body.
+    This(SelfInstance),
+}
+
+/// A method or associated type retaining its parent provenance.
+#[derive(Debug, Clone)]
+pub struct TraitMember {
+    parent: TraitMemberParent,
+    kind: SymbolKind,
     symbol_id: GlobalSymbolID,
     args: Args,
 }
 
-impl TraitDef {
-    const fn new(trait_ref: TraitRef, symbol_id: GlobalSymbolID, args: Args) -> Self {
-        Self { trait_ref, symbol_id, args }
+impl TraitMember {
+    const fn new(
+        parent: TraitMemberParent,
+        kind: SymbolKind,
+        symbol_id: GlobalSymbolID,
+        args: Args,
+    ) -> Self {
+        Self { parent, kind, symbol_id, args }
     }
 
     #[must_use]
-    pub const fn trait_ref(&self) -> &TraitRef { &self.trait_ref }
+    pub const fn parent(&self) -> &TraitMemberParent { &self.parent }
+
+    #[must_use]
+    pub const fn args(&self) -> &Args { &self.args }
 
     #[must_use]
     pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
 
     /// Builds the substitution for the parent trait and selected definition.
     pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
-        let mut subst =
-            substitution(self.trait_ref.trait_id(), self.trait_ref.args(), engine).await;
+        let trait_ref = match &self.parent {
+            TraitMemberParent::Named(reference) => reference.clone(),
+            TraitMemberParent::This(instance) => instance.trait_ref(engine).await,
+        };
+        let mut subst = substitution(trait_ref.trait_id(), trait_ref.args(), engine).await;
         subst.compose(&substitution(self.symbol_id, &self.args, engine).await, engine);
         subst
     }
 }
 
-/// A definition selected through a concrete trait instance.
+/// A method or associated type selected through a concrete trait instance.
 #[derive(Debug, Clone)]
-pub struct ResolvedInstanceDef {
+pub struct ResolvedInstanceMember {
+    kind: SymbolKind,
     instance: Interned<Ty>,
     symbol_id: GlobalSymbolID,
     args: Args,
 }
 
-impl ResolvedInstanceDef {
-    const fn new(instance: Interned<Ty>, symbol_id: GlobalSymbolID, args: Args) -> Self {
-        Self { instance, symbol_id, args }
+impl ResolvedInstanceMember {
+    const fn new(
+        instance: Interned<Ty>,
+        kind: SymbolKind,
+        symbol_id: GlobalSymbolID,
+        args: Args,
+    ) -> Self {
+        Self { kind, instance, symbol_id, args }
     }
+
+    #[must_use]
+    pub const fn args(&self) -> &Args { &self.args }
 
     /// Returns the parent instance type.
     ///
@@ -122,18 +155,30 @@ impl ResolvedInstanceDef {
     }
 }
 
-/// A trait definition selected through an instance polymorphic variable.
+/// A method or associated type selected through an instance polymorphic
+/// variable.
 #[derive(Debug, Clone)]
-pub struct UnsolvedInstanceDef {
+pub struct UnresolvedInstanceMember {
+    kind: SymbolKind,
+    trait_ref: TraitRef,
     instance: GlobalPolyVarID,
-    trait_def_id: GlobalSymbolID,
+    trait_member_id: GlobalSymbolID,
     args: Args,
 }
 
-impl UnsolvedInstanceDef {
-    const fn new(instance: GlobalPolyVarID, trait_def_id: GlobalSymbolID, args: Args) -> Self {
-        Self { instance, trait_def_id, args }
+impl UnresolvedInstanceMember {
+    const fn new(
+        instance: GlobalPolyVarID,
+        trait_ref: TraitRef,
+        kind: SymbolKind,
+        trait_member_id: GlobalSymbolID,
+        args: Args,
+    ) -> Self {
+        Self { kind, trait_ref, instance, trait_member_id, args }
     }
+
+    #[must_use]
+    pub const fn args(&self) -> &Args { &self.args }
 
     /// Returns the unresolved parent instance polymorphic variable.
     ///
@@ -142,19 +187,20 @@ impl UnsolvedInstanceDef {
     pub const fn instance(&self) -> GlobalPolyVarID { self.instance }
 
     /// Returns the selected symbol ID, which is guaranteed to identify a
-    /// [`SymbolKind::TraitDef`].
+    /// [`SymbolKind::TraitDef`] or [`SymbolKind::TraitType`].
     #[must_use]
-    pub const fn trait_def_id(&self) -> GlobalSymbolID { self.trait_def_id }
+    pub const fn trait_member_id(&self) -> GlobalSymbolID { self.trait_member_id }
 
     /// Builds the substitution for the unresolved parent trait and selected
     /// definition.
     pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
-        let poly_vars = engine.get_poly_var_map(self.instance.parent_id()).await;
-        let trait_ref = poly_vars
-            .trait_ref_of(self.instance.id())
-            .expect("an unsolved instance definition should have instance kind");
+        let trait_ref = &self.trait_ref;
         let mut subst = substitution(trait_ref.trait_id(), trait_ref.args(), engine).await;
-        subst.compose(&substitution(self.trait_def_id, &self.args, engine).await, engine);
+        subst.insert(
+            SelfInstance::new(trait_ref.trait_id()),
+            Ty::new_poly_var(self.instance, engine),
+        );
+        subst.compose(&substitution(self.trait_member_id, &self.args, engine).await, engine);
         subst
     }
 }
@@ -276,7 +322,7 @@ impl PathResolution {
     pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
         match self {
             Self::Def(def) => def.substitution(engine).await,
-            Self::ExternDef(_) | Self::Module(_) => Subst::new_empty(),
+            Self::ExternDef(_) | Self::Module(_) | Self::SelfInstance(_) => Subst::new_empty(),
             Self::Effect(effect) => effect.substitution(engine).await,
             Self::Trait(trait_ref) => {
                 substitution(trait_ref.trait_id(), trait_ref.args(), engine).await
@@ -292,9 +338,9 @@ impl PathResolution {
                     Subst::new_empty()
                 }
             }
-            Self::TraitDef(def) => def.substitution(engine).await,
-            Self::ResolvedInstanceDef(def) => def.substitution(engine).await,
-            Self::UnsolvedInstanceDef(def) => def.substitution(engine).await,
+            Self::TraitMember(def) => def.substitution(engine).await,
+            Self::ResolvedInstanceMember(def) => def.substitution(engine).await,
+            Self::UnresolvedInstanceMember(def) => def.substitution(engine).await,
             Self::EffectOperation(operation) => operation.substitution(engine).await,
         }
     }
@@ -309,9 +355,10 @@ impl PathResolution {
             Self::Effect(_) => Some(SymbolKind::Effect),
             Self::Trait(_) => Some(SymbolKind::Trait),
             Self::Instance(_) => Some(SymbolKind::Instance),
-            Self::PolyVar(_) => None,
-            Self::TraitDef(_) | Self::UnsolvedInstanceDef(_) => Some(SymbolKind::TraitDef),
-            Self::ResolvedInstanceDef(_) => Some(SymbolKind::InstanceDef),
+            Self::PolyVar(_) | Self::SelfInstance(_) => None,
+            Self::TraitMember(member) => Some(member.kind),
+            Self::UnresolvedInstanceMember(member) => Some(member.kind),
+            Self::ResolvedInstanceMember(member) => Some(member.kind),
             Self::EffectOperation(_) => Some(SymbolKind::EffectOperation),
         }
     }
@@ -326,10 +373,10 @@ impl PathResolution {
             Self::Effect(effect) => Some(effect.symbol_id()),
             Self::Trait(trait_ref) => Some(trait_ref.trait_id()),
             Self::Instance(instance) => Some(instance.symbol_id()),
-            Self::PolyVar(_) => None,
-            Self::TraitDef(def) => Some(def.symbol_id()),
-            Self::ResolvedInstanceDef(def) => Some(def.symbol_id()),
-            Self::UnsolvedInstanceDef(def) => Some(def.trait_def_id()),
+            Self::PolyVar(_) | Self::SelfInstance(_) => None,
+            Self::TraitMember(def) => Some(def.symbol_id()),
+            Self::ResolvedInstanceMember(def) => Some(def.symbol_id()),
+            Self::UnresolvedInstanceMember(def) => Some(def.trait_member_id()),
             Self::EffectOperation(operation) => Some(operation.symbol_id()),
         }
     }
@@ -396,13 +443,19 @@ impl Resolver<'_> {
         &mut self,
         path: &Path,
     ) -> Result<PathResolution, PathResolutionError> {
-        let mut segments = path.segments();
-        let Some(first) = segments.next() else {
-            return Err(PathResolutionError::MissingIdentifier);
+        let mut resolution = match path.root() {
+            Some(PathRoot::Segment(first)) => self.resolve_path_segment(&first, None).await?,
+            Some(PathRoot::This(keyword)) => {
+                let Some(instance) = self.self_instance().await else {
+                    self.report_invalid_this_path(keyword.span());
+                    return Err(PathResolutionError::UnexpectedSymbolKind);
+                };
+                PathResolution::SelfInstance(instance)
+            }
+            None => return Err(PathResolutionError::MissingIdentifier),
         };
-        let mut resolution = self.resolve_path_segment(&first, None).await?;
-
-        for segment in segments {
+        for part in path.rest() {
+            let Some(segment) = part.segment() else { continue };
             resolution = self.resolve_path_segment(&segment, Some(resolution)).await?;
         }
 
@@ -421,17 +474,26 @@ impl Resolver<'_> {
         if previous.is_none()
             && let Some(poly_var_id) = self.search_poly_var(&identifier.kind.0)
         {
+            if path.arguments().is_some() {
+                self.report_explicit_type_arguments_not_allowed(path.span());
+            }
             return Ok(PathResolution::PolyVar(poly_var_id));
         }
 
         // Resolve instance parameters using the in-progress map when constructing a
         // declaration, rather than querying that declaration recursively.
         let poly_var_trait = if let Some(PathResolution::PolyVar(id)) = previous.as_ref() {
-            Some(PathResolution::Trait(
-                self.poly_var_trait_ref(*id)
-                    .await
-                    .ok_or(PathResolutionError::UnexpectedSymbolKind)?,
-            ))
+            let Some(reference) = self.poly_var_trait_ref(*id).await else {
+                self.report_type_kind_mismatch(
+                    path.span(),
+                    rayc_type::ty::TyKind::Instance,
+                    rayc_type::ty::TyKind::Star,
+                );
+                return Err(PathResolutionError::UnexpectedSymbolKind);
+            };
+            Some(PathResolution::Trait(reference))
+        } else if let Some(PathResolution::SelfInstance(instance)) = previous.as_ref() {
+            Some(PathResolution::Trait(instance.trait_ref(self.engine()).await))
         } else {
             None
         };
@@ -452,18 +514,33 @@ impl Resolver<'_> {
         let symbol_kind = self.symbol_kind(symbol_id).await;
         let parameters = self.argument_parameters(symbol_id).await;
         // Member requirements may refer to their parent's polymorphic variables.
-        let inherited = match parent {
+        let mut inherited = match parent {
             Some(parent) => parent.substitution(self.engine()).await,
             None => Subst::new_empty(),
         };
+        if let (Some(PathResolution::PolyVar(id)), Some(PathResolution::Trait(reference))) =
+            (&previous, &poly_var_trait)
+        {
+            inherited.insert(
+                SelfInstance::new(reference.trait_id()),
+                Ty::new_poly_var(*id, self.engine()),
+            );
+        }
         let args = self
             .resolve_arguments(symbol_id, path, &identifier, parameters.as_deref(), inherited)
             .await;
 
+        self.resolve_member(previous, symbol_kind, symbol_id, args).await
+    }
+
+    async fn resolve_member(
+        &self,
+        previous: Option<PathResolution>,
+        symbol_kind: SymbolKind,
+        symbol_id: GlobalSymbolID,
+        args: Args,
+    ) -> Result<PathResolution, PathResolutionError> {
         match symbol_kind {
-            SymbolKind::TraitType | SymbolKind::InstanceType => {
-                Err(PathResolutionError::UnexpectedSymbolKind)
-            }
             SymbolKind::Def => Ok(PathResolution::Def(Def::new(symbol_id, args))),
             SymbolKind::ExternDef => Ok(PathResolution::ExternDef(ExternDef::new(symbol_id))),
             SymbolKind::Module => Ok(PathResolution::Module(Module::new(symbol_id))),
@@ -476,23 +553,43 @@ impl Resolver<'_> {
                 };
                 Ok(PathResolution::EffectOperation(EffectOperation::new(effect, symbol_id)))
             }
-            SymbolKind::InstanceDef => {
+            SymbolKind::InstanceDef | SymbolKind::InstanceType => {
                 let Some(PathResolution::Instance(instance)) = previous else {
                     return Err(PathResolutionError::UnexpectedSymbolKind);
                 };
                 let instance =
                     self.new_instance_type(instance.symbol_id(), instance.args().clone());
-                Ok(PathResolution::ResolvedInstanceDef(ResolvedInstanceDef::new(
-                    instance, symbol_id, args,
+                Ok(PathResolution::ResolvedInstanceMember(ResolvedInstanceMember::new(
+                    instance,
+                    symbol_kind,
+                    symbol_id,
+                    args,
                 )))
             }
-            SymbolKind::TraitDef => match previous {
+            SymbolKind::TraitDef | SymbolKind::TraitType => match previous {
                 Some(PathResolution::Trait(trait_ref)) => {
-                    Ok(PathResolution::TraitDef(TraitDef::new(trait_ref, symbol_id, args)))
+                    Ok(PathResolution::TraitMember(TraitMember::new(
+                        TraitMemberParent::Named(trait_ref),
+                        symbol_kind,
+                        symbol_id,
+                        args,
+                    )))
+                }
+                Some(PathResolution::SelfInstance(instance)) => {
+                    Ok(PathResolution::TraitMember(TraitMember::new(
+                        TraitMemberParent::This(instance),
+                        symbol_kind,
+                        symbol_id,
+                        args,
+                    )))
                 }
                 Some(PathResolution::PolyVar(poly_var_id)) => {
-                    Ok(PathResolution::UnsolvedInstanceDef(UnsolvedInstanceDef::new(
+                    Ok(PathResolution::UnresolvedInstanceMember(UnresolvedInstanceMember::new(
                         poly_var_id,
+                        self.poly_var_trait_ref(poly_var_id)
+                            .await
+                            .expect("resolved dictionary trait"),
+                        symbol_kind,
                         symbol_id,
                         args,
                     )))
@@ -503,9 +600,9 @@ impl Resolver<'_> {
                     | PathResolution::Module(_)
                     | PathResolution::Effect(_)
                     | PathResolution::Instance(_)
-                    | PathResolution::TraitDef(_)
-                    | PathResolution::ResolvedInstanceDef(_)
-                    | PathResolution::UnsolvedInstanceDef(_)
+                    | PathResolution::TraitMember(_)
+                    | PathResolution::ResolvedInstanceMember(_)
+                    | PathResolution::UnresolvedInstanceMember(_)
                     | PathResolution::EffectOperation(_),
                 )
                 | None => Err(PathResolutionError::UnexpectedSymbolKind),

@@ -29,6 +29,15 @@ pub mod ty;
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum Diagnostic {
+    /// A `this` path used outside a trait body.
+    InvalidThisPath(InvalidThisPath),
+    /// An associated type selected through a named trait without a dictionary.
+    NamedTraitTypeProjection(NamedTraitTypeProjection),
+    /// An instance associated type with no corresponding trait type
+    /// declaration.
+    MissingTraitTypeDeclaration(MissingTraitTypeDeclaration),
+    /// A path resolving to something other than a value type.
+    ExpectedValueType(ExpectedValueType),
     /// An explicit instance does not satisfy its given parameter.
     TraitRefCheck(TraitRefCheck),
     /// A polymorphic variable was used without being declared by a parameter
@@ -64,6 +73,10 @@ pub enum Diagnostic {
 impl Report for Diagnostic {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
+            Self::InvalidThisPath(diagnostic) => diagnostic.report(engine).await,
+            Self::NamedTraitTypeProjection(diagnostic) => diagnostic.report(engine).await,
+            Self::MissingTraitTypeDeclaration(diagnostic) => diagnostic.report(engine).await,
+            Self::ExpectedValueType(diagnostic) => diagnostic.report(engine).await,
             Self::TraitRefCheck(diagnostic) => diagnostic.report(engine).await,
             Self::PolyVarNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::PathSegmentNotFound(diagnostic) => diagnostic.report(engine).await,
@@ -551,13 +564,21 @@ fn discover_poly_vars(
             }
             discover_effect_row_poly_var(lambda.effect_row().as_ref(), poly_vars);
         }
-        TypeSyntax::PolymorphicVariable(identifier) => {
-            let existing =
-                poly_var_stack.is_some_and(|x| x.find_by_name(&identifier.kind).is_some());
-
-            if is_poly_var_name(&identifier.kind.0) && !existing {
-                let _ = poly_vars
-                    .insert(PolyVar::new_type(identifier.kind.0.clone(), identifier.span()));
+        TypeSyntax::Path(path) => {
+            if let Some(identifier) = path.bare_identifier() {
+                let existing =
+                    poly_var_stack.is_some_and(|x| x.find_by_name(&identifier.kind).is_some());
+                if is_poly_var_name(&identifier.kind.0) && !existing {
+                    let _ = poly_vars
+                        .insert(PolyVar::new_type(identifier.kind.0.clone(), identifier.span()));
+                }
+            }
+            for segment in path.segments() {
+                if let Some(arguments) = segment.arguments() {
+                    for argument in arguments.type_arguments() {
+                        discover_poly_vars(&argument, poly_vars, poly_var_stack);
+                    }
+                }
             }
         }
     }
@@ -590,4 +611,132 @@ pub fn discover_function_poly_vars(
     poly_var_stack: Option<&PolyVarStack>,
 ) -> PolyVarMap {
     discover_parameter_poly_vars(parameters, poly_var_stack)
+}
+
+/// A `this` path used outside a trait body.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct InvalidThisPath {
+    span: RelativeSpan,
+}
+
+impl InvalidThisPath {
+    const fn new(span: RelativeSpan) -> Self { Self { span } }
+}
+
+impl Report for InvalidThisPath {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("`this` is only valid within a trait body")
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
+    }
+}
+
+/// An associated type selected through a named trait without a dictionary.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct NamedTraitTypeProjection {
+    span: RelativeSpan,
+}
+
+impl NamedTraitTypeProjection {
+    const fn new(span: RelativeSpan) -> Self { Self { span } }
+}
+
+impl Report for NamedTraitTypeProjection {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("an associated type requires an instance dictionary, not a named trait")
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
+    }
+}
+
+/// An instance associated type with no corresponding trait type declaration.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct MissingTraitTypeDeclaration {
+    span: RelativeSpan,
+}
+
+impl MissingTraitTypeDeclaration {
+    const fn new(span: RelativeSpan) -> Self { Self { span } }
+}
+
+impl Report for MissingTraitTypeDeclaration {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("associated type has no matching trait type declaration")
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
+    }
+}
+
+/// A path resolving to something other than a value type.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct ExpectedValueType {
+    span: RelativeSpan,
+}
+
+impl ExpectedValueType {
+    const fn new(span: RelativeSpan) -> Self { Self { span } }
+}
+
+impl Report for ExpectedValueType {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("expected a value type or an associated type projection")
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
+    }
 }

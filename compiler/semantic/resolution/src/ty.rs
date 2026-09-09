@@ -15,7 +15,11 @@ use rayc_type::{
     ty::{Mutability, Primitive, Ty, TyKind, args::Args},
 };
 
-use crate::{is_poly_var_name, path::PathResolution, resolver::Resolver};
+use crate::{
+    is_poly_var_name,
+    path::{PathResolution, TraitMemberParent},
+    resolver::Resolver,
+};
 
 #[derive(Debug, Clone)]
 pub struct ResolvedParameter {
@@ -96,6 +100,9 @@ impl Resolver<'_> {
         };
 
         match resolution {
+            PathResolution::SelfInstance(instance) => {
+                self.engine().intern(Ty::SelfInstance(instance))
+            }
             PathResolution::Instance(instance) => {
                 self.new_instance_type(instance.symbol_id(), instance.args().clone())
             }
@@ -364,12 +371,89 @@ impl Resolver<'_> {
                 };
                 self.new_lambda_type(parameters, return_type, effect_row)
             }
-            TypeSyntax::PolymorphicVariable(identifier) => {
-                if !is_poly_var_name(&identifier.kind.0) {
+            TypeSyntax::Path(path) => self.resolve_type_path(path).await,
+        }
+    }
+
+    async fn resolve_type_path(&mut self, path: &Path) -> Interned<Ty> {
+        if let Some(identifier) = path.bare_identifier()
+            && (is_poly_var_name(&identifier.kind.0)
+                || self.search_poly_var(&identifier.kind.0).is_some())
+        {
+            return self.new_checked_poly_var_type(&identifier, TyKind::Star).await;
+        }
+        let Ok(resolution) = Box::pin(self.resolve_path(path)).await else {
+            return self.new_error_type(TyKind::Star);
+        };
+        let projection = match &resolution {
+            PathResolution::TraitMember(member)
+                if resolution.symbol_kind() == Some(SymbolKind::TraitType) =>
+            {
+                match member.parent() {
+                    TraitMemberParent::This(instance) => Some((
+                        member.symbol_id(),
+                        self.engine().intern(Ty::SelfInstance(*instance)),
+                        member.args().clone(),
+                    )),
+                    TraitMemberParent::Named(_) => {
+                        self.report_named_trait_type_projection(path.span());
+                        return self.new_error_type(TyKind::Star);
+                    }
+                }
+            }
+            PathResolution::UnresolvedInstanceMember(member)
+                if resolution.symbol_kind() == Some(SymbolKind::TraitType) =>
+            {
+                Some((
+                    member.trait_member_id(),
+                    Ty::new_poly_var(member.instance(), self.engine()),
+                    member.args().clone(),
+                ))
+            }
+            PathResolution::ResolvedInstanceMember(member)
+                if resolution.symbol_kind() == Some(SymbolKind::InstanceType) =>
+            {
+                use rayc_type::instance_member::get_instance_member;
+                let Some(correspondence) =
+                    self.engine().get_instance_member(member.symbol_id()).await
+                else {
+                    self.report_missing_trait_type_declaration(path.span());
+                    return self.new_error_type(TyKind::Star);
+                };
+                if self.symbol_kind(correspondence.trait_member_id()).await != SymbolKind::TraitType
+                {
+                    self.report_missing_trait_type_declaration(path.span());
                     return self.new_error_type(TyKind::Star);
                 }
-                self.new_poly_var_type(identifier, TyKind::Star)
+                Some((
+                    correspondence.trait_member_id(),
+                    member.instance().clone(),
+                    member.args().clone(),
+                ))
             }
+            PathResolution::Def(_)
+            | PathResolution::ExternDef(_)
+            | PathResolution::Module(_)
+            | PathResolution::Effect(_)
+            | PathResolution::Trait(_)
+            | PathResolution::Instance(_)
+            | PathResolution::PolyVar(_)
+            | PathResolution::SelfInstance(_)
+            | PathResolution::TraitMember(_)
+            | PathResolution::ResolvedInstanceMember(_)
+            | PathResolution::UnresolvedInstanceMember(_)
+            | PathResolution::EffectOperation(_) => None,
+        };
+        if let Some((id, dictionary, args)) = projection {
+            Ty::new_instance_associated(
+                id,
+                dictionary,
+                args.interned_iter().cloned(),
+                self.engine(),
+            )
+        } else {
+            self.report_expected_value_type(path.span());
+            self.new_error_type(TyKind::Star)
         }
     }
 }

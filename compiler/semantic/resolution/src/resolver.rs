@@ -57,6 +57,33 @@ impl fmt::Debug for Resolver<'_> {
 }
 
 impl Resolver<'_> {
+    pub(crate) async fn self_instance(&self) -> Option<rayc_type::ty::self_instance::SelfInstance> {
+        use rayc_symbol::parent::get_parent_global;
+        let parent = self.engine.get_parent_global(self.site).await?;
+        (self.engine.get_symbol_kind(parent).await == SymbolKind::Trait)
+            .then_some(rayc_type::ty::self_instance::SelfInstance::new(parent))
+    }
+
+    pub(crate) fn report_invalid_this_path(&self, span: RelativeSpan) {
+        self.handler.receive(Diagnostic::InvalidThisPath(crate::InvalidThisPath::new(span)));
+    }
+
+    pub(crate) fn report_named_trait_type_projection(&self, span: RelativeSpan) {
+        self.handler.receive(Diagnostic::NamedTraitTypeProjection(
+            crate::NamedTraitTypeProjection::new(span),
+        ));
+    }
+
+    pub(crate) fn report_missing_trait_type_declaration(&self, span: RelativeSpan) {
+        self.handler.receive(Diagnostic::MissingTraitTypeDeclaration(
+            crate::MissingTraitTypeDeclaration::new(span),
+        ));
+    }
+
+    pub(crate) fn report_expected_value_type(&self, span: RelativeSpan) {
+        self.handler.receive(Diagnostic::ExpectedValueType(crate::ExpectedValueType::new(span)));
+    }
+
     pub(crate) const fn engine(&self) -> &TrackedEngine { self.engine }
 
     pub(crate) fn require_instance_trait_ref(
@@ -164,9 +191,8 @@ impl Resolver<'_> {
     pub(crate) async fn poly_var_trait_ref(&self, id: GlobalPolyVarID) -> Option<TraitRef> {
         if let Some(building_poly_var_map) = self.building_poly_var_map
             && id.parent_id() == self.site
-            && let Some(trait_ref) = building_poly_var_map.trait_ref_of(id.id())
         {
-            return Some(trait_ref.clone());
+            return building_poly_var_map.trait_ref_of(id.id()).cloned();
         }
 
         let poly_var_map = self.engine.get_poly_var_map(id.parent_id()).await;
@@ -245,6 +271,11 @@ impl Resolver<'_> {
         &self,
         symbol_id: GlobalSymbolID,
     ) -> Option<Interned<PolyVarMap>> {
+        if symbol_id == self.site
+            && let Some(parameters) = self.building_poly_var_map
+        {
+            return Some(self.engine.intern(parameters.clone()));
+        }
         let symbol_kind = self.engine.get_symbol_kind(symbol_id).await;
         if symbol_kind.has_poly_var_map() {
             Some(self.engine.get_poly_var_map(symbol_id).await)
