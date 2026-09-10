@@ -1,0 +1,23 @@
+---
+source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
+expression: run
+---
+stderr:
+[error]: where-clause obligation for `main.LeafFromBox` is not satisfied
+   ╭▸ compiler/e2e/test/check/tast/implicit_instance_where_clause/main.ray:26:12
+   │
+26 │     return acceptsLeaf(0)
+   ╰╴           ━━━━━━━━━━━ `BoolBox.Item` must equal `int32`
+
+[error]: where-clause obligation for `main.LeafFromBox` is not satisfied
+   ╭▸ compiler/e2e/test/check/tast/implicit_instance_where_clause/main.ray:29:12
+   │
+29 │     return acceptsRoot(0)
+   ╰╴           ━━━━━━━━━━━ `BoolBox.Item` must equal `int32`
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

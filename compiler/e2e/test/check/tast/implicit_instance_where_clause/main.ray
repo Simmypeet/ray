@@ -1,0 +1,29 @@
+trait Box[a]:
+    type Item
+
+inst BoolBox for Box[int32]:
+    type Item = bool
+
+trait Leaf[a]:
+    type Value
+
+inst LeafFromBox[a] for Leaf[a] given (box: Box[a]) where (box.Item = a):
+    type Value = a
+
+trait Root[a]:
+    type Value
+
+inst RootFromLeaf[a] for Root[a] given (leaf: Leaf[a]):
+    type Value = a
+
+def acceptsLeaf(value: a) given (leaf: Leaf[a]) -> a:
+    return value
+
+def acceptsRoot(value: a) given (root: Root[a]) -> a:
+    return value
+
+def direct() -> int32:
+    return acceptsLeaf(0)
+
+def nested() -> int32:
+    return acceptsRoot(0)
