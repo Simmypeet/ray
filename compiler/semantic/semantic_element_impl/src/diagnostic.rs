@@ -13,7 +13,10 @@ use rayc_symbol::{
 use rayc_target::TargetID;
 use rayc_type::poly_var;
 
-use crate::build::{DiagnosticKey, ObligationKey};
+use crate::{
+    build::{DiagnosticKey, ObligationKey},
+    obligation::solve_obligations,
+};
 
 /// Retrieves all rendered semantic-element diagnostics for a symbol.
 #[derive(
@@ -168,72 +171,3 @@ async fn rendered_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static RENDERED_EXECUTOR: Registration<Config> =
     Registration::new::<RenderedKey, RenderedExecutor>();
-
-/// Solve together after construction, retaining each source obligation for
-/// diagnostics.
-async fn solve_obligations(
-    obligations: Vec<rayc_resolution::Obligation>,
-    site: GlobalSymbolID,
-    engine: &TrackedEngine,
-) -> Vec<Rendered<ByteIndex>> {
-    use rayc_solver::ty_relate::Step;
-    use rayc_type::{
-        reduce::Reduce,
-        subst::{Subst, Substitutable},
-    };
-
-    let mut solver = rayc_solver::Solver::new(engine.clone(), site).await;
-    let mut constraints = Vec::new();
-    let mut failed = std::collections::BTreeSet::new();
-    // Expand trait checks only after all semantic elements are available.
-    for (index, obligation) in obligations.iter().enumerate() {
-        match obligation {
-            rayc_resolution::Obligation::TraitRefCheck(check) => {
-                match solver.entail_instance_trait_ref(check.constraint()).await {
-                    Ok(Step::Derived(derived)) => constraints
-                        .extend(derived.into_iter().map(|derived| (index, derived.ty_relate))),
-                    Ok(Step::NoProgress) | Err(_) => {
-                        failed.insert(index);
-                    }
-                    Ok(Step::Subst(_)) => unreachable!("trait checks only derive type relations"),
-                }
-            }
-        }
-    }
-    let mut subst = Subst::new_empty();
-    let mut residual = Vec::new();
-    while let Some((index, constraint)) = constraints.pop() {
-        match solver.entail_ty_relate(&constraint).await {
-            Ok(Step::Derived(derived)) => {
-                constraints.extend(derived.into_iter().map(|derived| (index, derived.ty_relate)));
-            }
-            Ok(Step::Subst(new)) => {
-                subst.compose(&new, engine);
-                constraints.append(&mut residual);
-                for (_, constraint) in &mut constraints {
-                    constraint.apply_in_place(&new, engine);
-                }
-            }
-            Ok(Step::NoProgress) => {
-                if let Some(reduced) = constraint.reduce(solver.engine(), solver.givens()).await {
-                    constraints.push((index, reduced));
-                } else {
-                    residual.push((index, constraint));
-                }
-            }
-            Err(_) => {
-                failed.insert(index);
-            }
-        }
-    }
-    failed.extend(residual.into_iter().map(|(index, _)| index));
-    let mut rendered = Vec::new();
-    for index in failed {
-        match &obligations[index] {
-            rayc_resolution::Obligation::TraitRefCheck(check) => {
-                rendered.push(check.apply_subst_or_clone(&subst, engine).report(engine).await);
-            }
-        }
-    }
-    rendered
-}
