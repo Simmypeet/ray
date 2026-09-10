@@ -11,6 +11,7 @@ use rayc_type::{
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{Ty, args::Args},
+    where_clause::{PredicateKind, get_where_clause},
 };
 
 mod candidates;
@@ -80,8 +81,48 @@ pub enum InstanceResolutionLimit {
     CandidateVisits { limit: usize, candidate: GlobalSymbolID },
 }
 
+/// One instantiated where-clause predicate required by a selected global
+/// instance.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct InstanceResolutionObligation {
+    instance_id: GlobalSymbolID,
+    predicate: PredicateKind,
+}
+
+impl InstanceResolutionObligation {
+    #[must_use]
+    const fn new(instance_id: GlobalSymbolID, predicate: PredicateKind) -> Self {
+        Self { instance_id, predicate }
+    }
+
+    #[must_use]
+    pub fn into_parts(self) -> (GlobalSymbolID, PredicateKind) {
+        (self.instance_id, self.predicate)
+    }
+}
+
+/// A selected dictionary term and every predicate required by its resolution
+/// tree.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct ResolvedInstance {
+    term: Interned<Ty>,
+    obligations: Vec<InstanceResolutionObligation>,
+}
+
+impl ResolvedInstance {
+    #[must_use]
+    const fn new(term: Interned<Ty>, obligations: Vec<InstanceResolutionObligation>) -> Self {
+        Self { term, obligations }
+    }
+
+    #[must_use]
+    pub fn into_parts(self) -> (Interned<Ty>, Vec<InstanceResolutionObligation>) {
+        (self.term, self.obligations)
+    }
+}
+
 /// A complete instance-resolution result eligible for memoization.
-pub type InstanceResolutionResult = Result<Interned<Ty>, InstanceResolutionError>;
+pub type InstanceResolutionResult = Result<ResolvedInstance, InstanceResolutionError>;
 
 /// One canonical goal in a diagnostic search trace.
 #[derive(
@@ -133,25 +174,22 @@ pub enum InstanceResolutionError {
 
 impl Solver {
     /// Resolves a normalized, ground trait requirement to a lexical or global
-    /// dictionary term.
+    /// dictionary term and the instantiated predicates required by its proof
+    /// tree.
     ///
     /// Lexical dictionaries form the first precedence tier. Otherwise all
     /// matching global candidates have their given premises resolved
     /// recursively, after which the unique most-specific viable head wins.
-    pub async fn resolve_instance(
-        &mut self,
-        required: TraitRef,
-    ) -> Result<Interned<Ty>, InstanceResolutionError> {
+    pub async fn resolve_instance(&mut self, required: TraitRef) -> InstanceResolutionResult {
         self.resolve_instance_from(required, None).await
     }
 
-    pub async fn search_active_goal(
-        &mut self,
-        required: &TraitRef,
-    ) -> Result<Interned<Ty>, InstanceResolutionError> {
+    pub async fn search_active_goal(&mut self, required: &TraitRef) -> InstanceResolutionResult {
         match lexical::resolve(self, required).await {
             Ok(LexicalResolution::NotFound) => {}
-            Ok(LexicalResolution::Resolved(term)) => return Ok(term),
+            Ok(LexicalResolution::Resolved(term)) => {
+                return Ok(ResolvedInstance::new(term, Vec::new()));
+            }
             Err(error) => return Err(error),
         }
 
@@ -201,7 +239,7 @@ impl Solver {
             });
         }
 
-        ranking::select(self, required, &viable).await
+        ranking::select(self, required, viable).await
     }
 
     async fn resolve_candidate(
@@ -210,6 +248,7 @@ impl Solver {
     ) -> Result<ViableInstance, InstanceCandidateFailure> {
         let (mut subst, instance_id, pending_given_parameters) = candidate.into_parts();
         let parameters = self.engine().get_poly_var_map(instance_id).await;
+        let mut obligations = Vec::new();
 
         Box::pin(async {
             for parameter_id in pending_given_parameters {
@@ -221,15 +260,17 @@ impl Solver {
 
                 let edge = InstanceResolutionEdge::new(instance_id, global_parameter_id);
 
-                let argument =
+                let resolved =
                     self.resolve_instance_from(required, Some(edge)).await.map_err(|error| {
                         InstanceCandidateFailure::UnsatisfiedGiven {
                             parameter: global_parameter_id,
                             error: Box::new(error),
                         }
                     })?;
+                let (argument, nested_obligations) = resolved.into_parts();
 
                 subst.compose(&Subst::new_singleton(global_parameter_id, argument), self.engine());
+                extend_unique_obligations(&mut obligations, nested_obligations);
             }
 
             Ok(())
@@ -245,9 +286,32 @@ impl Solver {
             arguments.push(argument);
         }
 
-        Ok(ViableInstance::new(
-            instance_id,
-            Ty::new_instance(instance_id, Args::new(arguments, self.engine()), self.engine()),
-        ))
+        // Instantiate this candidate's predicates only after every ordinary and given
+        // parameter has a selected argument.
+        let where_clause = self.engine().get_where_clause(instance_id).await;
+        extend_unique_obligations(
+            &mut obligations,
+            where_clause.iter().map(|predicate| {
+                InstanceResolutionObligation::new(
+                    instance_id,
+                    predicate.kind().apply_subst_or_clone(&subst, self.engine()),
+                )
+            }),
+        );
+
+        let term =
+            Ty::new_instance(instance_id, Args::new(arguments, self.engine()), self.engine());
+        Ok(ViableInstance::new(instance_id, ResolvedInstance::new(term, obligations)))
+    }
+}
+
+fn extend_unique_obligations(
+    obligations: &mut Vec<InstanceResolutionObligation>,
+    additional: impl IntoIterator<Item = InstanceResolutionObligation>,
+) {
+    for obligation in additional {
+        if !obligations.contains(&obligation) {
+            obligations.push(obligation);
+        }
     }
 }

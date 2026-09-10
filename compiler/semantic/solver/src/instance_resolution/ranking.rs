@@ -1,21 +1,20 @@
-use qbice::storage::intern::Interned;
 use rayc_semantic_element::instance_trait_ref::get_instance_trait_ref;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{trait_ref::TraitRef, ty::Ty};
+use rayc_type::trait_ref::TraitRef;
 
-use super::InstanceResolutionError;
+use super::{InstanceResolutionError, InstanceResolutionResult, ResolvedInstance};
 use crate::Solver;
 
 #[derive(Debug)]
 pub(super) struct ViableInstance {
     instance_id: GlobalSymbolID,
-    term: Interned<Ty>,
+    resolved: ResolvedInstance,
 }
 
 impl ViableInstance {
     #[must_use]
-    pub(super) const fn new(instance_id: GlobalSymbolID, term: Interned<Ty>) -> Self {
-        Self { instance_id, term }
+    pub(super) const fn new(instance_id: GlobalSymbolID, resolved: ResolvedInstance) -> Self {
+        Self { instance_id, resolved }
     }
 }
 
@@ -23,11 +22,11 @@ impl ViableInstance {
 pub(super) async fn select(
     solver: &mut Solver,
     required: &TraitRef,
-    candidates: &[ViableInstance],
-) -> Result<Interned<Ty>, InstanceResolutionError> {
+    mut candidates: Vec<ViableInstance>,
+) -> InstanceResolutionResult {
     let engine = solver.engine().clone();
     let mut heads = Vec::with_capacity(candidates.len());
-    for candidate in candidates {
+    for candidate in &candidates {
         let head = engine
             .get_instance_trait_ref(candidate.instance_id)
             .await
@@ -38,7 +37,7 @@ pub(super) async fn select(
 
     let maxima = maximal_candidates(solver, &heads).await;
     match maxima.as_slice() {
-        [winner] => Ok(candidates[*winner].term.clone()),
+        [winner] => Ok(candidates.remove(*winner).resolved),
         [] => unreachable!("a non-empty finite partial order has a maximal element"),
         [_, _, ..] => {
             let mut candidates =
