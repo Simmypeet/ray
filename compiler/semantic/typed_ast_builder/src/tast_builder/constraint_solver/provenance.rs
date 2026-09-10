@@ -325,14 +325,14 @@ impl Provenance {
             match &origin.source {
                 EffectUnificationSource::EffectIntroduction { original_effect } => {
                     sites.push(ResolvedEffectUnificationSite {
-                        effect_row: self.resolve_type(original_effect, solver).await,
+                        effect_row: self.latest_type(original_effect, solver).await,
                         source: origin.source.clone(),
                         span: origin.span,
                     });
                 }
                 EffectUnificationSource::FunctionBodyEffect => {
                     sites.push(ResolvedEffectUnificationSite {
-                        effect_row: self.resolve_type(&origin.greater, solver).await,
+                        effect_row: self.latest_type(&origin.greater, solver).await,
                         source: origin.source.clone(),
                         span: origin.span,
                     });
@@ -352,7 +352,7 @@ impl Provenance {
         sites
     }
 
-    async fn resolve_type(&self, ty: &Interned<Ty>, solver: &Solver) -> Interned<Ty> {
+    async fn latest_type(&self, ty: &Interned<Ty>, solver: &Solver) -> Interned<Ty> {
         let ty = ty.apply_subst_or_clone(&self.subst, solver.engine());
         solver.normalize(&ty).await
     }
@@ -390,8 +390,8 @@ impl Provenance {
             },
             RootCauseOrigin::EffectUnification(origin) => {
                 ResolvedRootCause::EffectUnification(ResolvedEffectUnification {
-                    lesser: self.resolve_type(&origin.lesser, solver).await,
-                    greater: self.resolve_type(&origin.greater, solver).await,
+                    lesser: self.latest_type(&origin.lesser, solver).await,
+                    greater: self.latest_type(&origin.greater, solver).await,
                     source: origin.source.clone(),
                     span: origin.span,
                     related_sites: self
@@ -416,7 +416,7 @@ impl Provenance {
         let mut defaults = Subst::default();
         for inference in inferences {
             // can we do this without interning?
-            let latest = self.resolve_type(&engine.intern(Ty::Inference(inference)), solver).await;
+            let latest = self.latest_type(&engine.intern(Ty::Inference(inference)), solver).await;
 
             if let Ty::Inference(infer) = &*latest {
                 defaults.insert(*infer, default.clone());
@@ -439,10 +439,6 @@ impl Provenance {
 
 impl TAstBuilder {
     pub async fn latest_type(&self, ty: &Interned<Ty>) -> Interned<Ty> {
-        let ty = ty.apply_subst_or_clone(
-            &self.constraint_solver.provenance.subst,
-            self.constraint_solver.solver.engine(),
-        );
-        self.constraint_solver.solver.normalize(&ty).await
+        self.constraint_solver.provenance.latest_type(ty, &self.constraint_solver.solver).await
     }
 }
