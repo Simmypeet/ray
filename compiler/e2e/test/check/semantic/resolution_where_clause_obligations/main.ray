@@ -1,0 +1,31 @@
+trait Box[a]:
+    type Item
+
+inst IntBox for Box[int32]:
+    type Item = int32
+
+inst BoolBox for Box[int32]:
+    type Item = bool
+
+trait HasValue[a]:
+    type Value given (box: Box[a]) where (box.Item = a)
+
+def accepts(value: a) given (box: Box[a]) -> a where (box.Item = a):
+    return value
+
+def semanticGood(value: has.Value[given box]) given (
+    has: HasValue[int32],
+    box: Box[int32],
+) -> int32 where (box.Item = int32):
+    return 0
+
+def semanticBad(value: has.Value[given box]) given (
+    has: HasValue[int32],
+    box: Box[int32],
+) -> int32:
+    return 0
+
+def main() -> int32:
+    let valid = accepts[given IntBox](42)
+    let invalid = accepts[given BoolBox](42)
+    return valid

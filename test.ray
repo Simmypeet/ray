@@ -1,0 +1,25 @@
+trait Convert[a]:
+    type Output
+
+    def convert(value: a) -> this.Output
+
+
+inst BoolToInt32 for Convert[bool]:
+    type Output = int32
+
+    def convert(value: bool) -> int32:
+        return if value: 1 else: 0
+
+
+def convertGeneric(value: a) given (c: Convert[a]) -> c.Output:
+    return c.convert(value)
+
+
+extern def printf(format: cstr, ...) -> c_int
+
+
+def main() -> int32:
+    let val = convertGeneric(false)
+    printf("Converted value: %d\n", val)
+    
+    return 0

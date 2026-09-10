@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: where-clause obligation for `main.HasValue.Value` is not satisfied
+   ╭▸ compiler/e2e/test/check/semantic/resolution_where_clause_obligations/main.ray:22:28
+   │
+22 │ def semanticBad(value: has.Value[given box]) given (
+   ╰╴                           ━━━━━━━━━━━━━━━━ `box.Item` must equal `int32`
+
+[error]: where-clause obligation for `main.accepts` is not satisfied
+   ╭▸ compiler/e2e/test/check/semantic/resolution_where_clause_obligations/main.ray:30:19
+   │
+30 │     let invalid = accepts[given BoolBox](42)
+   ╰╴                  ━━━━━━━━━━━━━━━━━━━━━━ `BoolBox.Item` must equal `int32`
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

@@ -113,6 +113,9 @@ impl ConstraintSolver {
                 ResolvedRootCause::TraitRefCheck(check) => {
                     diags.push(Diagnostic::from(rayc_resolution::Diagnostic::TraitRefCheck(check)));
                 }
+                ResolvedRootCause::PredicateObligation(predicate) => {
+                    diags.push(Diagnostic::from(rayc_resolution::Diagnostic::Predicate(predicate)));
+                }
                 ResolvedRootCause::InstanceResolve { trait_ref, span } => {
                     // Preserve the structured failure for rendering at the diagnostic boundary.
                     let error =

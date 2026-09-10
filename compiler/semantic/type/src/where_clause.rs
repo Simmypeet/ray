@@ -7,7 +7,9 @@ use rayc_symbol::GlobalSymbolID;
 use crate::ty::Ty;
 
 /// An equality between types, including associated type projections.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
 pub struct AssociatedTypeEquality {
     left: Interned<Ty>,
     right: Interned<Ty>,
@@ -25,7 +27,9 @@ impl AssociatedTypeEquality {
 }
 
 /// The requirement expressed by a where-clause predicate.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
 pub enum PredicateKind {
     AssociatedTypeEquality(AssociatedTypeEquality),
 }
