@@ -4,10 +4,11 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::{name::get_qualified_name, source_map::to_absolute_span};
+use rayc_symbol::{GlobalSymbolID, name::get_qualified_name, source_map::to_absolute_span};
 use rayc_type::{
-    constraint::instance_trait_ref::InstanceTraitRef,
+    constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
     subst::{Subst, Substitutable},
+    where_clause::{AssociatedTypeEquality, PredicateKind},
 };
 
 #[derive(
@@ -16,6 +17,80 @@ use rayc_type::{
 pub enum Obligation {
     /// An explicit given argument must implement the required trait reference.
     TraitRefCheck(TraitRefCheck),
+    /// A predicate declared on a resolved symbol must hold at the resolution
+    /// site.
+    Predicate(PredicateObligation),
+}
+
+/// A substituted where-clause predicate required by a resolved symbol.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct PredicateObligation {
+    predicate: PredicateKind,
+    symbol_id: GlobalSymbolID,
+    span: RelativeSpan,
+}
+
+impl PredicateObligation {
+    #[must_use]
+    pub const fn new(
+        predicate: PredicateKind,
+        symbol_id: GlobalSymbolID,
+        span: RelativeSpan,
+    ) -> Self {
+        Self { predicate, symbol_id, span }
+    }
+
+    #[must_use]
+    pub fn constraint(&self) -> TyRelate {
+        match &self.predicate {
+            PredicateKind::AssociatedTypeEquality(equality) => {
+                TyRelate::new(equality.left().clone(), equality.right().clone())
+            }
+        }
+    }
+}
+
+impl Substitutable for PredicateObligation {
+    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+        let predicate = match &self.predicate {
+            PredicateKind::AssociatedTypeEquality(equality) => {
+                let left = equality.left().apply_subst(subst, engine);
+                let right = equality.right().apply_subst(subst, engine);
+                if left.is_none() && right.is_none() {
+                    return None;
+                }
+                PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
+                    left.unwrap_or_else(|| equality.left().clone()),
+                    right.unwrap_or_else(|| equality.right().clone()),
+                ))
+            }
+        };
+
+        Some(Self::new(predicate, self.symbol_id, self.span))
+    }
+}
+
+impl Report for PredicateObligation {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let name = engine.get_qualified_name(self.symbol_id).await;
+        let requirement = match &self.predicate {
+            PredicateKind::AssociatedTypeEquality(equality) => {
+                let left = equality.left().display(engine).await;
+                let right = equality.right().display(engine).await;
+                format!("`{left}` must equal `{right}`")
+            }
+        };
+
+        Rendered::builder()
+            .message(format!("where-clause obligation for `{name}` is not satisfied"))
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(requirement),
+            ))
+            .build()
+    }
 }
 
 #[derive(

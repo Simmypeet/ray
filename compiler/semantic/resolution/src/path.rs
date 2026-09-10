@@ -1,17 +1,19 @@
 //! Semantic path-resolution results.
 
 use qbice::storage::intern::Interned;
+use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind};
 use rayc_syntax::path::{Path, PathRoot, PathSegment};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
-    subst::Subst,
+    subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{Ty, application::View as ApplicationView, args::Args, self_instance::SelfInstance},
+    where_clause::get_where_clause,
 };
 
-use crate::resolver::Resolver;
+use crate::{PredicateObligation, resolver::Resolver};
 
 /// The semantic result of resolving a path.
 #[derive(Debug, Clone)]
@@ -530,7 +532,33 @@ impl Resolver<'_> {
             .resolve_arguments(symbol_id, path, &identifier, parameters.as_deref(), inherited)
             .await;
 
-        self.resolve_member(previous, symbol_kind, symbol_id, args).await
+        let resolution = self.resolve_member(previous, symbol_kind, symbol_id, args).await?;
+        self.emit_predicate_obligations(&resolution, symbol_kind, symbol_id, path.span()).await;
+        Ok(resolution)
+    }
+
+    async fn emit_predicate_obligations(
+        &self,
+        resolution: &PathResolution,
+        symbol_kind: SymbolKind,
+        symbol_id: GlobalSymbolID,
+        span: RelativeSpan,
+    ) {
+        // A symbol's own predicates are givens at its declaration site. Skipping
+        // them also avoids recursively querying a where clause while constructing it.
+        if symbol_id == self.site() || !symbol_kind.has_where_clause() {
+            return;
+        }
+
+        // Instantiate every declared predicate with the arguments selected by this
+        // path segment before handing it to downstream solvers.
+        let where_clause = self.engine().get_where_clause(symbol_id).await;
+        let subst = resolution.substitution(self.engine()).await;
+        for predicate in where_clause.iter() {
+            let obligation = PredicateObligation::new(predicate.kind().clone(), symbol_id, span)
+                .apply_subst_or_clone(&subst, self.engine());
+            self.require_predicate(obligation);
+        }
     }
 
     async fn resolve_member(

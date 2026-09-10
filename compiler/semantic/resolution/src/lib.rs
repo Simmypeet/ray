@@ -17,7 +17,7 @@ use rayc_type::{
 };
 
 pub mod obligation;
-pub use obligation::{Obligation, TraitRefCheck};
+pub use obligation::{Obligation, PredicateObligation, TraitRefCheck};
 pub mod inference;
 pub mod path;
 pub use inference::GenInferWithSpan;
@@ -40,6 +40,8 @@ pub enum Diagnostic {
     ExpectedValueType(ExpectedValueType),
     /// An explicit instance does not satisfy its given parameter.
     TraitRefCheck(TraitRefCheck),
+    /// A resolved symbol's where-clause predicate is not satisfied.
+    Predicate(PredicateObligation),
     /// A polymorphic variable was used without being declared by a parameter
     /// type.
     PolyVarNotFound(PolyVarNotFound),
@@ -78,6 +80,7 @@ impl Report for Diagnostic {
             Self::MissingTraitTypeDeclaration(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedValueType(diagnostic) => diagnostic.report(engine).await,
             Self::TraitRefCheck(diagnostic) => diagnostic.report(engine).await,
+            Self::Predicate(diagnostic) => diagnostic.report(engine).await,
             Self::PolyVarNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::PathSegmentNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::TypeInferenceNotAllowed(diagnostic) => diagnostic.report(engine).await,
