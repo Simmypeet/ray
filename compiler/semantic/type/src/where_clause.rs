@@ -2,9 +2,13 @@
 
 use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_lexical::tree::RelativeSpan;
+use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 
-use crate::ty::Ty;
+use crate::{
+    subst::{Subst, Substitutable},
+    ty::Ty,
+};
 
 /// An equality between types, including associated type projections.
 #[derive(
@@ -26,12 +30,33 @@ impl AssociatedTypeEquality {
     pub const fn right(&self) -> &Interned<Ty> { &self.right }
 }
 
+impl Substitutable for AssociatedTypeEquality {
+    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+        match (self.left.apply_subst(subst, engine), self.right.apply_subst(subst, engine)) {
+            (Some(left), Some(right)) => Some(Self::new(left, right)),
+            (Some(left), None) => Some(Self::new(left, self.right.clone())),
+            (None, Some(right)) => Some(Self::new(self.left.clone(), right)),
+            (None, None) => None,
+        }
+    }
+}
+
 /// The requirement expressed by a where-clause predicate.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum PredicateKind {
     AssociatedTypeEquality(AssociatedTypeEquality),
+}
+
+impl Substitutable for PredicateKind {
+    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+        match self {
+            Self::AssociatedTypeEquality(equality) => {
+                equality.apply_subst(subst, engine).map(Self::AssociatedTypeEquality)
+            }
+        }
+    }
 }
 
 /// A resolved requirement and the source span where it was declared.

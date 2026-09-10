@@ -8,7 +8,7 @@ use rayc_symbol::{GlobalSymbolID, name::get_qualified_name, source_map::to_absol
 use rayc_type::{
     constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
     subst::{Subst, Substitutable},
-    where_clause::{AssociatedTypeEquality, PredicateKind},
+    where_clause::PredicateKind,
 };
 
 #[derive(
@@ -54,21 +54,9 @@ impl PredicateObligation {
 
 impl Substitutable for PredicateObligation {
     fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
-        let predicate = match &self.predicate {
-            PredicateKind::AssociatedTypeEquality(equality) => {
-                let left = equality.left().apply_subst(subst, engine);
-                let right = equality.right().apply_subst(subst, engine);
-                if left.is_none() && right.is_none() {
-                    return None;
-                }
-                PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
-                    left.unwrap_or_else(|| equality.left().clone()),
-                    right.unwrap_or_else(|| equality.right().clone()),
-                ))
-            }
-        };
-
-        Some(Self::new(predicate, self.symbol_id, self.span))
+        self.predicate
+            .apply_subst(subst, engine)
+            .map(|predicate| Self::new(predicate, self.symbol_id, self.span))
     }
 }
 
