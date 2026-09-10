@@ -654,6 +654,24 @@ impl Ty {
     pub const fn as_inference(&self) -> Option<&Inference> {
         if let Self::Inference(inference) = self { Some(inference) } else { None }
     }
+
+    #[must_use]
+    pub fn is_instance_associated(&self) -> bool {
+        match self {
+            Self::Application(application) => match application.view() {
+                ApplicationView::InstanceAssociated(_) => true,
+                ApplicationView::Primitive(_)
+                | ApplicationView::Tuple(_)
+                | ApplicationView::Lambda(_)
+                | ApplicationView::Pointer(_)
+                | ApplicationView::Instance(_)
+                | ApplicationView::Error => false,
+            },
+            Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {
+                false
+            }
+        }
+    }
 }
 
 #[cfg(test)]

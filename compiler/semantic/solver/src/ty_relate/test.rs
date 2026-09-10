@@ -463,3 +463,39 @@ async fn self_instance_is_rigid_but_can_be_an_inference_solution() {
         }
     }
 }
+
+// input: C.Item[List[int32]] = C.Item[Set[int32]]
+// premise: Item is an opaque instance associated type
+// output: NoProgress, without relating the distinct instance arguments
+#[tokio::test]
+async fn associated_types_are_not_structurally_decomposed() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let id = |n| TargetID::TEST.make_global(SymbolID::from_u128(n));
+    let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+    let list = Ty::new_instance(id(1), Args::new([int32.clone()], &engine), &engine);
+    let set = Ty::new_instance(id(2), Args::new([int32], &engine), &engine);
+    let list_element = Ty::new_instance_associated(id(3), list, [], &engine);
+    let set_element = Ty::new_instance_associated(id(3), set, [], &engine);
+    let mut solver = Solver::without_givens(engine);
+
+    let step = solver.entail_ty_relate(&TyRelate::new(list_element, set_element)).await;
+
+    assert_eq!(step, Ok(Step::NoProgress));
+}
+
+// input: C.Item[List[int32]] = C.Item[List[int32]]
+// premise: Item is an opaque instance associated type
+// output: the syntactically identical constraint is discharged
+#[tokio::test]
+async fn syntactically_identical_associated_types_are_discharged() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let id = |n| TargetID::TEST.make_global(SymbolID::from_u128(n));
+    let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+    let list = Ty::new_instance(id(1), Args::new([int32], &engine), &engine);
+    let element = Ty::new_instance_associated(id(2), list, [], &engine);
+    let mut solver = Solver::without_givens(engine);
+
+    let step = solver.entail_ty_relate(&TyRelate::new(element.clone(), element)).await;
+
+    assert_eq!(step, Ok(Step::Derived(Vec::new())));
+}
