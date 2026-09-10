@@ -6,7 +6,6 @@ use rayc_type::{
     subst::Subst,
     ty::{
         InferenceConstraint, Ty, TyKind,
-        application::View as ApplicationView,
         effect_row::{EffectLabel, EffectRow},
         inference::Inference,
     },
@@ -114,33 +113,27 @@ impl Solver {
             return Ok(Step::Derived(Vec::new()));
         }
 
-        match (&**substype.lesser(), &**substype.greater()) {
-            (Ty::Application(l1), Ty::Application(l2)) => {
-                // Keep associated types opaque until reduction can identify their
-                // concrete definitions. Decomposing two projections would incorrectly
-                // require their instance arguments to be equal even when both
-                // projections reduce to the same type.
-                if substype.lesser().is_instance_associated()
-                    || substype.greater().is_instance_associated()
-                {
-                    return Ok(Step::NoProgress);
-                }
+        // Keep associated types opaque until reduction can identify their
+        // concrete definitions. Decomposing two projections would incorrectly
+        // require their instance arguments to be equal even when both
+        // projections reduce to the same type.
+        if substype.lesser().is_instance_associated() || substype.greater().is_instance_associated()
+        {
+            return Ok(Step::NoProgress);
+        }
 
-                l1.structural_match(l2).map_or_else(
-                    || Err(Error::Conflicted),
-                    |arg| {
-                        Ok(Step::Derived(
-                            arg.map(|(l, g)| {
-                                DerivedConstraint::new_type_application_matching(
-                                    l.clone(),
-                                    g.clone(),
-                                )
-                            })
-                            .collect(),
-                        ))
-                    },
-                )
-            }
+        match (&**substype.lesser(), &**substype.greater()) {
+            (Ty::Application(l1), Ty::Application(l2)) => l1.structural_match(l2).map_or_else(
+                || Err(Error::Conflicted),
+                |arg| {
+                    Ok(Step::Derived(
+                        arg.map(|(l, g)| {
+                            DerivedConstraint::new_type_application_matching(l.clone(), g.clone())
+                        })
+                        .collect(),
+                    ))
+                },
+            ),
 
             // Effect rows use exact Koka-style row unification here. Despite the
             // enclosing `Subtype` name, this is equality: labels are neither
