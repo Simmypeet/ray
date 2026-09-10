@@ -267,6 +267,17 @@ impl Provenance {
         }
     }
 
+    pub(super) fn instance_resolution_span(&self, cause_id: CauseID) -> RelativeSpan {
+        let root_cause_id = self.primary_root_cause_id(cause_id);
+        let Cause::Root(root) = &self.causes[root_cause_id] else {
+            unreachable!("the primary cause of instance resolution must be a root cause")
+        };
+        let RootCauseOrigin::InstanceResolve { span, .. } = &root.origin else {
+            unreachable!("an instance-resolution constraint must originate from instance search")
+        };
+        *span
+    }
+
     /// Traverses the cause graph to collect all the root causes that (including
     /// binding causes)
     fn collect_root_cause_ids(&self, cause_id: CauseID, roots: &mut FxHashSet<CauseID>) {

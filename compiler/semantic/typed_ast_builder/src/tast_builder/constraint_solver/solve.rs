@@ -1,8 +1,9 @@
 use bon::Builder;
 use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
+use rayc_resolution::PredicateObligation;
 use rayc_solver::{
-    instance_resolution::InstanceResolutionError,
+    instance_resolution::{InstanceResolutionError, InstanceResolutionObligation},
     ty_relate::{self, DerivedConstraint, Step},
 };
 use rayc_type::{
@@ -178,9 +179,17 @@ impl TAstBuilder {
         queued: &mut Vec<PendingConstraint>,
     ) {
         match self.constraint_solver.solver.resolve_instance(trait_ref.clone()).await {
-            Ok(result) => {
+            Ok(resolved) => {
                 let cause_id =
                     self.constraint_solver.provenance.insert_instance_resolution_cause(cause_id);
+                let (result, obligations) = resolved.into_parts();
+
+                // Instance search returns the predicates contributed by the selected proof
+                // tree.
+                self.enqueue_instance_resolution_obligations(obligations, cause_id, queued);
+
+                // Relate the requested dictionary after its predicates have been queued. The
+                // worklist is LIFO, so this relation is solved before those predicates.
                 queued.push(PendingConstraint {
                     constraint: Constraint::TyRelate(TyRelate::new(instance, result)),
                     cause_id,
@@ -203,6 +212,29 @@ impl TAstBuilder {
                     },
                 ));
             }
+        }
+    }
+
+    fn enqueue_instance_resolution_obligations(
+        &mut self,
+        obligations: Vec<InstanceResolutionObligation>,
+        cause_id: CauseID,
+        queued: &mut Vec<PendingConstraint>,
+    ) {
+        let span = self.constraint_solver.provenance.instance_resolution_span(cause_id);
+
+        // Give each returned predicate its own diagnostic root at the implicit-use
+        // site.
+        for obligation in obligations {
+            let (instance_id, predicate) = obligation.into_parts();
+            let obligation = PredicateObligation::new(predicate, instance_id, span);
+            let predicate_cause_id =
+                self.constraint_solver.provenance.insert_root_cause(obligation.clone());
+
+            queued.push(PendingConstraint {
+                constraint: Constraint::TyRelate(obligation.constraint()),
+                cause_id: predicate_cause_id,
+            });
         }
     }
 
