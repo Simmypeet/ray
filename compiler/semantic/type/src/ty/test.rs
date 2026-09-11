@@ -35,11 +35,14 @@ async fn recursive_iter_yields_root_and_descendants_in_breadth_first_order() {
 }
 
 // input: ?instance.Inner[?a, bool]
-// premise: ?instance maps to I and ?a maps to int32
+// premise: Inner has Star kind; ?instance maps to I and ?a maps to int32
 // output: I.Inner[int32, bool], with Star kind and no remaining inference
 // variables
 #[tokio::test]
 async fn associated_type_substitution_replaces_instance_and_member_arguments() {
+    use std::{collections::HashMap, sync::Arc};
+
+    use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor};
     use rayc_symbol::SymbolID;
     use rayc_target::TargetID;
 
@@ -51,8 +54,20 @@ async fn associated_type_substitution_replaces_instance_and_member_arguments() {
     };
     use crate::subst::{Subst, Substitutable};
 
-    let engine = rayc_qbice::create_minimal_engine().await;
     let member_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    // Supply the declaration kind queried by the substituted projection.
+    let mut engine = Engine::new_with(
+        qbice::serialize::Plugin::default(),
+        InMemoryFactory,
+        qbice::stable_hash::SeededStableHasherBuilder::new(0),
+    )
+    .await
+    .unwrap();
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        crate::associated_type_kind::Key { symbol_id: member_id },
+        TyKind::Star,
+    )]))));
+    let engine = Arc::new(engine).tracked().await;
     let instance_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
     let instance_var = Inference::new(TyKind::Instance, 0);
     let arg_var = Inference::new(TyKind::Star, 1);

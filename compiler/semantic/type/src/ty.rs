@@ -100,7 +100,7 @@ pub enum Ty {
 impl Ty {
     pub async fn kind_of(&self, engine: &TrackedEngine) -> TyKind {
         match self {
-            Self::Application(application) => application.kind_of(),
+            Self::Application(application) => application.kind_of(engine).await,
             Self::Inference(inference) => inference.kind(),
             Self::PolyVar(poly_var) => {
                 let poly_var_map = engine.get_poly_var_map(poly_var.parent_id()).await;

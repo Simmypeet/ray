@@ -163,13 +163,15 @@ impl Application {
     }
 
     #[must_use]
-    pub(crate) const fn kind_of(&self) -> TyKind {
+    pub(crate) async fn kind_of(&self, engine: &TrackedEngine) -> TyKind {
         match self.constant {
-            Constant::Primitive(_)
-            | Constant::Tuple
-            | Constant::Lambda
-            | Constant::Pointer(_)
-            | Constant::InstanceAssociated(_) => TyKind::Star,
+            Constant::Primitive(_) | Constant::Tuple | Constant::Lambda | Constant::Pointer(_) => {
+                TyKind::Star
+            }
+            Constant::InstanceAssociated(symbol_id) => {
+                use crate::associated_type_kind::get_associated_type_kind;
+                engine.get_associated_type_kind(symbol_id).await
+            }
             Constant::Instance(_) => TyKind::Instance,
             Constant::Error(kind) => kind,
         }
