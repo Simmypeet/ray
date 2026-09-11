@@ -1,0 +1,181 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Ray",
+  "scopeName": "source.ray",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#characters" },
+    { "include": "#declarations" },
+    { "include": "#types" },
+    { "include": "#constants" },
+    { "include": "#keywords" },
+    { "include": "#function-calls" },
+    { "include": "#numbers" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.ray",
+          "begin": "#",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.comment.ray" }
+          },
+          "end": "$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.ray",
+          "begin": "\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.ray" }
+          },
+          "end": "\"",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.ray" }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.ray",
+              "match": "\\\\['\"\\\\abtnvfr0]"
+            },
+            {
+              "name": "invalid.illegal.escape.ray",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "characters": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.ray",
+          "match": "'(?:[^'\\\\]|\\\\['\"\\\\abtnvfr0])'",
+          "captures": {
+            "0": { "name": "constant.character.ray" }
+          }
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(def)(\\s+)([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": { "name": "storage.type.function.ray" },
+            "3": { "name": "entity.name.function.ray" }
+          }
+        },
+        {
+          "match": "\\b(eff)(\\s+)([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": { "name": "storage.type.effect.ray" },
+            "3": { "name": "entity.name.type.effect.ray" }
+          }
+        },
+        {
+          "match": "\\b(struct|enum|trait|type|module)(\\s+)([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": { "name": "storage.type.ray" },
+            "3": { "name": "entity.name.type.ray" }
+          }
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.ray",
+          "match": "\\b(?:bool|int8|int16|int32|int64|uint8|uint16|uint32|uint64|float32|float64|usize|isize|c_int|cstr)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.ray",
+          "match": "\\b(?:true|false|null)\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.ray",
+          "match": "\\b(?:match|if|else|while|loop|for|break|continue|return|do|try|with|run|resume|panic|pass)\\b"
+        },
+        {
+          "name": "keyword.operator.word.ray",
+          "match": "\\b(?:and|or|not|as|from)\\b"
+        },
+        {
+          "name": "storage.modifier.ray",
+          "match": "\\b(?:pub|priv|internal|let|const|mut|static|unsafe|extern|phantom|final|marker)\\b"
+        },
+        {
+          "name": "keyword.declaration.ray",
+          "match": "\\b(?:def|eff|struct|impl|enum|module|type|trait|import|tuple|case|express|delete|where|scope|given|inst)\\b"
+        },
+        {
+          "name": "variable.language.ray",
+          "match": "\\b(?:super|target|this)\\b"
+        }
+      ]
+    },
+    "function-calls": {
+      "patterns": [
+        {
+          "name": "entity.name.function.call.ray",
+          "match": "(?<![_\\p{L}\\p{N}])[_\\p{L}][_\\p{L}\\p{N}]*(?=\\s*\\()"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.integer.decimal.ray",
+          "match": "(?<![_\\p{L}\\p{N}])\\d+(?![_\\p{L}\\p{N}])"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.ray",
+          "match": "==|!=|->|[=+\\-*/]"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.parameters.ray",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.definition.bracket.ray",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.definition.brace.ray",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.separator.ray",
+          "match": "[.,:;]"
+        },
+        {
+          "name": "punctuation.accessor.ray",
+          "match": "[&|\\\\]"
+        }
+      ]
+    }
+  }
+}
