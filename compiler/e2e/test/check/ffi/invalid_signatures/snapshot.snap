@@ -33,13 +33,11 @@ stderr:
 4 │ extern def polymorphic(value: a) -> a
   ╰╴                              ━
 
-[error]: type `a` is not found
+[error]: symbol `a` is not found
   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:31
   │
 4 │ extern def polymorphic(value: a) -> a
-  │                               ━ type `a` is not found
-  │
-  ╰ help: a polymorphic variable must first appear in a parameter type
+  ╰╴                              ━ symbol `a` is not found
 
 [error]: this type is not supported as an extern return type
   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:37
@@ -47,13 +45,11 @@ stderr:
 4 │ extern def polymorphic(value: a) -> a
   ╰╴                                    ━
 
-[error]: type `a` is not found
+[error]: symbol `a` is not found
   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:37
   │
 4 │ extern def polymorphic(value: a) -> a
-  │                                     ━ type `a` is not found
-  │
-  ╰ help: a polymorphic variable must first appear in a parameter type
+  ╰╴                                    ━ symbol `a` is not found
 
 [error]: Compilation aborted due to 8 error(s)
 

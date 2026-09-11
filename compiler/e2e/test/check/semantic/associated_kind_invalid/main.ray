@@ -1,0 +1,44 @@
+trait Contract[]:
+    type Value
+    type Effects: Effect
+
+inst WrongEffect for Contract:
+    type Value = int32
+    type Effects = int32
+
+inst WrongValue for Contract:
+    type Value = {}
+    type Effects = {}
+
+inst WrongAscription for Contract:
+    type Value: Effect = int32
+    type Effects: Star = {}
+
+inst Valid for Contract:
+    type Value = int32
+    type Effects = {}
+
+trait RequiresEffect[e: Effect]:
+    type Value
+
+inst BadArgument for RequiresEffect[Valid.Value]:
+    type Value = int32
+
+def wrongValue(value: Valid.Effects) -> int32:
+    return 0
+
+def wrongEffect(callback: def() -> int32 \ Valid.Value) -> int32:
+    return 0
+
+def wrongOpaque(value: i.Effects) given (i: Contract) -> int32:
+    return 0
+
+def wrongEquality() given (i: Contract) -> int32 where (i.Effects = int32):
+    return 0
+
+# Failed effect arguments should emit only the lookup error, not a kind mismatch.
+inst MissingEffectArgument for RequiresEffect[Missing.Effects]:
+    type Value = int32
+
+def main() -> int32:
+    return 0

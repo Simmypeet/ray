@@ -1,0 +1,76 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: type kind mismatch
+  ╭▸ compiler/e2e/test/check/semantic/associated_kind_invalid/main.ray:7:20
+  │
+7 │     type Effects = int32
+  ╰╴                   ━━━━━ expected an effect row, found a value type
+
+[error]: type kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_kind_invalid/main.ray:10:17
+   │
+10 │     type Value = {}
+   ╰╴                ━━━ expected a value type, found an effect row
+
+[error]: instance member `Value`: associated type kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_kind_invalid/main.ray:14:15
+   │
+ 2 │     type Value
+   │          ───── the corresponding trait declaration is here
+   ‡
+14 │     type Value: Effect = int32
+   ╰╴              ━━━━━━━━ expected type, found effect row
+
+[error]: instance member `Effects`: associated type kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_kind_invalid/main.ray:15:17
+   │
+ 3 │     type Effects: Effect
+   │          ─────── the corresponding trait declaration is here
+   ‡
+15 │     type Effects: Star = {}
+   ╰╴                ━━━━━━ expected effect row, found type
+
+[error]: type kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_kind_invalid/main.ray:24:37
+   │
+24 │ inst BadArgument for RequiresEffect[Valid.Value]:
+   ╰╴                                    ━━━━━━━━━━━ expected an effect row, found a value type
+
+[error]: type kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_kind_invalid/main.ray:27:23
+   │
+27 │ def wrongValue(value: Valid.Effects) -> int32:
+   ╰╴                      ━━━━━━━━━━━━━ expected a value type, found an effect row
+
+[error]: type kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_kind_invalid/main.ray:30:44
+   │
+30 │ def wrongEffect(callback: def() -> int32 \ Valid.Value) -> int32:
+   ╰╴                                           ━━━━━━━━━━━ expected an effect row, found a value type
+
+[error]: type kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_kind_invalid/main.ray:33:24
+   │
+33 │ def wrongOpaque(value: i.Effects) given (i: Contract) -> int32:
+   ╰╴                       ━━━━━━━━━ expected a value type, found an effect row
+
+[error]: type kind mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_kind_invalid/main.ray:36:69
+   │
+36 │ def wrongEquality() given (i: Contract) -> int32 where (i.Effects = int32):
+   ╰╴                                                                    ━━━━━ expected an effect row, found a value type
+
+[error]: symbol `Missing` is not found
+   ╭▸ compiler/e2e/test/check/semantic/associated_kind_invalid/main.ray:40:47
+   │
+40 │ inst MissingEffectArgument for RequiresEffect[Missing.Effects]:
+   ╰╴                                              ━━━━━━━ symbol `Missing` is not found
+
+[error]: Compilation aborted due to 10 error(s)
+
+
+
+stdout:

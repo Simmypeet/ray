@@ -3,13 +3,11 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: type `a` is not found
+[error]: symbol `a` is not found
   ╭▸ compiler/e2e/test/check/tast/polymorphic_return_only/main.ray:1:33
   │
 1 │ def test(b: int32, c: int32) -> a:
-  │                                 ━ type `a` is not found
-  │
-  ╰ help: a polymorphic variable must first appear in a parameter type
+  ╰╴                                ━ symbol `a` is not found
 
 [error]: mismatched types in return expression: expected `<error>`, but found `int32`
   ╭▸ compiler/e2e/test/check/tast/polymorphic_return_only/main.ray:2:12

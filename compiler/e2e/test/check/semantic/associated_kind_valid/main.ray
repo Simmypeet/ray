@@ -1,0 +1,36 @@
+eff IO:
+    def output()
+
+trait Contract[e: Effect]:
+    type Value
+    type Effects: Effect
+    type Extend[r: Effect]: Effect
+    def use(callback: def() -> int32 \ this.Effects) -> int32
+
+inst Concrete for Contract[{IO}]:
+    type Value = int32
+    type Effects = {IO}
+    type Extend[r: Effect] = {IO | r}
+    def use(callback: def() -> int32 \ Concrete.Effects) -> int32:
+        return 0
+
+trait Forward[e: Effect]:
+    type Effects: Effect
+
+inst Forwarded for Forward[Concrete.Effects]:
+    type Effects: Effect = Concrete.Extend[{}]
+
+def opaque(callback: def() -> int32 \ i.Effects) given (i: Contract[{}]) -> int32:
+    return 0
+
+def tail(callback: def() -> int32 \ {IO | i.Effects}) given (i: Contract[{}]) -> int32:
+    return 0
+
+def concrete(callback: def() -> int32 \ Forwarded.Effects) -> int32:
+    return 0
+
+def constrained(callback: def() -> int32 \ i.Effects) given (i: Contract[{}]) -> int32 where (i.Effects = {}):
+    return 0
+
+def main() -> int32:
+    return 0
