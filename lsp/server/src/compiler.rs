@@ -98,13 +98,3 @@ impl Compiler {
         diagnostics.into_iter().map(|diagnostic| convert(diagnostic, uri, text)).collect()
     }
 }
-
-fn test<'a>(mut a: impl FnMut() -> &'a i32) {
-    let mut b = a();
-    let mut c = a();
-}
-
-fn another() {
-    let mut a = 2;
-    test(|| &a);
-}
