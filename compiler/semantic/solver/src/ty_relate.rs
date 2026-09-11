@@ -113,27 +113,45 @@ impl Solver {
             return Ok(Step::Derived(Vec::new()));
         }
 
-        // Keep associated types opaque until reduction can identify their
-        // concrete definitions. Decomposing two projections would incorrectly
-        // require their instance arguments to be equal even when both
-        // projections reduce to the same type.
-        if substype.lesser().is_instance_associated() || substype.greater().is_instance_associated()
-        {
-            return Ok(Step::NoProgress);
-        }
-
         match (&**substype.lesser(), &**substype.greater()) {
-            (Ty::Application(l1), Ty::Application(l2)) => l1.structural_match(l2).map_or_else(
-                || Err(Error::Conflicted),
-                |arg| {
-                    Ok(Step::Derived(
-                        arg.map(|(l, g)| {
-                            DerivedConstraint::new_type_application_matching(l.clone(), g.clone())
-                        })
-                        .collect(),
-                    ))
-                },
-            ),
+            (Ty::Application(l1), Ty::Application(l2)) => {
+                // If either side is an associated type, we'll not attempt to break it down
+                // further. Here're two counterexamples that show why we shouldn't!
+                //
+                // 1. Suppose that's an equality constraint `Col.Elm[List[int32]] ~
+                //    Col.Elm[Set[int32]]`. If we break down the application, we'll get a
+                //    constraint `List[int32] ~ Set[int32]`, which is unsatisfiable, but the
+                //    original constraint is satisfiable if we reduce the associated type to a
+                //    common `int32` type.
+                //
+                // 2. Again, suppose we have `Col.Elm[List[int32]] ~ int32`. If we try to
+                //   `structural_match` the application, we'll definitely get a conflicted
+                //   error, but again, the original constraint is satisfiable if we reduce the
+                //   associated type
+                //
+                // the main point is that we don't want to break down the application since
+                // we'll lose the information that the **associated type** was
+                // there and it could potentially be reduced to type that satisfies the
+                // constraint.
+                if l1.is_instance_associated() || l2.is_instance_associated() {
+                    return Ok(Step::NoProgress);
+                }
+
+                l1.structural_match(l2).map_or_else(
+                    || Err(Error::Conflicted),
+                    |arg| {
+                        Ok(Step::Derived(
+                            arg.map(|(l, g)| {
+                                DerivedConstraint::new_type_application_matching(
+                                    l.clone(),
+                                    g.clone(),
+                                )
+                            })
+                            .collect(),
+                        ))
+                    },
+                )
+            }
 
             // Effect rows use exact Koka-style row unification here. Despite the
             // enclosing `Subtype` name, this is equality: labels are neither
@@ -143,35 +161,43 @@ impl Solver {
                 self.entail_effect_row_subtype(lesser, greater).map(Step::Derived)
             }
 
-            (Ty::Inference(var), _) => Ok(Step::Subst(
+            (Ty::Inference(var), _) => {
                 self.bind_infer_var(*var, substype.greater(), TyRelatingSide::Lesser, relate_env)
-                    .await?,
-            )),
-            (_, Ty::Inference(var)) => Ok(Step::Subst(
+                    .await
+            }
+            (_, Ty::Inference(var)) => {
                 self.bind_infer_var(*var, substype.lesser(), TyRelatingSide::Greater, relate_env)
-                    .await?,
-            )),
+                    .await
+            }
 
-            (Ty::PolyVar(poly_var), _) => Ok(Step::Subst(
+            (Ty::PolyVar(poly_var), _) => {
                 self.bind_poly_var(
                     *poly_var,
                     substype.greater(),
                     TyRelatingSide::Lesser,
                     relate_env,
                 )
-                .await?,
-            )),
-            (_, Ty::PolyVar(poly_var)) => Ok(Step::Subst(
+                .await
+            }
+            (_, Ty::PolyVar(poly_var)) => {
                 self.bind_poly_var(
                     *poly_var,
                     substype.lesser(),
                     TyRelatingSide::Greater,
                     relate_env,
                 )
-                .await?,
-            )),
+                .await
+            }
 
-            _ => Err(Error::Conflicted),
+            _ => {
+                if substype.lesser().is_instance_associated()
+                    || substype.greater().is_instance_associated()
+                {
+                    Ok(Step::NoProgress)
+                } else {
+                    Err(Error::Conflicted)
+                }
+            }
         }
     }
 
@@ -269,9 +295,13 @@ impl Solver {
         ty: &Interned<Ty>,
         relating_side: TyRelatingSide,
         relate_env: &TyRelatingEnvironment,
-    ) -> Result<Subst, Error> {
+    ) -> Result<Step, Error> {
         if !can_bind(relate_env, relating_side, VariableKind::Poly) {
-            return Err(Error::Conflicted);
+            return if ty.is_instance_associated() {
+                Ok(Step::NoProgress)
+            } else {
+                Err(Error::Conflicted)
+            };
         }
 
         if ty.has_poly_variable(&poly_var) {
@@ -285,7 +315,7 @@ impl Solver {
             return Err(Error::Conflicted);
         }
 
-        Ok(Subst::new_singleton(poly_var, ty.clone()))
+        Ok(Step::Subst(Subst::new_singleton(poly_var, ty.clone())))
     }
 
     async fn bind_infer_var(
@@ -294,9 +324,16 @@ impl Solver {
         ty: &Interned<Ty>,
         relating_side: TyRelatingSide,
         relate_env: &TyRelatingEnvironment,
-    ) -> Result<Subst, Error> {
+    ) -> Result<Step, Error> {
         if !can_bind(relate_env, relating_side, VariableKind::Inference) {
-            return Err(Error::Conflicted);
+            // technically, the instance associated can be reduced into something that can
+            // be equal to this inference variable and thus discharging the
+            // constraint
+            return if ty.is_instance_associated() {
+                Ok(Step::NoProgress)
+            } else {
+                Err(Error::Conflicted)
+            };
         }
 
         if ty.has_inference_variable(&var) {
@@ -312,15 +349,21 @@ impl Solver {
                 if var.kind() == TyKind::Star
                     && !ty_application.satisfies_constraint(var.constraint())
                 {
-                    return Err(Error::Conflicted);
+                    // associated type could reduce to a type that satisfies the constraint in the
+                    // future, don't make it a conflict yet
+                    return if ty_application.is_instance_associated() {
+                        Ok(Step::NoProgress)
+                    } else {
+                        Err(Error::Conflicted)
+                    };
                 }
 
-                Ok(Subst::new_singleton(var, ty.clone()))
+                Ok(Step::Subst(Subst::new_singleton(var, ty.clone())))
             }
 
             Ty::Inference(ty_inference) => {
                 if var.constraint() == ty_inference.constraint() {
-                    return Ok(Subst::new_singleton(var, ty.clone()));
+                    return Ok(Step::Subst(Subst::new_singleton(var, ty.clone())));
                 }
 
                 let meet =
@@ -329,12 +372,14 @@ impl Solver {
                 let common_var = self.new_inference_with_constraint(var.kind(), meet);
                 let common_var = self.engine().intern(Ty::Inference(common_var));
 
-                Ok([(var, common_var.clone()), (*ty_inference, common_var)].into_iter().collect())
+                Ok(Step::Subst(
+                    [(var, common_var.clone()), (*ty_inference, common_var)].into_iter().collect(),
+                ))
             }
 
             Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => {
                 if var.constraint() == InferenceConstraint::Any {
-                    Ok(Subst::new_singleton(var, ty.clone()))
+                    Ok(Step::Subst(Subst::new_singleton(var, ty.clone())))
                 } else {
                     Err(Error::Conflicted)
                 }

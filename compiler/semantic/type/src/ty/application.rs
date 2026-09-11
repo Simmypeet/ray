@@ -163,6 +163,11 @@ impl Application {
     }
 
     #[must_use]
+    pub const fn is_instance_associated(&self) -> bool {
+        matches!(self.constant, Constant::InstanceAssociated(_))
+    }
+
+    #[must_use]
     pub(crate) async fn kind_of(&self, engine: &TrackedEngine) -> TyKind {
         match self.constant {
             Constant::Primitive(_) | Constant::Tuple | Constant::Lambda | Constant::Pointer(_) => {

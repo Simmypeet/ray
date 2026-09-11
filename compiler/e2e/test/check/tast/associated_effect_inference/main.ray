@@ -1,0 +1,8 @@
+trait TraitAssocEff[a]:
+    type Assoc: Effect
+
+    def executeSomething() \ this.Assoc
+
+
+def testAssoc(param: a) given (i: TraitAssocEff[a]) \ i.Assoc:
+    i.executeSomething()
