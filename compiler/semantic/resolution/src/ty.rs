@@ -16,7 +16,6 @@ use rayc_type::{
 };
 
 use crate::{
-    is_poly_var_name,
     path::{PathResolution, TraitMemberParent},
     resolver::Resolver,
 };
@@ -71,15 +70,11 @@ impl Resolver<'_> {
 
         if let Some(arguments) = path.arguments() {
             for (index, argument) in arguments.type_arguments().enumerate() {
-                let mut ty = Box::pin(self.resolve_type(&argument)).await;
-
-                if let Some(expected) = expected.get(index) {
-                    let actual = self.type_kind(&ty).await;
-                    if actual != *expected {
-                        self.report_type_kind_mismatch(argument.span(), *expected, actual);
-                        ty = self.new_error_type(*expected);
-                    }
-                }
+                let ty = if let Some(expected_kind) = expected.get(index) {
+                    Box::pin(self.resolve_type_term(&argument, *expected_kind)).await
+                } else {
+                    Box::pin(self.infer_type_term(&argument)).await
+                };
 
                 resolved.push(ty);
             }
@@ -282,8 +277,8 @@ impl Resolver<'_> {
     #[must_use]
     pub async fn resolve_effect_row(&mut self, syntax: &EffectRowSyntax) -> Interned<Ty> {
         match syntax {
-            EffectRowSyntax::PolyVar(identifier) => {
-                self.new_checked_poly_var_type(identifier, TyKind::EffectRow).await
+            EffectRowSyntax::Path(path) => {
+                Box::pin(self.resolve_type_path(path, TyKind::EffectRow)).await
             }
             EffectRowSyntax::ConcreteEffectRow(effect_row) => {
                 let mut labels = Vec::new();
@@ -300,7 +295,7 @@ impl Resolver<'_> {
 
                 let tail =
                     if let Some(variable) = effect_row.tail().and_then(|tail| tail.variable()) {
-                        Some(self.new_checked_poly_var_type(&variable, TyKind::EffectRow).await)
+                        Some(Box::pin(self.resolve_type_path(&variable, TyKind::EffectRow)).await)
                     } else {
                         None
                     };
@@ -313,7 +308,60 @@ impl Resolver<'_> {
     /// Resolves one type against this resolver's polymorphic environment.
     #[must_use]
     pub async fn resolve_type(&mut self, syntax: &TypeSyntax) -> Interned<Ty> {
+        self.resolve_type_term(syntax, TyKind::Star).await
+    }
+
+    /// Resolves a type term and validates its kind, including polymorphic
+    /// variables and associated projections. Recovery errors have
+    /// `expected_kind` too.
+    pub async fn resolve_type_term(
+        &mut self,
+        syntax: &TypeSyntax,
+        expected_kind: TyKind,
+    ) -> Interned<Ty> {
+        let ty = Box::pin(self.synthesize_type_term(syntax, expected_kind)).await;
+        self.check_type_kind(ty, syntax.span(), expected_kind).await
+    }
+
+    /// Resolves a term whose result kind is not yet known, as on the left of a
+    /// where equality. Nested components still satisfy their required kinds.
+    pub async fn infer_type_term(&mut self, syntax: &TypeSyntax) -> Interned<Ty> {
+        Box::pin(self.synthesize_type_term(syntax, TyKind::Star)).await
+    }
+
+    async fn check_type_kind(
+        &self,
+        ty: Interned<Ty>,
+        span: RelativeSpan,
+        expected: TyKind,
+    ) -> Interned<Ty> {
+        // Preserve the required kind during recovery without duplicating a resolution
+        // error.
+        if matches!(&*ty, Ty::Application(application) if matches!(application.view(), rayc_type::ty::application::View::Error))
+        {
+            return self.new_error_type(expected);
+        }
+        let actual = self.type_kind(&ty).await;
+        if actual == expected {
+            ty
+        } else {
+            self.report_type_kind_mismatch(span, expected, actual);
+            self.new_error_type(expected)
+        }
+    }
+
+    // Shared synthesis preserves the actual result kind until the checking
+    // boundary.
+    async fn synthesize_type_term(
+        &mut self,
+        syntax: &TypeSyntax,
+        recovery_kind: TyKind,
+    ) -> Interned<Ty> {
         match syntax {
+            TypeSyntax::EffectRow(row) => {
+                Box::pin(self.resolve_effect_row(&EffectRowSyntax::ConcreteEffectRow(row.clone())))
+                    .await
+            }
             TypeSyntax::Primitive(primitive) => {
                 let primitive = match primitive {
                     PrimitiveSyntax::Int32(_) => Primitive::Int32,
@@ -371,20 +419,26 @@ impl Resolver<'_> {
                 };
                 self.new_lambda_type(parameters, return_type, effect_row)
             }
-            TypeSyntax::Path(path) => self.resolve_type_path(path).await,
+            TypeSyntax::Path(path) => self.synthesize_type_path(path, recovery_kind).await,
         }
     }
 
-    async fn resolve_type_path(&mut self, path: &Path) -> Interned<Ty> {
+    async fn resolve_type_path(&mut self, path: &Path, expected_kind: TyKind) -> Interned<Ty> {
+        let ty = Box::pin(self.synthesize_type_path(path, expected_kind)).await;
+        self.check_type_kind(ty, path.span(), expected_kind).await
+    }
+
+    async fn synthesize_type_path(&mut self, path: &Path, recovery_kind: TyKind) -> Interned<Ty> {
         if let Some(identifier) = path.bare_identifier()
-            && (is_poly_var_name(&identifier.kind.0)
-                || self.search_poly_var(&identifier.kind.0).is_some())
+            && let Some(id) = self.search_poly_var(&identifier.kind.0)
         {
-            return self.new_checked_poly_var_type(&identifier, TyKind::Star).await;
+            return self.new_poly_var_type_from_id(id);
         }
+
         let Ok(resolution) = Box::pin(self.resolve_path(path)).await else {
-            return self.new_error_type(TyKind::Star);
+            return self.new_error_type(recovery_kind);
         };
+
         let projection = match &resolution {
             PathResolution::TraitMember(member)
                 if resolution.symbol_kind() == Some(SymbolKind::TraitType) =>
@@ -397,7 +451,7 @@ impl Resolver<'_> {
                     )),
                     TraitMemberParent::Named(_) => {
                         self.report_named_trait_type_projection(path.span());
-                        return self.new_error_type(TyKind::Star);
+                        return self.new_error_type(recovery_kind);
                     }
                 }
             }
@@ -418,12 +472,12 @@ impl Resolver<'_> {
                     self.engine().get_instance_member(member.symbol_id()).await
                 else {
                     self.report_missing_trait_type_declaration(path.span());
-                    return self.new_error_type(TyKind::Star);
+                    return self.new_error_type(recovery_kind);
                 };
                 if self.symbol_kind(correspondence.trait_member_id()).await != SymbolKind::TraitType
                 {
                     self.report_missing_trait_type_declaration(path.span());
-                    return self.new_error_type(TyKind::Star);
+                    return self.new_error_type(recovery_kind);
                 }
                 Some((
                     correspondence.trait_member_id(),
@@ -453,7 +507,7 @@ impl Resolver<'_> {
             )
         } else {
             self.report_expected_value_type(path.span());
-            self.new_error_type(TyKind::Star)
+            self.new_error_type(recovery_kind)
         }
     }
 }

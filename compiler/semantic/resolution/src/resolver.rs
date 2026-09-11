@@ -26,8 +26,8 @@ use rayc_type::{
 use crate::{
     Diagnostic, DuplicateGivenArgument, ExpectedEffect, ExpectedInstance, ExpectedTrait,
     ExplicitTypeArgumentsNotAllowed, GenInferWithSpan, GivenArgumentNotFound, MissingGivenArgument,
-    PathSegmentNotFound, PolyVarNotFound, PositionalGivenArgumentAfterNamed,
-    TypeArgumentArityMismatch, TypeInferenceNotAllowed, TypeKindMismatch,
+    PathSegmentNotFound, PositionalGivenArgumentAfterNamed, TypeArgumentArityMismatch,
+    TypeInferenceNotAllowed, TypeKindMismatch,
 };
 
 /// Resolves syntax relative to a symbol and its polymorphic environment.
@@ -163,27 +163,6 @@ impl Resolver<'_> {
         Ty::new_instance(symbol_id, args, self.engine)
     }
 
-    pub(crate) fn new_poly_var_type(
-        &self,
-        identifier: &rayc_syntax::Identifier,
-        error_kind: TyKind,
-    ) -> Interned<Ty> {
-        let Some(id) = self
-            .building_poly_var_map
-            .and_then(|x| {
-                x.find_by_name(&identifier.kind).map(|x| GlobalPolyVarID::new(self.site, x))
-            })
-            .or_else(|| self.poly_var_stack.and_then(|x| x.find_by_name(&identifier.kind.0)))
-        else {
-            self.handler.receive(Diagnostic::PolyVarNotFound(PolyVarNotFound::new(
-                identifier.kind.0.clone(),
-                identifier.span(),
-            )));
-            return self.new_error_type(error_kind);
-        };
-        Ty::new_poly_var(id, self.engine)
-    }
-
     pub(crate) fn new_poly_var_type_from_id(&self, id: GlobalPolyVarID) -> Interned<Ty> {
         Ty::new_poly_var(id, self.engine)
     }
@@ -203,20 +182,6 @@ impl Resolver<'_> {
 
         let poly_var_map = self.engine.get_poly_var_map(id.parent_id()).await;
         poly_var_map.trait_ref_of(id.id()).cloned()
-    }
-
-    pub(crate) async fn new_checked_poly_var_type(
-        &self,
-        identifier: &rayc_syntax::Identifier,
-        expected: TyKind,
-    ) -> Interned<Ty> {
-        let ty = self.new_poly_var_type(identifier, expected);
-        let actual = self.type_kind(&ty).await;
-        if actual != expected {
-            self.report_type_kind_mismatch(identifier.span(), expected, actual);
-            return self.new_error_type(expected);
-        }
-        ty
     }
 
     pub(crate) fn new_inference_type(

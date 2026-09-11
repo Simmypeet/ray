@@ -494,10 +494,6 @@ pub struct PolyVarNotFound {
     span: RelativeSpan,
 }
 
-impl PolyVarNotFound {
-    const fn new(name: Interned<str>, span: RelativeSpan) -> Self { Self { name, span } }
-}
-
 impl Report for PolyVarNotFound {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         Rendered::builder()
@@ -525,10 +521,11 @@ fn discover_effect_row_poly_var(
     poly_vars: &mut PolyVarMap,
 ) {
     let variable = match effect_row.and_then(EffectRowAnnotation::effect_row) {
-        Some(EffectRowSyntax::PolyVar(variable)) => Some(variable),
-        Some(EffectRowSyntax::ConcreteEffectRow(effect_row)) => {
-            effect_row.tail().and_then(|tail| tail.variable())
-        }
+        Some(EffectRowSyntax::Path(path)) => path.bare_identifier(),
+        Some(EffectRowSyntax::ConcreteEffectRow(effect_row)) => effect_row
+            .tail()
+            .and_then(|tail| tail.variable())
+            .and_then(|path| path.bare_identifier()),
         None => None,
     };
 
@@ -543,6 +540,14 @@ fn discover_poly_vars(
     poly_var_stack: Option<&PolyVarStack>,
 ) {
     match ty {
+        TypeSyntax::EffectRow(row) => {
+            if let Some(variable) =
+                row.tail().and_then(|tail| tail.variable()).and_then(|path| path.bare_identifier())
+            {
+                let _ =
+                    poly_vars.insert(PolyVar::new_effect(variable.kind.0.clone(), variable.span()));
+            }
+        }
         TypeSyntax::Primitive(_) => {}
         TypeSyntax::Pointer(pointer) => {
             if let Some(pointed_type) = pointer.pointed_type() {
