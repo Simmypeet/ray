@@ -54,6 +54,7 @@ pub enum Mismatch {
     MissingWhereClausePredicate { expected: PredicateKind },
     ExtraneousWhereClausePredicate { actual: PredicateKind },
     MemberKind { expected: SymbolKind, actual: SymbolKind },
+    AssociatedTypeKind { expected: TyKind, actual: TyKind },
 }
 
 #[derive(
@@ -109,6 +110,7 @@ impl Report for Diagnostic {
             | Mismatch::PolyVarCount { .. }
             | Mismatch::PolyVarKind { .. }
             | Mismatch::InstanceParameterTraitRef { .. }
+            | Mismatch::AssociatedTypeKind { .. }
             | Mismatch::MemberKind { .. } => "the corresponding trait declaration is here",
         };
         let (problem, detail) = match &self.mismatch {
@@ -166,6 +168,10 @@ impl Report for Diagnostic {
             Mismatch::ExtraneousWhereClausePredicate { actual } => (
                 "extraneous where-clause predicate".to_owned(),
                 format!("extra requirement: {}", display_predicate(actual, engine).await),
+            ),
+            Mismatch::AssociatedTypeKind { expected, actual } => (
+                "associated type kind mismatch".to_owned(),
+                format!("expected {}, found {}", kind_name(*expected), kind_name(*actual)),
             ),
             Mismatch::MemberKind { expected, actual } => (
                 "member kind mismatch".to_owned(),
@@ -669,6 +675,22 @@ async fn conformance_executor(
         trait_span: engine.get_span(trait_member_id).await.expect("member span"),
         diagnostics: &diagnostics,
     };
+    // An optional implementation ascription must agree with the trait contract.
+    if engine.get_symbol_kind(symbol_id).await == SymbolKind::InstanceType {
+        use rayc_symbol::syntax::get_kind_ascription_syntax;
+        use rayc_type::associated_type_kind::get_associated_type_kind;
+        if let Some(ascription) = engine.get_kind_ascription_syntax(symbol_id).await {
+            let expected = engine.get_associated_type_kind(trait_member_id).await;
+            let actual = crate::associated_type_kind::resolve_kind(Some(ascription.clone()));
+            if actual != expected {
+                compatibility.report_at(
+                    Mismatch::AssociatedTypeKind { expected, actual },
+                    compatibility.trait_span,
+                    ascription.span(),
+                );
+            }
+        }
+    }
     let mut solver = Solver::new(engine.clone(), symbol_id).await;
     let givens_compatible =
         check_given_requirements(engine, &mut solver, &member, &compatibility).await;

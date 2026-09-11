@@ -168,11 +168,20 @@ impl Build for rayc_type::poly_var::Key {
                         let Some(identifier) = parameter.name() else {
                             continue;
                         };
-                        insert_poly_var(
-                            &mut poly_vars,
-                            PolyVar::new_type(identifier.kind.0.clone(), identifier.span()),
-                            &storage,
-                        );
+                        let variable = match crate::associated_type_kind::resolve_kind(
+                            parameter.kind_ascription(),
+                        ) {
+                            rayc_type::ty::TyKind::Star => {
+                                PolyVar::new_type(identifier.kind.0.clone(), identifier.span())
+                            }
+                            rayc_type::ty::TyKind::EffectRow => {
+                                PolyVar::new_effect(identifier.kind.0.clone(), identifier.span())
+                            }
+                            rayc_type::ty::TyKind::Instance => {
+                                unreachable!("kind ascriptions cannot declare dictionaries")
+                            }
+                        };
+                        insert_poly_var(&mut poly_vars, variable, &storage);
                     }
                 }
 

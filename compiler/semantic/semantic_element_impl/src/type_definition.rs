@@ -1,8 +1,17 @@
 use rayc_handler::Storage;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::resolver::Resolver;
-use rayc_symbol::syntax::get_type_definition_syntax;
-use rayc_type::{poly_var::get_enclosing_poly_var_maps, ty::Ty, type_definition::Key};
+use rayc_symbol::{
+    symbol_kind::{SymbolKind, get_symbol_kind},
+    syntax::get_type_definition_syntax,
+};
+use rayc_type::{
+    associated_type_kind::get_associated_type_kind,
+    instance_member::get_instance_member,
+    poly_var::get_enclosing_poly_var_maps,
+    ty::{Ty, TyKind},
+    type_definition::Key,
+};
 
 use crate::{
     build::{Build, Output},
@@ -25,10 +34,21 @@ impl Build for Key {
             .obligation_handler(&obligations)
             .build();
 
-        let definition = if let Some(syntax) = syntax {
-            resolver.resolve_type(&syntax).await
+        // The trait declaration fixes the result kind independently of the
+        // implementation.
+        let expected = if let Some(member) = engine.get_instance_member(symbol_id).await {
+            if engine.get_symbol_kind(member.trait_member_id()).await == SymbolKind::TraitType {
+                engine.get_associated_type_kind(member.trait_member_id()).await
+            } else {
+                TyKind::Star
+            }
         } else {
-            Ty::new_star_error(engine)
+            TyKind::Star
+        };
+        let definition = if let Some(syntax) = syntax {
+            resolver.resolve_type_term(&syntax, expected).await
+        } else {
+            Ty::new_error(expected, engine)
         };
         Output::new_with(definition, diagnostics.into_vec(), obligations.into_vec(), engine)
     }

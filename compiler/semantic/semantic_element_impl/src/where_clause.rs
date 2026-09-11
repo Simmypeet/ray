@@ -132,8 +132,10 @@ impl Build for Key {
                         continue;
                     };
                     let left_span = left.span();
-                    let left = resolver.resolve_type(&left).await;
-                    let right = resolver.resolve_type(&right).await;
+                    // Infer the left operand's kind, then check the right against it.
+                    let left = resolver.infer_type_term(&left).await;
+                    let right =
+                        resolver.resolve_type_term(&right, left.kind_of(engine).await).await;
                     match is_opaque_projection(&left) {
                         Some(true) => {}
                         Some(false) => {
