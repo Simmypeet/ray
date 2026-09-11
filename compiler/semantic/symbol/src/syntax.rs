@@ -114,11 +114,11 @@ pub struct WhereClauseSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }
 
-/// Retrieves the explicitly declared result-kind ascription of a trait
+/// Retrieves the explicitly declared result-kind ascription of an
 /// associated type.
 ///
-/// Only valid for trait associated-type symbols. An omitted ascription returns
-/// `None`.
+/// Only valid for trait and instance associated-type symbols. An omitted
+/// ascription returns `None`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
