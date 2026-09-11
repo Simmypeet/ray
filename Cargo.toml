@@ -44,6 +44,7 @@ members = [
 
     "compiler/driver",
     "compiler/main",
+    "lsp/server",
 
     # tidy-alphabetical-end
 ]

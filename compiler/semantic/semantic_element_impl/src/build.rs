@@ -107,7 +107,7 @@ impl<T: Build> Executor<T, Config> for ElementExtractExecutor {
         build_result.item
     }
 
-    fn execution_style() -> qbice::ExecutionStyle { qbice::ExecutionStyle::Firewall }
+    fn execution_style() -> qbice::ExecutionStyle { qbice::ExecutionStyle::Normal }
 }
 
 /// A helper structs that groups the side-effects of building a query.

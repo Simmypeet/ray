@@ -9,8 +9,8 @@ let client: LanguageClient | undefined;
 
 function createClient(): LanguageClient {
   const configuration = vscode.workspace.getConfiguration("ray.server");
-  const command = configuration.get<string>("path", "rayc");
-  const args = configuration.get<string[]>("arguments", ["lsp"]);
+  const command = configuration.get<string>("path", "ray_lsp");
+  const args = configuration.get<string[]>("arguments", []);
   const serverOptions: ServerOptions = {
     command,
     args,

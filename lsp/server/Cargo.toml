@@ -1,0 +1,30 @@
+[package]
+name = "ray_lsp"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Language server for Ray"
+
+[dependencies]
+tower-lsp.workspace = true
+tokio = { workspace = true, features = ["io-std", "io-util"] }
+qbice.workspace = true
+rayc_qbice.path = "../../compiler/base/qbice"
+rayc_target.path = "../../compiler/base/target"
+rayc_source_file.path = "../../compiler/base/source_file"
+rayc_source_file_impl.path = "../../compiler/base/source_file_impl"
+rayc_diagnostic.path = "../../compiler/base/diagnostic"
+rayc_check.path = "../../compiler/semantic/check"
+rayc_symbol_impl.path = "../../compiler/semantic/symbol_impl"
+rayc_semantic_element_impl.path = "../../compiler/semantic/semantic_element_impl"
+rayc_ir_builder.path = "../../compiler/semantic/ir_builder"
+rayc_lexical_impl.path = "../../compiler/syntax/lexical_impl"
+rayc_syntax_impl.path = "../../compiler/syntax/syntax_impl"
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

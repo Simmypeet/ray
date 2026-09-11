@@ -28,7 +28,7 @@
       "properties": {
         "ray.server.path": {
           "type": "string",
-          "default": "rayc",
+          "default": "ray_lsp",
           "description": "Path to the Ray language server executable."
         },
         "ray.server.arguments": {
@@ -36,9 +36,7 @@
           "items": {
             "type": "string"
           },
-          "default": [
-            "lsp"
-          ],
+          "default": [],
           "description": "Arguments passed to the Ray language server executable."
         },
         "ray.trace.server": {
@@ -78,6 +76,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "check": "tsc --noEmit -p ./",
+    "package": "vsce package --allow-missing-repository",
     "vscode:prepublish": "npm run compile"
   },
   "dependencies": {
