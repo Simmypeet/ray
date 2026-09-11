@@ -2,17 +2,17 @@ use qbice::{Decode, Encode, StableHash};
 use rayc_lexical::tree::DelimiterKind;
 use rayc_parser::{
     abstract_tree,
-    expect::{self, Fragment},
+    expect::Fragment,
     parser::{ParserExt, ast},
 };
 
-use crate::{Identifier, Punctuation, path::Path};
+use crate::{Punctuation, path::Path};
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct EffectRowTail {
         pub pipe: Punctuation = '|',
-        pub variable: Identifier = expect::Identifier
+        pub variable: Path = ast::<Path>()
     }
 }
 
@@ -28,7 +28,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub enum EffectRow {
-        PolyVar(Identifier = expect::Identifier),
+        Path(Path = ast::<Path>()),
         ConcreteEffectRow(ConcreteEffectRow = ast::<ConcreteEffectRow>())
     }
 }

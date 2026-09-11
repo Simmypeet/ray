@@ -6,7 +6,11 @@ use rayc_parser::{
     parser::{ParserExt, ast},
 };
 
-use crate::{Keyword, Punctuation, effect_row::EffectRowAnnotation, path::Path};
+use crate::{
+    Keyword, Punctuation,
+    effect_row::{ConcreteEffectRow, EffectRowAnnotation},
+    path::Path,
+};
 
 abstract_tree::abstract_tree! {
     #[derive(
@@ -168,6 +172,7 @@ abstract_tree::abstract_tree! {
         Pointer(Pointer = ast::<Pointer>()),
         Tuple(Tuple = ast::<Tuple>()),
         Lambda(Lambda = ast::<Lambda>()),
+        EffectRow(ConcreteEffectRow = ast::<ConcreteEffectRow>()),
         Path(Path = ast::<Path>())
     }
 }
