@@ -164,7 +164,10 @@ impl Build for rayc_type::poly_var::Key {
                 if let Some(type_parameters) =
                     engine.get_type_parameter_list_syntax(symbol_id).await
                 {
-                    for identifier in type_parameters.parameters() {
+                    for parameter in type_parameters.parameters() {
+                        let Some(identifier) = parameter.name() else {
+                            continue;
+                        };
                         insert_poly_var(
                             &mut poly_vars,
                             PolyVar::new_type(identifier.kind.0.clone(), identifier.span()),

@@ -54,6 +54,10 @@ impl Expect for Identifier {
 pub enum IdentifierValue {
     #[display("x")]
     X,
+    #[display("Star")]
+    Star,
+    #[display("Effect")]
+    Effect,
 }
 
 impl IdentifierValue {
@@ -62,6 +66,8 @@ impl IdentifierValue {
     pub const fn expected_string(&self) -> &'static str {
         match self {
             Self::X => "x",
+            Self::Star => "Star",
+            Self::Effect => "Effect",
         }
     }
 }

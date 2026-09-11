@@ -10,14 +10,23 @@ use crate::{
     Identifier, Keyword,
     def::{ParameterList, ReturnType},
     given::GivenParameterList,
+    kind::KindAscription,
     where_clause::WhereClause,
 };
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct TypeParameter {
+        pub name: Identifier = expect::Identifier,
+        pub kind_ascription: KindAscription = ast::<KindAscription>().optional()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     #{fragment = Fragment::Delimited(DelimiterKind::Bracket)}
     pub struct TypeParameterList {
-        pub parameters: #[multi] Identifier = expect::Identifier
+        pub parameters: #[multi] TypeParameter = ast::<TypeParameter>()
             .repeat_all_with_separator(',')
     }
 }

@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
-use rayc_lexical::{kind, token::Token, tree::RelativeLocation};
+use rayc_lexical::{kind as lexical_kind, token::Token, tree::RelativeLocation};
 use rayc_target::TargetID;
 
 use crate::module::ModuleContent;
@@ -17,6 +17,7 @@ pub mod expression;
 pub mod given;
 pub mod instance;
 pub mod irrefutable_pattern;
+pub mod kind;
 pub mod module;
 pub mod path;
 pub mod statement;
@@ -24,26 +25,26 @@ pub mod r#trait;
 pub mod r#type;
 pub mod where_clause;
 
-/// Type alias for [`Token`] categorized as a [`kind::Keyword`].
-pub type Keyword = Token<kind::Keyword, RelativeLocation>;
+/// Type alias for [`Token`] categorized as a [`lexical_kind::Keyword`].
+pub type Keyword = Token<lexical_kind::Keyword, RelativeLocation>;
 
-/// Type alias for [`Token`] categorized as a [`kind::NewLine`].
-pub type NewLine = Token<kind::NewLine, RelativeLocation>;
+/// Type alias for [`Token`] categorized as a [`lexical_kind::NewLine`].
+pub type NewLine = Token<lexical_kind::NewLine, RelativeLocation>;
 
-/// Type alias for [`Token`] categorized as a [`kind::Character`].
-pub type Character = Token<kind::Character, RelativeLocation>;
+/// Type alias for [`Token`] categorized as a [`lexical_kind::Character`].
+pub type Character = Token<lexical_kind::Character, RelativeLocation>;
 
-/// Type alias for [`Token`] categorized as a [`kind::String`].
-pub type String = Token<kind::String, RelativeLocation>;
+/// Type alias for [`Token`] categorized as a [`lexical_kind::String`].
+pub type String = Token<lexical_kind::String, RelativeLocation>;
 
-/// Type alias for [`Token`] categorized as a [`kind::Identifier`].
-pub type Identifier = Token<kind::Identifier, RelativeLocation>;
+/// Type alias for [`Token`] categorized as a [`lexical_kind::Identifier`].
+pub type Identifier = Token<lexical_kind::Identifier, RelativeLocation>;
 
-/// Type alias for [`Token`] categorized as a [`kind::Punctuation`].
-pub type Punctuation = Token<kind::Punctuation, RelativeLocation>;
+/// Type alias for [`Token`] categorized as a [`lexical_kind::Punctuation`].
+pub type Punctuation = Token<lexical_kind::Punctuation, RelativeLocation>;
 
-/// Type alias for [`Token`] categorized as a [`kind::Numeric`].
-pub type Numeric = Token<kind::Numeric, RelativeLocation>;
+/// Type alias for [`Token`] categorized as a [`lexical_kind::Numeric`].
+pub type Numeric = Token<lexical_kind::Numeric, RelativeLocation>;
 
 /// Query for parsing a token tree from the given source file path.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query)]

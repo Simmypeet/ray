@@ -7,7 +7,7 @@ use rayc_parser::{
 
 use crate::{
     Identifier, Keyword, def::DefSignature, effect::TypeParameterList, given::GivenParameterList,
-    where_clause::WhereClause,
+    kind::KindAscription, where_clause::WhereClause,
 };
 
 abstract_tree::abstract_tree! {
@@ -17,6 +17,7 @@ abstract_tree::abstract_tree! {
         pub name: Identifier = expect::Identifier,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
         pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
+        pub kind_ascription: KindAscription = ast::<KindAscription>().optional(),
         pub where_clause: WhereClause = ast::<WhereClause>().optional()
     }
 }
