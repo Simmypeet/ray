@@ -21,7 +21,7 @@ use rayc_symbol::{
     source_map::to_absolute_span,
     span::get_span,
     symbol_kind::{SymbolKind, get_symbol_kind},
-    syntax::{get_effect_row_syntax, get_return_type_syntax},
+    syntax::{get_effect_row_syntax, get_return_type_syntax, get_where_clause_syntax},
 };
 use rayc_type::{
     instance_member::{InstanceMember, Key},
@@ -31,6 +31,7 @@ use rayc_type::{
     ty::{
         Ty, TyKind, application::View as ApplicationView, args::Args, self_instance::SelfInstance,
     },
+    where_clause::{PredicateKind, get_where_clause},
 };
 
 use crate::{
@@ -50,6 +51,8 @@ pub enum Mismatch {
     PolyVarCount { expected: usize, actual: usize },
     PolyVarKind { index: usize, expected: TyKind, actual: TyKind },
     InstanceParameterTraitRef { index: usize, expected: TraitRef, actual: TraitRef },
+    MissingWhereClausePredicate { expected: PredicateKind },
+    ExtraneousWhereClausePredicate { actual: PredicateKind },
     MemberKind { expected: SymbolKind, actual: SymbolKind },
 }
 
@@ -80,8 +83,34 @@ async fn display_trait_ref(reference: &TraitRef, engine: &TrackedEngine) -> Stri
     format!("{name}[{}]", args.join(", "))
 }
 
+async fn display_predicate(predicate: &PredicateKind, engine: &TrackedEngine) -> String {
+    match predicate {
+        PredicateKind::AssociatedTypeEquality(equality) => format!(
+            "`{}` must equal `{}`",
+            equality.left().display(engine).await,
+            equality.right().display(engine).await
+        ),
+    }
+}
+
 impl Report for Diagnostic {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let related_message = match &self.mismatch {
+            Mismatch::MissingWhereClausePredicate { .. } => {
+                "the required trait predicate is declared here"
+            }
+            Mismatch::ExtraneousWhereClausePredicate { .. } => {
+                "the corresponding trait member declares no equivalent requirement"
+            }
+            Mismatch::ParameterCount { .. }
+            | Mismatch::ParameterType { .. }
+            | Mismatch::ReturnType { .. }
+            | Mismatch::EffectRow { .. }
+            | Mismatch::PolyVarCount { .. }
+            | Mismatch::PolyVarKind { .. }
+            | Mismatch::InstanceParameterTraitRef { .. }
+            | Mismatch::MemberKind { .. } => "the corresponding trait declaration is here",
+        };
         let (problem, detail) = match &self.mismatch {
             Mismatch::ParameterCount { expected, actual } => (
                 "parameter count mismatch".to_owned(),
@@ -130,6 +159,14 @@ impl Report for Diagnostic {
                     display_trait_ref(actual, engine).await
                 ),
             ),
+            Mismatch::MissingWhereClausePredicate { expected } => (
+                "missing where-clause predicate".to_owned(),
+                format!("missing requirement: {}", display_predicate(expected, engine).await),
+            ),
+            Mismatch::ExtraneousWhereClausePredicate { actual } => (
+                "extraneous where-clause predicate".to_owned(),
+                format!("extra requirement: {}", display_predicate(actual, engine).await),
+            ),
             Mismatch::MemberKind { expected, actual } => (
                 "member kind mismatch".to_owned(),
                 format!("expected an implementation of {}, found {}", expected.str(), actual.str()),
@@ -146,11 +183,101 @@ impl Report for Diagnostic {
             .related(vec![
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.trait_span).await)
-                    .message("the corresponding trait declaration is here")
+                    .message(related_message)
                     .build(),
             ])
             .build()
     }
+}
+
+async fn check_where_clause(
+    engine: &TrackedEngine,
+    member: &InstanceMember,
+    instance_id: GlobalSymbolID,
+    compatibility: &Compatibility<'_>,
+) -> bool {
+    use rayc_solver::givens::get_givens;
+
+    use crate::build::DiagnosticKey;
+
+    let trait_member_id = member.trait_member_id();
+    let instance_member_id = member.instance_member_id();
+
+    // Invalid clauses already emit their own resolution diagnostics. Their
+    // recovery predicates must not cause additional conformance errors.
+    let trait_key = rayc_type::where_clause::Key { symbol_id: trait_member_id };
+    let instance_key = rayc_type::where_clause::Key { symbol_id: instance_member_id };
+    if !engine.query(&DiagnosticKey::new(trait_key)).await.is_empty()
+        || !engine.query(&DiagnosticKey::new(instance_key)).await.is_empty()
+    {
+        return false;
+    }
+
+    let trait_clause = engine.get_where_clause(trait_member_id).await;
+    let instance_clause = engine.get_where_clause(instance_member_id).await;
+    let substed_trait_predicates = trait_clause
+        .iter()
+        .map(|predicate| {
+            predicate.kind().apply_subst_or_clone(member.poly_var_substitution(), engine)
+        })
+        .collect::<Vec<_>>();
+
+    // Both directions receive the same ambient contract: the enclosing
+    // instance assumptions and the enclosing trait assumptions translated to
+    // the instance's variables. Member-local predicates are added only to the
+    // direction in which they act as givens.
+    let mut ambient = engine.get_givens(instance_id).await.to_vec();
+    let trait_id = engine.get_parent_global(trait_member_id).await.expect("trait member parent");
+
+    // Technically, we don't need to extend the ambient givens with the trait's
+    // givens. This is because the instance's where clause must already entail the
+    // trait's where clause, in other words, the trait's givens are already covered
+    // by the instance's givens. However, we do this since users might write
+    // malformed instances that don't entail the trait's where clause.
+    ambient.extend(
+        engine.get_givens(trait_id).await.iter().map(|predicate| {
+            predicate.apply_subst_or_clone(member.poly_var_substitution(), engine)
+        }),
+    );
+
+    let mut trait_givens = ambient.clone();
+    trait_givens.extend(substed_trait_predicates.iter().cloned());
+    let mut trait_solver = Solver::with_givens(engine.clone(), instance_member_id, trait_givens);
+
+    let mut instance_givens = ambient;
+    instance_givens.extend(instance_clause.iter().map(|predicate| predicate.kind().clone()));
+    let mut instance_solver =
+        Solver::with_givens(engine.clone(), instance_member_id, instance_givens);
+
+    let mut compatible = true;
+    for predicate in instance_clause.iter() {
+        if !trait_solver.entails_predicate(predicate.kind()).await {
+            compatibility.report_at(
+                Mismatch::ExtraneousWhereClausePredicate { actual: predicate.kind().clone() },
+                compatibility.trait_span,
+                predicate.span(),
+            );
+            compatible = false;
+        }
+    }
+
+    let instance_clause_span = engine
+        .get_where_clause_syntax(instance_member_id)
+        .await
+        .map_or(compatibility.instance_span, |syntax| syntax.span());
+
+    for (predicate, expected) in trait_clause.iter().zip(substed_trait_predicates) {
+        if !instance_solver.entails_predicate(&expected).await {
+            compatibility.report_at(
+                Mismatch::MissingWhereClausePredicate { expected },
+                predicate.span(),
+                instance_clause_span,
+            );
+            compatible = false;
+        }
+    }
+
+    compatible
 }
 
 struct Compatibility<'a> {
@@ -535,6 +662,7 @@ async fn conformance_executor(
 
     let diagnostics = Storage::new();
     let trait_member_id = member.trait_member_id();
+    let instance_id = engine.get_parent_global(symbol_id).await.expect("instance member parent");
     let compatibility = Compatibility {
         name: engine.get_name(symbol_id).await,
         instance_span: engine.get_span(symbol_id).await.expect("member span"),
@@ -542,7 +670,12 @@ async fn conformance_executor(
         diagnostics: &diagnostics,
     };
     let mut solver = Solver::new(engine.clone(), symbol_id).await;
-    if check_given_requirements(engine, &mut solver, &member, &compatibility).await
+    let givens_compatible =
+        check_given_requirements(engine, &mut solver, &member, &compatibility).await;
+    let where_clause_compatible =
+        check_where_clause(engine, &member, instance_id, &compatibility).await;
+    if givens_compatible
+        && where_clause_compatible
         && engine.get_symbol_kind(symbol_id).await == SymbolKind::InstanceDef
     {
         check_method_signature(

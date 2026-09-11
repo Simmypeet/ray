@@ -1,0 +1,46 @@
+trait Box[a]:
+    type Item
+
+trait Contract[]:
+    type MissingType[a] given (box: Box[a]) where (box.Item = a)
+    def missingAll(value: a) given (box: Box[a]) -> a where (box.Item = a)
+    def missingPartial(value: a) given (left: Box[a], right: Box[a]) -> a where (
+        left.Item = a,
+        right.Item = a,
+    )
+    def extraAll(value: a) given (box: Box[a]) -> a
+    def extraPartial(value: a) given (left: Box[a], right: Box[a]) -> a where (
+        left.Item = a,
+    )
+    def replaced(value: a) given (box: Box[a]) -> a where (box.Item = a)
+    def brokenTrait(value: a) given (box: Box[a]) -> a where (
+        box.Missing = Unknown,
+    )
+    def brokenInstance(value: a) given (box: Box[a]) -> a
+
+inst BadContract for Contract:
+    type MissingType[b] given (box: Box[b]) = b
+    def missingAll(value: b) given (box: Box[b]) -> b:
+        return value
+    def missingPartial(value: b) given (left: Box[b], right: Box[b]) -> b where (
+        left.Item = b,
+    ):
+        return value
+    def extraAll(value: b) given (box: Box[b]) -> b where (box.Item = b):
+        return value
+    def extraPartial(value: b) given (left: Box[b], right: Box[b]) -> b where (
+        left.Item = b,
+        right.Item = b,
+    ):
+        return value
+    def replaced(value: b) given (box: Box[b]) -> bool where (box.Item = bool):
+        return true
+    def brokenTrait(value: b) given (box: Box[b]) -> b:
+        return value
+    def brokenInstance(value: b) given (box: Box[b]) -> b where (
+        box.Missing = Unknown,
+    ):
+        return value
+
+def main() -> int32:
+    return 0

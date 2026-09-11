@@ -1,0 +1,31 @@
+trait Box[a]:
+    type Item
+
+trait Contract[a] given (outer: Box[a]) where (outer.Item = a):
+    type Assoc
+    type Related[b] given (box: Box[b]) where (box.Item = b)
+    def equivalent(value: b) given (first: Box[b], second: Box[b]) -> b where (
+        first.Item = b,
+        second.Item = first.Item,
+        first.Item = b,
+    )
+    def inherited(value: a) -> a where (outer.Item = a)
+    def concrete(value: a) -> a where (this.Assoc = a)
+
+inst GenericContract[a] for Contract[a; given outer] given (outer: Box[a]) where (
+    outer.Item = a,
+):
+    type Assoc = a
+    type Related[c] given (renamed: Box[c]) where (renamed.Item = c) = c
+    def equivalent(value: c) given (alpha: Box[c], beta: Box[c]) -> c where (
+        alpha.Item = beta.Item,
+        beta.Item = c,
+    ):
+        return value
+    def inherited(value: a) -> a:
+        return value
+    def concrete(value: a) -> a:
+        return value
+
+def main() -> int32:
+    return 0

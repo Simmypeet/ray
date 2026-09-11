@@ -73,6 +73,16 @@ impl Solver {
         true
     }
 
+    /// Returns whether `predicate` follows from this solver's visible givens
+    /// without binding any variables.
+    pub async fn entails_predicate(&mut self, predicate: &PredicateKind) -> bool {
+        match predicate {
+            PredicateKind::AssociatedTypeEquality(equality) => {
+                self.eq_without_unify(equality.left(), equality.right()).await
+            }
+        }
+    }
+
     /// Matches an instance head against an expected trait reference, binding
     /// polymorphic variables on the head side using top-level matching.
     ///
@@ -140,12 +150,26 @@ impl Solver {
     /// concrete, and in focused unit-test fixtures.
     #[must_use]
     pub fn without_givens(engine: TrackedEngine) -> Self {
+        Self::with_givens(engine, GlobalSymbolID::default(), [])
+    }
+
+    /// Creates a solver with exactly the supplied visible predicates.
+    ///
+    /// Unlike [`Self::new`], this does not collect predicates from `site` and
+    /// is suitable for entailment checks that must exclude the site's own
+    /// where clause.
+    pub fn with_givens(
+        engine: TrackedEngine,
+        site: GlobalSymbolID,
+        givens: impl IntoIterator<Item = PredicateKind>,
+    ) -> Self {
+        let givens = engine.intern_unsized(givens.into_iter().collect::<Vec<_>>());
         Self {
             inference_counter: 0,
-            givens: engine.intern_unsized([]),
             engine,
-            site: GlobalSymbolID::default(),
+            site,
             instance_resolution: InstanceResolutionState::new(InstanceResolutionLimits::default()),
+            givens,
         }
     }
 

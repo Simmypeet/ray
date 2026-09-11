@@ -4,7 +4,7 @@ trait Container[]:
     def valid(value: int32) -> int32 where (this.Item = int32)
 
 inst Concrete[a] for Container:
-    type Item = a
+    type Item = int32
     type Generic[b] = b
     def valid(value: int32) -> int32:
         return value
@@ -16,7 +16,7 @@ def valid(value: a) given (c: Container) -> int32 where (
 ):
     return 0
 
-# Concrete projections are not opaque even when their definition is a type variable.
+# Concrete projections are not opaque.
 def invalid(value: a) given (c: Container) -> int32 where (
     int32 = c.Item,
     a = c.Item,
