@@ -19,6 +19,7 @@ use rayc_syntax::{
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
     given::GivenParameterList,
+    kind::KindAscription,
     path::Path as SyntaxPath,
     statement::Block,
     r#type::Type,
@@ -47,6 +48,7 @@ pub struct Infos {
     where_clause: Option<Option<WhereClause>>,
     instance_trait: Option<Option<SyntaxPath>>,
     type_definition: Option<Option<Type>>,
+    kind_ascription: Option<Option<KindAscription>>,
 }
 
 #[derive(Debug, Default, StableHash, Encode, Decode)]
@@ -61,6 +63,7 @@ struct SyntaxTable {
     where_clauses: Map<Option<WhereClause>>,
     instance_traits: Map<Option<SyntaxPath>>,
     type_definitions: Map<Option<Type>>,
+    kind_ascriptions: Map<Option<KindAscription>>,
 }
 
 /// Stores the symbol information. It maps the symbol ID to its related
@@ -217,6 +220,11 @@ impl Table {
     }
 
     #[must_use]
+    pub fn get_kind_ascription_syntax(&self, symbol_id: SymbolID) -> Option<KindAscription> {
+        self.syntaxes.kind_ascriptions.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
     pub const fn source_id(&self) -> Option<LocalSourceID> { self.source_id }
 
     fn insert_member_as_root_module(&mut self, member: MemberBuilder, engine: &TrackedEngine) {
@@ -282,6 +290,10 @@ impl Table {
 
         if let Some(type_definition) = info.type_definition {
             self.syntaxes.type_definitions.insert(symbol_id, type_definition);
+        }
+
+        if let Some(kind_ascription) = info.kind_ascription {
+            self.syntaxes.kind_ascriptions.insert(symbol_id, kind_ascription);
         }
 
         if let Some(member) = info.member {

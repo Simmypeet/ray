@@ -7,6 +7,7 @@ use rayc_syntax::{
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
     given::GivenParameterList,
+    kind::KindAscription,
     path::Path,
     statement::Block,
     r#type::Type,
@@ -110,5 +111,19 @@ pub struct TypeDefinitionSyntaxKey {
 #[value(Option<WhereClause>)]
 #[extend(by_val, name = get_where_clause_syntax)]
 pub struct WhereClauseSyntaxKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+/// Retrieves the explicitly declared result-kind ascription of a trait
+/// associated type.
+///
+/// Only valid for trait associated-type symbols. An omitted ascription returns
+/// `None`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<KindAscription>)]
+#[extend(by_val, name = get_kind_ascription_syntax)]
+pub struct KindAscriptionSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }

@@ -3,7 +3,7 @@ use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
     DefBodySyntaxKey, EffectRowSyntaxKey, GivenParameterListSyntaxKey, InstanceTraitSyntaxKey,
-    ParameterListSyntaxKey, ReturnTypeSyntaxKey, TypeDefinitionSyntaxKey,
+    KindAscriptionSyntaxKey, ParameterListSyntaxKey, ReturnTypeSyntaxKey, TypeDefinitionSyntaxKey,
     TypeParameterListSyntaxKey, VariadicDefKey, WhereClauseSyntaxKey,
 };
 use rayc_syntax::{
@@ -11,6 +11,7 @@ use rayc_syntax::{
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
     given::GivenParameterList,
+    kind::KindAscription,
     path::Path,
     statement::Block,
     r#type::Type,
@@ -146,3 +147,15 @@ pub async fn where_clause_syntax_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static WHERE_CLAUSE_SYNTAX_EXECUTOR: Registration<Config> =
     Registration::new::<WhereClauseSyntaxKey, WhereClauseSyntaxExecutor>();
+
+#[executor(config = Config)]
+pub async fn kind_ascription_syntax_executor(
+    &KindAscriptionSyntaxKey { symbol_id }: &KindAscriptionSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<KindAscription> {
+    engine.get_table(symbol_id.target_id).await.get_kind_ascription_syntax(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static KIND_ASCRIPTION_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<KindAscriptionSyntaxKey, KindAscriptionSyntaxExecutor>();

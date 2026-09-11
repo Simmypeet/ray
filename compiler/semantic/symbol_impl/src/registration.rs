@@ -245,6 +245,7 @@ impl Table {
                 .name(ident.kind.0.clone())
                 .span(ident.span)
                 .type_parameters(ty.type_parameters())
+                .kind_ascription(ty.kind_ascription())
                 .given_parameter_list(ty.given_parameter_list())
                 .where_clause(ty.where_clause())
                 .build(),
