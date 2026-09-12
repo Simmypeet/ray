@@ -8,6 +8,7 @@ use crate::GlobalSymbolID;
 pub enum CoreItem {
     DefTrait,
     DefCall,
+    DefArgs,
     DefReturn,
     DefEffect,
 }

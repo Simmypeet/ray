@@ -42,6 +42,7 @@ async fn core_item_executor(key: &Key, engine: &TrackedEngine) -> GlobalSymbolID
     match key.role {
         CoreItem::DefTrait => def,
         CoreItem::DefCall => find(engine, key.role, def, "call", SymbolKind::TraitDef).await,
+        CoreItem::DefArgs => find(engine, key.role, def, "Args", SymbolKind::TraitType).await,
         CoreItem::DefReturn => find(engine, key.role, def, "Return", SymbolKind::TraitType).await,
         CoreItem::DefEffect => find(engine, key.role, def, "Effect", SymbolKind::TraitType).await,
     }
