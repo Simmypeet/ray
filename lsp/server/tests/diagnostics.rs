@@ -190,3 +190,59 @@ fn diagnostic_columns_use_utf16_after_non_ascii_text() {
         })
     );
 }
+
+#[test]
+fn core_diagnostics_follow_unsaved_edits() {
+    let directory = tempfile::tempdir().unwrap();
+    let uri = Url::from_file_path(directory.path().join("unsaved.ray")).unwrap();
+    let mut editor = Editor::start();
+    let valid = "inst Value for core.Def[int32, int32]:\n    type Return = int32\n    type Effect \
+                 = {}\n    def call(value: int32, a: int32) -> int32:\n        return value + a\n";
+    let invalid = valid
+        .replace("call(value: int32", "call(value: bool")
+        .replace("return value + a", "return a");
+    editor.notify(
+        "textDocument/didOpen",
+        &json!({"textDocument": {
+            "uri": uri, "languageId":"ray", "version":1, "text":invalid,
+        }}),
+    );
+    let diagnostics = editor.diagnostics(&uri, Some(1));
+    assert!(!diagnostics.is_empty());
+    let core_locations: Vec<_> = diagnostics
+        .iter()
+        .flat_map(|diagnostic| diagnostic["relatedInformation"].as_array().into_iter().flatten())
+        .filter(|related| related["location"]["uri"] == "ray-core:/core.ray")
+        .collect();
+    assert!(!core_locations.is_empty(), "{diagnostics:?}");
+    assert!(
+        core_locations.iter().any(|related| related["location"]["range"]["start"]["line"] == 4)
+    );
+    for (version, text) in [(2, valid), (3, invalid.as_str()), (4, valid)] {
+        editor.notify(
+            "textDocument/didChange",
+            &json!({
+                "textDocument":{"uri":uri,"version":version}, "contentChanges":[{"text":text}],
+            }),
+        );
+        let updated = editor.diagnostics(&uri, Some(version));
+        if version == 3 {
+            assert_eq!(updated, diagnostics);
+        } else {
+            assert!(updated.is_empty(), "{updated:?}");
+        }
+    }
+    let reserved_uri = Url::from_file_path(directory.path().join("core.ray")).unwrap();
+    editor.notify(
+        "textDocument/didOpen",
+        &json!({"textDocument":{
+            "uri":reserved_uri,"languageId":"ray","version":1,"text":valid,
+        }}),
+    );
+    assert!(
+        editor.diagnostics(&reserved_uri, Some(1))[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("reserved")
+    );
+}

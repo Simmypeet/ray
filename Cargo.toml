@@ -42,6 +42,7 @@ members = [
 
     "compiler/e2e",
 
+    "compiler/corelib",
     "compiler/driver",
     "compiler/main",
     "lsp/server",

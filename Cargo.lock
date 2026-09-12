@@ -1787,6 +1787,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "qbice",
  "rayc_check",
+ "rayc_corelib",
  "rayc_diagnostic",
  "rayc_ir_builder",
  "rayc_lexical_impl",
@@ -1813,6 +1814,7 @@ dependencies = [
  "rayc_source_file",
  "rayc_target",
  "serde",
+ "tempfile",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
@@ -1883,6 +1885,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayc_corelib"
+version = "0.1.0-beta.2"
+dependencies = [
+ "rayc_qbice",
+ "rayc_source_file",
+ "rayc_target",
+]
+
+[[package]]
 name = "rayc_diagnostic"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -1904,6 +1915,7 @@ dependencies = [
  "qbice",
  "rayc_c2",
  "rayc_check",
+ "rayc_corelib",
  "rayc_diagnostic",
  "rayc_handler",
  "rayc_hash",
@@ -1920,6 +1932,7 @@ dependencies = [
  "rayc_target",
  "rayc_type",
  "tempfile",
+ "tokio",
  "tracing",
 ]
 
@@ -2140,6 +2153,7 @@ dependencies = [
  "rayc_source_file",
  "rayc_symbol",
  "rayc_syntax",
+ "rayc_target",
  "rayc_type",
 ]
 

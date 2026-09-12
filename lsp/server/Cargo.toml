@@ -7,6 +7,7 @@ rust-version.workspace = true
 description = "Language server for Ray"
 
 [dependencies]
+rayc_corelib.path = "../../compiler/corelib"
 tower-lsp.workspace = true
 tokio = { workspace = true, features = ["io-std", "io-util"] }
 qbice.workspace = true

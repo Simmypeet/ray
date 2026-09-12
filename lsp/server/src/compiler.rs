@@ -5,6 +5,7 @@ use std::{path::PathBuf, sync::Arc};
 use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use rayc_qbice::{Engine, InMemoryFactory};
 use rayc_source_file::{LocalSourceID, SourceFile};
+use rayc_symbol_impl::source_map::create_source_map;
 use rayc_target::{Arguments, Input, TargetID};
 use tower_lsp::lsp_types::{Diagnostic, Url};
 
@@ -15,6 +16,7 @@ pub(crate) struct Compiler {
     engine: Arc<Engine>,
     target_id: TargetID,
     path: PathBuf,
+    reserved_name: bool,
 }
 
 impl Compiler {
@@ -34,6 +36,11 @@ impl Compiler {
 
         let arguments = Arguments::new_check(Input::builder().file(path.clone()).build());
         let name = arguments.target_name();
+        let reserved_name = name == "core";
+        let name = if reserved_name { "__reserved_core_document".to_owned() } else { name };
+        let arguments = Arguments::new_check(
+            Input::builder().file(path.clone()).target_name(name.clone()).build(),
+        );
         let target_id = TargetID::from_target_name(&name);
         let engine = Arc::new(engine);
         let mut session = engine.input_session().await;
@@ -77,11 +84,20 @@ impl Compiler {
             )
             .await;
 
+        rayc_corelib::initialize(&mut session).await;
         session.commit().await;
-        Self { engine, target_id, path }
+        Self { engine, target_id, path, reserved_name }
     }
 
     pub(crate) async fn check(&self, uri: &Url, text: &str) -> Vec<Diagnostic> {
+        if self.reserved_name {
+            return vec![Diagnostic {
+                severity: Some(tower_lsp::lsp_types::DiagnosticSeverity::ERROR),
+                source: Some("ray".to_owned()),
+                message: "target name 'core' is reserved for the compiler core library".to_owned(),
+                ..Diagnostic::default()
+            }];
+        }
         // Updating the source input invalidates dependent queries while retaining
         // the same engine across edits. Editor contents never touch the disk.
         let mut session = self.engine.input_session().await;
@@ -95,6 +111,7 @@ impl Compiler {
         let check = engine.query(&rayc_check::Key { target_id }).await;
         let mut diagnostics = check.all_diagnostics().collect::<Vec<_>>();
         diagnostics.sort();
-        diagnostics.into_iter().map(|diagnostic| convert(diagnostic, uri, text)).collect()
+        let sources = engine.create_source_map(target_id).await;
+        diagnostics.into_iter().map(|diagnostic| convert(diagnostic, uri, text, &sources)).collect()
     }
 }

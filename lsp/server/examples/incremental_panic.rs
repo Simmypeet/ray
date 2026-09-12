@@ -68,6 +68,7 @@ async fn reproduce() {
         )
         .await;
 
+    rayc_corelib::initialize(&mut session).await;
     session.commit().await;
 
     let versions = [

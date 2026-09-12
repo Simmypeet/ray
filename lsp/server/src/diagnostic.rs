@@ -24,10 +24,29 @@ fn range(highlight: &Highlight<usize>, text: &str) -> Range {
     Range::new(position(text, highlight.span().start), position(text, highlight.span().end))
 }
 
+fn location(
+    highlight: &Highlight<usize>,
+    uri: &Url,
+    text: &str,
+    sources: &rayc_symbol_impl::source_map::SourceMap,
+) -> Option<Location> {
+    let id = highlight.span().source_id;
+    let source = sources.0.get(&id)?;
+    if id.target_id == rayc_target::TargetID::CORE {
+        Some(Location::new(
+            Url::parse(rayc_corelib::SOURCE_URI).expect("valid core URI"),
+            range(highlight, &source.content()),
+        ))
+    } else {
+        Some(Location::new(uri.clone(), range(highlight, text)))
+    }
+}
+
 fn append_group(
     group: &Group<usize>,
     uri: &Url,
     text: &str,
+    sources: &rayc_symbol_impl::source_map::SourceMap,
     message: &mut String,
     related: &mut Vec<DiagnosticRelatedInformation>,
 ) {
@@ -36,35 +55,54 @@ fn append_group(
         message.push_str(help);
     }
     for highlight in group.primary_highlight().into_iter().chain(group.related()) {
-        if let Some(label) = highlight.message() {
-            related.push(DiagnosticRelatedInformation {
-                location: Location::new(uri.clone(), range(highlight, text)),
-                message: label.to_owned(),
-            });
+        if let Some(label) = highlight.message()
+            && let Some(location) = location(highlight, uri, text, sources)
+        {
+            related.push(DiagnosticRelatedInformation { location, message: label.to_owned() });
         }
     }
 }
 
-pub(crate) fn convert(diagnostic: &Rendered<usize>, uri: &Url, text: &str) -> Diagnostic {
+pub(crate) fn convert(
+    diagnostic: &Rendered<usize>,
+    uri: &Url,
+    text: &str,
+    sources: &rayc_symbol_impl::source_map::SourceMap,
+) -> Diagnostic {
     let mut message = diagnostic.message().to_owned();
     let mut related = Vec::new();
-    append_group(diagnostic.group(), uri, text, &mut message, &mut related);
+    append_group(diagnostic.group(), uri, text, sources, &mut message, &mut related);
     for note in diagnostic.notes() {
         message.push_str("\nnote: ");
         message.push_str(note.message());
-        if let Some(highlight) = note.primary_highlight() {
+        if let Some(highlight) = note.primary_highlight()
+            && let Some(location) = location(highlight, uri, text, sources)
+        {
             related.push(DiagnosticRelatedInformation {
-                location: Location::new(uri.clone(), range(highlight, text)),
+                location,
                 message: note.message().to_owned(),
             });
         }
-        append_group(note.group(), uri, text, &mut message, &mut related);
+        append_group(note.group(), uri, text, sources, &mut message, &mut related);
     }
 
+    if let Some(highlight) = diagnostic.primary_highlight()
+        && highlight.span().source_id.target_id == rayc_target::TargetID::CORE
+    {
+        message.insert_str(0, "bundled core library: ");
+        if let Some(location) = location(highlight, uri, text, sources) {
+            related.push(DiagnosticRelatedInformation {
+                location,
+                message: diagnostic.message().to_owned(),
+            });
+        }
+    }
     Diagnostic {
         range: diagnostic
             .primary_highlight()
-            .map_or_else(Range::default, |highlight| range(highlight, text)),
+            .and_then(|highlight| location(highlight, uri, text, sources))
+            .filter(|location| &location.uri == uri)
+            .map_or_else(Range::default, |location| location.range),
         severity: Some(match diagnostic.severity() {
             Severity::Info => DiagnosticSeverity::INFORMATION,
             Severity::Warning => DiagnosticSeverity::WARNING,
