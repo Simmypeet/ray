@@ -11,6 +11,8 @@
 
 use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_arena::Arena;
+use rayc_hash::FxHashMap;
+use rayc_type::ty::application::ClosureID;
 
 use crate::{
     cfg::{BlockID, Terminator},
@@ -28,7 +30,7 @@ pub mod place;
 pub mod rvalue;
 pub mod ty;
 
-pub use instance::{MonoDefInstance, MonoEffectInstance};
+pub use instance::{MonoClosureInstance, MonoDefInstance, MonoEffectInstance};
 
 /// The independently cacheable `MonoIR` fragment for one concrete definition.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
@@ -36,6 +38,7 @@ pub struct MonoIR {
     instance: MonoDefInstance,
     functions: Arena<MonoFunction>,
     root: MonoFunctionID,
+    closures: FxHashMap<ClosureID, MonoFunctionID>,
 }
 
 impl MonoIR {
@@ -43,7 +46,25 @@ impl MonoIR {
     pub fn new(instance: MonoDefInstance, root_signature: FunctionSignature) -> Self {
         let mut functions = Arena::new();
         let root = functions.insert(MonoFunction::new(MonoFunctionKind::Def, root_signature));
-        Self { instance, functions, root }
+        Self { instance, functions, root, closures: FxHashMap::default() }
+    }
+
+    pub fn register_closure(&mut self, closure: ClosureID, function: MonoFunctionID) {
+        let _ = self.get_function(function);
+        assert!(!self.closures.values().any(|id| *id == function));
+        assert!(self.closures.insert(closure, function).is_none());
+    }
+
+    #[must_use]
+    pub fn closure_function(&self, closure: ClosureID) -> Option<MonoFunctionID> {
+        self.closures.get(&closure).copied()
+    }
+
+    #[must_use]
+    pub fn closure_instance(&self, function: MonoFunctionID) -> Option<MonoClosureInstance> {
+        self.closures.iter().find_map(|(closure, id)| {
+            (*id == function).then(|| MonoClosureInstance::new(self.instance.clone(), *closure))
+        })
     }
 
     #[must_use]

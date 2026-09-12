@@ -368,7 +368,10 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 engine.intern(ty)
             }
 
-            ApplicationView::Closure(_) => todo!("implement closure type lowering"),
+            ApplicationView::Closure(closure) => {
+                let environment = Box::pin(nominal_environment(engine, closure)).await;
+                engine.intern(MonoType::Aggregate(AggregateType::Environment(environment)))
+            }
 
             ApplicationView::Tuple(tuple) => {
                 let mut fields = Vec::with_capacity(tuple.args().len());
@@ -513,4 +516,49 @@ const fn lower_mutability(mutability: Mutability) -> PointerMutability {
         Mutability::Immutable => PointerMutability::Const,
         Mutability::Mutable => PointerMutability::Mut,
     }
+}
+
+/// The inline storage shared by nominal values and their body ABI.
+pub async fn nominal_environment(
+    engine: &TrackedEngine,
+    closure: rayc_type::ty::application::ClosureView<'_>,
+) -> Environment {
+    let tuple = engine.lower_type(closure.captured_tuple(), &Subst::new_empty()).await;
+    let MonoType::Aggregate(AggregateType::Tuple(tuple)) = &*tuple else {
+        panic!("closure captures must be a tuple")
+    };
+    Environment::new(engine.intern_unsized(tuple.fields().to_vec()))
+}
+
+/// Plans the concrete nominal body call, including the inline environment and
+/// handlers.
+pub async fn nominal_signature(
+    engine: &TrackedEngine,
+    closure: rayc_type::ty::application::ClosureView<'_>,
+) -> (FunctionSignature, Vec<MonoEffectInstance>) {
+    let environment = nominal_environment(engine, closure).await;
+    let mut parameters = Vec::new();
+    for parameter in closure.params() {
+        parameters.push(engine.lower_type(parameter, &Subst::new_empty()).await);
+    }
+    let effects = engine.lower_effects(closure.effect_row(), &Subst::new_empty()).await;
+    let result = engine.lower_type(closure.return_type(), &Subst::new_empty()).await;
+    (nominal_body_signature(engine, environment, parameters, result, &effects), effects)
+}
+
+/// Builds the by-value nominal ABI from concrete storage and source parameters.
+#[must_use]
+pub fn nominal_body_signature(
+    engine: &TrackedEngine,
+    environment: Environment,
+    parameters: impl IntoIterator<Item = Interned<MonoType>>,
+    result: Interned<MonoType>,
+    effects: &[MonoEffectInstance],
+) -> FunctionSignature {
+    let mut body_parameters =
+        vec![engine.intern(MonoType::Aggregate(AggregateType::Environment(environment)))];
+    body_parameters.extend(parameters);
+    body_parameters
+        .extend(effects.iter().map(|effect| MonoType::new_handler_pointer(effect.clone(), engine)));
+    MonoType::new_function_signature(body_parameters, result, engine)
 }
