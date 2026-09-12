@@ -4,7 +4,9 @@ use rayc_parser::{
     parser::{ParserExt, ast},
 };
 
-use crate::{def::Def, effect::Effect, extern_def::ExternDef, instance::Instance, r#trait::Trait};
+use crate::{
+    Passable, def::Def, effect::Effect, extern_def::ExternDef, instance::Instance, r#trait::Trait,
+};
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -31,6 +33,7 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub struct ModuleContent {
-        pub members: #[multi] ModuleMember = ast::<ModuleMember>().repeat_all()
+        pub members: #[multi] Passable<ModuleMember> =
+            ast::<Passable<ModuleMember>>().line().repeat_all()
     }
 }

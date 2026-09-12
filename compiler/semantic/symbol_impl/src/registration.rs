@@ -2,6 +2,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_source_file::SourceElement;
 use rayc_symbol::symbol_kind::SymbolKind;
 use rayc_syntax::{
+    Passable,
     def::{Def, DefSignature, ParameterEntry},
     effect::{Effect, OperationSignature},
     extern_def::ExternDef,
@@ -419,6 +420,10 @@ impl Table {
         engine: &TrackedEngine,
     ) {
         for member in module_content.members() {
+            let Passable::Ast(member) = member else {
+                continue;
+            };
+
             match member {
                 ModuleMember::Def(def) => {
                     self.register_def(member_builder, def.clone(), engine).await;

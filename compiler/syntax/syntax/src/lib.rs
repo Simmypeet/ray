@@ -6,6 +6,11 @@ use std::path::Path;
 
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_lexical::{kind as lexical_kind, token::Token, tree::RelativeLocation};
+use rayc_parser::{
+    abstract_tree::{self, AbstractTree},
+    expect,
+    parser::ast,
+};
 use rayc_target::TargetID;
 
 use crate::module::ModuleContent;
@@ -46,6 +51,25 @@ pub type Punctuation = Token<lexical_kind::Punctuation, RelativeLocation>;
 
 /// Type alias for [`Token`] categorized as a [`lexical_kind::Numeric`].
 pub type Numeric = Token<lexical_kind::Numeric, RelativeLocation>;
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub enum Passable<T: AbstractTree> {
+        Ast(T = ast::<T>()),
+        Pass(Keyword = expect::Keyword::Pass)
+    }
+}
 
 /// Query for parsing a token tree from the given source file path.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query)]
