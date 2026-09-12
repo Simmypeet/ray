@@ -75,6 +75,28 @@ abstract_tree::abstract_tree! {
     #[derive(
         Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode
     )]
+    #{fragment = Fragment::Delimited(DelimiterKind::Bracket)}
+    pub struct NLambdaParameterList {
+        pub parameters: #[multi] IrrefutablePattern = ast::<IrrefutablePattern>()
+            .repeat_all_with_separator(',')
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode
+    )]
+    pub struct NLambda {
+        pub parameter_list: NLambdaParameterList = ast::<NLambdaParameterList>(),
+        pub arrow: Arrow = ast::<Arrow>(),
+        pub body: Expression = ast::<Expression>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode
+    )]
     #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct LambdaParameterList {
         pub parameters: #[multi] IrrefutablePattern = ast::<IrrefutablePattern>()
@@ -437,6 +459,7 @@ abstract_tree::abstract_tree! {
     pub enum Expression {
         RunWith(RunWith = ast::<RunWith>()),
         Lambda(Lambda = ast::<Lambda>()),
+        NLambda(NLambda = ast::<NLambda>()),
         IfElse(IfElse = ast::<IfElse>()),
         Binary(Binary = ast::<Binary>()),
     }
