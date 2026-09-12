@@ -1,6 +1,7 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
-use rayc_type::ty::Ty;
+use rayc_hash::FxHashMap;
+use rayc_type::ty::{Ty, application::ClosureID};
 
 use crate::{
     address::Address,
@@ -22,6 +23,7 @@ pub type FunctionID = ID<IRFunction>;
 pub struct IRFunctionMap {
     functions: Arena<IRFunction>,
     root: FunctionID,
+    closures: FxHashMap<ClosureID, FunctionID>,
 }
 
 impl IRFunctionMap {
@@ -29,7 +31,24 @@ impl IRFunctionMap {
     pub fn new(root_effect: Interned<Ty>) -> Self {
         let mut functions = Arena::new();
         let root = functions.insert(IRFunction::new(root_effect));
-        Self { functions, root }
+        Self { functions, root, closures: FxHashMap::default() }
+    }
+
+    /// Associates a source closure identity with its lowered local function.
+    pub fn register_closure(&mut self, closure_id: ClosureID, function_id: FunctionID) {
+        let _ = self.get_function(function_id).context().assert_as_lambda_context();
+        assert!(self.closures.insert(closure_id, function_id).is_none());
+    }
+
+    #[must_use]
+    pub fn closure_function(&self, closure_id: ClosureID) -> Option<FunctionID> {
+        self.closures.get(&closure_id).copied()
+    }
+
+    /// Iterates over nominal closure identities and their lowered functions.
+    #[must_use]
+    pub fn closures(&self) -> impl ExactSizeIterator<Item = (ClosureID, FunctionID)> {
+        self.closures.iter().map(|(closure_id, function_id)| (*closure_id, *function_id))
     }
 
     pub fn fill_return_on_unterminated_blocks(&mut self, function_id: FunctionID) {
