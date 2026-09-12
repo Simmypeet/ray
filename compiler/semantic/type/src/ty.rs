@@ -766,6 +766,19 @@ impl Ty {
     }
 
     #[must_use]
+    pub fn unwrap_as_closure_view(&self) -> application::ClosureView<'_> {
+        let Self::Application(application) = self else {
+            panic!("Expected Ty::Application, found {self:?}");
+        };
+
+        let ApplicationView::Closure(closure_view) = application.view() else {
+            panic!("Expected Ty::ApplicationView::Closure, found {application:?}");
+        };
+
+        closure_view
+    }
+
+    #[must_use]
     pub fn is_c_abi_value_type(&self) -> bool {
         match self {
             Self::Application(application) => match application.view() {
