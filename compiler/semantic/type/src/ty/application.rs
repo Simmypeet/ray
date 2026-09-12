@@ -1,4 +1,5 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 
@@ -21,7 +22,54 @@ pub enum Constant {
     /// Arguments are an instance-kind type followed by the trait type's
     /// polymorphic arguments in declaration order.
     InstanceAssociated(GlobalSymbolID),
+    Closure(Closure),
     Error(TyKind),
+}
+
+/// Represents an anonymous type created by the lambda expression. It represents
+/// the storage that holds all the captured variables required by the lambda.
+/// The type is created by the compiler and is not visible to the user.
+///
+/// The arguments of the closure application type are
+/// - A list of parameter types, this can be empty if the lambda has no
+///   parameters.
+/// - The return type of the lambda.
+/// - The effect row of the lambda.
+/// - The tuple type of all the captured variables of the lambda. This can be an
+///   empty tuple if the lambda has no captured variables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub struct Closure {
+    /// The relative span of the lambda expression that created this closure
+    /// type. This is also used to differentiate between different closure types
+    /// created by different lambda expressions since the span is unique to each
+    /// lambda expression.
+    span: RelativeSpan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ClosureView<'x> {
+    span: RelativeSpan,
+    params: &'x [Interned<Ty>],
+    return_type: &'x Interned<Ty>,
+    effect_row: &'x Interned<Ty>,
+    captured_tuple: TupleView<'x>,
+}
+
+impl ClosureView<'_> {
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
+
+    #[must_use]
+    pub const fn params(&self) -> &[Interned<Ty>] { self.params }
+
+    #[must_use]
+    pub const fn return_type(&self) -> &Interned<Ty> { self.return_type }
+
+    #[must_use]
+    pub const fn effect_row(&self) -> &Interned<Ty> { self.effect_row }
+
+    #[must_use]
+    pub const fn captured_tuple(&self) -> TupleView<'_> { self.captured_tuple }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -115,6 +163,7 @@ pub enum View<'x> {
     Pointer(PointerView<'x>),
     Instance(InstanceView<'x>),
     InstanceAssociated(InstanceAssociatedView<'x>),
+    Closure(ClosureView<'x>),
     Error,
 }
 
@@ -158,6 +207,25 @@ impl Application {
                     self.args.split_first().expect("associated type has an instance");
                 View::InstanceAssociated(InstanceAssociatedView { symbol_id, instance, args })
             }
+            Constant::Closure(closure) => {
+                let tuple_index = self.args.len() - 1;
+                let effect_index = self.args.len() - 2;
+                let return_index = self.args.len() - 3;
+
+                let params = &self.args[..return_index];
+                let return_type = &self.args[return_index];
+                let effect_row = &self.args[effect_index];
+                let captured_tuple =
+                    self.args[tuple_index].unwrap_as_application_view().unwrap_into_tuple_view();
+
+                View::Closure(ClosureView {
+                    params,
+                    return_type,
+                    effect_row,
+                    captured_tuple,
+                    span: closure.span,
+                })
+            }
             Constant::Error(_) => View::Error,
         }
     }
@@ -170,9 +238,12 @@ impl Application {
     #[must_use]
     pub(crate) async fn kind_of(&self, engine: &TrackedEngine) -> TyKind {
         match self.constant {
-            Constant::Primitive(_) | Constant::Tuple | Constant::Lambda | Constant::Pointer(_) => {
-                TyKind::Star
-            }
+            Constant::Closure(_)
+            | Constant::Primitive(_)
+            | Constant::Tuple
+            | Constant::Lambda
+            | Constant::Pointer(_) => TyKind::Star,
+
             Constant::InstanceAssociated(symbol_id) => {
                 use crate::associated_type_kind::get_associated_type_kind;
                 engine.get_associated_type_kind(symbol_id).await
@@ -197,6 +268,7 @@ impl Application {
                 | View::Lambda(_)
                 | View::Pointer(_)
                 | View::Instance(_)
+                | View::Closure(_)
                 | View::InstanceAssociated(_) => false,
             },
             InferenceConstraint::EqualityComparable => match self.view() {
@@ -212,7 +284,8 @@ impl Application {
                 | View::Lambda(_)
                 | View::Pointer(_)
                 | View::Instance(_)
-                | View::InstanceAssociated(_) => false,
+                | View::InstanceAssociated(_)
+                | View::Closure(_) => false,
             },
         }
     }

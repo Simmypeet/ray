@@ -168,6 +168,7 @@ impl Ty {
                 | ApplicationView::Lambda(_)
                 | ApplicationView::Pointer(_)
                 | ApplicationView::InstanceAssociated(_)
+                | ApplicationView::Closure(_)
                 | ApplicationView::Instance(_) => false,
             },
             Self::Inference(_) | Self::EffectRow(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
@@ -403,6 +404,7 @@ impl Ty {
                         | ApplicationView::Tuple(_)
                         | ApplicationView::Lambda(_)
                         | ApplicationView::Pointer(_)
+                        | ApplicationView::Closure(_)
                         | ApplicationView::Error => None,
                     };
                     if let Some(symbol_id) = symbol_id {
@@ -516,6 +518,23 @@ impl TyDisplay<'_> {
                     Primitive::CInt => write!(f, "c_int"),
                     Primitive::CStr => write!(f, "cstr"),
                 },
+
+                ApplicationView::Closure(closure) => {
+                    f.write_str("<closure>(")?;
+
+                    for (index, param) in closure.params().iter().enumerate() {
+                        if index > 0 {
+                            f.write_str(", ")?;
+                        }
+                        self.fmt_ty(param, f)?;
+                    }
+
+                    f.write_str(") -> ")?;
+                    self.fmt_ty(closure.return_type(), f)?;
+                    f.write_str(" \\ ")?;
+                    self.fmt_ty(closure.effect_row(), f)
+                }
+
                 ApplicationView::Tuple(tuple) => {
                     f.write_char('(')?;
 
@@ -665,6 +684,7 @@ impl Ty {
                 | ApplicationView::Lambda(_)
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Instance(_)
+                | ApplicationView::Closure(_)
                 | ApplicationView::Error => false,
             },
             Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {
