@@ -9,7 +9,7 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
-    GlobalSymbolID,
+    GlobalSymbolID, get_target_root_module_id,
     member::{get_member_by_name, try_get_members},
     parent::get_closest_module_id,
     symbol_kind::{SymbolKind, get_symbol_kind},
@@ -267,7 +267,18 @@ impl Resolver<'_> {
         } else {
             let closest_module_id = self.engine.get_closest_module_id(self.site).await;
             let closest_module_id = self.site.target_id.make_global(closest_module_id);
-            self.engine.get_member_by_name(closest_module_id, name).await
+            if let Some(local) = self.engine.get_member_by_name(closest_module_id, name).await {
+                return Some(local);
+            }
+            // Only explicitly linked roots are visible, after local names.
+            let targets = self.engine.query(&rayc_target::MapKey).await;
+            let target_id = *targets.get(name)?;
+            let linked =
+                self.engine.query(&rayc_target::LinkKey { target_id: self.site.target_id }).await;
+            if !linked.contains(&target_id) {
+                return None;
+            }
+            Some(target_id.make_global(self.engine.get_target_root_module_id(target_id).await))
         }
     }
 
