@@ -4,7 +4,7 @@ use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
-    subst::{self, Subst, Substitutable},
+    subst::{Subst, Substitutable},
     ty::{
         Ty,
         application::{ClosureID, ClosureView},

@@ -1,0 +1,15 @@
+def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+    return d.call(value, args)
+
+trait Use[]:
+    def use(value: b) -> b
+
+inst User[a] for Use[]:
+    def use(value: b) -> b:
+        return invoke([] -> value, ())
+
+def main() -> int32:
+    let flag: bool = User[int32].use(true)
+    let left: int32 = User[int32].use(20)
+    let right: int32 = User[bool].use(22)
+    return if flag: left + right else: 1

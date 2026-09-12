@@ -1,0 +1,8 @@
+def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+    return d.call(value, args)
+
+def use(value: a) -> a:
+    return invoke([] -> value, ())
+
+def main() -> int32:
+    return if use(true): use(42) else: 1

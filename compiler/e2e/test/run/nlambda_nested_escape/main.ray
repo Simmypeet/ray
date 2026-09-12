@@ -1,0 +1,7 @@
+def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+    return d.call(value, args)
+
+def main() -> int32:
+    let outer = [x] -> ([] -> x)
+    let inner = invoke(outer, (42,))
+    return invoke(inner, ())

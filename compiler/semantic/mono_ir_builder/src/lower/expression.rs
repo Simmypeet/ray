@@ -87,7 +87,7 @@ impl Builder<'_> {
             IRExprKind::MakeLambda(lambda) => {
                 self.lower_make_lambda(context, lambda, expression_id);
             }
-            IRExprKind::NLambda(_) => todo!("implement nominal closure lowering to MonoIR"),
+            IRExprKind::NLambda(lambda) => self.lower_nlambda(context, lambda, expression_id),
         }
     }
 

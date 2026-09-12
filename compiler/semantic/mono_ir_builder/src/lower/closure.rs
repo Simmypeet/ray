@@ -11,6 +11,29 @@ use rayc_mono_ir::{
 use crate::{builder::Builder, context::Context, function_abi::FunctionABI};
 
 impl Builder<'_> {
+    pub(super) fn lower_nlambda(
+        &mut self,
+        context: &Context,
+        lambda: &rayc_ir::ir_expr::nlambda::NLambda,
+        expression_id: IRExprID,
+    ) {
+        // Captures have already been evaluated in semantic IR order.
+        let abi = context.function_abi(lambda.function_id());
+
+        let environment = abi.environment_type();
+        let fields =
+            lambda.captures().iter().map(|capture| self.expression_operand(*capture)).collect();
+
+        // Effect handlers are passed as additional arguments to the function, not
+        // embedded in the environment.
+        assert!(!abi.captures_effect_handlers());
+
+        self.assign(
+            self.expression_place(expression_id),
+            Rvalue::new_environment(environment.clone(), fields),
+        );
+    }
+
     pub(super) fn lower_make_lambda(
         &mut self,
         context: &Context,
@@ -18,7 +41,7 @@ impl Builder<'_> {
         expression_id: IRExprID,
     ) {
         let abi = context.function_abi(lambda.function_id());
-        let environment = self.emit_environment(context, lambda.captures(), abi);
+        let environment = self.emit_opauqe_environment_pointer(context, lambda.captures(), abi);
 
         let function_ref = Operand::Function(FunctionOperand::new(
             FunctionReference::Local(context.target_function_id(lambda.function_id())),
@@ -31,12 +54,13 @@ impl Builder<'_> {
         );
     }
 
-    pub(super) fn emit_environment(
+    pub(super) fn emit_opauqe_environment_pointer(
         &mut self,
         context: &Context,
         args: &[IRExprID],
         abi: &FunctionABI,
     ) -> Operand {
+        assert!(!abi.by_value());
         assert_eq!(args.len(), abi.capture_count());
         let environment = abi.environment_type();
 

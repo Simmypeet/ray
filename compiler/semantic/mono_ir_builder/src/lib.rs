@@ -26,5 +26,7 @@ pub async fn lower_ir(
     substitution: Subst,
 ) -> MonoIR {
     let source = engine.get_ir(def_id).await;
-    Context::new(engine.clone(), MonoDefInstance::new(def_id, substitution), source).lower().await
+    Context::new(engine.clone(), MonoDefInstance::new(def_id, substitution, engine).await, source)
+        .lower()
+        .await
 }

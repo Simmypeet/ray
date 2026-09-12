@@ -141,3 +141,14 @@ impl fmt::Display for Base62 {
         formatter.write_str(encoded)
     }
 }
+
+pub(super) fn closure_name(instance: &rayc_mono_ir::MonoClosureInstance) -> String {
+    format!("ray_nominal_{}", Base62(stable_codegen_id("rayc_c2::NominalClosure:v1", instance)))
+}
+
+pub(super) fn ir_function_name(ir: &rayc_mono_ir::MonoIR, id: MonoFunctionID) -> String {
+    ir.closure_instance(id).map_or_else(
+        || function_name(ir.instance(), id, ir.get_function(id).kind(), ir.root_id()),
+        |closure| closure_name(&closure),
+    )
+}

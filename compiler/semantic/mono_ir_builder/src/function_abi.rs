@@ -10,13 +10,21 @@ use rayc_mono_ir::{
 
 use crate::context::Context;
 
+/// How the hidden capture parameter is passed.
+#[derive(Debug, Clone)]
+enum EnvironmentPassing {
+    None,
+    ErasedPointer(EnvironmentTy),
+    ByValue(EnvironmentTy),
+}
+
 /// The concrete calling convention and environment layout of one function.
 #[derive(Debug, Clone)]
 pub(crate) struct FunctionABI {
     kind: MonoFunctionKind,
     signature: FunctionSignature,
     effects: Vec<MonoEffectInstance>,
-    environment_type: Option<EnvironmentTy>,
+    environment_type: EnvironmentPassing,
     capture_ids: Vec<CaptureID>,
 }
 
@@ -25,10 +33,14 @@ impl FunctionABI {
         kind: MonoFunctionKind,
         signature: FunctionSignature,
         effects: Vec<MonoEffectInstance>,
-        environment_type: Option<EnvironmentTy>,
+        environment_type: EnvironmentPassing,
         capture_ids: Vec<CaptureID>,
     ) -> Self {
         Self { kind, signature, effects, environment_type, capture_ids }
+    }
+
+    pub(crate) const fn by_value(&self) -> bool {
+        matches!(self.environment_type, EnvironmentPassing::ByValue(_))
     }
 
     pub(crate) const fn kind(&self) -> MonoFunctionKind { self.kind }
@@ -40,7 +52,11 @@ impl FunctionABI {
     }
 
     pub(crate) const fn environment_type(&self) -> &EnvironmentTy {
-        self.environment_type.as_ref().expect("should have an environment type")
+        match &self.environment_type {
+            EnvironmentPassing::None => panic!("function has no environment"),
+            EnvironmentPassing::ErasedPointer(environment)
+            | EnvironmentPassing::ByValue(environment) => environment,
+        }
     }
 
     pub(crate) fn capture_ids(&self) -> impl ExactSizeIterator<Item = CaptureID> + '_ {
@@ -55,7 +71,11 @@ impl FunctionABI {
 }
 
 impl Context {
-    pub(super) async fn plan_function(&self, source: &IRFunction) -> FunctionABI {
+    pub(super) async fn plan_function(
+        &self,
+        source_id: rayc_ir::ir_function::FunctionID,
+        source: &IRFunction,
+    ) -> FunctionABI {
         let effects = self.lower_effects(source.effect()).await;
 
         let mut parameter_types = Vec::new();
@@ -73,7 +93,8 @@ impl Context {
             }
 
             IRContext::Lambda(context) => {
-                // The first parameter carries the erased capture environment.
+                // Reserve the hidden environment slot; nominal bodies replace
+                // this erased parameter with their shared by-value ABI below.
                 parameter_types.push(self.create_opaque_pointer());
 
                 for (_, parameter) in context.parameters() {
@@ -118,19 +139,34 @@ impl Context {
             }
         };
 
-        // Ordinary functions receive their handlers as hidden parameters.
-        // Operation-handler callbacks capture them in their environments so
-        // their signatures continue to match the effect operation signatures.
-        if kind != MonoFunctionKind::OperationHandler {
-            for effect in &effects {
-                parameter_types.push(self.create_handler_pointer(effect.clone()));
+        // Nominal bodies and dictionary calls share the same environment/handler ABI.
+        let (signature, environment_type) = if self.is_nominal(source_id) {
+            let environment =
+                self.create_aggregate_type_for_capture_environment(environment_fields);
+            parameter_types.remove(0);
+            let signature = self.create_nominal_signature(
+                environment.clone(),
+                parameter_types,
+                return_type,
+                &effects,
+            );
+            (signature, EnvironmentPassing::ByValue(environment))
+        } else {
+            // Operation callbacks capture handlers instead of receiving them.
+            if kind != MonoFunctionKind::OperationHandler {
+                parameter_types.extend(
+                    effects.iter().map(|effect| self.create_handler_pointer(effect.clone())),
+                );
             }
-        }
-
-        let signature = self.create_function_signature(parameter_types, return_type);
-        let environment_type = (kind != MonoFunctionKind::Def)
-            .then(|| self.create_aggregate_type_for_capture_environment(environment_fields));
-
+            let environment = if kind == MonoFunctionKind::Def {
+                EnvironmentPassing::None
+            } else {
+                EnvironmentPassing::ErasedPointer(
+                    self.create_aggregate_type_for_capture_environment(environment_fields),
+                )
+            };
+            (self.create_function_signature(parameter_types, return_type), environment)
+        };
         FunctionABI::new(kind, signature, effects, environment_type, capture_ids)
     }
 }

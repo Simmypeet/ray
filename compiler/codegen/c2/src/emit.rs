@@ -18,7 +18,7 @@ use crate::{
     generator::Generator,
     name::{
         aggregate_name, aggregate_typedef_name, block_name, closure_environment_field_name,
-        closure_function_field_name, environment_field_name, function_name, local_name,
+        closure_function_field_name, environment_field_name, ir_function_name, local_name,
         operation_environment_field_name, operation_function_field_name, tuple_field_name,
     },
 };
@@ -30,7 +30,7 @@ impl Generator<'_> {
         function_id: MonoFunctionID,
     ) -> String {
         let function = ir.get_function(function_id);
-        let name = function_name(ir.instance(), function_id, function.kind(), ir.root_id());
+        let name = ir_function_name(ir, function_id);
         let parameter_names =
             function.parameters().map(|local| local_name(local.index())).collect::<Vec<_>>();
         let mut output = signature_declaration(function.signature(), &name, Some(&parameter_names));

@@ -49,7 +49,7 @@ impl Builder<'_> {
 
         let body_abi = context.function_abi(handle.body().function_id());
         let mut arguments =
-            vec![self.emit_environment(context, handle.body().captures(), body_abi)];
+            vec![self.emit_opauqe_environment_pointer(context, handle.body().captures(), body_abi)];
 
         for effect in body_abi.effects() {
             if effect == &instance {
@@ -101,7 +101,7 @@ impl Builder<'_> {
         for handler in handle.handlers() {
             let abi = context.function_abi(handler.function_id());
 
-            let env = self.emit_environment(context, handler.captures(), abi);
+            let env = self.emit_opauqe_environment_pointer(context, handler.captures(), abi);
             let fn_ptr = Operand::Function(FunctionOperand::new(
                 FunctionReference::Local(context.target_function_id(handler.function_id())),
                 abi.signature().clone(),

@@ -129,21 +129,31 @@ impl Builder<'_> {
             return;
         }
 
-        let env_ty = context.intern_environment_type(env.clone());
-        let pointer_type = context.create_pointer(env_ty, PointerMutability::Mut);
-        let pointer_local =
-            self.insert_local(Local::new(pointer_type.clone(), LocalKind::Temporary));
+        let environment_place = if abi.by_value() {
+            // no need to dereference the environment parameter, it is already the correct
+            // type
+            Place::new(environment_parameter)
+        } else {
+            let env_ty = context.intern_environment_type(env.clone());
+            let pointer_type = context.create_pointer(env_ty, PointerMutability::Mut);
+            let pointer_local =
+                self.insert_local(Local::new(pointer_type.clone(), LocalKind::Temporary));
 
-        // Case from the `void* env` parameter to the `Environment* env` local
-        self.push_instruction(Instruction::Assign(Assign::new(
-            Place::new(pointer_local),
-            Rvalue::Cast(Cast::new(Operand::Copy(Place::new(environment_parameter)), pointer_type)),
-        )));
+            // Case from the `void* env` parameter to the `Environment* env` local
+            self.push_instruction(Instruction::Assign(Assign::new(
+                Place::new(pointer_local),
+                Rvalue::Cast(Cast::new(
+                    Operand::Copy(Place::new(environment_parameter)),
+                    pointer_type,
+                )),
+            )));
 
-        // in order to access the environment fields, we need to dereference the pointer
-        // local esentially, we create a `env->field` or `(*env).field` place
-        // for each capture and handler in the environment
-        let environment_place = Place::new(pointer_local).dereference();
+            // in order to access the environment fields, we need to dereference the pointer
+            // local esentially, we create a `env->field` or `(*env).field` place
+            // for each capture and handler in the environment
+            Place::new(pointer_local).dereference()
+        };
+
         for (index, capture_id) in abi.capture_ids().enumerate() {
             self.insert_capture(
                 capture_id,

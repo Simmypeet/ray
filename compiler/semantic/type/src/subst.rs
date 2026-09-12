@@ -40,6 +40,9 @@ impl Subst {
     pub fn is_empty(&self) -> bool { self.0.is_empty() }
 
     #[must_use]
+    pub fn len(&self) -> usize { self.0.len() }
+
+    #[must_use]
     pub fn has_inference_variable(&self, inference: &Inference) -> bool {
         self.0.contains_key(&Var::Inference(*inference))
     }

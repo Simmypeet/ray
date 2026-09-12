@@ -5,7 +5,7 @@ use rayc_ir::{
     ir_lambda::Capture,
 };
 use rayc_mono_ir::{
-    MonoDefInstance, MonoEffectInstance, MonoIR,
+    MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoIR,
     function::MonoFunctionID,
     ty::{
         AggregateType, EffectHandler, Environment, FunctionSignature, MonoType, PointerMutability,
@@ -18,8 +18,10 @@ use rayc_semantic_element::{
     parameter::{ParameterMap, get_parameter_map},
     return_type::get_return_type,
 };
+use rayc_solver::Solver;
 use rayc_symbol::{
     GlobalSymbolID,
+    core_item::{CoreItem, get_core_item},
     member::get_member_by_name,
     name::get_name,
     symbol_kind::{SymbolKind, get_symbol_kind},
@@ -29,8 +31,17 @@ use rayc_type::{
     instance_member::get_instance_member,
     poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
     subst::{Subst, Substitutable},
-    ty::{Ty, application::View as ApplicationView, args::Args},
+    ty::{
+        Ty,
+        application::{InstanceView, View as ApplicationView},
+        args::Args,
+    },
 };
+
+pub(crate) enum InstanceCallable {
+    Definition(MonoDefInstance),
+    Closure(MonoClosureInstance, FunctionSignature, Vec<MonoEffectInstance>),
+}
 
 use crate::{builder::Builder, function_abi::FunctionABI};
 
@@ -80,6 +91,22 @@ impl Context {
         return_type: Interned<MonoType>,
     ) -> FunctionSignature {
         MonoType::new_function_signature(parameter_types, return_type, &self.engine)
+    }
+
+    pub(crate) fn create_nominal_signature(
+        &self,
+        environment: Environment,
+        parameters: Vec<Interned<MonoType>>,
+        result: Interned<MonoType>,
+        effects: &[MonoEffectInstance],
+    ) -> FunctionSignature {
+        rayc_mono_ir::ty::nominal_body_signature(
+            &self.engine,
+            environment,
+            parameters,
+            result,
+            effects,
+        )
     }
 
     pub(crate) fn create_aggregate_type_for_capture_environment(
@@ -141,32 +168,71 @@ impl Context {
         substitution.compose(self.instance.substitution(), &self.engine);
     }
 
-    /// Resolves an abstract trait-method call to one concrete instance method.
-    ///
-    /// The semantic IR identifies the dictionary, the trait method, and the
-    /// trait method's call-site substitution. `MonoIR` instead needs an
-    /// ordinary global definition reference whose substitution is expressed
-    /// entirely in the concrete instance and instance-method namespaces.
+    /// Resolves an abstract trait-method call to a definition or nominal
+    /// closure.
     pub(crate) async fn resolve_instance_call(
         &self,
         dictionary_ty: &Interned<Ty>,
         trait_def_id: GlobalSymbolID,
         trait_call_substitution: &Subst,
-    ) -> MonoDefInstance {
-        // TODO: this is a bit dense, there could be better ways to do this!
-
+    ) -> InstanceCallable {
         // The dictionary may still be a polymorphic variable owned by the
         // function being monomorphized. Applying the owner's substitution turns
         // it into the concrete instance chosen at the caller, such as `EqInt`.
         let dictionary_ty =
             dictionary_ty.apply_subst_or_clone(self.instance.substitution(), &self.engine);
+        let dictionary_ty =
+            Solver::without_givens(self.engine.clone()).normalize(&dictionary_ty).await;
         let Ty::Application(application) = &*dictionary_ty else {
             panic!("an instance call should resolve to a concrete instance application")
         };
-        let ApplicationView::Instance(instance) = application.view() else {
-            panic!("an instance call should resolve to a type of instance kind")
+        match application.view() {
+            ApplicationView::Instance(instance) => {
+                self.resolve_definition_call(instance, trait_def_id, trait_call_substitution).await
+            }
+            ApplicationView::DefInstance(closure_ty) => {
+                self.resolve_closure_call(closure_ty, trait_def_id).await
+            }
+            ApplicationView::Primitive(_)
+            | ApplicationView::Tuple(_)
+            | ApplicationView::Lambda(_)
+            | ApplicationView::Pointer(_)
+            | ApplicationView::InstanceAssociated(_)
+            | ApplicationView::Closure(_)
+            | ApplicationView::Error => {
+                panic!("an instance call should resolve to a type of instance kind")
+            }
+        }
+    }
+
+    /// Selects a nominal body and its ABI from a built-in Def dictionary.
+    async fn resolve_closure_call(
+        &self,
+        closure_ty: &Interned<Ty>,
+        trait_def_id: GlobalSymbolID,
+    ) -> InstanceCallable {
+        // Only core.Def.call can invoke a built-in nominal closure dictionary.
+        assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DefCall).await);
+        let Ty::Application(closure) = &**closure_ty else {
+            panic!("DefInstance requires a closure")
+        };
+        let ApplicationView::Closure(closure) = closure.view() else {
+            panic!("DefInstance requires a nominal closure")
         };
 
+        // Leave owner-body discovery to the backend worklist to allow fragment cycles.
+        let instance = MonoClosureInstance::from_closure(&self.engine, closure).await;
+        let (signature, effects) = rayc_mono_ir::ty::nominal_signature(&self.engine, closure).await;
+        InstanceCallable::Closure(instance, signature, effects)
+    }
+
+    /// Maps a trait method into the concrete instance and method namespaces.
+    async fn resolve_definition_call(
+        &self,
+        instance: InstanceView<'_>,
+        trait_def_id: GlobalSymbolID,
+        trait_call_substitution: &Subst,
+    ) -> InstanceCallable {
         // Trait and instance methods correspond by name. The InstanceMember query
         // verifies that correspondence and provides the precomputed mapping
         // from trait-owned polymorphic variables to instance-owned variables.
@@ -220,7 +286,9 @@ impl Context {
 
         // From this point on, the call is indistinguishable from any other
         // global MonoIR call: a concrete definition ID plus its substitution.
-        MonoDefInstance::new(instance_def_id, substitution)
+        InstanceCallable::Definition(
+            MonoDefInstance::new(instance_def_id, substitution, &self.engine).await,
+        )
     }
 
     pub(crate) fn instantiate_effect(
@@ -275,29 +343,45 @@ impl Context {
         (signature, effects, is_void)
     }
 
+    pub(crate) async fn definition_instance(
+        &self,
+        def_id: GlobalSymbolID,
+        substitution: Subst,
+    ) -> MonoDefInstance {
+        MonoDefInstance::new(def_id, substitution, &self.engine).await
+    }
+
+    pub(crate) fn is_nominal(&self, source_id: IRFunctionID) -> bool {
+        self.source.closures().any(|(_, function)| function == source_id)
+    }
+
     pub(crate) async fn lower(mut self) -> MonoIR {
         let root_source_id = self.source.root_id();
         let root_source = self.source.root().clone();
-        let root_abi = self.plan_function(&root_source).await;
+        let root_abi = self.plan_function(root_source_id, &root_source).await;
+
         let mut output = MonoIR::new(self.instance.clone(), root_abi.signature().clone());
+
         self.function_abis.insert(root_source_id, root_abi);
         self.function_ids.insert(root_source_id, output.root_id());
 
-        let mut source_functions = self.source.functions().map(|(id, _)| id).collect::<Vec<_>>();
-        source_functions.sort_unstable();
-
-        for source_id in source_functions.iter().copied() {
+        for source_id in self.source.functions().map(|(id, _)| id) {
             if source_id == root_source_id {
                 continue;
             }
+
             let source = self.source.get_function(source_id).clone();
-            let abi = self.plan_function(&source).await;
+            let abi = self.plan_function(source_id, &source).await;
             let target = output.insert_function(abi.kind(), abi.signature().clone());
             self.function_abis.insert(source_id, abi);
             self.function_ids.insert(source_id, target);
         }
 
-        for source_id in source_functions {
+        for (closure, source) in self.source.closures() {
+            output.register_closure(closure, self.target_function_id(source));
+        }
+
+        for source_id in self.source.functions().map(|(id, _)| id) {
             let target_id = self.target_function_id(source_id);
             let mut builder = Builder::new(&mut output, source_id, target_id);
             builder.lower_function(&self, source_id).await;

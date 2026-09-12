@@ -57,7 +57,8 @@ pub async fn write_c_translation_unit(
         match engine.get_symbol_kind(def_id).await {
             SymbolKind::Def => {
                 if engine.get_poly_var_map(def_id).await.is_empty() {
-                    initial_definitions.push(MonoDefInstance::new(def_id, Subst::new_empty()));
+                    initial_definitions
+                        .push(MonoDefInstance::new(def_id, Subst::new_empty(), engine).await);
                 }
             }
             SymbolKind::ExternDef => {}
@@ -76,9 +77,12 @@ pub async fn write_c_translation_unit(
     }
     initial_definitions.sort();
 
-    let entry_point = options
-        .entry_point
-        .map(|entry_point| MonoDefInstance::new(entry_point, Subst::new_empty()));
+    let entry_point = match options.entry_point {
+        Some(entry_point) => {
+            Some(MonoDefInstance::new(entry_point, Subst::new_empty(), engine).await)
+        }
+        None => None,
+    };
     let generated = Generator::new(engine, initial_definitions, std::iter::empty(), entry_point)
         .generate()
         .await;

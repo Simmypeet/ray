@@ -13,6 +13,7 @@ rayc_mono_ir.path = "../mono_ir"
 rayc_qbice.path = "../../base/qbice"
 rayc_semantic_element.path = "../semantic_element"
 rayc_symbol.path = "../symbol"
+rayc_solver.path = "../solver"
 rayc_type.path = "../type"
 qbice.workspace = true
 

@@ -3,7 +3,7 @@ use std::{collections::VecDeque, fmt::Write};
 use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_mono_ir::{
-    MonoDefInstance, MonoIR,
+    MonoClosureInstance, MonoDefInstance, MonoIR,
     cfg::Terminator,
     instance::FunctionReference,
     instruction::Instruction,
@@ -17,7 +17,10 @@ use rayc_symbol::{name::get_name, symbol_kind::get_symbol_kind};
 
 use crate::{
     c_type::signature_declaration,
-    name::{AggregateID, aggregate_name, aggregate_typedef_name, definition_name, function_name},
+    name::{
+        AggregateID, aggregate_name, aggregate_typedef_name, closure_name, definition_name,
+        ir_function_name,
+    },
 };
 
 #[derive(Debug, Default)]
@@ -38,6 +41,8 @@ pub(super) struct Generator<'engine> {
     seen_aggregates: FxHashSet<AggregateType>,
     preloaded_definitions: FxHashMap<MonoDefInstance, MonoIR>,
     global_signatures: FxHashMap<MonoDefInstance, FunctionSignature>,
+    closure_signatures: FxHashMap<MonoClosureInstance, FunctionSignature>,
+    exported_closures: FxHashSet<MonoClosureInstance>,
     aggregate_layouts: FxHashMap<AggregateType, Option<Interned<HandlerLayout>>>,
     function_declarations: Vec<String>,
     entry_point: Option<MonoDefInstance>,
@@ -60,6 +65,8 @@ impl<'engine> Generator<'engine> {
             seen_aggregates: FxHashSet::default(),
             preloaded_definitions: FxHashMap::default(),
             global_signatures: FxHashMap::default(),
+            closure_signatures: FxHashMap::default(),
+            exported_closures: FxHashSet::default(),
             aggregate_layouts: FxHashMap::default(),
             function_declarations: Vec::new(),
             entry_point,
@@ -100,6 +107,12 @@ impl<'engine> Generator<'engine> {
 
         // These buffers are populated only after their corresponding definition
         // buffers have discovered the complete set of required items.
+        for closure in self.closure_signatures.keys() {
+            assert!(
+                self.exported_closures.contains(closure),
+                "referenced nominal closure has no exported body"
+            );
+        }
         self.populate_aggregate_buffers();
         self.populate_function_forward_declarations();
         self.populate_entry_point();
@@ -160,12 +173,15 @@ impl<'engine> Generator<'engine> {
     }
 
     async fn process_ir(&mut self, ir: MonoIR) {
-        let instance = ir.instance().clone();
         let mut function_ids =
             ir.functions().map(|(function_id, _)| function_id).collect::<Vec<_>>();
         function_ids.sort_unstable();
         for function_id in function_ids.iter().copied() {
             let function = ir.get_function(function_id);
+            if let Some(closure) = ir.closure_instance(function_id) {
+                assert!(self.exported_closures.insert(closure.clone()));
+                self.record_closure_signature(closure, function.signature());
+            }
             self.collect_signature(function.signature());
             for (_, local) in function.locals() {
                 self.collect_type(local.ty());
@@ -174,17 +190,18 @@ impl<'engine> Generator<'engine> {
             blocks.sort_unstable_by_key(|(block_id, _)| *block_id);
             for (_, block) in blocks {
                 for instruction in block.instructions() {
-                    self.collect_instruction(instruction);
+                    self.collect_instruction(instruction, &ir);
                 }
                 self.collect_terminator(
                     block.terminator().expect("reachable MonoIR block should have a terminator"),
+                    &ir,
                 );
             }
         }
 
         for function_id in function_ids {
             let function = ir.get_function(function_id);
-            let name = function_name(&instance, function_id, function.kind(), ir.root_id());
+            let name = ir_function_name(&ir, function_id);
             let parameter_names = function
                 .parameters()
                 .map(|local| crate::name::local_name(local.index()))
@@ -259,75 +276,75 @@ impl<'engine> Generator<'engine> {
         }
     }
 
-    fn collect_instruction(&mut self, instruction: &Instruction) {
+    fn collect_instruction(&mut self, instruction: &Instruction, ir: &MonoIR) {
         match instruction {
-            Instruction::Assign(assign) => self.collect_rvalue(assign.value()),
+            Instruction::Assign(assign) => self.collect_rvalue(assign.value(), ir),
             Instruction::Call(call) => {
-                self.collect_operand(call.callee());
+                self.collect_operand(call.callee(), ir);
                 for argument in call.arguments() {
-                    self.collect_operand(argument);
+                    self.collect_operand(argument, ir);
                 }
             }
         }
     }
 
-    fn collect_terminator(&mut self, terminator: &Terminator) {
+    fn collect_terminator(&mut self, terminator: &Terminator, ir: &MonoIR) {
         match terminator {
             Terminator::Goto(_) | Terminator::Unreachable => {}
-            Terminator::Branch(branch) => self.collect_operand(branch.condition()),
+            Terminator::Branch(branch) => self.collect_operand(branch.condition(), ir),
             Terminator::Return(value) => {
                 if let Some(value) = value {
-                    self.collect_operand(value);
+                    self.collect_operand(value, ir);
                 }
             }
         }
     }
 
-    fn collect_rvalue(&mut self, value: &Rvalue) {
+    fn collect_rvalue(&mut self, value: &Rvalue, ir: &MonoIR) {
         match value {
-            Rvalue::Use(operand) => self.collect_operand(operand),
+            Rvalue::Use(operand) => self.collect_operand(operand, ir),
             Rvalue::AddressOf(_) => {}
-            Rvalue::Unary(unary) => self.collect_operand(unary.operand()),
+            Rvalue::Unary(unary) => self.collect_operand(unary.operand(), ir),
             Rvalue::Binary(binary) => {
-                self.collect_operand(binary.left());
-                self.collect_operand(binary.right());
+                self.collect_operand(binary.left(), ir);
+                self.collect_operand(binary.right(), ir);
             }
             Rvalue::Cast(cast) => {
-                self.collect_operand(cast.operand());
+                self.collect_operand(cast.operand(), ir);
                 self.collect_type(cast.target());
             }
             Rvalue::Aggregate(aggregate) => match aggregate {
                 AggregateValue::Tuple(tuple) => {
                     self.enqueue_aggregate(AggregateType::Tuple(tuple.ty().clone()));
                     for field in tuple.fields() {
-                        self.collect_operand(field);
+                        self.collect_operand(field, ir);
                     }
                 }
                 AggregateValue::Environment(environment) => {
                     self.enqueue_aggregate(AggregateType::Environment(environment.ty().clone()));
                     for field in environment.fields() {
-                        self.collect_operand(field);
+                        self.collect_operand(field, ir);
                     }
                 }
                 AggregateValue::Closure(closure) => {
                     self.enqueue_aggregate(AggregateType::Closure(closure.ty().clone()));
-                    self.collect_operand(closure.environment());
-                    self.collect_operand(closure.function());
+                    self.collect_operand(closure.environment(), ir);
+                    self.collect_operand(closure.function(), ir);
                 }
                 AggregateValue::EffectHandler(handler) => {
                     self.enqueue_aggregate(AggregateType::EffectHandler(
                         rayc_mono_ir::ty::EffectHandler::new(handler.effect().clone()),
                     ));
                     for slot in handler.slots().values() {
-                        self.collect_operand(slot.environment());
-                        self.collect_operand(slot.function());
+                        self.collect_operand(slot.environment(), ir);
+                        self.collect_operand(slot.function(), ir);
                     }
                 }
             },
         }
     }
 
-    fn collect_operand(&mut self, operand: &Operand) {
+    fn collect_operand(&mut self, operand: &Operand, ir: &MonoIR) {
         match operand {
             Operand::Copy(_) => {}
             Operand::Constant(constant) => match constant {
@@ -342,7 +359,16 @@ impl<'engine> Generator<'engine> {
             Operand::Function(function) => {
                 self.collect_signature(function.signature());
                 match function.function() {
-                    FunctionReference::Local(_) => {}
+                    FunctionReference::Local(id) => {
+                        assert_eq!(function.signature(), ir.get_function(*id).signature());
+                        if let Some(closure) = ir.closure_instance(*id) {
+                            self.record_closure_signature(closure, function.signature());
+                        }
+                    }
+                    FunctionReference::Closure(closure) => {
+                        self.enqueue_definition(closure.owner().clone());
+                        self.record_closure_signature(closure.clone(), function.signature());
+                    }
                     FunctionReference::Global(definition) => {
                         if let Some(previous) = self
                             .global_signatures
@@ -358,6 +384,16 @@ impl<'engine> Generator<'engine> {
                     }
                 }
             }
+        }
+    }
+
+    fn record_closure_signature(
+        &mut self,
+        closure: MonoClosureInstance,
+        signature: &FunctionSignature,
+    ) {
+        if let Some(previous) = self.closure_signatures.insert(closure, signature.clone()) {
+            assert_eq!(&previous, signature, "nominal closure reference and body ABI must agree");
         }
     }
 
@@ -450,10 +486,8 @@ impl<'engine> Generator<'engine> {
 
     pub(super) async fn callable_name(&self, reference: &FunctionReference, ir: &MonoIR) -> String {
         match reference {
-            FunctionReference::Local(function_id) => {
-                let function = ir.get_function(*function_id);
-                function_name(ir.instance(), *function_id, function.kind(), ir.root_id())
-            }
+            FunctionReference::Local(function_id) => ir_function_name(ir, *function_id),
+            FunctionReference::Closure(closure) => closure_name(closure),
             FunctionReference::Global(definition) => {
                 if self.internal_definitions.contains(definition) {
                     return definition_name(definition);

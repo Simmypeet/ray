@@ -49,7 +49,9 @@ async fn writes_ordered_translation_unit_from_mono_ir() {
     let instance = MonoDefInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(7)),
         Subst::new_empty(),
-    );
+        &engine,
+    )
+    .await;
     let mut ir = MonoIR::new(instance.clone(), signature);
     ir.set_terminator(
         ir.root_id(),
@@ -98,11 +100,15 @@ async fn discovers_called_definition_through_worklist() {
     let root_instance = MonoDefInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(11)),
         Subst::new_empty(),
-    );
+        &engine,
+    )
+    .await;
     let dependency_instance = MonoDefInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(12)),
         Subst::new_empty(),
-    );
+        &engine,
+    )
+    .await;
 
     let mut root = MonoIR::new(root_instance.clone(), signature.clone());
     root.push_instruction(

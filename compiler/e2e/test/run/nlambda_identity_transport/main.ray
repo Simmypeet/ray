@@ -1,0 +1,14 @@
+def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+    return d.call(value, args)
+
+def transport(value: a) -> a:
+    return value
+
+def main() -> int32:
+    let value = 10
+    let first = [x] -> x + value
+    let second = [x] -> x * value
+    let pair = (transport(first), transport(second))
+    let firstResult: int32 = invoke(pair.0, (2,))
+    let secondResult: int32 = invoke(pair.1, (3,))
+    return firstResult + secondResult
