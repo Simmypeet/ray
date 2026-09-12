@@ -132,6 +132,10 @@ impl<'engine> Collector<'engine> {
                 self.program
                     .insert_function(MonoFunction::new_lambda(function, lambda.function_id()));
             }
+            IRExprKind::NLambda(lambda) => {
+                self.program
+                    .insert_function(MonoFunction::new_lambda(function, lambda.function_id()));
+            }
             IRExprKind::Perform(_) | IRExprKind::Handle(_) => {
                 panic!("high-level effect IR reached monomorphization before effect lowering")
             }

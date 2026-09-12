@@ -9,7 +9,7 @@ use rayc_ir::{
 };
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::ParameterID;
-use rayc_type::ty::{Mutability, Ty};
+use rayc_type::ty::{Mutability, Ty, application::ClosureID};
 
 use self::function_build_state::FunctionBuildState;
 use crate::diagnostic::NotAllPathsReturnValue;
@@ -25,6 +25,14 @@ pub struct Builder {
 }
 
 impl Builder {
+    pub fn register_closure(
+        &mut self,
+        closure_id: ClosureID,
+        function_id: rayc_ir::ir_function::FunctionID,
+    ) {
+        self.ir_functions.register_closure(closure_id, function_id);
+    }
+
     pub fn pointer_ty(&self, pointee_ty: Interned<Ty>, mutability: Mutability) -> Interned<Ty> {
         Ty::new_pointer(pointee_ty, mutability, &self.engine)
     }

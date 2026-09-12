@@ -1,5 +1,5 @@
 use qbice::storage::intern::Interned;
-use rayc_type::ty::Ty;
+use rayc_type::ty::{Ty, application::ClosureID};
 use rayc_typed_ast::{
     capture_plan::{CapturePlan, FunctionCapturePlan},
     name_binding::{NameBindingID, Source},
@@ -37,6 +37,10 @@ impl<'a> LoweringContext<'a> {
     pub const fn root_typed_function_id(&self) -> TypedFunctionID { self.typed_functions.root_id() }
 
     pub const fn typed_function_id(&self) -> TypedFunctionID { self.typed_function_id }
+
+    pub fn closure_function(&self, closure_id: ClosureID) -> Option<TypedFunctionID> {
+        self.typed_functions.closure_function(closure_id)
+    }
 
     pub const fn typed_function_context(&self) -> &TypedFunctionContext {
         self.typed_function.context()

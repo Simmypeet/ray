@@ -11,6 +11,7 @@ mod identifier;
 mod if_else;
 mod lambda;
 mod literal;
+mod nlambda;
 mod paren;
 mod ref_of;
 mod run_with;
@@ -47,8 +48,8 @@ impl Builder {
             TypedExprKind::Call(call) => {
                 self.lower_expression(context, TypedExprWithID::new(call, expression_id))
             }
-            TypedExprKind::NLambda(_) => {
-                todo!("monomorphized closure lowering to control-flow IR")
+            TypedExprKind::NLambda(lambda) => {
+                self.lower_expression(context, TypedExprWithID::new(lambda, expression_id))
             }
             TypedExprKind::Lambda(lambda) => {
                 self.lower_expression(context, TypedExprWithID::new(lambda, expression_id))
