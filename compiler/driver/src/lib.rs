@@ -55,6 +55,12 @@ pub async fn run(
 ) -> ExitCode {
     let mut report_term = ReportTerm::new(err_writer, argument.fancy());
 
+    if argument.target_name() == "core" {
+        report_term
+            .report_simple_error("target name 'core' is reserved for the compiler core library");
+        return ExitCode::FAILURE;
+    }
+
     let Some(mut engine) = create_engine(&argument, &mut report_term).await else {
         return ExitCode::FAILURE;
     };
@@ -79,8 +85,6 @@ pub async fn run(
 
     {
         let mut input_session = engine.input_session().await;
-
-        // rayc_corelib_impl::initialize_corelib(&mut input_session).await;
 
         input_session
             .set_input(
@@ -132,6 +136,7 @@ pub async fn run(
 
         rayc_source_file_impl::refresh_source_file_executors(&mut input_session).await;
 
+        rayc_corelib::initialize(&mut input_session).await;
         input_session.commit().await;
     }
 

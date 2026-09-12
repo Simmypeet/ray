@@ -232,6 +232,8 @@ fn render_group(
         return renderer.render(&[group]);
     }
 
+    let missing_source = highlights_by_file.keys().any(|id| !source_map.0.contains_key(id));
+
     // Build source contexts for each file
     let mut source_contexts: Vec<SourceContext> = Vec::new();
 
@@ -269,7 +271,8 @@ fn render_group(
 
     // If all source contexts failed to load, render without source
     if source_contexts.is_empty() {
-        let mut group = Group::with_title(level.primary_title(diagnostic.message()));
+        let mut group = Group::with_title(level.primary_title(diagnostic.message()))
+            .element(Level::NOTE.message("diagnostic source is unavailable"));
         if let Some(help) = diagnostic.help_message() {
             group = group.element(Level::HELP.message(help));
         }
@@ -291,6 +294,10 @@ fn render_group(
         }
 
         group = group.element(snippet);
+    }
+
+    if missing_source {
+        group = group.element(Level::NOTE.message("a related diagnostic source is unavailable"));
     }
 
     // Add help message if present
