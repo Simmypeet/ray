@@ -1,0 +1,25 @@
+trait Source[]:
+    type Item
+    type Identity[a]
+
+inst Concrete for Source:
+    type Item = Concrete.Identity[int32]
+    type Identity[a] = a
+
+def nested(value: (Concrete.Item, bool)) -> (bool, Concrete.Item):
+    return value
+
+def contextual(value: d.Item) given (d: Source) -> bool where (d.Item = Concrete.Identity[int32]):
+    return value
+
+def opaque(value: d.Item) given (d: Source) -> bool:
+    return value
+
+trait Missing[a]:
+    type Item
+
+def requires(value: a) given (m: Missing[a]) -> bool:
+    return true
+
+def missing(value: Concrete.Item) -> bool:
+    return requires(value)

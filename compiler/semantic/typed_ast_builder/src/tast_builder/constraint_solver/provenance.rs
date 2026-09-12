@@ -338,14 +338,14 @@ impl Provenance {
                 EffectUnificationSource::EffectIntroduction { original_effect } => {
                     sites.push(ResolvedEffectUnificationSite {
                         effect_row: self.latest_type(original_effect, solver).await,
-                        source: origin.source.clone(),
+                        source: self.latest_effect_source(&origin.source, solver).await,
                         span: origin.span,
                     });
                 }
                 EffectUnificationSource::FunctionBodyEffect => {
                     sites.push(ResolvedEffectUnificationSite {
                         effect_row: self.latest_type(&origin.greater, solver).await,
-                        source: origin.source.clone(),
+                        source: self.latest_effect_source(&origin.source, solver).await,
                         span: origin.span,
                     });
                 }
@@ -367,6 +367,24 @@ impl Provenance {
     async fn latest_type(&self, ty: &Interned<Ty>, solver: &Solver) -> Interned<Ty> {
         let ty = ty.apply_subst_or_clone(&self.subst, solver.engine());
         solver.normalize(&ty).await
+    }
+
+    async fn latest_effect_source(
+        &self,
+        source: &EffectUnificationSource,
+        solver: &Solver,
+    ) -> EffectUnificationSource {
+        match source {
+            EffectUnificationSource::EffectIntroduction { original_effect } => {
+                EffectUnificationSource::EffectIntroduction {
+                    original_effect: self.latest_type(original_effect, solver).await,
+                }
+            }
+            EffectUnificationSource::EffectSharing => EffectUnificationSource::EffectSharing,
+            EffectUnificationSource::FunctionBodyEffect => {
+                EffectUnificationSource::FunctionBodyEffect
+            }
+        }
     }
 
     pub(super) async fn resolved_root_cause(
@@ -391,20 +409,27 @@ impl Provenance {
             }
             RootCauseOrigin::InstanceResolve { trait_ref, span } => {
                 ResolvedRootCause::InstanceResolve {
-                    trait_ref: trait_ref.apply_subst_or_clone(&self.subst, engine),
+                    trait_ref: solver
+                        .normalize(&trait_ref.apply_subst_or_clone(&self.subst, engine))
+                        .await,
                     span: *span,
                 }
             }
             RootCauseOrigin::Subtype(origin) => ResolvedRootCause::Subtype {
                 source: origin.source,
                 span: origin.span,
-                subtype: origin.original_subtype.apply_subst_or_clone(&self.subst, engine),
+                // Display both sides after reduction with the enclosing givens, while
+                // preserving the original constraint and span in the provenance graph.
+                subtype: TyRelate::new(
+                    self.latest_type(origin.original_subtype.lesser(), solver).await,
+                    self.latest_type(origin.original_subtype.greater(), solver).await,
+                ),
             },
             RootCauseOrigin::EffectUnification(origin) => {
                 ResolvedRootCause::EffectUnification(ResolvedEffectUnification {
                     lesser: self.latest_type(&origin.lesser, solver).await,
                     greater: self.latest_type(&origin.greater, solver).await,
-                    source: origin.source.clone(),
+                    source: self.latest_effect_source(&origin.source, solver).await,
                     span: origin.span,
                     related_sites: self
                         .effect_unification_sites(&root_ids, primary_root_id, origin.span, solver)

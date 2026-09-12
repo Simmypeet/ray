@@ -1,0 +1,39 @@
+eff Read[]:
+    def read() -> int32
+
+inst Fallback[f] for core.Def[f]:
+    type Args = bool
+    type Return = bool
+    type Effect = {}
+
+    def call(value: f, args: bool) -> bool:
+        return args
+
+def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+    return d.call(value, args)
+
+def inferred() -> int32:
+    return invoke([x] -> x, (42,))
+
+def multiple(captured: int32) -> int32:
+    return invoke([x, y] -> x + y + captured, (1, 2))
+
+def zero(value: a) -> a:
+    return invoke([] -> value, ())
+
+def effectful() -> int32 \ {Read}:
+    return invoke([] -> Read.read(), ())
+
+trait Callable[f]:
+    type Result
+
+inst FromDef[f] for Callable[f] given (d: core.Def[f]) where (d.Args = ()):
+    type Result = d.Return
+
+def nested(value: f, result: c.Result) given (c: Callable[f]) -> c.Result:
+    return result
+
+def recursive() -> bool:
+    let closure = [] -> true
+    let value: bool = invoke(closure, ())
+    return nested(closure, value)

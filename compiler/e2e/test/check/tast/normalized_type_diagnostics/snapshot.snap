@@ -1,0 +1,35 @@
+---
+source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
+expression: run
+---
+stderr:
+[error]: mismatched types in return expression: expected `(bool, int32)`, but found `(int32, bool)`
+   ╭▸ compiler/e2e/test/check/tast/normalized_type_diagnostics/main.ray:10:12
+   │
+10 │     return value
+   ╰╴           ━━━━━
+
+[error]: mismatched types in return expression: expected `bool`, but found `int32`
+   ╭▸ compiler/e2e/test/check/tast/normalized_type_diagnostics/main.ray:13:12
+   │
+13 │     return value
+   ╰╴           ━━━━━
+
+[error]: mismatched types in return expression: expected `bool`, but found `d.Item`
+   ╭▸ compiler/e2e/test/check/tast/normalized_type_diagnostics/main.ray:16:12
+   │
+16 │     return value
+   ╰╴           ━━━━━
+
+[error]: no implicit instance found: `main.Missing[int32]`
+   ╭▸ compiler/e2e/test/check/tast/normalized_type_diagnostics/main.ray:25:12
+   │
+25 │     return requires(value)
+   ╰╴           ━━━━━━━━
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

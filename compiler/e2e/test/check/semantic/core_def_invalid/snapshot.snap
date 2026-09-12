@@ -1,5 +1,6 @@
 ---
 source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
 expression: run
 ---
 stderr:
@@ -70,7 +71,7 @@ stderr:
 11 │ def invalid(value: int32) -> int32:
    │     ━━━━━━━ the function body has effects outside its signature
 12 │     return core.Def.call(value, value)
-   ╰╴           ─────────────────────────── effect `{any}.Effect` introduced here
+   ╰╴           ─────────────────────────── effect `<error>` introduced here
 
 [error]: symbol `Def` is not found
    ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:14:15

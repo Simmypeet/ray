@@ -1,0 +1,46 @@
+---
+source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
+expression: run
+---
+stderr:
+[error]: mismatched argument types in function call: expected `(int32)`, but found `(bool)`
+  ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:8:32
+  │
+8 │     return invoke([x] -> x + 1, (true,))
+  ╰╴                               ━━━━━━━━
+
+[error]: mismatched types in return expression: expected `bool`, but found `int32`
+   ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:11:12
+   │
+11 │     return invoke([] -> 42, ())
+   ╰╴           ━━━━━━━━━━━━━━━━━━━━
+
+[error]: function body effects do not match its signature: expected `{}`, but found `{Read | {any}}`
+   ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:13:5
+   │
+13 │ def effectMismatch() -> int32:
+   │     ━━━━━━━━━━━━━━ the function body has effects outside its signature
+14 │     return invoke([] -> Read.read(), ())
+   │            ┬────────────┬───────────────
+   │            │            │
+   │            │            effect `{Read}` introduced here
+   ╰╴           effect `{Read | {any}}` introduced here
+
+[error]: no implicit instance found: `main.Def[<closure>() -> bool \ {}]`
+   ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:25:12
+   │
+25 │     return local(closure)
+   ╰╴           ━━━━━
+
+[error]: no implicit instance found: `core.Def[def() -> bool \ {}]`
+   ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:32:12
+   │
+32 │     return requireDef(callback)
+   ╰╴           ━━━━━━━━━━
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

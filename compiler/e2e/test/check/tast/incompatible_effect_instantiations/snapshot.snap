@@ -1,5 +1,6 @@
 ---
 source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
 expression: run
 ---
 stderr:
@@ -10,9 +11,9 @@ stderr:
    │     ──── function body effect `{State[bool] | {any}}` is checked against its signature here
    ‡
 20 │     let conflict = (((withPolyState(varInt), ()), (withPolyState(varBool), ())))
-   │                      ┯┬────────────────────━━━━━   ────────────────────── effect `{State[{any}]}` introduced here
+   │                      ┯┬────────────────────━━━━━   ────────────────────── effect `{State[bool]}` introduced here
    │                      ││
-   │                      │effect `{State[{any}]}` introduced here
+   │                      │effect `{State[int32]}` introduced here
    ╰╴                     these effect rows cannot be composed
 
 [error]: Compilation aborted due to 1 error(s)
