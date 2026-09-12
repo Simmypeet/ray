@@ -15,7 +15,8 @@ pub enum CallTarget {
         subst: Subst,
     },
 
-    /// Calls a method on an unresolved trait instance (e.g., `i.foo()` where
+    /// Calls a method on an inferred trait instance (e.g., `Trait.foo()`) or
+    /// an unresolved trait instance (e.g., `i.foo()` where
     /// `i` is an instance parameter), which is differ from a direct call to an
     /// instance associated method (e.g., `someInstanceSym.foo()` where
     /// `someInstanceSym` is a concrete instance symbol).

@@ -1,6 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
-use rayc_resolution::path::{Effect, PathResolution};
+use rayc_resolution::path::{Effect, PathResolution, TraitMemberParent};
 use rayc_semantic_element::{
     effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
 };
@@ -9,15 +9,14 @@ use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind, syntax::is_variadic_d
 use rayc_syntax::expression::{Call as CallSyn, DirectCall as DirectCallSyn};
 use rayc_type::{
     subst::{Subst, Substitutable},
-    ty::{Ty, TyKind, effect_row::EffectLabel},
+    ty::{Ty, TyKind, effect_row::EffectLabel, self_instance::SelfInstance},
 };
 use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, call::Call};
 
 use crate::{
     bind::Bind,
     diagnostic::{
-        AbstractTraitDefinitionCall, Diagnostic, ExpectedLambdaType, MismatchedArgumentCount,
-        MismatchedIndirectArgumentCount,
+        Diagnostic, ExpectedLambdaType, MismatchedArgumentCount, MismatchedIndirectArgumentCount,
     },
     tast_builder::TAstBuilder,
 };
@@ -112,13 +111,26 @@ impl TAstBuilder {
             PathResolution::TraitMember(def)
                 if resolution.symbol_kind() == Some(SymbolKind::TraitDef) =>
             {
-                self.push_diagnostic(Diagnostic::AbstractTraitDefinitionCall(
-                    AbstractTraitDefinitionCall::builder()
-                        .trait_def_id(def.symbol_id())
-                        .span(path.span())
-                        .build(),
-                ));
-                return self.push_error_expression_with_children(syn.span(), arguments).await;
+                let (instance, trait_id) = match def.parent() {
+                    TraitMemberParent::Named(trait_ref) => (
+                        self.infer_trait_instance(trait_ref, path.span()).await,
+                        trait_ref.trait_id(),
+                    ),
+                    TraitMemberParent::This(instance) => (
+                        self.engine().intern(Ty::SelfInstance(*instance)),
+                        instance.trait_ref(self.engine()).await.trait_id(),
+                    ),
+                };
+                // Associated types in the signature must use the selected dictionary.
+                let mut subst = def.substitution(self.engine()).await;
+                subst.insert(SelfInstance::new(trait_id), instance.clone());
+                (
+                    ResolvedCallTarget::UnresolvedInstanceAssociated {
+                        instance,
+                        trait_def_id: def.symbol_id(),
+                    },
+                    subst,
+                )
             }
             PathResolution::ResolvedInstanceMember(def)
                 if resolution.symbol_kind() == Some(SymbolKind::InstanceDef) =>

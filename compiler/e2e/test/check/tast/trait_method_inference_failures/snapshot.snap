@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: no implicit instance found: `main.Missing[bool]`
+  ╭▸ compiler/e2e/test/check/tast/trait_method_inference_failures/main.ray:5:12
+  │
+5 │     return Missing[bool].get(true)
+  ╰╴           ━━━━━━━━━━━━━━━━━
+
+[error]: ambiguous global instances: `main.Choice[bool]`
+   ╭▸ compiler/e2e/test/check/tast/trait_method_inference_failures/main.ray:19:12
+   │
+19 │     return Choice[bool].get(true)
+   ╰╴           ━━━━━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

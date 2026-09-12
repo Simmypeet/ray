@@ -1,0 +1,27 @@
+trait Identity[a]:
+    def identity(value: a) -> a
+
+inst IntIdentity for Identity[int32]:
+    def identity(value: int32) -> int32:
+        return value
+
+def global() -> int32:
+    return Identity[int32].identity(1)
+
+def inferred(value: int32) -> int32:
+    return Identity.identity(value)
+
+def lexical(value: a) given (dictionary: Identity[a]) -> a:
+    return Identity[a].identity(value)
+
+trait Source[a]:
+    type Item
+    def get(value: a) -> this.Item
+
+inst IntSource for Source[int32]:
+    type Item = bool
+    def get(value: int32) -> bool:
+        return true
+
+def associated() -> bool:
+    return Source[int32].get(1)

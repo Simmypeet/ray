@@ -53,13 +53,13 @@ stderr:
 7 │ inst Missing for core.Def[bool, bool]:
   ╰╴     ━━━━━━━ implement `call` in this instance
 
-[error]: trait method `core.Def.call` is abstract and cannot be called directly
-   ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:11:12
+[error]: function body effects do not match its signature: expected `{}`, but found `<error>`
+   ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:10:5
    │
+10 │ def invalid(value: int32) -> int32:
+   │     ━━━━━━━ the function body has effects outside its signature
 11 │     return core.Def.call(value, value)
-   │            ━━━━━━━━━━━━━ this trait method has no definition body
-   │
-   ╰ help: call the method through an instance dictionary instead
+   ╰╴           ─────────────────────────── effect `{any}.Effect` introduced here
 
 [error]: symbol `Def` is not found
    ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:13:15

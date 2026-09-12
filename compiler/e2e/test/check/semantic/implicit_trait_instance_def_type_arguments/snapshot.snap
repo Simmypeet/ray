@@ -15,21 +15,13 @@ stderr:
 15 │     return TransformInt.transform[bool](value)
    ╰╴                                 ━━━━━━ these type parameters are implicit
 
-[error]: trait method `main.Transform.transform` is abstract and cannot be called directly
-   ╭▸ compiler/e2e/test/check/semantic/implicit_trait_instance_def_type_arguments/main.ray:19:12
-   │
-19 │     return Transform[int32].transform[bool](value)
-   │            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ this trait method has no definition body
-   │
-   ╰ help: call the method through an instance dictionary instead
-
 [error]: explicit type arguments are not allowed for a definition
    ╭▸ compiler/e2e/test/check/semantic/implicit_trait_instance_def_type_arguments/main.ray:19:38
    │
 19 │     return Transform[int32].transform[bool](value)
    ╰╴                                     ━━━━━━ these type parameters are implicit
 
-[error]: Compilation aborted due to 4 error(s)
+[error]: Compilation aborted due to 3 error(s)
 
 
 

@@ -1,11 +1,13 @@
 use qbice::storage::intern::Interned;
 use rayc_handler::Storage;
+use rayc_lexical::tree::RelativeSpan;
 use rayc_resolution::{
+    GenInferWithSpan,
     path::{Effect, PathResolution, PathResolutionError},
     resolver::Resolver,
 };
 use rayc_syntax::{path::Path, r#type::Type as TypeSyntax};
-use rayc_type::{poly_var::get_enclosing_poly_var_maps, ty::Ty};
+use rayc_type::{poly_var::get_enclosing_poly_var_maps, trait_ref::TraitRef, ty::Ty};
 
 use crate::{
     diagnostic::Diagnostic,
@@ -13,6 +15,18 @@ use crate::{
 };
 
 impl TAstBuilder {
+    pub(crate) async fn infer_trait_instance(
+        &mut self,
+        trait_ref: &TraitRef,
+        span: RelativeSpan,
+    ) -> Interned<Ty> {
+        let mut inference = ResolutionInference::new(&mut self.constraint_solver);
+        let instance = inference.gen_instance_infer(trait_ref, span);
+        let constraints = inference.into_constraints();
+        self.push_constraints(constraints).await;
+        self.engine().intern(Ty::Inference(instance))
+    }
+
     pub(crate) async fn resolve_local_type_annotation(
         &mut self,
         syntax: &TypeSyntax,

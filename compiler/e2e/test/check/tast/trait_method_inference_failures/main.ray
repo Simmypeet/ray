@@ -1,0 +1,19 @@
+trait Missing[a]:
+    def get(value: a) -> a
+
+def missing() -> bool:
+    return Missing[bool].get(true)
+
+trait Choice[a]:
+    def get(value: a) -> a
+
+inst First for Choice[bool]:
+    def get(value: bool) -> bool:
+        return value
+
+inst Second for Choice[bool]:
+    def get(value: bool) -> bool:
+        return value
+
+def ambiguous() -> bool:
+    return Choice[bool].get(true)
