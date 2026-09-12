@@ -4,7 +4,10 @@ use rayc_syntax::{
     expression::{Expression, Lambda as LambdaSyntax, NLambda as NLambdaSyntax},
     irrefutable_pattern::IrrefutablePattern,
 };
-use rayc_type::ty::Ty;
+use rayc_type::{
+    poly_var::get_enclosing_poly_var_maps,
+    ty::{Ty, application::Closure},
+};
 use rayc_typed_ast::{
     name_binding::Source,
     statement::{Return, Statement},
@@ -84,10 +87,18 @@ impl TAstBuilder {
             LambdaKind::Nominal => {
                 // The capture pass resolves this placeholder once all nested bodies exist.
                 let captures = self.defer_closure_captures(function_id, span);
+                let closure_id = self.register_closure(function_id);
+                let owner_id = self.current_def_id();
+                let poly_vars = self.engine().get_enclosing_poly_var_maps(owner_id).await;
+                let owner_arguments = poly_vars
+                    .all_poly_vars()
+                    .map(|id| self.engine().intern(Ty::PolyVar(id)))
+                    .collect::<Vec<_>>();
                 (
                     TypedExprKind::NLambda(TypedNLambda::new(function_id)),
                     Ty::new_closure(
-                        span,
+                        Closure::new(owner_id, closure_id, owner_arguments.len()),
+                        owner_arguments,
                         parameter_types,
                         return_type,
                         effect_row,

@@ -13,7 +13,7 @@ use rayc_symbol::{
 use rayc_syntax::def::ParameterList;
 use rayc_type::{
     subst::MutSubstitutable,
-    ty::{InferenceConstraint, Ty, TyKind, inference::GenInfer},
+    ty::{InferenceConstraint, Ty, TyKind, application::ClosureID, inference::GenInfer},
 };
 use rayc_typed_ast::{
     TypedAst,
@@ -147,6 +147,10 @@ impl TAstBuilder {
         let inference = self.new_type_inference();
         self.closure_captures.push((function_id, inference.clone(), span));
         inference
+    }
+
+    pub(crate) fn register_closure(&mut self, function_id: TypedFunctionID) -> ClosureID {
+        self.function_map.register_closure(function_id)
     }
 
     #[must_use]
