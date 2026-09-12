@@ -122,6 +122,7 @@ fn by_value_tuple_depth(ty: &Ty) -> usize {
             | ApplicationView::Lambda(_)
             | ApplicationView::Pointer(_)
             | ApplicationView::InstanceAssociated(_)
+            | ApplicationView::DefInstance(_)
             | ApplicationView::Instance(_)
             | ApplicationView::Closure(_)
             | ApplicationView::Error => 0,

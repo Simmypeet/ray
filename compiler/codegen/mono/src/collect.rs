@@ -165,6 +165,7 @@ impl<'engine> Collector<'engine> {
                     ApplicationView::Primitive(_)
                     | ApplicationView::Pointer(_)
                     | ApplicationView::InstanceAssociated(_)
+                    | ApplicationView::DefInstance(_)
                     | ApplicationView::Instance(_) => {}
                     ApplicationView::Tuple(tuple) => {
                         self.program
