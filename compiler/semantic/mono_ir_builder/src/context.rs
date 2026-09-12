@@ -118,8 +118,8 @@ impl Context {
             .intern(MonoType::Aggregate(AggregateType::EffectHandler(EffectHandler::new(instance))))
     }
 
-    pub(crate) async fn lower_pointer_type_for_capture(&self, ty: &Capture) -> Interned<MonoType> {
-        self.engine.lower_type(&ty.pointer_ty(&self.engine), self.instance.substitution()).await
+    pub(crate) async fn lower_capture_storage_type(&self, ty: &Capture) -> Interned<MonoType> {
+        self.engine.lower_type(&ty.storage_ty(&self.engine), self.instance.substitution()).await
     }
 
     pub(crate) fn source_function(&self, source_id: IRFunctionID) -> IRFunction {

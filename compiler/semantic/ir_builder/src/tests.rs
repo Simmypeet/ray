@@ -2,7 +2,7 @@ use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::AddressRoot,
-    cfg::{Instruction, Terminator},
+    cfg::Instruction,
     ir_expr::{IRExprKind, make_lambda::MakeLambda},
     ir_function::IRFunction as IrFunction,
 };
@@ -292,7 +292,7 @@ async fn mutable_capture_is_passed_by_reference_and_written_through_its_pointer(
     let capture_layout: Vec<_> = context.captures().collect();
     assert_eq!(capture_layout.len(), 1);
     let (capture_id, capture) = capture_layout[0];
-    assert_eq!(capture.mutability(), Mutability::Mutable);
+    assert_eq!(capture.mode(), rayc_type::capture::CaptureMode::Reference(Mutability::Mutable));
 
     let store = child
         .block_instructions(child.entry_block())
@@ -309,74 +309,6 @@ async fn mutable_capture_is_passed_by_reference_and_written_through_its_pointer(
         panic!("captured assignment should load its capture pointer");
     };
     assert_eq!(load.address().root(), AddressRoot::Capture(capture_id));
-}
-
-#[tokio::test]
-async fn nested_lambdas_reborrow_a_transitive_capture_with_each_childs_mutability() {
-    let engine = rayc_qbice::create_minimal_engine().await;
-    let mut map = TestMap::new(&engine);
-    let root = map.functions.root_id();
-    let initial = map.literal(root, 0);
-    let captured = map.variable(root, "captured");
-    map.initialize_variable(root, captured, initial);
-
-    let outer = map.lambda();
-    let reader = map.lambda();
-    let writer = map.lambda();
-    let read = map.identifier(reader, captured);
-    map.statement(reader, read);
-    let destination = map.identifier(writer, captured);
-    let value = map.literal(writer, 1);
-    let assignment = map.assignment(writer, destination, value);
-    map.statement(writer, assignment);
-
-    let child_ty =
-        Ty::new_lambda([], map.unit_ty.clone(), Ty::new_effect_row([], None, &engine), &engine);
-    let reader_lambda = map.lambda_expression(outer, reader, child_ty.clone());
-    map.statement(outer, reader_lambda);
-    let writer_lambda = map.lambda_expression(outer, writer, child_ty);
-    map.statement(outer, writer_lambda);
-    let outer_ty =
-        Ty::new_lambda([], map.unit_ty.clone(), Ty::new_effect_row([], None, &engine), &engine);
-    let outer_lambda = map.lambda_expression(root, outer, outer_ty);
-    map.statement(root, outer_lambda);
-
-    let (ir, diagnostics) = lower_function(&engine, &map.functions, map.unit_ty.clone(), None);
-    assert!(diagnostics.is_empty());
-    let root_lambdas = make_lambdas(ir.root());
-    assert_eq!(root_lambdas.len(), 1);
-    let outer = ir.get_function(root_lambdas[0].function_id());
-    let outer_context = lambda_context(outer);
-    let outer_captures: Vec<_> = outer_context.captures().collect();
-    assert_eq!(outer_captures.len(), 1);
-    assert_eq!(outer_captures[0].1.mutability(), Mutability::Mutable);
-
-    let child_lambdas = make_lambdas(outer);
-    assert_eq!(child_lambdas.len(), 2);
-    for (make_lambda, expected_mutability) in
-        child_lambdas.into_iter().zip([Mutability::Immutable, Mutability::Mutable])
-    {
-        let child = ir.get_function(make_lambda.function_id());
-        let child_captures: Vec<_> = lambda_context(child).captures().collect();
-        assert_eq!(child_captures.len(), 1);
-        assert_eq!(child_captures[0].1.mutability(), expected_mutability);
-        assert_eq!(make_lambda.captures().len(), 1);
-
-        let reborrow = outer.get_expression(make_lambda.captures()[0]);
-        assert_eq!(reborrow.ty().as_pointer_mutability().unwrap(), expected_mutability);
-        let IRExprKind::RefOf(reference) = reborrow.kind() else {
-            panic!("forwarded capture should be explicitly reborrowed");
-        };
-        let AddressRoot::Deref(pointer) = reference.address().root() else {
-            panic!("forwarded capture should reborrow the captured pointee");
-        };
-        let IRExprKind::Load(load) = outer.get_expression(pointer).kind() else {
-            panic!("forwarded capture should load the parent capture pointer");
-        };
-        assert_eq!(load.address().root(), AddressRoot::Capture(outer_captures[0].0));
-    }
-
-    assert!(matches!(outer.block_terminator(outer.entry_block()), Some(Terminator::Return(None))));
 }
 
 #[tokio::test]

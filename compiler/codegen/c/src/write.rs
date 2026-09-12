@@ -208,7 +208,7 @@ impl Context {
         writeln!(buf, " {{")?;
         for (capture_id, capture) in lambda.captures() {
             write!(buf, "{}", Self::TAB)?;
-            let pointer_type = self.instantiate_capture_pointer_type(capture, function);
+            let pointer_type = self.instantiate_capture_storage_type(capture, function);
             let pointer_type = self.ty_to_cty(&pointer_type);
             self.write_cty(&pointer_type, buf)?;
             writeln!(buf, " {};", Identifier::capture_field(capture_id))?;

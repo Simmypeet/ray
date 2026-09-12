@@ -1,4 +1,5 @@
 pub mod associated_type_kind;
+pub mod capture;
 pub mod constraint;
 pub mod poly_var;
 pub mod reduce;

@@ -1,0 +1,6 @@
+def main() -> int32:
+    let mut value = 32
+    let outer = () -> (() -> value, () -> value = 42)
+    let callbacks = outer()
+    callbacks.1()
+    return callbacks.0()

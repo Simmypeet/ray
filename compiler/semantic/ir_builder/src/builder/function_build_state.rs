@@ -16,7 +16,7 @@ use rayc_ir::{
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_type::ty::Ty;
+use rayc_type::{capture::CaptureMode, ty::Ty};
 use rayc_typed_ast::{
     name_binding::Source, typed_function::TypedFunctionID,
     typed_lambda::LambdaParameterID as TypedLambdaParameterID,
@@ -188,8 +188,8 @@ impl FunctionBuildState {
             let ir_id = ir_functions.insert_capture(
                 ir_function_id,
                 Capture::new(
-                    requirement.pointee_ty().clone(),
-                    requirement.mutability(),
+                    requirement.binding_ty().clone(),
+                    requirement.mode(),
                     requirement.span(),
                 ),
             );
@@ -335,13 +335,16 @@ impl Builder {
             .captures()
             .map(|(_, requirement)| {
                 let address = self.source_address(requirement.source());
-                let ty =
-                    self.pointer_ty(requirement.pointee_ty().clone(), requirement.mutability());
-                self.emit_expression(IRExpr::new(
-                    IRExprKind::RefOf(rayc_ir::ir_expr::ref_of::RefOf::new(address)),
-                    requirement.span(),
-                    ty,
-                ))
+                let (kind, ty) = match requirement.mode() {
+                    CaptureMode::Value => {
+                        (IRExprKind::Load(Load::new(address)), requirement.binding_ty().clone())
+                    }
+                    CaptureMode::Reference(mutability) => (
+                        IRExprKind::RefOf(rayc_ir::ir_expr::ref_of::RefOf::new(address)),
+                        self.pointer_ty(requirement.binding_ty().clone(), mutability),
+                    ),
+                };
+                self.emit_expression(IRExpr::new(kind, requirement.span(), ty))
             })
             .collect()
     }
@@ -475,12 +478,17 @@ impl Builder {
             .copied()
             .expect("non-local source should have an analyzed capture");
 
-        let (span, captured_ty, mutability) = {
+        let (span, captured_ty, mode) = {
             let capture =
                 self.ir_functions.get_capture(self.building_function.ir_function_id, capture_id);
-            (capture.span(), capture.pointee_ty().clone(), capture.mutability())
+            (capture.span(), capture.binding_ty().clone(), capture.mode())
         };
 
+        // Value captures are already stored directly in the environment.
+        let mutability = match mode {
+            CaptureMode::Value => return self.capture_address(capture_id),
+            CaptureMode::Reference(mutability) => mutability,
+        };
         let ty = self.pointer_ty(captured_ty, mutability);
         let pointer = self.emit_expression(IRExpr::new(
             IRExprKind::Load(Load::new(self.capture_address(capture_id))),

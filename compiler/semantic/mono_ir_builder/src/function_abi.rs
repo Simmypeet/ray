@@ -82,7 +82,7 @@ impl Context {
 
                 for (capture_id, capture) in context.captures() {
                     capture_ids.push(capture_id);
-                    environment_fields.push(self.lower_pointer_type_for_capture(capture).await);
+                    environment_fields.push(self.lower_capture_storage_type(capture).await);
                 }
 
                 (MonoFunctionKind::Lambda, self.lower_type(context.return_ty()).await)
@@ -94,7 +94,7 @@ impl Context {
 
                 for (capture_id, capture) in context.captures() {
                     capture_ids.push(capture_id);
-                    environment_fields.push(self.lower_pointer_type_for_capture(capture).await);
+                    environment_fields.push(self.lower_capture_storage_type(capture).await);
                 }
 
                 (MonoFunctionKind::Thunk, self.lower_type(context.return_ty()).await)
@@ -107,7 +107,7 @@ impl Context {
                 }
                 for (capture_id, capture) in context.captures() {
                     capture_ids.push(capture_id);
-                    environment_fields.push(self.lower_pointer_type_for_capture(capture).await);
+                    environment_fields.push(self.lower_capture_storage_type(capture).await);
                 }
 
                 for effect in &effects {

@@ -485,6 +485,6 @@ impl VisitType for OperationHandlerParameter {
 
 impl VisitType for Capture {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
-        visitor.visit_type(self.pointee_ty());
+        visitor.visit_type(self.binding_ty());
     }
 }

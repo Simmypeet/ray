@@ -1,7 +1,10 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
-use rayc_type::ty::{Mutability, Ty};
+use rayc_type::{
+    capture::CaptureMode,
+    ty::{Mutability, Ty},
+};
 use rayc_typed_ast::{
     name_binding::{NameBindingID, Source},
     statement::Statement,
@@ -36,12 +39,12 @@ pub struct FunctionCapturePlan {
     capture_slots: FxHashMap<Source, CaptureSlot>,
 }
 
-/// One original binding that this function must receive by reference.
+/// One original binding that this function must receive.
 #[derive(Debug, Clone)]
 pub struct CaptureRequirement {
     source: Source,
-    pointee_ty: Interned<Ty>,
-    mutability: Mutability,
+    binding_ty: Interned<Ty>,
+    mode: CaptureMode,
     span: RelativeSpan,
 }
 
@@ -90,7 +93,7 @@ impl FunctionCapturePlan {
     fn require(&mut self, requirement: CaptureRequirement) -> CaptureSlot {
         if let Some(slot) = self.capture_slot(requirement.source) {
             let existing = &mut self.captures[slot.0];
-            existing.mutability = join_mutability(existing.mutability, requirement.mutability);
+            existing.mode = existing.mode.join(requirement.mode);
             return slot;
         }
 
@@ -107,10 +110,10 @@ impl CaptureRequirement {
     pub const fn source(&self) -> Source { self.source }
 
     #[must_use]
-    pub const fn pointee_ty(&self) -> &Interned<Ty> { &self.pointee_ty }
+    pub const fn binding_ty(&self) -> &Interned<Ty> { &self.binding_ty }
 
     #[must_use]
-    pub const fn mutability(&self) -> Mutability { self.mutability }
+    pub const fn mode(&self) -> CaptureMode { self.mode }
 
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
@@ -276,14 +279,14 @@ impl Analyzer {
             self.has_ancestor(function_id, source.function_id()),
             "a captured source should be owned by a lexical ancestor"
         );
-        let mutability = match use_mode {
-            UseMode::Value | UseMode::Address(Mutability::Immutable) => Mutability::Immutable,
-            UseMode::Address(Mutability::Mutable) => Mutability::Mutable,
+        let mode = match use_mode {
+            UseMode::Value => CaptureMode::Value,
+            UseMode::Address(mutability) => CaptureMode::Reference(mutability),
         };
         plan.require(CaptureRequirement {
             source,
-            pointee_ty: binding.ty().clone(),
-            mutability,
+            binding_ty: binding.ty().clone(),
+            mode,
             span: *binding.span(),
         });
     }
@@ -374,14 +377,6 @@ impl Analyzer {
             function_id = parent;
         }
         false
-    }
-}
-
-const fn join_mutability(current: Mutability, requested: Mutability) -> Mutability {
-    match (current, requested) {
-        (Mutability::Immutable, Mutability::Immutable) => Mutability::Immutable,
-        (Mutability::Immutable | Mutability::Mutable, Mutability::Mutable)
-        | (Mutability::Mutable, Mutability::Immutable) => Mutability::Mutable,
     }
 }
 

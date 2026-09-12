@@ -4,7 +4,10 @@ use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeS
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::{GlobalSourceID, LocalSourceID};
 use rayc_target::TargetID;
-use rayc_type::ty::{Mutability, Ty, TyKind, inference::Inference};
+use rayc_type::{
+    capture::CaptureMode,
+    ty::{Mutability, Ty, TyKind, inference::Inference},
+};
 use rayc_typed_ast::{
     name_binding::{NameBinding, Source},
     statement::Statement,
@@ -180,11 +183,11 @@ async fn repeated_uses_keep_first_encounter_order_and_upgrade_mutability_in_plac
 
     assert_eq!(captures.len(), 2);
     assert_eq!(captures[0].1.source(), first);
-    assert_eq!(captures[0].1.pointee_ty(), &map.ty);
+    assert_eq!(captures[0].1.binding_ty(), &map.ty);
     assert_eq!(captures[0].1.span(), *map.functions.get_name_binding(map.binding_id(first)).span());
-    assert_eq!(captures[0].1.mutability(), Mutability::Mutable);
+    assert_eq!(captures[0].1.mode(), CaptureMode::Reference(Mutability::Mutable));
     assert_eq!(captures[1].1.source(), second);
-    assert_eq!(captures[1].1.mutability(), Mutability::Immutable);
+    assert_eq!(captures[1].1.mode(), CaptureMode::Value);
 }
 
 #[tokio::test]
@@ -226,13 +229,13 @@ async fn address_modes_follow_projections_references_and_dereferences() {
     let captures: Vec<_> = analysis
         .plan(child)
         .captures()
-        .map(|(_, capture)| (capture.source(), capture.mutability()))
+        .map(|(_, capture)| (capture.source(), capture.mode()))
         .collect();
 
     assert_eq!(captures, vec![
-        (projected, Mutability::Mutable),
-        (referenced, Mutability::Mutable),
-        (pointer, Mutability::Immutable),
+        (projected, CaptureMode::Reference(Mutability::Mutable)),
+        (referenced, CaptureMode::Reference(Mutability::Mutable)),
+        (pointer, CaptureMode::Value),
     ]);
 }
 
@@ -276,24 +279,24 @@ async fn nested_children_propagate_only_ancestor_captures_with_joined_mutability
     let reader_captures: Vec<_> = analysis
         .plan(reader)
         .captures()
-        .map(|(_, capture)| (capture.source(), capture.mutability()))
+        .map(|(_, capture)| (capture.source(), capture.mode()))
         .collect();
     let writer_captures: Vec<_> = analysis
         .plan(writer)
         .captures()
-        .map(|(_, capture)| (capture.source(), capture.mutability()))
+        .map(|(_, capture)| (capture.source(), capture.mode()))
         .collect();
     let outer_captures: Vec<_> = analysis
         .plan(outer)
         .captures()
-        .map(|(_, capture)| (capture.source(), capture.mutability()))
+        .map(|(_, capture)| (capture.source(), capture.mode()))
         .collect();
 
     assert_eq!(reader_captures, vec![
-        (ancestor, Mutability::Immutable),
-        (parent_local, Mutability::Mutable)
+        (ancestor, CaptureMode::Value),
+        (parent_local, CaptureMode::Reference(Mutability::Mutable))
     ]);
-    assert_eq!(writer_captures, vec![(ancestor, Mutability::Mutable)]);
-    assert_eq!(outer_captures, vec![(ancestor, Mutability::Mutable)]);
+    assert_eq!(writer_captures, vec![(ancestor, CaptureMode::Reference(Mutability::Mutable))]);
+    assert_eq!(outer_captures, vec![(ancestor, CaptureMode::Reference(Mutability::Mutable))]);
     assert_eq!(analysis.plan(root).captures().len(), 0);
 }

@@ -2,7 +2,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_arena::{ID, OrderedArena};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_type::ty::{Mutability, Ty};
+use rayc_type::{capture::CaptureMode, ty::Ty};
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IRLambdaContext {
@@ -128,29 +128,34 @@ impl LambdaParameterMap {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable,
 )]
 pub struct Capture {
-    pointee_ty: Interned<Ty>,
-    mutability: Mutability,
+    binding_ty: Interned<Ty>,
+    mode: CaptureMode,
     span: RelativeSpan,
 }
 
 impl Capture {
     #[must_use]
-    pub const fn new(pointee_ty: Interned<Ty>, mutability: Mutability, span: RelativeSpan) -> Self {
-        Self { pointee_ty, mutability, span }
+    pub const fn new(binding_ty: Interned<Ty>, mode: CaptureMode, span: RelativeSpan) -> Self {
+        Self { binding_ty, mode, span }
     }
 
     #[must_use]
-    pub const fn pointee_ty(&self) -> &Interned<Ty> { &self.pointee_ty }
+    pub const fn binding_ty(&self) -> &Interned<Ty> { &self.binding_ty }
 
     #[must_use]
-    pub const fn mutability(&self) -> Mutability { self.mutability }
+    pub const fn mode(&self) -> CaptureMode { self.mode }
 
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
 
     #[must_use]
-    pub fn pointer_ty(&self, engine: &TrackedEngine) -> Interned<Ty> {
-        Ty::new_pointer(self.pointee_ty.clone(), self.mutability, engine)
+    pub fn storage_ty(&self, engine: &TrackedEngine) -> Interned<Ty> {
+        match self.mode {
+            CaptureMode::Value => self.binding_ty.clone(),
+            CaptureMode::Reference(mutability) => {
+                Ty::new_pointer(self.binding_ty.clone(), mutability, engine)
+            }
+        }
     }
 }
 

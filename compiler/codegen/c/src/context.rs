@@ -121,12 +121,12 @@ impl Context {
         ty.apply_subst_or_clone(function.subst(), &self.engine)
     }
 
-    pub fn instantiate_capture_pointer_type(
+    pub fn instantiate_capture_storage_type(
         &self,
         capture: &Capture,
         function: &MonoFunction,
     ) -> Interned<Ty> {
-        let pointer_ty = capture.pointer_ty(&self.engine);
+        let pointer_ty = capture.storage_ty(&self.engine);
         pointer_ty.apply_subst_or_clone(function.subst(), &self.engine)
     }
 }
