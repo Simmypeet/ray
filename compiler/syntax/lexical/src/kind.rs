@@ -180,6 +180,8 @@ pub enum Keyword {
     Given,
     /// `inst` keyword.
     Inst,
+    /// `move` keyword.
+    Move,
 }
 
 /// A static map that maps a string representation of a keyword to its
@@ -228,6 +230,7 @@ impl Keyword {
     // skipcq: RS-R1000
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Move => "move",
             Self::For => "for",
             Self::Def => "def",
             Self::As => "as",
