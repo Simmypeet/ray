@@ -1,16 +1,17 @@
-inst Wrong for core.Def[int32, int32]:
+inst Wrong for core.Def[int32]:
+    type Args = int32
     type Return = int32
     type Effect = int32
     def call(value: bool, a: int32) -> bool:
         return value
 
-inst Missing for core.Def[bool, bool]:
+inst Missing for core.Def[bool]:
     type Return = bool
 
 def invalid(value: int32) -> int32:
     return core.Def.call(value, value)
 
-inst Bare for Def[int32, int32]:
+inst Bare for Def[int32]:
     type Return = int32
 
 def projection(value: core.Def.Return):

@@ -196,8 +196,10 @@ fn core_diagnostics_follow_unsaved_edits() {
     let directory = tempfile::tempdir().unwrap();
     let uri = Url::from_file_path(directory.path().join("unsaved.ray")).unwrap();
     let mut editor = Editor::start();
-    let valid = "inst Value for core.Def[int32, int32]:\n    type Return = int32\n    type Effect \
-                 = {}\n    def call(value: int32, a: int32) -> int32:\n        return value + a\n";
+    let valid =
+        "inst Value for core.Def[int32]:\n    type Args = int32\n    type Return = int32\n    \
+         type Effect = {}\n    def call(value: int32, a: int32) -> int32:\n        return value + \
+         a\n";
     let invalid = valid
         .replace("call(value: int32", "call(value: bool")
         .replace("return value + a", "return a");
@@ -216,7 +218,7 @@ fn core_diagnostics_follow_unsaved_edits() {
         .collect();
     assert!(!core_locations.is_empty(), "{diagnostics:?}");
     assert!(
-        core_locations.iter().any(|related| related["location"]["range"]["start"]["line"] == 4)
+        core_locations.iter().any(|related| related["location"]["range"]["start"]["line"] == 5)
     );
     for (version, text) in [(2, valid), (3, invalid.as_str()), (4, valid)] {
         editor.notify(
