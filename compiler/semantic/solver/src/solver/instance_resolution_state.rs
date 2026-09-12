@@ -198,6 +198,11 @@ impl Solver {
         introduced_by: Option<InstanceResolutionEdge>,
     ) -> InstanceResolutionResult {
         let required = self.normalize(&required).await;
+        // Nominal closures determine their Def dictionary without searching or
+        // waiting for the signature and captures to finish inference.
+        if let Some(resolved) = self.resolve_closure_instance(&required).await {
+            return Ok(resolved);
+        }
         if required.contains_inference() {
             return Err(InstanceResolutionError::NotReady(required));
         }

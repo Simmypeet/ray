@@ -5,7 +5,10 @@
 //! shared across every root resolved by one [`Solver`](crate::Solver).
 
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
-use rayc_symbol::GlobalSymbolID;
+use rayc_symbol::{
+    GlobalSymbolID,
+    core_item::{CoreItem, get_core_item},
+};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
     subst::{Subst, Substitutable},
@@ -173,15 +176,36 @@ pub enum InstanceResolutionError {
 }
 
 impl Solver {
-    /// Resolves a normalized, ground trait requirement to a lexical or global
+    /// Resolves a trait requirement to a built-in, lexical, or global
     /// dictionary term and the instantiated predicates required by its proof
     /// tree.
     ///
-    /// Lexical dictionaries form the first precedence tier. Otherwise all
-    /// matching global candidates have their given premises resolved
-    /// recursively, after which the unique most-specific viable head wins.
+    /// Closure `Def` dictionaries resolve even with inference variables. Other
+    /// requirements must be ground, with lexical dictionaries taking
+    /// precedence. Otherwise all matching global candidates have their given
+    /// premises resolved recursively, after which the unique most-specific
+    /// viable head wins.
     pub async fn resolve_instance(&mut self, required: TraitRef) -> InstanceResolutionResult {
         self.resolve_instance_from(required, None).await
+    }
+
+    pub(crate) async fn resolve_closure_instance(
+        &self,
+        required: &TraitRef,
+    ) -> Option<ResolvedInstance> {
+        if required.args().len() != 1 {
+            return None;
+        }
+        let closure = required.args().interned_iter().next()?;
+        closure.as_closure_view()?;
+        if required.trait_id() != self.engine().get_core_item(CoreItem::DefTrait).await {
+            return None;
+        }
+
+        Some(ResolvedInstance::new(
+            Ty::new_def_instance(closure.clone(), self.engine()),
+            Vec::new(),
+        ))
     }
 
     pub async fn search_active_goal(&mut self, required: &TraitRef) -> InstanceResolutionResult {

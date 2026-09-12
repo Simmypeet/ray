@@ -1,11 +1,13 @@
 //! Entailment for explicit given arguments.
 
 use rayc_semantic_element::instance_trait_ref::get_instance_trait_ref;
+use rayc_symbol::core_item::{CoreItem, get_core_item};
 use rayc_type::{
     constraint::instance_trait_ref::InstanceTraitRef,
     poly_var::{build_subst_from_args, get_poly_var_map},
     subst::Substitutable,
-    ty::{Ty, application::View},
+    trait_ref::TraitRef,
+    ty::{Ty, application::View, args::Args},
 };
 
 use crate::{
@@ -30,17 +32,26 @@ impl Solver {
             Ty::PolyVar(id) => {
                 engine.get_poly_var_map(id.parent_id()).await.trait_ref_of(id.id()).cloned()
             }
-            Ty::Application(application) => {
-                let View::Instance(instance) = application.view() else {
-                    return Err(Error::Conflicted);
-                };
+            Ty::Application(application) => match application.view() {
+                View::DefInstance(closure) => Some(TraitRef::new(
+                    engine.get_core_item(CoreItem::DefTrait).await,
+                    Args::new([closure.clone()], engine),
+                )),
+                View::Instance(instance) => {
+                    let head = engine.get_instance_trait_ref(instance.symbol_id()).await;
+                    let subst =
+                        engine.build_subst_from_args(instance.symbol_id(), instance.args()).await;
 
-                let head = engine.get_instance_trait_ref(instance.symbol_id()).await;
-                let subst =
-                    engine.build_subst_from_args(instance.symbol_id(), instance.args()).await;
-
-                head.map(|head| head.apply_subst_or_clone(&subst, engine))
-            }
+                    head.map(|head| head.apply_subst_or_clone(&subst, engine))
+                }
+                View::Primitive(_)
+                | View::Tuple(_)
+                | View::Lambda(_)
+                | View::Pointer(_)
+                | View::InstanceAssociated(_)
+                | View::Closure(_)
+                | View::Error => return Err(Error::Conflicted),
+            },
             Ty::EffectRow(_) => return Err(Error::Conflicted),
         };
 
