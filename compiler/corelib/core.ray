@@ -1,0 +1,5 @@
+trait Def[f, args]:
+    type Return
+    type Effect: Effect
+
+    def call(fn: f, a: args) -> this.Return \ this.Effect

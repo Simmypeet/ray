@@ -1,0 +1,14 @@
+[package]
+name = "rayc_corelib"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_qbice.path = "../base/qbice"
+rayc_target.path = "../base/target"
+rayc_source_file.path = "../base/source_file"
+
+[lints]
+workspace = true
