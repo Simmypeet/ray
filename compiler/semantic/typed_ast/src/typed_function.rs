@@ -1,10 +1,11 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
+use rayc_hash::FxHashMap;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     subst::{MutSubstitutable, Subst},
-    ty::Ty,
+    ty::{Ty, application::ClosureID},
 };
 
 use crate::{
@@ -27,6 +28,7 @@ pub struct TypedFunctionMap {
     name_binding_map: NameBindingMap,
     functions: Arena<TypedFunction>,
     root: TypedFunctionID,
+    closures: FxHashMap<ClosureID, TypedFunctionID>,
 }
 
 impl TypedFunctionMap {
@@ -41,8 +43,29 @@ impl TypedFunctionMap {
             root_effect,
         ));
 
-        Self { name_binding_map, functions, root }
+        Self { name_binding_map, functions, root, closures: FxHashMap::default() }
     }
+
+    /// Assigns an owner-local identity to a nominal lambda's function.
+    #[must_use]
+    pub fn register_closure(&mut self, function_id: TypedFunctionID) -> ClosureID {
+        let _ = self.get_function(function_id).context().assert_as_lambda_context();
+        let closure_id = ClosureID::new(function_id.index());
+        assert!(self.closures.insert(closure_id, function_id).is_none());
+        closure_id
+    }
+
+    #[must_use]
+    pub fn closure_function(&self, closure_id: ClosureID) -> Option<TypedFunctionID> {
+        self.closures.get(&closure_id).copied()
+    }
+
+    /// Iterates over nominal closure identities and their local functions.
+    #[must_use]
+    pub fn closures(&self) -> impl ExactSizeIterator<Item = (ClosureID, TypedFunctionID)> {
+        self.closures.iter().map(|(closure_id, function_id)| (*closure_id, *function_id))
+    }
+
     #[must_use]
     pub const fn root_id(&self) -> TypedFunctionID { self.root }
 

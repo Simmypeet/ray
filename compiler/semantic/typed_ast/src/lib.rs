@@ -1,7 +1,10 @@
 use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::subst::{MutSubstitutable, Subst};
+use rayc_type::{
+    subst::{MutSubstitutable, Subst},
+    ty::application::ClosureID,
+};
 
 use crate::{capture_plan::CapturePlan, typed_function::TypedFunctionMap};
 
@@ -35,6 +38,14 @@ impl TypedAst {
 
     #[must_use]
     pub const fn captures(&self) -> &CapturePlan { &self.captures }
+
+    #[must_use]
+    pub fn closure_function(
+        &self,
+        closure_id: ClosureID,
+    ) -> Option<typed_function::TypedFunctionID> {
+        self.functions.closure_function(closure_id)
+    }
 }
 
 impl MutSubstitutable for TypedAst {
