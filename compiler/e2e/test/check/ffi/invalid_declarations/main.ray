@@ -1,7 +1,7 @@
+def missingBody() -> ()
+
 extern def hasBody() -> ():
     return
-
-def missingBody() -> ()
 
 def rayVariadic(value: int32, ...) -> ():
     return
@@ -9,3 +9,7 @@ def rayVariadic(value: int32, ...) -> ():
 extern def misplaced(..., value: c_int) -> c_int
 
 extern def effectful() -> () \ {}
+
+extern def withGiven() given (dictionary: Service)
+
+extern def constrained() -> c_int where (c_int = c_int)

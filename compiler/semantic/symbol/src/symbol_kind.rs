@@ -111,14 +111,13 @@ impl SymbolKind {
         match self {
             Self::Def
             | Self::Effect
-            | Self::ExternDef
             | Self::Instance
             | Self::InstanceDef
             | Self::InstanceType
             | Self::Trait
             | Self::TraitDef
             | Self::TraitType => true,
-            Self::EffectOperation | Self::Module => false,
+            Self::EffectOperation | Self::ExternDef | Self::Module => false,
         }
     }
 

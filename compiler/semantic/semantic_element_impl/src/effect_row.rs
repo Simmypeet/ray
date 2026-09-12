@@ -5,7 +5,10 @@ use rayc_handler::Storage;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::resolver::Resolver;
 use rayc_semantic_element::effect_row::Key;
-use rayc_symbol::syntax::get_effect_row_syntax;
+use rayc_symbol::{
+    symbol_kind::{SymbolKind, get_symbol_kind},
+    syntax::get_effect_row_syntax,
+};
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
     ty::{Ty, TyKind},
@@ -46,6 +49,11 @@ impl Build for Key {
     type Diagnostic = Diagnostic;
 
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
+        // Extern definitions have no effect annotation syntax to resolve.
+        if engine.get_symbol_kind(symbol_id).await == SymbolKind::ExternDef {
+            return Output::new(Ty::new_effect_row([], None, engine), engine);
+        }
+
         let syntax = engine.get_effect_row_syntax(symbol_id).await;
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
         let diagnostics = Storage::new();

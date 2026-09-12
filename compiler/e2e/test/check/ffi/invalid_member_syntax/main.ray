@@ -1,0 +1,12 @@
+trait Service[]:
+    extern def invoke() -> c_int
+
+inst ServiceImpl for Service:
+    extern def invoke() -> c_int:
+        return 0
+
+trait MissingBody[]:
+    def invoke() -> c_int
+
+inst MissingBodyImpl for MissingBody:
+    def invoke() -> c_int

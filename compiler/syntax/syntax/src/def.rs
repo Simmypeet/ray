@@ -30,7 +30,6 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub struct DefSignature {
-        pub extern_keyword: Keyword = expect::Keyword::Extern.optional(),
         pub def_keyword: Keyword = expect::Keyword::Def,
         pub name: Identifier = expect::Identifier,
         pub parameter_list: ParameterList = ast::<ParameterList>(),
@@ -133,6 +132,6 @@ abstract_tree::abstract_tree! {
     )]
     pub struct Def {
         pub signature: DefSignature = ast::<DefSignature>(),
-        pub block: Block = ast::<Block>().optional()
+        pub block: Block = ast::<Block>()
     }
 }
