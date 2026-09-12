@@ -150,34 +150,22 @@ impl TAstBuilder {
     async fn build_deref(&mut self, expr_id: TypedExprID, deref: &DerefSyntax) -> TypedExprID {
         let span = self.span_of_expression(expr_id);
         let ty = self.latest_type(&self.type_of_expression(expr_id)).await;
-        let pointee = match &*ty {
-            Ty::Application(application) => match application.view() {
-                ApplicationView::Pointer(pointer) => pointer.pointee().clone(),
-                ApplicationView::Error => Ty::new_star_error(self.engine()),
-                ApplicationView::Primitive(_)
-                | ApplicationView::Tuple(_)
-                | ApplicationView::Lambda(_)
-                | ApplicationView::InstanceAssociated(_)
-                | ApplicationView::Instance(_) => {
-                    self.push_diagnostic(Diagnostic::ExpectedPointerType(
-                        ExpectedPointerType::builder().ty(ty).span(span).build(),
-                    ));
-                    Ty::new_star_error(self.engine())
-                }
-            },
-            Ty::PolyVar(_) | Ty::SelfInstance(_) => {
-                self.push_diagnostic(Diagnostic::ExpectedPointerType(
-                    ExpectedPointerType::builder().ty(ty).span(span).build(),
-                ));
-                Ty::new_star_error(self.engine())
-            }
-            Ty::Inference(_) => {
+
+        #[allow(clippy::option_if_let_else)]
+        let pointee = if let Some(pointee) = ty.as_pointee_of_pointer() {
+            pointee.clone()
+        } else {
+            if let Ty::Inference(_) = &*ty {
                 self.push_diagnostic(Diagnostic::TypeMustBeKnownAtThisPoint(
                     TypeMustBeKnownAtThisPoint::builder().span(span).build(),
                 ));
-                Ty::new_star_error(self.engine())
+            } else {
+                self.push_diagnostic(Diagnostic::ExpectedPointerType(
+                    ExpectedPointerType::builder().ty(ty).span(span).build(),
+                ));
             }
-            Ty::EffectRow(_) => todo!("type-check dereferencing an effect-row type"),
+
+            Ty::new_star_error(self.engine())
         };
 
         self.insert_expression(

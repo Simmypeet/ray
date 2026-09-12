@@ -13,7 +13,7 @@ use crate::{
     reduce::Reduce,
     subst::{Subst, Substitutable},
     ty::{
-        application::{Application, Constant, InstanceView, View as ApplicationView},
+        application::{Application, Constant, InstanceView, LambdaView, View as ApplicationView},
         args::Args,
         effect_row::EffectRow,
         inference::{GenInfer, Inference},
@@ -639,6 +639,19 @@ impl Ty {
     }
 
     #[must_use]
+    pub fn unwrap_as_lambda_view(&self) -> LambdaView<'_> {
+        let Self::Application(ty_application) = self else {
+            panic!("Expected Ty::Application, found {self:?}");
+        };
+
+        let ApplicationView::Lambda(lambda_view) = ty_application.view() else {
+            panic!("Expected Ty::ApplicationView::Lambda, found {ty_application:?}");
+        };
+
+        lambda_view
+    }
+
+    #[must_use]
     pub fn as_instance_view(&self) -> Option<InstanceView<'_>> {
         let Self::Application(ty_application) = self else {
             return None;
@@ -649,6 +662,19 @@ impl Ty {
         };
 
         Some(instance_view)
+    }
+
+    #[must_use]
+    pub fn as_lambda_view(&self) -> Option<LambdaView<'_>> {
+        let Self::Application(ty_application) = self else {
+            return None;
+        };
+
+        let ApplicationView::Lambda(lambda_view) = ty_application.view() else {
+            return None;
+        };
+
+        Some(lambda_view)
     }
 
     #[must_use]
@@ -675,6 +701,73 @@ impl Ty {
     }
 
     #[must_use]
+    pub fn as_pointer_mutability(&self) -> Option<Mutability> {
+        if let Self::Application(application) = self
+            && let ApplicationView::Pointer(pointer) = application.view()
+        {
+            return Some(pointer.mutability());
+        }
+
+        None
+    }
+
+    #[must_use]
+    pub fn as_pointee_of_pointer(&self) -> Option<&Interned<Self>> {
+        if let Self::Application(application) = self
+            && let ApplicationView::Pointer(pointer) = application.view()
+        {
+            return Some(pointer.pointee());
+        }
+        None
+    }
+
+    #[must_use]
+    pub fn is_opaque_projection(&self) -> Option<bool> {
+        match self {
+            Self::Application(application) => match application.view() {
+                ApplicationView::InstanceAssociated(associated) => Some(matches!(
+                    &**associated.instance(),
+                    Self::PolyVar(_) | Self::SelfInstance(_)
+                )),
+                ApplicationView::Error => None,
+                ApplicationView::Primitive(_)
+                | ApplicationView::Tuple(_)
+                | ApplicationView::Lambda(_)
+                | ApplicationView::Pointer(_)
+                | ApplicationView::Closure(_)
+                | ApplicationView::Instance(_) => Some(false),
+            },
+            Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {
+                Some(false)
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn is_c_abi_value_type(&self) -> bool {
+        match self {
+            Self::Application(application) => match application.view() {
+                ApplicationView::Primitive(_) => true,
+                ApplicationView::Pointer(pointer) => pointer.pointee().is_c_abi_value_type(),
+                ApplicationView::Tuple(_)
+                | ApplicationView::Lambda(_)
+                | ApplicationView::InstanceAssociated(_)
+                | ApplicationView::Instance(_)
+                | ApplicationView::Closure(_)
+                | ApplicationView::Error => false,
+            },
+            Self::EffectRow(_) | Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
+                false
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn is_unit_type(&self) -> bool {
+        matches!(self, Self::Application(application) if matches!(application.view(), ApplicationView::Tuple(tuple) if tuple.args().is_empty()))
+    }
+
+    #[must_use]
     pub fn is_instance_associated(&self) -> bool {
         match self {
             Self::Application(application) => match application.view() {
@@ -691,6 +784,11 @@ impl Ty {
                 false
             }
         }
+    }
+
+    #[must_use]
+    pub fn is_int32(&self) -> bool {
+        matches!(self, Self::Application(application) if matches!(application.view(), ApplicationView::Primitive(Primitive::Int32)))
     }
 }
 

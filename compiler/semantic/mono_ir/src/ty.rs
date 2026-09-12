@@ -367,6 +367,9 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 };
                 engine.intern(ty)
             }
+
+            ApplicationView::Closure(_) => todo!("implement closure type lowering"),
+
             ApplicationView::Tuple(tuple) => {
                 let mut fields = Vec::with_capacity(tuple.args().len());
                 for ty in tuple.args() {

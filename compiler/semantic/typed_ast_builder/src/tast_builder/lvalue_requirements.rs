@@ -1,4 +1,4 @@
-use rayc_type::ty::{Mutability, Ty, application::View as ApplicationView};
+use rayc_type::ty::Mutability;
 use rayc_typed_ast::{
     typed_expr::{LvalueClassification, LvalueRoot, TypedExprID},
     typed_function::{TypedFunctionID, TypedFunctionLocalID},
@@ -97,25 +97,7 @@ impl TAstBuilder {
                     )
                     .await;
 
-                match &*ty {
-                    Ty::Application(application) => match application.view() {
-                        ApplicationView::Pointer(pointer) => {
-                            Some(pointer.mutability() == Mutability::Mutable)
-                        }
-                        ApplicationView::Primitive(_)
-                        | ApplicationView::Tuple(_)
-                        | ApplicationView::Lambda(_)
-                        | ApplicationView::InstanceAssociated(_)
-                        | ApplicationView::Instance(_)
-                        | ApplicationView::Error => None,
-                    },
-
-                    // EffectRow and SelfInstance are actually sign of ill-kindedness, should have
-                    // been a fatal compiler error!
-                    Ty::EffectRow(_) | Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => {
-                        None
-                    }
-                }
+                ty.as_pointer_mutability().map(|x| x == Mutability::Mutable)
             }
         }
     }

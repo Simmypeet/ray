@@ -16,7 +16,7 @@ use rayc_ir::{
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_type::ty::{Ty, application::View as ApplicationView};
+use rayc_type::ty::Ty;
 use rayc_typed_ast::{
     name_binding::Source, typed_function::TypedFunctionID,
     typed_lambda::LambdaParameterID as TypedLambdaParameterID,
@@ -354,7 +354,8 @@ impl Builder {
             return;
         }
 
-        if requires_value_return(&self.building_function.return_ty)
+        // if the function requires a return value (non-unit type)
+        if !self.building_function.return_ty.is_unit_type()
             && let Some(span) = self.building_function.diagnostic_span
         {
             self.diagnostics.push(NotAllPathsReturnValue::builder().span(span).build());
@@ -487,21 +488,5 @@ impl Builder {
             ty,
         ));
         self.dereference_address(pointer)
-    }
-}
-
-fn requires_value_return(ty: &Ty) -> bool {
-    match ty {
-        Ty::Application(application) => match application.view() {
-            ApplicationView::Tuple(tuple) => !tuple.args().is_empty(),
-
-            ApplicationView::Primitive(_)
-            | ApplicationView::InstanceAssociated(_)
-            | ApplicationView::Lambda(_)
-            | ApplicationView::Pointer(_) => true,
-
-            ApplicationView::Instance(_) | ApplicationView::Error => false,
-        },
-        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => false,
     }
 }

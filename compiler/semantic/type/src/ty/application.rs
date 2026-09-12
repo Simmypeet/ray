@@ -52,24 +52,24 @@ pub struct ClosureView<'x> {
     params: &'x [Interned<Ty>],
     return_type: &'x Interned<Ty>,
     effect_row: &'x Interned<Ty>,
-    captured_tuple: TupleView<'x>,
+    captured_tuple: &'x Interned<Ty>,
 }
 
-impl ClosureView<'_> {
+impl<'x> ClosureView<'x> {
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
 
     #[must_use]
-    pub const fn params(&self) -> &[Interned<Ty>] { self.params }
+    pub const fn params(&self) -> &'x [Interned<Ty>] { self.params }
 
     #[must_use]
-    pub const fn return_type(&self) -> &Interned<Ty> { self.return_type }
+    pub const fn return_type(&self) -> &'x Interned<Ty> { self.return_type }
 
     #[must_use]
-    pub const fn effect_row(&self) -> &Interned<Ty> { self.effect_row }
+    pub const fn effect_row(&self) -> &'x Interned<Ty> { self.effect_row }
 
     #[must_use]
-    pub const fn captured_tuple(&self) -> TupleView<'_> { self.captured_tuple }
+    pub const fn captured_tuple(&self) -> &'x Interned<Ty> { self.captured_tuple }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -77,9 +77,9 @@ pub struct TupleView<'x> {
     args: &'x [Interned<Ty>],
 }
 
-impl TupleView<'_> {
+impl<'x> TupleView<'x> {
     #[must_use]
-    pub const fn args(&self) -> &[Interned<Ty>] { self.args }
+    pub const fn args(&self) -> &'x [Interned<Ty>] { self.args }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -87,22 +87,22 @@ pub struct LambdaView<'x> {
     args: &'x [Interned<Ty>],
 }
 
-impl LambdaView<'_> {
+impl<'x> LambdaView<'x> {
     #[must_use]
-    pub const fn parameter_types(&self) -> &[Interned<Ty>] {
+    pub const fn parameter_types(&self) -> &'x [Interned<Ty>] {
         let (_, signature) = self.args.split_last().expect("lambda has an effect row");
         let (_, parameter_types) = signature.split_last().expect("lambda has a return type");
         parameter_types
     }
 
     #[must_use]
-    pub const fn return_type(&self) -> &Interned<Ty> {
+    pub const fn return_type(&self) -> &'x Interned<Ty> {
         let (_, signature) = self.args.split_last().expect("lambda has an effect row");
         signature.last().expect("lambda has a return type")
     }
 
     #[must_use]
-    pub const fn effect_row(&self) -> &Interned<Ty> {
+    pub const fn effect_row(&self) -> &'x Interned<Ty> {
         self.args.last().expect("lambda has an effect row")
     }
 }
@@ -119,12 +119,12 @@ pub struct InstanceView<'x> {
     args: &'x [Interned<Ty>],
 }
 
-impl InstanceView<'_> {
+impl<'x> InstanceView<'x> {
     #[must_use]
     pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
 
     #[must_use]
-    pub const fn args(&self) -> &[Interned<Ty>] { self.args }
+    pub const fn args(&self) -> &'x [Interned<Ty>] { self.args }
 }
 
 /// A projection of a trait associated type from an instance.
@@ -135,21 +135,21 @@ pub struct InstanceAssociatedView<'x> {
     args: &'x [Interned<Ty>],
 }
 
-impl InstanceAssociatedView<'_> {
+impl<'x> InstanceAssociatedView<'x> {
     #[must_use]
     pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
 
     #[must_use]
-    pub const fn instance(&self) -> &Interned<Ty> { self.instance }
+    pub const fn instance(&self) -> &'x Interned<Ty> { self.instance }
 
     /// The associated type's polymorphic arguments, excluding the instance.
     #[must_use]
-    pub const fn args(&self) -> &[Interned<Ty>] { self.args }
+    pub const fn args(&self) -> &'x [Interned<Ty>] { self.args }
 }
 
-impl PointerView<'_> {
+impl<'x> PointerView<'x> {
     #[must_use]
-    pub const fn pointee(&self) -> &Interned<Ty> { self.arg }
+    pub const fn pointee(&self) -> &'x Interned<Ty> { self.arg }
 
     #[must_use]
     pub const fn mutability(&self) -> Mutability { self.mutability }
@@ -215,8 +215,7 @@ impl Application {
                 let params = &self.args[..return_index];
                 let return_type = &self.args[return_index];
                 let effect_row = &self.args[effect_index];
-                let captured_tuple =
-                    self.args[tuple_index].unwrap_as_application_view().unwrap_into_tuple_view();
+                let captured_tuple = &self.args[tuple_index];
 
                 View::Closure(ClosureView {
                     params,

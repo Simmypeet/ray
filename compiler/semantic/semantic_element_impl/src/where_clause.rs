@@ -10,7 +10,6 @@ use rayc_symbol::{source_map::to_absolute_span, syntax::get_where_clause_syntax}
 use rayc_syntax::where_clause::Constraint;
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
-    ty::{Ty, application::View},
     where_clause::{AssociatedTypeEquality, Key, Predicate, PredicateKind, WhereClause},
 };
 
@@ -83,25 +82,6 @@ impl Report for Diagnostic {
     }
 }
 
-// Check the original projection without reducing a concrete implementation.
-// Resolution errors already have diagnostics and should not cause a cascade.
-fn is_opaque_projection(ty: &Ty) -> Option<bool> {
-    match ty {
-        Ty::Application(application) => match application.view() {
-            View::InstanceAssociated(associated) => {
-                Some(matches!(&**associated.instance(), Ty::PolyVar(_) | Ty::SelfInstance(_)))
-            }
-            View::Error => None,
-            View::Primitive(_)
-            | View::Tuple(_)
-            | View::Lambda(_)
-            | View::Pointer(_)
-            | View::Instance(_) => Some(false),
-        },
-        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => Some(false),
-    }
-}
-
 impl Build for Key {
     type Diagnostic = Diagnostic;
 
@@ -136,7 +116,8 @@ impl Build for Key {
                     let left = resolver.infer_type_term(&left).await;
                     let right =
                         resolver.resolve_type_term(&right, left.kind_of(engine).await).await;
-                    match is_opaque_projection(&left) {
+
+                    match left.is_opaque_projection() {
                         Some(true) => {}
                         Some(false) => {
                             diagnostics.receive(Diagnostic::InvalidEqualityLeft(
@@ -146,6 +127,7 @@ impl Build for Key {
                         }
                         None => continue,
                     }
+
                     predicates.push(Predicate::new(
                         PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
                             left, right,

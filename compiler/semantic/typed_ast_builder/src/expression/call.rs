@@ -9,7 +9,7 @@ use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind, syntax::is_variadic_d
 use rayc_syntax::expression::{Call as CallSyn, DirectCall as DirectCallSyn};
 use rayc_type::{
     subst::{Subst, Substitutable},
-    ty::{Ty, TyKind, application::View as ApplicationView, effect_row::EffectLabel},
+    ty::{Ty, TyKind, effect_row::EffectLabel},
 };
 use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, call::Call};
 
@@ -271,46 +271,30 @@ impl TAstBuilder {
     ) -> LambdaCallSignature {
         let callee_ty = self.latest_type(&self.type_of_expression(callee)).await;
 
-        match &*callee_ty {
-            Ty::Application(application) => match application.view() {
-                ApplicationView::Lambda(lambda) => LambdaCallSignature::Callable {
-                    parameter_types: lambda.parameter_types().to_vec(),
-                    return_type: lambda.return_type().clone(),
-                    effect_row: lambda.effect_row().clone(),
-                },
-                ApplicationView::Error => LambdaCallSignature::Invalid,
-                ApplicationView::Primitive(_)
-                | ApplicationView::Tuple(_)
-                | ApplicationView::Pointer(_)
-                | ApplicationView::InstanceAssociated(_)
-                | ApplicationView::Instance(_) => {
-                    self.report_expected_lambda(callee_ty, callee_span);
-                    LambdaCallSignature::Invalid
-                }
-            },
-            Ty::Inference(_) => {
-                let parameter_types =
-                    (0..argument_count).map(|_| self.new_type_inference()).collect::<Vec<_>>();
-
-                let return_type = self.new_type_inference();
-                let effect_row = self.new_type_inference_with_kind(TyKind::EffectRow);
-                let expected = Ty::new_lambda(
-                    parameter_types.iter().cloned(),
-                    return_type.clone(),
-                    effect_row.clone(),
-                    self.engine(),
-                );
-                self.push_lambda_invocation_constraint(&expected, callee).await;
-
-                LambdaCallSignature::Callable { parameter_types, return_type, effect_row }
+        if let Some(lambda) = callee_ty.as_lambda_view() {
+            LambdaCallSignature::Callable {
+                parameter_types: lambda.parameter_types().to_vec(),
+                return_type: lambda.return_type().clone(),
+                effect_row: lambda.effect_row().clone(),
             }
+        } else if let Ty::Inference(_) = &*callee_ty {
+            let parameter_types =
+                (0..argument_count).map(|_| self.new_type_inference()).collect::<Vec<_>>();
 
-            // EffectRow and SelfInstance are actually sign of ill-kindedness, should have been a
-            // fatal compiler error!
-            Ty::EffectRow(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => {
-                self.report_expected_lambda(callee_ty, callee_span);
-                LambdaCallSignature::Invalid
-            }
+            let return_type = self.new_type_inference();
+            let effect_row = self.new_type_inference_with_kind(TyKind::EffectRow);
+            let expected = Ty::new_lambda(
+                parameter_types.iter().cloned(),
+                return_type.clone(),
+                effect_row.clone(),
+                self.engine(),
+            );
+            self.push_lambda_invocation_constraint(&expected, callee).await;
+
+            LambdaCallSignature::Callable { parameter_types, return_type, effect_row }
+        } else {
+            self.report_expected_lambda(callee_ty, callee_span);
+            LambdaCallSignature::Invalid
         }
     }
 

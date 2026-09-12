@@ -1,5 +1,4 @@
 use rayc_ir::ir_expr::{IRExpr, IRExprID, IRExprKind, make_lambda::MakeLambda};
-use rayc_type::ty::{Ty, application::View as ApplicationView};
 use rayc_typed_ast::typed_expr::lambda::Lambda;
 
 use crate::{
@@ -16,28 +15,8 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Lambda>> for Builder {
     ) -> IRExprID {
         let typed_expression = context.expression(expression.id());
         let lambda = expression.node();
-        let return_ty = match &**typed_expression.ty() {
-            Ty::Application(application) => match application.view() {
-                ApplicationView::Lambda(lambda) => lambda.return_type().clone(),
-                ApplicationView::Primitive(_)
-                | ApplicationView::Tuple(_)
-                | ApplicationView::Pointer(_)
-                | ApplicationView::InstanceAssociated(_)
-                | ApplicationView::Instance(_)
-                | ApplicationView::Error => {
-                    panic!(
-                        "TypedAST lambda expression should have a solved lambda type, found {:?}",
-                        typed_expression.ty()
-                    )
-                }
-            },
-            Ty::EffectRow(_) | Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => {
-                panic!(
-                    "TypedAST lambda expression should have a solved lambda type, found {:?}",
-                    typed_expression.ty()
-                )
-            }
-        };
+        let return_ty = typed_expression.ty().unwrap_as_lambda_view().return_type().clone();
+
         let function_id = self.lower_lambda_function(
             context,
             lambda.function_id(),

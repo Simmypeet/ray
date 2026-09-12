@@ -13,9 +13,7 @@ use rayc_symbol::SymbolID;
 use rayc_target::TargetID;
 use rayc_type::{
     subst::Subst,
-    ty::{
-        Mutability, Primitive, Ty, application::View as ApplicationView, effect_row::EffectLabel,
-    },
+    ty::{Mutability, Primitive, Ty, effect_row::EffectLabel},
 };
 use rayc_typed_ast::{
     name_binding::{NameBinding, Source},
@@ -220,24 +218,6 @@ fn lambda_context(function: &IrFunction) -> &rayc_ir::ir_lambda::IRLambdaContext
     function.context().assert_as_lambda_context()
 }
 
-fn pointer_mutability(ty: &Ty) -> Mutability {
-    match ty {
-        Ty::Application(application) => match application.view() {
-            ApplicationView::Pointer(pointer) => pointer.mutability(),
-            ApplicationView::Primitive(_)
-            | ApplicationView::Tuple(_)
-            | ApplicationView::Lambda(_)
-            | ApplicationView::InstanceAssociated(_)
-            | ApplicationView::Instance(_)
-            | ApplicationView::Error => panic!("expected a pointer type"),
-        },
-        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => {
-            panic!("expected a concrete pointer type")
-        }
-        Ty::EffectRow(_) => todo!("extract pointer mutability from an effect-row type"),
-    }
-}
-
 #[tokio::test]
 async fn captureless_lambda_copies_signature_and_uses_lambda_parameter_addresses() {
     let engine = rayc_qbice::create_minimal_engine().await;
@@ -301,7 +281,7 @@ async fn mutable_capture_is_passed_by_reference_and_written_through_its_pointer(
     let make_lambda = root_lambdas[0];
     assert_eq!(make_lambda.captures().len(), 1);
     let capture_operand = ir.root().get_expression(make_lambda.captures()[0]);
-    assert_eq!(pointer_mutability(capture_operand.ty()), Mutability::Mutable);
+    assert_eq!(capture_operand.ty().as_pointer_mutability().unwrap(), Mutability::Mutable);
     let IRExprKind::RefOf(reference) = capture_operand.kind() else {
         panic!("closure capture operand should be a reference");
     };
@@ -383,7 +363,7 @@ async fn nested_lambdas_reborrow_a_transitive_capture_with_each_childs_mutabilit
         assert_eq!(make_lambda.captures().len(), 1);
 
         let reborrow = outer.get_expression(make_lambda.captures()[0]);
-        assert_eq!(pointer_mutability(reborrow.ty()), expected_mutability);
+        assert_eq!(reborrow.ty().as_pointer_mutability().unwrap(), expected_mutability);
         let IRExprKind::RefOf(reference) = reborrow.kind() else {
             panic!("forwarded capture should be explicitly reborrowed");
         };

@@ -110,6 +110,8 @@ impl Context {
                     panic!("an instance argument cannot be lowered as a C value type")
                 }
 
+                ApplicationView::Closure(_) => todo!("lower a closure type to a C type"),
+
                 ApplicationView::Error => {
                     panic!("type error reached codegen, this should have been caught earlier")
                 }

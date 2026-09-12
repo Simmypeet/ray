@@ -172,6 +172,7 @@ impl<'engine> Collector<'engine> {
                             lambda.return_type().clone(),
                         );
                     }
+                    ApplicationView::Closure(_) => todo!("implement closure type collection"),
                     ApplicationView::Error => {
                         panic!(
                             "compiler-internal invariant violation: error type reached \

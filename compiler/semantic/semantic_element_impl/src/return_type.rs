@@ -14,9 +14,7 @@ use rayc_type::{poly_var::get_enclosing_poly_var_maps, ty::Ty};
 
 use crate::{
     build::{Build, Output},
-    extern_signature::{
-        InvalidExternSignature, InvalidExternSignatureKind, is_c_abi_value_type, is_unit_type,
-    },
+    extern_signature::{InvalidExternSignature, InvalidExternSignatureKind},
     register_build,
 };
 
@@ -77,8 +75,8 @@ impl Build for Key {
         };
 
         if symbol_kind == SymbolKind::ExternDef
-            && !is_unit_type(&return_type)
-            && !is_c_abi_value_type(&return_type)
+            && !return_type.is_unit_type()
+            && !return_type.is_c_abi_value_type()
             && let Some(syntax) = syntax.as_ref()
         {
             diagnostics.receive(Diagnostic::InvalidExternSignature(InvalidExternSignature::new(
