@@ -1,7 +1,7 @@
 use qbice::storage::intern::Interned;
-use rayc_tast_capture_analysis::{CaptureAnalysis, FunctionCapturePlan};
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{
+    capture_plan::{CapturePlan, FunctionCapturePlan},
     name_binding::{NameBindingID, Source},
     statement::Statement,
     typed_expr::{LvalueClassification, TypedExpr, TypedExprID},
@@ -13,13 +13,13 @@ use rayc_typed_ast::{
 
 pub struct LoweringContext<'a> {
     typed_functions: &'a TypedFunctionMap,
-    analysis: &'a CaptureAnalysis,
+    analysis: &'a CapturePlan,
     typed_function_id: TypedFunctionID,
     typed_function: &'a TypedFunction,
 }
 
 impl<'a> LoweringContext<'a> {
-    pub fn new(typed_functions: &'a TypedFunctionMap, analysis: &'a CaptureAnalysis) -> Self {
+    pub fn new(typed_functions: &'a TypedFunctionMap, analysis: &'a CapturePlan) -> Self {
         let typed_function_id = typed_functions.root_id();
         let typed_function = typed_functions.root();
         Self { typed_functions, analysis, typed_function_id, typed_function }

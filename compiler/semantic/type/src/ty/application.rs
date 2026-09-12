@@ -46,6 +46,11 @@ pub struct Closure {
     span: RelativeSpan,
 }
 
+impl Closure {
+    #[must_use]
+    pub const fn new(span: RelativeSpan) -> Self { Self { span } }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClosureView<'x> {
     span: RelativeSpan,

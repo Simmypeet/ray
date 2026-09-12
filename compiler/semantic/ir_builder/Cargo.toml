@@ -16,7 +16,6 @@ rayc_semantic_element.path = "../semantic_element"
 rayc_source_file.path = "../../base/source_file"
 rayc_symbol.path = "../symbol"
 rayc_target.path = "../../base/target"
-rayc_tast_capture_analysis.path = "../tast_capture_analysis"
 rayc_typed_ast.path = "../typed_ast"
 rayc_type.path = "../type"
 qbice.workspace = true

@@ -16,6 +16,7 @@ use rayc_type::{
     ty::{Mutability, Primitive, Ty, effect_row::EffectLabel},
 };
 use rayc_typed_ast::{
+    capture_plan::CapturePlan,
     name_binding::{NameBinding, Source},
     statement::{Let, Statement},
     typed_expr::{
@@ -236,7 +237,13 @@ async fn captureless_lambda_copies_signature_and_uses_lambda_parameter_addresses
     let lambda = map.lambda_expression(root, child, lambda_ty);
     map.statement(root, lambda);
 
-    let (ir, diagnostics) = lower_function(&engine, &map.functions, map.unit_ty.clone(), None);
+    let (ir, diagnostics) = lower_function(
+        &engine,
+        &map.functions,
+        &CapturePlan::analyze(&map.functions),
+        map.unit_ty.clone(),
+        None,
+    );
     assert!(diagnostics.is_empty());
     let root_lambdas = make_lambdas(ir.root());
     assert_eq!(root_lambdas.len(), 1);
@@ -274,7 +281,13 @@ async fn mutable_capture_is_passed_by_reference_and_written_through_its_pointer(
     let lambda = map.lambda_expression(root, child, lambda_ty);
     map.statement(root, lambda);
 
-    let (ir, diagnostics) = lower_function(&engine, &map.functions, map.unit_ty.clone(), None);
+    let (ir, diagnostics) = lower_function(
+        &engine,
+        &map.functions,
+        &CapturePlan::analyze(&map.functions),
+        map.unit_ty.clone(),
+        None,
+    );
     assert!(diagnostics.is_empty());
     let root_lambdas = make_lambdas(ir.root());
     assert_eq!(root_lambdas.len(), 1);
@@ -336,7 +349,13 @@ async fn effect_operation_call_lowers_to_perform_and_preserves_function_effect()
     );
     map.statement(root, perform);
 
-    let (ir, diagnostics) = lower_function(&engine, &map.functions, map.unit_ty.clone(), None);
+    let (ir, diagnostics) = lower_function(
+        &engine,
+        &map.functions,
+        &CapturePlan::analyze(&map.functions),
+        map.unit_ty.clone(),
+        None,
+    );
     assert!(diagnostics.is_empty());
     assert_eq!(ir.root().effect(), &effect);
     let perform = ir
@@ -391,7 +410,13 @@ async fn run_with_lowers_body_and_handlers_to_explicit_handle_functions() {
     );
     map.statement(root, run_with);
 
-    let (ir, diagnostics) = lower_function(&engine, &map.functions, map.unit_ty.clone(), None);
+    let (ir, diagnostics) = lower_function(
+        &engine,
+        &map.functions,
+        &CapturePlan::analyze(&map.functions),
+        map.unit_ty.clone(),
+        None,
+    );
     assert!(diagnostics.is_empty());
     let handle = ir
         .root()

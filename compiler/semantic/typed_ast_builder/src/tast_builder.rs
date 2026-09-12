@@ -16,6 +16,8 @@ use rayc_type::{
     ty::{InferenceConstraint, Ty, TyKind, inference::GenInfer},
 };
 use rayc_typed_ast::{
+    TypedAst,
+    capture_plan::CapturePlan,
     name_binding::{NameBindingGroupID, NameBindingID},
     statement::Statement,
     typed_expr::{self, SubExprs, TypedExpr, TypedExprID, TypedExprKind},
@@ -43,6 +45,7 @@ pub struct TAstBuilder {
     function_map: TypedFunctionMap,
     building_function: TypedFunctionID,
     suspended_functions: Vec<TypedFunctionID>,
+    closure_captures: Vec<(TypedFunctionID, Interned<Ty>, RelativeSpan)>,
     current_def_id: GlobalSymbolID,
 
     name_env: NameEnv,
@@ -70,6 +73,7 @@ impl TAstBuilder {
             function_map,
             building_function,
             suspended_functions: Vec::new(),
+            closure_captures: Vec::new(),
             name_env,
             current_def_id,
             constraint_solver,
@@ -133,6 +137,16 @@ impl TAstBuilder {
         self.name_env.enter_function(parameter_name_binding_group_id);
 
         function_id
+    }
+
+    pub(crate) fn defer_closure_captures(
+        &mut self,
+        function_id: TypedFunctionID,
+        span: RelativeSpan,
+    ) -> Interned<Ty> {
+        let inference = self.new_type_inference();
+        self.closure_captures.push((function_id, inference.clone(), span));
+        inference
     }
 
     #[must_use]
@@ -314,19 +328,29 @@ impl TAstBuilder {
 
 impl TAstBuilder {
     #[must_use]
-    pub async fn finish(mut self) -> (TypedFunctionMap, Vec<Diagnostic>) {
+    pub async fn finish(mut self) -> (TypedAst, Vec<Diagnostic>) {
         assert!(
             self.suspended_functions.is_empty(),
             "all suspended functions should be restored before finishing the typed AST"
         );
+
+        // Capture layouts are structural, so their binding types may still contain
+        // inference variables. Each binding wakes constraints waiting on a closure.
+        let captures = CapturePlan::analyze(&self.function_map);
+        for (function_id, inference, span) in std::mem::take(&mut self.closure_captures) {
+            let tuple = captures.plan(function_id).captured_tuple(&self.engine);
+            self.push_capture_constraint(&inference, &tuple, span).await;
+        }
+
         self.validate_lvalue_requirements().await;
         self.finish_constraints().await;
 
         let (constr_diags, subst) = self.constraint_solver.residual_into_diags().await;
 
         self.diagnostics.extend(constr_diags);
-        self.function_map.apply_mut_subst(&subst, &self.engine);
+        let mut ast = TypedAst::new(self.function_map, captures);
+        ast.apply_mut_subst(&subst, &self.engine);
 
-        (self.function_map, self.diagnostics)
+        (ast, self.diagnostics)
     }
 }

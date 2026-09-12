@@ -179,7 +179,7 @@ impl FunctionBuildState {
     }
 
     fn insert_captures(
-        capture_plan: &rayc_tast_capture_analysis::FunctionCapturePlan,
+        capture_plan: &rayc_typed_ast::capture_plan::FunctionCapturePlan,
         ir_functions: &mut IRFunctionMap,
         ir_function_id: IrFunctionID,
     ) -> FxHashMap<Source, CaptureID> {

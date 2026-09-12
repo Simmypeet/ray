@@ -8,7 +8,9 @@ use rayc_type::{
     capture::CaptureMode,
     ty::{Mutability, Ty, TyKind, inference::Inference},
 };
-use rayc_typed_ast::{
+
+use super::CapturePlan;
+use crate::{
     name_binding::{NameBinding, Source},
     statement::Statement,
     typed_expr::{
@@ -28,14 +30,12 @@ use rayc_typed_ast::{
     typed_variable::TypedVariable,
 };
 
-use super::CaptureAnalysis;
-
 struct TestMap {
     functions: TypedFunctionMap,
     ty: Interned<Ty>,
     effect: Interned<Ty>,
     next_span: usize,
-    bindings: FxHashMap<Source, rayc_typed_ast::name_binding::NameBindingID>,
+    bindings: FxHashMap<Source, crate::name_binding::NameBindingID>,
 }
 
 impl TestMap {
@@ -100,7 +100,7 @@ impl TestMap {
         assert!(self.bindings.insert(source, binding_id).is_none());
     }
 
-    fn binding_id(&self, source: Source) -> rayc_typed_ast::name_binding::NameBindingID {
+    fn binding_id(&self, source: Source) -> crate::name_binding::NameBindingID {
         *self.bindings.get(&source).expect("test source should have a name binding")
     }
 
@@ -149,7 +149,7 @@ async fn bindings_owned_by_the_current_function_are_not_captured() {
     let lambda = map.lambda_expression(root, child);
     map.statement(root, lambda);
 
-    let analysis = CaptureAnalysis::analyze(&map.functions);
+    let analysis = CapturePlan::analyze(&map.functions);
 
     assert_eq!(analysis.plan(child).captures().len(), 0);
     assert_eq!(analysis.plan(root).captures().len(), 0);
@@ -178,7 +178,7 @@ async fn repeated_uses_keep_first_encounter_order_and_upgrade_mutability_in_plac
     let lambda = map.lambda_expression(root, child);
     map.statement(root, lambda);
 
-    let analysis = CaptureAnalysis::analyze(&map.functions);
+    let analysis = CapturePlan::analyze(&map.functions);
     let captures: Vec<_> = analysis.plan(child).captures().collect();
 
     assert_eq!(captures.len(), 2);
@@ -225,7 +225,7 @@ async fn address_modes_follow_projections_references_and_dereferences() {
     let lambda = map.lambda_expression(root, child);
     map.statement(root, lambda);
 
-    let analysis = CaptureAnalysis::analyze(&map.functions);
+    let analysis = CapturePlan::analyze(&map.functions);
     let captures: Vec<_> = analysis
         .plan(child)
         .captures()
@@ -275,7 +275,7 @@ async fn nested_children_propagate_only_ancestor_captures_with_joined_mutability
     let outer_lambda = map.lambda_expression(root, outer);
     map.statement(root, outer_lambda);
 
-    let analysis = CaptureAnalysis::analyze(&map.functions);
+    let analysis = CapturePlan::analyze(&map.functions);
     let reader_captures: Vec<_> = analysis
         .plan(reader)
         .captures()

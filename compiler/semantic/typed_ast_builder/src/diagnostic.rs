@@ -526,6 +526,7 @@ impl Report for ResidualSubtype {
     async fn report(&self, parameter: &TrackedEngine) -> Rendered<ByteIndex> {
         let header_msg = match &self.source {
             SubtypeSource::FunctionCall => "mismatched argument types in function call",
+            SubtypeSource::ClosureCaptures => "incompatible closure capture types",
             SubtypeSource::LambdaInvocation => "mismatched argument types in lambda invocation",
             SubtypeSource::VariableAssignment => "mismatched types in variable assignment",
             SubtypeSource::BinaryOperator => "mismatched types in binary operation",

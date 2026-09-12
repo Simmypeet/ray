@@ -418,6 +418,15 @@ impl TAstBuilder {
         .await;
     }
 
+    pub(in crate::tast_builder) async fn push_capture_constraint(
+        &mut self,
+        inference: &Interned<Ty>,
+        tuple: &Interned<Ty>,
+        span: RelativeSpan,
+    ) {
+        self.push_subtype_constraint(tuple, inference, span, SubtypeSource::ClosureCaptures).await;
+    }
+
     async fn push_subtype_constraint(
         &mut self,
         actual_ty: &Interned<Ty>,

@@ -301,6 +301,26 @@ impl Ty {
         )))
     }
 
+    /// Creates a nominal closure type, including its capture storage.
+    #[must_use]
+    pub fn new_closure(
+        span: rayc_lexical::tree::RelativeSpan,
+        parameter_types: impl IntoIterator<Item = Interned<Self>>,
+        return_type: Interned<Self>,
+        effect_row: Interned<Self>,
+        captured_tuple: Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        let args = parameter_types
+            .into_iter()
+            .chain([return_type, effect_row, captured_tuple])
+            .collect::<Vec<_>>();
+        engine.intern(Self::Application(Application::new(
+            Constant::Closure(application::Closure::new(span)),
+            engine.intern_unsized(args),
+        )))
+    }
+
     #[must_use]
     pub fn new_pointer(
         arg: Interned<Self>,

@@ -1,36 +1,67 @@
-use qbice::storage::intern::Interned;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
+use rayc_qbice::TrackedEngine;
 use rayc_type::{
     capture::CaptureMode,
+    subst::{MutSubstitutable, Subst, Substitutable},
     ty::{Mutability, Ty},
 };
-use rayc_typed_ast::{
+
+use crate::{
     name_binding::{NameBindingID, Source},
     statement::Statement,
     typed_expr::{
         TypedExprID, TypedExprKind,
         binary::{Binary, BinaryOp},
         call::CallTarget,
-        lambda::Lambda,
         run_with::RunWith,
     },
     typed_function::{TypedFunctionID, TypedFunctionMap},
 };
 
-/// Complete, temporary closure-conversion analysis for one source def.
-#[derive(Debug)]
-pub struct CaptureAnalysis {
-    /// Map iteration order has no meaning; each plan owns its stable layout.
+/// Stable capture layouts for every function in a typed AST.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
+pub struct CapturePlan {
     plans: FxHashMap<TypedFunctionID, FunctionCapturePlan>,
 }
 
+impl CapturePlan {
+    /// Computes capture layouts from a complete typed AST.
+    #[must_use]
+    pub fn analyze(functions: &TypedFunctionMap) -> Self {
+        let mut analyzer = Analyzer::default();
+        analyzer.analyze_function(functions.root_id(), functions);
+        Self::new(analyzer.plans)
+    }
+
+    #[must_use]
+    pub const fn new(plans: FxHashMap<TypedFunctionID, FunctionCapturePlan>) -> Self {
+        Self { plans }
+    }
+
+    #[must_use]
+    pub fn plan(&self, function_id: TypedFunctionID) -> &FunctionCapturePlan {
+        self.plans.get(&function_id).expect("capture analysis should cover every reached function")
+    }
+}
+
+impl MutSubstitutable for CapturePlan {
+    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        for plan in self.plans.values_mut() {
+            for requirement in &mut plan.captures {
+                requirement.binding_ty.apply_in_place(subst, engine);
+            }
+        }
+    }
+}
+
 /// Index into [`FunctionCapturePlan::captures`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, StableHash, Encode, Decode)]
 pub struct CaptureSlot(usize);
 
 /// The capture layout of one `TypedAST` function.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct FunctionCapturePlan {
     /// Stable closure-field order, determined by first encounter.
     captures: Vec<CaptureRequirement>,
@@ -40,7 +71,7 @@ pub struct FunctionCapturePlan {
 }
 
 /// One original binding that this function must receive.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct CaptureRequirement {
     source: Source,
     binding_ty: Interned<Ty>,
@@ -48,37 +79,9 @@ pub struct CaptureRequirement {
     span: RelativeSpan,
 }
 
-/// How the enclosing expression uses an lvalue-shaped child.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum UseMode {
-    Value,
-    Address(Mutability),
-}
-
-#[derive(Debug, Default)]
-struct Analyzer {
-    plans: FxHashMap<TypedFunctionID, FunctionCapturePlan>,
-    parents: FxHashMap<TypedFunctionID, TypedFunctionID>,
-    visiting: FxHashSet<TypedFunctionID>,
-}
-
-impl CaptureAnalysis {
-    #[must_use]
-    pub fn analyze(functions: &TypedFunctionMap) -> Self {
-        let mut analyzer = Analyzer::default();
-        analyzer.analyze_function(functions.root_id(), functions);
-
-        Self { plans: analyzer.plans }
-    }
-
-    #[must_use]
-    pub fn plan(&self, function_id: TypedFunctionID) -> &FunctionCapturePlan {
-        self.plans.get(&function_id).expect("capture plan should exist")
-    }
-}
-
 impl FunctionCapturePlan {
-    fn new() -> Self { Self { captures: Vec::new(), capture_slots: FxHashMap::default() } }
+    #[must_use]
+    pub fn new() -> Self { Self { captures: Vec::new(), capture_slots: FxHashMap::default() } }
 
     #[must_use]
     pub fn captures(&self) -> impl ExactSizeIterator<Item = (CaptureSlot, &CaptureRequirement)> {
@@ -90,7 +93,7 @@ impl FunctionCapturePlan {
         self.capture_slots.get(&source).copied()
     }
 
-    fn require(&mut self, requirement: CaptureRequirement) -> CaptureSlot {
+    pub fn require(&mut self, requirement: CaptureRequirement) -> CaptureSlot {
         if let Some(slot) = self.capture_slot(requirement.source) {
             let existing = &mut self.captures[slot.0];
             existing.mode = existing.mode.join(requirement.mode);
@@ -117,6 +120,58 @@ impl CaptureRequirement {
 
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
+}
+
+impl Default for FunctionCapturePlan {
+    fn default() -> Self { Self::new() }
+}
+
+impl FunctionCapturePlan {
+    /// The concrete environment layout, including pointers for borrowed
+    /// captures.
+    #[must_use]
+    pub fn captured_tuple(&self, engine: &TrackedEngine) -> Interned<Ty> {
+        Ty::new_tuple(
+            engine.intern_unsized(
+                self.captures
+                    .iter()
+                    .map(|capture| match capture.mode {
+                        CaptureMode::Value => capture.binding_ty.clone(),
+                        CaptureMode::Reference(mutability) => {
+                            Ty::new_pointer(capture.binding_ty.clone(), mutability, engine)
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            engine,
+        )
+    }
+}
+
+impl CaptureRequirement {
+    #[must_use]
+    pub const fn new(
+        source: Source,
+        binding_ty: Interned<Ty>,
+        mode: CaptureMode,
+        span: RelativeSpan,
+    ) -> Self {
+        Self { source, binding_ty, mode, span }
+    }
+}
+
+/// How the enclosing expression uses an lvalue-shaped child.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UseMode {
+    Value,
+    Address(Mutability),
+}
+
+#[derive(Debug, Default)]
+struct Analyzer {
+    plans: FxHashMap<TypedFunctionID, FunctionCapturePlan>,
+    parents: FxHashMap<TypedFunctionID, TypedFunctionID>,
+    visiting: FxHashSet<TypedFunctionID>,
 }
 
 impl Analyzer {
@@ -217,7 +272,10 @@ impl Analyzer {
                 }
             }
             TypedExprKind::Lambda(lambda) => {
-                self.visit_lambda(function_id, functions, *lambda, plan);
+                self.visit_nested_function(function_id, functions, lambda.function_id(), plan);
+            }
+            TypedExprKind::NLambda(lambda) => {
+                self.visit_nested_function(function_id, functions, lambda.function_id(), plan);
             }
             TypedExprKind::Binary(binary) => {
                 self.visit_binary(function_id, functions, *binary, plan);
@@ -283,22 +341,7 @@ impl Analyzer {
             UseMode::Value => CaptureMode::Value,
             UseMode::Address(mutability) => CaptureMode::Reference(mutability),
         };
-        plan.require(CaptureRequirement {
-            source,
-            binding_ty: binding.ty().clone(),
-            mode,
-            span: *binding.span(),
-        });
-    }
-
-    fn visit_lambda(
-        &mut self,
-        function_id: TypedFunctionID,
-        functions: &TypedFunctionMap,
-        lambda: Lambda,
-        plan: &mut FunctionCapturePlan,
-    ) {
-        self.visit_nested_function(function_id, functions, lambda.function_id(), plan);
+        plan.require(CaptureRequirement::new(source, binding.ty().clone(), mode, *binding.span()));
     }
 
     fn visit_run_with(

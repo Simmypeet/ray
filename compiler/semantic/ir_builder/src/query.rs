@@ -33,7 +33,13 @@ async fn build_ir_executor(
     } else {
         engine.get_def_body_syntax(def_id).await.map(|body| body.span())
     };
-    let (function, diagnostics) = lower_function(engine, &typed_function, return_ty, span);
+    let (function, diagnostics) = lower_function(
+        engine,
+        typed_function.functions(),
+        typed_function.captures(),
+        return_ty,
+        span,
+    );
     (engine.intern(function), engine.intern_unsized(diagnostics))
 }
 

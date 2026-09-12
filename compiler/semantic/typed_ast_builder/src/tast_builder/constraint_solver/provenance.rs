@@ -52,6 +52,7 @@ impl Provenance {
 pub enum SubtypeSource {
     FunctionCall,
     LambdaInvocation,
+    ClosureCaptures,
     VariableAssignment,
     BinaryOperator,
     IfCondition,

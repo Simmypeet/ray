@@ -47,6 +47,9 @@ impl Builder {
             TypedExprKind::Call(call) => {
                 self.lower_expression(context, TypedExprWithID::new(call, expression_id))
             }
+            TypedExprKind::NLambda(_) => {
+                todo!("monomorphized closure lowering to control-flow IR")
+            }
             TypedExprKind::Lambda(lambda) => {
                 self.lower_expression(context, TypedExprWithID::new(lambda, expression_id))
             }

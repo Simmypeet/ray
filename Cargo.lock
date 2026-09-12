@@ -2015,7 +2015,6 @@ dependencies = [
  "rayc_source_file",
  "rayc_symbol",
  "rayc_target",
- "rayc_tast_capture_analysis",
  "rayc_type",
  "rayc_typed_ast",
  "tokio",
@@ -2333,22 +2332,6 @@ dependencies = [
  "rayc_hash",
  "rayc_qbice",
  "siphasher",
-]
-
-[[package]]
-name = "rayc_tast_capture_analysis"
-version = "0.1.0-beta.2"
-dependencies = [
- "qbice",
- "rayc_arena",
- "rayc_hash",
- "rayc_lexical",
- "rayc_qbice",
- "rayc_source_file",
- "rayc_target",
- "rayc_type",
- "rayc_typed_ast",
- "tokio",
 ]
 
 [[package]]
