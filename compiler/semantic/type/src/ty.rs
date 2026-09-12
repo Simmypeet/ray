@@ -302,21 +302,23 @@ impl Ty {
     }
 
     /// Creates a nominal closure type, including its capture storage.
+    /// Owner arguments precede the signature, with the owner's arguments first
+    /// and each enclosing symbol's arguments following in declaration order.
     #[must_use]
     pub fn new_closure(
-        span: rayc_lexical::tree::RelativeSpan,
+        closure: application::Closure,
+        owner_arguments: impl IntoIterator<Item = Interned<Self>>,
         parameter_types: impl IntoIterator<Item = Interned<Self>>,
         return_type: Interned<Self>,
         effect_row: Interned<Self>,
         captured_tuple: Interned<Self>,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
-        let args = parameter_types
-            .into_iter()
-            .chain([return_type, effect_row, captured_tuple])
-            .collect::<Vec<_>>();
+        let mut args = owner_arguments.into_iter().collect::<Vec<_>>();
+        assert_eq!(args.len(), closure.owner_argument_count());
+        args.extend(parameter_types.into_iter().chain([return_type, effect_row, captured_tuple]));
         engine.intern(Self::Application(Application::new(
-            Constant::Closure(application::Closure::new(span)),
+            Constant::Closure(closure),
             engine.intern_unsized(args),
         )))
     }

@@ -1,5 +1,5 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
-use rayc_lexical::tree::RelativeSpan;
+use rayc_arena::ID;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 
@@ -31,6 +31,8 @@ pub enum Constant {
 /// The type is created by the compiler and is not visible to the user.
 ///
 /// The arguments of the closure application type are
+/// - The owner's polymorphic arguments in declaration order, followed by those
+///   of each enclosing symbol, proceeding outwards.
 /// - A list of parameter types, this can be empty if the lambda has no
 ///   parameters.
 /// - The return type of the lambda.
@@ -39,21 +41,40 @@ pub enum Constant {
 ///   empty tuple if the lambda has no captured variables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Closure {
-    /// The relative span of the lambda expression that created this closure
-    /// type. This is also used to differentiate between different closure types
-    /// created by different lambda expressions since the span is unique to each
-    /// lambda expression.
-    span: RelativeSpan,
+    /// The source definition containing this closure, including nested lambdas.
+    owner_id: GlobalSymbolID,
+    local_closure_id: ClosureID,
+    /// Separates owner arguments from parameters without querying the owner.
+    owner_argument_count: usize,
 }
+
+/// Identifies a nominal closure within its owning source definition.
+pub type ClosureID = ID<Closure>;
 
 impl Closure {
     #[must_use]
-    pub const fn new(span: RelativeSpan) -> Self { Self { span } }
+    pub const fn new(
+        owner_id: GlobalSymbolID,
+        local_closure_id: ClosureID,
+        owner_argument_count: usize,
+    ) -> Self {
+        Self { owner_id, local_closure_id, owner_argument_count }
+    }
+
+    #[must_use]
+    pub const fn owner_id(&self) -> GlobalSymbolID { self.owner_id }
+
+    #[must_use]
+    pub const fn local_closure_id(&self) -> ClosureID { self.local_closure_id }
+
+    #[must_use]
+    pub const fn owner_argument_count(&self) -> usize { self.owner_argument_count }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClosureView<'x> {
-    span: RelativeSpan,
+    closure: Closure,
+    owner_arguments: &'x [Interned<Ty>],
     params: &'x [Interned<Ty>],
     return_type: &'x Interned<Ty>,
     effect_row: &'x Interned<Ty>,
@@ -62,7 +83,13 @@ pub struct ClosureView<'x> {
 
 impl<'x> ClosureView<'x> {
     #[must_use]
-    pub const fn span(&self) -> RelativeSpan { self.span }
+    pub const fn owner_id(&self) -> GlobalSymbolID { self.closure.owner_id }
+
+    #[must_use]
+    pub const fn local_closure_id(&self) -> ClosureID { self.closure.local_closure_id }
+
+    #[must_use]
+    pub const fn owner_arguments(&self) -> &'x [Interned<Ty>] { self.owner_arguments }
 
     #[must_use]
     pub const fn params(&self) -> &'x [Interned<Ty>] { self.params }
@@ -217,17 +244,19 @@ impl Application {
                 let effect_index = self.args.len() - 2;
                 let return_index = self.args.len() - 3;
 
-                let params = &self.args[..return_index];
+                let (owner_arguments, params) =
+                    self.args[..return_index].split_at(closure.owner_argument_count);
                 let return_type = &self.args[return_index];
                 let effect_row = &self.args[effect_index];
                 let captured_tuple = &self.args[tuple_index];
 
                 View::Closure(ClosureView {
+                    closure,
+                    owner_arguments,
                     params,
                     return_type,
                     effect_row,
                     captured_tuple,
-                    span: closure.span,
                 })
             }
             Constant::Error(_) => View::Error,

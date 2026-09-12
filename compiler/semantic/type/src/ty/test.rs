@@ -1,5 +1,91 @@
 use super::{Mutability, Primitive, Ty};
 
+// input: closure(owner, 0)[b, a](int32) -> int32 with empty effect and captures
+// premise: owner.b maps to bool and its parent.a maps to float32
+// output: owner arguments become [bool, float32]; identity and signature are
+// preserved
+#[tokio::test]
+async fn closure_substitution_preserves_unused_owner_arguments_separately_from_signature() {
+    use rayc_symbol::SymbolID;
+    use rayc_target::TargetID;
+
+    use super::application::{Closure, ClosureID, View};
+    use crate::{
+        poly_var::{GlobalPolyVarID, PolyVarID},
+        subst::{Subst, Substitutable},
+    };
+
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let owner = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    let parent = TargetID::TEST.make_global(SymbolID::from_u128(2));
+    let b = GlobalPolyVarID::new(owner, PolyVarID::new(0));
+    let a = GlobalPolyVarID::new(parent, PolyVarID::new(0));
+    let closure_id = ClosureID::new(0);
+    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
+    let float_ty = Ty::new_primitive(Primitive::Float32, &engine);
+    let effect = Ty::new_effect_row([], None, &engine);
+    let captures = Ty::new_unit(&engine);
+    let ty = Ty::new_closure(
+        Closure::new(owner, closure_id, 2),
+        [engine.intern(Ty::PolyVar(b)), engine.intern(Ty::PolyVar(a))],
+        [int_ty.clone()],
+        int_ty.clone(),
+        effect.clone(),
+        captures.clone(),
+        &engine,
+    );
+    let mut subst = Subst::new_singleton(b, bool_ty.clone());
+    subst.insert(a, float_ty.clone());
+
+    let instantiated = ty.apply_subst_or_clone(&subst, &engine);
+
+    let View::Closure(view) = instantiated.unwrap_as_application_view() else {
+        panic!("expected a closure");
+    };
+    assert_eq!(view.owner_id(), owner);
+    assert_eq!(view.local_closure_id(), closure_id);
+    assert_eq!(view.owner_arguments(), [bool_ty, float_ty]);
+    assert_eq!(view.params(), std::slice::from_ref(&int_ty));
+    assert_eq!(view.return_type(), &int_ty);
+    assert_eq!(view.effect_row(), &effect);
+    assert_eq!(view.captured_tuple(), &captures);
+}
+
+// input: three captureless closures with identical signatures
+// premise: the first two have different owners; the third has another local ID
+// output: none of their nominal types structurally match
+#[tokio::test]
+async fn closure_identity_distinguishes_owners_and_local_closures() {
+    use rayc_symbol::SymbolID;
+    use rayc_target::TargetID;
+
+    use super::application::{Closure, ClosureID};
+
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let owner = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    let other_owner = TargetID::TEST.make_global(SymbolID::from_u128(2));
+    let closures = [(owner, 0), (other_owner, 0), (owner, 1)].map(|(owner, local_id)| {
+        Ty::new_closure(
+            Closure::new(owner, ClosureID::new(local_id), 0),
+            [],
+            [],
+            Ty::new_unit(&engine),
+            Ty::new_effect_row([], None, &engine),
+            Ty::new_unit(&engine),
+            &engine,
+        )
+    });
+
+    for (index, left) in closures.iter().enumerate() {
+        for right in &closures[index + 1..] {
+            let Ty::Application(left) = left.as_ref() else { panic!("expected application") };
+            let Ty::Application(right) = right.as_ref() else { panic!("expected application") };
+            assert!(left.structural_match(right).is_none());
+        }
+    }
+}
+
 // input: def(*int32, (bool, float32)) -> int32 \ {}
 // premise: nested applications are traversed in argument order
 // output: root, *int32, (bool, float32), int32, {}, int32, bool, float32
