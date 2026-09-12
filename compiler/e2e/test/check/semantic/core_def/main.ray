@@ -1,0 +1,12 @@
+inst AddValue for core.Def[int32, (int32, int32)]:
+    type Return = int32
+    type Effect = {}
+
+    def call(fn: int32, a: (int32, int32)) -> int32 \ {}:
+        return fn + a.0 + a.1
+
+def invoke(value: f, a: g) given (d: core.Def[f, g]) -> d.Return \ d.Effect:
+    return d.call(value, a)
+
+def main() -> int32:
+    return invoke[given AddValue](1, (2, 3))

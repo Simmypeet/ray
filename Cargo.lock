@@ -1814,7 +1814,6 @@ dependencies = [
  "rayc_source_file",
  "rayc_target",
  "serde",
- "tempfile",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",

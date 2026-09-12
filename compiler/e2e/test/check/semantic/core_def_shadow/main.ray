@@ -1,0 +1,15 @@
+trait Def[a]:
+    def ordinary(value: a) -> a
+
+inst Local for Def[int32]:
+    def ordinary(value: int32) -> int32:
+        return value
+
+trait core[a]:
+    type Item
+
+inst Shadow for core[int32]:
+    type Item = int32
+
+def main() -> int32:
+    return Local.ordinary(6)

@@ -1,0 +1,14 @@
+eff Read[]:
+    def read() -> int32
+
+inst ReadValue for core.Def[int32, ()]:
+    type Return = int32
+    type Effect = {Read}
+    def call(value: int32, a: ()) -> int32 \ {Read}:
+        return value + Read.read()
+
+def invoke(value: f, a: g) given (d: core.Def[f, g]) -> d.Return \ d.Effect:
+    return d.call(value, a)
+
+def effectful() -> int32 \ {Read}:
+    return invoke[given ReadValue](1, ())

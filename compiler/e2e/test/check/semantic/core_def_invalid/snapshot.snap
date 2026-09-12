@@ -1,0 +1,88 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: type kind mismatch
+  ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:3:19
+  │
+3 │     type Effect = int32
+  ╰╴                  ━━━━━ expected an effect row, found a value type
+
+[error]: instance member `call`: parameter 1 type mismatch
+  ╭▸ __ray_core__/core.ray:5:14
+  │
+5 │     def call(fn: f, a: args) -> this.Return \ this.Effect
+  │              ───── the corresponding trait declaration is here
+  │
+  ⸬  compiler/e2e/test/check/semantic/core_def_invalid/main.ray:4:14
+  │
+4 │     def call(value: bool, a: int32) -> bool:
+  ╰╴             ━━━━━━━━━━━ expected `int32`, found `bool`
+
+[error]: instance member `call`: return type mismatch
+  ╭▸ __ray_core__/core.ray:5:30
+  │
+5 │     def call(fn: f, a: args) -> this.Return \ this.Effect
+  │                              ────────────── the corresponding trait declaration is here
+  │
+  ⸬  compiler/e2e/test/check/semantic/core_def_invalid/main.ray:4:37
+  │
+4 │     def call(value: bool, a: int32) -> bool:
+  ╰╴                                    ━━━━━━━ expected `int32`, found `bool`
+
+[error]: instance is missing trait method `Effect`
+  ╭▸ __ray_core__/core.ray:3:10
+  │
+3 │     type Effect: Effect
+  │          ────── the trait method is declared here
+  │
+  ⸬  compiler/e2e/test/check/semantic/core_def_invalid/main.ray:7:6
+  │
+7 │ inst Missing for core.Def[bool, bool]:
+  ╰╴     ━━━━━━━ implement `Effect` in this instance
+
+[error]: instance is missing trait method `call`
+  ╭▸ __ray_core__/core.ray:5:9
+  │
+5 │     def call(fn: f, a: args) -> this.Return \ this.Effect
+  │         ──── the trait method is declared here
+  │
+  ⸬  compiler/e2e/test/check/semantic/core_def_invalid/main.ray:7:6
+  │
+7 │ inst Missing for core.Def[bool, bool]:
+  ╰╴     ━━━━━━━ implement `call` in this instance
+
+[error]: trait method `core.Def.call` is abstract and cannot be called directly
+   ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:11:12
+   │
+11 │     return core.Def.call(value, value)
+   │            ━━━━━━━━━━━━━ this trait method has no definition body
+   │
+   ╰ help: call the method through an instance dictionary instead
+
+[error]: symbol `Def` is not found
+   ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:13:15
+   │
+13 │ inst Bare for Def[int32, int32]:
+   ╰╴              ━━━ symbol `Def` is not found
+
+[error]: an associated type requires an instance dictionary, not a named trait
+   ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:16:23
+   │
+16 │ def projection(value: core.Def.Return):
+   ╰╴                      ━━━━━━━━━━━━━━━
+
+[error]: type inference is not allowed for `Def` here
+   ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:16:28
+   │
+16 │ def projection(value: core.Def.Return):
+   │                            ━━━ expected 2 type arguments
+   │
+   ╰ help: provide all type arguments explicitly
+
+[error]: Compilation aborted due to 9 error(s)
+
+
+
+stdout:
