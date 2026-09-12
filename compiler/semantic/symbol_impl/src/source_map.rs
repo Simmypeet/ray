@@ -41,19 +41,16 @@ pub struct SourceMap(pub HashMap<GlobalSourceID, SourceFile>);
 /// retrieve source files by their IDs.
 #[extend]
 pub async fn create_source_map(self: &TrackedEngine, target_id: TargetID) -> SourceMap {
-    let args = self.get_invocation_arguments(target_id).await;
-    let interned_path: Interned<Path> = self.intern_unsized(args.file_path().to_path_buf());
-
-    match self.query(&rayc_source_file::Key { path: interned_path.clone(), target_id }).await {
-        Ok(file) => {
-            let mut map = HashMap::new();
-
-            let stable_path_id = self.get_stable_path_id(interned_path, target_id).await.unwrap();
-
-            map.insert(target_id.make_global(stable_path_id), file);
-
-            SourceMap(map)
+    let mut map = HashMap::new();
+    for target_id in [target_id, TargetID::CORE] {
+        let args = self.get_invocation_arguments(target_id).await;
+        let path: Interned<Path> = self.intern_unsized(args.file_path().to_path_buf());
+        if let (Ok(file), Ok(id)) = (
+            self.query(&rayc_source_file::Key { path: path.clone(), target_id }).await,
+            self.get_stable_path_id(path, target_id).await,
+        ) {
+            map.insert(target_id.make_global(id), file);
         }
-        Err(_) => SourceMap(HashMap::default()),
     }
+    SourceMap(map)
 }

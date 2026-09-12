@@ -8,3 +8,5 @@ pub mod span;
 pub mod symbol_kind;
 pub mod syntax;
 pub mod table;
+
+pub mod core_item;
