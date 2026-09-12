@@ -169,6 +169,7 @@ impl Ty {
                 | ApplicationView::Pointer(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
+                | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_) => false,
             },
             Self::Inference(_) | Self::EffectRow(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
@@ -335,6 +336,16 @@ impl Ty {
         )))
     }
 
+    /// Creates the built-in `Def` dictionary for a nominal closure type.
+    #[must_use]
+    pub fn new_def_instance(closure: Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
+        assert!(closure.as_closure_view().is_some(), "Def instance requires a closure type");
+        engine.intern(Self::Application(Application::new(
+            Constant::DefInstance,
+            engine.intern_unsized([closure]),
+        )))
+    }
+
     #[must_use]
     pub fn new_instance(
         symbol_id: GlobalSymbolID,
@@ -426,6 +437,7 @@ impl Ty {
                         | ApplicationView::Tuple(_)
                         | ApplicationView::Lambda(_)
                         | ApplicationView::Pointer(_)
+                        | ApplicationView::DefInstance(_)
                         | ApplicationView::Closure(_)
                         | ApplicationView::Error => None,
                     };
@@ -530,6 +542,26 @@ impl TyDisplay<'_> {
         Ok(())
     }
 
+    fn fmt_signature(
+        &self,
+        parameters: &[Interned<Ty>],
+        return_type: &Ty,
+        effect_row: &Ty,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        f.write_char('(')?;
+        for (index, parameter) in parameters.iter().enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            self.fmt_ty(parameter, f)?;
+        }
+        f.write_str(") -> ")?;
+        self.fmt_ty(return_type, f)?;
+        f.write_str(" \\ ")?;
+        self.fmt_ty(effect_row, f)
+    }
+
     fn fmt_ty(&self, ty: &Ty, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match ty {
             Ty::Application(ty_application) => match ty_application.view() {
@@ -542,19 +574,13 @@ impl TyDisplay<'_> {
                 },
 
                 ApplicationView::Closure(closure) => {
-                    f.write_str("<closure>(")?;
-
-                    for (index, param) in closure.params().iter().enumerate() {
-                        if index > 0 {
-                            f.write_str(", ")?;
-                        }
-                        self.fmt_ty(param, f)?;
-                    }
-
-                    f.write_str(") -> ")?;
-                    self.fmt_ty(closure.return_type(), f)?;
-                    f.write_str(" \\ ")?;
-                    self.fmt_ty(closure.effect_row(), f)
+                    f.write_str("<closure>")?;
+                    self.fmt_signature(
+                        closure.params(),
+                        closure.return_type(),
+                        closure.effect_row(),
+                        f,
+                    )
                 }
 
                 ApplicationView::Tuple(tuple) => {
@@ -570,17 +596,13 @@ impl TyDisplay<'_> {
                     f.write_char(')')
                 }
                 ApplicationView::Lambda(lambda) => {
-                    f.write_str("def(")?;
-                    for (index, parameter) in lambda.parameter_types().iter().enumerate() {
-                        if index > 0 {
-                            f.write_str(", ")?;
-                        }
-                        self.fmt_ty(parameter, f)?;
-                    }
-                    f.write_str(") -> ")?;
-                    self.fmt_ty(lambda.return_type(), f)?;
-                    f.write_str(" \\ ")?;
-                    self.fmt_ty(lambda.effect_row(), f)
+                    f.write_str("def")?;
+                    self.fmt_signature(
+                        lambda.parameter_types(),
+                        lambda.return_type(),
+                        lambda.effect_row(),
+                        f,
+                    )
                 }
                 ApplicationView::Pointer(pointer) => {
                     f.write_char('*')?;
@@ -591,6 +613,11 @@ impl TyDisplay<'_> {
                 }
                 ApplicationView::Instance(instance) => {
                     self.fmt_symbol_application(instance.symbol_id(), instance.args(), f)
+                }
+                ApplicationView::DefInstance(closure) => {
+                    f.write_str("DefInstance[")?;
+                    self.fmt_ty(closure, f)?;
+                    f.write_char(']')
                 }
                 ApplicationView::InstanceAssociated(associated) => {
                     self.fmt_ty(associated.instance(), f)?;
@@ -757,6 +784,7 @@ impl Ty {
                 | ApplicationView::Lambda(_)
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Closure(_)
+                | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_) => Some(false),
             },
             Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {
@@ -767,15 +795,20 @@ impl Ty {
 
     #[must_use]
     pub fn unwrap_as_closure_view(&self) -> application::ClosureView<'_> {
+        self.as_closure_view().expect("expected a closure type")
+    }
+
+    #[must_use]
+    pub fn as_closure_view(&self) -> Option<application::ClosureView<'_>> {
         let Self::Application(application) = self else {
-            panic!("Expected Ty::Application, found {self:?}");
+            return None;
         };
 
         let ApplicationView::Closure(closure_view) = application.view() else {
-            panic!("Expected Ty::ApplicationView::Closure, found {application:?}");
+            return None;
         };
 
-        closure_view
+        Some(closure_view)
     }
 
     #[must_use]
@@ -787,6 +820,7 @@ impl Ty {
                 ApplicationView::Tuple(_)
                 | ApplicationView::Lambda(_)
                 | ApplicationView::InstanceAssociated(_)
+                | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::Error => false,
@@ -811,6 +845,7 @@ impl Ty {
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Lambda(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::Error => false,

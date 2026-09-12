@@ -1,6 +1,7 @@
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::{
+    core_item::{CoreItem, get_core_item},
     member::get_member_by_name,
     name::get_name,
     symbol_kind::{SymbolKind, get_symbol_kind},
@@ -10,6 +11,7 @@ use crate::{
     instance_member::get_instance_member,
     poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
     subst::Substitutable,
+    ty::{Ty, application::View},
     type_definition::get_type_definition,
 };
 
@@ -66,6 +68,26 @@ pub(crate) async fn reduce_instance_associated(
     associated: crate::ty::application::InstanceAssociatedView<'_>,
     engine: &TrackedEngine,
 ) -> Option<Interned<crate::ty::Ty>> {
+    // Closure dictionaries carry their signature directly, even during inference.
+    if let Ty::Application(application) = &**associated.instance()
+        && let View::DefInstance(closure) = application.view()
+    {
+        if !associated.args().is_empty() {
+            return None;
+        }
+        let closure = closure.unwrap_as_closure_view();
+        let member = associated.symbol_id();
+        return if member == engine.get_core_item(CoreItem::DefArgs).await {
+            Some(Ty::new_tuple(engine.intern_unsized(closure.params().to_vec()), engine))
+        } else if member == engine.get_core_item(CoreItem::DefReturn).await {
+            Some(closure.return_type().clone())
+        } else if member == engine.get_core_item(CoreItem::DefEffect).await {
+            Some(closure.effect_row().clone())
+        } else {
+            None
+        };
+    }
+
     let instance = associated.instance().as_instance_view()?;
 
     // The projection names a trait member, while the definition belongs to its

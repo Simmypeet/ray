@@ -23,6 +23,8 @@ pub enum Constant {
     /// polymorphic arguments in declaration order.
     InstanceAssociated(GlobalSymbolID),
     Closure(Closure),
+    /// The built-in `Def` dictionary whose sole argument is a closure type.
+    DefInstance,
     Error(TyKind),
 }
 
@@ -196,6 +198,7 @@ pub enum View<'x> {
     Instance(InstanceView<'x>),
     InstanceAssociated(InstanceAssociatedView<'x>),
     Closure(ClosureView<'x>),
+    DefInstance(&'x Interned<Ty>),
     Error,
 }
 
@@ -259,6 +262,7 @@ impl Application {
                     captured_tuple,
                 })
             }
+            Constant::DefInstance => View::DefInstance(&self.args[0]),
             Constant::Error(_) => View::Error,
         }
     }
@@ -281,7 +285,7 @@ impl Application {
                 use crate::associated_type_kind::get_associated_type_kind;
                 engine.get_associated_type_kind(symbol_id).await
             }
-            Constant::Instance(_) => TyKind::Instance,
+            Constant::Instance(_) | Constant::DefInstance => TyKind::Instance,
             Constant::Error(kind) => kind,
         }
     }
@@ -301,6 +305,7 @@ impl Application {
                 | View::Lambda(_)
                 | View::Pointer(_)
                 | View::Instance(_)
+                | View::DefInstance(_)
                 | View::Closure(_)
                 | View::InstanceAssociated(_) => false,
             },
@@ -317,6 +322,7 @@ impl Application {
                 | View::Lambda(_)
                 | View::Pointer(_)
                 | View::Instance(_)
+                | View::DefInstance(_)
                 | View::InstanceAssociated(_)
                 | View::Closure(_) => false,
             },
