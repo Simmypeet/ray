@@ -433,6 +433,44 @@ pub struct ResidualSubtype {
     subype: TyRelate,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct BreakOutsideLoop(RelativeSpan);
+
+impl BreakOutsideLoop {
+    #[must_use]
+    pub const fn new(span: RelativeSpan) -> Self { Self(span) }
+}
+
+impl Report for BreakOutsideLoop {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("`break` can only be used inside a loop")
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.0).await).build(),
+            )
+            .build()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct ContinueOutsideLoop(RelativeSpan);
+
+impl ContinueOutsideLoop {
+    #[must_use]
+    pub const fn new(span: RelativeSpan) -> Self { Self(span) }
+}
+
+impl Report for ContinueOutsideLoop {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("`continue` can only be used inside a loop")
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.0).await).build(),
+            )
+            .build()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct InstanceResolution {
     span: RelativeSpan,
@@ -485,6 +523,7 @@ impl Report for ResidualSubtype {
             SubtypeSource::VariableAssignment => "mismatched types in variable assignment",
             SubtypeSource::BinaryOperator => "mismatched types in binary operation",
             SubtypeSource::IfCondition => "if expression condition must be `bool`",
+            SubtypeSource::WhileCondition => "while loop condition must be `bool`",
             SubtypeSource::IfBranch => "mismatched types in if expression branches",
             SubtypeSource::ReturnType => "mismatched types in return expression",
         };
@@ -607,6 +646,8 @@ pub enum Diagnostic {
     ImmutableLvalue(ImmutableLvalue),
     OutOfBoundsTupleIndex(OutOfBoundsTupleIndex),
     DuplicateNameBinding(DuplicateNameBinding),
+    BreakOutsideLoop(BreakOutsideLoop),
+    ContinueOutsideLoop(ContinueOutsideLoop),
     ResidualSubtype(ResidualSubtype),
     IncompatibleEffectRows(IncompatibleEffectRows),
     EmbeddedNulString(EmbeddedNulString),
@@ -650,6 +691,8 @@ impl Report for Diagnostic {
             Self::DuplicateNameBinding(duplicate_name_binding) => {
                 duplicate_name_binding.report(engine).await
             }
+            Self::BreakOutsideLoop(diagnostic) => diagnostic.report(engine).await,
+            Self::ContinueOutsideLoop(diagnostic) => diagnostic.report(engine).await,
             Self::ResidualSubtype(residual_subtype) => residual_subtype.report(engine).await,
             Self::IncompatibleEffectRows(incompatible_effects) => {
                 incompatible_effects.report(engine).await

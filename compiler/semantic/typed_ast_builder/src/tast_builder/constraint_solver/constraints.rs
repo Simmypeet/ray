@@ -223,6 +223,8 @@ impl TAstBuilder {
     ) {
         let expression = match statement {
             Statement::Let(statement) => statement.expression(),
+            Statement::While(statement) => Some(statement.condition()),
+            Statement::Break(_) | Statement::Continue(_) => None,
             Statement::Expression(expression) => Some(*expression),
             Statement::Return(statement) => statement.value(),
         };
@@ -401,6 +403,19 @@ impl TAstBuilder {
     ) {
         self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::IfCondition)
             .await;
+    }
+
+    pub async fn push_while_condition_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(
+            expression,
+            expected_ty,
+            SubtypeSource::WhileCondition,
+        )
+        .await;
     }
 
     pub async fn push_if_branch_constraint(

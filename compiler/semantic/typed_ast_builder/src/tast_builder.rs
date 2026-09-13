@@ -45,6 +45,11 @@ pub struct TAstBuilder {
     function_map: TypedFunctionMap,
     building_function: TypedFunctionID,
     suspended_functions: Vec<TypedFunctionID>,
+
+    statement_blocks: Vec<(TypedFunctionID, Vec<Statement>)>,
+    loop_depth: usize,
+    suspended_loop_depths: Vec<usize>,
+
     closure_captures: Vec<(TypedFunctionID, Interned<Ty>, RelativeSpan)>,
     current_def_id: GlobalSymbolID,
 
@@ -73,6 +78,9 @@ impl TAstBuilder {
             function_map,
             building_function,
             suspended_functions: Vec::new(),
+            statement_blocks: Vec::new(),
+            loop_depth: 0,
+            suspended_loop_depths: Vec::new(),
             closure_captures: Vec::new(),
             name_env,
             current_def_id,
@@ -133,7 +141,9 @@ impl TAstBuilder {
             self.function_map.parameter_name_binding_group_id_of(function_id);
 
         self.suspended_functions.push(self.building_function);
+        self.suspended_loop_depths.push(self.loop_depth);
         self.building_function = function_id;
+        self.loop_depth = 0;
         self.name_env.enter_function(parameter_name_binding_group_id);
 
         function_id
@@ -157,6 +167,7 @@ impl TAstBuilder {
     pub fn finish_lambda(&mut self) -> Interned<Ty> {
         let effect = self.function_map.effect_of(self.building_function).clone();
         self.name_env.exit_function();
+        self.loop_depth = self.suspended_loop_depths.pop().unwrap();
         self.building_function =
             self.suspended_functions.pop().expect("a lambda should suspend its enclosing function");
         effect
@@ -175,7 +186,9 @@ impl TAstBuilder {
             self.function_map.parameter_name_binding_group_id_of(function_id);
 
         self.suspended_functions.push(self.building_function);
+        self.suspended_loop_depths.push(self.loop_depth);
         self.building_function = function_id;
+        self.loop_depth = 0;
         self.name_env.enter_function(parameter_name_binding_group_id);
 
         function_id
@@ -183,6 +196,7 @@ impl TAstBuilder {
 
     pub fn finish_operation_handler(&mut self) {
         self.name_env.exit_function();
+        self.loop_depth = self.suspended_loop_depths.pop().unwrap();
         self.building_function = self
             .suspended_functions
             .pop()
@@ -196,7 +210,9 @@ impl TAstBuilder {
         let function_id = self.function_map.insert_thunk(return_type.clone(), effect);
 
         self.suspended_functions.push(self.building_function);
+        self.suspended_loop_depths.push(self.loop_depth);
         self.building_function = function_id;
+        self.loop_depth = 0;
         self.name_env.enter_function(None);
 
         (function_id, return_type)
@@ -204,6 +220,7 @@ impl TAstBuilder {
 
     pub fn finish_thunk(&mut self) {
         self.name_env.exit_function();
+        self.loop_depth = self.suspended_loop_depths.pop().unwrap();
         self.building_function =
             self.suspended_functions.pop().expect("a thunk should suspend its enclosing function");
     }
@@ -292,8 +309,33 @@ impl TAstBuilder {
 
     pub async fn push_statement(&mut self, statement: Statement) {
         self.compose_effect_from_statement(&statement).await;
-        self.function_map.push_statement(self.building_function, statement);
+        if let Some((owner, statements)) = self.statement_blocks.last_mut()
+            && *owner == self.building_function
+        {
+            statements.push(statement);
+        } else {
+            self.function_map.push_statement(self.building_function, statement);
+        }
     }
+
+    pub fn enter_loop_body(&mut self) {
+        self.loop_depth += 1;
+        self.name_env.enter_scope();
+        self.statement_blocks.push((self.building_function, Vec::new()));
+    }
+
+    #[must_use]
+    pub fn exit_loop_body(&mut self) -> Vec<Statement> {
+        let (owner, statements) =
+            self.statement_blocks.pop().expect("a loop body should be active");
+        assert_eq!(owner, self.building_function);
+        self.name_env.exit_scope();
+        self.loop_depth -= 1;
+        statements
+    }
+
+    #[must_use]
+    pub const fn is_inside_loop(&self) -> bool { self.loop_depth > 0 }
 
     #[must_use]
     pub async fn return_type_of_current_function(&self) -> Interned<Ty> {

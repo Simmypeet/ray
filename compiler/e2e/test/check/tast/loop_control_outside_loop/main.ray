@@ -1,0 +1,4 @@
+def main() -> int32:
+    break
+    continue
+    return 0

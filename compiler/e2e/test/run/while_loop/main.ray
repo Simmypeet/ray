@@ -1,0 +1,10 @@
+def main() -> int32:
+    let mut value = 0
+    while value != 4:
+        value = value + 1
+        continue
+        value = 100
+    while true:
+        break
+        value = 100
+    return value + 38

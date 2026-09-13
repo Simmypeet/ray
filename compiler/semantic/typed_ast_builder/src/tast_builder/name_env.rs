@@ -42,6 +42,16 @@ impl NameEnv {
         );
         self.name_binding_gruop_stack.pop();
     }
+
+    pub(super) fn enter_scope(&mut self) { self.name_binding_gruop_stack.push(Vec::new()); }
+
+    pub(super) fn exit_scope(&mut self) {
+        assert!(
+            self.name_binding_gruop_stack.len() > 1,
+            "the root name environment cannot be exited"
+        );
+        self.name_binding_gruop_stack.pop();
+    }
 }
 
 impl TAstBuilder {

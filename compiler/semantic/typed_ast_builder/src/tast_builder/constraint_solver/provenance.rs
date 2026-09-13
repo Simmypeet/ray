@@ -55,6 +55,7 @@ pub enum SubtypeSource {
     VariableAssignment,
     BinaryOperator,
     IfCondition,
+    WhileCondition,
     IfBranch,
     ReturnType,
 }

@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: `break` can only be used inside a loop
+  ╭▸ compiler/e2e/test/check/tast/loop_control_outside_loop/main.ray:2:5
+  │
+2 │     break
+  ╰╴    ━━━━━
+
+[error]: `continue` can only be used inside a loop
+  ╭▸ compiler/e2e/test/check/tast/loop_control_outside_loop/main.ray:3:5
+  │
+3 │     continue
+  ╰╴    ━━━━━━━━
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

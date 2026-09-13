@@ -236,6 +236,19 @@ impl Analyzer {
                     self.visit_expression(function_id, functions, expr_id, UseMode::Value, plan);
                 }
             }
+            Statement::While(statement) => {
+                self.visit_expression(
+                    function_id,
+                    functions,
+                    statement.condition(),
+                    UseMode::Value,
+                    plan,
+                );
+                for statement in statement.body() {
+                    self.visit_statement(function_id, functions, statement, plan);
+                }
+            }
+            Statement::Break(_) | Statement::Continue(_) => {}
             Statement::Expression(expression) => {
                 self.visit_expression(function_id, functions, *expression, UseMode::Value, plan);
             }
