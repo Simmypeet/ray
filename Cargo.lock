@@ -2159,6 +2159,7 @@ dependencies = [
  "rayc_syntax",
  "rayc_target",
  "rayc_type",
+ "tokio",
 ]
 
 [[package]]

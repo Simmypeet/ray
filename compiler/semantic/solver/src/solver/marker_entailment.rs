@@ -4,8 +4,10 @@
 //! explicit rule receive the same structural treatment as Rust auto traits.
 
 use rayc_hash::FxHashMap;
-use rayc_semantic_element::marker_implementation::get_marker_implementation;
-use rayc_symbol::symbol_kind::{SymbolKind, get_all_symbol_ids, get_symbol_kind};
+use rayc_semantic_element::{
+    all_marker_implementations::get_all_marker_implementations,
+    marker_implementation::get_marker_implementation,
+};
 use rayc_type::{
     subst::Substitutable,
     ty::{Ty, application::View as ApplicationView},
@@ -197,18 +199,11 @@ impl Solver {
     async fn explicit_marker_rule(&mut self, goal: &MarkerPredicate) -> Option<ExplicitMarkerRule> {
         let engine = self.engine().clone();
         let target_id = self.site().target_id;
-        let ids = engine.get_all_symbol_ids(target_id).await;
+        let implementations =
+            engine.get_all_marker_implementations(goal.marker_id(), target_id).await;
 
-        for symbol_id in ids.iter().copied().map(|id| target_id.make_global(id)) {
-            if engine.get_symbol_kind(symbol_id).await != SymbolKind::MarkerImplementation {
-                continue;
-            }
+        for symbol_id in implementations.iter().copied() {
             let implementation = engine.get_marker_implementation(symbol_id).await;
-            if !implementation.has_valid_head()
-                || implementation.marker_id() != Some(goal.marker_id())
-            {
-                continue;
-            }
 
             let Some(subst) = self
                 .type_head_match(implementation.implementor().clone(), goal.implementor().clone())

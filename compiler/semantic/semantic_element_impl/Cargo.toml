@@ -24,5 +24,8 @@ rayc_type.path = "../type"
 rayc_source_file.path = "../../base/source_file"
 rayc_target.path = "../../base/target"
 
+[dev-dependencies]
+tokio.workspace = true
+
 [lints]
 workspace = true

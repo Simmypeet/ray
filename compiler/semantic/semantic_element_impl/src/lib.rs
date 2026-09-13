@@ -1,4 +1,5 @@
 mod all_instance_implements_trait;
+mod all_marker_implementations;
 mod associated_type_kind;
 pub mod build;
 pub mod diagnostic;
