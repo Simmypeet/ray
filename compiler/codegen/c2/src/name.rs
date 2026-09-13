@@ -17,7 +17,6 @@ pub(super) struct AggregateID(u128);
 impl AggregateID {
     pub(super) fn for_type(aggregate: &AggregateType) -> Self {
         let domain = match aggregate {
-            AggregateType::Closure(_) => "rayc_c2::ClosureLayout:v1",
             AggregateType::EffectHandler(_) => "rayc_c2::EffectHandlerLayout:v1",
             AggregateType::Tuple(_) => "rayc_c2::TupleLayout:v1",
             AggregateType::Environment(_) => "rayc_c2::EnvironmentLayout:v1",
@@ -45,7 +44,6 @@ impl DefinitionID {
 
 pub(super) fn aggregate_name(aggregate: &AggregateType) -> String {
     let category = match aggregate {
-        AggregateType::Closure(_) => "Closure",
         AggregateType::EffectHandler(_) => "EffectHandler",
         AggregateType::Tuple(_) => "Tuple",
         AggregateType::Environment(_) => "Environment",
@@ -92,10 +90,6 @@ pub(super) fn block_name(index: u64) -> String { format!("ray_block_{index:X}") 
 pub(super) fn tuple_field_name(index: u32) -> String { format!("elem{index:X}") }
 
 pub(super) fn environment_field_name(index: u32) -> String { format!("capture{index:X}") }
-
-pub(super) const fn closure_environment_field_name() -> &'static str { "environment" }
-
-pub(super) const fn closure_function_field_name() -> &'static str { "function" }
 
 pub(super) fn operation_environment_field_name(operation: GlobalSymbolID) -> String {
     format!("operation_{}_environment", operation_id(operation))

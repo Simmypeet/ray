@@ -4,15 +4,21 @@ use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::{discover_parameter_poly_vars, resolver::Resolver};
-use rayc_semantic_element::parameter::{Key, Parameter, ParameterMap};
+use rayc_semantic_element::{
+    callable_parameter::get_callable_parameters,
+    parameter::{Key, Parameter, ParameterMap},
+};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     span::get_span,
     symbol_kind::{SymbolKind, get_symbol_kind},
     syntax::get_parameter_list_syntax,
 };
-use rayc_syntax::def::ParameterEntry;
-use rayc_type::{poly_var::get_enclosing_poly_var_maps, ty::Ty};
+use rayc_syntax::def::{ParameterEntry, ParameterType};
+use rayc_type::{
+    poly_var::{GlobalPolyVarID, PolyVarOrigin, get_enclosing_poly_var_maps, get_poly_var_map},
+    ty::Ty,
+};
 
 use crate::{
     build::{Build, Output},
@@ -66,11 +72,36 @@ impl Build for Key {
             .build();
         let mut parameters = ParameterMap::new();
 
+        let callables = engine.get_callable_parameters(symbol_id).await;
         if let Some(syntax) = syntax.as_ref() {
-            for entry in syntax.entries() {
-                let ParameterEntry::Parameter(parameter) = entry else { continue };
-                let ty = if let Some(syntax) = parameter.r#type() {
-                    resolver.resolve_type(&syntax).await
+            for (index, parameter) in syntax
+                .entries()
+                .filter_map(|entry| match entry {
+                    ParameterEntry::Parameter(parameter) => Some(parameter),
+                    ParameterEntry::Ellipsis(_) => None,
+                })
+                .enumerate()
+            {
+                // if this position is for a callable sugar parameter, then we need to create a
+                // poly var for it
+                let ty = if let Some(entry) =
+                    callables.iter().find(|entry| entry.occurrence() == index)
+                {
+                    let map = engine.get_poly_var_map(symbol_id).await;
+                    let id = map
+                        .find_generated(&PolyVarOrigin::CallableType(entry.occurrence()))
+                        .unwrap();
+                    Ty::new_poly_var(GlobalPolyVarID::new(symbol_id, id), engine)
+                } else if let Some(syntax) = parameter.r#type() {
+                    match syntax {
+                        ParameterType::Type(ty) => resolver.resolve_type(&ty).await,
+
+                        ParameterType::CallableSugar(callable) => {
+                            // Only ordinary definitions can own callable binders.
+                            resolver.report_unsupported_callable_type(callable.span());
+                            Ty::new_star_error(engine)
+                        }
+                    }
                 } else {
                     Ty::new_star_error(engine)
                 };
@@ -94,6 +125,10 @@ impl Build for Key {
                         ParameterEntry::Ellipsis(_) => None,
                     }))
                 {
+                    if parameter.ty().contains_error() {
+                        continue;
+                    }
+
                     let kind = if parameter.ty().is_unit_type() {
                         Some(InvalidExternSignatureKind::UnitParameter)
                     } else if !parameter.ty().is_c_abi_value_type() {
@@ -101,6 +136,7 @@ impl Build for Key {
                     } else {
                         None
                     };
+
                     if let Some(kind) = kind {
                         diagnostics.receive(Diagnostic::InvalidExternSignature(
                             InvalidExternSignature::new(

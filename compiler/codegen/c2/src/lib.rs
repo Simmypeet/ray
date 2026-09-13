@@ -2,8 +2,7 @@
 //!
 //! This backend consumes independently lowered definition fragments. Global
 //! calls enqueue further definition instances, while concrete aggregate types
-//! enter a separate layout worklist. It intentionally has no dependency on
-//! `rayc_mono`.
+//! enter a separate layout worklist.
 
 use std::io::{self, Write};
 

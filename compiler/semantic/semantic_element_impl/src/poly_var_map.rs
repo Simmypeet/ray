@@ -5,9 +5,11 @@ use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::{Obligation, discover_function_poly_vars, resolver::Resolver};
+use rayc_semantic_element::callable_parameter::get_callable_parameters;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID,
+    core_item::{CoreItem, get_core_item},
     parent::get_parent_global,
     source_map::to_absolute_span,
     symbol_kind::{SymbolKind, get_symbol_kind},
@@ -15,7 +17,11 @@ use rayc_symbol::{
         get_given_parameter_list_syntax, get_parameter_list_syntax, get_type_parameter_list_syntax,
     },
 };
-use rayc_type::poly_var::{PolyVar, PolyVarMap, get_enclosing_poly_var_maps};
+use rayc_type::{
+    poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap, PolyVarOrigin, get_enclosing_poly_var_maps},
+    trait_ref::TraitRef,
+    ty::{Ty, args::Args},
+};
 
 use crate::{
     build::{Build, Output},
@@ -198,10 +204,35 @@ impl Build for rayc_type::poly_var::Key {
 
         // Function-like symbols order variables by first occurrence in
         // explicit parameter types; traits and instances order explicit type
-        // parameters by declaration. Given-instance variables then follow in
-        // declaration order. Instance conformance relies on corresponding
-        // trait and instance definitions producing the same order.
+        // parameters by declaration. Generated types follow source types, then
+        // explicit dictionaries precede generated dictionaries. Source given
+        // arguments therefore retain their original positional order.
+        let callables = engine.get_callable_parameters(symbol_id).await;
+        for entry in callables.iter() {
+            poly_vars.insert_generated(
+                PolyVar::new_type(engine.intern_unsized("callable"), entry.syntax().span()),
+                PolyVarOrigin::CallableType(entry.occurrence()),
+            );
+        }
+
         insert_given_parameters(engine, symbol_id, &mut poly_vars, &storage, &obligations).await;
+        for entry in callables.iter() {
+            let id =
+                poly_vars.find_generated(&PolyVarOrigin::CallableType(entry.occurrence())).unwrap();
+            let ty = Ty::new_poly_var(GlobalPolyVarID::new(symbol_id, id), engine);
+            let requirement = TraitRef::new(
+                engine.get_core_item(CoreItem::DefTrait).await,
+                Args::new([ty], engine),
+            );
+            poly_vars.insert_generated(
+                PolyVar::new_instance(
+                    engine.intern_unsized("callable dictionary"),
+                    requirement,
+                    entry.syntax().span(),
+                ),
+                PolyVarOrigin::CallableDictionary(entry.occurrence()),
+            );
+        }
 
         Output::new_with(
             engine.intern(poly_vars),

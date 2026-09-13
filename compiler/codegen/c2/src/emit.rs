@@ -17,9 +17,9 @@ use crate::{
     c_type::{declaration, signature_declaration, type_name},
     generator::Generator,
     name::{
-        aggregate_name, aggregate_typedef_name, block_name, closure_environment_field_name,
-        closure_function_field_name, environment_field_name, ir_function_name, local_name,
-        operation_environment_field_name, operation_function_field_name, tuple_field_name,
+        aggregate_name, aggregate_typedef_name, block_name, environment_field_name,
+        ir_function_name, local_name, operation_environment_field_name,
+        operation_function_field_name, tuple_field_name,
     },
 };
 
@@ -83,29 +83,6 @@ impl Generator<'_> {
     ) -> String {
         let mut output = format!("struct {} {{\n", aggregate_name(aggregate));
         match aggregate {
-            AggregateType::Closure(closure) => {
-                let signature = closure.function_signature();
-                let environment_type = signature
-                    .parameter_types()
-                    .first()
-                    .expect("a closure signature should have an environment parameter");
-                writeln!(
-                    output,
-                    "    {};",
-                    declaration(environment_type, closure_environment_field_name())
-                )
-                .unwrap();
-                writeln!(
-                    output,
-                    "    {};",
-                    signature_declaration(
-                        signature,
-                        &format!("(*{})", closure_function_field_name()),
-                        None,
-                    )
-                )
-                .unwrap();
-            }
             AggregateType::EffectHandler(_) => {
                 let handler_layout = handler_layout
                     .expect("an effect-handler aggregate should have a resolved handler layout");
@@ -370,19 +347,7 @@ impl Generator<'_> {
                 }
                 (ty, fields)
             }
-            AggregateValue::Closure(closure) => {
-                let ty = AggregateType::Closure(closure.ty().clone());
-                let environment_type = &closure.ty().function_signature().parameter_types()[0];
-                let environment = self
-                    .emit_operand(closure.environment(), ir, function, Some(environment_type))
-                    .await;
-                let function_pointer =
-                    self.emit_operand(closure.function(), ir, function, None).await;
-                (ty, vec![
-                    format!(".{} = {environment}", closure_environment_field_name()),
-                    format!(".{} = {function_pointer}", closure_function_field_name()),
-                ])
-            }
+
             AggregateValue::EffectHandler(handler) => {
                 self.emit_effect_handler_value(handler, ir, function).await
             }
@@ -476,23 +441,7 @@ impl Generator<'_> {
                         .expect("tuple projection index should be in bounds"))
                     .clone()
                 }
-                Projection::ClosureEnvironmentField => {
-                    let MonoType::Aggregate(AggregateType::Closure(closure)) = ty else {
-                        panic!("closure environment projection requires a closure aggregate")
-                    };
-                    (**closure
-                        .function_signature()
-                        .parameter_types()
-                        .first()
-                        .expect("closure signature should have an environment parameter"))
-                    .clone()
-                }
-                Projection::ClosureFunctionPointerField => {
-                    let MonoType::Aggregate(AggregateType::Closure(closure)) = ty else {
-                        panic!("closure function projection requires a closure aggregate")
-                    };
-                    MonoType::FunctionPointer(closure.function_signature().clone())
-                }
+
                 Projection::OperationRecordEnvironmentField(operation_id) => {
                     let operation = self.operation_signature(&ty, *operation_id).await;
                     (**operation
@@ -540,12 +489,7 @@ fn place_expression(place: &Place) -> String {
             Projection::TupleFieldIndex(index) => {
                 format!("({expression}).{}", tuple_field_name(index.index()))
             }
-            Projection::ClosureEnvironmentField => {
-                format!("({expression}).{}", closure_environment_field_name())
-            }
-            Projection::ClosureFunctionPointerField => {
-                format!("({expression}).{}", closure_function_field_name())
-            }
+
             Projection::OperationRecordEnvironmentField(operation) => {
                 format!("({expression}).{}", operation_environment_field_name(*operation))
             }

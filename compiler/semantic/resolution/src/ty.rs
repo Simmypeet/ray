@@ -5,7 +5,7 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind};
 use rayc_syntax::{
-    effect_row::{EffectRow as EffectRowSyntax, EffectRowAnnotation},
+    effect_row::EffectRow as EffectRowSyntax,
     path::{Path, PathSegment},
     r#type::{Primitive as PrimitiveSyntax, Type as TypeSyntax},
 };
@@ -130,6 +130,12 @@ impl Resolver<'_> {
     ) -> Vec<Interned<Ty>> {
         let given_parameter_count =
             parameters.map_or(0, |parameters| parameters.len() - type_parameter_count);
+        let explicit_given_count = parameters
+            .into_iter()
+            .flat_map(PolyVarMap::iter)
+            .skip(type_parameter_count)
+            .filter(|(_, parameter)| parameter.is_source())
+            .count();
         let mut supplied = vec![None; given_parameter_count];
         let mut positional_index = 0;
         let mut saw_named = false;
@@ -145,7 +151,9 @@ impl Resolver<'_> {
                         .into_iter()
                         .flat_map(PolyVarMap::iter)
                         .skip(type_parameter_count)
-                        .position(|(_, expected)| **expected.name() == *name.kind.0)
+                        .position(|(_, expected)| {
+                            expected.is_source() && **expected.name() == *name.kind.0
+                        })
                     else {
                         self.report_given_argument_not_found(name.kind.0.clone(), name.span());
                         continue;
@@ -166,8 +174,10 @@ impl Resolver<'_> {
                     self.report_positional_given_argument_after_named(argument.span());
                 }
 
-                if positional_index < supplied.len() {
+                if positional_index < explicit_given_count {
                     supplied[positional_index] = Some((dictionary, argument.span()));
+                } else {
+                    self.report_too_many_given_arguments(argument.span(), explicit_given_count);
                 }
                 positional_index += 1;
             }
@@ -391,33 +401,6 @@ impl Resolver<'_> {
                     arguments.push(Box::pin(self.resolve_type(&element)).await);
                 }
                 self.new_tuple_type(arguments)
-            }
-            TypeSyntax::Lambda(lambda) => {
-                let mut parameters = Vec::new();
-                if let Some(parameter_list) = lambda.parameters() {
-                    for parameter in parameter_list.parameters() {
-                        parameters.push(Box::pin(self.resolve_type(&parameter)).await);
-                    }
-                }
-                let return_type = if let Some(return_type) = lambda.return_type() {
-                    if let Some(return_type) = return_type.r#type() {
-                        Box::pin(self.resolve_type(&return_type)).await
-                    } else {
-                        self.new_error_type(TyKind::Star)
-                    }
-                } else {
-                    self.new_unit_type()
-                };
-                let effect_row_syntax = lambda.effect_row();
-                let effect_row = match effect_row_syntax
-                    .as_ref()
-                    .and_then(EffectRowAnnotation::effect_row)
-                {
-                    Some(effect_row) => self.resolve_effect_row(&effect_row).await,
-                    None if effect_row_syntax.is_some() => self.new_error_type(TyKind::EffectRow),
-                    None => self.new_effect_row_type(Vec::new(), None),
-                };
-                self.new_lambda_type(parameters, return_type, effect_row)
             }
             TypeSyntax::Path(path) => self.synthesize_type_path(path, recovery_kind).await,
         }

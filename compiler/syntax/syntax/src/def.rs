@@ -94,7 +94,77 @@ abstract_tree::abstract_tree! {
         pub irrefutable_pattern: IrrefutablePattern
             = ast::<IrrefutablePattern>(),
         pub colon: Punctuation = ':',
+        pub r#type: ParameterType = ast::<ParameterType>()
+    }
+}
+
+// Callable sugar is available only as a complete definition parameter
+// annotation.
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub enum ParameterType {
+        CallableSugar(Callable = ast::<Callable>()),
+        Type(Type = ast::<Type>())
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct CallableReturnType {
+        pub arrow: Arrow = ast::<Arrow>(),
         pub r#type: Type = ast::<Type>()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct Callable {
+        pub def_keyword: Keyword = expect::Keyword::Def,
+        pub parameters: CallableParameterList = ast::<CallableParameterList>(),
+        pub return_type: CallableReturnType = ast::<CallableReturnType>().optional(),
+        pub effect_row: EffectRowAnnotation = ast::<EffectRowAnnotation>().optional()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
+    pub struct CallableParameterList {
+        pub parameters: #[multi] Type = ast::<Type>()
+            .repeat_all_with_separator(',')
     }
 }
 

@@ -220,10 +220,6 @@ impl<'engine> Generator<'engine> {
 
     async fn process_aggregate(&mut self, aggregate: AggregateType) {
         let handler_layout = match &aggregate {
-            AggregateType::Closure(closure) => {
-                self.collect_signature(closure.function_signature());
-                None
-            }
             AggregateType::EffectHandler(handler) => {
                 let layout =
                     self.engine.build_handler_layout(handler.mono_effect_instance().clone()).await;
@@ -326,11 +322,7 @@ impl<'engine> Generator<'engine> {
                         self.collect_operand(field, ir);
                     }
                 }
-                AggregateValue::Closure(closure) => {
-                    self.enqueue_aggregate(AggregateType::Closure(closure.ty().clone()));
-                    self.collect_operand(closure.environment(), ir);
-                    self.collect_operand(closure.function(), ir);
-                }
+
                 AggregateValue::EffectHandler(handler) => {
                     self.enqueue_aggregate(AggregateType::EffectHandler(
                         rayc_mono_ir::ty::EffectHandler::new(handler.effect().clone()),
@@ -544,9 +536,9 @@ impl<'engine> Generator<'engine> {
 
 fn by_value_dependencies(aggregate: &AggregateType) -> Vec<AggregateType> {
     let fields = match aggregate {
+        AggregateType::EffectHandler(_) => return Vec::new(),
         AggregateType::Tuple(tuple) => tuple.fields(),
         AggregateType::Environment(environment) => environment.captures(),
-        AggregateType::Closure(_) | AggregateType::EffectHandler(_) => return Vec::new(),
     };
     fields
         .iter()

@@ -14,5 +14,6 @@ mod return_type;
 /// A dummy function to make sure this crate is linked by the compiler.
 pub const fn black_box() {}
 
+mod callable_parameter;
 mod type_definition;
 mod where_clause;

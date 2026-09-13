@@ -84,7 +84,21 @@ impl Resolver<'_> {
         self.handler.receive(Diagnostic::ExpectedValueType(crate::ExpectedValueType::new(span)));
     }
 
+    pub fn report_unsupported_callable_type(&self, span: RelativeSpan) {
+        self.handler
+            .receive(Diagnostic::UnsupportedCallableType(crate::UnsupportedCallableType { span }));
+    }
+
+    pub(crate) fn report_too_many_given_arguments(&self, span: RelativeSpan, expected: usize) {
+        self.handler.receive(Diagnostic::TooManyGivenArguments(crate::TooManyGivenArguments {
+            span,
+            expected,
+        }));
+    }
+
     pub(crate) const fn engine(&self) -> &TrackedEngine { self.engine }
+
+    pub(crate) fn allows_inference(&self) -> bool { self.infer_gen.is_some() }
 
     pub(crate) const fn site(&self) -> GlobalSymbolID { self.site }
 
@@ -126,17 +140,6 @@ impl Resolver<'_> {
 
     pub(crate) fn new_tuple_type(&self, elements: Vec<Interned<Ty>>) -> Interned<Ty> {
         Ty::new_tuple(self.engine.intern_unsized(elements), self.engine)
-    }
-
-    pub(crate) fn new_unit_type(&self) -> Interned<Ty> { Ty::new_unit(self.engine) }
-
-    pub(crate) fn new_lambda_type(
-        &self,
-        parameters: Vec<Interned<Ty>>,
-        return_type: Interned<Ty>,
-        effect_row: Interned<Ty>,
-    ) -> Interned<Ty> {
-        Ty::new_lambda(parameters, return_type, effect_row, self.engine)
     }
 
     pub(crate) fn new_effect_row_type(

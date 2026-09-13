@@ -7,7 +7,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{source_map::to_absolute_span, symbol_kind::SymbolKind};
 use rayc_syntax::{
-    def::{ParameterEntry, ParameterList},
+    def::{ParameterEntry, ParameterList, ParameterType},
     effect_row::{EffectRow as EffectRowSyntax, EffectRowAnnotation},
     r#type::Type as TypeSyntax,
 };
@@ -38,6 +38,8 @@ pub enum Diagnostic {
     MissingTraitTypeDeclaration(MissingTraitTypeDeclaration),
     /// A path resolving to something other than a value type.
     ExpectedValueType(ExpectedValueType),
+    UnsupportedCallableType(UnsupportedCallableType),
+    TooManyGivenArguments(TooManyGivenArguments),
     /// An explicit instance does not satisfy its given parameter.
     TraitRefCheck(TraitRefCheck),
     /// A resolved symbol's where-clause predicate is not satisfied.
@@ -79,6 +81,8 @@ impl Report for Diagnostic {
             Self::NamedTraitTypeProjection(diagnostic) => diagnostic.report(engine).await,
             Self::MissingTraitTypeDeclaration(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedValueType(diagnostic) => diagnostic.report(engine).await,
+            Self::UnsupportedCallableType(diagnostic) => diagnostic.report(engine).await,
+            Self::TooManyGivenArguments(diagnostic) => diagnostic.report(engine).await,
             Self::TraitRefCheck(diagnostic) => diagnostic.report(engine).await,
             Self::Predicate(diagnostic) => diagnostic.report(engine).await,
             Self::PolyVarNotFound(diagnostic) => diagnostic.report(engine).await,
@@ -559,19 +563,6 @@ fn discover_poly_vars(
                 discover_poly_vars(&element, poly_vars, poly_var_stack);
             }
         }
-        TypeSyntax::Lambda(lambda) => {
-            if let Some(parameters) = lambda.parameters() {
-                for parameter in parameters.parameters() {
-                    discover_poly_vars(&parameter, poly_vars, poly_var_stack);
-                }
-            }
-            if let Some(return_type) = lambda.return_type()
-                && let Some(return_type) = return_type.r#type()
-            {
-                discover_poly_vars(&return_type, poly_vars, poly_var_stack);
-            }
-            discover_effect_row_poly_var(lambda.effect_row().as_ref(), poly_vars);
-        }
         TypeSyntax::Path(path) => {
             if let Some(identifier) = path.bare_identifier() {
                 let existing =
@@ -604,7 +595,27 @@ pub fn discover_parameter_poly_vars(
             let ParameterEntry::Parameter(parameter) = entry else { continue };
 
             if let Some(ty) = parameter.r#type() {
-                discover_poly_vars(&ty, &mut poly_vars, poly_var_stack);
+                match ty {
+                    ParameterType::Type(ty) => {
+                        discover_poly_vars(&ty, &mut poly_vars, poly_var_stack);
+                    }
+                    ParameterType::CallableSugar(callable) => {
+                        if let Some(parameters) = callable.parameters() {
+                            for parameter in parameters.parameters() {
+                                discover_poly_vars(&parameter, &mut poly_vars, poly_var_stack);
+                            }
+                        }
+                        if let Some(return_type) = callable.return_type()
+                            && let Some(return_type) = return_type.r#type()
+                        {
+                            discover_poly_vars(&return_type, &mut poly_vars, poly_var_stack);
+                        }
+                        discover_effect_row_poly_var(
+                            callable.effect_row().as_ref(),
+                            &mut poly_vars,
+                        );
+                    }
+                }
             }
         }
     }
@@ -744,6 +755,62 @@ impl Report for ExpectedValueType {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         Rendered::builder()
             .message("expected a value type or an associated type projection")
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct UnsupportedCallableType {
+    span: RelativeSpan,
+}
+impl Report for UnsupportedCallableType {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message(
+                "callable syntax is only supported as a complete parameter type on ordinary \
+                 definitions",
+            )
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct TooManyGivenArguments {
+    span: RelativeSpan,
+    expected: usize,
+}
+impl Report for TooManyGivenArguments {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message(format!("only {} explicit given arguments are accepted", self.expected))
             .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
             .build()
     }

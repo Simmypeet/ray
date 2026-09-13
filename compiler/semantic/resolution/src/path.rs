@@ -544,9 +544,11 @@ impl Resolver<'_> {
         symbol_id: GlobalSymbolID,
         span: RelativeSpan,
     ) {
-        // A symbol's own predicates are givens at its declaration site. Skipping
-        // them also avoids recursively querying a where clause while constructing it.
-        if symbol_id == self.site() || !symbol_kind.has_where_clause() {
+        // Signature resolution must not recursively query the clause it is building.
+        // Body resolution also checks recursive calls against the instantiated
+        // contract.
+        if (symbol_id == self.site() && !self.allows_inference()) || !symbol_kind.has_where_clause()
+        {
             return;
         }
 

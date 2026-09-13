@@ -1832,25 +1832,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rayc_c"
-version = "0.1.0-beta.2"
-dependencies = [
- "qbice",
- "rayc_arena",
- "rayc_hash",
- "rayc_ir",
- "rayc_lexical",
- "rayc_mono",
- "rayc_qbice",
- "rayc_semantic_element",
- "rayc_source_file",
- "rayc_symbol",
- "rayc_target",
- "rayc_type",
- "tokio",
-]
-
-[[package]]
 name = "rayc_c2"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -2058,20 +2039,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rayc_mono"
-version = "0.1.0-beta.2"
-dependencies = [
- "qbice",
- "rayc_hash",
- "rayc_ir",
- "rayc_qbice",
- "rayc_semantic_element",
- "rayc_symbol",
- "rayc_target",
- "rayc_type",
-]
-
-[[package]]
 name = "rayc_mono_ir"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -2166,6 +2133,7 @@ dependencies = [
  "rayc_lexical",
  "rayc_qbice",
  "rayc_symbol",
+ "rayc_syntax",
  "rayc_target",
  "rayc_type",
 ]
