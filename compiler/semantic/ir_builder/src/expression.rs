@@ -9,7 +9,6 @@ mod deref;
 mod errored;
 mod identifier;
 mod if_else;
-mod lambda;
 mod literal;
 mod nlambda;
 mod paren;
@@ -51,9 +50,7 @@ impl Builder {
             TypedExprKind::NLambda(lambda) => {
                 self.lower_expression(context, TypedExprWithID::new(lambda, expression_id))
             }
-            TypedExprKind::Lambda(lambda) => {
-                self.lower_expression(context, TypedExprWithID::new(lambda, expression_id))
-            }
+
             TypedExprKind::Binary(binary) => {
                 self.lower_expression(context, TypedExprWithID::new(binary, expression_id))
             }

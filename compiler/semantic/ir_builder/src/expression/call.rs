@@ -61,12 +61,6 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Call>> for Builder {
                 let perform = Perform::new(*effect_id, *operation_id, arguments, subst.clone());
                 self.emit_expression(IRExpr::new(IRExprKind::Perform(perform), span, ty))
             }
-            CallTarget::Lambda { callee } => {
-                let callee = self.lower_expression_by_id(context, *callee);
-                let arguments = self.lower_call_arguments(context, call);
-                let lowered_call = IrCall::new_lambda(callee, arguments, effect);
-                self.emit_expression(IRExpr::new(IRExprKind::Call(lowered_call), span, ty))
-            }
         }
     }
 }

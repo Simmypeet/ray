@@ -33,10 +33,6 @@ pub enum CallTarget {
         /// [`trait_def_id`].
         trait_def_subst: Subst,
     },
-
-    Lambda {
-        callee: IRExprID,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
@@ -61,8 +57,6 @@ impl VisitType for Call {
                     visitor.visit_type(ty);
                 }
             }
-
-            CallTarget::Lambda { .. } => {}
         }
         visitor.visit_type(&self.effect);
     }
@@ -96,15 +90,6 @@ impl Call {
             arguments,
             effect,
         }
-    }
-
-    #[must_use]
-    pub const fn new_lambda(
-        callee: IRExprID,
-        arguments: Vec<IRExprID>,
-        effect: Interned<Ty>,
-    ) -> Self {
-        Self { target: CallTarget::Lambda { callee }, arguments, effect }
     }
 
     #[must_use]

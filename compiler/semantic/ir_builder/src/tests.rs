@@ -3,7 +3,7 @@ use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::AddressRoot,
     cfg::Instruction,
-    ir_expr::{IRExprKind, make_lambda::MakeLambda},
+    ir_expr::{IRExprKind, nlambda::NLambda as IrNLambda},
     ir_function::IRFunction as IrFunction,
 };
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
@@ -24,8 +24,8 @@ use rayc_typed_ast::{
         binary::{Binary, BinaryOp},
         call::Call,
         identifier::Identifier,
-        lambda::Lambda,
         literal::Literal,
+        nlambda::NLambda,
         run_with::RunWith,
     },
     typed_function::{TypedFunctionID, TypedFunctionLocalID, TypedFunctionMap},
@@ -183,11 +183,30 @@ impl TestMap {
 
     fn lambda_expression(
         &mut self,
+        engine: &TrackedEngine,
         owner: TypedFunctionID,
         child: TypedFunctionID,
         ty: Interned<Ty>,
     ) -> TypedExprID {
-        self.expression(owner, TypedExprKind::Lambda(Lambda::new(child)), ty)
+        let closure_id = self.functions.register_closure(child);
+        let source_owner = TargetID::TEST.make_global(rayc_symbol::SymbolID::from_u128(1));
+        let parameter_types = self
+            .functions
+            .get_function(child)
+            .context()
+            .assert_as_lambda_context()
+            .parameters()
+            .map(|(_, parameter)| parameter.ty().clone());
+        let ty = Ty::new_closure(
+            rayc_type::ty::application::Closure::new(source_owner, closure_id, 0),
+            [],
+            parameter_types,
+            ty,
+            self.effect.clone(),
+            self.unit_ty.clone(),
+            engine,
+        );
+        self.expression(owner, TypedExprKind::NLambda(NLambda::new(child)), ty)
     }
 
     fn statement(&mut self, owner: TypedFunctionID, expression: TypedExprID) {
@@ -195,12 +214,12 @@ impl TestMap {
     }
 }
 
-fn make_lambdas(function: &IrFunction) -> Vec<&MakeLambda> {
+fn make_lambdas(function: &IrFunction) -> Vec<&IrNLambda> {
     function
         .reachables()
         .expressions()
         .filter_map(|id| match function.get_expression(id).kind() {
-            IRExprKind::MakeLambda(lambda) => Some(lambda),
+            IRExprKind::NLambda(lambda) => Some(lambda),
             IRExprKind::Error
             | IRExprKind::Literal(_)
             | IRExprKind::RefOf(_)
@@ -210,7 +229,6 @@ fn make_lambdas(function: &IrFunction) -> Vec<&MakeLambda> {
             | IRExprKind::Call(_)
             | IRExprKind::Perform(_)
             | IRExprKind::Handle(_)
-            | IRExprKind::NLambda(_)
             | IRExprKind::Tuple(_) => None,
         })
         .collect()
@@ -296,13 +314,8 @@ async fn captureless_lambda_copies_signature_and_uses_lambda_parameter_addresses
     let parameter = map.lambda_parameter(child, "value");
     let parameter_read = map.identifier(child, parameter);
     map.statement(child, parameter_read);
-    let lambda_ty = Ty::new_lambda(
-        [map.int_ty.clone()],
-        map.unit_ty.clone(),
-        Ty::new_effect_row([], None, &engine),
-        &engine,
-    );
-    let lambda = map.lambda_expression(root, child, lambda_ty);
+    let lambda_ty = map.unit_ty.clone();
+    let lambda = map.lambda_expression(&engine, root, child, lambda_ty);
     map.statement(root, lambda);
 
     let (ir, diagnostics) = lower_function(
@@ -344,9 +357,8 @@ async fn mutable_capture_is_passed_by_reference_and_written_through_its_pointer(
     let value = map.literal(child, 1);
     let assignment = map.assignment(child, destination, value);
     map.statement(child, assignment);
-    let lambda_ty =
-        Ty::new_lambda([], map.unit_ty.clone(), Ty::new_effect_row([], None, &engine), &engine);
-    let lambda = map.lambda_expression(root, child, lambda_ty);
+    let lambda_ty = map.unit_ty.clone();
+    let lambda = map.lambda_expression(&engine, root, child, lambda_ty);
     map.statement(root, lambda);
 
     let (ir, diagnostics) = lower_function(
@@ -441,8 +453,7 @@ async fn effect_operation_call_lowers_to_perform_and_preserves_function_effect()
             | IRExprKind::Call(_)
             | IRExprKind::Handle(_)
             | IRExprKind::Tuple(_)
-            | IRExprKind::NLambda(_)
-            | IRExprKind::MakeLambda(_) => None,
+            | IRExprKind::NLambda(_) => None,
         })
         .expect("effect operation should lower to perform");
     assert_eq!(perform.effect_id(), effect_id);
@@ -502,8 +513,7 @@ async fn run_with_lowers_body_and_handlers_to_explicit_handle_functions() {
             | IRExprKind::Call(_)
             | IRExprKind::Perform(_)
             | IRExprKind::Tuple(_)
-            | IRExprKind::NLambda(_)
-            | IRExprKind::MakeLambda(_) => None,
+            | IRExprKind::NLambda(_) => None,
         })
         .expect("run-with should lower to handle");
     assert_eq!(handle.effect_id(), effect_id);
