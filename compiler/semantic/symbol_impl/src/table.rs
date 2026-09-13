@@ -48,6 +48,7 @@ pub struct Infos {
     given_parameter_list: Option<Option<GivenParameterList>>,
     where_clause: Option<Option<WhereClause>>,
     instance_trait: Option<Option<SyntaxPath>>,
+    negative_marker_implementation: Option<bool>,
     marker_implementation_marker: Option<Option<SyntaxPath>>,
     marker_implementation_type: Option<Option<Type>>,
     type_definition: Option<Option<Type>>,
@@ -65,6 +66,7 @@ struct SyntaxTable {
     given_parameter_lists: Map<Option<GivenParameterList>>,
     where_clauses: Map<Option<WhereClause>>,
     instance_traits: Map<Option<SyntaxPath>>,
+    negative_marker_implementations: Map<bool>,
     marker_implementation_markers: Map<Option<SyntaxPath>>,
     marker_implementation_types: Map<Option<Type>>,
     type_definitions: Map<Option<Type>>,
@@ -228,6 +230,11 @@ impl Table {
     }
 
     #[must_use]
+    pub fn is_negative_marker_implementation(&self, symbol_id: SymbolID) -> bool {
+        self.syntaxes.negative_marker_implementations.get(&symbol_id).copied().unwrap()
+    }
+
+    #[must_use]
     pub fn get_marker_implementation_type_syntax(&self, symbol_id: SymbolID) -> Option<Type> {
         self.syntaxes.marker_implementation_types.get(&symbol_id).cloned().unwrap()
     }
@@ -304,6 +311,10 @@ impl Table {
 
         if let Some(instance_trait) = info.instance_trait {
             self.syntaxes.instance_traits.insert(symbol_id, instance_trait);
+        }
+
+        if let Some(negative) = info.negative_marker_implementation {
+            self.syntaxes.negative_marker_implementations.insert(symbol_id, negative);
         }
 
         if let Some(marker) = info.marker_implementation_marker {

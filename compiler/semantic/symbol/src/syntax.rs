@@ -101,6 +101,16 @@ pub struct MarkerImplementationMarkerSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }
 
+/// Retrieves whether a marker implementation has a leading `!`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(bool)]
+#[extend(by_val, name = is_negative_marker_implementation)]
+pub struct NegativeMarkerImplementationSyntaxKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
 /// Retrieves the implementor type declared by a marker-implementation symbol.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,

@@ -12,11 +12,15 @@ use rayc_type::{
 
 use crate::{
     givens::get_givens,
-    solver::instance_resolution_state::{InstanceResolutionLimits, InstanceResolutionState},
+    solver::{
+        instance_resolution_state::{InstanceResolutionLimits, InstanceResolutionState},
+        marker_entailment::MarkerEntailmentState,
+    },
     ty_relate::Step,
 };
 
 mod instance_resolution_state;
+mod marker_entailment;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TyRelatingEnvironment {
@@ -35,6 +39,7 @@ pub struct Solver {
     engine: TrackedEngine,
     site: GlobalSymbolID,
     instance_resolution: InstanceResolutionState,
+    marker_entailment: MarkerEntailmentState,
     givens: Interned<[PredicateKind]>,
 }
 
@@ -80,8 +85,9 @@ impl Solver {
             PredicateKind::AssociatedTypeEquality(equality) => {
                 self.eq_without_unify(equality.left(), equality.right()).await
             }
-            // TODO: Marker entailment is intentionally deferred.
-            PredicateKind::Marker(_) => false,
+            PredicateKind::Marker(predicate) => {
+                self.entails_marker_predicate(predicate.clone()).await
+            }
         }
     }
 
@@ -102,6 +108,20 @@ impl Solver {
             .collect();
 
         self.exhaustive_solve(constrs, &TyRelatingEnvironment::TopLevelMatching).await
+    }
+
+    /// Matches one type-constructor head against a concrete type without
+    /// binding variables in the concrete type.
+    pub(crate) async fn type_head_match(
+        &mut self,
+        head: Interned<Ty>,
+        expected: Interned<Ty>,
+    ) -> Option<Subst> {
+        self.exhaustive_solve(
+            vec![TyRelate::new(head, expected)],
+            &TyRelatingEnvironment::TopLevelMatching,
+        )
+        .await
     }
 
     /// Solves all constraints, returning the composed substitution.
@@ -171,6 +191,7 @@ impl Solver {
             engine,
             site,
             instance_resolution: InstanceResolutionState::new(InstanceResolutionLimits::default()),
+            marker_entailment: MarkerEntailmentState::default(),
             givens,
         }
     }
@@ -193,6 +214,7 @@ impl Solver {
             engine,
             site,
             instance_resolution: InstanceResolutionState::new(limits),
+            marker_entailment: MarkerEntailmentState::default(),
         }
     }
 

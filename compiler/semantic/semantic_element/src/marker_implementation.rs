@@ -2,12 +2,19 @@ use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::In
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::Ty;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum MarkerImplementationPolarity {
+    Positive,
+    Negative,
+}
+
 /// The resolved properties of a marker implementation.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct MarkerImplementation {
     marker_id: Option<GlobalSymbolID>,
     implementor: Interned<Ty>,
     valid_head: bool,
+    polarity: MarkerImplementationPolarity,
 }
 
 impl MarkerImplementation {
@@ -16,8 +23,9 @@ impl MarkerImplementation {
         marker_id: Option<GlobalSymbolID>,
         implementor: Interned<Ty>,
         valid_head: bool,
+        polarity: MarkerImplementationPolarity,
     ) -> Self {
-        Self { marker_id, implementor, valid_head }
+        Self { marker_id, implementor, valid_head, polarity }
     }
 
     /// Returns the implemented marker, or `None` when its path did not resolve.
@@ -31,6 +39,16 @@ impl MarkerImplementation {
     /// Returns whether this implementation has a valid simple instance head.
     #[must_use]
     pub const fn has_valid_head(&self) -> bool { self.valid_head }
+
+    /// Returns whether this implementation explicitly opts the constructor
+    /// out of the marker.
+    #[must_use]
+    pub const fn is_negative(&self) -> bool {
+        match self.polarity {
+            MarkerImplementationPolarity::Positive => false,
+            MarkerImplementationPolarity::Negative => true,
+        }
+    }
 
     /// Returns whether two valid implementations overlap.
     #[must_use]

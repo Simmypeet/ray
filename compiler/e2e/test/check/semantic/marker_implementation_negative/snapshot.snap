@@ -1,0 +1,27 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: overlapping marker implementations
+  ╭▸ compiler/e2e/test/check/semantic/marker_implementation_negative/main.ray:4:1
+  │
+3 │ impl !Send for bool
+  │ ─────────────────── the first overlapping implementation is here
+4 │ impl Send for bool
+  ╰╴━━━━━━━━━━━━━━━━━━ this marker is already implemented for the same type constructor
+
+[error]: negative marker implementations cannot have where clauses
+  ╭▸ compiler/e2e/test/check/semantic/marker_implementation_negative/main.ray:6:22
+  │
+6 │   impl[a] !Send for *a where (
+  │ ┏━━━━━━━━━━━━━━━━━━━━━━┛
+7 │ ┃     a: Send,
+8 │ ┃ )
+  ╰╴┗━┛ remove this conditional requirement
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

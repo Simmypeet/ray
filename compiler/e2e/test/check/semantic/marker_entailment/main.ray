@@ -1,0 +1,23 @@
+marker Send
+marker Copy
+
+impl[a, b, c] !Send for (a, b, c)
+
+impl[a, b] Send for (a, b) where (
+    b: Copy,
+)
+
+def requireSend(value: a) -> a where (a: Send):
+    return value
+
+def accepted(value: a) -> (int32, a) where (a: Copy):
+    return requireSend((0, value))
+
+def rejected(value: a) -> (int32, a) where (a: Send):
+    return requireSend((0, value))
+
+def rejectedNegative() -> (int32, bool, int32):
+    return requireSend((0, true, 0))
+
+def main() -> int32:
+    return 0

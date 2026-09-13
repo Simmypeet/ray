@@ -1,0 +1,11 @@
+marker Send
+
+impl !Send for bool
+impl Send for bool
+
+impl[a] !Send for *a where (
+    a: Send,
+)
+
+def main() -> int32:
+    return 0

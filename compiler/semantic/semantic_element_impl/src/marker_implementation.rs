@@ -6,7 +6,8 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::resolver::Resolver;
 use rayc_semantic_element::marker_implementation::{
-    Key, MarkerImplementation as SemanticMarkerImplementation, get_marker_implementation,
+    Key, MarkerImplementation as SemanticMarkerImplementation, MarkerImplementationPolarity,
+    get_marker_implementation,
 };
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
@@ -14,7 +15,10 @@ use rayc_symbol::{
     source_map::to_absolute_span,
     span::get_span,
     symbol_kind::{SymbolKind, get_all_symbol_ids, get_symbol_kind},
-    syntax::{get_marker_implementation_marker_syntax, get_marker_implementation_type_syntax},
+    syntax::{
+        get_marker_implementation_marker_syntax, get_marker_implementation_type_syntax,
+        get_where_clause_syntax, is_negative_marker_implementation,
+    },
 };
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_enclosing_poly_var_maps, get_poly_var_map},
@@ -133,6 +137,36 @@ pub struct OverlappingImplementation {
     previous_span: RelativeSpan,
 }
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct NegativeImplementationWhereClause {
+    span: RelativeSpan,
+}
+
+impl Report for NegativeImplementationWhereClause {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("negative marker implementations cannot have where clauses")
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some("remove this conditional requirement".into()),
+            ))
+            .build()
+    }
+}
+
 impl Report for OverlappingImplementation {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         Rendered::builder()
@@ -167,6 +201,7 @@ pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
     InvalidHead(InvalidHead),
     InvalidTypeVariableOccurrence(InvalidTypeVariableOccurrence),
+    NegativeImplementationWhereClause(NegativeImplementationWhereClause),
     OverlappingImplementation(OverlappingImplementation),
 }
 
@@ -176,6 +211,7 @@ impl Report for Diagnostic {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::InvalidHead(diagnostic) => diagnostic.report(engine).await,
             Self::InvalidTypeVariableOccurrence(diagnostic) => diagnostic.report(engine).await,
+            Self::NegativeImplementationWhereClause(diagnostic) => diagnostic.report(engine).await,
             Self::OverlappingImplementation(diagnostic) => diagnostic.report(engine).await,
         }
     }
@@ -320,6 +356,12 @@ impl Build for Key {
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
         let diagnostics = Storage::new();
         let obligations = Storage::new();
+        let negative = engine.is_negative_marker_implementation(symbol_id).await;
+        let polarity = if negative {
+            MarkerImplementationPolarity::Negative
+        } else {
+            MarkerImplementationPolarity::Positive
+        };
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
         let mut resolver = Resolver::builder()
             .engine(engine)
@@ -350,8 +392,17 @@ impl Build for Key {
             false
         };
 
+        // Conditional negative reasoning needs a three-valued applicability
+        // check, which the Boolean marker solver deliberately does not expose.
+        if negative && let Some(where_clause) = engine.get_where_clause_syntax(symbol_id).await {
+            diagnostics.receive(Diagnostic::NegativeImplementationWhereClause(
+                NegativeImplementationWhereClause { span: where_clause.span() },
+            ));
+        }
+
         // Compare only against earlier declarations to keep overlap queries acyclic.
-        let implementation = SemanticMarkerImplementation::new(marker_id, implementor, valid_head);
+        let implementation =
+            SemanticMarkerImplementation::new(marker_id, implementor, valid_head, polarity);
         if let Some(previous_span) =
             find_overlapping_implementation(engine, symbol_id, &implementation).await
         {

@@ -5,7 +5,7 @@ use rayc_parser::{
 };
 
 use crate::{
-    Identifier, Keyword, effect::TypeParameterList, path::Path, r#type::Type,
+    Identifier, Keyword, Punctuation, effect::TypeParameterList, path::Path, r#type::Type,
     where_clause::WhereClause,
 };
 
@@ -22,6 +22,7 @@ abstract_tree::abstract_tree! {
     pub struct MarkerImplementation {
         pub impl_keyword: Keyword = expect::Keyword::Impl,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
+        pub negation: Punctuation = '!'.optional(),
         pub marker: Path = ast::<Path>(),
         pub for_keyword: Keyword = expect::Keyword::For,
         pub implementor: Type = ast::<Type>(),

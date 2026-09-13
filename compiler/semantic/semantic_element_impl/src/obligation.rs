@@ -2,7 +2,7 @@
 
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::{Obligation, PredicateObligation, TraitRefCheck};
+use rayc_resolution::{Obligation, PredicateConstraint, PredicateObligation, TraitRefCheck};
 use rayc_solver::ty_relate::Step;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
@@ -59,7 +59,7 @@ pub(crate) async fn solve_obligations(
                 }
             }
             ExpandedObligation::Predicate(predicate) => {
-                if let Some(constraint) = predicate.constraint() {
+                if let PredicateConstraint::TyRelate(constraint) = predicate.constraint() {
                     constraints.push((index, constraint));
                 }
             }
@@ -95,6 +95,21 @@ pub(crate) async fn solve_obligations(
         }
     }
     failed.extend(residual.into_iter().map(|(index, _)| index));
+
+    // Type equalities run first so marker goals observe the final substitution
+    // produced by the complete obligation set.
+    for (index, obligation) in expanded.iter().enumerate() {
+        let ExpandedObligation::Predicate(predicate) = obligation else {
+            continue;
+        };
+        let PredicateConstraint::Marker(marker) = predicate.constraint() else {
+            continue;
+        };
+        let marker = marker.apply_subst_or_clone(&subst, engine);
+        if !solver.entails_marker_predicate(marker).await {
+            failed.insert(index);
+        }
+    }
 
     // Report the original obligation after applying every substitution learned
     // while solving the complete set.

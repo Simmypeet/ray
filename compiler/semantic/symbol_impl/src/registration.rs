@@ -58,6 +58,7 @@ impl Table {
                 .type_parameters(implementation.type_parameters())
                 .given_parameter_list(None)
                 .where_clause(implementation.where_clause())
+                .negative_marker_implementation(implementation.negation().is_some())
                 .marker_implementation_marker(implementation.marker())
                 .marker_implementation_type(implementation.implementor())
                 .build(),

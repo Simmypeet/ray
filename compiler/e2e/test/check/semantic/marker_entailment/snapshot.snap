@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: where-clause obligation for `main.requireSend` is not satisfied
+   ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:17:12
+   │
+17 │     return requireSend((0, value))
+   ╰╴           ━━━━━━━━━━━ `(int32, a)` must satisfy marker `main.Send`
+
+[error]: where-clause obligation for `main.requireSend` is not satisfied
+   ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:20:12
+   │
+20 │     return requireSend((0, true, 0))
+   ╰╴           ━━━━━━━━━━━ `(int32, bool, int32)` must satisfy marker `main.Send`
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

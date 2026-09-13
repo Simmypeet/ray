@@ -4,8 +4,9 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
     DefBodySyntaxKey, EffectRowSyntaxKey, GivenParameterListSyntaxKey, InstanceTraitSyntaxKey,
     KindAscriptionSyntaxKey, MarkerImplementationMarkerSyntaxKey,
-    MarkerImplementationTypeSyntaxKey, ParameterListSyntaxKey, ReturnTypeSyntaxKey,
-    TypeDefinitionSyntaxKey, TypeParameterListSyntaxKey, VariadicDefKey, WhereClauseSyntaxKey,
+    MarkerImplementationTypeSyntaxKey, NegativeMarkerImplementationSyntaxKey,
+    ParameterListSyntaxKey, ReturnTypeSyntaxKey, TypeDefinitionSyntaxKey,
+    TypeParameterListSyntaxKey, VariadicDefKey, WhereClauseSyntaxKey,
 };
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
@@ -140,6 +141,20 @@ pub async fn marker_implementation_marker_syntax_executor(
 static MARKER_IMPLEMENTATION_MARKER_SYNTAX_EXECUTOR: Registration<Config> = Registration::new::<
     MarkerImplementationMarkerSyntaxKey,
     MarkerImplementationMarkerSyntaxExecutor,
+>();
+
+#[executor(config = Config)]
+pub async fn negative_marker_implementation_syntax_executor(
+    &NegativeMarkerImplementationSyntaxKey { symbol_id }: &NegativeMarkerImplementationSyntaxKey,
+    engine: &TrackedEngine,
+) -> bool {
+    engine.get_table(symbol_id.target_id).await.is_negative_marker_implementation(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static NEGATIVE_MARKER_IMPLEMENTATION_SYNTAX_EXECUTOR: Registration<Config> = Registration::new::<
+    NegativeMarkerImplementationSyntaxKey,
+    NegativeMarkerImplementationSyntaxExecutor,
 >();
 
 #[executor(config = Config)]

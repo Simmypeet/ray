@@ -2,13 +2,14 @@ use derive_more::From;
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::Obligation;
+use rayc_resolution::{Obligation, PredicateConstraint};
 use rayc_type::{
     constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
     reduce::Reduce,
     subst::Substitutable,
     trait_ref::TraitRef,
     ty::{Ty, TyKind, effect_row::EffectLabel},
+    where_clause::MarkerPredicate,
 };
 use rayc_typed_ast::{
     statement::Statement,
@@ -30,6 +31,7 @@ use crate::tast_builder::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
 pub enum Constraint {
     InstanceTraitRef(InstanceTraitRef),
+    MarkerPredicate(MarkerPredicate),
     TyRelate(TyRelate),
     InstanceResolve { instance: Interned<Ty>, trait_ref: TraitRef },
 }
@@ -49,6 +51,11 @@ impl Reduce for Constraint {
             }
             Self::TyRelate(ty_relate) => {
                 ty_relate.reduce(engine, givens).await.map(Constraint::TyRelate)
+            }
+            Self::MarkerPredicate(predicate) => {
+                predicate.implementor().reduce(engine, givens).await.map(|implementor| {
+                    Self::MarkerPredicate(MarkerPredicate::new(predicate.marker_id(), implementor))
+                })
             }
             Self::InstanceResolve { instance, trait_ref } => {
                 match (
@@ -87,6 +94,9 @@ impl Substitutable for Constraint {
             Self::TyRelate(ty_relate) => {
                 ty_relate.apply_subst(subst, engine).map(Constraint::TyRelate)
             }
+            Self::MarkerPredicate(predicate) => {
+                predicate.apply_subst(subst, engine).map(Self::MarkerPredicate)
+            }
         }
     }
 }
@@ -96,6 +106,9 @@ impl Constraint {
         match self {
             Self::InstanceTraitRef(check) => Box::new(check.interned_recursive_iter()),
             Self::TyRelate(ty_relate) => Box::new(ty_relate.interned_recursive_iter()),
+            Self::MarkerPredicate(predicate) => {
+                Box::new(Ty::interned_recursive_iter(predicate.implementor()))
+            }
             Self::InstanceResolve { instance, trait_ref } => Box::new(
                 Ty::interned_recursive_iter(instance)
                     .chain(trait_ref.args().interned_iter().flat_map(Ty::interned_recursive_iter)),
@@ -127,15 +140,20 @@ impl TAstBuilder {
                 }
                 Obligation::WfCheck(check) => {
                     for predicate in check.predicate_obligations(&self.engine).await {
-                        let Some(constraint) = predicate.constraint() else {
-                            continue;
+                        let constraint = match predicate.constraint() {
+                            PredicateConstraint::TyRelate(constraint) => {
+                                Constraint::TyRelate(constraint)
+                            }
+                            PredicateConstraint::Marker(marker) => {
+                                Constraint::MarkerPredicate(marker)
+                            }
                         };
                         let root_cause_id =
                             self.constraint_solver.provenance.insert_root_cause(predicate.clone());
 
                         self.push_constraint(
                             PendingConstraint::builder()
-                                .constraint(constraint.into())
+                                .constraint(constraint)
                                 .cause_id(root_cause_id)
                                 .build(),
                         )

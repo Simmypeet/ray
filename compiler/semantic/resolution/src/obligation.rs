@@ -8,7 +8,7 @@ use rayc_symbol::{GlobalSymbolID, name::get_qualified_name, source_map::to_absol
 use rayc_type::{
     constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
     subst::{Subst, Substitutable},
-    where_clause::{PredicateKind, get_where_clause},
+    where_clause::{MarkerPredicate, PredicateKind, get_where_clause},
 };
 
 #[derive(
@@ -63,6 +63,13 @@ pub struct PredicateObligation {
     span: RelativeSpan,
 }
 
+/// The solver constraint represented by one where-clause predicate.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum PredicateConstraint {
+    TyRelate(TyRelate),
+    Marker(MarkerPredicate),
+}
+
 impl PredicateObligation {
     #[must_use]
     pub const fn new(
@@ -74,14 +81,12 @@ impl PredicateObligation {
     }
 
     #[must_use]
-    pub fn constraint(&self) -> Option<TyRelate> {
+    pub fn constraint(&self) -> PredicateConstraint {
         match &self.predicate {
-            PredicateKind::AssociatedTypeEquality(equality) => {
-                Some(TyRelate::new(equality.left().clone(), equality.right().clone()))
-            }
-            // TODO: Marker predicates are preserved semantically, but their
-            // resolution and entailment are intentionally deferred.
-            PredicateKind::Marker(_) => None,
+            PredicateKind::AssociatedTypeEquality(equality) => PredicateConstraint::TyRelate(
+                TyRelate::new(equality.left().clone(), equality.right().clone()),
+            ),
+            PredicateKind::Marker(predicate) => PredicateConstraint::Marker(predicate.clone()),
         }
     }
 }

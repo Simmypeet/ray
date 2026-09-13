@@ -1,7 +1,7 @@
 use bon::Builder;
 use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::PredicateObligation;
+use rayc_resolution::{PredicateConstraint, PredicateObligation};
 use rayc_solver::{
     instance_resolution::{InstanceResolutionError, InstanceResolutionObligation},
     ty_relate::{self, DerivedConstraint, Step},
@@ -137,11 +137,31 @@ impl TAstBuilder {
                     self.entail_instance_trait_ref(check, pending_constraint.cause_id, &mut queued)
                         .await;
                 }
+                Constraint::MarkerPredicate(predicate) => {
+                    self.entail_marker_predicate(predicate, pending_constraint.cause_id).await;
+                }
                 Constraint::TyRelate(ty_relate) => {
                     self.entail_relate(ty_relate, pending_constraint.cause_id, &mut queued).await;
                 }
             }
         }
+    }
+
+    async fn entail_marker_predicate(
+        &mut self,
+        predicate: rayc_type::where_clause::MarkerPredicate,
+        cause_id: CauseID,
+    ) {
+        if self.constraint_solver.solver.entails_marker_predicate(predicate.clone()).await {
+            return;
+        }
+
+        // A later type substitution may make an unresolved marker goal
+        // provable, so retain it in the common residual worklist.
+        self.constraint_solver.constraint_set.residual_constraints.push(PendingConstraint {
+            constraint: Constraint::MarkerPredicate(predicate),
+            cause_id,
+        });
     }
 
     async fn entail_instance_trait_ref(
@@ -228,16 +248,14 @@ impl TAstBuilder {
         for obligation in obligations {
             let (instance_id, predicate) = obligation.into_parts();
             let obligation = PredicateObligation::new(predicate, instance_id, span);
-            let Some(constraint) = obligation.constraint() else {
-                continue;
+            let constraint = match obligation.constraint() {
+                PredicateConstraint::TyRelate(constraint) => Constraint::TyRelate(constraint),
+                PredicateConstraint::Marker(marker) => Constraint::MarkerPredicate(marker),
             };
             let predicate_cause_id =
                 self.constraint_solver.provenance.insert_root_cause(obligation.clone());
 
-            queued.push(PendingConstraint {
-                constraint: Constraint::TyRelate(constraint),
-                cause_id: predicate_cause_id,
-            });
+            queued.push(PendingConstraint { constraint, cause_id: predicate_cause_id });
         }
     }
 
