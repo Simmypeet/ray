@@ -2,6 +2,6 @@ def main() -> int32:
     let first = 32
     let second = 42
     let mut pointer = first.&
-    let read = () -> pointer.*
+    let read = [] -> pointer.*
     pointer = second.&
     return read()

@@ -1,5 +1,5 @@
 def main() -> int32:
     let mut value = 32
-    let address = () -> value.&
+    let address = [] -> value.&
     value = 42
     return address().*

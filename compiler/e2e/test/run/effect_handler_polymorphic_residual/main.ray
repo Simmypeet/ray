@@ -20,7 +20,7 @@ def handleScale(
 def main() -> int32:
     return run:
         return run:
-            let callback = (value) -> Scale.apply(value) + Offset.get() + Bonus.get()
+            let callback = [value] -> Scale.apply(value) + Offset.get() + Bonus.get()
             return handleScale(callback, 10)
         with Offset:
             def get():

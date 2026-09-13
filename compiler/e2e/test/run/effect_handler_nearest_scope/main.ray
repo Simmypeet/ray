@@ -9,20 +9,20 @@ def readScope() -> int32 \ {Scope}:
 def forwardScope() -> int32 \ {Scope}:
     return readScope()
 
+def invoke(callback: def() -> int32 \ {Scope}) -> int32 \ {Scope}:
+    return callback()
+
 def main() -> int32:
     let result = run:
-        # this is a bummer that we have to explicitly type the callback to a 
-        # closed-row. if we don't, the row tail will be open to a particualr 
-        # variable and will be shared between the two call sites
-        let callback: def() -> int32 \ {Scope} = () -> forwardScope()
+        let callback = [] -> forwardScope()
         
-        let outerBefore = callback()
+        let outerBefore = invoke(callback)
         let inner = run:
-            return callback()
+            return invoke(callback)
         with Scope:
             def current():
                 return 20
-        let outerAfter = callback()
+        let outerAfter = invoke(callback)
         printf("outer-before = %d, inner = %d, outer-after = %d\n", outerBefore, inner, outerAfter)
         return 0
     with Scope:

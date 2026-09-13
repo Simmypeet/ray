@@ -2,7 +2,7 @@ def identity(value: a) -> a:
     return value
 
 def recover(value: a) -> a:
-    let captured = () -> identity(value)
+    let captured = [] -> identity(value)
     return captured()
 
 def main() -> int32:

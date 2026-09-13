@@ -1,3 +1,3 @@
 def main() -> int32:
-    let increment = (value) -> value + 1
+    let increment = [value] -> value + 1
     return increment(40)
