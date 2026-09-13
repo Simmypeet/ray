@@ -1,0 +1,15 @@
+eff Values:
+    def read() -> int32
+    def update() -> int32
+
+def main() -> int32:
+    let mut a = 32
+    let b = 10
+    return run:
+        Values.update()
+        return Values.read()
+    with Values:
+        def read():
+            return a + b
+        def update():
+            return a = 40

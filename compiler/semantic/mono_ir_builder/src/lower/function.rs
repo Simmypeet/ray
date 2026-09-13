@@ -17,7 +17,7 @@ impl Builder<'_> {
     pub(crate) async fn lower_function(&mut self, context: &Context, source_id: IRFunctionID) {
         let source = context.source_function(source_id);
         let abi = context.function_abi(source_id);
-        self.initialize_function_state(context, &source, abi).await;
+        self.initialize_function_state(context, source_id, &source, abi).await;
 
         for source_block in source.reachables().blocks() {
             let target_block = self.block(source_block);
@@ -44,6 +44,7 @@ impl Builder<'_> {
     async fn initialize_function_state(
         &mut self,
         context: &Context,
+        source_id: IRFunctionID,
         source: &IRFunction,
         abi: &FunctionABI,
     ) {
@@ -113,23 +114,23 @@ impl Builder<'_> {
         }
 
         if let Some(environment_parameter) = environment_parameter {
-            self.initialize_environment_access(context, source, abi, environment_parameter);
+            self.initialize_environment_access(context, source_id, environment_parameter);
         }
     }
 
     fn initialize_environment_access(
         &mut self,
         context: &Context,
-        source: &IRFunction,
-        abi: &FunctionABI,
+        source_id: IRFunctionID,
         environment_parameter: LocalID,
     ) {
-        let env = abi.environment_type();
+        let environment_abi = context.function_environment_abi(source_id);
+        let env = environment_abi.environment_type();
         if env.captures().is_empty() {
             return;
         }
 
-        let environment_place = if abi.by_value() {
+        let environment_place = if environment_abi.by_value() {
             // no need to dereference the environment parameter, it is already the correct
             // type
             Place::new(environment_parameter)
@@ -154,7 +155,7 @@ impl Builder<'_> {
             Place::new(pointer_local).dereference()
         };
 
-        for (index, capture_id) in abi.capture_ids().enumerate() {
+        for (index, capture_id) in environment_abi.capture_ids().enumerate() {
             self.insert_capture(
                 capture_id,
                 environment_place
@@ -163,27 +164,18 @@ impl Builder<'_> {
             );
         }
 
-        // if the environment explicitly captures effect handlers in the environment, we
-        // need to insert them as well
-        if abi.captures_effect_handlers() {
-            for (offset, effect) in abi.effects().cloned().enumerate() {
-                let index = abi.capture_count() + offset;
-                self.insert_handler(
-                    effect,
-                    environment_place
-                        .clone()
-                        .project_environment_field(FieldIndex::new(index.try_into().unwrap())),
-                );
-            }
+        // Initialize effect handlers from the same environment ABI used by its
+        // producer.
+        for (offset, effect) in environment_abi.captured_effects().cloned().enumerate() {
+            let index = environment_abi.capture_count() + offset;
+            self.insert_handler(
+                effect,
+                environment_place
+                    .clone()
+                    .project_environment_field(FieldIndex::new(index.try_into().unwrap())),
+            );
         }
 
-        let expected_captures = match source.context() {
-            IRContext::Lambda(context) => context.captures().len(),
-            IRContext::Thunk(context) => context.captures().len(),
-            IRContext::OperationHandler(context) => context.captures().len(),
-            IRContext::Def => 0,
-        };
-
-        assert_eq!(expected_captures, abi.capture_count());
+        assert_eq!(context.source_capture_count(source_id), environment_abi.capture_count());
     }
 }

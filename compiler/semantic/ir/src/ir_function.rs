@@ -8,7 +8,8 @@ use crate::{
     cfg::{BlockID, Cfg, Instruction, Reachables, Terminator},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
     ir_lambda::{
-        Capture, CaptureID, IRLambdaContext, IRThunkContext, LambdaParameter, LambdaParameterID,
+        Capture, CaptureID, CaptureMap, CaptureMapID, IRLambdaContext, IRThunkContext,
+        LambdaParameter, LambdaParameterID,
     },
     ir_operation_handler::{
         IROperationHandlerContext, OperationHandlerParameter, OperationHandlerParameterID,
@@ -22,6 +23,9 @@ pub type FunctionID = ID<IRFunction>;
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IRFunctionMap {
     functions: Arena<IRFunction>,
+    /// Capture layouts referenced by nested-function contexts. Operation
+    /// handlers belonging to one handler record share an entry.
+    capture_maps: Arena<CaptureMap>,
     root: FunctionID,
     closures: FxHashMap<ClosureID, FunctionID>,
 }
@@ -31,7 +35,7 @@ impl IRFunctionMap {
     pub fn new(root_effect: Interned<Ty>) -> Self {
         let mut functions = Arena::new();
         let root = functions.insert(IRFunction::new(root_effect));
-        Self { functions, root, closures: FxHashMap::default() }
+        Self { functions, capture_maps: Arena::new(), root, closures: FxHashMap::default() }
     }
 
     /// Associates a source closure identity with its lowered local function.
@@ -81,13 +85,23 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn insert_lambda(&mut self, return_ty: Interned<Ty>, effect: Interned<Ty>) -> FunctionID {
-        self.functions.insert(IRFunction::new_lambda(return_ty, effect))
+    pub fn insert_lambda(
+        &mut self,
+        return_ty: Interned<Ty>,
+        effect: Interned<Ty>,
+        capture_map: CaptureMapID,
+    ) -> FunctionID {
+        self.functions.insert(IRFunction::new_lambda(return_ty, effect, capture_map))
     }
 
     #[must_use]
-    pub fn insert_thunk(&mut self, return_ty: Interned<Ty>, effect: Interned<Ty>) -> FunctionID {
-        self.functions.insert(IRFunction::new_thunk(return_ty, effect))
+    pub fn insert_thunk(
+        &mut self,
+        return_ty: Interned<Ty>,
+        effect: Interned<Ty>,
+        capture_map: CaptureMapID,
+    ) -> FunctionID {
+        self.functions.insert(IRFunction::new_thunk(return_ty, effect, capture_map))
     }
 
     #[must_use]
@@ -96,8 +110,14 @@ impl IRFunctionMap {
         operation: rayc_symbol::GlobalSymbolID,
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
+        capture_map: CaptureMapID,
     ) -> FunctionID {
-        self.functions.insert(IRFunction::new_operation_handler(operation, return_ty, effect))
+        self.functions.insert(IRFunction::new_operation_handler(
+            operation,
+            return_ty,
+            effect,
+            capture_map,
+        ))
     }
 
     #[must_use]
@@ -119,13 +139,40 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn insert_capture(&mut self, function_id: FunctionID, capture: Capture) -> CaptureID {
-        self.get_function_mut(function_id).insert_capture(capture)
+    pub fn new_capture_map(&mut self) -> CaptureMapID {
+        self.capture_maps.insert(CaptureMap::default())
+    }
+
+    #[must_use]
+    pub fn insert_capture(&mut self, capture_map_id: CaptureMapID, capture: Capture) -> CaptureID {
+        self.capture_maps
+            .get_mut(capture_map_id)
+            .expect("IR capture map should exist")
+            .insert_capture(capture)
     }
 
     #[must_use]
     pub fn get_capture(&self, function_id: FunctionID, capture_id: CaptureID) -> &Capture {
-        self.get_function(function_id).context().get_capture(capture_id)
+        self.capture_map(function_id).get_capture(capture_id)
+    }
+
+    #[must_use]
+    pub fn captures(
+        &self,
+        function_id: FunctionID,
+    ) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
+        self.capture_map(function_id).iter()
+    }
+
+    /// Returns the arena-owned capture layout referenced by a nested function.
+    #[must_use]
+    pub fn capture_map_id(&self, function_id: FunctionID) -> CaptureMapID {
+        self.get_function(function_id).context().capture_map()
+    }
+
+    fn capture_map(&self, function_id: FunctionID) -> &CaptureMap {
+        let capture_map = self.capture_map_id(function_id);
+        self.capture_maps.get(capture_map).expect("IR capture map should exist")
     }
 
     #[must_use]
@@ -194,6 +241,9 @@ impl VisitType for IRFunctionMap {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
         for (_, function) in self.functions() {
             function.visit_types(visitor);
+        }
+        for (_, capture_map) in self.capture_maps.iter() {
+            capture_map.visit_types(visitor);
         }
     }
 }
@@ -270,21 +320,12 @@ impl IRContext {
         }
     }
 
-    fn get_capture(&self, id: CaptureID) -> &Capture {
+    fn capture_map(&self) -> CaptureMapID {
         match self {
             Self::Def => panic!("a def context does not have captures"),
-            Self::Lambda(context) => context.get_capture(id),
-            Self::Thunk(context) => context.get_capture(id),
-            Self::OperationHandler(context) => context.get_capture(id),
-        }
-    }
-
-    fn insert_capture(&mut self, capture: Capture) -> CaptureID {
-        match self {
-            Self::Def => panic!("a def context cannot have captures"),
-            Self::Lambda(context) => context.insert_capture(capture),
-            Self::Thunk(context) => context.insert_capture(capture),
-            Self::OperationHandler(context) => context.insert_capture(capture),
+            Self::Lambda(context) => context.capture_map(),
+            Self::Thunk(context) => context.capture_map(),
+            Self::OperationHandler(context) => context.capture_map(),
         }
     }
 }
@@ -311,23 +352,31 @@ impl IRFunction {
     }
 
     #[must_use]
-    pub fn new_lambda(return_ty: Interned<Ty>, effect: Interned<Ty>) -> Self {
+    pub fn new_lambda(
+        return_ty: Interned<Ty>,
+        effect: Interned<Ty>,
+        capture_map: CaptureMapID,
+    ) -> Self {
         Self {
             cfg: Cfg::default(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
-            context: IRContext::Lambda(IRLambdaContext::new(return_ty)),
+            context: IRContext::Lambda(IRLambdaContext::new(return_ty, capture_map)),
             effect,
         }
     }
 
     #[must_use]
-    pub fn new_thunk(return_ty: Interned<Ty>, effect: Interned<Ty>) -> Self {
+    pub fn new_thunk(
+        return_ty: Interned<Ty>,
+        effect: Interned<Ty>,
+        capture_map: CaptureMapID,
+    ) -> Self {
         Self {
             cfg: Cfg::default(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
-            context: IRContext::Thunk(IRThunkContext::new(return_ty)),
+            context: IRContext::Thunk(IRThunkContext::new(return_ty, capture_map)),
             effect,
         }
     }
@@ -337,13 +386,16 @@ impl IRFunction {
         operation: rayc_symbol::GlobalSymbolID,
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
+        capture_map: CaptureMapID,
     ) -> Self {
         Self {
             cfg: Cfg::default(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
             context: IRContext::OperationHandler(IROperationHandlerContext::new(
-                operation, return_ty,
+                operation,
+                return_ty,
+                capture_map,
             )),
             effect,
         }
@@ -371,11 +423,6 @@ impl IRFunction {
                 panic!("operation handler parameters require an operation handler context")
             }
         }
-    }
-
-    #[must_use]
-    pub fn insert_capture(&mut self, capture: Capture) -> CaptureID {
-        self.context.insert_capture(capture)
     }
 
     #[must_use]
@@ -462,12 +509,7 @@ impl VisitType for IRContext {
 }
 
 impl VisitType for IRThunkContext {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
-        visitor.visit_type(self.return_ty());
-        for (_, capture) in self.captures() {
-            capture.visit_types(visitor);
-        }
-    }
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) { visitor.visit_type(self.return_ty()); }
 }
 
 impl VisitType for IROperationHandlerContext {
@@ -476,9 +518,6 @@ impl VisitType for IROperationHandlerContext {
             parameter.visit_types(visitor);
         }
         visitor.visit_type(self.return_ty());
-        for (_, capture) in self.captures() {
-            capture.visit_types(visitor);
-        }
     }
 }
 
@@ -488,9 +527,6 @@ impl VisitType for IRLambdaContext {
             parameter.visit_types(visitor);
         }
         visitor.visit_type(self.return_ty());
-        for (_, capture) in self.captures() {
-            capture.visit_types(visitor);
-        }
     }
 }
 
@@ -505,5 +541,13 @@ impl VisitType for OperationHandlerParameter {
 impl VisitType for Capture {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
         visitor.visit_type(self.binding_ty());
+    }
+}
+
+impl VisitType for CaptureMap {
+    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        for (_, capture) in self.iter() {
+            capture.visit_types(visitor);
+        }
     }
 }

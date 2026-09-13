@@ -383,8 +383,7 @@ async fn mutable_capture_is_passed_by_reference_and_written_through_its_pointer(
     assert!(matches!(reference.address().root(), AddressRoot::Variable(_)));
 
     let child = ir.get_function(make_lambda.function_id());
-    let context = lambda_context(child);
-    let capture_layout: Vec<_> = context.captures().collect();
+    let capture_layout: Vec<_> = ir.captures(make_lambda.function_id()).collect();
     assert_eq!(capture_layout.len(), 1);
     let (capture_id, capture) = capture_layout[0];
     assert_eq!(capture.mode(), rayc_type::capture::CaptureMode::Reference(Mutability::Mutable));
@@ -526,7 +525,7 @@ async fn run_with_lowers_body_and_handlers_to_explicit_handle_functions() {
     let body = ir.get_function(handle.body().function_id());
     assert_eq!(body.effect(), &body_effect);
     assert_eq!(body.context().assert_as_thunk_context().return_ty(), &map.unit_ty);
-    let handler = ir.get_function(handle.handlers()[0].function().function_id());
+    let handler = ir.get_function(handle.handlers()[0].function_id());
     let handler_context = handler.context().assert_as_operation_handler_context();
     assert_eq!(handler_context.operation(), operation_id);
     assert_eq!(handler_context.return_ty(), &map.unit_ty);

@@ -2059,6 +2059,7 @@ name = "rayc_mono_ir_builder"
 version = "0.1.0-beta.2"
 dependencies = [
  "qbice",
+ "rayc_arena",
  "rayc_hash",
  "rayc_ir",
  "rayc_lexical",

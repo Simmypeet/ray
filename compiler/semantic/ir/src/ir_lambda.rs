@@ -8,43 +8,30 @@ use rayc_type::{capture::CaptureMode, ty::Ty};
 pub struct IRLambdaContext {
     parameters: LambdaParameterMap,
     return_ty: Interned<Ty>,
-    captures: CaptureMap,
+    capture_map: CaptureMapID,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IRThunkContext {
     return_ty: Interned<Ty>,
-    captures: CaptureMap,
+    capture_map: CaptureMapID,
 }
 
 impl IRThunkContext {
-    pub(crate) fn new(return_ty: Interned<Ty>) -> Self {
-        Self { return_ty, captures: CaptureMap::default() }
+    pub(crate) const fn new(return_ty: Interned<Ty>, capture_map: CaptureMapID) -> Self {
+        Self { return_ty, capture_map }
     }
 
     #[must_use]
     pub const fn return_ty(&self) -> &Interned<Ty> { &self.return_ty }
 
     #[must_use]
-    pub fn captures(&self) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
-        self.captures.iter()
-    }
-
-    #[must_use]
-    pub fn get_capture(&self, id: CaptureID) -> &Capture { self.captures.get_capture(id) }
-
-    pub(crate) fn insert_capture(&mut self, capture: Capture) -> CaptureID {
-        self.captures.insert_capture(capture)
-    }
+    pub(crate) const fn capture_map(&self) -> CaptureMapID { self.capture_map }
 }
 
 impl IRLambdaContext {
-    pub(crate) fn new(return_ty: Interned<Ty>) -> Self {
-        Self {
-            parameters: LambdaParameterMap::default(),
-            return_ty,
-            captures: CaptureMap::default(),
-        }
+    pub(crate) fn new(return_ty: Interned<Ty>, capture_map: CaptureMapID) -> Self {
+        Self { parameters: LambdaParameterMap::default(), return_ty, capture_map }
     }
 
     #[must_use]
@@ -68,17 +55,7 @@ impl IRLambdaContext {
     }
 
     #[must_use]
-    pub fn captures(&self) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
-        self.captures.iter()
-    }
-
-    #[must_use]
-    pub fn get_capture(&self, id: CaptureID) -> &Capture { self.captures.get_capture(id) }
-
-    #[must_use]
-    pub(crate) fn insert_capture(&mut self, capture: Capture) -> CaptureID {
-        self.captures.insert_capture(capture)
-    }
+    pub(crate) const fn capture_map(&self) -> CaptureMapID { self.capture_map }
 }
 
 #[derive(
@@ -160,6 +137,9 @@ impl Capture {
 }
 
 pub type CaptureID = ID<Capture>;
+
+/// Identifies one arena-owned capture layout in an IR function map.
+pub type CaptureMapID = ID<CaptureMap>;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
 pub struct CaptureMap {

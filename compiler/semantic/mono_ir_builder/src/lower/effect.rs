@@ -48,8 +48,12 @@ impl Builder<'_> {
         let handler_pointer = self.lower_effect_handler_pointer(context, handle, instance.clone());
 
         let body_abi = context.function_abi(handle.body().function_id());
-        let mut arguments =
-            vec![self.emit_opauqe_environment_pointer(context, handle.body().captures(), body_abi)];
+        let body_environment = context.function_environment_abi(handle.body().function_id());
+        let mut arguments = vec![self.emit_opaque_environment_pointer(
+            context,
+            handle.body().captures(),
+            body_environment,
+        )];
 
         for effect in body_abi.effects() {
             if effect == &instance {
@@ -97,11 +101,23 @@ impl Builder<'_> {
         handle: &Handle,
     ) -> FxHashMap<GlobalSymbolID, OperationHandlerSlot> {
         let mut slots = FxHashMap::default();
+        let Some(capture_map_id) = handle.handler_capture_map() else {
+            assert!(handle.handlers().is_empty());
+            return slots;
+        };
+
+        // Construct the environment exactly once from the handler group's
+        // arena-owned ABI.
+        let environment_abi = context.capture_environment_abi(capture_map_id);
+        let shared_environment = self.emit_opaque_environment_pointer(
+            context,
+            handle.handler_captures(),
+            environment_abi,
+        );
 
         for handler in handle.handlers() {
+            context.assert_function_uses_capture_environment(handler.function_id(), capture_map_id);
             let abi = context.function_abi(handler.function_id());
-
-            let env = self.emit_opauqe_environment_pointer(context, handler.captures(), abi);
             let fn_ptr = Operand::Function(FunctionOperand::new(
                 FunctionReference::Local(context.target_function_id(handler.function_id())),
                 abi.signature().clone(),
@@ -109,7 +125,10 @@ impl Builder<'_> {
 
             assert!(
                 slots
-                    .insert(handler.operation_id(), OperationHandlerSlot::new(env, fn_ptr))
+                    .insert(
+                        handler.operation_id(),
+                        OperationHandlerSlot::new(shared_environment.clone(), fn_ptr),
+                    )
                     .is_none()
             );
         }

@@ -74,6 +74,10 @@ impl<'a> LoweringContext<'a> {
         self.analysis.plan(id)
     }
 
+    pub fn shares_capture_plan(&self, first: TypedFunctionID, second: TypedFunctionID) -> bool {
+        self.analysis.shares_plan(first, second)
+    }
+
     pub fn name_binding_source(&self, id: NameBindingID) -> Source {
         *self.typed_functions.get_name_binding(id).source()
     }

@@ -7,7 +7,7 @@ use rayc_mono_ir::{
     ty::PointerMutability,
 };
 
-use crate::{builder::Builder, context::Context, function_abi::FunctionABI};
+use crate::{builder::Builder, context::Context, function_abi::EnvironmentABI};
 
 impl Builder<'_> {
     pub(super) fn lower_closure(
@@ -17,15 +17,14 @@ impl Builder<'_> {
         expression_id: IRExprID,
     ) {
         // Captures have already been evaluated in semantic IR order.
-        let abi = context.function_abi(lambda.function_id());
-
-        let environment = abi.environment_type();
+        let environment_abi = context.function_environment_abi(lambda.function_id());
+        let environment = environment_abi.environment_type();
         let fields =
             lambda.captures().iter().map(|capture| self.expression_operand(*capture)).collect();
 
         // Effect handlers are passed as additional arguments to the function, not
         // embedded in the environment.
-        assert!(!abi.captures_effect_handlers());
+        assert_eq!(environment_abi.captured_effects().len(), 0);
 
         self.assign(
             self.expression_place(expression_id),
@@ -33,15 +32,15 @@ impl Builder<'_> {
         );
     }
 
-    pub(super) fn emit_opauqe_environment_pointer(
+    pub(super) fn emit_opaque_environment_pointer(
         &mut self,
         context: &Context,
         args: &[IRExprID],
-        abi: &FunctionABI,
+        environment_abi: &EnvironmentABI,
     ) -> Operand {
-        assert!(!abi.by_value());
-        assert_eq!(args.len(), abi.capture_count());
-        let environment = abi.environment_type();
+        assert!(!environment_abi.by_value());
+        assert_eq!(args.len(), environment_abi.capture_count());
+        let environment = environment_abi.environment_type();
 
         if environment.captures().is_empty() {
             return Operand::Constant(Constant::NullPointer(context.create_opaque_pointer()));
@@ -52,11 +51,9 @@ impl Builder<'_> {
         let mut fields =
             args.iter().map(|capture| self.expression_operand(*capture)).collect::<Vec<_>>();
 
-        // determine whether the effect handlers are embedded in the environment and if
-        // so, add them to the fields
-        if abi.captures_effect_handlers() {
-            fields.extend(abi.effects().map(|effect| self.handler_operand(effect)));
-        }
+        // Append any effect handlers embedded in this environment layout.
+        fields
+            .extend(environment_abi.captured_effects().map(|effect| self.handler_operand(effect)));
 
         // There're three steps to create the ready-to-use environment:
         //

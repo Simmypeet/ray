@@ -1,8 +1,9 @@
 use qbice::storage::intern::Interned;
+use rayc_arena::Arena;
 use rayc_hash::FxHashMap;
 use rayc_ir::{
     ir_function::{FunctionID as IRFunctionID, IRFunction, IRFunctionMap},
-    ir_lambda::Capture,
+    ir_lambda::{Capture, CaptureID, CaptureMapID},
 };
 use rayc_mono_ir::{
     MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoIR,
@@ -43,13 +44,18 @@ pub(crate) enum InstanceCallable {
     Closure(MonoClosureInstance, FunctionSignature, Vec<MonoEffectInstance>),
 }
 
-use crate::{builder::Builder, function_abi::FunctionABI};
+use crate::{
+    builder::Builder,
+    function_abi::{EnvironmentABI, EnvironmentABIID, FunctionABI},
+};
 
 /// Long-lived context shared while lowering one definition instance.
 pub(crate) struct Context {
     engine: TrackedEngine,
     instance: MonoDefInstance,
     source: Interned<IRFunctionMap>,
+    environment_abis: Arena<EnvironmentABI>,
+    capture_environments: FxHashMap<CaptureMapID, EnvironmentABIID>,
     function_abis: FxHashMap<IRFunctionID, FunctionABI>,
     function_ids: FxHashMap<IRFunctionID, MonoFunctionID>,
 }
@@ -64,6 +70,8 @@ impl Context {
             engine,
             instance,
             source,
+            environment_abis: Arena::new(),
+            capture_environments: FxHashMap::default(),
             function_abis: FxHashMap::default(),
             function_ids: FxHashMap::default(),
         }
@@ -153,8 +161,76 @@ impl Context {
         self.source.get_function(source_id).clone()
     }
 
+    pub(crate) fn source_capture_count(&self, source_id: IRFunctionID) -> usize {
+        self.source.captures(source_id).len()
+    }
+
+    pub(crate) fn source_capture_map_id(&self, source_id: IRFunctionID) -> CaptureMapID {
+        self.source.capture_map_id(source_id)
+    }
+
+    pub(crate) fn source_captures(
+        &self,
+        source_id: IRFunctionID,
+    ) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
+        self.source.captures(source_id)
+    }
+
     pub(crate) fn function_abi(&self, source_id: IRFunctionID) -> &FunctionABI {
         self.function_abis.get(&source_id).expect("nested MonoIR function ABI should be planned")
+    }
+
+    pub(crate) fn function_environment_abi(&self, source_id: IRFunctionID) -> &EnvironmentABI {
+        let environment_id = self.function_abi(source_id).environment_id();
+        self.environment_abis
+            .get(environment_id)
+            .expect("function environment ABI should be planned")
+    }
+
+    pub(crate) fn capture_environment_abi(&self, capture_map_id: CaptureMapID) -> &EnvironmentABI {
+        let environment_id = self
+            .capture_environments
+            .get(&capture_map_id)
+            .expect("capture environment ABI should be planned");
+        self.environment_abis.get(*environment_id).expect("capture environment ABI should exist")
+    }
+
+    pub(crate) fn assert_function_uses_capture_environment(
+        &self,
+        source_id: IRFunctionID,
+        capture_map_id: CaptureMapID,
+    ) {
+        let expected = self
+            .capture_environments
+            .get(&capture_map_id)
+            .expect("capture environment ABI should be planned");
+        assert_eq!(
+            self.function_abi(source_id).environment_id(),
+            *expected,
+            "operation handlers in one handler record should share an environment ABI"
+        );
+    }
+
+    pub(super) fn plan_capture_environment(
+        &mut self,
+        capture_map_id: CaptureMapID,
+        environment: EnvironmentABI,
+    ) -> EnvironmentABIID {
+        if let Some(environment_id) = self.capture_environments.get(&capture_map_id).copied() {
+            let planned = self
+                .environment_abis
+                .get(environment_id)
+                .expect("capture environment ABI should exist");
+            assert_eq!(
+                planned, &environment,
+                "functions sharing a capture map should share an environment ABI"
+            );
+            environment_id
+        } else {
+            let environment_id = self.environment_abis.insert(environment);
+            assert!(self.capture_environments.insert(capture_map_id, environment_id).is_none());
+            environment_id
+        }
     }
 
     pub(crate) fn target_function_id(&self, source_id: IRFunctionID) -> MonoFunctionID {
@@ -358,13 +434,14 @@ impl Context {
         let root_source_id = self.source.root_id();
         let root_source = self.source.root().clone();
         let root_abi = self.plan_function(root_source_id, &root_source).await;
+        let source_ids = self.source.functions().map(|(id, _)| id).collect::<Vec<_>>();
 
         let mut output = MonoIR::new(self.instance.clone(), root_abi.signature().clone());
 
         self.function_abis.insert(root_source_id, root_abi);
         self.function_ids.insert(root_source_id, output.root_id());
 
-        for source_id in self.source.functions().map(|(id, _)| id) {
+        for source_id in source_ids.iter().copied() {
             if source_id == root_source_id {
                 continue;
             }
@@ -380,7 +457,7 @@ impl Context {
             output.register_closure(closure, self.target_function_id(source));
         }
 
-        for source_id in self.source.functions().map(|(id, _)| id) {
+        for source_id in source_ids {
             let target_id = self.target_function_id(source_id);
             let mut builder = Builder::new(&mut output, source_id, target_id);
             builder.lower_function(&self, source_id).await;

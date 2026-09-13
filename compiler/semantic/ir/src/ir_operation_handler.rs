@@ -4,23 +4,27 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::Ty;
 
-use crate::ir_lambda::{Capture, CaptureID, CaptureMap};
+use crate::ir_lambda::CaptureMapID;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IROperationHandlerContext {
     operation: GlobalSymbolID,
     parameters: OperationHandlerParameterMap,
     return_ty: Interned<Ty>,
-    captures: CaptureMap,
+    capture_map: CaptureMapID,
 }
 
 impl IROperationHandlerContext {
-    pub(crate) fn new(operation: GlobalSymbolID, return_ty: Interned<Ty>) -> Self {
+    pub(crate) fn new(
+        operation: GlobalSymbolID,
+        return_ty: Interned<Ty>,
+        capture_map: CaptureMapID,
+    ) -> Self {
         Self {
             operation,
             parameters: OperationHandlerParameterMap::default(),
             return_ty,
-            captures: CaptureMap::default(),
+            capture_map,
         }
     }
 
@@ -51,16 +55,7 @@ impl IROperationHandlerContext {
     pub const fn return_ty(&self) -> &Interned<Ty> { &self.return_ty }
 
     #[must_use]
-    pub fn captures(&self) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
-        self.captures.iter()
-    }
-
-    #[must_use]
-    pub fn get_capture(&self, id: CaptureID) -> &Capture { self.captures.get_capture(id) }
-
-    pub(crate) fn insert_capture(&mut self, capture: Capture) -> CaptureID {
-        self.captures.insert_capture(capture)
-    }
+    pub(crate) const fn capture_map(&self) -> CaptureMapID { self.capture_map }
 }
 
 #[derive(

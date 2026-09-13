@@ -1,4 +1,5 @@
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use rayc_arena::{Arena, ID};
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
@@ -23,7 +24,8 @@ use crate::{
 /// Stable capture layouts for every function in a typed AST.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct CapturePlan {
-    plans: FxHashMap<TypedFunctionID, FunctionCapturePlan>,
+    plans: Arena<FunctionCapturePlan>,
+    function_plans: FxHashMap<TypedFunctionID, FunctionCapturePlanID>,
 }
 
 impl CapturePlan {
@@ -31,24 +33,34 @@ impl CapturePlan {
     #[must_use]
     pub fn analyze(functions: &TypedFunctionMap) -> Self {
         let mut analyzer = Analyzer::default();
-        analyzer.analyze_function(functions.root_id(), functions);
-        Self::new(analyzer.plans)
-    }
-
-    #[must_use]
-    pub const fn new(plans: FxHashMap<TypedFunctionID, FunctionCapturePlan>) -> Self {
-        Self { plans }
+        let root_id = functions.root_id();
+        let mut root_plan = FunctionCapturePlan::new();
+        analyzer.analyze_function(root_id, functions, &mut root_plan);
+        analyzer.insert_plan(root_id, root_plan);
+        Self { plans: analyzer.plans, function_plans: analyzer.function_plans }
     }
 
     #[must_use]
     pub fn plan(&self, function_id: TypedFunctionID) -> &FunctionCapturePlan {
-        self.plans.get(&function_id).expect("capture analysis should cover every reached function")
+        self.plans.get(self.plan_id(function_id)).expect("function capture plan should exist")
+    }
+
+    #[must_use]
+    pub fn shares_plan(&self, first: TypedFunctionID, second: TypedFunctionID) -> bool {
+        self.plan_id(first) == self.plan_id(second)
+    }
+
+    fn plan_id(&self, function_id: TypedFunctionID) -> FunctionCapturePlanID {
+        *self
+            .function_plans
+            .get(&function_id)
+            .expect("capture analysis should cover every reached function")
     }
 }
 
 impl MutSubstitutable for CapturePlan {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        for plan in self.plans.values_mut() {
+        for plan in self.plans.items_mut() {
             for requirement in &mut plan.captures {
                 requirement.binding_ty.apply_in_place(subst, engine);
             }
@@ -61,7 +73,7 @@ impl MutSubstitutable for CapturePlan {
 pub struct CaptureSlot(usize);
 
 /// The capture layout of one `TypedAST` function.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct FunctionCapturePlan {
     /// Stable closure-field order, determined by first encounter.
     captures: Vec<CaptureRequirement>,
@@ -69,6 +81,9 @@ pub struct FunctionCapturePlan {
     /// layout.
     capture_slots: FxHashMap<Source, CaptureSlot>,
 }
+
+/// Identifies one arena-owned function capture plan.
+pub type FunctionCapturePlanID = ID<FunctionCapturePlan>;
 
 /// One original binding that this function must receive.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
@@ -169,29 +184,43 @@ enum UseMode {
 
 #[derive(Debug, Default)]
 struct Analyzer {
-    plans: FxHashMap<TypedFunctionID, FunctionCapturePlan>,
+    plans: Arena<FunctionCapturePlan>,
+    function_plans: FxHashMap<TypedFunctionID, FunctionCapturePlanID>,
     parents: FxHashMap<TypedFunctionID, TypedFunctionID>,
     visiting: FxHashSet<TypedFunctionID>,
 }
 
 impl Analyzer {
-    fn analyze_function(&mut self, function_id: TypedFunctionID, functions: &TypedFunctionMap) {
+    fn analyze_function(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        plan: &mut FunctionCapturePlan,
+    ) {
         assert!(
             self.visiting.insert(function_id),
             "TypedAST nested-function graph should not contain a cycle"
         );
         assert!(
-            !self.plans.contains_key(&function_id),
+            !self.function_plans.contains_key(&function_id),
             "each TypedAST function should be analyzed exactly once"
         );
 
-        let mut plan = FunctionCapturePlan::new();
         for statement in functions.statements(function_id) {
-            self.visit_statement(function_id, functions, statement, &mut plan);
+            self.visit_statement(function_id, functions, statement, plan);
         }
 
         assert!(self.visiting.remove(&function_id));
-        self.plans.insert(function_id, plan);
+    }
+
+    fn insert_plan(
+        &mut self,
+        function_id: TypedFunctionID,
+        plan: FunctionCapturePlan,
+    ) -> FunctionCapturePlanID {
+        let plan_id = self.plans.insert(plan);
+        assert!(self.function_plans.insert(function_id, plan_id).is_none());
+        plan_id
     }
 
     fn visit_statement(
@@ -340,12 +369,27 @@ impl Analyzer {
         plan: &mut FunctionCapturePlan,
     ) {
         self.visit_nested_function(function_id, functions, run_with.body(), plan);
-        for handler in run_with.operation_handlers() {
-            self.visit_nested_function(function_id, functions, handler, plan);
+
+        let handlers = run_with.operation_handlers().collect::<Vec<_>>();
+        if handlers.is_empty() {
+            return;
+        }
+
+        // Every operation callback in one handler record contributes directly
+        // to the same capture layout.
+        let mut shared_plan = FunctionCapturePlan::new();
+        for handler in &handlers {
+            self.analyze_nested_function(function_id, functions, *handler, &mut shared_plan);
+        }
+
+        Self::propagate_nested_captures(function_id, &shared_plan, plan);
+        let shared_plan_id = self.plans.insert(shared_plan);
+        for handler in handlers {
+            assert!(self.function_plans.insert(handler, shared_plan_id).is_none());
         }
     }
 
-    fn visit_nested_function(
+    fn analyze_nested_function(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -358,14 +402,32 @@ impl Analyzer {
             "each TypedAST nested function should have exactly one lexical parent"
         );
 
-        self.analyze_function(child_id, functions);
+        self.analyze_function(child_id, functions, plan);
+    }
 
-        let child_plan = self.plans.get(&child_id).expect("child capture plan should exist");
+    fn propagate_nested_captures(
+        function_id: TypedFunctionID,
+        child_plan: &FunctionCapturePlan,
+        plan: &mut FunctionCapturePlan,
+    ) {
         for (_, requirement) in child_plan.captures() {
             if requirement.source().function_id() != function_id {
                 plan.require(requirement.clone());
             }
         }
+    }
+
+    fn visit_nested_function(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        child_id: TypedFunctionID,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        let mut child_plan = FunctionCapturePlan::new();
+        self.analyze_nested_function(function_id, functions, child_id, &mut child_plan);
+        Self::propagate_nested_captures(function_id, &child_plan, plan);
+        self.insert_plan(child_id, child_plan);
     }
 
     fn visit_binary(

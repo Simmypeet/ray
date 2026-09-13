@@ -7,7 +7,9 @@ use rayc_ir::{
     cfg::{BlockID, Terminator},
     ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load},
     ir_function::{FunctionID as IrFunctionID, IRFunctionMap},
-    ir_lambda::{Capture, CaptureID, LambdaParameter as IrLambdaParameter, LambdaParameterID},
+    ir_lambda::{
+        Capture, CaptureID, CaptureMapID, LambdaParameter as IrLambdaParameter, LambdaParameterID,
+    },
     ir_operation_handler::{
         OperationHandlerParameter as IrOperationHandlerParameter,
         OperationHandlerParameterID as IrOperationHandlerParameterID,
@@ -18,7 +20,7 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{capture::CaptureMode, ty::Ty};
 use rayc_typed_ast::{
-    name_binding::Source, typed_function::TypedFunctionID,
+    capture_plan::FunctionCapturePlan, name_binding::Source, typed_function::TypedFunctionID,
     typed_lambda::LambdaParameterID as TypedLambdaParameterID,
     typed_operation_handler::OperationHandlerParameterID as TypedOperationHandlerParameterID,
     typed_variable::TypedVariableID,
@@ -33,10 +35,12 @@ pub(super) struct FunctionBuildState {
     typed_function_id: TypedFunctionID,
     return_ty: Interned<Ty>,
     diagnostic_span: Option<RelativeSpan>,
+
     variables: FxHashMap<TypedVariableID, IRVariableID>,
     lambda_parameters: FxHashMap<TypedLambdaParameterID, LambdaParameterID>,
     operation_handler_parameters:
         FxHashMap<TypedOperationHandlerParameterID, IrOperationHandlerParameterID>,
+
     captures: FxHashMap<Source, CaptureID>,
 }
 
@@ -90,8 +94,12 @@ impl FunctionBuildState {
             "root TypedAST function should not be a lambda"
         );
         let mut lambda_parameters = FxHashMap::default();
-        let ir_function_id =
-            ir_functions.insert_lambda(return_ty.clone(), context.function_effect().clone());
+        let (capture_map, captures) = Self::insert_capture_map(capture_plan, ir_functions);
+        let ir_function_id = ir_functions.insert_lambda(
+            return_ty.clone(),
+            context.function_effect().clone(),
+            capture_map,
+        );
         for (typed_id, parameter) in lambda_context.parameters() {
             let ir_id = ir_functions.insert_lambda_parameter(
                 ir_function_id,
@@ -99,7 +107,6 @@ impl FunctionBuildState {
             );
             assert!(lambda_parameters.insert(typed_id, ir_id).is_none());
         }
-        let captures = Self::insert_captures(capture_plan, ir_functions, ir_function_id);
         let current_block = ir_functions.entry_block(ir_function_id);
         Self {
             ir_function_id,
@@ -123,9 +130,12 @@ impl FunctionBuildState {
         let capture_plan = context.capture_plan(typed_function_id);
         let thunk_context = context.typed_function_context().assert_as_thunk_context();
         let return_ty = thunk_context.return_type().clone();
-        let ir_function_id =
-            ir_functions.insert_thunk(return_ty.clone(), context.function_effect().clone());
-        let captures = Self::insert_captures(capture_plan, ir_functions, ir_function_id);
+        let (capture_map, captures) = Self::insert_capture_map(capture_plan, ir_functions);
+        let ir_function_id = ir_functions.insert_thunk(
+            return_ty.clone(),
+            context.function_effect().clone(),
+            capture_map,
+        );
         let current_block = ir_functions.entry_block(ir_function_id);
         Self {
             ir_function_id,
@@ -144,9 +154,10 @@ impl FunctionBuildState {
         context: &LoweringContext<'_>,
         ir_functions: &mut IRFunctionMap,
         diagnostic_span: RelativeSpan,
+        capture_map: CaptureMapID,
+        captures: FxHashMap<Source, CaptureID>,
     ) -> Self {
         let typed_function_id = context.typed_function_id();
-        let capture_plan = context.capture_plan(typed_function_id);
         let handler_context =
             context.typed_function_context().assert_as_operation_handler_context();
         let return_ty = handler_context.return_type().clone();
@@ -154,6 +165,7 @@ impl FunctionBuildState {
             handler_context.operation(),
             return_ty.clone(),
             context.function_effect().clone(),
+            capture_map,
         );
         let mut operation_handler_parameters = FxHashMap::default();
         for (typed_id, parameter) in handler_context.parameters() {
@@ -163,7 +175,6 @@ impl FunctionBuildState {
             );
             assert!(operation_handler_parameters.insert(typed_id, ir_id).is_none());
         }
-        let captures = Self::insert_captures(capture_plan, ir_functions, ir_function_id);
         let current_block = ir_functions.entry_block(ir_function_id);
         Self {
             ir_function_id,
@@ -178,15 +189,16 @@ impl FunctionBuildState {
         }
     }
 
-    fn insert_captures(
-        capture_plan: &rayc_typed_ast::capture_plan::FunctionCapturePlan,
+    fn insert_capture_map(
+        capture_plan: &FunctionCapturePlan,
         ir_functions: &mut IRFunctionMap,
-        ir_function_id: IrFunctionID,
-    ) -> FxHashMap<Source, CaptureID> {
+    ) -> (CaptureMapID, FxHashMap<Source, CaptureID>) {
+        let capture_map_id = ir_functions.new_capture_map();
         let mut captures = FxHashMap::default();
+
         for (_, requirement) in capture_plan.captures() {
             let ir_id = ir_functions.insert_capture(
-                ir_function_id,
+                capture_map_id,
                 Capture::new(
                     requirement.binding_ty().clone(),
                     requirement.mode(),
@@ -195,7 +207,8 @@ impl FunctionBuildState {
             );
             assert!(captures.insert(requirement.source(), ir_id).is_none());
         }
-        captures
+
+        (capture_map_id, captures)
     }
 }
 
@@ -266,11 +279,24 @@ impl Builder {
         context: &LoweringContext<'_>,
         typed_function_id: TypedFunctionID,
         diagnostic_span: RelativeSpan,
+        capture_map: CaptureMapID,
+        captures: FxHashMap<Source, CaptureID>,
     ) -> IrFunctionID {
         let handler_context = context.for_function(typed_function_id);
-        self.start_operation_handler(&handler_context, diagnostic_span);
+        self.start_operation_handler(&handler_context, diagnostic_span, capture_map, captures);
         self.lower_current_function(&handler_context);
         self.finish_nested_function()
+    }
+
+    pub fn lower_capture_map(
+        &mut self,
+        context: &LoweringContext<'_>,
+        typed_function_id: TypedFunctionID,
+    ) -> (CaptureMapID, FxHashMap<Source, CaptureID>) {
+        FunctionBuildState::insert_capture_map(
+            context.capture_plan(typed_function_id),
+            &mut self.ir_functions,
+        )
     }
 
     fn lower_current_function(&mut self, context: &LoweringContext<'_>) {
@@ -304,11 +330,15 @@ impl Builder {
         &mut self,
         context: &LoweringContext<'_>,
         diagnostic_span: RelativeSpan,
+        capture_map: CaptureMapID,
+        captures: FxHashMap<Source, CaptureID>,
     ) {
         let handler = FunctionBuildState::new_operation_handler(
             context,
             &mut self.ir_functions,
             diagnostic_span,
+            capture_map,
+            captures,
         );
         let enclosing = mem::replace(&mut self.building_function, handler);
         self.suspended_functions.push(enclosing);

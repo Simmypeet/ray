@@ -5,6 +5,7 @@ use rayc_type::{subst::Subst, ty::Ty};
 use crate::{
     ir_expr::IRExprID,
     ir_function::FunctionID,
+    ir_lambda::CaptureMapID,
     visit::{TypeVisitor, VisitType},
 };
 
@@ -29,29 +30,23 @@ impl HandledFunction {
     pub fn captures(&self) -> &[IRExprID] { &self.captures }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct OperationHandler {
     operation_id: GlobalSymbolID,
-    function: HandledFunction,
+    function_id: FunctionID,
 }
 
 impl OperationHandler {
     #[must_use]
-    pub const fn new(operation_id: GlobalSymbolID, function: HandledFunction) -> Self {
-        Self { operation_id, function }
+    pub const fn new(operation_id: GlobalSymbolID, function_id: FunctionID) -> Self {
+        Self { operation_id, function_id }
     }
 
     #[must_use]
     pub const fn operation_id(&self) -> GlobalSymbolID { self.operation_id }
 
     #[must_use]
-    pub const fn function_id(&self) -> FunctionID { self.function.function_id() }
-
-    #[must_use]
-    pub fn captures(&self) -> &[IRExprID] { self.function.captures() }
-
-    #[must_use]
-    pub const fn function(&self) -> &HandledFunction { &self.function }
+    pub const fn function_id(&self) -> FunctionID { self.function_id }
 }
 
 /// Runs a thunk under a complete set of handlers for one instantiated effect.
@@ -60,6 +55,8 @@ pub struct Handle {
     effect_id: GlobalSymbolID,
     substitution: Subst,
     body: HandledFunction,
+    handler_captures: Vec<IRExprID>,
+    handler_capture_map: Option<CaptureMapID>,
     handlers: Vec<OperationHandler>,
     residual_effect: Interned<Ty>,
 }
@@ -70,10 +67,20 @@ impl Handle {
         effect_id: GlobalSymbolID,
         substitution: Subst,
         body: HandledFunction,
+        handler_captures: Vec<IRExprID>,
+        handler_capture_map: Option<CaptureMapID>,
         handlers: Vec<OperationHandler>,
         residual_effect: Interned<Ty>,
     ) -> Self {
-        Self { effect_id, substitution, body, handlers, residual_effect }
+        Self {
+            effect_id,
+            substitution,
+            body,
+            handler_captures,
+            handler_capture_map,
+            handlers,
+            residual_effect,
+        }
     }
 
     #[must_use]
@@ -84,6 +91,12 @@ impl Handle {
 
     #[must_use]
     pub const fn body(&self) -> &HandledFunction { &self.body }
+
+    #[must_use]
+    pub fn handler_captures(&self) -> &[IRExprID] { &self.handler_captures }
+
+    #[must_use]
+    pub const fn handler_capture_map(&self) -> Option<CaptureMapID> { self.handler_capture_map }
 
     #[must_use]
     pub fn handlers(&self) -> &[OperationHandler] { &self.handlers }
