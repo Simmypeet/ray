@@ -91,6 +91,11 @@ async fn display_predicate(predicate: &PredicateKind, engine: &TrackedEngine) ->
             equality.left().display(engine).await,
             equality.right().display(engine).await
         ),
+        PredicateKind::Marker(predicate) => format!(
+            "`{}` must satisfy marker `{}`",
+            predicate.implementor().display(engine).await,
+            engine.get_qualified_name(predicate.marker_id()).await
+        ),
     }
 }
 

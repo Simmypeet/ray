@@ -1,0 +1,28 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: invalid marker implementation where-clause predicate
+   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_where_clause/main.ray:14:1
+   │
+14 │     (a, b, a): Send,
+   ╰╴━━━━━━━━━━━━━ a marker predicate in an implementation where clause must apply directly to a polymorphic type variable
+
+[error]: invalid marker implementation where-clause predicate
+   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_where_clause/main.ray:15:7
+   │
+15 │     a = b,
+   ╰╴      ━ marker implementation where clauses may only contain marker predicates
+
+[error]: expected a marker, found trait
+   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_where_clause/main.ray:16:8
+   │
+16 │     a: NotMarker,
+   ╰╴       ━━━━━━━━━ expected a marker, found trait
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

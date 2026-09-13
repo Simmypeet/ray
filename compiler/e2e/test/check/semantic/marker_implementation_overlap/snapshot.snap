@@ -6,21 +6,12 @@ stderr:
 [error]: overlapping marker implementations
   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_overlap/main.ray:5:1
   │
-4 │ impl[a] Send for (a,)
-  │ ───────────────────── the first overlapping implementation is here
-5 │ impl[b] Send for (b,)
-  ╰╴━━━━━━━━━━━━━━━━━━━━━ this marker is already implemented for the same type constructor
-
-[error]: overlapping marker implementations
-  ╭▸ compiler/e2e/test/check/semantic/marker_implementation_overlap/main.ray:6:1
-  │
-4 │ impl[a] Send for (a,)
-  │ ───────────────────── the first overlapping implementation is here
-5 │ impl[b] Send for (b,)
-6 │ impl[a, b] Send for (a, b)
+4 │ impl[a, b] Send for (a, b)
+  │ ────────────────────────── the first overlapping implementation is here
+5 │ impl[b, c] Send for (b, c)
   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━ this marker is already implemented for the same type constructor
 
-[error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

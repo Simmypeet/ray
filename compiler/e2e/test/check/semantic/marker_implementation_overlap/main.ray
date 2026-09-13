@@ -1,11 +1,11 @@
 marker Send
 marker Copy
 
-impl[a] Send for (a,)
-impl[b] Send for (b,)
 impl[a, b] Send for (a, b)
+impl[b, c] Send for (b, c)
+impl[a, b, c] Send for (a, b, c)
 
-impl[a] Copy for (a,)
+impl[a, b] Copy for (a, b)
 impl Copy for int32
 impl Send for int32
 

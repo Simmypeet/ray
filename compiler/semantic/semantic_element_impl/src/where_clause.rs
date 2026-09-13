@@ -10,13 +10,16 @@ use rayc_source_file::SourceElement;
 use rayc_symbol::{
     core_item::{CoreItem, get_core_item},
     source_map::to_absolute_span,
+    symbol_kind::{SymbolKind, get_symbol_kind},
     syntax::get_where_clause_syntax,
 };
 use rayc_syntax::where_clause::Constraint;
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarOrigin, get_enclosing_poly_var_maps, get_poly_var_map},
     ty::{Ty, TyKind},
-    where_clause::{AssociatedTypeEquality, Key, Predicate, PredicateKind, WhereClause},
+    where_clause::{
+        AssociatedTypeEquality, Key, MarkerPredicate, Predicate, PredicateKind, WhereClause,
+    },
 };
 
 use crate::{
@@ -42,6 +45,66 @@ use crate::{
 )]
 pub struct InvalidEqualityLeft {
     span: RelativeSpan,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+enum InvalidMarkerImplementationPredicateKind {
+    NonMarkerPredicate,
+    NonVariableImplementor,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct InvalidMarkerImplementationPredicate {
+    span: RelativeSpan,
+    kind: InvalidMarkerImplementationPredicateKind,
+}
+
+impl Report for InvalidMarkerImplementationPredicate {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let message = match self.kind {
+            InvalidMarkerImplementationPredicateKind::NonMarkerPredicate => {
+                "marker implementation where clauses may only contain marker predicates"
+            }
+            InvalidMarkerImplementationPredicateKind::NonVariableImplementor => {
+                "a marker predicate in an implementation where clause must apply directly to a \
+                 polymorphic type variable"
+            }
+        };
+
+        Rendered::builder()
+            .message("invalid marker implementation where-clause predicate")
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(message.to_owned()),
+            ))
+            .build()
+    }
 }
 
 impl Report for InvalidEqualityLeft {
@@ -77,6 +140,7 @@ impl Report for InvalidEqualityLeft {
 pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
     InvalidEqualityLeft(InvalidEqualityLeft),
+    InvalidMarkerImplementationPredicate(InvalidMarkerImplementationPredicate),
 }
 
 impl Report for Diagnostic {
@@ -84,6 +148,9 @@ impl Report for Diagnostic {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::InvalidEqualityLeft(diagnostic) => diagnostic.report(engine).await,
+            Self::InvalidMarkerImplementationPredicate(diagnostic) => {
+                diagnostic.report(engine).await
+            }
         }
     }
 }
@@ -94,6 +161,8 @@ impl Build for Key {
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
         let syntax = engine.get_where_clause_syntax(symbol_id).await;
         let constraints = syntax.and_then(|syntax| syntax.constraints());
+        let is_marker_implementation =
+            engine.get_symbol_kind(symbol_id).await == SymbolKind::MarkerImplementation;
 
         // Resolve both operands in the declaration's polymorphic and given scope.
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
@@ -113,6 +182,18 @@ impl Build for Key {
         {
             match constraint {
                 Constraint::TypeEquality(equality) => {
+                    if is_marker_implementation {
+                        diagnostics.receive(Diagnostic::InvalidMarkerImplementationPredicate(
+                            InvalidMarkerImplementationPredicate {
+                                span: equality
+                                    .equals()
+                                    .map_or_else(|| equality.span(), |equals| equals.span()),
+                                kind: InvalidMarkerImplementationPredicateKind::NonMarkerPredicate,
+                            },
+                        ));
+                        continue;
+                    }
+
                     // Incomplete constraints already have parser diagnostics.
                     let (Some(left), Some(right)) = (equality.left(), equality.right()) else {
                         continue;
@@ -141,8 +222,42 @@ impl Build for Key {
                         equality.span(),
                     ));
                 }
-                // TODO: Marker predicates are resolved when marker semantics are added.
-                Constraint::MarkerPredicate(_) => {}
+                Constraint::MarkerPredicate(predicate) => {
+                    // Incomplete predicates already have parser diagnostics.
+                    let (Some(implementor_syntax), Some(marker_syntax)) =
+                        (predicate.implementor(), predicate.marker())
+                    else {
+                        continue;
+                    };
+
+                    let implementor = resolver.resolve_type(&implementor_syntax).await;
+                    let marker_id = resolver.resolve_marker_path(&marker_syntax).await.ok();
+
+                    // Marker implementation contexts deliberately use only
+                    // variable-headed predicates, keeping their assumptions in the
+                    // same simple form as their implementation heads.
+                    if is_marker_implementation
+                        && !implementor.contains_error()
+                        && implementor.as_poly_var().is_none()
+                    {
+                        diagnostics.receive(Diagnostic::InvalidMarkerImplementationPredicate(
+                            InvalidMarkerImplementationPredicate {
+                                span: implementor_syntax.span(),
+                                kind: InvalidMarkerImplementationPredicateKind::NonVariableImplementor,
+                            },
+                        ));
+                        continue;
+                    }
+
+                    if let Some(marker_id) = marker_id
+                        && !implementor.contains_error()
+                    {
+                        predicates.push(Predicate::new(
+                            PredicateKind::Marker(MarkerPredicate::new(marker_id, implementor)),
+                            predicate.span(),
+                        ));
+                    }
+                }
             }
         }
 

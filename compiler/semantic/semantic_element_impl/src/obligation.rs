@@ -59,7 +59,9 @@ pub(crate) async fn solve_obligations(
                 }
             }
             ExpandedObligation::Predicate(predicate) => {
-                constraints.push((index, predicate.constraint()));
+                if let Some(constraint) = predicate.constraint() {
+                    constraints.push((index, constraint));
+                }
             }
         }
     }

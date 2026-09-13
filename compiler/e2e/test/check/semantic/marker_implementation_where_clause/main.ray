@@ -1,0 +1,20 @@
+marker Send
+marker Copy
+
+trait NotMarker[]:
+    type Item
+
+# Both the implemented marker and another marker are valid requirements.
+impl[a, b] Send for (a, b) where (
+    a: Send,
+    b: Copy,
+)
+
+impl[a, b, c] Copy for (a, b, c) where (
+    (a, b, a): Send,
+    a = b,
+    a: NotMarker,
+)
+
+def main() -> int32:
+    return 0

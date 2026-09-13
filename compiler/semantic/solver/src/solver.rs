@@ -80,6 +80,8 @@ impl Solver {
             PredicateKind::AssociatedTypeEquality(equality) => {
                 self.eq_without_unify(equality.left(), equality.right()).await
             }
+            // TODO: Marker entailment is intentionally deferred.
+            PredicateKind::Marker(_) => false,
         }
     }
 

@@ -74,11 +74,14 @@ impl PredicateObligation {
     }
 
     #[must_use]
-    pub fn constraint(&self) -> TyRelate {
+    pub fn constraint(&self) -> Option<TyRelate> {
         match &self.predicate {
             PredicateKind::AssociatedTypeEquality(equality) => {
-                TyRelate::new(equality.left().clone(), equality.right().clone())
+                Some(TyRelate::new(equality.left().clone(), equality.right().clone()))
             }
+            // TODO: Marker predicates are preserved semantically, but their
+            // resolution and entailment are intentionally deferred.
+            PredicateKind::Marker(_) => None,
         }
     }
 }
@@ -99,6 +102,11 @@ impl Report for PredicateObligation {
                 let left = equality.left().display(engine).await;
                 let right = equality.right().display(engine).await;
                 format!("`{left}` must equal `{right}`")
+            }
+            PredicateKind::Marker(predicate) => {
+                let implementor = predicate.implementor().display(engine).await;
+                let marker = engine.get_qualified_name(predicate.marker_id()).await;
+                format!("`{implementor}` must satisfy marker `{marker}`")
             }
         };
 
