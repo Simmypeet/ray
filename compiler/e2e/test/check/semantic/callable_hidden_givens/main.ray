@@ -1,0 +1,12 @@
+inst Integer for core.Def[int32]:
+    type Args = ()
+    type Return = int32
+    type Effect = {}
+    def call(fn: int32, args: ()) -> int32:
+        return fn
+
+def invoke(fn: def() -> int32) -> int32:
+    return fn()
+
+def main() -> int32:
+    return invoke[given Integer](42)

@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: only 0 explicit given arguments are accepted
+   ╭▸ compiler/e2e/test/check/semantic/callable_hidden_givens/main.ray:12:25
+   │
+12 │     return invoke[given Integer](42)
+   ╰╴                        ━━━━━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

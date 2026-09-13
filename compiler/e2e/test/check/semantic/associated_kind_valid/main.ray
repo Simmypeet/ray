@@ -5,13 +5,13 @@ trait Contract[e: Effect]:
     type Value
     type Effects: Effect
     type Extend[r: Effect]: Effect
-    def use(callback: def() -> int32 \ this.Effects) -> int32
+    def use(callback: f) given (d: core.Def[f]) -> int32 where (d.Args = (), d.Return = int32, d.Effect = this.Effects)
 
 inst Concrete for Contract[{IO}]:
     type Value = int32
     type Effects = {IO}
     type Extend[r: Effect] = {IO | r}
-    def use(callback: def() -> int32 \ Concrete.Effects) -> int32:
+    def use(callback: f) given (d: core.Def[f]) -> int32 where (d.Args = (), d.Return = int32, d.Effect = Concrete.Effects):
         return 0
 
 trait Forward[e: Effect]:
