@@ -15,6 +15,10 @@ use crate::{
 };
 
 impl TAstBuilder {
+    /// Creates a new inference variable for a trait instance, then generates a
+    /// constraint that will resolve a concrete instance and assign it to the
+    /// inference variable. The inference variable is returned as a
+    /// `Ty::Inference` type.
     pub(crate) async fn infer_trait_instance(
         &mut self,
         trait_ref: &TraitRef,

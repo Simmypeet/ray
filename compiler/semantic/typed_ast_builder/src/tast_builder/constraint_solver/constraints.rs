@@ -358,19 +358,6 @@ impl TAstBuilder {
         .await;
     }
 
-    pub async fn push_lambda_invocation_constraint(
-        &mut self,
-        expected_ty: &Interned<Ty>,
-        expression: TypedExprID,
-    ) {
-        self.push_subtype_constraint_with_expr(
-            expression,
-            expected_ty,
-            SubtypeSource::LambdaInvocation,
-        )
-        .await;
-    }
-
     pub async fn push_binary_operator_constraint(
         &mut self,
         expected_ty: &Interned<Ty>,

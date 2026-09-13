@@ -111,18 +111,12 @@ impl Report for MismatchedIndirectArgumentCount {
 
         Rendered::builder()
             .message(format!(
-                "lambda expects {} arguments, but {} were provided",
+                "callable expects {} arguments, but {} were provided",
                 self.expected, self.found
             ))
             .primary_highlight(Highlight::builder().span(abs_span).build())
             .build()
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
-pub struct ExpectedLambdaType {
-    ty: Interned<Ty>,
-    span: RelativeSpan,
 }
 
 #[derive(
@@ -247,20 +241,6 @@ impl Report for EmbeddedNulString {
             .primary_highlight(
                 Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
             )
-            .build()
-    }
-}
-
-impl Report for ExpectedLambdaType {
-    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        let abs_span = engine.to_absolute_span(&self.span).await;
-
-        Rendered::builder()
-            .message(format!(
-                "expected a lambda type, but found `{}`",
-                self.ty.display(engine).await
-            ))
-            .primary_highlight(Highlight::builder().span(abs_span).build())
             .build()
     }
 }
@@ -502,7 +482,6 @@ impl Report for ResidualSubtype {
         let header_msg = match &self.source {
             SubtypeSource::FunctionCall => "mismatched argument types in function call",
             SubtypeSource::ClosureCaptures => "incompatible closure capture types",
-            SubtypeSource::LambdaInvocation => "mismatched argument types in lambda invocation",
             SubtypeSource::VariableAssignment => "mismatched types in variable assignment",
             SubtypeSource::BinaryOperator => "mismatched types in binary operation",
             SubtypeSource::IfCondition => "if expression condition must be `bool`",
@@ -621,7 +600,6 @@ pub enum Diagnostic {
     SymbolNotCallable(SymbolNotCallable),
     MismatchedArgumentCount(MismatchedArgumentCount),
     MismatchedIndirectArgumentCount(MismatchedIndirectArgumentCount),
-    ExpectedLambdaType(ExpectedLambdaType),
     TypeMustBeKnownAtThisPoint(TypeMustBeKnownAtThisPoint),
     ExpectedTupleType(ExpectedTupleType),
     ExpectedPointerType(ExpectedPointerType),
@@ -654,9 +632,7 @@ impl Report for Diagnostic {
             Self::MismatchedIndirectArgumentCount(mismatched_argument_count) => {
                 mismatched_argument_count.report(engine).await
             }
-            Self::ExpectedLambdaType(expected_lambda_type) => {
-                expected_lambda_type.report(engine).await
-            }
+
             Self::TypeMustBeKnownAtThisPoint(type_must_be_known) => {
                 type_must_be_known.report(engine).await
             }
