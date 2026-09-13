@@ -1,0 +1,12 @@
+extern def puts(text: cstr) -> c_int
+
+def argument() -> int32:
+    puts("argument")
+    return 42
+
+def callee(fn: f) -> f:
+    puts("callee")
+    return fn
+
+def main() -> int32:
+    return callee([x] -> x)(argument())

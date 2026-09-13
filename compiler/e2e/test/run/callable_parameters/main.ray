@@ -1,0 +1,14 @@
+def acceptHof(fn: def(a) -> b \ e, value: a) -> b \ e:
+    return fn(value)
+
+def forward(fn: def(a) -> b \ e, value: a) -> b \ e:
+    return acceptHof(fn, value)
+
+def pair(left: def(int32) -> int32, right: def(int32) -> int32) -> int32:
+    let alias = left
+    return alias(1) + right(1)
+
+def main() -> int32:
+    let offset = 20
+    let value = forward([x] -> x + offset, 0)
+    return pair([x] -> x + value, [x] -> x + offset)

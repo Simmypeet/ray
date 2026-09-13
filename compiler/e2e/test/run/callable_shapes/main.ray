@@ -1,0 +1,37 @@
+trait Def[a]:
+    def identity(x: a) -> a
+
+inst IntMarker for Def[int32]:
+    def identity(x: int32) -> int32:
+        return x
+
+def zero(fn: def() -> int32) -> int32:
+    return fn()
+
+def sum(pair: (int32, int32)) -> int32:
+    return pair.0 + pair.1
+
+def oneTuple(fn: def((int32, int32)) -> int32) -> int32:
+    return fn((20, 22))
+
+def defaults(fn: def()):
+    return fn()
+
+def explicit(fn: def(int32) -> int32, value: a) given (callable: Def[a], second: Def[a]) -> int32:
+    let checked = callable.identity(second.identity(value))
+    return fn(21)
+
+def manual(fn: f, x: a) given (d: core.Def[f]) -> int32 where (d.Args = (a,), d.Return = int32, d.Effect = {}):
+    return fn(x)
+
+def hygiene(fn: def(int32) -> int32 \ callable, value: a) -> a \ callable:
+    return value
+
+def main() -> int32:
+    defaults([] -> ())
+    let callable = 1
+    let a = explicit[given IntMarker, second = IntMarker]([x] -> x, callable)
+    let b = explicit[given second = IntMarker, callable = IntMarker]([x] -> x, callable)
+    let c = oneTuple([pair] -> sum(pair))
+    let d = zero([] -> c)
+    return hygiene([x] -> x, manual([x] -> x, (a + b + d) / 2))

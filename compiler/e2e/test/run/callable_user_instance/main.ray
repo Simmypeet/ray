@@ -1,0 +1,13 @@
+inst IntCallable for core.Def[int32]:
+    type Args = (int32,)
+    type Return = int32
+    type Effect = {}
+    def call(fn: int32, args: (int32,)) -> int32:
+        return fn + args.0
+
+def apply(fn: def(int32) -> int32) -> int32:
+    return fn(2)
+
+def main() -> int32:
+    let value = 40
+    return apply(value)
