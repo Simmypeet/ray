@@ -98,6 +98,17 @@ pub enum Ty {
 }
 
 impl Ty {
+    /// Returns whether both types are applications of the same outer type
+    /// constructor.
+    #[must_use]
+    pub fn has_same_type_constructor(&self, other: &Self) -> bool {
+        if let (Self::Application(left), Self::Application(right)) = (self, other) {
+            left.has_same_constant(right)
+        } else {
+            false
+        }
+    }
+
     pub async fn kind_of(&self, engine: &TrackedEngine) -> TyKind {
         match self {
             Self::Application(application) => application.kind_of(engine).await,
