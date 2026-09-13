@@ -211,6 +211,11 @@ impl PolyVarStack {
     pub const fn new() -> Self { Self { poly_var_maps: Vec::new() } }
 
     #[must_use]
+    pub fn all_poly_var_len(&self) -> usize {
+        self.poly_var_maps.iter().map(|(_, map)| map.len()).sum()
+    }
+
+    #[must_use]
     pub fn find_by_name(&self, name: &str) -> Option<GlobalPolyVarID> {
         for (symbol_id, poly_var_map) in &self.poly_var_maps {
             if let Some(poly_var_id) = poly_var_map.find_by_name(name) {

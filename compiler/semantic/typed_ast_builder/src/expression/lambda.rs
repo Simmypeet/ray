@@ -68,15 +68,11 @@ impl TAstBuilder {
             let closure_id = self.register_closure(function_id);
             let owner_id = self.current_def_id();
             let poly_vars = self.engine().get_enclosing_poly_var_maps(owner_id).await;
-            let owner_arguments = poly_vars
-                .all_poly_vars()
-                .map(|id| self.engine().intern(Ty::PolyVar(id)))
-                .collect::<Vec<_>>();
             (
                 TypedExprKind::NLambda(TypedNLambda::new(function_id)),
                 Ty::new_closure(
-                    Closure::new(owner_id, closure_id, owner_arguments.len()),
-                    owner_arguments,
+                    Closure::new(owner_id, closure_id, poly_vars.all_poly_var_len()),
+                    poly_vars.all_poly_vars().map(|id| self.engine().intern(Ty::PolyVar(id))),
                     parameter_types,
                     return_type,
                     effect_row,
