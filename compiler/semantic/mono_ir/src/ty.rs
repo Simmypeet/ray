@@ -52,16 +52,6 @@ impl MonoType {
     }
 
     #[must_use]
-    pub fn assert_as_closure(&self) -> &Closure {
-        match self {
-            Self::Aggregate(AggregateType::Closure(closure)) => closure,
-            _ => {
-                panic!("compiler-internal invariant violation: expected closure type, got {self:?}")
-            }
-        }
-    }
-
-    #[must_use]
     pub fn assert_as_pointer(&self) -> &PointerType {
         match self {
             Self::Pointer(pointer) => pointer,
@@ -146,35 +136,6 @@ impl PointerType {
     pub const fn mutability(&self) -> PointerMutability { self.mutability }
 }
 
-/// ABI of Closure is roughly described as follows:
-///
-/// ```c
-/// typedef struct Closure {
-///     void* environment;
-///     return_type (*function_pointer)(void* environment, parameter_types...)
-/// };
-/// ```
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
-pub struct Closure {
-    /// Invariant: the first parameter of the function signature is always a
-    /// pointer to the environment.
-    function_signature: FunctionSignature,
-}
-
-impl Closure {
-    #[must_use]
-    pub fn new(function_signature: FunctionSignature) -> Self {
-        assert!(function_signature.parameter_types()[0].is_opauque_mut_pointer());
-
-        Self { function_signature }
-    }
-
-    #[must_use]
-    pub const fn function_signature(&self) -> &FunctionSignature { &self.function_signature }
-}
-
 /// The nominal record type for one concrete effect instantiation.
 ///
 /// Its fields are described by a corresponding [`HandlerLayout`], which can
@@ -241,7 +202,6 @@ impl Environment {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum AggregateType {
-    Closure(Closure),
     EffectHandler(EffectHandler),
     Tuple(Tuple),
     Environment(Environment),
@@ -381,20 +341,7 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 let fields = engine.intern_unsized(fields);
                 engine.intern(MonoType::Aggregate(AggregateType::Tuple(Tuple::new(fields))))
             }
-            ApplicationView::Lambda(lambda) => {
-                let mut parameters = vec![MonoType::new_opaque_pointer(engine)];
 
-                for parameter in lambda.parameter_types() {
-                    parameters.push(Box::pin(lower_concrete_type(engine, parameter)).await);
-                }
-                for effect in lower_concrete_effects(engine, lambda.effect_row()).await {
-                    parameters.push(MonoType::new_handler_pointer(effect, engine));
-                }
-
-                let return_type = Box::pin(lower_concrete_type(engine, lambda.return_type())).await;
-                let signature = MonoType::new_function_signature(parameters, return_type, engine);
-                engine.intern(MonoType::Aggregate(AggregateType::Closure(Closure::new(signature))))
-            }
             ApplicationView::Pointer(pointer) => {
                 let pointee_type = Box::pin(lower_concrete_type(engine, pointer.pointee())).await;
                 MonoType::new_pointer(pointee_type, lower_mutability(pointer.mutability()), engine)

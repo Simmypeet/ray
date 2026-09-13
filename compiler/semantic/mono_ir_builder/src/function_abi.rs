@@ -93,9 +93,7 @@ impl Context {
             }
 
             IRContext::Lambda(context) => {
-                // Reserve the hidden environment slot; nominal bodies replace
-                // this erased parameter with their shared by-value ABI below.
-                parameter_types.push(self.create_opaque_pointer());
+                // Every closure body uses the nominal environment ABI below.
 
                 for (_, parameter) in context.parameters() {
                     parameter_types.push(self.lower_type(parameter.ty()).await);
@@ -143,7 +141,6 @@ impl Context {
         let (signature, environment_type) = if self.is_nominal(source_id) {
             let environment =
                 self.create_aggregate_type_for_capture_environment(environment_fields);
-            parameter_types.remove(0);
             let signature = self.create_nominal_signature(
                 environment.clone(),
                 parameter_types,

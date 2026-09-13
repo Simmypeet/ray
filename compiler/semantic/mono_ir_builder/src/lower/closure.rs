@@ -1,11 +1,10 @@
-use rayc_ir::ir_expr::{IRExprID, make_lambda::MakeLambda};
+use rayc_ir::ir_expr::IRExprID;
 use rayc_mono_ir::{
     function::{Local, LocalKind},
-    instance::FunctionReference,
-    operand::{Constant, FunctionOperand, Operand},
+    operand::{Constant, Operand},
     place::Place,
     rvalue::{AddressOf, Cast, Rvalue},
-    ty::{Closure, PointerMutability},
+    ty::PointerMutability,
 };
 
 use crate::{builder::Builder, context::Context, function_abi::FunctionABI};
@@ -31,26 +30,6 @@ impl Builder<'_> {
         self.assign(
             self.expression_place(expression_id),
             Rvalue::new_environment(environment.clone(), fields),
-        );
-    }
-
-    pub(super) fn lower_make_lambda(
-        &mut self,
-        context: &Context,
-        lambda: &MakeLambda,
-        expression_id: IRExprID,
-    ) {
-        let abi = context.function_abi(lambda.function_id());
-        let environment = self.emit_opauqe_environment_pointer(context, lambda.captures(), abi);
-
-        let function_ref = Operand::Function(FunctionOperand::new(
-            FunctionReference::Local(context.target_function_id(lambda.function_id())),
-            abi.signature().clone(),
-        ));
-
-        self.assign(
-            self.expression_place(expression_id),
-            Rvalue::new_closure(Closure::new(abi.signature().clone()), environment, function_ref),
         );
     }
 

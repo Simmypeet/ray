@@ -195,7 +195,6 @@ impl Context {
             }
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
-            | ApplicationView::Lambda(_)
             | ApplicationView::Pointer(_)
             | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Closure(_)

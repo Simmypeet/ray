@@ -6,10 +6,7 @@ use crate::{
     MonoEffectInstance,
     operand::Operand,
     place::Place,
-    ty::{
-        Closure as ClosureTy, Environment as EnvironmentTy, MonoType, PointerMutability,
-        Tuple as TupleTy,
-    },
+    ty::{Environment as EnvironmentTy, MonoType, PointerMutability, Tuple as TupleTy},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -164,26 +161,6 @@ impl AggregateEnvironment {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
-pub struct AggregateClosure {
-    ty: ClosureTy,
-    environment: Operand,
-    function: Operand,
-}
-
-impl AggregateClosure {
-    #[must_use]
-    pub const fn ty(&self) -> &ClosureTy { &self.ty }
-
-    #[must_use]
-    pub const fn environment(&self) -> &Operand { &self.environment }
-
-    #[must_use]
-    pub const fn function(&self) -> &Operand { &self.function }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
 pub struct OperationHandlerSlot {
     environment: Operand,
     function: Operand,
@@ -220,7 +197,6 @@ impl AggregateEffectHandler {
 pub enum AggregateValue {
     Tuple(AggregateTuple),
     Environment(AggregateEnvironment),
-    Closure(AggregateClosure),
     EffectHandler(AggregateEffectHandler),
 }
 
@@ -244,11 +220,6 @@ impl Rvalue {
         assert_eq!(ty.len(), fields.len());
 
         Self::Aggregate(AggregateValue::Tuple(AggregateTuple { ty, fields }))
-    }
-
-    #[must_use]
-    pub const fn new_closure(ty: ClosureTy, environment: Operand, function: Operand) -> Self {
-        Self::Aggregate(AggregateValue::Closure(AggregateClosure { ty, environment, function }))
     }
 
     #[must_use]

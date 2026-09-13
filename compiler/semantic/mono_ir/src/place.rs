@@ -33,8 +33,6 @@ pub enum Projection {
     Dereference,
     EnvironmentFieldIndex(FieldIndex),
     TupleFieldIndex(FieldIndex),
-    ClosureEnvironmentField,
-    ClosureFunctionPointerField,
     OperationRecordEnvironmentField(GlobalSymbolID),
     OperationRecordFunctionPointerField(GlobalSymbolID),
 }
@@ -69,16 +67,6 @@ impl Place {
     #[must_use]
     pub fn project_tuple_field(self, field: FieldIndex) -> Self {
         self.with_projection(Projection::TupleFieldIndex(field))
-    }
-
-    #[must_use]
-    pub fn project_closure_environment(self) -> Self {
-        self.with_projection(Projection::ClosureEnvironmentField)
-    }
-
-    #[must_use]
-    pub fn project_closure_function_pointer(self) -> Self {
-        self.with_projection(Projection::ClosureFunctionPointerField)
     }
 
     #[must_use]

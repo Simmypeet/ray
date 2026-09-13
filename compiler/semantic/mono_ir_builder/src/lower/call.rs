@@ -101,44 +101,6 @@ impl Builder<'_> {
         )));
     }
 
-    /// Calls an erased lambda through its stored function pointer and
-    /// environment.
-    fn lower_lambda_call(
-        &mut self,
-        callee: IRExprID,
-        mut arguments: Vec<Operand>,
-        expression_id: IRExprID,
-    ) {
-        let callee_place = self.expression_place(callee);
-        let callee_type = self.local_type(callee_place.local()).clone();
-        let closure = callee_type.assert_as_closure();
-
-        let handler_offset = 1 + arguments.len();
-        let effects = closure
-            .function_signature()
-            .parameter_types()
-            .iter()
-            .skip(handler_offset)
-            .map(|handler_type| {
-                let pointer = handler_type.assert_as_pointer();
-                let handler = pointer.pointee().assert_as_effect_handler();
-                handler.mono_effect_instance().clone()
-            })
-            .collect::<Vec<_>>();
-
-        // we're generating something like `callee.environment, ...args`
-        arguments.insert(0, Operand::Copy(callee_place.clone().project_closure_environment()));
-
-        for effect in effects {
-            arguments.push(self.handler_operand(&effect));
-        }
-
-        let code = Operand::Copy(callee_place.project_closure_function_pointer());
-        let destination = self.expression_place(expression_id);
-
-        self.push_instruction(Instruction::Call(Call::new(Some(destination), code, arguments)));
-    }
-
     pub(super) async fn lower_call(
         &mut self,
         context: &Context,
@@ -173,9 +135,6 @@ impl Builder<'_> {
                         self.lower_closure_call(call, instance, signature, &effects, expression_id);
                     }
                 }
-            }
-            CallTarget::Lambda { callee } => {
-                self.lower_lambda_call(*callee, arguments, expression_id);
             }
         }
     }
