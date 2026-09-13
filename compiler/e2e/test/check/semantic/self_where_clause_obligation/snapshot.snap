@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: where-clause obligation for `main.Recursive.Value` is not satisfied
+  ╭▸ compiler/e2e/test/check/semantic/self_where_clause_obligation/main.ray:9:25
+  │
+9 │         box.Item = this.Value[bool; given BadBoolBox],
+  ╰╴                        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ `BadBoolBox.Item` must equal `this.Value[bool; given BadBoolBox]`
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

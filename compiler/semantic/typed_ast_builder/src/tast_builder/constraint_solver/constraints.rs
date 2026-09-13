@@ -125,17 +125,19 @@ impl TAstBuilder {
                     )
                     .await;
                 }
-                Obligation::Predicate(predicate) => {
-                    let root_cause_id =
-                        self.constraint_solver.provenance.insert_root_cause(predicate.clone());
+                Obligation::WfCheck(check) => {
+                    for predicate in check.predicate_obligations(&self.engine).await {
+                        let root_cause_id =
+                            self.constraint_solver.provenance.insert_root_cause(predicate.clone());
 
-                    self.push_constraint(
-                        PendingConstraint::builder()
-                            .constraint(predicate.constraint().into())
-                            .cause_id(root_cause_id)
-                            .build(),
-                    )
-                    .await;
+                        self.push_constraint(
+                            PendingConstraint::builder()
+                                .constraint(predicate.constraint().into())
+                                .cause_id(root_cause_id)
+                                .build(),
+                        )
+                        .await;
+                    }
                 }
             }
         }

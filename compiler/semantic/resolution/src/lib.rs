@@ -17,7 +17,7 @@ use rayc_type::{
 };
 
 pub mod obligation;
-pub use obligation::{Obligation, PredicateObligation, TraitRefCheck};
+pub use obligation::{Obligation, PredicateObligation, TraitRefCheck, WfCheck};
 pub mod inference;
 pub mod path;
 pub use inference::GenInferWithSpan;

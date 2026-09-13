@@ -8,7 +8,7 @@ use rayc_symbol::{GlobalSymbolID, name::get_qualified_name, source_map::to_absol
 use rayc_type::{
     constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
     subst::{Subst, Substitutable},
-    where_clause::PredicateKind,
+    where_clause::{PredicateKind, get_where_clause},
 };
 
 #[derive(
@@ -17,9 +17,40 @@ use rayc_type::{
 pub enum Obligation {
     /// An explicit given argument must implement the required trait reference.
     TraitRefCheck(TraitRefCheck),
-    /// A predicate declared on a resolved symbol must hold at the resolution
-    /// site.
-    Predicate(PredicateObligation),
+    /// The instantiated where clause of a resolved symbol must hold at the
+    /// resolution site.
+    WfCheck(WfCheck),
+}
+
+/// A deferred check of a resolved symbol's instantiated where clause.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct WfCheck {
+    symbol_id: GlobalSymbolID,
+    subst: Subst,
+    span: RelativeSpan,
+}
+
+impl WfCheck {
+    #[must_use]
+    pub const fn new(symbol_id: GlobalSymbolID, subst: Subst, span: RelativeSpan) -> Self {
+        Self { symbol_id, subst, span }
+    }
+
+    /// Queries and instantiates the predicates after semantic construction has
+    /// completed.
+    pub async fn predicate_obligations(&self, engine: &TrackedEngine) -> Vec<PredicateObligation> {
+        let wher_clause = engine.get_where_clause(self.symbol_id).await;
+
+        wher_clause
+            .iter()
+            .map(|predicate| {
+                let kind = predicate.kind().apply_subst_or_clone(&self.subst, engine);
+                PredicateObligation::new(kind, self.symbol_id, self.span)
+            })
+            .collect()
+    }
 }
 
 /// A substituted where-clause predicate required by a resolved symbol.

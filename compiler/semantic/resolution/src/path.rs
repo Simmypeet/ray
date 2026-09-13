@@ -7,13 +7,12 @@ use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind};
 use rayc_syntax::path::{Path, PathRoot, PathSegment};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
-    subst::{Subst, Substitutable},
+    subst::Subst,
     trait_ref::TraitRef,
     ty::{Ty, application::View as ApplicationView, args::Args, self_instance::SelfInstance},
-    where_clause::get_where_clause,
 };
 
-use crate::{PredicateObligation, resolver::Resolver};
+use crate::{WfCheck, resolver::Resolver};
 
 /// The semantic result of resolving a path.
 #[derive(Debug, Clone)]
@@ -544,23 +543,14 @@ impl Resolver<'_> {
         symbol_id: GlobalSymbolID,
         span: RelativeSpan,
     ) {
-        // Signature resolution must not recursively query the clause it is building.
-        // Body resolution also checks recursive calls against the instantiated
-        // contract.
-        if (symbol_id == self.site() && !self.allows_inference()) || !symbol_kind.has_where_clause()
-        {
+        if !symbol_kind.has_where_clause() {
             return;
         }
 
-        // Instantiate every declared predicate with the arguments selected by this
-        // path segment before handing it to downstream solvers.
-        let where_clause = self.engine().get_where_clause(symbol_id).await;
+        // Defer querying the clause so resolving a declaration can require its own
+        // instantiated contract without recursively querying the clause being built.
         let subst = resolution.substitution(self.engine()).await;
-        for predicate in where_clause.iter() {
-            let obligation = PredicateObligation::new(predicate.kind().clone(), symbol_id, span)
-                .apply_subst_or_clone(&subst, self.engine());
-            self.require_predicate(obligation);
-        }
+        self.require_wf_check(WfCheck::new(symbol_id, subst, span));
     }
 
     async fn resolve_member(

@@ -98,10 +98,6 @@ impl Resolver<'_> {
 
     pub(crate) const fn engine(&self) -> &TrackedEngine { self.engine }
 
-    pub(crate) fn allows_inference(&self) -> bool { self.infer_gen.is_some() }
-
-    pub(crate) const fn site(&self) -> GlobalSymbolID { self.site }
-
     pub(crate) fn require_instance_trait_ref(
         &self,
         instance: Interned<Ty>,
@@ -118,8 +114,8 @@ impl Resolver<'_> {
         ));
     }
 
-    pub(crate) fn require_predicate(&self, obligation: crate::PredicateObligation) {
-        self.obligation_handler.receive(crate::Obligation::Predicate(obligation));
+    pub(crate) fn require_wf_check(&self, check: crate::WfCheck) {
+        self.obligation_handler.receive(crate::Obligation::WfCheck(check));
     }
 
     pub(crate) fn new_primitive_type(&self, primitive: Primitive) -> Interned<Ty> {

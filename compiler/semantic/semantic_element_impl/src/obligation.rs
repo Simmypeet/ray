@@ -2,7 +2,7 @@
 
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::Obligation;
+use rayc_resolution::{Obligation, PredicateObligation, TraitRefCheck};
 use rayc_solver::ty_relate::Step;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
@@ -17,14 +17,38 @@ pub(crate) async fn solve_obligations(
     site: GlobalSymbolID,
     engine: &TrackedEngine,
 ) -> Vec<Rendered<ByteIndex>> {
+    enum ExpandedObligation {
+        TraitRefCheck(TraitRefCheck),
+        Predicate(PredicateObligation),
+    }
+
     let mut solver = rayc_solver::Solver::new(engine.clone(), site).await;
+    let mut expanded = Vec::new();
     let mut constraints = Vec::new();
     let mut failed = std::collections::BTreeSet::new();
 
-    // Expand obligations only after all semantic elements are available.
-    for (index, obligation) in obligations.iter().enumerate() {
+    // Query and instantiate where clauses only after all semantic elements are
+    // available, so resolution can refer to the clause currently being built.
+    for obligation in obligations {
         match obligation {
             Obligation::TraitRefCheck(check) => {
+                expanded.push(ExpandedObligation::TraitRefCheck(check));
+            }
+            Obligation::WfCheck(check) => expanded.extend(
+                check
+                    .predicate_obligations(engine)
+                    .await
+                    .into_iter()
+                    .map(ExpandedObligation::Predicate),
+            ),
+        }
+    }
+
+    // Lower the expanded obligations into constraints while retaining each
+    // individual predicate for diagnostics.
+    for (index, obligation) in expanded.iter().enumerate() {
+        match obligation {
+            ExpandedObligation::TraitRefCheck(check) => {
                 match solver.entail_instance_trait_ref(check.constraint()).await {
                     Ok(Step::Derived(derived)) => constraints
                         .extend(derived.into_iter().map(|derived| (index, derived.ty_relate))),
@@ -34,7 +58,7 @@ pub(crate) async fn solve_obligations(
                     Ok(Step::Subst(_)) => unreachable!("trait checks only derive type relations"),
                 }
             }
-            Obligation::Predicate(predicate) => {
+            ExpandedObligation::Predicate(predicate) => {
                 constraints.push((index, predicate.constraint()));
             }
         }
@@ -74,11 +98,11 @@ pub(crate) async fn solve_obligations(
     // while solving the complete set.
     let mut rendered = Vec::new();
     for index in failed {
-        match &obligations[index] {
-            Obligation::TraitRefCheck(check) => {
+        match &expanded[index] {
+            ExpandedObligation::TraitRefCheck(check) => {
                 rendered.push(check.apply_subst_or_clone(&subst, engine).report(engine).await);
             }
-            Obligation::Predicate(predicate) => {
+            ExpandedObligation::Predicate(predicate) => {
                 rendered.push(predicate.apply_subst_or_clone(&subst, engine).report(engine).await);
             }
         }

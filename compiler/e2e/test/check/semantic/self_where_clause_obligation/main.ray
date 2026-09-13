@@ -1,0 +1,13 @@
+trait Box[a]:
+    type Item
+
+inst BadBoolBox for Box[bool]:
+    type Item = int32
+
+trait Recursive[]:
+    type Value[a] given (box: Box[a]) where (
+        box.Item = this.Value[bool; given BadBoolBox],
+    )
+
+def main() -> int32:
+    return 0
