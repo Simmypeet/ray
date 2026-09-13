@@ -1,0 +1,58 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: expected a marker, found trait
+   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_invalid/main.ray:12:6
+   │
+12 │ impl NotMarker for int32
+   ╰╴     ━━━━━━━━━ expected a marker, found trait
+
+[error]: symbol `Missing` is not found
+   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_invalid/main.ray:13:6
+   │
+13 │ impl Missing for int32
+   ╰╴     ━━━━━━━ symbol `Missing` is not found
+
+[error]: invalid marker implementation head
+   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_invalid/main.ray:14:15
+   │
+14 │ impl Send for IntContainer.Item
+   ╰╴              ━━━━━━━━━━━━━━━━━ associated types are not allowed in marker implementation heads
+
+[error]: invalid marker implementation head
+   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_invalid/main.ray:15:18
+   │
+15 │ impl[a] Send for a
+   ╰╴                 ━ a marker implementation head must start with a type constructor
+
+[error]: invalid marker implementation head
+   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_invalid/main.ray:16:18
+   │
+16 │ impl[a] Send for *int32
+   ╰╴                 ━━━━━━ type constructor arguments in a marker implementation must be type variables
+
+[error]: invalid marker implementation head
+   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_invalid/main.ray:17:6
+   │
+17 │ impl[a] Send for (a, a)
+   ╰╴     ━ type variable `a` must occur exactly once in the implementation head; found 2 occurrences
+
+[error]: invalid marker implementation head
+   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_invalid/main.ray:18:6
+   │
+18 │ impl[a] Send for int32
+   ╰╴     ━ type variable `a` must occur exactly once in the implementation head; found 0 occurrences
+
+[error]: expected a value type or an associated type projection
+   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_invalid/main.ray:19:15
+   │
+19 │ impl Send for IntContainer
+   ╰╴              ━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 8 error(s)
+
+
+
+stdout:

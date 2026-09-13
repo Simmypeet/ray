@@ -6,6 +6,7 @@ mod effect_row;
 mod extern_signature;
 pub mod instance_member;
 pub mod instance_trait_ref;
+mod marker_implementation;
 mod obligation;
 mod parameter;
 mod poly_var_map;

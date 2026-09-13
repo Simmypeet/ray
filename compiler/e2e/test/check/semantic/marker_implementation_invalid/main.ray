@@ -1,0 +1,22 @@
+marker Send
+
+trait NotMarker[]:
+    type Item
+
+trait Container[]:
+    type Item
+
+inst IntContainer for Container:
+    type Item = int32
+
+impl NotMarker for int32
+impl Missing for int32
+impl Send for IntContainer.Item
+impl[a] Send for a
+impl[a] Send for *int32
+impl[a] Send for (a, a)
+impl[a] Send for int32
+impl Send for IntContainer
+
+def main() -> int32:
+    return 0

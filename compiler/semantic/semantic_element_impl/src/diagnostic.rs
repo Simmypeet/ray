@@ -93,6 +93,18 @@ async fn single_rendered_executor(
         }
     }
 
+    if kind == rayc_symbol::symbol_kind::SymbolKind::MarkerImplementation {
+        let marker_implementation_key =
+            rayc_semantic_element::marker_implementation::Key { symbol_id };
+        let diagnostics = engine.query(&DiagnosticKey::new(marker_implementation_key)).await;
+        let generated = engine.query(&ObligationKey::new(marker_implementation_key)).await;
+
+        obligations.extend(generated.iter().cloned());
+        for diagnostic in diagnostics.iter() {
+            rendered.push(diagnostic.report(engine).await);
+        }
+    }
+
     if matches!(
         kind,
         rayc_symbol::symbol_kind::SymbolKind::InstanceDef

@@ -1,0 +1,13 @@
+marker Send
+marker Copy
+
+impl[a] Send for (a,)
+impl[b] Send for (b,)
+impl[a, b] Send for (a, b)
+
+impl[a] Copy for (a,)
+impl Copy for int32
+impl Send for int32
+
+def main() -> int32:
+    return 0
