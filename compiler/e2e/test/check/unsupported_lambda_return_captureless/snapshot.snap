@@ -1,0 +1,45 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `cstr` keyword
+  ╭▸ compiler/e2e/test/check/unsupported_lambda_return_captureless/main.ray:1:24
+  │
+1 │ def makeIncrement() -> def(int32) -> int32:
+  ╰╴                       ━━━
+
+[error]: function body effects do not match its signature: expected `{}`, but found `{any}.Effect`
+  ╭▸ compiler/e2e/test/check/unsupported_lambda_return_captureless/main.ray:4:5
+  │
+4 │ def main() -> int32:
+  │     ━━━━ the function body has effects outside its signature
+5 │     return makeIncrement()(45)
+  │            ┬──────────────────
+  │            │
+  │            effect `{any}.Effect` introduced here
+  ╰╴           effect `{}` introduced here
+
+[error]: mismatched types in return expression: expected `int32`, but found `{any}.Return`
+  ╭▸ compiler/e2e/test/check/unsupported_lambda_return_captureless/main.ray:5:12
+  │
+5 │     return makeIncrement()(45)
+  ╰╴           ━━━━━━━━━━━━━━━━━━━
+
+[error]: no implicit instance found: `core.Def[()]`
+  ╭▸ compiler/e2e/test/check/unsupported_lambda_return_captureless/main.ray:5:12
+  │
+5 │     return makeIncrement()(45)
+  ╰╴           ━━━━━━━━━━━━━━━━━━━
+
+[error]: mismatched argument types in function call: expected `{any}.Args`, but found `(int32)`
+  ╭▸ compiler/e2e/test/check/unsupported_lambda_return_captureless/main.ray:5:27
+  │
+5 │     return makeIncrement()(45)
+  ╰╴                          ━━━━
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

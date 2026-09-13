@@ -1,6 +1,5 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-assertion_line: 112
 expression: run
 ---
 stderr:
@@ -40,17 +39,19 @@ stderr:
 47 │ def badParameter(callback: def() -> () \ {Reader[int32; given EqBool]}) -> ():
    ╰╴                                                              ━━━━━━
 
-[error]: given argument `main.OrdBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:50:107
+[error]: function body effects do not match its signature: expected `{Reader[int32; given OrdBool]}`, but found `{Reader[int32; given EqInt]}`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:50:5
    │
-50 │ def badReturn(callback: def() -> () \ {Reader[int32; given EqInt]}) -> def() -> () \ {Reader[int32; given OrdBool]}:
-   ╰╴                                                                                                          ━━━━━━━
+50 │ def badReturn(callback: def() -> () \ {Reader[int32; given EqInt]}) -> () \ {Reader[int32; given OrdBool]}:
+   │     ━━━━━━━━━ the function body has effects outside its signature
+51 │     return callback()
+   ╰╴           ────────── effect `{Reader[int32; given EqInt]}` introduced here
 
-[error]: mismatched types in return expression: expected `def() -> () \ {Reader[int32; given OrdBool]}`, but found `def() -> () \ {Reader[int32; given EqInt]}`
-   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:51:12
+[error]: given argument `main.OrdBool` does not implement `main.Eq[int32]`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_given_trait_ref/main.ray:50:98
    │
-51 │     return callback
-   ╰╴           ━━━━━━━━
+50 │ def badReturn(callback: def() -> () \ {Reader[int32; given EqInt]}) -> () \ {Reader[int32; given OrdBool]}:
+   ╰╴                                                                                                 ━━━━━━━
 
 [error]: Compilation aborted due to 8 error(s)
 

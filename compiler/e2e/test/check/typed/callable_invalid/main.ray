@@ -1,0 +1,16 @@
+def unused(fn: def(int32) -> bool) -> int32:
+    return 0
+
+def wrongBody(fn: def(int32) -> int32) -> int32:
+    return fn(true)
+
+def wrongArity(fn: def(int32) -> int32) -> int32:
+    return fn(1, 2)
+
+def recursive(fn: def(int32) -> bool, depth: int32) -> int32:
+    return recursive([x] -> x + 1, depth - 1)
+
+def main() -> int32:
+    let ignored = unused([x] -> x + 1)
+    let value = 1
+    return value()

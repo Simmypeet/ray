@@ -1,14 +1,11 @@
-def zero(callback: def()) -> def() -> ():
-    return callback
+def zero(callback: def()):
+    return callback()
 
-def omitted(callback: def(int32)) -> def(int32) -> ():
-    return callback
+def omitted(callback: def(int32)):
+    return callback(1)
 
-def explicit(callback: def(int32, bool,) -> float32) -> def(int32, bool) -> float32:
-    return callback
+def explicit(callback: def(int32, bool,) -> float32) -> float32:
+    return callback(1, true)
 
-def nested(callback: def(def(int32) -> bool) -> def() -> float32) -> def(def(int32) -> bool) -> def() -> float32:
-    return callback
-
-def polymorphic(callback: def(a, def(b) -> a) -> b, value: a) -> def(a, def(b) -> a) -> b:
-    return callback
+def polymorphic(callback: def(a, b) -> b, value: a, other: b) -> b:
+    return callback(value, other)

@@ -1,0 +1,63 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched argument types in function call: expected `int32`, but found `bool`
+  ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:5:15
+  │
+5 │     return fn(true)
+  ╰╴              ━━━━
+
+[error]: callable expects 1 arguments, but 2 were provided
+  ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:8:12
+  │
+8 │     return fn(1, 2)
+  ╰╴           ━━━━━━━━
+
+[error]: where-clause obligation for `main.recursive` is not satisfied
+   ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:11:12
+   │
+11 │     return recursive([x] -> x + 1, depth - 1)
+   ╰╴           ━━━━━━━━━ `DefInstance[<closure>(int32) -> int32 \ {}].Return` must equal `bool`
+
+[error]: function body effects do not match its signature: expected `{}`, but found `{any}.Effect`
+   ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:13:5
+   │
+13 │ def main() -> int32:
+   │     ━━━━ the function body has effects outside its signature
+14 │     let ignored = unused([x] -> x + 1)
+   │                   ──────────────────── effect `{}` introduced here
+15 │     let value = 1
+16 │     return value()
+   ╰╴           ─────── effect `{any}.Effect` introduced here
+
+[error]: where-clause obligation for `main.unused` is not satisfied
+   ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:14:19
+   │
+14 │     let ignored = unused([x] -> x + 1)
+   ╰╴                  ━━━━━━ `DefInstance[<closure>(int32) -> int32 \ {}].Return` must equal `bool`
+
+[error]: mismatched types in return expression: expected `int32`, but found `{any}.Return`
+   ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:16:12
+   │
+16 │     return value()
+   ╰╴           ━━━━━━━
+
+[error]: no implicit instance found: `core.Def[int32]`
+   ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:16:12
+   │
+16 │     return value()
+   ╰╴           ━━━━━━━
+
+[error]: mismatched argument types in function call: expected `{any}.Args`, but found `()`
+   ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:16:17
+   │
+16 │     return value()
+   ╰╴                ━━
+
+[error]: Compilation aborted due to 8 error(s)
+
+
+
+stdout:

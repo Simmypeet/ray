@@ -1,0 +1,15 @@
+eff E:
+    def value() -> int32
+
+def pure(fn: def() -> int32) -> int32:
+    return 0
+
+def effectful(fn: def() -> int32 \ {E}) -> int32:
+    return 0
+
+def main() -> int32:
+    let a = pure([] -> E.value())
+    let closure = [] -> 42
+    let checked = pure(closure)
+    let b = effectful(closure)
+    return a + b

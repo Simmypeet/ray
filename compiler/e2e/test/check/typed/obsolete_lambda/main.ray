@@ -1,0 +1,3 @@
+def main() -> int32:
+    let old = (x) -> x + 1
+    return old(1)

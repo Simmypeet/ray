@@ -11,11 +11,11 @@ stderr:
 10 │     return withIntState()
    ╰╴           ────────────── effect `{State[int32]}` introduced here
 
-[error]: mismatched types in variable assignment: expected `def() -> () \ {}`, but found `def() -> () \ {State[int32] | {any}}`
-   ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:18:37
+[error]: where-clause obligation for `main.requirePure` is not satisfied
+   ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:24:5
    │
-18 │     let callback: def() -> () \ {} = () -> withIntState()
-   ╰╴                                    ━━━━━━━━━━━━━━━━━━━━━
+24 │     requirePure([] -> withIntState())
+   ╰╴    ━━━━━━━━━━━ `DefInstance[<closure>() -> () \ {State[int32] | {any}}].Effect` must equal `{}`
 
 [error]: Compilation aborted due to 2 error(s)
 

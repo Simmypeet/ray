@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: lambda expects 2 arguments, but 1 were provided
+[error]: callable expects 2 arguments, but 1 were provided
   ╭▸ compiler/e2e/test/check/tast/indirect_call_argument_count/main.ray:2:12
   │
 2 │     return callback(1)

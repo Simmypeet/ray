@@ -1,6 +1,5 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-assertion_line: 112
 expression: run
 ---
 stderr:
@@ -19,7 +18,7 @@ stderr:
 [error]: cannot infer instance requirement: `main.Missing[{any}]`
    ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:28:31
    │
-28 │     let callback = (value) -> missing(value)
+28 │     let callback = [value] -> missing(value)
    ╰╴                              ━━━━━━━
 
 [error]: no implicit instance found: `main.Missing[bool]`

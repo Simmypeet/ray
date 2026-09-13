@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: where-clause obligation for `main.pure` is not satisfied
+   ╭▸ compiler/e2e/test/check/typed/callable_effect_contract/main.ray:11:13
+   │
+11 │     let a = pure([] -> E.value())
+   ╰╴            ━━━━ `DefInstance[<closure>() -> int32 \ {E | {any}}].Effect` must equal `{}`
+
+[error]: where-clause obligation for `main.effectful` is not satisfied
+   ╭▸ compiler/e2e/test/check/typed/callable_effect_contract/main.ray:14:13
+   │
+14 │     let b = effectful(closure)
+   ╰╴            ━━━━━━━━━ `DefInstance[<closure>() -> int32 \ {}].Effect` must equal `{E}`
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

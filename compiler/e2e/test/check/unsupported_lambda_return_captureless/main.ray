@@ -1,0 +1,5 @@
+def makeIncrement() -> def(int32) -> int32:
+    return [value] -> value + 1
+
+def main() -> int32:
+    return makeIncrement()(45)

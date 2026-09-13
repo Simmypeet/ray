@@ -47,8 +47,8 @@ def badRequirement() given (nested: Nested[int32; given OrdBool]) -> ():
 def badParameter(callback: def() -> () \ {Reader[int32; given EqBool]}) -> ():
     return ()
 
-def badReturn(callback: def() -> () \ {Reader[int32; given EqInt]}) -> def() -> () \ {Reader[int32; given OrdBool]}:
-    return callback
+def badReturn(callback: def() -> () \ {Reader[int32; given EqInt]}) -> () \ {Reader[int32; given OrdBool]}:
+    return callback()
 
 inst NestedInt for Nested[int32; given EqInt]:
     def value() -> int32:

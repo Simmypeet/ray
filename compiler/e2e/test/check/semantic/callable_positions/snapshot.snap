@@ -1,0 +1,72 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `cstr` keyword
+  ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:5:18
+  │
+5 │     type Value = def(int32) -> int32
+  ╰╴                 ━━━
+
+[error]: callable syntax is only supported as a complete parameter type on ordinary definitions
+  ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:8:19
+  │
+8 │     def apply(fn: def(int32) -> int32) -> int32
+  ╰╴                  ━━━━━━━━━━━━━━━━━━━
+
+[error]: callable syntax is only supported as a complete parameter type on ordinary definitions
+   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:10:24
+   │
+10 │ extern def foreign(fn: def(int32) -> int32) -> int32
+   ╰╴                       ━━━━━━━━━━━━━━━━━━━
+
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `cstr` keyword
+   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:12:17
+   │
+12 │ def result() -> def(int32) -> int32:
+   ╰╴                ━━━
+
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `cstr` keyword
+   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:15:20
+   │
+15 │ def nested(fn: def(def(int32) -> int32)):
+   ╰╴                   ━━━
+
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `cstr` keyword
+   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:18:23
+   │
+18 │ def components(pair: (def(int32),), pointer: *def(int32)):
+   ╰╴                      ━━━
+
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `mut` keyword, `cstr` keyword
+   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:18:47
+   │
+18 │ def components(pair: (def(int32),), pointer: *def(int32)):
+   ╰╴                                              ━━━
+
+[error]: type inference is not allowed for `Holder` here
+   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:21:35
+   │
+21 │ def arguments(value: a) given (d: Holder[def(int32)]):
+   │                                   ━━━━━━ expected 1 type arguments
+   │
+   ╰ help: provide all type arguments explicitly
+
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `given` keyword, `]` punctuation, `cstr` keyword
+   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:21:42
+   │
+21 │ def arguments(value: a) given (d: Holder[def(int32)]):
+   ╰╴                                         ━━━
+
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `cstr` keyword
+   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:25:16
+   │
+25 │     let local: def(int32) -> int32 = [x] -> x
+   ╰╴               ━━━
+
+[error]: Compilation aborted due to 10 error(s)
+
+
+
+stdout:

@@ -8,6 +8,9 @@ inst GenericEq[a] for Eq[a]:
 eff Reader[a] given (equality: Eq[a]):
     def read() -> a
 
+def requireBool(callback: def() -> () \ {Reader[bool; given GenericEq[bool]]}):
+    return ()
+
 def mismatch(callback: def() -> () \ {Reader[int32; given GenericEq[int32]]}) -> ():
-    let local: def() -> () \ {Reader[bool; given GenericEq[bool]]} = callback
+    requireBool(callback)
     return ()

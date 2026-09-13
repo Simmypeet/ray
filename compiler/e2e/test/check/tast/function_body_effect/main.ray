@@ -14,11 +14,17 @@ def matchingTopLevel() -> () \ {State[int32]}:
     return withIntState()
 
 
+def requirePure(callback: def()):
+    return ()
+
+def requireState(callback: def() \ {State[int32]}):
+    return ()
+
 def mismatchedLambda() -> ():
-    let callback: def() -> () \ {} = () -> withIntState()
+    requirePure([] -> withIntState())
     return ()
 
 
 def matchingLambda() -> ():
-    let callback: def() -> () \ {State[int32]} = () -> withIntState()
+    requireState([] -> withIntState())
     return ()

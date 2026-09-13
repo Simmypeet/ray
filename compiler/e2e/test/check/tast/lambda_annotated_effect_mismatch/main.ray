@@ -6,9 +6,12 @@ def withPolyState(arg: s) -> () \ {State[s]}:
     return ()
 
 
+def requireBool(callback: def() \ {State[bool]}):
+    return ()
+
 def main() -> ():
     let mut var
-    let lambda: def() \ {State[bool]} = () -> withPolyState(var)
+    requireBool([] -> withPolyState(var))
     var = 32
     
     return ()

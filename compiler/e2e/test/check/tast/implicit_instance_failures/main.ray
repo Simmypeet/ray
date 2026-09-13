@@ -25,7 +25,7 @@ def testAmbiguous() -> bool:
     return ambiguous(true)
 
 def testUnknown() -> bool:
-    let callback = (value) -> missing(value)
+    let callback = [value] -> missing(value)
     return true
 
 inst Nested for Choice[int32] given (dictionary: Missing[bool]):

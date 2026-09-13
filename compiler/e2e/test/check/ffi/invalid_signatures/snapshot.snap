@@ -15,23 +15,17 @@ stderr:
 2 │ extern def tupleParameter(value: (c_int, c_int)) -> c_int
   ╰╴                                ━━━━━━━━━━━━━━━
 
-[error]: this type is not supported as an extern return type
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `cstr` keyword
   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:3:30
   │
 3 │ extern def lambdaReturn() -> def(c_int) -> c_int
-  ╰╴                             ━━━━━━━━━━━━━━━━━━━
+  ╰╴                             ━━━
 
 [error]: an extern definition cannot be polymorphic
   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:12
   │
 4 │ extern def polymorphic(value: a) -> a
   ╰╴           ━━━━━━━━━━━
-
-[error]: this type is not supported in an extern parameter
-  ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:31
-  │
-4 │ extern def polymorphic(value: a) -> a
-  ╰╴                              ━
 
 [error]: symbol `a` is not found
   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:31
@@ -51,7 +45,7 @@ stderr:
 4 │ extern def polymorphic(value: a) -> a
   ╰╴                                    ━ symbol `a` is not found
 
-[error]: Compilation aborted due to 8 error(s)
+[error]: Compilation aborted due to 7 error(s)
 
 
 

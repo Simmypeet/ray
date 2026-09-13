@@ -8,7 +8,7 @@ def invoke(callback: def(int32) -> int32, value: int32) -> int32:
 def invokeParenthesized(callback: def(int32) -> int32, value: int32) -> int32:
     return (callback)(value)
 
-def invokeChained(callback: def(int32) -> def(int32) -> bool) -> bool:
+def invokeChained(callback: f) given (first: core.Def[f], second: core.Def[first.Return]) -> bool where (first.Args = (int32,), first.Effect = {}, second.Args = (int32,), second.Return = bool, second.Effect = {}):
     return callback(1)(2)
 
 def invokeGlobal() -> int32:

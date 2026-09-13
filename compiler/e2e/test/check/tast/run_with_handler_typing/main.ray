@@ -10,7 +10,7 @@ def test() -> ():
     with Convert[int32]:
         def convert(value):
             let copied: bool = value
-            let closure = () -> captured
+            let closure = [] -> captured
             return true
 
     return ()

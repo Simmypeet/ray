@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: mismatched argument types in lambda invocation: expected `int32`, but found `bool`
+[error]: mismatched argument types in function call: expected `int32`, but found `bool`
   ╭▸ compiler/e2e/test/check/tast/indirect_call_argument_type/main.ray:2:21
   │
 2 │     return callback(true)

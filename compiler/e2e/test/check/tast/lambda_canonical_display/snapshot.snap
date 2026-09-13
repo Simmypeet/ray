@@ -1,14 +1,13 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-assertion_line: 112
 expression: run
 ---
 stderr:
-[error]: mismatched types in return expression: expected `def(bool) -> () \ {}`, but found `def(int32) -> () \ {}`
-  ╭▸ compiler/e2e/test/check/tast/lambda_canonical_display/main.ray:2:12
+[error]: mismatched argument types in function call: expected `int32`, but found `bool`
+  ╭▸ compiler/e2e/test/check/tast/lambda_canonical_display/main.ray:2:21
   │
-2 │     return callback
-  ╰╴           ━━━━━━━━
+2 │     return callback(true)
+  ╰╴                    ━━━━
 
 [error]: Compilation aborted due to 1 error(s)
 

@@ -1,6 +1,5 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-assertion_line: 112
 expression: run
 ---
 stderr:
@@ -41,16 +40,16 @@ stderr:
    ╰╴                              ━━━━━━
 
 [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:70:51
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:69:62
    │
-70 │     let local: def() -> () \ {Reader[int32; given EqBool]} = callback
-   ╰╴                                                  ━━━━━━
+69 │ def requireBool(callback: def() -> () \ {Reader[int32; given EqBool]}):
+   ╰╴                                                             ━━━━━━
 
-[error]: mismatched types in variable assignment: expected `def() -> () \ {Reader[int32; given EqBool]}`, but found `def() -> () \ {Reader[int32; given EqInt]}`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:70:62
+[error]: where-clause obligation for `main.requireBool` is not satisfied
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:73:5
    │
-70 │     let local: def() -> () \ {Reader[int32; given EqBool]} = callback
-   ╰╴                                                             ━━━━━━━━
+73 │     requireBool(callback)
+   ╰╴    ━━━━━━━━━━━ `callable dictionary.Effect` must equal `{Reader[int32; given EqBool]}`
 
 [error]: Compilation aborted due to 8 error(s)
 

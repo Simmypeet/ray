@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: callable syntax is only supported as a complete parameter type on ordinary definitions
+  ╭▸ compiler/e2e/test/check/semantic/callable_conformance_invalid/main.ray:2:20
+  │
+2 │     def invoke(fn: def(int32) -> int32) -> int32
+  ╰╴                   ━━━━━━━━━━━━━━━━━━━
+
+[error]: callable syntax is only supported as a complete parameter type on ordinary definitions
+  ╭▸ compiler/e2e/test/check/semantic/callable_conformance_invalid/main.ray:8:20
+  │
+8 │     def invoke(fn: def(int32) -> int32) -> int32:
+  ╰╴                   ━━━━━━━━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

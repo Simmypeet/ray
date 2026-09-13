@@ -66,8 +66,11 @@ def invalidPolyVarMember() given (member: Member[int32]) -> bool:
 eff Reader[a] given (equality: Eq[a]):
     def read() -> a
 
+def requireBool(callback: def() -> () \ {Reader[int32; given EqBool]}):
+    return ()
+
 def badLocal(callback: def() -> () \ {Reader[int32; given EqInt]}) -> ():
-    let local: def() -> () \ {Reader[int32; given EqBool]} = callback
+    requireBool(callback)
     return ()
 
 def validLiteral() -> bool:

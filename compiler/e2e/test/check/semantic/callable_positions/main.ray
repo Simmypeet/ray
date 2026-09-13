@@ -1,0 +1,26 @@
+trait Holder[a]:
+    type Value
+
+inst Invalid for Holder[int32]:
+    type Value = def(int32) -> int32
+
+eff InvalidOperation:
+    def apply(fn: def(int32) -> int32) -> int32
+
+extern def foreign(fn: def(int32) -> int32) -> int32
+
+def result() -> def(int32) -> int32:
+    return [x] -> x
+
+def nested(fn: def(def(int32) -> int32)):
+    return ()
+
+def components(pair: (def(int32),), pointer: *def(int32)):
+    return ()
+
+def arguments(value: a) given (d: Holder[def(int32)]):
+    return ()
+
+def main() -> int32:
+    let local: def(int32) -> int32 = [x] -> x
+    return 0

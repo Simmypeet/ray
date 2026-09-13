@@ -4,9 +4,9 @@ expression: run
 ---
 stderr:
 [error]: mismatched types in variable assignment: expected `bool`, but found `int32`
-   ╭▸ compiler/e2e/test/check/tast/lambda_annotated_effect_mismatch/main.ray:12:11
+   ╭▸ compiler/e2e/test/check/tast/lambda_annotated_effect_mismatch/main.ray:15:11
    │
-12 │     var = 32
+15 │     var = 32
    ╰╴          ━━
 
 [error]: Compilation aborted due to 1 error(s)

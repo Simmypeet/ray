@@ -1,0 +1,12 @@
+trait InvalidContract[t]:
+    def invoke(fn: def(int32) -> int32) -> int32
+
+trait Contract[t]:
+    def invoke(fn: int32) -> int32
+
+inst InvalidImplementation for Contract[int32]:
+    def invoke(fn: def(int32) -> int32) -> int32:
+        return 0
+
+def main() -> int32:
+    return 0

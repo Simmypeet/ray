@@ -3,19 +3,33 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: expected a lambda type, but found `int32`
-  ╭▸ compiler/e2e/test/check/tast/indirect_call_non_lambda_shadow/main.ray:5:12
+[error]: function body effects do not match its signature: expected `{}`, but found `{any}.Effect`
+  ╭▸ compiler/e2e/test/check/tast/indirect_call_non_lambda_shadow/main.ray:4:5
   │
+4 │ def invoke(callback: int32) -> int32:
+  │     ━━━━━━ the function body has effects outside its signature
 5 │     return callback(1)
-  ╰╴           ━━━━━━━━
+  ╰╴           ─────────── effect `{any}.Effect` introduced here
 
-[error]: mismatched types in return expression: expected `int32`, but found `<error>`
+[error]: mismatched types in return expression: expected `int32`, but found `{any}.Return`
   ╭▸ compiler/e2e/test/check/tast/indirect_call_non_lambda_shadow/main.ray:5:12
   │
 5 │     return callback(1)
   ╰╴           ━━━━━━━━━━━
 
-[error]: Compilation aborted due to 2 error(s)
+[error]: no implicit instance found: `core.Def[int32]`
+  ╭▸ compiler/e2e/test/check/tast/indirect_call_non_lambda_shadow/main.ray:5:12
+  │
+5 │     return callback(1)
+  ╰╴           ━━━━━━━━━━━
+
+[error]: mismatched argument types in function call: expected `{any}.Args`, but found `(int32)`
+  ╭▸ compiler/e2e/test/check/tast/indirect_call_non_lambda_shadow/main.ray:5:20
+  │
+5 │     return callback(1)
+  ╰╴                   ━━━
+
+[error]: Compilation aborted due to 4 error(s)
 
 
 
