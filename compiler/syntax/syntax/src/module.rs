@@ -5,7 +5,13 @@ use rayc_parser::{
 };
 
 use crate::{
-    Passable, def::Def, effect::Effect, extern_def::ExternDef, instance::Instance, r#trait::Trait,
+    Passable,
+    def::Def,
+    effect::Effect,
+    extern_def::ExternDef,
+    instance::Instance,
+    marker::{Marker, MarkerImplementation},
+    r#trait::Trait,
 };
 
 abstract_tree::abstract_tree! {
@@ -15,7 +21,9 @@ abstract_tree::abstract_tree! {
         ExternDef(ExternDef = ast::<ExternDef>()),
         Effect(Effect = ast::<Effect>()),
         Trait(Trait = ast::<Trait>()),
-        Instance(Instance = ast::<Instance>())
+        Instance(Instance = ast::<Instance>()),
+        Marker(Marker = ast::<Marker>()),
+        MarkerImplementation(MarkerImplementation = ast::<MarkerImplementation>())
     }
 }
 

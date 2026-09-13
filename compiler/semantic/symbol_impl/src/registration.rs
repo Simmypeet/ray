@@ -440,6 +440,8 @@ impl Table {
                 ModuleMember::Instance(instance) => {
                     self.register_instance(member_builder, instance.clone(), engine).await;
                 }
+                // TODO: Marker declarations enter the symbol table when marker semantics are added.
+                ModuleMember::Marker(_) | ModuleMember::MarkerImplementation(_) => {}
             }
         }
     }

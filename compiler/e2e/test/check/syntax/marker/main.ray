@@ -1,0 +1,15 @@
+marker Send
+
+impl Send for int32
+
+impl[a] Send for *a where (
+    a: Send,
+)
+
+def verify(value: a) -> a where (
+    a: Send,
+):
+    return value
+
+def main() -> int32:
+    return verify(42)

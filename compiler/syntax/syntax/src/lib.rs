@@ -24,6 +24,7 @@ pub mod given;
 pub mod instance;
 pub mod irrefutable_pattern;
 pub mod kind;
+pub mod marker;
 pub mod module;
 pub mod path;
 pub mod statement;

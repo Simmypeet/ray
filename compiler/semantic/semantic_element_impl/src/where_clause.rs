@@ -141,6 +141,8 @@ impl Build for Key {
                         equality.span(),
                     ));
                 }
+                // TODO: Marker predicates are resolved when marker semantics are added.
+                Constraint::MarkerPredicate(_) => {}
             }
         }
 
