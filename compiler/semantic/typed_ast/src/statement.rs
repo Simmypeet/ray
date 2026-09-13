@@ -3,7 +3,9 @@ use qbice::{Decode, Encode, StableHash};
 use rayc_lexical::tree::RelativeSpan;
 
 use crate::{
-    name_binding::NameBindingGroupID, typed_expr::TypedExprID, typed_variable::TypedVariableID,
+    name_binding::NameBindingGroupID,
+    typed_expr::{SubExprs, TypedExprID},
+    typed_variable::TypedVariableID,
 };
 
 #[derive(
@@ -40,24 +42,6 @@ impl Return {
     pub const fn value(&self) -> Option<TypedExprID> { self.value }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub struct While {
-    condition: TypedExprID,
-    body: Vec<Statement>,
-}
-
-impl While {
-    #[must_use]
-    pub const fn new(condition: TypedExprID, body: Vec<Statement>) -> Self {
-        Self { condition, body }
-    }
-
-    #[must_use]
-    pub const fn condition(&self) -> TypedExprID { self.condition }
-
-    pub fn body(&self) -> impl Iterator<Item = &Statement> { self.body.iter() }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Break {
     span: RelativeSpan,
@@ -84,12 +68,23 @@ impl Continue {
     pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Statement {
     Let(Let),
-    While(While),
     Break(Break),
     Continue(Continue),
     Expression(TypedExprID),
     Return(Return),
+}
+
+impl SubExprs for Statement {
+    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
+        match self {
+            Self::Let(statement) => statement.expression(),
+            Self::Expression(expression) => Some(*expression),
+            Self::Return(statement) => statement.value(),
+            Self::Break(_) | Self::Continue(_) => None,
+        }
+        .into_iter()
+    }
 }

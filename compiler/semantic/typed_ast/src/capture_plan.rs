@@ -236,18 +236,6 @@ impl Analyzer {
                     self.visit_expression(function_id, functions, expr_id, UseMode::Value, plan);
                 }
             }
-            Statement::While(statement) => {
-                self.visit_expression(
-                    function_id,
-                    functions,
-                    statement.condition(),
-                    UseMode::Value,
-                    plan,
-                );
-                for statement in statement.body() {
-                    self.visit_statement(function_id, functions, statement, plan);
-                }
-            }
             Statement::Break(_) | Statement::Continue(_) => {}
             Statement::Expression(expression) => {
                 self.visit_expression(function_id, functions, *expression, UseMode::Value, plan);
@@ -311,10 +299,30 @@ impl Analyzer {
                 self.visit_binary(function_id, functions, *binary, plan);
             }
             TypedExprKind::IfElse(if_else) => {
-                for child in
-                    [if_else.condition(), if_else.then_expression(), if_else.else_expression()]
-                {
-                    self.visit_expression(function_id, functions, child, UseMode::Value, plan);
+                for conditional_arm in if_else.conditional_arms() {
+                    self.visit_expression(
+                        function_id,
+                        functions,
+                        conditional_arm.condition(),
+                        UseMode::Value,
+                        plan,
+                    );
+                    self.visit_if_arm(function_id, functions, conditional_arm.arm(), plan);
+                }
+                if let Some(else_arm) = if_else.else_arm() {
+                    self.visit_if_arm(function_id, functions, else_arm, plan);
+                }
+            }
+            TypedExprKind::While(while_loop) => {
+                self.visit_expression(
+                    function_id,
+                    functions,
+                    while_loop.condition(),
+                    UseMode::Value,
+                    plan,
+                );
+                for statement in while_loop.body() {
+                    self.visit_statement(function_id, functions, statement, plan);
                 }
             }
             TypedExprKind::RefOf(reference) => {
@@ -342,8 +350,50 @@ impl Analyzer {
                 self.visit_run_with(function_id, functions, run_with, plan);
             }
             TypedExprKind::Errored(errored) => {
-                for child in errored.children() {
-                    self.visit_expression(function_id, functions, *child, UseMode::Value, plan);
+                self.visit_errored(function_id, functions, errored, plan);
+            }
+        }
+    }
+
+    fn visit_errored(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        errored: &crate::typed_expr::errored::Errored,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        for child in errored.children() {
+            match child {
+                crate::typed_expr::errored::ErroredChild::Expression(expression) => {
+                    self.visit_expression(
+                        function_id,
+                        functions,
+                        *expression,
+                        UseMode::Value,
+                        plan,
+                    );
+                }
+                crate::typed_expr::errored::ErroredChild::Statement(statement) => {
+                    self.visit_statement(function_id, functions, statement, plan);
+                }
+            }
+        }
+    }
+
+    fn visit_if_arm(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        arm: &crate::typed_expr::if_else::Arm,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        match arm {
+            crate::typed_expr::if_else::Arm::Expression(expression) => {
+                self.visit_expression(function_id, functions, *expression, UseMode::Value, plan);
+            }
+            crate::typed_expr::if_else::Arm::Block(statements) => {
+                for statement in statements {
+                    self.visit_statement(function_id, functions, statement, plan);
                 }
             }
         }

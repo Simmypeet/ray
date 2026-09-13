@@ -13,7 +13,7 @@ use crate::{
     typed_expr::{
         binary::Binary, call::Call, closure::Closure, deref::Deref, errored::Errored,
         identifier::Identifier, if_else::IfElse, literal::Literal, paren::Paren, ref_of::RefOf,
-        run_with::RunWith, tuple::Tuple, tuple_index::TupleIndex,
+        run_with::RunWith, tuple::Tuple, tuple_index::TupleIndex, while_loop::While,
     },
 };
 
@@ -31,6 +31,7 @@ pub mod r#return;
 pub mod run_with;
 pub mod tuple;
 pub mod tuple_index;
+pub mod while_loop;
 
 /// Retrieves the child expressions of the current expression node.
 pub trait SubExprs {
@@ -47,6 +48,7 @@ pub enum TypedExprKind {
     Closure(Closure),
     Binary(Binary),
     IfElse(IfElse),
+    While(While),
     RefOf(RefOf),
     Deref(Deref),
     Paren(Paren),
@@ -58,12 +60,13 @@ impl SubExprs for TypedExprKind {
     fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
         // There must be a better way to do this while doesn't require boxing the
         // iterator 😭
-        pub enum Iter<A, B, C, D, E, G, H, I, J, K, L, M, N> {
+        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N> {
             A(A),
             B(B),
             C(C),
             D(D),
             E(E),
+            F(F),
             G(G),
             H(H),
             I(I),
@@ -74,13 +77,15 @@ impl SubExprs for TypedExprKind {
             N(N),
         }
 
-        impl<A, B, C, D, E, G, H, I, J, K, L, M, N> Iterator for Iter<A, B, C, D, E, G, H, I, J, K, L, M, N>
+        impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N> Iterator
+            for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N>
         where
             A: Iterator<Item = TypedExprID>,
             B: Iterator<Item = TypedExprID>,
             C: Iterator<Item = TypedExprID>,
             D: Iterator<Item = TypedExprID>,
             E: Iterator<Item = TypedExprID>,
+            F: Iterator<Item = TypedExprID>,
             G: Iterator<Item = TypedExprID>,
             H: Iterator<Item = TypedExprID>,
             I: Iterator<Item = TypedExprID>,
@@ -99,6 +104,7 @@ impl SubExprs for TypedExprKind {
                     Self::C(iter) => iter.next(),
                     Self::D(iter) => iter.next(),
                     Self::E(iter) => iter.next(),
+                    Self::F(iter) => iter.next(),
                     Self::G(iter) => iter.next(),
                     Self::H(iter) => iter.next(),
                     Self::I(iter) => iter.next(),
@@ -120,6 +126,7 @@ impl SubExprs for TypedExprKind {
             Self::Closure(x) => Iter::N(x.sub_exprs()),
             Self::Binary(x) => Iter::G(x.sub_exprs()),
             Self::IfElse(x) => Iter::H(x.sub_exprs()),
+            Self::While(x) => Iter::F(x.sub_exprs()),
             Self::RefOf(x) => Iter::I(x.sub_exprs()),
             Self::Deref(x) => Iter::J(x.sub_exprs()),
             Self::Paren(x) => Iter::K(x.sub_exprs()),
@@ -168,7 +175,7 @@ impl TypedExpr {
 
     #[must_use]
     pub const fn new_error_with_children(
-        children: Vec<TypedExprID>,
+        children: Vec<errored::ErroredChild>,
         span: RelativeSpan,
         ty: Interned<Ty>,
         effect: Interned<Ty>,
@@ -204,6 +211,7 @@ impl MutSubstitutable for TypedExpr {
             | TypedExprKind::Closure(_)
             | TypedExprKind::Binary(_)
             | TypedExprKind::IfElse(_)
+            | TypedExprKind::While(_)
             | TypedExprKind::RefOf(_)
             | TypedExprKind::Deref(_)
             | TypedExprKind::Paren(_)
@@ -257,6 +265,7 @@ impl TypedExprMap {
             | TypedExprKind::Closure(_)
             | TypedExprKind::Binary(_)
             | TypedExprKind::IfElse(_)
+            | TypedExprKind::While(_)
             | TypedExprKind::RefOf(_)
             | TypedExprKind::RunWith(_) => LvalueClassification::NotLvalue,
         }
