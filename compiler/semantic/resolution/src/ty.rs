@@ -474,6 +474,7 @@ impl Resolver<'_> {
             | PathResolution::Effect(_)
             | PathResolution::Trait(_)
             | PathResolution::Instance(_)
+            | PathResolution::Marker(_)
             | PathResolution::PolyVar(_)
             | PathResolution::SelfInstance(_)
             | PathResolution::TraitMember(_)

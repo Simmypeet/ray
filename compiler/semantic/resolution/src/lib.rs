@@ -62,6 +62,9 @@ pub enum Diagnostic {
     ExpectedEffect(ExpectedEffect),
     /// A given parameter's reference resolved to a symbol that is not a trait.
     ExpectedTrait(ExpectedTrait),
+    /// A marker implementation's reference resolved to a symbol that is not a
+    /// marker.
+    ExpectedMarker(ExpectedMarker),
     /// A given argument resolved to a symbol that is not an instance.
     ExpectedInstance(ExpectedInstance),
     /// A positional given argument appeared after a named argument.
@@ -93,6 +96,7 @@ impl Report for Diagnostic {
             Self::TypeKindMismatch(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedEffect(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedTrait(diagnostic) => diagnostic.report(engine).await,
+            Self::ExpectedMarker(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedInstance(diagnostic) => diagnostic.report(engine).await,
             Self::PositionalGivenArgumentAfterNamed(diagnostic) => diagnostic.report(engine).await,
             Self::GivenArgumentNotFound(diagnostic) => diagnostic.report(engine).await,
@@ -349,6 +353,42 @@ impl Report for ExpectedTrait {
                 Some(format!("expected a trait, found {}", self.actual.str())),
             ))
             .message(format!("expected a trait, found {}", self.actual.str()))
+            .build()
+    }
+}
+
+/// A symbol used by a marker implementation that is not a marker.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct ExpectedMarker {
+    span: RelativeSpan,
+    actual: SymbolKind,
+}
+
+impl ExpectedMarker {
+    const fn new(span: RelativeSpan, actual: SymbolKind) -> Self { Self { span, actual } }
+}
+
+impl Report for ExpectedMarker {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("expected a marker, found {}", self.actual.str())),
+            ))
+            .message(format!("expected a marker, found {}", self.actual.str()))
             .build()
     }
 }

@@ -27,6 +27,8 @@ pub enum PathResolution {
     Effect(Effect),
     /// A trait.
     Trait(TraitRef),
+    /// A marker.
+    Marker(GlobalSymbolID),
     /// A trait instance.
     Instance(Instance),
     /// A polymorphic type or instance parameter.
@@ -323,7 +325,9 @@ impl PathResolution {
     pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
         match self {
             Self::Def(def) => def.substitution(engine).await,
-            Self::ExternDef(_) | Self::Module(_) | Self::SelfInstance(_) => Subst::new_empty(),
+            Self::ExternDef(_) | Self::Marker(_) | Self::Module(_) | Self::SelfInstance(_) => {
+                Subst::new_empty()
+            }
             Self::Effect(effect) => effect.substitution(engine).await,
             Self::Trait(trait_ref) => {
                 substitution(trait_ref.trait_id(), trait_ref.args(), engine).await
@@ -355,6 +359,7 @@ impl PathResolution {
             Self::Module(_) => Some(SymbolKind::Module),
             Self::Effect(_) => Some(SymbolKind::Effect),
             Self::Trait(_) => Some(SymbolKind::Trait),
+            Self::Marker(_) => Some(SymbolKind::Marker),
             Self::Instance(_) => Some(SymbolKind::Instance),
             Self::PolyVar(_) | Self::SelfInstance(_) => None,
             Self::TraitMember(member) => Some(member.kind),
@@ -373,6 +378,7 @@ impl PathResolution {
             Self::Module(module) => Some(module.symbol_id()),
             Self::Effect(effect) => Some(effect.symbol_id()),
             Self::Trait(trait_ref) => Some(trait_ref.trait_id()),
+            Self::Marker(marker_id) => Some(*marker_id),
             Self::Instance(instance) => Some(instance.symbol_id()),
             Self::PolyVar(_) | Self::SelfInstance(_) => None,
             Self::TraitMember(def) => Some(def.symbol_id()),
@@ -415,6 +421,24 @@ impl Resolver<'_> {
             resolution => {
                 if let Some(actual) = resolution.symbol_kind() {
                     self.report_expected_trait(path.span(), actual);
+                }
+                Err(PathResolutionError::UnexpectedSymbolKind)
+            }
+        }
+    }
+
+    /// Resolves a path and requires its final symbol to be a marker.
+    pub async fn resolve_marker_path(
+        &mut self,
+        path: &Path,
+    ) -> Result<GlobalSymbolID, PathResolutionError> {
+        let resolution = self.resolve_path(path).await?;
+
+        match resolution {
+            PathResolution::Marker(marker_id) => Ok(marker_id),
+            resolution => {
+                if let Some(actual) = resolution.symbol_kind() {
+                    self.report_expected_marker(path.span(), actual);
                 }
                 Err(PathResolutionError::UnexpectedSymbolKind)
             }
@@ -567,9 +591,8 @@ impl Resolver<'_> {
             SymbolKind::Effect => Ok(PathResolution::Effect(Effect::new(symbol_id, args))),
             SymbolKind::Trait => Ok(PathResolution::Trait(TraitRef::new(symbol_id, args))),
             SymbolKind::Instance => Ok(PathResolution::Instance(Instance::new(symbol_id, args))),
-            SymbolKind::Marker | SymbolKind::MarkerImplementation => {
-                Err(PathResolutionError::UnexpectedSymbolKind)
-            }
+            SymbolKind::Marker => Ok(PathResolution::Marker(symbol_id)),
+            SymbolKind::MarkerImplementation => Err(PathResolutionError::UnexpectedSymbolKind),
             SymbolKind::EffectOperation => {
                 let Some(PathResolution::Effect(effect)) = previous else {
                     unreachable!("an effect operation should be resolved through its parent effect")
@@ -623,6 +646,7 @@ impl Resolver<'_> {
                     | PathResolution::Module(_)
                     | PathResolution::Effect(_)
                     | PathResolution::Instance(_)
+                    | PathResolution::Marker(_)
                     | PathResolution::TraitMember(_)
                     | PathResolution::ResolvedInstanceMember(_)
                     | PathResolution::UnresolvedInstanceMember(_)

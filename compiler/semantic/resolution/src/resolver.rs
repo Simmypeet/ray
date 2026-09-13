@@ -24,10 +24,10 @@ use rayc_type::{
 };
 
 use crate::{
-    Diagnostic, DuplicateGivenArgument, ExpectedEffect, ExpectedInstance, ExpectedTrait,
-    ExplicitTypeArgumentsNotAllowed, GenInferWithSpan, GivenArgumentNotFound, MissingGivenArgument,
-    PathSegmentNotFound, PositionalGivenArgumentAfterNamed, TypeArgumentArityMismatch,
-    TypeInferenceNotAllowed, TypeKindMismatch,
+    Diagnostic, DuplicateGivenArgument, ExpectedEffect, ExpectedInstance, ExpectedMarker,
+    ExpectedTrait, ExplicitTypeArgumentsNotAllowed, GenInferWithSpan, GivenArgumentNotFound,
+    MissingGivenArgument, PathSegmentNotFound, PositionalGivenArgumentAfterNamed,
+    TypeArgumentArityMismatch, TypeInferenceNotAllowed, TypeKindMismatch,
 };
 
 /// Resolves syntax relative to a symbol and its polymorphic environment.
@@ -287,6 +287,10 @@ impl Resolver<'_> {
 
     pub(crate) fn report_expected_trait(&self, span: RelativeSpan, actual: SymbolKind) {
         self.handler.receive(Diagnostic::ExpectedTrait(ExpectedTrait::new(span, actual)));
+    }
+
+    pub(crate) fn report_expected_marker(&self, span: RelativeSpan, actual: SymbolKind) {
+        self.handler.receive(Diagnostic::ExpectedMarker(ExpectedMarker::new(span, actual)));
     }
 
     pub(crate) fn report_expected_instance(&self, span: RelativeSpan, actual: SymbolKind) {
