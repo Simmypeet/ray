@@ -3,5 +3,5 @@ def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect
 
 def main() -> int32:
     let value = 40
-    let closure = [x] -> x + value
+    let closure = (x) -> x + value
     return core.Def.call(closure, (2,))

@@ -1,7 +1,7 @@
 use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
 use rayc_syntax::{
-    expression::{Expression, NLambda as NLambdaSyntax},
+    expression::{Closure as ClosureSyntax, Expression},
     irrefutable_pattern::IrrefutablePattern,
 };
 use rayc_type::{
@@ -11,15 +11,15 @@ use rayc_type::{
 use rayc_typed_ast::{
     name_binding::Source,
     statement::{Return, Statement},
-    typed_expr::{TypedExprID, TypedExprKind, nlambda::NLambda as TypedNLambda},
+    typed_expr::{TypedExprID, TypedExprKind, closure::Closure as TypedClosure},
     typed_function::TypedFunctionLocalID,
     typed_lambda::TypedLambdaParameter,
 };
 
 use crate::{bind::Bind, tast_builder::TAstBuilder};
 
-impl Bind<NLambdaSyntax> for TAstBuilder {
-    async fn bind(&mut self, syn: NLambdaSyntax) -> TypedExprID {
+impl Bind<ClosureSyntax> for TAstBuilder {
+    async fn bind(&mut self, syn: ClosureSyntax) -> TypedExprID {
         let parameters =
             syn.parameter_list().map(|list| list.parameters().collect()).unwrap_or_default();
         self.bind_lambda(parameters, syn.body(), syn.span()).await
@@ -69,7 +69,7 @@ impl TAstBuilder {
             let owner_id = self.current_def_id();
             let poly_vars = self.engine().get_enclosing_poly_var_maps(owner_id).await;
             (
-                TypedExprKind::NLambda(TypedNLambda::new(function_id)),
+                TypedExprKind::Closure(TypedClosure::new(function_id)),
                 Ty::new_closure(
                     Closure::new(owner_id, closure_id, poly_vars.all_poly_var_len()),
                     poly_vars.all_poly_vars().map(|id| self.engine().intern(Ty::PolyVar(id))),

@@ -9,4 +9,4 @@ def callee(fn: f) -> f:
     return fn
 
 def main() -> int32:
-    return callee([x] -> x)(argument())
+    return callee((x) -> x)(argument())

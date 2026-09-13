@@ -14,7 +14,7 @@ stderr:
 [error]: where-clause obligation for `main.requirePure` is not satisfied
    ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:24:5
    │
-24 │     requirePure([] -> withIntState())
+24 │     requirePure(() -> withIntState())
    ╰╴    ━━━━━━━━━━━ `DefInstance[<closure>() -> () \ {State[int32] | {any}}].Effect` must equal `{}`
 
 [error]: Compilation aborted due to 2 error(s)

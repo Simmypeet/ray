@@ -5,7 +5,7 @@ use rayc_type::ty::Ty;
 
 use crate::{
     ir_expr::{
-        binary::Binary, call::Call, handle::Handle, literal::Literal, load::Load, nlambda::NLambda,
+        binary::Binary, call::Call, closure::Closure, handle::Handle, literal::Literal, load::Load,
         perform::Perform, phi::Phi, ref_of::RefOf, tuple::Tuple,
     },
     visit::{TypeVisitor, VisitType},
@@ -13,10 +13,10 @@ use crate::{
 
 pub mod binary;
 pub mod call;
+pub mod closure;
 pub mod handle;
 pub mod literal;
 pub mod load;
-pub mod nlambda;
 pub mod perform;
 pub mod phi;
 pub mod ref_of;
@@ -37,7 +37,7 @@ pub enum IRExprKind {
     Perform(Perform),
     Handle(Handle),
     Tuple(Tuple),
-    NLambda(NLambda),
+    Closure(Closure),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
@@ -105,7 +105,7 @@ impl VisitType for IRExpr {
             | IRExprKind::Phi(_)
             | IRExprKind::Binary(_)
             | IRExprKind::Tuple(_)
-            | IRExprKind::NLambda(_) => {}
+            | IRExprKind::Closure(_) => {}
         }
     }
 }

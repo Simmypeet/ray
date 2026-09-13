@@ -15,8 +15,8 @@ def handleTransform(callback: def() -> int32 \ {Transform | effects}) -> int32 \
             return value + 10
 
 def main() -> int32:
-    let leftCallback = [] -> Transform.apply(5) + Left.value()
-    let rightCallback = [] -> Transform.apply(5) + Right.value()
+    let leftCallback = () -> Transform.apply(5) + Left.value()
+    let rightCallback = () -> Transform.apply(5) + Right.value()
 
     let left = run:
         return handleTransform(leftCallback)

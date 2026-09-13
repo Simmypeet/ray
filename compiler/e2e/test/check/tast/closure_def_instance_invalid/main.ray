@@ -5,13 +5,13 @@ def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect
     return d.call(value, args)
 
 def argsMismatch() -> int32:
-    return invoke([x] -> x + 1, (true,))
+    return invoke((x) -> x + 1, (true,))
 
 def returnMismatch() -> bool:
-    return invoke([] -> 42, ())
+    return invoke(() -> 42, ())
 
 def effectMismatch() -> int32:
-    return invoke([] -> Read.read(), ())
+    return invoke(() -> Read.read(), ())
 
 trait Def[f]:
     type Return
@@ -20,7 +20,7 @@ def local(value: f) given (d: Def[f]) -> ():
     return ()
 
 def shadowed() -> ():
-    let closure = [] -> true
+    let closure = () -> true
     let result: bool = invoke(closure, ())
     return local(closure)
 

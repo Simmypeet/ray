@@ -15,7 +15,7 @@ def invoke(callback: def() -> int32 \ {Source}) -> int32 \ {Source}:
 
 def main() -> int32:
     return run:
-        let callback = [] -> forwardRead()
+        let callback = () -> forwardRead()
         return readDirectly() + recursiveRead(2) + invoke(callback)
     with Source:
         def read():

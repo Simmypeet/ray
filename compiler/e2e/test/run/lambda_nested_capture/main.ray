@@ -1,5 +1,5 @@
 def main() -> int32:
     let mut value = 1
-    let outer = [] -> ([] -> value = 43)()
+    let outer = () -> (() -> value = 43)()
     outer()
     return value

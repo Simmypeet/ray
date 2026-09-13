@@ -5,12 +5,12 @@ use crate::{builder::Builder, context::LoweringContext};
 
 mod binary;
 mod call;
+mod closure;
 mod deref;
 mod errored;
 mod identifier;
 mod if_else;
 mod literal;
-mod nlambda;
 mod paren;
 mod ref_of;
 mod run_with;
@@ -47,7 +47,7 @@ impl Builder {
             TypedExprKind::Call(call) => {
                 self.lower_expression(context, TypedExprWithID::new(call, expression_id))
             }
-            TypedExprKind::NLambda(lambda) => {
+            TypedExprKind::Closure(lambda) => {
                 self.lower_expression(context, TypedExprWithID::new(lambda, expression_id))
             }
 

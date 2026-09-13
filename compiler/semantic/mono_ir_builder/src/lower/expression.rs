@@ -85,7 +85,7 @@ impl Builder<'_> {
                 self.lower_tuple(tuple, destination);
             }
 
-            IRExprKind::NLambda(lambda) => self.lower_nlambda(context, lambda, expression_id),
+            IRExprKind::Closure(lambda) => self.lower_closure(context, lambda, expression_id),
         }
     }
 

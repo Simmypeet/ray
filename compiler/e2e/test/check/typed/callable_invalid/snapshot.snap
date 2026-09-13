@@ -18,7 +18,7 @@ stderr:
 [error]: where-clause obligation for `main.recursive` is not satisfied
    ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:11:12
    │
-11 │     return recursive([x] -> x + 1, depth - 1)
+11 │     return recursive((x) -> x + 1, depth - 1)
    ╰╴           ━━━━━━━━━ `DefInstance[<closure>(int32) -> int32 \ {}].Return` must equal `bool`
 
 [error]: function body effects do not match its signature: expected `{}`, but found `{any}.Effect`
@@ -26,7 +26,7 @@ stderr:
    │
 13 │ def main() -> int32:
    │     ━━━━ the function body has effects outside its signature
-14 │     let ignored = unused([x] -> x + 1)
+14 │     let ignored = unused((x) -> x + 1)
    │                   ──────────────────── effect `{}` introduced here
 15 │     let value = 1
 16 │     return value()
@@ -35,7 +35,7 @@ stderr:
 [error]: where-clause obligation for `main.unused` is not satisfied
    ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:14:19
    │
-14 │     let ignored = unused([x] -> x + 1)
+14 │     let ignored = unused((x) -> x + 1)
    ╰╴                  ━━━━━━ `DefInstance[<closure>(int32) -> int32 \ {}].Return` must equal `bool`
 
 [error]: mismatched types in return expression: expected `int32`, but found `{any}.Return`

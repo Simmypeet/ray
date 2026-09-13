@@ -28,10 +28,10 @@ def hygiene(fn: def(int32) -> int32 \ callable, value: a) -> a \ callable:
     return value
 
 def main() -> int32:
-    defaults([] -> ())
+    defaults(() -> ())
     let callable = 1
-    let a = explicit[given IntMarker, second = IntMarker]([x] -> x, callable)
-    let b = explicit[given second = IntMarker, callable = IntMarker]([x] -> x, callable)
-    let c = oneTuple([pair] -> sum(pair))
-    let d = zero([] -> c)
-    return hygiene([x] -> x, manual([x] -> x, (a + b + d) / 2))
+    let a = explicit[given IntMarker, second = IntMarker]((x) -> x, callable)
+    let b = explicit[given second = IntMarker, callable = IntMarker]((x) -> x, callable)
+    let c = oneTuple((pair) -> sum(pair))
+    let d = zero(() -> c)
+    return hygiene((x) -> x, manual((x) -> x, (a + b + d) / 2))

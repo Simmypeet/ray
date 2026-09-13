@@ -6,7 +6,7 @@ trait Use[]:
 
 inst User[a] for Use[]:
     def use(value: b) -> b:
-        return invoke([] -> value, ())
+        return invoke(() -> value, ())
 
 def main() -> int32:
     let flag: bool = User[int32].use(true)

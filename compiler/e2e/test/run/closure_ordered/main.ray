@@ -5,5 +5,5 @@ def main() -> int32:
     let pair = (10, 20)
     let flag = true
     let scale: float32 = 2
-    let closure = [x, y, enabled] -> if flag and enabled and scale == 2: pair.0 * x + pair.1 + y else: 1
+    let closure = (x, y, enabled) -> if flag and enabled and scale == 2: pair.0 * x + pair.1 + y else: 1
     return invoke(closure, (2, 2, true))

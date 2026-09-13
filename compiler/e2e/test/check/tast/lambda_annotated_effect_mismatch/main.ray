@@ -11,7 +11,7 @@ def requireBool(callback: def() \ {State[bool]}):
 
 def main() -> ():
     let mut var
-    requireBool([] -> withPolyState(var))
+    requireBool(() -> withPolyState(var))
     var = 32
     
     return ()

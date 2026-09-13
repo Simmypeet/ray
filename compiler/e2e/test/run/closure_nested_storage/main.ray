@@ -3,6 +3,6 @@ def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect
 
 def main() -> int32:
     let value = 40
-    let inner = [x] -> value + x
-    let outer = [x] -> invoke(inner, (x,))
+    let inner = (x) -> value + x
+    let outer = (x) -> invoke(inner, (x,))
     return invoke(outer, (2,))

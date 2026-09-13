@@ -1,5 +1,5 @@
 def main() -> int32:
     let mut value = 1
-    let update = [] -> value = 42
+    let update = () -> value = 42
     update()
     return value

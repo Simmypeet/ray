@@ -10,5 +10,5 @@ def pair(left: def(int32) -> int32, right: def(int32) -> int32) -> int32:
 
 def main() -> int32:
     let offset = 20
-    let value = forward([x] -> x + offset, 0)
-    return pair([x] -> x + value, [x] -> x + offset)
+    let value = forward((x) -> x + offset, 0)
+    return pair((x) -> x + value, (x) -> x + offset)

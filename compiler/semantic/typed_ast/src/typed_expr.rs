@@ -11,20 +11,20 @@ use rayc_type::{
 use crate::{
     name_binding::NameBindingID,
     typed_expr::{
-        binary::Binary, call::Call, deref::Deref, errored::Errored, identifier::Identifier,
-        if_else::IfElse, literal::Literal, nlambda::NLambda, paren::Paren, ref_of::RefOf,
+        binary::Binary, call::Call, closure::Closure, deref::Deref, errored::Errored,
+        identifier::Identifier, if_else::IfElse, literal::Literal, paren::Paren, ref_of::RefOf,
         run_with::RunWith, tuple::Tuple, tuple_index::TupleIndex,
     },
 };
 
 pub mod binary;
 pub mod call;
+pub mod closure;
 pub mod deref;
 pub mod errored;
 pub mod identifier;
 pub mod if_else;
 pub mod literal;
-pub mod nlambda;
 pub mod paren;
 pub mod ref_of;
 pub mod r#return;
@@ -44,7 +44,7 @@ pub enum TypedExprKind {
     TupleIndex(TupleIndex),
     Tuple(Tuple),
     Call(Call),
-    NLambda(NLambda),
+    Closure(Closure),
     Binary(Binary),
     IfElse(IfElse),
     RefOf(RefOf),
@@ -117,7 +117,7 @@ impl SubExprs for TypedExprKind {
             Self::TupleIndex(x) => Iter::C(x.sub_exprs()),
             Self::Tuple(x) => Iter::D(x.sub_exprs()),
             Self::Call(x) => Iter::E(x.sub_exprs()),
-            Self::NLambda(x) => Iter::N(x.sub_exprs()),
+            Self::Closure(x) => Iter::N(x.sub_exprs()),
             Self::Binary(x) => Iter::G(x.sub_exprs()),
             Self::IfElse(x) => Iter::H(x.sub_exprs()),
             Self::RefOf(x) => Iter::I(x.sub_exprs()),
@@ -201,7 +201,7 @@ impl MutSubstitutable for TypedExpr {
             | TypedExprKind::Literal(_)
             | TypedExprKind::TupleIndex(_)
             | TypedExprKind::Tuple(_)
-            | TypedExprKind::NLambda(_)
+            | TypedExprKind::Closure(_)
             | TypedExprKind::Binary(_)
             | TypedExprKind::IfElse(_)
             | TypedExprKind::RefOf(_)
@@ -254,7 +254,7 @@ impl TypedExprMap {
             TypedExprKind::Literal(_)
             | TypedExprKind::Tuple(_)
             | TypedExprKind::Call(_)
-            | TypedExprKind::NLambda(_)
+            | TypedExprKind::Closure(_)
             | TypedExprKind::Binary(_)
             | TypedExprKind::IfElse(_)
             | TypedExprKind::RefOf(_)

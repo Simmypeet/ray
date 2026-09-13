@@ -14,7 +14,7 @@ def invoke(callback: def() -> int32 \ {Scope}) -> int32 \ {Scope}:
 
 def main() -> int32:
     let result = run:
-        let callback = [] -> forwardScope()
+        let callback = () -> forwardScope()
         
         let outerBefore = invoke(callback)
         let inner = run:

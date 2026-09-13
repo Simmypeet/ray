@@ -62,7 +62,7 @@ stderr:
 [error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `cstr` keyword
    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:25:16
    │
-25 │     let local: def(int32) -> int32 = [x] -> x
+25 │     let local: def(int32) -> int32 = (x) -> x
    ╰╴               ━━━
 
 [error]: Compilation aborted due to 10 error(s)

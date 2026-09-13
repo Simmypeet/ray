@@ -262,7 +262,7 @@ impl Analyzer {
                 }
             }
 
-            TypedExprKind::NLambda(lambda) => {
+            TypedExprKind::Closure(lambda) => {
                 self.visit_nested_function(function_id, functions, lambda.function_id(), plan);
             }
             TypedExprKind::Binary(binary) => {

@@ -4,12 +4,12 @@ use crate::{ir_expr::IRExprID, ir_function::FunctionID};
 
 /// Creates a nominal closure whose capture storage is described by its type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
-pub struct NLambda {
+pub struct Closure {
     function_id: FunctionID,
     captures: Vec<IRExprID>,
 }
 
-impl NLambda {
+impl Closure {
     #[must_use]
     pub const fn new(function_id: FunctionID, captures: Vec<IRExprID>) -> Self {
         Self { function_id, captures }

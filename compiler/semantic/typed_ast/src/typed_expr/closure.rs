@@ -7,11 +7,11 @@ use crate::{
 
 /// A nominal closure whose capture storage is visible in its type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub struct NLambda {
+pub struct Closure {
     function_id: TypedFunctionID,
 }
 
-impl NLambda {
+impl Closure {
     #[must_use]
     pub const fn new(function_id: TypedFunctionID) -> Self { Self { function_id } }
 
@@ -19,6 +19,6 @@ impl NLambda {
     pub const fn function_id(&self) -> TypedFunctionID { self.function_id }
 }
 
-impl SubExprs for NLambda {
+impl SubExprs for Closure {
     fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> { std::iter::empty() }
 }

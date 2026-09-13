@@ -75,8 +75,8 @@ abstract_tree::abstract_tree! {
     #[derive(
         Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode
     )]
-    #{fragment = Fragment::Delimited(DelimiterKind::Bracket)}
-    pub struct NLambdaParameterList {
+    #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
+    pub struct ClosureParameterList {
         pub parameters: #[multi] IrrefutablePattern = ast::<IrrefutablePattern>()
             .repeat_all_with_separator(',')
     }
@@ -86,8 +86,8 @@ abstract_tree::abstract_tree! {
     #[derive(
         Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode
     )]
-    pub struct NLambda {
-        pub parameter_list: NLambdaParameterList = ast::<NLambdaParameterList>(),
+    pub struct Closure {
+        pub parameter_list: ClosureParameterList = ast::<ClosureParameterList>(),
         pub arrow: Arrow = ast::<Arrow>(),
         pub body: Expression = ast::<Expression>(),
     }
@@ -436,7 +436,7 @@ abstract_tree::abstract_tree! {
     )]
     pub enum Expression {
         RunWith(RunWith = ast::<RunWith>()),
-        NLambda(NLambda = ast::<NLambda>()),
+        Closure(Closure = ast::<Closure>()),
         IfElse(IfElse = ast::<IfElse>()),
         Binary(Binary = ast::<Binary>()),
     }

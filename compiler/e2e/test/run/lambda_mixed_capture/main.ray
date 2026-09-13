@@ -1,6 +1,6 @@
 def main() -> int32:
     let mut value = 32
-    let reader = [] -> value
-    let update = [] -> value = value + 10
+    let reader = () -> value
+    let update = () -> value = value + 10
     update()
     return reader() + value

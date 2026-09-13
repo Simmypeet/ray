@@ -28,7 +28,7 @@ impl Builder {
             TypedExprKind::Literal(_)
             | TypedExprKind::Tuple(_)
             | TypedExprKind::Call(_)
-            | TypedExprKind::NLambda(_)
+            | TypedExprKind::Closure(_)
             | TypedExprKind::Binary(_)
             | TypedExprKind::IfElse(_)
             | TypedExprKind::RefOf(_)

@@ -3,10 +3,10 @@ trait SomeTrait[]:
 
 inst SomeInst[a] for SomeTrait[]:
     def someDef(value: b) -> b:
-        let first = [x] -> x + 1
-        let second = [] -> ([x] -> x + 2)
+        let first = (x) -> x + 1
+        let second = () -> ((x) -> x + 2)
         return value
 
 def ordinary(value: a) -> a:
-    let closure = [] -> value
+    let closure = () -> value
     return value

@@ -1,5 +1,5 @@
 def readSecond(pair: (int32, int32)) -> int32:
-    let second = [] -> pair.1
+    let second = () -> pair.1
     return second()
 
 def main() -> int32:

@@ -3,7 +3,7 @@ use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::AddressRoot,
     cfg::Instruction,
-    ir_expr::{IRExprKind, nlambda::NLambda as IrNLambda},
+    ir_expr::{IRExprKind, closure::Closure as IrClosure},
     ir_function::IRFunction as IrFunction,
 };
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
@@ -23,9 +23,9 @@ use rayc_typed_ast::{
         TypedExpr, TypedExprID, TypedExprKind,
         binary::{Binary, BinaryOp},
         call::Call,
+        closure::Closure,
         identifier::Identifier,
         literal::Literal,
-        nlambda::NLambda,
         run_with::RunWith,
     },
     typed_function::{TypedFunctionID, TypedFunctionLocalID, TypedFunctionMap},
@@ -206,7 +206,7 @@ impl TestMap {
             self.unit_ty.clone(),
             engine,
         );
-        self.expression(owner, TypedExprKind::NLambda(NLambda::new(child)), ty)
+        self.expression(owner, TypedExprKind::Closure(Closure::new(child)), ty)
     }
 
     fn statement(&mut self, owner: TypedFunctionID, expression: TypedExprID) {
@@ -214,12 +214,12 @@ impl TestMap {
     }
 }
 
-fn make_lambdas(function: &IrFunction) -> Vec<&IrNLambda> {
+fn make_lambdas(function: &IrFunction) -> Vec<&IrClosure> {
     function
         .reachables()
         .expressions()
         .filter_map(|id| match function.get_expression(id).kind() {
-            IRExprKind::NLambda(lambda) => Some(lambda),
+            IRExprKind::Closure(lambda) => Some(lambda),
             IRExprKind::Error
             | IRExprKind::Literal(_)
             | IRExprKind::RefOf(_)
@@ -241,7 +241,7 @@ fn lambda_context(function: &IrFunction) -> &rayc_ir::ir_lambda::IRLambdaContext
 #[tokio::test]
 async fn nominal_closure_ids_resolve_to_nested_lowered_functions() {
     use rayc_type::ty::application::Closure;
-    use rayc_typed_ast::{TypedAst, typed_expr::nlambda::NLambda};
+    use rayc_typed_ast::{TypedAst, typed_expr::closure::Closure as TypedClosure};
 
     let engine = rayc_qbice::create_minimal_engine().await;
     let mut map = TestMap::new(&engine);
@@ -261,7 +261,8 @@ async fn nominal_closure_ids_resolve_to_nested_lowered_functions() {
         map.unit_ty.clone(),
         &engine,
     );
-    let inner_expr = map.expression(outer, TypedExprKind::NLambda(NLambda::new(inner)), inner_ty);
+    let inner_expr =
+        map.expression(outer, TypedExprKind::Closure(TypedClosure::new(inner)), inner_ty);
     map.statement(outer, inner_expr);
     let outer_ty = Ty::new_closure(
         Closure::new(owner, outer_id, 0),
@@ -272,7 +273,8 @@ async fn nominal_closure_ids_resolve_to_nested_lowered_functions() {
         map.unit_ty.clone(),
         &engine,
     );
-    let outer_expr = map.expression(root, TypedExprKind::NLambda(NLambda::new(outer)), outer_ty);
+    let outer_expr =
+        map.expression(root, TypedExprKind::Closure(TypedClosure::new(outer)), outer_ty);
     map.statement(root, outer_expr);
     let captures = CapturePlan::analyze(&map.functions);
     let ast = TypedAst::new(map.functions, captures);
@@ -284,17 +286,17 @@ async fn nominal_closure_ids_resolve_to_nested_lowered_functions() {
     assert_eq!(ast.closure_function(inner_id), Some(inner));
     assert_eq!(ast.closure_function(outer_id), Some(outer));
     let outer_expression_id = ir.root().reachables().expressions().next().unwrap();
-    let IRExprKind::NLambda(outer_lambda) = ir.root().get_expression(outer_expression_id).kind()
+    let IRExprKind::Closure(outer_lambda) = ir.root().get_expression(outer_expression_id).kind()
     else {
-        panic!("nominal closures should lower to NLambda");
+        panic!("nominal closures should lower to Closure");
     };
     let ir_outer = outer_lambda.function_id();
     let outer_function = ir.get_function(ir_outer);
     let inner_expression_id = outer_function.reachables().expressions().next().unwrap();
-    let IRExprKind::NLambda(inner_lambda) =
+    let IRExprKind::Closure(inner_lambda) =
         outer_function.get_expression(inner_expression_id).kind()
     else {
-        panic!("nested nominal closures should lower to NLambda");
+        panic!("nested nominal closures should lower to Closure");
     };
     let ir_inner = inner_lambda.function_id();
     assert!(outer_lambda.captures().is_empty());
@@ -453,7 +455,7 @@ async fn effect_operation_call_lowers_to_perform_and_preserves_function_effect()
             | IRExprKind::Call(_)
             | IRExprKind::Handle(_)
             | IRExprKind::Tuple(_)
-            | IRExprKind::NLambda(_) => None,
+            | IRExprKind::Closure(_) => None,
         })
         .expect("effect operation should lower to perform");
     assert_eq!(perform.effect_id(), effect_id);
@@ -513,7 +515,7 @@ async fn run_with_lowers_body_and_handlers_to_explicit_handle_functions() {
             | IRExprKind::Call(_)
             | IRExprKind::Perform(_)
             | IRExprKind::Tuple(_)
-            | IRExprKind::NLambda(_) => None,
+            | IRExprKind::Closure(_) => None,
         })
         .expect("run-with should lower to handle");
     assert_eq!(handle.effect_id(), effect_id);

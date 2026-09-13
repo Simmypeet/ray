@@ -10,7 +10,7 @@ eff InvalidOperation:
 extern def foreign(fn: def(int32) -> int32) -> int32
 
 def result() -> def(int32) -> int32:
-    return [x] -> x
+    return (x) -> x
 
 def nested(fn: def(def(int32) -> int32)):
     return ()
@@ -22,5 +22,5 @@ def arguments(value: a) given (d: Holder[def(int32)]):
     return ()
 
 def main() -> int32:
-    let local: def(int32) -> int32 = [x] -> x
+    let local: def(int32) -> int32 = (x) -> x
     return 0

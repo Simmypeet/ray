@@ -6,13 +6,13 @@ stderr:
 [error]: mismatched argument types in function call: expected `(int32)`, but found `(bool)`
   ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:8:32
   │
-8 │     return invoke([x] -> x + 1, (true,))
+8 │     return invoke((x) -> x + 1, (true,))
   ╰╴                               ━━━━━━━━
 
 [error]: mismatched types in return expression: expected `bool`, but found `int32`
    ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:11:12
    │
-11 │     return invoke([] -> 42, ())
+11 │     return invoke(() -> 42, ())
    ╰╴           ━━━━━━━━━━━━━━━━━━━━
 
 [error]: function body effects do not match its signature: expected `{}`, but found `{Read | {any}}`
@@ -20,7 +20,7 @@ stderr:
    │
 13 │ def effectMismatch() -> int32:
    │     ━━━━━━━━━━━━━━ the function body has effects outside its signature
-14 │     return invoke([] -> Read.read(), ())
+14 │     return invoke(() -> Read.read(), ())
    │            ┬────────────┬───────────────
    │            │            │
    │            │            effect `{Read}` introduced here

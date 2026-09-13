@@ -6,8 +6,8 @@ def transport(value: a) -> a:
 
 def main() -> int32:
     let value = 10
-    let first = [x] -> x + value
-    let second = [x] -> x * value
+    let first = (x) -> x + value
+    let second = (x) -> x * value
     let pair = (transport(first), transport(second))
     let firstResult: int32 = invoke(pair.0, (2,))
     let secondResult: int32 = invoke(pair.1, (3,))

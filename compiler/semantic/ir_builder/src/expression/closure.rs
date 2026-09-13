@@ -1,5 +1,5 @@
-use rayc_ir::ir_expr::{IRExpr, IRExprID, IRExprKind, nlambda::NLambda as IrNLambda};
-use rayc_typed_ast::typed_expr::nlambda::NLambda;
+use rayc_ir::ir_expr::{IRExpr, IRExprID, IRExprKind, closure::Closure as IrClosure};
+use rayc_typed_ast::typed_expr::closure::Closure;
 
 use crate::{
     builder::Builder,
@@ -7,11 +7,11 @@ use crate::{
     expression::{LowerExpression, TypedExprWithID},
 };
 
-impl<'a> LowerExpression<TypedExprWithID<&'a NLambda>> for Builder {
+impl<'a> LowerExpression<TypedExprWithID<&'a Closure>> for Builder {
     fn lower_expression(
         &mut self,
         context: &LoweringContext<'_>,
-        expression: TypedExprWithID<&'a NLambda>,
+        expression: TypedExprWithID<&'a Closure>,
     ) -> IRExprID {
         let typed_expression = context.expression(expression.id());
         let lambda = expression.node();
@@ -33,7 +33,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a NLambda>> for Builder {
         let captures = self.lower_capture_operands(context, lambda.function_id());
 
         self.emit_expression(IRExpr::new(
-            IRExprKind::NLambda(IrNLambda::new(function_id, captures)),
+            IRExprKind::Closure(IrClosure::new(function_id, captures)),
             typed_expression.span(),
             typed_expression.ty().clone(),
         ))

@@ -10,10 +10,10 @@ use rayc_mono_ir::{
 use crate::{builder::Builder, context::Context, function_abi::FunctionABI};
 
 impl Builder<'_> {
-    pub(super) fn lower_nlambda(
+    pub(super) fn lower_closure(
         &mut self,
         context: &Context,
-        lambda: &rayc_ir::ir_expr::nlambda::NLambda,
+        lambda: &rayc_ir::ir_expr::closure::Closure,
         expression_id: IRExprID,
     ) {
         // Captures have already been evaluated in semantic IR order.

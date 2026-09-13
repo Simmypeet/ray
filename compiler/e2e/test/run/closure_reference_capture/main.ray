@@ -3,7 +3,7 @@ def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect
 
 def main() -> int32:
     let mut value = 1
-    let update = [] -> value = value + 10
+    let update = () -> value = value + 10
     let copy = update
     invoke(update, ())
     invoke(copy, ())
