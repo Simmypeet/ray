@@ -5,30 +5,26 @@ use rayc_semantic_element::{
     effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
 };
 use rayc_source_file::SourceElement;
-use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind, syntax::is_variadic_def};
+use rayc_symbol::{
+    GlobalSymbolID,
+    core_item::{CoreItem, get_core_item},
+    symbol_kind::SymbolKind,
+    syntax::is_variadic_def,
+};
 use rayc_syntax::expression::{Call as CallSyn, DirectCall as DirectCallSyn};
 use rayc_type::{
+    poly_var::build_subst_from_args,
     subst::{Subst, Substitutable},
-    ty::{Ty, TyKind, effect_row::EffectLabel, self_instance::SelfInstance},
+    trait_ref::TraitRef,
+    ty::{Ty, args::Args, effect_row::EffectLabel, self_instance::SelfInstance},
 };
-use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, call::Call};
+use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, call::Call, tuple::Tuple};
 
 use crate::{
     bind::Bind,
-    diagnostic::{
-        Diagnostic, ExpectedLambdaType, MismatchedArgumentCount, MismatchedIndirectArgumentCount,
-    },
+    diagnostic::{Diagnostic, MismatchedArgumentCount, MismatchedIndirectArgumentCount},
     tast_builder::TAstBuilder,
 };
-
-enum LambdaCallSignature {
-    Callable {
-        parameter_types: Vec<Interned<Ty>>,
-        return_type: Interned<Ty>,
-        effect_row: Interned<Ty>,
-    },
-    Invalid,
-}
 
 enum ResolvedCallTarget<'a> {
     Direct { function_id: GlobalSymbolID, symbol_kind: SymbolKind },
@@ -50,6 +46,18 @@ impl ResolvedCallTarget<'_> {
             Self::Direct { symbol_kind, .. } => *symbol_kind,
             Self::UnresolvedInstanceAssociated { .. } => SymbolKind::TraitDef,
             Self::EffectOperation { .. } => SymbolKind::EffectOperation,
+        }
+    }
+
+    fn into_call(self, arguments: Vec<TypedExprID>, subst: Subst) -> Call {
+        match self {
+            Self::Direct { function_id, .. } => Call::new_direct(function_id, arguments, subst),
+            Self::UnresolvedInstanceAssociated { instance, trait_def_id } => {
+                Call::new_unresolved_instance_associated(instance, trait_def_id, subst, arguments)
+            }
+            Self::EffectOperation { effect, operation_id } => {
+                Call::new_effect_operation(effect.symbol_id(), operation_id, arguments, subst)
+            }
         }
     }
 }
@@ -161,7 +169,8 @@ impl TAstBuilder {
                 return self.push_error_expression_with_children(syn.span(), arguments).await;
             }
         };
-        self.build_resolved_direct_call(target, arguments, call_subst, syn.span()).await
+
+        self.build_resolved_direct_call(target, arguments, call_subst, syn.span(), None).await
     }
 
     async fn build_resolved_direct_call(
@@ -170,38 +179,117 @@ impl TAstBuilder {
         arguments: Vec<TypedExprID>,
         call_subst: Subst,
         span: RelativeSpan,
+        // Is `Some` when the call is a lambda call
+        value_arguments: Option<&[TypedExprID]>,
     ) -> TypedExprID {
-        let function_id = target.function_id();
-        let symbol_kind = target.symbol_kind();
-        let parameter_map = self.engine().get_parameter_map(function_id).await;
+        // Check arguments before reading the resulting signature: constraints may
+        // resolve inference variables and associated types used by the call.
+        self.check_resolved_call_arguments(&target, &arguments, &call_subst, span, value_arguments)
+            .await;
+        let (return_type, effect_row) = self.resolve_call_signature(&target, &call_subst).await;
 
-        let is_variadic = if matches!(symbol_kind, SymbolKind::Def | SymbolKind::ExternDef) {
-            self.engine().is_variadic_def(function_id).await
+        // Construct the call and introduce its effect exactly once.
+        let call = target.into_call(arguments, call_subst);
+        let expr_id = self.insert_expression(TypedExprKind::Call(call), span, return_type).await;
+        self.push_effect_introduction(expr_id, &effect_row).await;
+        expr_id
+    }
+
+    async fn check_resolved_call_arguments(
+        &mut self,
+        target: &ResolvedCallTarget<'_>,
+        arguments: &[TypedExprID],
+        call_subst: &Subst,
+        span: RelativeSpan,
+        value_arguments: Option<&[TypedExprID]>,
+    ) {
+        let parameters = self.engine().get_parameter_map(target.function_id()).await;
+        self.check_call_argument_count(target, parameters.len(), arguments.len(), span).await;
+
+        // Def.call's second parameter packages the source value-call arguments.
+        // Keep their individual locations available for argument diagnostics.
+        for (index, ((_, parameter), argument)) in parameters.iter().zip(arguments).enumerate() {
+            let parameter_ty = parameter.ty().apply_subst_or_clone(call_subst, self.engine());
+            if index == 1
+                && let Some(value_arguments) = value_arguments
+            {
+                self.check_callable_arguments(&parameter_ty, *argument, value_arguments, span)
+                    .await;
+            } else {
+                self.push_function_call_constraint(&parameter_ty, *argument).await;
+            }
+        }
+    }
+
+    async fn check_call_argument_count(
+        &mut self,
+        target: &ResolvedCallTarget<'_>,
+        expected: usize,
+        found: usize,
+        span: RelativeSpan,
+    ) {
+        let is_variadic = if matches!(target.symbol_kind(), SymbolKind::Def | SymbolKind::ExternDef)
+        {
+            self.engine().is_variadic_def(target.function_id()).await
         } else {
             false
         };
-        if (!is_variadic && parameter_map.len() != arguments.len())
-            || (is_variadic && arguments.len() < parameter_map.len())
-        {
+
+        // Variadic calls must still provide all fixed parameters.
+        if (!is_variadic && expected != found) || (is_variadic && found < expected) {
             self.push_diagnostic(Diagnostic::MismatchedArgumentCount(
                 MismatchedArgumentCount::builder()
-                    .calling_symbol(function_id)
-                    .expected(parameter_map.len())
-                    .found(arguments.len())
+                    .calling_symbol(target.function_id())
+                    .expected(expected)
+                    .found(found)
                     .span(span)
                     .build(),
             ));
         }
+    }
 
-        for ((_, parameter), argument) in parameter_map.iter().zip(arguments.iter()) {
-            let parameter_ty = parameter.ty().apply_subst_or_clone(&call_subst, self.engine());
-            self.push_function_call_constraint(&parameter_ty, *argument).await;
+    async fn check_callable_arguments(
+        &mut self,
+        parameter_ty: &Interned<Ty>,
+        argument_tuple: TypedExprID,
+        arguments: &[TypedExprID],
+        span: RelativeSpan,
+    ) {
+        // When Args normalizes to a tuple, check each source argument directly.
+        let normalized = self.latest_type(parameter_ty).await;
+        if let Ty::Application(application) = &*normalized
+            && let rayc_type::ty::application::View::Tuple(tuple) = application.view()
+        {
+            if tuple.args().len() != arguments.len() {
+                self.push_diagnostic(Diagnostic::MismatchedIndirectArgumentCount(
+                    MismatchedIndirectArgumentCount::builder()
+                        .expected(tuple.args().len())
+                        .found(arguments.len())
+                        .span(span)
+                        .build(),
+                ));
+            }
+            for (expected, actual) in tuple.args().iter().zip(arguments) {
+                self.push_function_call_constraint(expected, *actual).await;
+            }
+        } else {
+            // An unresolved Args projection retains the ordinary tuple constraint.
+            // This generally shouldn't happen, but it's a good defensive fallback
+            self.push_function_call_constraint(parameter_ty, argument_tuple).await;
         }
+    }
 
-        let return_type = self.engine().get_return_type(function_id).await;
-        let return_type = return_type.apply_subst_or_clone(&call_subst, self.engine());
+    async fn resolve_call_signature(
+        &self,
+        target: &ResolvedCallTarget<'_>,
+        call_subst: &Subst,
+    ) -> (Interned<Ty>, Interned<Ty>) {
+        let return_type = self.engine().get_return_type(target.function_id()).await;
+        let return_type = return_type.apply_subst_or_clone(call_subst, self.engine());
 
-        let effect_row = match &target {
+        // Operations introduce their enclosing effect; other calls use the
+        // declaration's effect row instantiated with the selected arguments.
+        let effect_row = match target {
             ResolvedCallTarget::EffectOperation { effect, .. } => {
                 let label = self
                     .engine()
@@ -211,30 +299,11 @@ impl TAstBuilder {
             ResolvedCallTarget::Direct { .. }
             | ResolvedCallTarget::UnresolvedInstanceAssociated { .. } => self
                 .engine()
-                .get_effect_row(function_id)
+                .get_effect_row(target.function_id())
                 .await
-                .apply_subst_or_clone(&call_subst, self.engine()),
+                .apply_subst_or_clone(call_subst, self.engine()),
         };
-
-        let call = match target {
-            ResolvedCallTarget::Direct { .. } => {
-                Call::new_direct(function_id, arguments, call_subst)
-            }
-            ResolvedCallTarget::UnresolvedInstanceAssociated { instance, trait_def_id } => {
-                Call::new_unresolved_instance_associated(
-                    instance,
-                    trait_def_id,
-                    call_subst,
-                    arguments,
-                )
-            }
-            ResolvedCallTarget::EffectOperation { effect, operation_id } => {
-                Call::new_effect_operation(effect.symbol_id(), operation_id, arguments, call_subst)
-            }
-        };
-        let expr_id = self.insert_expression(TypedExprKind::Call(call), span, return_type).await;
-        self.push_effect_introduction(expr_id, &effect_row).await;
-        expr_id
+        (return_type, effect_row)
     }
 
     fn push_symbol_not_callable(&mut self, symbol_id: GlobalSymbolID, span: RelativeSpan) {
@@ -244,97 +313,44 @@ impl TAstBuilder {
     }
 
     pub async fn build_lambda_call(&mut self, callee: TypedExprID, syn: &CallSyn) -> TypedExprID {
+        // Bind once, preserving callee-before-arguments evaluation order.
         let arguments = self.bind_call_arguments(syn).await;
-        let callee_span = self.span_of_expression(callee);
-        let span = callee_span.join(&syn.span());
+        let span = self.span_of_expression(callee).join(&syn.span());
 
-        let (return_type, effect_row) =
-            match self.resolve_lambda_call_signature(callee, arguments.len(), callee_span).await {
-                LambdaCallSignature::Callable { parameter_types, return_type, effect_row } => {
-                    self.check_lambda_call_arguments(&parameter_types, &arguments, span).await;
+        // Preserve the original inference terms in the signature substitution;
+        // dictionary resolution applies the current inference substitution itself.
+        let callee_ty = self.type_of_expression(callee);
+        let trait_id = self.engine().get_core_item(CoreItem::DefTrait).await;
+        let trait_ref = TraitRef::new(trait_id, Args::new([callee_ty], self.engine()));
+        let instance = self.infer_trait_instance(&trait_ref, span).await;
 
-                    (return_type, Some(effect_row))
-                }
-                LambdaCallSignature::Invalid => (Ty::new_star_error(self.engine()), None),
-            };
-
-        let expr_id = self
+        // Every arguments are packaged into a single tuple, which is passed as the
+        // second parameter to Def.call.
+        let types = arguments.iter().map(|id| self.type_of_expression(*id)).collect::<Vec<_>>();
+        let tuple_ty = Ty::new_tuple(self.engine().intern_unsized(types), self.engine());
+        let tuple = self
             .insert_expression(
-                TypedExprKind::Call(Call::new_lambda(callee, arguments)),
-                span,
-                return_type,
+                TypedExprKind::Tuple(Tuple::new(arguments.clone())),
+                syn.span(),
+                tuple_ty,
             )
             .await;
 
-        // if the lambda effect signature is malformed, don't bother adding the effect
-        // introduction constraint, as it will just add noise to the diagnostics
-        if let Some(effect_row) = effect_row {
-            self.push_effect_introduction(expr_id, &effect_row).await;
-        }
+        // Use the same signature substitution and effect introduction as
+        // dictionary.call.
+        let mut subst =
+            self.engine().build_subst_from_args(trait_id, trait_ref.args().interned_iter()).await;
+        subst.insert(SelfInstance::new(trait_id), instance.clone());
+        let trait_def_id = self.engine().get_core_item(CoreItem::DefCall).await;
 
-        expr_id
-    }
-
-    async fn resolve_lambda_call_signature(
-        &mut self,
-        callee: TypedExprID,
-        argument_count: usize,
-        callee_span: RelativeSpan,
-    ) -> LambdaCallSignature {
-        let callee_ty = self.latest_type(&self.type_of_expression(callee)).await;
-
-        if let Some(lambda) = callee_ty.as_lambda_view() {
-            LambdaCallSignature::Callable {
-                parameter_types: lambda.parameter_types().to_vec(),
-                return_type: lambda.return_type().clone(),
-                effect_row: lambda.effect_row().clone(),
-            }
-        } else if let Ty::Inference(_) = &*callee_ty {
-            let parameter_types =
-                (0..argument_count).map(|_| self.new_type_inference()).collect::<Vec<_>>();
-
-            let return_type = self.new_type_inference();
-            let effect_row = self.new_type_inference_with_kind(TyKind::EffectRow);
-            let expected = Ty::new_lambda(
-                parameter_types.iter().cloned(),
-                return_type.clone(),
-                effect_row.clone(),
-                self.engine(),
-            );
-            self.push_lambda_invocation_constraint(&expected, callee).await;
-
-            LambdaCallSignature::Callable { parameter_types, return_type, effect_row }
-        } else {
-            self.report_expected_lambda(callee_ty, callee_span);
-            LambdaCallSignature::Invalid
-        }
-    }
-
-    fn report_expected_lambda(&mut self, ty: Interned<Ty>, span: RelativeSpan) {
-        self.push_diagnostic(Diagnostic::ExpectedLambdaType(
-            ExpectedLambdaType::builder().ty(ty).span(span).build(),
-        ));
-    }
-
-    async fn check_lambda_call_arguments(
-        &mut self,
-        parameter_types: &[Interned<Ty>],
-        arguments: &[TypedExprID],
-        call_span: RelativeSpan,
-    ) {
-        if parameter_types.len() != arguments.len() {
-            self.push_diagnostic(Diagnostic::MismatchedIndirectArgumentCount(
-                MismatchedIndirectArgumentCount::builder()
-                    .expected(parameter_types.len())
-                    .found(arguments.len())
-                    .span(call_span)
-                    .build(),
-            ));
-        }
-
-        for (parameter_type, argument) in parameter_types.iter().zip(arguments.iter()) {
-            self.push_lambda_invocation_constraint(parameter_type, *argument).await;
-        }
+        self.build_resolved_direct_call(
+            ResolvedCallTarget::UnresolvedInstanceAssociated { instance, trait_def_id },
+            vec![callee, tuple],
+            subst,
+            span,
+            Some(&arguments),
+        )
+        .await
     }
 }
 
