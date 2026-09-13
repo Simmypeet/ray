@@ -228,11 +228,14 @@ impl TAstBuilder {
         for obligation in obligations {
             let (instance_id, predicate) = obligation.into_parts();
             let obligation = PredicateObligation::new(predicate, instance_id, span);
+            let Some(constraint) = obligation.constraint() else {
+                continue;
+            };
             let predicate_cause_id =
                 self.constraint_solver.provenance.insert_root_cause(obligation.clone());
 
             queued.push(PendingConstraint {
-                constraint: Constraint::TyRelate(obligation.constraint()),
+                constraint: Constraint::TyRelate(constraint),
                 cause_id: predicate_cause_id,
             });
         }

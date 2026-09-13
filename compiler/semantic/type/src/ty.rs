@@ -99,7 +99,7 @@ pub enum Ty {
 
 impl Ty {
     /// Returns whether both types are applications of the same outer type
-    /// constructor.
+    /// constructor with the same arity.
     #[must_use]
     pub fn has_same_type_constructor(&self, other: &Self) -> bool {
         if let (Self::Application(left), Self::Application(right)) = (self, other) {
@@ -245,6 +245,7 @@ impl Reduce for Interned<Ty> {
                 (equality.left() == self && equality.right() != self)
                     .then(|| equality.right().clone())
             }
+            crate::where_clause::PredicateKind::Marker(_) => None,
         })
     }
 }

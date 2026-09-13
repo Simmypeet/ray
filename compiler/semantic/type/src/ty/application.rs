@@ -238,7 +238,9 @@ impl Application {
     }
 
     #[must_use]
-    pub(super) fn has_same_constant(&self, other: &Self) -> bool { self.constant == other.constant }
+    pub(super) fn has_same_constant(&self, other: &Self) -> bool {
+        self.constant == other.constant && self.args.len() == other.args.len()
+    }
 
     #[must_use]
     pub const fn is_instance_associated(&self) -> bool {

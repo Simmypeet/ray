@@ -41,12 +41,43 @@ impl Substitutable for AssociatedTypeEquality {
     }
 }
 
+/// A requirement that a type satisfies a marker.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct MarkerPredicate {
+    marker_id: GlobalSymbolID,
+    implementor: Interned<Ty>,
+}
+
+impl MarkerPredicate {
+    #[must_use]
+    pub const fn new(marker_id: GlobalSymbolID, implementor: Interned<Ty>) -> Self {
+        Self { marker_id, implementor }
+    }
+
+    #[must_use]
+    pub const fn marker_id(&self) -> GlobalSymbolID { self.marker_id }
+
+    #[must_use]
+    pub const fn implementor(&self) -> &Interned<Ty> { &self.implementor }
+}
+
+impl Substitutable for MarkerPredicate {
+    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+        self.implementor
+            .apply_subst(subst, engine)
+            .map(|implementor| Self::new(self.marker_id, implementor))
+    }
+}
+
 /// The requirement expressed by a where-clause predicate.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum PredicateKind {
     AssociatedTypeEquality(AssociatedTypeEquality),
+    Marker(MarkerPredicate),
 }
 
 impl Substitutable for PredicateKind {
@@ -55,6 +86,7 @@ impl Substitutable for PredicateKind {
             Self::AssociatedTypeEquality(equality) => {
                 equality.apply_subst(subst, engine).map(Self::AssociatedTypeEquality)
             }
+            Self::Marker(predicate) => predicate.apply_subst(subst, engine).map(Self::Marker),
         }
     }
 }

@@ -127,12 +127,15 @@ impl TAstBuilder {
                 }
                 Obligation::WfCheck(check) => {
                     for predicate in check.predicate_obligations(&self.engine).await {
+                        let Some(constraint) = predicate.constraint() else {
+                            continue;
+                        };
                         let root_cause_id =
                             self.constraint_solver.provenance.insert_root_cause(predicate.clone());
 
                         self.push_constraint(
                             PendingConstraint::builder()
-                                .constraint(predicate.constraint().into())
+                                .constraint(constraint.into())
                                 .cause_id(root_cause_id)
                                 .build(),
                         )
