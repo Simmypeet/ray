@@ -1,8 +1,0 @@
-def transport(callback: def(int32) -> int32) -> def(int32) -> int32:
-    return callback
-
-def nestedTransport(callback: def(def(int32) -> bool) -> def() -> float32) -> def(def(int32) -> bool) -> def() -> float32:
-    return callback
-
-def main() -> int32:
-    return 37
