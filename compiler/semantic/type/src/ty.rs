@@ -13,7 +13,7 @@ use crate::{
     reduce::Reduce,
     subst::{Subst, Substitutable},
     ty::{
-        application::{Application, Constant, InstanceView, LambdaView, View as ApplicationView},
+        application::{Application, Constant, InstanceView, View as ApplicationView},
         args::Args,
         effect_row::EffectRow,
         inference::{GenInfer, Inference},
@@ -165,7 +165,6 @@ impl Ty {
                 ApplicationView::Error => true,
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
-                | ApplicationView::Lambda(_)
                 | ApplicationView::Pointer(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
@@ -285,21 +284,6 @@ impl Ty {
     #[must_use]
     pub fn new_tuple(args: Interned<[Interned<Self>]>, engine: &TrackedEngine) -> Interned<Self> {
         engine.intern(Self::Application(Application::new(Constant::Tuple, args)))
-    }
-
-    /// Creates a lambda type with its effect row stored after its return type.
-    #[must_use]
-    pub fn new_lambda(
-        parameter_types: impl IntoIterator<Item = Interned<Self>>,
-        return_type: Interned<Self>,
-        effect_row: Interned<Self>,
-        engine: &TrackedEngine,
-    ) -> Interned<Self> {
-        let args = parameter_types.into_iter().chain([return_type, effect_row]).collect::<Vec<_>>();
-        engine.intern(Self::Application(Application::new(
-            Constant::Lambda,
-            engine.intern_unsized(args),
-        )))
     }
 
     /// Creates a nominal closure type, including its capture storage.
@@ -435,7 +419,6 @@ impl Ty {
                         }
                         ApplicationView::Primitive(_)
                         | ApplicationView::Tuple(_)
-                        | ApplicationView::Lambda(_)
                         | ApplicationView::Pointer(_)
                         | ApplicationView::DefInstance(_)
                         | ApplicationView::Closure(_)
@@ -595,15 +578,7 @@ impl TyDisplay<'_> {
 
                     f.write_char(')')
                 }
-                ApplicationView::Lambda(lambda) => {
-                    f.write_str("def")?;
-                    self.fmt_signature(
-                        lambda.parameter_types(),
-                        lambda.return_type(),
-                        lambda.effect_row(),
-                        f,
-                    )
-                }
+
                 ApplicationView::Pointer(pointer) => {
                     f.write_char('*')?;
                     if pointer.mutability() == Mutability::Mutable {
@@ -688,19 +663,6 @@ impl Ty {
     }
 
     #[must_use]
-    pub fn unwrap_as_lambda_view(&self) -> LambdaView<'_> {
-        let Self::Application(ty_application) = self else {
-            panic!("Expected Ty::Application, found {self:?}");
-        };
-
-        let ApplicationView::Lambda(lambda_view) = ty_application.view() else {
-            panic!("Expected Ty::ApplicationView::Lambda, found {ty_application:?}");
-        };
-
-        lambda_view
-    }
-
-    #[must_use]
     pub fn as_instance_view(&self) -> Option<InstanceView<'_>> {
         let Self::Application(ty_application) = self else {
             return None;
@@ -711,19 +673,6 @@ impl Ty {
         };
 
         Some(instance_view)
-    }
-
-    #[must_use]
-    pub fn as_lambda_view(&self) -> Option<LambdaView<'_>> {
-        let Self::Application(ty_application) = self else {
-            return None;
-        };
-
-        let ApplicationView::Lambda(lambda_view) = ty_application.view() else {
-            return None;
-        };
-
-        Some(lambda_view)
     }
 
     #[must_use]
@@ -781,7 +730,6 @@ impl Ty {
                 ApplicationView::Error => None,
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
-                | ApplicationView::Lambda(_)
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
@@ -818,7 +766,6 @@ impl Ty {
                 ApplicationView::Primitive(_) => true,
                 ApplicationView::Pointer(pointer) => pointer.pointee().is_c_abi_value_type(),
                 ApplicationView::Tuple(_)
-                | ApplicationView::Lambda(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_)
@@ -843,7 +790,6 @@ impl Ty {
                 ApplicationView::InstanceAssociated(_) => true,
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
-                | ApplicationView::Lambda(_)
                 | ApplicationView::Pointer(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_)

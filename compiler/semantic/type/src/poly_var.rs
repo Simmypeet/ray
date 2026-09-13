@@ -36,9 +36,36 @@ impl PolyVarKind {
     }
 }
 
+/// Identifies whether a binder comes from source or callable-parameter
+/// elaboration.
+///
+/// Each `def(...)` parameter annotation generates a fresh callable type and a
+/// `core.Def` dictionary. Their origins pair those binders without using their
+/// display names: generated binders are excluded from source-name lookup, and
+/// generated dictionaries cannot be supplied as explicit `given` arguments.
+///
+/// Both generated variants carry the zero-based value-parameter index within
+/// the owning declaration, counting ordinary parameters too (but not an
+/// ellipsis). This is a declaration-local occurrence key, not a
+/// polymorphic-variable ID or an index among only callable parameters. For `def
+/// apply(x: int32, fn: def())`, the generated pair has origins
+/// `CallableType(1)` and `CallableDictionary(1)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum PolyVarOrigin {
+    /// A source-addressable type/effect variable or explicitly declared
+    /// dictionary.
+    Source,
+    /// The fresh callable type for the value parameter at the given index.
+    CallableType(usize),
+    /// The hidden `core.Def` dictionary for that parameter's fresh callable
+    /// type.
+    CallableDictionary(usize),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct PolyVar {
     name: Interned<str>,
+    origin: PolyVarOrigin,
     kind: PolyVarKind,
     span: RelativeSpan,
 }
@@ -46,12 +73,17 @@ pub struct PolyVar {
 impl PolyVar {
     #[must_use]
     pub const fn new_type(name: Interned<str>, span: RelativeSpan) -> Self {
-        Self { name, kind: PolyVarKind::Type(TyKind::Star), span }
+        Self { name, origin: PolyVarOrigin::Source, kind: PolyVarKind::Type(TyKind::Star), span }
     }
 
     #[must_use]
     pub const fn new_effect(name: Interned<str>, span: RelativeSpan) -> Self {
-        Self { name, kind: PolyVarKind::Type(TyKind::EffectRow), span }
+        Self {
+            name,
+            origin: PolyVarOrigin::Source,
+            kind: PolyVarKind::Type(TyKind::EffectRow),
+            span,
+        }
     }
 
     #[must_use]
@@ -60,8 +92,11 @@ impl PolyVar {
         trait_ref: TraitRef,
         span: RelativeSpan,
     ) -> Self {
-        Self { name, kind: PolyVarKind::Instance(trait_ref), span }
+        Self { name, origin: PolyVarOrigin::Source, kind: PolyVarKind::Instance(trait_ref), span }
     }
+
+    #[must_use]
+    pub const fn is_source(&self) -> bool { matches!(self.origin, PolyVarOrigin::Source) }
 
     #[must_use]
     pub const fn name(&self) -> &Interned<str> { &self.name }
@@ -86,9 +121,9 @@ pub type GlobalPolyVarID = MemberID<PolyVarID>;
 
 /// The polymorphic variables owned by a symbol, in semantic insertion order.
 ///
-/// The order returned by [`Self::iter`] is significant. Builders of
-/// corresponding declarations must insert alpha-equivalent variables in the
-/// same order so that consumers can pair variables positionally.
+/// The order returned by [`Self::iter`] is significant: type/effect binders
+/// precede dictionaries. Arguments and substitutions use this complete order,
+/// including generated binders that cannot be addressed by source names.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
 pub struct PolyVarMap {
     poly_vars: OrderedArena<PolyVar>,
@@ -128,6 +163,19 @@ impl PolyVarMap {
     #[must_use]
     pub fn trait_ref_of(&self, id: PolyVarID) -> Option<&TraitRef> {
         self.poly_vars.get(id).and_then(PolyVar::trait_ref)
+    }
+
+    /// Generated binders deliberately bypass the source-name index.
+    pub fn insert_generated(&mut self, mut variable: PolyVar, origin: PolyVarOrigin) -> PolyVarID {
+        assert!(!matches!(origin, PolyVarOrigin::Source));
+        assert!(self.find_generated(&origin).is_none());
+        variable.origin = origin;
+        self.poly_vars.insert(variable)
+    }
+
+    #[must_use]
+    pub fn find_generated(&self, origin: &PolyVarOrigin) -> Option<PolyVarID> {
+        self.iter().find_map(|(id, variable)| (&variable.origin == origin).then_some(id))
     }
 
     #[allow(clippy::result_large_err)]

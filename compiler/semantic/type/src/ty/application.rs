@@ -13,9 +13,6 @@ use crate::{
 pub enum Constant {
     Primitive(Primitive),
     Tuple,
-    /// A lambda whose arguments are its parameter types, return type, then
-    /// effect row.
-    Lambda,
     Pointer(Mutability),
     Instance(GlobalSymbolID),
     /// An associated type identified by its `SymbolKind::TraitType` symbol.
@@ -117,31 +114,6 @@ impl<'x> TupleView<'x> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LambdaView<'x> {
-    args: &'x [Interned<Ty>],
-}
-
-impl<'x> LambdaView<'x> {
-    #[must_use]
-    pub const fn parameter_types(&self) -> &'x [Interned<Ty>] {
-        let (_, signature) = self.args.split_last().expect("lambda has an effect row");
-        let (_, parameter_types) = signature.split_last().expect("lambda has a return type");
-        parameter_types
-    }
-
-    #[must_use]
-    pub const fn return_type(&self) -> &'x Interned<Ty> {
-        let (_, signature) = self.args.split_last().expect("lambda has an effect row");
-        signature.last().expect("lambda has a return type")
-    }
-
-    #[must_use]
-    pub const fn effect_row(&self) -> &'x Interned<Ty> {
-        self.args.last().expect("lambda has an effect row")
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PointerView<'x> {
     arg: &'x Interned<Ty>,
     mutability: Mutability,
@@ -193,7 +165,6 @@ impl<'x> PointerView<'x> {
 pub enum View<'x> {
     Primitive(Primitive),
     Tuple(TupleView<'x>),
-    Lambda(LambdaView<'x>),
     Pointer(PointerView<'x>),
     Instance(InstanceView<'x>),
     InstanceAssociated(InstanceAssociatedView<'x>),
@@ -230,7 +201,6 @@ impl Application {
         match self.constant {
             Constant::Primitive(primitive) => View::Primitive(primitive),
             Constant::Tuple => View::Tuple(TupleView { args: &self.args }),
-            Constant::Lambda => View::Lambda(LambdaView { args: &self.args }),
             Constant::Pointer(mutability) => {
                 View::Pointer(PointerView { arg: &self.args[0], mutability })
             }
@@ -278,7 +248,6 @@ impl Application {
             Constant::Closure(_)
             | Constant::Primitive(_)
             | Constant::Tuple
-            | Constant::Lambda
             | Constant::Pointer(_) => TyKind::Star,
 
             Constant::InstanceAssociated(symbol_id) => {
@@ -302,7 +271,6 @@ impl Application {
 
                 View::Error
                 | View::Tuple(_)
-                | View::Lambda(_)
                 | View::Pointer(_)
                 | View::Instance(_)
                 | View::DefInstance(_)
@@ -319,7 +287,6 @@ impl Application {
 
                 View::Error
                 | View::Tuple(_)
-                | View::Lambda(_)
                 | View::Pointer(_)
                 | View::Instance(_)
                 | View::DefInstance(_)
