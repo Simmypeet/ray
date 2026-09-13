@@ -162,6 +162,8 @@ impl<'engine> Generator<'engine> {
             rayc_symbol::symbol_kind::SymbolKind::Effect
             | rayc_symbol::symbol_kind::SymbolKind::EffectOperation
             | rayc_symbol::symbol_kind::SymbolKind::Instance
+            | rayc_symbol::symbol_kind::SymbolKind::Marker
+            | rayc_symbol::symbol_kind::SymbolKind::MarkerImplementation
             | rayc_symbol::symbol_kind::SymbolKind::Module
             | rayc_symbol::symbol_kind::SymbolKind::Trait
             | rayc_symbol::symbol_kind::SymbolKind::TraitType
@@ -495,6 +497,8 @@ impl<'engine> Generator<'engine> {
                     rayc_symbol::symbol_kind::SymbolKind::Effect
                     | rayc_symbol::symbol_kind::SymbolKind::EffectOperation
                     | rayc_symbol::symbol_kind::SymbolKind::Instance
+                    | rayc_symbol::symbol_kind::SymbolKind::Marker
+                    | rayc_symbol::symbol_kind::SymbolKind::MarkerImplementation
                     | rayc_symbol::symbol_kind::SymbolKind::Module
                     | rayc_symbol::symbol_kind::SymbolKind::Trait
                     | rayc_symbol::symbol_kind::SymbolKind::TraitType

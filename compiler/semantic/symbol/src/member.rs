@@ -69,6 +69,11 @@ impl Member {
             }
         }
     }
+
+    /// Inserts an unnamed symbol into this member collection.
+    pub fn insert_unnamed(&mut self, id: SymbolID) {
+        assert!(self.unnameds.insert(id), "an unnamed symbol should only be inserted once");
+    }
 }
 
 /// Retrieves the member ID of the given name in the symbol with the given ID.

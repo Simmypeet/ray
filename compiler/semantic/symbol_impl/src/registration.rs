@@ -7,6 +7,7 @@ use rayc_syntax::{
     effect::{Effect, OperationSignature},
     extern_def::ExternDef,
     instance::{Instance, InstanceAssociatedType, InstanceMember},
+    marker::{Marker, MarkerImplementation},
     module::ModuleMember,
     r#trait::{Trait, TraitAssociatedType, TraitMember},
 };
@@ -20,6 +21,51 @@ use crate::{
 };
 
 impl Table {
+    async fn register_marker(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        marker: Marker,
+        engine: &TrackedEngine,
+    ) {
+        let Some(ident) = marker.name() else {
+            return;
+        };
+
+        self.insert_symbol(
+            member_builder,
+            Infos::builder()
+                .symbol_kind(SymbolKind::Marker)
+                .name(ident.kind.0.clone())
+                .span(ident.span)
+                .build(),
+            engine,
+        )
+        .await;
+    }
+
+    async fn register_marker_implementation(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        implementation: MarkerImplementation,
+        engine: &TrackedEngine,
+    ) {
+        self.insert_unnamed_symbol(
+            member_builder,
+            Infos::builder()
+                .symbol_kind(SymbolKind::MarkerImplementation)
+                .name(engine.intern_unsized("[marker implementation]"))
+                .span(implementation.span())
+                .type_parameters(implementation.type_parameters())
+                .given_parameter_list(None)
+                .where_clause(implementation.where_clause())
+                .marker_implementation_marker(implementation.marker())
+                .marker_implementation_type(implementation.implementor())
+                .build(),
+            engine,
+        )
+        .await;
+    }
+
     pub(crate) async fn register_def(
         &mut self,
         member_builder: &mut MemberBuilder,
@@ -440,8 +486,17 @@ impl Table {
                 ModuleMember::Instance(instance) => {
                     self.register_instance(member_builder, instance.clone(), engine).await;
                 }
-                // TODO: Marker declarations enter the symbol table when marker semantics are added.
-                ModuleMember::Marker(_) | ModuleMember::MarkerImplementation(_) => {}
+                ModuleMember::Marker(marker) => {
+                    self.register_marker(member_builder, marker.clone(), engine).await;
+                }
+                ModuleMember::MarkerImplementation(implementation) => {
+                    self.register_marker_implementation(
+                        member_builder,
+                        implementation.clone(),
+                        engine,
+                    )
+                    .await;
+                }
             }
         }
     }

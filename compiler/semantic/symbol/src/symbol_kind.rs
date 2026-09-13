@@ -33,6 +33,8 @@ pub enum SymbolKind {
     Instance,
     InstanceDef,
     InstanceType,
+    Marker,
+    MarkerImplementation,
     Module,
     Trait,
     TraitDef,
@@ -67,6 +69,7 @@ impl SymbolKind {
                 | Self::Instance
                 | Self::InstanceDef
                 | Self::InstanceType
+                | Self::MarkerImplementation
                 | Self::Trait
                 | Self::TraitDef
                 | Self::TraitType
@@ -114,10 +117,11 @@ impl SymbolKind {
             | Self::Instance
             | Self::InstanceDef
             | Self::InstanceType
+            | Self::MarkerImplementation
             | Self::Trait
             | Self::TraitDef
             | Self::TraitType => true,
-            Self::EffectOperation | Self::ExternDef | Self::Module => false,
+            Self::EffectOperation | Self::ExternDef | Self::Marker | Self::Module => false,
         }
     }
 
@@ -132,6 +136,8 @@ impl SymbolKind {
             Self::Instance => "instance",
             Self::InstanceDef => "instance def",
             Self::InstanceType => "instance type",
+            Self::Marker => "marker",
+            Self::MarkerImplementation => "marker implementation",
             Self::Module => "module",
             Self::Trait => "trait",
             Self::TraitDef => "trait def",

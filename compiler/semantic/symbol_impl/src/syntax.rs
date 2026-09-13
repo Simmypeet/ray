@@ -3,8 +3,9 @@ use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
     DefBodySyntaxKey, EffectRowSyntaxKey, GivenParameterListSyntaxKey, InstanceTraitSyntaxKey,
-    KindAscriptionSyntaxKey, ParameterListSyntaxKey, ReturnTypeSyntaxKey, TypeDefinitionSyntaxKey,
-    TypeParameterListSyntaxKey, VariadicDefKey, WhereClauseSyntaxKey,
+    KindAscriptionSyntaxKey, MarkerImplementationMarkerSyntaxKey,
+    MarkerImplementationTypeSyntaxKey, ParameterListSyntaxKey, ReturnTypeSyntaxKey,
+    TypeDefinitionSyntaxKey, TypeParameterListSyntaxKey, VariadicDefKey, WhereClauseSyntaxKey,
 };
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
@@ -123,6 +124,36 @@ pub async fn instance_trait_syntax_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static INSTANCE_TRAIT_SYNTAX_EXECUTOR: Registration<Config> =
     Registration::new::<InstanceTraitSyntaxKey, InstanceTraitSyntaxExecutor>();
+
+#[executor(config = Config)]
+pub async fn marker_implementation_marker_syntax_executor(
+    &MarkerImplementationMarkerSyntaxKey { symbol_id }: &MarkerImplementationMarkerSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<Path> {
+    engine
+        .get_table(symbol_id.target_id)
+        .await
+        .get_marker_implementation_marker_syntax(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static MARKER_IMPLEMENTATION_MARKER_SYNTAX_EXECUTOR: Registration<Config> = Registration::new::<
+    MarkerImplementationMarkerSyntaxKey,
+    MarkerImplementationMarkerSyntaxExecutor,
+>();
+
+#[executor(config = Config)]
+pub async fn marker_implementation_type_syntax_executor(
+    &MarkerImplementationTypeSyntaxKey { symbol_id }: &MarkerImplementationTypeSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<Type> {
+    engine.get_table(symbol_id.target_id).await.get_marker_implementation_type_syntax(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static MARKER_IMPLEMENTATION_TYPE_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<MarkerImplementationTypeSyntaxKey, MarkerImplementationTypeSyntaxExecutor>(
+    );
 
 #[executor(config = Config)]
 pub async fn type_definition_syntax_executor(

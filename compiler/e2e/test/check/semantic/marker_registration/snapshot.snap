@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: symbol `Send` is already defined in the scope `main`
+  ╭▸ compiler/e2e/test/check/semantic/marker_registration/main.ray:2:8
+  │
+1 │ marker Send
+  │        ──── symbol `Send` is already defined here
+2 │ marker Send
+  ╰╴       ━━━━ redefinition here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

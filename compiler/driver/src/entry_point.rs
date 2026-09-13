@@ -68,6 +68,8 @@ pub(super) async fn validate_entry_point(
         | SymbolKind::ExternDef
         | SymbolKind::Instance
         | SymbolKind::InstanceDef
+        | SymbolKind::Marker
+        | SymbolKind::MarkerImplementation
         | SymbolKind::Module
         | SymbolKind::Trait
         | SymbolKind::TraitType

@@ -567,6 +567,9 @@ impl Resolver<'_> {
             SymbolKind::Effect => Ok(PathResolution::Effect(Effect::new(symbol_id, args))),
             SymbolKind::Trait => Ok(PathResolution::Trait(TraitRef::new(symbol_id, args))),
             SymbolKind::Instance => Ok(PathResolution::Instance(Instance::new(symbol_id, args))),
+            SymbolKind::Marker | SymbolKind::MarkerImplementation => {
+                Err(PathResolutionError::UnexpectedSymbolKind)
+            }
             SymbolKind::EffectOperation => {
                 let Some(PathResolution::Effect(effect)) = previous else {
                     unreachable!("an effect operation should be resolved through its parent effect")

@@ -10,7 +10,8 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_source_file::{LocalSourceID, get_stable_path_id};
 use rayc_symbol::{
-    GlobalSymbolID, SymbolID, calculate_qualified_name_id, get_target_root_module_id,
+    GlobalSymbolID, SymbolID, calculate_implements_id, calculate_qualified_name_id,
+    get_target_root_module_id,
     member::{Insertion, Member},
     symbol_kind::SymbolKind,
 };
@@ -47,6 +48,8 @@ pub struct Infos {
     given_parameter_list: Option<Option<GivenParameterList>>,
     where_clause: Option<Option<WhereClause>>,
     instance_trait: Option<Option<SyntaxPath>>,
+    marker_implementation_marker: Option<Option<SyntaxPath>>,
+    marker_implementation_type: Option<Option<Type>>,
     type_definition: Option<Option<Type>>,
     kind_ascription: Option<Option<KindAscription>>,
 }
@@ -62,6 +65,8 @@ struct SyntaxTable {
     given_parameter_lists: Map<Option<GivenParameterList>>,
     where_clauses: Map<Option<WhereClause>>,
     instance_traits: Map<Option<SyntaxPath>>,
+    marker_implementation_markers: Map<Option<SyntaxPath>>,
+    marker_implementation_types: Map<Option<Type>>,
     type_definitions: Map<Option<Type>>,
     kind_ascriptions: Map<Option<KindAscription>>,
 }
@@ -215,6 +220,19 @@ impl Table {
     }
 
     #[must_use]
+    pub fn get_marker_implementation_marker_syntax(
+        &self,
+        symbol_id: SymbolID,
+    ) -> Option<SyntaxPath> {
+        self.syntaxes.marker_implementation_markers.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
+    pub fn get_marker_implementation_type_syntax(&self, symbol_id: SymbolID) -> Option<Type> {
+        self.syntaxes.marker_implementation_types.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
     pub fn get_type_definition_syntax(&self, symbol_id: SymbolID) -> Option<Type> {
         self.syntaxes.type_definitions.get(&symbol_id).cloned().unwrap()
     }
@@ -288,6 +306,14 @@ impl Table {
             self.syntaxes.instance_traits.insert(symbol_id, instance_trait);
         }
 
+        if let Some(marker) = info.marker_implementation_marker {
+            self.syntaxes.marker_implementation_markers.insert(symbol_id, marker);
+        }
+
+        if let Some(implementor) = info.marker_implementation_type {
+            self.syntaxes.marker_implementation_types.insert(symbol_id, implementor);
+        }
+
         if let Some(type_definition) = info.type_definition {
             self.syntaxes.type_definitions.insert(symbol_id, type_definition);
         }
@@ -354,6 +380,21 @@ impl Table {
         }
 
         // finally, insert the symbol information into the table
+        self.insert_info(id, Some(member_builder.current_id.id), info, engine);
+
+        member_builder.current_id.target_id.make_global(id)
+    }
+
+    pub async fn insert_unnamed_symbol(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        info: Infos,
+        engine: &TrackedEngine,
+    ) -> GlobalSymbolID {
+        let span = info.span.expect("an unnamed symbol should have a span");
+        let id = engine.calculate_implements_id(&span, member_builder.current_id.target_id).await;
+
+        member_builder.member.insert_unnamed(id);
         self.insert_info(id, Some(member_builder.current_id.id), info, engine);
 
         member_builder.current_id.target_id.make_global(id)

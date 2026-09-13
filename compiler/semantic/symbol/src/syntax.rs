@@ -91,6 +91,26 @@ pub struct InstanceTraitSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }
 
+/// Retrieves the marker path declared by a marker-implementation symbol.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<Path>)]
+#[extend(by_val, name = get_marker_implementation_marker_syntax)]
+pub struct MarkerImplementationMarkerSyntaxKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+/// Retrieves the implementor type declared by a marker-implementation symbol.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<Type>)]
+#[extend(by_val, name = get_marker_implementation_type_syntax)]
+pub struct MarkerImplementationTypeSyntaxKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
 /// Retrieves the type definition declared by an instance associated type.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,

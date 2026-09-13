@@ -162,6 +162,7 @@ impl Build for rayc_type::poly_var::Key {
             }
             SymbolKind::Effect
             | SymbolKind::Instance
+            | SymbolKind::MarkerImplementation
             | SymbolKind::Trait
             | SymbolKind::TraitType
             | SymbolKind::InstanceType => {
@@ -199,6 +200,7 @@ impl Build for rayc_type::poly_var::Key {
             SymbolKind::ExternDef => {
                 panic!("an extern definition does not own a polymorphic-variable map")
             }
+            SymbolKind::Marker => panic!("a marker does not own a polymorphic-variable map"),
             SymbolKind::Module => panic!("a module does not own a polymorphic-variable map"),
         };
 
