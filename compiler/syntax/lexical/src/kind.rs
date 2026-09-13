@@ -182,6 +182,8 @@ pub enum Keyword {
     Inst,
     /// `move` keyword.
     Move,
+    /// `elif` keyword.
+    Elif,
 }
 
 /// A static map that maps a string representation of a keyword to its
@@ -243,6 +245,7 @@ impl Keyword {
             Self::Let => "let",
             Self::Const => "const",
             Self::If => "if",
+            Self::Elif => "elif",
             Self::Else => "else",
             Self::While => "while",
             Self::Mut => "mut",

@@ -374,8 +374,8 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
-    pub struct IfElseThenArm {
-        pub then_colon: Punctuation = ':',
+    pub struct IfElseExpressionArm {
+        pub colon: Punctuation = ':',
         pub expression: Expression = ast::<Expression>(),
     }
 }
@@ -393,10 +393,48 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
+    pub enum IfElseArm {
+        Block(Block = ast::<Block>()),
+        Expression(IfElseExpressionArm = ast::<IfElseExpressionArm>()),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct IfElseElifArm {
+        pub elif_keyword: Keyword = expect::Keyword::Elif.new_line_significant(false),
+        pub condition: IfElseCondition = ast::<IfElseCondition>(),
+        pub arm: IfElseArm = ast::<IfElseArm>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
     pub struct IfElseElseArm {
-        pub else_keyword: Keyword = expect::Keyword::Else,
-        pub else_colon: Punctuation = ':',
-        pub expression: Expression = ast::<Expression>(),
+        pub else_keyword: Keyword = expect::Keyword::Else.new_line_significant(false),
+        pub arm: IfElseArm = ast::<IfElseArm>(),
     }
 }
 
@@ -416,8 +454,18 @@ abstract_tree::abstract_tree! {
     pub struct IfElse {
         pub if_keyword: Keyword = expect::Keyword::If,
         pub condition: IfElseCondition = ast::<IfElseCondition>(),
-        pub then_arm: IfElseThenArm = ast::<IfElseThenArm>(),
-        pub else_arm: IfElseElseArm = ast::<IfElseElseArm>(),
+        pub then_arm: IfElseArm = ast::<IfElseArm>(),
+        pub elif_arms: #[multi] IfElseElifArm = ast::<IfElseElifArm>().repeat(),
+        pub else_arm: IfElseElseArm = ast::<IfElseElseArm>().optional(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct While {
+        pub while_keyword: Keyword = expect::Keyword::While,
+        pub condition: Expression = ast::<Expression>(),
+        pub block: Block = ast::<Block>(),
     }
 }
 
@@ -438,6 +486,7 @@ abstract_tree::abstract_tree! {
         RunWith(RunWith = ast::<RunWith>()),
         Closure(Closure = ast::<Closure>()),
         IfElse(IfElse = ast::<IfElse>()),
+        While(While = ast::<While>()),
         Binary(Binary = ast::<Binary>()),
     }
 }

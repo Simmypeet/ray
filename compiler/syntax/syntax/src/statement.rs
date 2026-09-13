@@ -79,15 +79,6 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    pub struct While {
-        pub while_keyword: Keyword = expect::Keyword::While,
-        pub condition: Expression = ast::<Expression>(),
-        pub block: Block = ast::<Block>(),
-    }
-}
-
-abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct Break {
         pub break_keyword: Keyword = expect::Keyword::Break,
     }
@@ -115,7 +106,6 @@ abstract_tree::abstract_tree! {
     )]
     pub enum Statement {
         Let(Let = ast::<Let>()),
-        While(While = ast::<While>()),
         Break(Break = ast::<Break>()),
         Continue(Continue = ast::<Continue>()),
         Expression(Expression = ast::<Expression>()),
