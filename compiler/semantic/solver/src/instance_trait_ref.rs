@@ -46,7 +46,6 @@ impl Solver {
                 }
                 View::Primitive(_)
                 | View::Tuple(_)
-                | View::Lambda(_)
                 | View::Pointer(_)
                 | View::InstanceAssociated(_)
                 | View::Closure(_)
