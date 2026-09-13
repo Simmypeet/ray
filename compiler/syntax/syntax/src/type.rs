@@ -107,7 +107,7 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
-    pub struct LambdaReturnType {
+    pub struct CallableReturnType {
         pub arrow: Arrow = ast::<Arrow>(),
         pub r#type: Type = ast::<Type>()
     }
@@ -126,10 +126,10 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
-    pub struct Lambda {
+    pub struct Callable {
         pub def_keyword: Keyword = expect::Keyword::Def,
-        pub parameters: LambdaParameterList = ast::<LambdaParameterList>(),
-        pub return_type: LambdaReturnType = ast::<LambdaReturnType>().optional(),
+        pub parameters: CallableParameterList = ast::<CallableParameterList>(),
+        pub return_type: CallableReturnType = ast::<CallableReturnType>().optional(),
         pub effect_row: EffectRowAnnotation = ast::<EffectRowAnnotation>().optional()
     }
 }
@@ -148,7 +148,7 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
-    pub struct LambdaParameterList {
+    pub struct CallableParameterList {
         pub parameters: #[multi] Type = ast::<Type>()
             .repeat_all_with_separator(',')
     }
@@ -171,7 +171,7 @@ abstract_tree::abstract_tree! {
         Primitive(Primitive = ast::<Primitive>()),
         Pointer(Pointer = ast::<Pointer>()),
         Tuple(Tuple = ast::<Tuple>()),
-        Lambda(Lambda = ast::<Lambda>()),
+        Callable(Callable = ast::<Callable>()),
         EffectRow(ConcreteEffectRow = ast::<ConcreteEffectRow>()),
         Path(Path = ast::<Path>())
     }
