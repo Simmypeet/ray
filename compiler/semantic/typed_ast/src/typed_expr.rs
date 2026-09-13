@@ -12,8 +12,8 @@ use crate::{
     name_binding::NameBindingID,
     typed_expr::{
         binary::Binary, call::Call, deref::Deref, errored::Errored, identifier::Identifier,
-        if_else::IfElse, lambda::Lambda, literal::Literal, nlambda::NLambda, paren::Paren,
-        ref_of::RefOf, run_with::RunWith, tuple::Tuple, tuple_index::TupleIndex,
+        if_else::IfElse, literal::Literal, nlambda::NLambda, paren::Paren, ref_of::RefOf,
+        run_with::RunWith, tuple::Tuple, tuple_index::TupleIndex,
     },
 };
 
@@ -23,7 +23,6 @@ pub mod deref;
 pub mod errored;
 pub mod identifier;
 pub mod if_else;
-pub mod lambda;
 pub mod literal;
 pub mod nlambda;
 pub mod paren;
@@ -45,7 +44,6 @@ pub enum TypedExprKind {
     TupleIndex(TupleIndex),
     Tuple(Tuple),
     Call(Call),
-    Lambda(Lambda),
     NLambda(NLambda),
     Binary(Binary),
     IfElse(IfElse),
@@ -60,13 +58,12 @@ impl SubExprs for TypedExprKind {
     fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
         // There must be a better way to do this while doesn't require boxing the
         // iterator 😭
-        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N> {
+        pub enum Iter<A, B, C, D, E, G, H, I, J, K, L, M, N> {
             A(A),
             B(B),
             C(C),
             D(D),
             E(E),
-            F(F),
             G(G),
             H(H),
             I(I),
@@ -77,15 +74,13 @@ impl SubExprs for TypedExprKind {
             N(N),
         }
 
-        impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N> Iterator
-            for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N>
+        impl<A, B, C, D, E, G, H, I, J, K, L, M, N> Iterator for Iter<A, B, C, D, E, G, H, I, J, K, L, M, N>
         where
             A: Iterator<Item = TypedExprID>,
             B: Iterator<Item = TypedExprID>,
             C: Iterator<Item = TypedExprID>,
             D: Iterator<Item = TypedExprID>,
             E: Iterator<Item = TypedExprID>,
-            F: Iterator<Item = TypedExprID>,
             G: Iterator<Item = TypedExprID>,
             H: Iterator<Item = TypedExprID>,
             I: Iterator<Item = TypedExprID>,
@@ -104,7 +99,6 @@ impl SubExprs for TypedExprKind {
                     Self::C(iter) => iter.next(),
                     Self::D(iter) => iter.next(),
                     Self::E(iter) => iter.next(),
-                    Self::F(iter) => iter.next(),
                     Self::G(iter) => iter.next(),
                     Self::H(iter) => iter.next(),
                     Self::I(iter) => iter.next(),
@@ -123,7 +117,6 @@ impl SubExprs for TypedExprKind {
             Self::TupleIndex(x) => Iter::C(x.sub_exprs()),
             Self::Tuple(x) => Iter::D(x.sub_exprs()),
             Self::Call(x) => Iter::E(x.sub_exprs()),
-            Self::Lambda(x) => Iter::F(x.sub_exprs()),
             Self::NLambda(x) => Iter::N(x.sub_exprs()),
             Self::Binary(x) => Iter::G(x.sub_exprs()),
             Self::IfElse(x) => Iter::H(x.sub_exprs()),
@@ -208,7 +201,6 @@ impl MutSubstitutable for TypedExpr {
             | TypedExprKind::Literal(_)
             | TypedExprKind::TupleIndex(_)
             | TypedExprKind::Tuple(_)
-            | TypedExprKind::Lambda(_)
             | TypedExprKind::NLambda(_)
             | TypedExprKind::Binary(_)
             | TypedExprKind::IfElse(_)
@@ -262,7 +254,6 @@ impl TypedExprMap {
             TypedExprKind::Literal(_)
             | TypedExprKind::Tuple(_)
             | TypedExprKind::Call(_)
-            | TypedExprKind::Lambda(_)
             | TypedExprKind::NLambda(_)
             | TypedExprKind::Binary(_)
             | TypedExprKind::IfElse(_)

@@ -18,8 +18,8 @@ use crate::{
         binary::{Binary, BinaryOp},
         deref::Deref,
         identifier::Identifier,
-        lambda::Lambda,
         literal::Literal,
+        nlambda::NLambda,
         paren::Paren,
         ref_of::RefOf,
         tuple::Tuple,
@@ -130,7 +130,7 @@ impl TestMap {
         parent: TypedFunctionID,
         child: TypedFunctionID,
     ) -> TypedExprID {
-        self.expression(parent, TypedExprKind::Lambda(Lambda::new(child)))
+        self.expression(parent, TypedExprKind::NLambda(NLambda::new(child)))
     }
 }
 

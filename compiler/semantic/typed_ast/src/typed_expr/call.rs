@@ -41,10 +41,6 @@ pub enum CallTarget {
         operation_id: GlobalSymbolID,
         subst: Subst,
     },
-
-    Lambda {
-        callee: TypedExprID,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -81,11 +77,6 @@ impl Call {
     }
 
     #[must_use]
-    pub const fn new_lambda(callee: TypedExprID, arguments: Vec<TypedExprID>) -> Self {
-        Self { target: CallTarget::Lambda { callee }, arguments }
-    }
-
-    #[must_use]
     pub const fn new_effect_operation(
         effect_id: GlobalSymbolID,
         operation_id: GlobalSymbolID,
@@ -113,21 +104,10 @@ impl MutSubstitutable for Call {
                 instance.apply_in_place(subst, engine);
                 trait_def_subst.apply_mut_subst(subst, engine);
             }
-            CallTarget::Lambda { .. } => {}
         }
     }
 }
 
 impl SubExprs for Call {
-    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
-        let target_iter = match &self.target {
-            CallTarget::UnresolvedInstanceAssociated { .. }
-            | CallTarget::Direct { .. }
-            | CallTarget::EffectOperation { .. } => None,
-
-            CallTarget::Lambda { callee } => Some(*callee),
-        };
-
-        target_iter.into_iter().chain(self.arguments.iter().copied())
-    }
+    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> { self.arguments.iter().copied() }
 }

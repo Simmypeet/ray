@@ -256,24 +256,12 @@ impl Analyzer {
                     CallTarget::Direct { .. }
                     | CallTarget::UnresolvedInstanceAssociated { .. }
                     | CallTarget::EffectOperation { .. } => {}
-
-                    CallTarget::Lambda { callee } => {
-                        self.visit_expression(
-                            function_id,
-                            functions,
-                            *callee,
-                            UseMode::Value,
-                            plan,
-                        );
-                    }
                 }
                 for argument in call.arguments() {
                     self.visit_expression(function_id, functions, *argument, UseMode::Value, plan);
                 }
             }
-            TypedExprKind::Lambda(lambda) => {
-                self.visit_nested_function(function_id, functions, lambda.function_id(), plan);
-            }
+
             TypedExprKind::NLambda(lambda) => {
                 self.visit_nested_function(function_id, functions, lambda.function_id(), plan);
             }
