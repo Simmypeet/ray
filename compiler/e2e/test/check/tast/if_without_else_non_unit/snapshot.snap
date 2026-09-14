@@ -1,0 +1,17 @@
+---
+source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
+expression: run
+---
+stderr:
+[error]: mismatched types in if expression branches: expected `()`, but found `int32`
+  ╭▸ compiler/e2e/test/check/tast/if_without_else_non_unit/main.ray:2:26
+  │
+2 │     let value = if true: 42
+  ╰╴                         ━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

@@ -221,24 +221,19 @@ impl TAstBuilder {
         &mut self,
         statement: &Statement,
     ) {
-        let expression = match statement {
-            Statement::Let(statement) => statement.expression(),
-            Statement::While(statement) => Some(statement.condition()),
-            Statement::Break(_) | Statement::Continue(_) => None,
-            Statement::Expression(expression) => Some(*expression),
-            Statement::Return(statement) => statement.value(),
-        };
-
-        let Some(expression) = expression else {
-            return;
-        };
-        self.push_effect_unification_constraint(
-            self.effect_of_expression(expression).clone(),
-            self.function_map.effect_of(self.current_typed_function_id()).clone(),
-            self.span_of_expression(expression),
-            EffectUnificationSource::EffectSharing,
-        )
-        .await;
+        let function_effect = self.function_map.effect_of(self.current_typed_function_id()).clone();
+        let constraints = statement
+            .sub_exprs()
+            .map(|expression| {
+                self.effect_unification_constraint(
+                    self.effect_of_expression(expression).clone(),
+                    function_effect.clone(),
+                    self.span_of_expression(expression),
+                    EffectUnificationSource::EffectSharing,
+                )
+            })
+            .collect();
+        self.push_constraints(constraints).await;
     }
 
     pub(crate) async fn compose_run_with_effect(
@@ -425,6 +420,20 @@ impl TAstBuilder {
     ) {
         self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::IfBranch)
             .await;
+    }
+
+    pub async fn push_if_unit_branch_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        span: RelativeSpan,
+    ) {
+        self.push_subtype_constraint(
+            &Ty::new_unit(self.engine()),
+            expected_ty,
+            span,
+            SubtypeSource::IfBranch,
+        )
+        .await;
     }
 
     async fn push_subtype_constraint_with_expr(

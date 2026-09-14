@@ -14,6 +14,7 @@ pub mod parenthesized;
 pub mod postfix;
 pub mod r#return;
 pub mod run_with;
+pub mod while_loop;
 
 impl Bind<Expression> for TAstBuilder {
     async fn bind(&mut self, syn: Expression) -> TypedExprID {
@@ -21,6 +22,7 @@ impl Bind<Expression> for TAstBuilder {
             Expression::RunWith(run_with) => Box::pin(self.bind(run_with)).await,
             Expression::Closure(lambda) => Box::pin(self.bind(lambda)).await,
             Expression::IfElse(if_else) => Box::pin(self.bind(if_else)).await,
+            Expression::While(while_loop) => Box::pin(self.bind(while_loop)).await,
             Expression::Binary(binary) => Box::pin(self.bind(binary)).await,
         }
     }

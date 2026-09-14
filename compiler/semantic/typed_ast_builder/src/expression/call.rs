@@ -92,7 +92,9 @@ impl TAstBuilder {
 
         let arguments = self.bind_call_arguments(&call).await;
         let Ok(resolution) = self.resolve_path(&path).await else {
-            return self.push_error_expression_with_children(syn.span(), arguments).await;
+            return self
+                .push_error_expression_with_expression_children(syn.span(), arguments)
+                .await;
         };
         let (target, call_subst) = match &resolution {
             PathResolution::Def(def) => (
@@ -166,7 +168,9 @@ impl TAstBuilder {
                 if let Some(symbol_id) = resolution.global_id() {
                     self.push_symbol_not_callable(symbol_id, path.span());
                 }
-                return self.push_error_expression_with_children(syn.span(), arguments).await;
+                return self
+                    .push_error_expression_with_expression_children(syn.span(), arguments)
+                    .await;
             }
         };
 

@@ -12,7 +12,7 @@ use rayc_semantic_element::parameter::ParameterID;
 use rayc_type::ty::{Mutability, Ty, application::ClosureID};
 
 use self::function_build_state::FunctionBuildState;
-use crate::diagnostic::NotAllPathsReturnValue;
+use crate::{diagnostic::NotAllPathsReturnValue, statement::LoopTarget};
 
 mod function_build_state;
 
@@ -21,10 +21,24 @@ pub struct Builder {
     ir_functions: IRFunctionMap,
     building_function: FunctionBuildState,
     suspended_functions: Vec<FunctionBuildState>,
+    loop_targets: Vec<LoopTarget>,
+    suspended_loop_targets: Vec<Vec<LoopTarget>>,
     diagnostics: Vec<NotAllPathsReturnValue>,
 }
 
 impl Builder {
+    pub(crate) fn push_loop_target(&mut self, target: LoopTarget) {
+        self.loop_targets.push(target);
+    }
+
+    pub(crate) fn pop_loop_target(&mut self) {
+        self.loop_targets.pop().expect("a loop target should be active");
+    }
+
+    pub(crate) fn current_loop_target(&self) -> Option<LoopTarget> {
+        self.loop_targets.last().copied()
+    }
+
     pub fn register_closure(
         &mut self,
         closure_id: ClosureID,

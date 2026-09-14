@@ -228,6 +228,8 @@ impl Builder {
             ir_functions,
             building_function,
             suspended_functions: Vec::new(),
+            loop_targets: Vec::new(),
+            suspended_loop_targets: Vec::new(),
             diagnostics: Vec::new(),
         }
     }
@@ -257,9 +259,12 @@ impl Builder {
         diagnostic_span: RelativeSpan,
     ) -> IrFunctionID {
         let lambda_context = context.for_function(typed_function_id);
+        self.suspend_loop_targets();
         self.start_lambda(&lambda_context, return_ty, diagnostic_span);
         self.lower_current_function(&lambda_context);
-        self.finish_lambda()
+        let function = self.finish_lambda();
+        self.restore_loop_targets();
+        function
     }
 
     pub fn lower_thunk_function(
@@ -269,9 +274,12 @@ impl Builder {
         diagnostic_span: RelativeSpan,
     ) -> IrFunctionID {
         let thunk_context = context.for_function(typed_function_id);
+        self.suspend_loop_targets();
         self.start_thunk(&thunk_context, diagnostic_span);
         self.lower_current_function(&thunk_context);
-        self.finish_nested_function()
+        let function = self.finish_nested_function();
+        self.restore_loop_targets();
+        function
     }
 
     pub fn lower_operation_handler_function(
@@ -283,9 +291,12 @@ impl Builder {
         captures: FxHashMap<Source, CaptureID>,
     ) -> IrFunctionID {
         let handler_context = context.for_function(typed_function_id);
+        self.suspend_loop_targets();
         self.start_operation_handler(&handler_context, diagnostic_span, capture_map, captures);
         self.lower_current_function(&handler_context);
-        self.finish_nested_function()
+        let function = self.finish_nested_function();
+        self.restore_loop_targets();
+        function
     }
 
     pub fn lower_capture_map(
@@ -302,6 +313,18 @@ impl Builder {
     fn lower_current_function(&mut self, context: &LoweringContext<'_>) {
         self.lower_statements(context);
         self.finish_current_function();
+    }
+
+    fn suspend_loop_targets(&mut self) {
+        self.suspended_loop_targets.push(std::mem::take(&mut self.loop_targets));
+    }
+
+    fn restore_loop_targets(&mut self) {
+        assert!(self.loop_targets.is_empty(), "nested function should finish outside a loop");
+        self.loop_targets = self
+            .suspended_loop_targets
+            .pop()
+            .expect("an enclosing function's loop targets should be suspended");
     }
 
     fn start_lambda(

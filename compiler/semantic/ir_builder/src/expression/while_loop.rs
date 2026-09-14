@@ -1,0 +1,51 @@
+use rayc_ir::{
+    cfg::{Conditional, Terminator},
+    ir_expr::{IRExpr, IRExprID, IRExprKind, tuple::Tuple},
+};
+use rayc_typed_ast::typed_expr::while_loop::While;
+
+use crate::{
+    builder::Builder,
+    context::LoweringContext,
+    expression::{LowerExpression, TypedExprWithID},
+    statement::LoopTarget,
+};
+
+impl<'a> LowerExpression<TypedExprWithID<&'a While>> for Builder {
+    fn lower_expression(
+        &mut self,
+        context: &LoweringContext<'_>,
+        expression: TypedExprWithID<&'a While>,
+    ) -> IRExprID {
+        let typed_expression = context.expression(expression.id());
+        let while_loop = expression.node();
+
+        // Re-enter the condition block after every normal body fallthrough or
+        // continue; break branches directly to the exit block.
+        let condition_block = self.create_block();
+        let body_block = self.create_block();
+        let exit_block = self.create_block();
+        self.jump_to(condition_block);
+
+        self.select_block(condition_block);
+        let condition = self.lower_expression_by_id(context, while_loop.condition());
+        self.terminate(Terminator::Conditional(Conditional::new(
+            condition, body_block, exit_block,
+        )));
+
+        self.select_block(body_block);
+        self.push_loop_target(LoopTarget::new(exit_block, condition_block));
+        self.lower_statement_list(context, while_loop.body());
+        self.pop_loop_target();
+        if !self.is_terminated() {
+            self.jump_to(condition_block);
+        }
+
+        self.select_block(exit_block);
+        self.emit_expression(IRExpr::new(
+            IRExprKind::Tuple(Tuple::new(Vec::new())),
+            typed_expression.span(),
+            typed_expression.ty().clone(),
+        ))
+    }
+}

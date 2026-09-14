@@ -17,6 +17,7 @@ mod run_with;
 mod tuple;
 mod tuple_index;
 mod typed_expr_id;
+mod while_loop;
 
 pub use typed_expr_id::TypedExprWithID;
 
@@ -56,6 +57,9 @@ impl Builder {
             }
             TypedExprKind::IfElse(if_else) => {
                 self.lower_expression(context, TypedExprWithID::new(if_else, expression_id))
+            }
+            TypedExprKind::While(while_loop) => {
+                self.lower_expression(context, TypedExprWithID::new(while_loop, expression_id))
             }
             TypedExprKind::RefOf(reference) => {
                 self.lower_expression(context, TypedExprWithID::new(reference, expression_id))

@@ -38,7 +38,7 @@ impl Bind<BinarySyntax> for TAstBuilder {
         }
 
         if is_malformed {
-            return self.push_error_expression_with_children(span, bound_operands).await;
+            return self.push_error_expression_with_expression_children(span, bound_operands).await;
         }
 
         self.reduce_with_precedence(first, subsequent).await

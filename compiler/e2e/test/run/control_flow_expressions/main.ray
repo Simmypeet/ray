@@ -1,0 +1,23 @@
+def choose(value: int32) -> int32:
+    return if value == 0: 10 elif value == 1: 20 else: 30
+
+
+def main() -> int32:
+    let mut result = 0
+
+    let loop_result: () = while true:
+        if result == 0:
+            result = choose(0)
+        elif result == 10:
+            result = result + choose(1)
+        else:
+            break
+
+    if result == 30:
+        result = result + choose(2)
+
+    if false: () elif true:
+        result = result + 1
+    else: ()
+
+    return result

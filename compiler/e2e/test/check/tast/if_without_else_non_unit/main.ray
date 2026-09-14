@@ -1,0 +1,3 @@
+def main() -> int32:
+    let value = if true: 42
+    return 0
