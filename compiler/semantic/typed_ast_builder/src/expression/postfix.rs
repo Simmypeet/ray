@@ -41,7 +41,7 @@ impl Bind<Postfix> for TAstBuilder {
                 // if the postfix operator failed to bind then we return an error expression
                 // but we still want to keep the children of the expression so that we can
                 // report errors on them as well
-                self.push_error_expression_with_children(syn.span(), vec![bound]).await
+                self.push_error_expression_with_children(syn.span(), vec![bound.into()]).await
             };
         }
 

@@ -1,9 +1,8 @@
 use rayc_source_file::SourceElement;
 use rayc_syntax::statement::Statement as StatementSyntax;
-use rayc_type::ty::{Primitive, Ty};
 use rayc_typed_ast::{
     name_binding::Source,
-    statement::{Break, Continue, Let, Return, Statement, While},
+    statement::{Break, Continue, Let, Return, Statement},
     typed_function::TypedFunctionLocalID,
     typed_variable::TypedVariable,
 };
@@ -64,10 +63,6 @@ impl TAstBuilder {
                 .await;
             }
 
-            StatementSyntax::While(while_statement) => {
-                self.bind_while_statement(while_statement).await;
-            }
-
             StatementSyntax::Break(statement) => {
                 let span = statement.span();
                 if !self.is_inside_loop() {
@@ -107,27 +102,5 @@ impl TAstBuilder {
                 self.push_statement(Statement::Return(ret)).await;
             }
         }
-    }
-
-    async fn bind_while_statement(&mut self, statement: &rayc_syntax::statement::While) {
-        // Bind and constrain the condition before introducing the body's lexical scope.
-        let Some(condition) = statement.condition() else {
-            return;
-        };
-        let condition = self.bind(condition).await;
-        let bool_ty = Ty::new_primitive(Primitive::Bool, self.engine());
-        self.push_while_condition_constraint(&bool_ty, condition).await;
-
-        // Collect nested statements separately while retaining their function-local
-        // IDs.
-        self.enter_loop_body();
-        if let Some(block) = statement.block() {
-            for statement in block.statements() {
-                Box::pin(self.bind_statement(&statement)).await;
-            }
-        }
-        let body = self.exit_loop_body();
-
-        self.push_statement(Statement::While(While::new(condition, body))).await;
     }
 }

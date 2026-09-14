@@ -293,10 +293,22 @@ impl TAstBuilder {
     pub async fn push_error_expression_with_children(
         &mut self,
         span: RelativeSpan,
-        children: Vec<TypedExprID>,
+        children: Vec<typed_expr::errored::ErroredChild>,
     ) -> TypedExprID {
         let infer = self.new_type_inference();
         self.insert_expression(typed_expr::errored::Errored::new(children), span, infer).await
+    }
+
+    pub async fn push_error_expression_with_expression_children(
+        &mut self,
+        span: RelativeSpan,
+        children: Vec<TypedExprID>,
+    ) -> TypedExprID {
+        self.push_error_expression_with_children(
+            span,
+            children.into_iter().map(Into::into).collect(),
+        )
+        .await
     }
 
     pub fn span_of_expression(&self, id: TypedExprID) -> RelativeSpan {
@@ -308,29 +320,38 @@ impl TAstBuilder {
     }
 
     pub async fn push_statement(&mut self, statement: Statement) {
-        self.compose_effect_from_statement(&statement).await;
-        if let Some((owner, statements)) = self.statement_blocks.last_mut()
-            && *owner == self.building_function
-        {
-            statements.push(statement);
-        } else {
-            self.function_map.push_statement(self.building_function, statement);
+        // Nested statements contribute through their owning control-flow
+        // expression. Only function-root statements compose directly into the
+        // function effect.
+        let is_nested =
+            self.statement_blocks.last().is_some_and(|(owner, _)| *owner == self.building_function);
+
+        if is_nested {
+            self.statement_blocks
+                .last_mut()
+                .expect("a nested statement block should be active")
+                .1
+                .push(statement);
+            return;
         }
+
+        self.compose_function_effect_from_statement(&statement).await;
+        self.function_map.push_statement(self.building_function, statement);
     }
 
-    pub fn enter_loop_body(&mut self) {
-        self.loop_depth += 1;
+    pub fn enter_statement_block(&mut self, is_loop_body: bool) {
+        self.loop_depth += usize::from(is_loop_body);
         self.name_env.enter_scope();
         self.statement_blocks.push((self.building_function, Vec::new()));
     }
 
     #[must_use]
-    pub fn exit_loop_body(&mut self) -> Vec<Statement> {
+    pub fn exit_statement_block(&mut self, is_loop_body: bool) -> Vec<Statement> {
         let (owner, statements) =
-            self.statement_blocks.pop().expect("a loop body should be active");
+            self.statement_blocks.pop().expect("a statement block should be active");
         assert_eq!(owner, self.building_function);
         self.name_env.exit_scope();
-        self.loop_depth -= 1;
+        self.loop_depth -= usize::from(is_loop_body);
         statements
     }
 
