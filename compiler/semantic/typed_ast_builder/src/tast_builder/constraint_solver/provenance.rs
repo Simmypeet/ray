@@ -58,6 +58,7 @@ pub enum SubtypeSource {
     WhileCondition,
     IfBranch,
     ReturnType,
+    StructFieldInitialization,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]

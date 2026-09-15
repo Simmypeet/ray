@@ -378,6 +378,19 @@ impl TAstBuilder {
         .await;
     }
 
+    pub async fn push_struct_field_initialization_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(
+            expression,
+            expected_ty,
+            SubtypeSource::StructFieldInitialization,
+        )
+        .await;
+    }
+
     pub async fn push_binary_operator_constraint(
         &mut self,
         expected_ty: &Interned<Ty>,

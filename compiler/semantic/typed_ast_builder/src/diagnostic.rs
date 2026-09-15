@@ -526,6 +526,9 @@ impl Report for ResidualSubtype {
             SubtypeSource::WhileCondition => "while loop condition must be `bool`",
             SubtypeSource::IfBranch => "mismatched types in if expression branches",
             SubtypeSource::ReturnType => "mismatched types in return expression",
+            SubtypeSource::StructFieldInitialization => {
+                "mismatched type in struct field initializer"
+            }
         };
 
         let found = self.subype.greater();

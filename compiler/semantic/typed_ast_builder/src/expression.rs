@@ -14,6 +14,7 @@ pub mod parenthesized;
 pub mod postfix;
 pub mod r#return;
 pub mod run_with;
+pub mod struct_initialization;
 pub mod while_loop;
 
 impl Bind<Expression> for TAstBuilder {

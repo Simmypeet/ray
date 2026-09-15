@@ -302,7 +302,7 @@ impl TAstBuilder {
     pub async fn push_error_expression_with_expression_children(
         &mut self,
         span: RelativeSpan,
-        children: Vec<TypedExprID>,
+        children: impl IntoIterator<Item = TypedExprID>,
     ) -> TypedExprID {
         self.push_error_expression_with_children(
             span,
