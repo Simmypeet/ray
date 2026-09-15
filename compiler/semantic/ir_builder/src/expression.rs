@@ -8,17 +8,18 @@ mod call;
 mod closure;
 mod deref;
 mod errored;
+mod field;
 mod identifier;
 mod if_else;
 mod literal;
 mod paren;
 mod ref_of;
 mod run_with;
+mod struct_initialization;
 mod tuple;
 mod tuple_index;
 mod typed_expr_id;
 mod while_loop;
-mod field;
 
 pub use typed_expr_id::TypedExprWithID;
 

@@ -85,6 +85,8 @@ impl Builder<'_> {
                 self.lower_tuple(tuple, destination);
             }
 
+            IRExprKind::StructInitialization(_) => todo!("lower struct initialization expressions"),
+
             IRExprKind::Closure(lambda) => self.lower_closure(context, lambda, expression_id),
         }
     }

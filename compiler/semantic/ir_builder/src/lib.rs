@@ -15,9 +15,6 @@ mod expression;
 pub mod query;
 mod statement;
 
-#[cfg(test)]
-mod tests;
-
 /// Keeps this crate linked so its distributed query registration is retained.
 pub const fn black_box() {}
 

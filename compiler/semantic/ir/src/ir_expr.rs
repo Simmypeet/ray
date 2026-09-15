@@ -1,3 +1,4 @@
+use derive_more::From;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_lexical::tree::RelativeSpan;
@@ -6,7 +7,8 @@ use rayc_type::ty::Ty;
 use crate::{
     ir_expr::{
         binary::Binary, call::Call, closure::Closure, handle::Handle, literal::Literal, load::Load,
-        perform::Perform, phi::Phi, ref_of::RefOf, tuple::Tuple,
+        perform::Perform, phi::Phi, ref_of::RefOf, struct_initialization::StructInitialization,
+        tuple::Tuple,
     },
     visit::{TypeVisitor, VisitType},
 };
@@ -20,12 +22,13 @@ pub mod load;
 pub mod perform;
 pub mod phi;
 pub mod ref_of;
+pub mod struct_initialization;
 pub mod tuple;
 
 /// Identifies an expression value stored in a function's expression arena.
 pub type IRExprID = ID<IRExpr>;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, From)]
 pub enum IRExprKind {
     Error,
     Literal(Literal),
@@ -38,9 +41,10 @@ pub enum IRExprKind {
     Handle(Handle),
     Tuple(Tuple),
     Closure(Closure),
+    StructInitialization(StructInitialization),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct IRExpr {
     kind: IRExprKind,
     span: RelativeSpan,
@@ -49,12 +53,12 @@ pub struct IRExpr {
 
 impl IRExpr {
     #[must_use]
-    pub const fn new(kind: IRExprKind, span: RelativeSpan, ty: Interned<Ty>) -> Self {
-        Self { kind, span, ty }
+    pub fn new(kind: impl Into<IRExprKind>, span: RelativeSpan, ty: Interned<Ty>) -> Self {
+        Self { kind: kind.into(), span, ty }
     }
 
     #[must_use]
-    pub const fn new_error(span: RelativeSpan, ty: Interned<Ty>) -> Self {
+    pub fn new_error(span: RelativeSpan, ty: Interned<Ty>) -> Self {
         Self::new(IRExprKind::Error, span, ty)
     }
 
@@ -105,6 +109,7 @@ impl VisitType for IRExpr {
             | IRExprKind::Phi(_)
             | IRExprKind::Binary(_)
             | IRExprKind::Tuple(_)
+            | IRExprKind::StructInitialization(_)
             | IRExprKind::Closure(_) => {}
         }
     }
