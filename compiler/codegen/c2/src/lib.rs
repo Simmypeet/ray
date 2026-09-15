@@ -68,6 +68,7 @@ pub async fn write_c_translation_unit(
             | SymbolKind::Marker
             | SymbolKind::MarkerImplementation
             | SymbolKind::Module
+            | SymbolKind::Strut
             | SymbolKind::Trait
             | SymbolKind::TraitType
             | SymbolKind::InstanceType

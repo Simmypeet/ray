@@ -33,6 +33,7 @@ impl Bind<Postfix> for TAstBuilder {
                 PostfixOperator::Deref(deref) => Some(self.build_deref(bound, &deref).await),
 
                 PostfixOperator::TupleIndex(index) => self.build_tuple_index(bound, &index).await,
+                PostfixOperator::FieldAccess(_) => todo!("bind struct field access expressions"),
             };
 
             bound = if let Some(val) = val {

@@ -346,6 +346,9 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 let pointee_type = Box::pin(lower_concrete_type(engine, pointer.pointee())).await;
                 MonoType::new_pointer(pointee_type, lower_mutability(pointer.mutability()), engine)
             }
+            ApplicationView::Struct(_) => {
+                todo!("struct type reached MonoIR before struct lowering was implemented")
+            }
             ApplicationView::InstanceAssociated(_) => {
                 panic!("unresolved associated type reached code generation")
             }

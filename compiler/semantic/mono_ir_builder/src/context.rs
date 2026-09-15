@@ -272,6 +272,7 @@ impl Context {
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Pointer(_)
+            | ApplicationView::Struct(_)
             | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Closure(_)
             | ApplicationView::Error => {
