@@ -1,0 +1,8 @@
+struct Box[a]:
+    value: a
+
+def unknown(box: Box[int32]) -> int32:
+    return box.missing
+
+def nonStruct(value: int32) -> int32:
+    return value.field

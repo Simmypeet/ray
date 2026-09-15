@@ -42,6 +42,7 @@ impl Builder {
             TypedExprKind::TupleIndex(tuple_index) => {
                 self.lower_expression(context, TypedExprWithID::new(tuple_index, expression_id))
             }
+            TypedExprKind::FieldAccess(_) => todo!("lower struct field access expressions"),
             TypedExprKind::Tuple(tuple) => {
                 self.lower_expression(context, TypedExprWithID::new(tuple, expression_id))
             }

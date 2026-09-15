@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: struct `main.Box` has no field named `missing`
+  ╭▸ compiler/e2e/test/check/tast/struct_field_access/main.ray:5:16
+  │
+5 │     return box.missing
+  ╰╴               ━━━━━━━ unknown struct field
+
+[error]: expected a struct type, but found `int32`
+  ╭▸ compiler/e2e/test/check/tast/struct_field_access/main.ray:8:12
+  │
+8 │     return value.field
+  ╰╴           ━━━━━
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

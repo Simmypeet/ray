@@ -23,6 +23,7 @@ impl Builder {
         match expression.kind() {
             TypedExprKind::Identifier(identifier) => self.lower_address(context, identifier),
             TypedExprKind::TupleIndex(tuple_index) => self.lower_address(context, tuple_index),
+            TypedExprKind::FieldAccess(_) => todo!("lower struct field access addresses"),
             TypedExprKind::Deref(deref) => self.lower_address(context, deref),
             TypedExprKind::Paren(paren) => self.lower_address(context, paren),
             TypedExprKind::Literal(_)
