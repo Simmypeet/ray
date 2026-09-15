@@ -14,6 +14,8 @@ pub enum Constant {
     Primitive(Primitive),
     Tuple,
     Pointer(Mutability),
+    /// A nominal struct identified by its `SymbolKind::Strut` symbol.
+    Struct(GlobalSymbolID),
     Instance(GlobalSymbolID),
     /// An associated type identified by its `SymbolKind::TraitType` symbol.
     /// Arguments are an instance-kind type followed by the trait type's
@@ -120,6 +122,20 @@ pub struct PointerView<'x> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StructView<'x> {
+    symbol_id: GlobalSymbolID,
+    args: &'x [Interned<Ty>],
+}
+
+impl<'x> StructView<'x> {
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+
+    #[must_use]
+    pub const fn args(&self) -> &'x [Interned<Ty>] { self.args }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstanceView<'x> {
     symbol_id: GlobalSymbolID,
     args: &'x [Interned<Ty>],
@@ -166,6 +182,7 @@ pub enum View<'x> {
     Primitive(Primitive),
     Tuple(TupleView<'x>),
     Pointer(PointerView<'x>),
+    Struct(StructView<'x>),
     Instance(InstanceView<'x>),
     InstanceAssociated(InstanceAssociatedView<'x>),
     Closure(ClosureView<'x>),
@@ -204,6 +221,7 @@ impl Application {
             Constant::Pointer(mutability) => {
                 View::Pointer(PointerView { arg: &self.args[0], mutability })
             }
+            Constant::Struct(symbol_id) => View::Struct(StructView { symbol_id, args: &self.args }),
             Constant::Instance(symbol_id) => {
                 View::Instance(InstanceView { symbol_id, args: &self.args })
             }
@@ -253,7 +271,8 @@ impl Application {
             Constant::Closure(_)
             | Constant::Primitive(_)
             | Constant::Tuple
-            | Constant::Pointer(_) => TyKind::Star,
+            | Constant::Pointer(_)
+            | Constant::Struct(_) => TyKind::Star,
 
             Constant::InstanceAssociated(symbol_id) => {
                 use crate::associated_type_kind::get_associated_type_kind;
@@ -277,6 +296,7 @@ impl Application {
                 View::Error
                 | View::Tuple(_)
                 | View::Pointer(_)
+                | View::Struct(_)
                 | View::Instance(_)
                 | View::DefInstance(_)
                 | View::Closure(_)
@@ -293,6 +313,7 @@ impl Application {
                 View::Error
                 | View::Tuple(_)
                 | View::Pointer(_)
+                | View::Struct(_)
                 | View::Instance(_)
                 | View::DefInstance(_)
                 | View::InstanceAssociated(_)

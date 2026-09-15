@@ -13,7 +13,7 @@ use crate::{
     reduce::Reduce,
     subst::{Subst, Substitutable},
     ty::{
-        application::{Application, Constant, InstanceView, View as ApplicationView},
+        application::{Application, Constant, InstanceView, StructView, View as ApplicationView},
         args::Args,
         effect_row::EffectRow,
         inference::{GenInfer, Inference},
@@ -177,6 +177,7 @@ impl Ty {
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::Struct(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
@@ -332,6 +333,18 @@ impl Ty {
         )))
     }
 
+    #[must_use]
+    pub fn new_struct(
+        symbol_id: GlobalSymbolID,
+        args: Args,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::Application(Application::new(
+            Constant::Struct(symbol_id),
+            args.into_interned(),
+        )))
+    }
+
     /// Creates the built-in `Def` dictionary for a nominal closure type.
     #[must_use]
     pub fn new_def_instance(closure: Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
@@ -426,6 +439,7 @@ impl Ty {
                 Self::Application(application) => {
                     let symbol_id = match application.view() {
                         ApplicationView::Instance(instance) => Some(instance.symbol_id()),
+                        ApplicationView::Struct(struct_) => Some(struct_.symbol_id()),
                         ApplicationView::InstanceAssociated(associated) => {
                             Some(associated.symbol_id())
                         }
@@ -601,6 +615,9 @@ impl TyDisplay<'_> {
                 ApplicationView::Instance(instance) => {
                     self.fmt_symbol_application(instance.symbol_id(), instance.args(), f)
                 }
+                ApplicationView::Struct(struct_) => {
+                    self.fmt_symbol_application(struct_.symbol_id(), struct_.args(), f)
+                }
                 ApplicationView::DefInstance(closure) => {
                     f.write_str("DefInstance[")?;
                     self.fmt_ty(closure, f)?;
@@ -688,6 +705,19 @@ impl Ty {
     }
 
     #[must_use]
+    pub fn as_struct_view(&self) -> Option<StructView<'_>> {
+        let Self::Application(ty_application) = self else {
+            return None;
+        };
+
+        let ApplicationView::Struct(struct_view) = ty_application.view() else {
+            return None;
+        };
+
+        Some(struct_view)
+    }
+
+    #[must_use]
     pub const fn as_poly_var(&self) -> Option<&GlobalPolyVarID> {
         if let Self::PolyVar(poly_var) = self { Some(poly_var) } else { None }
     }
@@ -743,6 +773,7 @@ impl Ty {
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::Struct(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_) => Some(false),
@@ -778,6 +809,7 @@ impl Ty {
                 ApplicationView::Primitive(_) => true,
                 ApplicationView::Pointer(pointer) => pointer.pointee().is_c_abi_value_type(),
                 ApplicationView::Tuple(_)
+                | ApplicationView::Struct(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_)
@@ -803,6 +835,7 @@ impl Ty {
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::Struct(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_)
                 | ApplicationView::Closure(_)

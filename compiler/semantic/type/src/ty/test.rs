@@ -1,5 +1,43 @@
 use super::{Mutability, Primitive, Ty};
 
+// input: Box[a], substituted with a := int32, and Other[int32]
+// premise: struct applications are nominal and carry substitutable type
+// arguments output: Box[int32] has star kind and does not match Other[int32]
+#[tokio::test]
+async fn struct_application_preserves_nominal_identity_and_substitutes_arguments() {
+    use rayc_symbol::SymbolID;
+    use rayc_target::TargetID;
+
+    use super::{TyKind, application::View, args::Args};
+    use crate::{
+        poly_var::{GlobalPolyVarID, PolyVarID},
+        subst::{Subst, Substitutable},
+    };
+
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let struct_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    let other_struct_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
+    let poly_var = GlobalPolyVarID::new(struct_id, PolyVarID::new(0));
+    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let generic = Ty::new_struct(
+        struct_id,
+        Args::new([Ty::new_poly_var(poly_var, &engine)], &engine),
+        &engine,
+    );
+
+    let instantiated =
+        generic.apply_subst_or_clone(&Subst::new_singleton(poly_var, int_ty.clone()), &engine);
+    let other = Ty::new_struct(other_struct_id, Args::new([int_ty.clone()], &engine), &engine);
+
+    let View::Struct(struct_) = instantiated.unwrap_as_application_view() else {
+        panic!("expected a struct application");
+    };
+    assert_eq!(struct_.symbol_id(), struct_id);
+    assert_eq!(struct_.args(), std::slice::from_ref(&int_ty));
+    assert_eq!(instantiated.kind_of(&engine).await, TyKind::Star);
+    assert!(!instantiated.has_same_type_constructor(&other));
+}
+
 // input: closure(owner, 0)[b, a](int32) -> int32 with empty effect and captures
 // premise: owner.b maps to bool and its parent.a maps to float32
 // output: owner arguments become [bool, float32]; identity and signature are
