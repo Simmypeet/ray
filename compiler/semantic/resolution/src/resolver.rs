@@ -162,6 +162,10 @@ impl Resolver<'_> {
         Ty::new_instance(symbol_id, args, self.engine)
     }
 
+    pub(crate) fn new_struct_type(&self, symbol_id: GlobalSymbolID, args: Args) -> Interned<Ty> {
+        Ty::new_struct(symbol_id, args, self.engine)
+    }
+
     pub(crate) fn new_poly_var_type_from_id(&self, id: GlobalPolyVarID) -> Interned<Ty> {
         Ty::new_poly_var(id, self.engine)
     }

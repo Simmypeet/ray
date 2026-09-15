@@ -29,6 +29,8 @@ pub enum PathResolution {
     Trait(TraitRef),
     /// A marker.
     Marker(GlobalSymbolID),
+    /// A nominal struct.
+    Struct(Struct),
     /// A trait instance.
     Instance(Instance),
     /// A polymorphic type or instance parameter.
@@ -44,6 +46,27 @@ pub enum PathResolution {
     UnresolvedInstanceMember(UnresolvedInstanceMember),
     /// An operation belonging to an effect.
     EffectOperation(EffectOperation),
+}
+
+/// A resolved nominal struct and its type arguments.
+#[derive(Debug, Clone)]
+pub struct Struct {
+    symbol_id: GlobalSymbolID,
+    args: Args,
+}
+
+impl Struct {
+    const fn new(symbol_id: GlobalSymbolID, args: Args) -> Self { Self { symbol_id, args } }
+
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+
+    #[must_use]
+    pub const fn args(&self) -> &Args { &self.args }
+
+    pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
+        substitution(self.symbol_id, &self.args, engine).await
+    }
 }
 
 /// A resolved global trait instance and its arguments.
@@ -329,6 +352,7 @@ impl PathResolution {
                 Subst::new_empty()
             }
             Self::Effect(effect) => effect.substitution(engine).await,
+            Self::Struct(struct_) => struct_.substitution(engine).await,
             Self::Trait(trait_ref) => {
                 substitution(trait_ref.trait_id(), trait_ref.args(), engine).await
             }
@@ -360,6 +384,7 @@ impl PathResolution {
             Self::Effect(_) => Some(SymbolKind::Effect),
             Self::Trait(_) => Some(SymbolKind::Trait),
             Self::Marker(_) => Some(SymbolKind::Marker),
+            Self::Struct(_) => Some(SymbolKind::Strut),
             Self::Instance(_) => Some(SymbolKind::Instance),
             Self::PolyVar(_) | Self::SelfInstance(_) => None,
             Self::TraitMember(member) => Some(member.kind),
@@ -379,6 +404,7 @@ impl PathResolution {
             Self::Effect(effect) => Some(effect.symbol_id()),
             Self::Trait(trait_ref) => Some(trait_ref.trait_id()),
             Self::Marker(marker_id) => Some(*marker_id),
+            Self::Struct(struct_) => Some(struct_.symbol_id()),
             Self::Instance(instance) => Some(instance.symbol_id()),
             Self::PolyVar(_) | Self::SelfInstance(_) => None,
             Self::TraitMember(def) => Some(def.symbol_id()),
@@ -592,6 +618,7 @@ impl Resolver<'_> {
             SymbolKind::Trait => Ok(PathResolution::Trait(TraitRef::new(symbol_id, args))),
             SymbolKind::Instance => Ok(PathResolution::Instance(Instance::new(symbol_id, args))),
             SymbolKind::Marker => Ok(PathResolution::Marker(symbol_id)),
+            SymbolKind::Strut => Ok(PathResolution::Struct(Struct::new(symbol_id, args))),
             SymbolKind::MarkerImplementation => Err(PathResolutionError::UnexpectedSymbolKind),
             SymbolKind::EffectOperation => {
                 let Some(PathResolution::Effect(effect)) = previous else {
@@ -647,6 +674,7 @@ impl Resolver<'_> {
                     | PathResolution::Effect(_)
                     | PathResolution::Instance(_)
                     | PathResolution::Marker(_)
+                    | PathResolution::Struct(_)
                     | PathResolution::TraitMember(_)
                     | PathResolution::ResolvedInstanceMember(_)
                     | PathResolution::UnresolvedInstanceMember(_)

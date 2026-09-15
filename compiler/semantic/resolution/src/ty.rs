@@ -422,6 +422,10 @@ impl Resolver<'_> {
             return self.new_error_type(recovery_kind);
         };
 
+        if let PathResolution::Struct(struct_) = &resolution {
+            return self.new_struct_type(struct_.symbol_id(), struct_.args().clone());
+        }
+
         let projection = match &resolution {
             PathResolution::TraitMember(member)
                 if resolution.symbol_kind() == Some(SymbolKind::TraitType) =>
@@ -475,6 +479,7 @@ impl Resolver<'_> {
             | PathResolution::Trait(_)
             | PathResolution::Instance(_)
             | PathResolution::Marker(_)
+            | PathResolution::Struct(_)
             | PathResolution::PolyVar(_)
             | PathResolution::SelfInstance(_)
             | PathResolution::TraitMember(_)
