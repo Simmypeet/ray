@@ -5,7 +5,7 @@ use rayc_symbol::syntax::{
     DefBodySyntaxKey, EffectRowSyntaxKey, GivenParameterListSyntaxKey, InstanceTraitSyntaxKey,
     KindAscriptionSyntaxKey, MarkerImplementationMarkerSyntaxKey,
     MarkerImplementationTypeSyntaxKey, NegativeMarkerImplementationSyntaxKey,
-    ParameterListSyntaxKey, ReturnTypeSyntaxKey, TypeDefinitionSyntaxKey,
+    ParameterListSyntaxKey, ReturnTypeSyntaxKey, StructBodySyntaxKey, TypeDefinitionSyntaxKey,
     TypeParameterListSyntaxKey, VariadicDefKey, WhereClauseSyntaxKey,
 };
 use rayc_syntax::{
@@ -16,6 +16,7 @@ use rayc_syntax::{
     kind::KindAscription,
     path::Path,
     statement::Block,
+    r#struct::StructBody,
     r#type::Type,
     where_clause::WhereClause,
 };
@@ -77,6 +78,18 @@ pub async fn def_body_syntax_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static DEF_BODY_SYNTAX_EXECUTOR: Registration<Config> =
     Registration::new::<DefBodySyntaxKey, DefBodySyntaxExecutor>();
+
+#[executor(config = Config)]
+pub async fn struct_body_syntax_executor(
+    &StructBodySyntaxKey { symbol_id }: &StructBodySyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<StructBody> {
+    engine.get_table(symbol_id.target_id).await.get_struct_body_syntax(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static STRUCT_BODY_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<StructBodySyntaxKey, StructBodySyntaxExecutor>();
 
 #[executor(config = Config)]
 pub async fn variadic_def_executor(

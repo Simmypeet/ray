@@ -23,6 +23,7 @@ use rayc_syntax::{
     kind::KindAscription,
     path::Path as SyntaxPath,
     statement::Block,
+    r#struct::StructBody,
     r#type::Type,
     where_clause::WhereClause,
 };
@@ -43,6 +44,7 @@ pub struct Infos {
     effect_row: Option<Option<EffectRowAnnotation>>,
     member: Option<MemberBuilder>,
     def_body: Option<Option<Block>>,
+    struct_body: Option<Option<StructBody>>,
     variadic: Option<bool>,
     type_parameters: Option<Option<TypeParameterList>>,
     given_parameter_list: Option<Option<GivenParameterList>>,
@@ -61,6 +63,7 @@ struct SyntaxTable {
     return_types: Map<Option<ReturnType>>,
     effect_rows: Map<Option<EffectRowAnnotation>>,
     def_bodies: Map<Option<Block>>,
+    struct_bodies: Map<Option<StructBody>>,
     variadic_defs: Map<bool>,
     type_parameters: Map<Option<TypeParameterList>>,
     given_parameter_lists: Map<Option<GivenParameterList>>,
@@ -194,6 +197,11 @@ impl Table {
     }
 
     #[must_use]
+    pub fn get_struct_body_syntax(&self, symbol_id: SymbolID) -> Option<StructBody> {
+        self.syntaxes.struct_bodies.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
     pub fn is_variadic_def(&self, symbol_id: SymbolID) -> bool {
         self.syntaxes.variadic_defs.get(&symbol_id).copied().unwrap()
     }
@@ -291,6 +299,10 @@ impl Table {
 
         if let Some(def_body) = info.def_body {
             self.syntaxes.def_bodies.insert(symbol_id, def_body);
+        }
+
+        if let Some(struct_body) = info.struct_body {
+            self.syntaxes.struct_bodies.insert(symbol_id, struct_body);
         }
 
         if let Some(variadic) = info.variadic {

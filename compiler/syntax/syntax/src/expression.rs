@@ -217,7 +217,8 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    pub enum Leaf {
+pub enum Leaf {
+        StructInitialization(StructInitialization = ast::<StructInitialization>()),
         DirectCall(DirectCall = ast::<DirectCall>()),
         Identifier(Identifier = expect::Identifier),
         Literal(Literal = ast::<Literal>()),
@@ -281,7 +282,8 @@ abstract_tree::abstract_tree! {
         Call(Call = ast::<Call>()),
         RefOf(RefOf = ast::<RefOf>()),
         Deref(Deref = ast::<Deref>()),
-        TupleIndex(TupleIndex = ast::<TupleIndex>())
+        TupleIndex(TupleIndex = ast::<TupleIndex>()),
+        FieldAccess(FieldAccess = ast::<FieldAccess>())
     }
 }
 
@@ -301,6 +303,25 @@ abstract_tree::abstract_tree! {
     pub struct TupleIndex {
         pub dot: Punctuation = '.',
         pub numeric: Numeric = expect::Numeric,
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct FieldAccess {
+        pub dot: Punctuation = '.',
+        pub name: Identifier = expect::Identifier,
     }
 }
 
@@ -524,8 +545,67 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
-    pub struct Call {
+pub struct Call {
         pub arguments: Parenthesized = ast::<Parenthesized>()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct StructFieldInitialization {
+        pub name: Identifier = expect::Identifier,
+        pub equals: Punctuation = '=',
+        pub expression: Expression = ast::<Expression>()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    #{fragment = Fragment::Delimited(DelimiterKind::Brace)}
+    pub struct StructFieldInitializations {
+        pub fields: #[multi] StructFieldInitialization = ast::<StructFieldInitialization>()
+            .repeat_all_with_separator(',')
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct StructInitialization {
+        pub path: Path = ast::<Path>(),
+        pub fields: StructFieldInitializations = ast::<StructFieldInitializations>()
     }
 }
 

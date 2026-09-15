@@ -10,6 +10,7 @@ use rayc_syntax::{
     kind::KindAscription,
     path::Path,
     statement::Block,
+    r#struct::StructBody,
     r#type::Type,
     where_clause::WhereClause,
 };
@@ -49,6 +50,16 @@ pub struct EffectRowSyntaxKey {
 #[value(Option<Block>)]
 #[extend(by_val, name = get_def_body_syntax)]
 pub struct DefBodySyntaxKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+/// Retrieves the body declared by a struct symbol.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<StructBody>)]
+#[extend(by_val, name = get_struct_body_syntax)]
+pub struct StructBodySyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }
 

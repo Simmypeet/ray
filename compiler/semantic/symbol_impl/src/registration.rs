@@ -9,6 +9,7 @@ use rayc_syntax::{
     instance::{Instance, InstanceAssociatedType, InstanceMember},
     marker::{Marker, MarkerImplementation},
     module::ModuleMember,
+    r#struct::Struct,
     r#trait::{Trait, TraitAssociatedType, TraitMember},
 };
 
@@ -21,6 +22,32 @@ use crate::{
 };
 
 impl Table {
+    async fn register_struct(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        r#struct: Struct,
+        engine: &TrackedEngine,
+    ) {
+        let Some(ident) = r#struct.name() else {
+            return;
+        };
+
+        self.insert_symbol(
+            member_builder,
+            Infos::builder()
+                .symbol_kind(SymbolKind::Strut)
+                .name(ident.kind.0.clone())
+                .span(ident.span)
+                .type_parameters(r#struct.type_parameters())
+                .given_parameter_list(r#struct.given_parameter_list())
+                .where_clause(r#struct.where_clause())
+                .struct_body(r#struct.body())
+                .build(),
+            engine,
+        )
+        .await;
+    }
+
     async fn register_marker(
         &mut self,
         member_builder: &mut MemberBuilder,
@@ -486,6 +513,9 @@ impl Table {
                 }
                 ModuleMember::Instance(instance) => {
                     self.register_instance(member_builder, instance.clone(), engine).await;
+                }
+                ModuleMember::Struct(r#struct) => {
+                    self.register_struct(member_builder, r#struct.clone(), engine).await;
                 }
                 ModuleMember::Marker(marker) => {
                     self.register_marker(member_builder, marker.clone(), engine).await;

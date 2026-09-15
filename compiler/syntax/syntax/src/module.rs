@@ -11,6 +11,7 @@ use crate::{
     extern_def::ExternDef,
     instance::Instance,
     marker::{Marker, MarkerImplementation},
+    r#struct::Struct,
     r#trait::Trait,
 };
 
@@ -22,6 +23,7 @@ abstract_tree::abstract_tree! {
         Effect(Effect = ast::<Effect>()),
         Trait(Trait = ast::<Trait>()),
         Instance(Instance = ast::<Instance>()),
+        Struct(Struct = ast::<Struct>()),
         Marker(Marker = ast::<Marker>()),
         MarkerImplementation(MarkerImplementation = ast::<MarkerImplementation>())
     }

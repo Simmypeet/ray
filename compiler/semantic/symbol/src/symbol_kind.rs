@@ -36,6 +36,7 @@ pub enum SymbolKind {
     Marker,
     MarkerImplementation,
     Module,
+    Strut,
     Trait,
     TraitDef,
     TraitType,
@@ -70,6 +71,7 @@ impl SymbolKind {
                 | Self::InstanceDef
                 | Self::InstanceType
                 | Self::MarkerImplementation
+                | Self::Strut
                 | Self::Trait
                 | Self::TraitDef
                 | Self::TraitType
@@ -118,6 +120,7 @@ impl SymbolKind {
             | Self::InstanceDef
             | Self::InstanceType
             | Self::MarkerImplementation
+            | Self::Strut
             | Self::Trait
             | Self::TraitDef
             | Self::TraitType => true,
@@ -139,6 +142,7 @@ impl SymbolKind {
             Self::Marker => "marker",
             Self::MarkerImplementation => "marker implementation",
             Self::Module => "module",
+            Self::Strut => "struct",
             Self::Trait => "trait",
             Self::TraitDef => "trait def",
             Self::TraitType => "trait type",

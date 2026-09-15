@@ -28,6 +28,7 @@ pub mod marker;
 pub mod module;
 pub mod path;
 pub mod statement;
+pub mod r#struct;
 pub mod r#trait;
 pub mod r#type;
 pub mod where_clause;
