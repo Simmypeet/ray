@@ -47,6 +47,7 @@ impl Solver {
                 View::Primitive(_)
                 | View::Tuple(_)
                 | View::Pointer(_)
+                | View::Struct(_)
                 | View::InstanceAssociated(_)
                 | View::Closure(_)
                 | View::Error => return Err(Error::Conflicted),
