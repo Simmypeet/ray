@@ -15,7 +15,8 @@ use crate::{
     typed_expr::{
         TypedExprID, TypedExprKind,
         binary::{Binary, BinaryOp},
-        call::CallTarget,
+        call::{Call, CallTarget},
+        if_else::IfElse,
         run_with::RunWith,
         struct_initialization::StructInitialization,
     },
@@ -269,10 +270,19 @@ impl Analyzer {
             }
             TypedExprKind::Literal(_) => {}
             TypedExprKind::TupleIndex(tuple_index) => {
-                self.visit_expression(
+                self.visit_projection(
                     function_id,
                     functions,
                     tuple_index.operand(),
+                    use_mode,
+                    plan,
+                );
+            }
+            TypedExprKind::FieldAccess(field_access) => {
+                self.visit_projection(
+                    function_id,
+                    functions,
+                    field_access.operand(),
                     use_mode,
                     plan,
                 );
@@ -283,16 +293,8 @@ impl Analyzer {
                 }
             }
             TypedExprKind::Call(call) => {
-                match call.target() {
-                    CallTarget::Direct { .. }
-                    | CallTarget::UnresolvedInstanceAssociated { .. }
-                    | CallTarget::EffectOperation { .. } => {}
-                }
-                for argument in call.arguments() {
-                    self.visit_expression(function_id, functions, *argument, UseMode::Value, plan);
-                }
+                self.visit_call(function_id, functions, call, plan);
             }
-
             TypedExprKind::Closure(lambda) => {
                 self.visit_nested_function(function_id, functions, lambda.function_id(), plan);
             }
@@ -300,19 +302,7 @@ impl Analyzer {
                 self.visit_binary(function_id, functions, *binary, plan);
             }
             TypedExprKind::IfElse(if_else) => {
-                for conditional_arm in if_else.conditional_arms() {
-                    self.visit_expression(
-                        function_id,
-                        functions,
-                        conditional_arm.condition(),
-                        UseMode::Value,
-                        plan,
-                    );
-                    self.visit_if_arm(function_id, functions, conditional_arm.arm(), plan);
-                }
-                if let Some(else_arm) = if_else.else_arm() {
-                    self.visit_if_arm(function_id, functions, else_arm, plan);
-                }
+                self.visit_if_else(function_id, functions, if_else, plan);
             }
             TypedExprKind::While(while_loop) => {
                 self.visit_expression(
@@ -356,6 +346,56 @@ impl Analyzer {
             TypedExprKind::Errored(errored) => {
                 self.visit_errored(function_id, functions, errored, plan);
             }
+        }
+    }
+
+    fn visit_projection(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        operand: TypedExprID,
+        use_mode: UseMode,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        self.visit_expression(function_id, functions, operand, use_mode, plan);
+    }
+
+    fn visit_call(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        call: &Call,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        match call.target() {
+            CallTarget::Direct { .. }
+            | CallTarget::UnresolvedInstanceAssociated { .. }
+            | CallTarget::EffectOperation { .. } => {}
+        }
+        for argument in call.arguments() {
+            self.visit_expression(function_id, functions, *argument, UseMode::Value, plan);
+        }
+    }
+
+    fn visit_if_else(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        if_else: &IfElse,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        for conditional_arm in if_else.conditional_arms() {
+            self.visit_expression(
+                function_id,
+                functions,
+                conditional_arm.condition(),
+                UseMode::Value,
+                plan,
+            );
+            self.visit_if_arm(function_id, functions, conditional_arm.arm(), plan);
+        }
+        if let Some(else_arm) = if_else.else_arm() {
+            self.visit_if_arm(function_id, functions, else_arm, plan);
         }
     }
 

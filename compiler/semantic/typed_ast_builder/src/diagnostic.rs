@@ -275,6 +275,12 @@ pub struct ExpectedTupleType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct ExpectedStructType {
+    ty: Interned<Ty>,
+    span: RelativeSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct ExpectedPointerType {
     ty: Interned<Ty>,
     span: RelativeSpan,
@@ -366,6 +372,20 @@ impl Report for ExpectedTupleType {
         Rendered::builder()
             .message(format!(
                 "expected a tuple type, but found `{}`",
+                self.ty.display(engine).await
+            ))
+            .primary_highlight(Highlight::builder().span(abs_span).build())
+            .build()
+    }
+}
+
+impl Report for ExpectedStructType {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let abs_span = engine.to_absolute_span(&self.span).await;
+
+        Rendered::builder()
+            .message(format!(
+                "expected a struct type, but found `{}`",
                 self.ty.display(engine).await
             ))
             .primary_highlight(Highlight::builder().span(abs_span).build())
@@ -744,12 +764,14 @@ pub enum Diagnostic {
     MismatchedIndirectArgumentCount(MismatchedIndirectArgumentCount),
     TypeMustBeKnownAtThisPoint(TypeMustBeKnownAtThisPoint),
     ExpectedTupleType(ExpectedTupleType),
+    ExpectedStructType(ExpectedStructType),
     ExpectedPointerType(ExpectedPointerType),
     ExpectedLvalue(ExpectedLvalue),
     ImmutableLvalue(ImmutableLvalue),
     OutOfBoundsTupleIndex(OutOfBoundsTupleIndex),
     DuplicateNameBinding(DuplicateNameBinding),
     StructInitialization(StructInitializationDiagnostic),
+    UnknownStructField(UnknownStructField),
     BreakOutsideLoop(BreakOutsideLoop),
     ContinueOutsideLoop(ContinueOutsideLoop),
     ResidualSubtype(ResidualSubtype),
@@ -787,6 +809,9 @@ impl Report for Diagnostic {
             Self::ExpectedTupleType(expected_tuple_type) => {
                 expected_tuple_type.report(engine).await
             }
+            Self::ExpectedStructType(expected_struct_type) => {
+                expected_struct_type.report(engine).await
+            }
             Self::ExpectedPointerType(expected_pointer_type) => {
                 expected_pointer_type.report(engine).await
             }
@@ -799,6 +824,7 @@ impl Report for Diagnostic {
                 duplicate_name_binding.report(engine).await
             }
             Self::StructInitialization(diagnostic) => diagnostic.report(engine).await,
+            Self::UnknownStructField(diagnostic) => diagnostic.report(engine).await,
             Self::BreakOutsideLoop(diagnostic) => diagnostic.report(engine).await,
             Self::ContinueOutsideLoop(diagnostic) => diagnostic.report(engine).await,
             Self::ResidualSubtype(residual_subtype) => residual_subtype.report(engine).await,

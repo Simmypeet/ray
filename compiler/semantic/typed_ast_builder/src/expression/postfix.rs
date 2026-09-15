@@ -1,18 +1,23 @@
+use rayc_semantic_element::struct_body::get_struct_body;
 use rayc_source_file::SourceElement;
 use rayc_syntax::expression::{
-    Deref as DerefSyntax, Postfix, PostfixOperator, RefOf as RefOfSyntax,
-    TupleIndex as TupleIndexSyntax,
+    Deref as DerefSyntax, FieldAccess as FieldAccessSyntax, Postfix, PostfixOperator,
+    RefOf as RefOfSyntax, TupleIndex as TupleIndexSyntax,
 };
-use rayc_type::ty::{Mutability, Ty, application::View as ApplicationView};
+use rayc_type::{
+    subst::Substitutable,
+    ty::{Mutability, Ty, application::View as ApplicationView},
+};
 use rayc_typed_ast::typed_expr::{
-    TypedExprID, TypedExprKind, deref::Deref, ref_of::RefOf, tuple_index::TupleIndex,
+    TypedExprID, TypedExprKind, deref::Deref, field_access::FieldAccess, ref_of::RefOf,
+    tuple_index::TupleIndex,
 };
 
 use crate::{
     bind::Bind,
     diagnostic::{
-        Diagnostic, ExpectedPointerType, ExpectedTupleType, LvalueOperation, OutOfBoundsTupleIndex,
-        TypeMustBeKnownAtThisPoint,
+        Diagnostic, ExpectedPointerType, ExpectedStructType, ExpectedTupleType, LvalueOperation,
+        OutOfBoundsTupleIndex, TypeMustBeKnownAtThisPoint, UnknownStructField,
     },
     tast_builder::TAstBuilder,
 };
@@ -33,7 +38,9 @@ impl Bind<Postfix> for TAstBuilder {
                 PostfixOperator::Deref(deref) => Some(self.build_deref(bound, &deref).await),
 
                 PostfixOperator::TupleIndex(index) => self.build_tuple_index(bound, &index).await,
-                PostfixOperator::FieldAccess(_) => todo!("bind struct field access expressions"),
+                PostfixOperator::FieldAccess(access) => {
+                    self.build_field_access(bound, &access).await
+                }
             };
 
             bound = if let Some(val) = val {
@@ -51,6 +58,57 @@ impl Bind<Postfix> for TAstBuilder {
 }
 
 impl TAstBuilder {
+    async fn build_field_access(
+        &mut self,
+        bound: TypedExprID,
+        field_access: &FieldAccessSyntax,
+    ) -> Option<TypedExprID> {
+        let name = field_access.name()?;
+        let operand_span = self.span_of_expression(bound);
+        let ty = self.latest_type(&self.type_of_expression(bound)).await;
+
+        // Field lookup requires the concrete struct so its declaration and
+        // generic arguments are both available.
+        let Some(st) = ty.as_struct_view() else {
+            if matches!(&*ty, Ty::Inference(_)) {
+                self.push_diagnostic(Diagnostic::TypeMustBeKnownAtThisPoint(
+                    TypeMustBeKnownAtThisPoint::builder().span(operand_span).build(),
+                ));
+            } else {
+                self.push_diagnostic(Diagnostic::ExpectedStructType(
+                    ExpectedStructType::builder().span(operand_span).ty(ty).build(),
+                ));
+            }
+            return None;
+        };
+
+        // Resolve the source name to the stable field identity stored in the
+        // typed AST.
+        let body = self.engine().get_struct_body(st.symbol_id()).await;
+        let Some((field_id, field)) = body.get_by_name(&name.kind) else {
+            self.push_diagnostic(Diagnostic::UnknownStructField(
+                UnknownStructField::builder()
+                    .struct_id(st.symbol_id())
+                    .name(name.kind.0)
+                    .span(name.span)
+                    .build(),
+            ));
+            return None;
+        };
+
+        let subst = st.create_subst(self.engine()).await;
+        let field_ty = field.ty().apply_subst_or_clone(&subst, self.engine());
+
+        Some(
+            self.insert_expression(
+                TypedExprKind::FieldAccess(FieldAccess::new(bound, field_id)),
+                operand_span.join(&field_access.span()),
+                field_ty,
+            )
+            .await,
+        )
+    }
+
     async fn build_ref_of(&mut self, bound: TypedExprID, ref_of: &RefOfSyntax) -> TypedExprID {
         let span = self.span_of_expression(bound);
         let ty = self.type_of_expression(bound);

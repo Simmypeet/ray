@@ -12,9 +12,10 @@ use crate::{
     name_binding::NameBindingID,
     typed_expr::{
         binary::Binary, call::Call, closure::Closure, deref::Deref, errored::Errored,
-        identifier::Identifier, if_else::IfElse, literal::Literal, paren::Paren, ref_of::RefOf,
-        run_with::RunWith, struct_initialization::StructInitialization, tuple::Tuple,
-        tuple_index::TupleIndex, while_loop::While,
+        field_access::FieldAccess, identifier::Identifier, if_else::IfElse, literal::Literal,
+        paren::Paren, ref_of::RefOf, run_with::RunWith,
+        struct_initialization::StructInitialization, tuple::Tuple, tuple_index::TupleIndex,
+        while_loop::While,
     },
 };
 
@@ -23,6 +24,7 @@ pub mod call;
 pub mod closure;
 pub mod deref;
 pub mod errored;
+pub mod field_access;
 pub mod identifier;
 pub mod if_else;
 pub mod literal;
@@ -45,6 +47,7 @@ pub enum TypedExprKind {
     Identifier(Identifier),
     Literal(Literal),
     TupleIndex(TupleIndex),
+    FieldAccess(FieldAccess),
     Tuple(Tuple),
     Call(Call),
     Closure(Closure),
@@ -63,7 +66,7 @@ impl SubExprs for TypedExprKind {
     fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
         // There must be a better way to do this while doesn't require boxing the
         // iterator 😭
-        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O> {
+        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P> {
             A(A),
             B(B),
             C(C),
@@ -79,10 +82,11 @@ impl SubExprs for TypedExprKind {
             M(M),
             N(N),
             O(O),
+            P(P),
         }
 
-        impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O> Iterator
-            for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>
+        impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P> Iterator
+            for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>
         where
             A: Iterator<Item = TypedExprID>,
             B: Iterator<Item = TypedExprID>,
@@ -99,6 +103,7 @@ impl SubExprs for TypedExprKind {
             M: Iterator<Item = TypedExprID>,
             N: Iterator<Item = TypedExprID>,
             O: Iterator<Item = TypedExprID>,
+            P: Iterator<Item = TypedExprID>,
         {
             type Item = TypedExprID;
 
@@ -119,6 +124,7 @@ impl SubExprs for TypedExprKind {
                     Self::M(iter) => iter.next(),
                     Self::N(iter) => iter.next(),
                     Self::O(iter) => iter.next(),
+                    Self::P(iter) => iter.next(),
                 }
             }
         }
@@ -139,6 +145,7 @@ impl SubExprs for TypedExprKind {
             Self::RunWith(x) => Iter::L(x.sub_exprs()),
             Self::Errored(x) => Iter::M(x.sub_exprs()),
             Self::StructInitialization(x) => Iter::O(x.sub_exprs()),
+            Self::FieldAccess(x) => Iter::P(x.sub_exprs()),
         }
     }
 }
@@ -214,6 +221,7 @@ impl MutSubstitutable for TypedExpr {
             TypedExprKind::Identifier(_)
             | TypedExprKind::Literal(_)
             | TypedExprKind::TupleIndex(_)
+            | TypedExprKind::FieldAccess(_)
             | TypedExprKind::Tuple(_)
             | TypedExprKind::Closure(_)
             | TypedExprKind::Binary(_)
@@ -262,6 +270,9 @@ impl TypedExprMap {
                 LvalueClassification::Lvalue(LvalueRoot::NameBinding(identifier.name_binding()))
             }
             TypedExprKind::TupleIndex(tuple_index) => self.classify_lvalue(tuple_index.operand()),
+            TypedExprKind::FieldAccess(field_access) => {
+                self.classify_lvalue(field_access.operand())
+            }
             TypedExprKind::Deref(deref) => {
                 LvalueClassification::Lvalue(LvalueRoot::Dereference(deref.pointee()))
             }

@@ -5,6 +5,7 @@ use rayc_symbol::GlobalSymbolID;
 
 use super::{InferenceConstraint, Mutability, Primitive, Ty, TyKind, inference::Inference};
 use crate::{
+    poly_var::build_subst_from_args,
     reduce::Reduce,
     subst::{Subst, Substitutable},
 };
@@ -133,6 +134,11 @@ impl<'x> StructView<'x> {
 
     #[must_use]
     pub const fn args(&self) -> &'x [Interned<Ty>] { self.args }
+
+    #[must_use]
+    pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
+        engine.build_subst_from_args(self.symbol_id, self.args).await
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
