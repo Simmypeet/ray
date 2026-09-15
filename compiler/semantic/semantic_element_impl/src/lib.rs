@@ -12,6 +12,7 @@ mod obligation;
 mod parameter;
 mod poly_var_map;
 mod return_type;
+mod struct_body;
 
 /// A dummy function to make sure this crate is linked by the compiler.
 pub const fn black_box() {}

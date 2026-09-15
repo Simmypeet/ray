@@ -29,7 +29,7 @@ pub struct SingleRenderedKey {
 }
 
 #[executor(config = Config)]
-#[expect(clippy::cognitive_complexity)]
+#[expect(clippy::cognitive_complexity, clippy::too_many_lines)]
 async fn single_rendered_executor(
     &SingleRenderedKey { symbol_id }: &SingleRenderedKey,
     engine: &TrackedEngine,
@@ -98,6 +98,17 @@ async fn single_rendered_executor(
             rayc_semantic_element::marker_implementation::Key { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(marker_implementation_key)).await;
         let generated = engine.query(&ObligationKey::new(marker_implementation_key)).await;
+
+        obligations.extend(generated.iter().cloned());
+        for diagnostic in diagnostics.iter() {
+            rendered.push(diagnostic.report(engine).await);
+        }
+    }
+
+    if kind == rayc_symbol::symbol_kind::SymbolKind::Strut {
+        let key = rayc_semantic_element::struct_body::Key { symbol_id };
+        let diagnostics = engine.query(&DiagnosticKey::new(key)).await;
+        let generated = engine.query(&ObligationKey::new(key)).await;
 
         obligations.extend(generated.iter().cloned());
         for diagnostic in diagnostics.iter() {

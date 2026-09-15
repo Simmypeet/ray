@@ -2131,6 +2131,7 @@ dependencies = [
  "bon",
  "qbice",
  "rayc_arena",
+ "rayc_hash",
  "rayc_lexical",
  "rayc_qbice",
  "rayc_symbol",

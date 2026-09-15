@@ -235,6 +235,7 @@ fn head_arguments(ty: &Ty) -> Result<Vec<&Interned<Ty>>, InvalidHeadKind> {
         ApplicationView::Primitive(_) => Ok(Vec::new()),
         ApplicationView::Tuple(tuple) => Ok(tuple.args().iter().collect()),
         ApplicationView::Pointer(pointer) => Ok(vec![pointer.pointee()]),
+        ApplicationView::Struct(struct_) => Ok(struct_.args().iter().collect()),
         ApplicationView::InstanceAssociated(_) => Err(InvalidHeadKind::AssociatedType),
         ApplicationView::Closure(_)
         | ApplicationView::DefInstance(_)

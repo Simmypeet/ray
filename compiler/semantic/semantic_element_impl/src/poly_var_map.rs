@@ -163,6 +163,7 @@ impl Build for rayc_type::poly_var::Key {
             SymbolKind::Effect
             | SymbolKind::Instance
             | SymbolKind::MarkerImplementation
+            | SymbolKind::Strut
             | SymbolKind::Trait
             | SymbolKind::TraitType
             | SymbolKind::InstanceType => {

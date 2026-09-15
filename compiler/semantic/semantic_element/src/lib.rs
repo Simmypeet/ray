@@ -6,3 +6,4 @@ pub mod instance_trait_ref;
 pub mod marker_implementation;
 pub mod parameter;
 pub mod return_type;
+pub mod struct_body;
