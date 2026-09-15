@@ -13,7 +13,8 @@ use crate::{
     typed_expr::{
         binary::Binary, call::Call, closure::Closure, deref::Deref, errored::Errored,
         identifier::Identifier, if_else::IfElse, literal::Literal, paren::Paren, ref_of::RefOf,
-        run_with::RunWith, tuple::Tuple, tuple_index::TupleIndex, while_loop::While,
+        run_with::RunWith, struct_initialization::StructInitialization, tuple::Tuple,
+        tuple_index::TupleIndex, while_loop::While,
     },
 };
 
@@ -29,6 +30,7 @@ pub mod paren;
 pub mod ref_of;
 pub mod r#return;
 pub mod run_with;
+pub mod struct_initialization;
 pub mod tuple;
 pub mod tuple_index;
 pub mod while_loop;
@@ -53,6 +55,7 @@ pub enum TypedExprKind {
     Deref(Deref),
     Paren(Paren),
     RunWith(RunWith),
+    StructInitialization(StructInitialization),
     Errored(Errored),
 }
 
@@ -60,7 +63,7 @@ impl SubExprs for TypedExprKind {
     fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
         // There must be a better way to do this while doesn't require boxing the
         // iterator 😭
-        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N> {
+        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O> {
             A(A),
             B(B),
             C(C),
@@ -75,10 +78,11 @@ impl SubExprs for TypedExprKind {
             L(L),
             M(M),
             N(N),
+            O(O),
         }
 
-        impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N> Iterator
-            for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N>
+        impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O> Iterator
+            for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>
         where
             A: Iterator<Item = TypedExprID>,
             B: Iterator<Item = TypedExprID>,
@@ -94,6 +98,7 @@ impl SubExprs for TypedExprKind {
             L: Iterator<Item = TypedExprID>,
             M: Iterator<Item = TypedExprID>,
             N: Iterator<Item = TypedExprID>,
+            O: Iterator<Item = TypedExprID>,
         {
             type Item = TypedExprID;
 
@@ -113,6 +118,7 @@ impl SubExprs for TypedExprKind {
                     Self::L(iter) => iter.next(),
                     Self::M(iter) => iter.next(),
                     Self::N(iter) => iter.next(),
+                    Self::O(iter) => iter.next(),
                 }
             }
         }
@@ -132,6 +138,7 @@ impl SubExprs for TypedExprKind {
             Self::Paren(x) => Iter::K(x.sub_exprs()),
             Self::RunWith(x) => Iter::L(x.sub_exprs()),
             Self::Errored(x) => Iter::M(x.sub_exprs()),
+            Self::StructInitialization(x) => Iter::O(x.sub_exprs()),
         }
     }
 }
@@ -215,6 +222,7 @@ impl MutSubstitutable for TypedExpr {
             | TypedExprKind::RefOf(_)
             | TypedExprKind::Deref(_)
             | TypedExprKind::Paren(_)
+            | TypedExprKind::StructInitialization(_)
             | TypedExprKind::Errored(_) => {}
         }
     }
@@ -267,7 +275,8 @@ impl TypedExprMap {
             | TypedExprKind::IfElse(_)
             | TypedExprKind::While(_)
             | TypedExprKind::RefOf(_)
-            | TypedExprKind::RunWith(_) => LvalueClassification::NotLvalue,
+            | TypedExprKind::RunWith(_)
+            | TypedExprKind::StructInitialization(_) => LvalueClassification::NotLvalue,
         }
     }
 }

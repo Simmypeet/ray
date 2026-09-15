@@ -17,6 +17,7 @@ use crate::{
         binary::{Binary, BinaryOp},
         call::CallTarget,
         run_with::RunWith,
+        struct_initialization::StructInitialization,
     },
     typed_function::{TypedFunctionID, TypedFunctionMap},
 };
@@ -349,9 +350,30 @@ impl Analyzer {
             TypedExprKind::RunWith(run_with) => {
                 self.visit_run_with(function_id, functions, run_with, plan);
             }
+            TypedExprKind::StructInitialization(initialization) => {
+                self.visit_struct_initialization(function_id, functions, initialization, plan);
+            }
             TypedExprKind::Errored(errored) => {
                 self.visit_errored(function_id, functions, errored, plan);
             }
+        }
+    }
+
+    fn visit_struct_initialization(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        initialization: &StructInitialization,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        for initializer in initialization.initializers() {
+            self.visit_expression(
+                function_id,
+                functions,
+                initializer.expression(),
+                UseMode::Value,
+                plan,
+            );
         }
     }
 
