@@ -73,6 +73,9 @@ impl Builder {
             TypedExprKind::RunWith(run_with) => {
                 self.lower_expression(context, TypedExprWithID::new(run_with, expression_id))
             }
+            TypedExprKind::StructInitialization(_) => {
+                todo!("lower struct initialization expressions")
+            }
             TypedExprKind::Errored(errored) => {
                 self.lower_expression(context, TypedExprWithID::new(errored, expression_id))
             }
