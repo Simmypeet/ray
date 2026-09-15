@@ -67,6 +67,11 @@ impl Struct {
     pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
         substitution(self.symbol_id, &self.args, engine).await
     }
+
+    #[must_use]
+    pub fn into_struct_type(self, engine: &rayc_qbice::TrackedEngine) -> Interned<Ty> {
+        Ty::new_struct(self.symbol_id, self.args, engine)
+    }
 }
 
 /// A resolved global trait instance and its arguments.

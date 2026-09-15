@@ -1,0 +1,38 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: missing initialization for field `second` of struct `main.Pair`
+   ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:6:16
+   │
+ 3 │       second: bool
+   │       ────── field declared here
+   ‡
+ 6 │       let pair = Pair {
+   │ ┏━━━━━━━━━━━━━━━━┛
+ 7 │ ┃         first = 1,
+ 8 │ ┃         first = 2,
+ 9 │ ┃         mystery = true
+10 │ ┃     }
+   ╰╴┗━━━━━┛ this field must be initialized
+
+[error]: duplicate initialization for struct field `first`
+  ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:8:9
+  │
+7 │         first = 1,
+  │         ───── the first initialization is here
+8 │         first = 2,
+  ╰╴        ━━━━━ this field is initialized more than once
+
+[error]: struct `main.Pair` has no field named `mystery`
+  ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:9:9
+  │
+9 │         mystery = true
+  ╰╴        ━━━━━━━ unknown struct field
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

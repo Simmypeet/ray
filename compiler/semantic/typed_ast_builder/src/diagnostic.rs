@@ -427,6 +427,106 @@ impl Report for DuplicateNameBinding {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct DuplicateStructFieldInitialization {
+    name: Interned<str>,
+    original_span: RelativeSpan,
+    duplicate_span: RelativeSpan,
+}
+
+impl Report for DuplicateStructFieldInitialization {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message(format!("duplicate initialization for struct field `{}`", &*self.name))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.duplicate_span).await)
+                    .message("this field is initialized more than once")
+                    .build(),
+            )
+            .related(vec![
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.original_span).await)
+                    .message("the first initialization is here")
+                    .build(),
+            ])
+            .build()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct UnknownStructField {
+    struct_id: GlobalSymbolID,
+    name: Interned<str>,
+    span: RelativeSpan,
+}
+
+impl Report for UnknownStructField {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let struct_name = engine.get_qualified_name(self.struct_id).await;
+        Rendered::builder()
+            .message(format!("struct `{struct_name}` has no field named `{}`", &*self.name))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("unknown struct field")
+                    .build(),
+            )
+            .build()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct MissingStructFieldInitialization {
+    struct_id: GlobalSymbolID,
+    name: Interned<str>,
+    initialization_span: RelativeSpan,
+    field_span: RelativeSpan,
+}
+
+impl Report for MissingStructFieldInitialization {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let struct_name = engine.get_qualified_name(self.struct_id).await;
+        Rendered::builder()
+            .message(format!(
+                "missing initialization for field `{}` of struct `{struct_name}`",
+                &*self.name
+            ))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.initialization_span).await)
+                    .message("this field must be initialized")
+                    .build(),
+            )
+            .related(vec![
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.field_span).await)
+                    .message("field declared here")
+                    .build(),
+            ])
+            .build()
+    }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable, From,
+)]
+pub enum StructInitializationDiagnostic {
+    DuplicateField(DuplicateStructFieldInitialization),
+    UnknownField(UnknownStructField),
+    MissingField(MissingStructFieldInitialization),
+}
+
+impl Report for StructInitializationDiagnostic {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        match self {
+            Self::DuplicateField(diagnostic) => diagnostic.report(engine).await,
+            Self::UnknownField(diagnostic) => diagnostic.report(engine).await,
+            Self::MissingField(diagnostic) => diagnostic.report(engine).await,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct ResidualSubtype {
     span: RelativeSpan,
     source: SubtypeSource,
@@ -649,6 +749,7 @@ pub enum Diagnostic {
     ImmutableLvalue(ImmutableLvalue),
     OutOfBoundsTupleIndex(OutOfBoundsTupleIndex),
     DuplicateNameBinding(DuplicateNameBinding),
+    StructInitialization(StructInitializationDiagnostic),
     BreakOutsideLoop(BreakOutsideLoop),
     ContinueOutsideLoop(ContinueOutsideLoop),
     ResidualSubtype(ResidualSubtype),
@@ -661,6 +762,9 @@ pub enum Diagnostic {
 }
 
 impl Report for Diagnostic {
+    // Keep the exhaustive dispatch here so adding a diagnostic forces its
+    // rendering path to be selected explicitly.
+    #[allow(clippy::cognitive_complexity)]
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
             Self::InstanceResolution(diagnostic) => diagnostic.report(engine).await,
@@ -694,6 +798,7 @@ impl Report for Diagnostic {
             Self::DuplicateNameBinding(duplicate_name_binding) => {
                 duplicate_name_binding.report(engine).await
             }
+            Self::StructInitialization(diagnostic) => diagnostic.report(engine).await,
             Self::BreakOutsideLoop(diagnostic) => diagnostic.report(engine).await,
             Self::ContinueOutsideLoop(diagnostic) => diagnostic.report(engine).await,
             Self::ResidualSubtype(residual_subtype) => residual_subtype.report(engine).await,

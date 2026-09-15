@@ -1,0 +1,11 @@
+struct Pair:
+    first: int32
+    second: bool
+
+def main() -> ():
+    let pair = Pair {
+        first = 1,
+        first = 2,
+        mystery = true
+    }
+    return ()
