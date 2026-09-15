@@ -4,6 +4,7 @@ use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind};
 use crate::{builder::Builder, context::LoweringContext};
 
 mod deref;
+mod field;
 mod identifier;
 mod paren;
 mod tuple_index;

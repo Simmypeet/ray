@@ -1,4 +1,5 @@
 use qbice::storage::intern::Interned;
+use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::{Ty, application::ClosureID};
 use rayc_typed_ast::{
     capture_plan::{CapturePlan, FunctionCapturePlan},
@@ -52,6 +53,10 @@ impl<'a> LoweringContext<'a> {
 
     pub fn expression(&self, id: TypedExprID) -> &TypedExpr {
         self.typed_function.get_expression(id)
+    }
+
+    pub fn expression_span(&self, id: TypedExprID) -> RelativeSpan {
+        self.typed_function.get_expression(id).span()
     }
 
     pub fn classify_lvalue(&self, id: TypedExprID) -> LvalueClassification {

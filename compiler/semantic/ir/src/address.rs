@@ -1,6 +1,6 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::parameter::ParameterID;
+use rayc_semantic_element::{parameter::ParameterID, struct_body::FieldID};
 
 use crate::{
     ir_expr::IRExprID,
@@ -25,6 +25,7 @@ pub enum AddressRoot {
 )]
 pub enum Projection {
     Tuple(usize),
+    Field(FieldID),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
@@ -83,6 +84,10 @@ impl Address {
 
     pub fn add_tuple_index(&mut self, index: usize, engine: &TrackedEngine) {
         self.add_projection(Projection::Tuple(index), engine);
+    }
+
+    pub fn add_field(&mut self, field_id: FieldID, engine: &TrackedEngine) {
+        self.add_projection(Projection::Field(field_id), engine);
     }
 
     #[must_use]

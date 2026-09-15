@@ -18,6 +18,7 @@ mod tuple;
 mod tuple_index;
 mod typed_expr_id;
 mod while_loop;
+mod field;
 
 pub use typed_expr_id::TypedExprWithID;
 
