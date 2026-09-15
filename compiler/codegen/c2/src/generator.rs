@@ -253,10 +253,8 @@ impl<'engine> Generator<'engine> {
         }
         match signature.return_type() {
             rayc_mono_ir::ty::ReturnType::Void => {}
-            rayc_mono_ir::ty::ReturnType::Value(types) => {
-                for ty in &**types {
-                    self.collect_type(ty);
-                }
+            rayc_mono_ir::ty::ReturnType::Value(ty) => {
+                self.collect_type(ty);
             }
         }
     }

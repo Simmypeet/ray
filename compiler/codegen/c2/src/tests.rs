@@ -42,10 +42,8 @@ async fn writes_ordered_translation_unit_from_mono_ir() {
     let unit_aggregate = AggregateType::Tuple(unit_tuple.clone());
     let unit_type = engine.intern(MonoType::Aggregate(unit_aggregate));
 
-    let signature = FunctionSignature::new(
-        engine.intern_unsized([outer_type]),
-        ReturnType::Value(engine.intern_unsized([unit_type])),
-    );
+    let signature =
+        FunctionSignature::new(engine.intern_unsized([outer_type]), ReturnType::Value(unit_type));
     let instance = MonoDefInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(7)),
         Subst::new_empty(),
@@ -93,10 +91,8 @@ async fn discovers_called_definition_through_worklist() {
     let engine = create_minimal_engine().await;
     let unit_tuple = Tuple::new(engine.intern_unsized(Vec::new()));
     let unit_type = engine.intern(MonoType::Aggregate(AggregateType::Tuple(unit_tuple)));
-    let signature = FunctionSignature::new(
-        engine.intern_unsized(Vec::new()),
-        ReturnType::Value(engine.intern_unsized([unit_type])),
-    );
+    let signature =
+        FunctionSignature::new(engine.intern_unsized(Vec::new()), ReturnType::Value(unit_type));
     let root_instance = MonoDefInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(11)),
         Subst::new_empty(),

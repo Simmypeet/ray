@@ -93,7 +93,7 @@ impl MonoType {
     ) -> FunctionSignature {
         FunctionSignature::new(
             engine.intern_unsized(parameter_types.into_iter().collect::<Vec<_>>()),
-            ReturnType::Value(engine.intern_unsized([return_type])),
+            ReturnType::Value(return_type),
         )
     }
 
@@ -212,7 +212,7 @@ pub enum AggregateType {
 )]
 pub enum ReturnType {
     Void,
-    Value(Interned<[Interned<MonoType>]>),
+    Value(Interned<MonoType>),
 }
 
 /// A concrete calling signature shared by direct and indirect calls.

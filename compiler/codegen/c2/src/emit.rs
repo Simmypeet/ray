@@ -235,12 +235,7 @@ impl Generator<'_> {
                         ReturnType::Void => {
                             panic!("a void MonoIR return cannot carry an operand")
                         }
-                        ReturnType::Value(types) => {
-                            let [return_type] = &**types else {
-                                panic!("C code generation requires exactly one return value")
-                            };
-                            &**return_type
-                        }
+                        ReturnType::Value(return_type) => return_type,
                     };
                     let value = self.emit_operand(value, ir, function, Some(return_type)).await;
                     format!("return {value};")

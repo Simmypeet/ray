@@ -400,11 +400,7 @@ impl Context {
         let return_type = self.engine.lower_type(&return_type, substitution).await;
         let is_void = symbol_kind == SymbolKind::ExternDef && return_type.is_unit();
 
-        let return_type = if is_void {
-            ReturnType::Void
-        } else {
-            ReturnType::Value(self.engine.intern_unsized([return_type]))
-        };
+        let return_type = if is_void { ReturnType::Void } else { ReturnType::Value(return_type) };
         let is_variadic = if matches!(symbol_kind, SymbolKind::Def | SymbolKind::ExternDef) {
             self.engine.is_variadic_def(function_id).await
         } else {

@@ -59,12 +59,7 @@ pub(super) fn signature_declaration(
 ) -> String {
     let return_type = match signature.return_type() {
         ReturnType::Void => "void".to_owned(),
-        ReturnType::Value(types) => {
-            let [return_type] = &**types else {
-                panic!("C code generation requires exactly one MonoIR return value")
-            };
-            type_name(return_type)
-        }
+        ReturnType::Value(return_type) => type_name(return_type),
     };
 
     let mut parameters = signature
