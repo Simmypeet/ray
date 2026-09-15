@@ -1,0 +1,29 @@
+---
+source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
+expression: run
+---
+stderr:
+[error]: function body effects do not match its signature: expected `{}`, but found `{State | {any}}`
+  ╭▸ compiler/e2e/test/check/tast/control_flow_statement_effects/main.ray:5:5
+  │
+5 │ def effectInIf(condition: bool) -> ():
+  │     ━━━━━━━━━━ the function body has effects outside its signature
+6 │     if condition:
+7 │         State.perform()
+  ╰╴        ─────────────── effect `{State}` introduced here
+
+[error]: function body effects do not match its signature: expected `{}`, but found `{State | {any}}`
+   ╭▸ compiler/e2e/test/check/tast/control_flow_statement_effects/main.ray:11:5
+   │
+11 │ def effectInWhile() -> ():
+   │     ━━━━━━━━━━━━━ the function body has effects outside its signature
+12 │     while false:
+13 │         State.perform()
+   ╰╴        ─────────────── effect `{State}` introduced here
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

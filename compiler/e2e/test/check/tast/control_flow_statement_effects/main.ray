@@ -1,0 +1,14 @@
+eff State:
+    def perform()
+
+
+def effectInIf(condition: bool) -> ():
+    if condition:
+        State.perform()
+    return ()
+
+
+def effectInWhile() -> ():
+    while false:
+        State.perform()
+    return ()
