@@ -27,7 +27,7 @@ use rayc_typed_ast::{
 };
 
 use super::Builder;
-use crate::{context::LoweringContext, diagnostic::NotAllPathsReturnValue};
+use crate::{context::LoweringContext, diagnostic::NotAllPathsReturnValue, statement::LoopTarget};
 
 pub(super) struct FunctionBuildState {
     ir_function_id: IrFunctionID,
@@ -42,6 +42,7 @@ pub(super) struct FunctionBuildState {
         FxHashMap<TypedOperationHandlerParameterID, IrOperationHandlerParameterID>,
 
     captures: FxHashMap<Source, CaptureID>,
+    loop_targets: Vec<LoopTarget>,
 }
 
 impl FunctionBuildState {
@@ -76,6 +77,7 @@ impl FunctionBuildState {
             lambda_parameters: FxHashMap::default(),
             operation_handler_parameters: FxHashMap::default(),
             captures: FxHashMap::default(),
+            loop_targets: Vec::new(),
         }
     }
 
@@ -118,6 +120,7 @@ impl FunctionBuildState {
             lambda_parameters,
             operation_handler_parameters: FxHashMap::default(),
             captures,
+            loop_targets: Vec::new(),
         }
     }
 
@@ -147,6 +150,7 @@ impl FunctionBuildState {
             lambda_parameters: FxHashMap::default(),
             operation_handler_parameters: FxHashMap::default(),
             captures,
+            loop_targets: Vec::new(),
         }
     }
 
@@ -186,6 +190,7 @@ impl FunctionBuildState {
             lambda_parameters: FxHashMap::default(),
             operation_handler_parameters,
             captures,
+            loop_targets: Vec::new(),
         }
     }
 
@@ -209,6 +214,18 @@ impl FunctionBuildState {
         }
 
         (capture_map_id, captures)
+    }
+
+    pub(super) fn push_loop_target(&mut self, target: LoopTarget) {
+        self.loop_targets.push(target);
+    }
+
+    pub(super) fn pop_loop_target(&mut self) {
+        self.loop_targets.pop().expect("a loop target should be active");
+    }
+
+    pub(super) fn current_loop_target(&self) -> Option<LoopTarget> {
+        self.loop_targets.last().copied()
     }
 }
 
@@ -444,6 +461,8 @@ impl Builder {
         );
     }
 
+    /// Adds a jump to the specified target block and returns the current block
+    /// as the predecessor of the jump.
     pub fn jump_to(&mut self, target: BlockID) -> BlockID {
         let predecessor = self.building_function.current_block;
         self.terminate(Terminator::Jump(target));

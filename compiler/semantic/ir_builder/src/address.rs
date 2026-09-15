@@ -31,6 +31,7 @@ impl Builder {
             | TypedExprKind::Closure(_)
             | TypedExprKind::Binary(_)
             | TypedExprKind::IfElse(_)
+            | TypedExprKind::While(_)
             | TypedExprKind::RefOf(_)
             | TypedExprKind::RunWith(_)
             | TypedExprKind::Errored(_) => self.error_address(),

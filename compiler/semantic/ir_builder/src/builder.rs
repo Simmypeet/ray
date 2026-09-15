@@ -12,7 +12,7 @@ use rayc_semantic_element::parameter::ParameterID;
 use rayc_type::ty::{Mutability, Ty, application::ClosureID};
 
 use self::function_build_state::FunctionBuildState;
-use crate::diagnostic::NotAllPathsReturnValue;
+use crate::{diagnostic::NotAllPathsReturnValue, statement::LoopTarget};
 
 mod function_build_state;
 
@@ -25,6 +25,16 @@ pub struct Builder {
 }
 
 impl Builder {
+    pub(crate) fn push_loop_target(&mut self, target: LoopTarget) {
+        self.building_function.push_loop_target(target);
+    }
+
+    pub(crate) fn pop_loop_target(&mut self) { self.building_function.pop_loop_target(); }
+
+    pub(crate) fn current_loop_target(&self) -> Option<LoopTarget> {
+        self.building_function.current_loop_target()
+    }
+
     pub fn register_closure(
         &mut self,
         closure_id: ClosureID,
