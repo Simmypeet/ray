@@ -1,12 +1,18 @@
+use std::collections::BTreeMap;
+
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_hash::FxHashMap;
+use rayc_semantic_element::struct_body::FieldID;
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
     MonoEffectInstance,
     operand::Operand,
     place::Place,
-    ty::{Environment as EnvironmentTy, MonoType, PointerMutability, Tuple as TupleTy},
+    ty::{
+        Environment as EnvironmentTy, MonoType, PointerMutability, Struct as StructTy,
+        Tuple as TupleTy,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -129,6 +135,22 @@ impl Cast {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
+pub struct AggregateStruct {
+    ty: StructTy,
+    fields: BTreeMap<FieldID, Operand>,
+}
+
+impl AggregateStruct {
+    #[must_use]
+    pub const fn ty(&self) -> &StructTy { &self.ty }
+
+    #[must_use]
+    pub const fn fields(&self) -> &BTreeMap<FieldID, Operand> { &self.fields }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
 pub struct AggregateTuple {
     ty: TupleTy,
     fields: Vec<Operand>,
@@ -198,6 +220,7 @@ pub enum AggregateValue {
     Tuple(AggregateTuple),
     Environment(AggregateEnvironment),
     EffectHandler(AggregateEffectHandler),
+    Struct(AggregateStruct),
 }
 
 /// A pure, shallow value computation.

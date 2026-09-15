@@ -30,7 +30,9 @@ pub mod place;
 pub mod rvalue;
 pub mod ty;
 
-pub use instance::{MonoClosureInstance, MonoDefInstance, MonoEffectInstance};
+pub use instance::{
+    MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoStructInstance,
+};
 
 /// The independently cacheable `MonoIR` fragment for one concrete definition.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]

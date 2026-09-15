@@ -139,6 +139,20 @@ impl MonoClosureInstance {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub struct MonoStructInstance {
-    struc_id: GlobalSymbolID,
+    struct_id: GlobalSymbolID,
     substitution: Subst,
 }
+
+impl MonoStructInstance {
+    #[must_use]
+    pub const fn new(struct_id: GlobalSymbolID, substitution: Subst) -> Self {
+        Self { struct_id, substitution }
+    }
+
+    #[must_use]
+    pub const fn struct_id(&self) -> GlobalSymbolID { self.struct_id }
+
+    #[must_use]
+    pub const fn substitution(&self) -> &Subst { &self.substitution }
+}
+

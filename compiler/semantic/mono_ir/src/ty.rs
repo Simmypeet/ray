@@ -8,7 +8,9 @@ use qbice::{
 use rayc_extend::extend;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::{
-    parameter::get_parameter_map, return_type::get_return_type, struct_body::FieldID,
+    parameter::get_parameter_map,
+    return_type::get_return_type,
+    struct_body::{FieldID, get_struct_body},
 };
 use rayc_solver::Solver;
 use rayc_symbol::{GlobalSymbolID, member::get_members};
@@ -72,6 +74,16 @@ impl MonoType {
             _ => panic!(
                 "compiler-internal invariant violation: expected effect handler type, got {self:?}"
             ),
+        }
+    }
+
+    #[must_use]
+    pub fn assert_as_struct(&self) -> &Struct {
+        match self {
+            Self::Aggregate(AggregateType::Struct(struct_)) => struct_,
+            _ => {
+                panic!("compiler-internal invariant violation: expected struct type, got {self:?}")
+            }
         }
     }
 
@@ -146,6 +158,22 @@ impl PointerType {
 pub struct Struct {
     instance: MonoStructInstance,
     fields: BTreeMap<FieldID, Interned<MonoType>>,
+}
+
+impl Struct {
+    #[must_use]
+    pub const fn new(
+        instance: MonoStructInstance,
+        fields: BTreeMap<FieldID, Interned<MonoType>>,
+    ) -> Self {
+        Self { instance, fields }
+    }
+
+    #[must_use]
+    pub const fn instance(&self) -> &MonoStructInstance { &self.instance }
+
+    #[must_use]
+    pub const fn fields(&self) -> &BTreeMap<FieldID, Interned<MonoType>> { &self.fields }
 }
 
 /// The nominal record type for one concrete effect instantiation.
@@ -359,8 +387,22 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 let pointee_type = Box::pin(lower_concrete_type(engine, pointer.pointee())).await;
                 MonoType::new_pointer(pointee_type, lower_mutability(pointer.mutability()), engine)
             }
-            ApplicationView::Struct(_) => {
-                todo!("struct type reached MonoIR before struct lowering was implemented")
+            ApplicationView::Struct(struct_view) => {
+                let substitution = struct_view.create_subst(engine).await;
+                let struct_body = engine.get_struct_body(struct_view.symbol_id()).await;
+
+                // Lower each struct field's type under the concrete type argument substitution.
+                let mut fields = BTreeMap::new();
+                for (field_id, field) in struct_body.iter() {
+                    let field_type =
+                        Box::pin(engine.lower_type(field.ty(), &substitution)).await;
+                    fields.insert(field_id, field_type);
+                }
+
+                let instance = MonoStructInstance::new(struct_view.symbol_id(), substitution);
+                engine.intern(MonoType::Aggregate(AggregateType::Struct(Struct::new(
+                    instance, fields,
+                ))))
             }
             ApplicationView::InstanceAssociated(_) => {
                 panic!("unresolved associated type reached code generation")
