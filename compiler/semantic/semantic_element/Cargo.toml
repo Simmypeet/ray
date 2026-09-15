@@ -16,7 +16,6 @@ rayc_target.path = "../../base/target"
 rayc_lexical.path = "../../syntax/lexical"
 rayc_arena.path = "../../base/arena"
 rayc_hash.path = "../../base/hash"
-
 rayc_syntax.path = "../../syntax/syntax"
 
 [lints]

@@ -4,11 +4,13 @@
 //! explicit rule receive the same structural treatment as Rust auto traits.
 
 use rayc_hash::FxHashMap;
+use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
     all_marker_implementations::get_all_marker_implementations,
-    marker_implementation::get_marker_implementation,
+    marker_implementation::get_marker_implementation, struct_body::get_struct_body,
 };
 use rayc_type::{
+    poly_var::build_subst_from_args,
     subst::Substitutable,
     ty::{Ty, application::View as ApplicationView},
     where_clause::{MarkerPredicate, PredicateKind, get_where_clause},
@@ -185,7 +187,7 @@ impl Solver {
 
         // Without an explicit rule, synthesize the auto-trait rule from the
         // values stored by the type. Empty structural types prove immediately.
-        let Some(fields) = structural_fields(goal.implementor()) else {
+        let Some(fields) = structural_fields(goal.implementor(), self.engine()).await else {
             return false;
         };
         let mut entailed = true;
@@ -232,12 +234,25 @@ impl Solver {
 
 /// Returns the values whose marker properties determine the enclosing type.
 /// `None` represents an opaque or ill-kinded type that cannot be inferred.
-fn structural_fields(ty: &Ty) -> Option<Vec<qbice::storage::intern::Interned<Ty>>> {
+async fn structural_fields(
+    ty: &Ty,
+    engine: &TrackedEngine,
+) -> Option<Vec<qbice::storage::intern::Interned<Ty>>> {
     match ty {
         Ty::Application(application) => match application.view() {
             ApplicationView::Primitive(_) => Some(Vec::new()),
             ApplicationView::Tuple(tuple) => Some(tuple.args().to_vec()),
             ApplicationView::Closure(closure) => Some(vec![closure.captured_tuple().clone()]),
+            ApplicationView::Struct(struct_) => {
+                let body = engine.get_struct_body(struct_.symbol_id()).await;
+                let subst = engine.build_subst_from_args(struct_.symbol_id(), struct_.args()).await;
+
+                Some(
+                    body.iter()
+                        .map(|(_, field)| field.ty().apply_subst_or_clone(&subst, engine))
+                        .collect(),
+                )
+            }
             ApplicationView::Pointer(_)
             | ApplicationView::Instance(_)
             | ApplicationView::InstanceAssociated(_)
