@@ -133,3 +133,12 @@ impl MonoClosureInstance {
         Self::new(owner, closure.local_closure_id())
     }
 }
+
+/// A concrete instantiation of a source struct definition.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct MonoStructInstance {
+    struc_id: GlobalSymbolID,
+    substitution: Subst,
+}

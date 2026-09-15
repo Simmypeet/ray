@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use linkme::distributed_slice;
 use qbice::{
     Decode, Encode, Identifiable, Query, StableHash, executor, program::Registration,
@@ -5,7 +7,9 @@ use qbice::{
 };
 use rayc_extend::extend;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
+use rayc_semantic_element::{
+    parameter::get_parameter_map, return_type::get_return_type, struct_body::FieldID,
+};
 use rayc_solver::Solver;
 use rayc_symbol::{GlobalSymbolID, member::get_members};
 use rayc_type::{
@@ -14,7 +18,7 @@ use rayc_type::{
     ty::{Mutability, Primitive, Ty, application::View as ApplicationView},
 };
 
-use crate::instance::MonoEffectInstance;
+use crate::instance::{MonoEffectInstance, MonoStructInstance};
 
 /// A fully concrete type with a direct runtime representation.
 #[derive(
@@ -136,6 +140,14 @@ impl PointerType {
     pub const fn mutability(&self) -> PointerMutability { self.mutability }
 }
 
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct Struct {
+    instance: MonoStructInstance,
+    fields: BTreeMap<FieldID, Interned<MonoType>>,
+}
+
 /// The nominal record type for one concrete effect instantiation.
 ///
 /// Its fields are described by a corresponding [`HandlerLayout`], which can
@@ -205,6 +217,7 @@ pub enum AggregateType {
     EffectHandler(EffectHandler),
     Tuple(Tuple),
     Environment(Environment),
+    Struct(Struct),
 }
 
 #[derive(

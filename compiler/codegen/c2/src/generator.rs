@@ -243,6 +243,9 @@ impl<'engine> Generator<'engine> {
                 }
                 None
             }
+            AggregateType::Struct(_) => {
+                todo!("collect struct aggregate definition")
+            }
         };
         assert!(self.aggregate_layouts.insert(aggregate, handler_layout).is_none());
     }
@@ -543,6 +546,7 @@ fn by_value_dependencies(aggregate: &AggregateType) -> Vec<AggregateType> {
         AggregateType::EffectHandler(_) => return Vec::new(),
         AggregateType::Tuple(tuple) => tuple.fields(),
         AggregateType::Environment(environment) => environment.captures(),
+        AggregateType::Struct(_) => todo!("determine struct aggregate dependencies by value"),
     };
     fields
         .iter()

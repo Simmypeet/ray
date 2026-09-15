@@ -20,6 +20,7 @@ impl AggregateID {
             AggregateType::EffectHandler(_) => "rayc_c2::EffectHandlerLayout:v1",
             AggregateType::Tuple(_) => "rayc_c2::TupleLayout:v1",
             AggregateType::Environment(_) => "rayc_c2::EnvironmentLayout:v1",
+            AggregateType::Struct(_) => "rayc_c2::StructLayout:v1",
         };
         Self(stable_codegen_id(domain, aggregate))
     }
@@ -47,6 +48,7 @@ pub(super) fn aggregate_name(aggregate: &AggregateType) -> String {
         AggregateType::EffectHandler(_) => "EffectHandler",
         AggregateType::Tuple(_) => "Tuple",
         AggregateType::Environment(_) => "Environment",
+        AggregateType::Struct(_) => "Struct",
     };
     format!("Ray{category}_{}", AggregateID::for_type(aggregate).base62())
 }

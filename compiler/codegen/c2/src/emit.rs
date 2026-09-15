@@ -145,6 +145,7 @@ impl Generator<'_> {
                     .unwrap();
                 }
             }
+            AggregateType::Struct(_) => todo!("emit struct aggregate definition"),
         }
         output.push_str("};");
         output
