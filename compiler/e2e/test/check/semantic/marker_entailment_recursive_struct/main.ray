@@ -1,0 +1,19 @@
+marker Send
+
+impl[a, b, c] !Send for (a, b, c)
+
+struct Node[a]:
+    value: a
+    next: Node[a]
+
+def requireSend(value: a) -> a where (a: Send):
+    return value
+
+def accepted(value: Node[(int32, bool)]) -> Node[(int32, bool)]:
+    return requireSend(value)
+
+def rejected(value: Node[(int32, bool, int32)]) -> Node[(int32, bool, int32)]:
+    return requireSend(value)
+
+def main() -> int32:
+    return 0

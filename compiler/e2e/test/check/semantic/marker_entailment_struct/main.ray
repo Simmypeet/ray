@@ -1,0 +1,18 @@
+marker Send
+
+impl[a, b, c] !Send for (a, b, c)
+
+struct Wrapper[a]:
+    value: a
+
+def requireSend(value: a) -> a where (a: Send):
+    return value
+
+def accepted(value: Wrapper[(int32, bool)]) -> Wrapper[(int32, bool)]:
+    return requireSend(value)
+
+def rejected(value: Wrapper[(int32, bool, int32)]) -> Wrapper[(int32, bool, int32)]:
+    return requireSend(value)
+
+def main() -> int32:
+    return 0

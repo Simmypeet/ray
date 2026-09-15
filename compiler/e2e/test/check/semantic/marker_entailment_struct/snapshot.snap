@@ -1,0 +1,17 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: where-clause obligation for `main.requireSend` is not satisfied
+   ╭▸ compiler/e2e/test/check/semantic/marker_entailment_struct/main.ray:15:12
+   │
+15 │     return requireSend(value)
+   ╰╴           ━━━━━━━━━━━ `Wrapper[(int32, bool, int32)]` must satisfy marker `main.Send`
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
+

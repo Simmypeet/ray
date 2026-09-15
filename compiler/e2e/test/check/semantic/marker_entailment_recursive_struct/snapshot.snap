@@ -1,0 +1,17 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: where-clause obligation for `main.requireSend` is not satisfied
+   ╭▸ compiler/e2e/test/check/semantic/marker_entailment_recursive_struct/main.ray:16:12
+   │
+16 │     return requireSend(value)
+   ╰╴           ━━━━━━━━━━━ `Node[(int32, bool, int32)]` must satisfy marker `main.Send`
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
+
