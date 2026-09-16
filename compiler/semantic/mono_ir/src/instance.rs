@@ -155,4 +155,3 @@ impl MonoStructInstance {
     #[must_use]
     pub const fn substitution(&self) -> &Subst { &self.substitution }
 }
-
