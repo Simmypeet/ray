@@ -243,8 +243,12 @@ impl<'engine> Generator<'engine> {
                 }
                 None
             }
-            AggregateType::Struct(_) => {
-                todo!("collect struct aggregate definition")
+
+            AggregateType::Struct(st) => {
+                for field in st.fields().values() {
+                    self.collect_type(field);
+                }
+                None
             }
         };
         assert!(self.aggregate_layouts.insert(aggregate, handler_layout).is_none());
@@ -334,6 +338,13 @@ impl<'engine> Generator<'engine> {
                     for slot in handler.slots().values() {
                         self.collect_operand(slot.environment(), ir);
                         self.collect_operand(slot.function(), ir);
+                    }
+                }
+
+                AggregateValue::Struct(st) => {
+                    self.enqueue_aggregate(AggregateType::Struct(st.ty().clone()));
+                    for field in st.fields().values() {
+                        self.collect_operand(field, ir);
                     }
                 }
             },
@@ -542,26 +553,30 @@ impl<'engine> Generator<'engine> {
 }
 
 fn by_value_dependencies(aggregate: &AggregateType) -> Vec<AggregateType> {
-    let fields = match aggregate {
-        AggregateType::EffectHandler(_) => return Vec::new(),
-        AggregateType::Tuple(tuple) => tuple.fields(),
-        AggregateType::Environment(environment) => environment.captures(),
-        AggregateType::Struct(_) => todo!("determine struct aggregate dependencies by value"),
-    };
-    fields
-        .iter()
-        .filter_map(|field| match &**field {
-            MonoType::Aggregate(dependency) => Some(dependency.clone()),
-            MonoType::Bool
-            | MonoType::Int32
-            | MonoType::Float32
-            | MonoType::CInt
-            | MonoType::CStr
-            | MonoType::OpaquePointer(_)
-            | MonoType::Pointer(_)
-            | MonoType::FunctionPointer(_) => None,
-        })
-        .collect()
+    fn collect_operand<'a>(
+        iter: impl IntoIterator<Item = &'a Interned<MonoType>>,
+    ) -> Vec<AggregateType> {
+        iter.into_iter()
+            .filter_map(|ty| match &**ty {
+                MonoType::Aggregate(aggregate) => Some(aggregate.clone()),
+                MonoType::Bool
+                | MonoType::Int32
+                | MonoType::Float32
+                | MonoType::CInt
+                | MonoType::CStr
+                | MonoType::OpaquePointer(_)
+                | MonoType::Pointer(_)
+                | MonoType::FunctionPointer(_) => None,
+            })
+            .collect()
+    }
+
+    match aggregate {
+        AggregateType::EffectHandler(_) => Vec::new(),
+        AggregateType::Tuple(tuple) => collect_operand(tuple.fields()),
+        AggregateType::Environment(environment) => collect_operand(environment.captures()),
+        AggregateType::Struct(st) => collect_operand(st.fields().values()),
+    }
 }
 
 fn append_section(output: &mut String, heading: &str, contents: &str) {

@@ -1840,6 +1840,7 @@ dependencies = [
  "rayc_mono_ir",
  "rayc_mono_ir_builder",
  "rayc_qbice",
+ "rayc_semantic_element",
  "rayc_symbol",
  "rayc_target",
  "rayc_type",

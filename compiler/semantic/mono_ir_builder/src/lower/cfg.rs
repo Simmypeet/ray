@@ -35,7 +35,9 @@ impl Builder<'_> {
                     place =
                         place.project_tuple_field(FieldIndex::new((*index).try_into().unwrap()));
                 }
-                IRProjection::Field(_) => todo!("lower struct field access addresses"),
+                IRProjection::Field(id) => {
+                    place = place.project_struct_field(*id);
+                }
             }
         }
         place

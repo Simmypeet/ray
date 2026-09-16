@@ -246,6 +246,13 @@ impl Rvalue {
     }
 
     #[must_use]
+    pub fn new_struct(ty: StructTy, fields: BTreeMap<FieldID, Operand>) -> Self {
+        assert_eq!(ty.fields().len(), fields.len());
+
+        Self::Aggregate(AggregateValue::Struct(AggregateStruct { ty, fields }))
+    }
+
+    #[must_use]
     pub const fn new_environment(ty: EnvironmentTy, fields: Vec<Operand>) -> Self {
         Self::Aggregate(AggregateValue::Environment(AggregateEnvironment { ty, fields }))
     }

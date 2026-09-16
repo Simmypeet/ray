@@ -15,6 +15,7 @@ rayc_qbice.path = "../../base/qbice"
 rayc_symbol.path = "../../semantic/symbol"
 rayc_target.path = "../../base/target"
 rayc_type.path = "../../semantic/type"
+rayc_semantic_element.path = "../../semantic/semantic_element"
 
 [dev-dependencies]
 tokio.workspace = true

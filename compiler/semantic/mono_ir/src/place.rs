@@ -1,4 +1,5 @@
 use qbice::{Decode, Encode, Identifiable, StableHash};
+use rayc_semantic_element::struct_body::FieldID;
 use rayc_symbol::GlobalSymbolID;
 
 use crate::function::LocalID;
@@ -33,6 +34,7 @@ pub enum Projection {
     Dereference,
     EnvironmentFieldIndex(FieldIndex),
     TupleFieldIndex(FieldIndex),
+    StructFieldIndex(FieldID),
     OperationRecordEnvironmentField(GlobalSymbolID),
     OperationRecordFunctionPointerField(GlobalSymbolID),
 }
@@ -77,6 +79,11 @@ impl Place {
     #[must_use]
     pub fn project_operation_record_function_pointer(self, operation: GlobalSymbolID) -> Self {
         self.with_projection(Projection::OperationRecordFunctionPointerField(operation))
+    }
+
+    #[must_use]
+    pub fn project_struct_field(self, field: FieldID) -> Self {
+        self.with_projection(Projection::StructFieldIndex(field))
     }
 
     #[must_use]

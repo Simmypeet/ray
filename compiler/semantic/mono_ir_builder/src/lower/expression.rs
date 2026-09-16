@@ -1,7 +1,8 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     ir_expr::{
-        IRExprID, IRExprKind, binary::BinaryOp as IRBinaryOperator, literal::Literal, tuple::Tuple,
+        IRExprID, IRExprKind, binary::BinaryOp as IRBinaryOperator, literal::Literal,
+        struct_initialization::StructInitialization, tuple::Tuple,
     },
     ir_function::IRFunction,
 };
@@ -85,10 +86,26 @@ impl Builder<'_> {
                 self.lower_tuple(tuple, destination);
             }
 
-            IRExprKind::StructInitialization(_) => todo!("lower struct initialization expressions"),
+            IRExprKind::StructInitialization(st) => {
+                self.lower_struct(st, destination);
+            }
 
             IRExprKind::Closure(lambda) => self.lower_closure(context, lambda, expression_id),
         }
+    }
+
+    fn lower_struct(&mut self, st: &StructInitialization, destination: Place) {
+        let ty = self.local_type(destination.local());
+        let ty = ty.assert_as_struct();
+
+        let fields = st
+            .initializers()
+            .iter()
+            .map(|(field_id, field)| (*field_id, self.expression_operand(*field)))
+            .collect();
+
+        let value = Rvalue::new_struct(ty.clone(), fields);
+        self.assign(destination, value);
     }
 
     fn lower_tuple(&mut self, tuple: &Tuple, destination: Place) {

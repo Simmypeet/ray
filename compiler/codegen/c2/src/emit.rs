@@ -19,7 +19,7 @@ use crate::{
     name::{
         aggregate_name, aggregate_typedef_name, block_name, environment_field_name,
         ir_function_name, local_name, operation_environment_field_name,
-        operation_function_field_name, tuple_field_name,
+        operation_function_field_name, struct_field_name, tuple_field_name,
     },
 };
 
@@ -145,7 +145,19 @@ impl Generator<'_> {
                     .unwrap();
                 }
             }
-            AggregateType::Struct(_) => todo!("emit struct aggregate definition"),
+            AggregateType::Struct(st) => {
+                if st.fields().is_empty() {
+                    output.push_str("    uint8_t _unit;\n");
+                }
+                for (field_id, field_type) in st.fields() {
+                    writeln!(
+                        output,
+                        "    {};",
+                        declaration(field_type, &struct_field_name(*field_id))
+                    )
+                    .unwrap();
+                }
+            }
         }
         output.push_str("};");
         output
@@ -347,6 +359,25 @@ impl Generator<'_> {
             AggregateValue::EffectHandler(handler) => {
                 self.emit_effect_handler_value(handler, ir, function).await
             }
+
+            AggregateValue::Struct(st) => {
+                let ty = AggregateType::Struct(st.ty().clone());
+                let mut fields = Vec::with_capacity(st.fields().len());
+
+                for (field_id, field_ty) in st.ty().fields() {
+                    let field_value = st
+                        .fields()
+                        .get(field_id)
+                        .expect("struct aggregate should initialize every field");
+                    let value = self.emit_operand(field_value, ir, function, Some(field_ty)).await;
+                    fields.push(format!(".{} = {value}", struct_field_name(*field_id)));
+                }
+
+                if fields.is_empty() {
+                    fields.push("._unit = 0".to_owned());
+                }
+                (ty, fields)
+            }
         };
         format!("(({}){{ {} }})", aggregate_typedef_name(&ty), fields.join(", "))
     }
@@ -449,6 +480,17 @@ impl Generator<'_> {
                 Projection::OperationRecordFunctionPointerField(operation_id) => {
                     MonoType::FunctionPointer(self.operation_signature(&ty, *operation_id).await)
                 }
+
+                Projection::StructFieldIndex(st) => {
+                    let MonoType::Aggregate(AggregateType::Struct(struct_ty)) = ty else {
+                        panic!("struct field projection requires a struct aggregate")
+                    };
+                    (**struct_ty
+                        .fields()
+                        .get(st)
+                        .expect("struct projection field should be in bounds"))
+                    .clone()
+                }
             };
         }
         ty
@@ -485,12 +527,14 @@ fn place_expression(place: &Place) -> String {
             Projection::TupleFieldIndex(index) => {
                 format!("({expression}).{}", tuple_field_name(index.index()))
             }
-
             Projection::OperationRecordEnvironmentField(operation) => {
                 format!("({expression}).{}", operation_environment_field_name(*operation))
             }
             Projection::OperationRecordFunctionPointerField(operation) => {
                 format!("({expression}).{}", operation_function_field_name(*operation))
+            }
+            Projection::StructFieldIndex(field) => {
+                format!("({expression}).{}", struct_field_name(*field))
             }
         };
     }

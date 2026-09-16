@@ -9,6 +9,7 @@ use rayc_mono_ir::{
     function::{MonoFunctionID, MonoFunctionKind},
     ty::AggregateType,
 };
+use rayc_semantic_element::struct_body::FieldID;
 use rayc_symbol::GlobalSymbolID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -92,6 +93,8 @@ pub(super) fn block_name(index: u64) -> String { format!("ray_block_{index:X}") 
 pub(super) fn tuple_field_name(index: u32) -> String { format!("elem{index:X}") }
 
 pub(super) fn environment_field_name(index: u32) -> String { format!("capture{index:X}") }
+
+pub(super) fn struct_field_name(field: FieldID) -> String { format!("field_{}", field.index()) }
 
 pub(super) fn operation_environment_field_name(operation: GlobalSymbolID) -> String {
     format!("operation_{}_environment", operation_id(operation))
