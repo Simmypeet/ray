@@ -2,7 +2,7 @@ use qbice::storage::intern::Interned;
 use rayc_ir::{
     cfg::{Conditional, Terminator},
     ir_expr::{
-        IRExpr, IRExprID, IRExprKind,
+        IRExpr, IRExprKind,
         binary::{Binary as IrBinary, BinaryOp as IrBinaryOp},
         literal::Literal,
         phi::Phi,
@@ -15,15 +15,15 @@ use rayc_typed_ast::typed_expr::binary::{Binary, BinaryOp};
 use crate::{
     builder::Builder,
     context::LoweringContext,
-    expression::{LowerExpression, TypedExprWithID},
+    expression::{Lower, LoweredExpression, TypedExprWithID},
 };
 
-impl<'a> LowerExpression<TypedExprWithID<&'a Binary>> for Builder {
-    fn lower_expression(
+impl<'a> Lower<TypedExprWithID<&'a Binary>> for Builder {
+    fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Binary>,
-    ) -> IRExprID {
+    ) -> LoweredExpression {
         let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
@@ -50,11 +50,11 @@ fn lower_assignment(
     builder: &mut Builder,
     context: &LoweringContext<'_>,
     binary: &Binary,
-) -> IRExprID {
-    let address = builder.lower_address_by_id(context, binary.left());
-    let value = builder.lower_expression_by_id(context, binary.right());
+) -> LoweredExpression {
+    let address = builder.lower_lvalue_by_id(context, binary.left());
+    let value = builder.lower_rvalue_by_id(context, binary.right());
     builder.emit_store(address, value);
-    value
+    LoweredExpression::RValue(value)
 }
 
 fn lower_binary(
@@ -64,14 +64,14 @@ fn lower_binary(
     operator: IrBinaryOp,
     span: RelativeSpan,
     ty: Interned<Ty>,
-) -> IRExprID {
-    let left = builder.lower_expression_by_id(context, binary.left());
-    let right = builder.lower_expression_by_id(context, binary.right());
-    builder.emit_expression(IRExpr::new(
+) -> LoweredExpression {
+    let left = builder.lower_rvalue_by_id(context, binary.left());
+    let right = builder.lower_rvalue_by_id(context, binary.right());
+    LoweredExpression::RValue(builder.emit_expression(IRExpr::new(
         IRExprKind::Binary(IrBinary::new(left, operator, right)),
         span,
         ty,
-    ))
+    )))
 }
 
 fn lower_logical(
@@ -81,8 +81,8 @@ fn lower_logical(
     short_circuit_value: bool,
     span: RelativeSpan,
     ty: Interned<Ty>,
-) -> IRExprID {
-    let left = builder.lower_expression_by_id(context, binary.left());
+) -> LoweredExpression {
+    let left = builder.lower_rvalue_by_id(context, binary.left());
     let rhs_block = builder.create_block();
     let short_circuit_block = builder.create_block();
     let merge_block = builder.create_block();
@@ -103,11 +103,15 @@ fn lower_logical(
     let short_circuit_predecessor = builder.jump_to(merge_block);
 
     builder.select_block(rhs_block);
-    let rhs = builder.lower_expression_by_id(context, binary.right());
+    let rhs = builder.lower_rvalue_by_id(context, binary.right());
     let rhs_predecessor = builder.jump_to(merge_block);
 
     builder.select_block(merge_block);
     let incoming =
         [(short_circuit_predecessor, constant), (rhs_predecessor, rhs)].into_iter().collect();
-    builder.emit_expression(IRExpr::new(IRExprKind::Phi(Phi::new(incoming)), span, ty))
+    LoweredExpression::RValue(builder.emit_expression(IRExpr::new(
+        IRExprKind::Phi(Phi::new(incoming)),
+        span,
+        ty,
+    )))
 }

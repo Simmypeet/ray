@@ -7,7 +7,6 @@ use rayc_typed_ast::{capture_plan::CapturePlan, typed_function::TypedFunctionMap
 
 use crate::{builder::Builder, context::LoweringContext, diagnostic::NotAllPathsReturnValue};
 
-mod address;
 mod builder;
 mod context;
 pub mod diagnostic;

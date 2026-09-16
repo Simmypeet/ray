@@ -1,18 +1,18 @@
-use rayc_ir::ir_expr::{IRExpr, IRExprID, IRExprKind, literal::Literal as IrLiteral};
+use rayc_ir::ir_expr::{IRExpr, IRExprKind, literal::Literal as IrLiteral};
 use rayc_typed_ast::typed_expr::literal::Literal;
 
 use crate::{
     builder::Builder,
     context::LoweringContext,
-    expression::{LowerExpression, TypedExprWithID},
+    expression::{Lower, LoweredExpression, TypedExprWithID},
 };
 
-impl<'a> LowerExpression<TypedExprWithID<&'a Literal>> for Builder {
-    fn lower_expression(
+impl<'a> Lower<TypedExprWithID<&'a Literal>> for Builder {
+    fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Literal>,
-    ) -> IRExprID {
+    ) -> LoweredExpression {
         let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
@@ -22,6 +22,10 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Literal>> for Builder {
             Literal::Bool(value) => IrLiteral::Bool(*value),
             Literal::String(value) => IrLiteral::String(value.clone()),
         };
-        self.emit_expression(IRExpr::new(IRExprKind::Literal(literal), span, ty))
+        LoweredExpression::RValue(self.emit_expression(IRExpr::new(
+            IRExprKind::Literal(literal),
+            span,
+            ty,
+        )))
     }
 }

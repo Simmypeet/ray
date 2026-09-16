@@ -1,7 +1,7 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     address::Address,
-    ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load},
+    ir_expr::IRExprID,
     ir_function::IRFunctionMap,
     ir_lambda::{CaptureID, LambdaParameterID},
     ir_operation_handler::OperationHandlerParameterID,
@@ -10,10 +10,9 @@ use rayc_ir::{
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{parameter::ParameterID, struct_body::FieldID};
 use rayc_type::ty::{Mutability, Ty, application::ClosureID};
-use rayc_typed_ast::typed_expr::TypedExprID;
 
 use self::function_build_state::FunctionBuildState;
-use crate::{context::LoweringContext, diagnostic::NotAllPathsReturnValue, statement::LoopTarget};
+use crate::{diagnostic::NotAllPathsReturnValue, statement::LoopTarget};
 
 mod function_build_state;
 
@@ -80,18 +79,5 @@ impl Builder {
 
     pub fn project_field(&self, address: &mut Address, field_id: FieldID) {
         address.add_field(field_id, &self.engine);
-    }
-
-    pub fn lower_address_and_load(
-        &mut self,
-        context: &LoweringContext<'_>,
-        expression_id: TypedExprID,
-    ) -> IRExprID {
-        let address = self.lower_address_by_id(context, expression_id);
-        let typed_expression = context.expression(expression_id);
-        let span = typed_expression.span();
-        let ty = typed_expression.ty().clone();
-
-        self.emit_expression(IRExpr::new(IRExprKind::Load(Load::new(address)), span, ty))
     }
 }

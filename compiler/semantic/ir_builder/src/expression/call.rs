@@ -4,7 +4,7 @@ use rayc_typed_ast::typed_expr::call::{Call, CallTarget};
 use crate::{
     builder::Builder,
     context::LoweringContext,
-    expression::{LowerExpression, TypedExprWithID},
+    expression::{Lower, LoweredExpression, TypedExprWithID},
 };
 
 impl Builder {
@@ -15,17 +15,17 @@ impl Builder {
     ) -> Vec<IRExprID> {
         call.arguments()
             .iter()
-            .map(|argument| self.lower_expression_by_id(context, *argument))
+            .map(|argument| self.lower_rvalue_by_id(context, *argument))
             .collect()
     }
 }
 
-impl<'a> LowerExpression<TypedExprWithID<&'a Call>> for Builder {
-    fn lower_expression(
+impl<'a> Lower<TypedExprWithID<&'a Call>> for Builder {
+    fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Call>,
-    ) -> IRExprID {
+    ) -> LoweredExpression {
         let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
@@ -37,7 +37,11 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Call>> for Builder {
             CallTarget::Direct { function_id, subst } => {
                 let arguments = self.lower_call_arguments(context, call);
                 let call = IrCall::new_direct(*function_id, arguments, subst.clone(), effect);
-                self.emit_expression(IRExpr::new(IRExprKind::Call(call), span, ty))
+                LoweredExpression::RValue(self.emit_expression(IRExpr::new(
+                    IRExprKind::Call(call),
+                    span,
+                    ty,
+                )))
             }
 
             CallTarget::UnresolvedInstanceAssociated {
@@ -53,13 +57,21 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Call>> for Builder {
                     arguments,
                     effect,
                 );
-                self.emit_expression(IRExpr::new(IRExprKind::Call(call), span, ty))
+                LoweredExpression::RValue(self.emit_expression(IRExpr::new(
+                    IRExprKind::Call(call),
+                    span,
+                    ty,
+                )))
             }
 
             CallTarget::EffectOperation { effect_id, operation_id, subst } => {
                 let arguments = self.lower_call_arguments(context, call);
                 let perform = Perform::new(*effect_id, *operation_id, arguments, subst.clone());
-                self.emit_expression(IRExpr::new(IRExprKind::Perform(perform), span, ty))
+                LoweredExpression::RValue(self.emit_expression(IRExpr::new(
+                    IRExprKind::Perform(perform),
+                    span,
+                    ty,
+                )))
             }
         }
     }

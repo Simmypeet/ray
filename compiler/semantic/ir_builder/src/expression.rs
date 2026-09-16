@@ -1,4 +1,7 @@
-use rayc_ir::ir_expr::IRExprID;
+use rayc_ir::{
+    address::Address,
+    ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load},
+};
 use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind};
 
 use crate::{builder::Builder, context::LoweringContext};
@@ -23,66 +26,146 @@ mod while_loop;
 
 pub use typed_expr_id::TypedExprWithID;
 
-pub trait LowerExpression<S> {
-    fn lower_expression(&mut self, context: &LoweringContext<'_>, expression: S) -> IRExprID;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LoweredExpression {
+    LValue(Address),
+    RValue(IRExprID),
+}
+
+/// A trait for lowering typed expressions into IR expressions. Typically, this
+/// is implemented for the [`Builder`] struct with [`TypedExprWithID`] as the
+/// type parameter.
+///
+/// # L-Value vs R-Value Lowering Policy
+///
+/// Some expression nodes can be lowered into either an L-value or an R-value.
+/// Those expressions must always be lowered into an L-value.
+pub trait Lower<S> {
+    fn lower(&mut self, context: &LoweringContext<'_>, expression: S) -> LoweredExpression;
 }
 
 impl Builder {
-    pub fn lower_expression_by_id(
+    pub fn lower_by_id(
+        &mut self,
+        context: &LoweringContext<'_>,
+        expression_id: TypedExprID,
+    ) -> LoweredExpression {
+        let expression = context.expression(expression_id);
+        match expression.kind() {
+            TypedExprKind::Identifier(identifier) => {
+                self.lower(context, TypedExprWithID::new(identifier, expression_id))
+            }
+            TypedExprKind::Literal(literal) => {
+                self.lower(context, TypedExprWithID::new(literal, expression_id))
+            }
+            TypedExprKind::TupleIndex(tuple_index) => {
+                self.lower(context, TypedExprWithID::new(tuple_index, expression_id))
+            }
+            TypedExprKind::FieldAccess(field) => {
+                self.lower(context, TypedExprWithID::new(field, expression_id))
+            }
+            TypedExprKind::Tuple(tuple) => {
+                self.lower(context, TypedExprWithID::new(tuple, expression_id))
+            }
+            TypedExprKind::Call(call) => {
+                self.lower(context, TypedExprWithID::new(call, expression_id))
+            }
+            TypedExprKind::Closure(lambda) => {
+                self.lower(context, TypedExprWithID::new(lambda, expression_id))
+            }
+            TypedExprKind::Binary(binary) => {
+                self.lower(context, TypedExprWithID::new(binary, expression_id))
+            }
+            TypedExprKind::IfElse(if_else) => {
+                self.lower(context, TypedExprWithID::new(if_else, expression_id))
+            }
+            TypedExprKind::While(while_loop) => {
+                self.lower(context, TypedExprWithID::new(while_loop, expression_id))
+            }
+            TypedExprKind::RefOf(reference) => {
+                self.lower(context, TypedExprWithID::new(reference, expression_id))
+            }
+            TypedExprKind::Deref(deref) => {
+                self.lower(context, TypedExprWithID::new(deref, expression_id))
+            }
+            TypedExprKind::Paren(paren) => {
+                self.lower(context, TypedExprWithID::new(paren, expression_id))
+            }
+            TypedExprKind::RunWith(run_with) => {
+                self.lower(context, TypedExprWithID::new(run_with, expression_id))
+            }
+            TypedExprKind::StructInitialization(st) => {
+                self.lower(context, TypedExprWithID::new(st, expression_id))
+            }
+            TypedExprKind::Errored(errored) => {
+                self.lower(context, TypedExprWithID::new(errored, expression_id))
+            }
+        }
+    }
+
+    /// Lowers an expression into an R-Value. If the expression is an L-Value,
+    /// the address will be loaded, generating an R-Value.
+    pub fn lower_rvalue_by_id(
         &mut self,
         context: &LoweringContext<'_>,
         expression_id: TypedExprID,
     ) -> IRExprID {
-        let expression = context.expression(expression_id);
-        match expression.kind() {
-            TypedExprKind::Identifier(identifier) => {
-                self.lower_expression(context, TypedExprWithID::new(identifier, expression_id))
+        let lowered = self.lower_by_id(context, expression_id);
+        self.lowered_expression_to_rvalue(context, expression_id, lowered)
+    }
+
+    /// Lowers an expression into an L-Value. If the expression is an R-Value,
+    /// an error address will be returned.
+    pub fn lower_lvalue_by_id(
+        &mut self,
+        context: &LoweringContext<'_>,
+        expression_id: TypedExprID,
+    ) -> Address {
+        match self.lower_by_id(context, expression_id) {
+            LoweredExpression::LValue(address) => address,
+            LoweredExpression::RValue(_) => self.error_address(),
+        }
+    }
+
+    /// Lowers an expression into an address. If the expression is an R-Value,
+    /// a temporary will be created to store the value, and the address of the
+    /// temporary will be returned.
+    pub(crate) fn lower_to_address_or_temporary(
+        &mut self,
+        context: &LoweringContext<'_>,
+        expression_id: TypedExprID,
+        lowered: LoweredExpression,
+    ) -> Address {
+        match lowered {
+            LoweredExpression::LValue(address) => address,
+            LoweredExpression::RValue(value) => {
+                // A computed operand needs storage before a projection can extend its address.
+                let typed_expression = context.expression(expression_id);
+                let temporary =
+                    self.create_temporary(typed_expression.ty().clone(), typed_expression.span());
+                let address = self.variable_address(temporary);
+                self.emit_store(address.clone(), value);
+                address
             }
-            TypedExprKind::Literal(literal) => {
-                self.lower_expression(context, TypedExprWithID::new(literal, expression_id))
+        }
+    }
+
+    pub(crate) fn lowered_expression_to_rvalue(
+        &mut self,
+        context: &LoweringContext<'_>,
+        expression_id: TypedExprID,
+        lowered: LoweredExpression,
+    ) -> IRExprID {
+        match lowered {
+            LoweredExpression::LValue(address) => {
+                let typed_expression = context.expression(expression_id);
+                self.emit_expression(IRExpr::new(
+                    IRExprKind::Load(Load::new(address)),
+                    typed_expression.span(),
+                    typed_expression.ty().clone(),
+                ))
             }
-            TypedExprKind::TupleIndex(tuple_index) => {
-                self.lower_expression(context, TypedExprWithID::new(tuple_index, expression_id))
-            }
-            TypedExprKind::FieldAccess(field) => {
-                self.lower_expression(context, TypedExprWithID::new(field, expression_id))
-            }
-            TypedExprKind::Tuple(tuple) => {
-                self.lower_expression(context, TypedExprWithID::new(tuple, expression_id))
-            }
-            TypedExprKind::Call(call) => {
-                self.lower_expression(context, TypedExprWithID::new(call, expression_id))
-            }
-            TypedExprKind::Closure(lambda) => {
-                self.lower_expression(context, TypedExprWithID::new(lambda, expression_id))
-            }
-            TypedExprKind::Binary(binary) => {
-                self.lower_expression(context, TypedExprWithID::new(binary, expression_id))
-            }
-            TypedExprKind::IfElse(if_else) => {
-                self.lower_expression(context, TypedExprWithID::new(if_else, expression_id))
-            }
-            TypedExprKind::While(while_loop) => {
-                self.lower_expression(context, TypedExprWithID::new(while_loop, expression_id))
-            }
-            TypedExprKind::RefOf(reference) => {
-                self.lower_expression(context, TypedExprWithID::new(reference, expression_id))
-            }
-            TypedExprKind::Deref(deref) => {
-                self.lower_expression(context, TypedExprWithID::new(deref, expression_id))
-            }
-            TypedExprKind::Paren(paren) => {
-                self.lower_expression(context, TypedExprWithID::new(paren, expression_id))
-            }
-            TypedExprKind::RunWith(run_with) => {
-                self.lower_expression(context, TypedExprWithID::new(run_with, expression_id))
-            }
-            TypedExprKind::StructInitialization(st) => {
-                self.lower_expression(context, TypedExprWithID::new(st, expression_id))
-            }
-            TypedExprKind::Errored(errored) => {
-                self.lower_expression(context, TypedExprWithID::new(errored, expression_id))
-            }
+            LoweredExpression::RValue(value) => value,
         }
     }
 }

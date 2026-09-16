@@ -1,22 +1,22 @@
 use rayc_ir::{
     cfg::{Conditional, Terminator},
-    ir_expr::{IRExpr, IRExprID, IRExprKind, tuple::Tuple},
+    ir_expr::{IRExpr, IRExprKind, tuple::Tuple},
 };
 use rayc_typed_ast::typed_expr::while_loop::While;
 
 use crate::{
     builder::Builder,
     context::LoweringContext,
-    expression::{LowerExpression, TypedExprWithID},
+    expression::{Lower, LoweredExpression, TypedExprWithID},
     statement::LoopTarget,
 };
 
-impl<'a> LowerExpression<TypedExprWithID<&'a While>> for Builder {
-    fn lower_expression(
+impl<'a> Lower<TypedExprWithID<&'a While>> for Builder {
+    fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a While>,
-    ) -> IRExprID {
+    ) -> LoweredExpression {
         let typed_expression = context.expression(expression.id());
         let while_loop = expression.node();
 
@@ -28,7 +28,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a While>> for Builder {
         self.jump_to(condition_block);
 
         self.select_block(condition_block);
-        let condition = self.lower_expression_by_id(context, while_loop.condition());
+        let condition = self.lower_rvalue_by_id(context, while_loop.condition());
         self.terminate(Terminator::Conditional(Conditional::new(
             condition, body_block, exit_block,
         )));
@@ -42,10 +42,10 @@ impl<'a> LowerExpression<TypedExprWithID<&'a While>> for Builder {
         }
 
         self.select_block(exit_block);
-        self.emit_expression(IRExpr::new(
+        LoweredExpression::RValue(self.emit_expression(IRExpr::new(
             IRExprKind::Tuple(Tuple::new(Vec::new())),
             typed_expression.span(),
             typed_expression.ty().clone(),
-        ))
+        )))
     }
 }

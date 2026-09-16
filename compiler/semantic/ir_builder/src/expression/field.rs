@@ -1,41 +1,21 @@
-use rayc_ir::ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load};
-use rayc_typed_ast::typed_expr::{LvalueClassification, field_access::FieldAccess};
+use rayc_typed_ast::typed_expr::field_access::FieldAccess;
 
 use crate::{
     builder::Builder,
     context::LoweringContext,
-    expression::{LowerExpression, TypedExprWithID},
+    expression::{Lower, LoweredExpression, TypedExprWithID},
 };
 
-impl<'a> LowerExpression<TypedExprWithID<&'a FieldAccess>> for Builder {
-    fn lower_expression(
+impl<'a> Lower<TypedExprWithID<&'a FieldAccess>> for Builder {
+    fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a FieldAccess>,
-    ) -> IRExprID {
-        match context.classify_lvalue(expression.id()) {
-            LvalueClassification::Lvalue(_) => {
-                self.lower_address_and_load(context, expression.id())
-            }
-
-            LvalueClassification::NotLvalue => {
-                // store the operand in a temporary variable and then project the field from
-                // that temporary variable
-                let mut temporary_address =
-                    self.create_temporary_and_lower_store(expression.node().operand(), context);
-
-                self.project_field(&mut temporary_address, expression.node().field());
-
-                self.emit_expression(IRExpr::new(
-                    IRExprKind::Load(Load::new(temporary_address)),
-                    context.expression_span(expression.id()),
-                    context.expression_ty(expression.id()).clone(),
-                ))
-            }
-            LvalueClassification::Errored => self.emit_expression(IRExpr::new_error(
-                context.expression_span(expression.id()),
-                context.expression_ty(expression.id()).clone(),
-            )),
-        }
+    ) -> LoweredExpression {
+        let operand_id = expression.node().operand();
+        let operand = self.lower_by_id(context, operand_id);
+        let mut address = self.lower_to_address_or_temporary(context, operand_id, operand);
+        self.project_field(&mut address, expression.node().field());
+        LoweredExpression::LValue(address)
     }
 }

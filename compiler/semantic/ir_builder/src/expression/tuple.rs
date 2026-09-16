@@ -1,18 +1,18 @@
-use rayc_ir::ir_expr::{IRExpr, IRExprID, IRExprKind, tuple::Tuple as IrTuple};
+use rayc_ir::ir_expr::{IRExpr, IRExprKind, tuple::Tuple as IrTuple};
 use rayc_typed_ast::typed_expr::tuple::Tuple;
 
 use crate::{
     builder::Builder,
     context::LoweringContext,
-    expression::{LowerExpression, TypedExprWithID},
+    expression::{Lower, LoweredExpression, TypedExprWithID},
 };
 
-impl<'a> LowerExpression<TypedExprWithID<&'a Tuple>> for Builder {
-    fn lower_expression(
+impl<'a> Lower<TypedExprWithID<&'a Tuple>> for Builder {
+    fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Tuple>,
-    ) -> IRExprID {
+    ) -> LoweredExpression {
         let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
@@ -20,8 +20,12 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Tuple>> for Builder {
         let elements = tuple
             .elements()
             .iter()
-            .map(|element| self.lower_expression_by_id(context, *element))
+            .map(|element| self.lower_rvalue_by_id(context, *element))
             .collect();
-        self.emit_expression(IRExpr::new(IRExprKind::Tuple(IrTuple::new(elements)), span, ty))
+        LoweredExpression::RValue(self.emit_expression(IRExpr::new(
+            IRExprKind::Tuple(IrTuple::new(elements)),
+            span,
+            ty,
+        )))
     }
 }

@@ -36,7 +36,7 @@ impl Builder {
                     let ir_id = self.register_source_variable(context, typed_id);
 
                     if let Some(expr_id) = let_statement.expression() {
-                        let value = self.lower_expression_by_id(context, expr_id);
+                        let value = self.lower_rvalue_by_id(context, expr_id);
                         self.emit_store(self.variable_address(ir_id), value);
                     }
                 }
@@ -51,12 +51,12 @@ impl Builder {
                     }
                 }
                 Statement::Expression(expression) => {
-                    self.lower_expression_by_id(context, *expression);
+                    self.lower_rvalue_by_id(context, *expression);
                 }
                 Statement::Return(return_statement) => {
                     let value = return_statement
                         .value()
-                        .map(|value| self.lower_expression_by_id(context, value));
+                        .map(|value| self.lower_rvalue_by_id(context, value));
                     self.terminate(Terminator::Return(value));
                 }
             }

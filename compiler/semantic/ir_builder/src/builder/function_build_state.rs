@@ -20,8 +20,8 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{capture::CaptureMode, ty::Ty};
 use rayc_typed_ast::{
-    capture_plan::FunctionCapturePlan, name_binding::Source, typed_expr::TypedExprID,
-    typed_function::TypedFunctionID, typed_lambda::LambdaParameterID as TypedLambdaParameterID,
+    capture_plan::FunctionCapturePlan, name_binding::Source, typed_function::TypedFunctionID,
+    typed_lambda::LambdaParameterID as TypedLambdaParameterID,
     typed_operation_handler::OperationHandlerParameterID as TypedOperationHandlerParameterID,
     typed_variable::TypedVariableID,
 };
@@ -437,25 +437,6 @@ impl Builder {
     pub fn create_temporary(&mut self, ty: Interned<Ty>, span: RelativeSpan) -> IRVariableID {
         self.ir_functions
             .insert_variable(self.building_function.ir_function_id, IRVariable::new(ty, span))
-    }
-
-    /// Lowers the given `typed_expr_id` and stores the result in a temporary
-    /// variable, returning the address of the temporary variable.
-    pub fn create_temporary_and_lower_store(
-        &mut self,
-        typed_expr_id: TypedExprID,
-        context: &LoweringContext<'_>,
-    ) -> Address {
-        let typed_expression = context.expression(typed_expr_id);
-        let ty = typed_expression.ty().clone();
-        let span = typed_expression.span();
-
-        let value = self.lower_expression_by_id(context, typed_expr_id);
-        let temporary = self.create_temporary(ty, span);
-        let address = self.variable_address(temporary);
-        self.emit_store(address.clone(), value);
-
-        address
     }
 
     pub fn register_source_variable(

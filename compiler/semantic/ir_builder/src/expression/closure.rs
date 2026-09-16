@@ -1,18 +1,18 @@
-use rayc_ir::ir_expr::{IRExpr, IRExprID, IRExprKind, closure::Closure as IrClosure};
+use rayc_ir::ir_expr::{IRExpr, IRExprKind, closure::Closure as IrClosure};
 use rayc_typed_ast::typed_expr::closure::Closure;
 
 use crate::{
     builder::Builder,
     context::LoweringContext,
-    expression::{LowerExpression, TypedExprWithID},
+    expression::{Lower, LoweredExpression, TypedExprWithID},
 };
 
-impl<'a> LowerExpression<TypedExprWithID<&'a Closure>> for Builder {
-    fn lower_expression(
+impl<'a> Lower<TypedExprWithID<&'a Closure>> for Builder {
+    fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Closure>,
-    ) -> IRExprID {
+    ) -> LoweredExpression {
         let typed_expression = context.expression(expression.id());
         let lambda = expression.node();
         let closure = typed_expression.ty().unwrap_as_closure_view();
@@ -32,10 +32,10 @@ impl<'a> LowerExpression<TypedExprWithID<&'a Closure>> for Builder {
         self.register_closure(closure.local_closure_id(), function_id);
         let captures = self.lower_capture_operands(context, lambda.function_id());
 
-        self.emit_expression(IRExpr::new(
+        LoweredExpression::RValue(self.emit_expression(IRExpr::new(
             IRExprKind::Closure(IrClosure::new(function_id, captures)),
             typed_expression.span(),
             typed_expression.ty().clone(),
-        ))
+        )))
     }
 }

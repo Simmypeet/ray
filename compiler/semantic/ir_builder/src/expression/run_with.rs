@@ -1,5 +1,5 @@
 use rayc_ir::ir_expr::{
-    IRExpr, IRExprID, IRExprKind,
+    IRExpr, IRExprKind,
     handle::{Handle, HandledFunction, OperationHandler},
 };
 use rayc_typed_ast::typed_expr::run_with::RunWith;
@@ -7,15 +7,15 @@ use rayc_typed_ast::typed_expr::run_with::RunWith;
 use crate::{
     builder::Builder,
     context::LoweringContext,
-    expression::{LowerExpression, TypedExprWithID},
+    expression::{Lower, LoweredExpression, TypedExprWithID},
 };
 
-impl<'a> LowerExpression<TypedExprWithID<&'a RunWith>> for Builder {
-    fn lower_expression(
+impl<'a> Lower<TypedExprWithID<&'a RunWith>> for Builder {
+    fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a RunWith>,
-    ) -> IRExprID {
+    ) -> LoweredExpression {
         let typed_expression = context.expression(expression.id());
         let run_with = expression.node();
         let body_function =
@@ -78,10 +78,10 @@ impl<'a> LowerExpression<TypedExprWithID<&'a RunWith>> for Builder {
             typed_expression.effect().clone(),
         );
 
-        self.emit_expression(IRExpr::new(
+        LoweredExpression::RValue(self.emit_expression(IRExpr::new(
             IRExprKind::Handle(handle),
             typed_expression.span(),
             typed_expression.ty().clone(),
-        ))
+        )))
     }
 }

@@ -7,15 +7,15 @@ use rayc_typed_ast::typed_expr::if_else::{Arm, IfElse};
 use crate::{
     builder::Builder,
     context::LoweringContext,
-    expression::{LowerExpression, TypedExprWithID},
+    expression::{Lower, LoweredExpression, TypedExprWithID},
 };
 
-impl<'a> LowerExpression<TypedExprWithID<&'a IfElse>> for Builder {
-    fn lower_expression(
+impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
+    fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a IfElse>,
-    ) -> IRExprID {
+    ) -> LoweredExpression {
         let typed_expression = context.expression(expression.id());
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
@@ -27,7 +27,7 @@ impl<'a> LowerExpression<TypedExprWithID<&'a IfElse>> for Builder {
         let mut incoming = Vec::new();
 
         for conditional_arm in if_else.conditional_arms() {
-            let condition = self.lower_expression_by_id(context, conditional_arm.condition());
+            let condition = self.lower_rvalue_by_id(context, conditional_arm.condition());
             let arm_block = self.create_block();
             let next_condition_block = self.create_block();
             self.terminate(Terminator::Conditional(Conditional::new(
@@ -56,13 +56,13 @@ impl<'a> LowerExpression<TypedExprWithID<&'a IfElse>> for Builder {
 
         self.select_block(merge_block);
         if incoming.is_empty() {
-            self.emit_unit(span, ty)
+            LoweredExpression::RValue(self.emit_unit(span, ty))
         } else {
-            self.emit_expression(IRExpr::new(
+            LoweredExpression::RValue(self.emit_expression(IRExpr::new(
                 IRExprKind::Phi(Phi::new(incoming.into_iter().collect())),
                 span,
                 ty,
-            ))
+            )))
         }
     }
 }
@@ -76,7 +76,7 @@ impl Builder {
         ty: &qbice::storage::intern::Interned<rayc_type::ty::Ty>,
     ) -> Option<IRExprID> {
         match arm {
-            Arm::Expression(expression) => Some(self.lower_expression_by_id(context, *expression)),
+            Arm::Expression(expression) => Some(self.lower_rvalue_by_id(context, *expression)),
             Arm::Block(statements) => {
                 self.lower_statement_list(context, statements);
                 (!self.is_terminated()).then(|| self.emit_unit(span, ty.clone()))
