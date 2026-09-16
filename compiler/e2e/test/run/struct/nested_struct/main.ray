@@ -1,0 +1,15 @@
+struct Pair[a, b]:
+    first: a
+    second: b
+
+
+def mkPair(a: a, b: b) -> Pair[a, b]:
+    return Pair { first = a, second = b }
+
+
+def main() -> int32: 
+    let firstPair = Pair { first = 11, second = 10 }
+    let secondPair = Pair { first = 10, second = 11 }
+    let thirdPair = mkPair(firstPair, secondPair)
+
+    return thirdPair.first.first + thirdPair.first.second + thirdPair.second.first + thirdPair.second.second

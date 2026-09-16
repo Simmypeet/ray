@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+firstPair.first = 1
+firstPair.second = 0
+secondPair.first = 2
+secondPair.second = 3
+
+
+stderr:

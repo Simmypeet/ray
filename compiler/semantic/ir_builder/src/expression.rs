@@ -44,7 +44,9 @@ impl Builder {
             TypedExprKind::TupleIndex(tuple_index) => {
                 self.lower_expression(context, TypedExprWithID::new(tuple_index, expression_id))
             }
-            TypedExprKind::FieldAccess(_) => todo!("lower struct field access expressions"),
+            TypedExprKind::FieldAccess(field) => {
+                self.lower_expression(context, TypedExprWithID::new(field, expression_id))
+            }
             TypedExprKind::Tuple(tuple) => {
                 self.lower_expression(context, TypedExprWithID::new(tuple, expression_id))
             }
@@ -54,7 +56,6 @@ impl Builder {
             TypedExprKind::Closure(lambda) => {
                 self.lower_expression(context, TypedExprWithID::new(lambda, expression_id))
             }
-
             TypedExprKind::Binary(binary) => {
                 self.lower_expression(context, TypedExprWithID::new(binary, expression_id))
             }
@@ -76,8 +77,8 @@ impl Builder {
             TypedExprKind::RunWith(run_with) => {
                 self.lower_expression(context, TypedExprWithID::new(run_with, expression_id))
             }
-            TypedExprKind::StructInitialization(_) => {
-                todo!("lower struct initialization expressions")
+            TypedExprKind::StructInitialization(st) => {
+                self.lower_expression(context, TypedExprWithID::new(st, expression_id))
             }
             TypedExprKind::Errored(errored) => {
                 self.lower_expression(context, TypedExprWithID::new(errored, expression_id))

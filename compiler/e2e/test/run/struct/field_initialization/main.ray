@@ -1,0 +1,34 @@
+## Case
+## 0
+## 1
+## 2
+## 3
+
+extern def scanf(format: cstr, ...) -> int32
+extern def printf(format: cstr, ...) -> int32
+
+struct Pair[a, b]:
+    first: a
+    second: b
+
+def promptInt32() -> int32:
+    let mut x: int32 = 0
+    scanf("%d", x.&mut)
+    return x
+
+def main() -> int32:
+    let firstPair = Pair { second = promptInt32(), first = promptInt32() }
+    let secondPair = Pair { first = promptInt32(), second = promptInt32() }
+
+    # it should print out in this order
+    # firstPair.first = 1
+    # firstPair.second = 0
+    # secondPair.first = 2
+    # secondPair.second = 3
+
+    printf("firstPair.first = %d\n", firstPair.first)
+    printf("firstPair.second = %d\n", firstPair.second)
+    printf("secondPair.first = %d\n", secondPair.first)
+    printf("secondPair.second = %d\n", secondPair.second)
+
+    return 0
