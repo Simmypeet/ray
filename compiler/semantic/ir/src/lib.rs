@@ -1,5 +1,6 @@
 pub mod address;
 pub mod cfg;
+pub mod dataflow;
 pub mod ir_expr;
 pub mod ir_function;
 pub mod ir_lambda;

@@ -16,6 +16,7 @@ rayc_semantic_element.path = "../semantic_element"
 rayc_hash.path = "../../base/hash"
 qbice.workspace = true
 derive_more.workspace = true
+bon.workspace = true
 
 [dev-dependencies]
 rayc_source_file.path = "../../base/source_file"

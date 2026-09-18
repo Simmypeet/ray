@@ -1,13 +1,64 @@
-use std::collections::VecDeque;
+use std::{
+    collections::{VecDeque, hash_set},
+    ops::Index,
+};
 
+use bon::Builder;
 use qbice::{Decode, Encode, StableHash};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashSet;
 
-use crate::{address::Address, ir_expr::IRExprID};
+use crate::{address::Address, dataflow::Direction, ir_expr::IRExprID};
 
 /// Identifies a basic block stored in a function's control-flow graph.
 pub type BlockID = ID<Block>;
+
+/// Identifies a specific instruction in the control-flow graph of a function,
+/// by its block and position in that block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Builder)]
+pub struct Point {
+    block_id: BlockID,
+    instruction_idx: usize,
+}
+
+impl Point {
+    #[must_use]
+    pub const fn block_id(&self) -> BlockID { self.block_id }
+
+    #[must_use]
+    pub const fn instruction_idx(&self) -> usize { self.instruction_idx }
+}
+/// An iterator for traversing through the control flow graph.
+///
+/// Every block is guaranteed to be visited exactly once and reachable from
+/// the entry block.
+///
+/// The iterator is called in a depth-first and pre-order manner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Traverser<'a> {
+    cfg: &'a Cfg,
+    visited: FxHashSet<BlockID>,
+    stack: Vec<BlockID>,
+}
+
+impl<'a> Iterator for Traverser<'a> {
+    type Item = (ID<Block>, &'a Block);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let block_id = loop {
+            let block_id = self.stack.pop()?;
+            if self.visited.insert(block_id) {
+                break block_id;
+            }
+        };
+
+        let block = &self.cfg[block_id];
+
+        self.stack.extend(block.terminator().iter().flat_map(|x| x.jump_targets()));
+
+        Some((block_id, block))
+    }
+}
 
 /// A basic block whose instructions execute in insertion order.
 ///
@@ -17,10 +68,16 @@ pub type BlockID = ID<Block>;
 /// incoming predecessor. Store instructions consume an already-defined value
 /// and perform their write at their position in the block. A block is sealed
 /// when its single terminator is set and cannot then be changed or extended.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
 pub struct Block {
+    predecessors: FxHashSet<BlockID>,
     instructions: Vec<Instruction>,
     terminator: Option<Terminator>,
+}
+
+impl Block {
+    #[must_use]
+    pub const fn terminator(&self) -> Option<&Terminator> { self.terminator.as_ref() }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
@@ -49,24 +106,57 @@ pub enum Instruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Conditional {
     condition: IRExprID,
-    then_block: BlockID,
-    else_block: BlockID,
+    true_block: BlockID,
+    false_block: BlockID,
 }
 
 impl Conditional {
     #[must_use]
-    pub const fn new(condition: IRExprID, then_block: BlockID, else_block: BlockID) -> Self {
-        Self { condition, then_block, else_block }
+    pub const fn new(condition: IRExprID, true_block: BlockID, false_block: BlockID) -> Self {
+        Self { condition, true_block, false_block }
     }
 
     #[must_use]
     pub const fn condition(&self) -> IRExprID { self.condition }
 
     #[must_use]
-    pub const fn then_block(&self) -> BlockID { self.then_block }
+    pub const fn then_block(&self) -> BlockID { self.true_block }
 
     #[must_use]
-    pub const fn else_block(&self) -> BlockID { self.else_block }
+    pub const fn else_block(&self) -> BlockID { self.false_block }
+}
+
+/// Describes the kind of control-flow edge between two blocks in a control-flow
+/// graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum ControlFlowEdgeKind {
+    /// A control-flow edge that is always taken.
+    Jump,
+    /// A control-flow edge that is taken when a condition evaluates to true.
+    ConditionalTrue,
+    /// A control-flow edge that is taken when a condition evaluates to false.
+    ConditionalFalse,
+}
+
+/// Describes a control-flow edge between two blocks in a control-flow graph.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Builder,
+)]
+pub struct ControlFlowEdge {
+    kind: ControlFlowEdgeKind,
+    source: BlockID,
+    target: BlockID,
+}
+
+impl ControlFlowEdge {
+    #[must_use]
+    pub const fn kind(&self) -> ControlFlowEdgeKind { self.kind }
+
+    #[must_use]
+    pub const fn source(&self) -> BlockID { self.source }
+
+    #[must_use]
+    pub const fn target(&self) -> BlockID { self.target }
 }
 
 /// The single operation that transfers control out of a sealed block.
@@ -77,6 +167,41 @@ pub enum Terminator {
     Jump(BlockID),
     Conditional(Conditional),
     Return(Option<IRExprID>),
+}
+
+impl Terminator {
+    pub fn jump_targets(&self) -> impl Iterator<Item = BlockID> + '_ {
+        pub enum Iter<A, B, C> {
+            A(A),
+            B(B),
+            C(C),
+        }
+
+        impl<A, B, C> Iterator for Iter<A, B, C>
+        where
+            A: Iterator<Item = BlockID>,
+            B: Iterator<Item = BlockID>,
+            C: Iterator<Item = BlockID>,
+        {
+            type Item = BlockID;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    Self::A(a) => a.next(),
+                    Self::B(b) => b.next(),
+                    Self::C(c) => c.next(),
+                }
+            }
+        }
+
+        match self {
+            Self::Jump(block_id) => Iter::A(std::iter::once(*block_id)),
+            Self::Conditional(conditional) => {
+                Iter::B([conditional.true_block, conditional.false_block].into_iter())
+            }
+            Self::Return(_) => Iter::C(std::iter::empty()),
+        }
+    }
 }
 
 /// The blocks and expression instructions reachable from a control-flow
@@ -109,8 +234,103 @@ pub struct Cfg {
     entry_block: ID<Block>,
 }
 
+impl Index<BlockID> for Cfg {
+    type Output = Block;
+
+    fn index(&self, index: BlockID) -> &Self::Output {
+        self.blocks.get(index).expect("Block should exist")
+    }
+}
+
 impl Default for Cfg {
     fn default() -> Self { Self::new() }
+}
+
+#[derive(Debug, Clone)]
+enum OutgoingEdgeCursor {
+    Empty,
+    Unconditional(Option<ControlFlowEdge>),
+    Conditional { true_edge: Option<ControlFlowEdge>, false_edge: Option<ControlFlowEdge> },
+}
+
+/// Iterates over the outgoing edges of a block without heap allocation.
+#[derive(Debug, Clone)]
+pub struct OutgoingEdges {
+    cursor: OutgoingEdgeCursor,
+}
+
+impl Iterator for OutgoingEdges {
+    type Item = ControlFlowEdge;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.cursor {
+            OutgoingEdgeCursor::Empty => None,
+
+            OutgoingEdgeCursor::Unconditional(edge) => edge.take(),
+
+            OutgoingEdgeCursor::Conditional { true_edge, false_edge } => {
+                true_edge.take().or_else(|| false_edge.take())
+            }
+        }
+    }
+}
+
+/// Iterates over the incoming edges of a block without heap allocation.
+#[derive(Debug, Clone)]
+pub struct IncomingEdges<'a> {
+    graph: &'a Cfg,
+    target: ID<Block>,
+    predecessors: hash_set::Iter<'a, BlockID>,
+    current_outgoing: Option<OutgoingEdges>,
+}
+
+impl Iterator for IncomingEdges<'_> {
+    type Item = ControlFlowEdge;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(edge) = self.current_outgoing.as_mut().and_then(Iterator::next) {
+                if edge.target == self.target {
+                    return Some(edge);
+                }
+
+                continue;
+            }
+
+            let predecessor = *self.predecessors.next()?;
+            self.current_outgoing = self.graph.outgoing_edges(predecessor);
+        }
+    }
+}
+
+/// Iterates over the boundary blocks for a given dataflow direction.
+#[derive(Debug, Clone)]
+pub struct BoundaryBlocks<'a> {
+    graph: &'a Cfg,
+    direction: Direction,
+    traverser: Traverser<'a>,
+    emitted_entry: bool,
+}
+
+impl Iterator for BoundaryBlocks<'_> {
+    type Item = ID<Block>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.direction {
+            Direction::Forward => {
+                if self.emitted_entry {
+                    None
+                } else {
+                    self.emitted_entry = true;
+                    Some(self.graph.entry_block)
+                }
+            }
+
+            Direction::Backward => self.traverser.find_map(|(block_id, _)| {
+                self.graph.outgoing_edges(block_id)?.next().is_none().then_some(block_id)
+            }),
+        }
+    }
 }
 
 impl Cfg {
@@ -147,9 +367,50 @@ impl Cfg {
     }
 
     pub fn set_terminator(&mut self, block_id: BlockID, terminator: Terminator) {
+        // set the predecessors of the successor blocks to include this block
+        match &terminator {
+            Terminator::Jump(id) => {
+                self.blocks[*id].predecessors.insert(block_id);
+            }
+            Terminator::Conditional(conditional) => {
+                self.blocks[conditional.true_block].predecessors.insert(block_id);
+                self.blocks[conditional.false_block].predecessors.insert(block_id);
+            }
+            Terminator::Return(_) => {}
+        }
+
         let block = self.blocks.get_mut(block_id).expect("Block should exist");
-        assert!(block.terminator.is_none(), "Cannot replace a block terminator");
+        assert!(block.terminator.is_none(), "Cannot set a terminator on a sealed block");
         block.terminator = Some(terminator);
+    }
+
+    #[must_use]
+    pub fn instructions_with_points(
+        &self,
+        block_id: BlockID,
+    ) -> impl ExactSizeIterator<Item = (Point, &Instruction)> {
+        self.blocks.get(block_id).expect("Block should exist").instructions.iter().enumerate().map(
+            move |(instruction_idx, instruction)| {
+                (Point { block_id, instruction_idx }, instruction)
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn instructions_with_points_rev(
+        &self,
+        block_id: BlockID,
+    ) -> impl ExactSizeIterator<Item = (Point, &Instruction)> {
+        self.blocks
+            .get(block_id)
+            .expect("Block should exist")
+            .instructions
+            .iter()
+            .enumerate()
+            .rev()
+            .map(move |(instruction_idx, instruction)| {
+                (Point { block_id, instruction_idx }, instruction)
+            })
     }
 
     #[must_use]
@@ -167,6 +428,12 @@ impl Cfg {
         self.blocks
             .iter()
             .filter_map(|(block_id, block)| block.terminator.is_none().then_some(block_id))
+    }
+
+    /// Iterates over reachable blocks.
+    #[must_use]
+    pub fn traverse(&self) -> Traverser<'_> {
+        Traverser { cfg: self, visited: FxHashSet::default(), stack: vec![self.entry_block] }
     }
 
     /// Calculates the blocks and expression instructions reachable from the
@@ -200,13 +467,65 @@ impl Cfg {
                     pending.push_back(*successor);
                 }
                 Terminator::Conditional(conditional) => {
-                    pending.push_back(conditional.then_block);
-                    pending.push_back(conditional.else_block);
+                    pending.push_back(conditional.true_block);
+                    pending.push_back(conditional.false_block);
                 }
                 Terminator::Return(_) => {}
             }
         }
 
         Reachables { reachable_blocks, reachable_expressions }
+    }
+
+    /// Returns the outgoing edges from the given block.
+    #[must_use]
+    pub fn outgoing_edges(&self, block_id: ID<Block>) -> Option<OutgoingEdges> {
+        let block = self.blocks.get(block_id)?;
+
+        let cursor = match block.terminator() {
+            None | Some(Terminator::Return(_)) => OutgoingEdgeCursor::Empty,
+
+            Some(Terminator::Jump(unconditional)) => {
+                OutgoingEdgeCursor::Unconditional(Some(ControlFlowEdge {
+                    source: block_id,
+                    target: *unconditional,
+                    kind: ControlFlowEdgeKind::Jump,
+                }))
+            }
+
+            Some(Terminator::Conditional(conditional)) => OutgoingEdgeCursor::Conditional {
+                true_edge: Some(ControlFlowEdge {
+                    source: block_id,
+                    target: conditional.true_block,
+                    kind: ControlFlowEdgeKind::ConditionalTrue,
+                }),
+                false_edge: Some(ControlFlowEdge {
+                    source: block_id,
+                    target: conditional.false_block,
+                    kind: ControlFlowEdgeKind::ConditionalFalse,
+                }),
+            },
+        };
+
+        Some(OutgoingEdges { cursor })
+    }
+
+    /// Returns the incoming edges to the given block.
+    #[must_use]
+    pub fn incoming_edges(&self, block_id: ID<Block>) -> Option<IncomingEdges<'_>> {
+        let block = self.blocks.get(block_id)?;
+
+        Some(IncomingEdges {
+            graph: self,
+            target: block_id,
+            predecessors: block.predecessors.iter(),
+            current_outgoing: None,
+        })
+    }
+
+    /// Returns the boundary blocks for the given dataflow direction.
+    #[must_use]
+    pub fn boundary_block_ids(&self, direction: Direction) -> BoundaryBlocks<'_> {
+        BoundaryBlocks { graph: self, direction, traverser: self.traverse(), emitted_entry: false }
     }
 }
