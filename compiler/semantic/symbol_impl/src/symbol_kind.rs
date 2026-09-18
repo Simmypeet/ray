@@ -5,7 +5,9 @@ use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{
     SymbolID,
-    symbol_kind::{AllCallableDefIDs, AllDefIDs, AllInstanceIDs, AllSymbolIDs, Key, SymbolKind},
+    symbol_kind::{
+        AllCallableDefIDs, AllDefWithBodyIDs, AllInstanceIDs, AllSymbolIDs, Key, SymbolKind,
+    },
 };
 
 use crate::table::get_table;
@@ -32,17 +34,17 @@ static ALL_SYMBOL_IDS_EXECUTOR: Registration<Config> =
     Registration::new::<AllSymbolIDs, AllSymbolIdsExecutor>();
 
 #[executor(config = Config)]
-pub async fn all_def_ids_executor(
-    &AllDefIDs { target }: &AllDefIDs,
+pub async fn all_def_with_body_ids_executor(
+    &AllDefWithBodyIDs { target }: &AllDefWithBodyIDs,
     engine: &TrackedEngine,
 ) -> Arc<[SymbolID]> {
     let table = engine.get_table(target).await;
-    table.all_def_ids().collect::<Arc<_>>()
+    table.all_def_with_body_ids().collect::<Arc<_>>()
 }
 
 #[distributed_slice(RAY_PROGRAM)]
-static ALL_DEF_IDS_EXECUTOR: Registration<Config> =
-    Registration::new::<AllDefIDs, AllDefIdsExecutor>();
+static ALL_DEF_WITH_BODY_IDS_EXECUTOR: Registration<Config> =
+    Registration::new::<AllDefWithBodyIDs, AllDefWithBodyIdsExecutor>();
 
 #[executor(config = Config)]
 pub async fn all_instance_ids_executor(

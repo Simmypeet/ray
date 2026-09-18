@@ -60,6 +60,10 @@ impl SymbolKind {
         matches!(self, Self::Effect | Self::Instance | Self::Module | Self::Trait)
     }
 
+    /// Checks if this kind of symbol has a definition body.
+    #[must_use]
+    pub const fn has_def_body(&self) -> bool { matches!(self, Self::Def | Self::InstanceDef) }
+
     /// Checks if this kind of symbol owns a polymorphic-variable map.
     #[must_use]
     pub const fn has_poly_var_map(&self) -> bool {
@@ -165,8 +169,8 @@ pub struct AllSymbolIDs {
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
 #[value(Arc<[SymbolID]>)]
-#[extend(name = get_all_def_ids, by_val)]
-pub struct AllDefIDs {
+#[extend(name = get_all_def_with_body_ids, by_val)]
+pub struct AllDefWithBodyIDs {
     pub target: TargetID,
 }
 

@@ -439,8 +439,8 @@ impl Table {
         self.symbol_kinds.keys().copied()
     }
 
-    pub fn all_def_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
-        self.symbol_kinds.iter().filter_map(|(id, kind)| (*kind == SymbolKind::Def).then_some(*id))
+    pub fn all_def_with_body_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
+        self.symbol_kinds.iter().filter_map(|(id, kind)| kind.has_def_body().then_some(*id))
     }
 
     pub fn all_callable_def_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {

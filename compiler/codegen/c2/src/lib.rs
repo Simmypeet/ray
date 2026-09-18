@@ -10,7 +10,7 @@ use rayc_mono_ir::{MonoDefInstance, MonoIR};
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::{
     GlobalSymbolID,
-    symbol_kind::{SymbolKind, get_all_def_ids, get_symbol_kind},
+    symbol_kind::{SymbolKind, get_all_def_with_body_ids, get_symbol_kind},
 };
 use rayc_target::TargetID;
 use rayc_type::{poly_var::get_poly_var_map, subst::Subst};
@@ -51,7 +51,7 @@ pub async fn write_c_translation_unit(
     output: &mut impl Write,
 ) -> io::Result<()> {
     let mut initial_definitions = Vec::new();
-    for def_id in engine.get_all_def_ids(target_id).await.iter().copied() {
+    for def_id in engine.get_all_def_with_body_ids(target_id).await.iter().copied() {
         let def_id = target_id.make_global(def_id);
         match engine.get_symbol_kind(def_id).await {
             SymbolKind::Def => {
@@ -60,11 +60,11 @@ pub async fn write_c_translation_unit(
                         .push(MonoDefInstance::new(def_id, Subst::new_empty(), engine).await);
                 }
             }
-            SymbolKind::ExternDef => {}
+            SymbolKind::InstanceDef | SymbolKind::ExternDef => {}
+
             SymbolKind::Effect
             | SymbolKind::EffectOperation
             | SymbolKind::Instance
-            | SymbolKind::InstanceDef
             | SymbolKind::Marker
             | SymbolKind::MarkerImplementation
             | SymbolKind::Module

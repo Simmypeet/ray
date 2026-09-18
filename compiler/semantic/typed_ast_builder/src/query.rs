@@ -5,7 +5,7 @@ use qbice::{
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_source_file::SourceElement;
-use rayc_symbol::{GlobalSymbolID, span::get_span, symbol_kind::get_all_def_ids};
+use rayc_symbol::{GlobalSymbolID, span::get_span, symbol_kind::get_all_def_with_body_ids};
 use rayc_target::TargetID;
 use rayc_typed_ast::{TypedAst, name_binding::Source, typed_function::TypedFunctionLocalID};
 
@@ -136,7 +136,7 @@ pub async fn rendered_executor(
     engine: &TrackedEngine,
 ) -> Interned<[Interned<[Rendered<ByteIndex>]>]> {
     let mut rendered = Vec::new();
-    let def_ids = engine.get_all_def_ids(target_id).await;
+    let def_ids = engine.get_all_def_with_body_ids(target_id).await;
 
     for def_id in def_ids.iter().copied() {
         rendered

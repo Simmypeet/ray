@@ -7,7 +7,9 @@ use rayc_ir::ir_function::IRFunctionMap;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::return_type::get_return_type;
 use rayc_source_file::SourceElement;
-use rayc_symbol::{span::get_span, symbol_kind::get_all_def_ids, syntax::get_def_body_syntax};
+use rayc_symbol::{
+    span::get_span, symbol_kind::get_all_def_with_body_ids, syntax::get_def_body_syntax,
+};
 use rayc_target::TargetID;
 use rayc_typed_ast::get_typed_ast;
 
@@ -100,7 +102,7 @@ async fn rendered_executor(
     engine: &TrackedEngine,
 ) -> Interned<[Interned<[Rendered<ByteIndex>]>]> {
     let mut rendered = Vec::new();
-    let def_ids = engine.get_all_def_ids(target_id).await;
+    let def_ids = engine.get_all_def_with_body_ids(target_id).await;
     for def_id in def_ids.iter().copied() {
         rendered
             .push(engine.query(&SingleRenderedKey { def_id: target_id.make_global(def_id) }).await);
