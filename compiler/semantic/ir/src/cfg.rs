@@ -8,7 +8,7 @@ use qbice::{Decode, Encode, StableHash};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashSet;
 
-use crate::{address::Address, dataflow::Direction, ir_expr::IRExprID};
+use crate::{address::Address, dataflow::Direction, ir_expr::IRExprID, scope::ScopeID};
 
 /// Identifies a basic block stored in a function's control-flow graph.
 pub type BlockID = ID<Block>;
@@ -97,6 +97,10 @@ impl Store {
 /// An operation evaluated at a precise position in a basic block.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum Instruction {
+    /// Begins the lifetime of a lexical or temporary scope.
+    ScopePush(ScopeID),
+    /// Ends the lifetime of a lexical or temporary scope.
+    ScopePop(ScopeID),
     /// Defines and evaluates the identified expression exactly once.
     Expression(IRExprID),
     /// Writes an already-defined expression value to an address.
@@ -355,9 +359,21 @@ impl Cfg {
     pub fn create_block(&mut self) -> BlockID { self.blocks.insert(Block::default()) }
 
     pub fn push_expression(&mut self, block_id: BlockID, expression: IRExprID) {
+        self.push_instruction(block_id, Instruction::Expression(expression));
+    }
+
+    pub fn push_scope(&mut self, block_id: BlockID, scope_id: ScopeID) {
+        self.push_instruction(block_id, Instruction::ScopePush(scope_id));
+    }
+
+    pub fn pop_scope(&mut self, block_id: BlockID, scope_id: ScopeID) {
+        self.push_instruction(block_id, Instruction::ScopePop(scope_id));
+    }
+
+    fn push_instruction(&mut self, block_id: BlockID, instruction: Instruction) {
         let block = self.blocks.get_mut(block_id).expect("Block should exist");
         assert!(block.terminator.is_none(), "Cannot append an instruction to a sealed block");
-        block.instructions.push(Instruction::Expression(expression));
+        block.instructions.push(instruction);
     }
 
     pub fn push_store(&mut self, block_id: BlockID, address: Address, expression: IRExprID) {
@@ -453,10 +469,15 @@ impl Cfg {
 
             let block = self.blocks.get(block_id).expect("Reachable block should exist");
             for instruction in &block.instructions {
-                if let Instruction::Expression(expression_id) = instruction
-                    && visited_expressions.insert(*expression_id)
-                {
-                    reachable_expressions.push(*expression_id);
+                match instruction {
+                    Instruction::ScopePush(_)
+                    | Instruction::ScopePop(_)
+                    | Instruction::Store(_) => {}
+                    Instruction::Expression(expression_id) => {
+                        if visited_expressions.insert(*expression_id) {
+                            reachable_expressions.push(*expression_id);
+                        }
+                    }
                 }
             }
             let terminator =

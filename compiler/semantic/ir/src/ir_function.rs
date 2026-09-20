@@ -237,6 +237,14 @@ impl IRFunctionMap {
         self.get_function_mut(function_id).push_expression(block_id, expression);
     }
 
+    pub fn push_scope(&mut self, function_id: FunctionID, block_id: BlockID, scope_id: ScopeID) {
+        self.get_function_mut(function_id).push_scope(block_id, scope_id);
+    }
+
+    pub fn pop_scope(&mut self, function_id: FunctionID, block_id: BlockID, scope_id: ScopeID) {
+        self.get_function_mut(function_id).pop_scope(block_id, scope_id);
+    }
+
     pub fn push_store(
         &mut self,
         function_id: FunctionID,
@@ -514,6 +522,14 @@ impl IRFunction {
 
     pub fn push_expression(&mut self, block_id: BlockID, expression: IRExprID) {
         self.cfg.push_expression(block_id, expression);
+    }
+
+    pub fn push_scope(&mut self, block_id: BlockID, scope_id: ScopeID) {
+        self.cfg.push_scope(block_id, scope_id);
+    }
+
+    pub fn pop_scope(&mut self, block_id: BlockID, scope_id: ScopeID) {
+        self.cfg.pop_scope(block_id, scope_id);
     }
 
     pub fn push_store(&mut self, block_id: BlockID, address: Address, value: IRExprID) {
