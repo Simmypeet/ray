@@ -362,11 +362,11 @@ impl Cfg {
         self.push_instruction(block_id, Instruction::Expression(expression));
     }
 
-    pub fn push_scope(&mut self, block_id: BlockID, scope_id: ScopeID) {
+    pub fn push_scope_push_instruction(&mut self, block_id: BlockID, scope_id: ScopeID) {
         self.push_instruction(block_id, Instruction::ScopePush(scope_id));
     }
 
-    pub fn pop_scope(&mut self, block_id: BlockID, scope_id: ScopeID) {
+    pub fn push_scope_pop_instruction(&mut self, block_id: BlockID, scope_id: ScopeID) {
         self.push_instruction(block_id, Instruction::ScopePop(scope_id));
     }
 
