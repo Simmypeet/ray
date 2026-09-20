@@ -10,7 +10,7 @@ use rayc_source_file::SourceElement;
 use rayc_symbol::{
     span::get_span, symbol_kind::get_all_def_with_body_ids, syntax::get_def_body_syntax,
 };
-use rayc_target::TargetID;
+use rayc_target::{TargetID, get_ir_verification};
 use rayc_typed_ast::get_typed_ast;
 
 use crate::{diagnostic::NotAllPathsReturnValue, lower_function};
@@ -42,6 +42,11 @@ async fn build_ir_executor(
         return_ty,
         span,
     );
+    if engine.get_ir_verification(def_id.target_id).await
+        && let Err(error) = crate::verification::verify(&function).await
+    {
+        panic!("IR verification failed for {def_id:?}: {error}");
+    }
     (engine.intern(function), engine.intern_unsized(diagnostics))
 }
 

@@ -121,7 +121,7 @@ fn execute(executable_path: &Path, stdin: &str) -> Output {
 }
 
 fn build_arguments(file_path: &Path, executable_path: &Path) -> Arguments {
-    Arguments::parse_from([
+    let mut arguments = Arguments::parse_from([
         OsString::from("rayc"),
         OsString::from("build"),
         file_path.as_os_str().to_owned(),
@@ -132,7 +132,9 @@ fn build_arguments(file_path: &Path, executable_path: &Path) -> Arguments {
         OsString::from("0"),
         OsString::from("-o"),
         executable_path.as_os_str().to_owned(),
-    ])
+    ]);
+    arguments.enable_ir_verification();
+    arguments
 }
 
 fn render_outputs(outputs: &[Output]) -> String {

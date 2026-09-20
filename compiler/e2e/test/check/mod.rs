@@ -76,7 +76,7 @@ async fn test(file_path: &Path) {
     };
 
     // read for the custom cli interface starting with `##` comment
-    let arguments = buf_reader.lines().next().map(|x| x.unwrap()).map_or_else(
+    let mut arguments = buf_reader.lines().next().map(|x| x.unwrap()).map_or_else(
         || Arguments::new_check(input()),
         |mut first_line| {
             if first_line.starts_with("##") {
@@ -91,6 +91,7 @@ async fn test(file_path: &Path) {
             }
         },
     );
+    arguments.enable_ir_verification();
 
     let run = run(arguments).await;
 

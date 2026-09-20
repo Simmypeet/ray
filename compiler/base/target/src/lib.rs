@@ -500,6 +500,9 @@ impl Arguments {
     #[must_use]
     pub const fn verify_ir(&self) -> bool { self.command.input().verify_ir }
 
+    /// Enables verification of finalized function IR for this invocation.
+    pub const fn enable_ir_verification(&mut self) { self.command.input_mut().verify_ir = true; }
+
     #[must_use]
     pub const fn chrome_tracing(&self) -> bool { self.command.input().chrome_tracing }
 

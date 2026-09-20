@@ -7,6 +7,7 @@ use rayc_type::ty::{Ty, application::ClosureID};
 use crate::{
     address::Address,
     cfg::{BlockID, Cfg, Instruction, Reachables, Terminator},
+    dataflow::{DataflowProblem, DataflowSolution, solve},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
     ir_lambda::{
         Capture, CaptureID, CaptureMap, CaptureMapID, IRLambdaContext, IRThunkContext,
@@ -567,6 +568,14 @@ impl IRFunction {
 
     #[must_use]
     pub fn reachables(&self) -> Reachables { self.cfg.reachables() }
+
+    /// Solves a dataflow problem over this function's control-flow graph.
+    pub async fn solve_dataflow<P: DataflowProblem>(
+        &self,
+        problem: &mut P,
+    ) -> Result<DataflowSolution<P::JoinLattice>, P::Error> {
+        solve(problem, &self.cfg).await
+    }
 }
 
 impl VisitType for IRFunction {

@@ -13,6 +13,7 @@ pub mod diagnostic;
 mod expression;
 pub mod query;
 mod statement;
+mod verification;
 
 /// Keeps this crate linked so its distributed query registration is retained.
 pub const fn black_box() {}
