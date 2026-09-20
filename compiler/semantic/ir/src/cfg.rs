@@ -400,6 +400,97 @@ impl Cfg {
         block.terminator = Some(terminator);
     }
 
+    /// Splits every critical edge in the graph and returns the number of
+    /// intermediate blocks that were inserted.
+    ///
+    /// An edge is critical when its source has multiple outgoing edges and its
+    /// target has multiple incoming edges. Each such edge is replaced by an
+    /// edge to a new empty block that unconditionally jumps to the original
+    /// target.
+    pub fn split_critical_edges(&mut self) -> usize {
+        let mut critical_edges = Vec::new();
+
+        // Take a snapshot before mutating the graph so every original critical
+        // edge is split exactly once.
+        for block_id in self.blocks.iter().map(|(block_id, _)| block_id) {
+            let outgoing_edges = self.outgoing_edges(block_id).expect("Block should exist");
+
+            if outgoing_edges.clone().count() < 2 {
+                continue;
+            }
+
+            for edge in outgoing_edges {
+                let incoming_edge_count =
+                    self.incoming_edges(edge.target).expect("Target block should exist").count();
+
+                if incoming_edge_count >= 2 {
+                    critical_edges.push(edge);
+                }
+            }
+        }
+
+        // Redirect each critical edge through a fresh block. Edge counts, not
+        // predecessor-block counts, are used above because both arms of a
+        // conditional may target the same block.
+        for edge in critical_edges.iter().copied() {
+            let split_block = self.create_block();
+            self.set_terminator(split_block, Terminator::Jump(edge.target));
+            self.redirect_edge(edge, split_block);
+        }
+
+        critical_edges.len()
+    }
+
+    fn redirect_edge(&mut self, edge: ControlFlowEdge, new_target: BlockID) {
+        // Update the selected terminator arm and determine whether another arm
+        // still connects the original source and target.
+        let source = self.blocks.get_mut(edge.source).expect("Source block should exist");
+        let terminator = source.terminator.as_mut().expect("Source block should be sealed");
+        match edge.kind {
+            ControlFlowEdgeKind::Jump => match terminator {
+                Terminator::Jump(target) => {
+                    assert_eq!(*target, edge.target, "Edge target should match its terminator");
+                    *target = new_target;
+                }
+                Terminator::Conditional(_) | Terminator::Return(_) => {
+                    panic!("Jump edge should have a jump terminator")
+                }
+            },
+            ControlFlowEdgeKind::ConditionalTrue => match terminator {
+                Terminator::Conditional(conditional) => {
+                    assert_eq!(
+                        conditional.true_block, edge.target,
+                        "Edge target should match its terminator"
+                    );
+                    conditional.true_block = new_target;
+                }
+                Terminator::Jump(_) | Terminator::Return(_) => {
+                    panic!("Conditional edge should have a conditional terminator")
+                }
+            },
+            ControlFlowEdgeKind::ConditionalFalse => match terminator {
+                Terminator::Conditional(conditional) => {
+                    assert_eq!(
+                        conditional.false_block, edge.target,
+                        "Edge target should match its terminator"
+                    );
+                    conditional.false_block = new_target;
+                }
+                Terminator::Jump(_) | Terminator::Return(_) => {
+                    panic!("Conditional edge should have a conditional terminator")
+                }
+            },
+        }
+        let still_targets_original = terminator.jump_targets().any(|target| target == edge.target);
+
+        // Keep the cached predecessor sets consistent with the rewritten
+        // terminator, including parallel edges between the same two blocks.
+        self.blocks[new_target].predecessors.insert(edge.source);
+        if !still_targets_original {
+            self.blocks[edge.target].predecessors.remove(&edge.source);
+        }
+    }
+
     #[must_use]
     pub fn instructions_with_points(
         &self,
@@ -550,3 +641,6 @@ impl Cfg {
         BoundaryBlocks { graph: self, direction, traverser: self.traverse(), emitted_entry: false }
     }
 }
+
+#[cfg(test)]
+mod tests;
