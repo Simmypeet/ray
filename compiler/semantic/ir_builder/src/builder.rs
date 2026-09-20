@@ -14,11 +14,9 @@ use rayc_type::ty::{Mutability, Ty, application::ClosureID};
 use self::function_build_state::FunctionBuildState;
 use crate::{diagnostic::NotAllPathsReturnValue, statement::LoopTarget};
 
-mod function_build_state;
+pub mod function_build_state;
 
-pub(crate) use function_build_state::ScopeKind;
-
-pub struct Builder {
+pub(crate) struct Builder {
     engine: TrackedEngine,
     ir_functions: IRFunctionMap,
     building_function: FunctionBuildState,

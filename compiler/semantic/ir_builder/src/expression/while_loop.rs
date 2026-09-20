@@ -5,7 +5,7 @@ use rayc_ir::{
 use rayc_typed_ast::typed_expr::while_loop::While;
 
 use crate::{
-    builder::{Builder, ScopeKind},
+    builder::{Builder, function_build_state::scope_tracker::ScopeKind},
     context::LoweringContext,
     expression::{Lower, LoweredExpression, TypedExprWithID},
     statement::LoopTarget,

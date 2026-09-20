@@ -2,7 +2,7 @@ use rayc_ir::cfg::{BlockID, Terminator};
 use rayc_typed_ast::statement::Statement;
 
 use crate::{
-    builder::{Builder, ScopeKind},
+    builder::{Builder, function_build_state::scope_tracker::ScopeKind},
     context::LoweringContext,
 };
 

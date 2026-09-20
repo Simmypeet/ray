@@ -28,11 +28,12 @@ use rayc_typed_ast::{
 
 use self::scope_tracker::ScopeTracker;
 use super::Builder;
-use crate::{context::LoweringContext, diagnostic::NotAllPathsReturnValue, statement::LoopTarget};
+use crate::{
+    builder::function_build_state::scope_tracker::ScopeKind, context::LoweringContext,
+    diagnostic::NotAllPathsReturnValue, statement::LoopTarget,
+};
 
-mod scope_tracker;
-
-pub(crate) use scope_tracker::ScopeKind;
+pub mod scope_tracker;
 
 pub(super) struct FunctionBuildState {
     ir_function_id: IrFunctionID,
