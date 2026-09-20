@@ -24,6 +24,7 @@ impl Builder<'_> {
             self.select_block(target_block);
             for instruction in source.block_instructions(source_block) {
                 match instruction {
+                    IRInstruction::ScopePush(_) | IRInstruction::ScopePop(_) => {}
                     IRInstruction::Expression(expression_id) => {
                         self.lower_expression(context, *expression_id, &source).await;
                     }

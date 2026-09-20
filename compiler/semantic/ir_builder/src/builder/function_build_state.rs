@@ -26,12 +26,18 @@ use rayc_typed_ast::{
     typed_variable::TypedVariableID,
 };
 
+use self::scope_tracker::ScopeTracker;
 use super::Builder;
 use crate::{context::LoweringContext, diagnostic::NotAllPathsReturnValue, statement::LoopTarget};
+
+mod scope_tracker;
+
+pub(crate) use scope_tracker::ScopeKind;
 
 pub(super) struct FunctionBuildState {
     ir_function_id: IrFunctionID,
     current_block: BlockID,
+    scopes: ScopeTracker,
     typed_function_id: TypedFunctionID,
     return_ty: Interned<Ty>,
     diagnostic_span: Option<RelativeSpan>,
@@ -67,9 +73,11 @@ impl FunctionBuildState {
         );
         let ir_function_id = ir_functions.root_id();
         let current_block = ir_functions.entry_block(ir_function_id);
+        let scopes = Self::initialize_scopes(ir_functions, ir_function_id, current_block);
         Self {
             ir_function_id,
             current_block,
+            scopes,
             typed_function_id,
             return_ty,
             diagnostic_span,
@@ -110,9 +118,11 @@ impl FunctionBuildState {
             assert!(lambda_parameters.insert(typed_id, ir_id).is_none());
         }
         let current_block = ir_functions.entry_block(ir_function_id);
+        let scopes = Self::initialize_scopes(ir_functions, ir_function_id, current_block);
         Self {
             ir_function_id,
             current_block,
+            scopes,
             typed_function_id,
             return_ty,
             diagnostic_span: Some(diagnostic_span),
@@ -140,9 +150,11 @@ impl FunctionBuildState {
             capture_map,
         );
         let current_block = ir_functions.entry_block(ir_function_id);
+        let scopes = Self::initialize_scopes(ir_functions, ir_function_id, current_block);
         Self {
             ir_function_id,
             current_block,
+            scopes,
             typed_function_id,
             return_ty,
             diagnostic_span: Some(diagnostic_span),
@@ -180,9 +192,11 @@ impl FunctionBuildState {
             assert!(operation_handler_parameters.insert(typed_id, ir_id).is_none());
         }
         let current_block = ir_functions.entry_block(ir_function_id);
+        let scopes = Self::initialize_scopes(ir_functions, ir_function_id, current_block);
         Self {
             ir_function_id,
             current_block,
+            scopes,
             typed_function_id,
             return_ty,
             diagnostic_span: Some(diagnostic_span),
@@ -216,6 +230,16 @@ impl FunctionBuildState {
         (capture_map_id, captures)
     }
 
+    fn initialize_scopes(
+        ir_functions: &mut IRFunctionMap,
+        function_id: IrFunctionID,
+        entry_block: BlockID,
+    ) -> ScopeTracker {
+        let root = ir_functions.root_scope_id(function_id);
+        ir_functions.push_scope_push_instruction(function_id, entry_block, root);
+        ScopeTracker::new(root)
+    }
+
     pub(super) fn push_loop_target(&mut self, target: LoopTarget) {
         self.loop_targets.push(target);
     }
@@ -230,6 +254,52 @@ impl FunctionBuildState {
 }
 
 impl Builder {
+    pub(crate) fn enter_scope(&mut self, kind: ScopeKind) {
+        let function_id = self.building_function.ir_function_id;
+        let parent = self.building_function.scopes.current();
+        let scope_id = self.ir_functions.insert_scope(function_id, parent);
+        self.enter_existing_scope(scope_id, kind);
+    }
+
+    pub(crate) fn create_scope_branch(
+        &mut self,
+        branch_count: usize,
+    ) -> Vec<rayc_ir::scope::ScopeID> {
+        let function_id = self.building_function.ir_function_id;
+        let parent = self.building_function.scopes.current();
+        self.ir_functions.insert_scope_branch(function_id, parent, branch_count)
+    }
+
+    pub(crate) fn enter_existing_scope(
+        &mut self,
+        scope_id: rayc_ir::scope::ScopeID,
+        kind: ScopeKind,
+    ) {
+        self.building_function.scopes.push(scope_id, kind);
+        self.ir_functions.push_scope_push_instruction(
+            self.building_function.ir_function_id,
+            self.building_function.current_block,
+            scope_id,
+        );
+    }
+
+    pub(crate) fn exit_scope(&mut self) {
+        let scope_id = self.building_function.scopes.pop();
+        if !self.is_terminated() {
+            self.emit_scope_pop(scope_id);
+        }
+    }
+
+    pub(crate) const fn scope_depth(&self) -> usize { self.building_function.scopes.depth() }
+
+    fn emit_scope_pop(&mut self, scope_id: rayc_ir::scope::ScopeID) {
+        self.ir_functions.push_scope_pop_instruction(
+            self.building_function.ir_function_id,
+            self.building_function.current_block,
+            scope_id,
+        );
+    }
+
     pub fn new(
         engine: TrackedEngine,
         context: &LoweringContext<'_>,
@@ -399,7 +469,7 @@ impl Builder {
     fn finish_current_function(&mut self) {
         let function_id = self.building_function.ir_function_id;
 
-        // has no unterminated blocks, so no need to check for return value
+        // Functions with only explicit returns have already unwound their root scope.
         if self.ir_functions.get_function(function_id).unterminated_blocks().next().is_none() {
             return;
         }
@@ -411,6 +481,13 @@ impl Builder {
             self.diagnostics.push(NotAllPathsReturnValue::builder().span(span).build());
         }
 
+        // Every implicit return closes the function root scope first.
+        let root_scope = self.ir_functions.root_scope_id(function_id);
+        let unterminated: Vec<_> =
+            self.ir_functions.get_function(function_id).unterminated_blocks().collect();
+        for block_id in unterminated {
+            self.ir_functions.push_scope_pop_instruction(function_id, block_id, root_scope);
+        }
         self.ir_functions.fill_return_on_unterminated_blocks(function_id);
     }
 
@@ -436,7 +513,7 @@ impl Builder {
 
     pub fn create_temporary(&mut self, ty: Interned<Ty>, span: RelativeSpan) -> IRVariableID {
         let function_id = self.building_function.ir_function_id;
-        let scope_id = self.ir_functions.root_scope_id(function_id);
+        let scope_id = self.building_function.scopes.current();
         self.ir_functions.create_variable_in_scope(function_id, scope_id, ty, span)
     }
 
@@ -447,7 +524,7 @@ impl Builder {
     ) -> IRVariableID {
         let variable = context.variable(typed_id);
         let function_id = self.building_function.ir_function_id;
-        let scope_id = self.ir_functions.root_scope_id(function_id);
+        let scope_id = self.building_function.scopes.current_lexical();
         let ir_id = self.ir_functions.create_variable_in_scope(
             function_id,
             scope_id,

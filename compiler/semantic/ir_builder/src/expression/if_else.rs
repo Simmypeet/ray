@@ -5,7 +5,7 @@ use rayc_ir::{
 use rayc_typed_ast::typed_expr::if_else::{Arm, IfElse};
 
 use crate::{
-    builder::Builder,
+    builder::{Builder, ScopeKind},
     context::LoweringContext,
     expression::{Lower, LoweredExpression, TypedExprWithID},
 };
@@ -25,6 +25,9 @@ impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
         // the next condition (or the final else path).
         let merge_block = self.create_block();
         let mut incoming = Vec::new();
+        let branch_count =
+            if_else.conditional_arms().count() + usize::from(if_else.else_arm().is_some());
+        let mut arm_scopes = self.create_scope_branch(branch_count).into_iter();
 
         for conditional_arm in if_else.conditional_arms() {
             let condition = self.lower_rvalue_by_id(context, conditional_arm.condition());
@@ -37,7 +40,13 @@ impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
             )));
 
             self.select_block(arm_block);
-            if let Some(value) = self.lower_arm(context, conditional_arm.arm(), span, &ty) {
+            self.enter_existing_scope(
+                arm_scopes.next().expect("a conditional arm scope should exist"),
+                ScopeKind::Lexical,
+            );
+            let value = self.lower_arm(context, conditional_arm.arm(), span, &ty);
+            self.exit_scope();
+            if let Some(value) = value {
                 incoming.push((self.jump_to(merge_block), value));
             }
 
@@ -46,10 +55,17 @@ impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
 
         // A missing else is the implicit unit-valued fallthrough path.
         let else_value = if let Some(else_arm) = if_else.else_arm() {
-            self.lower_arm(context, else_arm, span, &ty)
+            self.enter_existing_scope(
+                arm_scopes.next().expect("an else arm scope should exist"),
+                ScopeKind::Lexical,
+            );
+            let value = self.lower_arm(context, else_arm, span, &ty);
+            self.exit_scope();
+            value
         } else {
             Some(self.emit_unit(span, ty.clone()))
         };
+        assert!(arm_scopes.next().is_none(), "all if arm scopes should be lowered");
         if let Some(value) = else_value {
             incoming.push((self.jump_to(merge_block), value));
         }

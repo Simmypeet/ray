@@ -1,17 +1,25 @@
 use rayc_ir::cfg::{BlockID, Terminator};
 use rayc_typed_ast::statement::Statement;
 
-use crate::{builder::Builder, context::LoweringContext};
+use crate::{
+    builder::{Builder, ScopeKind},
+    context::LoweringContext,
+};
 
 #[derive(Clone, Copy)]
 pub(crate) struct LoopTarget {
     break_target: BlockID,
     continue_target: BlockID,
+    scope_depth: usize,
 }
 
 impl LoopTarget {
-    pub(crate) const fn new(break_target: BlockID, continue_target: BlockID) -> Self {
-        Self { break_target, continue_target }
+    pub(crate) const fn new(
+        break_target: BlockID,
+        continue_target: BlockID,
+        scope_depth: usize,
+    ) -> Self {
+        Self { break_target, continue_target, scope_depth }
     }
 }
 
@@ -30,6 +38,9 @@ impl Builder {
                 break;
             }
 
+            // Temporaries produced while lowering one statement live only for that
+            // statement.
+            self.enter_scope(ScopeKind::Temporary);
             match statement {
                 Statement::Let(let_statement) => {
                     let typed_id = let_statement.variable_id();
@@ -42,11 +53,13 @@ impl Builder {
                 }
                 Statement::Break(_) => {
                     if let Some(loop_target) = self.current_loop_target() {
+                        self.unwind_scopes_from(loop_target.scope_depth);
                         self.jump_to(loop_target.break_target);
                     }
                 }
                 Statement::Continue(_) => {
                     if let Some(loop_target) = self.current_loop_target() {
+                        self.unwind_scopes_from(loop_target.scope_depth);
                         self.jump_to(loop_target.continue_target);
                     }
                 }
@@ -57,9 +70,11 @@ impl Builder {
                     let value = return_statement
                         .value()
                         .map(|value| self.lower_rvalue_by_id(context, value));
+                    self.unwind_all_scopes();
                     self.terminate(Terminator::Return(value));
                 }
             }
+            self.exit_scope();
         }
     }
 }

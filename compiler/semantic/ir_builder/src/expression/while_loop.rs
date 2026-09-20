@@ -5,7 +5,7 @@ use rayc_ir::{
 use rayc_typed_ast::typed_expr::while_loop::While;
 
 use crate::{
-    builder::Builder,
+    builder::{Builder, ScopeKind},
     context::LoweringContext,
     expression::{Lower, LoweredExpression, TypedExprWithID},
     statement::LoopTarget,
@@ -34,9 +34,12 @@ impl<'a> Lower<TypedExprWithID<&'a While>> for Builder {
         )));
 
         self.select_block(body_block);
-        self.push_loop_target(LoopTarget::new(exit_block, condition_block));
+        let loop_scope_depth = self.scope_depth();
+        self.enter_scope(ScopeKind::Lexical);
+        self.push_loop_target(LoopTarget::new(exit_block, condition_block, loop_scope_depth));
         self.lower_statement_list(context, while_loop.body());
         self.pop_loop_target();
+        self.exit_scope();
         if !self.is_terminated() {
             self.jump_to(condition_block);
         }

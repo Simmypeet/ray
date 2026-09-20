@@ -16,6 +16,8 @@ use crate::{diagnostic::NotAllPathsReturnValue, statement::LoopTarget};
 
 mod function_build_state;
 
+pub(crate) use function_build_state::ScopeKind;
+
 pub struct Builder {
     engine: TrackedEngine,
     ir_functions: IRFunctionMap,
