@@ -14,7 +14,7 @@ use rayc_ir::{
         OperationHandlerParameter as IrOperationHandlerParameter,
         OperationHandlerParameterID as IrOperationHandlerParameterID,
     },
-    ir_variable::{IRVariable, IRVariableID},
+    ir_variable::IRVariableID,
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
@@ -435,8 +435,9 @@ impl Builder {
     }
 
     pub fn create_temporary(&mut self, ty: Interned<Ty>, span: RelativeSpan) -> IRVariableID {
-        self.ir_functions
-            .insert_variable(self.building_function.ir_function_id, IRVariable::new(ty, span))
+        let function_id = self.building_function.ir_function_id;
+        let scope_id = self.ir_functions.root_scope_id(function_id);
+        self.ir_functions.create_variable_in_scope(function_id, scope_id, ty, span)
     }
 
     pub fn register_source_variable(
@@ -445,9 +446,13 @@ impl Builder {
         typed_id: TypedVariableID,
     ) -> IRVariableID {
         let variable = context.variable(typed_id);
-        let ir_id = self.ir_functions.insert_variable(
-            self.building_function.ir_function_id,
-            IRVariable::new(variable.ty().clone(), variable.span()),
+        let function_id = self.building_function.ir_function_id;
+        let scope_id = self.ir_functions.root_scope_id(function_id);
+        let ir_id = self.ir_functions.create_variable_in_scope(
+            function_id,
+            scope_id,
+            variable.ty().clone(),
+            variable.span(),
         );
         self.building_function.variables.insert(typed_id, ir_id);
         ir_id

@@ -3,7 +3,10 @@ use rayc_arena::{Arena, ID};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 
-use crate::visit::{TypeVisitor, VisitType};
+use crate::{
+    scope::ScopeID,
+    visit::{TypeVisitor, VisitType},
+};
 
 /// Identifies a local variable stored in a function's variable arena.
 pub type IRVariableID = ID<IRVariable>;
@@ -12,17 +15,23 @@ pub type IRVariableID = ID<IRVariable>;
 pub struct IRVariable {
     ty: Interned<Ty>,
     span: RelativeSpan,
+    scope_id: ScopeID,
 }
 
 impl IRVariable {
     #[must_use]
-    pub const fn new(ty: Interned<Ty>, span: RelativeSpan) -> Self { Self { ty, span } }
+    pub(crate) const fn new(ty: Interned<Ty>, span: RelativeSpan, scope_id: ScopeID) -> Self {
+        Self { ty, span, scope_id }
+    }
 
     #[must_use]
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
 
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
+
+    #[must_use]
+    pub const fn scope_id(&self) -> ScopeID { self.scope_id }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
@@ -32,7 +41,7 @@ pub struct IRVariableMap {
 
 impl IRVariableMap {
     #[must_use]
-    pub fn insert_variable(&mut self, variable: IRVariable) -> IRVariableID {
+    pub(crate) fn insert_variable(&mut self, variable: IRVariable) -> IRVariableID {
         self.variables.insert(variable)
     }
 

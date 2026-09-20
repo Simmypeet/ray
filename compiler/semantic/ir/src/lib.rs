@@ -6,6 +6,7 @@ pub mod ir_function;
 pub mod ir_lambda;
 pub mod ir_operation_handler;
 pub mod ir_variable;
+pub mod scope;
 pub mod visit;
 
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};

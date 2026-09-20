@@ -1,6 +1,7 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
+use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::{Ty, application::ClosureID};
 
 use crate::{
@@ -15,6 +16,7 @@ use crate::{
         IROperationHandlerContext, OperationHandlerParameter, OperationHandlerParameterID,
     },
     ir_variable::{IRVariable, IRVariableID, IRVariableMap},
+    scope::{Scope, ScopeID, ScopeMap},
     visit::{ExprVisitor, TypeVisitor, VisitExpr, VisitType},
 };
 
@@ -36,6 +38,31 @@ impl IRFunctionMap {
         let mut functions = Arena::new();
         let root = functions.insert(IRFunction::new(root_effect));
         Self { functions, capture_maps: Arena::new(), root, closures: FxHashMap::default() }
+    }
+
+    #[must_use]
+    pub fn root_scope_id(&self, function_id: FunctionID) -> ScopeID {
+        self.get_function(function_id).root_scope_id()
+    }
+
+    #[must_use]
+    pub fn get_scope(&self, function_id: FunctionID, scope_id: ScopeID) -> &Scope {
+        self.get_function(function_id).get_scope(scope_id)
+    }
+
+    #[must_use]
+    pub fn insert_scope(&mut self, function_id: FunctionID, parent: ScopeID) -> ScopeID {
+        self.get_function_mut(function_id).insert_scope(parent)
+    }
+
+    #[must_use]
+    pub fn insert_scope_branch(
+        &mut self,
+        function_id: FunctionID,
+        parent: ScopeID,
+        branch_count: usize,
+    ) -> Vec<ScopeID> {
+        self.get_function_mut(function_id).insert_scope_branch(parent, branch_count)
     }
 
     /// Associates a source closure identity with its lowered local function.
@@ -191,12 +218,14 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn insert_variable(
+    pub fn create_variable_in_scope(
         &mut self,
         function_id: FunctionID,
-        variable: IRVariable,
+        scope_id: ScopeID,
+        ty: Interned<Ty>,
+        span: RelativeSpan,
     ) -> IRVariableID {
-        self.get_function_mut(function_id).insert_variable(variable)
+        self.get_function_mut(function_id).create_variable_in_scope(scope_id, ty, span)
     }
 
     pub fn push_expression(
@@ -333,6 +362,7 @@ impl IRContext {
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IRFunction {
     cfg: Cfg,
+    scope_map: ScopeMap,
     variable_map: IRVariableMap,
     expression_map: IRExpressionMap,
     context: IRContext,
@@ -344,6 +374,7 @@ impl IRFunction {
     pub fn new(effect: Interned<Ty>) -> Self {
         Self {
             cfg: Cfg::default(),
+            scope_map: ScopeMap::new(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
             context: IRContext::Def,
@@ -359,6 +390,7 @@ impl IRFunction {
     ) -> Self {
         Self {
             cfg: Cfg::default(),
+            scope_map: ScopeMap::new(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
             context: IRContext::Lambda(IRLambdaContext::new(return_ty, capture_map)),
@@ -374,6 +406,7 @@ impl IRFunction {
     ) -> Self {
         Self {
             cfg: Cfg::default(),
+            scope_map: ScopeMap::new(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
             context: IRContext::Thunk(IRThunkContext::new(return_ty, capture_map)),
@@ -390,6 +423,7 @@ impl IRFunction {
     ) -> Self {
         Self {
             cfg: Cfg::default(),
+            scope_map: ScopeMap::new(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
             context: IRContext::OperationHandler(IROperationHandlerContext::new(
@@ -442,6 +476,20 @@ impl IRFunction {
     }
 
     #[must_use]
+    const fn root_scope_id(&self) -> ScopeID { self.scope_map.root_id() }
+
+    #[must_use]
+    fn get_scope(&self, id: ScopeID) -> &Scope { self.scope_map.get_scope(id) }
+
+    #[must_use]
+    fn insert_scope(&mut self, parent: ScopeID) -> ScopeID { self.scope_map.insert_scope(parent) }
+
+    #[must_use]
+    fn insert_scope_branch(&mut self, parent: ScopeID, branch_count: usize) -> Vec<ScopeID> {
+        self.scope_map.insert_branch(parent, branch_count)
+    }
+
+    #[must_use]
     pub const fn entry_block(&self) -> BlockID { self.cfg.entry_block() }
 
     #[must_use]
@@ -453,8 +501,15 @@ impl IRFunction {
     }
 
     #[must_use]
-    pub fn insert_variable(&mut self, variable: IRVariable) -> IRVariableID {
-        self.variable_map.insert_variable(variable)
+    fn create_variable_in_scope(
+        &mut self,
+        scope_id: ScopeID,
+        ty: Interned<Ty>,
+        span: RelativeSpan,
+    ) -> IRVariableID {
+        let variable_id = self.variable_map.insert_variable(IRVariable::new(ty, span, scope_id));
+        self.scope_map.register_variable(scope_id, variable_id);
+        variable_id
     }
 
     pub fn push_expression(&mut self, block_id: BlockID, expression: IRExprID) {
