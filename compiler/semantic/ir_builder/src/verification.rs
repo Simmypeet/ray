@@ -17,8 +17,12 @@ impl ScopeStack {
     const fn active() -> Self { Self::Active(Vec::new()) }
 }
 
-impl JoinLattice<ScopeStackError> for ScopeStack {
-    async fn join(&mut self, other: &Self) -> Result<bool, ScopeStackError> {
+impl JoinLattice<ScopeStackProblem, ScopeStackError> for ScopeStack {
+    async fn join(
+        &mut self,
+        other: &Self,
+        _dataflow_problem_ctx: &ScopeStackProblem,
+    ) -> Result<bool, ScopeStackError> {
         match (&*self, other) {
             (Self::Unreachable | Self::Active(_), Self::Unreachable) => Ok(false),
 

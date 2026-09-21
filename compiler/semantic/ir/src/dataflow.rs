@@ -16,18 +16,23 @@ pub enum Direction {
     Backward,
 }
 
-/// A join-semilattice used by the dataflow solver.
-pub trait JoinLattice<E>: Clone + Eq {
+/// A join-semilattice used by a dataflow problem.
+pub trait JoinLattice<D: ?Sized, E>: Clone + Eq {
     /// Joins `other` into `self`, returning whether `self` changed or the join
     /// failed.
     fn join<'a>(
         &'a mut self,
         other: &'a Self,
-    ) -> impl Future<Output = Result<bool, E>> + Send + use<'a, Self, E>;
+        dataflow_problem_ctx: &'a D,
+    ) -> impl Future<Output = Result<bool, E>> + Send + use<'a, Self, D, E>;
 }
 
-impl<T: JoinLattice<E> + Send + Sync, E> JoinLattice<E> for Option<T> {
-    async fn join(&mut self, other: &Self) -> Result<bool, E> {
+impl<T, D, E> JoinLattice<D, E> for Option<T>
+where
+    T: JoinLattice<D, E> + Send + Sync,
+    D: Sync + ?Sized,
+{
+    async fn join(&mut self, other: &Self, dataflow_problem_ctx: &D) -> Result<bool, E> {
         match other {
             None => Ok(false),
 
@@ -37,7 +42,7 @@ impl<T: JoinLattice<E> + Send + Sync, E> JoinLattice<E> for Option<T> {
                     Ok(true)
                 }
 
-                Some(this) => this.join(other).await,
+                Some(this) => this.join(other, dataflow_problem_ctx).await,
             },
         }
     }
@@ -46,7 +51,7 @@ impl<T: JoinLattice<E> + Send + Sync, E> JoinLattice<E> for Option<T> {
 /// Describes a dataflow problem that can be solved over a CFG.
 pub trait DataflowProblem {
     /// The lattice carried through the analysis.
-    type JoinLattice: JoinLattice<Self::Error>;
+    type JoinLattice: JoinLattice<Self, Self::Error>;
 
     /// The error returned by transfer or initialization routines.
     type Error;
@@ -250,7 +255,7 @@ pub async fn solve<P: DataflowProblem>(
                             if block_entries
                                 .get_mut(&edge.target())
                                 .unwrap()
-                                .join(&edge_state)
+                                .join(&edge_state, problem)
                                 .await?
                             {
                                 enqueue_block(&mut worklist, &mut queued_blocks, edge.target());
@@ -259,7 +264,7 @@ pub async fn solve<P: DataflowProblem>(
                     } else if block_entries
                         .get_mut(&edge.target())
                         .unwrap()
-                        .join(&candidate_state)
+                        .join(&candidate_state, problem)
                         .await?
                     {
                         enqueue_block(&mut worklist, &mut queued_blocks, edge.target());
@@ -301,7 +306,7 @@ pub async fn solve<P: DataflowProblem>(
                             if block_exits
                                 .get_mut(&edge.source())
                                 .unwrap()
-                                .join(&edge_state)
+                                .join(&edge_state, problem)
                                 .await?
                             {
                                 enqueue_block(&mut worklist, &mut queued_blocks, edge.source());
@@ -310,7 +315,7 @@ pub async fn solve<P: DataflowProblem>(
                     } else if block_exits
                         .get_mut(&edge.source())
                         .unwrap()
-                        .join(&candidate_state)
+                        .join(&candidate_state, problem)
                         .await?
                     {
                         enqueue_block(&mut worklist, &mut queued_blocks, edge.source());
