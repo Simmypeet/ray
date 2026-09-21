@@ -39,8 +39,11 @@ async fn find(
 async fn core_item_executor(key: &Key, engine: &TrackedEngine) -> GlobalSymbolID {
     let root = TargetID::CORE.make_global(calculate_core_root_target_module_id());
     let def = find(engine, key.role, root, "Def", SymbolKind::Trait).await;
+    let core = find(engine, key.role, root, "Core", SymbolKind::Marker).await;
+
     match key.role {
         CoreItem::DefTrait => def,
+        CoreItem::Core => core,
         CoreItem::DefCall => find(engine, key.role, def, "call", SymbolKind::TraitDef).await,
         CoreItem::DefArgs => find(engine, key.role, def, "Args", SymbolKind::TraitType).await,
         CoreItem::DefReturn => find(engine, key.role, def, "Return", SymbolKind::TraitType).await,

@@ -4,3 +4,8 @@ trait Def[f]:
     type Effect: Effect
 
     def call(fn: f, a: this.Args) -> this.Return \ this.Effect
+
+marker Copy
+
+impl[t] Copy for *t
+impl[t] Copy for *mut t
