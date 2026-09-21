@@ -27,6 +27,7 @@ members = [
     "compiler/semantic/typed_ast_builder",
     "compiler/semantic/ir",
     "compiler/semantic/ir_builder",
+    "compiler/semantic/memory",
     "compiler/semantic/mono_ir",
     "compiler/semantic/mono_ir_builder",
     "compiler/semantic/resolution",

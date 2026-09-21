@@ -7,20 +7,19 @@ use std::{
 
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
-use rayc_semantic_element::{parameter::ParameterID, struct_body::get_struct_body};
-use rayc_solver::Solver;
-use rayc_type::{
-    subst::Substitutable,
-    ty::{Ty, application::View as ApplicationView},
-};
-
-use crate::{
+use rayc_ir::{
     address::{Address, AddressRoot, Projection},
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
     dataflow::{DataflowProblem, Direction, JoinLattice},
     ir_lambda::{CaptureID, LambdaParameterID},
     ir_operation_handler::OperationHandlerParameterID,
     ir_variable::IRVariableID,
+};
+use rayc_semantic_element::{parameter::ParameterID, struct_body::get_struct_body};
+use rayc_solver::Solver;
+use rayc_type::{
+    subst::Substitutable,
+    ty::{Ty, application::View as ApplicationView},
 };
 
 /// CFG locations which may be the most recent move of a place.

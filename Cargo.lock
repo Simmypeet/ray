@@ -1975,12 +1975,8 @@ dependencies = [
  "rayc_lexical",
  "rayc_qbice",
  "rayc_semantic_element",
- "rayc_solver",
- "rayc_source_file",
  "rayc_symbol",
- "rayc_target",
  "rayc_type",
- "tokio",
 ]
 
 [[package]]
@@ -2040,6 +2036,25 @@ dependencies = [
  "rayc_lexical",
  "rayc_qbice",
  "rayc_source_file",
+]
+
+[[package]]
+name = "rayc_memory"
+version = "0.1.0-beta.2"
+dependencies = [
+ "qbice",
+ "rayc_arena",
+ "rayc_hash",
+ "rayc_ir",
+ "rayc_lexical",
+ "rayc_qbice",
+ "rayc_semantic_element",
+ "rayc_solver",
+ "rayc_source_file",
+ "rayc_symbol",
+ "rayc_target",
+ "rayc_type",
+ "tokio",
 ]
 
 [[package]]

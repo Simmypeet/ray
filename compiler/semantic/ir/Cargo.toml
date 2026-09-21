@@ -10,7 +10,6 @@ rust-version.workspace = true
 rayc_arena.path = "../../base/arena"
 rayc_qbice.path = "../../base/qbice"
 rayc_lexical.path = "../../syntax/lexical"
-rayc_solver.path = "../solver"
 rayc_type.path = "../type"
 rayc_symbol.path = "../symbol"
 rayc_semantic_element.path = "../semantic_element"
@@ -18,11 +17,6 @@ rayc_hash.path = "../../base/hash"
 qbice.workspace = true
 derive_more.workspace = true
 bon.workspace = true
-
-[dev-dependencies]
-rayc_source_file.path = "../../base/source_file"
-rayc_target.path = "../../base/target"
-tokio.workspace = true
 
 [lints]
 workspace = true

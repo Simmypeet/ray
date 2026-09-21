@@ -2,6 +2,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use qbice::storage::intern::Interned;
 use rayc_arena::ID;
+use rayc_ir::{
+    address::{Address, Projection},
+    cfg::{Block, Point},
+    dataflow::{DataflowProblem, JoinLattice},
+    ir_variable::IRVariableID,
+};
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
 use rayc_qbice::{
     Engine, InMemoryFactory, PrecomputedExecutor, TrackedEngine, create_minimal_engine,
@@ -21,12 +27,6 @@ use rayc_type::{
 };
 
 use super::{PlaceState, PossibleStates, StackRoot, StackState, StackStateProblem};
-use crate::{
-    address::{Address, Projection},
-    cfg::{Block, Point},
-    dataflow::{DataflowProblem, JoinLattice},
-    ir_variable::IRVariableID,
-};
 
 fn point(instruction_idx: usize) -> Point {
     Point::builder().block_id(ID::<Block>::new(0)).instruction_idx(instruction_idx).build()
