@@ -10,17 +10,19 @@ use rayc_semantic_element::{
     parameter::ParameterID,
     struct_body::{Field, Key as StructBodyKey, StructBody},
 };
+use rayc_solver::Solver;
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::SymbolID;
 use rayc_target::TargetID;
 use rayc_type::{
     poly_var::{Key as PolyVarMapKey, PolyVarMap},
-    ty::{Primitive, Ty, args::Args},
+    ty::{Primitive, Ty, args::Args, self_instance::SelfInstance},
+    where_clause::{AssociatedTypeEquality, PredicateKind},
 };
 
 use super::{PlaceState, PossibleStates, StackRoot, StackState, StackStateProblem};
 use crate::{
-    address::Projection,
+    address::{Address, Projection},
     cfg::{Block, Point},
     dataflow::{DataflowProblem, JoinLattice},
     ir_variable::IRVariableID,
@@ -37,6 +39,65 @@ fn leaf_type(engine: &TrackedEngine) -> Interned<Ty> { Ty::new_primitive(Primiti
 fn tuple_type(engine: &TrackedEngine) -> Interned<Ty> {
     let leaf = leaf_type(engine);
     Ty::new_tuple(engine.intern_unsized([leaf.clone(), leaf]), engine)
+}
+
+fn nested_tuple_type(engine: &TrackedEngine) -> Interned<Ty> {
+    let leaf = leaf_type(engine);
+    let nested = Ty::new_tuple(engine.intern_unsized([leaf.clone(), leaf.clone()]), engine);
+    Ty::new_tuple(engine.intern_unsized([nested, leaf]), engine)
+}
+
+// input: move from component 0 of a type alias
+// premise: the solver normalizes the alias to (int32, int32)
+// output: component 0 is moved and component 1 remains initialized
+#[tokio::test]
+async fn projected_move_normalizes_the_type_before_inspecting_its_shape() {
+    let root = variable();
+    let engine = create_minimal_engine().await;
+    let owner = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    let alias = engine.intern(Ty::SelfInstance(SelfInstance::new(owner)));
+    let normalized = tuple_type(&engine);
+    let solver =
+        Solver::with_givens(engine.clone(), owner, [PredicateKind::AssociatedTypeEquality(
+            AssociatedTypeEquality::new(alias.clone(), normalized),
+        )]);
+    let mut problem = StackStateProblem::new(solver);
+    problem.register(root, alias);
+    let mut state = StackState::reachable();
+    let StackState::Reachable(slots) = &mut state else {
+        unreachable!();
+    };
+    slots.set(root, PlaceState::initialized());
+
+    assert!(state.move_place(root, &[Projection::Tuple(0)], point(1), &problem).await);
+
+    let StackState::Reachable(slots) = state else {
+        unreachable!();
+    };
+    let PlaceState::Partial(components) = slots.state(root).unwrap() else {
+        panic!("the normalized tuple should be expanded");
+    };
+    assert!(!components[&Projection::Tuple(0)].is_initialized());
+    assert!(components[&Projection::Tuple(1)].is_initialized());
+}
+
+// input: tuple projection from int32
+// premise: this projection is invalid in type-checked IR
+// output: internal compiler error
+#[tokio::test]
+#[should_panic(expected = "does not match normalized type")]
+async fn projected_move_panics_when_the_projection_does_not_match_the_type() {
+    let root = variable();
+    let engine = create_minimal_engine().await;
+    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
+    problem.register(root, leaf_type(&engine));
+    let mut state = StackState::reachable();
+    let StackState::Reachable(slots) = &mut state else {
+        unreachable!();
+    };
+    slots.set(root, PlaceState::initialized());
+
+    let _ = state.move_place(root, &[Projection::Tuple(0)], point(1), &problem).await;
 }
 
 fn test_span() -> RelativeSpan {
@@ -88,7 +149,7 @@ async fn recursive_struct() -> (TrackedEngine, Interned<Ty>, Projection) {
 async fn move_rejects_a_never_initialized_place() {
     let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(engine.clone());
+    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
     problem.register(root, leaf_type(&engine));
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
@@ -106,7 +167,7 @@ async fn boundary_initializes_parameters_but_not_variables() {
     let variable = variable();
     let parameter = StackRoot::Parameter(ParameterID::new(0));
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(engine.clone());
+    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
     problem.register(variable, leaf_type(&engine));
     problem.register(parameter, leaf_type(&engine));
 
@@ -123,7 +184,7 @@ async fn boundary_initializes_parameters_but_not_variables() {
 async fn move_rejects_a_place_after_its_first_move() {
     let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(engine.clone());
+    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
     problem.register(root, leaf_type(&engine));
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
@@ -148,7 +209,7 @@ async fn move_rejects_a_place_after_its_first_move() {
 async fn moving_one_component_partially_initializes_its_aggregate() {
     let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(engine.clone());
+    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
     problem.register(root, tuple_type(&engine));
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
@@ -173,7 +234,7 @@ async fn moving_one_component_partially_initializes_its_aggregate() {
 async fn moving_an_initialized_sibling_through_a_partial_parent_succeeds() {
     let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(engine.clone());
+    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
     problem.register(root, tuple_type(&engine));
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
@@ -195,10 +256,63 @@ async fn moving_an_initialized_sibling_through_a_partial_parent_succeeds() {
 }
 
 #[tokio::test]
+async fn restoring_a_nested_place_preserves_uninitialized_siblings() {
+    let root = variable();
+    let engine = create_minimal_engine().await;
+    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
+    problem.register(root, nested_tuple_type(&engine));
+    let mut state = StackState::reachable();
+    let StackState::Reachable(slots) = &mut state else {
+        unreachable!();
+    };
+    slots.set(root, PlaceState::uninitialized());
+    let mut address = Address::new_variable(IRVariableID::new(0), &engine);
+    address.add_tuple_index(0, &engine);
+    address.add_tuple_index(1, &engine);
+
+    assert!(state.restore(&address, &problem).await);
+
+    let StackState::Reachable(slots) = state else {
+        unreachable!();
+    };
+    let PlaceState::Partial(root_components) = slots.state(root).unwrap() else {
+        panic!("restoring a nested component should expand the root tuple");
+    };
+    let PlaceState::Partial(nested_components) = &root_components[&Projection::Tuple(0)] else {
+        panic!("restoring a nested component should expand its parent tuple");
+    };
+    assert!(!nested_components[&Projection::Tuple(0)].is_initialized());
+    assert!(nested_components[&Projection::Tuple(1)].is_initialized());
+    assert!(!root_components[&Projection::Tuple(1)].is_initialized());
+}
+
+#[tokio::test]
+async fn restoring_the_last_moved_component_reinitializes_the_aggregate() {
+    let root = variable();
+    let engine = create_minimal_engine().await;
+    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
+    problem.register(root, tuple_type(&engine));
+    let mut state = StackState::reachable();
+    let StackState::Reachable(slots) = &mut state else {
+        unreachable!();
+    };
+    slots.set(root, PlaceState::initialized());
+    let projections = [Projection::Tuple(0)];
+    assert!(state.move_place(root, &projections, point(1), &problem).await);
+
+    assert!(state.restore_place(root, &projections, &problem).await);
+
+    let StackState::Reachable(slots) = state else {
+        unreachable!();
+    };
+    assert_eq!(slots.state(root), Some(&PlaceState::initialized()));
+}
+
+#[tokio::test]
 async fn projected_move_expands_recursive_structs_only_along_the_address() {
     let root = variable();
     let (engine, recursive_ty, field) = recursive_struct().await;
-    let mut problem = StackStateProblem::new(engine);
+    let mut problem = StackStateProblem::new(Solver::without_givens(engine));
     problem.register(root, recursive_ty);
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
@@ -224,7 +338,7 @@ async fn projected_move_expands_recursive_structs_only_along_the_address() {
 async fn join_preserves_partial_initialization() {
     let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(engine.clone());
+    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
     problem.register(root, tuple_type(&engine));
 
     let mut left_slots = super::StackSlots::new();
@@ -251,7 +365,7 @@ async fn join_preserves_partial_initialization() {
 async fn join_preserves_each_possible_last_move() {
     let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(engine.clone());
+    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
     problem.register(root, leaf_type(&engine));
 
     let mut left_slots = super::StackSlots::new();

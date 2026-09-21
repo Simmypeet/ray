@@ -7,8 +7,8 @@ use std::{
 
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
-use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{parameter::ParameterID, struct_body::get_struct_body};
+use rayc_solver::Solver;
 use rayc_type::{
     subst::Substitutable,
     ty::{Ty, application::View as ApplicationView},
@@ -154,6 +154,26 @@ pub enum PlaceState {
     Partial(BTreeMap<Projection, Self>),
 }
 
+#[derive(Clone, Copy)]
+enum PlaceUpdate {
+    Move,
+    Restore,
+}
+
+impl PlaceUpdate {
+    fn can_traverse(self, state: &PlaceState) -> bool {
+        match self {
+            // A uniformly uninitialized place has no movable descendant, but
+            // a partial place may still contain an initialized component.
+            Self::Move => !matches!(state, PlaceState::Uniform(PossibleStates::Uninitialized(_))),
+
+            // An initialized place implies that all descendants are already
+            // initialized, so restoring beneath it cannot change the state.
+            Self::Restore => !state.is_initialized(),
+        }
+    }
+}
+
 impl PlaceState {
     /// Creates a uniformly initialized place.
     #[must_use]
@@ -185,32 +205,64 @@ impl PlaceState {
     async fn move_at(
         &mut self,
         projections: &[Projection],
-        mut ty: Interned<Ty>,
+        ty: Interned<Ty>,
         point: Point,
         dataflow_problem_ctx: &StackStateProblem,
     ) -> bool {
+        let Some(selected) =
+            self.projected_mut(projections, ty, PlaceUpdate::Move, dataflow_problem_ctx).await
+        else {
+            return false;
+        };
+
+        if !selected.is_initialized() {
+            return false;
+        }
+        *selected = Self::moved_at(point);
+        true
+    }
+
+    async fn restore_at(
+        &mut self,
+        projections: &[Projection],
+        ty: Interned<Ty>,
+        dataflow_problem_ctx: &StackStateProblem,
+    ) -> bool {
+        let Some(selected) =
+            self.projected_mut(projections, ty, PlaceUpdate::Restore, dataflow_problem_ctx).await
+        else {
+            return false;
+        };
+
+        if selected.is_initialized() {
+            return false;
+        }
+        *selected = Self::initialized();
+
+        // Canonicalize aggregates whose final uninitialized descendant was
+        // restored so future operations can use their uniform state directly.
+        self.collapse_initialized();
+        true
+    }
+
+    async fn projected_mut<'a>(
+        &'a mut self,
+        projections: &[Projection],
+        mut ty: Interned<Ty>,
+        update: PlaceUpdate,
+        dataflow_problem_ctx: &StackStateProblem,
+    ) -> Option<&'a mut Self> {
         let mut selected = self;
 
         for projection in projections {
-            // A uniform uninitialized state applies to every descendant, so
-            // no deeper projection can identify a movable place. A partial
-            // state must still be traversed because another child may remain
-            // initialized.
-            match selected {
-                Self::Uniform(PossibleStates::Uninitialized(_)) => return false,
-                Self::Uniform(PossibleStates::Initialized) | Self::Partial(_) => {}
+            if !update.can_traverse(selected) {
+                return None;
             }
 
-            // Resolve only the layer that is about to be traversed. This keeps
-            // recursive types finite without collecting every layer first.
-            let Some((components, projected_ty)) =
-                dataflow_problem_ctx.projection_layer(&ty, *projection, selected).await
-            else {
-                return false;
-            };
-
-            // Expand a uniform aggregate only when one of its components
-            // changes, preserving the current state for every sibling.
+            // Resolve and expand only the layer being traversed. This keeps
+            // recursive types finite and preserves every sibling's state.
+            let (components, projected_ty) =
+                dataflow_problem_ctx.projection_layer(&ty, *projection, selected).await;
             if let Some(components) = components {
                 *selected = Self::Partial(components);
             }
@@ -218,21 +270,29 @@ impl PlaceState {
             let Self::Partial(components) = selected else {
                 unreachable!("the uniform aggregate should have been expanded");
             };
-            let Some(component) = components.get_mut(projection) else {
-                return false;
-            };
-
-            selected = component;
+            selected = components
+                .get_mut(projection)
+                .expect("the type-checked projection must exist in the place state");
             ty = projected_ty;
         }
 
-        // A non-empty projection path returns from its final iteration above,
-        // so only a move of the root place reaches this point.
-        if !selected.is_initialized() {
-            return false;
+        Some(selected)
+    }
+
+    fn collapse_initialized(&mut self) {
+        let Self::Partial(components) = self else {
+            return;
+        };
+
+        for component in components.values_mut() {
+            component.collapse_initialized();
         }
-        *selected = Self::moved_at(point);
-        true
+        if components
+            .values()
+            .all(|component| matches!(component, Self::Uniform(PossibleStates::Initialized)))
+        {
+            *self = Self::initialized();
+        }
     }
 
     fn join_in_place(&mut self, other: &Self) -> bool {
@@ -320,6 +380,10 @@ impl StackSlots {
     /// Returns the state of a stack allocation.
     #[must_use]
     pub fn state(&self, root: StackRoot) -> Option<&PlaceState> { self.states.get(&root) }
+
+    fn state_mut(&mut self, root: StackRoot) -> Option<&mut PlaceState> {
+        self.states.get_mut(&root)
+    }
 }
 
 /// Memory-checker facts at a point in the control-flow graph.
@@ -377,38 +441,66 @@ impl StackState {
         let Self::Reachable(slots) = self else {
             return false;
         };
-        let Some(ty) = dataflow_problem_ctx.binding_type(root) else {
-            return false;
-        };
-        let Some(state) = slots.state(root) else {
+        let ty = dataflow_problem_ctx
+            .binding_type(root)
+            .expect("tracked stack root must have a registered type");
+        let state = slots.state_mut(root).expect("tracked stack root must have a state");
+
+        state.move_at(projections, ty, point, dataflow_problem_ctx).await
+    }
+
+    /// Restores `address` to the initialized state after assigning to it.
+    ///
+    /// Returns whether the tracked state changed. Assignments through an
+    /// untracked address do not change the stack state.
+    pub async fn restore(
+        &mut self,
+        address: &Address,
+        dataflow_problem_ctx: &StackStateProblem,
+    ) -> bool {
+        let Some(root) = StackRoot::from_address_root(address.root()) else {
             return false;
         };
 
-        // Traverse and update a clone so an invalid path or uninitialized
-        // target leaves the original dataflow fact unchanged.
-        let mut moved = state.clone();
-        if !moved.move_at(projections, ty, point, dataflow_problem_ctx).await {
+        self.restore_place(root, address.projections(), dataflow_problem_ctx).await
+    }
+
+    /// Restores a stack root and projection path after assigning to it.
+    ///
+    /// This lower-level form is useful when an analysis already decomposed an
+    /// [`Address`] into its stack root and projections.
+    pub async fn restore_place(
+        &mut self,
+        root: StackRoot,
+        projections: &[Projection],
+        dataflow_problem_ctx: &StackStateProblem,
+    ) -> bool {
+        let Self::Reachable(slots) = self else {
             return false;
-        }
-        slots.set(root, moved);
-        true
+        };
+        let ty = dataflow_problem_ctx
+            .binding_type(root)
+            .expect("tracked stack root must have a registered type");
+        let state = slots.state_mut(root).expect("tracked stack root must have a state");
+
+        state.restore_at(projections, ty, dataflow_problem_ctx).await
     }
 }
 
 /// Dataflow context for stack initialization and move state.
 ///
-/// It stores only each stack root's type. Aggregate structure is queried lazily
-/// through the tracked engine when an address projects into that aggregate, so
-/// recursive types are never expanded eagerly.
-#[derive(Debug, Clone)]
+/// It stores only each stack root's type. Types are normalized and aggregate
+/// structure is queried lazily when an address projects into that aggregate,
+/// so recursive types are never expanded eagerly.
+#[derive(Debug)]
 pub struct StackStateProblem {
-    engine: TrackedEngine,
+    solver: Solver,
     bindings: FxHashMap<StackRoot, Interned<Ty>>,
 }
 
 impl StackStateProblem {
     #[must_use]
-    pub fn new(engine: TrackedEngine) -> Self { Self { engine, bindings: FxHashMap::default() } }
+    pub fn new(solver: Solver) -> Self { Self { solver, bindings: FxHashMap::default() } }
 
     /// Registers the type of a stack allocation.
     pub fn register(&mut self, root: StackRoot, ty: Interned<Ty>) {
@@ -427,25 +519,34 @@ impl StackStateProblem {
     /// sibling projections. An already-partial place returns no replacement
     /// map. The selected type becomes the input to the next projection.
     ///
-    /// Struct bodies and generic field substitutions are queried through the
-    /// tracked engine only for the current projection. Types beneath fields
-    /// not selected by the address are never traversed, and no collection of
-    /// future layers is built, which keeps recursive types finite.
+    /// The type is normalized before its shape is inspected. Struct bodies and
+    /// generic field substitutions are queried only for the current
+    /// projection. Types beneath fields not selected by the address are never
+    /// traversed, and no collection of future layers is built, which keeps
+    /// recursive types finite.
     ///
-    /// Returns `None` when `projection` is invalid for `ty`.
+    /// # Panics
+    ///
+    /// Panics if the normalized type is not an application, the projection
+    /// kind does not match the type, or the requested component does not exist.
     async fn projection_layer(
         &self,
         ty: &Interned<Ty>,
         projection: Projection,
         place_state: &PlaceState,
-    ) -> Option<(Option<BTreeMap<Projection, PlaceState>>, Interned<Ty>)> {
-        let Ty::Application(application) = &**ty else {
-            return None;
+    ) -> (Option<BTreeMap<Projection, PlaceState>>, Interned<Ty>) {
+        let ty = self.solver.normalize(ty).await;
+        let Ty::Application(application) = &*ty else {
+            panic!("projected type must normalize to an application: {ty:?}");
         };
 
         match (application.view(), projection) {
             (ApplicationView::Tuple(tuple), Projection::Tuple(index)) => {
-                let projected = tuple.args().get(index)?.clone();
+                let projected = tuple
+                    .args()
+                    .get(index)
+                    .unwrap_or_else(|| panic!("tuple projection index {index} is out of bounds"))
+                    .clone();
                 let components = match place_state {
                     PlaceState::Uniform(state) => Some(
                         (0..tuple.args().len())
@@ -456,14 +557,19 @@ impl StackStateProblem {
                     ),
                     PlaceState::Partial(_) => None,
                 };
-                Some((components, projected))
+                (components, projected)
             }
             (ApplicationView::Struct(struct_ty), Projection::Field(field_id)) => {
-                let substitution = struct_ty.create_subst(&self.engine).await;
-                let body = self.engine.get_struct_body(struct_ty.symbol_id()).await;
-                let field =
-                    body.iter().find_map(|(id, field)| (id == field_id).then_some(field))?;
-                let projected = field.ty().apply_subst_or_clone(&substitution, &self.engine);
+                let engine = self.solver.engine();
+                let substitution = struct_ty.create_subst(engine).await;
+                let body = engine.get_struct_body(struct_ty.symbol_id()).await;
+                let field = body
+                    .iter()
+                    .find_map(|(id, field)| (id == field_id).then_some(field))
+                    .unwrap_or_else(|| {
+                        panic!("struct projection references missing field {field_id:?}")
+                    });
+                let projected = field.ty().apply_subst_or_clone(&substitution, engine);
                 let components = match place_state {
                     PlaceState::Uniform(state) => Some(
                         body.iter()
@@ -474,7 +580,7 @@ impl StackStateProblem {
                     ),
                     PlaceState::Partial(_) => None,
                 };
-                Some((components, projected))
+                (components, projected)
             }
             (
                 ApplicationView::Primitive(_)
@@ -487,7 +593,9 @@ impl StackStateProblem {
                 Projection::Tuple(_) | Projection::Field(_),
             )
             | (ApplicationView::Tuple(_), Projection::Field(_))
-            | (ApplicationView::Struct(_), Projection::Tuple(_)) => None,
+            | (ApplicationView::Struct(_), Projection::Tuple(_)) => {
+                panic!("projection {projection:?} does not match normalized type {ty:?}");
+            }
         }
     }
 }

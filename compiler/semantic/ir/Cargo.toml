@@ -10,6 +10,7 @@ rust-version.workspace = true
 rayc_arena.path = "../../base/arena"
 rayc_qbice.path = "../../base/qbice"
 rayc_lexical.path = "../../syntax/lexical"
+rayc_solver.path = "../solver"
 rayc_type.path = "../type"
 rayc_symbol.path = "../symbol"
 rayc_semantic_element.path = "../semantic_element"
