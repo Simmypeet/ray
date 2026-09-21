@@ -4,8 +4,11 @@ use qbice::storage::intern::Interned;
 use rayc_arena::ID;
 use rayc_ir::{
     address::{Address, Projection},
-    cfg::{Block, Point},
+    cfg::{Block, Instruction, Point},
     dataflow::{DataflowProblem, JoinLattice},
+    ir_expr::{IRExpr, load::Load},
+    ir_function::{FunctionID, IRFunctionMap},
+    ir_lambda::LambdaParameter,
     ir_variable::IRVariableID,
 };
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
@@ -13,16 +16,19 @@ use rayc_qbice::{
     Engine, InMemoryFactory, PrecomputedExecutor, TrackedEngine, create_minimal_engine,
 };
 use rayc_semantic_element::{
-    parameter::ParameterID,
+    all_marker_implementations::AllMarkerImplementations,
     struct_body::{Field, Key as StructBodyKey, StructBody},
 };
 use rayc_solver::Solver;
 use rayc_source_file::GlobalSourceID;
-use rayc_symbol::SymbolID;
+use rayc_symbol::{
+    SymbolID,
+    core_item::{CoreItem, Key as CoreItemKey},
+};
 use rayc_target::TargetID;
 use rayc_type::{
     poly_var::{Key as PolyVarMapKey, PolyVarMap},
-    ty::{Primitive, Ty, args::Args, self_instance::SelfInstance},
+    ty::{Primitive, Ty, TyKind, args::Args, self_instance::SelfInstance},
     where_clause::{AssociatedTypeEquality, PredicateKind},
 };
 
@@ -31,8 +37,6 @@ use super::{PlaceState, PossibleStates, StackRoot, StackState, StackStateProblem
 fn point(instruction_idx: usize) -> Point {
     Point::builder().block_id(ID::<Block>::new(0)).instruction_idx(instruction_idx).build()
 }
-
-fn variable() -> StackRoot { StackRoot::Variable(IRVariableID::new(0)) }
 
 fn leaf_type(engine: &TrackedEngine) -> Interned<Ty> { Ty::new_primitive(Primitive::Int32, engine) }
 
@@ -47,12 +51,54 @@ fn nested_tuple_type(engine: &TrackedEngine) -> Interned<Ty> {
     Ty::new_tuple(engine.intern_unsized([nested, leaf]), engine)
 }
 
+fn function_with_variable(ty: Interned<Ty>) -> (IRFunctionMap, FunctionID, StackRoot) {
+    let mut functions = IRFunctionMap::new(ty.clone());
+    let function_id = functions.root_id();
+    let scope_id = functions.root_scope_id(function_id);
+    let variable_id = functions.create_variable_in_scope(function_id, scope_id, ty, test_span());
+    (functions, function_id, StackRoot::Variable(variable_id))
+}
+
+fn stack_state_problem(
+    solver: Solver,
+    functions: &IRFunctionMap,
+    function_id: FunctionID,
+) -> StackStateProblem<'_> {
+    StackStateProblem::new(
+        solver,
+        functions.get_function(function_id),
+        functions.captures_for_function(function_id),
+    )
+}
+
+async fn engine_without_marker_implementations(
+    marker_id: rayc_symbol::GlobalSymbolID,
+) -> TrackedEngine {
+    let mut engine = Engine::new_with(
+        qbice::serialize::Plugin::default(),
+        InMemoryFactory,
+        qbice::stable_hash::SeededStableHasherBuilder::new(0),
+    )
+    .await
+    .unwrap();
+    let implementations = engine.intern_unsized([]);
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        AllMarkerImplementations { marker_id, target_id: TargetID::TEST },
+        implementations,
+    )]))));
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        CoreItemKey { role: CoreItem::Copy },
+        marker_id,
+    )]))));
+
+    Arc::new(engine).tracked().await
+}
+
 // input: move from component 0 of a type alias
 // premise: the solver normalizes the alias to (int32, int32)
 // output: component 0 is moved and component 1 remains initialized
 #[tokio::test]
 async fn projected_move_normalizes_the_type_before_inspecting_its_shape() {
-    let root = variable();
     let engine = create_minimal_engine().await;
     let owner = TargetID::TEST.make_global(SymbolID::from_u128(1));
     let alias = engine.intern(Ty::SelfInstance(SelfInstance::new(owner)));
@@ -61,8 +107,8 @@ async fn projected_move_normalizes_the_type_before_inspecting_its_shape() {
         Solver::with_givens(engine.clone(), owner, [PredicateKind::AssociatedTypeEquality(
             AssociatedTypeEquality::new(alias.clone(), normalized),
         )]);
-    let mut problem = StackStateProblem::new(solver);
-    problem.register(root, alias);
+    let (functions, function_id, root) = function_with_variable(alias);
+    let problem = stack_state_problem(solver, &functions, function_id);
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -87,10 +133,10 @@ async fn projected_move_normalizes_the_type_before_inspecting_its_shape() {
 #[tokio::test]
 #[should_panic(expected = "does not match normalized type")]
 async fn projected_move_panics_when_the_projection_does_not_match_the_type() {
-    let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
-    problem.register(root, leaf_type(&engine));
+    let (functions, function_id, root) = function_with_variable(leaf_type(&engine));
+    let problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -147,10 +193,10 @@ async fn recursive_struct() -> (TrackedEngine, Interned<Ty>, Projection) {
 
 #[tokio::test]
 async fn move_rejects_a_never_initialized_place() {
-    let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
-    problem.register(root, leaf_type(&engine));
+    let (functions, function_id, root) = function_with_variable(leaf_type(&engine));
+    let problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -163,15 +209,26 @@ async fn move_rejects_a_never_initialized_place() {
 }
 
 #[tokio::test]
-async fn boundary_initializes_parameters_but_not_variables() {
-    let variable = variable();
-    let parameter = StackRoot::Parameter(ParameterID::new(0));
+async fn root_scope_push_initializes_parameters_but_not_variables() {
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
-    problem.register(variable, leaf_type(&engine));
-    problem.register(parameter, leaf_type(&engine));
+    let ty = leaf_type(&engine);
+    let mut functions = IRFunctionMap::new(ty.clone());
+    let capture_map = functions.new_capture_map();
+    let function_id = functions.insert_lambda(ty.clone(), ty.clone(), capture_map);
+    let parameter_id = functions
+        .insert_lambda_parameter(function_id, LambdaParameter::new(ty.clone(), test_span()));
+    let root_scope = functions.root_scope_id(function_id);
+    let variable_id = functions.create_variable_in_scope(function_id, root_scope, ty, test_span());
+    let variable = StackRoot::Variable(variable_id);
+    let parameter = StackRoot::LambdaParameter(parameter_id);
+    let mut problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
 
-    let boundary = problem.boundary_facts(ID::<Block>::new(0)).await.unwrap();
+    let mut boundary = problem.boundary_facts(ID::<Block>::new(0)).await.unwrap();
+    problem
+        .transfer_instruction(point(0), &Instruction::ScopePush(root_scope), &mut boundary)
+        .await
+        .unwrap();
 
     let StackState::Reachable(slots) = boundary else {
         panic!("boundary facts should be reachable");
@@ -181,11 +238,140 @@ async fn boundary_initializes_parameters_but_not_variables() {
 }
 
 #[tokio::test]
-async fn move_rejects_a_place_after_its_first_move() {
-    let root = variable();
+async fn scope_pop_removes_local_and_function_input_slots() {
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
-    problem.register(root, leaf_type(&engine));
+    let ty = leaf_type(&engine);
+    let mut functions = IRFunctionMap::new(ty.clone());
+    let capture_map = functions.new_capture_map();
+    let function_id = functions.insert_lambda(ty.clone(), ty.clone(), capture_map);
+    let parameter_id = functions
+        .insert_lambda_parameter(function_id, LambdaParameter::new(ty.clone(), test_span()));
+    let root_scope = functions.root_scope_id(function_id);
+    let variable_id = functions.create_variable_in_scope(function_id, root_scope, ty, test_span());
+    let variable = StackRoot::Variable(variable_id);
+    let parameter = StackRoot::LambdaParameter(parameter_id);
+    let mut problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
+    let mut state = StackState::reachable();
+    problem
+        .transfer_instruction(point(0), &Instruction::ScopePush(root_scope), &mut state)
+        .await
+        .unwrap();
+
+    problem
+        .transfer_instruction(point(1), &Instruction::ScopePop(root_scope), &mut state)
+        .await
+        .unwrap();
+
+    let StackState::Reachable(slots) = state else {
+        unreachable!();
+    };
+    assert_eq!(slots.state(variable), None);
+    assert_eq!(slots.state(parameter), None);
+}
+
+#[tokio::test]
+async fn load_moves_a_non_copy_place() {
+    let copy_marker = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    let engine = engine_without_marker_implementations(copy_marker).await;
+    let ty = Ty::new_error(TyKind::Star, &engine);
+    let site = TargetID::TEST.make_global(SymbolID::from_u128(2));
+    let (mut functions, function_id, root) = function_with_variable(ty.clone());
+    let StackRoot::Variable(variable_id) = root else {
+        unreachable!();
+    };
+    let address = Address::new_variable(variable_id, &engine);
+    let expression_id =
+        functions.insert_expression(function_id, IRExpr::new(Load::new(address), test_span(), ty));
+    let mut problem =
+        stack_state_problem(Solver::with_givens(engine.clone(), site, []), &functions, function_id);
+    let mut state = StackState::reachable();
+    let StackState::Reachable(slots) = &mut state else {
+        unreachable!();
+    };
+    slots.set(root, PlaceState::initialized());
+
+    problem
+        .transfer_instruction(point(1), &Instruction::Expression(expression_id), &mut state)
+        .await
+        .unwrap();
+
+    let StackState::Reachable(slots) = state else {
+        unreachable!();
+    };
+    assert_eq!(slots.state(root), Some(&PlaceState::moved_at(point(1))));
+}
+
+#[tokio::test]
+async fn load_preserves_a_copy_place() {
+    let copy_marker = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    let engine = engine_without_marker_implementations(copy_marker).await;
+    let ty = leaf_type(&engine);
+    let site = TargetID::TEST.make_global(SymbolID::from_u128(2));
+    let (mut functions, function_id, root) = function_with_variable(ty.clone());
+    let StackRoot::Variable(variable_id) = root else {
+        unreachable!();
+    };
+    let address = Address::new_variable(variable_id, &engine);
+    let expression_id =
+        functions.insert_expression(function_id, IRExpr::new(Load::new(address), test_span(), ty));
+    let mut problem =
+        stack_state_problem(Solver::with_givens(engine.clone(), site, []), &functions, function_id);
+    let mut state = StackState::reachable();
+    let StackState::Reachable(slots) = &mut state else {
+        unreachable!();
+    };
+    slots.set(root, PlaceState::initialized());
+
+    problem
+        .transfer_instruction(point(1), &Instruction::Expression(expression_id), &mut state)
+        .await
+        .unwrap();
+
+    let StackState::Reachable(slots) = state else {
+        unreachable!();
+    };
+    assert_eq!(slots.state(root), Some(&PlaceState::initialized()));
+}
+
+#[tokio::test]
+async fn store_restores_a_place() {
+    let engine = create_minimal_engine().await;
+    let ty = leaf_type(&engine);
+    let (mut functions, function_id, root) = function_with_variable(ty);
+    let StackRoot::Variable(variable_id) = root else {
+        unreachable!();
+    };
+    let block_id = functions.entry_block(function_id);
+    functions.push_store(
+        function_id,
+        block_id,
+        Address::new_variable(variable_id, &engine),
+        ID::<IRExpr>::new(0),
+    );
+    let instruction = functions.get_function(function_id).block_instructions(block_id)[0].clone();
+    let mut problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
+    let mut state = StackState::reachable();
+    let StackState::Reachable(slots) = &mut state else {
+        unreachable!();
+    };
+    slots.set(root, PlaceState::uninitialized());
+
+    problem.transfer_instruction(point(1), &instruction, &mut state).await.unwrap();
+
+    let StackState::Reachable(slots) = state else {
+        unreachable!();
+    };
+    assert_eq!(slots.state(root), Some(&PlaceState::initialized()));
+}
+
+#[tokio::test]
+async fn move_rejects_a_place_after_its_first_move() {
+    let engine = create_minimal_engine().await;
+    let (functions, function_id, root) = function_with_variable(leaf_type(&engine));
+    let problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -207,10 +393,10 @@ async fn move_rejects_a_place_after_its_first_move() {
 
 #[tokio::test]
 async fn moving_one_component_partially_initializes_its_aggregate() {
-    let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
-    problem.register(root, tuple_type(&engine));
+    let (functions, function_id, root) = function_with_variable(tuple_type(&engine));
+    let problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -232,10 +418,10 @@ async fn moving_one_component_partially_initializes_its_aggregate() {
 
 #[tokio::test]
 async fn moving_an_initialized_sibling_through_a_partial_parent_succeeds() {
-    let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
-    problem.register(root, tuple_type(&engine));
+    let (functions, function_id, root) = function_with_variable(tuple_type(&engine));
+    let problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -257,10 +443,10 @@ async fn moving_an_initialized_sibling_through_a_partial_parent_succeeds() {
 
 #[tokio::test]
 async fn restoring_a_nested_place_preserves_uninitialized_siblings() {
-    let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
-    problem.register(root, nested_tuple_type(&engine));
+    let (functions, function_id, root) = function_with_variable(nested_tuple_type(&engine));
+    let problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -288,10 +474,10 @@ async fn restoring_a_nested_place_preserves_uninitialized_siblings() {
 
 #[tokio::test]
 async fn restoring_the_last_moved_component_reinitializes_the_aggregate() {
-    let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
-    problem.register(root, tuple_type(&engine));
+    let (functions, function_id, root) = function_with_variable(tuple_type(&engine));
+    let problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -310,10 +496,9 @@ async fn restoring_the_last_moved_component_reinitializes_the_aggregate() {
 
 #[tokio::test]
 async fn projected_move_expands_recursive_structs_only_along_the_address() {
-    let root = variable();
     let (engine, recursive_ty, field) = recursive_struct().await;
-    let mut problem = StackStateProblem::new(Solver::without_givens(engine));
-    problem.register(root, recursive_ty);
+    let (functions, function_id, root) = function_with_variable(recursive_ty);
+    let problem = stack_state_problem(Solver::without_givens(engine), &functions, function_id);
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -336,10 +521,10 @@ async fn projected_move_expands_recursive_structs_only_along_the_address() {
 
 #[tokio::test]
 async fn join_preserves_partial_initialization() {
-    let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
-    problem.register(root, tuple_type(&engine));
+    let (functions, function_id, root) = function_with_variable(tuple_type(&engine));
+    let problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
 
     let mut left_slots = super::StackSlots::new();
     left_slots.set(root, PlaceState::initialized());
@@ -363,10 +548,10 @@ async fn join_preserves_partial_initialization() {
 
 #[tokio::test]
 async fn join_preserves_each_possible_last_move() {
-    let root = variable();
     let engine = create_minimal_engine().await;
-    let mut problem = StackStateProblem::new(Solver::without_givens(engine.clone()));
-    problem.register(root, leaf_type(&engine));
+    let (functions, function_id, root) = function_with_variable(leaf_type(&engine));
+    let problem =
+        stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
 
     let mut left_slots = super::StackSlots::new();
     left_slots.set(root, PlaceState::moved_at(point(1)));

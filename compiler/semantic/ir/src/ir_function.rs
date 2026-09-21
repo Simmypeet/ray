@@ -192,6 +192,20 @@ impl IRFunctionMap {
         self.capture_map(function_id).iter()
     }
 
+    /// Returns the capture layout owned by a nested function context.
+    ///
+    /// Definition functions do not capture values and therefore return `None`.
+    #[must_use]
+    pub fn captures_for_function(&self, function_id: FunctionID) -> Option<&CaptureMap> {
+        let function = self.get_function(function_id);
+        match function.context() {
+            IRContext::Def => None,
+            IRContext::Lambda(_) | IRContext::Thunk(_) | IRContext::OperationHandler(_) => {
+                Some(self.capture_map(function_id))
+            }
+        }
+    }
+
     /// Returns the arena-owned capture layout referenced by a nested function.
     #[must_use]
     pub fn capture_map_id(&self, function_id: FunctionID) -> CaptureMapID {
@@ -495,7 +509,15 @@ impl IRFunction {
     }
 
     #[must_use]
-    const fn root_scope_id(&self) -> ScopeID { self.scope_map.root_id() }
+    pub const fn root_scope_id(&self) -> ScopeID { self.scope_map.root_id() }
+
+    #[must_use]
+    pub fn declared_variables(
+        &self,
+        scope_id: ScopeID,
+    ) -> impl ExactSizeIterator<Item = IRVariableID> + '_ {
+        self.get_scope(scope_id).declared_variables()
+    }
 
     #[must_use]
     fn get_scope(&self, id: ScopeID) -> &Scope { self.scope_map.get_scope(id) }

@@ -12,6 +12,7 @@ rayc_hash.path = "../../base/hash"
 rayc_ir.path = "../ir"
 rayc_semantic_element.path = "../semantic_element"
 rayc_solver.path = "../solver"
+rayc_symbol.path = "../symbol"
 rayc_type.path = "../type"
 
 [dev-dependencies]

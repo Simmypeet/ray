@@ -11,6 +11,7 @@ pub enum CoreItem {
     DefArgs,
     DefReturn,
     DefEffect,
+    Copy,
     Core,
 }
 
