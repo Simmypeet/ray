@@ -394,8 +394,7 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 // Lower each struct field's type under the concrete type argument substitution.
                 let mut fields = BTreeMap::new();
                 for (field_id, field) in struct_body.iter() {
-                    let field_type =
-                        Box::pin(engine.lower_type(field.ty(), &substitution)).await;
+                    let field_type = Box::pin(engine.lower_type(field.ty(), &substitution)).await;
                     fields.insert(field_id, field_type);
                 }
 

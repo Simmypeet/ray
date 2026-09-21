@@ -2,8 +2,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    error::Error,
-    fmt,
+    convert::Infallible,
 };
 
 use qbice::storage::intern::Interned;
@@ -64,15 +63,15 @@ impl MoveHistory {
         self.points.iter().copied()
     }
 
-    fn joined(&self, other: &Self) -> Self {
-        let mut points = self.points.clone();
-        points.extend(other.points.iter().copied());
+    fn join_in_place(&mut self, other: &Self) -> bool {
+        let previous_len = self.points.len();
+        self.points.extend(other.points.iter().copied());
 
-        Self {
-            may_be_uninitialized_without_move: self.may_be_uninitialized_without_move
-                || other.may_be_uninitialized_without_move,
-            points,
-        }
+        let was_uninitialized_without_move = self.may_be_uninitialized_without_move;
+        self.may_be_uninitialized_without_move |= other.may_be_uninitialized_without_move;
+
+        previous_len != self.points.len()
+            || was_uninitialized_without_move != self.may_be_uninitialized_without_move
     }
 }
 
@@ -117,15 +116,25 @@ impl PossibleStates {
         }
     }
 
-    fn joined(&self, other: &Self) -> Self {
-        match (self, other) {
-            (Self::Initialized, Self::Initialized) => Self::Initialized,
-            (Self::Initialized, Self::Uninitialized(history))
-            | (Self::Uninitialized(history), Self::Initialized) => {
-                Self::Uninitialized(history.clone())
+    #[allow(clippy::match_same_arms)]
+    fn join_in_place(&mut self, other: &Self) -> bool {
+        match (&mut *self, other) {
+            // already the same, so no change
+            (Self::Initialized, Self::Initialized) => false,
+
+            // prefer uninitialized over initialized, so no need to update the
+            // current state
+            (Self::Uninitialized(_), Self::Initialized) => false,
+
+            // becomes uninitialized, so update the current state
+            (current @ Self::Initialized, Self::Uninitialized(history)) => {
+                *current = Self::Uninitialized(history.clone());
+                true
             }
-            (Self::Uninitialized(left), Self::Uninitialized(right)) => {
-                Self::Uninitialized(left.joined(right))
+
+            // merge the histories of two uninitialized states
+            (Self::Uninitialized(current), Self::Uninitialized(incoming)) => {
+                current.join_in_place(incoming)
             }
         }
     }
@@ -226,33 +235,38 @@ impl PlaceState {
         true
     }
 
-    fn joined(&self, other: &Self) -> Option<Self> {
-        match (self, other) {
-            (Self::Uniform(left), Self::Uniform(right)) => Some(Self::Uniform(left.joined(right))),
-            (Self::Uniform(_), Self::Partial(right)) => {
-                let mut joined_components = BTreeMap::new();
-                for (projection, right) in right {
-                    joined_components.insert(*projection, self.joined(right)?);
+    fn join_in_place(&mut self, other: &Self) -> bool {
+        match (&mut *self, other) {
+            (Self::Uniform(current), Self::Uniform(incoming)) => current.join_in_place(incoming),
+            (Self::Uniform(uniform), Self::Partial(incoming)) => {
+                // Expand the uniform state to the incoming component shape,
+                // then join each corresponding component in place.
+                let mut components = BTreeMap::new();
+                for (projection, incoming) in incoming {
+                    let mut state = Self::Uniform(uniform.clone());
+                    let _ = state.join_in_place(incoming);
+                    components.insert(*projection, state);
                 }
-                Some(Self::Partial(joined_components))
+                *self = Self::Partial(components);
+                true
             }
-            (Self::Partial(left), Self::Uniform(_)) => {
-                let mut joined_components = BTreeMap::new();
-                for (projection, left) in left {
-                    joined_components.insert(*projection, left.joined(other)?);
-                }
-                Some(Self::Partial(joined_components))
-            }
-            (Self::Partial(left), Self::Partial(right)) => {
-                if left.len() != right.len() || !left.keys().eq(right.keys()) {
-                    return None;
-                }
+            (Self::Partial(current), incoming @ Self::Uniform(_)) => current
+                .values_mut()
+                .fold(false, |changed, state| state.join_in_place(incoming) || changed),
 
-                let mut joined_components = BTreeMap::new();
-                for ((projection, left), right) in left.iter().zip(right.values()) {
-                    joined_components.insert(*projection, left.joined(right)?);
-                }
-                Some(Self::Partial(joined_components))
+            (Self::Partial(current), Self::Partial(incoming)) => {
+                assert_eq!(
+                    current.len(),
+                    incoming.len(),
+                    "partial place states have different component counts",
+                );
+
+                current.iter_mut().fold(false, |changed, (projection, current)| {
+                    let incoming = incoming
+                        .get(projection)
+                        .expect("partial place states have different component projections");
+                    current.join_in_place(incoming) || changed
+                })
             }
         }
     }
@@ -381,28 +395,6 @@ impl StackState {
     }
 }
 
-/// Failure while merging stack-memory dataflow facts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StackStateError {
-    MissingBinding(StackRoot),
-    MissingState(StackRoot),
-    InvalidStateShape(StackRoot),
-}
-
-impl fmt::Display for StackStateError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingBinding(root) => write!(formatter, "missing binding for {root:?}"),
-            Self::MissingState(root) => write!(formatter, "missing state for {root:?}"),
-            Self::InvalidStateShape(root) => {
-                write!(formatter, "incoming states have different component shapes for {root:?}")
-            }
-        }
-    }
-}
-
-impl Error for StackStateError {}
-
 /// Dataflow context for stack initialization and move state.
 ///
 /// It stores only each stack root's type. Aggregate structure is queried lazily
@@ -500,42 +492,44 @@ impl StackStateProblem {
     }
 }
 
-impl JoinLattice<StackStateProblem, StackStateError> for StackState {
+impl JoinLattice<StackStateProblem, Infallible> for StackState {
+    #[allow(clippy::match_same_arms)]
     async fn join(
         &mut self,
         other: &Self,
         dataflow_problem_ctx: &StackStateProblem,
-    ) -> Result<bool, StackStateError> {
-        match (&*self, other) {
-            (Self::Unreachable | Self::Reachable(_), Self::Unreachable) => Ok(false),
-            (Self::Unreachable, Self::Reachable(_)) => {
-                *self = other.clone();
+    ) -> Result<bool, Infallible> {
+        match (&mut *self, other) {
+            (Self::Unreachable, Self::Unreachable) => Ok(false),
+            (Self::Reachable(_), Self::Unreachable) => Ok(false),
+
+            (current @ Self::Unreachable, Self::Reachable(_)) => {
+                *current = other.clone();
                 Ok(true)
             }
             (Self::Reachable(current), Self::Reachable(incoming)) => {
-                let mut joined = current.clone();
+                assert_eq!(
+                    current.states.len(),
+                    dataflow_problem_ctx.bindings.len(),
+                    "current stack state does not match the type-checked bindings",
+                );
+                assert_eq!(
+                    incoming.states.len(),
+                    dataflow_problem_ctx.bindings.len(),
+                    "incoming stack state does not match the type-checked bindings",
+                );
 
-                // Every reachable fact must describe every stack slot known by
-                // the problem. Partial states carry their already-expanded
-                // immediate sibling sets, so joining requires no type query.
-                for root in dataflow_problem_ctx.bindings.keys() {
-                    let left = current.state(*root).ok_or(StackStateError::MissingState(*root))?;
-                    let right =
-                        incoming.state(*root).ok_or(StackStateError::MissingState(*root))?;
-                    let state =
-                        left.joined(right).ok_or(StackStateError::InvalidStateShape(*root))?;
-                    joined.set(*root, state);
-                }
-
-                for root in current.states.keys().chain(incoming.states.keys()) {
-                    if !dataflow_problem_ctx.bindings.contains_key(root) {
-                        return Err(StackStateError::MissingBinding(*root));
-                    }
-                }
-
-                let changed = *current != joined;
-                if changed {
-                    *self = Self::Reachable(joined);
+                // The type-checked IR guarantees matching roots and place
+                // shapes, so update each state directly in place.
+                let mut changed = false;
+                for (root, current) in &mut current.states {
+                    assert!(
+                        dataflow_problem_ctx.bindings.contains_key(root),
+                        "stack state contains a root without a type-checked binding: {root:?}",
+                    );
+                    let incoming =
+                        incoming.state(*root).expect("incoming stack state is missing a root");
+                    changed |= current.join_in_place(incoming);
                 }
                 Ok(changed)
             }
@@ -545,16 +539,16 @@ impl JoinLattice<StackStateProblem, StackStateError> for StackState {
 
 impl DataflowProblem for StackStateProblem {
     type JoinLattice = StackState;
-    type Error = StackStateError;
+    type Error = Infallible;
 
     const DIRECTION: Direction = Direction::Forward;
     const EDGE_SENSITIVE: bool = false;
 
-    async fn bottom(&mut self, _block_id: BlockID) -> Result<StackState, StackStateError> {
+    async fn bottom(&mut self, _block_id: BlockID) -> Result<StackState, Infallible> {
         Ok(StackState::Unreachable)
     }
 
-    async fn boundary_facts(&mut self, _block_id: BlockID) -> Result<StackState, StackStateError> {
+    async fn boundary_facts(&mut self, _block_id: BlockID) -> Result<StackState, Infallible> {
         let mut slots = StackSlots::new();
         for root in self.bindings.keys() {
             let state = match root {
@@ -574,7 +568,7 @@ impl DataflowProblem for StackStateProblem {
         _point: Point,
         _instruction: &Instruction,
         _state: &mut StackState,
-    ) -> Result<(), StackStateError> {
+    ) -> Result<(), Infallible> {
         Ok(())
     }
 
@@ -583,7 +577,7 @@ impl DataflowProblem for StackStateProblem {
         _block_id: BlockID,
         _terminator: &Terminator,
         _state: &mut StackState,
-    ) -> Result<(), StackStateError> {
+    ) -> Result<(), Infallible> {
         Ok(())
     }
 
@@ -591,7 +585,7 @@ impl DataflowProblem for StackStateProblem {
         &mut self,
         _edge: &ControlFlowEdge,
         _state: &mut StackState,
-    ) -> Result<(), StackStateError> {
+    ) -> Result<(), Infallible> {
         Ok(())
     }
 }
