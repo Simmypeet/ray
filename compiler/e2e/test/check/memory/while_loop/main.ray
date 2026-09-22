@@ -1,0 +1,14 @@
+struct Resource:
+    value: int32
+
+impl !core.Copy for Resource
+
+def consume(value: Resource) -> ():
+    return ()
+
+def main(condition: bool) -> ():
+    let value = Resource { value = 1 }
+    while condition:
+        # ERROR: a later iteration might reuse the outer value moved here.
+        consume(value)
+    return ()

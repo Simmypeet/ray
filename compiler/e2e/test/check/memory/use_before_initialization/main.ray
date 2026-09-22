@@ -1,0 +1,14 @@
+struct Resource:
+    value: int32
+
+impl !core.Copy for Resource
+
+def consume(value: Resource) -> ():
+    return ()
+
+def main() -> ():
+    let mut value: Resource
+
+    # ERROR: `value` has not been initialized on any path.
+    consume(value)
+    return ()

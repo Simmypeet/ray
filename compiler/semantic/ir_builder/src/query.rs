@@ -4,6 +4,7 @@ use qbice::{
 };
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_ir::ir_function::IRFunctionMap;
+use rayc_memory::analyze;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::return_type::get_return_type;
 use rayc_source_file::SourceElement;
@@ -81,11 +82,24 @@ async fn single_rendered_executor(
         return engine.intern_unsized([]);
     }
 
-    let (_, diagnostics) = engine.query(&BuildIR { def_id }).await;
+    let (functions, diagnostics) = engine.query(&BuildIR { def_id }).await;
     let mut rendered = Vec::new();
     for diagnostic in diagnostics.iter() {
         rendered.push(diagnostic.report(engine).await);
     }
+
+    // Memory checking relies on valid typed and control-flow IR. Keep it out
+    // of recovery paths so an earlier error cannot produce misleading move or
+    // initialization diagnostics from placeholder nodes.
+    let (_, typed_diagnostics) =
+        engine.query(&rayc_typed_ast_builder::query::BuildTAst { def_id }).await;
+
+    if diagnostics.is_empty() && typed_diagnostics.is_empty() {
+        for diagnostic in analyze(engine, def_id, &functions).await {
+            rendered.push(diagnostic.report(engine).await);
+        }
+    }
+
     engine.intern_unsized(rendered)
 }
 

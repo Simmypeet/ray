@@ -1,0 +1,19 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: use of partially moved value
+   ╭▸ compiler/e2e/test/check/memory/partial_move/main.ray:24:17
+   │
+21 │     consumeResource(pair.first)
+   │                     ────────── a component was moved here
+   ‡
+24 │     consumePair(pair)
+   ╰╴                ━━━━ value used here after one of its components was moved
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

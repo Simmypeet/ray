@@ -1,0 +1,21 @@
+struct Resource:
+    value: int32
+
+impl !core.Copy for Resource
+
+def consume(value: Resource) -> ():
+    return ()
+
+def main(outer: bool, inner: bool, take: bool) -> ():
+    let value = Resource { value = 1 }
+    while outer:
+        while inner:
+            if take:
+                consume(value)
+                break
+            continue
+
+        # ERROR: breaking from the inner loop may carry its moved state here.
+        consume(value)
+        break
+    return ()

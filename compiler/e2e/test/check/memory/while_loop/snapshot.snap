@@ -1,0 +1,19 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: use of moved value
+   ╭▸ compiler/e2e/test/check/memory/while_loop/main.ray:13:17
+   │
+13 │         consume(value)
+   │                 ┯━━━━
+   │                 │
+   │                 value used here after it was moved
+   ╰╴                value moved here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

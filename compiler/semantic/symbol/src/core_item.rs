@@ -12,7 +12,6 @@ pub enum CoreItem {
     DefReturn,
     DefEffect,
     Copy,
-    Core,
 }
 
 /// Finds an actual, unambiguous core declaration without checking signatures.

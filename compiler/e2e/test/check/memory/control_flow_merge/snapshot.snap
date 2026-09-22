@@ -1,0 +1,19 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: use of moved value
+   ╭▸ compiler/e2e/test/check/memory/control_flow_merge/main.ray:15:13
+   │
+12 │         consume(value)
+   │                 ───── value moved here
+   ‡
+15 │     consume(value)
+   ╰╴            ━━━━━ value used here after it was moved
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

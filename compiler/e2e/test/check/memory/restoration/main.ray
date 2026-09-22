@@ -1,0 +1,40 @@
+struct Resource:
+    value: int32
+
+impl !core.Copy for Resource
+
+struct Pair:
+    first: Resource
+    second: Resource
+
+def consumeResource(value: Resource) -> ():
+    return ()
+
+def consumePair(value: Pair) -> ():
+    return ()
+
+def restoreWholeValue() -> ():
+    let mut value = Resource { value = 1 }
+    consumeResource(value)
+    value = Resource { value = 2 }
+
+    # OK: assigning the whole value restored it after the move.
+    consumeResource(value)
+    return ()
+
+def restoreFieldByField() -> ():
+    let mut pair = Pair {
+        first = Resource { value = 1 },
+        second = Resource { value = 2 },
+    }
+    consumePair(pair)
+    pair.first = Resource { value = 3 }
+
+    # ERROR: only `pair.first` is restored; `pair.second` remains moved.
+    consumePair(pair)
+
+    pair.second = Resource { value = 4 }
+
+    # OK: restoring the final field made the complete pair usable again.
+    consumePair(pair)
+    return ()

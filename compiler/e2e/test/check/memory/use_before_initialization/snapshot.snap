@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: use of value before initialization
+   ╭▸ compiler/e2e/test/check/memory/use_before_initialization/main.ray:13:13
+   │
+13 │     consume(value)
+   ╰╴            ━━━━━ value may be uninitialized here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

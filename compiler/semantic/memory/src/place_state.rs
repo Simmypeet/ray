@@ -185,6 +185,19 @@ impl PlaceState {
         }
     }
 
+    /// Visits every uninitialized leaf beneath this place.
+    pub(crate) fn visit_uninitialized(&self, visitor: &mut impl FnMut(&MoveHistory)) {
+        match self {
+            Self::Uniform(PossibleStates::Initialized) => {}
+            Self::Uniform(PossibleStates::Uninitialized(history)) => visitor(history),
+            Self::Partial(components) => {
+                for component in components.values() {
+                    component.visit_uninitialized(visitor);
+                }
+            }
+        }
+    }
+
     pub(crate) async fn move_at(
         &mut self,
         projections: &[Projection],

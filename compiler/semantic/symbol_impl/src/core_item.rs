@@ -38,16 +38,27 @@ async fn find(
 #[executor(config = Config)]
 async fn core_item_executor(key: &Key, engine: &TrackedEngine) -> GlobalSymbolID {
     let root = TargetID::CORE.make_global(calculate_core_root_target_module_id());
-    let def = find(engine, key.role, root, "Def", SymbolKind::Trait).await;
-    let core = find(engine, key.role, root, "Core", SymbolKind::Marker).await;
 
     match key.role {
-        CoreItem::DefTrait => def,
-        CoreItem::Core => core,
-        CoreItem::DefCall => find(engine, key.role, def, "call", SymbolKind::TraitDef).await,
-        CoreItem::DefArgs => find(engine, key.role, def, "Args", SymbolKind::TraitType).await,
-        CoreItem::DefReturn => find(engine, key.role, def, "Return", SymbolKind::TraitType).await,
-        CoreItem::DefEffect => find(engine, key.role, def, "Effect", SymbolKind::TraitType).await,
+        CoreItem::DefTrait => find(engine, key.role, root, "Def", SymbolKind::Trait).await,
+        CoreItem::DefCall | CoreItem::DefArgs | CoreItem::DefReturn | CoreItem::DefEffect => {
+            let def = find(engine, key.role, root, "Def", SymbolKind::Trait).await;
+            match key.role {
+                CoreItem::DefCall => {
+                    find(engine, key.role, def, "call", SymbolKind::TraitDef).await
+                }
+                CoreItem::DefArgs => {
+                    find(engine, key.role, def, "Args", SymbolKind::TraitType).await
+                }
+                CoreItem::DefReturn => {
+                    find(engine, key.role, def, "Return", SymbolKind::TraitType).await
+                }
+                CoreItem::DefEffect => {
+                    find(engine, key.role, def, "Effect", SymbolKind::TraitType).await
+                }
+                CoreItem::DefTrait | CoreItem::Copy => unreachable!(),
+            }
+        }
         CoreItem::Copy => find(engine, key.role, root, "Copy", SymbolKind::Marker).await,
     }
 }

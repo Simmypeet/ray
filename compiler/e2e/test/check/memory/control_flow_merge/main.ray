@@ -1,0 +1,16 @@
+struct Resource:
+    value: int32
+
+impl !core.Copy for Resource
+
+def consume(value: Resource) -> ():
+    return ()
+
+def main(condition: bool) -> ():
+    let value = Resource { value = 1 }
+    if condition:
+        consume(value)
+
+    # ERROR: the true branch moved `value`, so it might be moved at this join.
+    consume(value)
+    return ()

@@ -1,0 +1,25 @@
+struct Resource:
+    value: int32
+
+impl !core.Copy for Resource
+
+struct Pair:
+    first: Resource
+    second: Resource
+
+def consumeResource(value: Resource) -> ():
+    return ()
+
+def consumePair(value: Pair) -> ():
+    return ()
+
+def main() -> ():
+    let pair = Pair {
+        first = Resource { value = 1 },
+        second = Resource { value = 2 },
+    }
+    consumeResource(pair.first)
+
+    # ERROR: `pair.first` was moved, so the complete `pair` cannot be used.
+    consumePair(pair)
+    return ()

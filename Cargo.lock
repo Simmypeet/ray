@@ -1991,6 +1991,7 @@ dependencies = [
  "rayc_hash",
  "rayc_ir",
  "rayc_lexical",
+ "rayc_memory",
  "rayc_qbice",
  "rayc_semantic_element",
  "rayc_source_file",
@@ -1998,6 +1999,7 @@ dependencies = [
  "rayc_target",
  "rayc_type",
  "rayc_typed_ast",
+ "rayc_typed_ast_builder",
  "tokio",
 ]
 
@@ -2042,8 +2044,12 @@ dependencies = [
 name = "rayc_memory"
 version = "0.1.0-beta.2"
 dependencies = [
+ "bon",
+ "derive_more",
+ "futures",
  "qbice",
  "rayc_arena",
+ "rayc_diagnostic",
  "rayc_hash",
  "rayc_ir",
  "rayc_lexical",

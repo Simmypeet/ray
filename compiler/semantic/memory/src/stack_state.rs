@@ -124,6 +124,32 @@ impl StackState {
         self.move_place(root, address.projections(), point, dataflow_problem_ctx).await
     }
 
+    /// Returns the current state of the place selected by `address`.
+    ///
+    /// Untracked addresses have no stack state. Traversal stops at the first
+    /// uniform state because it describes every descendant of that place.
+    #[must_use]
+    pub fn place_state(&self, address: &Address) -> Option<&PlaceState> {
+        let root = StackRoot::from_address_root(address.root())?;
+        let Self::Reachable(slots) = self else {
+            return None;
+        };
+
+        let mut selected = slots.state(root)?;
+        for projection in address.projections() {
+            match selected {
+                PlaceState::Uniform(_) => return Some(selected),
+                PlaceState::Partial(components) => {
+                    selected = components
+                        .get(projection)
+                        .expect("the type-checked projection must exist in the place state");
+                }
+            }
+        }
+
+        Some(selected)
+    }
+
     /// Moves from a stack root and projection path.
     ///
     /// This lower-level form is useful when an analysis already decomposed an
