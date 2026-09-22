@@ -25,6 +25,8 @@ pub enum Constant {
     Closure(Closure),
     /// The built-in `Def` dictionary whose sole argument is a closure type.
     DefInstance,
+    /// The built-in `NoOp` dictionary whose sole argument is a primitive type.
+    NoOpDropInstance,
     Error(TyKind),
 }
 
@@ -193,6 +195,7 @@ pub enum View<'x> {
     InstanceAssociated(InstanceAssociatedView<'x>),
     Closure(ClosureView<'x>),
     DefInstance(&'x Interned<Ty>),
+    NoOpDropInstance(&'x Interned<Ty>),
     Error,
 }
 
@@ -257,6 +260,7 @@ impl Application {
                 })
             }
             Constant::DefInstance => View::DefInstance(&self.args[0]),
+            Constant::NoOpDropInstance => View::NoOpDropInstance(&self.args[0]),
             Constant::Error(_) => View::Error,
         }
     }
@@ -284,7 +288,10 @@ impl Application {
                 use crate::associated_type_kind::get_associated_type_kind;
                 engine.get_associated_type_kind(symbol_id).await
             }
-            Constant::Instance(_) | Constant::DefInstance => TyKind::Instance,
+
+            Constant::NoOpDropInstance | Constant::Instance(_) | Constant::DefInstance => {
+                TyKind::Instance
+            }
             Constant::Error(kind) => kind,
         }
     }
@@ -306,6 +313,7 @@ impl Application {
                 | View::Instance(_)
                 | View::DefInstance(_)
                 | View::Closure(_)
+                | View::NoOpDropInstance(_)
                 | View::InstanceAssociated(_) => false,
             },
             InferenceConstraint::EqualityComparable => match self.view() {
@@ -323,6 +331,7 @@ impl Application {
                 | View::Instance(_)
                 | View::DefInstance(_)
                 | View::InstanceAssociated(_)
+                | View::NoOpDropInstance(_)
                 | View::Closure(_) => false,
             },
         }

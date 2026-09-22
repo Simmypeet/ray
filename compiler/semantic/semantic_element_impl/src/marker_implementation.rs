@@ -237,9 +237,11 @@ fn head_arguments(ty: &Ty) -> Result<Vec<&Interned<Ty>>, InvalidHeadKind> {
         ApplicationView::Pointer(pointer) => Ok(vec![pointer.pointee()]),
         ApplicationView::Struct(struct_) => Ok(struct_.args().iter().collect()),
         ApplicationView::InstanceAssociated(_) => Err(InvalidHeadKind::AssociatedType),
+
         ApplicationView::Closure(_)
         | ApplicationView::DefInstance(_)
         | ApplicationView::Instance(_)
+        | ApplicationView::NoOpDropInstance(_)
         | ApplicationView::Error => Err(InvalidHeadKind::MissingTypeConstructor),
     }
 }

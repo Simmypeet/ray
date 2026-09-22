@@ -44,6 +44,10 @@ impl Solver {
 
                     head.map(|head| head.apply_subst_or_clone(&subst, engine))
                 }
+                View::NoOpDropInstance(no_op) => Some(TraitRef::new(
+                    engine.get_core_item(CoreItem::DropTrait).await,
+                    Args::new([no_op.clone()], engine),
+                )),
                 View::Primitive(_)
                 | View::Tuple(_)
                 | View::Pointer(_)

@@ -254,6 +254,7 @@ async fn structural_fields(
                 )
             }
             ApplicationView::Pointer(_)
+            | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::Instance(_)
             | ApplicationView::InstanceAssociated(_)
             | ApplicationView::DefInstance(_)

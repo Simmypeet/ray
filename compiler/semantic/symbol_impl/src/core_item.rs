@@ -42,7 +42,7 @@ async fn core_item_executor(key: &Key, engine: &TrackedEngine) -> GlobalSymbolID
     match key.role {
         CoreItem::DefTrait => find(engine, key.role, root, "Def", SymbolKind::Trait).await,
 
-        CoreItem::Drop => find(engine, key.role, root, "Drop", SymbolKind::Trait).await,
+        CoreItem::DropTrait => find(engine, key.role, root, "Drop", SymbolKind::Trait).await,
         CoreItem::DropMethod => {
             let def = find(engine, key.role, root, "Drop", SymbolKind::Trait).await;
             find(engine, key.role, def, "drop", SymbolKind::TraitDef).await
@@ -64,7 +64,10 @@ async fn core_item_executor(key: &Key, engine: &TrackedEngine) -> GlobalSymbolID
                     find(engine, key.role, def, "Effect", SymbolKind::TraitType).await
                 }
 
-                CoreItem::DropMethod | CoreItem::Drop | CoreItem::DefTrait | CoreItem::Copy => {
+                CoreItem::DropMethod
+                | CoreItem::DropTrait
+                | CoreItem::DefTrait
+                | CoreItem::Copy => {
                     unreachable!()
                 }
             }

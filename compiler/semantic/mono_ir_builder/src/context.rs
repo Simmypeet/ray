@@ -269,6 +269,9 @@ impl Context {
             ApplicationView::DefInstance(closure_ty) => {
                 self.resolve_closure_call(closure_ty, trait_def_id).await
             }
+            ApplicationView::NoOpDropInstance(_) => {
+                todo!("implement NoOpDropInstance call resolution")
+            }
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Pointer(_)

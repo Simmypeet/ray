@@ -12,7 +12,7 @@ pub enum CoreItem {
     DefReturn,
     DefEffect,
     Copy,
-    Drop,
+    DropTrait,
     DropMethod,
 }
 

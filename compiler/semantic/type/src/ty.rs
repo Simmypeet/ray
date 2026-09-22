@@ -181,6 +181,7 @@ impl Ty {
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
+                | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::Instance(_) => false,
             },
             Self::Inference(_) | Self::EffectRow(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
@@ -448,6 +449,7 @@ impl Ty {
                         | ApplicationView::Pointer(_)
                         | ApplicationView::DefInstance(_)
                         | ApplicationView::Closure(_)
+                        | ApplicationView::NoOpDropInstance(_)
                         | ApplicationView::Error => None,
                     };
                     if let Some(symbol_id) = symbol_id {
@@ -581,6 +583,11 @@ impl TyDisplay<'_> {
                     Primitive::CInt => write!(f, "c_int"),
                     Primitive::CStr => write!(f, "cstr"),
                 },
+
+                ApplicationView::NoOpDropInstance(ty) => {
+                    f.write_str("<no-op drop instance>")?;
+                    self.fmt_ty(ty, f)
+                }
 
                 ApplicationView::Closure(closure) => {
                     f.write_str("<closure>")?;
@@ -776,6 +783,7 @@ impl Ty {
                 | ApplicationView::Struct(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
+                | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::Instance(_) => Some(false),
             },
             Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {
@@ -814,6 +822,7 @@ impl Ty {
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_)
                 | ApplicationView::Closure(_)
+                | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::Error => false,
             },
             Self::EffectRow(_) | Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
@@ -839,6 +848,7 @@ impl Ty {
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_)
                 | ApplicationView::Closure(_)
+                | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::Error => false,
             },
             Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {

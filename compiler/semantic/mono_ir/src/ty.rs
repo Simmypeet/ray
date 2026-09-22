@@ -406,7 +406,9 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
             ApplicationView::InstanceAssociated(_) => {
                 panic!("unresolved associated type reached code generation")
             }
-            ApplicationView::Instance(_) | ApplicationView::DefInstance(_) => {
+            ApplicationView::NoOpDropInstance(_)
+            | ApplicationView::Instance(_)
+            | ApplicationView::DefInstance(_) => {
                 panic!("compiler-internal invariant violation: instance used as a value type")
             }
             ApplicationView::Error => {
