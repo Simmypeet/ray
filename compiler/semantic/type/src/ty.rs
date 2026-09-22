@@ -356,6 +356,27 @@ impl Ty {
         )))
     }
 
+    /// Creates the built-in no-op `Drop` dictionary for a primitive or pointer
+    /// type.
+    #[must_use]
+    pub fn new_no_op_drop_instance(ty: Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
+        assert!(
+            matches!(
+                &*ty,
+                Self::Application(application)
+                    if matches!(
+                        application.view(),
+                        ApplicationView::Primitive(_) | ApplicationView::Pointer(_)
+                    )
+            ),
+            "no-op Drop instance requires a primitive or pointer type"
+        );
+        engine.intern(Self::Application(Application::new(
+            Constant::NoOpDropInstance,
+            engine.intern_unsized([ty]),
+        )))
+    }
+
     #[must_use]
     pub fn new_instance(
         symbol_id: GlobalSymbolID,

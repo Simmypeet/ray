@@ -134,6 +134,9 @@ impl Builder<'_> {
                     InstanceCallable::Closure(instance, signature, effects) => {
                         self.lower_closure_call(call, instance, signature, &effects, expression_id);
                     }
+                    // The arguments have already been evaluated by their own IR
+                    // expressions. A built-in no-op Drop call emits no instruction.
+                    InstanceCallable::NoOp => {}
                 }
             }
         }

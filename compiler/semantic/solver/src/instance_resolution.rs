@@ -208,6 +208,32 @@ impl Solver {
         ))
     }
 
+    pub(crate) async fn resolve_no_op_drop_instance(
+        &self,
+        required: &TraitRef,
+    ) -> Option<ResolvedInstance> {
+        if required.args().len() != 1
+            || required.trait_id() != self.engine().get_core_item(CoreItem::DropTrait).await
+        {
+            return None;
+        }
+
+        let ty = required.args().interned_iter().next()?;
+        let Ty::Application(application) = &**ty else { return None };
+        if !matches!(
+            application.view(),
+            rayc_type::ty::application::View::Primitive(_)
+                | rayc_type::ty::application::View::Pointer(_)
+        ) {
+            return None;
+        }
+
+        Some(ResolvedInstance::new(
+            Ty::new_no_op_drop_instance(ty.clone(), self.engine()),
+            Vec::new(),
+        ))
+    }
+
     pub async fn search_active_goal(&mut self, required: &TraitRef) -> InstanceResolutionResult {
         match lexical::resolve(self, required).await {
             Ok(LexicalResolution::NotFound) => {}

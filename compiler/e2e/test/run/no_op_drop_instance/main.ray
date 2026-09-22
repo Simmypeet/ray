@@ -1,0 +1,23 @@
+def dispose(value: a) given (drop: core.Drop[a]):
+    drop.drop(value)
+
+def disposePointer(value: *a) given (drop: core.Drop[*a]):
+    drop.drop(value)
+
+def main() -> int32:
+    dispose(42)
+    dispose(true)
+    dispose("text")
+
+    let float: float32 = 1
+    dispose(float)
+
+    let cInteger: c_int = 2
+    dispose(cInteger)
+
+    let value = 3
+    disposePointer(value.&)
+
+    let mut mutableValue = 4
+    dispose(mutableValue.&mut)
+    return 0

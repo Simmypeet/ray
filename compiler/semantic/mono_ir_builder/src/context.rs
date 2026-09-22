@@ -42,6 +42,7 @@ use rayc_type::{
 pub(crate) enum InstanceCallable {
     Definition(MonoDefInstance),
     Closure(MonoClosureInstance, FunctionSignature, Vec<MonoEffectInstance>),
+    NoOp,
 }
 
 use crate::{
@@ -270,7 +271,8 @@ impl Context {
                 self.resolve_closure_call(closure_ty, trait_def_id).await
             }
             ApplicationView::NoOpDropInstance(_) => {
-                todo!("implement NoOpDropInstance call resolution")
+                assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
+                InstanceCallable::NoOp
             }
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)

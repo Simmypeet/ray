@@ -203,6 +203,11 @@ impl Solver {
         if let Some(resolved) = self.resolve_closure_instance(&required).await {
             return Ok(resolved);
         }
+        // Primitive and pointer Drop dictionaries are intrinsic and need no
+        // global instance declaration or recursively resolved premises.
+        if let Some(resolved) = self.resolve_no_op_drop_instance(&required).await {
+            return Ok(resolved);
+        }
         if required.contains_inference() {
             return Err(InstanceResolutionError::NotReady(required));
         }

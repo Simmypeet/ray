@@ -25,7 +25,7 @@ pub enum Constant {
     Closure(Closure),
     /// The built-in `Def` dictionary whose sole argument is a closure type.
     DefInstance,
-    /// The built-in `NoOp` dictionary whose sole argument is a primitive type.
+    /// The built-in no-op `Drop` dictionary for a primitive or pointer type.
     NoOpDropInstance,
     Error(TyKind),
 }
