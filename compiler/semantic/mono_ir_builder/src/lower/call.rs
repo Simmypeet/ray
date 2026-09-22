@@ -1,3 +1,4 @@
+use qbice::storage::intern::Interned;
 use rayc_ir::ir_expr::{
     IRExprID,
     call::{Call as IRCall, CallTarget},
@@ -7,10 +8,11 @@ use rayc_mono_ir::{
     instance::FunctionReference,
     instruction::{Call, Instruction},
     operand::{Constant, FunctionOperand, Operand},
-    place::FieldIndex,
+    place::{FieldIndex, Place},
     rvalue::Rvalue,
     ty::{AggregateType, FunctionSignature, MonoType},
 };
+use rayc_type::ty::Ty;
 
 use crate::{
     builder::Builder,
@@ -18,6 +20,45 @@ use crate::{
 };
 
 impl Builder<'_> {
+    /// Expands a built-in tuple `Drop` call into the selected element calls.
+    async fn lower_tuple_drop(
+        &mut self,
+        context: &Context,
+        tuple: Place,
+        element_instances: &[Interned<Ty>],
+        expression_id: IRExprID,
+    ) {
+        // Destroy fields in reverse declaration order, matching scope teardown.
+        for (index, element_instance) in element_instances.iter().enumerate().rev() {
+            let field =
+                tuple.clone().project_tuple_field(FieldIndex::new(index.try_into().unwrap()));
+            match context.resolve_drop_call(element_instance).await {
+                InstanceCallable::Definition(callee) => {
+                    self.lower_global_call(
+                        context,
+                        callee,
+                        vec![Operand::Copy(field)],
+                        expression_id,
+                    )
+                    .await;
+                }
+                InstanceCallable::TupleDrop(nested_instances) => {
+                    Box::pin(self.lower_tuple_drop(
+                        context,
+                        field,
+                        &nested_instances,
+                        expression_id,
+                    ))
+                    .await;
+                }
+                InstanceCallable::NoOp => {}
+                InstanceCallable::Closure(_, _, _) => {
+                    panic!("a Drop dictionary cannot call a closure")
+                }
+            }
+        }
+    }
+
     async fn lower_global_call(
         &mut self,
         context: &Context,
@@ -133,6 +174,12 @@ impl Builder<'_> {
                     }
                     InstanceCallable::Closure(instance, signature, effects) => {
                         self.lower_closure_call(call, instance, signature, &effects, expression_id);
+                    }
+                    InstanceCallable::TupleDrop(element_instances) => {
+                        assert_eq!(call.arguments().len(), 1);
+                        let tuple = self.expression_place(call.arguments()[0]);
+                        self.lower_tuple_drop(context, tuple, &element_instances, expression_id)
+                            .await;
                     }
                     // The arguments have already been evaluated by their own IR
                     // expressions. A built-in no-op Drop call emits no instruction.

@@ -45,10 +45,13 @@ pub(super) async fn collect(
         };
         solver.visit_instance_candidate(instance_id)?;
 
+        // TODO: actually, we'd like for the instance-trait-ref to already be normalized
+        // so that we can avoid this extra normalization step.
         let head = solver.normalize(&head).await;
         let Some(subst) = solver.head_match(&head, required).await else {
             continue;
         };
+
         let pending_given_parameters = engine
             .get_poly_var_map(instance_id)
             .await

@@ -27,6 +27,9 @@ pub enum Constant {
     DefInstance,
     /// The built-in no-op `Drop` dictionary for a primitive or pointer type.
     NoOpDropInstance,
+    /// The built-in `Drop` dictionary for a tuple. Its arguments are the tuple
+    /// type followed by one `Drop` dictionary for each element in tuple order.
+    TupleDropInstance,
     Error(TyKind),
 }
 
@@ -149,6 +152,20 @@ pub struct InstanceView<'x> {
     args: &'x [Interned<Ty>],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TupleDropInstanceView<'x> {
+    tuple: &'x Interned<Ty>,
+    element_instances: &'x [Interned<Ty>],
+}
+
+impl<'x> TupleDropInstanceView<'x> {
+    #[must_use]
+    pub const fn tuple(&self) -> &'x Interned<Ty> { self.tuple }
+
+    #[must_use]
+    pub const fn element_instances(&self) -> &'x [Interned<Ty>] { self.element_instances }
+}
+
 impl<'x> InstanceView<'x> {
     #[must_use]
     pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
@@ -196,6 +213,7 @@ pub enum View<'x> {
     Closure(ClosureView<'x>),
     DefInstance(&'x Interned<Ty>),
     NoOpDropInstance(&'x Interned<Ty>),
+    TupleDropInstance(TupleDropInstanceView<'x>),
     Error,
 }
 
@@ -261,6 +279,11 @@ impl Application {
             }
             Constant::DefInstance => View::DefInstance(&self.args[0]),
             Constant::NoOpDropInstance => View::NoOpDropInstance(&self.args[0]),
+            Constant::TupleDropInstance => {
+                let (tuple, element_instances) =
+                    self.args.split_first().expect("tuple Drop instance has a tuple type");
+                View::TupleDropInstance(TupleDropInstanceView { tuple, element_instances })
+            }
             Constant::Error(_) => View::Error,
         }
     }
@@ -289,9 +312,10 @@ impl Application {
                 engine.get_associated_type_kind(symbol_id).await
             }
 
-            Constant::NoOpDropInstance | Constant::Instance(_) | Constant::DefInstance => {
-                TyKind::Instance
-            }
+            Constant::NoOpDropInstance
+            | Constant::TupleDropInstance
+            | Constant::Instance(_)
+            | Constant::DefInstance => TyKind::Instance,
             Constant::Error(kind) => kind,
         }
     }
@@ -314,6 +338,7 @@ impl Application {
                 | View::DefInstance(_)
                 | View::Closure(_)
                 | View::NoOpDropInstance(_)
+                | View::TupleDropInstance(_)
                 | View::InstanceAssociated(_) => false,
             },
             InferenceConstraint::EqualityComparable => match self.view() {
@@ -332,6 +357,7 @@ impl Application {
                 | View::DefInstance(_)
                 | View::InstanceAssociated(_)
                 | View::NoOpDropInstance(_)
+                | View::TupleDropInstance(_)
                 | View::Closure(_) => false,
             },
         }

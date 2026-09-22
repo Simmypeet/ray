@@ -242,6 +242,7 @@ fn head_arguments(ty: &Ty) -> Result<Vec<&Interned<Ty>>, InvalidHeadKind> {
         | ApplicationView::DefInstance(_)
         | ApplicationView::Instance(_)
         | ApplicationView::NoOpDropInstance(_)
+        | ApplicationView::TupleDropInstance(_)
         | ApplicationView::Error => Err(InvalidHeadKind::MissingTypeConstructor),
     }
 }

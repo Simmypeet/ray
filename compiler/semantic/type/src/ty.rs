@@ -182,6 +182,7 @@ impl Ty {
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::NoOpDropInstance(_)
+                | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::Instance(_) => false,
             },
             Self::Inference(_) | Self::EffectRow(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
@@ -377,6 +378,36 @@ impl Ty {
         )))
     }
 
+    /// Creates the built-in `Drop` dictionary for a tuple from the selected
+    /// dictionary for each element.
+    #[must_use]
+    pub fn new_tuple_drop_instance(
+        tuple: Interned<Self>,
+        element_instances: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        let Self::Application(application) = &*tuple else {
+            panic!("tuple Drop instance requires a tuple type")
+        };
+        let ApplicationView::Tuple(tuple_view) = application.view() else {
+            panic!("tuple Drop instance requires a tuple type")
+        };
+
+        // Keep the target tuple beside its selected element dictionaries so
+        // lexical dictionaries survive substitution and monomorphization.
+        let element_instances = element_instances.into_iter().collect::<Vec<_>>();
+        assert_eq!(
+            tuple_view.args().len(),
+            element_instances.len(),
+            "tuple Drop instance requires one dictionary per element"
+        );
+        let args = std::iter::once(tuple).chain(element_instances);
+        engine.intern(Self::Application(Application::new(
+            Constant::TupleDropInstance,
+            engine.intern_unsized(args.collect::<Vec<_>>()),
+        )))
+    }
+
     #[must_use]
     pub fn new_instance(
         symbol_id: GlobalSymbolID,
@@ -471,6 +502,7 @@ impl Ty {
                         | ApplicationView::DefInstance(_)
                         | ApplicationView::Closure(_)
                         | ApplicationView::NoOpDropInstance(_)
+                        | ApplicationView::TupleDropInstance(_)
                         | ApplicationView::Error => None,
                     };
                     if let Some(symbol_id) = symbol_id {
@@ -610,6 +642,11 @@ impl TyDisplay<'_> {
                     self.fmt_ty(ty, f)
                 }
 
+                ApplicationView::TupleDropInstance(instance) => {
+                    f.write_str("<tuple drop instance>")?;
+                    self.fmt_ty(instance.tuple(), f)
+                }
+
                 ApplicationView::Closure(closure) => {
                     f.write_str("<closure>")?;
                     self.fmt_signature(
@@ -720,6 +757,19 @@ impl Ty {
     }
 
     #[must_use]
+    pub fn as_tuple_view(&self) -> Option<application::TupleView<'_>> {
+        let Self::Application(ty_application) = self else {
+            return None;
+        };
+
+        let ApplicationView::Tuple(tuple_view) = ty_application.view() else {
+            return None;
+        };
+
+        Some(tuple_view)
+    }
+
+    #[must_use]
     pub fn as_instance_view(&self) -> Option<InstanceView<'_>> {
         let Self::Application(ty_application) = self else {
             return None;
@@ -805,6 +855,7 @@ impl Ty {
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::NoOpDropInstance(_)
+                | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::Instance(_) => Some(false),
             },
             Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {
@@ -844,6 +895,7 @@ impl Ty {
                 | ApplicationView::Instance(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::NoOpDropInstance(_)
+                | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::Error => false,
             },
             Self::EffectRow(_) | Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
@@ -870,6 +922,7 @@ impl Ty {
                 | ApplicationView::Instance(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::NoOpDropInstance(_)
+                | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::Error => false,
             },
             Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {

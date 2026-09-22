@@ -6,14 +6,19 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::resolver::Resolver;
 use rayc_semantic_element::instance_trait_ref::Key;
+use rayc_source_file::SourceElement;
 use rayc_symbol::{
+    core_item::{CoreItem, get_core_item},
     member::{get_member_by_name, get_members},
     name::get_name,
     source_map::to_absolute_span,
     span::get_span,
     syntax::get_instance_trait_syntax,
 };
-use rayc_type::poly_var::get_enclosing_poly_var_maps;
+use rayc_type::{
+    poly_var::get_enclosing_poly_var_maps,
+    ty::{Ty, application::View as ApplicationView},
+};
 
 use crate::{
     build::{Build, Output},
@@ -27,6 +32,45 @@ pub struct MissingDefinition {
     name: Interned<str>,
     instance_span: RelativeSpan,
     trait_def_span: RelativeSpan,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+enum ReservedDropHeadKind {
+    Primitive,
+    Pointer,
+    Tuple,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct ReservedDropImplementation {
+    span: RelativeSpan,
+    kind: ReservedDropHeadKind,
 }
 
 impl Report for MissingDefinition {
@@ -49,6 +93,24 @@ impl Report for MissingDefinition {
     }
 }
 
+impl Report for ReservedDropImplementation {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let type_kind = match self.kind {
+            ReservedDropHeadKind::Primitive => "primitive",
+            ReservedDropHeadKind::Pointer => "pointer",
+            ReservedDropHeadKind::Tuple => "tuple",
+        };
+
+        Rendered::builder()
+            .message("reserved Drop implementation")
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("Drop for {type_kind} types is provided by the compiler")),
+            ))
+            .build()
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -66,6 +128,7 @@ impl Report for MissingDefinition {
 pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
     MissingDefinition(MissingDefinition),
+    ReservedDropImplementation(ReservedDropImplementation),
 }
 
 impl Report for Diagnostic {
@@ -73,7 +136,27 @@ impl Report for Diagnostic {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::MissingDefinition(diagnostic) => diagnostic.report(engine).await,
+            Self::ReservedDropImplementation(diagnostic) => diagnostic.report(engine).await,
         }
+    }
+}
+
+fn reserved_drop_head_kind(ty: &Ty) -> Option<ReservedDropHeadKind> {
+    match ty {
+        Ty::Application(application) => match application.view() {
+            ApplicationView::Primitive(_) => Some(ReservedDropHeadKind::Primitive),
+            ApplicationView::Pointer(_) => Some(ReservedDropHeadKind::Pointer),
+            ApplicationView::Tuple(_) => Some(ReservedDropHeadKind::Tuple),
+            ApplicationView::Struct(_)
+            | ApplicationView::Instance(_)
+            | ApplicationView::InstanceAssociated(_)
+            | ApplicationView::Closure(_)
+            | ApplicationView::DefInstance(_)
+            | ApplicationView::NoOpDropInstance(_)
+            | ApplicationView::TupleDropInstance(_)
+            | ApplicationView::Error => None,
+        },
+        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => None,
     }
 }
 
@@ -98,6 +181,18 @@ impl Build for Key {
         let Ok(trait_ref) = resolver.resolve_trait_path(&syntax).await else {
             return Output::new_with(None, diagnostics.into_vec(), obligations.into_vec(), engine);
         };
+
+        // Drop dictionaries for compiler-provided structural types cannot be
+        // overridden because instance resolution selects them intrinsically.
+        if trait_ref.trait_id() == engine.get_core_item(CoreItem::DropTrait).await
+            && let Some(implementor) = trait_ref.args().interned_iter().next()
+            && let Some(kind) = reserved_drop_head_kind(implementor)
+        {
+            diagnostics.receive(Diagnostic::ReservedDropImplementation(
+                ReservedDropImplementation { span: syntax.span(), kind },
+            ));
+            return Output::new_with(None, diagnostics.into_vec(), obligations.into_vec(), engine);
+        }
 
         let instance_span =
             engine.get_span(symbol_id).await.expect("an instance symbol should have a source span");

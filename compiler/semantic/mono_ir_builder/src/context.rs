@@ -42,6 +42,7 @@ use rayc_type::{
 pub(crate) enum InstanceCallable {
     Definition(MonoDefInstance),
     Closure(MonoClosureInstance, FunctionSignature, Vec<MonoEffectInstance>),
+    TupleDrop(Vec<Interned<Ty>>),
     NoOp,
 }
 
@@ -274,6 +275,10 @@ impl Context {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
                 InstanceCallable::NoOp
             }
+            ApplicationView::TupleDropInstance(instance) => {
+                assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
+                InstanceCallable::TupleDrop(instance.element_instances().to_vec())
+            }
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Pointer(_)
@@ -284,6 +289,12 @@ impl Context {
                 panic!("an instance call should resolve to a type of instance kind")
             }
         }
+    }
+
+    /// Resolves the `Drop.drop` implementation selected by a stored dictionary.
+    pub(crate) async fn resolve_drop_call(&self, dictionary_ty: &Interned<Ty>) -> InstanceCallable {
+        let drop_method = self.engine.get_core_item(CoreItem::DropMethod).await;
+        self.resolve_instance_call(dictionary_ty, drop_method, &Subst::new_empty()).await
     }
 
     /// Selects a nominal body and its ABI from a built-in Def dictionary.

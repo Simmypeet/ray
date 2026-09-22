@@ -1,0 +1,28 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: reserved Drop implementation
+  ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:1:18
+  │
+1 │ inst IntDrop for core.Drop[int32]:
+  ╰╴                 ━━━━━━━━━━━━━━━━ Drop for primitive types is provided by the compiler
+
+[error]: reserved Drop implementation
+  ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:5:25
+  │
+5 │ inst PointerDrop[a] for core.Drop[*a]:
+  ╰╴                        ━━━━━━━━━━━━━ Drop for pointer types is provided by the compiler
+
+[error]: reserved Drop implementation
+  ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:9:26
+  │
+9 │ inst TupleDrop[a, b] for core.Drop[(a, b)]:
+  ╰╴                         ━━━━━━━━━━━━━━━━━ Drop for tuple types is provided by the compiler
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

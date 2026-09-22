@@ -198,6 +198,7 @@ impl<'a> StackStateProblem<'a> {
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::NoOpDropInstance(_)
+                | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::Error,
                 Projection::Tuple(_) | Projection::Field(_),
             )

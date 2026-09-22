@@ -176,15 +176,14 @@ pub enum InstanceResolutionError {
 }
 
 impl Solver {
-    /// Resolves a trait requirement to a built-in, lexical, or global
+    /// Resolves a trait requirement to a lexical, built-in, or global
     /// dictionary term and the instantiated predicates required by its proof
     /// tree.
     ///
-    /// Closure `Def` dictionaries resolve even with inference variables. Other
-    /// requirements must be ground, with lexical dictionaries taking
-    /// precedence. Otherwise all matching global candidates have their given
-    /// premises resolved recursively, after which the unique most-specific
-    /// viable head wins.
+    /// Requirements must be ground, with lexical dictionaries taking
+    /// precedence. Compiler-provided dictionaries are selected next, before
+    /// matching global candidates. Global premises are resolved
+    /// recursively, after which the unique most-specific viable head wins.
     pub async fn resolve_instance(&mut self, required: TraitRef) -> InstanceResolutionResult {
         self.resolve_instance_from(required, None).await
     }
@@ -234,13 +233,66 @@ impl Solver {
         ))
     }
 
+    /// Builds the intrinsic `Drop` dictionary for a tuple by resolving one
+    /// dictionary for each element.
+    pub(crate) async fn resolve_tuple_drop_instance(
+        &mut self,
+        required: &TraitRef,
+    ) -> Option<InstanceResolutionResult> {
+        let drop_trait = self.engine().get_core_item(CoreItem::DropTrait).await;
+        if required.args().len() != 1 || required.trait_id() != drop_trait {
+            return None;
+        }
+
+        // Extract owned element types before recursively borrowing the solver.
+        let tuple = required.args().interned_iter().next()?.clone();
+        let tuple_view = tuple.as_tuple_view()?;
+
+        let elements = tuple_view.args().to_vec();
+
+        // Retain the selected element dictionaries, including lexical givens,
+        // and propagate every obligation from their proof trees.
+        let mut element_instances = Vec::with_capacity(elements.len());
+        let mut obligations = Vec::new();
+
+        Box::pin(async move {
+            for element in elements {
+                let element_requirement =
+                    TraitRef::new(drop_trait, Args::new([element], self.engine()));
+
+                let resolved = match self.resolve_instance_from(element_requirement, None).await {
+                    Ok(resolved) => resolved,
+                    Err(error) => return Some(Err(error)),
+                };
+
+                let (element_instance, element_obligations) = resolved.into_parts();
+                element_instances.push(element_instance);
+                extend_unique_obligations(&mut obligations, element_obligations);
+            }
+
+            let term = Ty::new_tuple_drop_instance(tuple, element_instances, self.engine());
+            Some(Ok(ResolvedInstance::new(term, obligations)))
+        })
+        .await
+    }
+
     pub async fn search_active_goal(&mut self, required: &TraitRef) -> InstanceResolutionResult {
+        // An explicitly supplied dictionary is always the nearest evidence,
+        // including for types that also have a compiler-provided dictionary.
         match lexical::resolve(self, required).await {
             Ok(LexicalResolution::NotFound) => {}
             Ok(LexicalResolution::Resolved(term)) => {
                 return Ok(ResolvedInstance::new(term, Vec::new()));
             }
             Err(error) => return Err(error),
+        }
+
+        // Structural Drop dictionaries take precedence over global instances.
+        if let Some(resolved) = self.resolve_no_op_drop_instance(required).await {
+            return Ok(resolved);
+        }
+        if let Some(resolution) = self.resolve_tuple_drop_instance(required).await {
+            return resolution;
         }
 
         let candidates = match candidates::collect(self, required).await {
