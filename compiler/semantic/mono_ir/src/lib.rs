@@ -2,8 +2,9 @@
 //!
 //! A [`MonoIR`] is deliberately scoped to one concrete source-definition
 //! instance. It owns that definition's root function and all nested functions
-//! produced from its lambdas, thunks, and operation handlers. Calls to other
-//! definitions retain [`MonoDefInstance`] keys so a future incremental
+//! produced from its lambdas, thunks, and operation handlers. A fragment can
+//! instead hold a compiler-generated nominal `Drop.drop` body. Calls to other
+//! fragments retain [`MonoFragmentInstance`] keys so a future incremental
 //! orchestrator can request and reuse their independently cached fragments.
 //!
 //! This crate models the IR and exposes the cached query for concrete handler
@@ -30,12 +31,16 @@ pub mod place;
 pub mod rvalue;
 pub mod ty;
 
-pub use instance::{MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoStructInstance};
+pub use instance::{
+    MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoFragmentInstance,
+    MonoNominalDropInstance, MonoStructInstance,
+};
 
-/// The independently cacheable `MonoIR` fragment for one concrete definition.
+/// The independently cacheable `MonoIR` fragment for one concrete definition
+/// or generated nominal Drop body.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct MonoIR {
-    instance: MonoDefInstance,
+    instance: MonoFragmentInstance,
     functions: Arena<MonoFunction>,
     root: MonoFunctionID,
     closures: FxHashMap<ClosureID, MonoFunctionID>,
@@ -43,13 +48,21 @@ pub struct MonoIR {
 
 impl MonoIR {
     #[must_use]
-    pub fn new(instance: MonoDefInstance, root_signature: FunctionSignature) -> Self {
+    pub fn new(
+        instance: impl Into<MonoFragmentInstance>,
+        root_signature: FunctionSignature,
+    ) -> Self {
+        let instance = instance.into();
         let mut functions = Arena::new();
         let root = functions.insert(MonoFunction::new(MonoFunctionKind::Def, root_signature));
         Self { instance, functions, root, closures: FxHashMap::default() }
     }
 
     pub fn register_closure(&mut self, closure: ClosureID, function: MonoFunctionID) {
+        assert!(
+            matches!(self.instance, MonoFragmentInstance::Definition(_)),
+            "only definition fragments own source closures"
+        );
         let _ = self.get_function(function);
         assert!(!self.closures.values().any(|id| *id == function));
         assert!(self.closures.insert(closure, function).is_none());
@@ -62,13 +75,17 @@ impl MonoIR {
 
     #[must_use]
     pub fn closure_instance(&self, function: MonoFunctionID) -> Option<MonoClosureInstance> {
+        let owner = match &self.instance {
+            MonoFragmentInstance::Definition(owner) => owner,
+            MonoFragmentInstance::NominalDrop(_) => return None,
+        };
         self.closures.iter().find_map(|(closure, id)| {
-            (*id == function).then(|| MonoClosureInstance::new(self.instance.clone(), *closure))
+            (*id == function).then(|| MonoClosureInstance::new(owner.clone(), *closure))
         })
     }
 
     #[must_use]
-    pub const fn instance(&self) -> &MonoDefInstance { &self.instance }
+    pub const fn instance(&self) -> &MonoFragmentInstance { &self.instance }
 
     #[must_use]
     pub const fn root_id(&self) -> MonoFunctionID { self.root }

@@ -344,18 +344,21 @@ impl HandlerLayout {
 }
 
 /// Lowers a type of kind star using the supplied concrete substitution.
-#[extend]
+///
+/// `solver` normalizes projections; callers lowering many types should reuse
+/// one solver so any normalization state it keeps is shared.
 pub async fn lower_type(
-    self: &TrackedEngine,
+    solver: &Solver,
     ty: &Interned<Ty>,
     substitution: &Subst,
 ) -> Interned<MonoType> {
-    let ty = ty.apply_subst_or_clone(substitution, self);
-    let ty = Solver::without_givens(self.clone()).normalize(&ty).await;
-    lower_concrete_type(self, &ty).await
+    let ty = ty.apply_subst_or_clone(substitution, solver.engine());
+    let ty = solver.normalize(&ty).await;
+    lower_concrete_type(solver, &ty).await
 }
 
-async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Interned<MonoType> {
+async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<MonoType> {
+    let engine = solver.engine();
     match &**ty {
         Ty::Application(application) => match application.view() {
             ApplicationView::Primitive(primitive) => {
@@ -370,21 +373,21 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
             }
 
             ApplicationView::Closure(closure) => {
-                let environment = Box::pin(nominal_environment(engine, closure)).await;
+                let environment = Box::pin(nominal_environment(solver, closure)).await;
                 engine.intern(MonoType::Aggregate(AggregateType::Environment(environment)))
             }
 
             ApplicationView::Tuple(tuple) => {
                 let mut fields = Vec::with_capacity(tuple.args().len());
                 for ty in tuple.args() {
-                    fields.push(Box::pin(lower_concrete_type(engine, ty)).await);
+                    fields.push(Box::pin(lower_concrete_type(solver, ty)).await);
                 }
                 let fields = engine.intern_unsized(fields);
                 engine.intern(MonoType::Aggregate(AggregateType::Tuple(Tuple::new(fields))))
             }
 
             ApplicationView::Pointer(pointer) => {
-                let pointee_type = Box::pin(lower_concrete_type(engine, pointer.pointee())).await;
+                let pointee_type = Box::pin(lower_concrete_type(solver, pointer.pointee())).await;
                 MonoType::new_pointer(pointee_type, lower_mutability(pointer.mutability()), engine)
             }
             ApplicationView::Struct(struct_view) => {
@@ -394,7 +397,7 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
                 // Lower each struct field's type under the concrete type argument substitution.
                 let mut fields = BTreeMap::new();
                 for (field_id, field) in struct_body.iter() {
-                    let field_type = Box::pin(engine.lower_type(field.ty(), &substitution)).await;
+                    let field_type = Box::pin(lower_type(solver, field.ty(), &substitution)).await;
                     fields.insert(field_id, field_type);
                 }
 
@@ -429,15 +432,14 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
 }
 
 /// Lowers a concrete, closed effect row using the supplied substitution.
-#[extend]
 pub async fn lower_effects(
-    self: &TrackedEngine,
+    solver: &Solver,
     effect: &Interned<Ty>,
     substitution: &Subst,
 ) -> Vec<MonoEffectInstance> {
-    let effect = effect.apply_subst_or_clone(substitution, self);
-    let effect = Solver::without_givens(self.clone()).normalize(&effect).await;
-    lower_concrete_effects(self, &effect).await
+    let effect = effect.apply_subst_or_clone(substitution, solver.engine());
+    let effect = solver.normalize(&effect).await;
+    lower_concrete_effects(solver.engine(), &effect).await
 }
 
 async fn lower_concrete_effects(
@@ -491,6 +493,7 @@ async fn build_handler_layout_executor(
     engine: &TrackedEngine,
 ) -> Interned<HandlerLayout> {
     let instance = &key.instance;
+    let solver = Solver::without_givens(engine.clone());
     let members = engine.get_members(instance.effect_id()).await;
     let mut operations = members
         .namable_members()
@@ -503,10 +506,11 @@ async fn build_handler_layout_executor(
         let parameters = engine.get_parameter_map(operation_id).await;
         let mut parameter_types = vec![MonoType::new_opaque_pointer(engine)];
         for (_, parameter) in parameters.iter() {
-            parameter_types.push(engine.lower_type(parameter.ty(), instance.substitution()).await);
+            parameter_types
+                .push(lower_type(&solver, parameter.ty(), instance.substitution()).await);
         }
         let return_type = engine.get_return_type(operation_id).await;
-        let return_type = engine.lower_type(&return_type, instance.substitution()).await;
+        let return_type = lower_type(&solver, &return_type, instance.substitution()).await;
         lowered_operations.push(EffectOperation::new(
             operation_id,
             MonoType::new_function_signature(parameter_types, return_type, engine),
@@ -528,10 +532,11 @@ const fn lower_mutability(mutability: Mutability) -> PointerMutability {
 
 /// The inline storage shared by nominal values and their body ABI.
 pub async fn nominal_environment(
-    engine: &TrackedEngine,
+    solver: &Solver,
     closure: rayc_type::ty::application::ClosureView<'_>,
 ) -> Environment {
-    let tuple = engine.lower_type(closure.captured_tuple(), &Subst::new_empty()).await;
+    let engine = solver.engine();
+    let tuple = lower_type(solver, closure.captured_tuple(), &Subst::new_empty()).await;
     let MonoType::Aggregate(AggregateType::Tuple(tuple)) = &*tuple else {
         panic!("closure captures must be a tuple")
     };
@@ -541,16 +546,17 @@ pub async fn nominal_environment(
 /// Plans the concrete nominal body call, including the inline environment and
 /// handlers.
 pub async fn nominal_signature(
-    engine: &TrackedEngine,
+    solver: &Solver,
     closure: rayc_type::ty::application::ClosureView<'_>,
 ) -> (FunctionSignature, Vec<MonoEffectInstance>) {
-    let environment = nominal_environment(engine, closure).await;
+    let engine = solver.engine();
+    let environment = nominal_environment(solver, closure).await;
     let mut parameters = Vec::new();
     for parameter in closure.params() {
-        parameters.push(engine.lower_type(parameter, &Subst::new_empty()).await);
+        parameters.push(lower_type(solver, parameter, &Subst::new_empty()).await);
     }
-    let effects = engine.lower_effects(closure.effect_row(), &Subst::new_empty()).await;
-    let result = engine.lower_type(closure.return_type(), &Subst::new_empty()).await;
+    let effects = lower_effects(solver, closure.effect_row(), &Subst::new_empty()).await;
+    let result = lower_type(solver, closure.return_type(), &Subst::new_empty()).await;
     (nominal_body_signature(engine, environment, parameters, result, &effects), effects)
 }
 
