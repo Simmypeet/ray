@@ -1,0 +1,84 @@
+---
+name: write-unit-tests
+description: Write or update a specifically requested or otherwise justified unit test in the Ray compiler codebase. Use only after the test-strategy unit-test gate selects unit coverage, or when a programmer explicitly requests unit tests. Apply concise input, premise, and output contract comments especially to tests for rayc_type and rayc_solver.
+---
+
+# Write Unit Tests
+
+Write each test as a small behavioral specification. Follow nearby test helpers and
+conventions, and make the scenario understandable without tracing its setup code.
+
+Do not use this skill to decide that a change needs unit coverage. Apply the
+`test-strategy` skill first unless the programmer explicitly requested a unit test.
+If that selection points to `check_e2e`, `run_e2e`, or no new test, do not add a
+unit test.
+
+## Workflow
+
+1. Inspect the implementation, adjacent tests, and shared test helpers.
+2. Identify one behavior per test, including the relevant edge or failure case.
+3. For tests related to `rayc_type` or `rayc_solver`, express the case as
+   `input`, `premise`, and `output` comments immediately above every `#[test]` or
+   `#[tokio::test]` attribute.
+4. Name the test after the observable behavior, not the implementation steps.
+5. Arrange only the state needed by the premise, invoke the behavior once, and
+   assert the complete relevant result.
+6. Run the narrowest applicable test command, then `cargo +nightly fmt` and
+   `cargo clippy` as required by the project code-style skill.
+
+## Test Contract Comments
+
+Apply this contract-comment style especially to test cases for definitions and
+behavior in `rayc_type` and `rayc_solver`. Their type and solver operations
+map naturally to explicit inputs, premises, and outputs.
+
+Do not impose this format mechanically on tests in other crates. Inspect nearby
+tests and use the crate's established style; adopt the contract comments only
+when they clarify the behavior or local convention already supports them.
+
+Use this exact order and lowercase labels:
+
+```rust
+// input: <value or operation supplied to the subject>
+// premise: <facts, rules, or state assumed by the case>
+// output: <expected value, constraints, side effects, or error>
+#[tokio::test]
+async fn subject_exhibits_behavior() {
+    // ...
+}
+```
+
+- Keep each line brief and use domain notation instead of restating Rust setup.
+- Write `premise: {}` when the case needs no facts beyond normal initialization.
+- Include all semantically relevant result parts in `output`, such as both a
+  reduced value and emitted constraints.
+- Name expected failures in `output`, for example `Overflow` or the diagnostic
+  kind, rather than pretending the case returns a normal value.
+- Align continuation lines beneath the comment value when a contract cannot fit
+  clearly on one line:
+
+```rust
+// input: (&skolem(0) bool, &skolem(1) int32)
+// premise: forall 'a, 'b. (&'a bool, &'b int32) =
+//          (&'b uint64, &'a int32)
+// output: (&skolem(1) uint64, &skolem(0) int32), {}
+```
+
+Treat the premise as the distinction between ambient setup and the rule that
+makes the expected output valid. For solver tests, it normally lists predicates
+inserted into `Premise`. For other units, use it for relevant initial state,
+configuration, mocks, or invariants.
+
+## Test Quality
+
+- Keep one reason to fail per test. Split unrelated behaviors into separate cases.
+- Prefer public or behavior-level entry points unless the unit specifically
+  requires testing a private invariant.
+- Reuse nearby constructors and helpers when they improve the scenario's signal.
+- Assert exact values, errors, constraints, and side effects relevant to the
+  contract; avoid assertions that only prove execution completed.
+- Add regression cases that fail before the fix and pass after it.
+- Do not add the three-line contract to helper functions that are not test cases.
+
+Use `compiler/semantic/solver/src/reduction/test.rs` as the canonical example for
+the contract-comment notation and placement.

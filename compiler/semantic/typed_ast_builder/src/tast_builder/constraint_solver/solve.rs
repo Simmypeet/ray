@@ -23,16 +23,11 @@ use crate::tast_builder::{TAstBuilder, constraint_solver::constraints::Constrain
 pub struct ConstraintSet {
     residual_constraints: Vec<PendingConstraint>,
     errored_constraints: Vec<(ConstraintError, PendingConstraint)>,
-    numeric_inferences: Vec<Inference>,
 }
 
 impl ConstraintSet {
     pub const fn new() -> Self {
-        Self {
-            residual_constraints: Vec::new(),
-            errored_constraints: Vec::new(),
-            numeric_inferences: Vec::new(),
-        }
+        Self { residual_constraints: Vec::new(), errored_constraints: Vec::new() }
     }
 
     pub(super) fn failed_pending_constraints(&self) -> impl Iterator<Item = &PendingConstraint> {
@@ -40,10 +35,6 @@ impl ConstraintSet {
             .iter()
             .map(|(_, pending)| pending)
             .chain(self.residual_constraints.iter())
-    }
-
-    pub(super) fn numeric_inferences(&self) -> impl Iterator<Item = Inference> + '_ {
-        self.numeric_inferences.iter().copied()
     }
 }
 
@@ -344,11 +335,7 @@ impl ConstraintSolver {
 
 impl GenInfer for ConstraintSolver {
     fn gen_infer(&mut self, kind: TyKind, constraint: InferenceConstraint) -> Inference {
-        let inference = self.solver.new_inference_with_constraint(kind, constraint);
-        if kind == TyKind::Star && constraint == InferenceConstraint::Numeric {
-            self.constraint_set.numeric_inferences.push(inference);
-        }
-        inference
+        self.solver.new_inference_with_constraint(kind, constraint)
     }
 }
 
@@ -360,14 +347,54 @@ impl GenInfer for TAstBuilder {
 
 impl TAstBuilder {
     pub async fn finish_constraints(&mut self) {
-        let numeric =
-            self.constraint_solver.constraint_set.numeric_inferences().collect::<Vec<_>>();
+        self.default_numerics().await;
+
+        // Effect rows are defaulted last: retrying the residuals after numeric
+        // defaulting can still bind them, e.g. when a `Def` requirement fixes
+        // a closure's effect.
+        self.default_effect_rows().await;
+    }
+
+    /// Defaults every numeric literal that no constraint determined to
+    /// `int32`, then retries the residual constraints it may unblock.
+    async fn default_numerics(&mut self) {
+        let numerics = self.constraint_solver.take_recorded_numeric_inferences();
 
         let default = Ty::new_primitive(rayc_type::ty::Primitive::Int32, &self.engine);
         self.constraint_solver
             .provenance
-            .default_unbound_inferences(numeric, &default, &self.constraint_solver.solver)
+            .default_unbound_inferences(numerics, &default, &self.constraint_solver.solver)
             .await;
+
+        let mut queued = Vec::new();
+        self.move_constraints_from_residual(&mut queued);
+        self.push_constraints(queued).await;
+    }
+
+    /// Closes every effect row that no constraint determines with the empty
+    /// row, e.g. the effect of a closure that is never called.
+    ///
+    /// Effect rows are related only by exact row unification, so after the
+    /// constraints reach a fixed point, an unbound row that no residual or
+    /// errored constraint mentions can take any value without affecting a
+    /// solved constraint. Rows mentioned by those constraints are left alone,
+    /// so their diagnostics are reported against the uninferred row.
+    async fn default_effect_rows(&mut self) {
+        let effect_rows = self.constraint_solver.take_recorded_effect_row_inferences();
+        let excluded = self.constraint_solver.provenance.inferences_in(
+            self.constraint_solver.constraint_set.failed_pending_constraints(),
+            &self.engine,
+        );
+
+        let defaulted = self.constraint_solver.provenance.default_unbound_effect_rows(
+            effect_rows,
+            &excluded,
+            &self.engine,
+        );
+        if !defaulted {
+            return;
+        }
+
         let mut queued = Vec::new();
         self.move_constraints_from_residual(&mut queued);
         self.push_constraints(queued).await;

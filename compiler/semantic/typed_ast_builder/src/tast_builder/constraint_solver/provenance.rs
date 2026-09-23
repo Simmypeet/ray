@@ -136,7 +136,9 @@ pub struct DerivedCause {
 pub enum Cause {
     Root(RootCause),
     Derived(DerivedCause),
-    NumericDefault,
+    /// A substitution chosen for an inference that no constraint determined,
+    /// such as a numeric literal's `int32` or an unconstrained effect row.
+    Default,
 }
 
 pub type CauseID = ID<Cause>;
@@ -262,8 +264,8 @@ impl Provenance {
                         cause_id = step.original_cause_id;
                     }
                 },
-                Cause::NumericDefault => {
-                    unreachable!("a numeric default cannot be a constraint's primary cause")
+                Cause::Default => {
+                    unreachable!("a default cannot be a constraint's primary cause")
                 }
             }
         }
@@ -301,7 +303,7 @@ impl Provenance {
                     }
                 }
             },
-            Cause::NumericDefault => {}
+            Cause::Default => {}
         }
     }
 
@@ -461,15 +463,66 @@ impl Provenance {
             }
         }
 
+        self.insert_defaults(&defaults, engine);
+    }
+
+    /// Binds every effect row in `effect_rows` that is still unbound, other
+    /// than `excluded`, to the empty row. Returns whether any row was
+    /// defaulted.
+    ///
+    /// `effect_rows` must contain every effect row of the definition, so that
+    /// open tails such as the `?t` of an effect bound to `{Identity | ?t}` are
+    /// defaulted directly rather than found through other bindings.
+    pub(super) fn default_unbound_effect_rows(
+        &mut self,
+        effect_rows: impl IntoIterator<Item = Inference>,
+        excluded: &FxHashSet<Inference>,
+        engine: &TrackedEngine,
+    ) -> bool {
+        let empty = Ty::new_effect_row([], None, engine);
+
+        // The substitution is idempotent, so a row is unbound exactly when it
+        // is not in its domain. A row aliased to another one is bound, and
+        // receives the default through that row.
+        let mut defaults = Subst::default();
+        for effect_row in effect_rows {
+            if self.subst.get(&effect_row).is_none() && !excluded.contains(&effect_row) {
+                defaults.insert(effect_row, empty.clone());
+            }
+        }
+
+        let defaulted = defaults.inference_mappings().next().is_some();
+        self.insert_defaults(&defaults, engine);
+        defaulted
+    }
+
+    /// Collects the inferences that `constraints` still mention after the
+    /// current substitution.
+    pub(super) fn inferences_in<'a>(
+        &self,
+        constraints: impl IntoIterator<Item = &'a PendingConstraint>,
+        engine: &TrackedEngine,
+    ) -> FxHashSet<Inference> {
+        let mut inferences = FxHashSet::default();
+        for pending in constraints {
+            let latest = pending.constraint().apply_subst(&self.subst, engine);
+            let constraint = latest.as_ref().unwrap_or_else(|| pending.constraint());
+            inferences
+                .extend(constraint.interned_recursive_iter().filter_map(|ty| ty.as_inference()));
+        }
+        inferences
+    }
+
+    fn insert_defaults(&mut self, defaults: &Subst, engine: &TrackedEngine) {
         // Defaults are not attributable to a source constraint, but provenance still
         // needs an entry for every substituted inference when retrying residuals.
         if defaults.inference_mappings().next().is_some() {
-            let default_cause = self.causes.insert(Cause::NumericDefault);
+            let default_cause = self.causes.insert(Cause::Default);
             for (inference, _) in defaults.inference_mappings() {
                 self.subst_causes.entry(inference).or_insert(default_cause);
             }
         }
-        self.subst.compose(&defaults, engine);
+        self.subst.compose(defaults, engine);
     }
 
     pub(super) fn into_subst(self) -> Subst { self.subst }
