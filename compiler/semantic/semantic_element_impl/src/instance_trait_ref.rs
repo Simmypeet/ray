@@ -73,6 +73,24 @@ pub struct ReservedDropImplementation {
     kind: ReservedDropHeadKind,
 }
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct ForeignNominalDropImplementation {
+    span: RelativeSpan,
+}
+
 impl Report for MissingDefinition {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         Rendered::builder()
@@ -111,6 +129,18 @@ impl Report for ReservedDropImplementation {
     }
 }
 
+impl Report for ForeignNominalDropImplementation {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("Drop instance must be declared in the nominal type's target")
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some("move this Drop instance to the target that defines the type".into()),
+            ))
+            .build()
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -129,6 +159,7 @@ pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
     MissingDefinition(MissingDefinition),
     ReservedDropImplementation(ReservedDropImplementation),
+    ForeignNominalDropImplementation(ForeignNominalDropImplementation),
 }
 
 impl Report for Diagnostic {
@@ -137,6 +168,7 @@ impl Report for Diagnostic {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::MissingDefinition(diagnostic) => diagnostic.report(engine).await,
             Self::ReservedDropImplementation(diagnostic) => diagnostic.report(engine).await,
+            Self::ForeignNominalDropImplementation(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -190,6 +222,18 @@ impl Build for Key {
         {
             diagnostics.receive(Diagnostic::ReservedDropImplementation(
                 ReservedDropImplementation { span: syntax.span(), kind },
+            ));
+            return Output::new_with(None, diagnostics.into_vec(), obligations.into_vec(), engine);
+        }
+
+        if trait_ref.trait_id() == engine.get_core_item(CoreItem::DropTrait).await
+            && let Some(implementor) = trait_ref.args().interned_iter().next()
+            && let Ty::Application(application) = &**implementor
+            && let ApplicationView::Struct(struct_) = application.view()
+            && struct_.symbol_id().target_id != symbol_id.target_id
+        {
+            diagnostics.receive(Diagnostic::ForeignNominalDropImplementation(
+                ForeignNominalDropImplementation { span: syntax.span() },
             ));
             return Output::new_with(None, diagnostics.into_vec(), obligations.into_vec(), engine);
         }
