@@ -14,6 +14,7 @@ pub enum CoreItem {
     Copy,
     DropTrait,
     DropMethod,
+    NoDropStruct,
 }
 
 /// Finds an actual, unambiguous core declaration without checking signatures.

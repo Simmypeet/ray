@@ -1,0 +1,16 @@
+extern def puts(message: cstr) -> c_int
+
+struct Logged:
+    message: cstr
+
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        puts(self.message)
+
+def dispose(value: a) given (drop: core.Drop[a]):
+    drop.drop(value)
+
+def main() -> int32:
+    dispose(Logged { message = "dropped" })
+    dispose(core.NoDrop { value = Logged { message = "suppressed" } })
+    return 0

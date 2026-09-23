@@ -25,7 +25,8 @@ pub enum Constant {
     Closure(Closure),
     /// The built-in `Def` dictionary whose sole argument is a closure type.
     DefInstance,
-    /// The built-in no-op `Drop` dictionary for a primitive or pointer type.
+    /// The built-in no-op `Drop` dictionary for primitives, pointers, and
+    /// `core.NoDrop[t]`.
     NoOpDropInstance,
     /// The built-in `Drop` dictionary for a tuple. Its arguments are the tuple
     /// type followed by one `Drop` dictionary for each element in tuple order.

@@ -377,8 +377,8 @@ impl Ty {
         )))
     }
 
-    /// Creates the built-in no-op `Drop` dictionary for a primitive or pointer
-    /// type.
+    /// Creates the built-in no-op `Drop` dictionary for primitives, pointers,
+    /// and `core.NoDrop[t]`.
     #[must_use]
     pub fn new_no_op_drop_instance(ty: Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
         assert!(
@@ -387,10 +387,12 @@ impl Ty {
                 Self::Application(application)
                     if matches!(
                         application.view(),
-                        ApplicationView::Primitive(_) | ApplicationView::Pointer(_)
+                        ApplicationView::Primitive(_)
+                            | ApplicationView::Pointer(_)
+                            | ApplicationView::Struct(_)
                     )
             ),
-            "no-op Drop instance requires a primitive or pointer type"
+            "no-op Drop instance requires a compiler-provided no-op type"
         );
         engine.intern(Self::Application(Application::new(
             Constant::NoOpDropInstance,

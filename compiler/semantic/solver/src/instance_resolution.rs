@@ -269,6 +269,33 @@ impl Solver {
         ))
     }
 
+    /// Makes `NoDrop` discard its field's dictionary and returns a no-op Drop
+    /// dictionary for the wrapper itself.
+    pub(crate) async fn resolve_no_drop_instance(
+        &self,
+        required: &TraitRef,
+    ) -> Option<ResolvedInstance> {
+        // Accept only a Drop requirement with its single implementor argument.
+        if required.args().len() != 1
+            || required.trait_id() != self.engine().get_core_item(CoreItem::DropTrait).await
+        {
+            return None;
+        }
+
+        // Match the core wrapper by declaration identity before making its
+        // intrinsic dictionary.
+        let ty = required.args().interned_iter().next()?;
+        let struct_ = ty.as_struct_view()?;
+        if struct_.symbol_id() != self.engine().get_core_item(CoreItem::NoDropStruct).await {
+            return None;
+        }
+
+        Some(ResolvedInstance::new(
+            Ty::new_no_op_drop_instance(ty.clone(), self.engine()),
+            Vec::new(),
+        ))
+    }
+
     /// Builds the intrinsic `Drop` dictionary for a tuple by resolving one
     /// dictionary for each element.
     pub(crate) async fn resolve_tuple_drop_instance(
@@ -415,8 +442,13 @@ impl Solver {
     }
 
     pub async fn search_active_goal(&mut self, required: &TraitRef) -> InstanceResolutionResult {
-        // An explicitly supplied dictionary is always the nearest evidence,
-        // including for types that also have a compiler-provided dictionary.
+        // This wrapper's contract discards all Drop implementations, including
+        // dictionaries that would otherwise be found lexically.
+        if let Some(resolved) = self.resolve_no_drop_instance(required).await {
+            return Ok(resolved);
+        }
+
+        // Lexical evidence is the nearest dictionary for ordinary requirements.
         match lexical::resolve(self, required).await {
             Ok(LexicalResolution::NotFound) => {}
             Ok(LexicalResolution::Resolved(term)) => {
