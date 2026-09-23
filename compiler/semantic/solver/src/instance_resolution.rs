@@ -448,16 +448,12 @@ impl Solver {
             return Ok(resolved);
         }
 
-        // Lexical evidence is the nearest dictionary for ordinary requirements.
-        match lexical::resolve(self, required).await {
-            Ok(LexicalResolution::NotFound) => {}
-            Ok(LexicalResolution::Resolved(term)) => {
-                return Ok(ResolvedInstance::new(term, Vec::new()));
-            }
-            Err(error) => return Err(error),
-        }
-
-        // Structural Drop dictionaries take precedence over global instances.
+        // Drop for a type with a known constructor is decided by the compiler:
+        // `NoDrop` (above), primitives and pointers are no-ops, tuples and
+        // nominal types follow their structure or plan. These run before
+        // lexical lookup so a `given Drop[int32]` cannot replace the built-in
+        // behavior; lexical Drop evidence is only consulted for opaque types
+        // such as type variables and unreduced associated types.
         if let Some(resolved) = self.resolve_no_op_drop_instance(required).await {
             return Ok(resolved);
         }
@@ -466,6 +462,15 @@ impl Solver {
         }
         if let Some(resolution) = self.resolve_nominal_drop_instance(required).await {
             return resolution;
+        }
+
+        // Lexical evidence is the nearest dictionary for ordinary requirements.
+        match lexical::resolve(self, required).await {
+            Ok(LexicalResolution::NotFound) => {}
+            Ok(LexicalResolution::Resolved(term)) => {
+                return Ok(ResolvedInstance::new(term, Vec::new()));
+            }
+            Err(error) => return Err(error),
         }
 
         let candidates = match candidates::collect(self, required).await {

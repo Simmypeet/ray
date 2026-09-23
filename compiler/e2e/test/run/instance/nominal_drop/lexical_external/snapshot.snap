@@ -7,7 +7,7 @@ case 1:
 exit_code: 0
 
 stdout:
-loud
+boxed
 
 
 stderr:

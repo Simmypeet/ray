@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: Drop instance must be declared for a struct type
+  ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:4:21
+  │
+4 │ inst AnyDrop[a] for core.Drop[a]:
+  ╰╴                    ━━━━━━━━━━━━ expected `Drop[SomeStruct[...]]`, found a type variable
+
+[error]: Drop instance must be declared for a struct type
+  ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:8:19
+  │
+8 │ inst ItemDrop for core.Drop[c.Item] given (c: Convert[int32]):
+  ╰╴                  ━━━━━━━━━━━━━━━━━ expected `Drop[SomeStruct[...]]`, found an associated type
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

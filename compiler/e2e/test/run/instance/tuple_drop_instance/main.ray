@@ -7,17 +7,12 @@ inst LoggedDrop for core.Drop[Logged]:
     def drop(self: Logged):
         puts(self.message)
 
-inst OverrideDrop[a] for core.Drop[a]:
-    def drop(self: a):
-        puts("lexical override")
-
 def dispose(value: a) given (drop: core.Drop[a]):
     drop.drop(value)
 
-def disposeInt(value: int32) given (drop: core.Drop[int32]):
-    dispose(value)
-
-def disposePair(value: (int32, bool)) given (drop: core.Drop[(int32, bool)]):
+# The tuple Drop is built-in; the opaque element `a` uses the lexical
+# dictionary, and `bool` stays a no-op.
+def disposePair(value: (a, bool)) given (drop: core.Drop[a]):
     dispose(value)
 
 def disposeNested(value: (a, (b, c, d), e)) given (
@@ -30,8 +25,7 @@ def disposeNested(value: (a, (b, c, d), e)) given (
     dispose(value)
 
 def main() -> int32:
-    disposeInt[given OverrideDrop[int32]](42)
-    disposePair[given OverrideDrop[(int32, bool)]]((1, true))
+    disposePair((Logged { message = "pair" }, true))
     disposeNested((
         Logged { message = "first" },
         (

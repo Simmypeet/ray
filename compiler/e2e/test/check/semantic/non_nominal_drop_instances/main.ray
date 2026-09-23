@@ -1,0 +1,10 @@
+trait Convert[a]:
+    type Item
+
+inst AnyDrop[a] for core.Drop[a]:
+    def drop(self: a):
+        return
+
+inst ItemDrop for core.Drop[c.Item] given (c: Convert[int32]):
+    def drop(self: c.Item):
+        return

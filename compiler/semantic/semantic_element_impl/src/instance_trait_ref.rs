@@ -87,6 +87,46 @@ pub struct ReservedDropImplementation {
     Decode,
     Identifiable,
 )]
+enum NonNominalDropHeadKind {
+    TypeVariable,
+    AssociatedType,
+    Other,
+}
+
+/// A Drop instance whose head is not a struct type, such as `Drop[a]`.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct NonNominalDropImplementation {
+    span: RelativeSpan,
+    kind: NonNominalDropHeadKind,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
 pub struct ForeignNominalDropImplementation {
     span: RelativeSpan,
 }
@@ -129,6 +169,24 @@ impl Report for ReservedDropImplementation {
     }
 }
 
+impl Report for NonNominalDropImplementation {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let found = match self.kind {
+            NonNominalDropHeadKind::TypeVariable => "found a type variable",
+            NonNominalDropHeadKind::AssociatedType => "found an associated type",
+            NonNominalDropHeadKind::Other => "found a type that is not a struct",
+        };
+
+        Rendered::builder()
+            .message("Drop instance must be declared for a struct type")
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("expected `Drop[SomeStruct[...]]`, {found}")),
+            ))
+            .build()
+    }
+}
+
 impl Report for ForeignNominalDropImplementation {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         Rendered::builder()
@@ -159,6 +217,7 @@ pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
     MissingDefinition(MissingDefinition),
     ReservedDropImplementation(ReservedDropImplementation),
+    NonNominalDropImplementation(NonNominalDropImplementation),
     ForeignNominalDropImplementation(ForeignNominalDropImplementation),
 }
 
@@ -168,28 +227,46 @@ impl Report for Diagnostic {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::MissingDefinition(diagnostic) => diagnostic.report(engine).await,
             Self::ReservedDropImplementation(diagnostic) => diagnostic.report(engine).await,
+            Self::NonNominalDropImplementation(diagnostic) => diagnostic.report(engine).await,
             Self::ForeignNominalDropImplementation(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
 
-fn reserved_drop_head_kind(ty: &Ty) -> Option<ReservedDropHeadKind> {
+/// How the implementor of a Drop instance head relates to the rule that
+/// only struct types may declare Drop instances.
+enum DropHead {
+    Struct,
+    Reserved(ReservedDropHeadKind),
+    NonNominal(NonNominalDropHeadKind),
+    /// Already reported by type resolution.
+    Error,
+}
+
+fn classify_drop_head(ty: &Ty) -> DropHead {
     match ty {
         Ty::Application(application) => match application.view() {
-            ApplicationView::Primitive(_) => Some(ReservedDropHeadKind::Primitive),
-            ApplicationView::Pointer(_) => Some(ReservedDropHeadKind::Pointer),
-            ApplicationView::Tuple(_) => Some(ReservedDropHeadKind::Tuple),
-            ApplicationView::Struct(_)
-            | ApplicationView::Instance(_)
-            | ApplicationView::InstanceAssociated(_)
+            ApplicationView::Struct(_) => DropHead::Struct,
+            ApplicationView::Primitive(_) => DropHead::Reserved(ReservedDropHeadKind::Primitive),
+            ApplicationView::Pointer(_) => DropHead::Reserved(ReservedDropHeadKind::Pointer),
+            ApplicationView::Tuple(_) => DropHead::Reserved(ReservedDropHeadKind::Tuple),
+            ApplicationView::InstanceAssociated(_) => {
+                DropHead::NonNominal(NonNominalDropHeadKind::AssociatedType)
+            }
+            ApplicationView::Instance(_)
             | ApplicationView::Closure(_)
             | ApplicationView::DefInstance(_)
             | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
-            | ApplicationView::NominalDropInstance(_)
-            | ApplicationView::Error => None,
+            | ApplicationView::NominalDropInstance(_) => {
+                DropHead::NonNominal(NonNominalDropHeadKind::Other)
+            }
+            ApplicationView::Error => DropHead::Error,
         },
-        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => None,
+        Ty::PolyVar(_) => DropHead::NonNominal(NonNominalDropHeadKind::TypeVariable),
+        Ty::Inference(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => {
+            DropHead::NonNominal(NonNominalDropHeadKind::Other)
+        }
     }
 }
 
@@ -215,28 +292,51 @@ impl Build for Key {
             return Output::new_with(None, diagnostics.into_vec(), obligations.into_vec(), engine);
         };
 
-        // Drop dictionaries for compiler-provided structural types cannot be
-        // overridden because instance resolution selects them intrinsically.
+        // Drop instances may only be declared for struct types. Structural
+        // types get their Drop from the compiler, and an opaque head such as
+        // `Drop[a]` would compete with those built-in and generated
+        // dictionaries.
         if trait_ref.trait_id() == engine.get_core_item(CoreItem::DropTrait).await
             && let Some(implementor) = trait_ref.args().interned_iter().next()
-            && let Some(kind) = reserved_drop_head_kind(implementor)
         {
-            diagnostics.receive(Diagnostic::ReservedDropImplementation(
-                ReservedDropImplementation { span: syntax.span(), kind },
-            ));
-            return Output::new_with(None, diagnostics.into_vec(), obligations.into_vec(), engine);
-        }
+            let diagnostic =
+                match classify_drop_head(implementor) {
+                    DropHead::Struct | DropHead::Error => None,
+                    DropHead::Reserved(kind) => {
+                        Some(Diagnostic::ReservedDropImplementation(ReservedDropImplementation {
+                            span: syntax.span(),
+                            kind,
+                        }))
+                    }
+                    DropHead::NonNominal(kind) => Some(Diagnostic::NonNominalDropImplementation(
+                        NonNominalDropImplementation { span: syntax.span(), kind },
+                    )),
+                };
+            if let Some(diagnostic) = diagnostic {
+                diagnostics.receive(diagnostic);
+                return Output::new_with(
+                    None,
+                    diagnostics.into_vec(),
+                    obligations.into_vec(),
+                    engine,
+                );
+            }
 
-        if trait_ref.trait_id() == engine.get_core_item(CoreItem::DropTrait).await
-            && let Some(implementor) = trait_ref.args().interned_iter().next()
-            && let Ty::Application(application) = &**implementor
-            && let ApplicationView::Struct(struct_) = application.view()
-            && struct_.symbol_id().target_id != symbol_id.target_id
-        {
-            diagnostics.receive(Diagnostic::ForeignNominalDropImplementation(
-                ForeignNominalDropImplementation { span: syntax.span() },
-            ));
-            return Output::new_with(None, diagnostics.into_vec(), obligations.into_vec(), engine);
+            // A struct's Drop instance belongs to the target defining it, so
+            // that target's Drop plans see every explicit instance.
+            if let Some(struct_) = implementor.as_struct_view()
+                && struct_.symbol_id().target_id != symbol_id.target_id
+            {
+                diagnostics.receive(Diagnostic::ForeignNominalDropImplementation(
+                    ForeignNominalDropImplementation { span: syntax.span() },
+                ));
+                return Output::new_with(
+                    None,
+                    diagnostics.into_vec(),
+                    obligations.into_vec(),
+                    engine,
+                );
+            }
         }
 
         let instance_span =

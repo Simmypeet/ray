@@ -1,20 +1,23 @@
 extern def puts(message: cstr) -> c_int
 
-inst Loud[a] for core.Drop[a]:
-    def drop(self: a):
-        puts("loud")
+struct Logged:
+    message: cstr
 
-# `Box[a]` needs an external `Drop[a]`; the caller's dictionary must reach the
-# generated body.
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        puts(self.message)
+
+# `Box[a]` needs an external `Drop[a]`. Inside `disposeBox`, `a` is opaque,
+# so the lexical dictionary fills it and must reach the generated body.
 struct Box[a]:
     value: a
 
 def dispose(value: a) given (drop: core.Drop[a]):
     drop.drop(value)
 
-def disposeBox(value: Box[int32]) given (drop: core.Drop[int32]):
+def disposeBox(value: Box[a]) given (drop: core.Drop[a]):
     dispose(value)
 
 def main() -> int32:
-    disposeBox[given Loud[int32]](Box { value = 1 })
+    disposeBox(Box { value = Logged { message = "boxed" } })
     return 0

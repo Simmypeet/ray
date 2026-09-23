@@ -18,7 +18,7 @@ use rayc_type::{
         EnclosingMapsKey, GlobalPolyVarID, Key as PolyVarKey, PolyVar, PolyVarMap, PolyVarStack,
     },
     trait_ref::TraitRef,
-    ty::{Primitive, Ty, application::View, args::Args},
+    ty::{Ty, application::View, args::Args},
     where_clause::{Key as WhereClauseKey, WhereClause},
 };
 
@@ -55,24 +55,26 @@ async fn nominal_drop_fixture(
     let no_drop = target.make_global(SymbolID::from_u128(5));
     let mut engine = Arc::new(engine);
     let tracked = engine.clone().tracked().await;
-    let int_ty = Ty::new_primitive(Primitive::Int32, &tracked);
-
-    // Model Wrapper[t] and a lexical given Drop[int32] at the call site.
+    // Model Wrapper[t] and a call site generic over an opaque `s` with a lexical
+    // given Drop[s]. A concrete type such as int32 would resolve to the
+    // built-in no-op Drop before lexical lookup, so the site must be opaque.
     let mut wrapper_params = PolyVarMap::new();
     let t = wrapper_params.insert(PolyVar::new_type(engine.intern_unsized("t"), span())).unwrap();
     let requirement = engine.intern(Ty::PolyVar(GlobalPolyVarID::new(wrapper, t)));
     let wrapper_params = engine.intern(wrapper_params);
     let mut site_params = PolyVarMap::new();
+    let s = site_params.insert(PolyVar::new_type(engine.intern_unsized("s"), span())).unwrap();
+    let site_ty = Ty::new_poly_var(GlobalPolyVarID::new(site, s), &tracked);
     let given = site_params
         .insert(PolyVar::new_instance(
-            engine.intern_unsized("intDrop"),
-            TraitRef::new(drop_trait, Args::new([int_ty.clone()], &tracked)),
+            engine.intern_unsized("sDrop"),
+            TraitRef::new(drop_trait, Args::new([site_ty.clone()], &tracked)),
             span(),
         ))
         .unwrap();
     let site_params = engine.intern(site_params);
     let mut scope = PolyVarStack::new();
-    scope.push(site, site_params);
+    scope.push(site, site_params.clone());
     let scope = engine.intern(scope);
 
     let plan = match plan_kind {
@@ -111,19 +113,21 @@ async fn nominal_drop_fixture(
         NominalDropPlan { symbol_id: wrapper },
         engine_mut.intern(plan),
     )]))));
-    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-        PolyVarKey { symbol_id: wrapper },
-        wrapper_params,
-    )]))));
+    // One executor per key type: a later registration for `PolyVarKey` would
+    // replace this one, so the explicit instance's map joins the same table.
+    let mut poly_var_maps = HashMap::from([
+        (PolyVarKey { symbol_id: wrapper }, wrapper_params),
+        (PolyVarKey { symbol_id: site }, site_params),
+    ]);
+    if let Some((parameters, _, _)) = &explicit_data {
+        poly_var_maps.insert(PolyVarKey { symbol_id: explicit }, parameters.clone());
+    }
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(poly_var_maps)));
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
         EnclosingMapsKey { symbol_id: site },
         scope,
     )]))));
-    if let Some((parameters, head, where_clause)) = explicit_data {
-        engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-            PolyVarKey { symbol_id: explicit },
-            parameters,
-        )]))));
+    if let Some((_, head, where_clause)) = explicit_data {
         engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
             InstanceTraitRefKey { symbol_id: explicit },
             Some(head),
@@ -134,16 +138,17 @@ async fn nominal_drop_fixture(
         )]))));
     }
 
-    (engine.tracked().await, site, wrapper, int_ty, GlobalPolyVarID::new(site, given))
+    (engine.tracked().await, site, wrapper, site_ty, GlobalPolyVarID::new(site, given))
 }
 
-// input: Drop[Wrapper[int32]]
-// premise: Wrapper[t] requires Drop[t], and intDrop is the lexical Drop[int32]
-// output: NominalDropInstance[Wrapper[int32], intDrop], with no obligations
+// input: Drop[Wrapper[s]] for an opaque site variable `s`
+// premise: Wrapper[t] requires Drop[t], and sDrop is the lexical Drop[s]
+// output: NominalDropInstance[Wrapper[s], sDrop], with no obligations
 #[tokio::test]
 async fn generated_nominal_drop_retains_selected_external_dictionary() {
-    let (engine, site, wrapper, int_ty, given) = nominal_drop_fixture(FixturePlan::Generated).await;
-    let nominal = Ty::new_struct(wrapper, Args::new([int_ty], &engine), &engine);
+    let (engine, site, wrapper, site_ty, given) =
+        nominal_drop_fixture(FixturePlan::Generated).await;
+    let nominal = Ty::new_struct(wrapper, Args::new([site_ty], &engine), &engine);
     let drop_trait = TargetID::TEST.make_global(SymbolID::from_u128(3));
     let required = TraitRef::new(drop_trait, Args::new([nominal.clone()], &engine));
     let mut solver = Solver::with_givens(engine.clone(), site, []);
@@ -158,13 +163,13 @@ async fn generated_nominal_drop_retains_selected_external_dictionary() {
     assert!(obligations.is_empty());
 }
 
-// input: Drop[Wrapper[int32]]
+// input: Drop[Wrapper[s]]
 // premise: Wrapper's plan is CannotDerive
 // output: NoInstance; no generated dictionary or global fallback is selected
 #[tokio::test]
 async fn invalid_nominal_drop_plan_cannot_resolve() {
-    let (engine, site, wrapper, int_ty, _) = nominal_drop_fixture(FixturePlan::CannotDerive).await;
-    let nominal = Ty::new_struct(wrapper, Args::new([int_ty], &engine), &engine);
+    let (engine, site, wrapper, site_ty, _) = nominal_drop_fixture(FixturePlan::CannotDerive).await;
+    let nominal = Ty::new_struct(wrapper, Args::new([site_ty], &engine), &engine);
     let drop_trait = TargetID::TEST.make_global(SymbolID::from_u128(3));
     let required = TraitRef::new(drop_trait, Args::new([nominal], &engine));
     let mut solver = Solver::with_givens(engine, site, []);
@@ -175,14 +180,14 @@ async fn invalid_nominal_drop_plan_cannot_resolve() {
     );
 }
 
-// input: Drop[Wrapper[int32]]
-// premise: Wrapper's plan selects DropWrapper[a] given Drop[a], with intDrop in
-// scope output: DropWrapper[int32, intDrop], without querying or ranking global
-// candidates
+// input: Drop[Wrapper[s]]
+// premise: Wrapper's plan selects DropWrapper[a] given Drop[a], with sDrop in
+// scope
+// output: DropWrapper[s, sDrop], without querying or ranking global candidates
 #[tokio::test]
 async fn explicit_nominal_drop_uses_only_planned_instance() {
-    let (engine, site, wrapper, int_ty, given) = nominal_drop_fixture(FixturePlan::Explicit).await;
-    let nominal = Ty::new_struct(wrapper, Args::new([int_ty.clone()], &engine), &engine);
+    let (engine, site, wrapper, site_ty, given) = nominal_drop_fixture(FixturePlan::Explicit).await;
+    let nominal = Ty::new_struct(wrapper, Args::new([site_ty.clone()], &engine), &engine);
     let drop_trait = TargetID::TEST.make_global(SymbolID::from_u128(3));
     let explicit = TargetID::TEST.make_global(SymbolID::from_u128(4));
     let required = TraitRef::new(drop_trait, Args::new([nominal], &engine));
@@ -193,9 +198,65 @@ async fn explicit_nominal_drop_uses_only_planned_instance() {
         term,
         Ty::new_instance(
             explicit,
-            Args::new([int_ty, Ty::new_poly_var(given, &engine)], &engine),
+            Args::new([site_ty, Ty::new_poly_var(given, &engine)], &engine),
             &engine,
         )
     );
+    assert!(obligations.is_empty());
+}
+
+// input: Drop[int32] at a site whose scope has a lexical given Drop[int32]
+// premise: built-in Drop for primitives is selected before lexical lookup
+// output: NoOpDropInstance[int32]; the lexical given is not used
+#[tokio::test]
+async fn built_in_drop_takes_precedence_over_lexical_given() {
+    let engine = Engine::new_with(
+        qbice::serialize::Plugin::default(),
+        InMemoryFactory,
+        qbice::stable_hash::SeededStableHasherBuilder::new(0),
+    )
+    .await
+    .unwrap();
+    let target = TargetID::TEST;
+    let site = target.make_global(SymbolID::from_u128(1));
+    let drop_trait = target.make_global(SymbolID::from_u128(3));
+    let no_drop = target.make_global(SymbolID::from_u128(5));
+    let mut engine = Arc::new(engine);
+    let tracked = engine.clone().tracked().await;
+    let int_ty = Ty::new_primitive(rayc_type::ty::Primitive::Int32, &tracked);
+
+    // The site declares `given (intDrop: Drop[int32])`.
+    let mut site_params = PolyVarMap::new();
+    let _ = site_params.insert(PolyVar::new_instance(
+        engine.intern_unsized("intDrop"),
+        TraitRef::new(drop_trait, Args::new([int_ty.clone()], &tracked)),
+        span(),
+    ));
+    let site_params = engine.intern(site_params);
+    let mut scope = PolyVarStack::new();
+    scope.push(site, site_params.clone());
+    let scope = engine.intern(scope);
+    drop(tracked);
+
+    let engine_mut = Arc::get_mut(&mut engine).unwrap();
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
+        (CoreItemKey { role: CoreItem::DropTrait }, drop_trait),
+        (CoreItemKey { role: CoreItem::NoDropStruct }, no_drop),
+    ]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        PolyVarKey { symbol_id: site },
+        site_params,
+    )]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        EnclosingMapsKey { symbol_id: site },
+        scope,
+    )]))));
+
+    let engine = engine.tracked().await;
+    let required = TraitRef::new(drop_trait, Args::new([int_ty.clone()], &engine));
+    let mut solver = Solver::with_givens(engine.clone(), site, []);
+
+    let (term, obligations) = solver.resolve_instance(required).await.unwrap().into_parts();
+    assert_eq!(term, Ty::new_no_op_drop_instance(int_ty, &engine));
     assert!(obligations.is_empty());
 }

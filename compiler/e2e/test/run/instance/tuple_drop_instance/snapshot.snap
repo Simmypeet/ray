@@ -7,8 +7,7 @@ case 1:
 exit_code: 0
 
 stdout:
-lexical override
-lexical override
+pair
 fifth
 fourth
 third
