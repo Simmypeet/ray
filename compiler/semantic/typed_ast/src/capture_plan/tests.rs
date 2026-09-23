@@ -12,7 +12,7 @@ use rayc_type::{
 use super::CapturePlan;
 use crate::{
     name_binding::{NameBinding, Source},
-    statement::Statement,
+    statement::{ExpressionStatement, Statement},
     typed_expr::{
         TypedExpr, TypedExprID, TypedExprKind,
         binary::{Binary, BinaryOp},
@@ -122,7 +122,13 @@ impl TestMap {
     fn lambda(&mut self) -> TypedFunctionID { self.functions.insert_lambda(self.effect.clone()) }
 
     fn statement(&mut self, function: TypedFunctionID, expression: TypedExprID) {
-        self.functions.push_statement(function, Statement::Expression(expression));
+        // Capture analysis never inspects the discard's Drop dictionary.
+        let drop_instance =
+            Interned::new_duplicating(Ty::Inference(Inference::new(TyKind::Instance, 1)));
+        self.functions.push_statement(
+            function,
+            Statement::Expression(ExpressionStatement::new(expression, drop_instance)),
+        );
     }
 
     fn lambda_expression(

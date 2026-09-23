@@ -218,6 +218,9 @@ impl MutSubstitutable for TypedExpr {
         match &mut self.kind {
             TypedExprKind::Call(call) => call.apply_mut_subst(subst, engine),
             TypedExprKind::RunWith(run_with) => run_with.apply_mut_subst(subst, engine),
+            TypedExprKind::IfElse(if_else) => if_else.apply_mut_subst(subst, engine),
+            TypedExprKind::While(while_loop) => while_loop.apply_mut_subst(subst, engine),
+            TypedExprKind::Errored(errored) => errored.apply_mut_subst(subst, engine),
             TypedExprKind::Identifier(_)
             | TypedExprKind::Literal(_)
             | TypedExprKind::TupleIndex(_)
@@ -225,13 +228,10 @@ impl MutSubstitutable for TypedExpr {
             | TypedExprKind::Tuple(_)
             | TypedExprKind::Closure(_)
             | TypedExprKind::Binary(_)
-            | TypedExprKind::IfElse(_)
-            | TypedExprKind::While(_)
             | TypedExprKind::RefOf(_)
             | TypedExprKind::Deref(_)
             | TypedExprKind::Paren(_)
-            | TypedExprKind::StructInitialization(_)
-            | TypedExprKind::Errored(_) => {}
+            | TypedExprKind::StructInitialization(_) => {}
         }
     }
 }

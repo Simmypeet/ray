@@ -30,5 +30,8 @@ impl Block {
 impl MutSubstitutable for Block {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.effect.apply_in_place(subst, engine);
+        for statement in &mut self.statements {
+            statement.apply_mut_subst(subst, engine);
+        }
     }
 }

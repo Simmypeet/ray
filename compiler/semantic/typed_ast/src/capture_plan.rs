@@ -239,8 +239,14 @@ impl Analyzer {
                 }
             }
             Statement::Break(_) | Statement::Continue(_) => {}
-            Statement::Expression(expression) => {
-                self.visit_expression(function_id, functions, *expression, UseMode::Value, plan);
+            Statement::Expression(statement) => {
+                self.visit_expression(
+                    function_id,
+                    functions,
+                    statement.expression(),
+                    UseMode::Value,
+                    plan,
+                );
             }
             Statement::Return(statement) => {
                 if let Some(value) = statement.value() {

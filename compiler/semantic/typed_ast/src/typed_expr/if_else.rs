@@ -1,4 +1,6 @@
 use qbice::{Decode, Encode, StableHash};
+use rayc_qbice::TrackedEngine;
+use rayc_type::subst::{MutSubstitutable, Subst};
 
 use crate::{
     statement::Statement,
@@ -69,6 +71,30 @@ impl IfElse {
 
     #[must_use]
     pub const fn else_arm(&self) -> Option<&Arm> { self.else_arm.as_ref() }
+}
+
+impl MutSubstitutable for Arm {
+    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        match self {
+            Self::Expression(_) => {}
+            Self::Block(statements) => {
+                for statement in statements {
+                    statement.apply_mut_subst(subst, engine);
+                }
+            }
+        }
+    }
+}
+
+impl MutSubstitutable for IfElse {
+    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        for conditional_arm in &mut self.conditional_arms {
+            conditional_arm.arm.apply_mut_subst(subst, engine);
+        }
+        if let Some(else_arm) = &mut self.else_arm {
+            else_arm.apply_mut_subst(subst, engine);
+        }
+    }
 }
 
 impl SubExprs for IfElse {

@@ -1,4 +1,6 @@
 use qbice::{Decode, Encode, StableHash};
+use rayc_qbice::TrackedEngine;
+use rayc_type::subst::{MutSubstitutable, Subst};
 
 use crate::{
     statement::Statement,
@@ -21,6 +23,14 @@ impl While {
     pub const fn condition(&self) -> TypedExprID { self.condition }
 
     pub fn body(&self) -> impl Iterator<Item = &Statement> { self.body.iter() }
+}
+
+impl MutSubstitutable for While {
+    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        for statement in &mut self.body {
+            statement.apply_mut_subst(subst, engine);
+        }
+    }
 }
 
 impl SubExprs for While {

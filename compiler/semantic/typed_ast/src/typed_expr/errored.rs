@@ -1,11 +1,13 @@
 use qbice::{Decode, Encode, StableHash};
+use rayc_qbice::TrackedEngine;
+use rayc_type::subst::{MutSubstitutable, Subst};
 
 use crate::{
     statement::Statement,
     typed_expr::{SubExprs, TypedExprID},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum ErroredChild {
     Expression(TypedExprID),
     Statement(Statement),
@@ -48,6 +50,17 @@ impl Errored {
 
     #[must_use]
     pub fn children(&self) -> &[ErroredChild] { &self.children }
+}
+
+impl MutSubstitutable for Errored {
+    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        for child in &mut self.children {
+            match child {
+                ErroredChild::Expression(_) => {}
+                ErroredChild::Statement(statement) => statement.apply_mut_subst(subst, engine),
+            }
+        }
+    }
 }
 
 impl SubExprs for Errored {
