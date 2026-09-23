@@ -4,9 +4,10 @@ use std::{
 };
 
 use bon::Builder;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashSet;
+use rayc_type::ty::Ty;
 
 use crate::{address::Address, dataflow::Direction, ir_expr::IRExprID, scope::ScopeID};
 
@@ -67,7 +68,7 @@ impl<'a> Iterator for Traverser<'a> {
 /// that instruction. Phi operands are instead defined on their corresponding
 /// incoming predecessor. Store instructions consume an already-defined value
 /// and perform their write at their position in the block. Expression discard
-/// instructions mark an evaluated value as unused. A block is sealed when its
+/// instructions drop an evaluated value that is otherwise unused. A block is sealed when its
 /// single terminator is set and cannot then be changed or extended.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
 pub struct Block {
@@ -95,6 +96,23 @@ impl Store {
     pub const fn expression(&self) -> IRExprID { self.expression }
 }
 
+/// Drops the unused value of an evaluated expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct ExprDiscard {
+    expression: IRExprID,
+
+    /// The `Drop` dictionary selected for the expression's type.
+    drop_instance: Interned<Ty>,
+}
+
+impl ExprDiscard {
+    #[must_use]
+    pub const fn expression(&self) -> IRExprID { self.expression }
+
+    #[must_use]
+    pub const fn drop_instance(&self) -> &Interned<Ty> { &self.drop_instance }
+}
+
 /// An operation evaluated at a precise position in a basic block.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum Instruction {
@@ -104,8 +122,8 @@ pub enum Instruction {
     ScopePop(ScopeID),
     /// Defines and evaluates the identified expression exactly once.
     Expression(IRExprID),
-    /// Marks the result of an evaluated expression as unused.
-    ExprDiscard(IRExprID),
+    /// Drops the unused result of an evaluated expression.
+    ExprDiscard(ExprDiscard),
     /// Writes an already-defined expression value to an address.
     Store(Store),
 }
@@ -365,8 +383,16 @@ impl Cfg {
         self.push_instruction(block_id, Instruction::Expression(expression));
     }
 
-    pub fn push_expr_discard(&mut self, block_id: BlockID, expression: IRExprID) {
-        self.push_instruction(block_id, Instruction::ExprDiscard(expression));
+    pub fn push_expr_discard(
+        &mut self,
+        block_id: BlockID,
+        expression: IRExprID,
+        drop_instance: Interned<Ty>,
+    ) {
+        self.push_instruction(
+            block_id,
+            Instruction::ExprDiscard(ExprDiscard { expression, drop_instance }),
+        );
     }
 
     pub fn push_scope_push_instruction(&mut self, block_id: BlockID, scope_id: ScopeID) {
@@ -571,8 +597,12 @@ impl Cfg {
                     Instruction::ScopePush(_)
                     | Instruction::ScopePop(_)
                     | Instruction::Store(_) => {}
-                    Instruction::Expression(expression_id)
-                    | Instruction::ExprDiscard(expression_id) => {
+                    Instruction::ExprDiscard(discard) => {
+                        if visited_expressions.insert(discard.expression) {
+                            reachable_expressions.push(discard.expression);
+                        }
+                    }
+                    Instruction::Expression(expression_id) => {
                         if visited_expressions.insert(*expression_id) {
                             reachable_expressions.push(*expression_id);
                         }

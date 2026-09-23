@@ -63,9 +63,9 @@ impl Builder {
                         self.jump_to(loop_target.continue_target);
                     }
                 }
-                Statement::Expression(expression) => {
-                    let value = self.lower_rvalue_by_id(context, *expression);
-                    self.emit_expr_discard(value);
+                Statement::Expression(statement) => {
+                    let value = self.lower_rvalue_by_id(context, statement.expression());
+                    self.emit_expr_discard(value, statement.drop_instance().clone());
                 }
                 Statement::Return(return_statement) => {
                     let value = return_statement

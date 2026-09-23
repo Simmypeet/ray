@@ -257,8 +257,9 @@ impl IRFunctionMap {
         function_id: FunctionID,
         block_id: BlockID,
         expression: IRExprID,
+        drop_instance: Interned<Ty>,
     ) {
-        self.get_function_mut(function_id).push_expr_discard(block_id, expression);
+        self.get_function_mut(function_id).push_expr_discard(block_id, expression, drop_instance);
     }
 
     pub fn push_scope_push_instruction(
@@ -566,8 +567,13 @@ impl IRFunction {
         self.cfg.push_expression(block_id, expression);
     }
 
-    pub fn push_expr_discard(&mut self, block_id: BlockID, expression: IRExprID) {
-        self.cfg.push_expr_discard(block_id, expression);
+    pub fn push_expr_discard(
+        &mut self,
+        block_id: BlockID,
+        expression: IRExprID,
+        drop_instance: Interned<Ty>,
+    ) {
+        self.cfg.push_expr_discard(block_id, expression, drop_instance);
     }
 
     pub fn push_scope_push_instruction(&mut self, block_id: BlockID, scope_id: ScopeID) {
