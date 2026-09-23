@@ -51,6 +51,9 @@ impl ConditionalArm {
 
     #[must_use]
     pub const fn arm(&self) -> &Arm { &self.arm }
+
+    #[must_use]
+    pub fn into_arm(self) -> Arm { self.arm }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]

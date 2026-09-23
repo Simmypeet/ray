@@ -47,11 +47,11 @@ impl Bind<IfElseSyntax> for TAstBuilder {
         // that case, we want to return an error expression.
         if conditional_arms.is_empty() || syn.else_arm().is_some() != else_arm.is_some() {
             let mut children = Vec::new();
-            for conditional_arm in &conditional_arms {
+            for conditional_arm in conditional_arms {
                 children.push(conditional_arm.condition().into());
-                append_errored_arm_children(conditional_arm.arm(), &mut children);
+                append_errored_arm_children(conditional_arm.into_arm(), &mut children);
             }
-            if let Some((else_arm, _)) = &else_arm {
+            if let Some((else_arm, _)) = else_arm {
                 append_errored_arm_children(else_arm, &mut children);
             }
 
@@ -81,11 +81,11 @@ impl Bind<IfElseSyntax> for TAstBuilder {
     }
 }
 
-fn append_errored_arm_children(arm: &Arm, children: &mut Vec<ErroredChild>) {
+fn append_errored_arm_children(arm: Arm, children: &mut Vec<ErroredChild>) {
     match arm {
-        Arm::Expression(expression) => children.push((*expression).into()),
+        Arm::Expression(expression) => children.push(expression.into()),
         Arm::Block(statements) => {
-            children.extend(statements.iter().copied().map(ErroredChild::from));
+            children.extend(statements.into_iter().map(ErroredChild::from));
         }
     }
 }

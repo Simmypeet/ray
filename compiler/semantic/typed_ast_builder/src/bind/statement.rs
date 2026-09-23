@@ -1,8 +1,10 @@
 use rayc_source_file::SourceElement;
+use rayc_symbol::core_item::{CoreItem, get_core_item};
 use rayc_syntax::statement::Statement as StatementSyntax;
+use rayc_type::{trait_ref::TraitRef, ty::args::Args};
 use rayc_typed_ast::{
     name_binding::Source,
-    statement::{Break, Continue, Let, Return, Statement},
+    statement::{Break, Continue, ExpressionStatement, Let, Return, Statement},
     typed_function::TypedFunctionLocalID,
     typed_variable::TypedVariable,
 };
@@ -84,7 +86,22 @@ impl TAstBuilder {
             StatementSyntax::Expression(expression) => {
                 let expr = self.bind(expression.clone()).await;
 
-                self.push_statement(Statement::Expression(expr)).await;
+                // The discarded value is dropped, so its type must have a Drop
+                // dictionary in this context. The requirement is solved with
+                // the other constraints, since the type may still be inferred.
+                let drop_trait = self.engine().get_core_item(CoreItem::DropTrait).await;
+                let trait_ref = TraitRef::new(
+                    drop_trait,
+                    Args::new([self.type_of_expression(expr)], self.engine()),
+                );
+                let drop_instance =
+                    self.infer_trait_instance(&trait_ref, self.span_of_expression(expr)).await;
+
+                self.push_statement(Statement::Expression(ExpressionStatement::new(
+                    expr,
+                    drop_instance,
+                )))
+                .await;
             }
 
             StatementSyntax::Return(ret) => {
