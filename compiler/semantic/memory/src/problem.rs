@@ -298,6 +298,7 @@ impl DataflowProblem for StackStateProblem<'_> {
                     }
                 }
             }
+            Instruction::ExprDiscard(_) => {}
             Instruction::Store(store) => {
                 let address = store.address().clone();
                 let _ = state.restore(&address, self).await;

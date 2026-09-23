@@ -66,8 +66,9 @@ impl<'a> Iterator for Traverser<'a> {
 /// the block. Non-phi operands must already be defined on every path reaching
 /// that instruction. Phi operands are instead defined on their corresponding
 /// incoming predecessor. Store instructions consume an already-defined value
-/// and perform their write at their position in the block. A block is sealed
-/// when its single terminator is set and cannot then be changed or extended.
+/// and perform their write at their position in the block. Expression discard
+/// instructions mark an evaluated value as unused. A block is sealed when its
+/// single terminator is set and cannot then be changed or extended.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
 pub struct Block {
     predecessors: FxHashSet<BlockID>,
@@ -103,6 +104,8 @@ pub enum Instruction {
     ScopePop(ScopeID),
     /// Defines and evaluates the identified expression exactly once.
     Expression(IRExprID),
+    /// Marks the result of an evaluated expression as unused.
+    ExprDiscard(IRExprID),
     /// Writes an already-defined expression value to an address.
     Store(Store),
 }
@@ -208,8 +211,8 @@ impl Terminator {
     }
 }
 
-/// The blocks and expression instructions reachable from a control-flow
-/// graph's entry block, in breadth-first visit order.
+/// The blocks and expressions reachable from a control-flow graph's entry
+/// block, in breadth-first visit order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reachables {
     reachable_blocks: Vec<BlockID>,
@@ -360,6 +363,10 @@ impl Cfg {
 
     pub fn push_expression(&mut self, block_id: BlockID, expression: IRExprID) {
         self.push_instruction(block_id, Instruction::Expression(expression));
+    }
+
+    pub fn push_expr_discard(&mut self, block_id: BlockID, expression: IRExprID) {
+        self.push_instruction(block_id, Instruction::ExprDiscard(expression));
     }
 
     pub fn push_scope_push_instruction(&mut self, block_id: BlockID, scope_id: ScopeID) {
@@ -564,7 +571,8 @@ impl Cfg {
                     Instruction::ScopePush(_)
                     | Instruction::ScopePop(_)
                     | Instruction::Store(_) => {}
-                    Instruction::Expression(expression_id) => {
+                    Instruction::Expression(expression_id)
+                    | Instruction::ExprDiscard(expression_id) => {
                         if visited_expressions.insert(*expression_id) {
                             reachable_expressions.push(*expression_id);
                         }

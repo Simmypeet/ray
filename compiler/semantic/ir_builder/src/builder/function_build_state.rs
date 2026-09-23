@@ -503,6 +503,14 @@ impl Builder {
         expression_id
     }
 
+    pub fn emit_expr_discard(&mut self, expression: IRExprID) {
+        self.ir_functions.push_expr_discard(
+            self.building_function.ir_function_id,
+            self.building_function.current_block,
+            expression,
+        );
+    }
+
     pub fn emit_store(&mut self, address: Address, value: IRExprID) {
         self.ir_functions.push_store(
             self.building_function.ir_function_id,

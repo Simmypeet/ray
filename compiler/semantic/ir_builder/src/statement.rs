@@ -64,7 +64,8 @@ impl Builder {
                     }
                 }
                 Statement::Expression(expression) => {
-                    self.lower_rvalue_by_id(context, *expression);
+                    let value = self.lower_rvalue_by_id(context, *expression);
+                    self.emit_expr_discard(value);
                 }
                 Statement::Return(return_statement) => {
                     let value = return_statement
