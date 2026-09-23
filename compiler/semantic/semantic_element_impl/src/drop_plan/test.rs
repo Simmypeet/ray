@@ -118,8 +118,8 @@ async fn mutually_recursive_plans_share_external_requirement() {
 
     let tracked = engine.tracked().await;
     let all = tracked.get_target_drop_plans(target).await;
-    let a_plan = tracked.get_drop_plan(a).await.unwrap();
-    let b_plan = tracked.get_drop_plan(b).await.unwrap();
+    let a_plan = tracked.get_drop_plan(a).await;
+    let b_plan = tracked.get_drop_plan(b).await;
     assert_eq!(all.get(&a.id), Some(&a_plan));
     assert_eq!(all.get(&b.id), Some(&b_plan));
     assert_eq!(generated(&a_plan).requirements(), &[a_t]);
@@ -199,13 +199,13 @@ async fn foreign_field_uses_its_defining_targets_plan() {
     let tracked = engine.tracked().await;
     let plans = tracked.get_target_drop_plans(local).await;
     assert_eq!(plans.len(), 1);
-    let wrapper_plan = tracked.get_drop_plan(wrapper).await.unwrap();
+    let wrapper_plan = tracked.get_drop_plan(wrapper).await;
     assert!(matches!(
         generated(&wrapper_plan).fields()[0].dictionary(),
         DictionaryExpr::Generated { nominal, external }
             if nominal == &leaf_ty && external.is_empty()
     ));
-    assert!(generated(&tracked.get_drop_plan(leaf).await.unwrap()).fields().is_empty());
+    assert!(generated(&*tracked.get_drop_plan(leaf).await).fields().is_empty());
 }
 
 // input: Node[t] owns Option[Node[t]], and DropOption[a] requires Drop[a]
@@ -407,7 +407,8 @@ async fn concrete_associated_argument_does_not_become_external_requirement() {
     )]))));
 
     let tracked = engine.tracked().await;
-    let plans = FxHashMap::from_iter([(option.id, DropPlan::Explicit(option_drop))]);
+    let plans =
+        FxHashMap::from_iter([(option.id, tracked.intern(DropPlan::Explicit(option_drop)))]);
     let mut evaluator = Evaluator {
         engine: &tracked,
         solver: Solver::with_givens(tracked.clone(), owner, []),

@@ -90,7 +90,7 @@ pub enum DropPlan {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
-#[value(Interned<FxHashMap<SymbolID, DropPlan>>)]
+#[value(Interned<FxHashMap<SymbolID, Interned<DropPlan>>>)]
 #[extend(by_val, name = get_target_drop_plans)]
 pub struct TargetDropPlans {
     pub target_id: TargetID,
@@ -100,7 +100,7 @@ pub struct TargetDropPlans {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
-#[value(Option<DropPlan>)]
+#[value(Interned<DropPlan>)]
 #[extend(by_val, name = get_drop_plan)]
 pub struct NominalDropPlan {
     pub symbol_id: GlobalSymbolID,

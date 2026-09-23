@@ -28,6 +28,26 @@ impl InstanceCandidate {
     }
 }
 
+/// Matches the one source instance selected by a nominal Drop plan, without
+/// consulting the global candidate index or spending ranking/search fuel.
+pub(super) async fn selected(
+    solver: &mut Solver,
+    required: &TraitRef,
+    instance_id: GlobalSymbolID,
+) -> Option<InstanceCandidate> {
+    let engine = solver.engine().clone();
+    let head = engine.get_instance_trait_ref(instance_id).await?;
+    let head = solver.normalize(&head).await;
+    let subst = solver.head_match(&head, required).await?;
+    let pending_given_parameters = engine
+        .get_poly_var_map(instance_id)
+        .await
+        .iter()
+        .filter_map(|(id, parameter)| parameter.trait_ref().is_some().then_some(id))
+        .collect();
+    Some(InstanceCandidate { subst, instance_id, pending_given_parameters })
+}
+
 /// Collects globally eligible instances whose heads match the required trait.
 pub(super) async fn collect(
     solver: &mut Solver,

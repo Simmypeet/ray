@@ -5,6 +5,7 @@
 //! shared across every root resolved by one [`Solver`](crate::Solver).
 
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use rayc_semantic_element::drop_plan::{DropPlan, GeneratedDropPlan, get_drop_plan};
 use rayc_symbol::{
     GlobalSymbolID,
     core_item::{CoreItem, get_core_item},
@@ -32,6 +33,41 @@ use crate::Solver;
 pub enum InstanceCandidateFailure {
     UndeterminedParameter(GlobalPolyVarID),
     UnsatisfiedGiven { parameter: GlobalPolyVarID, error: Box<InstanceResolutionError> },
+}
+
+impl InstanceCandidateFailure {
+    #[must_use]
+    pub(crate) fn as_limit_error(&self) -> Option<&InstanceResolutionError> {
+        match self {
+            Self::UndeterminedParameter(_) => None,
+            Self::UnsatisfiedGiven { error, .. } => match &**error {
+                InstanceResolutionError::Limit { .. } => Some(&**error),
+
+                InstanceResolutionError::NotReady(_)
+                | InstanceResolutionError::Cycle(_)
+                | InstanceResolutionError::ContainsError(_)
+                | InstanceResolutionError::AmbiguousLexical { .. }
+                | InstanceResolutionError::NoInstance { .. }
+                | InstanceResolutionError::AmbiguousGlobal { .. } => None,
+            },
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn as_cycle_error(&self) -> Option<&InstanceResolutionCycle> {
+        match self {
+            Self::UndeterminedParameter(_) => None,
+            Self::UnsatisfiedGiven { error, .. } => match &**error {
+                InstanceResolutionError::Cycle(cycle) => Some(cycle),
+                InstanceResolutionError::NotReady(_)
+                | InstanceResolutionError::ContainsError(_)
+                | InstanceResolutionError::AmbiguousLexical { .. }
+                | InstanceResolutionError::NoInstance { .. }
+                | InstanceResolutionError::AmbiguousGlobal { .. }
+                | InstanceResolutionError::Limit { .. } => None,
+            },
+        }
+    }
 }
 
 /// A matching global candidate whose complete prerequisite tree was not viable.
@@ -276,6 +312,108 @@ impl Solver {
         .await
     }
 
+    /// Selects only the dictionary prescribed by a nominal Drop plan.
+    pub(crate) async fn resolve_nominal_drop_instance(
+        &mut self,
+        required: &TraitRef,
+    ) -> Option<InstanceResolutionResult> {
+        let drop_trait = self.engine().get_core_item(CoreItem::DropTrait).await;
+
+        //  not a drop trait requirement
+        if required.args().len() != 1 || required.trait_id() != drop_trait {
+            return None;
+        }
+
+        let nominal = required.args().interned_iter().next()?.clone();
+        let struct_ = nominal.as_struct_view()?;
+
+        let plan = self.engine().get_drop_plan(struct_.symbol_id()).await;
+
+        match &*plan {
+            DropPlan::Explicit(instance_id) => {
+                Some(self.resolve_planned_explicit_drop(required, *instance_id).await)
+            }
+            DropPlan::CannotDerive(_) => Some(Err(InstanceResolutionError::NoInstance {
+                required: required.clone(),
+                failed_candidates: Vec::new(),
+            })),
+            DropPlan::Generated(generated) => {
+                Some(self.resolve_planned_generated_drop(nominal, generated, drop_trait).await)
+            }
+        }
+    }
+
+    async fn resolve_planned_generated_drop(
+        &mut self,
+        nominal: Interned<Ty>,
+        generated: &GeneratedDropPlan,
+        drop_trait: GlobalSymbolID,
+    ) -> InstanceResolutionResult {
+        let struct_ = nominal.as_struct_view().expect("a nominal type must be a struct");
+
+        // Substitute the requested nominal arguments into the plan's generic
+        // requirements before recursively resolving their Drop dictionaries.
+        let substitution = struct_.create_subst(self.engine()).await;
+
+        // this is due to the borrow-checker error
+        let engine = self.engine().clone();
+
+        Box::pin(async move {
+            let mut external_instances = Vec::with_capacity(generated.requirements().len());
+            let mut obligations = Vec::new();
+
+            for ty in generated
+                .requirements()
+                .iter()
+                .map(|ty| ty.apply_subst_or_clone(&substitution, &engine))
+            {
+                let requirement = TraitRef::new(drop_trait, Args::new([ty], &engine));
+                let resolved = self.resolve_instance_from(requirement, None).await?;
+                let (instance, nested_obligations) = resolved.into_parts();
+
+                external_instances.push(instance);
+
+                extend_unique_obligations(&mut obligations, nested_obligations);
+            }
+
+            let term = Ty::new_nominal_drop_instance(nominal, external_instances, self.engine());
+            Ok(ResolvedInstance::new(term, obligations))
+        })
+        .await
+    }
+
+    async fn resolve_planned_explicit_drop(
+        &mut self,
+        required: &TraitRef,
+        instance_id: GlobalSymbolID,
+    ) -> InstanceResolutionResult {
+        let Some(candidate) = candidates::selected(self, required, instance_id).await else {
+            return Err(InstanceResolutionError::NoInstance {
+                required: required.clone(),
+                failed_candidates: Vec::new(),
+            });
+        };
+
+        // Reuse normal premise and where-clause instantiation, but never
+        // collect or rank any other global instance for this nominal type.
+        match self.resolve_candidate(candidate).await {
+            Ok(resolved) => Ok(resolved),
+            Err(failure) => {
+                if let Some(err) = failure.as_limit_error() {
+                    return Err(err.clone());
+                }
+                if let Some(cycle) = failure.as_cycle_error() {
+                    return Err(InstanceResolutionError::Cycle(cycle.clone()));
+                }
+
+                Err(InstanceResolutionError::NoInstance {
+                    required: required.clone(),
+                    failed_candidates: vec![FailedInstanceCandidate::new(instance_id, failure)],
+                })
+            }
+        }
+    }
+
     pub async fn search_active_goal(&mut self, required: &TraitRef) -> InstanceResolutionResult {
         // An explicitly supplied dictionary is always the nearest evidence,
         // including for types that also have a compiler-provided dictionary.
@@ -294,6 +432,9 @@ impl Solver {
         if let Some(resolution) = self.resolve_tuple_drop_instance(required).await {
             return resolution;
         }
+        if let Some(resolution) = self.resolve_nominal_drop_instance(required).await {
+            return resolution;
+        }
 
         let candidates = match candidates::collect(self, required).await {
             Ok(candidates) => candidates,
@@ -305,36 +446,31 @@ impl Solver {
         for candidate in candidates {
             let instance_id = candidate.instance_id();
             match self.resolve_candidate(candidate).await {
-                Ok(candidate) => viable.push(candidate),
+                Ok(resolved) => viable.push(ViableInstance::new(instance_id, resolved)),
                 Err(failure) => {
-                    if let InstanceCandidateFailure::UnsatisfiedGiven { error, .. } = &failure
-                        && matches!(&**error, InstanceResolutionError::Limit {
-                            limit: _,
-                            recent_goals: _
-                        })
-                    {
-                        return Err((**error).clone());
+                    if let Some(err) = failure.as_limit_error() {
+                        return Err(err.clone());
                     }
+
                     failures.push(FailedInstanceCandidate::new(instance_id, failure));
                 }
             }
         }
 
+        // has no viable candidates at all
         if viable.is_empty() {
-            if let Some(cycle) = failures.iter().find_map(|candidate| match candidate.failure() {
-                InstanceCandidateFailure::UnsatisfiedGiven { error, .. } => match &**error {
-                    InstanceResolutionError::Cycle(cycle) => Some(cycle.clone()),
-                    InstanceResolutionError::NotReady(_)
-                    | InstanceResolutionError::ContainsError(_)
-                    | InstanceResolutionError::AmbiguousLexical { .. }
-                    | InstanceResolutionError::NoInstance { .. }
-                    | InstanceResolutionError::AmbiguousGlobal { .. }
-                    | InstanceResolutionError::Limit { .. } => None,
-                },
-                InstanceCandidateFailure::UndeterminedParameter(_) => None,
-            }) {
-                return Err(InstanceResolutionError::Cycle(cycle));
+            // however, if any candidate failed due to a cycle, report that instead
+            // of the NoInstance error, since it is more informative than just saying
+            // "no instance found"
+            //
+            // TODO: should we just return `NoInstance` with all the information
+            // about failed candidates
+            if let Some(cycle) =
+                failures.iter().find_map(|candidate| candidate.failure().as_cycle_error())
+            {
+                return Err(InstanceResolutionError::Cycle(cycle.clone()));
             }
+
             return Err(InstanceResolutionError::NoInstance {
                 required: required.clone(),
                 failed_candidates: failures,
@@ -347,7 +483,7 @@ impl Solver {
     async fn resolve_candidate(
         &mut self,
         candidate: InstanceCandidate,
-    ) -> Result<ViableInstance, InstanceCandidateFailure> {
+    ) -> Result<ResolvedInstance, InstanceCandidateFailure> {
         let (mut subst, instance_id, pending_given_parameters) = candidate.into_parts();
         let parameters = self.engine().get_poly_var_map(instance_id).await;
         let mut obligations = Vec::new();
@@ -403,7 +539,7 @@ impl Solver {
 
         let term =
             Ty::new_instance(instance_id, Args::new(arguments, self.engine()), self.engine());
-        Ok(ViableInstance::new(instance_id, ResolvedInstance::new(term, obligations)))
+        Ok(ResolvedInstance::new(term, obligations))
     }
 }
 
@@ -417,3 +553,6 @@ fn extend_unique_obligations(
         }
     }
 }
+
+#[cfg(test)]
+mod test;

@@ -42,8 +42,13 @@ const MAX_REQUIREMENT_PASSES: usize = 64;
 async fn nominal_drop_plan_executor(
     &NominalDropPlan { symbol_id }: &NominalDropPlan,
     engine: &TrackedEngine,
-) -> Option<DropPlan> {
-    engine.get_target_drop_plans(symbol_id.target_id).await.get(&symbol_id.id).cloned()
+) -> Interned<DropPlan> {
+    engine
+        .get_target_drop_plans(symbol_id.target_id)
+        .await
+        .get(&symbol_id.id)
+        .cloned()
+        .expect("invalid id")
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -54,7 +59,7 @@ static NOMINAL_DROP_PLAN_EXECUTOR: Registration<Config> =
 async fn target_drop_plans_executor(
     &TargetDropPlans { target_id }: &TargetDropPlans,
     engine: &TrackedEngine,
-) -> Interned<FxHashMap<SymbolID, DropPlan>> {
+) -> Interned<FxHashMap<SymbolID, Interned<DropPlan>>> {
     let drop_trait = engine.get_core_item(CoreItem::DropTrait).await;
     let mut plans = FxHashMap::default();
     let mut nominal_ids = Vec::new();
@@ -63,7 +68,10 @@ async fn target_drop_plans_executor(
     // fields. These empty generated plans are the starting approximation.
     for id in engine.get_all_nominal_type_ids(target_id).await.iter().copied() {
         nominal_ids.push(id);
-        plans.insert(id, DropPlan::Generated(GeneratedDropPlan::new(Vec::new(), Vec::new())));
+        plans.insert(
+            id,
+            engine.intern(DropPlan::Generated(GeneratedDropPlan::new(Vec::new(), Vec::new()))),
+        );
     }
     // In-place updates expose earlier results to later constructors. Fix the
     // traversal order so requirement positions do not depend on hash iteration.
@@ -108,7 +116,7 @@ async fn target_drop_plans_executor(
             }
             [] => unreachable!("the map contains only nonempty instance lists"),
         };
-        plans.insert(id, plan);
+        plans.insert(id, engine.intern(plan));
     }
 
     // Update each plan after building its replacement. Later constructors in
@@ -126,11 +134,14 @@ async fn target_drop_plans_executor(
         let mut changed = false;
 
         for &id in &nominal_ids {
-            let Some(DropPlan::Generated(old)) = plans.get(&id) else { continue };
+            let old = plans.get(&id).unwrap();
+            let DropPlan::Generated(old) = &**old else { continue };
+
             let nominal_id = target_id.make_global(id);
             let next = build_generated(engine, nominal_id, old, &plans).await;
-            if plans.get(&id) != Some(&next) {
-                plans.insert(id, next);
+
+            if plans.get(&id).map(|x| &**x) != Some(&next) {
+                plans.insert(id, engine.intern(next));
                 changed = true;
             }
         }
@@ -144,8 +155,13 @@ async fn target_drop_plans_executor(
     // recursive generic instantiations that keep changing the required type).
     // Return a plan error instead of leaving this query running indefinitely.
     for id in nominal_ids {
-        if matches!(plans.get(&id), Some(DropPlan::Generated(_))) {
-            plans.insert(id, DropPlan::CannotDerive(DropPlanError::NonConvergentRequirements));
+        let plan = plans.get(&id).unwrap();
+
+        if matches!(&**plan, DropPlan::Generated(_)) {
+            plans.insert(
+                id,
+                engine.intern(DropPlan::CannotDerive(DropPlanError::NonConvergentRequirements)),
+            );
         }
     }
     engine.intern(plans)
@@ -203,7 +219,13 @@ async fn valid_explicit(
     for (param_id, parameter) in instance_params.iter() {
         let Some(given) = parameter.trait_ref() else { continue };
 
-        // it should be a Drop trait
+        // if this dictionary has already been constrainted by the head, then
+        // we don't need to check it again
+        if !seen.insert(param_id) {
+            continue;
+        }
+
+        // unconstrainted parameters should be a Drop dictionary.
         if given.trait_id() != drop_trait || given.args().len() != 1 {
             return false;
         }
@@ -221,8 +243,6 @@ async fn valid_explicit(
             | Ty::SelfInstance(_)
             | Ty::EffectRow(_) => return false,
         }
-
-        seen.insert(param_id);
     }
 
     // if length differs, this implies that there are some parameters not
@@ -249,7 +269,7 @@ async fn build_generated(
     engine: &TrackedEngine,
     nominal_id: GlobalSymbolID,
     old: &GeneratedDropPlan,
-    plans: &FxHashMap<SymbolID, DropPlan>,
+    plans: &FxHashMap<SymbolID, Interned<DropPlan>>,
 ) -> DropPlan {
     let body = engine.get_struct_body(nominal_id).await;
 
@@ -279,7 +299,7 @@ struct Evaluator<'a> {
     engine: &'a TrackedEngine,
     solver: Solver,
     current_nominal: GlobalSymbolID,
-    plans: &'a FxHashMap<SymbolID, DropPlan>,
+    plans: &'a FxHashMap<SymbolID, Interned<DropPlan>>,
     requirements: Vec<Interned<Ty>>,
 }
 
@@ -310,6 +330,7 @@ impl Evaluator<'_> {
                     }
                     ApplicationView::Struct(struct_) => {
                         let symbol_id = struct_.symbol_id();
+
                         // Same-target plans may still be changing in this sweep.
                         // A foreign target cannot be in this local fixed point,
                         // so its completed query result is safe to request.
@@ -317,13 +338,15 @@ impl Evaluator<'_> {
                         let foreign_plan = if same_target {
                             None
                         } else {
-                            self.engine.get_drop_plan(symbol_id).await
+                            Some(self.engine.get_drop_plan(symbol_id).await)
                         };
+
                         let plan = if same_target {
-                            self.plans.get(&symbol_id.id)
+                            self.plans.get(&symbol_id.id).map(|x| &**x)
                         } else {
-                            foreign_plan.as_ref()
+                            foreign_plan.as_deref()
                         };
+
                         match plan {
                             Some(DropPlan::Generated(generated)) => {
                                 // Substitute the field's actual type arguments
