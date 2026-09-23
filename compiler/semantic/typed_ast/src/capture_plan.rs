@@ -4,7 +4,7 @@ use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{
-    capture::CaptureMode,
+    capture::{CaptureMode, LoadKind},
     subst::{MutSubstitutable, Subst, Substitutable},
     ty::{Mutability, Ty},
 };
@@ -19,6 +19,7 @@ use crate::{
         if_else::IfElse,
         run_with::RunWith,
         struct_initialization::StructInitialization,
+        while_loop::While,
     },
     typed_function::{TypedFunctionID, TypedFunctionMap},
 };
@@ -153,7 +154,7 @@ impl FunctionCapturePlan {
                 self.captures
                     .iter()
                     .map(|capture| match capture.mode {
-                        CaptureMode::Value => capture.binding_ty.clone(),
+                        CaptureMode::Value(_) => capture.binding_ty.clone(),
                         CaptureMode::Reference(mutability) => {
                             Ty::new_pointer(capture.binding_ty.clone(), mutability, engine)
                         }
@@ -180,8 +181,14 @@ impl CaptureRequirement {
 /// How the enclosing expression uses an lvalue-shaped child.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UseMode {
-    Value,
+    Value(LoadKind),
     Address(Mutability),
+}
+
+impl UseMode {
+    /// Creates an ordinary value use, which copies a `Copy` value and moves
+    /// any other value.
+    const fn new_value_implicit() -> Self { Self::Value(LoadKind::Implicit) }
 }
 
 #[derive(Debug, Default)]
@@ -235,7 +242,13 @@ impl Analyzer {
         match statement {
             Statement::Let(statement) => {
                 if let Some(expr_id) = statement.expression() {
-                    self.visit_expression(function_id, functions, expr_id, UseMode::Value, plan);
+                    self.visit_expression(
+                        function_id,
+                        functions,
+                        expr_id,
+                        UseMode::new_value_implicit(),
+                        plan,
+                    );
                 }
             }
             Statement::Break(_) | Statement::Continue(_) => {}
@@ -244,13 +257,19 @@ impl Analyzer {
                     function_id,
                     functions,
                     statement.expression(),
-                    UseMode::Value,
+                    UseMode::new_value_implicit(),
                     plan,
                 );
             }
             Statement::Return(statement) => {
                 if let Some(value) = statement.value() {
-                    self.visit_expression(function_id, functions, value, UseMode::Value, plan);
+                    self.visit_expression(
+                        function_id,
+                        functions,
+                        value,
+                        UseMode::new_value_implicit(),
+                        plan,
+                    );
                 }
             }
         }
@@ -295,7 +314,13 @@ impl Analyzer {
             }
             TypedExprKind::Tuple(tuple) => {
                 for element in tuple.elements() {
-                    self.visit_expression(function_id, functions, *element, UseMode::Value, plan);
+                    self.visit_expression(
+                        function_id,
+                        functions,
+                        *element,
+                        UseMode::new_value_implicit(),
+                        plan,
+                    );
                 }
             }
             TypedExprKind::Call(call) => {
@@ -311,16 +336,7 @@ impl Analyzer {
                 self.visit_if_else(function_id, functions, if_else, plan);
             }
             TypedExprKind::While(while_loop) => {
-                self.visit_expression(
-                    function_id,
-                    functions,
-                    while_loop.condition(),
-                    UseMode::Value,
-                    plan,
-                );
-                for statement in while_loop.body() {
-                    self.visit_statement(function_id, functions, statement, plan);
-                }
+                self.visit_while(function_id, functions, while_loop, plan);
             }
             TypedExprKind::RefOf(reference) => {
                 self.visit_expression(
@@ -336,12 +352,21 @@ impl Analyzer {
                     function_id,
                     functions,
                     deref.pointee(),
-                    UseMode::Value,
+                    UseMode::new_value_implicit(),
                     plan,
                 );
             }
             TypedExprKind::Paren(paren) => {
                 self.visit_expression(function_id, functions, paren.expression(), use_mode, plan);
+            }
+            TypedExprKind::Move(move_expr) => {
+                self.visit_expression(
+                    function_id,
+                    functions,
+                    move_expr.operand(),
+                    UseMode::Value(LoadKind::Move),
+                    plan,
+                );
             }
             TypedExprKind::RunWith(run_with) => {
                 self.visit_run_with(function_id, functions, run_with, plan);
@@ -379,7 +404,32 @@ impl Analyzer {
             | CallTarget::EffectOperation { .. } => {}
         }
         for argument in call.arguments() {
-            self.visit_expression(function_id, functions, *argument, UseMode::Value, plan);
+            self.visit_expression(
+                function_id,
+                functions,
+                *argument,
+                UseMode::new_value_implicit(),
+                plan,
+            );
+        }
+    }
+
+    fn visit_while(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        while_loop: &While,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        self.visit_expression(
+            function_id,
+            functions,
+            while_loop.condition(),
+            UseMode::new_value_implicit(),
+            plan,
+        );
+        for statement in while_loop.body() {
+            self.visit_statement(function_id, functions, statement, plan);
         }
     }
 
@@ -395,7 +445,7 @@ impl Analyzer {
                 function_id,
                 functions,
                 conditional_arm.condition(),
-                UseMode::Value,
+                UseMode::new_value_implicit(),
                 plan,
             );
             self.visit_if_arm(function_id, functions, conditional_arm.arm(), plan);
@@ -417,7 +467,7 @@ impl Analyzer {
                 function_id,
                 functions,
                 initializer.expression(),
-                UseMode::Value,
+                UseMode::new_value_implicit(),
                 plan,
             );
         }
@@ -437,7 +487,7 @@ impl Analyzer {
                         function_id,
                         functions,
                         *expression,
-                        UseMode::Value,
+                        UseMode::new_value_implicit(),
                         plan,
                     );
                 }
@@ -457,7 +507,13 @@ impl Analyzer {
     ) {
         match arm {
             crate::typed_expr::if_else::Arm::Expression(expression) => {
-                self.visit_expression(function_id, functions, *expression, UseMode::Value, plan);
+                self.visit_expression(
+                    function_id,
+                    functions,
+                    *expression,
+                    UseMode::new_value_implicit(),
+                    plan,
+                );
             }
             crate::typed_expr::if_else::Arm::Block(statements) => {
                 for statement in statements {
@@ -486,7 +542,7 @@ impl Analyzer {
             "a captured source should be owned by a lexical ancestor"
         );
         let mode = match use_mode {
-            UseMode::Value => CaptureMode::Value,
+            UseMode::Value(kind) => CaptureMode::Value(kind),
             UseMode::Address(mutability) => CaptureMode::Reference(mutability),
         };
         plan.require(CaptureRequirement::new(source, binding.ty().clone(), mode, *binding.span()));
@@ -577,7 +633,13 @@ impl Analyzer {
                     UseMode::Address(Mutability::Mutable),
                     plan,
                 );
-                self.visit_expression(function_id, functions, binary.right(), UseMode::Value, plan);
+                self.visit_expression(
+                    function_id,
+                    functions,
+                    binary.right(),
+                    UseMode::new_value_implicit(),
+                    plan,
+                );
             }
             BinaryOp::Equal
             | BinaryOp::NotEqual
@@ -587,8 +649,20 @@ impl Analyzer {
             | BinaryOp::Divide
             | BinaryOp::And
             | BinaryOp::Or => {
-                self.visit_expression(function_id, functions, binary.left(), UseMode::Value, plan);
-                self.visit_expression(function_id, functions, binary.right(), UseMode::Value, plan);
+                self.visit_expression(
+                    function_id,
+                    functions,
+                    binary.left(),
+                    UseMode::new_value_implicit(),
+                    plan,
+                );
+                self.visit_expression(
+                    function_id,
+                    functions,
+                    binary.right(),
+                    UseMode::new_value_implicit(),
+                    plan,
+                );
             }
         }
     }

@@ -1985,6 +1985,7 @@ name = "rayc_ir_builder"
 version = "0.1.0-beta.2"
 dependencies = [
  "bon",
+ "derive_more",
  "linkme",
  "qbice",
  "rayc_arena",
@@ -2055,6 +2056,7 @@ dependencies = [
  "rayc_ir",
  "rayc_lexical",
  "rayc_qbice",
+ "rayc_resolution",
  "rayc_semantic_element",
  "rayc_solver",
  "rayc_source_file",

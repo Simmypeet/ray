@@ -5,7 +5,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_source_file::{GlobalSourceID, LocalSourceID};
 use rayc_target::TargetID;
 use rayc_type::{
-    capture::CaptureMode,
+    capture::{CaptureMode, LoadKind},
     ty::{Mutability, Ty, TyKind, inference::Inference},
 };
 
@@ -193,7 +193,7 @@ async fn repeated_uses_keep_first_encounter_order_and_upgrade_mutability_in_plac
     assert_eq!(captures[0].1.span(), *map.functions.get_name_binding(map.binding_id(first)).span());
     assert_eq!(captures[0].1.mode(), CaptureMode::Reference(Mutability::Mutable));
     assert_eq!(captures[1].1.source(), second);
-    assert_eq!(captures[1].1.mode(), CaptureMode::Value);
+    assert_eq!(captures[1].1.mode(), CaptureMode::Value(LoadKind::Implicit));
 }
 
 #[tokio::test]
@@ -241,7 +241,7 @@ async fn address_modes_follow_projections_references_and_dereferences() {
     assert_eq!(captures, vec![
         (projected, CaptureMode::Reference(Mutability::Mutable)),
         (referenced, CaptureMode::Reference(Mutability::Mutable)),
-        (pointer, CaptureMode::Value),
+        (pointer, CaptureMode::Value(LoadKind::Implicit)),
     ]);
 }
 
@@ -299,7 +299,7 @@ async fn nested_children_propagate_only_ancestor_captures_with_joined_mutability
         .collect();
 
     assert_eq!(reader_captures, vec![
-        (ancestor, CaptureMode::Value),
+        (ancestor, CaptureMode::Value(LoadKind::Implicit)),
         (parent_local, CaptureMode::Reference(Mutability::Mutable))
     ]);
     assert_eq!(writer_captures, vec![(ancestor, CaptureMode::Reference(Mutability::Mutable))]);
