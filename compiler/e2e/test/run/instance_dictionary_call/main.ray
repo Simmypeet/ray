@@ -16,7 +16,7 @@ inst IdentityImpl for Identity[int32]:
         return value
 
 
-def equalsSelf(value: a) given (equality: Eq[a]) -> bool:
+def equalsSelf(value: a) given (equality: Eq[a]) -> bool where(a: core.Copy):
     return equality.equals(value, value)
 
 

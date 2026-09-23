@@ -4,7 +4,7 @@ use rayc_semantic_element::{
 };
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
-    poly_var::{PolyVarID, get_poly_var_map},
+    poly_var::{GlobalPolyVarID, PolyVarID, PolyVarMap, get_poly_var_map},
     subst::Subst,
     trait_ref::TraitRef,
 };
@@ -28,6 +28,23 @@ impl InstanceCandidate {
     }
 }
 
+/// A given matched by the head already has its dictionary in `subst` and must
+/// not be resolved again from the candidate's surrounding scope.
+fn pending_given_parameters(
+    parameters: &PolyVarMap,
+    instance_id: GlobalSymbolID,
+    subst: &Subst,
+) -> Vec<PolyVarID> {
+    parameters
+        .iter()
+        .filter_map(|(id, parameter)| {
+            (parameter.trait_ref().is_some()
+                && subst.get(&GlobalPolyVarID::new(instance_id, id)).is_none())
+            .then_some(id)
+        })
+        .collect()
+}
+
 /// Matches the one source instance selected by a nominal Drop plan, without
 /// consulting the global candidate index or spending ranking/search fuel.
 pub(super) async fn selected(
@@ -39,12 +56,10 @@ pub(super) async fn selected(
     let head = engine.get_instance_trait_ref(instance_id).await?;
     let head = solver.normalize(&head).await;
     let subst = solver.head_match(&head, required).await?;
-    let pending_given_parameters = engine
-        .get_poly_var_map(instance_id)
-        .await
-        .iter()
-        .filter_map(|(id, parameter)| parameter.trait_ref().is_some().then_some(id))
-        .collect();
+
+    let parameters = engine.get_poly_var_map(instance_id).await;
+    let pending_given_parameters = pending_given_parameters(&parameters, instance_id, &subst);
+
     Some(InstanceCandidate { subst, instance_id, pending_given_parameters })
 }
 
@@ -72,12 +87,9 @@ pub(super) async fn collect(
             continue;
         };
 
-        let pending_given_parameters = engine
-            .get_poly_var_map(instance_id)
-            .await
-            .iter()
-            .filter_map(|(id, parameter)| parameter.trait_ref().is_some().then_some(id))
-            .collect();
+        let parameters = engine.get_poly_var_map(instance_id).await;
+        let pending_given_parameters = pending_given_parameters(&parameters, instance_id, &subst);
+
         candidates.push(InstanceCandidate { subst, instance_id, pending_given_parameters });
     }
 
