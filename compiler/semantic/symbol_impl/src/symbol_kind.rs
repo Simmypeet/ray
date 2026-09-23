@@ -6,7 +6,8 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{
     SymbolID,
     symbol_kind::{
-        AllCallableDefIDs, AllDefWithBodyIDs, AllInstanceIDs, AllSymbolIDs, Key, SymbolKind,
+        AllCallableDefIDs, AllDefWithBodyIDs, AllInstanceIDs, AllNominalTypeIDs, AllSymbolIDs, Key,
+        SymbolKind,
     },
 };
 
@@ -58,6 +59,19 @@ pub async fn all_instance_ids_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static ALL_INSTANCE_IDS_EXECUTOR: Registration<Config> =
     Registration::new::<AllInstanceIDs, AllInstanceIdsExecutor>();
+
+#[executor(config = Config)]
+pub async fn all_nominal_type_ids_executor(
+    &AllNominalTypeIDs { target }: &AllNominalTypeIDs,
+    engine: &TrackedEngine,
+) -> Arc<[SymbolID]> {
+    let table = engine.get_table(target).await;
+    table.all_symbol_ids().filter(|&id| table.get_symbol_kind(id) == SymbolKind::Strut).collect()
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static ALL_NOMINAL_TYPE_IDS_EXECUTOR: Registration<Config> =
+    Registration::new::<AllNominalTypeIDs, AllNominalTypeIdsExecutor>();
 
 #[executor(config = Config)]
 pub async fn all_callable_def_ids_executor(

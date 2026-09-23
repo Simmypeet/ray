@@ -184,6 +184,17 @@ pub struct AllInstanceIDs {
     pub target: TargetID,
 }
 
+/// Retrieves all nominal type symbol IDs in a given target.
+/// Currently structs are the only nominal type kind.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Arc<[SymbolID]>)]
+#[extend(name = get_all_nominal_type_ids, by_val)]
+pub struct AllNominalTypeIDs {
+    pub target: TargetID,
+}
+
 /// Retrieves all callable definition and effect-operation IDs in a target.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,

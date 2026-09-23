@@ -336,6 +336,25 @@ impl Ty {
     }
 
     #[must_use]
+    pub async fn new_identity_struct(
+        symbol_id: GlobalSymbolID,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        let params = engine.get_poly_var_map(symbol_id).await;
+
+        Self::new_struct(
+            symbol_id,
+            Args::new(
+                params.iter().map(|(id, _)| {
+                    engine.intern(Self::PolyVar(GlobalPolyVarID::new(symbol_id, id)))
+                }),
+                engine,
+            ),
+            engine,
+        )
+    }
+
+    #[must_use]
     pub fn new_struct(
         symbol_id: GlobalSymbolID,
         args: Args,
