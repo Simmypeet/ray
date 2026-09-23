@@ -17,7 +17,7 @@ def oneTuple(fn: def((int32, int32)) -> int32) -> int32:
 def defaults(fn: def()):
     return fn()
 
-def explicit(fn: def(int32) -> int32, value: a) given (callable: Def[a], second: Def[a]) -> int32:
+def explicit(fn: def(int32) -> int32, value: a) given (callable: Def[a], second: Def[a], drop: core.Drop[a]) -> int32:
     let checked = callable.identity(second.identity(value))
     return fn(21)
 

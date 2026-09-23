@@ -1,0 +1,45 @@
+extern def puts(message: cstr) -> c_int
+
+struct Logged:
+    message: cstr
+
+impl !core.Copy for Logged
+
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        puts(self.message)
+
+        # Consume `self` without dropping it again.
+        core.NoDrop { value = move self }
+
+struct Pair:
+    first: Logged
+    second: Logged
+
+def make(message: cstr) -> Logged:
+    return Logged { message = message }
+
+# The parameter is dropped when the function returns.
+def take(value: Logged):
+    puts("take")
+
+def main() -> int32:
+    let first = make("first")
+    let second = make("second")
+
+    # A moved value is dropped by its new owner, not again here.
+    let moved = make("moved")
+    take(moved)
+
+    # A value in an inner scope is dropped when that scope ends.
+    if true:
+        let inner = make("inner")
+    puts("after inner")
+
+    # Only the fields left in a partially moved value are dropped.
+    let pair = Pair { first = make("pair.first"), second = make("pair.second") }
+    take(pair.first)
+
+    # The remaining values drop in reverse declaration order.
+    puts("end")
+    return 0

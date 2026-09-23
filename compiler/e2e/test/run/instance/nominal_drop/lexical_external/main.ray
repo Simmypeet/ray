@@ -7,6 +7,9 @@ inst LoggedDrop for core.Drop[Logged]:
     def drop(self: Logged):
         puts(self.message)
 
+        # Consume `self` without dropping it again.
+        core.NoDrop { value = move self }
+
 # `Box[a]` needs an external `Drop[a]`. Inside `disposeBox`, `a` is opaque,
 # so the lexical dictionary fills it and must reach the generated body.
 struct Box[a]:

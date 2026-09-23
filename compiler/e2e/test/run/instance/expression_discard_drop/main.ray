@@ -7,6 +7,9 @@ inst LoggedDrop for core.Drop[Logged]:
     def drop(self: Logged):
         puts(self.message)
 
+        # Consume `self` without dropping it again.
+        core.NoDrop { value = move self }
+
 def make(message: cstr) -> Logged:
     return Logged { message = message }
 

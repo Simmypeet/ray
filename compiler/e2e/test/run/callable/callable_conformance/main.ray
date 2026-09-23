@@ -2,14 +2,14 @@ trait Marker[a]:
     def value(x: a) -> a
 
 trait Callers[t]:
-    def invoke(left: f, right: g, value: a, outer: t) given (first: core.Def[f], m: Marker[a], second: core.Def[g]) -> int32 where (first.Args = (a,), second.Args = (a,), first.Return = int32, second.Return = int32, first.Effect = {}, second.Effect = {})
+    def invoke(left: f, right: g, value: a, outer: t) given (first: core.Def[f], m: Marker[a], second: core.Def[g], leftDrop: core.Drop[f], rightDrop: core.Drop[g]) -> int32 where (first.Args = (a,), second.Args = (a,), first.Return = int32, second.Return = int32, first.Effect = {}, second.Effect = {})
 
 inst Renamed for Callers[int32]:
-    def invoke(left: f, right: g, value: x, outer: int32) given (first: core.Def[f], evidence: Marker[x], second: core.Def[g]) -> int32 where (first.Args = (x,), second.Args = (x,), first.Return = int32, second.Return = int32, first.Effect = {}, second.Effect = {}):
+    def invoke(left: f, right: g, value: x, outer: int32) given (first: core.Def[f], evidence: Marker[x], second: core.Def[g], leftDrop: core.Drop[f], rightDrop: core.Drop[g]) -> int32 where (first.Args = (x,), second.Args = (x,), first.Return = int32, second.Return = int32, first.Effect = {}, second.Effect = {}):
         return right(value)
 
 inst Explicit for Callers[bool]:
-    def invoke(left: f, right: g, value: a, outer: bool) given (first: core.Def[f], evidence: Marker[a], second: core.Def[g]) -> int32 where (first.Args = (a,), second.Args = (a,), first.Return = int32, second.Return = int32, first.Effect = {}, second.Effect = {}):
+    def invoke(left: f, right: g, value: a, outer: bool) given (first: core.Def[f], evidence: Marker[a], second: core.Def[g], leftDrop: core.Drop[f], rightDrop: core.Drop[g]) -> int32 where (first.Args = (a,), second.Args = (a,), first.Return = int32, second.Return = int32, first.Effect = {}, second.Effect = {}):
         return first.call(left, (value,))
 
 trait ExplicitContract[t]:
