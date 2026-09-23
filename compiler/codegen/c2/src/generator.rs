@@ -3,7 +3,7 @@ use std::{collections::VecDeque, fmt::Write};
 use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_mono_ir::{
-    MonoClosureInstance, MonoDefInstance, MonoIR,
+    MonoClosureInstance, MonoDefInstance, MonoFragmentInstance, MonoIR,
     cfg::Terminator,
     instance::FunctionReference,
     instruction::Instruction,
@@ -11,7 +11,7 @@ use rayc_mono_ir::{
     rvalue::{AggregateValue, Rvalue},
     ty::{AggregateType, FunctionSignature, HandlerLayout, MonoType, build_handler_layout},
 };
-use rayc_mono_ir_builder::lower_ir;
+use rayc_mono_ir_builder::{lower_ir, lower_nominal_drop};
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::{name::get_name, symbol_kind::get_symbol_kind};
 
@@ -19,7 +19,7 @@ use crate::{
     c_type::signature_declaration,
     name::{
         AggregateID, aggregate_name, aggregate_typedef_name, closure_name, definition_name,
-        ir_function_name,
+        ir_function_name, nominal_drop_name,
     },
 };
 
@@ -34,12 +34,12 @@ struct Buffers {
 #[derive(Debug)]
 pub(super) struct Generator<'engine> {
     engine: &'engine TrackedEngine,
-    def_worklist: VecDeque<MonoDefInstance>,
+    def_worklist: VecDeque<MonoFragmentInstance>,
     aggregate_worklist: VecDeque<AggregateType>,
-    seen_definitions: FxHashSet<MonoDefInstance>,
+    seen_definitions: FxHashSet<MonoFragmentInstance>,
     internal_definitions: FxHashSet<MonoDefInstance>,
     seen_aggregates: FxHashSet<AggregateType>,
-    preloaded_definitions: FxHashMap<MonoDefInstance, MonoIR>,
+    preloaded_definitions: FxHashMap<MonoFragmentInstance, MonoIR>,
     global_signatures: FxHashMap<MonoDefInstance, FunctionSignature>,
     closure_signatures: FxHashMap<MonoClosureInstance, FunctionSignature>,
     exported_closures: FxHashSet<MonoClosureInstance>,
@@ -52,7 +52,7 @@ pub(super) struct Generator<'engine> {
 impl<'engine> Generator<'engine> {
     pub(super) fn new(
         engine: &'engine TrackedEngine,
-        initial_definitions: impl IntoIterator<Item = MonoDefInstance>,
+        initial_definitions: impl IntoIterator<Item = impl Into<MonoFragmentInstance>>,
         preloaded_definitions: impl IntoIterator<Item = MonoIR>,
         entry_point: Option<MonoDefInstance>,
     ) -> Self {
@@ -74,7 +74,12 @@ impl<'engine> Generator<'engine> {
         };
 
         for definition in preloaded_definitions {
-            generator.internal_definitions.insert(definition.instance().clone());
+            match definition.instance() {
+                MonoFragmentInstance::Definition(instance) => {
+                    generator.internal_definitions.insert(instance.clone());
+                }
+                MonoFragmentInstance::NominalDrop(_) => {}
+            }
             assert!(
                 generator
                     .preloaded_definitions
@@ -84,7 +89,8 @@ impl<'engine> Generator<'engine> {
             );
         }
 
-        let mut initial_definitions = initial_definitions.into_iter().collect::<Vec<_>>();
+        let mut initial_definitions =
+            initial_definitions.into_iter().map(Into::into).collect::<Vec<_>>();
         initial_definitions.sort();
         initial_definitions.dedup();
         for definition in initial_definitions {
@@ -119,7 +125,8 @@ impl<'engine> Generator<'engine> {
         self.finish()
     }
 
-    fn enqueue_definition(&mut self, definition: MonoDefInstance) {
+    fn enqueue_definition(&mut self, definition: impl Into<MonoFragmentInstance>) {
+        let definition = definition.into();
         if self.seen_definitions.insert(definition.clone()) {
             self.def_worklist.push_back(definition);
         }
@@ -131,11 +138,20 @@ impl<'engine> Generator<'engine> {
         }
     }
 
-    async fn process_definition(&mut self, definition: MonoDefInstance) {
-        if let Some(ir) = self.preloaded_definitions.remove(&definition) {
+    async fn process_definition(&mut self, fragment: MonoFragmentInstance) {
+        if let Some(ir) = self.preloaded_definitions.remove(&fragment) {
             self.process_ir(ir).await;
             return;
         }
+
+        let definition = match fragment {
+            MonoFragmentInstance::Definition(definition) => definition,
+            MonoFragmentInstance::NominalDrop(instance) => {
+                let ir = lower_nominal_drop(self.engine, instance).await;
+                self.process_ir(ir).await;
+                return;
+            }
+        };
 
         match self.engine.get_symbol_kind(definition.def_id()).await {
             rayc_symbol::symbol_kind::SymbolKind::Def
@@ -376,6 +392,9 @@ impl<'engine> Generator<'engine> {
                         self.enqueue_definition(closure.owner().clone());
                         self.record_closure_signature(closure.clone(), function.signature());
                     }
+                    FunctionReference::NominalDrop(instance) => {
+                        self.enqueue_definition(instance.clone());
+                    }
                     FunctionReference::Global(definition) => {
                         if let Some(previous) = self
                             .global_signatures
@@ -438,7 +457,7 @@ impl<'engine> Generator<'engine> {
             return;
         };
         assert!(
-            self.seen_definitions.contains(entry_point),
+            self.seen_definitions.contains(&MonoFragmentInstance::Definition(entry_point.clone())),
             "the executable entry point should be present in the definition worklist"
         );
         writeln!(
@@ -495,6 +514,7 @@ impl<'engine> Generator<'engine> {
         match reference {
             FunctionReference::Local(function_id) => ir_function_name(ir, *function_id),
             FunctionReference::Closure(closure) => closure_name(closure),
+            FunctionReference::NominalDrop(instance) => nominal_drop_name(instance),
             FunctionReference::Global(definition) => {
                 if self.internal_definitions.contains(definition) {
                     return definition_name(definition);

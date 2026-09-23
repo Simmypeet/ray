@@ -8,6 +8,7 @@ use std::io::{self, Write};
 
 use rayc_mono_ir::{MonoDefInstance, MonoIR};
 use rayc_qbice::TrackedEngine;
+use rayc_solver::Solver;
 use rayc_symbol::{
     GlobalSymbolID,
     symbol_kind::{SymbolKind, get_all_def_with_body_ids, get_symbol_kind},
@@ -50,6 +51,8 @@ pub async fn write_c_translation_unit(
     options: CTranslationUnitOptions,
     output: &mut impl Write,
 ) -> io::Result<()> {
+    // Every root key is normalized with the same solver.
+    let solver = Solver::without_givens(engine.clone());
     let mut initial_definitions = Vec::new();
     for def_id in engine.get_all_def_with_body_ids(target_id).await.iter().copied() {
         let def_id = target_id.make_global(def_id);
@@ -57,7 +60,7 @@ pub async fn write_c_translation_unit(
             SymbolKind::Def => {
                 if engine.get_poly_var_map(def_id).await.is_empty() {
                     initial_definitions
-                        .push(MonoDefInstance::new(def_id, Subst::new_empty(), engine).await);
+                        .push(MonoDefInstance::new(def_id, Subst::new_empty(), &solver).await);
                 }
             }
             SymbolKind::InstanceDef | SymbolKind::ExternDef => {}
@@ -81,13 +84,16 @@ pub async fn write_c_translation_unit(
 
     let entry_point = match options.entry_point {
         Some(entry_point) => {
-            Some(MonoDefInstance::new(entry_point, Subst::new_empty(), engine).await)
+            Some(MonoDefInstance::new(entry_point, Subst::new_empty(), &solver).await)
         }
         None => None,
     };
-    let generated = Generator::new(engine, initial_definitions, std::iter::empty(), entry_point)
-        .generate()
-        .await;
+    // The worklist future holds per-fragment lowering state such as its
+    // solver; keep it on the heap so callers' futures stay small.
+    let generated = Box::pin(
+        Generator::new(engine, initial_definitions, std::iter::empty(), entry_point).generate(),
+    )
+    .await;
     output.write_all(generated.as_bytes())
 }
 

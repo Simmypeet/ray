@@ -3,7 +3,6 @@ use rayc_hash::FxHashMap;
 use rayc_ir::{
     cfg::BlockID as IRBlockID,
     ir_expr::IRExprID,
-    ir_function::FunctionID as IRFunctionID,
     ir_lambda::{CaptureID, LambdaParameterID},
     ir_operation_handler::OperationHandlerParameterID,
     ir_variable::IRVariableID,
@@ -28,7 +27,6 @@ pub(crate) struct Builder<'output> {
 
 /// Maps semantic IR identities to the locals and blocks of one target function.
 struct FunctionState {
-    source_id: IRFunctionID,
     target_id: MonoFunctionID,
     blocks: FxHashMap<IRBlockID, BlockID>,
     expressions: FxHashMap<IRExprID, LocalID>,
@@ -41,16 +39,11 @@ struct FunctionState {
 }
 
 impl<'output> Builder<'output> {
-    pub(crate) fn new(
-        output: &'output mut MonoIR,
-        source_id: IRFunctionID,
-        target_id: MonoFunctionID,
-    ) -> Self {
+    pub(crate) fn new(output: &'output mut MonoIR, target_id: MonoFunctionID) -> Self {
         let block = output.entry_block(target_id);
         Self {
             output,
             state: FunctionState {
-                source_id,
                 target_id,
                 blocks: FxHashMap::default(),
                 expressions: FxHashMap::default(),
@@ -204,7 +197,7 @@ impl<'output> Builder<'output> {
             .handlers
             .get(effect)
             .unwrap_or_else(|| {
-                panic!("effect handler {effect:?} is not available in {:#?}", self.state.source_id)
+                panic!("effect handler {effect:?} is not available in {:?}", self.state.target_id)
             })
             .clone()
     }

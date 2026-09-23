@@ -1,0 +1,20 @@
+extern def puts(message: cstr) -> c_int
+
+inst Loud[a] for core.Drop[a]:
+    def drop(self: a):
+        puts("loud")
+
+# `Box[a]` needs an external `Drop[a]`; the caller's dictionary must reach the
+# generated body.
+struct Box[a]:
+    value: a
+
+def dispose(value: a) given (drop: core.Drop[a]):
+    drop.drop(value)
+
+def disposeBox(value: Box[int32]) given (drop: core.Drop[int32]):
+    dispose(value)
+
+def main() -> int32:
+    disposeBox[given Loud[int32]](Box { value = 1 })
+    return 0

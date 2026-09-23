@@ -5,7 +5,7 @@ use qbice::{
     stable_hash::{Sip128Hasher, StableHasher},
 };
 use rayc_mono_ir::{
-    MonoDefInstance,
+    MonoDefInstance, MonoFragmentInstance, MonoNominalDropInstance,
     function::{MonoFunctionID, MonoFunctionKind},
     ty::AggregateType,
 };
@@ -64,13 +64,24 @@ pub(super) fn definition_name(instance: &MonoDefInstance) -> String {
     format!("ray_def_{symbol}_{substitution}")
 }
 
+pub(super) fn nominal_drop_name(instance: &MonoNominalDropInstance) -> String {
+    format!("ray_drop_{}", Base62(stable_codegen_id("rayc_c2::NominalDrop:v1", instance)))
+}
+
+pub(super) fn fragment_name(instance: &MonoFragmentInstance) -> String {
+    match instance {
+        MonoFragmentInstance::Definition(instance) => definition_name(instance),
+        MonoFragmentInstance::NominalDrop(instance) => nominal_drop_name(instance),
+    }
+}
+
 pub(super) fn function_name(
-    instance: &MonoDefInstance,
+    instance: &MonoFragmentInstance,
     function_id: MonoFunctionID,
     kind: MonoFunctionKind,
     root_id: MonoFunctionID,
 ) -> String {
-    let definition = definition_name(instance);
+    let definition = fragment_name(instance);
     if function_id == root_id {
         return definition;
     }

@@ -12,6 +12,7 @@ use rayc_mono_ir::{
     ty::{AggregateType, FunctionSignature, MonoType, ReturnType, Tuple},
 };
 use rayc_qbice::create_minimal_engine;
+use rayc_solver::Solver;
 use rayc_symbol::SymbolID;
 use rayc_target::TargetID;
 use rayc_type::subst::Subst;
@@ -31,6 +32,7 @@ use crate::{
 #[tokio::test]
 async fn writes_ordered_translation_unit_from_mono_ir() {
     let engine = create_minimal_engine().await;
+    let solver = Solver::without_givens(engine.clone());
     let int32 = engine.intern(MonoType::Int32);
     let inner_tuple = Tuple::new(engine.intern_unsized([int32]));
     let inner_aggregate = AggregateType::Tuple(inner_tuple.clone());
@@ -47,7 +49,7 @@ async fn writes_ordered_translation_unit_from_mono_ir() {
     let instance = MonoDefInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(7)),
         Subst::new_empty(),
-        &engine,
+        &solver,
     )
     .await;
     let mut ir = MonoIR::new(instance.clone(), signature);
@@ -89,6 +91,7 @@ async fn writes_ordered_translation_unit_from_mono_ir() {
 #[tokio::test]
 async fn discovers_called_definition_through_worklist() {
     let engine = create_minimal_engine().await;
+    let solver = Solver::without_givens(engine.clone());
     let unit_tuple = Tuple::new(engine.intern_unsized(Vec::new()));
     let unit_type = engine.intern(MonoType::Aggregate(AggregateType::Tuple(unit_tuple)));
     let signature =
@@ -96,13 +99,13 @@ async fn discovers_called_definition_through_worklist() {
     let root_instance = MonoDefInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(11)),
         Subst::new_empty(),
-        &engine,
+        &solver,
     )
     .await;
     let dependency_instance = MonoDefInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(12)),
         Subst::new_empty(),
-        &engine,
+        &solver,
     )
     .await;
 

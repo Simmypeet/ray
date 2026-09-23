@@ -52,6 +52,7 @@ async fn nominal_drop_fixture(
     let wrapper = target.make_global(SymbolID::from_u128(2));
     let drop_trait = target.make_global(SymbolID::from_u128(3));
     let explicit = target.make_global(SymbolID::from_u128(4));
+    let no_drop = target.make_global(SymbolID::from_u128(5));
     let mut engine = Arc::new(engine);
     let tracked = engine.clone().tracked().await;
     let int_ty = Ty::new_primitive(Primitive::Int32, &tracked);
@@ -100,10 +101,12 @@ async fn nominal_drop_fixture(
     });
     drop(tracked);
     let engine_mut = Arc::get_mut(&mut engine).unwrap();
-    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-        CoreItemKey { role: CoreItem::DropTrait },
-        drop_trait,
-    )]))));
+    // `NoDrop` is checked before any nominal plan; give it a distinct symbol so
+    // `Wrapper` is not mistaken for it.
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
+        (CoreItemKey { role: CoreItem::DropTrait }, drop_trait),
+        (CoreItemKey { role: CoreItem::NoDropStruct }, no_drop),
+    ]))));
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
         NominalDropPlan { symbol_id: wrapper },
         engine_mut.intern(plan),

@@ -1,0 +1,29 @@
+extern def puts(message: cstr) -> c_int
+
+struct Logged:
+    message: cstr
+
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        puts(self.message)
+
+struct Inner:
+    x: Logged
+    y: Logged
+
+# `inner` is dropped by calling the generated Drop of `Inner`.
+struct Outer:
+    head: Logged
+    inner: Inner
+    tail: Logged
+
+def dispose(value: a) given (drop: core.Drop[a]):
+    drop.drop(value)
+
+def main() -> int32:
+    dispose(Outer {
+        head = Logged { message = "head" },
+        inner = Inner { x = Logged { message = "x" }, y = Logged { message = "y" } },
+        tail = Logged { message = "tail" },
+    })
+    return 0

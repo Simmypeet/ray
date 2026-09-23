@@ -1,0 +1,28 @@
+extern def puts(message: cstr) -> c_int
+
+struct Logged:
+    message: cstr
+
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        puts(self.message)
+
+struct Tagged[t]:
+    value: t
+
+inst TaggedDrop[t] for core.Drop[Tagged[t]] given (inner: core.Drop[t]):
+    def drop(self: Tagged[t]):
+        puts("tagged")
+        inner.drop(self.value)
+
+# The field uses the explicit `TaggedDrop`, whose `given` is filled by the
+# generated plan.
+struct Holder:
+    tagged: Tagged[Logged]
+
+def dispose(value: a) given (drop: core.Drop[a]):
+    drop.drop(value)
+
+def main() -> int32:
+    dispose(Holder { tagged = Tagged { value = Logged { message = "held" } } })
+    return 0

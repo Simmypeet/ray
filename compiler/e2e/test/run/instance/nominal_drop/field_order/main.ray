@@ -1,0 +1,28 @@
+extern def puts(message: cstr) -> c_int
+
+struct Logged:
+    message: cstr
+
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        puts(self.message)
+
+# Generated Drop visits fields in reverse: `c`, then the tuple (right to
+# left), then `a`. The int32 field is a no-op.
+struct Record:
+    a: Logged
+    count: int32
+    b: (Logged, Logged)
+    c: Logged
+
+def dispose(value: a) given (drop: core.Drop[a]):
+    drop.drop(value)
+
+def main() -> int32:
+    dispose(Record {
+        a = Logged { message = "a" },
+        count = 0,
+        b = (Logged { message = "b.0" }, Logged { message = "b.1" }),
+        c = Logged { message = "c" },
+    })
+    return 0
