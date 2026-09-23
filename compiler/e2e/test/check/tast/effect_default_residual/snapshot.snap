@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot infer instance requirement: `main.Show[<closure>() -> int32 \ {any}]`
+   ╭▸ compiler/e2e/test/check/tast/effect_default_residual/main.ray:10:12
+   │
+10 │     return needShow(() -> 1)
+   ╰╴           ━━━━━━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

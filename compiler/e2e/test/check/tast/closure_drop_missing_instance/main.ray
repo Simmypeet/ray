@@ -1,0 +1,4 @@
+# The closure captures `value` by value, but no Drop dictionary is available
+# for `a`, so the discarded closure cannot be dropped.
+def discardCapture(value: a):
+    () -> value

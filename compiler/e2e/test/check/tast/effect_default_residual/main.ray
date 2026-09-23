@@ -1,0 +1,10 @@
+trait Show[a]:
+    def show(value: a) -> int32
+
+def needShow(value: a) given (s: Show[a]) -> int32:
+    return s.show(value)
+
+# The closure's effect row is mentioned only by the unresolved `Show`
+# requirement, so it is not defaulted and the requirement stays uninferred.
+def main() -> int32:
+    return needShow(() -> 1)

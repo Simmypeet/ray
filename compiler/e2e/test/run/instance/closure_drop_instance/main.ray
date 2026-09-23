@@ -1,0 +1,39 @@
+extern def puts(message: cstr) -> c_int
+
+struct Logged:
+    message: cstr
+
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        puts(self.message)
+
+def make(message: cstr) -> Logged:
+    return Logged { message = message }
+
+def dispose(value: a) given (drop: core.Drop[a]):
+    drop.drop(value)
+
+# The polymorphic capture is dropped with the dictionary supplied by the caller.
+def discardCapture(value: a) given (drop: core.Drop[a]):
+    () -> value
+
+def main() -> int32:
+    # A discarded closure drops its by-value captures in reverse order.
+    let first = make("value.first")
+    let second = make("value.second")
+    () -> (first, second)
+
+    # A borrowed capture is a pointer in the environment, so only the
+    # by-value capture is dropped.
+    let owned = make("owned")
+    let borrowed = make("borrowed")
+    () -> (owned, borrowed.&)
+
+    discardCapture(make("poly"))
+
+    # A closure passed as a polymorphic value resolves `Drop` at the call site.
+    let passed = make("passed")
+    dispose(() -> passed)
+
+    puts("end")
+    return 0

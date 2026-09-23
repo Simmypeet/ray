@@ -1,0 +1,11 @@
+eff Identity[t]:
+    def apply(value: t) -> t
+
+def main() -> int32:
+    # Neither closure is ever called, so nothing constrains its effect row.
+    # The pure body defaults to `{}`; the effectful body keeps `Identity` and
+    # only its open tail is closed.
+    let value = 42
+    let unused = () -> value
+    let effectful = () -> Identity[int32].apply(value)
+    return value

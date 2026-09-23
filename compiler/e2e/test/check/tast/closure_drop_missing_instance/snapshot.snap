@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: no implicit instance found: `core.Drop[<closure>() -> a \ {any}]`
+  ╭▸ compiler/e2e/test/check/tast/closure_drop_missing_instance/main.ray:4:1
+  │
+4 │     () -> value
+  ╰╴━━━━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
