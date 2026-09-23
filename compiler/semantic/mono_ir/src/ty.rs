@@ -408,6 +408,7 @@ async fn lower_concrete_type(engine: &TrackedEngine, ty: &Interned<Ty>) -> Inter
             }
             ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
+            | ApplicationView::NominalDropInstance(_)
             | ApplicationView::Instance(_)
             | ApplicationView::DefInstance(_) => {
                 panic!("compiler-internal invariant violation: instance used as a value type")

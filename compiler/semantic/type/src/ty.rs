@@ -183,6 +183,7 @@ impl Ty {
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
+                | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Instance(_) => false,
             },
             Self::Inference(_) | Self::EffectRow(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
@@ -427,6 +428,23 @@ impl Ty {
         )))
     }
 
+    /// Creates a generated nominal `Drop` dictionary. The selected external
+    /// dictionaries follow the plan's requirement order, not field order.
+    #[must_use]
+    pub fn new_nominal_drop_instance(
+        nominal: Interned<Self>,
+        external_instances: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        assert!(nominal.as_struct_view().is_some(), "nominal Drop instance requires a struct type");
+
+        let args = std::iter::once(nominal).chain(external_instances);
+        engine.intern(Self::Application(Application::new(
+            Constant::NominalDropInstance,
+            engine.intern_unsized(args.collect::<Vec<_>>()),
+        )))
+    }
+
     #[must_use]
     pub fn new_instance(
         symbol_id: GlobalSymbolID,
@@ -522,6 +540,7 @@ impl Ty {
                         | ApplicationView::Closure(_)
                         | ApplicationView::NoOpDropInstance(_)
                         | ApplicationView::TupleDropInstance(_)
+                        | ApplicationView::NominalDropInstance(_)
                         | ApplicationView::Error => None,
                     };
                     if let Some(symbol_id) = symbol_id {
@@ -645,6 +664,16 @@ impl TyDisplay<'_> {
         self.fmt_ty(effect_row, f)
     }
 
+    fn fmt_drop_instance(
+        &self,
+        description: &str,
+        target: &Ty,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        f.write_str(description)?;
+        self.fmt_ty(target, f)
+    }
+
     fn fmt_ty(&self, ty: &Ty, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match ty {
             Ty::Application(ty_application) => match ty_application.view() {
@@ -657,13 +686,13 @@ impl TyDisplay<'_> {
                 },
 
                 ApplicationView::NoOpDropInstance(ty) => {
-                    f.write_str("<no-op drop instance>")?;
-                    self.fmt_ty(ty, f)
+                    self.fmt_drop_instance("<no-op drop instance>", ty, f)
                 }
-
                 ApplicationView::TupleDropInstance(instance) => {
-                    f.write_str("<tuple drop instance>")?;
-                    self.fmt_ty(instance.tuple(), f)
+                    self.fmt_drop_instance("<tuple drop instance>", instance.tuple(), f)
+                }
+                ApplicationView::NominalDropInstance(instance) => {
+                    self.fmt_drop_instance("<nominal drop instance>", instance.nominal(), f)
                 }
 
                 ApplicationView::Closure(closure) => {
@@ -875,6 +904,7 @@ impl Ty {
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
+                | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Instance(_) => Some(false),
             },
             Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {
@@ -915,6 +945,7 @@ impl Ty {
                 | ApplicationView::Closure(_)
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
+                | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Error => false,
             },
             Self::EffectRow(_) | Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
@@ -942,6 +973,7 @@ impl Ty {
                 | ApplicationView::Closure(_)
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
+                | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Error => false,
             },
             Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {

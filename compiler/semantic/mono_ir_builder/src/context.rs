@@ -279,6 +279,9 @@ impl Context {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
                 InstanceCallable::TupleDrop(instance.element_instances().to_vec())
             }
+            ApplicationView::NominalDropInstance(_) => {
+                panic!("nominal Drop instance code generation is not implemented")
+            }
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Pointer(_)

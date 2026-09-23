@@ -186,6 +186,7 @@ fn reserved_drop_head_kind(ty: &Ty) -> Option<ReservedDropHeadKind> {
             | ApplicationView::DefInstance(_)
             | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
+            | ApplicationView::NominalDropInstance(_)
             | ApplicationView::Error => None,
         },
         Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => None,

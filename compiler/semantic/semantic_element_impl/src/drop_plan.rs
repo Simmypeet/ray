@@ -359,6 +359,7 @@ impl Evaluator<'_> {
                     | ApplicationView::DefInstance(_)
                     | ApplicationView::NoOpDropInstance(_)
                     | ApplicationView::TupleDropInstance(_)
+                    | ApplicationView::NominalDropInstance(_)
                     | ApplicationView::Error => Err(DropPlanError::MissingFieldDictionary(ty)),
                 },
                 Ty::Inference(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => {
