@@ -68,8 +68,9 @@ impl<'a> Iterator for Traverser<'a> {
 /// that instruction. Phi operands are instead defined on their corresponding
 /// incoming predecessor. Store instructions consume an already-defined value
 /// and perform their write at their position in the block. Expression discard
-/// instructions drop an evaluated value that is otherwise unused. A block is sealed when its
-/// single terminator is set and cannot then be changed or extended.
+/// instructions drop an evaluated value that is otherwise unused. A block is
+/// sealed when its single terminator is set and cannot then be changed or
+/// extended.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
 pub struct Block {
     predecessors: FxHashSet<BlockID>,

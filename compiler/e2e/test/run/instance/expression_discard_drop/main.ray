@@ -1,0 +1,32 @@
+extern def puts(message: cstr) -> c_int
+
+struct Logged:
+    message: cstr
+
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        puts(self.message)
+
+def make(message: cstr) -> Logged:
+    return Logged { message = message }
+
+def identity(value: a) -> a:
+    return value
+
+# The discarded value has a polymorphic type, so it is dropped with the given
+# dictionary supplied by the caller.
+def discardPoly(value: a) given (drop: core.Drop[a]):
+    identity(value)
+
+def main() -> int32:
+    # A discarded call result is dropped immediately.
+    make("call")
+
+    # A discarded tuple drops its elements right to left.
+    (make("tuple.0"), make("tuple.1"))
+
+    discardPoly(make("poly"))
+
+    # A discarded primitive uses the no-op Drop instance.
+    puts("end")
+    return 0

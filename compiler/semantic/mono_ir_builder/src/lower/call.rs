@@ -1,10 +1,14 @@
 use qbice::storage::intern::Interned;
-use rayc_ir::ir_expr::{
-    IRExprID,
-    call::{Call as IRCall, CallTarget},
+use rayc_ir::{
+    cfg::ExprDiscard,
+    ir_expr::{
+        IRExprID,
+        call::{Call as IRCall, CallTarget},
+    },
 };
 use rayc_mono_ir::{
     MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoNominalDropInstance,
+    function::{Local, LocalKind},
     instance::FunctionReference,
     instruction::{Call, Instruction},
     operand::{Constant, FunctionOperand, Operand},
@@ -52,6 +56,20 @@ impl Builder<'_> {
                 panic!("a Drop dictionary cannot call a closure")
             }
         }
+    }
+
+    /// Drops the unused value of an expression statement with the dictionary
+    /// selected during type checking.
+    pub(super) async fn lower_expr_discard(&mut self, context: &Context, discard: &ExprDiscard) {
+        let resolver = context.resolver();
+
+        // `Drop.drop` returns unit, which is itself unused, so every call
+        // writes to one scratch temporary.
+        let unit = resolver.unit_type().await;
+        let destination = Place::new(self.insert_local(Local::new(unit, LocalKind::Temporary)));
+
+        let value = self.expression_place(discard.expression());
+        self.lower_drop(resolver, value, discard.drop_instance(), destination).await;
     }
 
     /// Expands a built-in tuple `Drop` call into the selected element calls.

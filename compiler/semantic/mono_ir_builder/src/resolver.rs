@@ -139,8 +139,13 @@ impl Resolver {
     /// The ABI of a generated `Drop.drop`, matching `drop(self: T) -> unit`.
     pub(crate) async fn nominal_drop_signature(&self, nominal: &Interned<Ty>) -> FunctionSignature {
         let parameter = self.lower_type(nominal).await;
-        let unit = lower_type(&self.solver, &Ty::new_unit(&self.engine), &Subst::new_empty()).await;
+        let unit = self.unit_type().await;
         MonoType::new_function_signature([parameter], unit, &self.engine)
+    }
+
+    /// The lowered unit type, which every `Drop.drop` call returns.
+    pub(crate) async fn unit_type(&self) -> Interned<MonoType> {
+        lower_type(&self.solver, &Ty::new_unit(&self.engine), &Subst::new_empty()).await
     }
 
     /// Selects a nominal body and its ABI from a built-in Def dictionary.
