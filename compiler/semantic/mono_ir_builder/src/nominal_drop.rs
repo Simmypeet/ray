@@ -95,6 +95,11 @@ impl Instantiator<'_> {
                 elements.iter().map(|element| self.instantiate(element)),
                 self.engine,
             ),
+            DictionaryExpr::Closure { closure, captures } => Ty::new_closure_drop_instance(
+                self.ty(closure),
+                captures.iter().map(|capture| self.instantiate(capture)),
+                self.engine,
+            ),
 
             // Explicit instance arguments are already in the instance's
             // polymorphic-variable order, which is how instance applications

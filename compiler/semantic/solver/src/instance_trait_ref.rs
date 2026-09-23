@@ -52,6 +52,10 @@ impl Solver {
                     engine.get_core_item(CoreItem::DropTrait).await,
                     Args::new([instance.tuple().clone()], engine),
                 )),
+                View::ClosureDropInstance(instance) => Some(TraitRef::new(
+                    engine.get_core_item(CoreItem::DropTrait).await,
+                    Args::new([instance.closure().clone()], engine),
+                )),
                 View::NominalDropInstance(instance) => Some(TraitRef::new(
                     engine.get_core_item(CoreItem::DropTrait).await,
                     Args::new([instance.nominal().clone()], engine),

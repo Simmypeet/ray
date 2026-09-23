@@ -199,9 +199,13 @@ impl Solver {
     ) -> InstanceResolutionResult {
         let required = self.normalize(&required).await;
         // Nominal closures determine their Def dictionary without searching or
-        // waiting for the signature and captures to finish inference.
+        // waiting for the signature and captures to finish inference. Their
+        // Drop dictionary likewise waits only on the captures.
         if let Some(resolved) = self.resolve_closure_instance(&required).await {
             return Ok(resolved);
+        }
+        if let Some(resolution) = self.resolve_closure_drop_instance(&required).await {
+            return resolution;
         }
         if required.contains_inference() {
             return Err(InstanceResolutionError::NotReady(required));

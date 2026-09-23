@@ -41,6 +41,7 @@ pub(crate) enum InstanceCallable {
     Definition(MonoDefInstance),
     Closure(MonoClosureInstance, FunctionSignature, Vec<MonoEffectInstance>),
     TupleDrop(Vec<Interned<Ty>>),
+    ClosureDrop(Vec<Interned<Ty>>),
     NominalDrop(MonoNominalDropInstance, FunctionSignature),
     NoOp,
 }
@@ -106,6 +107,10 @@ impl Resolver {
             ApplicationView::TupleDropInstance(instance) => {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
                 InstanceCallable::TupleDrop(instance.element_instances().to_vec())
+            }
+            ApplicationView::ClosureDropInstance(instance) => {
+                assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
+                InstanceCallable::ClosureDrop(instance.capture_instances().to_vec())
             }
             ApplicationView::NominalDropInstance(instance) => {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);

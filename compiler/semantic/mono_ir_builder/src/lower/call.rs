@@ -43,6 +43,10 @@ impl Builder<'_> {
                 Box::pin(self.lower_tuple_drop(resolver, value, &element_instances, destination))
                     .await;
             }
+            InstanceCallable::ClosureDrop(capture_instances) => {
+                Box::pin(self.lower_closure_drop(resolver, value, &capture_instances, destination))
+                    .await;
+            }
             InstanceCallable::NominalDrop(instance, signature) => {
                 self.lower_nominal_drop_call(
                     instance,
@@ -85,6 +89,24 @@ impl Builder<'_> {
             let field =
                 tuple.clone().project_tuple_field(FieldIndex::new(index.try_into().unwrap()));
             self.lower_drop(resolver, field, element_instance, destination.clone()).await;
+        }
+    }
+
+    /// Expands a built-in closure `Drop` call into the selected capture calls.
+    async fn lower_closure_drop(
+        &mut self,
+        resolver: &Resolver,
+        closure: Place,
+        capture_instances: &[Interned<Ty>],
+        destination: Place,
+    ) {
+        // A closure value is its inline environment, whose fields are the
+        // captures. Destroy them in reverse order, matching tuple Drop.
+        for (index, capture_instance) in capture_instances.iter().enumerate().rev() {
+            let capture = closure
+                .clone()
+                .project_environment_field(FieldIndex::new(index.try_into().unwrap()));
+            self.lower_drop(resolver, capture, capture_instance, destination.clone()).await;
         }
     }
 
@@ -223,6 +245,12 @@ impl Builder<'_> {
                         assert_eq!(call.arguments().len(), 1);
                         let tuple = self.expression_place(call.arguments()[0]);
                         self.lower_tuple_drop(resolver, tuple, &element_instances, destination)
+                            .await;
+                    }
+                    InstanceCallable::ClosureDrop(capture_instances) => {
+                        assert_eq!(call.arguments().len(), 1);
+                        let closure = self.expression_place(call.arguments()[0]);
+                        self.lower_closure_drop(resolver, closure, &capture_instances, destination)
                             .await;
                     }
                     InstanceCallable::NominalDrop(instance, signature) => {

@@ -23,9 +23,13 @@ use rayc_symbol::{
 use rayc_target::TargetID;
 use rayc_type::{
     instance_member::{InstanceMember, Key as InstanceMemberKey},
-    poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVar, PolyVarMap},
+    poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVar, PolyVarID, PolyVarMap},
     trait_ref::TraitRef,
-    ty::{Primitive, Ty, args::Args},
+    ty::{
+        Mutability, Primitive, Ty,
+        application::{Closure, ClosureID},
+        args::Args,
+    },
     type_definition::Key as TypeDefinitionKey,
     where_clause::{Key as WhereClauseKey, WhereClause},
 };
@@ -424,4 +428,44 @@ async fn concrete_associated_argument_does_not_become_external_requirement() {
         ],
     });
     assert!(evaluator.requirements.is_empty());
+}
+
+// input: a field of closure type capturing `t` by value and an `int32` by
+//        reference
+// premise: the struct has no explicit Drop instance
+// output: one dictionary per capture: an external Drop[t] requirement for the
+//         by-value capture and a no-op for the borrowed pointer
+#[tokio::test]
+async fn closure_field_resolves_one_dictionary_per_capture() {
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let owner = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    let t = engine.intern(Ty::PolyVar(GlobalPolyVarID::new(owner, PolyVarID::new(0))));
+    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let borrowed = Ty::new_pointer(int_ty.clone(), Mutability::Immutable, &engine);
+
+    let captures = Ty::new_tuple(engine.intern_unsized([t.clone(), borrowed.clone()]), &engine);
+    let closure = Ty::new_closure(
+        Closure::new(owner, ClosureID::new(0), 1),
+        [t.clone()],
+        [],
+        Ty::new_unit(&engine),
+        Ty::new_effect_row([], None, &engine),
+        captures,
+        &engine,
+    );
+
+    let plans = FxHashMap::default();
+    let mut evaluator = Evaluator {
+        engine: &engine,
+        solver: Solver::with_givens(engine.clone(), owner, []),
+        current_nominal: owner,
+        plans: &plans,
+        requirements: Vec::new(),
+    };
+
+    assert_eq!(evaluator.resolve(closure.clone()).await.unwrap(), DictionaryExpr::Closure {
+        closure,
+        captures: vec![DictionaryExpr::External(0), DictionaryExpr::NoOp(borrowed)],
+    });
+    assert_eq!(evaluator.requirements, vec![t]);
 }

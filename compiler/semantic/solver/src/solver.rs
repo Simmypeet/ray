@@ -12,6 +12,7 @@ use rayc_type::{
 
 use crate::{
     givens::get_givens,
+    inference_generator::{CountingInferenceGenerator, InferenceGenerator},
     solver::{
         instance_resolution_state::{InstanceResolutionLimits, InstanceResolutionState},
         marker_entailment::MarkerEntailmentState,
@@ -35,7 +36,7 @@ pub enum TyRelatingEnvironment {
 
 #[derive(Debug)]
 pub struct Solver {
-    inference_counter: u64,
+    inference_generator: Box<dyn InferenceGenerator>,
     engine: TrackedEngine,
     site: GlobalSymbolID,
     instance_resolution: InstanceResolutionState,
@@ -187,7 +188,7 @@ impl Solver {
     ) -> Self {
         let givens = engine.intern_unsized(givens.into_iter().collect::<Vec<_>>());
         Self {
-            inference_counter: 0,
+            inference_generator: Box::new(CountingInferenceGenerator::default()),
             engine,
             site,
             instance_resolution: InstanceResolutionState::new(InstanceResolutionLimits::default()),
@@ -209,7 +210,7 @@ impl Solver {
         let givens = engine.get_givens(site).await;
 
         Self {
-            inference_counter: 0,
+            inference_generator: Box::new(CountingInferenceGenerator::default()),
             givens,
             engine,
             site,
@@ -243,20 +244,41 @@ impl Solver {
         normalized
     }
 
+    /// Replaces the generator of this solver's inference variables.
+    ///
+    /// This must be done before any inference variable is created, so that
+    /// every variable comes from one generator.
     #[must_use]
-    pub const fn new_inference(&mut self, kind: TyKind) -> Inference {
+    pub fn with_inference_generator(mut self, generator: Box<dyn InferenceGenerator>) -> Self {
+        self.inference_generator = generator;
+        self
+    }
+
+    /// The generator of this solver's inference variables. Callers that
+    /// installed their own generator can downcast it through
+    /// [`InferenceGenerator::as_any`].
+    #[must_use]
+    pub fn inference_generator(&self) -> &dyn InferenceGenerator { &*self.inference_generator }
+
+    /// Mutable access to the generator, e.g. to take what a recording
+    /// generator collected through [`InferenceGenerator::as_any_mut`].
+    #[must_use]
+    pub fn inference_generator_mut(&mut self) -> &mut dyn InferenceGenerator {
+        &mut *self.inference_generator
+    }
+
+    #[must_use]
+    pub fn new_inference(&mut self, kind: TyKind) -> Inference {
         self.new_inference_with_constraint(kind, InferenceConstraint::Any)
     }
 
     #[must_use]
-    pub const fn new_inference_with_constraint(
+    pub fn new_inference_with_constraint(
         &mut self,
         kind: TyKind,
         constraint: InferenceConstraint,
     ) -> Inference {
-        let inference = Inference::new_with_constraint(kind, constraint, self.inference_counter);
-        self.inference_counter += 1;
-        inference
+        self.inference_generator.generate(kind, constraint)
     }
 }
 

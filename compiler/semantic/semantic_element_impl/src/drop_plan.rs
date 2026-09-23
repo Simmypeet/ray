@@ -328,6 +328,19 @@ impl Evaluator<'_> {
                         }
                         Ok(DictionaryExpr::Tuple { tuple: ty, elements })
                     }
+                    ApplicationView::Closure(closure) => {
+                        // Uninferred captures cannot occur in a declaration's
+                        // field types, so the captured tuple is always known.
+                        let Some(captured_tuple) = closure.captured_tuple().as_tuple_view() else {
+                            return Err(DropPlanError::MissingFieldDictionary(ty));
+                        };
+
+                        let mut captures = Vec::with_capacity(captured_tuple.args().len());
+                        for capture in captured_tuple.args() {
+                            captures.push(self.resolve(capture.clone()).await?);
+                        }
+                        Ok(DictionaryExpr::Closure { closure: ty, captures })
+                    }
                     ApplicationView::Struct(struct_) => {
                         let symbol_id = struct_.symbol_id();
 
@@ -377,11 +390,11 @@ impl Evaluator<'_> {
                         }
                     }
                     ApplicationView::InstanceAssociated(_) => Ok(self.external(ty)),
-                    ApplicationView::Closure(_)
-                    | ApplicationView::Instance(_)
+                    ApplicationView::Instance(_)
                     | ApplicationView::DefInstance(_)
                     | ApplicationView::NoOpDropInstance(_)
                     | ApplicationView::TupleDropInstance(_)
+                    | ApplicationView::ClosureDropInstance(_)
                     | ApplicationView::NominalDropInstance(_)
                     | ApplicationView::Error => Err(DropPlanError::MissingFieldDictionary(ty)),
                 },

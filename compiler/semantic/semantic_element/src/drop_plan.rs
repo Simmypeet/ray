@@ -15,9 +15,23 @@ use crate::struct_body::FieldID;
 pub enum DictionaryExpr {
     External(usize),
     NoOp(Interned<Ty>),
-    Tuple { tuple: Interned<Ty>, elements: Vec<Self> },
-    Explicit { instance_id: GlobalSymbolID, arguments: Vec<DictionaryArgument> },
-    Generated { nominal: Interned<Ty>, external: Vec<Self> },
+    Tuple {
+        tuple: Interned<Ty>,
+        elements: Vec<Self>,
+    },
+    /// One dictionary per capture of the closure, in environment order.
+    Closure {
+        closure: Interned<Ty>,
+        captures: Vec<Self>,
+    },
+    Explicit {
+        instance_id: GlobalSymbolID,
+        arguments: Vec<DictionaryArgument>,
+    },
+    Generated {
+        nominal: Interned<Ty>,
+        external: Vec<Self>,
+    },
 }
 
 /// An argument to a source-declared Drop instance, in parameter order.

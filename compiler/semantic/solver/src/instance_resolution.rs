@@ -307,34 +307,79 @@ impl Solver {
             return None;
         }
 
-        // Extract owned element types before recursively borrowing the solver.
-        let tuple = required.args().interned_iter().next()?.clone();
-        let tuple_view = tuple.as_tuple_view()?;
+        // `required` is not owned by the solver, so its element types can be
+        // borrowed while resolving them.
+        let tuple = required.args().interned_iter().next()?;
+        let elements = tuple.as_tuple_view()?.args();
 
-        let elements = tuple_view.args().to_vec();
+        let resolution = self.resolve_element_drop_instances(elements, drop_trait).await;
+        Some(resolution.map(|(element_instances, obligations)| {
+            let term = Ty::new_tuple_drop_instance(tuple.clone(), element_instances, self.engine());
+            ResolvedInstance::new(term, obligations)
+        }))
+    }
 
-        // Retain the selected element dictionaries, including lexical givens,
-        // and propagate every obligation from their proof trees.
+    /// Builds the intrinsic `Drop` dictionary for a closure by resolving one
+    /// dictionary for each capture, exactly like the tuple of its captures.
+    pub(crate) async fn resolve_closure_drop_instance(
+        &mut self,
+        required: &TraitRef,
+    ) -> Option<InstanceResolutionResult> {
+        let drop_trait = self.engine().get_core_item(CoreItem::DropTrait).await;
+        if required.args().len() != 1 || required.trait_id() != drop_trait {
+            return None;
+        }
+
+        let closure = required.args().interned_iter().next()?;
+        let captured_tuple = closure.as_closure_view()?.captured_tuple();
+
+        // Only the captures determine the dictionary, so readiness is checked
+        // on them alone. The signature and effect row may stay uninferred,
+        // e.g. for a closure that is never called.
+        if captured_tuple.contains_inference() {
+            return Some(Err(InstanceResolutionError::NotReady(required.clone())));
+        }
+        if captured_tuple.contains_error() {
+            return Some(Err(InstanceResolutionError::ContainsError(required.clone())));
+        }
+
+        // Borrowed captures are pointers in the captured tuple, so their
+        // dictionaries are no-ops and only by-value captures are dropped.
+        let captures = captured_tuple.as_tuple_view()?.args();
+
+        let resolution = self.resolve_element_drop_instances(captures, drop_trait).await;
+        Some(resolution.map(|(capture_instances, obligations)| {
+            let term =
+                Ty::new_closure_drop_instance(closure.clone(), capture_instances, self.engine());
+            ResolvedInstance::new(term, obligations)
+        }))
+    }
+
+    /// Resolves one `Drop` dictionary per element, in element order, and
+    /// collects the obligations of every selected proof tree.
+    async fn resolve_element_drop_instances(
+        &mut self,
+        elements: &[Interned<Ty>],
+        drop_trait: GlobalSymbolID,
+    ) -> Result<(Vec<Interned<Ty>>, Vec<InstanceResolutionObligation>), InstanceResolutionError>
+    {
         let mut element_instances = Vec::with_capacity(elements.len());
         let mut obligations = Vec::new();
 
+        // Retain the selected element dictionaries, including lexical givens,
+        // and propagate every obligation from their proof trees.
         Box::pin(async move {
             for element in elements {
                 let element_requirement =
-                    TraitRef::new(drop_trait, Args::new([element], self.engine()));
-
-                let resolved = match self.resolve_instance_from(element_requirement, None).await {
-                    Ok(resolved) => resolved,
-                    Err(error) => return Some(Err(error)),
-                };
+                    TraitRef::new(drop_trait, Args::new([element.clone()], self.engine()));
+                let resolved = self.resolve_instance_from(element_requirement, None).await?;
 
                 let (element_instance, element_obligations) = resolved.into_parts();
                 element_instances.push(element_instance);
                 extend_unique_obligations(&mut obligations, element_obligations);
             }
 
-            let term = Ty::new_tuple_drop_instance(tuple, element_instances, self.engine());
-            Some(Ok(ResolvedInstance::new(term, obligations)))
+            Ok((element_instances, obligations))
         })
         .await
     }
@@ -450,7 +495,8 @@ impl Solver {
 
         // Drop for a type with a known constructor is decided by the compiler:
         // `NoDrop` (above), primitives and pointers are no-ops, tuples and
-        // nominal types follow their structure or plan. These run before
+        // nominal types follow their structure or plan. Closures are resolved
+        // earlier, before the readiness check. These run before
         // lexical lookup so a `given Drop[int32]` cannot replace the built-in
         // behavior; lexical Drop evidence is only consulted for opaque types
         // such as type variables and unreduced associated types.

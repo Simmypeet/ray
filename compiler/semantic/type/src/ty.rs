@@ -183,6 +183,7 @@ impl Ty {
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
+                | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Instance(_) => false,
             },
@@ -430,6 +431,38 @@ impl Ty {
         )))
     }
 
+    /// Creates the built-in `Drop` dictionary for a closure from the selected
+    /// dictionary for each capture.
+    #[must_use]
+    pub fn new_closure_drop_instance(
+        closure: Interned<Self>,
+        capture_instances: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        let closure_view =
+            closure.as_closure_view().expect("closure Drop instance requires a closure type");
+        let captures = closure_view
+            .captured_tuple()
+            .as_tuple_view()
+            .expect("closure Drop instance requires resolved captures")
+            .args()
+            .len();
+
+        // Keep the closure beside its selected capture dictionaries so lexical
+        // dictionaries survive substitution and monomorphization.
+        let capture_instances = capture_instances.into_iter().collect::<Vec<_>>();
+        assert_eq!(
+            captures,
+            capture_instances.len(),
+            "closure Drop instance requires one dictionary per capture"
+        );
+        let args = std::iter::once(closure).chain(capture_instances);
+        engine.intern(Self::Application(Application::new(
+            Constant::ClosureDropInstance,
+            engine.intern_unsized(args.collect::<Vec<_>>()),
+        )))
+    }
+
     /// Creates a generated nominal `Drop` dictionary. The selected external
     /// dictionaries follow the plan's requirement order, not field order.
     #[must_use]
@@ -542,6 +575,7 @@ impl Ty {
                         | ApplicationView::Closure(_)
                         | ApplicationView::NoOpDropInstance(_)
                         | ApplicationView::TupleDropInstance(_)
+                        | ApplicationView::ClosureDropInstance(_)
                         | ApplicationView::NominalDropInstance(_)
                         | ApplicationView::Error => None,
                     };
@@ -666,12 +700,33 @@ impl TyDisplay<'_> {
         self.fmt_ty(effect_row, f)
     }
 
+    /// Formats a built-in Drop dictionary by its kind and target type.
     fn fmt_drop_instance(
         &self,
-        description: &str,
-        target: &Ty,
+        view: ApplicationView<'_>,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
+        let (description, target) = match view {
+            ApplicationView::NoOpDropInstance(ty) => ("<no-op drop instance>", ty),
+            ApplicationView::TupleDropInstance(instance) => {
+                ("<tuple drop instance>", instance.tuple())
+            }
+            ApplicationView::ClosureDropInstance(instance) => {
+                ("<closure drop instance>", instance.closure())
+            }
+            ApplicationView::NominalDropInstance(instance) => {
+                ("<nominal drop instance>", instance.nominal())
+            }
+            ApplicationView::Primitive(_)
+            | ApplicationView::Tuple(_)
+            | ApplicationView::Pointer(_)
+            | ApplicationView::Struct(_)
+            | ApplicationView::Instance(_)
+            | ApplicationView::InstanceAssociated(_)
+            | ApplicationView::Closure(_)
+            | ApplicationView::DefInstance(_)
+            | ApplicationView::Error => panic!("expected a built-in Drop dictionary"),
+        };
         f.write_str(description)?;
         self.fmt_ty(target, f)
     }
@@ -687,15 +742,10 @@ impl TyDisplay<'_> {
                     Primitive::CStr => write!(f, "cstr"),
                 },
 
-                ApplicationView::NoOpDropInstance(ty) => {
-                    self.fmt_drop_instance("<no-op drop instance>", ty, f)
-                }
-                ApplicationView::TupleDropInstance(instance) => {
-                    self.fmt_drop_instance("<tuple drop instance>", instance.tuple(), f)
-                }
-                ApplicationView::NominalDropInstance(instance) => {
-                    self.fmt_drop_instance("<nominal drop instance>", instance.nominal(), f)
-                }
+                view @ (ApplicationView::NoOpDropInstance(_)
+                | ApplicationView::TupleDropInstance(_)
+                | ApplicationView::ClosureDropInstance(_)
+                | ApplicationView::NominalDropInstance(_)) => self.fmt_drop_instance(view, f),
 
                 ApplicationView::Closure(closure) => {
                     f.write_str("<closure>")?;
@@ -906,6 +956,7 @@ impl Ty {
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
+                | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Instance(_) => Some(false),
             },
@@ -947,6 +998,7 @@ impl Ty {
                 | ApplicationView::Closure(_)
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
+                | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Error => false,
             },
@@ -975,6 +1027,7 @@ impl Ty {
                 | ApplicationView::Closure(_)
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
+                | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Error => false,
             },

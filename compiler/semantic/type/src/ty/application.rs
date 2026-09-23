@@ -31,6 +31,10 @@ pub enum Constant {
     /// The built-in `Drop` dictionary for a tuple. Its arguments are the tuple
     /// type followed by one `Drop` dictionary for each element in tuple order.
     TupleDropInstance,
+    /// The built-in `Drop` dictionary for a closure. Its arguments are the
+    /// closure type followed by one `Drop` dictionary for each capture in
+    /// environment order.
+    ClosureDropInstance,
     /// The generated `Drop` dictionary for a nominal type. Its arguments are
     /// the instantiated nominal type followed by its external dictionaries in
     /// `GeneratedDropPlan::requirements` order.
@@ -164,6 +168,20 @@ pub struct TupleDropInstanceView<'x> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ClosureDropInstanceView<'x> {
+    closure: &'x Interned<Ty>,
+    capture_instances: &'x [Interned<Ty>],
+}
+
+impl<'x> ClosureDropInstanceView<'x> {
+    #[must_use]
+    pub const fn closure(&self) -> &'x Interned<Ty> { self.closure }
+
+    #[must_use]
+    pub const fn capture_instances(&self) -> &'x [Interned<Ty>] { self.capture_instances }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NominalDropInstanceView<'x> {
     nominal: &'x Interned<Ty>,
     external_instances: &'x [Interned<Ty>],
@@ -233,6 +251,7 @@ pub enum View<'x> {
     DefInstance(&'x Interned<Ty>),
     NoOpDropInstance(&'x Interned<Ty>),
     TupleDropInstance(TupleDropInstanceView<'x>),
+    ClosureDropInstance(ClosureDropInstanceView<'x>),
     NominalDropInstance(NominalDropInstanceView<'x>),
     Error,
 }
@@ -304,6 +323,11 @@ impl Application {
                     self.args.split_first().expect("tuple Drop instance has a tuple type");
                 View::TupleDropInstance(TupleDropInstanceView { tuple, element_instances })
             }
+            Constant::ClosureDropInstance => {
+                let (closure, capture_instances) =
+                    self.args.split_first().expect("closure Drop instance has a closure type");
+                View::ClosureDropInstance(ClosureDropInstanceView { closure, capture_instances })
+            }
             Constant::NominalDropInstance => {
                 let (nominal, external_instances) =
                     self.args.split_first().expect("nominal Drop instance has a nominal type");
@@ -339,6 +363,7 @@ impl Application {
 
             Constant::NoOpDropInstance
             | Constant::TupleDropInstance
+            | Constant::ClosureDropInstance
             | Constant::NominalDropInstance
             | Constant::Instance(_)
             | Constant::DefInstance => TyKind::Instance,
@@ -365,6 +390,7 @@ impl Application {
                 | View::Closure(_)
                 | View::NoOpDropInstance(_)
                 | View::TupleDropInstance(_)
+                | View::ClosureDropInstance(_)
                 | View::NominalDropInstance(_)
                 | View::InstanceAssociated(_) => false,
             },
@@ -385,6 +411,7 @@ impl Application {
                 | View::InstanceAssociated(_)
                 | View::NoOpDropInstance(_)
                 | View::TupleDropInstance(_)
+                | View::ClosureDropInstance(_)
                 | View::NominalDropInstance(_)
                 | View::Closure(_) => false,
             },
