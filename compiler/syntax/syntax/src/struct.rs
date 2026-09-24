@@ -6,8 +6,8 @@ use rayc_parser::{
 };
 
 use crate::{
-    Identifier, Keyword, Punctuation, effect::TypeParameterList, given::GivenParameterList,
-    r#type::Type, where_clause::WhereClause,
+    Identifier, Keyword, Punctuation, attribute::Attribute, effect::TypeParameterList,
+    given::GivenParameterList, r#type::Type, where_clause::WhereClause,
 };
 
 abstract_tree::abstract_tree! {
@@ -30,6 +30,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct Struct {
+        pub attributes: #[multi] Attribute = ast::<Attribute>().line().repeat(),
         pub struct_keyword: Keyword = expect::Keyword::Struct,
         pub name: Identifier = expect::Identifier,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
