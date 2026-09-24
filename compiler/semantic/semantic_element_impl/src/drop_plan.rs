@@ -25,6 +25,7 @@ use rayc_symbol::{
     GlobalSymbolID, SymbolID,
     core_item::{CoreItem, get_core_item},
     symbol_kind::{get_all_instance_ids, get_all_nominal_type_ids},
+    syntax::is_linear_struct,
 };
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
@@ -117,6 +118,15 @@ async fn target_drop_plans_executor(
             [] => unreachable!("the map contains only nonempty instance lists"),
         };
         plans.insert(id, engine.intern(plan));
+    }
+
+    // A linear struct never gets a Drop plan, not even from an explicit
+    // instance (which is rejected where the instance is declared). Fields of
+    // a linear type then fail generation for their enclosing structs.
+    for &id in &nominal_ids {
+        if engine.is_linear_struct(target_id.make_global(id)).await {
+            plans.insert(id, engine.intern(DropPlan::Linear));
+        }
     }
 
     // Update each plan after building its replacement. Later constructors in
@@ -384,6 +394,7 @@ impl Evaluator<'_> {
                             Some(DropPlan::Explicit(instance_id)) => {
                                 self.explicit(*instance_id, struct_.args()).await
                             }
+                            Some(DropPlan::Linear) => Err(DropPlanError::LinearField(ty)),
                             Some(DropPlan::CannotDerive(_)) | None => {
                                 Err(DropPlanError::MissingFieldDictionary(ty))
                             }

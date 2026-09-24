@@ -14,11 +14,12 @@ use rayc_semantic_element::{
 use rayc_solver::Solver;
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::{
-    SymbolID,
+    GlobalSymbolID, SymbolID,
     core_item::{CoreItem, Key as CoreItemKey},
     member::{Key as MemberKey, Member},
     name::Key as NameKey,
     symbol_kind::{AllInstanceIDs, AllNominalTypeIDs, Key as SymbolKindKey, SymbolKind},
+    syntax::LinearStructKey,
 };
 use rayc_target::TargetID;
 use rayc_type::{
@@ -40,6 +41,25 @@ fn span() -> RelativeSpan {
     let location =
         RelativeLocation { offset: 0, mode: OffsetMode::Start, relative_to: ROOT_BRANCH_ID };
     RelativeSpan { start: location, end: location, source_id: GlobalSourceID::default() }
+}
+
+/// Declares the nominal types of each target, none of which is `@linear`.
+fn register_nominals(engine: &mut Engine, targets: &[(TargetID, &[GlobalSymbolID])]) {
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(
+        targets
+            .iter()
+            .map(|&(target, structs)| {
+                (AllNominalTypeIDs { target }, structs.iter().map(|x| x.id).collect::<Arc<[_]>>())
+            })
+            .collect(),
+    )));
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(
+        targets
+            .iter()
+            .flat_map(|(_, structs)| structs.iter())
+            .map(|&symbol_id| (LinearStructKey { symbol_id }, false))
+            .collect(),
+    )));
 }
 
 fn generated(plan: &DropPlan) -> &rayc_semantic_element::drop_plan::GeneratedDropPlan {
@@ -101,10 +121,7 @@ async fn mutually_recursive_plans_share_external_requirement() {
         CoreItemKey { role: CoreItem::DropTrait },
         drop_trait,
     )]))));
-    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-        AllNominalTypeIDs { target },
-        Arc::<[SymbolID]>::from([a.id, b.id]),
-    )]))));
+    register_nominals(engine_mut, &[(target, &[a, b])]);
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
         AllInstanceIDs { target },
         Arc::<[SymbolID]>::from([]),
@@ -181,10 +198,7 @@ async fn foreign_field_uses_its_defining_targets_plan() {
         CoreItemKey { role: CoreItem::DropTrait },
         drop_trait,
     )]))));
-    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
-        (AllNominalTypeIDs { target: local }, Arc::<[SymbolID]>::from([wrapper.id])),
-        (AllNominalTypeIDs { target: dependency }, Arc::<[SymbolID]>::from([leaf.id])),
-    ]))));
+    register_nominals(engine_mut, &[(local, &[wrapper]), (dependency, &[leaf])]);
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
         (AllInstanceIDs { target: local }, Arc::<[SymbolID]>::from([])),
         (AllInstanceIDs { target: dependency }, Arc::<[SymbolID]>::from([])),
@@ -279,10 +293,7 @@ async fn recursive_field_applies_generated_dictionary_to_explicit_wrapper() {
         CoreItemKey { role: CoreItem::DropTrait },
         drop_trait,
     )]))));
-    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-        AllNominalTypeIDs { target },
-        Arc::<[SymbolID]>::from([node.id, option.id]),
-    )]))));
+    register_nominals(engine_mut, &[(target, &[node, option])]);
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
         AllInstanceIDs { target },
         Arc::<[SymbolID]>::from([option_drop.id]),

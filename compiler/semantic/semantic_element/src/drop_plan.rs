@@ -2,9 +2,13 @@
 
 use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_hash::FxHashMap;
-use rayc_symbol::{GlobalSymbolID, SymbolID};
+use rayc_qbice::TrackedEngine;
+use rayc_symbol::{
+    GlobalSymbolID, SymbolID,
+    core_item::{CoreItem, get_core_item},
+};
 use rayc_target::TargetID;
-use rayc_type::ty::Ty;
+use rayc_type::{trait_ref::TraitRef, ty::Ty};
 
 use crate::struct_body::FieldID;
 
@@ -88,12 +92,17 @@ pub enum DropPlanError {
     MultipleInstances(Vec<GlobalSymbolID>),
     InvalidExplicitInstance(GlobalSymbolID),
     MissingFieldDictionary(Interned<Ty>),
+    /// A field's type is a linear struct, which has no Drop instance.
+    LinearField(Interned<Ty>),
     NonConvergentRequirements,
 }
 
 /// The Drop behavior selected for one nominal constructor.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub enum DropPlan {
+    /// The struct is declared `@linear`: it has no Drop instance, so its
+    /// values must always be consumed explicitly.
+    Linear,
     Explicit(GlobalSymbolID),
     Generated(GeneratedDropPlan),
     CannotDerive(DropPlanError),
@@ -118,4 +127,32 @@ pub struct TargetDropPlans {
 #[extend(by_val, name = get_drop_plan)]
 pub struct NominalDropPlan {
     pub symbol_id: GlobalSymbolID,
+}
+
+/// Explains a missing `Drop` dictionary when the cause is a linear struct, for
+/// the diagnostics that report such a failure. Returns `None` for any other
+/// requirement or cause.
+pub async fn linear_drop_help(engine: &TrackedEngine, trait_ref: &TraitRef) -> Option<String> {
+    // Only a `Drop[SomeStruct[...]]` requirement can fail due to linearity.
+    if trait_ref.trait_id() != engine.get_core_item(CoreItem::DropTrait).await {
+        return None;
+    }
+    let ty = trait_ref.args().interned_iter().next()?;
+    let struct_ = ty.as_struct_view()?;
+
+    // Name the linear type: either the struct itself or the field type that
+    // prevented generating its plan.
+    match &*engine.get_drop_plan(struct_.symbol_id()).await {
+        DropPlan::Linear => Some(format!(
+            "`{}` is a linear type: it has no Drop instance and must be consumed explicitly",
+            ty.display(engine).await
+        )),
+        DropPlan::CannotDerive(DropPlanError::LinearField(field)) => Some(format!(
+            "`{}` has no generated Drop instance because it contains the linear type `{}`; \
+             consume it explicitly or implement Drop for it by hand",
+            ty.display(engine).await,
+            field.display(engine).await
+        )),
+        DropPlan::Explicit(_) | DropPlan::Generated(_) | DropPlan::CannotDerive(_) => None,
+    }
 }
