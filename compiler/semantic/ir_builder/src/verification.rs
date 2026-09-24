@@ -257,13 +257,15 @@ mod test {
         cfg.set_terminator(else_block, Terminator::Jump(merge_block));
         cfg.set_terminator(merge_block, Terminator::Return(None));
 
-        assert_eq!(
-            verify_cfg(&cfg).await,
-            Err(VerificationErrorKind::MergeConflict {
-                first: Vec::new(),
-                second: vec![ID::<Scope>::new(0)],
-            })
-        );
+        // Which stack is reported first depends on the order the branches
+        // are processed in, which is not part of the contract.
+        let Err(VerificationErrorKind::MergeConflict { first, second }) = verify_cfg(&cfg).await
+        else {
+            panic!("differing scope stacks at a merge should be rejected");
+        };
+        let mut stacks = [first, second];
+        stacks.sort();
+        assert_eq!(stacks, [Vec::new(), vec![ID::<Scope>::new(0)]]);
     }
 
     #[tokio::test]

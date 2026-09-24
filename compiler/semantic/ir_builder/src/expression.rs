@@ -159,7 +159,7 @@ impl Builder {
                 let temporary =
                     self.create_temporary(typed_expression.ty().clone(), typed_expression.span());
                 let address = self.variable_address(temporary);
-                self.emit_store(address.clone(), value);
+                self.emit_store(address.clone(), value, typed_expression.span());
                 address
             }
         }

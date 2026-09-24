@@ -49,7 +49,7 @@ impl Builder {
 
                     if let Some(expr_id) = let_statement.expression() {
                         let value = self.lower_rvalue_by_id(context, expr_id).await;
-                        self.emit_store(self.variable_address(ir_id), value);
+                        self.emit_store(self.variable_address(ir_id), value, let_statement.span());
                     }
                 }
                 Statement::Break(_) => {

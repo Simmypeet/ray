@@ -1,7 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     address::Address,
-    ir_expr::IRExprID,
     ir_function::IRFunctionMap,
     ir_lambda::{CaptureID, LambdaParameterID},
     ir_operation_handler::OperationHandlerParameterID,
@@ -76,10 +75,6 @@ impl Builder {
         Address::new_capture(id, &self.engine)
     }
 
-    pub fn dereference_address(&self, value: IRExprID) -> Address {
-        Address::new_deref(value, &self.engine)
-    }
-
     pub fn project_tuple(&self, address: &mut Address, index: usize) {
         address.add_tuple_index(index, &self.engine);
     }
@@ -87,6 +82,8 @@ impl Builder {
     pub fn project_field(&self, address: &mut Address, field_id: FieldID) {
         address.add_field(field_id, &self.engine);
     }
+
+    pub fn project_raw_deref(&self, address: &mut Address) { address.add_raw_deref(&self.engine); }
 }
 
 impl Builder {
