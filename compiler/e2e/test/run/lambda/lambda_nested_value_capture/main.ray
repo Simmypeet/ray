@@ -1,6 +1,7 @@
 def main() -> int32:
     let mut value = 32
-    let outer = () -> (() -> value)
+    # `move` snapshots `value` through both closures.
+    let outer = () -> (() -> move value)
     value = 42
     let inner = outer()
     return inner()
