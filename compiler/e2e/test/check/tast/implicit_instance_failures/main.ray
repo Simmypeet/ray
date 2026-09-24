@@ -13,9 +13,10 @@ inst Second for Choice[bool]:
         return false
 
 def missing(value: a) given (dictionary: Missing[a]) -> bool:
+    core.NoDrop { value = move value }
     return true
 
-def ambiguous(value: a) given (dictionary: Choice[a]) -> bool:
+def ambiguous(value: a) given (dictionary: Choice[a], drop: core.Drop[a]) -> bool:
     return true
 
 def testMissing() -> bool:

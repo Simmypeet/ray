@@ -6,7 +6,7 @@ stderr:
 [error]: use of moved value
    ╭▸ compiler/e2e/test/check/tast/closure_polymorphic_owner/main.ray:12:12
    │
-10 │ def ordinary(value: a) -> a:
+10 │ def ordinary(value: a) given (drop: core.Drop[a]) -> a:
    │              ───── value moved here
 11 │     let closure = () -> value
 12 │     return value

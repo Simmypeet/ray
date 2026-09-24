@@ -18,7 +18,7 @@ def opaque(value: d.Item) given (d: Source) -> bool:
 trait Missing[a]:
     type Item
 
-def requires(value: a) given (m: Missing[a]) -> bool:
+def requires(value: a) given (m: Missing[a], drop: core.Drop[a]) -> bool:
     return true
 
 def missing(value: Concrete.Item) -> bool:

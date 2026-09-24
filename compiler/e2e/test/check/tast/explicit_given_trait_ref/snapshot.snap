@@ -22,33 +22,33 @@ stderr:
    ╰╴                         ━━━━━━━━
 
 [error]: mismatched argument types in function call: expected `bool`, but found `int32`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:45:43
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:46:43
    │
-45 │     return accepts[given GenericEq[bool]](value)
+46 │     return accepts[given GenericEq[bool]](value)
    ╰╴                                          ━━━━━
 
 [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:58:34
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:59:34
    │
-58 │     return IntMember.check[given EqBool]()
+59 │     return IntMember.check[given EqBool]()
    ╰╴                                 ━━━━━━
 
 [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:64:31
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:65:31
    │
-64 │     return member.check[given EqBool]()
+65 │     return member.check[given EqBool]()
    ╰╴                              ━━━━━━
 
 [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:69:62
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:70:62
    │
-69 │ def requireBool(callback: def() -> () \ {Reader[int32; given EqBool]}):
+70 │ def requireBool(callback: def() -> () \ {Reader[int32; given EqBool]}):
    ╰╴                                                             ━━━━━━
 
 [error]: where-clause obligation for `main.requireBool` is not satisfied
-   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:73:5
+   ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:74:5
    │
-73 │     requireBool(callback)
+74 │     requireBool(callback)
    ╰╴    ━━━━━━━━━━━ `callable dictionary.Effect` must equal `{Reader[int32; given EqBool]}`
 
 [error]: Compilation aborted due to 8 error(s)

@@ -10,7 +10,7 @@ def withBoolState() -> () \ {State[bool]}:
     return ()
 
 
-def withPolyState(arg: s) -> () \ {State[s]}:
+def withPolyState(arg: s) given (drop: core.Drop[s]) -> () \ {State[s]}:
     return ()
 
 

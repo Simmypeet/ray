@@ -16,7 +16,7 @@ inst OrdBool for Ord[bool]:
     def less(lhs: bool, rhs: bool) -> bool:
         return false
 
-def accepts(value: a) given (equality: Eq[a]) -> bool:
+def accepts(value: a) given (equality: Eq[a], drop: core.Drop[a]) -> bool:
     return true
 
 def wrongTrait(value: int32) -> bool:
@@ -25,17 +25,18 @@ def wrongTrait(value: int32) -> bool:
 def wrongType(value: int32) -> bool:
     return accepts[given equality = EqBool](value)
 
-def wrongPolyVar(value: a) given (ordering: Ord[a]) -> bool:
+def wrongPolyVar(value: a) given (ordering: Ord[a], drop: core.Drop[a]) -> bool:
     return accepts[given ordering](value)
 
 def valid(value: int32) -> bool:
     return accepts[given EqInt](value)
 
-def validPolyVar(value: a) given (equality: Eq[a]) -> bool:
+def validPolyVar(value: a) given (equality: Eq[a], drop: core.Drop[a]) -> bool:
     return accepts[given equality](value)
 
 inst GenericEq[a] for Eq[a]:
     def equals(lhs: a, rhs: a) -> bool:
+        core.NoDrop { value = (move lhs, move rhs) }
         return true
 
 def generic(value: int32) -> bool:

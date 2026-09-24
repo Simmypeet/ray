@@ -7,6 +7,6 @@ inst SomeInst[a] for SomeTrait[]:
         let second = () -> ((x) -> x + 2)
         return value
 
-def ordinary(value: a) -> a:
+def ordinary(value: a) given (drop: core.Drop[a]) -> a:
     let closure = () -> value
     return value

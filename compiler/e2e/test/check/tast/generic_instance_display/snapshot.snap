@@ -4,9 +4,9 @@ expression: run
 ---
 stderr:
 [error]: where-clause obligation for `main.requireBool` is not satisfied
-   ╭▸ compiler/e2e/test/check/tast/generic_instance_display/main.ray:15:5
+   ╭▸ compiler/e2e/test/check/tast/generic_instance_display/main.ray:16:5
    │
-15 │     requireBool(callback)
+16 │     requireBool(callback)
    ╰╴    ━━━━━━━━━━━ `callable dictionary.Effect` must equal `{Reader[bool; given GenericEq[bool]]}`
 
 [error]: Compilation aborted due to 1 error(s)

@@ -1,7 +1,7 @@
 eff Read[]:
     def read() -> int32
 
-inst Fallback[f] for core.Def[f]:
+inst Fallback[f] for core.Def[f] given (drop: core.Drop[f]):
     type Args = bool
     type Return = bool
     type Effect = {}
@@ -30,7 +30,7 @@ trait Callable[f]:
 inst FromDef[f] for Callable[f] given (d: core.Def[f]) where (d.Args = ()):
     type Result = d.Return
 
-def nested(value: f, result: c.Result) given (c: Callable[f]) -> c.Result:
+def nested(value: f, result: c.Result) given (c: Callable[f], drop: core.Drop[f]) -> c.Result:
     return result
 
 def recursive() -> bool:

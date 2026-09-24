@@ -4,5 +4,5 @@ trait TraitAssocEff[a]:
     def executeSomething() \ this.Assoc
 
 
-def testAssoc(param: a) given (i: TraitAssocEff[a]) \ i.Assoc:
+def testAssoc(param: a) given (i: TraitAssocEff[a], drop: core.Drop[a]) \ i.Assoc:
     i.executeSomething()
