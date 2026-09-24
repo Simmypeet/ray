@@ -1,0 +1,12 @@
+# `value` is never consumed, so it is dropped when the function returns, but
+# no Drop dictionary is available for `a`.
+def ignore(value: a) -> int32:
+    return 0
+
+# A supplied dictionary lets the parameter be dropped.
+def ignoreWithDrop(value: a) given (drop: core.Drop[a]) -> int32:
+    return 0
+
+# A moved parameter is not dropped, so it needs no dictionary.
+def identity(value: a) -> a:
+    return value

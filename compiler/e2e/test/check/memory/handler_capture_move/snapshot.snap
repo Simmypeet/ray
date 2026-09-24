@@ -1,0 +1,46 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot move out of a value captured by an operation handler
+   ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:36:25
+   │
+19 │     let mut restored = Resource { value = 1 }
+   │         ──────────── every call to the handler shares this captured value
+   ‡
+36 │             let taken = restored
+   ╰╴                        ━━━━━━━━ value moved out here
+
+[error]: cannot move out of a value captured by an operation handler
+   ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:40:21
+   │
+20 │     let moved = Resource { value = 2 }
+   │         ───── every call to the handler shares this captured value
+   ‡
+40 │             consume(moved)
+   ╰╴                    ━━━━━ value moved out here
+
+[error]: cannot move out of a value captured by an operation handler
+   ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:43:21
+   │
+21 │     let pair = Pair { first = Resource { value = 3 }, second = 4 }
+   │         ──── every call to the handler shares this captured value
+   ‡
+43 │             consume(pair.first)
+   ╰╴                    ━━━━━━━━━━ value moved out here
+
+[error]: cannot move out of a value captured by an operation handler
+   ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:46:26
+   │
+22 │     let mut counter = 0
+   │         ─────────── every call to the handler shares this captured value
+   ‡
+46 │             let forced = move counter
+   ╰╴                         ━━━━━━━━━━━━ value moved out here
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

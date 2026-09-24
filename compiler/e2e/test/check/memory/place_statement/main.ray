@@ -1,0 +1,21 @@
+struct Resource:
+    value: int32
+
+impl !core.Copy for Resource
+
+def consume(resource: Resource) -> int32:
+    return resource.value
+
+def main() -> int32:
+    let resource = Resource { value = 1 }
+
+    # OK: naming a place as a statement does not read it, so nothing moves.
+    resource
+    resource.value
+
+    # OK: an assignment evaluates to unit, so the assigned value is only
+    # stored.
+    let mut other = Resource { value = 2 }
+    other = Resource { value = 3 }
+
+    return consume(resource) + consume(other)

@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: no implicit instance found: `core.Drop[a]`
+  ╭▸ compiler/e2e/test/check/memory/scope_drop_missing_instance/main.ray:3:12
+  │
+3 │ def ignore(value: a) -> int32:
+  ╰╴           ━━━━━━━━ this value is dropped when it goes out of scope
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

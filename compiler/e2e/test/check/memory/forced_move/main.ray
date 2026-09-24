@@ -1,0 +1,13 @@
+def consume(value: int32) -> int32:
+    return value
+
+def main() -> int32:
+    # OK: a plain use copies a `Copy` value.
+    let copied = 1
+    consume(copied)
+    consume(copied)
+
+    # Error: `move` consumes even a `Copy` value.
+    let moved = 2
+    consume(move moved)
+    return consume(moved)

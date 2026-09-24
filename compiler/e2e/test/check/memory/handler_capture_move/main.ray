@@ -1,0 +1,47 @@
+struct Resource:
+    value: int32
+
+impl !core.Copy for Resource
+
+struct Pair:
+    first: Resource
+    second: int32
+
+impl !core.Copy for Pair
+
+eff Use:
+    def use()
+
+def consume(resource: Resource) -> int32:
+    return resource.value
+
+def main() -> int32:
+    let mut restored = Resource { value = 1 }
+    let moved = Resource { value = 2 }
+    let pair = Pair { first = Resource { value = 3 }, second = 4 }
+    let mut counter = 0
+    let copied = 5
+    run:
+        Use.use()
+    with Use:
+        def use():
+            # OK: reading a Copy value, a Copy field, or assigning only
+            # borrows the capture.
+            let read = copied
+            let field = pair.second
+            counter = counter + read + field
+
+            # Error: moving out is rejected even if a value is put back
+            # before the handler returns.
+            let taken = restored
+            restored = taken
+
+            # Error: the capture is moved out and never restored.
+            consume(moved)
+
+            # Error: moving out a single field is a move out of the capture.
+            consume(pair.first)
+
+            # Error: a forced move of a Copy value still moves it.
+            let forced = move counter
+    return 0
