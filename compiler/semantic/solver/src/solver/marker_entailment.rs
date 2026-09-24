@@ -9,6 +9,10 @@ use rayc_semantic_element::{
     all_marker_implementations::get_all_marker_implementations,
     marker_implementation::get_marker_implementation, struct_body::get_struct_body,
 };
+use rayc_symbol::{
+    core_item::{CoreItem, get_core_item},
+    syntax::is_linear_struct,
+};
 use rayc_type::{
     poly_var::build_subst_from_args,
     subst::Substitutable,
@@ -140,6 +144,15 @@ impl Solver {
     }
 
     async fn prove_active_marker_goal(&mut self, goal: &MarkerPredicate) -> bool {
+        // A linear value must be consumed exactly once, so copying it is never
+        // allowed. Structs containing it are rejected structurally below.
+        if let Some(struct_) = goal.implementor().as_struct_view()
+            && self.engine().is_linear_struct(struct_.symbol_id()).await
+            && goal.marker_id() == self.engine().get_core_item(CoreItem::Copy).await
+        {
+            return false;
+        }
+
         // A matching visible predicate is a leaf proof. Equality is checked
         // without allowing entailment to bind either side.
         let matching_givens = self

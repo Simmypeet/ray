@@ -405,10 +405,12 @@ impl Solver {
             DropPlan::Explicit(instance_id) => {
                 Some(self.resolve_planned_explicit_drop(required, *instance_id).await)
             }
-            DropPlan::CannotDerive(_) => Some(Err(InstanceResolutionError::NoInstance {
-                required: required.clone(),
-                failed_candidates: Vec::new(),
-            })),
+            DropPlan::Linear | DropPlan::CannotDerive(_) => {
+                Some(Err(InstanceResolutionError::NoInstance {
+                    required: required.clone(),
+                    failed_candidates: Vec::new(),
+                }))
+            }
             DropPlan::Generated(generated) => {
                 Some(self.resolve_planned_generated_drop(nominal, generated, drop_trait).await)
             }
