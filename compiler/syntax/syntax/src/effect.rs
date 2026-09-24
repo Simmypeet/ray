@@ -11,14 +11,23 @@ use crate::{
     def::{ParameterList, ReturnType},
     given::GivenParameterList,
     kind::KindAscription,
+    r#type::Lifetime,
     where_clause::WhereClause,
 };
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    pub struct TypeParameter {
+    pub struct TypeVariableParameter {
         pub name: Identifier = expect::Identifier,
         pub kind_ascription: KindAscription = ast::<KindAscription>().optional()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub enum TypeParameter {
+        Lifetime(Lifetime = ast::<Lifetime>()),
+        Variable(TypeVariableParameter = ast::<TypeVariableParameter>())
     }
 }
 

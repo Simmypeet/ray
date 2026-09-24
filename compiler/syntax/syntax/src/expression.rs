@@ -502,6 +502,16 @@ abstract_tree::abstract_tree! {
     }
 }
 
+// The arm is either an indented block, which has no value, or `: expression`,
+// whose value is the value of the whole `unsafe`.
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct Unsafe {
+        pub unsafe_keyword: Keyword = expect::Keyword::Unsafe,
+        pub arm: IfElseArm = ast::<IfElseArm>(),
+    }
+}
+
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct While {
@@ -529,6 +539,7 @@ abstract_tree::abstract_tree! {
         Closure(Closure = ast::<Closure>()),
         IfElse(IfElse = ast::<IfElse>()),
         While(While = ast::<While>()),
+        Unsafe(Unsafe = ast::<Unsafe>()),
         Binary(Binary = ast::<Binary>()),
     }
 }
