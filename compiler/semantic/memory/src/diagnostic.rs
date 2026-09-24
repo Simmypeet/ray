@@ -5,6 +5,7 @@ use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::obligation::PredicateObligation;
+use rayc_semantic_element::drop_plan::linear_drop_help;
 use rayc_solver::instance_resolution::InstanceResolutionError;
 use rayc_symbol::{name::get_qualified_name, source_map::to_absolute_span};
 use rayc_type::trait_ref::TraitRef;
@@ -115,6 +116,18 @@ async fn unresolved_scope_drop_report(
         args.push(arg.display(engine).await.to_string());
     }
 
+    let help = match &diagnostic.error {
+        InstanceResolutionError::NoInstance { .. } => {
+            linear_drop_help(engine, &diagnostic.trait_ref).await
+        }
+        InstanceResolutionError::NotReady(_)
+        | InstanceResolutionError::ContainsError(_)
+        | InstanceResolutionError::AmbiguousLexical { .. }
+        | InstanceResolutionError::AmbiguousGlobal { .. }
+        | InstanceResolutionError::Cycle(_)
+        | InstanceResolutionError::Limit { .. } => None,
+    };
+
     Rendered::builder()
         .message(format!("{message}: `{name}[{}]`", args.join(", ")))
         .primary_highlight(
@@ -123,6 +136,7 @@ async fn unresolved_scope_drop_report(
                 .message("this value is dropped when it goes out of scope")
                 .build(),
         )
+        .maybe_help_message(help)
         .build()
 }
 

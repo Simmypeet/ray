@@ -13,7 +13,7 @@ use rayc_symbol::{
     name::get_name,
     source_map::to_absolute_span,
     span::get_span,
-    syntax::get_instance_trait_syntax,
+    syntax::{get_instance_trait_syntax, is_linear_struct},
 };
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
@@ -131,6 +131,15 @@ pub struct ForeignNominalDropImplementation {
     span: RelativeSpan,
 }
 
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct LinearDropImplementation {
+    span: RelativeSpan,
+    struct_name: Interned<str>,
+    struct_span: Option<RelativeSpan>,
+}
+
 impl Report for MissingDefinition {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         Rendered::builder()
@@ -199,6 +208,30 @@ impl Report for ForeignNominalDropImplementation {
     }
 }
 
+impl Report for LinearDropImplementation {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let related = match &self.struct_span {
+            Some(span) => Some(vec![Highlight::new(
+                engine.to_absolute_span(span).await,
+                Some(format!("`{}` is declared `@linear` here", &*self.struct_name)),
+            )]),
+            None => None,
+        };
+
+        Rendered::builder()
+            .message(format!(
+                "cannot implement Drop for the linear struct `{}`",
+                &*self.struct_name
+            ))
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some("a linear value must be consumed explicitly instead of dropped".into()),
+            ))
+            .maybe_related(related)
+            .build()
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -219,6 +252,7 @@ pub enum Diagnostic {
     ReservedDropImplementation(ReservedDropImplementation),
     NonNominalDropImplementation(NonNominalDropImplementation),
     ForeignNominalDropImplementation(ForeignNominalDropImplementation),
+    LinearDropImplementation(LinearDropImplementation),
 }
 
 impl Report for Diagnostic {
@@ -229,6 +263,7 @@ impl Report for Diagnostic {
             Self::ReservedDropImplementation(diagnostic) => diagnostic.report(engine).await,
             Self::NonNominalDropImplementation(diagnostic) => diagnostic.report(engine).await,
             Self::ForeignNominalDropImplementation(diagnostic) => diagnostic.report(engine).await,
+            Self::LinearDropImplementation(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -330,6 +365,26 @@ impl Build for Key {
             {
                 diagnostics.receive(Diagnostic::ForeignNominalDropImplementation(
                     ForeignNominalDropImplementation { span: syntax.span() },
+                ));
+                return Output::new_with(
+                    None,
+                    diagnostics.into_vec(),
+                    obligations.into_vec(),
+                    engine,
+                );
+            }
+
+            // A linear struct has no Drop instance by definition; its values
+            // must be consumed explicitly.
+            if let Some(struct_) = implementor.as_struct_view()
+                && engine.is_linear_struct(struct_.symbol_id()).await
+            {
+                diagnostics.receive(Diagnostic::LinearDropImplementation(
+                    LinearDropImplementation {
+                        span: syntax.span(),
+                        struct_name: engine.get_name(struct_.symbol_id()).await,
+                        struct_span: engine.get_span(struct_.symbol_id()).await,
+                    },
                 ));
                 return Output::new_with(
                     None,

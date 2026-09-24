@@ -4,6 +4,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_semantic_element::drop_plan::linear_drop_help;
 use rayc_symbol::{
     GlobalSymbolID, name::get_qualified_name, source_map::to_absolute_span,
     symbol_kind::get_symbol_kind,
@@ -621,6 +622,13 @@ impl Report for InstanceResolution {
             },
         };
 
+        let help = match &self.error {
+            ConstraintError::InstanceResolve(InstanceResolutionError::NoInstance { .. }) => {
+                linear_drop_help(engine, &self.trait_ref).await
+            }
+            ConstraintError::InstanceResolve(_) | ConstraintError::TyRelate(_) => None,
+        };
+
         let name = engine.get_qualified_name(self.trait_ref.trait_id()).await;
         let mut args = Vec::new();
         for arg in self.trait_ref.args().iter() {
@@ -631,6 +639,7 @@ impl Report for InstanceResolution {
             .primary_highlight(
                 Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
             )
+            .maybe_help_message(help)
             .build()
     }
 }
