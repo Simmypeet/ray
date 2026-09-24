@@ -1,0 +1,31 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot implement Drop for the linear struct `Handle`
+  ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:6:21
+  │
+2 │ struct Handle:
+  │        ────── `Handle` is declared `@linear` here
+  ‡
+6 │ inst HandleDrop for core.Drop[Handle]:
+  ╰╴                    ━━━━━━━━━━━━━━━━━ a linear value must be consumed explicitly instead of dropped
+
+[error]: attribute `@linear` is specified more than once
+   ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:12:1
+   │
+12 │ @linear
+   ╰╴━━━━━━━
+
+[error]: unknown attribute `@inline`
+   ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:17:1
+   │
+17 │ @inline
+   ╰╴━━━━━━━
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

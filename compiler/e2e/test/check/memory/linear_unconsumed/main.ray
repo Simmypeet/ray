@@ -1,0 +1,64 @@
+@linear
+struct Handle:
+    fd: int32
+
+# Structs containing a linear field get no generated Drop instance.
+struct Pair:
+    first: Handle
+    second: Handle
+
+struct Wrapper[t]:
+    value: t
+
+def make() -> Handle:
+    return Handle { fd = 0 }
+
+def close(handle: Handle):
+    core.NoDrop { value = move handle }
+
+def dispose(value: a) given (drop: core.Drop[a]):
+    drop.drop(value)
+
+# OK: every linear value is consumed exactly once.
+def consumed(pair: Pair):
+    let handle = make()
+    close(handle)
+    close(pair.first)
+    close(pair.second)
+
+# Error: the value is dropped at the end of the scope.
+def leak():
+    let handle = make()
+
+# Error: the value is dropped on the path that does not consume it.
+def leakOnBranch(condition: bool):
+    let handle = make()
+    if condition:
+        close(handle)
+
+# Error: a discarded linear value is dropped.
+def leakDiscard():
+    make()
+
+# Error: a struct containing a linear field cannot be dropped.
+def leakPair():
+    let pair = Pair { first = make(), second = make() }
+
+# Error: the remaining field of a partially moved struct is dropped.
+def leakPartial():
+    let pair = Pair { first = make(), second = make() }
+    close(pair.first)
+
+# Error: a generic struct instantiated with a linear type cannot be dropped.
+def leakWrapper():
+    let wrapper = Wrapper { value = make() }
+
+# Error: a linear value is never `Copy`, even with only `Copy` fields.
+def useTwice(handle: Handle):
+    close(handle)
+    close(handle)
+
+# Error: a linear type has no Drop dictionary to pass.
+def main() -> int32:
+    dispose(make())
+    return 0

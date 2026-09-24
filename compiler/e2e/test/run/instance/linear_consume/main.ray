@@ -1,0 +1,38 @@
+extern def puts(message: cstr) -> c_int
+
+@linear
+struct Handle:
+    name: cstr
+
+def open(name: cstr) -> Handle:
+    puts("open")
+    return Handle { name = name }
+
+# The destruction method consumes the value through `core.NoDrop`.
+def close(handle: Handle):
+    puts(handle.name)
+    core.NoDrop { value = move handle }
+
+struct Pair:
+    first: Handle
+    second: Handle
+
+# A struct containing a linear field may still implement Drop by hand, as long
+# as it consumes the linear fields itself.
+inst PairDrop for core.Drop[Pair]:
+    def drop(self: Pair):
+        close(self.second)
+        close(self.first)
+
+def dispose(value: a) given (drop: core.Drop[a]):
+    drop.drop(value)
+
+def main() -> int32:
+    let handle = open("closed")
+    close(handle)
+
+    dispose(Pair { first = open("first"), second = open("second") })
+
+    # Pair is dropped by its own instance at the end of the scope.
+    let pair = Pair { first = open("scoped first"), second = open("scoped second") }
+    return 0

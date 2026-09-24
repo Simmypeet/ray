@@ -1,0 +1,72 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: no implicit instance found: `core.Drop[Handle]`
+   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:31:9
+   │
+31 │     let handle = make()
+   │         ━━━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+
+[error]: no implicit instance found: `core.Drop[Handle]`
+   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:35:9
+   │
+35 │     let handle = make()
+   │         ━━━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+
+[error]: no implicit instance found: `core.Drop[Handle]`
+   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:41:5
+   │
+41 │     make()
+   │     ━━━━━━
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+
+[error]: no implicit instance found: `core.Drop[Pair]`
+   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:45:9
+   │
+45 │     let pair = Pair { first = make(), second = make() }
+   │         ━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: `Pair` has no generated Drop instance because it contains the linear type `Handle`; consume it explicitly or implement Drop for it by hand
+
+[error]: no implicit instance found: `core.Drop[Handle]`
+   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:49:9
+   │
+49 │     let pair = Pair { first = make(), second = make() }
+   │         ━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+
+[error]: no implicit instance found: `core.Drop[Wrapper[Handle]]`
+   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:54:9
+   │
+54 │     let wrapper = Wrapper { value = make() }
+   ╰╴        ━━━━━━━ this value is dropped when it goes out of scope
+
+[error]: use of moved value
+   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:59:11
+   │
+58 │     close(handle)
+   │           ────── value moved here
+59 │     close(handle)
+   ╰╴          ━━━━━━ value used here after it was moved
+
+[error]: no implicit instance found: `core.Drop[Handle]`
+   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:63:5
+   │
+63 │     dispose(make())
+   │     ━━━━━━━
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+
+[error]: Compilation aborted due to 8 error(s)
+
+
+
+stdout:

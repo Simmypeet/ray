@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+open
+closed
+open
+open
+second
+first
+open
+open
+scoped second
+scoped first
+
+
+stderr:

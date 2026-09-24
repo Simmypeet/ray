@@ -1,0 +1,22 @@
+@linear
+struct Handle:
+    fd: int32
+
+# Error: a linear struct cannot have a Drop instance.
+inst HandleDrop for core.Drop[Handle]:
+    def drop(self: Handle):
+        core.NoDrop { value = move self }
+
+# Error: the attribute is repeated.
+@linear
+@linear
+struct Twice:
+    fd: int32
+
+# Error: the attribute is not known.
+@inline
+struct Unknown:
+    fd: int32
+
+def main() -> int32:
+    return 0
