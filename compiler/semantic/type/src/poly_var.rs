@@ -44,12 +44,12 @@ impl PolyVarKind {
 /// display names: generated binders are excluded from source-name lookup, and
 /// generated dictionaries cannot be supplied as explicit `given` arguments.
 ///
-/// Both generated variants carry the zero-based value-parameter index within
+/// Every generated variant carries the zero-based value-parameter index within
 /// the owning declaration, counting ordinary parameters too (but not an
 /// ellipsis). This is a declaration-local occurrence key, not a
 /// polymorphic-variable ID or an index among only callable parameters. For `def
-/// apply(x: int32, fn: def())`, the generated pair has origins
-/// `CallableType(1)` and `CallableDictionary(1)`.
+/// apply(x: int32, fn: def())`, the generated binders have origins
+/// `CallableType(1)`, `CallableDictionary(1)` and `CallableDropDictionary(1)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum PolyVarOrigin {
     /// A source-addressable type/effect variable or explicitly declared
@@ -60,6 +60,9 @@ pub enum PolyVarOrigin {
     /// The hidden `core.Def` dictionary for that parameter's fresh callable
     /// type.
     CallableDictionary(usize),
+    /// The hidden `core.Drop` dictionary for that parameter's fresh callable
+    /// type, used when the callable is dropped instead of called.
+    CallableDropDictionary(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
