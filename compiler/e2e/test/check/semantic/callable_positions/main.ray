@@ -18,7 +18,7 @@ def nested(fn: def(def(int32) -> int32)):
 def components(pair: (def(int32),), pointer: *def(int32)):
     return ()
 
-def arguments(value: a) given (d: Holder[def(int32)]):
+def arguments(value: a) given (d: Holder[def(int32)], drop: core.Drop[a]):
     return ()
 
 def main() -> int32:

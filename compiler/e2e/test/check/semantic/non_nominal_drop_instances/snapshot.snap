@@ -10,9 +10,9 @@ stderr:
   ╰╴                    ━━━━━━━━━━━━ expected `Drop[SomeStruct[...]]`, found a type variable
 
 [error]: Drop instance must be declared for a struct type
-  ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:8:19
+  ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:9:19
   │
-8 │ inst ItemDrop for core.Drop[c.Item] given (c: Convert[int32]):
+9 │ inst ItemDrop for core.Drop[c.Item] given (c: Convert[int32]):
   ╰╴                  ━━━━━━━━━━━━━━━━━ expected `Drop[SomeStruct[...]]`, found an associated type
 
 [error]: Compilation aborted due to 2 error(s)

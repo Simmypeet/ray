@@ -3,8 +3,10 @@ trait Convert[a]:
 
 inst AnyDrop[a] for core.Drop[a]:
     def drop(self: a):
+        core.NoDrop { value = move self }
         return
 
 inst ItemDrop for core.Drop[c.Item] given (c: Convert[int32]):
     def drop(self: c.Item):
+        core.NoDrop { value = move self }
         return

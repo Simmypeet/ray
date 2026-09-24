@@ -8,4 +8,5 @@ inst PointerDrop[a] for core.Drop[*a]:
 
 inst TupleDrop[a, b] for core.Drop[(a, b)]:
     def drop(self: (a, b)):
+        core.NoDrop { value = move self }
         return

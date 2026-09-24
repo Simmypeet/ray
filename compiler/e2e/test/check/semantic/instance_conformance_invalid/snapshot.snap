@@ -22,13 +22,13 @@ stderr:
    ╰╴               ━━━━━━━━━━━ expected `int32`, found `bool`
 
 [error]: instance member `convert`: return type mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:13:27
+   ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:13:54
    │
- 7 │     def convert(value: b) -> b
-   │                           ──── the corresponding trait declaration is here
+ 7 │     def convert(value: b) given (drop: core.Drop[b]) -> b
+   │                                                      ──── the corresponding trait declaration is here
    ‡
-13 │     def convert(value: c) -> bool:
-   ╰╴                          ━━━━━━━ expected `c`, found `bool`
+13 │     def convert(value: c) given (drop: core.Drop[c]) -> bool:
+   ╰╴                                                     ━━━━━━━ expected `c`, found `bool`
 
 [error]: instance member `useEffect`: effect row mismatch
    ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:15:9

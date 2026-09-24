@@ -16,6 +16,7 @@ def accepts(value: a) given (box: Box[a]) -> a where (box.Item = a):
 def semanticGood(value: has.Value[given box]) given (
     has: HasValue[int32],
     box: Box[int32],
+    drop: core.Drop[has.Value[given box]],
 ) -> int32 where (box.Item = int32):
     return 0
 
@@ -23,6 +24,7 @@ def semanticBad(value: has.Value[given box]) given (
     has: HasValue[int32],
     box: Box[int32],
 ) -> int32:
+    core.NoDrop { value = move value }
     return 0
 
 def main() -> int32:

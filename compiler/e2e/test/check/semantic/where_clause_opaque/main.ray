@@ -10,14 +10,14 @@ inst Concrete[a] for Container:
         return value
 
 # Abstract projections remain valid with generic arguments and arbitrary RHS types.
-def valid(value: a) given (c: Container) -> int32 where (
+def valid(value: a) given (c: Container, drop: core.Drop[a]) -> int32 where (
     c.Item = (a, bool),
     c.Generic[a] = Concrete[a].Item,
 ):
     return 0
 
 # Concrete projections are not opaque.
-def invalid(value: a) given (c: Container) -> int32 where (
+def invalid(value: a) given (c: Container, drop: core.Drop[a]) -> int32 where (
     int32 = c.Item,
     a = c.Item,
     (c.Item, bool) = (int32, bool),

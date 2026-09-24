@@ -68,22 +68,22 @@ stderr:
    ╰╴┗━━━━━━━━━━━━━━━━━━━━━━┛ extra requirement: `right.Item` must equal `b`
 
 [error]: instance member `replaced`: missing where-clause predicate
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:36:56
+   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:36:76
    │
-15 │     def replaced(value: a) given (box: Box[a]) -> a where (box.Item = a)
-   │                                                            ──────────── the required trait predicate is declared here
+15 │     def replaced(value: a) given (box: Box[a], drop: core.Drop[a]) -> a where (box.Item = a)
+   │                                                                                ──────────── the required trait predicate is declared here
    ‡
-36 │     def replaced(value: b) given (box: Box[b]) -> bool where (box.Item = bool):
-   ╰╴                                                       ━━━━━━━━━━━━━━━━━━━━━━━ missing requirement: `box.Item` must equal `b`
+36 │     def replaced(value: b) given (box: Box[b], drop: core.Drop[b]) -> bool where (box.Item = bool):
+   ╰╴                                                                           ━━━━━━━━━━━━━━━━━━━━━━━ missing requirement: `box.Item` must equal `b`
 
 [error]: instance member `replaced`: extraneous where-clause predicate
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:36:63
+   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:36:83
    │
-15 │     def replaced(value: a) given (box: Box[a]) -> a where (box.Item = a)
+15 │     def replaced(value: a) given (box: Box[a], drop: core.Drop[a]) -> a where (box.Item = a)
    │         ──────── the corresponding trait member declares no equivalent requirement
    ‡
-36 │     def replaced(value: b) given (box: Box[b]) -> bool where (box.Item = bool):
-   ╰╴                                                              ━━━━━━━━━━━━━━━ extra requirement: `box.Item` must equal `bool`
+36 │     def replaced(value: b) given (box: Box[b], drop: core.Drop[b]) -> bool where (box.Item = bool):
+   ╰╴                                                                                  ━━━━━━━━━━━━━━━ extra requirement: `box.Item` must equal `bool`
 
 [error]: symbol `Missing` is not found
    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:41:13

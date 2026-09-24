@@ -33,7 +33,7 @@ stderr:
 15 │ def nested(fn: def(def(int32) -> int32)):
    ╰╴                   ━━━
 
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `cstr` keyword
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, identifier, `cstr` keyword, `( ... )` block, `float32` keyword, `*` punctuation
    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:18:23
    │
 18 │ def components(pair: (def(int32),), pointer: *def(int32)):
@@ -48,18 +48,18 @@ stderr:
 [error]: type inference is not allowed for `Holder` here
    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:21:35
    │
-21 │ def arguments(value: a) given (d: Holder[def(int32)]):
+21 │ def arguments(value: a) given (d: Holder[def(int32)], drop: core.Drop[a]):
    │                                   ━━━━━━ expected 1 type arguments
    │
    ╰ help: provide all type arguments explicitly
 
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `given` keyword, `]` punctuation, `cstr` keyword
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, identifier, `given` keyword, `cstr` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `]` punctuation
    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:21:42
    │
-21 │ def arguments(value: a) given (d: Holder[def(int32)]):
+21 │ def arguments(value: a) given (d: Holder[def(int32)], drop: core.Drop[a]):
    ╰╴                                         ━━━
 
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `cstr` keyword
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, identifier, `cstr` keyword, `( ... )` block, `float32` keyword, `*` punctuation
    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:25:16
    │
 25 │     let local: def(int32) -> int32 = (x) -> x

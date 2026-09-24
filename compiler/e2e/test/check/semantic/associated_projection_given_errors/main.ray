@@ -22,7 +22,12 @@ def wrong(value: Concrete.Item[int32; given BoolEqual]) -> int32:
 def named(value: Concrete.Item[int32; given absent = IntEqual]) -> int32:
     return 0
 
-def kind(value: i.Item[int32; given BoolEqual]) given (i: Container) -> int32:
+def kind(
+    value: i.Item[int32; given BoolEqual]
+) given (
+    i: Container,
+    d: core.Drop[i.Item[int32; given BoolEqual]]
+) -> int32:
     return 0
 
 def main() -> int32:

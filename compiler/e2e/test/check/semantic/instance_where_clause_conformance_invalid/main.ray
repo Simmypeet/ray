@@ -12,7 +12,7 @@ trait Contract[]:
     def extraPartial(value: a) given (left: Box[a], right: Box[a]) -> a where (
         left.Item = a,
     )
-    def replaced(value: a) given (box: Box[a]) -> a where (box.Item = a)
+    def replaced(value: a) given (box: Box[a], drop: core.Drop[a]) -> a where (box.Item = a)
     def brokenTrait(value: a) given (box: Box[a]) -> a where (
         box.Missing = Unknown,
     )
@@ -33,7 +33,7 @@ inst BadContract for Contract:
         right.Item = b,
     ):
         return value
-    def replaced(value: b) given (box: Box[b]) -> bool where (box.Item = bool):
+    def replaced(value: b) given (box: Box[b], drop: core.Drop[b]) -> bool where (box.Item = bool):
         return true
     def brokenTrait(value: b) given (box: Box[b]) -> b:
         return value

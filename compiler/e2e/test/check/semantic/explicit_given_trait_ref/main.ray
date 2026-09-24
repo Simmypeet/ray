@@ -31,7 +31,7 @@ def wrongPolyVar() given (ordering: Ord[bool]) -> () \ {Reader[int32; given orde
 def valid() -> () \ {Reader[int32; given EqInt]}:
     return ()
 
-def validPolyVar(value: a) given (equality: Eq[a]) -> () \ {Reader[a; given equality]}:
+def validPolyVar(value: a) given (equality: Eq[a], drop: core.Drop[a]) -> () \ {Reader[a; given equality]}:
     return ()
 
 trait Nested[a] given (equality: Eq[a]):
