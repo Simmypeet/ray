@@ -4,13 +4,28 @@
   "scopeName": "source.ray",
   "patterns": [
     { "include": "#comments" },
+    { "include": "#attributes" },
     { "include": "#strings" },
     { "include": "#characters" },
-    { "include": "#declarations" },
-    { "include": "#types" },
-    { "include": "#constants" },
+    { "include": "#def-signature" },
+    { "include": "#struct-declaration" },
+    { "include": "#trait-declaration" },
+    { "include": "#effect-declaration" },
+    { "include": "#instance-declaration" },
+    { "include": "#impl-declaration" },
+    { "include": "#marker-declaration" },
+    { "include": "#type-declaration" },
+    { "include": "#where-clause" },
+    { "include": "#given-parameters" },
+    { "include": "#let-statement" },
+    { "include": "#closure-parameters" },
     { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#primitive-types" },
     { "include": "#function-calls" },
+    { "include": "#type-names" },
+    { "include": "#type-arguments" },
+    { "include": "#struct-initialization" },
     { "include": "#numbers" },
     { "include": "#operators" },
     { "include": "#punctuation" }
@@ -25,6 +40,19 @@
             "0": { "name": "punctuation.definition.comment.ray" }
           },
           "end": "$"
+        }
+      ]
+    },
+    "attributes": {
+      "comment": "`@linear`, written on its own line above a declaration.",
+      "patterns": [
+        {
+          "name": "meta.attribute.ray",
+          "match": "(@)\\s*([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.attribute.ray" },
+            "2": { "name": "entity.name.function.decorator.ray" }
+          }
         }
       ]
     },
@@ -64,36 +92,475 @@
         }
       ]
     },
-    "declarations": {
+    "def-signature": {
+      "comment": "`[extern] def name(params) given (...) -> T \\ effects where (...)`. Also covers trait members, effect operations, and handler operations.",
+      "begin": "\\b(?:(extern)\\s+)?(def)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)\\s*",
+      "beginCaptures": {
+        "1": { "name": "storage.modifier.extern.ray" },
+        "2": { "name": "storage.type.function.ray" },
+        "3": { "name": "entity.name.function.ray" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#parameter-list" },
+        { "include": "#given-parameters" },
+        { "include": "#where-clause" },
+        { "include": "#type-content" }
+      ]
+    },
+    "parameter-list": {
+      "begin": "\\G(\\()",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.parameters.begin.ray" }
+      },
+      "end": "\\)",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.parameters.end.ray" }
+      },
+      "patterns": [
+        { "include": "#comments" },
+        {
+          "name": "keyword.operator.variadic.ray",
+          "match": "\\.\\.\\."
+        },
+        {
+          "comment": "`mut name: Type`",
+          "begin": "(?:\\b(mut)\\s+)?([_\\p{L}][_\\p{L}\\p{N}]*)\\s*(:)",
+          "beginCaptures": {
+            "1": { "name": "storage.modifier.ray" },
+            "2": { "name": "variable.parameter.ray" },
+            "3": { "name": "punctuation.separator.colon.ray" }
+          },
+          "end": "(?=[,)])",
+          "patterns": [{ "include": "#type-content" }]
+        },
+        {
+          "comment": "Untyped handler operation parameter: `def apply(value):`",
+          "match": "(?:\\b(mut)\\s+)?([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": { "name": "storage.modifier.ray" },
+            "2": { "name": "variable.parameter.ray" }
+          }
+        },
+        {
+          "name": "punctuation.separator.comma.ray",
+          "match": ","
+        }
+      ]
+    },
+    "given-parameters": {
+      "comment": "`given (name: Trait[...], ...)`",
+      "begin": "\\b(given)\\s*(\\()",
+      "beginCaptures": {
+        "1": { "name": "keyword.other.given.ray" },
+        "2": { "name": "punctuation.definition.parameters.begin.ray" }
+      },
+      "end": "\\)",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.parameters.end.ray" }
+      },
+      "patterns": [
+        { "include": "#comments" },
+        {
+          "begin": "([_\\p{L}][_\\p{L}\\p{N}]*)\\s*(:)",
+          "beginCaptures": {
+            "1": { "name": "variable.parameter.given.ray" },
+            "2": { "name": "punctuation.separator.colon.ray" }
+          },
+          "end": "(?=[,)])",
+          "patterns": [{ "include": "#type-content" }]
+        },
+        {
+          "name": "punctuation.separator.comma.ray",
+          "match": ","
+        }
+      ]
+    },
+    "where-clause": {
+      "comment": "`where (left = right, T: Marker, ...)`, possibly spanning several lines.",
+      "begin": "\\b(where)\\s*(\\()",
+      "beginCaptures": {
+        "1": { "name": "keyword.other.where.ray" },
+        "2": { "name": "punctuation.definition.parameters.begin.ray" }
+      },
+      "end": "\\)",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.parameters.end.ray" }
+      },
+      "patterns": [
+        { "include": "#comments" },
+        {
+          "name": "keyword.operator.equality.ray",
+          "match": "="
+        },
+        { "include": "#type-content" }
+      ]
+    },
+    "type-parameters": {
+      "comment": "Declaration type parameter list directly following a declaration's name (or `impl`): `[a, e: Effect]`.",
+      "begin": "\\G(\\[)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.bracket.begin.ray" }
+      },
+      "end": "\\]",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.bracket.end.ray" }
+      },
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#kind-ascription" },
+        {
+          "name": "entity.name.type.parameter.ray",
+          "match": "[_\\p{L}][_\\p{L}\\p{N}]*"
+        },
+        {
+          "name": "punctuation.separator.comma.ray",
+          "match": ","
+        }
+      ]
+    },
+    "kind-ascription": {
+      "match": "(:)\\s*(\\*|Effect(?![_\\p{L}\\p{N}]))",
+      "captures": {
+        "1": { "name": "punctuation.separator.colon.ray" },
+        "2": { "name": "support.type.kind.ray" }
+      }
+    },
+    "type-content": {
+      "comment": "Anything in type position: paths, primitives, pointers, tuples, callables, and effect rows.",
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#type-arguments" },
+        { "include": "#type-group" },
+        { "include": "#effect-row" },
+        {
+          "name": "storage.type.function.ray",
+          "match": "\\bdef\\b"
+        },
+        {
+          "name": "keyword.other.given.ray",
+          "match": "\\bgiven\\b"
+        },
+        {
+          "name": "storage.modifier.ray",
+          "match": "\\bmut\\b"
+        },
+        {
+          "name": "variable.language.this.ray",
+          "match": "\\bthis\\b"
+        },
+        { "include": "#primitive-types" },
+        {
+          "name": "keyword.operator.arrow.ray",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.effect.ray",
+          "match": "\\\\"
+        },
+        {
+          "name": "keyword.operator.pointer.ray",
+          "match": "\\*"
+        },
+        { "include": "#type-names" },
+        {
+          "comment": "Qualifier of a path such as `core.Drop` or `d.Args`.",
+          "name": "entity.name.namespace.ray",
+          "match": "(?<![_\\p{L}\\p{N}])[_\\p{L}][_\\p{L}\\p{N}]*(?=\\s*\\.)"
+        },
+        {
+          "comment": "Lower-case type names are type parameters by convention.",
+          "name": "entity.name.type.parameter.ray",
+          "match": "(?<![_\\p{L}\\p{N}])[_\\p{L}][_\\p{L}\\p{N}]*"
+        },
+        {
+          "name": "punctuation.accessor.ray",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.separator.comma.ray",
+          "match": ","
+        },
+        {
+          "name": "punctuation.separator.colon.ray",
+          "match": ":"
+        }
+      ]
+    },
+    "type-arguments": {
+      "comment": "`[T, U; given Dict, name = Dict]`",
+      "begin": "\\[",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.bracket.begin.ray" }
+      },
+      "end": "\\]",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.bracket.end.ray" }
+      },
+      "patterns": [
+        { "include": "#comments" },
+        {
+          "match": "([_\\p{L}][_\\p{L}\\p{N}]*)\\s*(=)(?!=)",
+          "captures": {
+            "1": { "name": "variable.parameter.given.ray" },
+            "2": { "name": "keyword.operator.assignment.ray" }
+          }
+        },
+        {
+          "name": "punctuation.separator.semicolon.ray",
+          "match": ";"
+        },
+        { "include": "#type-content" }
+      ]
+    },
+    "type-group": {
+      "comment": "Tuple types and callable parameter lists.",
+      "begin": "\\(",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.parameters.begin.ray" }
+      },
+      "end": "\\)",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.parameters.end.ray" }
+      },
+      "patterns": [{ "include": "#type-content" }]
+    },
+    "effect-row": {
+      "comment": "`{Read[int32], State | rest}`",
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.brace.begin.ray" }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.brace.end.ray" }
+      },
       "patterns": [
         {
-          "match": "\\b(def)(\\s+)([_\\p{L}][_\\p{L}\\p{N}]*)",
-          "captures": {
-            "1": { "name": "storage.type.function.ray" },
-            "3": { "name": "entity.name.function.ray" }
-          }
+          "name": "keyword.operator.effect-row.tail.ray",
+          "match": "\\|"
+        },
+        { "include": "#type-content" }
+      ]
+    },
+    "struct-declaration": {
+      "comment": "The struct body is the indented block that follows the header.",
+      "begin": "^([ \\t]*)(struct)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)\\s*",
+      "beginCaptures": {
+        "2": { "name": "storage.type.struct.ray" },
+        "3": { "name": "entity.name.type.struct.ray" }
+      },
+      "end": "^(?![ \\t]*$)(?!\\1[ \\t]+\\S)",
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#type-parameters" },
+        { "include": "#given-parameters" },
+        { "include": "#where-clause" },
+        {
+          "begin": "^[ \\t]+([_\\p{L}][_\\p{L}\\p{N}]*)\\s*(:)",
+          "beginCaptures": {
+            "1": { "name": "variable.other.member.ray" },
+            "2": { "name": "punctuation.separator.colon.ray" }
+          },
+          "end": "$",
+          "patterns": [{ "include": "#type-content" }]
         },
         {
-          "match": "\\b(eff)(\\s+)([_\\p{L}][_\\p{L}\\p{N}]*)",
-          "captures": {
-            "1": { "name": "storage.type.effect.ray" },
-            "3": { "name": "entity.name.type.effect.ray" }
-          }
+          "name": "punctuation.separator.colon.ray",
+          "match": ":"
+        }
+      ]
+    },
+    "trait-declaration": {
+      "begin": "\\b(trait)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)\\s*",
+      "beginCaptures": {
+        "1": { "name": "storage.type.trait.ray" },
+        "2": { "name": "entity.name.type.trait.ray" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#type-parameters" },
+        { "include": "#given-parameters" },
+        { "include": "#where-clause" },
+        {
+          "name": "punctuation.separator.colon.ray",
+          "match": ":"
+        }
+      ]
+    },
+    "effect-declaration": {
+      "begin": "\\b(eff)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)\\s*",
+      "beginCaptures": {
+        "1": { "name": "storage.type.effect.ray" },
+        "2": { "name": "entity.name.type.effect.ray" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#type-parameters" },
+        { "include": "#given-parameters" },
+        { "include": "#where-clause" },
+        {
+          "name": "punctuation.separator.colon.ray",
+          "match": ":"
+        }
+      ]
+    },
+    "instance-declaration": {
+      "comment": "`inst Name[a] for Trait[a] given (...) where (...):`",
+      "begin": "\\b(inst)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)\\s*",
+      "beginCaptures": {
+        "1": { "name": "storage.type.instance.ray" },
+        "2": { "name": "entity.name.type.instance.ray" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#type-parameters" },
+        {
+          "name": "keyword.other.for.ray",
+          "match": "\\bfor\\b"
+        },
+        { "include": "#given-parameters" },
+        { "include": "#where-clause" },
+        { "include": "#type-content" }
+      ]
+    },
+    "impl-declaration": {
+      "comment": "Marker implementation: `impl[a] !Marker for Type where (...)`",
+      "begin": "\\b(impl)\\s*",
+      "beginCaptures": {
+        "1": { "name": "storage.type.impl.ray" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#type-parameters" },
+        {
+          "name": "keyword.operator.negation.ray",
+          "match": "!"
         },
         {
-          "match": "\\b(struct|enum|trait|type|module)(\\s+)([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "name": "keyword.other.for.ray",
+          "match": "\\bfor\\b"
+        },
+        { "include": "#where-clause" },
+        { "include": "#type-content" }
+      ]
+    },
+    "marker-declaration": {
+      "match": "\\b(marker)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)",
+      "captures": {
+        "1": { "name": "storage.type.marker.ray" },
+        "2": { "name": "entity.name.type.marker.ray" }
+      }
+    },
+    "type-declaration": {
+      "comment": "Associated type in a trait (`type Effect: Effect`) or instance (`type Item = int32`).",
+      "begin": "\\b(type)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)\\s*",
+      "beginCaptures": {
+        "1": { "name": "storage.type.ray" },
+        "2": { "name": "entity.name.type.ray" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#type-parameters" },
+        { "include": "#given-parameters" },
+        { "include": "#kind-ascription" },
+        { "include": "#where-clause" },
+        {
+          "name": "keyword.operator.assignment.ray",
+          "match": "="
+        },
+        { "include": "#type-content" }
+      ]
+    },
+    "let-statement": {
+      "patterns": [
+        {
+          "comment": "`let mut name: Type = ...`",
+          "begin": "\\b(let)\\s+(?:(mut)\\s+)?([_\\p{L}][_\\p{L}\\p{N}]*)\\s*(:)",
+          "beginCaptures": {
+            "1": { "name": "storage.modifier.ray" },
+            "2": { "name": "storage.modifier.ray" },
+            "3": { "name": "variable.other.ray" },
+            "4": { "name": "punctuation.separator.colon.ray" }
+          },
+          "end": "(?==)|$",
+          "patterns": [{ "include": "#type-content" }]
+        },
+        {
+          "match": "\\b(let)\\s+(?:(mut)\\s+)?([_\\p{L}][_\\p{L}\\p{N}]*)",
           "captures": {
-            "1": { "name": "storage.type.ray" },
-            "3": { "name": "entity.name.type.ray" }
+            "1": { "name": "storage.modifier.ray" },
+            "2": { "name": "storage.modifier.ray" },
+            "3": { "name": "variable.other.ray" }
           }
         }
       ]
     },
-    "types": {
+    "closure-parameters": {
+      "comment": "`(x, mut y) -> body`",
+      "match": "(\\()\\s*((?:(?:mut\\s+)?[_\\p{L}][_\\p{L}\\p{N}]*\\s*,\\s*)*(?:(?:mut\\s+)?[_\\p{L}][_\\p{L}\\p{N}]*\\s*)?)(\\))(?=\\s*->)",
+      "captures": {
+        "1": { "name": "punctuation.definition.parameters.begin.ray" },
+        "2": {
+          "patterns": [
+            {
+              "name": "storage.modifier.ray",
+              "match": "\\bmut\\b"
+            },
+            {
+              "name": "variable.parameter.ray",
+              "match": "[_\\p{L}][_\\p{L}\\p{N}]*"
+            },
+            {
+              "name": "punctuation.separator.comma.ray",
+              "match": ","
+            }
+          ]
+        },
+        "3": { "name": "punctuation.definition.parameters.end.ray" }
+      }
+    },
+    "struct-initialization": {
+      "comment": "`Path { field = expr, ... }`",
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.brace.begin.ray" }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.brace.end.ray" }
+      },
+      "patterns": [
+        {
+          "match": "([_\\p{L}][_\\p{L}\\p{N}]*)\\s*(=)(?!=)",
+          "captures": {
+            "1": { "name": "variable.other.member.ray" },
+            "2": { "name": "keyword.operator.assignment.ray" }
+          }
+        },
+        { "include": "$self" }
+      ]
+    },
+    "primitive-types": {
       "patterns": [
         {
           "name": "storage.type.primitive.ray",
           "match": "\\b(?:bool|int8|int16|int32|int64|uint8|uint16|uint32|uint64|float32|float64|usize|isize|c_int|cstr)\\b"
+        }
+      ]
+    },
+    "type-names": {
+      "comment": "Types, traits, effects, and markers are upper camel case by convention.",
+      "patterns": [
+        {
+          "name": "entity.name.type.ray",
+          "match": "(?<![_\\p{L}\\p{N}])\\p{Lu}[_\\p{L}\\p{N}]*"
         }
       ]
     },
@@ -109,19 +576,27 @@
       "patterns": [
         {
           "name": "keyword.control.ray",
-          "match": "\\b(?:match|if|else|while|loop|for|break|continue|return|do|try|with|run|resume|panic|pass)\\b"
+          "match": "\\b(?:match|if|elif|else|while|loop|for|break|continue|return|do|try|with|run|resume|panic|pass)\\b"
         },
         {
           "name": "keyword.operator.word.ray",
           "match": "\\b(?:and|or|not|as|from)\\b"
         },
         {
+          "name": "keyword.other.move.ray",
+          "match": "\\bmove\\b"
+        },
+        {
           "name": "storage.modifier.ray",
-          "match": "\\b(?:pub|priv|internal|let|const|mut|static|unsafe|extern|phantom|final|marker)\\b"
+          "match": "\\b(?:pub|priv|internal|let|const|mut|static|unsafe|extern|phantom|final)\\b"
         },
         {
           "name": "keyword.declaration.ray",
-          "match": "\\b(?:def|eff|struct|impl|enum|module|type|trait|import|tuple|case|express|delete|where|scope|given|inst)\\b"
+          "match": "\\b(?:def|eff|struct|impl|enum|module|type|trait|import|tuple|case|express|delete|scope|inst|marker)\\b"
+        },
+        {
+          "name": "keyword.other.ray",
+          "match": "\\b(?:given|where)\\b"
         },
         {
           "name": "variable.language.ray",
@@ -130,10 +605,11 @@
       ]
     },
     "function-calls": {
+      "comment": "`name(...)` or `name[T, ...](...)`",
       "patterns": [
         {
           "name": "entity.name.function.call.ray",
-          "match": "(?<![_\\p{L}\\p{N}])[_\\p{L}][_\\p{L}\\p{N}]*(?=\\s*\\()"
+          "match": "(?<![_\\p{L}\\p{N}])[_\\p{L}][_\\p{L}\\p{N}]*(?=\\s*(?:\\[[^\\[\\]]*(?:\\[[^\\[\\]]*\\][^\\[\\]]*)*\\]\\s*)?\\()"
         }
       ]
     },
@@ -148,8 +624,44 @@
     "operators": {
       "patterns": [
         {
-          "name": "keyword.operator.ray",
-          "match": "==|!=|->|[=+\\-*/]"
+          "name": "keyword.operator.variadic.ray",
+          "match": "\\.\\.\\."
+        },
+        {
+          "name": "keyword.operator.reference.ray",
+          "match": "\\.&"
+        },
+        {
+          "name": "keyword.operator.dereference.ray",
+          "match": "\\.\\*"
+        },
+        {
+          "name": "keyword.operator.arrow.ray",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.comparison.ray",
+          "match": "==|!="
+        },
+        {
+          "name": "keyword.operator.negation.ray",
+          "match": "!"
+        },
+        {
+          "name": "keyword.operator.assignment.ray",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.arithmetic.ray",
+          "match": "[+\\-*/]"
+        },
+        {
+          "name": "keyword.operator.effect.ray",
+          "match": "\\\\"
+        },
+        {
+          "name": "keyword.operator.effect-row.tail.ray",
+          "match": "\\|"
         }
       ]
     },
@@ -169,11 +681,11 @@
         },
         {
           "name": "punctuation.separator.ray",
-          "match": "[.,:;]"
+          "match": "[,:;]"
         },
         {
           "name": "punctuation.accessor.ray",
-          "match": "[&|\\\\]"
+          "match": "\\."
         }
       ]
     }
