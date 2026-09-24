@@ -15,8 +15,8 @@ use rayc_syntax::{
 
 use crate::{
     diagnostic::{
-        Diagnostic, InvalidDefDeclaration, InvalidDefDeclarationKind,
-        InvalidEffectOperationDeclaration,
+        Diagnostic, InvalidAttribute, InvalidAttributeKind, InvalidDefDeclaration,
+        InvalidDefDeclarationKind, InvalidEffectOperationDeclaration,
     },
     table::{Infos, MemberBuilder, Table},
 };
@@ -32,6 +32,8 @@ impl Table {
             return;
         };
 
+        let linear = self.register_struct_attributes(&r#struct);
+
         self.insert_symbol(
             member_builder,
             Infos::builder()
@@ -42,10 +44,42 @@ impl Table {
                 .given_parameter_list(r#struct.given_parameter_list())
                 .where_clause(r#struct.where_clause())
                 .struct_body(r#struct.body())
+                .linear_struct(linear)
                 .build(),
             engine,
         )
         .await;
+    }
+
+    /// Interprets the attributes written above a struct and returns whether
+    /// the struct is declared `@linear`. Unknown and repeated attributes are
+    /// reported and otherwise ignored.
+    fn register_struct_attributes(&mut self, r#struct: &Struct) -> bool {
+        let mut linear = false;
+
+        for attribute in r#struct.attributes() {
+            let Some(name) = attribute.name() else { continue };
+
+            match name.kind.0.as_ref() {
+                "linear" if linear => {
+                    self.push_diagnostic(Diagnostic::InvalidAttribute(InvalidAttribute::new(
+                        InvalidAttributeKind::Duplicated,
+                        name.kind.0.clone(),
+                        attribute.span(),
+                    )));
+                }
+                "linear" => linear = true,
+                _ => {
+                    self.push_diagnostic(Diagnostic::InvalidAttribute(InvalidAttribute::new(
+                        InvalidAttributeKind::Unknown,
+                        name.kind.0.clone(),
+                        attribute.span(),
+                    )));
+                }
+            }
+        }
+
+        linear
     }
 
     async fn register_marker(

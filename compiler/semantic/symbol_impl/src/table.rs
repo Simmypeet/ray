@@ -45,6 +45,7 @@ pub struct Infos {
     member: Option<MemberBuilder>,
     def_body: Option<Option<Block>>,
     struct_body: Option<Option<StructBody>>,
+    linear_struct: Option<bool>,
     variadic: Option<bool>,
     type_parameters: Option<Option<TypeParameterList>>,
     given_parameter_list: Option<Option<GivenParameterList>>,
@@ -64,6 +65,7 @@ struct SyntaxTable {
     effect_rows: Map<Option<EffectRowAnnotation>>,
     def_bodies: Map<Option<Block>>,
     struct_bodies: Map<Option<StructBody>>,
+    linear_structs: Map<bool>,
     variadic_defs: Map<bool>,
     type_parameters: Map<Option<TypeParameterList>>,
     given_parameter_lists: Map<Option<GivenParameterList>>,
@@ -202,6 +204,11 @@ impl Table {
     }
 
     #[must_use]
+    pub fn is_linear_struct(&self, symbol_id: SymbolID) -> bool {
+        self.syntaxes.linear_structs.get(&symbol_id).copied().unwrap()
+    }
+
+    #[must_use]
     pub fn is_variadic_def(&self, symbol_id: SymbolID) -> bool {
         self.syntaxes.variadic_defs.get(&symbol_id).copied().unwrap()
     }
@@ -303,6 +310,10 @@ impl Table {
 
         if let Some(struct_body) = info.struct_body {
             self.syntaxes.struct_bodies.insert(symbol_id, struct_body);
+        }
+
+        if let Some(linear) = info.linear_struct {
+            self.syntaxes.linear_structs.insert(symbol_id, linear);
         }
 
         if let Some(variadic) = info.variadic {

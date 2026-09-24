@@ -63,6 +63,18 @@ pub struct StructBodySyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }
 
+/// Retrieves whether a struct symbol is declared with the `@linear`
+/// attribute. A linear struct never has a `Drop` instance, so its values must
+/// be consumed explicitly.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(bool)]
+#[extend(by_val, name = is_linear_struct)]
+pub struct LinearStructKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]

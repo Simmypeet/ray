@@ -3,7 +3,7 @@ use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
     DefBodySyntaxKey, EffectRowSyntaxKey, GivenParameterListSyntaxKey, InstanceTraitSyntaxKey,
-    KindAscriptionSyntaxKey, MarkerImplementationMarkerSyntaxKey,
+    KindAscriptionSyntaxKey, LinearStructKey, MarkerImplementationMarkerSyntaxKey,
     MarkerImplementationTypeSyntaxKey, NegativeMarkerImplementationSyntaxKey,
     ParameterListSyntaxKey, ReturnTypeSyntaxKey, StructBodySyntaxKey, TypeDefinitionSyntaxKey,
     TypeParameterListSyntaxKey, VariadicDefKey, WhereClauseSyntaxKey,
@@ -90,6 +90,18 @@ pub async fn struct_body_syntax_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static STRUCT_BODY_SYNTAX_EXECUTOR: Registration<Config> =
     Registration::new::<StructBodySyntaxKey, StructBodySyntaxExecutor>();
+
+#[executor(config = Config)]
+pub async fn linear_struct_executor(
+    &LinearStructKey { symbol_id }: &LinearStructKey,
+    engine: &TrackedEngine,
+) -> bool {
+    engine.get_table(symbol_id.target_id).await.is_linear_struct(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static LINEAR_STRUCT_EXECUTOR: Registration<Config> =
+    Registration::new::<LinearStructKey, LinearStructExecutor>();
 
 #[executor(config = Config)]
 pub async fn variadic_def_executor(

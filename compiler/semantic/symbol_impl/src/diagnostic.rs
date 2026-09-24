@@ -34,6 +34,7 @@ pub enum Diagnostic {
     SourceFileLoadFail(SourceFileLoadFail),
     InvalidDefDeclaration(InvalidDefDeclaration),
     InvalidEffectOperationDeclaration(InvalidEffectOperationDeclaration),
+    InvalidAttribute(InvalidAttribute),
 }
 
 impl Report for Diagnostic {
@@ -43,7 +44,47 @@ impl Report for Diagnostic {
             Self::SourceFileLoadFail(diagnostic) => diagnostic.report(engine).await,
             Self::InvalidDefDeclaration(diagnostic) => diagnostic.report(engine).await,
             Self::InvalidEffectOperationDeclaration(diagnostic) => diagnostic.report(engine).await,
+            Self::InvalidAttribute(diagnostic) => diagnostic.report(engine).await,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum InvalidAttributeKind {
+    Unknown,
+    Duplicated,
+}
+
+/// An attribute that the declaration does not accept, or that is repeated.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub struct InvalidAttribute {
+    kind: InvalidAttributeKind,
+    name: Interned<str>,
+    span: RelativeSpan,
+}
+
+impl InvalidAttribute {
+    pub(crate) const fn new(
+        kind: InvalidAttributeKind,
+        name: Interned<str>,
+        span: RelativeSpan,
+    ) -> Self {
+        Self { kind, name, span }
+    }
+}
+
+impl Report for InvalidAttribute {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let message = match self.kind {
+            InvalidAttributeKind::Unknown => format!("unknown attribute `@{}`", self.name.as_ref()),
+            InvalidAttributeKind::Duplicated => {
+                format!("attribute `@{}` is specified more than once", self.name.as_ref())
+            }
+        };
+        Rendered::builder()
+            .message(message)
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
     }
 }
 
