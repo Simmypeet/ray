@@ -24,6 +24,13 @@ use crate::{
     typed_function::{TypedFunctionID, TypedFunctionMap},
 };
 
+/// Decides whether values of a type are `Copy`, which capture inference needs
+/// to tell a read that borrows a binding from one that moves it.
+pub trait CopyOracle {
+    /// Returns whether a value of `ty` is `Copy`.
+    fn is_copy(&mut self, ty: &Interned<Ty>) -> impl Future<Output = bool> + Send;
+}
+
 /// Stable capture layouts for every function in a typed AST.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct CapturePlan {
@@ -33,12 +40,21 @@ pub struct CapturePlan {
 
 impl CapturePlan {
     /// Computes capture layouts from a complete typed AST.
-    #[must_use]
-    pub fn analyze(functions: &TypedFunctionMap) -> Self {
-        let mut analyzer = Analyzer::default();
+    ///
+    /// `copy_oracle` decides which values are `Copy`. Reading such a value
+    /// only needs a shared reference to the binding, while reading any other
+    /// value moves the binding into the closure.
+    pub async fn analyze(functions: &TypedFunctionMap, copy_oracle: &mut impl CopyOracle) -> Self {
+        let mut analyzer = Analyzer {
+            plans: Arena::default(),
+            function_plans: FxHashMap::default(),
+            parents: FxHashMap::default(),
+            visiting: FxHashSet::default(),
+            copy_oracle,
+        };
         let root_id = functions.root_id();
         let mut root_plan = FunctionCapturePlan::new();
-        analyzer.analyze_function(root_id, functions, &mut root_plan);
+        analyzer.analyze_function(root_id, functions, &mut root_plan).await;
         analyzer.insert_plan(root_id, root_plan);
         Self { plans: analyzer.plans, function_plans: analyzer.function_plans }
     }
@@ -191,16 +207,16 @@ impl UseMode {
     const fn new_value_implicit() -> Self { Self::Value(LoadKind::Implicit) }
 }
 
-#[derive(Debug, Default)]
-struct Analyzer {
+struct Analyzer<'a, O> {
     plans: Arena<FunctionCapturePlan>,
     function_plans: FxHashMap<TypedFunctionID, FunctionCapturePlanID>,
     parents: FxHashMap<TypedFunctionID, TypedFunctionID>,
     visiting: FxHashSet<TypedFunctionID>,
+    copy_oracle: &'a mut O,
 }
 
-impl Analyzer {
-    fn analyze_function(
+impl<O: CopyOracle> Analyzer<'_, O> {
+    async fn analyze_function(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -216,7 +232,7 @@ impl Analyzer {
         );
 
         for statement in functions.statements(function_id) {
-            self.visit_statement(function_id, functions, statement, plan);
+            self.visit_statement(function_id, functions, statement, plan).await;
         }
 
         assert!(self.visiting.remove(&function_id));
@@ -232,7 +248,7 @@ impl Analyzer {
         plan_id
     }
 
-    fn visit_statement(
+    async fn visit_statement(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -248,7 +264,8 @@ impl Analyzer {
                         expr_id,
                         UseMode::new_value_implicit(),
                         plan,
-                    );
+                    )
+                    .await;
                 }
             }
             Statement::Break(_) | Statement::Continue(_) => {}
@@ -259,7 +276,8 @@ impl Analyzer {
                     statement.expression(),
                     UseMode::new_value_implicit(),
                     plan,
-                );
+                )
+                .await;
             }
             Statement::Return(statement) => {
                 if let Some(value) = statement.value() {
@@ -269,13 +287,16 @@ impl Analyzer {
                         value,
                         UseMode::new_value_implicit(),
                         plan,
-                    );
+                    )
+                    .await;
                 }
             }
         }
     }
 
-    fn visit_expression(
+    /// Every recursive traversal passes through here, so this is where the
+    /// recursion is boxed.
+    async fn visit_expression(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -283,7 +304,23 @@ impl Analyzer {
         use_mode: UseMode,
         plan: &mut FunctionCapturePlan,
     ) {
-        match functions.get_expression(function_id, expression_id).kind() {
+        Box::pin(self.visit_expression_kind(function_id, functions, expression_id, use_mode, plan))
+            .await;
+    }
+
+    #[expect(clippy::too_many_lines)]
+    async fn visit_expression_kind(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        expression_id: TypedExprID,
+        use_mode: UseMode,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        let expression = functions.get_expression(function_id, expression_id);
+        let use_mode = self.refine_use_mode(use_mode, expression.ty()).await;
+
+        match expression.kind() {
             TypedExprKind::Identifier(identifier) => {
                 self.visit_identifier(
                     function_id,
@@ -301,7 +338,8 @@ impl Analyzer {
                     tuple_index.operand(),
                     use_mode,
                     plan,
-                );
+                )
+                .await;
             }
             TypedExprKind::FieldAccess(field_access) => {
                 self.visit_projection(
@@ -310,7 +348,8 @@ impl Analyzer {
                     field_access.operand(),
                     use_mode,
                     plan,
-                );
+                )
+                .await;
             }
             TypedExprKind::Tuple(tuple) => {
                 for element in tuple.elements() {
@@ -320,23 +359,25 @@ impl Analyzer {
                         *element,
                         UseMode::new_value_implicit(),
                         plan,
-                    );
+                    )
+                    .await;
                 }
             }
             TypedExprKind::Call(call) => {
-                self.visit_call(function_id, functions, call, plan);
+                self.visit_call(function_id, functions, call, plan).await;
             }
             TypedExprKind::Closure(lambda) => {
-                self.visit_nested_function(function_id, functions, lambda.function_id(), plan);
+                self.visit_nested_function(function_id, functions, lambda.function_id(), plan)
+                    .await;
             }
             TypedExprKind::Binary(binary) => {
-                self.visit_binary(function_id, functions, *binary, plan);
+                self.visit_binary(function_id, functions, *binary, plan).await;
             }
             TypedExprKind::IfElse(if_else) => {
-                self.visit_if_else(function_id, functions, if_else, plan);
+                self.visit_if_else(function_id, functions, if_else, plan).await;
             }
             TypedExprKind::While(while_loop) => {
-                self.visit_while(function_id, functions, while_loop, plan);
+                self.visit_while(function_id, functions, while_loop, plan).await;
             }
             TypedExprKind::RefOf(reference) => {
                 self.visit_expression(
@@ -345,7 +386,8 @@ impl Analyzer {
                     reference.pointee(),
                     UseMode::Address(reference.mutability()),
                     plan,
-                );
+                )
+                .await;
             }
             TypedExprKind::Deref(deref) => {
                 self.visit_expression(
@@ -354,10 +396,12 @@ impl Analyzer {
                     deref.pointee(),
                     UseMode::new_value_implicit(),
                     plan,
-                );
+                )
+                .await;
             }
             TypedExprKind::Paren(paren) => {
-                self.visit_expression(function_id, functions, paren.expression(), use_mode, plan);
+                self.visit_expression(function_id, functions, paren.expression(), use_mode, plan)
+                    .await;
             }
             TypedExprKind::Move(move_expr) => {
                 self.visit_expression(
@@ -366,21 +410,36 @@ impl Analyzer {
                     move_expr.operand(),
                     UseMode::Value(LoadKind::Move),
                     plan,
-                );
+                )
+                .await;
             }
             TypedExprKind::RunWith(run_with) => {
-                self.visit_run_with(function_id, functions, run_with, plan);
+                self.visit_run_with(function_id, functions, run_with, plan).await;
             }
             TypedExprKind::StructInitialization(initialization) => {
-                self.visit_struct_initialization(function_id, functions, initialization, plan);
+                self.visit_struct_initialization(function_id, functions, initialization, plan)
+                    .await;
             }
             TypedExprKind::Errored(errored) => {
-                self.visit_errored(function_id, functions, errored, plan);
+                self.visit_errored(function_id, functions, errored, plan).await;
             }
         }
     }
 
-    fn visit_projection(
+    /// Weakens a plain value use of a `Copy` value to a shared reference.
+    ///
+    /// Reading a `Copy` value copies it through the reference, so the binding
+    /// itself does not need to move into the closure.
+    async fn refine_use_mode(&mut self, use_mode: UseMode, ty: &Interned<Ty>) -> UseMode {
+        match use_mode {
+            UseMode::Value(LoadKind::Implicit) if self.copy_oracle.is_copy(ty).await => {
+                UseMode::Address(Mutability::Immutable)
+            }
+            UseMode::Value(_) | UseMode::Address(_) => use_mode,
+        }
+    }
+
+    async fn visit_projection(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -388,10 +447,10 @@ impl Analyzer {
         use_mode: UseMode,
         plan: &mut FunctionCapturePlan,
     ) {
-        self.visit_expression(function_id, functions, operand, use_mode, plan);
+        self.visit_expression(function_id, functions, operand, use_mode, plan).await;
     }
 
-    fn visit_call(
+    async fn visit_call(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -410,11 +469,12 @@ impl Analyzer {
                 *argument,
                 UseMode::new_value_implicit(),
                 plan,
-            );
+            )
+            .await;
         }
     }
 
-    fn visit_while(
+    async fn visit_while(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -427,13 +487,14 @@ impl Analyzer {
             while_loop.condition(),
             UseMode::new_value_implicit(),
             plan,
-        );
+        )
+        .await;
         for statement in while_loop.body() {
-            self.visit_statement(function_id, functions, statement, plan);
+            self.visit_statement(function_id, functions, statement, plan).await;
         }
     }
 
-    fn visit_if_else(
+    async fn visit_if_else(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -447,15 +508,16 @@ impl Analyzer {
                 conditional_arm.condition(),
                 UseMode::new_value_implicit(),
                 plan,
-            );
-            self.visit_if_arm(function_id, functions, conditional_arm.arm(), plan);
+            )
+            .await;
+            self.visit_if_arm(function_id, functions, conditional_arm.arm(), plan).await;
         }
         if let Some(else_arm) = if_else.else_arm() {
-            self.visit_if_arm(function_id, functions, else_arm, plan);
+            self.visit_if_arm(function_id, functions, else_arm, plan).await;
         }
     }
 
-    fn visit_struct_initialization(
+    async fn visit_struct_initialization(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -469,11 +531,12 @@ impl Analyzer {
                 initializer.expression(),
                 UseMode::new_value_implicit(),
                 plan,
-            );
+            )
+            .await;
         }
     }
 
-    fn visit_errored(
+    async fn visit_errored(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -489,16 +552,17 @@ impl Analyzer {
                         *expression,
                         UseMode::new_value_implicit(),
                         plan,
-                    );
+                    )
+                    .await;
                 }
                 crate::typed_expr::errored::ErroredChild::Statement(statement) => {
-                    self.visit_statement(function_id, functions, statement, plan);
+                    self.visit_statement(function_id, functions, statement, plan).await;
                 }
             }
         }
     }
 
-    fn visit_if_arm(
+    async fn visit_if_arm(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -513,11 +577,12 @@ impl Analyzer {
                     *expression,
                     UseMode::new_value_implicit(),
                     plan,
-                );
+                )
+                .await;
             }
             crate::typed_expr::if_else::Arm::Block(statements) => {
                 for statement in statements {
-                    self.visit_statement(function_id, functions, statement, plan);
+                    self.visit_statement(function_id, functions, statement, plan).await;
                 }
             }
         }
@@ -548,14 +613,14 @@ impl Analyzer {
         plan.require(CaptureRequirement::new(source, binding.ty().clone(), mode, *binding.span()));
     }
 
-    fn visit_run_with(
+    async fn visit_run_with(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
         run_with: &RunWith,
         plan: &mut FunctionCapturePlan,
     ) {
-        self.visit_nested_function(function_id, functions, run_with.body(), plan);
+        self.visit_nested_function(function_id, functions, run_with.body(), plan).await;
 
         let handlers = run_with.operation_handlers().collect::<Vec<_>>();
         if handlers.is_empty() {
@@ -566,7 +631,7 @@ impl Analyzer {
         // to the same capture layout.
         let mut shared_plan = FunctionCapturePlan::new();
         for handler in &handlers {
-            self.analyze_nested_function(function_id, functions, *handler, &mut shared_plan);
+            self.analyze_nested_function(function_id, functions, *handler, &mut shared_plan).await;
         }
 
         Self::propagate_nested_captures(function_id, &shared_plan, plan);
@@ -576,7 +641,7 @@ impl Analyzer {
         }
     }
 
-    fn analyze_nested_function(
+    async fn analyze_nested_function(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -589,7 +654,7 @@ impl Analyzer {
             "each TypedAST nested function should have exactly one lexical parent"
         );
 
-        self.analyze_function(child_id, functions, plan);
+        self.analyze_function(child_id, functions, plan).await;
     }
 
     fn propagate_nested_captures(
@@ -604,7 +669,7 @@ impl Analyzer {
         }
     }
 
-    fn visit_nested_function(
+    async fn visit_nested_function(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -612,12 +677,12 @@ impl Analyzer {
         plan: &mut FunctionCapturePlan,
     ) {
         let mut child_plan = FunctionCapturePlan::new();
-        self.analyze_nested_function(function_id, functions, child_id, &mut child_plan);
+        self.analyze_nested_function(function_id, functions, child_id, &mut child_plan).await;
         Self::propagate_nested_captures(function_id, &child_plan, plan);
         self.insert_plan(child_id, child_plan);
     }
 
-    fn visit_binary(
+    async fn visit_binary(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
@@ -632,14 +697,16 @@ impl Analyzer {
                     binary.left(),
                     UseMode::Address(Mutability::Mutable),
                     plan,
-                );
+                )
+                .await;
                 self.visit_expression(
                     function_id,
                     functions,
                     binary.right(),
                     UseMode::new_value_implicit(),
                     plan,
-                );
+                )
+                .await;
             }
             BinaryOp::Equal
             | BinaryOp::NotEqual
@@ -655,14 +722,16 @@ impl Analyzer {
                     binary.left(),
                     UseMode::new_value_implicit(),
                     plan,
-                );
+                )
+                .await;
                 self.visit_expression(
                     function_id,
                     functions,
                     binary.right(),
                     UseMode::new_value_implicit(),
                     plan,
-                );
+                )
+                .await;
             }
         }
     }

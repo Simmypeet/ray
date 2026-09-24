@@ -106,11 +106,13 @@ impl TAstBuilder {
         right: TypedExprID,
     ) -> TypedExprID {
         let ty = match operator {
+            // The assigned value moves into the place, so the assignment
+            // itself has no value to give.
             BinaryOp::Assign => {
                 let ty = self.type_of_expression(left);
                 self.push_variable_assignment_constraint(&ty, right).await;
                 self.require_lvalue(left, true, LvalueOperation::Assignment);
-                ty
+                Ty::new_unit(self.engine())
             }
             BinaryOp::Equal | BinaryOp::NotEqual => {
                 let operand_ty = self.new_equality_comparable_type_inference();

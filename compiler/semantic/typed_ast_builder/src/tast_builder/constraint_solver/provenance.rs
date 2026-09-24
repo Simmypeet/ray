@@ -13,7 +13,10 @@ use rayc_type::{
     ty::{Ty, inference::Inference},
 };
 
-use crate::tast_builder::{TAstBuilder, constraint_solver::solve::PendingConstraint};
+use crate::tast_builder::{
+    TAstBuilder,
+    constraint_solver::{ConstraintSolver, solve::PendingConstraint},
+};
 
 /// A struct that tracks the **provenance** of constraints and substitutions in
 /// the constraint solver.
@@ -528,8 +531,14 @@ impl Provenance {
     pub(super) fn into_subst(self) -> Subst { self.subst }
 }
 
+impl ConstraintSolver {
+    pub async fn latest_type(&self, ty: &Interned<Ty>) -> Interned<Ty> {
+        self.provenance.latest_type(ty, &self.solver).await
+    }
+}
+
 impl TAstBuilder {
     pub async fn latest_type(&self, ty: &Interned<Ty>) -> Interned<Ty> {
-        self.constraint_solver.provenance.latest_type(ty, &self.constraint_solver.solver).await
+        self.constraint_solver.latest_type(ty).await
     }
 }

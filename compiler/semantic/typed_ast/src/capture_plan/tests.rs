@@ -9,7 +9,7 @@ use rayc_type::{
     ty::{Mutability, Ty, TyKind, inference::Inference},
 };
 
-use super::CapturePlan;
+use super::{CapturePlan, CopyOracle};
 use crate::{
     name_binding::{NameBinding, Source},
     statement::{ExpressionStatement, Statement},
@@ -20,6 +20,7 @@ use crate::{
         deref::Deref,
         identifier::Identifier,
         literal::Literal,
+        r#move::Move,
         paren::Paren,
         ref_of::RefOf,
         tuple::Tuple,
@@ -140,6 +141,20 @@ impl TestMap {
     }
 }
 
+/// Treats every test value as `Copy`, so plain reads only borrow.
+struct AllCopy;
+
+impl CopyOracle for AllCopy {
+    async fn is_copy(&mut self, _: &Interned<Ty>) -> bool { true }
+}
+
+/// Treats every test value as not `Copy`, so plain reads move.
+struct NoneCopy;
+
+impl CopyOracle for NoneCopy {
+    async fn is_copy(&mut self, _: &Interned<Ty>) -> bool { false }
+}
+
 #[tokio::test]
 async fn bindings_owned_by_the_current_function_are_not_captured() {
     let engine = rayc_qbice::create_minimal_engine().await;
@@ -155,7 +170,7 @@ async fn bindings_owned_by_the_current_function_are_not_captured() {
     let lambda = map.lambda_expression(root, child);
     map.statement(root, lambda);
 
-    let analysis = CapturePlan::analyze(&map.functions);
+    let analysis = CapturePlan::analyze(&map.functions, &mut AllCopy).await;
 
     assert_eq!(analysis.plan(child).captures().len(), 0);
     assert_eq!(analysis.plan(root).captures().len(), 0);
@@ -184,7 +199,7 @@ async fn repeated_uses_keep_first_encounter_order_and_upgrade_mutability_in_plac
     let lambda = map.lambda_expression(root, child);
     map.statement(root, lambda);
 
-    let analysis = CapturePlan::analyze(&map.functions);
+    let analysis = CapturePlan::analyze(&map.functions, &mut AllCopy).await;
     let captures: Vec<_> = analysis.plan(child).captures().collect();
 
     assert_eq!(captures.len(), 2);
@@ -193,7 +208,7 @@ async fn repeated_uses_keep_first_encounter_order_and_upgrade_mutability_in_plac
     assert_eq!(captures[0].1.span(), *map.functions.get_name_binding(map.binding_id(first)).span());
     assert_eq!(captures[0].1.mode(), CaptureMode::Reference(Mutability::Mutable));
     assert_eq!(captures[1].1.source(), second);
-    assert_eq!(captures[1].1.mode(), CaptureMode::Value(LoadKind::Implicit));
+    assert_eq!(captures[1].1.mode(), CaptureMode::Reference(Mutability::Immutable));
 }
 
 #[tokio::test]
@@ -231,7 +246,7 @@ async fn address_modes_follow_projections_references_and_dereferences() {
     let lambda = map.lambda_expression(root, child);
     map.statement(root, lambda);
 
-    let analysis = CapturePlan::analyze(&map.functions);
+    let analysis = CapturePlan::analyze(&map.functions, &mut AllCopy).await;
     let captures: Vec<_> = analysis
         .plan(child)
         .captures()
@@ -241,7 +256,7 @@ async fn address_modes_follow_projections_references_and_dereferences() {
     assert_eq!(captures, vec![
         (projected, CaptureMode::Reference(Mutability::Mutable)),
         (referenced, CaptureMode::Reference(Mutability::Mutable)),
-        (pointer, CaptureMode::Value(LoadKind::Implicit)),
+        (pointer, CaptureMode::Reference(Mutability::Immutable)),
     ]);
 }
 
@@ -281,7 +296,7 @@ async fn nested_children_propagate_only_ancestor_captures_with_joined_mutability
     let outer_lambda = map.lambda_expression(root, outer);
     map.statement(root, outer_lambda);
 
-    let analysis = CapturePlan::analyze(&map.functions);
+    let analysis = CapturePlan::analyze(&map.functions, &mut AllCopy).await;
     let reader_captures: Vec<_> = analysis
         .plan(reader)
         .captures()
@@ -299,10 +314,67 @@ async fn nested_children_propagate_only_ancestor_captures_with_joined_mutability
         .collect();
 
     assert_eq!(reader_captures, vec![
-        (ancestor, CaptureMode::Value(LoadKind::Implicit)),
+        (ancestor, CaptureMode::Reference(Mutability::Immutable)),
         (parent_local, CaptureMode::Reference(Mutability::Mutable))
     ]);
     assert_eq!(writer_captures, vec![(ancestor, CaptureMode::Reference(Mutability::Mutable))]);
     assert_eq!(outer_captures, vec![(ancestor, CaptureMode::Reference(Mutability::Mutable))]);
     assert_eq!(analysis.plan(root).captures().len(), 0);
+}
+
+#[tokio::test]
+async fn moving_a_value_wins_over_borrowing_it() {
+    // Input: a closure reads a non-`Copy` binding, then assigns to it.
+    // Output: the read moves the binding, so it is captured by value, and the
+    // assignment writes the closure's own copy.
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let mut map = TestMap::new(&engine);
+    let root = map.functions.root_id();
+    let owned = map.variable(root, "owned");
+    let child = map.lambda();
+
+    let read = map.identifier(child, owned);
+    map.statement(child, read);
+    let write = map.identifier(child, owned);
+    let value = map.expression(child, TypedExprKind::Literal(Literal::Numeric(1)));
+    let assignment =
+        map.expression(child, TypedExprKind::Binary(Binary::new(write, BinaryOp::Assign, value)));
+    map.statement(child, assignment);
+    let lambda = map.lambda_expression(root, child);
+    map.statement(root, lambda);
+
+    let analysis = CapturePlan::analyze(&map.functions, &mut NoneCopy).await;
+    let captures: Vec<_> = analysis
+        .plan(child)
+        .captures()
+        .map(|(_, capture)| (capture.source(), capture.mode()))
+        .collect();
+
+    assert_eq!(captures, vec![(owned, CaptureMode::Value(LoadKind::Implicit))]);
+}
+
+#[tokio::test]
+async fn explicit_move_captures_a_copy_value_by_value() {
+    // Input: a closure applies `move` to a `Copy` binding.
+    // Output: the binding is moved into the closure rather than borrowed.
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let mut map = TestMap::new(&engine);
+    let root = map.functions.root_id();
+    let copied = map.variable(root, "copied");
+    let child = map.lambda();
+
+    let operand = map.identifier(child, copied);
+    let moved = map.expression(child, TypedExprKind::Move(Move::new(operand)));
+    map.statement(child, moved);
+    let lambda = map.lambda_expression(root, child);
+    map.statement(root, lambda);
+
+    let analysis = CapturePlan::analyze(&map.functions, &mut AllCopy).await;
+    let captures: Vec<_> = analysis
+        .plan(child)
+        .captures()
+        .map(|(_, capture)| (capture.source(), capture.mode()))
+        .collect();
+
+    assert_eq!(captures, vec![(copied, CaptureMode::Value(LoadKind::Move))]);
 }

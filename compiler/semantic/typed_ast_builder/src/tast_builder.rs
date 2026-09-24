@@ -403,7 +403,7 @@ impl TAstBuilder {
 
         // Capture layouts are structural, so their binding types may still contain
         // inference variables. Each binding wakes constraints waiting on a closure.
-        let captures = CapturePlan::analyze(&self.function_map);
+        let captures = CapturePlan::analyze(&self.function_map, &mut self.constraint_solver).await;
         for (function_id, inference, span) in std::mem::take(&mut self.closure_captures) {
             let tuple = captures.plan(function_id).captured_tuple(&self.engine);
             self.push_capture_constraint(&inference, &tuple, span).await;

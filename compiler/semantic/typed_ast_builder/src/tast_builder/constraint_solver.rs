@@ -1,7 +1,15 @@
+use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
-use rayc_symbol::GlobalSymbolID;
-use rayc_type::ty::inference::Inference;
+use rayc_symbol::{
+    GlobalSymbolID,
+    core_item::{CoreItem, get_core_item},
+};
+use rayc_type::{
+    ty::{InferenceConstraint, Ty, inference::Inference},
+    where_clause::MarkerPredicate,
+};
+use rayc_typed_ast::capture_plan::CopyOracle;
 
 use crate::tast_builder::constraint_solver::{
     inference_generator::RecordingInferenceGenerator,
@@ -26,6 +34,26 @@ pub struct ConstraintSolver {
     provenance: Provenance,
     constraint_set: ConstraintSet,
     solver: Solver,
+}
+
+/// Answers `Copy` queries under the substitution solved so far.
+///
+/// An undetermined numeric type is `Copy`, since it defaults to a numeric
+/// primitive. Any other type which is not determined yet counts as not `Copy`.
+impl CopyOracle for ConstraintSolver {
+    async fn is_copy(&mut self, ty: &Interned<Ty>) -> bool {
+        let ty = self.latest_type(ty).await;
+
+        // any numeric type is `Copy`, even if it is undetermined.
+        if let Ty::Inference(inference) = &*ty
+            && inference.constraint() == InferenceConstraint::Numeric
+        {
+            return true;
+        }
+
+        let copy = self.solver.engine().get_core_item(CoreItem::Copy).await;
+        self.solver.entails_marker_predicate(MarkerPredicate::new(copy, ty)).await
+    }
 }
 
 impl ConstraintSolver {
