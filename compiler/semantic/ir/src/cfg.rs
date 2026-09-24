@@ -428,6 +428,11 @@ impl Cfg {
     pub fn insert_instructions_before(&mut self, insertions: BTreeMap<Point, Vec<Instruction>>) {
         // Insert from the last point backward so the remaining points still
         // index the original layout of their block.
+
+        // REVIEW: this relies on the assumption that the BTreeMap is sorted by
+        // the Point's ordering and that the iterator of the BTreeMap is in
+        // ascending order. Is there a way to encode this assumption? perhaps
+        // some assertion here?
         for (point, instructions) in insertions.into_iter().rev() {
             let block = self.blocks.get_mut(point.block_id).expect("Block should exist");
             assert!(

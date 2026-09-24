@@ -2,17 +2,20 @@ use std::{collections::BTreeMap, convert::Infallible};
 
 use qbice::storage::intern::Interned;
 use rayc_ir::{
-    address::Projection,
+    address::{Address, AddressRoot, Projection},
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
     dataflow::{DataflowProblem, Direction, JoinLattice},
-    ir_expr::IRExprKind,
+    ir_expr::{IRExprKind, load::Load},
     ir_function::{IRContext, IRFunction},
     ir_lambda::CaptureMap,
+    scope::ScopeID,
 };
+use rayc_lexical::tree::RelativeSpan;
 use rayc_semantic_element::{parameter::get_parameter_map, struct_body::get_struct_body};
 use rayc_solver::Solver;
 use rayc_symbol::core_item::{CoreItem, get_core_item};
 use rayc_type::{
+    capture::LoadKind,
     subst::Substitutable,
     ty::{Ty, application::View as ApplicationView},
     where_clause::MarkerPredicate,
@@ -77,6 +80,106 @@ impl<'a> StackStateProblem<'a> {
                 .storage_ty(self.solver.engine()),
         }
     }
+
+    /// Returns the declaration span of a stack root's binding.
+    pub(crate) async fn binding_span(&self, root: StackRoot) -> RelativeSpan {
+        match root {
+            StackRoot::Variable(variable_id) => self.function.get_variable(variable_id).span(),
+            StackRoot::Parameter(parameter_id) => self
+                .solver
+                .engine()
+                .get_parameter_map(self.solver.site())
+                .await
+                .iter()
+                .find_map(|(id, parameter)| (id == parameter_id).then(|| parameter.span()))
+                .expect("parameter address root must exist in the function signature")
+                .expect("parameters of a function with a body are declared in source"),
+            StackRoot::LambdaParameter(parameter_id) => self
+                .function
+                .context()
+                .assert_as_lambda_context()
+                .get_parameter(parameter_id)
+                .span(),
+            StackRoot::OperationHandlerParameter(parameter_id) => self
+                .function
+                .context()
+                .assert_as_operation_handler_context()
+                .get_parameter(parameter_id)
+                .span(),
+            StackRoot::Capture(capture_id) => self
+                .captures
+                .expect("capture address roots require a nested function capture layout")
+                .get_capture(capture_id)
+                .span(),
+        }
+    }
+
+    /// Returns the stack roots whose lifetime ends with `scope_id`, in the
+    /// order their values are dropped.
+    ///
+    /// Values are dropped in reverse of the order they came into scope. Local
+    /// variables drop in reverse declaration order. The root scope then drops
+    /// the function inputs: parameters in reverse, followed by captures in
+    /// reverse, since the capture environment precedes the parameters.
+    ///
+    /// An operation handler only borrows its captures, which the enclosing
+    /// function drops after the handled body, so they are not included.
+    pub(crate) async fn scope_roots_in_drop_order(&self, scope_id: ScopeID) -> Vec<StackRoot> {
+        let mut roots =
+            self.function.declared_variables(scope_id).map(StackRoot::Variable).collect::<Vec<_>>();
+        roots.reverse();
+
+        if self.function.root_scope_id() == scope_id {
+            // REVIEW: this seems a bit wasteful, we have to allocate one big
+            // Vec just to partition it into two smaller Vecs. Can we
+            // individually query the iterator of parameters first and then
+            // the iterator of captures (if the function doesn't borrow its
+            // captures)?
+            let (captures, parameters): (Vec<_>, Vec<_>) = self
+                .root_stack_roots()
+                .await
+                .into_iter()
+                .partition(|root| matches!(root, StackRoot::Capture(_)));
+            roots.extend(parameters.into_iter().rev());
+            if !self.borrows_captures() {
+                roots.extend(captures.into_iter().rev());
+            }
+        }
+
+        roots
+    }
+
+    /// Returns whether `address` is rooted in a capture which this function
+    /// only borrows, so no value may be moved out of it.
+    ///
+    /// Operation handlers may run many times over one shared environment, so
+    /// every call must find its captures intact.
+    pub(crate) const fn is_borrowed_capture(&self, address: &Address) -> bool {
+        self.borrows_captures() && matches!(address.root(), AddressRoot::Capture(_))
+    }
+
+    /// Returns whether `load`, producing a value of type `ty`, moves out of
+    /// its place: a forced move always does, and an implicit load does unless
+    /// the value is `Copy`.
+    pub(crate) async fn load_moves(&mut self, load: &Load, ty: Interned<Ty>) -> bool {
+        match load.kind() {
+            LoadKind::Implicit => !self.type_is_copy(ty).await,
+            LoadKind::Move => true,
+        }
+    }
+
+    /// Returns whether the function borrows its captures rather than owning
+    /// them.
+    const fn borrows_captures(&self) -> bool {
+        match self.function.context() {
+            IRContext::OperationHandler(_) => true,
+            IRContext::Def | IRContext::Lambda(_) | IRContext::Thunk(_) => false,
+        }
+    }
+
+    pub(crate) const fn solver_mut(&mut self) -> &mut Solver { &mut self.solver }
+
+    pub(crate) const fn engine(&self) -> &rayc_qbice::TrackedEngine { self.solver.engine() }
 
     async fn type_is_copy(&mut self, ty: Interned<Ty>) -> bool {
         let marker_id = self.solver.engine().get_core_item(CoreItem::Copy).await;
@@ -289,14 +392,18 @@ impl DataflowProblem for StackStateProblem<'_> {
             Instruction::Expression(expression_id) => {
                 let expression = self.function.get_expression(*expression_id);
 
-                // Loads consume non-Copy places. Other expressions do not directly
-                // change stack initialization state.
-                if let IRExprKind::Load(load) = expression.kind() {
-                    let address = load.address().clone();
-                    let ty = expression.ty().clone();
-                    if !self.type_is_copy(ty).await {
-                        let _ = state.move_out(&address, point, self).await;
-                    }
+                // Loads consume non-Copy places, and forced moves consume any
+                // place. Other expressions do not directly change stack
+                // initialization state.
+                //
+                // Moving out of a borrowed capture is an error reported by the
+                // check, so the capture stays initialized to avoid cascading
+                // use-after-move errors.
+                if let IRExprKind::Load(load) = expression.kind()
+                    && self.load_moves(load, expression.ty().clone()).await
+                    && !self.is_borrowed_capture(load.address())
+                {
+                    let _ = state.move_out(load.address(), point, self).await;
                 }
             }
             Instruction::ExprDiscard(_) => {}

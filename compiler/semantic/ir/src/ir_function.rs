@@ -607,6 +607,10 @@ impl IRFunction {
         self.cfg.push_store(block_id, address, value);
     }
 
+    // REVIEW: using `BTreeMap` here is a bit arbitrary. I think let's create a new
+    // struct called `InstructionInsertion` that internally holds a `BTreeMap` and
+    // wraps the insertion logic. That way we don't have to expose the `BTreeMap`
+    // here
     pub fn insert_instructions_before(&mut self, insertions: BTreeMap<Point, Vec<Instruction>>) {
         self.cfg.insert_instructions_before(insertions);
     }

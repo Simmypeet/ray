@@ -185,6 +185,20 @@ impl PlaceState {
         }
     }
 
+    /// Returns the state of the immediate component selected by `projection`.
+    ///
+    /// A uniform state describes every component, so it is returned as is.
+    // REVIEW: Do we really need to clone here? Can it just be -> &Self?
+    pub(crate) fn component(&self, projection: Projection) -> Self {
+        match self {
+            Self::Uniform(state) => Self::Uniform(state.clone()),
+            Self::Partial(components) => components
+                .get(&projection)
+                .expect("the type-checked projection must exist in the place state")
+                .clone(),
+        }
+    }
+
     /// Visits every uninitialized leaf beneath this place.
     pub(crate) fn visit_uninitialized(&self, visitor: &mut impl FnMut(&MoveHistory)) {
         match self {

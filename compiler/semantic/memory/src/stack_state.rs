@@ -6,6 +6,7 @@ use rayc_ir::{
     ir_operation_handler::OperationHandlerParameterID,
     ir_variable::IRVariableID,
 };
+use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::ParameterID;
 
 use crate::{PlaceState, StackStateProblem};
@@ -38,6 +39,20 @@ impl StackRoot {
             AddressRoot::Error | AddressRoot::Deref(_) => None,
         }
     }
+
+    /// Returns the address of the whole stack allocation.
+    #[must_use]
+    pub fn to_address(self, engine: &TrackedEngine) -> Address {
+        match self {
+            Self::Variable(variable) => Address::new_variable(variable, engine),
+            Self::Parameter(parameter) => Address::new_parameter(parameter, engine),
+            Self::LambdaParameter(parameter) => Address::new_lambda_parameter(parameter, engine),
+            Self::OperationHandlerParameter(parameter) => {
+                Address::new_operation_handler_parameter(parameter, engine)
+            }
+            Self::Capture(capture) => Address::new_capture(capture, engine),
+        }
+    }
 }
 
 /// Initialization state of the stack allocations in one function.
@@ -64,6 +79,11 @@ impl StackSlots {
     }
 
     pub(crate) fn remove(&mut self, root: StackRoot) { self.states.remove(&root); }
+
+    /// Iterates over the live stack allocations in no particular order.
+    pub(crate) fn roots(&self) -> impl Iterator<Item = StackRoot> + '_ {
+        self.states.keys().copied()
+    }
 
     pub(crate) fn join_in_place(&mut self, incoming: &Self) -> bool {
         assert_eq!(

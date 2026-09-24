@@ -30,7 +30,7 @@ pub enum CallTarget {
         trait_def_id: GlobalSymbolID,
 
         /// The substitution containing all the type parameters of the
-        /// [`trait_def_id`].
+        /// [`trait_def_id`] (doesn't include its enclosing parent trait).
         trait_def_subst: Subst,
     },
 }
