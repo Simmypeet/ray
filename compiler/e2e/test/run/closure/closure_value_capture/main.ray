@@ -3,6 +3,7 @@ def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect
 
 def main() -> int32:
     let mut value = 32
-    let closure = () -> value
+    # `move` snapshots `value`, so the later assignment is not observed.
+    let closure = () -> move value
     value = 42
     return invoke(closure, ())

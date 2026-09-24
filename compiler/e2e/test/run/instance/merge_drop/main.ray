@@ -1,0 +1,46 @@
+extern def puts(message: cstr) -> c_int
+
+struct Logged:
+    message: cstr
+
+impl !core.Copy for Logged
+
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        puts(self.message)
+
+        # Consume `self` without dropping it again.
+        core.NoDrop { value = move self }
+
+def make(message: cstr) -> Logged:
+    return Logged { message = message }
+
+def consume(value: Logged):
+    puts("consume")
+
+# When the branch is not taken, `value` is dropped on the way to the merge so
+# that both paths agree it is gone afterwards.
+def branch(condition: bool):
+    let value = make("branch.value")
+    if condition:
+        consume(value)
+    puts("branch.end")
+
+# `value` is moved before the loop, so each value restored inside the loop is
+# dropped before the next iteration.
+def restore():
+    let mut value = make("restore.initial")
+    consume(value)
+
+    let mut count = 0
+    while count != 2:
+        count = count + 1
+        value = make("restore.loop")
+        puts("restore.iteration")
+    puts("restore.end")
+
+def main() -> int32:
+    branch(true)
+    branch(false)
+    restore()
+    return 0

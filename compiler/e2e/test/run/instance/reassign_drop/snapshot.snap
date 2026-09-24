@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+value.first
+reassigned
+consume
+value.second
+pair.first
+end
+pair.second
+pair.first.new
+value.third
+
+
+stderr:

@@ -1,0 +1,48 @@
+extern def puts(message: cstr) -> c_int
+
+struct Logged:
+    message: cstr
+
+impl !core.Copy for Logged
+
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        puts(self.message)
+
+        # Consume `self` without dropping it again.
+        core.NoDrop { value = move self }
+
+struct Pair:
+    first: Logged
+    second: Logged
+
+def make(message: cstr) -> Logged:
+    return Logged { message = message }
+
+def consume(value: Logged):
+    puts("consume")
+
+def identity(value: Logged) -> Logged:
+    return value
+
+def main() -> int32:
+    # Reassigning a live variable drops its previous value.
+    let mut value = make("value.first")
+    value = make("value.second")
+    puts("reassigned")
+
+    # A moved variable holds no value, so reassigning it drops nothing.
+    consume(value)
+    value = make("value.third")
+
+    # The new value is computed before the old one is dropped. Here it moves
+    # the old value out, so nothing is left to drop.
+    value = identity(value)
+
+    # Assigning a field drops only that field's previous value.
+    let mut pair = Pair { first = make("pair.first"), second = make("pair.second") }
+    pair.first = make("pair.first.new")
+
+    # The remaining values drop in reverse declaration order.
+    puts("end")
+    return 0

@@ -1,0 +1,24 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+consume
+branch.value
+branch.end
+branch.value
+branch.end
+consume
+restore.initial
+restore.iteration
+restore.loop
+restore.iteration
+restore.loop
+restore.end
+
+
+stderr:
