@@ -29,6 +29,9 @@ impl Let {
 
     #[must_use]
     pub const fn expression(&self) -> Option<TypedExprID> { self.expression }
+
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
