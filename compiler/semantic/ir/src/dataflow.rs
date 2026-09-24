@@ -199,9 +199,6 @@ pub async fn solve<P: DataflowProblem>(
 
     edges.sort_unstable();
 
-    let mut worklist = VecDeque::new();
-    let mut queued_blocks = FxHashSet::default();
-
     for block_id in cfg.boundary_block_ids(P::DIRECTION) {
         let boundary_facts = problem.boundary_facts(block_id).await?;
 
@@ -213,7 +210,23 @@ pub async fn solve<P: DataflowProblem>(
                 *block_exits.get_mut(&block_id).unwrap() = boundary_facts;
             }
         }
+    }
 
+    // Every reachable block is processed at least once, and afterwards only
+    // when its incoming facts change. Boundary facts are only where analysis
+    // facts enter the graph, not where processing starts: a block no path
+    // connects to a boundary, such as a loop without an exit in a backward
+    // problem, is still processed from bottom. Blocks are queued in the
+    // direction of the flow, so most blocks see the facts of their
+    // predecessors in the flow before they are first processed.
+    let mut worklist = VecDeque::new();
+    let mut queued_blocks = FxHashSet::default();
+    let mut seed_order = cfg.reverse_postorder();
+    match P::DIRECTION {
+        Direction::Forward => {}
+        Direction::Backward => seed_order.reverse(),
+    }
+    for block_id in seed_order {
         enqueue_block(&mut worklist, &mut queued_blocks, block_id);
     }
 

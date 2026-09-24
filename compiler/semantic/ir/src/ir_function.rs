@@ -288,8 +288,9 @@ impl IRFunctionMap {
         block_id: BlockID,
         address: Address,
         value: IRExprID,
+        span: RelativeSpan,
     ) {
-        self.get_function_mut(function_id).push_store(block_id, address, value);
+        self.get_function_mut(function_id).push_store(block_id, address, value, span);
     }
 
     /// Applies every instruction queued in `insertion` to `function_id`.
@@ -601,8 +602,14 @@ impl IRFunction {
         self.cfg.push_scope_pop_instruction(block_id, scope_id);
     }
 
-    pub fn push_store(&mut self, block_id: BlockID, address: Address, value: IRExprID) {
-        self.cfg.push_store(block_id, address, value);
+    pub fn push_store(
+        &mut self,
+        block_id: BlockID,
+        address: Address,
+        value: IRExprID,
+        span: RelativeSpan,
+    ) {
+        self.cfg.push_store(block_id, address, value, span);
     }
 
     /// Applies every instruction queued in `insertion`.

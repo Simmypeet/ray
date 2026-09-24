@@ -7,6 +7,7 @@ use bon::Builder;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_hash::{FxHashMap, FxHashSet};
+use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 
 use crate::{address::Address, dataflow::Direction, ir_expr::IRExprID, scope::ScopeID};
@@ -123,6 +124,10 @@ impl Block {
 pub struct Store {
     address: Address,
     expression: IRExprID,
+
+    /// The source construct performing the write, such as an assignment or a
+    /// `let` initializer.
+    span: RelativeSpan,
 }
 
 impl Store {
@@ -131,6 +136,9 @@ impl Store {
 
     #[must_use]
     pub const fn expression(&self) -> IRExprID { self.expression }
+
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
 /// Drops the unused value of an evaluated expression.
@@ -156,6 +164,14 @@ pub enum Instruction {
     /// Begins the lifetime of a lexical or temporary scope.
     ScopePush(ScopeID),
     /// Ends the lifetime of a lexical or temporary scope.
+    ///
+    /// This is the "storage dead" point of every variable declared in the
+    /// scope: drop elaboration drops the values still held there just before
+    /// it, and the storage itself is gone after it. A borrow of such a
+    /// variable which is still live here is therefore a "borrowed value does
+    /// not live long enough" error, or, for the temporaries of a temporary
+    /// scope, "temporary value dropped while borrowed". A borrow of the data
+    /// behind a pointer held in the variable does not end here.
     ScopePop(ScopeID),
     /// Defines and evaluates the identified expression exactly once.
     Expression(IRExprID),
@@ -446,10 +462,16 @@ impl Cfg {
         block.instructions.push(instruction);
     }
 
-    pub fn push_store(&mut self, block_id: BlockID, address: Address, expression: IRExprID) {
+    pub fn push_store(
+        &mut self,
+        block_id: BlockID,
+        address: Address,
+        expression: IRExprID,
+        span: RelativeSpan,
+    ) {
         let block = self.blocks.get_mut(block_id).expect("Block should exist");
         assert!(block.terminator.is_none(), "Cannot append an instruction to a sealed block");
-        block.instructions.push(Instruction::Store(Store { address, expression }));
+        block.instructions.push(Instruction::Store(Store { address, expression, span }));
     }
 
     /// Applies every instruction queued in `insertion`.
@@ -644,6 +666,46 @@ impl Cfg {
     #[must_use]
     pub fn traverse(&self) -> Traverser<'_> {
         Traverser { cfg: self, visited: FxHashSet::default(), stack: vec![self.entry_block] }
+    }
+
+    /// Returns the blocks reachable from the entry block in reverse postorder:
+    /// every block precedes its successors, except along back edges.
+    ///
+    /// The depth-first search visits the successors of a block in the order of
+    /// its terminator's jump targets.
+    #[must_use]
+    pub fn reverse_postorder(&self) -> Vec<BlockID> {
+        let mut visited = FxHashSet::default();
+        let mut postorder = Vec::new();
+
+        // Each frame holds a block and its successors not yet visited, stored
+        // reversed so the next one is popped from the end.
+        visited.insert(self.entry_block);
+        let mut stack = vec![(self.entry_block, self.successors_reversed(self.entry_block))];
+        while let Some((block_id, successors)) = stack.last_mut() {
+            if let Some(successor) = successors.pop() {
+                if visited.insert(successor) {
+                    let successors = self.successors_reversed(successor);
+                    stack.push((successor, successors));
+                }
+            } else {
+                postorder.push(*block_id);
+                stack.pop();
+            }
+        }
+
+        postorder.reverse();
+        postorder
+    }
+
+    fn successors_reversed(&self, block_id: BlockID) -> Vec<BlockID> {
+        let mut successors = self
+            .terminator(block_id)
+            .into_iter()
+            .flat_map(Terminator::jump_targets)
+            .collect::<Vec<_>>();
+        successors.reverse();
+        successors
     }
 
     /// Calculates the blocks and expression instructions reachable from the
