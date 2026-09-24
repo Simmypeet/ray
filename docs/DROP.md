@@ -35,7 +35,8 @@ def passPolyVar(value: a) given (dropDict: Drop[a]):
 
 In this sense Ray values behave a little like linear values: every value is
 consumed exactly once, either explicitly (by moving it somewhere) or implicitly
-(by the compiler inserting a `Drop.drop` call).
+(by the compiler inserting a `Drop.drop` call). Linear structs (see below)
+remove the implicit option.
 
 A value that is only ever moved needs no dictionary. `def identity(value: a) ->
 a: return value` compiles as is, because `value` is moved out by the `return`.
@@ -60,6 +61,53 @@ Because `Copy` is derived structurally, a struct whose fields are all `Copy`
 (such as a wrapper around a `cstr`) is `Copy` even when it has a user-written
 `Drop` instance. Reading such a value copies it, and each copy is dropped.
 Use `move` to transfer the value instead of copying it.
+
+# Linear Structs
+
+A struct declared with the `@linear` attribute has no `Drop` instance at all.
+Its values can never be dropped implicitly, so every value must be consumed
+exactly once by moving it somewhere:
+
+```
+@linear
+struct Handle:
+    fd: int32
+
+def close(handle: Handle):
+    # ... release the resource ...
+
+    # Consume `handle` without dropping it.
+    core.NoDrop { value = move handle }
+
+def main() -> int32:
+    let handle = open()
+    close(handle)       # without this call: error: no implicit instance found
+    return 0
+```
+
+The usual way to consume a linear value is a destruction function like
+`close`, which ends by moving the value into `core.NoDrop`. `core.NoDrop[t]`
+has a no-op `Drop` for every `t`, including linear types.
+
+The rules are:
+
+- **No `Drop` instance.** A linear struct has no generated `Drop`, and
+  declaring one by hand is an error:
+  `cannot implement Drop for the linear struct`.
+- **Never `Copy`.** A linear struct is not `Copy`, even when all of its fields
+  are. Reading it always moves it, so it cannot be consumed twice.
+- **Containment.** A struct with a field of a linear type gets no generated
+  `Drop` either, and is not `Copy`. It may still declare a `Drop` instance by
+  hand, as long as that instance consumes the linear fields itself. The same
+  applies to tuples, closures, and generic structs instantiated with a linear
+  type, such as `Wrapper[Handle]`: they have no `Drop` dictionary.
+
+Everywhere the compiler would insert a drop (see "When Drop Is Invoked"), a
+linear value that is still alive is therefore reported as a missing `Drop`
+dictionary, with a note that the type is linear.
+
+Attributes are written on their own line directly above the `struct` keyword.
+`@linear` is the only attribute; an unknown or repeated attribute is an error.
 
 # Moving Out Explicitly: `move <expr>`
 
@@ -397,6 +445,19 @@ passes involved.
   `ConstraintSolver`, which answers under the substitution solved so far: an
   undetermined numeric type counts as `Copy`, and any other undetermined type
   does not.
+
+- `@linear` is an `Attribute` on `Struct` in `rayc_syntax`. The symbol table
+  records it (`is_linear_struct`) and reports unknown or repeated attributes.
+- A linear struct's Drop plan is `DropPlan::Linear`, and a generated plan that
+  meets a linear field fails with `DropPlanError::LinearField`
+  (`semantic_element_impl/src/drop_plan.rs`). The solver resolves no
+  dictionary for either. A user-written `Drop` instance for a linear struct is
+  rejected in `semantic_element_impl/src/instance_trait_ref.rs`.
+- Marker entailment never proves `Copy` for a linear struct
+  (`solver/src/solver/marker_entailment.rs`); structs that contain one follow
+  from the structural rule.
+- `drop_plan::linear_drop_help` adds the linearity note to missing-`Drop`
+  diagnostics.
 
 ## IR
 
