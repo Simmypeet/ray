@@ -1,0 +1,34 @@
+def consume(pointer: *mut int32) -> ():
+    return ()
+
+def load() -> int32:
+    let pointer: *int32
+
+    # ERROR: reading through `pointer` reads `pointer` itself.
+    return pointer.*
+
+def store() -> ():
+    let pointer: *mut int32
+
+    # ERROR: writing through `pointer` reads `pointer`, and does not
+    # initialize it.
+    pointer.* = 1
+    pointer.* = 2
+    return ()
+
+def borrow() -> ():
+    let pointer: *mut int32
+
+    # ERROR: borrowing through `pointer` reads `pointer`.
+    let inner = pointer.*.&mut
+    return ()
+
+def moved(mut value: int32) -> int32:
+    let pointer = value.&mut
+    consume(move pointer)
+
+    # ERROR: `pointer` was moved out.
+    return pointer.*
+
+def main() -> ():
+    return ()

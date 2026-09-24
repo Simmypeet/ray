@@ -1,64 +1,33 @@
 use rayc_hash::FxHashMap;
 use rayc_ir::{
-    address::{Address, AddressRoot, Projection},
+    address::{Address, Local, Projection},
     cfg::Point,
-    ir_lambda::{CaptureID, LambdaParameterID},
-    ir_operation_handler::OperationHandlerParameterID,
-    ir_variable::IRVariableID,
 };
-use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::parameter::ParameterID;
 
 use crate::{PlaceState, StackStateProblem};
 
-/// A stack allocation tracked by the memory checker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum StackRoot {
-    Variable(IRVariableID),
-    Parameter(ParameterID),
-    LambdaParameter(LambdaParameterID),
-    OperationHandlerParameter(OperationHandlerParameterID),
-    Capture(CaptureID),
-}
-
-impl StackRoot {
-    /// Converts an IR address root into a tracked stack allocation.
-    ///
-    /// Error and dereference roots do not identify storage owned directly by
-    /// the current stack frame and are therefore not tracked by this model.
-    #[must_use]
-    pub const fn from_address_root(root: AddressRoot) -> Option<Self> {
-        match root {
-            AddressRoot::Variable(variable) => Some(Self::Variable(variable)),
-            AddressRoot::Parameter(parameter) => Some(Self::Parameter(parameter)),
-            AddressRoot::LambdaParameter(parameter) => Some(Self::LambdaParameter(parameter)),
-            AddressRoot::OperationHandlerParameter(parameter) => {
-                Some(Self::OperationHandlerParameter(parameter))
-            }
-            AddressRoot::Capture(capture) => Some(Self::Capture(capture)),
-            AddressRoot::Error | AddressRoot::Deref(_) => None,
-        }
+/// Returns the local whose place `address` selects, or `None` when the
+/// address is not tracked by the memory checker.
+///
+/// Error addresses name no storage. Addresses behind a dereference name memory
+/// the pointer refers to, which the current stack frame does not own, so
+/// tracking stops at the first dereference: the pointer itself is tracked
+/// through [`Address::deref_base`], but nothing beyond it is.
+///
+/// REVIEW: should this be a method on `Address` instead?
+#[must_use]
+pub(crate) fn tracked_local(address: &Address) -> Option<Local> {
+    if address.is_behind_deref() {
+        return None;
     }
 
-    /// Returns the address of the whole stack allocation.
-    #[must_use]
-    pub fn to_address(self, engine: &TrackedEngine) -> Address {
-        match self {
-            Self::Variable(variable) => Address::new_variable(variable, engine),
-            Self::Parameter(parameter) => Address::new_parameter(parameter, engine),
-            Self::LambdaParameter(parameter) => Address::new_lambda_parameter(parameter, engine),
-            Self::OperationHandlerParameter(parameter) => {
-                Address::new_operation_handler_parameter(parameter, engine)
-            }
-            Self::Capture(capture) => Address::new_capture(capture, engine),
-        }
-    }
+    address.local()
 }
 
 /// Initialization state of the stack allocations in one function.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StackSlots {
-    states: FxHashMap<StackRoot, PlaceState>,
+    states: FxHashMap<Local, PlaceState>,
 }
 
 impl StackSlots {
@@ -66,19 +35,19 @@ impl StackSlots {
     pub fn new() -> Self { Self::default() }
 
     /// Inserts or replaces the state of a stack allocation.
-    pub fn set(&mut self, root: StackRoot, state: PlaceState) {
+    pub fn set(&mut self, root: Local, state: PlaceState) {
         let _ = self.states.insert(root, state);
     }
 
     /// Returns the state of a stack allocation.
     #[must_use]
-    pub fn state(&self, root: StackRoot) -> Option<&PlaceState> { self.states.get(&root) }
+    pub fn state(&self, root: Local) -> Option<&PlaceState> { self.states.get(&root) }
 
-    pub(crate) fn state_mut(&mut self, root: StackRoot) -> Option<&mut PlaceState> {
+    pub(crate) fn state_mut(&mut self, root: Local) -> Option<&mut PlaceState> {
         self.states.get_mut(&root)
     }
 
-    pub(crate) fn remove(&mut self, root: StackRoot) { self.states.remove(&root); }
+    pub(crate) fn remove(&mut self, root: Local) { self.states.remove(&root); }
 
     pub(crate) fn join_in_place(&mut self, incoming: &Self) -> bool {
         assert_eq!(
@@ -132,7 +101,7 @@ impl StackState {
         point: Point,
         dataflow_problem_ctx: &StackStateProblem<'_>,
     ) -> bool {
-        let Some(root) = StackRoot::from_address_root(address.root()) else {
+        let Some(root) = tracked_local(address) else {
             return false;
         };
 
@@ -145,7 +114,7 @@ impl StackState {
     /// uniform state because it describes every descendant of that place.
     #[must_use]
     pub fn place_state(&self, address: &Address) -> Option<&PlaceState> {
-        let root = StackRoot::from_address_root(address.root())?;
+        let root = tracked_local(address)?;
         let Self::Reachable(slots) = self else {
             return None;
         };
@@ -171,7 +140,7 @@ impl StackState {
     /// [`Address`] into its stack root and projections.
     pub async fn move_place(
         &mut self,
-        root: StackRoot,
+        root: Local,
         projections: &[Projection],
         point: Point,
         dataflow_problem_ctx: &StackStateProblem<'_>,
@@ -194,7 +163,7 @@ impl StackState {
         address: &Address,
         dataflow_problem_ctx: &StackStateProblem<'_>,
     ) -> bool {
-        let Some(root) = StackRoot::from_address_root(address.root()) else {
+        let Some(root) = tracked_local(address) else {
             return false;
         };
 
@@ -207,7 +176,7 @@ impl StackState {
     /// [`Address`] into its stack root and projections.
     pub async fn restore_place(
         &mut self,
-        root: StackRoot,
+        root: Local,
         projections: &[Projection],
         dataflow_problem_ctx: &StackStateProblem<'_>,
     ) -> bool {

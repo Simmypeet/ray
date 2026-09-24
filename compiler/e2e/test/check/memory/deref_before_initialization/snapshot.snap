@@ -1,0 +1,43 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: use of value before initialization
+  ╭▸ compiler/e2e/test/check/memory/deref_before_initialization/main.ray:8:12
+  │
+8 │     return pointer.*
+  ╰╴           ━━━━━━━━━ value may be uninitialized here
+
+[error]: use of value before initialization
+   ╭▸ compiler/e2e/test/check/memory/deref_before_initialization/main.ray:15:5
+   │
+15 │     pointer.* = 1
+   ╰╴    ━━━━━━━━━━━━━ value may be uninitialized here
+
+[error]: use of value before initialization
+   ╭▸ compiler/e2e/test/check/memory/deref_before_initialization/main.ray:16:5
+   │
+16 │     pointer.* = 2
+   ╰╴    ━━━━━━━━━━━━━ value may be uninitialized here
+
+[error]: use of value before initialization
+   ╭▸ compiler/e2e/test/check/memory/deref_before_initialization/main.ray:23:17
+   │
+23 │     let inner = pointer.*.&mut
+   ╰╴                ━━━━━━━━━━━━━━ value may be uninitialized here
+
+[error]: use of moved value
+   ╭▸ compiler/e2e/test/check/memory/deref_before_initialization/main.ray:31:12
+   │
+28 │     consume(move pointer)
+   │             ──────────── value moved here
+   ‡
+31 │     return pointer.*
+   ╰╴           ━━━━━━━━━ value used here after it was moved
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

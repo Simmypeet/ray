@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use qbice::storage::intern::Interned;
 use rayc_arena::ID;
 use rayc_ir::{
-    address::{Address, Projection},
+    address::{Address, Local, Projection},
     cfg::{Block, Instruction, Point},
     dataflow::{DataflowProblem, JoinLattice},
     ir_expr::{IRExpr, load::Load},
@@ -32,7 +32,7 @@ use rayc_type::{
     where_clause::{AssociatedTypeEquality, PredicateKind},
 };
 
-use super::{PlaceState, PossibleStates, StackRoot, StackState, StackStateProblem};
+use super::{PlaceState, PossibleStates, StackState, StackStateProblem};
 
 fn point(instruction_idx: usize) -> Point {
     Point::builder().block_id(ID::<Block>::new(0)).instruction_idx(instruction_idx).build()
@@ -51,12 +51,12 @@ fn nested_tuple_type(engine: &TrackedEngine) -> Interned<Ty> {
     Ty::new_tuple(engine.intern_unsized([nested, leaf]), engine)
 }
 
-fn function_with_variable(ty: Interned<Ty>) -> (IRFunctionMap, FunctionID, StackRoot) {
+fn function_with_variable(ty: Interned<Ty>) -> (IRFunctionMap, FunctionID, Local) {
     let mut functions = IRFunctionMap::new(ty.clone());
     let function_id = functions.root_id();
     let scope_id = functions.root_scope_id(function_id);
     let variable_id = functions.create_variable_in_scope(function_id, scope_id, ty, test_span());
-    (functions, function_id, StackRoot::Variable(variable_id))
+    (functions, function_id, Local::Variable(variable_id))
 }
 
 fn stack_state_problem(
@@ -219,8 +219,8 @@ async fn root_scope_push_initializes_parameters_but_not_variables() {
         .insert_lambda_parameter(function_id, LambdaParameter::new(ty.clone(), test_span()));
     let root_scope = functions.root_scope_id(function_id);
     let variable_id = functions.create_variable_in_scope(function_id, root_scope, ty, test_span());
-    let variable = StackRoot::Variable(variable_id);
-    let parameter = StackRoot::LambdaParameter(parameter_id);
+    let variable = Local::Variable(variable_id);
+    let parameter = Local::LambdaParameter(parameter_id);
     let mut problem =
         stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
 
@@ -248,8 +248,8 @@ async fn scope_pop_removes_local_and_function_input_slots() {
         .insert_lambda_parameter(function_id, LambdaParameter::new(ty.clone(), test_span()));
     let root_scope = functions.root_scope_id(function_id);
     let variable_id = functions.create_variable_in_scope(function_id, root_scope, ty, test_span());
-    let variable = StackRoot::Variable(variable_id);
-    let parameter = StackRoot::LambdaParameter(parameter_id);
+    let variable = Local::Variable(variable_id);
+    let parameter = Local::LambdaParameter(parameter_id);
     let mut problem =
         stack_state_problem(Solver::without_givens(engine.clone()), &functions, function_id);
     let mut state = StackState::reachable();
@@ -277,7 +277,7 @@ async fn load_moves_a_non_copy_place() {
     let ty = Ty::new_error(TyKind::Star, &engine);
     let site = TargetID::TEST.make_global(SymbolID::from_u128(2));
     let (mut functions, function_id, root) = function_with_variable(ty.clone());
-    let StackRoot::Variable(variable_id) = root else {
+    let Local::Variable(variable_id) = root else {
         unreachable!();
     };
     let address = Address::new_variable(variable_id, &engine);
@@ -309,7 +309,7 @@ async fn load_preserves_a_copy_place() {
     let ty = leaf_type(&engine);
     let site = TargetID::TEST.make_global(SymbolID::from_u128(2));
     let (mut functions, function_id, root) = function_with_variable(ty.clone());
-    let StackRoot::Variable(variable_id) = root else {
+    let Local::Variable(variable_id) = root else {
         unreachable!();
     };
     let address = Address::new_variable(variable_id, &engine);
@@ -339,7 +339,7 @@ async fn store_restores_a_place() {
     let engine = create_minimal_engine().await;
     let ty = leaf_type(&engine);
     let (mut functions, function_id, root) = function_with_variable(ty);
-    let StackRoot::Variable(variable_id) = root else {
+    let Local::Variable(variable_id) = root else {
         unreachable!();
     };
     let block_id = functions.entry_block(function_id);
@@ -348,6 +348,7 @@ async fn store_restores_a_place() {
         block_id,
         Address::new_variable(variable_id, &engine),
         ID::<IRExpr>::new(0),
+        test_span(),
     );
     let instruction = functions.get_function(function_id).block_instructions(block_id)[0].clone();
     let mut problem =

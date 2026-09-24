@@ -12,7 +12,7 @@ pub use analysis::analyze;
 pub use diagnostic::Diagnostic;
 pub use place_state::{MoveHistory, PlaceState, PossibleStates};
 pub use problem::StackStateProblem;
-pub use stack_state::{StackRoot, StackSlots, StackState};
+pub use stack_state::{StackSlots, StackState};
 
 #[cfg(test)]
 mod tests;

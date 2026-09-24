@@ -27,7 +27,6 @@ impl Builder<'_> {
                 self.operation_parameter_place(parameter)
             }
             AddressRoot::Capture(capture) => self.capture_place(capture),
-            AddressRoot::Deref(expression) => self.expression_place(expression).dereference(),
         };
         for projection in address.projections() {
             match projection {
@@ -37,6 +36,9 @@ impl Builder<'_> {
                 }
                 IRProjection::Field(id) => {
                     place = place.project_struct_field(*id);
+                }
+                IRProjection::RawDeref => {
+                    place = place.dereference();
                 }
             }
         }

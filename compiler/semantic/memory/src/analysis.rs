@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use rayc_ir::{
+    address::Address,
     cfg::{Instruction, Point},
     dataflow::DataflowProblem,
     ir_expr::IRExprKind,
@@ -11,11 +12,12 @@ use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
-    Diagnostic, PlaceState, PossibleStates, StackRoot, StackStateProblem,
+    Diagnostic, PlaceState, PossibleStates, StackState, StackStateProblem,
     diagnostic::{
         MoveOutOfHandlerCapture, UseAfterMove, UseAfterPartialMove, UseBeforeInitialization,
     },
     drop_elaboration::DropElaborator,
+    stack_state::tracked_local,
 };
 
 /// Checks every reachable load and drops every stack value that would
@@ -94,23 +96,24 @@ async fn analyze_function(
                     let expression = function.get_expression(*expression_id);
                     match expression.kind() {
                         IRExprKind::Load(load) => {
-                            if let Some(place_state) = state.place_state(load.address())
-                                && !place_state.is_initialized()
-                            {
-                                diagnostics_for_load(
-                                    expression.span(),
-                                    place_state,
-                                    function,
-                                    diagnostics,
-                                );
-                            }
+                            // A load through a dereference reads the pointer
+                            // it dereferences, without moving it.
+                            let read = load
+                                .address()
+                                .deref_base(engine)
+                                .unwrap_or_else(|| load.address().clone());
+                            check_read(expression.span(), &read, &state, function, diagnostics);
 
                             // A borrowed capture is shared by every call, so
                             // nothing may be moved out of it, even briefly.
+                            //
+                            // REVIEW: Is this a bug? it should've covered the
+                            // "fields/projections" of a capture too, not just
+                            // the root capture itself.
                             if problem.is_borrowed_capture(load.address())
                                 && problem.load_moves(load, expression.ty().clone()).await
                             {
-                                let root = StackRoot::from_address_root(load.address().root())
+                                let root = tracked_local(load.address())
                                     .expect("a capture is a stack root");
                                 let capture_span = problem.binding_span(root).await;
                                 diagnostics.push(
@@ -120,11 +123,18 @@ async fn analyze_function(
                             }
                         }
 
+                        // Borrowing a place behind a dereference reads the
+                        // pointer it dereferences.
+                        IRExprKind::RefOf(ref_of) => {
+                            if let Some(base) = ref_of.address().deref_base(engine) {
+                                check_read(expression.span(), &base, &state, function, diagnostics);
+                            }
+                        }
+
                         IRExprKind::Error
                         | IRExprKind::Literal(_)
                         | IRExprKind::Binary(_)
                         | IRExprKind::Call(_)
-                        | IRExprKind::RefOf(_)
                         | IRExprKind::Phi(_)
                         | IRExprKind::Perform(_)
                         | IRExprKind::Tuple(_)
@@ -145,7 +155,14 @@ async fn analyze_function(
                 // The previous value of a reassigned place is dropped after
                 // the new value is computed, just before it is stored. A new
                 // value which moved the old one out leaves nothing to drop.
+                //
+                // A store through a dereference writes memory the frame does
+                // not own. It drops nothing, and only reads the pointer.
                 Instruction::Store(store) => {
+                    if let Some(base) = store.address().deref_base(engine) {
+                        check_read(store.span(), &base, &state, function, diagnostics);
+                    }
+
                     let ty = function.get_expression(store.expression()).ty().clone();
                     elaborator
                         .reassignment_drops(
@@ -177,6 +194,22 @@ async fn analyze_function(
         };
 
         elaborator.merge_drops(*edge, exit, entry, &drop_order, &mut problem, diagnostics).await;
+    }
+}
+
+/// Reports a read at `span` of the place `address` when that place may be
+/// uninitialized in `state`. Untracked places are never reported.
+fn check_read(
+    span: rayc_lexical::tree::RelativeSpan,
+    address: &Address,
+    state: &StackState,
+    function: &rayc_ir::ir_function::IRFunction,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if let Some(place_state) = state.place_state(address)
+        && !place_state.is_initialized()
+    {
+        diagnostics_for_load(span, place_state, function, diagnostics);
     }
 }
 
