@@ -5,7 +5,7 @@ use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::Address,
     cfg::{BlockID, Terminator},
-    ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load},
+    ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load, tuple::Tuple},
     ir_function::{FunctionID as IrFunctionID, IRFunctionMap},
     ir_lambda::{
         Capture, CaptureID, CaptureMapID, LambdaParameter as IrLambdaParameter, LambdaParameterID,
@@ -18,6 +18,8 @@ use rayc_ir::{
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_solver::Solver;
+use rayc_symbol::GlobalSymbolID;
 use rayc_type::{capture::CaptureMode, ty::Ty};
 use rayc_typed_ast::{
     capture_plan::FunctionCapturePlan, name_binding::Source, typed_function::TypedFunctionID,
@@ -29,8 +31,10 @@ use rayc_typed_ast::{
 use self::scope_tracker::ScopeTracker;
 use super::Builder;
 use crate::{
-    builder::function_build_state::scope_tracker::ScopeKind, context::LoweringContext,
-    diagnostic::NotAllPathsReturnValue, statement::LoopTarget,
+    builder::function_build_state::scope_tracker::ScopeKind,
+    context::LoweringContext,
+    diagnostic::{Diagnostic, NotAllPathsReturnValue},
+    statement::LoopTarget,
 };
 
 pub mod scope_tracker;
@@ -301,8 +305,9 @@ impl Builder {
         );
     }
 
-    pub fn new(
+    pub async fn new(
         engine: TrackedEngine,
+        def_id: GlobalSymbolID,
         context: &LoweringContext<'_>,
         return_ty: Interned<Ty>,
         diagnostic_span: Option<RelativeSpan>,
@@ -312,6 +317,7 @@ impl Builder {
             FunctionBuildState::new_def(context, &mut ir_functions, return_ty, diagnostic_span);
 
         Self {
+            solver: Solver::new(engine.clone(), def_id).await,
             engine,
             ir_functions,
             building_function,
@@ -320,11 +326,11 @@ impl Builder {
         }
     }
 
-    pub fn lower(
+    pub async fn lower(
         mut self,
         context: &LoweringContext<'_>,
-    ) -> (IRFunctionMap, Vec<NotAllPathsReturnValue>) {
-        self.lower_current_function(context);
+    ) -> (IRFunctionMap, Vec<Diagnostic>) {
+        self.lower_current_function(context).await;
         assert!(
             self.suspended_functions.is_empty(),
             "all suspended IR functions should be restored before finishing lowering"
@@ -337,7 +343,7 @@ impl Builder {
         (self.ir_functions, self.diagnostics)
     }
 
-    pub fn lower_lambda_function(
+    pub async fn lower_lambda_function(
         &mut self,
         context: &LoweringContext<'_>,
         typed_function_id: TypedFunctionID,
@@ -346,11 +352,11 @@ impl Builder {
     ) -> IrFunctionID {
         let lambda_context = context.for_function(typed_function_id);
         self.start_lambda(&lambda_context, return_ty, diagnostic_span);
-        self.lower_current_function(&lambda_context);
+        self.lower_current_function(&lambda_context).await;
         self.finish_lambda()
     }
 
-    pub fn lower_thunk_function(
+    pub async fn lower_thunk_function(
         &mut self,
         context: &LoweringContext<'_>,
         typed_function_id: TypedFunctionID,
@@ -358,11 +364,11 @@ impl Builder {
     ) -> IrFunctionID {
         let thunk_context = context.for_function(typed_function_id);
         self.start_thunk(&thunk_context, diagnostic_span);
-        self.lower_current_function(&thunk_context);
+        self.lower_current_function(&thunk_context).await;
         self.finish_nested_function()
     }
 
-    pub fn lower_operation_handler_function(
+    pub async fn lower_operation_handler_function(
         &mut self,
         context: &LoweringContext<'_>,
         typed_function_id: TypedFunctionID,
@@ -372,7 +378,7 @@ impl Builder {
     ) -> IrFunctionID {
         let handler_context = context.for_function(typed_function_id);
         self.start_operation_handler(&handler_context, diagnostic_span, capture_map, captures);
-        self.lower_current_function(&handler_context);
+        self.lower_current_function(&handler_context).await;
         self.finish_nested_function()
     }
 
@@ -387,8 +393,8 @@ impl Builder {
         )
     }
 
-    fn lower_current_function(&mut self, context: &LoweringContext<'_>) {
-        self.lower_statements(context);
+    async fn lower_current_function(&mut self, context: &LoweringContext<'_>) {
+        self.lower_statements(context).await;
         self.finish_current_function();
     }
 
@@ -454,9 +460,12 @@ impl Builder {
             .map(|(_, requirement)| {
                 let address = self.source_address(requirement.source());
                 let (kind, ty) = match requirement.mode() {
-                    CaptureMode::Value => {
-                        (IRExprKind::Load(Load::new(address)), requirement.binding_ty().clone())
-                    }
+                    // A capture moved inside the nested function must leave
+                    // the enclosing function even when it is `Copy`.
+                    CaptureMode::Value(kind) => (
+                        IRExprKind::Load(Load::with_kind(address, kind)),
+                        requirement.binding_ty().clone(),
+                    ),
                     CaptureMode::Reference(mutability) => (
                         IRExprKind::RefOf(rayc_ir::ir_expr::ref_of::RefOf::new(address)),
                         self.pointer_ty(requirement.binding_ty().clone(), mutability),
@@ -479,7 +488,7 @@ impl Builder {
         if !self.building_function.return_ty.is_unit_type()
             && let Some(span) = self.building_function.diagnostic_span
         {
-            self.diagnostics.push(NotAllPathsReturnValue::builder().span(span).build());
+            self.diagnostics.push(NotAllPathsReturnValue::builder().span(span).build().into());
         }
 
         // Every implicit return closes the function root scope first.
@@ -501,6 +510,11 @@ impl Builder {
             expression_id,
         );
         expression_id
+    }
+
+    /// Emits the unit value `()` of type `ty`.
+    pub(crate) fn emit_unit(&mut self, span: RelativeSpan, ty: Interned<Ty>) -> IRExprID {
+        self.emit_expression(IRExpr::new(IRExprKind::Tuple(Tuple::new(Vec::new())), span, ty))
     }
 
     pub fn emit_expr_discard(&mut self, expression: IRExprID, drop_instance: Interned<Ty>) {
@@ -627,7 +641,7 @@ impl Builder {
 
         // Value captures are already stored directly in the environment.
         let mutability = match mode {
-            CaptureMode::Value => return self.capture_address(capture_id),
+            CaptureMode::Value(_) => return self.capture_address(capture_id),
             CaptureMode::Reference(mutability) => mutability,
         };
         let ty = self.pointer_ty(captured_ty, mutability);

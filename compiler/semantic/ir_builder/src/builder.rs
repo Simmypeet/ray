@@ -7,21 +7,28 @@ use rayc_ir::{
     ir_operation_handler::OperationHandlerParameterID,
     ir_variable::IRVariableID,
 };
+use rayc_memory::drop_resolution::resolve_drop_instance;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{parameter::ParameterID, struct_body::FieldID};
-use rayc_type::ty::{Mutability, Ty, application::ClosureID};
+use rayc_solver::Solver;
+use rayc_type::ty::{Mutability, Ty, TyKind, application::ClosureID};
+use rayc_typed_ast::typed_function::TypedFunctionID;
 
 use self::function_build_state::FunctionBuildState;
-use crate::{diagnostic::NotAllPathsReturnValue, statement::LoopTarget};
+use crate::{context::LoweringContext, diagnostic::Diagnostic, statement::LoopTarget};
 
 pub mod function_build_state;
 
 pub(crate) struct Builder {
     engine: TrackedEngine,
+
+    /// Resolves the dictionaries the IR selects, in the environment of the
+    /// definition being lowered.
+    solver: Solver,
     ir_functions: IRFunctionMap,
     building_function: FunctionBuildState,
     suspended_functions: Vec<FunctionBuildState>,
-    diagnostics: Vec<NotAllPathsReturnValue>,
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl Builder {
@@ -79,5 +86,39 @@ impl Builder {
 
     pub fn project_field(&self, address: &mut Address, field_id: FieldID) {
         address.add_field(field_id, &self.engine);
+    }
+}
+
+impl Builder {
+    /// Resolves the `Drop` dictionary of each capture shared by the operation
+    /// handler `handler`, in capture-layout order.
+    ///
+    /// The handlers only borrow their shared captures, so the function running
+    /// the `run … with` drops them once the handled body returns. A borrowed
+    /// capture is stored as a pointer, whose dictionary is a no-op. A capture
+    /// without a usable dictionary is reported at the captured binding and
+    /// gets an error dictionary.
+    pub(crate) async fn handler_capture_drops(
+        &mut self,
+        context: &LoweringContext<'_>,
+        handler: TypedFunctionID,
+    ) -> Vec<Interned<Ty>> {
+        let mut drops = Vec::new();
+        for (_, requirement) in context.capture_plan(handler).captures() {
+            let ty = requirement.storage_ty(&self.engine);
+            let drop_instance = match resolve_drop_instance(&mut self.solver, ty).await {
+                Ok(drop_instance) => drop_instance,
+                Err(failures) => {
+                    self.diagnostics.extend(
+                        failures
+                            .into_iter()
+                            .map(|failure| failure.into_diagnostic(requirement.span()).into()),
+                    );
+                    Ty::new_error(TyKind::Instance, &self.engine)
+                }
+            };
+            drops.push(drop_instance);
+        }
+        drops
     }
 }

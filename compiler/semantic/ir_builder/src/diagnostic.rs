@@ -1,4 +1,5 @@
 use bon::Builder;
+use derive_more::From;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
@@ -34,5 +35,23 @@ impl Report for NotAllPathsReturnValue {
                     .build(),
             )
             .build()
+    }
+}
+
+/// A diagnostic found while building the IR of a definition.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable, From,
+)]
+pub enum Diagnostic {
+    NotAllPathsReturnValue(NotAllPathsReturnValue),
+    Memory(rayc_memory::Diagnostic),
+}
+
+impl Report for Diagnostic {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        match self {
+            Self::NotAllPathsReturnValue(diagnostic) => diagnostic.report(engine).await,
+            Self::Memory(diagnostic) => diagnostic.report(engine).await,
+        }
     }
 }

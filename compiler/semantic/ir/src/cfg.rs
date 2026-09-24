@@ -1,5 +1,5 @@
 use std::{
-    collections::{VecDeque, hash_set},
+    collections::{BTreeMap, VecDeque, hash_set},
     ops::Index,
 };
 
@@ -416,6 +416,28 @@ impl Cfg {
         block.instructions.push(Instruction::Store(Store { address, expression }));
     }
 
+    /// Inserts each instruction sequence immediately before the instruction
+    /// currently at its point.
+    ///
+    /// Every point refers to the block layout before any insertion, so callers
+    /// can collect insertions while replaying an analysis of that layout.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a point names a missing block or lies past the end of it.
+    pub fn insert_instructions_before(&mut self, insertions: BTreeMap<Point, Vec<Instruction>>) {
+        // Insert from the last point backward so the remaining points still
+        // index the original layout of their block.
+        for (point, instructions) in insertions.into_iter().rev() {
+            let block = self.blocks.get_mut(point.block_id).expect("Block should exist");
+            assert!(
+                point.instruction_idx <= block.instructions.len(),
+                "insertion point is past the end of its block"
+            );
+            block.instructions.splice(point.instruction_idx..point.instruction_idx, instructions);
+        }
+    }
+
     pub fn set_terminator(&mut self, block_id: BlockID, terminator: Terminator) {
         // set the predecessors of the successor blocks to include this block
         match &terminator {
@@ -467,12 +489,22 @@ impl Cfg {
         // predecessor-block counts, are used above because both arms of a
         // conditional may target the same block.
         for edge in critical_edges.iter().copied() {
-            let split_block = self.create_block();
-            self.set_terminator(split_block, Terminator::Jump(edge.target));
-            self.redirect_edge(edge, split_block);
+            let _ = self.split_edge(edge);
         }
 
         critical_edges.len()
+    }
+
+    /// Redirects `edge` through a new empty block that unconditionally jumps
+    /// to the original target, and returns the new block.
+    ///
+    /// Instructions placed in the new block run only when control follows
+    /// this edge.
+    pub fn split_edge(&mut self, edge: ControlFlowEdge) -> BlockID {
+        let split_block = self.create_block();
+        self.set_terminator(split_block, Terminator::Jump(edge.target));
+        self.redirect_edge(edge, split_block);
+        split_block
     }
 
     fn redirect_edge(&mut self, edge: ControlFlowEdge, new_target: BlockID) {

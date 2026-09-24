@@ -14,12 +14,12 @@ use rayc_symbol::{
 use rayc_target::{TargetID, get_ir_verification};
 use rayc_typed_ast::get_typed_ast;
 
-use crate::{diagnostic::NotAllPathsReturnValue, lower_function};
+use crate::{diagnostic::Diagnostic, lower_function};
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
 )]
-#[value((Interned<IRFunctionMap>, Interned<[NotAllPathsReturnValue]>))]
+#[value((Interned<IRFunctionMap>, Interned<[Diagnostic]>))]
 pub struct BuildIR {
     pub def_id: rayc_symbol::GlobalSymbolID,
 }
@@ -28,7 +28,7 @@ pub struct BuildIR {
 async fn build_ir_executor(
     &BuildIR { def_id }: &BuildIR,
     engine: &TrackedEngine,
-) -> (Interned<IRFunctionMap>, Interned<[NotAllPathsReturnValue]>) {
+) -> (Interned<IRFunctionMap>, Interned<[Diagnostic]>) {
     let typed_function = engine.get_typed_ast(def_id).await;
     let return_ty = engine.get_return_type(def_id).await;
     let span = if let Some(span) = engine.get_span(def_id).await {
@@ -36,13 +36,40 @@ async fn build_ir_executor(
     } else {
         engine.get_def_body_syntax(def_id).await.map(|body| body.span())
     };
-    let (function, diagnostics) = lower_function(
+    let (mut function, mut diagnostics) = lower_function(
         engine,
+        def_id,
         typed_function.functions(),
         typed_function.captures(),
         return_ty,
         span,
-    );
+    )
+    .await;
+
+    // Resolving a dictionary for a type left erroneous or undetermined by
+    // type checking would only repeat that error, so dictionary failures are
+    // reported only for a well-typed definition.
+    let (_, typed_diagnostics) =
+        engine.query(&rayc_typed_ast_builder::query::BuildTAst { def_id }).await;
+
+    if !typed_diagnostics.is_empty() {
+        diagnostics.retain(|diagnostic| !matches!(diagnostic, Diagnostic::Memory(_)));
+    }
+
+    // Memory checking relies on valid typed and control-flow IR. Keep it out
+    // of recovery paths so an earlier error cannot produce misleading move or
+    // initialization diagnostics from placeholder nodes. Such IR is never
+    // lowered further, so it needs no drops either. A missing dictionary
+    // leaves the IR valid, so it does not prevent the check.
+    let control_flow_valid = !diagnostics
+        .iter()
+        .any(|diagnostic| matches!(diagnostic, Diagnostic::NotAllPathsReturnValue(_)));
+
+    if control_flow_valid && typed_diagnostics.is_empty() {
+        let memory_diagnostics = analyze(engine, def_id, &mut function).await;
+        diagnostics.extend(memory_diagnostics.into_iter().map(Diagnostic::from));
+    }
+
     if engine.get_ir_verification(def_id.target_id).await
         && let Err(error) = crate::verification::verify(&function).await
     {
@@ -82,22 +109,10 @@ async fn single_rendered_executor(
         return engine.intern_unsized([]);
     }
 
-    let (functions, diagnostics) = engine.query(&BuildIR { def_id }).await;
+    let (_, diagnostics) = engine.query(&BuildIR { def_id }).await;
     let mut rendered = Vec::new();
     for diagnostic in diagnostics.iter() {
         rendered.push(diagnostic.report(engine).await);
-    }
-
-    // Memory checking relies on valid typed and control-flow IR. Keep it out
-    // of recovery paths so an earlier error cannot produce misleading move or
-    // initialization diagnostics from placeholder nodes.
-    let (_, typed_diagnostics) =
-        engine.query(&rayc_typed_ast_builder::query::BuildTAst { def_id }).await;
-
-    if diagnostics.is_empty() && typed_diagnostics.is_empty() {
-        for diagnostic in analyze(engine, def_id, &functions).await {
-            rendered.push(diagnostic.report(engine).await);
-        }
     }
 
     engine.intern_unsized(rendered)

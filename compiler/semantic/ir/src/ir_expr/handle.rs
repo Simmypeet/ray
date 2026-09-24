@@ -56,27 +56,45 @@ pub struct Handle {
     substitution: Subst,
     body: HandledFunction,
     handler_captures: Vec<IRExprID>,
+
+    /// The `Drop` dictionary of each handler capture, in the same order.
+    ///
+    /// The handlers only borrow their shared captures, so the enclosing
+    /// function drops them once the handled body returns.
+    handler_capture_drops: Vec<Interned<Ty>>,
     handler_capture_map: Option<CaptureMapID>,
     handlers: Vec<OperationHandler>,
     residual_effect: Interned<Ty>,
 }
 
 impl Handle {
+    /// # Panics
+    ///
+    /// Panics if there is not exactly one `Drop` dictionary per handler
+    /// capture.
     #[must_use]
-    pub const fn new(
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
         effect_id: GlobalSymbolID,
         substitution: Subst,
         body: HandledFunction,
         handler_captures: Vec<IRExprID>,
+        handler_capture_drops: Vec<Interned<Ty>>,
         handler_capture_map: Option<CaptureMapID>,
         handlers: Vec<OperationHandler>,
         residual_effect: Interned<Ty>,
     ) -> Self {
+        assert_eq!(
+            handler_capture_drops.len(),
+            handler_captures.len(),
+            "every handler capture needs exactly one Drop dictionary"
+        );
         Self {
             effect_id,
             substitution,
             body,
             handler_captures,
+            handler_capture_drops,
             handler_capture_map,
             handlers,
             residual_effect,
@@ -95,6 +113,11 @@ impl Handle {
     #[must_use]
     pub fn handler_captures(&self) -> &[IRExprID] { &self.handler_captures }
 
+    /// Returns the `Drop` dictionary of each handler capture, in the order of
+    /// [`Self::handler_captures`].
+    #[must_use]
+    pub fn handler_capture_drops(&self) -> &[Interned<Ty>] { &self.handler_capture_drops }
+
     #[must_use]
     pub const fn handler_capture_map(&self) -> Option<CaptureMapID> { self.handler_capture_map }
 
@@ -112,6 +135,9 @@ impl VisitType for Handle {
     fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
         for ty in self.substitution.codomain() {
             visitor.visit_type(ty);
+        }
+        for drop_instance in &self.handler_capture_drops {
+            visitor.visit_type(drop_instance);
         }
         visitor.visit_type(&self.residual_effect);
     }

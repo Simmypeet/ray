@@ -8,7 +8,7 @@ use crate::{
 };
 
 impl<'a> Lower<TypedExprWithID<&'a Errored>> for Builder {
-    fn lower(
+    async fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Errored>,

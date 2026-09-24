@@ -1,6 +1,6 @@
 use rayc_ir::{
     cfg::{Conditional, Terminator},
-    ir_expr::{IRExpr, IRExprID, IRExprKind, phi::Phi, tuple::Tuple},
+    ir_expr::{IRExpr, IRExprID, IRExprKind, phi::Phi},
 };
 use rayc_typed_ast::typed_expr::if_else::{Arm, IfElse};
 
@@ -11,7 +11,7 @@ use crate::{
 };
 
 impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
-    fn lower(
+    async fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a IfElse>,
@@ -30,7 +30,7 @@ impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
         let mut arm_scopes = self.create_scope_branch(branch_count).into_iter();
 
         for conditional_arm in if_else.conditional_arms() {
-            let condition = self.lower_rvalue_by_id(context, conditional_arm.condition());
+            let condition = self.lower_rvalue_by_id(context, conditional_arm.condition()).await;
             let arm_block = self.create_block();
             let next_condition_block = self.create_block();
             self.terminate(Terminator::Conditional(Conditional::new(
@@ -44,7 +44,7 @@ impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
                 arm_scopes.next().expect("a conditional arm scope should exist"),
                 ScopeKind::Lexical,
             );
-            let value = self.lower_arm(context, conditional_arm.arm(), span, &ty);
+            let value = self.lower_arm(context, conditional_arm.arm(), span, &ty).await;
             self.exit_scope();
             if let Some(value) = value {
                 incoming.push((self.jump_to(merge_block), value));
@@ -59,7 +59,7 @@ impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
                 arm_scopes.next().expect("an else arm scope should exist"),
                 ScopeKind::Lexical,
             );
-            let value = self.lower_arm(context, else_arm, span, &ty);
+            let value = self.lower_arm(context, else_arm, span, &ty).await;
             self.exit_scope();
             value
         } else {
@@ -84,7 +84,7 @@ impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
 }
 
 impl Builder {
-    fn lower_arm(
+    async fn lower_arm(
         &mut self,
         context: &LoweringContext<'_>,
         arm: &Arm,
@@ -92,19 +92,13 @@ impl Builder {
         ty: &qbice::storage::intern::Interned<rayc_type::ty::Ty>,
     ) -> Option<IRExprID> {
         match arm {
-            Arm::Expression(expression) => Some(self.lower_rvalue_by_id(context, *expression)),
+            Arm::Expression(expression) => {
+                Some(self.lower_rvalue_by_id(context, *expression).await)
+            }
             Arm::Block(statements) => {
-                self.lower_statement_list(context, statements);
+                self.lower_statement_list(context, statements).await;
                 (!self.is_terminated()).then(|| self.emit_unit(span, ty.clone()))
             }
         }
-    }
-
-    fn emit_unit(
-        &mut self,
-        span: rayc_lexical::tree::RelativeSpan,
-        ty: qbice::storage::intern::Interned<rayc_type::ty::Ty>,
-    ) -> IRExprID {
-        self.emit_expression(IRExpr::new(IRExprKind::Tuple(Tuple::new(Vec::new())), span, ty))
     }
 }

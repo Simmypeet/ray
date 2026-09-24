@@ -8,20 +8,21 @@ use crate::{
 };
 
 impl Builder {
-    fn lower_call_arguments(
+    async fn lower_call_arguments(
         &mut self,
         context: &LoweringContext<'_>,
         call: &Call,
     ) -> Vec<IRExprID> {
-        call.arguments()
-            .iter()
-            .map(|argument| self.lower_rvalue_by_id(context, *argument))
-            .collect()
+        let mut arguments = Vec::with_capacity(call.arguments().len());
+        for argument in call.arguments() {
+            arguments.push(self.lower_rvalue_by_id(context, *argument).await);
+        }
+        arguments
     }
 }
 
 impl<'a> Lower<TypedExprWithID<&'a Call>> for Builder {
-    fn lower(
+    async fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Call>,
@@ -35,7 +36,7 @@ impl<'a> Lower<TypedExprWithID<&'a Call>> for Builder {
         // right.
         match call.target() {
             CallTarget::Direct { function_id, subst } => {
-                let arguments = self.lower_call_arguments(context, call);
+                let arguments = self.lower_call_arguments(context, call).await;
                 let call = IrCall::new_direct(*function_id, arguments, subst.clone(), effect);
                 LoweredExpression::RValue(self.emit_expression(IRExpr::new(
                     IRExprKind::Call(call),
@@ -49,7 +50,7 @@ impl<'a> Lower<TypedExprWithID<&'a Call>> for Builder {
                 trait_def_id,
                 trait_def_subst,
             } => {
-                let arguments = self.lower_call_arguments(context, call);
+                let arguments = self.lower_call_arguments(context, call).await;
                 let call = IrCall::new_unresolved_instance_associated(
                     instance.clone(),
                     *trait_def_id,
@@ -65,7 +66,7 @@ impl<'a> Lower<TypedExprWithID<&'a Call>> for Builder {
             }
 
             CallTarget::EffectOperation { effect_id, operation_id, subst } => {
-                let arguments = self.lower_call_arguments(context, call);
+                let arguments = self.lower_call_arguments(context, call).await;
                 let perform = Perform::new(*effect_id, *operation_id, arguments, subst.clone());
                 LoweredExpression::RValue(self.emit_expression(IRExpr::new(
                     IRExprKind::Perform(perform),

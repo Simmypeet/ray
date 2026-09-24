@@ -1,3 +1,4 @@
+use rayc_hash::FxHashMap;
 use rayc_ir::ir_expr::{IRExpr, IRExprKind, struct_initialization::StructInitialization};
 use rayc_typed_ast::typed_expr::struct_initialization::StructInitialization as TypedStructInitialization;
 
@@ -8,7 +9,7 @@ use crate::{
 };
 
 impl<'a> Lower<TypedExprWithID<&'a TypedStructInitialization>> for Builder {
-    fn lower(
+    async fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a TypedStructInitialization>,
@@ -18,11 +19,11 @@ impl<'a> Lower<TypedExprWithID<&'a TypedStructInitialization>> for Builder {
         let ty = typed_expression.ty().clone();
         let struct_initialization = expression.node();
         let struct_id = struct_initialization.struct_id();
-        let initializers = struct_initialization
-            .initializers()
-            .iter()
-            .map(|init| (init.field(), self.lower_rvalue_by_id(context, init.expression())))
-            .collect();
+        let mut initializers = FxHashMap::default();
+        for init in struct_initialization.initializers() {
+            let value = self.lower_rvalue_by_id(context, init.expression()).await;
+            initializers.insert(init.field(), value);
+        }
 
         LoweredExpression::RValue(self.emit_expression(IRExpr::new(
             IRExprKind::StructInitialization(StructInitialization::new(struct_id, initializers)),

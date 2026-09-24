@@ -2,10 +2,11 @@ use qbice::storage::intern::Interned;
 use rayc_ir::ir_function::IRFunctionMap as IrFunctionMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::Ty;
 use rayc_typed_ast::{capture_plan::CapturePlan, typed_function::TypedFunctionMap};
 
-use crate::{builder::Builder, context::LoweringContext, diagnostic::NotAllPathsReturnValue};
+use crate::{builder::Builder, context::LoweringContext, diagnostic::Diagnostic};
 
 pub mod builder;
 mod context;
@@ -19,14 +20,17 @@ mod verification;
 pub const fn black_box() {}
 
 /// Lowers one typed function into control-flow IR.
-#[must_use]
-pub fn lower_function(
+///
+/// Dictionaries the IR selects itself are resolved in the environment of
+/// `def_id`.
+pub async fn lower_function(
     engine: &TrackedEngine,
+    def_id: GlobalSymbolID,
     functions: &TypedFunctionMap,
     captures: &CapturePlan,
     return_ty: Interned<Ty>,
     span: Option<RelativeSpan>,
-) -> (IrFunctionMap, Vec<NotAllPathsReturnValue>) {
+) -> (IrFunctionMap, Vec<Diagnostic>) {
     let context = LoweringContext::new(functions, captures);
-    Builder::new(engine.clone(), &context, return_ty, span).lower(&context)
+    Builder::new(engine.clone(), def_id, &context, return_ty, span).await.lower(&context).await
 }

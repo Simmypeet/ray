@@ -14,6 +14,7 @@ rayc_lexical.path = "../../syntax/lexical"
 rayc_memory.path = "../memory"
 rayc_qbice.path = "../../base/qbice"
 rayc_semantic_element.path = "../semantic_element"
+rayc_solver.path = "../solver"
 rayc_source_file.path = "../../base/source_file"
 rayc_symbol.path = "../symbol"
 rayc_target.path = "../../base/target"
@@ -22,6 +23,7 @@ rayc_typed_ast_builder.path = "../typed_ast_builder"
 rayc_type.path = "../type"
 qbice.workspace = true
 bon.workspace = true
+derive_more.workspace = true
 linkme.workspace = true
 
 [dev-dependencies]

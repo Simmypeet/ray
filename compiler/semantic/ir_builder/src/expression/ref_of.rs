@@ -8,7 +8,7 @@ use crate::{
 };
 
 impl<'a> Lower<TypedExprWithID<&'a RefOf>> for Builder {
-    fn lower(
+    async fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a RefOf>,
@@ -17,7 +17,7 @@ impl<'a> Lower<TypedExprWithID<&'a RefOf>> for Builder {
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
         let reference = expression.node();
-        let address = self.lower_lvalue_by_id(context, reference.pointee());
+        let address = self.lower_lvalue_by_id(context, reference.pointee()).await;
         LoweredExpression::RValue(self.emit_expression(IRExpr::new(
             IRExprKind::RefOf(IrRefOf::new(address)),
             span,

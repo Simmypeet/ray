@@ -4,6 +4,7 @@ use rayc_typed_ast::statement::Statement;
 use crate::{
     builder::{Builder, function_build_state::scope_tracker::ScopeKind},
     context::LoweringContext,
+    expression::LoweredExpression,
 };
 
 #[derive(Clone, Copy)]
@@ -24,11 +25,11 @@ impl LoopTarget {
 }
 
 impl Builder {
-    pub fn lower_statements(&mut self, context: &LoweringContext<'_>) {
-        self.lower_statement_list(context, context.statements());
+    pub async fn lower_statements(&mut self, context: &LoweringContext<'_>) {
+        self.lower_statement_list(context, context.statements()).await;
     }
 
-    pub(crate) fn lower_statement_list<'a>(
+    pub(crate) async fn lower_statement_list<'a>(
         &mut self,
         context: &LoweringContext<'_>,
         statements: impl IntoIterator<Item = &'a Statement>,
@@ -47,7 +48,7 @@ impl Builder {
                     let ir_id = self.register_source_variable(context, typed_id);
 
                     if let Some(expr_id) = let_statement.expression() {
-                        let value = self.lower_rvalue_by_id(context, expr_id);
+                        let value = self.lower_rvalue_by_id(context, expr_id).await;
                         self.emit_store(self.variable_address(ir_id), value);
                     }
                 }
@@ -64,13 +65,22 @@ impl Builder {
                     }
                 }
                 Statement::Expression(statement) => {
-                    let value = self.lower_rvalue_by_id(context, statement.expression());
-                    self.emit_expr_discard(value, statement.drop_instance().clone());
+                    match self.lower_by_id(context, statement.expression()).await {
+                        // A computed value is unused, so it is dropped here.
+                        LoweredExpression::RValue(value) => {
+                            self.emit_expr_discard(value, statement.drop_instance().clone());
+                        }
+
+                        // A place is only named, not read, so its value stays
+                        // where it is and nothing is loaded.
+                        LoweredExpression::LValue(_) => {}
+                    }
                 }
                 Statement::Return(return_statement) => {
-                    let value = return_statement
-                        .value()
-                        .map(|value| self.lower_rvalue_by_id(context, value));
+                    let value = match return_statement.value() {
+                        Some(value) => Some(self.lower_rvalue_by_id(context, value).await),
+                        None => None,
+                    };
                     self.unwind_all_scopes();
                     self.terminate(Terminator::Return(value));
                 }

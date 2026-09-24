@@ -19,7 +19,7 @@ use crate::{
 };
 
 impl<'a> Lower<TypedExprWithID<&'a Binary>> for Builder {
-    fn lower(
+    async fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Binary>,
@@ -29,35 +29,45 @@ impl<'a> Lower<TypedExprWithID<&'a Binary>> for Builder {
         let ty = typed_expression.ty().clone();
         let binary = expression.node();
         match binary.operator() {
-            BinaryOp::Assign => lower_assignment(self, context, binary),
-            BinaryOp::Equal => lower_binary(self, context, binary, IrBinaryOp::Equal, span, ty),
+            BinaryOp::Assign => lower_assignment(self, context, binary, span, ty).await,
+            BinaryOp::Equal => {
+                lower_binary(self, context, binary, IrBinaryOp::Equal, span, ty).await
+            }
             BinaryOp::NotEqual => {
-                lower_binary(self, context, binary, IrBinaryOp::NotEqual, span, ty)
+                lower_binary(self, context, binary, IrBinaryOp::NotEqual, span, ty).await
             }
-            BinaryOp::Plus => lower_binary(self, context, binary, IrBinaryOp::Plus, span, ty),
-            BinaryOp::Minus => lower_binary(self, context, binary, IrBinaryOp::Minus, span, ty),
+            BinaryOp::Plus => lower_binary(self, context, binary, IrBinaryOp::Plus, span, ty).await,
+            BinaryOp::Minus => {
+                lower_binary(self, context, binary, IrBinaryOp::Minus, span, ty).await
+            }
             BinaryOp::Multiply => {
-                lower_binary(self, context, binary, IrBinaryOp::Multiply, span, ty)
+                lower_binary(self, context, binary, IrBinaryOp::Multiply, span, ty).await
             }
-            BinaryOp::Divide => lower_binary(self, context, binary, IrBinaryOp::Divide, span, ty),
-            BinaryOp::And => lower_logical(self, context, binary, false, span, ty),
-            BinaryOp::Or => lower_logical(self, context, binary, true, span, ty),
+            BinaryOp::Divide => {
+                lower_binary(self, context, binary, IrBinaryOp::Divide, span, ty).await
+            }
+            BinaryOp::And => lower_logical(self, context, binary, false, span, ty).await,
+            BinaryOp::Or => lower_logical(self, context, binary, true, span, ty).await,
         }
     }
 }
 
-fn lower_assignment(
+/// Stores the right operand into the left place. The assignment itself
+/// evaluates to unit, so the stored value has a single owner.
+async fn lower_assignment(
     builder: &mut Builder,
     context: &LoweringContext<'_>,
     binary: &Binary,
+    span: RelativeSpan,
+    ty: Interned<Ty>,
 ) -> LoweredExpression {
-    let address = builder.lower_lvalue_by_id(context, binary.left());
-    let value = builder.lower_rvalue_by_id(context, binary.right());
+    let address = builder.lower_lvalue_by_id(context, binary.left()).await;
+    let value = builder.lower_rvalue_by_id(context, binary.right()).await;
     builder.emit_store(address, value);
-    LoweredExpression::RValue(value)
+    LoweredExpression::RValue(builder.emit_unit(span, ty))
 }
 
-fn lower_binary(
+async fn lower_binary(
     builder: &mut Builder,
     context: &LoweringContext<'_>,
     binary: &Binary,
@@ -65,8 +75,8 @@ fn lower_binary(
     span: RelativeSpan,
     ty: Interned<Ty>,
 ) -> LoweredExpression {
-    let left = builder.lower_rvalue_by_id(context, binary.left());
-    let right = builder.lower_rvalue_by_id(context, binary.right());
+    let left = builder.lower_rvalue_by_id(context, binary.left()).await;
+    let right = builder.lower_rvalue_by_id(context, binary.right()).await;
     LoweredExpression::RValue(builder.emit_expression(IRExpr::new(
         IRExprKind::Binary(IrBinary::new(left, operator, right)),
         span,
@@ -74,7 +84,7 @@ fn lower_binary(
     )))
 }
 
-fn lower_logical(
+async fn lower_logical(
     builder: &mut Builder,
     context: &LoweringContext<'_>,
     binary: &Binary,
@@ -82,7 +92,7 @@ fn lower_logical(
     span: RelativeSpan,
     ty: Interned<Ty>,
 ) -> LoweredExpression {
-    let left = builder.lower_rvalue_by_id(context, binary.left());
+    let left = builder.lower_rvalue_by_id(context, binary.left()).await;
     let rhs_block = builder.create_block();
     let short_circuit_block = builder.create_block();
     let merge_block = builder.create_block();
@@ -103,7 +113,7 @@ fn lower_logical(
     let short_circuit_predecessor = builder.jump_to(merge_block);
 
     builder.select_block(rhs_block);
-    let rhs = builder.lower_rvalue_by_id(context, binary.right());
+    let rhs = builder.lower_rvalue_by_id(context, binary.right()).await;
     let rhs_predecessor = builder.jump_to(merge_block);
 
     builder.select_block(merge_block);

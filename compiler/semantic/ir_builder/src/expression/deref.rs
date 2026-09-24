@@ -7,12 +7,12 @@ use crate::{
 };
 
 impl<'a> Lower<TypedExprWithID<&'a Deref>> for Builder {
-    fn lower(
+    async fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Deref>,
     ) -> LoweredExpression {
-        let pointer = self.lower_rvalue_by_id(context, expression.node().pointee());
+        let pointer = self.lower_rvalue_by_id(context, expression.node().pointee()).await;
         LoweredExpression::LValue(self.dereference_address(pointer))
     }
 }

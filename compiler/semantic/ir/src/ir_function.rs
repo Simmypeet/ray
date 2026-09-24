@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
@@ -6,7 +8,7 @@ use rayc_type::ty::{Ty, application::ClosureID};
 
 use crate::{
     address::Address,
-    cfg::{BlockID, Cfg, Instruction, Reachables, Terminator},
+    cfg::{BlockID, Cfg, ControlFlowEdge, Instruction, Point, Reachables, Terminator},
     dataflow::{DataflowProblem, DataflowSolution, solve},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
     ir_lambda::{
@@ -288,6 +290,23 @@ impl IRFunctionMap {
         value: IRExprID,
     ) {
         self.get_function_mut(function_id).push_store(block_id, address, value);
+    }
+
+    /// Inserts each instruction sequence immediately before the instruction
+    /// at its point, with every point referring to the layout before any
+    /// insertion.
+    pub fn insert_instructions_before(
+        &mut self,
+        function_id: FunctionID,
+        insertions: BTreeMap<Point, Vec<Instruction>>,
+    ) {
+        self.get_function_mut(function_id).insert_instructions_before(insertions);
+    }
+
+    /// Redirects `edge` of `function_id` through a new empty block and
+    /// returns that block.
+    pub fn split_edge(&mut self, function_id: FunctionID, edge: ControlFlowEdge) -> BlockID {
+        self.get_function_mut(function_id).split_edge(edge)
     }
 
     pub fn set_terminator(
@@ -587,6 +606,13 @@ impl IRFunction {
     pub fn push_store(&mut self, block_id: BlockID, address: Address, value: IRExprID) {
         self.cfg.push_store(block_id, address, value);
     }
+
+    pub fn insert_instructions_before(&mut self, insertions: BTreeMap<Point, Vec<Instruction>>) {
+        self.cfg.insert_instructions_before(insertions);
+    }
+
+    /// Redirects `edge` through a new empty block and returns that block.
+    pub fn split_edge(&mut self, edge: ControlFlowEdge) -> BlockID { self.cfg.split_edge(edge) }
 
     pub fn set_terminator(&mut self, block_id: BlockID, terminator: Terminator) {
         self.cfg.set_terminator(block_id, terminator);

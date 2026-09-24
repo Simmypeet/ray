@@ -8,7 +8,7 @@ use crate::{
 };
 
 impl<'a> Lower<TypedExprWithID<&'a Closure>> for Builder {
-    fn lower(
+    async fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Closure>,
@@ -23,12 +23,14 @@ impl<'a> Lower<TypedExprWithID<&'a Closure>> for Builder {
         );
 
         // Keep the source identity even when lowering assigns a different function ID.
-        let function_id = self.lower_lambda_function(
-            context,
-            lambda.function_id(),
-            closure.return_type().clone(),
-            typed_expression.span(),
-        );
+        let function_id = self
+            .lower_lambda_function(
+                context,
+                lambda.function_id(),
+                closure.return_type().clone(),
+                typed_expression.span(),
+            )
+            .await;
         self.register_closure(closure.local_closure_id(), function_id);
         let captures = self.lower_capture_operands(context, lambda.function_id());
 

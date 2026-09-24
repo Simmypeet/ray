@@ -8,7 +8,7 @@ use crate::{
 };
 
 impl<'a> Lower<TypedExprWithID<&'a Tuple>> for Builder {
-    fn lower(
+    async fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Tuple>,
@@ -17,11 +17,10 @@ impl<'a> Lower<TypedExprWithID<&'a Tuple>> for Builder {
         let span = typed_expression.span();
         let ty = typed_expression.ty().clone();
         let tuple = expression.node();
-        let elements = tuple
-            .elements()
-            .iter()
-            .map(|element| self.lower_rvalue_by_id(context, *element))
-            .collect();
+        let mut elements = Vec::with_capacity(tuple.elements().len());
+        for element in tuple.elements() {
+            elements.push(self.lower_rvalue_by_id(context, *element).await);
+        }
         LoweredExpression::RValue(self.emit_expression(IRExpr::new(
             IRExprKind::Tuple(IrTuple::new(elements)),
             span,

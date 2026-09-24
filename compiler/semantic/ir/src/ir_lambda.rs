@@ -128,7 +128,7 @@ impl Capture {
     #[must_use]
     pub fn storage_ty(&self, engine: &TrackedEngine) -> Interned<Ty> {
         match self.mode {
-            CaptureMode::Value => self.binding_ty.clone(),
+            CaptureMode::Value(_) => self.binding_ty.clone(),
             CaptureMode::Reference(mutability) => {
                 Ty::new_pointer(self.binding_ty.clone(), mutability, engine)
             }

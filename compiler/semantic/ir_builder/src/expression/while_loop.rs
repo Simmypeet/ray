@@ -12,7 +12,7 @@ use crate::{
 };
 
 impl<'a> Lower<TypedExprWithID<&'a While>> for Builder {
-    fn lower(
+    async fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a While>,
@@ -28,7 +28,7 @@ impl<'a> Lower<TypedExprWithID<&'a While>> for Builder {
         self.jump_to(condition_block);
 
         self.select_block(condition_block);
-        let condition = self.lower_rvalue_by_id(context, while_loop.condition());
+        let condition = self.lower_rvalue_by_id(context, while_loop.condition()).await;
         self.terminate(Terminator::Conditional(Conditional::new(
             condition, body_block, exit_block,
         )));
@@ -37,7 +37,7 @@ impl<'a> Lower<TypedExprWithID<&'a While>> for Builder {
         let loop_scope_depth = self.scope_depth();
         self.enter_scope(ScopeKind::Lexical);
         self.push_loop_target(LoopTarget::new(exit_block, condition_block, loop_scope_depth));
-        self.lower_statement_list(context, while_loop.body());
+        self.lower_statement_list(context, while_loop.body()).await;
         self.pop_loop_target();
         self.exit_scope();
         if !self.is_terminated() {

@@ -7,11 +7,11 @@ use crate::{
 };
 
 impl<'a> Lower<TypedExprWithID<&'a Paren>> for Builder {
-    fn lower(
+    async fn lower(
         &mut self,
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Paren>,
     ) -> LoweredExpression {
-        self.lower_by_id(context, expression.node().expression())
+        self.lower_by_id(context, expression.node().expression()).await
     }
 }
