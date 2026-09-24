@@ -17,7 +17,6 @@ use crate::{
         MoveOutOfHandlerCapture, UseAfterMove, UseAfterPartialMove, UseBeforeInitialization,
     },
     drop_elaboration::DropElaborator,
-    stack_state::tracked_local,
 };
 
 /// Checks every reachable load and drops every stack value that would
@@ -105,15 +104,14 @@ async fn analyze_function(
                             check_read(expression.span(), &read, &state, function, diagnostics);
 
                             // A borrowed capture is shared by every call, so
-                            // nothing may be moved out of it, even briefly.
-                            //
-                            // REVIEW: Is this a bug? it should've covered the
-                            // "fields/projections" of a capture too, not just
-                            // the root capture itself.
+                            // nothing may be moved out of it or any of its
+                            // fields, even briefly.
                             if problem.is_borrowed_capture(load.address())
                                 && problem.load_moves(load, expression.ty().clone()).await
                             {
-                                let root = tracked_local(load.address())
+                                let root = load
+                                    .address()
+                                    .direct_local()
                                     .expect("a capture is a stack root");
                                 let capture_span = problem.binding_span(root).await;
                                 diagnostics.push(

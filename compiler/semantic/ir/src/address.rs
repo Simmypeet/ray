@@ -159,6 +159,20 @@ impl Address {
         }
     }
 
+    /// Returns the local this address selects a place in, or `None` when the
+    /// address is an error address or goes through a dereference.
+    ///
+    /// Unlike [`Self::local`], the selected place is always part of the
+    /// local's own storage, never memory reached through a pointer held in it.
+    #[must_use]
+    pub fn direct_local(&self) -> Option<Local> {
+        if self.is_behind_deref() {
+            return None;
+        }
+
+        self.local()
+    }
+
     #[must_use]
     pub fn projections(&self) -> &[Projection] { &self.projections }
 

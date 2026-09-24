@@ -6,24 +6,6 @@ use rayc_ir::{
 
 use crate::{PlaceState, StackStateProblem};
 
-/// Returns the local whose place `address` selects, or `None` when the
-/// address is not tracked by the memory checker.
-///
-/// Error addresses name no storage. Addresses behind a dereference name memory
-/// the pointer refers to, which the current stack frame does not own, so
-/// tracking stops at the first dereference: the pointer itself is tracked
-/// through [`Address::deref_base`], but nothing beyond it is.
-///
-/// REVIEW: should this be a method on `Address` instead?
-#[must_use]
-pub(crate) fn tracked_local(address: &Address) -> Option<Local> {
-    if address.is_behind_deref() {
-        return None;
-    }
-
-    address.local()
-}
-
 /// Initialization state of the stack allocations in one function.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StackSlots {
@@ -68,6 +50,12 @@ impl StackSlots {
 }
 
 /// Memory-checker facts at a point in the control-flow graph.
+///
+/// Only places in a local's own storage are tracked, the ones selected by an
+/// address with a [`Address::direct_local`]. Memory reached through a pointer
+/// is not owned by the stack frame, so tracking stops at the first
+/// dereference: the pointer itself is tracked through
+/// [`Address::deref_base`], but nothing beyond it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StackState {
     /// Lattice bottom: no control-flow path reaches this point.
@@ -101,7 +89,7 @@ impl StackState {
         point: Point,
         dataflow_problem_ctx: &StackStateProblem<'_>,
     ) -> bool {
-        let Some(root) = tracked_local(address) else {
+        let Some(root) = address.direct_local() else {
             return false;
         };
 
@@ -114,7 +102,7 @@ impl StackState {
     /// uniform state because it describes every descendant of that place.
     #[must_use]
     pub fn place_state(&self, address: &Address) -> Option<&PlaceState> {
-        let root = tracked_local(address)?;
+        let root = address.direct_local()?;
         let Self::Reachable(slots) = self else {
             return None;
         };
@@ -163,7 +151,7 @@ impl StackState {
         address: &Address,
         dataflow_problem_ctx: &StackStateProblem<'_>,
     ) -> bool {
-        let Some(root) = tracked_local(address) else {
+        let Some(root) = address.direct_local() else {
             return false;
         };
 

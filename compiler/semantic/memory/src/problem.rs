@@ -23,7 +23,7 @@ use rayc_type::{
     where_clause::MarkerPredicate,
 };
 
-use crate::{PlaceState, PossibleStates, StackState, stack_state::tracked_local};
+use crate::{PlaceState, PossibleStates, StackState};
 
 /// Dataflow context for stack initialization and move state.
 ///
@@ -169,13 +169,16 @@ impl<'a> StackStateProblem<'a> {
         }
     }
 
-    /// Returns whether `address` is rooted in a capture which this function
-    /// only borrows, so no value may be moved out of it.
+    /// Returns whether `address` selects a capture which this function only
+    /// borrows, or a field of one, so no value may be moved out of it.
+    ///
+    /// A place reached through a pointer held in the capture is not part of
+    /// the capture.
     ///
     /// Operation handlers may run many times over one shared environment, so
     /// every call must find its captures intact.
     pub(crate) fn is_borrowed_capture(&self, address: &Address) -> bool {
-        self.borrows_captures() && matches!(tracked_local(address), Some(Local::Capture(_)))
+        self.borrows_captures() && matches!(address.direct_local(), Some(Local::Capture(_)))
     }
 
     /// Returns whether `load`, producing a value of type `ty`, moves out of

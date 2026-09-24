@@ -19,7 +19,6 @@ use rayc_type::{subst::Subst, ty::Ty};
 use crate::{
     Diagnostic, PlaceState, PossibleStates, StackState, StackStateProblem,
     drop_resolution::{DropFailure, resolve_drop_instance},
-    stack_state::tracked_local,
 };
 
 /// A drop of a stack place selected during a replay, applied to the IR once
@@ -114,7 +113,7 @@ impl DropElaborator {
         problem: &mut StackStateProblem<'_>,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
-        let (Some(root), Some(place_state)) = (tracked_local(address), state.place_state(address))
+        let (Some(root), Some(place_state)) = (address.direct_local(), state.place_state(address))
         else {
             return;
         };
