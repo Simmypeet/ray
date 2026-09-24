@@ -6,7 +6,7 @@ use std::{
 use bon::Builder;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
-use rayc_hash::FxHashSet;
+use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_type::ty::Ty;
 
 use crate::{address::Address, dataflow::Direction, ir_expr::IRExprID, scope::ScopeID};
@@ -29,6 +29,42 @@ impl Point {
     #[must_use]
     pub const fn instruction_idx(&self) -> usize { self.instruction_idx }
 }
+
+/// Instructions queued for insertion into a control-flow graph, applied all
+/// at once by [`Cfg::insert_instructions`].
+///
+/// Every point refers to the block layout before any insertion, so callers
+/// can queue insertions while replaying an analysis of that layout.
+#[derive(Debug, Default)]
+pub struct InstructionInsertion {
+    /// The sequences queued in each block, by the index of the instruction
+    /// they precede.
+    blocks: FxHashMap<BlockID, BTreeMap<usize, Vec<Instruction>>>,
+}
+
+impl InstructionInsertion {
+    #[must_use]
+    pub fn new() -> Self { Self::default() }
+
+    /// Queues `instructions` to run immediately before the instruction
+    /// currently at `point`, or at the end of the block when `point` is one
+    /// past its last instruction.
+    ///
+    /// Sequences queued at the same point run in the order they were queued.
+    pub fn insert_before(
+        &mut self,
+        point: Point,
+        instructions: impl IntoIterator<Item = Instruction>,
+    ) {
+        self.blocks
+            .entry(point.block_id)
+            .or_default()
+            .entry(point.instruction_idx)
+            .or_default()
+            .extend(instructions);
+    }
+}
+
 /// An iterator for traversing through the control flow graph.
 ///
 /// Every block is guaranteed to be visited exactly once and reachable from
@@ -416,30 +452,26 @@ impl Cfg {
         block.instructions.push(Instruction::Store(Store { address, expression }));
     }
 
-    /// Inserts each instruction sequence immediately before the instruction
-    /// currently at its point.
-    ///
-    /// Every point refers to the block layout before any insertion, so callers
-    /// can collect insertions while replaying an analysis of that layout.
+    /// Applies every instruction queued in `insertion`.
     ///
     /// # Panics
     ///
-    /// Panics if a point names a missing block or lies past the end of it.
-    pub fn insert_instructions_before(&mut self, insertions: BTreeMap<Point, Vec<Instruction>>) {
-        // Insert from the last point backward so the remaining points still
-        // index the original layout of their block.
-
-        // REVIEW: this relies on the assumption that the BTreeMap is sorted by
-        // the Point's ordering and that the iterator of the BTreeMap is in
-        // ascending order. Is there a way to encode this assumption? perhaps
-        // some assertion here?
-        for (point, instructions) in insertions.into_iter().rev() {
-            let block = self.blocks.get_mut(point.block_id).expect("Block should exist");
+    /// Panics if a queued point names a missing block or lies past the end of
+    /// it.
+    pub fn insert_instructions(&mut self, insertion: InstructionInsertion) {
+        for (block_id, queued) in insertion.blocks {
+            let block = self.blocks.get_mut(block_id).expect("Block should exist");
             assert!(
-                point.instruction_idx <= block.instructions.len(),
+                queued.last_key_value().is_none_or(|(index, _)| *index <= block.instructions.len()),
                 "insertion point is past the end of its block"
             );
-            block.instructions.splice(point.instruction_idx..point.instruction_idx, instructions);
+
+            // Each block's queue is ordered by index, so splicing from the
+            // highest index down leaves every lower index pointing into the
+            // original layout.
+            for (index, instructions) in queued.into_iter().rev() {
+                block.instructions.splice(index..index, instructions);
+            }
         }
     }
 

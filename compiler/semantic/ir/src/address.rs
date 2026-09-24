@@ -75,11 +75,20 @@ impl Address {
         Self::new_root(AddressRoot::Deref(expression_id), engine)
     }
 
-    fn add_projection(&mut self, projection: Projection, engine: &TrackedEngine) {
+    /// Extends this address by one projection.
+    pub fn add_projection(&mut self, projection: Projection, engine: &TrackedEngine) {
         let mut new_projections = Vec::with_capacity(self.projections.len() + 1);
         new_projections.extend(self.projections.iter().copied());
         new_projections.push(projection);
         self.projections = engine.intern_unsized(new_projections);
+    }
+
+    /// Returns this address extended by one projection.
+    #[must_use]
+    pub fn projected(&self, projection: Projection, engine: &TrackedEngine) -> Self {
+        let mut address = self.clone();
+        address.add_projection(projection, engine);
+        address
     }
 
     pub fn add_tuple_index(&mut self, index: usize, engine: &TrackedEngine) {

@@ -1,10 +1,8 @@
-use std::cmp::Reverse;
-
 use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_ir::{
-    address::{Address, Projection},
-    cfg::Instruction,
+    address::Address,
+    cfg::{ControlFlowEdge, Instruction, InstructionInsertion, Point, Terminator},
     ir_expr::{IRExpr, IRExprKind, call::Call, load::Load},
     ir_function::{FunctionID, IRFunctionMap},
     scope::ScopeID,
@@ -22,7 +20,7 @@ use crate::{
 /// A drop of a stack place selected during a replay, applied to the IR once
 /// that replay has finished.
 #[derive(Debug)]
-pub(crate) struct PendingDrop {
+struct PendingDrop {
     address: Address,
     ty: Interned<Ty>,
 
@@ -34,14 +32,28 @@ pub(crate) struct PendingDrop {
     span: RelativeSpan,
 }
 
+/// Where a selected drop runs.
+#[derive(Debug, Clone, Copy)]
+enum DropSite {
+    /// Immediately before the instruction at this point of the analyzed
+    /// layout.
+    Before(Point),
+
+    /// Only when control follows this edge.
+    Edge(ControlFlowEdge),
+}
+
 /// Selects the drops that keep stack values from outliving their owners, and
 /// the `Drop` dictionaries they use.
 ///
-/// Drops are returned as [`PendingDrop`]s against the analyzed layout and
-/// turned into instructions by [`materialize_drops`] once a replay has
-/// finished, so inserting them never invalidates the points of the replay.
+/// Every drop of a function is collected against the analyzed layout and
+/// inserted at once by [`Self::insert_drops`] after the replay, so inserting
+/// them never invalidates the points of the replay.
 #[derive(Debug, Default)]
 pub(crate) struct DropElaborator {
+    /// The selected drops, in the order they run at each site.
+    drops: Vec<(DropSite, PendingDrop)>,
+
     /// The selected `Drop` dictionary of each type, or why none is usable.
     instances: FxHashMap<Interned<Ty>, Result<Interned<Ty>, Vec<DropFailure>>>,
 
@@ -51,8 +63,9 @@ pub(crate) struct DropElaborator {
 }
 
 impl DropElaborator {
-    /// Returns the drops which run immediately before `ScopePop(scope_id)`,
-    /// given the stack `state` just before that instruction.
+    /// Selects the drops which run immediately before the
+    /// `ScopePop(scope_id)` at `point`, given the stack `state` just before
+    /// that instruction.
     ///
     /// Once merges are balanced, every place is either initialized or
     /// uninitialized on all paths reaching the scope end. Initialized values
@@ -60,102 +73,96 @@ impl DropElaborator {
     /// initialized component instead.
     pub(crate) async fn scope_drops(
         &mut self,
+        point: Point,
         scope_id: ScopeID,
         state: &StackState,
         problem: &mut StackStateProblem<'_>,
         diagnostics: &mut Vec<Diagnostic>,
-    ) -> Vec<PendingDrop> {
+    ) {
         let StackState::Reachable(slots) = state else {
-            return Vec::new();
+            return;
         };
 
-        let mut drops = Vec::new();
+        let site = DropSite::Before(point);
         for root in problem.scope_roots_in_drop_order(scope_id).await {
             let place_state = slots.state(root).expect("a live scope root must have a state");
             let ty = problem.binding_type(root).await;
             let address = root.to_address(problem.engine());
 
-            self.drop_place(root, address, place_state, ty, problem, &mut drops, diagnostics).await;
+            self.drop_place(site, root, address, place_state, ty, problem, diagnostics).await;
         }
-        drops
     }
 
-    /// Returns the drops which run just before a value is stored to
-    /// `address`, given the stack `state` just before the store.
+    /// Selects the drops which run just before a value is stored to
+    /// `address` by the `Store` at `point`, given the stack `state` just
+    /// before the store.
     ///
     /// Whatever part of the place is still initialized holds a previous value
     /// which would otherwise be overwritten, so it is dropped. Stores through
     /// a dereference are not tracked by the stack state and drop nothing.
     pub(crate) async fn reassignment_drops(
         &mut self,
+        point: Point,
         address: &Address,
         ty: Interned<Ty>,
         state: &StackState,
         problem: &mut StackStateProblem<'_>,
         diagnostics: &mut Vec<Diagnostic>,
-    ) -> Vec<PendingDrop> {
+    ) {
         let (Some(root), Some(place_state)) =
             (StackRoot::from_address_root(address.root()), state.place_state(address))
         else {
-            return Vec::new();
+            return;
         };
 
-        let mut drops = Vec::new();
-        self.drop_place(root, address.clone(), place_state, ty, problem, &mut drops, diagnostics)
-            .await;
-        drops
+        let site = DropSite::Before(point);
+        self.drop_place(site, root, address.clone(), place_state, ty, problem, diagnostics).await;
     }
 
-    /// Returns the drops which balance the stack on a control-flow edge.
+    /// Selects the drops which balance the stack on a control-flow edge.
     ///
     /// `exit` is the state leaving the edge's source and `entry` is the
     /// joined state at its target. A value which is initialized on this edge
     /// but may be uninitialized on another edge into the same target is
     /// dropped on this edge, so every path agrees on the state at the merge.
+    /// Values are considered in `drop_order`, the order a scope exit drops
+    /// them.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn merge_drops(
         &mut self,
+        edge: ControlFlowEdge,
         exit: &StackState,
         entry: &StackState,
+        drop_order: &[StackRoot],
         problem: &mut StackStateProblem<'_>,
         diagnostics: &mut Vec<Diagnostic>,
-    ) -> Vec<PendingDrop> {
+    ) {
         let (StackState::Reachable(exit), StackState::Reachable(entry)) = (exit, entry) else {
-            return Vec::new();
+            return;
         };
 
-        // Order the roots deterministically, dropping later declarations
-        // first as a scope exit does.
-        let mut roots = entry.roots().collect::<Vec<_>>();
-
-        // REVIEW: okay, this ranking is based on the assupmtion that the `ID`
-        // of a `StackRoot` is assigned in the order of declaration, which is
-        // quite fragile for me. Perhaps, we should have some way to concretely
-        // determines the order of declaration of a `StackRoot` instead of
-        // relying on the `ID`. I'm currently thinking of modifying the
-        // `rayc_ir`'s Variable to include the notion of declaration order so
-        // that we can reliably sort here
-        roots.sort_by_key(|root| (drop_order_rank(*root), Reverse(*root)));
-
-        let mut drops = Vec::new();
-        for root in roots {
-            let entry_state = entry.state(root).expect("a live root must have a state");
+        let site = DropSite::Edge(edge);
+        for root in drop_order.iter().copied() {
+            // Only roots live at the merge can need balancing.
+            let Some(entry_state) = entry.state(root) else {
+                continue;
+            };
             let exit_state = exit.state(root).expect("merging stack states share their live roots");
             let ty = problem.binding_type(root).await;
             let address = root.to_address(problem.engine());
 
             self.balance_place(
+                site,
                 root,
                 address,
                 entry_state,
                 exit_state,
                 ty,
                 problem,
-                &mut drops,
                 diagnostics,
             )
             .await;
         }
-        drops
     }
 
     /// Drops the parts of a place which are initialized on the incoming edge
@@ -163,13 +170,13 @@ impl DropElaborator {
     #[allow(clippy::too_many_arguments)]
     async fn balance_place(
         &mut self,
+        site: DropSite,
         root: StackRoot,
         address: Address,
         entry: &PlaceState,
         exit: &PlaceState,
         ty: Interned<Ty>,
         problem: &mut StackStateProblem<'_>,
-        drops: &mut Vec<PendingDrop>,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
         match entry {
@@ -180,30 +187,23 @@ impl DropElaborator {
             // Some incoming edge lacks the value, so this edge drops
             // whatever part of it this edge still holds.
             PlaceState::Uniform(PossibleStates::Uninitialized(_)) => {
-                self.drop_place(root, address, exit, ty, problem, drops, diagnostics).await;
+                self.drop_place(site, root, address, exit, ty, problem, diagnostics).await;
             }
 
             // Balance each component in reverse order, matching the order of
             // tuple and structural `Drop`.
             PlaceState::Partial(components) => {
                 for (projection, entry_component) in components.iter().rev() {
-                    // REVIEW: this is quite wasteful isn't it?, `projection_layer` creates a
-                    // BTreeMap for every sibling components in the proejction and in this context
-                    // we only need the type. Perhaps, we should create a more specialized function
-                    // for this use case.
-                    let (_, component_ty) = problem.projection_layer(&ty, *projection, entry).await;
-
-                    // REVIEW: can we avoid cloning here?
-                    let exit_component = exit.component(*projection);
+                    let component_ty = problem.projected_type(&ty, *projection).await;
 
                     Box::pin(self.balance_place(
+                        site,
                         root,
-                        project(&address, *projection, problem.engine()),
+                        address.projected(*projection, problem.engine()),
                         entry_component,
-                        &exit_component,
+                        exit.component(*projection),
                         component_ty,
                         problem,
-                        drops,
                         diagnostics,
                     ))
                     .await;
@@ -215,22 +215,22 @@ impl DropElaborator {
     #[allow(clippy::too_many_arguments)]
     async fn drop_place(
         &mut self,
+        site: DropSite,
         root: StackRoot,
         address: Address,
         state: &PlaceState,
         ty: Interned<Ty>,
         problem: &mut StackStateProblem<'_>,
-        drops: &mut Vec<PendingDrop>,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
         match state {
             // A fully initialized place drops as a whole, so its type's own
             // `Drop` instance decides how the components are dropped.
             PlaceState::Uniform(PossibleStates::Initialized) => {
-                self.push_drop(root, address, ty, problem, drops, diagnostics).await;
+                self.push_drop(site, root, address, ty, problem, diagnostics).await;
             }
             PlaceState::Partial(_) if state.is_initialized() => {
-                self.push_drop(root, address, ty, problem, drops, diagnostics).await;
+                self.push_drop(site, root, address, ty, problem, diagnostics).await;
             }
 
             // The value has been moved or was never assigned.
@@ -240,19 +240,15 @@ impl DropElaborator {
             // order of tuple and structural `Drop`.
             PlaceState::Partial(components) => {
                 for (projection, component) in components.iter().rev() {
-                    // REVIEW: this is quite wasteful isn't it?, `projection_layer` creates a
-                    // BTreeMap for every sibling components in the proejction and in this context
-                    // we only need the type. Perhaps, we should create a more specialized function
-                    // for this use case.
-                    let (_, component_ty) = problem.projection_layer(&ty, *projection, state).await;
+                    let component_ty = problem.projected_type(&ty, *projection).await;
 
                     Box::pin(self.drop_place(
+                        site,
                         root,
-                        project(&address, *projection, problem.engine()),
+                        address.projected(*projection, problem.engine()),
                         component,
                         component_ty,
                         problem,
-                        drops,
                         diagnostics,
                     ))
                     .await;
@@ -263,17 +259,17 @@ impl DropElaborator {
 
     async fn push_drop(
         &mut self,
+        site: DropSite,
         root: StackRoot,
         address: Address,
         ty: Interned<Ty>,
         problem: &mut StackStateProblem<'_>,
-        drops: &mut Vec<PendingDrop>,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
         match self.drop_instance(ty.clone(), problem).await {
             Ok(drop_instance) => {
                 let span = problem.binding_span(root).await;
-                drops.push(PendingDrop { address, ty, drop_instance, span });
+                self.drops.push((site, PendingDrop { address, ty, drop_instance, span }));
             }
 
             // Each binding is a separate fix site, but a binding which leaves
@@ -286,6 +282,89 @@ impl DropElaborator {
                 }
             }
         }
+    }
+
+    /// Inserts every selected drop into `function_id`: a forced move out of
+    /// each place followed by a `Drop.drop` call on the moved value.
+    ///
+    /// The move is forced so a `Copy` value is consumed by its drop as well.
+    /// A drop on an edge runs where it runs only when control follows that
+    /// edge: at the end of the source block when the edge is the source's
+    /// only one, and otherwise in a new block which splits the edge.
+    pub(crate) async fn insert_drops(
+        self,
+        engine: &TrackedEngine,
+        functions: &mut IRFunctionMap,
+        function_id: FunctionID,
+    ) {
+        if self.drops.is_empty() {
+            return;
+        }
+
+        let drop_method = engine.get_core_item(CoreItem::DropMethod).await;
+        let unit = Ty::new_unit(engine);
+
+        // `Drop.drop` has no effects of its own, so the function's row is a
+        // conservative ambient row for the call.
+
+        // TODO: This is an interesting point, this is correct under the assumption
+        // that every expression in a function has the same effect as the function
+        // itself, which is generally true in the current design of effect system.
+        // One might think that the statement "every expression in a function has
+        // the same effect as the function itself" is not true since we have a
+        // handler expression that can subtract the effect out. However, the
+        // handler body is always **a separate function** with its own effect,
+        // so the statement is still true.
+        //
+        // However, if we'll have a borrow-checker feature with lifetimes stuff in the
+        // future, then we must first generalize the lifetimes in the effect row of
+        // the function before we can use it as the ambient row for the drop call.
+        let effect = functions.get_function(function_id).effect().clone();
+
+        let mut insertion = InstructionInsertion::new();
+        let mut edge_points = FxHashMap::<ControlFlowEdge, Point>::default();
+        for (site, drop) in self.drops {
+            let point = match site {
+                DropSite::Before(point) => point,
+                DropSite::Edge(edge) => *edge_points
+                    .entry(edge)
+                    .or_insert_with(|| edge_drop_point(functions, function_id, edge)),
+            };
+
+            let value = functions.insert_expression(
+                function_id,
+                IRExpr::new(
+                    IRExprKind::Load(Load::with_kind(drop.address, LoadKind::Move)),
+                    drop.span,
+                    drop.ty,
+                ),
+            );
+
+            // `Drop.drop` declares no method-local type variables, so its
+            // trait call substitution is empty. The unit result is unused and
+            // trivially dropped.
+            let call = functions.insert_expression(
+                function_id,
+                IRExpr::new(
+                    IRExprKind::Call(Call::new_unresolved_instance_associated(
+                        drop.drop_instance,
+                        drop_method,
+                        Subst::new_empty(),
+                        vec![value],
+                        effect.clone(),
+                    )),
+                    drop.span,
+                    unit.clone(),
+                ),
+            );
+
+            insertion.insert_before(point, [
+                Instruction::Expression(value),
+                Instruction::Expression(call),
+            ]);
+        }
+
+        functions.insert_instructions(function_id, insertion);
     }
 
     /// Returns the `Drop` dictionary for `ty`, resolving it on first use.
@@ -304,92 +383,26 @@ impl DropElaborator {
     }
 }
 
-/// Turns drops into instructions of `function_id`: a forced move out of each
-/// place followed by a `Drop.drop` call on the moved value.
-///
-/// The move is forced so a `Copy` value is consumed by its drop as well.
-pub(crate) async fn materialize_drops(
-    engine: &TrackedEngine,
+/// Returns the point where drops on `edge` run: the end of the source block
+/// when the edge is the source's only one, or a new block splitting the edge
+/// otherwise.
+fn edge_drop_point(
     functions: &mut IRFunctionMap,
     function_id: FunctionID,
-    drops: Vec<PendingDrop>,
-) -> Vec<Instruction> {
-    let drop_method = engine.get_core_item(CoreItem::DropMethod).await;
-    let unit = Ty::new_unit(engine);
+    edge: ControlFlowEdge,
+) -> Point {
+    // A jump is the source's only edge, so the drops can end the source
+    // block. A conditional edge is critical, since its target merges several
+    // edges, so it gets a block of its own.
+    let terminator = functions.get_function(function_id).block_terminator(edge.source());
+    let block_id = match terminator {
+        Some(Terminator::Jump(_)) => edge.source(),
+        Some(Terminator::Conditional(_)) => functions.split_edge(function_id, edge),
+        Some(Terminator::Return(_)) | None => {
+            unreachable!("a control-flow edge leaves through a jump or a conditional")
+        }
+    };
 
-    // `Drop.drop` has no effects of its own, so the function's row is a
-    // conservative ambient row for the call.
-
-    // TODO: This is an interesting point, this is correct under the assumption
-    // that every expression in a function has the same effect as the function
-    // itself, which is generally true in the current design of effect system.
-    // One might think that the statement "every expression in a function has
-    // the same effect as the function itself" is not true since we have a
-    // handler expression that can subtract the effect out. However, the
-    // handler body is always **a separate function** with its own effect,
-    // so the statement is still true.
-    //
-    // However, if we'll have a borrow-checker feature with lifetimes stuff in the
-    // future, then we must first generalize the lifetimes in the effect row of
-    // the function before we can use it as the ambient row for the drop call.
-    let effect = functions.get_function(function_id).effect().clone();
-
-    let mut instructions = Vec::with_capacity(drops.len() * 2);
-    for drop in drops {
-        let value = functions.insert_expression(
-            function_id,
-            IRExpr::new(
-                IRExprKind::Load(Load::with_kind(drop.address, LoadKind::Move)),
-                drop.span,
-                drop.ty,
-            ),
-        );
-
-        // `Drop.drop` declares no method-local type variables, so its trait
-        // call substitution is empty. The unit result is unused and trivially
-        // dropped.
-        let call = functions.insert_expression(
-            function_id,
-            IRExpr::new(
-                IRExprKind::Call(Call::new_unresolved_instance_associated(
-                    drop.drop_instance,
-                    drop_method,
-                    Subst::new_empty(), /* the `Drop.drop` method has no additional type
-                                         * parameters, so its substitution is empty */
-                    vec![value],
-                    effect.clone(),
-                )),
-                drop.span,
-                unit.clone(),
-            ),
-        );
-
-        instructions.push(Instruction::Expression(value));
-        instructions.push(Instruction::Expression(call));
-    }
-    instructions
-}
-
-/// Extends `address` by one projection.
-// REVIEW: Could we abstract this into a method in the `Address` type? since it
-// seems like a common operation.
-fn project(address: &Address, projection: Projection, engine: &TrackedEngine) -> Address {
-    let mut address = address.clone();
-    match projection {
-        Projection::Tuple(index) => address.add_tuple_index(index, engine),
-        Projection::Field(field_id) => address.add_field(field_id, engine),
-    }
-    address
-}
-
-/// Ranks roots so local variables drop before function inputs, and
-/// parameters before captures, as they do when the root scope ends.
-const fn drop_order_rank(root: StackRoot) -> u8 {
-    match root {
-        StackRoot::Variable(_) => 0,
-        StackRoot::Parameter(_)
-        | StackRoot::LambdaParameter(_)
-        | StackRoot::OperationHandlerParameter(_) => 1,
-        StackRoot::Capture(_) => 2,
-    }
+    let instruction_idx = functions.get_function(function_id).block_instructions(block_id).len();
+    Point::builder().block_id(block_id).instruction_idx(instruction_idx).build()
 }

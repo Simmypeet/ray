@@ -1,7 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use rayc_ir::{
-    cfg::{ControlFlowEdge, Instruction, Point, Terminator},
+    cfg::{Instruction, Point},
     dataflow::DataflowProblem,
     ir_expr::IRExprKind,
     ir_function::{FunctionID, IRFunctionMap},
@@ -15,7 +15,7 @@ use crate::{
     diagnostic::{
         MoveOutOfHandlerCapture, UseAfterMove, UseAfterPartialMove, UseBeforeInitialization,
     },
-    drop_elaboration::{DropElaborator, PendingDrop, materialize_drops},
+    drop_elaboration::DropElaborator,
 };
 
 /// Checks every reachable load and drops every stack value that would
@@ -45,60 +45,33 @@ pub async fn analyze(
     let function_ids =
         functions.functions().map(|(function_id, _)| function_id).collect::<Vec<_>>();
     for function_id in function_ids {
-        // REVIEW: I think let's DropElaborator holds all the additional drop
-        // insertions for the entire function and materializes them all at once
-        // after `check_function` and `collect_place_drops` are done. This way
-        // we can avoid having to allocate small Vecs for each drop insertion
-        // and just to aggregate them all at once.
         let mut elaborator = DropElaborator::default();
-
-        // Moves are checked against the IR as written, so an inserted drop is
-        // never reported as the site of a move.
-        let merge_drops = check_function(
-            engine,
-            def_id,
-            functions,
-            function_id,
-            &mut elaborator,
-            &mut diagnostics,
-        )
-        .await;
-
-        insert_merge_drops(engine, functions, function_id, merge_drops).await;
-
-        // Scope exits and reassignments are resolved against the balanced IR,
-        // where every place is initialized on all paths or on none.
-        let place_drops = collect_place_drops(
-            engine,
-            def_id,
-            functions,
-            function_id,
-            &mut elaborator,
-            &mut diagnostics,
-        )
-        .await;
-        let mut insertions = BTreeMap::new();
-        for (point, drops) in place_drops {
-            insertions
-                .insert(point, materialize_drops(engine, functions, function_id, drops).await);
-        }
-        functions.insert_instructions_before(function_id, insertions);
+        analyze_function(engine, def_id, functions, function_id, &mut elaborator, &mut diagnostics)
+            .await;
+        elaborator.insert_drops(engine, functions, function_id).await;
     }
 
     diagnostics
 }
 
 /// Reports loads of possibly uninitialized places, and moves out of captures
-/// which the function only borrows, and returns the drops which balance the
-/// stack on each control-flow edge into a merge.
-async fn check_function(
+/// which the function only borrows, and selects every drop the function needs.
+///
+/// Everything is decided from one solution of the IR as written, so an
+/// inserted drop is never reported as the site of a move. The solution also
+/// describes the IR once merges are balanced: a place which may be
+/// uninitialized on some edge into a merge is already uninitialized in the
+/// joined state, which is exactly what dropping it on the other edges
+/// produces. Later scope exits and reassignments therefore see every place
+/// initialized on all paths or on none.
+async fn analyze_function(
     engine: &TrackedEngine,
     def_id: GlobalSymbolID,
     functions: &IRFunctionMap,
     function_id: FunctionID,
     elaborator: &mut DropElaborator,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Vec<(ControlFlowEdge, Vec<PendingDrop>)> {
+) {
     let function = functions.get_function(function_id);
     let captures = functions.captures_for_function(function_id);
     let mut problem =
@@ -161,109 +134,12 @@ async fn check_function(
                     }
                 }
 
-                Instruction::ScopePush(_)
-                | Instruction::ScopePop(_)
-                | Instruction::ExprDiscard(_)
-                | Instruction::Store(_) => {}
-            }
-
-            problem.transfer_instruction(point, instruction, &mut state).await.unwrap();
-        }
-    }
-
-    // The analysis is not edge-sensitive, so an edge carries its source's
-    // exit state unchanged.
-    let mut merge_drops = Vec::new();
-    for edge in solution.edges() {
-        let (Some(exit), Some(entry)) =
-            (solution.block_exit(edge.source()), solution.block_entry(edge.target()))
-        else {
-            continue;
-        };
-
-        let drops = elaborator.merge_drops(exit, entry, &mut problem, diagnostics).await;
-        if !drops.is_empty() {
-            merge_drops.push((*edge, drops));
-        }
-    }
-
-    merge_drops
-}
-
-/// Places each edge's balancing drops where they run only when control
-/// follows that edge.
-async fn insert_merge_drops(
-    engine: &TrackedEngine,
-    functions: &mut IRFunctionMap,
-    function_id: FunctionID,
-    merge_drops: Vec<(ControlFlowEdge, Vec<PendingDrop>)>,
-) {
-    let mut insertions = BTreeMap::new();
-    for (edge, drops) in merge_drops {
-        let instructions = materialize_drops(engine, functions, function_id, drops).await;
-
-        // A jump is the source's only edge, so the drops can end the source
-        // block. A conditional edge is critical, since its target merges
-        // several edges, so it gets a block of its own.
-        let terminator = functions.get_function(function_id).block_terminator(edge.source());
-        let block_id = match terminator {
-            Some(Terminator::Jump(_)) => edge.source(),
-            // this wouldn't be needed if we split every critical edge before dataflow analysis
-            Some(Terminator::Conditional(_)) => functions.split_edge(function_id, edge),
-            Some(Terminator::Return(_)) | None => {
-                unreachable!("a control-flow edge leaves through a jump or a conditional")
-            }
-        };
-
-        let instruction_idx =
-            functions.get_function(function_id).block_instructions(block_id).len();
-        let point = Point::builder().block_id(block_id).instruction_idx(instruction_idx).build();
-        insertions.insert(point, instructions);
-    }
-
-    functions.insert_instructions_before(function_id, insertions);
-}
-
-/// Returns the drops which run before each scope exit and each reassignment,
-/// keyed by the point of the `ScopePop` or `Store` they precede.
-async fn collect_place_drops(
-    engine: &TrackedEngine,
-    def_id: GlobalSymbolID,
-    functions: &IRFunctionMap,
-    function_id: FunctionID,
-    elaborator: &mut DropElaborator,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> BTreeMap<Point, Vec<PendingDrop>> {
-    let function = functions.get_function(function_id);
-    let captures = functions.captures_for_function(function_id);
-    let mut problem =
-        StackStateProblem::new(Solver::new(engine.clone(), def_id).await, function, captures);
-
-    // REVIEW: Woah! it seems that we have to solve the dataflow problem twice,
-    // which is quite expensive. Why don't we reuse the dataflow solution for
-    // both `check_function` and `collect_place_drops`? I assume that the
-    // reason is because of the borrow checker? if that's the case, perhaps we
-    // should aggregate all the drop insertions and then insert them all at once
-    // after `check_function` and `collect_place_drops` are done, so that we don't
-    // have to solve the dataflow problem twice. This is something we should
-    // investigate.
-    let solution = function.solve_dataflow(&mut problem).await.unwrap();
-
-    let mut place_drops = BTreeMap::new();
-    for block_id in solution.reachable_blocks() {
-        let mut state = solution.block_entry(block_id).unwrap().clone();
-
-        for (instruction_idx, instruction) in
-            function.block_instructions(block_id).iter().enumerate()
-        {
-            let point =
-                Point::builder().block_id(block_id).instruction_idx(instruction_idx).build();
-
-            let drops = match instruction {
                 // Values still initialized when their scope ends are dropped
                 // just before the scope pops.
                 Instruction::ScopePop(scope_id) => {
-                    elaborator.scope_drops(*scope_id, &state, &mut problem, diagnostics).await
+                    elaborator
+                        .scope_drops(point, *scope_id, &state, &mut problem, diagnostics)
+                        .await;
                 }
 
                 // The previous value of a reassigned place is dropped after
@@ -272,22 +148,36 @@ async fn collect_place_drops(
                 Instruction::Store(store) => {
                     let ty = function.get_expression(store.expression()).ty().clone();
                     elaborator
-                        .reassignment_drops(store.address(), ty, &state, &mut problem, diagnostics)
-                        .await
+                        .reassignment_drops(
+                            point,
+                            store.address(),
+                            ty,
+                            &state,
+                            &mut problem,
+                            diagnostics,
+                        )
+                        .await;
                 }
 
-                Instruction::ScopePush(_)
-                | Instruction::Expression(_)
-                | Instruction::ExprDiscard(_) => Vec::new(),
-            };
-            if !drops.is_empty() {
-                place_drops.insert(point, drops);
+                Instruction::ScopePush(_) | Instruction::ExprDiscard(_) => {}
             }
 
             problem.transfer_instruction(point, instruction, &mut state).await.unwrap();
         }
     }
-    place_drops
+
+    // Balance the stack on each edge into a merge. The analysis is not
+    // edge-sensitive, so an edge carries its source's exit state unchanged.
+    let drop_order = problem.roots_in_drop_order().await;
+    for edge in solution.edges() {
+        let (Some(exit), Some(entry)) =
+            (solution.block_exit(edge.source()), solution.block_entry(edge.target()))
+        else {
+            continue;
+        };
+
+        elaborator.merge_drops(*edge, exit, entry, &drop_order, &mut problem, diagnostics).await;
+    }
 }
 
 /// Returns the spans of the most recent moves which may have left `state`

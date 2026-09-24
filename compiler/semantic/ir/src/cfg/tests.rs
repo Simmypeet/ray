@@ -79,3 +79,33 @@ fn leaves_graph_without_critical_edges_unchanged() {
     assert_eq!(cfg.split_critical_edges(), 0);
     assert_eq!(cfg, original);
 }
+
+#[test]
+fn inserts_instructions_against_the_original_layout() {
+    let mut cfg = Cfg::new();
+    let entry = cfg.entry_block();
+    for index in 0..3 {
+        cfg.push_expression(entry, IRExprID::new(index));
+    }
+    let point =
+        |instruction_idx| Point::builder().block_id(entry).instruction_idx(instruction_idx).build();
+    let expression = |index| Instruction::Expression(IRExprID::new(index));
+
+    // Queue out of order, twice at one point, and at the end of the block.
+    let mut insertion = InstructionInsertion::new();
+    insertion.insert_before(point(3), [expression(13)]);
+    insertion.insert_before(point(1), [expression(10)]);
+    insertion.insert_before(point(0), [expression(11)]);
+    insertion.insert_before(point(1), [expression(12)]);
+    cfg.insert_instructions(insertion);
+
+    assert_eq!(cfg.instructions(entry), [
+        expression(11),
+        expression(0),
+        expression(10),
+        expression(12),
+        expression(1),
+        expression(2),
+        expression(13),
+    ]);
+}

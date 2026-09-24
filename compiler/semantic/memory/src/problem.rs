@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, convert::Infallible};
+use std::{cmp::Reverse, collections::BTreeMap, convert::Infallible};
 
 use qbice::storage::intern::Interned;
 use rayc_ir::{
@@ -21,7 +21,7 @@ use rayc_type::{
     where_clause::MarkerPredicate,
 };
 
-use crate::{PlaceState, StackRoot, StackState};
+use crate::{PlaceState, PossibleStates, StackRoot, StackState};
 
 /// Dataflow context for stack initialization and move state.
 ///
@@ -119,34 +119,54 @@ impl<'a> StackStateProblem<'a> {
     ///
     /// Values are dropped in reverse of the order they came into scope. Local
     /// variables drop in reverse declaration order. The root scope then drops
-    /// the function inputs: parameters in reverse, followed by captures in
-    /// reverse, since the capture environment precedes the parameters.
-    ///
-    /// An operation handler only borrows its captures, which the enclosing
-    /// function drops after the handled body, so they are not included.
+    /// the function inputs, as [`Self::push_inputs_in_drop_order`] orders them.
     pub(crate) async fn scope_roots_in_drop_order(&self, scope_id: ScopeID) -> Vec<StackRoot> {
         let mut roots =
             self.function.declared_variables(scope_id).map(StackRoot::Variable).collect::<Vec<_>>();
         roots.reverse();
 
         if self.function.root_scope_id() == scope_id {
-            // REVIEW: this seems a bit wasteful, we have to allocate one big
-            // Vec just to partition it into two smaller Vecs. Can we
-            // individually query the iterator of parameters first and then
-            // the iterator of captures (if the function doesn't borrow its
-            // captures)?
-            let (captures, parameters): (Vec<_>, Vec<_>) = self
-                .root_stack_roots()
-                .await
-                .into_iter()
-                .partition(|root| matches!(root, StackRoot::Capture(_)));
-            roots.extend(parameters.into_iter().rev());
-            if !self.borrows_captures() {
-                roots.extend(captures.into_iter().rev());
-            }
+            self.push_inputs_in_drop_order(&mut roots).await;
         }
 
         roots
+    }
+
+    /// Returns every stack root of the function in the order their values are
+    /// dropped: local variables in reverse declaration order, then the
+    /// function inputs, as [`Self::push_inputs_in_drop_order`] orders them.
+    pub(crate) async fn roots_in_drop_order(&self) -> Vec<StackRoot> {
+        let mut variables = self
+            .function
+            .variables()
+            .map(|(variable_id, variable)| (variable.declaration_order(), variable_id))
+            .collect::<Vec<_>>();
+        variables.sort_unstable_by_key(|(declaration_order, _)| Reverse(*declaration_order));
+
+        let mut roots = variables
+            .into_iter()
+            .map(|(_, variable_id)| StackRoot::Variable(variable_id))
+            .collect::<Vec<_>>();
+        self.push_inputs_in_drop_order(&mut roots).await;
+        roots
+    }
+
+    /// Appends the function inputs in the order their values are dropped when
+    /// the root scope ends: parameters in reverse, followed by captures in
+    /// reverse, since the capture environment precedes the parameters.
+    ///
+    /// An operation handler only borrows its captures, which the enclosing
+    /// function drops after the handled body, so they are not included.
+    async fn push_inputs_in_drop_order(&self, roots: &mut Vec<StackRoot>) {
+        let parameters_start = roots.len();
+        self.push_parameter_roots(roots).await;
+        roots[parameters_start..].reverse();
+
+        if !self.borrows_captures() {
+            let captures_start = roots.len();
+            roots.extend(self.capture_roots());
+            roots[captures_start..].reverse();
+        }
     }
 
     /// Returns whether `address` is rooted in a capture which this function
@@ -186,49 +206,67 @@ impl<'a> StackStateProblem<'a> {
         self.solver.entails_marker_predicate(MarkerPredicate::new(marker_id, ty)).await
     }
 
-    async fn root_stack_roots(&self) -> Vec<StackRoot> {
-        let mut roots = match self.function.context() {
-            IRContext::Def => self
-                .solver
-                .engine()
-                .get_parameter_map(self.solver.site())
-                .await
-                .iter()
-                .map(|(parameter_id, _)| StackRoot::Parameter(parameter_id))
-                .collect(),
-            IRContext::Lambda(context) => context
-                .parameters()
-                .map(|(parameter_id, _)| StackRoot::LambdaParameter(parameter_id))
-                .collect(),
-            IRContext::Thunk(_) => Vec::new(),
-            IRContext::OperationHandler(context) => context
-                .parameters()
-                .map(|(parameter_id, _)| StackRoot::OperationHandlerParameter(parameter_id))
-                .collect(),
-        };
+    /// Returns every function input: its parameters in declaration order,
+    /// followed by its captures in capture-layout order.
+    async fn input_roots(&self) -> Vec<StackRoot> {
+        let mut roots = Vec::new();
+        self.push_parameter_roots(&mut roots).await;
+        roots.extend(self.capture_roots());
+        roots
+    }
 
-        // Every nested function context also owns its captured stack inputs.
+    /// Appends the function's parameters, in declaration order.
+    async fn push_parameter_roots(&self, roots: &mut Vec<StackRoot>) {
         match self.function.context() {
-            IRContext::Def => {}
-            IRContext::Lambda(_) | IRContext::Thunk(_) | IRContext::OperationHandler(_) => {
+            IRContext::Def => {
+                let parameters = self.solver.engine().get_parameter_map(self.solver.site()).await;
                 roots.extend(
-                    self.captures
-                        .expect("nested functions require a capture layout")
-                        .iter()
-                        .map(|(capture_id, _)| StackRoot::Capture(capture_id)),
+                    parameters.iter().map(|(parameter_id, _)| StackRoot::Parameter(parameter_id)),
                 );
             }
+            IRContext::Lambda(context) => roots.extend(
+                context
+                    .parameters()
+                    .map(|(parameter_id, _)| StackRoot::LambdaParameter(parameter_id)),
+            ),
+            IRContext::Thunk(_) => {}
+            IRContext::OperationHandler(context) => roots.extend(
+                context
+                    .parameters()
+                    .map(|(parameter_id, _)| StackRoot::OperationHandlerParameter(parameter_id)),
+            ),
         }
-        roots
+    }
+
+    /// Returns the function's captures, in capture-layout order. Only nested
+    /// functions have captures.
+    fn capture_roots(&self) -> impl Iterator<Item = StackRoot> + '_ {
+        self.captures.into_iter().flat_map(|captures| {
+            captures.iter().map(|(capture_id, _)| StackRoot::Capture(capture_id))
+        })
+    }
+
+    /// Returns the type of the component of `ty` selected by `projection`.
+    ///
+    /// # Panics
+    ///
+    /// Panics under the same conditions as [`Self::projection_layer`].
+    pub(crate) async fn projected_type(
+        &self,
+        ty: &Interned<Ty>,
+        projection: Projection,
+    ) -> Interned<Ty> {
+        self.projection_layer(ty, projection, None).await.1
     }
 
     /// Resolves one projection into its component states and selected type.
     ///
     /// [`PlaceState::move_at`] calls this immediately before traversing each
-    /// projection. When `place_state` is uniform, this directly constructs the
-    /// component map used to expand it, avoiding an intermediate collection of
-    /// sibling projections. An already-partial place returns no replacement
-    /// map. The selected type becomes the input to the next projection.
+    /// projection. When the traversed place is uniform, its state is passed as
+    /// `uniform`, and this directly constructs the component map used to
+    /// expand it, avoiding an intermediate collection of sibling projections.
+    /// Without a uniform state, no component map is built. The selected type
+    /// becomes the input to the next projection.
     ///
     /// The type is normalized before its shape is inspected. Struct bodies and
     /// generic field substitutions are queried only for the current
@@ -244,7 +282,7 @@ impl<'a> StackStateProblem<'a> {
         &self,
         ty: &Interned<Ty>,
         projection: Projection,
-        place_state: &PlaceState,
+        uniform: Option<&PossibleStates>,
     ) -> (Option<BTreeMap<Projection, PlaceState>>, Interned<Ty>) {
         let ty = self.solver.normalize(ty).await;
         let Ty::Application(application) = &*ty else {
@@ -258,16 +296,11 @@ impl<'a> StackStateProblem<'a> {
                     .get(index)
                     .unwrap_or_else(|| panic!("tuple projection index {index} is out of bounds"))
                     .clone();
-                let components = match place_state {
-                    PlaceState::Uniform(state) => Some(
-                        (0..tuple.args().len())
-                            .map(|index| {
-                                (Projection::Tuple(index), PlaceState::Uniform(state.clone()))
-                            })
-                            .collect(),
-                    ),
-                    PlaceState::Partial(_) => None,
-                };
+                let components = uniform.map(|state| {
+                    (0..tuple.args().len())
+                        .map(|index| (Projection::Tuple(index), PlaceState::Uniform(state.clone())))
+                        .collect()
+                });
                 (components, projected)
             }
             (ApplicationView::Struct(struct_ty), Projection::Field(field_id)) => {
@@ -281,16 +314,11 @@ impl<'a> StackStateProblem<'a> {
                         panic!("struct projection references missing field {field_id:?}")
                     });
                 let projected = field.ty().apply_subst_or_clone(&substitution, engine);
-                let components = match place_state {
-                    PlaceState::Uniform(state) => Some(
-                        body.iter()
-                            .map(|(id, _)| {
-                                (Projection::Field(id), PlaceState::Uniform(state.clone()))
-                            })
-                            .collect(),
-                    ),
-                    PlaceState::Partial(_) => None,
-                };
+                let components = uniform.map(|state| {
+                    body.iter()
+                        .map(|(id, _)| (Projection::Field(id), PlaceState::Uniform(state.clone())))
+                        .collect()
+                });
                 (components, projected)
             }
             (
@@ -371,7 +399,7 @@ impl DataflowProblem for StackStateProblem<'_> {
 
                 // Function inputs live for the root scope and arrive initialized.
                 if self.function.root_scope_id() == *scope_id {
-                    for root in self.root_stack_roots().await {
+                    for root in self.input_roots().await {
                         slots.set(root, PlaceState::initialized());
                     }
                 }
@@ -384,7 +412,7 @@ impl DataflowProblem for StackStateProblem<'_> {
 
                 // Function inputs share the root scope's lifetime.
                 if self.function.root_scope_id() == *scope_id {
-                    for root in self.root_stack_roots().await {
+                    for root in self.input_roots().await {
                         slots.remove(root);
                     }
                 }

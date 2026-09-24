@@ -80,11 +80,6 @@ impl StackSlots {
 
     pub(crate) fn remove(&mut self, root: StackRoot) { self.states.remove(&root); }
 
-    /// Iterates over the live stack allocations in no particular order.
-    pub(crate) fn roots(&self) -> impl Iterator<Item = StackRoot> + '_ {
-        self.states.keys().copied()
-    }
-
     pub(crate) fn join_in_place(&mut self, incoming: &Self) -> bool {
         assert_eq!(
             self.states.len(),

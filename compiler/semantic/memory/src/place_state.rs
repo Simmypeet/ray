@@ -188,14 +188,12 @@ impl PlaceState {
     /// Returns the state of the immediate component selected by `projection`.
     ///
     /// A uniform state describes every component, so it is returned as is.
-    // REVIEW: Do we really need to clone here? Can it just be -> &Self?
-    pub(crate) fn component(&self, projection: Projection) -> Self {
+    pub(crate) fn component(&self, projection: Projection) -> &Self {
         match self {
-            Self::Uniform(state) => Self::Uniform(state.clone()),
+            Self::Uniform(_) => self,
             Self::Partial(components) => components
                 .get(&projection)
-                .expect("the type-checked projection must exist in the place state")
-                .clone(),
+                .expect("the type-checked projection must exist in the place state"),
         }
     }
 
@@ -271,8 +269,12 @@ impl PlaceState {
 
             // Resolve and expand only the layer being traversed. This keeps
             // recursive types finite and preserves every sibling's state.
+            let uniform = match &*selected {
+                Self::Uniform(state) => Some(state),
+                Self::Partial(_) => None,
+            };
             let (components, projected_ty) =
-                dataflow_problem_ctx.projection_layer(&ty, *projection, selected).await;
+                dataflow_problem_ctx.projection_layer(&ty, *projection, uniform).await;
             if let Some(components) = components {
                 *selected = Self::Partial(components);
             }

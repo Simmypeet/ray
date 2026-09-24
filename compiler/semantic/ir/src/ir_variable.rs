@@ -16,14 +16,13 @@ pub struct IRVariable {
     ty: Interned<Ty>,
     span: RelativeSpan,
     scope_id: ScopeID,
+
+    /// The position of this variable among its function's variables, in the
+    /// order they were declared. Later declarations are dropped first.
+    declaration_order: usize,
 }
 
 impl IRVariable {
-    #[must_use]
-    pub(crate) const fn new(ty: Interned<Ty>, span: RelativeSpan, scope_id: ScopeID) -> Self {
-        Self { ty, span, scope_id }
-    }
-
     #[must_use]
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
 
@@ -32,6 +31,9 @@ impl IRVariable {
 
     #[must_use]
     pub const fn scope_id(&self) -> ScopeID { self.scope_id }
+
+    #[must_use]
+    pub const fn declaration_order(&self) -> usize { self.declaration_order }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
@@ -40,9 +42,16 @@ pub struct IRVariableMap {
 }
 
 impl IRVariableMap {
+    /// Declares a new variable after every variable declared so far.
     #[must_use]
-    pub(crate) fn insert_variable(&mut self, variable: IRVariable) -> IRVariableID {
-        self.variables.insert(variable)
+    pub(crate) fn insert_variable(
+        &mut self,
+        ty: Interned<Ty>,
+        span: RelativeSpan,
+        scope_id: ScopeID,
+    ) -> IRVariableID {
+        let declaration_order = self.variables.len();
+        self.variables.insert(IRVariable { ty, span, scope_id, declaration_order })
     }
 
     #[must_use]

@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
@@ -8,7 +6,9 @@ use rayc_type::ty::{Ty, application::ClosureID};
 
 use crate::{
     address::Address,
-    cfg::{BlockID, Cfg, ControlFlowEdge, Instruction, Point, Reachables, Terminator},
+    cfg::{
+        BlockID, Cfg, ControlFlowEdge, Instruction, InstructionInsertion, Reachables, Terminator,
+    },
     dataflow::{DataflowProblem, DataflowSolution, solve},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
     ir_lambda::{
@@ -292,15 +292,13 @@ impl IRFunctionMap {
         self.get_function_mut(function_id).push_store(block_id, address, value);
     }
 
-    /// Inserts each instruction sequence immediately before the instruction
-    /// at its point, with every point referring to the layout before any
-    /// insertion.
-    pub fn insert_instructions_before(
+    /// Applies every instruction queued in `insertion` to `function_id`.
+    pub fn insert_instructions(
         &mut self,
         function_id: FunctionID,
-        insertions: BTreeMap<Point, Vec<Instruction>>,
+        insertion: InstructionInsertion,
     ) {
-        self.get_function_mut(function_id).insert_instructions_before(insertions);
+        self.get_function_mut(function_id).insert_instructions(insertion);
     }
 
     /// Redirects `edge` of `function_id` through a new empty block and
@@ -577,7 +575,7 @@ impl IRFunction {
         ty: Interned<Ty>,
         span: RelativeSpan,
     ) -> IRVariableID {
-        let variable_id = self.variable_map.insert_variable(IRVariable::new(ty, span, scope_id));
+        let variable_id = self.variable_map.insert_variable(ty, span, scope_id);
         self.scope_map.register_variable(scope_id, variable_id);
         variable_id
     }
@@ -607,12 +605,9 @@ impl IRFunction {
         self.cfg.push_store(block_id, address, value);
     }
 
-    // REVIEW: using `BTreeMap` here is a bit arbitrary. I think let's create a new
-    // struct called `InstructionInsertion` that internally holds a `BTreeMap` and
-    // wraps the insertion logic. That way we don't have to expose the `BTreeMap`
-    // here
-    pub fn insert_instructions_before(&mut self, insertions: BTreeMap<Point, Vec<Instruction>>) {
-        self.cfg.insert_instructions_before(insertions);
+    /// Applies every instruction queued in `insertion`.
+    pub fn insert_instructions(&mut self, insertion: InstructionInsertion) {
+        self.cfg.insert_instructions(insertion);
     }
 
     /// Redirects `edge` through a new empty block and returns that block.
