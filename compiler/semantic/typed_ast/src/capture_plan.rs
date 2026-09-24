@@ -154,6 +154,18 @@ impl CaptureRequirement {
 
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
+
+    /// The type of this capture's environment field: the binding itself for
+    /// a value capture, or a pointer to it for a reference capture.
+    #[must_use]
+    pub fn storage_ty(&self, engine: &TrackedEngine) -> Interned<Ty> {
+        match self.mode {
+            CaptureMode::Value(_) => self.binding_ty.clone(),
+            CaptureMode::Reference(mutability) => {
+                Ty::new_pointer(self.binding_ty.clone(), mutability, engine)
+            }
+        }
+    }
 }
 
 impl Default for FunctionCapturePlan {
@@ -167,15 +179,7 @@ impl FunctionCapturePlan {
     pub fn captured_tuple(&self, engine: &TrackedEngine) -> Interned<Ty> {
         Ty::new_tuple(
             engine.intern_unsized(
-                self.captures
-                    .iter()
-                    .map(|capture| match capture.mode {
-                        CaptureMode::Value(_) => capture.binding_ty.clone(),
-                        CaptureMode::Reference(mutability) => {
-                            Ty::new_pointer(capture.binding_ty.clone(), mutability, engine)
-                        }
-                    })
-                    .collect::<Vec<_>>(),
+                self.captures.iter().map(|capture| capture.storage_ty(engine)).collect::<Vec<_>>(),
             ),
             engine,
         )

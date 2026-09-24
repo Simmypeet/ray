@@ -1996,6 +1996,7 @@ dependencies = [
  "rayc_memory",
  "rayc_qbice",
  "rayc_semantic_element",
+ "rayc_solver",
  "rayc_source_file",
  "rayc_symbol",
  "rayc_target",
