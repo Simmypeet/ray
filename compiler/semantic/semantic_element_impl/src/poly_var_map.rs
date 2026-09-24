@@ -5,7 +5,7 @@ use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::{Obligation, discover_function_poly_vars, resolver::Resolver};
-use rayc_semantic_element::callable_parameter::get_callable_parameters;
+use rayc_semantic_element::callable_parameter::{CallableParameter, get_callable_parameters};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID,
@@ -94,6 +94,48 @@ fn insert_poly_var(poly_vars: &mut PolyVarMap, poly_var: PolyVar, storage: &Stor
                 original_span: poly_vars[id].span(),
                 duplicate_span: original.span(),
             }));
+        }
+    }
+}
+
+/// Inserts the hidden dictionaries of each callable-sugar parameter's fresh
+/// type, after every source dictionary.
+async fn insert_callable_dictionaries(
+    engine: &TrackedEngine,
+    symbol_id: GlobalSymbolID,
+    callables: &[CallableParameter],
+    poly_vars: &mut PolyVarMap,
+) {
+    for entry in callables {
+        let id =
+            poly_vars.find_generated(&PolyVarOrigin::CallableType(entry.occurrence())).unwrap();
+        let ty = Ty::new_poly_var(GlobalPolyVarID::new(symbol_id, id), engine);
+
+        // The callable is invoked through `Def`, and dropped through `Drop`
+        // on paths that do not consume it. The fresh type is unnamed, so
+        // the user cannot declare either dictionary.
+        for (role, name, origin) in [
+            (
+                CoreItem::DefTrait,
+                "callable dictionary",
+                PolyVarOrigin::CallableDictionary(entry.occurrence()),
+            ),
+            (
+                CoreItem::DropTrait,
+                "callable drop dictionary",
+                PolyVarOrigin::CallableDropDictionary(entry.occurrence()),
+            ),
+        ] {
+            let requirement =
+                TraitRef::new(engine.get_core_item(role).await, Args::new([ty.clone()], engine));
+            poly_vars.insert_generated(
+                PolyVar::new_instance(
+                    engine.intern_unsized(name),
+                    requirement,
+                    entry.syntax().span(),
+                ),
+                origin,
+            );
         }
     }
 }
@@ -219,23 +261,7 @@ impl Build for rayc_type::poly_var::Key {
         }
 
         insert_given_parameters(engine, symbol_id, &mut poly_vars, &storage, &obligations).await;
-        for entry in callables.iter() {
-            let id =
-                poly_vars.find_generated(&PolyVarOrigin::CallableType(entry.occurrence())).unwrap();
-            let ty = Ty::new_poly_var(GlobalPolyVarID::new(symbol_id, id), engine);
-            let requirement = TraitRef::new(
-                engine.get_core_item(CoreItem::DefTrait).await,
-                Args::new([ty], engine),
-            );
-            poly_vars.insert_generated(
-                PolyVar::new_instance(
-                    engine.intern_unsized("callable dictionary"),
-                    requirement,
-                    entry.syntax().span(),
-                ),
-                PolyVarOrigin::CallableDictionary(entry.occurrence()),
-            );
-        }
+        insert_callable_dictionaries(engine, symbol_id, &callables, &mut poly_vars).await;
 
         Output::new_with(
             engine.intern(poly_vars),
