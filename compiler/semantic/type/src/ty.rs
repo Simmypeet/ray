@@ -11,12 +11,14 @@ use rayc_symbol::{GlobalSymbolID, name::get_name};
 use crate::{
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap, get_poly_var_map},
     reduce::Reduce,
+    rewrite::{Rewrite, TyRewriter},
     subst::{Subst, Substitutable},
     ty::{
         application::{Application, Constant, InstanceView, StructView, View as ApplicationView},
         args::Args,
         effect_row::EffectRow,
         inference::{GenInfer, Inference},
+        lifetime::Lifetime,
     },
 };
 
@@ -24,6 +26,7 @@ pub mod application;
 pub mod args;
 pub mod effect_row;
 pub mod inference;
+pub mod lifetime;
 pub mod self_instance;
 
 use self_instance::SelfInstance;
@@ -58,6 +61,7 @@ pub enum TyKind {
     Star,
     EffectRow,
     Instance,
+    Lifetime,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -95,6 +99,8 @@ pub enum Ty {
     /// The enclosing trait’s rigid self dictionary; see [`SelfInstance`].
     SelfInstance(SelfInstance),
     EffectRow(EffectRow),
+    /// A lifetime that is not a lifetime parameter; see [`Lifetime`].
+    Lifetime(Lifetime),
 }
 
 impl Ty {
@@ -119,6 +125,7 @@ impl Ty {
             }
             Self::EffectRow(_) => TyKind::EffectRow,
             Self::SelfInstance(_) => TyKind::Instance,
+            Self::Lifetime(_) => TyKind::Lifetime,
         }
     }
 
@@ -134,7 +141,10 @@ impl Ty {
             match &**ty {
                 Self::Application(application) => pending.extend(application.interned_iter()),
                 Self::EffectRow(row) => pending.extend(row.interned_iter()),
-                Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {}
+                Self::Inference(_)
+                | Self::PolyVar(_)
+                | Self::SelfInstance(_)
+                | Self::Lifetime(_) => {}
             }
             Some(ty)
         })
@@ -150,7 +160,10 @@ impl Ty {
                     pending.extend(application.iter());
                 }
                 Self::EffectRow(row) => pending.extend(row.iter()),
-                Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {}
+                Self::Inference(_)
+                | Self::PolyVar(_)
+                | Self::SelfInstance(_)
+                | Self::Lifetime(_) => {}
             }
             Some(ty)
         })
@@ -164,7 +177,8 @@ impl Ty {
             Self::Application(_)
             | Self::EffectRow(_)
             | Self::PolyVar(_)
-            | Self::SelfInstance(_) => false,
+            | Self::SelfInstance(_)
+            | Self::Lifetime(_) => false,
         })
     }
 
@@ -177,6 +191,7 @@ impl Ty {
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::Reference(_)
                 | ApplicationView::Struct(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
@@ -187,9 +202,11 @@ impl Ty {
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Instance(_) => false,
             },
-            Self::Inference(_) | Self::EffectRow(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
-                false
-            }
+            Self::Inference(_)
+            | Self::EffectRow(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::Lifetime(_) => false,
         })
     }
 
@@ -199,8 +216,20 @@ impl Ty {
             Self::Application(application) => application.has_inference_variable(ty),
             Self::Inference(ty_inference) => ty_inference == ty,
             Self::EffectRow(row) => row.has_inference_variable(ty),
-            Self::PolyVar(_) | Self::SelfInstance(_) => false,
+            Self::PolyVar(_) | Self::SelfInstance(_) | Self::Lifetime(_) => false,
         }
+    }
+
+    /// Replaces every lifetime that is not a lifetime parameter with
+    /// [`Lifetime::Erased`].
+    ///
+    /// Lifetimes never affect code generation, so monomorphization erases
+    /// them before it interns an instantiated type: `f['a]` and `f['b]` must
+    /// share one instance, and `Ref['static, t]` and `Ref['a, t]` must lower
+    /// to one type.
+    #[must_use]
+    pub fn erase_lifetimes(ty: &Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
+        ty.rewrite_or_clone(&mut LifetimeEraser { engine }, engine)
     }
 
     #[must_use]
@@ -210,8 +239,30 @@ impl Ty {
             Self::Application(_)
             | Self::Inference(_)
             | Self::EffectRow(_)
-            | Self::SelfInstance(_) => false,
+            | Self::SelfInstance(_)
+            | Self::Lifetime(_) => false,
         })
+    }
+}
+
+/// The [`TyRewriter`] behind [`Ty::erase_lifetimes`].
+struct LifetimeEraser<'e> {
+    engine: &'e TrackedEngine,
+}
+
+impl TyRewriter for LifetimeEraser<'_> {
+    fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
+        match &**ty {
+            Ty::Lifetime(Lifetime::Static | Lifetime::Region(_)) => {
+                Some(Ty::new_lifetime(Lifetime::Erased, self.engine))
+            }
+            Ty::Lifetime(Lifetime::Erased)
+            | Ty::Application(_)
+            | Ty::Inference(_)
+            | Ty::PolyVar(_)
+            | Ty::SelfInstance(_)
+            | Ty::EffectRow(_) => None,
+        }
     }
 }
 
@@ -231,6 +282,7 @@ impl Substitutable for Interned<Ty> {
             Ty::EffectRow(row) => {
                 row.apply_subst(subst, engine).map(|new_row| engine.intern(Ty::EffectRow(new_row)))
             }
+            Ty::Lifetime(_) => None,
         }
     }
 }
@@ -277,7 +329,8 @@ async fn reduce_type(
             })
             .await
         }
-        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) => None,
+        // A lifetime never reduces.
+        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::Lifetime(_) => None,
         Ty::EffectRow(row) => {
             if row.labels().len() == 0
                 && let Some(tail) = row.tail()
@@ -337,6 +390,25 @@ impl Ty {
         )))
     }
 
+    /// Creates a checked reference `&'lifetime pointee`.
+    #[must_use]
+    pub fn new_reference(
+        lifetime: Interned<Self>,
+        pointee: Interned<Self>,
+        mutability: Mutability,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::Application(Application::new(
+            Constant::Reference(mutability),
+            engine.intern_unsized([lifetime, pointee]),
+        )))
+    }
+
+    #[must_use]
+    pub fn new_lifetime(lifetime: Lifetime, engine: &TrackedEngine) -> Interned<Self> {
+        engine.intern(Self::Lifetime(lifetime))
+    }
+
     #[must_use]
     pub async fn new_identity_struct(
         symbol_id: GlobalSymbolID,
@@ -379,7 +451,7 @@ impl Ty {
     }
 
     /// Creates the built-in no-op `Drop` dictionary for primitives, pointers,
-    /// and `core.NoDrop[t]`.
+    /// references, and `core.NoDrop[t]`.
     #[must_use]
     pub fn new_no_op_drop_instance(ty: Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
         assert!(
@@ -390,6 +462,7 @@ impl Ty {
                         application.view(),
                         ApplicationView::Primitive(_)
                             | ApplicationView::Pointer(_)
+                            | ApplicationView::Reference(_)
                             | ApplicationView::Struct(_)
                     )
             ),
@@ -510,6 +583,7 @@ impl Ty {
         )))
     }
 
+    /// Creates an error of the given kind.
     #[must_use]
     pub fn new_error(kind: TyKind, engine: &TrackedEngine) -> Interned<Self> {
         engine.intern(Self::Application(Application::new(
@@ -571,6 +645,7 @@ impl Ty {
                         ApplicationView::Primitive(_)
                         | ApplicationView::Tuple(_)
                         | ApplicationView::Pointer(_)
+                        | ApplicationView::Reference(_)
                         | ApplicationView::DefInstance(_)
                         | ApplicationView::Closure(_)
                         | ApplicationView::NoOpDropInstance(_)
@@ -589,7 +664,7 @@ impl Ty {
                         .await;
                     }
                 }
-                Self::Inference(_) | Self::SelfInstance(_) => {}
+                Self::Inference(_) | Self::SelfInstance(_) | Self::Lifetime(_) => {}
                 Self::PolyVar(poly_var) => {
                     let symbol_id = poly_var.parent_id();
                     if let Entry::Vacant(entry) = poly_var_maps.entry(symbol_id) {
@@ -720,6 +795,7 @@ impl TyDisplay<'_> {
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Pointer(_)
+            | ApplicationView::Reference(_)
             | ApplicationView::Struct(_)
             | ApplicationView::Instance(_)
             | ApplicationView::InstanceAssociated(_)
@@ -729,6 +805,24 @@ impl TyDisplay<'_> {
         };
         f.write_str(description)?;
         self.fmt_ty(target, f)
+    }
+
+    fn fmt_reference(
+        &self,
+        reference: application::ReferenceView<'_>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        f.write_char('&')?;
+
+        // An erased lifetime is left out, as in Rust.
+        if **reference.lifetime() != Ty::Lifetime(Lifetime::Erased) {
+            self.fmt_ty(reference.lifetime(), f)?;
+            f.write_char(' ')?;
+        }
+        if reference.mutability() == Mutability::Mutable {
+            f.write_str("mut ")?;
+        }
+        self.fmt_ty(reference.pointee(), f)
     }
 
     fn fmt_ty(&self, ty: &Ty, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -777,6 +871,7 @@ impl TyDisplay<'_> {
                     }
                     self.fmt_ty(pointer.pointee(), f)
                 }
+                ApplicationView::Reference(reference) => self.fmt_reference(reference, f),
                 ApplicationView::Instance(instance) => {
                     self.fmt_symbol_application(instance.symbol_id(), instance.args(), f)
                 }
@@ -807,6 +902,11 @@ impl TyDisplay<'_> {
             },
 
             Ty::SelfInstance(_) => f.write_str("this"),
+            Ty::Lifetime(lifetime) => match lifetime {
+                Lifetime::Static => f.write_str("'static"),
+                Lifetime::Erased => f.write_str("'_"),
+                Lifetime::Region(region) => write!(f, "'?{}", region.index()),
+            },
             Ty::PolyVar(poly_var) => {
                 let poly_var_map = self
                     .poly_var_maps
@@ -930,6 +1030,49 @@ impl Ty {
     }
 
     #[must_use]
+    pub fn as_reference_view(&self) -> Option<application::ReferenceView<'_>> {
+        if let Self::Application(application) = self
+            && let ApplicationView::Reference(reference) = application.view()
+        {
+            return Some(reference);
+        }
+        None
+    }
+
+    /// Returns what a dereference of this type reaches, when it is a raw
+    /// pointer or a reference.
+    #[must_use]
+    pub fn as_dereferenceable(&self) -> Option<Dereferenceable<'_>> {
+        let Self::Application(application) = self else {
+            return None;
+        };
+        match application.view() {
+            ApplicationView::Pointer(pointer) => Some(Dereferenceable {
+                pointee: pointer.pointee(),
+                mutability: pointer.mutability(),
+                is_raw: true,
+            }),
+            ApplicationView::Reference(reference) => Some(Dereferenceable {
+                pointee: reference.pointee(),
+                mutability: reference.mutability(),
+                is_raw: false,
+            }),
+            ApplicationView::Primitive(_)
+            | ApplicationView::Tuple(_)
+            | ApplicationView::Struct(_)
+            | ApplicationView::Instance(_)
+            | ApplicationView::InstanceAssociated(_)
+            | ApplicationView::Closure(_)
+            | ApplicationView::DefInstance(_)
+            | ApplicationView::NoOpDropInstance(_)
+            | ApplicationView::TupleDropInstance(_)
+            | ApplicationView::ClosureDropInstance(_)
+            | ApplicationView::NominalDropInstance(_)
+            | ApplicationView::Error => None,
+        }
+    }
+
+    #[must_use]
     pub fn as_pointee_of_pointer(&self) -> Option<&Interned<Self>> {
         if let Self::Application(application) = self
             && let ApplicationView::Pointer(pointer) = application.view()
@@ -951,6 +1094,7 @@ impl Ty {
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::Reference(_)
                 | ApplicationView::Struct(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
@@ -960,9 +1104,11 @@ impl Ty {
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Instance(_) => Some(false),
             },
-            Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {
-                Some(false)
-            }
+            Self::Inference(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::EffectRow(_)
+            | Self::Lifetime(_) => Some(false),
         }
     }
 
@@ -990,7 +1136,9 @@ impl Ty {
             Self::Application(application) => match application.view() {
                 ApplicationView::Primitive(_) => true,
                 ApplicationView::Pointer(pointer) => pointer.pointee().is_c_abi_value_type(),
-                ApplicationView::Tuple(_)
+                // A reference reaches C through a coercion to a raw pointer.
+                ApplicationView::Reference(_)
+                | ApplicationView::Tuple(_)
                 | ApplicationView::Struct(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::DefInstance(_)
@@ -1002,9 +1150,11 @@ impl Ty {
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Error => false,
             },
-            Self::EffectRow(_) | Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) => {
-                false
-            }
+            Self::EffectRow(_)
+            | Self::Inference(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::Lifetime(_) => false,
         }
     }
 
@@ -1021,6 +1171,7 @@ impl Ty {
                 ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::Reference(_)
                 | ApplicationView::Struct(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_)
@@ -1031,9 +1182,11 @@ impl Ty {
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Error => false,
             },
-            Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::EffectRow(_) => {
-                false
-            }
+            Self::Inference(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::EffectRow(_)
+            | Self::Lifetime(_) => false,
         }
     }
 
@@ -1041,6 +1194,26 @@ impl Ty {
     pub fn is_int32(&self) -> bool {
         matches!(self, Self::Application(application) if matches!(application.view(), ApplicationView::Primitive(Primitive::Int32)))
     }
+}
+
+/// What a dereference of a raw pointer or a reference reaches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Dereferenceable<'x> {
+    pointee: &'x Interned<Ty>,
+    mutability: Mutability,
+    is_raw: bool,
+}
+
+impl<'x> Dereferenceable<'x> {
+    #[must_use]
+    pub const fn pointee(&self) -> &'x Interned<Ty> { self.pointee }
+
+    #[must_use]
+    pub const fn mutability(&self) -> Mutability { self.mutability }
+
+    /// Returns whether this is a raw pointer rather than a reference.
+    #[must_use]
+    pub const fn is_raw(&self) -> bool { self.is_raw }
 }
 
 #[cfg(test)]

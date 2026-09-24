@@ -147,6 +147,14 @@ impl Subst {
     pub fn get<V: Copy + Into<Var>>(&self, var: &V) -> Option<&Interned<Ty>> {
         self.0.get(&(*var).into())
     }
+
+    /// Erases the lifetimes in every type this substitution maps to; see
+    /// [`Ty::erase_lifetimes`].
+    pub fn erase_lifetimes(&mut self, engine: &TrackedEngine) {
+        for (_, ty) in self.0.iter_mut() {
+            *ty = Ty::erase_lifetimes(ty, engine);
+        }
+    }
 }
 
 pub trait Substitutable {

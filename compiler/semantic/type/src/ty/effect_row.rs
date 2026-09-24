@@ -4,6 +4,7 @@ use rayc_symbol::GlobalSymbolID;
 
 use crate::{
     reduce::Reduce,
+    rewrite::{Rewrite, TyRewriter},
     subst::Substitutable,
     ty::{
         Ty,
@@ -42,6 +43,14 @@ impl Substitutable for Interned<EffectLabel> {
         Self: Sized,
     {
         self.args.apply_subst(subst, engine).map(|args| {
+            engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
+        })
+    }
+}
+
+impl Rewrite for Interned<EffectLabel> {
+    fn rewrite(&self, rewriter: &mut impl TyRewriter, engine: &TrackedEngine) -> Option<Self> {
+        self.args.rewrite(rewriter, engine).map(|args| {
             engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
         })
     }
@@ -170,6 +179,23 @@ impl Substitutable for EffectRow {
                 Some(Self { labels: new_labels, tail: Some(new_tail) })
             }
         }
+    }
+}
+
+impl Rewrite for EffectRow {
+    fn rewrite(&self, rewriter: &mut impl TyRewriter, engine: &TrackedEngine) -> Option<Self> {
+        // The labels are visited before the tail.
+        let new_labels = self.labels.rewrite(rewriter, engine);
+        let new_tail = self.tail.as_ref().and_then(|tail| tail.rewrite(rewriter, engine));
+
+        if new_labels.is_none() && new_tail.is_none() {
+            return None;
+        }
+
+        Some(Self {
+            labels: new_labels.unwrap_or_else(|| self.labels.clone()),
+            tail: new_tail.or_else(|| self.tail.clone()),
+        })
     }
 }
 

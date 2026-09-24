@@ -36,17 +36,17 @@ impl PolyVarKind {
     }
 }
 
-/// Identifies whether a binder comes from source or callable-parameter
-/// elaboration.
+/// Identifies whether a binder comes from source, callable-parameter
+/// elaboration, or lifetime elision.
 ///
 /// Each `def(...)` parameter annotation generates a fresh callable type and a
 /// `core.Def` dictionary. Their origins pair those binders without using their
 /// display names: generated binders are excluded from source-name lookup, and
 /// generated dictionaries cannot be supplied as explicit `given` arguments.
 ///
-/// Every generated variant carries the zero-based value-parameter index within
-/// the owning declaration, counting ordinary parameters too (but not an
-/// ellipsis). This is a declaration-local occurrence key, not a
+/// Every generated callable variant carries the zero-based value-parameter
+/// index within the owning declaration, counting ordinary parameters too (but
+/// not an ellipsis). This is a declaration-local occurrence key, not a
 /// polymorphic-variable ID or an index among only callable parameters. For `def
 /// apply(x: int32, fn: def())`, the generated binders have origins
 /// `CallableType(1)`, `CallableDictionary(1)` and `CallableDropDictionary(1)`.
@@ -63,6 +63,11 @@ pub enum PolyVarOrigin {
     /// The hidden `core.Drop` dictionary for that parameter's fresh callable
     /// type, used when the callable is dropped instead of called.
     CallableDropDictionary(usize),
+    /// The fresh lifetime parameter introduced for a lifetime elided in a
+    /// parameter type. It is keyed by the span of the elided lifetime: the
+    /// span of `&t` for a reference written without a lifetime, or the span
+    /// of `'_`.
+    ElidedLifetime(RelativeSpan),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -85,6 +90,18 @@ impl PolyVar {
             name,
             origin: PolyVarOrigin::Source,
             kind: PolyVarKind::Type(TyKind::EffectRow),
+            span,
+        }
+    }
+
+    /// Creates a lifetime parameter. Its name includes the leading quote, as
+    /// in `'a`, so lifetimes and types live in separate namespaces.
+    #[must_use]
+    pub const fn new_lifetime(name: Interned<str>, span: RelativeSpan) -> Self {
+        Self {
+            name,
+            origin: PolyVarOrigin::Source,
+            kind: PolyVarKind::Type(TyKind::Lifetime),
             span,
         }
     }
