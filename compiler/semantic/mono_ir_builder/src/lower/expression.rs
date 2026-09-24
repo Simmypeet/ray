@@ -80,7 +80,7 @@ impl Builder<'_> {
                 self.lower_perform(context, perform, expression_id);
             }
             IRExprKind::Handle(handle) => {
-                self.lower_handle(context, handle, expression_id);
+                self.lower_handle(context, handle, expression_id).await;
             }
             IRExprKind::Tuple(tuple) => {
                 self.lower_tuple(tuple, destination);

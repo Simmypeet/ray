@@ -1,6 +1,6 @@
 use rayc_ir::ir_expr::IRExprID;
 use rayc_mono_ir::{
-    function::{Local, LocalKind},
+    function::{Local, LocalID, LocalKind},
     operand::{Constant, Operand},
     place::Place,
     rvalue::{AddressOf, Cast, Rvalue},
@@ -38,12 +38,27 @@ impl Builder<'_> {
         args: &[IRExprID],
         environment_abi: &EnvironmentABI,
     ) -> Operand {
+        self.emit_environment(context, args, environment_abi).1
+    }
+
+    /// Builds an environment from `args` and returns its local together with
+    /// an opaque pointer to it. An environment without captures has no local
+    /// and is passed as a null pointer.
+    pub(super) fn emit_environment(
+        &mut self,
+        context: &Context,
+        args: &[IRExprID],
+        environment_abi: &EnvironmentABI,
+    ) -> (Option<LocalID>, Operand) {
         assert!(!environment_abi.by_value());
         assert_eq!(args.len(), environment_abi.capture_count());
         let environment = environment_abi.environment_type();
 
         if environment.captures().is_empty() {
-            return Operand::Constant(Constant::NullPointer(context.create_opaque_pointer()));
+            return (
+                None,
+                Operand::Constant(Constant::NullPointer(context.create_opaque_pointer())),
+            );
         }
 
         let environment_ty = context.intern_environment_type(environment.clone());
@@ -85,6 +100,6 @@ impl Builder<'_> {
             Rvalue::Cast(Cast::new(Operand::Copy(Place::new(pointer_local)), opaque_type)),
         );
 
-        Operand::Copy(Place::new(opaque_local))
+        (Some(environment_local), Operand::Copy(Place::new(opaque_local)))
     }
 }

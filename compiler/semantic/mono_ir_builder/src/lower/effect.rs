@@ -5,7 +5,7 @@ use rayc_mono_ir::{
     function::{Local, LocalID, LocalKind},
     instance::FunctionReference,
     operand::{FunctionOperand, Operand},
-    place::Place,
+    place::{FieldIndex, Place},
     rvalue::{AddressOf, OperationHandlerSlot, Rvalue},
     ty::PointerMutability,
 };
@@ -38,14 +38,15 @@ impl Builder<'_> {
         self.push_call_with_destination(destination, callee, arguments);
     }
 
-    pub(super) fn lower_handle(
+    pub(super) async fn lower_handle(
         &mut self,
         context: &Context,
         handle: &Handle,
         expression_id: IRExprID,
     ) {
         let instance = context.instantiate_effect(handle.effect_id(), handle.substitution());
-        let handler_pointer = self.lower_effect_handler_pointer(context, handle, instance.clone());
+        let (handler_pointer, handler_environment) =
+            self.lower_effect_handler_pointer(context, handle, instance.clone());
 
         let body_abi = context.function_abi(handle.body().function_id());
         let body_environment = context.function_environment_abi(handle.body().function_id());
@@ -69,6 +70,42 @@ impl Builder<'_> {
             body_abi.signature().clone(),
         ));
         self.push_call_with_destination(destination, callee, arguments);
+
+        // The handlers only borrow their shared captures, so they are dropped
+        // once the handled body has returned.
+        if let Some(environment) = handler_environment {
+            self.drop_handler_captures(context, handle, environment).await;
+        }
+    }
+
+    /// Drops the captures stored in a handler environment, in reverse order,
+    /// with the dictionaries memory analysis selected for them.
+    async fn drop_handler_captures(
+        &mut self,
+        context: &Context,
+        handle: &Handle,
+        environment: LocalID,
+    ) {
+        let drops = handle.handler_capture_drops();
+        assert_eq!(
+            drops.len(),
+            handle.handler_captures().len(),
+            "memory analysis selects a Drop dictionary for every handler capture"
+        );
+
+        // `Drop.drop` returns unit, which is itself unused, so every call
+        // writes to one scratch temporary.
+        let resolver = context.resolver();
+        let unit = resolver.unit_type().await;
+        let destination = Place::new(self.insert_local(Local::new(unit, LocalKind::Temporary)));
+
+        // The captures come first in the environment, followed by any
+        // captured effect handlers, which need no drop.
+        for (index, drop_instance) in drops.iter().enumerate().rev() {
+            let capture = Place::new(environment)
+                .project_environment_field(FieldIndex::new(index.try_into().unwrap()));
+            self.lower_drop(resolver, capture, drop_instance, destination.clone()).await;
+        }
     }
 
     pub(super) fn lower_effect_handler_pointer(
@@ -76,11 +113,11 @@ impl Builder<'_> {
         context: &Context,
         handle: &Handle,
         instance: MonoEffectInstance,
-    ) -> LocalID {
+    ) -> (LocalID, Option<LocalID>) {
         let handler_type = context.intern_effect_instance(instance.clone());
         let handler_local =
             self.insert_local(Local::new(handler_type.clone(), LocalKind::Temporary));
-        let slots = self.lower_handler_slot(context, handle);
+        let (slots, environment) = self.lower_handler_slot(context, handle);
 
         self.assign(Place::new(handler_local), Rvalue::new_effect_handler(instance, slots));
 
@@ -92,28 +129,27 @@ impl Builder<'_> {
             Rvalue::AddressOf(AddressOf::new(Place::new(handler_local), PointerMutability::Const)),
         );
 
-        handler_pointer
+        (handler_pointer, environment)
     }
 
+    /// Builds the operation slots of a handler record, and returns them with
+    /// the local of the environment the handlers share, if it has captures.
     pub(super) fn lower_handler_slot(
         &mut self,
         context: &Context,
         handle: &Handle,
-    ) -> FxHashMap<GlobalSymbolID, OperationHandlerSlot> {
+    ) -> (FxHashMap<GlobalSymbolID, OperationHandlerSlot>, Option<LocalID>) {
         let mut slots = FxHashMap::default();
         let Some(capture_map_id) = handle.handler_capture_map() else {
             assert!(handle.handlers().is_empty());
-            return slots;
+            return (slots, None);
         };
 
         // Construct the environment exactly once from the handler group's
         // arena-owned ABI.
         let environment_abi = context.capture_environment_abi(capture_map_id);
-        let shared_environment = self.emit_opaque_environment_pointer(
-            context,
-            handle.handler_captures(),
-            environment_abi,
-        );
+        let (environment, shared_environment) =
+            self.emit_environment(context, handle.handler_captures(), environment_abi);
 
         for handler in handle.handlers() {
             context.assert_function_uses_capture_environment(handler.function_id(), capture_map_id);
@@ -133,6 +169,6 @@ impl Builder<'_> {
             );
         }
 
-        slots
+        (slots, environment)
     }
 }
