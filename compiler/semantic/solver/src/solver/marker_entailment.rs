@@ -151,7 +151,7 @@ impl Solver {
             && goal.marker_id() == self.engine().get_core_item(CoreItem::Copy).await
         {
             return false;
-	}
+        }
 
         // `Copy` for references is built in: a shared reference is always
         // `Copy`, and a unique one never is.
@@ -170,7 +170,9 @@ impl Solver {
                 PredicateKind::Marker(predicate) if predicate.marker_id() == goal.marker_id() => {
                     Some(predicate.implementor().clone())
                 }
-                PredicateKind::AssociatedTypeEquality(_) | PredicateKind::Marker(_) => None,
+                PredicateKind::AssociatedTypeEquality(_)
+                | PredicateKind::Marker(_)
+                | PredicateKind::Outlives(_) => None,
             })
             // we have to collect here because the `eq_without_unify` call below mutably borrows
             // `self`, which prevents us from using the iterator directly
@@ -196,7 +198,8 @@ impl Solver {
 
                             // shouldn't happen because marker implementation predicates can only
                             // be marker predicates
-                            PredicateKind::AssociatedTypeEquality(_) => false,
+                            PredicateKind::AssociatedTypeEquality(_)
+                            | PredicateKind::Outlives(_) => false,
                         };
                         entailed &= premise;
                     }

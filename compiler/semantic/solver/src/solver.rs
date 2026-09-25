@@ -13,6 +13,7 @@ use rayc_type::{
 use crate::{
     givens::get_givens,
     inference_generator::{CountingInferenceGenerator, InferenceGenerator},
+    outlives::{OutlivesEnvironment, get_implied_bounds, outlives_givens},
     solver::{
         instance_resolution_state::{InstanceResolutionLimits, InstanceResolutionState},
         marker_entailment::MarkerEntailmentState,
@@ -42,6 +43,17 @@ pub struct Solver {
     instance_resolution: InstanceResolutionState,
     marker_entailment: MarkerEntailmentState,
     givens: Interned<[PredicateKind]>,
+
+    /// Whether the site's implied bounds are known facts. They are not for a
+    /// solver without a declaration site.
+    has_implied_bounds: bool,
+
+    // REVIEW: How about we always include the `OutlivesEnvironment`. So we would have a field with
+    // type `Interned<OutlivesEnvironment>`. Moreover, we should create a cached query that builds
+    // the `OutlivesEnvironment` based on the site. Similar to how we have `get_givens`.
+    /// Built on the first outlives question; see
+    /// [`Self::outlives_environment`].
+    outlives_environment: Option<OutlivesEnvironment>,
 }
 
 impl Solver {
@@ -89,6 +101,7 @@ impl Solver {
             PredicateKind::Marker(predicate) => {
                 self.entails_marker_predicate(predicate.clone()).await
             }
+            PredicateKind::Outlives(predicate) => self.entails_outlives(predicate).await,
         }
     }
 
@@ -173,7 +186,9 @@ impl Solver {
     /// concrete, and in focused unit-test fixtures.
     #[must_use]
     pub fn without_givens(engine: TrackedEngine) -> Self {
-        Self::with_givens(engine, GlobalSymbolID::default(), [])
+        let mut solver = Self::with_givens(engine, GlobalSymbolID::default(), []);
+        solver.has_implied_bounds = false;
+        solver
     }
 
     /// Creates a solver with exactly the supplied visible predicates.
@@ -194,6 +209,8 @@ impl Solver {
             instance_resolution: InstanceResolutionState::new(InstanceResolutionLimits::default()),
             marker_entailment: MarkerEntailmentState::default(),
             givens,
+            has_implied_bounds: true,
+            outlives_environment: None,
         }
     }
 
@@ -216,6 +233,8 @@ impl Solver {
             site,
             instance_resolution: InstanceResolutionState::new(limits),
             marker_entailment: MarkerEntailmentState::default(),
+            has_implied_bounds: true,
+            outlives_environment: None,
         }
     }
 
@@ -228,6 +247,20 @@ impl Solver {
     pub const fn engine(&self) -> &TrackedEngine { &self.engine }
 
     pub const fn site(&self) -> GlobalSymbolID { self.site }
+
+    /// Returns the outlives facts visible at this solver's site: the outlives
+    /// givens and the site's implied bounds. They are built once, on first
+    /// use, since most solvers never answer an outlives question.
+    pub async fn outlives_environment(&mut self) -> &OutlivesEnvironment {
+        if self.outlives_environment.is_none() {
+            let mut facts = outlives_givens(&self.givens).cloned().collect::<Vec<_>>();
+            if self.has_implied_bounds {
+                facts.extend(self.engine.get_implied_bounds(self.site).await.iter().cloned());
+            }
+            self.outlives_environment = Some(OutlivesEnvironment::new(facts, &self.engine).await);
+        }
+        self.outlives_environment.as_ref().expect("the environment was just built")
+    }
 
     /// Reduces a value and its descendants until no further step is available.
     ///
