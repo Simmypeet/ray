@@ -103,13 +103,14 @@ impl TAstBuilder {
         &mut self,
         left: TypedExprID,
         operator: BinaryOp,
-        right: TypedExprID,
+        mut right: TypedExprID,
     ) -> TypedExprID {
         let ty = match operator {
             // The assigned value moves into the place, so the assignment
             // itself has no value to give.
             BinaryOp::Assign => {
                 let ty = self.type_of_expression(left);
+                right = self.coerce(right, &ty).await;
                 self.push_variable_assignment_constraint(&ty, right).await;
                 self.require_lvalue(left, true, LvalueOperation::Assignment);
                 Ty::new_unit(self.engine())

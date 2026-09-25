@@ -35,6 +35,7 @@ use crate::{
     },
 };
 
+pub mod coercion;
 pub mod constraint_solver;
 pub mod lvalue_requirements;
 pub mod name_env;
@@ -49,6 +50,10 @@ pub struct TAstBuilder {
     statement_blocks: Vec<(TypedFunctionID, Vec<Statement>)>,
     loop_depth: usize,
     suspended_loop_depths: Vec<usize>,
+
+    /// How many `unsafe` expressions enclose the expression being bound.
+    /// Nested functions inherit it, as Rust closures do.
+    unsafe_depth: usize,
 
     closure_captures: Vec<(TypedFunctionID, Interned<Ty>, RelativeSpan)>,
     current_def_id: GlobalSymbolID,
@@ -81,6 +86,7 @@ impl TAstBuilder {
             statement_blocks: Vec::new(),
             loop_depth: 0,
             suspended_loop_depths: Vec::new(),
+            unsafe_depth: 0,
             closure_captures: Vec::new(),
             name_env,
             current_def_id,
@@ -357,6 +363,13 @@ impl TAstBuilder {
 
     #[must_use]
     pub const fn is_inside_loop(&self) -> bool { self.loop_depth > 0 }
+
+    pub const fn enter_unsafe(&mut self) { self.unsafe_depth += 1; }
+
+    pub const fn exit_unsafe(&mut self) { self.unsafe_depth -= 1; }
+
+    #[must_use]
+    pub const fn is_inside_unsafe(&self) -> bool { self.unsafe_depth > 0 }
 
     #[must_use]
     pub async fn return_type_of_current_function(&self) -> Interned<Ty> {

@@ -292,10 +292,36 @@ impl Report for ExpectedPointerType {
 
         Rendered::builder()
             .message(format!(
-                "expected a pointer type, but found `{}`",
+                "expected a pointer or reference type, but found `{}`",
                 self.ty.display(engine).await
             ))
             .primary_highlight(Highlight::builder().span(abs_span).build())
+            .build()
+    }
+}
+
+/// A dereference of a raw pointer outside an `unsafe` expression (Rust
+/// E0133).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
+)]
+pub struct RawPointerDerefOutsideUnsafe {
+    span: RelativeSpan,
+}
+
+impl Report for RawPointerDerefOutsideUnsafe {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("dereference of raw pointer is unsafe and requires `unsafe`")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("dereference of raw pointer")
+                    .build(),
+            )
+            .help_message(
+                "raw pointers may be null, dangling or unaligned; wrap the dereference in `unsafe`",
+            )
             .build()
     }
 }
@@ -766,6 +792,7 @@ pub enum Diagnostic {
     ExpectedTupleType(ExpectedTupleType),
     ExpectedStructType(ExpectedStructType),
     ExpectedPointerType(ExpectedPointerType),
+    RawPointerDerefOutsideUnsafe(RawPointerDerefOutsideUnsafe),
     ExpectedLvalue(ExpectedLvalue),
     ImmutableLvalue(ImmutableLvalue),
     OutOfBoundsTupleIndex(OutOfBoundsTupleIndex),
@@ -815,6 +842,7 @@ impl Report for Diagnostic {
             Self::ExpectedPointerType(expected_pointer_type) => {
                 expected_pointer_type.report(engine).await
             }
+            Self::RawPointerDerefOutsideUnsafe(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedLvalue(expected_lvalue) => expected_lvalue.report(engine).await,
             Self::ImmutableLvalue(immutable_lvalue) => immutable_lvalue.report(engine).await,
             Self::OutOfBoundsTupleIndex(out_of_bounds_tuple_index) => {

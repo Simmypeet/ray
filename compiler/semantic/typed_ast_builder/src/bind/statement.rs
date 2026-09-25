@@ -1,6 +1,6 @@
 use rayc_source_file::SourceElement;
 use rayc_symbol::core_item::{CoreItem, get_core_item};
-use rayc_syntax::statement::Statement as StatementSyntax;
+use rayc_syntax::statement::{Return as ReturnSyntax, Statement as StatementSyntax};
 use rayc_type::{trait_ref::TraitRef, ty::args::Args};
 use rayc_typed_ast::{
     name_binding::Source,
@@ -22,12 +22,17 @@ impl TAstBuilder {
                 let expr = l.assignment().and_then(|x| x.expression());
                 let pattern = l.pattern();
 
-                let expr_id =
+                let mut expr_id =
                     if let Some(expr) = expr { Some(self.bind(expr).await) } else { None };
 
+                // Only an annotated `let` is a coercion site.
                 let var_ty = if let Some(annotation) = l.type_annotation().and_then(|a| a.r#type())
                 {
-                    self.resolve_local_type_annotation(&annotation).await
+                    let var_ty = self.resolve_local_type_annotation(&annotation).await;
+                    if let Some(id) = expr_id {
+                        expr_id = Some(self.coerce(id, &var_ty).await);
+                    }
+                    var_ty
                 } else {
                     self.new_type_inference()
                 };
@@ -104,20 +109,25 @@ impl TAstBuilder {
                 .await;
             }
 
-            StatementSyntax::Return(ret) => {
-                let ret = if let Some(expression) = ret.expression() {
-                    let expression = self.bind(expression).await;
-                    self.push_return_type_constraint(expression).await;
-
-                    Return::new_with_value(expression)
-                } else {
-                    self.push_unit_return_type_constraint(ret.span()).await;
-
-                    Return::new_unit()
-                };
-
-                self.push_statement(Statement::Return(ret)).await;
-            }
+            StatementSyntax::Return(ret) => self.bind_return(ret).await,
         }
+    }
+
+    async fn bind_return(&mut self, ret: &ReturnSyntax) {
+        let ret = if let Some(expression) = ret.expression() {
+            // A returned value is a coercion site.
+            let expression = self.bind(expression).await;
+            let return_type = self.return_type_of_current_function().await;
+            let expression = self.coerce(expression, &return_type).await;
+            self.push_return_type_constraint(expression).await;
+
+            Return::new_with_value(expression)
+        } else {
+            self.push_unit_return_type_constraint(ret.span()).await;
+
+            Return::new_unit()
+        };
+
+        self.push_statement(Statement::Return(ret)).await;
     }
 }

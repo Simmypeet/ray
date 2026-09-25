@@ -97,7 +97,7 @@ impl TAstBuilder {
                     )
                     .await;
 
-                ty.as_pointer_mutability().map(|x| x == Mutability::Mutable)
+                ty.as_dereferenceable().map(|target| target.mutability() == Mutability::Mutable)
             }
         }
     }

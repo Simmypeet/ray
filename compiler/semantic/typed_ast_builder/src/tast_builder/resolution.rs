@@ -3,6 +3,7 @@ use rayc_handler::Storage;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_resolution::{
     GenInferWithSpan,
+    lifetime::LifetimeElision,
     path::{Effect, PathResolution, PathResolutionError},
     resolver::Resolver,
 };
@@ -44,6 +45,7 @@ impl TAstBuilder {
             .site(self.current_def_id())
             .handler(&diagnostics)
             .obligation_handler(&obligations)
+            .lifetime_elision(LifetimeElision::Erased)
             .build();
 
         let ty = resolver.resolve_type(syntax).await;
@@ -71,6 +73,7 @@ impl TAstBuilder {
                 .handler(&diagnostics)
                 .obligation_handler(&obligations)
                 .infer_gen(&mut inference)
+                .lifetime_elision(LifetimeElision::Erased)
                 .build();
             resolver.resolve_effect_path(path).await
         };
@@ -100,6 +103,7 @@ impl TAstBuilder {
                 .handler(&diagnostics)
                 .obligation_handler(&obligations)
                 .infer_gen(&mut inference)
+                .lifetime_elision(LifetimeElision::Erased)
                 .build();
             resolver.resolve_path(path).await
         };
