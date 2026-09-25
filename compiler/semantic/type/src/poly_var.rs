@@ -254,6 +254,13 @@ impl PolyVarStack {
     }
 
     #[must_use]
+    pub fn span_of(&self, id: GlobalPolyVarID) -> Option<RelativeSpan> {
+        self.poly_var_maps.iter().find_map(|(symbol_id, poly_var_map)| {
+            (*symbol_id == id.parent_id()).then(|| poly_var_map[id.id()].span())
+        })
+    }
+
+    #[must_use]
     pub fn trait_ref_of(&self, id: GlobalPolyVarID) -> Option<&TraitRef> {
         self.poly_var_maps.iter().find_map(|(symbol_id, poly_var_map)| {
             (*symbol_id == id.parent_id()).then(|| poly_var_map.trait_ref_of(id.id())).flatten()
