@@ -63,12 +63,13 @@ impl Solver {
                 View::Primitive(_)
                 | View::Tuple(_)
                 | View::Pointer(_)
+                | View::Reference(_)
                 | View::Struct(_)
                 | View::InstanceAssociated(_)
                 | View::Closure(_)
                 | View::Error => return Err(Error::Conflicted),
             },
-            Ty::EffectRow(_) => return Err(Error::Conflicted),
+            Ty::EffectRow(_) | Ty::Lifetime(_) => return Err(Error::Conflicted),
         };
 
         // Missing heads are recovery from an invalid instance declaration.

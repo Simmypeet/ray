@@ -195,6 +195,12 @@ impl Solver {
                 {
                     Ok(Step::NoProgress)
                 } else {
+                    // TODO: Obviously, we'll have to change this
+                    if self.is_lifetime(substype.lesser()).await
+                        && self.is_lifetime(substype.greater()).await
+                    {
+                        return Ok(Step::Derived(Vec::new()));
+                    }
                     Err(Error::Conflicted)
                 }
             }
@@ -289,6 +295,15 @@ impl Solver {
         Ok(constraints)
     }
 
+    /// Returns whether `ty` is of kind [`TyKind::Lifetime`]: a lifetime, a
+    /// lifetime parameter, or an error of that kind.
+    ///
+    /// There are no lifetime inference variables; see
+    /// `Solver::new_inference_with_constraint`.
+    async fn is_lifetime(&self, ty: &Ty) -> bool {
+        ty.kind_of(self.engine()).await == TyKind::Lifetime
+    }
+
     async fn bind_poly_var(
         &mut self,
         poly_var: GlobalPolyVarID,
@@ -377,7 +392,7 @@ impl Solver {
                 ))
             }
 
-            Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => {
+            Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {
                 if var.constraint() == InferenceConstraint::Any {
                     Ok(Step::Subst(Subst::new_singleton(var, ty.clone())))
                 } else {

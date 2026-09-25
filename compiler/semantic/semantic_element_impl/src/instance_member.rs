@@ -72,6 +72,7 @@ const fn kind_name(kind: TyKind) -> &'static str {
         TyKind::Star => "type",
         TyKind::EffectRow => "effect row",
         TyKind::Instance => "instance",
+        TyKind::Lifetime => "lifetime",
     }
 }
 
