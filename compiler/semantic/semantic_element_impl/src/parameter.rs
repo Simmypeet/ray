@@ -4,7 +4,9 @@ use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::{
-    discover_parameter_poly_vars, lifetime::LifetimeElision, resolver::Resolver,
+    discovery::{GivenTraits, discover_parameter_poly_vars},
+    lifetime::LifetimeElision,
+    resolver::Resolver,
 };
 use rayc_semantic_element::{
     callable_parameter::get_callable_parameters,
@@ -58,7 +60,7 @@ impl Report for Diagnostic {
 
 /// Returns how the parameter types of a symbol of kind `symbol_kind` treat
 /// elided lifetimes. Only a plain `def` owns lifetimes introduced for elision;
-/// see `discover_function_poly_vars`.
+/// see `discover_parameter_poly_vars`.
 const fn parameter_lifetime_elision(symbol_kind: SymbolKind) -> LifetimeElision {
     match symbol_kind {
         SymbolKind::Def => LifetimeElision::FreshParameter,
@@ -136,8 +138,16 @@ impl Build for Key {
         }
 
         if symbol_kind == SymbolKind::ExternDef {
-            if !discover_parameter_poly_vars(engine, syntax.as_ref(), Some(&poly_vars), false)
-                .is_empty()
+            if !discover_parameter_poly_vars(
+                engine,
+                symbol_id,
+                syntax.as_ref(),
+                &GivenTraits::default(),
+                Some(&poly_vars),
+                false,
+            )
+            .await
+            .is_empty()
                 && let Some(span) = engine.get_span(symbol_id).await
             {
                 diagnostics.receive(Diagnostic::InvalidExternSignature(
