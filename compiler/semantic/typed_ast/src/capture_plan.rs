@@ -6,7 +6,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_type::{
     capture::{CaptureMode, LoadKind},
     subst::{MutSubstitutable, Subst, Substitutable},
-    ty::{Mutability, Ty},
+    ty::{Mutability, Ty, lifetime::Lifetime},
 };
 
 use crate::{
@@ -156,14 +156,17 @@ impl CaptureRequirement {
     pub const fn span(&self) -> RelativeSpan { self.span }
 
     /// The type of this capture's environment field: the binding itself for
-    /// a value capture, or a pointer to it for a reference capture.
+    /// a value capture, or a reference to it for a reference capture.
     #[must_use]
     pub fn storage_ty(&self, engine: &TrackedEngine) -> Interned<Ty> {
         match self.mode {
             CaptureMode::Value(_) => self.binding_ty.clone(),
-            CaptureMode::Reference(mutability) => {
-                Ty::new_pointer(self.binding_ty.clone(), mutability, engine)
-            }
+            CaptureMode::Reference(mutability) => Ty::new_reference(
+                Ty::new_lifetime(Lifetime::Erased, engine),
+                self.binding_ty.clone(),
+                mutability,
+                engine,
+            ),
         }
     }
 }
@@ -173,7 +176,7 @@ impl Default for FunctionCapturePlan {
 }
 
 impl FunctionCapturePlan {
-    /// The concrete environment layout, including pointers for borrowed
+    /// The concrete environment layout, including references for borrowed
     /// captures.
     #[must_use]
     pub fn captured_tuple(&self, engine: &TrackedEngine) -> Interned<Ty> {
@@ -382,6 +385,11 @@ impl<O: CopyOracle> Analyzer<'_, O> {
             }
             TypedExprKind::While(while_loop) => {
                 self.visit_while(function_id, functions, while_loop, plan).await;
+            }
+            TypedExprKind::StatementBlock(block) => {
+                for statement in block.statements() {
+                    self.visit_statement(function_id, functions, statement, plan).await;
+                }
             }
             TypedExprKind::RefOf(reference) => {
                 self.visit_expression(
