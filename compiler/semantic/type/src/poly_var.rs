@@ -185,6 +185,25 @@ impl PolyVarMap {
         self.poly_vars.get(id).and_then(PolyVar::trait_ref)
     }
 
+    /// Returns the type, effect and lifetime variables, which type arguments
+    /// instantiate, in order. They precede the dictionaries.
+    pub fn type_parameters(&self) -> impl Iterator<Item = (PolyVarID, &PolyVar)> {
+        self.iter().take_while(|(_, poly_var)| poly_var.kind() != TyKind::Instance)
+    }
+
+    /// Returns the dictionaries, which given arguments instantiate, in order.
+    /// They follow the type parameters.
+    pub fn dictionaries(&self) -> impl Iterator<Item = (PolyVarID, &PolyVar)> {
+        self.iter().skip_while(|(_, poly_var)| poly_var.kind() != TyKind::Instance)
+    }
+
+    /// Returns the kind of the type parameter at `index`; see
+    /// [`Self::type_parameters`].
+    #[must_use]
+    pub fn type_parameter_kind(&self, index: usize) -> Option<TyKind> {
+        self.type_parameters().nth(index).map(|(_, poly_var)| poly_var.kind())
+    }
+
     /// Generated binders deliberately bypass the source-name index.
     pub fn insert_generated(&mut self, mut variable: PolyVar, origin: PolyVarOrigin) -> PolyVarID {
         assert!(!matches!(origin, PolyVarOrigin::Source));
