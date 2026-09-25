@@ -172,8 +172,8 @@ impl<'a> StackStateProblem<'a> {
     /// Returns whether `address` selects a capture which this function only
     /// borrows, or a field of one, so no value may be moved out of it.
     ///
-    /// A place reached through a pointer held in the capture is not part of
-    /// the capture.
+    /// A place reached through a pointer or reference held in the capture is
+    /// not part of the capture.
     ///
     /// Operation handlers may run many times over one shared environment, so
     /// every call must find its captures intact.
@@ -185,8 +185,9 @@ impl<'a> StackStateProblem<'a> {
     /// its place: a forced move always does, and an implicit load does unless
     /// the value is `Copy`.
     ///
-    /// A load through a raw pointer dereference is a bitwise copy of memory
-    /// the frame does not own, so it never moves.
+    /// A load through a dereference never moves: memory behind a raw pointer
+    /// is copied bitwise, and moving out of memory behind a reference is an
+    /// error reported separately.
     pub(crate) async fn load_moves(&mut self, load: &Load, ty: Interned<Ty>) -> bool {
         if load.address().is_behind_deref() {
             return false;
@@ -194,6 +195,20 @@ impl<'a> StackStateProblem<'a> {
 
         match load.kind() {
             LoadKind::Implicit => !self.type_is_copy(ty).await,
+            LoadKind::Move | LoadKind::Drop => true,
+        }
+    }
+
+    /// Returns whether `load` moves a value out of memory behind a reference,
+    /// which is not allowed since the memory is only borrowed.
+    pub(crate) async fn load_moves_out_of_borrow(&mut self, load: &Load, ty: Interned<Ty>) -> bool {
+        if !load.address().is_behind_reference() {
+            return false;
+        }
+
+        match load.kind() {
+            // Errors have already been reported.
+            LoadKind::Implicit => !ty.contains_error() && !self.type_is_copy(ty).await,
             LoadKind::Move | LoadKind::Drop => true,
         }
     }
@@ -298,7 +313,7 @@ impl<'a> StackStateProblem<'a> {
         };
 
         match (application.view(), projection) {
-            (_, Projection::RawDeref) => {
+            (_, Projection::Deref | Projection::RawDeref) => {
                 panic!("tracked places never extend past a dereference: {ty:?}");
             }
             (ApplicationView::Tuple(tuple), Projection::Tuple(index)) => {
@@ -335,6 +350,7 @@ impl<'a> StackStateProblem<'a> {
             (
                 ApplicationView::Primitive(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::Reference(_)
                 | ApplicationView::Instance(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)

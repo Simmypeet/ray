@@ -14,7 +14,8 @@ use rayc_symbol::GlobalSymbolID;
 use crate::{
     Diagnostic, PlaceState, PossibleStates, StackState, StackStateProblem,
     diagnostic::{
-        MoveOutOfHandlerCapture, UseAfterMove, UseAfterPartialMove, UseBeforeInitialization,
+        MoveOutOfBorrow, MoveOutOfHandlerCapture, UseAfterMove, UseAfterPartialMove,
+        UseBeforeInitialization,
     },
     drop_elaboration::DropElaborator,
 };
@@ -102,6 +103,17 @@ async fn analyze_function(
                                 .deref_base(engine)
                                 .unwrap_or_else(|| load.address().clone());
                             check_read(expression.span(), &read, &state, function, diagnostics);
+
+                            // Memory behind a reference is only borrowed.
+                            if problem.load_moves_out_of_borrow(load, expression.ty().clone()).await
+                            {
+                                diagnostics.push(
+                                    MoveOutOfBorrow::builder()
+                                        .move_span(expression.span())
+                                        .build()
+                                        .into(),
+                                );
+                            }
 
                             // A borrowed capture is shared by every call, so
                             // nothing may be moved out of it or any of its
