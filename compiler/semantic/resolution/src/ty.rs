@@ -230,6 +230,36 @@ impl Resolver<'_> {
         arguments
     }
 
+    /// Returns how many of the leading type parameters of `symbol_id` explicit
+    /// type arguments instantiate, or `None` when they are always inferred.
+    ///
+    /// A definition that declares a type-parameter list accepts arguments for
+    /// exactly the parameters it declares. They precede its generated ones,
+    /// such as fresh elided lifetimes and callable types, which are always
+    /// inferred. A definition without one accepts none, as its parameter
+    /// types introduce its type parameters. Any other symbol accepts arguments
+    /// for all `type_parameter_count` type parameters.
+    async fn explicit_type_parameter_count(
+        &self,
+        symbol_id: GlobalSymbolID,
+        parameters: Option<&PolyVarMap>,
+        type_parameter_count: usize,
+    ) -> Option<usize> {
+        if !self.symbol_kind(symbol_id).await.has_optional_type_parameter_list() {
+            return Some(type_parameter_count);
+        }
+        self.engine().get_type_parameter_list_syntax(symbol_id).await?;
+
+        Some(
+            parameters
+                .into_iter()
+                .flat_map(PolyVarMap::iter)
+                .take(type_parameter_count)
+                .take_while(|(_, parameter)| parameter.is_source())
+                .count(),
+        )
+    }
+
     pub(crate) async fn resolve_arguments(
         &mut self,
         symbol_id: GlobalSymbolID,
@@ -238,7 +268,7 @@ impl Resolver<'_> {
         parameters: Option<&PolyVarMap>,
         mut subst: Subst,
     ) -> Args {
-        let symbol_kind = self.symbol_kind(symbol_id).await;
+        // Type, effect and lifetime parameters precede dictionaries.
         let type_parameter_count = parameters
             .into_iter()
             .flat_map(PolyVarMap::iter)
@@ -251,37 +281,9 @@ impl Resolver<'_> {
             .map(|(_, parameter)| parameter.kind())
             .collect::<Vec<_>>();
 
-        // A definition accepts explicit type arguments only for the type
-        // parameters it declares explicitly; they precede its generated ones,
-        // such as fresh elided lifetimes and callable types, which are always
-        // inferred. Other symbols accept arguments for all type parameters.
-        let explicit_count = match symbol_kind {
-            SymbolKind::Def | SymbolKind::TraitDef | SymbolKind::InstanceDef => {
-                if self.engine().get_type_parameter_list_syntax(symbol_id).await.is_some() {
-                    Some(
-                        parameters
-                            .into_iter()
-                            .flat_map(PolyVarMap::iter)
-                            .take(type_parameter_count)
-                            .take_while(|(_, parameter)| parameter.is_source())
-                            .count(),
-                    )
-                } else {
-                    None
-                }
-            }
-            SymbolKind::Effect
-            | SymbolKind::Instance
-            | SymbolKind::InstanceType
-            | SymbolKind::MarkerImplementation
-            | SymbolKind::Strut
-            | SymbolKind::Trait
-            | SymbolKind::TraitType
-            | SymbolKind::ExternDef
-            | SymbolKind::EffectOperation
-            | SymbolKind::Marker
-            | SymbolKind::Module => Some(type_parameter_count),
-        };
+        // Resolve the explicit type arguments and infer the rest.
+        let explicit_count =
+            self.explicit_type_parameter_count(symbol_id, parameters, type_parameter_count).await;
         let has_explicit_type_arguments = path.has_explicit_type_arguments();
 
         let mut resolved = match explicit_count {
@@ -302,6 +304,8 @@ impl Resolver<'_> {
             }
         };
 
+        // Given arguments are checked against requirements that mention the
+        // type arguments just resolved.
         let own_subst = parameters
             .into_iter()
             .flat_map(PolyVarMap::iter)

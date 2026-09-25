@@ -14,6 +14,7 @@ use rayc_symbol::{
     parent::get_closest_module_id,
     symbol_kind::{SymbolKind, get_symbol_kind},
 };
+use rayc_syntax::path::{Path, PathRoot};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarMap, PolyVarStack, get_poly_var_map},
     subst::{Subst, Substitutable},
@@ -378,31 +379,54 @@ impl Resolver<'_> {
     }
 }
 
+/// Finds the symbol that `path` names, looking up each segment and ignoring
+/// its arguments. A path rooted at `this` names no symbol.
+pub(crate) async fn find_path_target(
+    engine: &TrackedEngine,
+    site: GlobalSymbolID,
+    path: &Path,
+) -> Option<GlobalSymbolID> {
+    let Some(PathRoot::Segment(_)) = path.root() else { return None };
+
+    let mut target = None;
+    for segment in path.segments() {
+        let name = segment.identifier()?.kind.0;
+        target = Some(find_path_symbol(engine, site, target, &name).await?);
+    }
+    target
+}
+
 /// Finds the symbol named `name` inside `previous`, or, for the first segment
 /// of a path, among the names visible from `site`.
+///
+/// This is shared by the resolver and by polymorphic-variable discovery, which
+/// runs before a resolver can be built for the signature being discovered.
 pub(crate) async fn find_path_symbol(
     engine: &TrackedEngine,
     site: GlobalSymbolID,
     previous: Option<GlobalSymbolID>,
     name: &str,
 ) -> Option<GlobalSymbolID> {
+    // A later segment names a member of the symbol before it.
     if let Some(previous) = previous {
-        engine.try_get_members(previous).await.and_then(|members| {
+        return engine.try_get_members(previous).await.and_then(|members| {
             members.get_by_name(name).map(|member_id| previous.target_id.make_global(member_id))
-        })
-    } else {
-        let closest_module_id = engine.get_closest_module_id(site).await;
-        let closest_module_id = site.target_id.make_global(closest_module_id);
-        if let Some(local) = engine.get_member_by_name(closest_module_id, name).await {
-            return Some(local);
-        }
-        // Only explicitly linked roots are visible, after local names.
-        let targets = engine.query(&rayc_target::MapKey).await;
-        let target_id = *targets.get(name)?;
-        let linked = engine.query(&rayc_target::LinkKey { target_id: site.target_id }).await;
-        if !linked.contains(&target_id) {
-            return None;
-        }
-        Some(target_id.make_global(engine.get_target_root_module_id(target_id).await))
+        });
     }
+
+    // The first segment names a member of the closest enclosing module...
+    let closest_module_id = engine.get_closest_module_id(site).await;
+    let closest_module_id = site.target_id.make_global(closest_module_id);
+    if let Some(local) = engine.get_member_by_name(closest_module_id, name).await {
+        return Some(local);
+    }
+
+    // ...or, after local names, the root of an explicitly linked target.
+    let targets = engine.query(&rayc_target::MapKey).await;
+    let target_id = *targets.get(name)?;
+    let linked = engine.query(&rayc_target::LinkKey { target_id: site.target_id }).await;
+    if !linked.contains(&target_id) {
+        return None;
+    }
+    Some(target_id.make_global(engine.get_target_root_module_id(target_id).await))
 }
