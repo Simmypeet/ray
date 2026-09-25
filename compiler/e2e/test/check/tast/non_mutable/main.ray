@@ -9,17 +9,35 @@ def secondCase(a: (int32, int32)) -> ():
 
 
 def thirdCase(a: *int32) -> ():
-    a.* = 32
+    unsafe:
+        a.* = 32
     return ()
 
 
 def fourthCase(a: *int32) -> ():
+    let b = unsafe: a.*.&mut
+    return ()
+
+
+def fifthCase(a: &int32) -> ():
+    a.* = 32
+    return ()
+
+
+def sixthCase(a: &int32) -> ():
     let b = a.*.&mut
     return ()
 
 
-def okCase(mut a: int32, mut b: (int32, int32), c: *mut int32) -> ():
+def okCase(
+    mut a: int32,
+    mut b: (int32, int32),
+    c: *mut int32,
+    d: &mut int32,
+) -> ():
     a = 32
     b.0 = 32
-    c.* = 32
+    unsafe:
+        c.* = 32
+    d.* = 32
     return ()

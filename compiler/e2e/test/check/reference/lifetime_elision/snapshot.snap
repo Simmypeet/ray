@@ -1,0 +1,42 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: missing lifetime specifier
+  ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:3:12
+  │
+3 │     value: &int32
+  │            ━━━━━━ expected a named lifetime
+  │
+  ╰ help: lifetimes can only be elided in function signatures and bodies
+
+[error]: missing lifetime specifier
+   ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:14:49
+   │
+14 │ def ambiguous(first: &int32, second: &int32) -> &int32:
+   │                                                 ━━━━━━ expected a named lifetime
+   │
+   ╰ help: an elided lifetime in a return type needs the parameters to mention exactly one lifetime
+
+[error]: missing lifetime specifier
+   ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:18:15
+   │
+18 │ def none() -> &int32:
+   │               ━━━━━━ expected a named lifetime
+   │
+   ╰ help: an elided lifetime in a return type needs the parameters to mention exactly one lifetime
+
+[error]: missing lifetime specifier
+   ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:23:22
+   │
+23 │ def callable(fn: def(&int32) -> int32) -> ():
+   │                      ━━━━━━ expected a named lifetime
+   │
+   ╰ help: an elided lifetime in a callable type would need a higher-ranked lifetime, which is not supported yet; name the lifetime instead
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

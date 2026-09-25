@@ -1,0 +1,33 @@
+struct Ref['a, t]:
+    value: &'a t
+
+# ERROR: structs must declare their lifetimes.
+struct Undeclared:
+    value: &'a int32
+
+# ERROR: `'static` and `'_` are not lifetime parameter names.
+struct Reserved['static, '_]:
+    value: int32
+
+# ERROR: a lifetime is expected, not a type.
+def kindMismatch(reference: Ref[int32, int32]) -> ():
+    return ()
+
+# ERROR: a `def` introduces only the lifetimes its parameter types mention.
+def returnOnly() -> &'b int32:
+    return returnOnly()
+
+# OK: `'a` is introduced by the parameter, and `'static` is always declared.
+def introduced(reference: &'a int32, other: &'static int32) -> &'a int32:
+    return reference
+
+# OK: outlives predicates resolve their lifetimes.
+def outlives(first: &'a int32, second: &'b int32) -> () where ('a: 'b, int32: 'a):
+    return ()
+
+# ERROR: `'c` is not declared.
+def undeclaredOutlives(first: &'a int32) -> () where ('a: 'c):
+    return ()
+
+def main() -> ():
+    return ()

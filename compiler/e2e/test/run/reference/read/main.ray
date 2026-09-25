@@ -1,0 +1,15 @@
+struct Pair:
+    first: int32
+    second: int32
+
+# The elided lifetime of the result is the parameter's lifetime.
+def first(pair: &Pair) -> &int32:
+    return pair.*.first.&
+
+def main() -> int32:
+    let pair = Pair { first = 40, second = 2 }
+    let reference = pair.&
+
+    # A shared reference is `Copy`, so both copies can be used.
+    let copy = reference
+    return first(reference).* + copy.*.second

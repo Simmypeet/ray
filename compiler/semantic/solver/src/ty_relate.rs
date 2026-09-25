@@ -113,7 +113,7 @@ impl Solver {
             return Ok(Step::Derived(Vec::new()));
         }
 
-        match (&**substype.lesser(), &**substype.greater()) {
+        let res = match (&**substype.lesser(), &**substype.greater()) {
             (Ty::Application(l1), Ty::Application(l2)) => {
                 // If either side is an associated type, we'll not attempt to break it down
                 // further. Here're two counterexamples that show why we shouldn't!
@@ -195,16 +195,27 @@ impl Solver {
                 {
                     Ok(Step::NoProgress)
                 } else {
-                    // TODO: Obviously, we'll have to change this
-                    if self.is_lifetime(substype.lesser()).await
-                        && self.is_lifetime(substype.greater()).await
-                    {
-                        return Ok(Step::Derived(Vec::new()));
-                    }
                     Err(Error::Conflicted)
                 }
             }
+        };
+
+        match res {
+            Err(Error::Conflicted) => {
+                // TODO: this is a temporary hack. will be removed once we have
+                // subtyping for lifetimes.
+                if self.is_ty_relate_lifetime(substype).await {
+                    Ok(Step::Derived(Vec::new()))
+                } else {
+                    Err(Error::Conflicted)
+                }
+            }
+            res => res,
         }
+    }
+
+    async fn is_ty_relate_lifetime(&self, ty_relate: &TyRelate) -> bool {
+        self.is_lifetime(ty_relate.lesser()).await && self.is_lifetime(ty_relate.greater()).await
     }
 
     fn entail_effect_row_subtype(

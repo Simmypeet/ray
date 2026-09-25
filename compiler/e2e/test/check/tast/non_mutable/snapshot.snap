@@ -16,18 +16,30 @@ stderr:
   ╰╴    ━ this destination is immutable
 
 [error]: assignment requires a mutable lvalue
-   ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:12:5
+   ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:13:9
    │
-12 │     a.* = 32
+13 │         a.* = 32
+   ╰╴        ━━━ this destination is immutable
+
+[error]: mutable reference-of operation requires a mutable lvalue
+   ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:18:21
+   │
+18 │     let b = unsafe: a.*.&mut
+   ╰╴                    ━━━ this destination is immutable
+
+[error]: assignment requires a mutable lvalue
+   ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:23:5
+   │
+23 │     a.* = 32
    ╰╴    ━━━ this destination is immutable
 
 [error]: mutable reference-of operation requires a mutable lvalue
-   ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:17:13
+   ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:28:13
    │
-17 │     let b = a.*.&mut
+28 │     let b = a.*.&mut
    ╰╴            ━━━ this destination is immutable
 
-[error]: Compilation aborted due to 4 error(s)
+[error]: Compilation aborted due to 6 error(s)
 
 
 

@@ -1,0 +1,26 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: dereference of raw pointer is unsafe and requires `unsafe`
+  ╭▸ compiler/e2e/test/check/tast/raw_pointer_deref_outside_unsafe/main.ray:3:12
+  │
+3 │     return pointer.*
+  │            ━━━━━━━━━ dereference of raw pointer
+  │
+  ╰ help: raw pointers may be null, dangling or unaligned; wrap the dereference in `unsafe`
+
+[error]: dereference of raw pointer is unsafe and requires `unsafe`
+  ╭▸ compiler/e2e/test/check/tast/raw_pointer_deref_outside_unsafe/main.ray:8:5
+  │
+8 │     pointer.* = 1
+  │     ━━━━━━━━━ dereference of raw pointer
+  │
+  ╰ help: raw pointers may be null, dangling or unaligned; wrap the dereference in `unsafe`
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

@@ -1,0 +1,34 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot move out of a borrow
+   ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:15:13
+   │
+15 │     consume(holder.*.resource)
+   │             ━━━━━━━━━━━━━━━━━ value moved out of a reference here
+   │
+   ╰ help: the value is only borrowed; borrow it instead of moving it
+
+[error]: cannot move out of a borrow
+   ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:20:20
+   │
+20 │     let resource = holder.*.resource
+   │                    ━━━━━━━━━━━━━━━━━ value moved out of a reference here
+   │
+   ╰ help: the value is only borrowed; borrow it instead of moving it
+
+[error]: cannot move out of a borrow
+   ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:25:12
+   │
+25 │     return move value.*
+   │            ━━━━━━━━━━━━ value moved out of a reference here
+   │
+   ╰ help: the value is only borrowed; borrow it instead of moving it
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

@@ -28,12 +28,18 @@ stderr:
    ╰╴                                            ━━━━━━ given parameter `absent` is not found
 
 [error]: given argument `main.BoolEqual` does not implement `main.Equal[int32]`
-   ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:25:37
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:26:32
    │
-25 │ def kind(value: i.Item[int32; given BoolEqual]) given (i: Container) -> int32:
-   ╰╴                                    ━━━━━━━━━
+26 │     value: i.Item[int32; given BoolEqual]
+   ╰╴                               ━━━━━━━━━
 
-[error]: Compilation aborted due to 5 error(s)
+[error]: given argument `main.BoolEqual` does not implement `main.Equal[int32]`
+   ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:29:38
+   │
+29 │     d: core.Drop[i.Item[int32; given BoolEqual]]
+   ╰╴                                     ━━━━━━━━━
+
+[error]: Compilation aborted due to 6 error(s)
 
 
 

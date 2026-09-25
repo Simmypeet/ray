@@ -1,0 +1,37 @@
+struct Resource:
+    value: int32
+
+impl !core.Copy for Resource
+
+struct Holder:
+    resource: Resource
+    count: int32
+
+def consume(resource: Resource) -> ():
+    return ()
+
+def moveOut(holder: &Holder) -> ():
+    # ERROR: `holder.*.resource` is only borrowed.
+    consume(holder.*.resource)
+    return ()
+
+def moveOutOfMutable(holder: &mut Holder) -> ():
+    # ERROR: a unique borrow is still a borrow.
+    let resource = holder.*.resource
+    return ()
+
+def forcedMove(value: &int32) -> int32:
+    # ERROR: `move` moves even a `Copy` value.
+    return move value.*
+
+def copyOut(holder: &Holder) -> int32:
+    # OK: a `Copy` value is copied out of the borrow.
+    return holder.*.count
+
+def rawPointer(holder: *Holder) -> ():
+    # OK: a load through a raw pointer is a bitwise copy.
+    consume(unsafe: holder.*.resource)
+    return ()
+
+def main() -> ():
+    return ()

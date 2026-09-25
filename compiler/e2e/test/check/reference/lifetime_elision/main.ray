@@ -1,0 +1,45 @@
+# ERROR: struct fields cannot elide lifetimes.
+struct Elided:
+    value: &int32
+
+# OK: the one parameter lifetime is the result's lifetime.
+def single(value: &int32) -> &int32:
+    return value
+
+# OK: `'_` is an elided lifetime too.
+def placeholder(value: &'_ int32) -> &int32:
+    return value
+
+# ERROR: two parameter lifetimes leave the result's lifetime ambiguous.
+def ambiguous(first: &int32, second: &int32) -> &int32:
+    return first
+
+# ERROR: no parameter lifetime can stand for the result's lifetime.
+def none() -> &int32:
+    return none()
+
+# ERROR: an elided lifetime in a callable type would need a higher-ranked
+# lifetime.
+def callable(fn: def(&int32) -> int32) -> ():
+    return ()
+
+# ERROR: trait and instance defs cannot elide lifetimes in parameter types.
+trait Read[]:
+    def read(value: &int32) -> int32
+
+    # ERROR: nor in return types.
+    def first(value: &'a int32) -> &int32
+
+inst Reader for Read[]:
+    def read(value: &int32) -> int32:
+        return value.*
+
+    def first(value: &'a int32) -> &int32:
+        return value
+
+def main() -> ():
+    let value = 1
+
+    # OK: a body elides lifetimes freely.
+    let reference: &int32 = value.&
+    return ()

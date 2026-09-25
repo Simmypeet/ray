@@ -1,0 +1,9 @@
+def increment(value: &mut int32) -> ():
+    value.* = value.* + 1
+    return ()
+
+def main() -> int32:
+    let mut value = 40
+    increment(value.&mut)
+    increment(value.&mut)
+    return value

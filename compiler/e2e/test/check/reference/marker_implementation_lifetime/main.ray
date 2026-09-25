@@ -1,0 +1,8 @@
+struct Unique['a]:
+    value: &'a mut int32
+
+# ERROR: a marker implementation cannot depend on a lifetime.
+impl core.Copy for Unique['static]
+
+def main() -> ():
+    return ()

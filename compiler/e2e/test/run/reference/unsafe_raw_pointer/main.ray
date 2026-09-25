@@ -1,0 +1,10 @@
+def main() -> int32:
+    let mut value = 1
+    let pointer: *mut int32 = value.&mut
+
+    # The block form has no value; the expression form has the value of its
+    # expression.
+    unsafe:
+        pointer.* = 20
+        pointer.* = pointer.* + 1
+    return unsafe: pointer.* + pointer.*

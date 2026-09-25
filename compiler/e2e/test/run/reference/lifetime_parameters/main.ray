@@ -1,0 +1,33 @@
+struct Ref['a, t]:
+    value: &'a t
+
+def get(reference: Ref['a, t]) -> &'a t:
+    return reference.value
+
+def either(first: &'a int32, second: &'a int32, pickFirst: bool) -> &'a int32:
+    if pickFirst:
+        return first
+    return second
+
+eff Reader['a]:
+    def ask() -> &'a int32
+
+# `'r` is introduced by the parameter type, so the effect row can use it.
+def askTwice(base: &'r int32) -> int32 \ {Reader['r]}:
+    return base.* + Reader.ask().* + Reader.ask().*
+
+def main() -> int32:
+    let value = 20
+    let reference = Ref { value = value.& }
+
+    let small = 1
+    let picked = get(reference).* + either(small.&, value.&, true).*
+
+    let asked = run:
+        return askTwice(small.&)
+    with Reader:
+        def ask():
+            return small.&
+
+    # 21 + 3
+    return picked + asked

@@ -28,7 +28,7 @@ def main() -> int32:
     let second = make("value.second")
     () -> (move first, move second)
 
-    # A borrowed capture is a pointer in the environment, so only the
+    # A borrowed capture is a reference in the environment, so only the
     # by-value capture is dropped. `borrowed` itself is dropped when `main`
     # returns.
     let owned = make("owned")

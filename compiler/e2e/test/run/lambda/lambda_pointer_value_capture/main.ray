@@ -2,7 +2,7 @@ def main() -> int32:
     let first = 32
     let second = 42
     let mut pointer = first.&
-    # `move` snapshots the pointer, so it still points at `first`.
+    # `move` snapshots the reference, so it still refers to `first`.
     let read = () -> (move pointer).*
     pointer = second.&
     return read()
