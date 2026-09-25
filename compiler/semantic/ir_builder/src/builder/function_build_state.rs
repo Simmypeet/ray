@@ -466,9 +466,9 @@ impl Builder {
                         IRExprKind::Load(Load::with_kind(address, kind.into())),
                         requirement.binding_ty().clone(),
                     ),
-                    CaptureMode::Reference(mutability) => (
+                    CaptureMode::Reference(_) => (
                         IRExprKind::RefOf(rayc_ir::ir_expr::ref_of::RefOf::new(address)),
-                        self.pointer_ty(requirement.binding_ty().clone(), mutability),
+                        requirement.storage_ty(&self.engine),
                     ),
                 };
                 self.emit_expression(IRExpr::new(kind, requirement.span(), ty))
@@ -635,7 +635,7 @@ impl Builder {
             .expect("non-local source should have an analyzed capture");
 
         // Value captures are already stored directly in the environment, while
-        // reference captures store a pointer to the captured place.
+        // reference captures store a reference to the captured place.
         let mut address = self.capture_address(capture_id);
         match self
             .ir_functions
@@ -643,7 +643,7 @@ impl Builder {
             .mode()
         {
             CaptureMode::Value(_) => {}
-            CaptureMode::Reference(_) => self.project_raw_deref(&mut address),
+            CaptureMode::Reference(_) => self.project_deref(&mut address),
         }
         address
     }

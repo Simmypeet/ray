@@ -19,6 +19,7 @@ mod r#move;
 mod paren;
 mod ref_of;
 mod run_with;
+mod statement_block;
 mod struct_initialization;
 mod tuple;
 mod tuple_index;
@@ -93,6 +94,9 @@ impl Builder {
             }
             TypedExprKind::While(while_loop) => {
                 self.lower(context, TypedExprWithID::new(while_loop, expression_id)).await
+            }
+            TypedExprKind::StatementBlock(block) => {
+                self.lower(context, TypedExprWithID::new(block, expression_id)).await
             }
             TypedExprKind::RefOf(reference) => {
                 self.lower(context, TypedExprWithID::new(reference, expression_id)).await

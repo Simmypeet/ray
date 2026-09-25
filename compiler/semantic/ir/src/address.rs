@@ -59,6 +59,12 @@ pub enum Projection {
     Tuple(usize),
     Field(FieldID),
 
+    /// Dereferences the reference stored at the address so far.
+    ///
+    /// The memory behind a reference is borrowed, not owned by the stack
+    /// frame, so nothing may be moved out of it.
+    Deref,
+
     /// Dereferences the raw pointer stored at the address so far.
     ///
     /// The memory behind a raw pointer is not owned by the stack frame, so the
@@ -133,6 +139,10 @@ impl Address {
         self.add_projection(Projection::Field(field_id), engine);
     }
 
+    pub fn add_deref(&mut self, engine: &TrackedEngine) {
+        self.add_projection(Projection::Deref, engine);
+    }
+
     pub fn add_raw_deref(&mut self, engine: &TrackedEngine) {
         self.add_projection(Projection::RawDeref, engine);
     }
@@ -196,6 +206,17 @@ impl Address {
             projections: engine.intern_unsized(self.projections[..deref_index].to_vec()),
         })
     }
+
+    /// Returns whether the last dereference in this address is of a
+    /// reference, which makes the place borrowed memory. A place reached last
+    /// through a raw pointer is untracked memory instead.
+    #[must_use]
+    pub fn is_behind_reference(&self) -> bool {
+        matches!(
+            self.projections.iter().rev().find(|projection| projection.is_deref()),
+            Some(Projection::Deref)
+        )
+    }
 }
 
 impl Projection {
@@ -204,7 +225,7 @@ impl Projection {
     #[must_use]
     pub const fn is_deref(self) -> bool {
         match self {
-            Self::RawDeref => true,
+            Self::Deref | Self::RawDeref => true,
             Self::Tuple(_) | Self::Field(_) => false,
         }
     }
