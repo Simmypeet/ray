@@ -9,10 +9,10 @@ use rayc_symbol::{source_map::to_absolute_span, symbol_kind::SymbolKind};
 use rayc_syntax::{
     def::{ParameterEntry, ParameterList, ParameterType},
     effect_row::{EffectRow as EffectRowSyntax, EffectRowAnnotation},
-    r#type::Type as TypeSyntax,
+    r#type::{Lifetime as LifetimeSyntax, Type as TypeSyntax},
 };
 use rayc_type::{
-    poly_var::{PolyVar, PolyVarMap, PolyVarStack},
+    poly_var::{PolyVar, PolyVarMap, PolyVarOrigin, PolyVarStack},
     ty::TyKind,
 };
 
@@ -21,6 +21,7 @@ pub use obligation::{
     Obligation, PredicateConstraint, PredicateObligation, TraitRefCheck, WfCheck,
 };
 pub mod inference;
+pub mod lifetime;
 pub mod path;
 pub use inference::GenInferWithSpan;
 pub mod resolver;
@@ -77,9 +78,16 @@ pub enum Diagnostic {
     MissingGivenArgument(MissingGivenArgument),
     /// A given parameter was assigned more than once.
     DuplicateGivenArgument(DuplicateGivenArgument),
+    /// A named lifetime is not declared.
+    LifetimeNotFound(lifetime::LifetimeNotFound),
+    /// A lifetime is elided where elision is not allowed.
+    MissingLifetime(lifetime::MissingLifetime),
 }
 
 impl Report for Diagnostic {
+    // Keep the exhaustive dispatch here so adding a diagnostic forces its
+    // rendering path to be selected explicitly.
+    #[allow(clippy::cognitive_complexity)]
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
             Self::InvalidThisPath(diagnostic) => diagnostic.report(engine).await,
@@ -104,6 +112,8 @@ impl Report for Diagnostic {
             Self::GivenArgumentNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::MissingGivenArgument(diagnostic) => diagnostic.report(engine).await,
             Self::DuplicateGivenArgument(diagnostic) => diagnostic.report(engine).await,
+            Self::LifetimeNotFound(diagnostic) => diagnostic.report(engine).await,
+            Self::MissingLifetime(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -268,6 +278,7 @@ const fn kind_name(kind: TyKind) -> &'static str {
         TyKind::Star => "a value type",
         TyKind::EffectRow => "an effect row",
         TyKind::Instance => "an instance",
+        TyKind::Lifetime => "a lifetime",
     }
 }
 
@@ -580,10 +591,52 @@ fn discover_effect_row_poly_var(
     }
 }
 
+/// Introduces the lifetime `lifetime` names, unless an enclosing symbol
+/// already declares it. An elided lifetime (`'_`) is introduced only when
+/// `introduce_elided` is set.
+fn discover_lifetime(
+    engine: &TrackedEngine,
+    lifetime: &LifetimeSyntax,
+    poly_vars: &mut PolyVarMap,
+    poly_var_stack: Option<&PolyVarStack>,
+    introduce_elided: bool,
+) {
+    if lifetime.is_placeholder() {
+        if introduce_elided {
+            introduce_elided_lifetime(engine, lifetime.span(), poly_vars);
+        }
+        return;
+    }
+
+    let Some(identifier) = lifetime.identifier() else { return };
+    let name = lifetime::lifetime_parameter_name(&identifier.kind.0);
+    if poly_var_stack.is_some_and(|stack| stack.find_by_name(&name).is_some()) {
+        return;
+    }
+    let _ = poly_vars.insert(PolyVar::new_lifetime(engine.intern_unsized(name), lifetime.span()));
+}
+
+/// Introduces the fresh lifetime parameter for the lifetime elided at `span`.
+fn introduce_elided_lifetime(
+    engine: &TrackedEngine,
+    span: RelativeSpan,
+    poly_vars: &mut PolyVarMap,
+) {
+    poly_vars.insert_generated(
+        PolyVar::new_lifetime(engine.intern_unsized("'_"), span),
+        PolyVarOrigin::ElidedLifetime(span),
+    );
+}
+
+/// Discovers the polymorphic variables a parameter type introduces: lowercase
+/// single-letter type variables, effect variables, named lifetimes, and, when
+/// `introduce_elided` is set, one fresh lifetime for each elided lifetime.
 fn discover_poly_vars(
+    engine: &TrackedEngine,
     ty: &TypeSyntax,
     poly_vars: &mut PolyVarMap,
     poly_var_stack: Option<&PolyVarStack>,
+    introduce_elided: bool,
 ) {
     match ty {
         TypeSyntax::EffectRow(row) => {
@@ -597,12 +650,51 @@ fn discover_poly_vars(
         TypeSyntax::Primitive(_) => {}
         TypeSyntax::Pointer(pointer) => {
             if let Some(pointed_type) = pointer.pointed_type() {
-                discover_poly_vars(&pointed_type, poly_vars, poly_var_stack);
+                discover_poly_vars(
+                    engine,
+                    &pointed_type,
+                    poly_vars,
+                    poly_var_stack,
+                    introduce_elided,
+                );
             }
+        }
+        TypeSyntax::Reference(reference) => {
+            match reference.lifetime() {
+                Some(lifetime) => {
+                    discover_lifetime(
+                        engine,
+                        &lifetime,
+                        poly_vars,
+                        poly_var_stack,
+                        introduce_elided,
+                    );
+                }
+                None if introduce_elided => {
+                    introduce_elided_lifetime(
+                        engine,
+                        lifetime::elided_reference_lifetime_span(reference),
+                        poly_vars,
+                    );
+                }
+                None => {}
+            }
+            if let Some(pointed_type) = reference.pointed_type() {
+                discover_poly_vars(
+                    engine,
+                    &pointed_type,
+                    poly_vars,
+                    poly_var_stack,
+                    introduce_elided,
+                );
+            }
+        }
+        TypeSyntax::Lifetime(lifetime) => {
+            discover_lifetime(engine, lifetime, poly_vars, poly_var_stack, introduce_elided);
         }
         TypeSyntax::Tuple(tuple) => {
             for element in tuple.elements() {
-                discover_poly_vars(&element, poly_vars, poly_var_stack);
+                discover_poly_vars(engine, &element, poly_vars, poly_var_stack, introduce_elided);
             }
         }
         TypeSyntax::Path(path) => {
@@ -617,7 +709,13 @@ fn discover_poly_vars(
             for segment in path.segments() {
                 if let Some(arguments) = segment.arguments() {
                     for argument in arguments.type_arguments() {
-                        discover_poly_vars(&argument, poly_vars, poly_var_stack);
+                        discover_poly_vars(
+                            engine,
+                            &argument,
+                            poly_vars,
+                            poly_var_stack,
+                            introduce_elided,
+                        );
                     }
                 }
             }
@@ -627,6 +725,7 @@ fn discover_poly_vars(
 
 #[must_use]
 pub fn discover_parameter_poly_vars(
+    engine: &TrackedEngine,
     parameters: Option<&ParameterList>,
     poly_var_stack: Option<&PolyVarStack>,
 ) -> PolyVarMap {
@@ -639,18 +738,34 @@ pub fn discover_parameter_poly_vars(
             if let Some(ty) = parameter.r#type() {
                 match ty {
                     ParameterType::Type(ty) => {
-                        discover_poly_vars(&ty, &mut poly_vars, poly_var_stack);
+                        discover_poly_vars(engine, &ty, &mut poly_vars, poly_var_stack, true);
                     }
+
+                    // An elided lifetime in a callable type would need a
+                    // higher-ranked lifetime, which Ray does not have yet, so
+                    // it introduces nothing and is reported when resolved.
                     ParameterType::CallableSugar(callable) => {
                         if let Some(parameters) = callable.parameters() {
                             for parameter in parameters.parameters() {
-                                discover_poly_vars(&parameter, &mut poly_vars, poly_var_stack);
+                                discover_poly_vars(
+                                    engine,
+                                    &parameter,
+                                    &mut poly_vars,
+                                    poly_var_stack,
+                                    false,
+                                );
                             }
                         }
                         if let Some(return_type) = callable.return_type()
                             && let Some(return_type) = return_type.r#type()
                         {
-                            discover_poly_vars(&return_type, &mut poly_vars, poly_var_stack);
+                            discover_poly_vars(
+                                engine,
+                                &return_type,
+                                &mut poly_vars,
+                                poly_var_stack,
+                                false,
+                            );
                         }
                         discover_effect_row_poly_var(
                             callable.effect_row().as_ref(),
@@ -668,10 +783,11 @@ pub fn discover_parameter_poly_vars(
 /// Discovers the polymorphic variables declared by a function signature.
 #[must_use]
 pub fn discover_function_poly_vars(
+    engine: &TrackedEngine,
     parameters: Option<&ParameterList>,
     poly_var_stack: Option<&PolyVarStack>,
 ) -> PolyVarMap {
-    discover_parameter_poly_vars(parameters, poly_var_stack)
+    discover_parameter_poly_vars(engine, parameters, poly_var_stack)
 }
 
 /// A `this` path used outside a trait body.

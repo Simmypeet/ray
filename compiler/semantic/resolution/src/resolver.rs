@@ -28,6 +28,7 @@ use crate::{
     ExpectedTrait, ExplicitTypeArgumentsNotAllowed, GenInferWithSpan, GivenArgumentNotFound,
     MissingGivenArgument, PathSegmentNotFound, PositionalGivenArgumentAfterNamed,
     TypeArgumentArityMismatch, TypeInferenceNotAllowed, TypeKindMismatch,
+    lifetime::LifetimeElision,
 };
 
 /// Resolves syntax relative to a symbol and its polymorphic environment.
@@ -42,6 +43,9 @@ pub struct Resolver<'a> {
     handler: &'a dyn Handler<Diagnostic>,
     obligation_handler: &'a dyn Handler<crate::Obligation>,
     infer_gen: Option<&'a mut dyn GenInferWithSpan>,
+
+    #[builder(default)]
+    lifetime_elision: LifetimeElision,
 }
 
 impl fmt::Debug for Resolver<'_> {
@@ -52,6 +56,7 @@ impl fmt::Debug for Resolver<'_> {
             .field("building_poly_va_map", &self.poly_var_stack)
             .field("site", &self.site)
             .field("has_infer_gen", &self.infer_gen.is_some())
+            .field("lifetime_elision", &self.lifetime_elision)
             .finish_non_exhaustive()
     }
 }
@@ -97,6 +102,22 @@ impl Resolver<'_> {
     }
 
     pub(crate) const fn engine(&self) -> &TrackedEngine { self.engine }
+
+    pub(crate) const fn site(&self) -> GlobalSymbolID { self.site }
+
+    pub(crate) const fn lifetime_elision(&self) -> &LifetimeElision { &self.lifetime_elision }
+
+    /// Replaces how this resolver treats elided lifetimes, returning the
+    /// previous treatment so that it can be restored.
+    pub const fn replace_lifetime_elision(&mut self, elision: LifetimeElision) -> LifetimeElision {
+        std::mem::replace(&mut self.lifetime_elision, elision)
+    }
+
+    /// Returns whether this resolver may create inference variables, which is
+    /// only the case inside a function body.
+    pub(crate) const fn infers(&self) -> bool { self.infer_gen.is_some() }
+
+    pub(crate) fn report(&self, diagnostic: Diagnostic) { self.handler.receive(diagnostic); }
 
     pub(crate) fn require_instance_trait_ref(
         &self,

@@ -12,10 +12,11 @@ use rayc_syntax::{
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarMap},
     subst::Subst,
-    ty::{Mutability, Primitive, Ty, TyKind, args::Args},
+    ty::{Mutability, Primitive, Ty, TyKind, args::Args, lifetime::Lifetime},
 };
 
 use crate::{
+    lifetime::elided_reference_lifetime_span,
     path::{PathResolution, TraitMemberParent},
     resolver::Resolver,
 };
@@ -46,6 +47,13 @@ impl Resolver<'_> {
 
         let mut inferred = Vec::with_capacity(expected.len());
         for kind in expected {
+            // Type inference ignores lifetimes, so an omitted lifetime in a
+            // body is erased instead of inferred.
+            if *kind == TyKind::Lifetime && self.infers() {
+                inferred.push(Ty::new_lifetime(Lifetime::Erased, self.engine()));
+                continue;
+            }
+
             let Some(ty) = self.new_inference_type(*kind, identifier.span()) else {
                 self.report_type_inference_not_allowed(identifier, expected.len());
                 return expected.iter().map(|kind| self.new_error_type(*kind)).collect();
@@ -395,6 +403,25 @@ impl Resolver<'_> {
                 };
                 self.new_pointer_type(pointee, mutability)
             }
+            TypeSyntax::Reference(reference) => {
+                let lifetime = if let Some(lifetime) = reference.explicit_lifetime() {
+                    self.resolve_lifetime(&lifetime).await
+                } else {
+                    self.elided_lifetime(elided_reference_lifetime_span(reference)).await
+                };
+                let pointee = if let Some(pointed_type) = reference.pointed_type() {
+                    Box::pin(self.resolve_type(&pointed_type)).await
+                } else {
+                    self.new_error_type(TyKind::Star)
+                };
+                let mutability = if reference.mut_keyword().is_some() {
+                    Mutability::Mutable
+                } else {
+                    Mutability::Immutable
+                };
+                Ty::new_reference(lifetime, pointee, mutability, self.engine())
+            }
+            TypeSyntax::Lifetime(lifetime) => self.resolve_lifetime(lifetime).await,
             TypeSyntax::Tuple(tuple) => {
                 let mut arguments = Vec::new();
                 for element in tuple.elements() {
