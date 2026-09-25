@@ -56,3 +56,72 @@ block to explain what it does.
 
 If the code is complex and not so obvious, add a comment to explain what the
 code is doing and why it is doing it that way.
+
+# Adds utility functions as a method of the struct/enum
+
+If you find yourself adding a utility function that is closely related to a
+struct or enum, consider adding it as a method for that struct or enum
+instead of a free function.
+
+**Rationale**: This allows us to group related functionality together and
+makes it easier to find and use in the future. This would reduce the chance
+of having duplicate utility functions in the codebase.
+
+# Pattern Match on Public Enums
+
+When pattern matching on public enums like `Ty` or `SymbolKind`, always
+create a new descriptive function name for the match statement instead of
+having the match statement inline in the code.
+
+For instance, DON'T do this:
+
+```rust
+let var = statement1;
+let blah = statement2;
+
+// ... more code ...
+let value = match var {
+    Ty::Int => expr1,
+    Ty::Float => expr2,
+    Ty::Bool => expr3,
+};
+
+// even more code ...
+```
+
+Instead, do this:
+
+```rust
+impl Ty {
+   /// Descriptive comment about why this function exists would also be helpful
+   pub fn get_value(&self) -> Value {
+       match self {
+           Ty::Int => expr1,
+           Ty::Float => expr2,
+           Ty::Bool => expr3,
+       }
+   }
+}
+let var = statement1;
+let blah = statement2;
+
+// ... more code ...
+let value = var.get_value();
+
+// even more code ...
+```
+
+**Rationale**: When adding a new variant to the enum, the developer will be
+able to understand what's the purpose and context of the match expression and
+will be able to know how to handle the new variant.
+
+# Avoid Needless Heap Allocations for Iterations
+
+Avoid calling `.collect::<Vec<_>>()` or `.to_vec()` on iterators unless you
+really need a `Vec`. Instead, try to use iterators directly and chain them
+together.
+
+# Prefer `-> impl Iterator<Item = &T>` over `-> Vec<T>` or any other Heap Allocated Collection
+
+When adding a getter method that returns a collection of items, prefer
+returning an iterator instead of a heap allocated collection like `Vec<T>`.

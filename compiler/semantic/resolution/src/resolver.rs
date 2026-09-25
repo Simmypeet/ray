@@ -284,26 +284,7 @@ impl Resolver<'_> {
         previous: Option<GlobalSymbolID>,
         name: &str,
     ) -> Option<GlobalSymbolID> {
-        if let Some(previous) = previous {
-            self.engine.try_get_members(previous).await.and_then(|members| {
-                members.get_by_name(name).map(|member_id| previous.target_id.make_global(member_id))
-            })
-        } else {
-            let closest_module_id = self.engine.get_closest_module_id(self.site).await;
-            let closest_module_id = self.site.target_id.make_global(closest_module_id);
-            if let Some(local) = self.engine.get_member_by_name(closest_module_id, name).await {
-                return Some(local);
-            }
-            // Only explicitly linked roots are visible, after local names.
-            let targets = self.engine.query(&rayc_target::MapKey).await;
-            let target_id = *targets.get(name)?;
-            let linked =
-                self.engine.query(&rayc_target::LinkKey { target_id: self.site.target_id }).await;
-            if !linked.contains(&target_id) {
-                return None;
-            }
-            Some(target_id.make_global(self.engine.get_target_root_module_id(target_id).await))
-        }
+        find_path_symbol(self.engine, self.site, previous, name).await
     }
 
     pub(crate) fn report_expected_effect(&self, span: RelativeSpan, actual: SymbolKind) {
@@ -394,5 +375,34 @@ impl Resolver<'_> {
     ) {
         self.handler
             .receive(Diagnostic::TypeKindMismatch(TypeKindMismatch::new(span, expected, actual)));
+    }
+}
+
+/// Finds the symbol named `name` inside `previous`, or, for the first segment
+/// of a path, among the names visible from `site`.
+pub(crate) async fn find_path_symbol(
+    engine: &TrackedEngine,
+    site: GlobalSymbolID,
+    previous: Option<GlobalSymbolID>,
+    name: &str,
+) -> Option<GlobalSymbolID> {
+    if let Some(previous) = previous {
+        engine.try_get_members(previous).await.and_then(|members| {
+            members.get_by_name(name).map(|member_id| previous.target_id.make_global(member_id))
+        })
+    } else {
+        let closest_module_id = engine.get_closest_module_id(site).await;
+        let closest_module_id = site.target_id.make_global(closest_module_id);
+        if let Some(local) = engine.get_member_by_name(closest_module_id, name).await {
+            return Some(local);
+        }
+        // Only explicitly linked roots are visible, after local names.
+        let targets = engine.query(&rayc_target::MapKey).await;
+        let target_id = *targets.get(name)?;
+        let linked = engine.query(&rayc_target::LinkKey { target_id: site.target_id }).await;
+        if !linked.contains(&target_id) {
+            return None;
+        }
+        Some(target_id.make_global(engine.get_target_root_module_id(target_id).await))
     }
 }

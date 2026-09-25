@@ -3,7 +3,9 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
-use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind};
+use rayc_symbol::{
+    GlobalSymbolID, symbol_kind::SymbolKind, syntax::get_type_parameter_list_syntax,
+};
 use rayc_syntax::{
     effect_row::EffectRow as EffectRowSyntax,
     path::{Path, PathSegment},
@@ -249,21 +251,55 @@ impl Resolver<'_> {
             .map(|(_, parameter)| parameter.kind())
             .collect::<Vec<_>>();
 
-        let type_arguments_are_implicit =
-            matches!(symbol_kind, SymbolKind::Def | SymbolKind::TraitDef | SymbolKind::InstanceDef);
+        // A definition accepts explicit type arguments only for the type
+        // parameters it declares explicitly; they precede its generated ones,
+        // such as fresh elided lifetimes and callable types, which are always
+        // inferred. Other symbols accept arguments for all type parameters.
+        let explicit_count = match symbol_kind {
+            SymbolKind::Def | SymbolKind::TraitDef | SymbolKind::InstanceDef => {
+                if self.engine().get_type_parameter_list_syntax(symbol_id).await.is_some() {
+                    Some(
+                        parameters
+                            .into_iter()
+                            .flat_map(PolyVarMap::iter)
+                            .take(type_parameter_count)
+                            .take_while(|(_, parameter)| parameter.is_source())
+                            .count(),
+                    )
+                } else {
+                    None
+                }
+            }
+            SymbolKind::Effect
+            | SymbolKind::Instance
+            | SymbolKind::InstanceType
+            | SymbolKind::MarkerImplementation
+            | SymbolKind::Strut
+            | SymbolKind::Trait
+            | SymbolKind::TraitType
+            | SymbolKind::ExternDef
+            | SymbolKind::EffectOperation
+            | SymbolKind::Marker
+            | SymbolKind::Module => Some(type_parameter_count),
+        };
         let has_explicit_type_arguments = path.has_explicit_type_arguments();
 
-        if type_arguments_are_implicit
-            && has_explicit_type_arguments
-            && let Some(span) = path.arguments().map(|arguments| arguments.span())
-        {
-            self.report_explicit_type_arguments_not_allowed(span);
-        }
-
-        let mut resolved = if type_arguments_are_implicit || !has_explicit_type_arguments {
-            self.infer_type_arguments(identifier, &type_kinds)
-        } else {
-            self.resolve_explicit_type_arguments(path, &type_kinds).await
+        let mut resolved = match explicit_count {
+            Some(explicit_count) if has_explicit_type_arguments => {
+                let (explicit, generated) = type_kinds.split_at(explicit_count);
+                let mut resolved = self.resolve_explicit_type_arguments(path, explicit).await;
+                resolved.extend(self.infer_type_arguments(identifier, generated));
+                resolved
+            }
+            Some(_) => self.infer_type_arguments(identifier, &type_kinds),
+            None => {
+                if has_explicit_type_arguments
+                    && let Some(span) = path.arguments().map(|arguments| arguments.span())
+                {
+                    self.report_explicit_type_arguments_not_allowed(span);
+                }
+                self.infer_type_arguments(identifier, &type_kinds)
+            }
         };
 
         let own_subst = parameters

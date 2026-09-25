@@ -65,8 +65,8 @@ impl Report for LifetimeNotFound {
             ))
             .message(format!("use of undeclared lifetime `{}`", &*self.name))
             .help_message(
-                "a `def` introduces the lifetimes its parameter types mention; structs, traits, \
-                 effects and instances must declare their lifetimes",
+                "a `def` without a type-parameter list introduces the lifetimes its parameter \
+                 types mention; every other declaration must declare its lifetimes",
             )
             .build()
     }
