@@ -15,7 +15,7 @@ stderr:
 2 │ extern def tupleParameter(value: (c_int, c_int)) -> c_int
   ╰╴                                ━━━━━━━━━━━━━━━
 
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `( ... )` block, `float32` keyword, identifier, `*` punctuation, `cstr` keyword
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `&` punctuation, `float32` keyword, `( ... )` block, `*` punctuation, `'` punctuation, identifier, `cstr` keyword
   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:3:30
   │
 3 │ extern def lambdaReturn() -> def(c_int) -> c_int

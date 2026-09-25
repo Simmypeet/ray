@@ -90,8 +90,9 @@ impl Bind<StructInitializationSyntax> for TAstBuilder {
             }
 
             let field_ty = field.ty().apply_subst_or_clone(&subst, self.engine());
-            self.push_struct_field_initialization_constraint(&field_ty, *expression).await;
-            initializers.push(FieldInitializer::new(field_id, *expression));
+            let expression = self.coerce(*expression, &field_ty).await;
+            self.push_struct_field_initialization_constraint(&field_ty, expression).await;
+            initializers.push(FieldInitializer::new(field_id, expression));
         }
 
         // Diagnose absent fields in their declaration order for deterministic output.

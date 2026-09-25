@@ -1,0 +1,22 @@
+def write(value: &mut int32) -> ():
+    value.* = 1
+    return ()
+
+def writeRaw(value: *mut int32) -> ():
+    unsafe:
+        value.* = 1
+    return ()
+
+def main() -> ():
+    let mut value = 1
+
+    # ERROR: a shared reference does not coerce to a unique one.
+    write(value.&)
+
+    # ERROR: nor to a mutable raw pointer.
+    writeRaw(value.&)
+
+    # OK: a unique reference coerces to a shared one, and to raw pointers.
+    let shared: &int32 = value.&mut
+    let raw: *int32 = value.&mut
+    return ()

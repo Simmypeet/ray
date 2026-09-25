@@ -17,7 +17,7 @@ use crate::{
         TypedExpr, TypedExprID, TypedExprKind,
         binary::{Binary, BinaryOp},
         closure::Closure,
-        deref::Deref,
+        deref::{Deref, DerefKind},
         identifier::Identifier,
         literal::Literal,
         r#move::Move,
@@ -236,7 +236,8 @@ async fn address_modes_follow_projections_references_and_dereferences() {
     map.statement(child, mutable_reference);
 
     let pointer_id = map.identifier(child, pointer);
-    let dereference = map.expression(child, TypedExprKind::Deref(Deref::new(pointer_id)));
+    let dereference =
+        map.expression(child, TypedExprKind::Deref(Deref::new(pointer_id, DerefKind::RawPointer)));
     let value = map.expression(child, TypedExprKind::Literal(Literal::Numeric(2)));
     let dereference_assignment = map.expression(
         child,

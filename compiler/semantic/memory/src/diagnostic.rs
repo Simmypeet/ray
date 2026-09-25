@@ -49,6 +49,15 @@ pub struct MoveOutOfHandlerCapture {
     capture_span: RelativeSpan,
 }
 
+/// A value moved out of memory behind a reference (Rust E0507). The memory is
+/// only borrowed, so it must still hold a value when the borrow ends.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
+)]
+pub struct MoveOutOfBorrow {
+    move_span: RelativeSpan,
+}
+
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable, From,
 )]
@@ -58,6 +67,7 @@ pub enum Diagnostic {
     UseBeforeInitialization(UseBeforeInitialization),
     UnresolvedScopeDrop(UnresolvedScopeDrop),
     MoveOutOfHandlerCapture(MoveOutOfHandlerCapture),
+    MoveOutOfBorrow(MoveOutOfBorrow),
 
     /// A selected `Drop` instance requires a where-clause predicate that does
     /// not hold at the dropping site.
@@ -187,6 +197,16 @@ impl Report for Diagnostic {
             Self::MoveOutOfHandlerCapture(diagnostic) => {
                 move_out_of_handler_capture_report(engine, diagnostic).await
             }
+            Self::MoveOutOfBorrow(diagnostic) => Rendered::builder()
+                .message("cannot move out of a borrow")
+                .primary_highlight(
+                    Highlight::builder()
+                        .span(engine.to_absolute_span(&diagnostic.move_span).await)
+                        .message("value moved out of a reference here")
+                        .build(),
+                )
+                .help_message("the value is only borrowed; borrow it instead of moving it")
+                .build(),
         }
     }
 }

@@ -180,7 +180,7 @@ impl TAstBuilder {
     async fn build_resolved_direct_call(
         &mut self,
         target: ResolvedCallTarget<'_>,
-        arguments: Vec<TypedExprID>,
+        mut arguments: Vec<TypedExprID>,
         call_subst: Subst,
         span: RelativeSpan,
         // Is `Some` when the call is a lambda call
@@ -188,8 +188,14 @@ impl TAstBuilder {
     ) -> TypedExprID {
         // Check arguments before reading the resulting signature: constraints may
         // resolve inference variables and associated types used by the call.
-        self.check_resolved_call_arguments(&target, &arguments, &call_subst, span, value_arguments)
-            .await;
+        self.check_resolved_call_arguments(
+            &target,
+            &mut arguments,
+            &call_subst,
+            span,
+            value_arguments,
+        )
+        .await;
         let (return_type, effect_row) = self.resolve_call_signature(&target, &call_subst).await;
 
         // Construct the call and introduce its effect exactly once.
@@ -202,7 +208,7 @@ impl TAstBuilder {
     async fn check_resolved_call_arguments(
         &mut self,
         target: &ResolvedCallTarget<'_>,
-        arguments: &[TypedExprID],
+        arguments: &mut [TypedExprID],
         call_subst: &Subst,
         span: RelativeSpan,
         value_arguments: Option<&[TypedExprID]>,
@@ -220,6 +226,7 @@ impl TAstBuilder {
                 self.check_callable_arguments(&parameter_ty, *argument, value_arguments, span)
                     .await;
             } else {
+                *argument = self.coerce(*argument, &parameter_ty).await;
                 self.push_function_call_constraint(&parameter_ty, *argument).await;
             }
         }

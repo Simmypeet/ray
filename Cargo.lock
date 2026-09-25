@@ -1976,8 +1976,10 @@ dependencies = [
  "rayc_lexical",
  "rayc_qbice",
  "rayc_semantic_element",
+ "rayc_source_file",
  "rayc_symbol",
  "rayc_type",
+ "tokio",
 ]
 
 [[package]]
@@ -2144,6 +2146,7 @@ dependencies = [
  "qbice",
  "rayc_diagnostic",
  "rayc_handler",
+ "rayc_hash",
  "rayc_lexical",
  "rayc_qbice",
  "rayc_source_file",

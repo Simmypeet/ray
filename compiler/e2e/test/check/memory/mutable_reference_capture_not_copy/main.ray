@@ -1,0 +1,15 @@
+def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+    return d.call(value, args)
+
+def main() -> int32:
+    let mut value = 1
+    let update = () -> value = value + 10
+
+    # A closure that captures `value` by `&mut` holds a `&mut int32`, which is
+    # not `Copy`, so the closure is not `Copy` either.
+    let copy = update
+
+    # ERROR: `update` was moved into `copy`.
+    invoke(update, ())
+    invoke(copy, ())
+    return value

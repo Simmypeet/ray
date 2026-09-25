@@ -463,12 +463,12 @@ impl Builder {
                     // A capture moved inside the nested function must leave
                     // the enclosing function even when it is `Copy`.
                     CaptureMode::Value(kind) => (
-                        IRExprKind::Load(Load::with_kind(address, kind)),
+                        IRExprKind::Load(Load::with_kind(address, kind.into())),
                         requirement.binding_ty().clone(),
                     ),
-                    CaptureMode::Reference(mutability) => (
+                    CaptureMode::Reference(_) => (
                         IRExprKind::RefOf(rayc_ir::ir_expr::ref_of::RefOf::new(address)),
-                        self.pointer_ty(requirement.binding_ty().clone(), mutability),
+                        requirement.storage_ty(&self.engine),
                     ),
                 };
                 self.emit_expression(IRExpr::new(kind, requirement.span(), ty))
@@ -526,12 +526,13 @@ impl Builder {
         );
     }
 
-    pub fn emit_store(&mut self, address: Address, value: IRExprID) {
+    pub fn emit_store(&mut self, address: Address, value: IRExprID, span: RelativeSpan) {
         self.ir_functions.push_store(
             self.building_function.ir_function_id,
             self.building_function.current_block,
             address,
             value,
+            span,
         );
     }
 
@@ -633,23 +634,17 @@ impl Builder {
             .copied()
             .expect("non-local source should have an analyzed capture");
 
-        let (span, captured_ty, mode) = {
-            let capture =
-                self.ir_functions.get_capture(self.building_function.ir_function_id, capture_id);
-            (capture.span(), capture.binding_ty().clone(), capture.mode())
-        };
-
-        // Value captures are already stored directly in the environment.
-        let mutability = match mode {
-            CaptureMode::Value(_) => return self.capture_address(capture_id),
-            CaptureMode::Reference(mutability) => mutability,
-        };
-        let ty = self.pointer_ty(captured_ty, mutability);
-        let pointer = self.emit_expression(IRExpr::new(
-            IRExprKind::Load(Load::new(self.capture_address(capture_id))),
-            span,
-            ty,
-        ));
-        self.dereference_address(pointer)
+        // Value captures are already stored directly in the environment, while
+        // reference captures store a reference to the captured place.
+        let mut address = self.capture_address(capture_id);
+        match self
+            .ir_functions
+            .get_capture(self.building_function.ir_function_id, capture_id)
+            .mode()
+        {
+            CaptureMode::Value(_) => {}
+            CaptureMode::Reference(_) => self.project_deref(&mut address),
+        }
+        address
     }
 }

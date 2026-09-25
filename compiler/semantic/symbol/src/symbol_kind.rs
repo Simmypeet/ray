@@ -82,6 +82,14 @@ impl SymbolKind {
         )
     }
 
+    /// Checks if this kind of symbol may leave out its type-parameter list, in
+    /// which case its parameter types introduce its type parameters and its
+    /// type arguments are always inferred.
+    #[must_use]
+    pub const fn has_optional_type_parameter_list(&self) -> bool {
+        matches!(self, Self::Def | Self::InstanceDef | Self::TraitDef)
+    }
+
     /// Checks if this kind of symbol has a parameter list
     #[must_use]
     pub const fn has_parameter_list(&self) -> bool {

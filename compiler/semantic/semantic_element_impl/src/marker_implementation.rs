@@ -222,7 +222,11 @@ fn contains_associated_type(ty: &Ty) -> bool {
         Ty::Application(application) => {
             matches!(application.view(), ApplicationView::InstanceAssociated(_))
         }
-        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => false,
+        Ty::Inference(_)
+        | Ty::PolyVar(_)
+        | Ty::SelfInstance(_)
+        | Ty::EffectRow(_)
+        | Ty::Lifetime(_) => false,
     })
 }
 
@@ -235,6 +239,9 @@ fn head_arguments(ty: &Ty) -> Result<Vec<&Interned<Ty>>, InvalidHeadKind> {
         ApplicationView::Primitive(_) => Ok(Vec::new()),
         ApplicationView::Tuple(tuple) => Ok(tuple.args().iter().collect()),
         ApplicationView::Pointer(pointer) => Ok(vec![pointer.pointee()]),
+        ApplicationView::Reference(reference) => {
+            Ok(vec![reference.lifetime(), reference.pointee()])
+        }
         ApplicationView::Struct(struct_) => Ok(struct_.args().iter().collect()),
         ApplicationView::InstanceAssociated(_) => Err(InvalidHeadKind::AssociatedType),
 

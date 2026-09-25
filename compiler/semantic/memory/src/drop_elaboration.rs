@@ -1,19 +1,23 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_ir::{
-    address::Address,
+    address::{Address, Local},
     cfg::{ControlFlowEdge, Instruction, InstructionInsertion, Point, Terminator},
-    ir_expr::{IRExpr, IRExprKind, call::Call, load::Load},
+    ir_expr::{
+        IRExpr, IRExprKind,
+        call::Call,
+        load::{Load, LoadKind},
+    },
     ir_function::{FunctionID, IRFunctionMap},
     scope::ScopeID,
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::core_item::{CoreItem, get_core_item};
-use rayc_type::{capture::LoadKind, subst::Subst, ty::Ty};
+use rayc_type::{subst::Subst, ty::Ty};
 
 use crate::{
-    Diagnostic, PlaceState, PossibleStates, StackRoot, StackState, StackStateProblem,
+    Diagnostic, PlaceState, PossibleStates, StackState, StackStateProblem,
     drop_resolution::{DropFailure, resolve_drop_instance},
 };
 
@@ -59,7 +63,7 @@ pub(crate) struct DropElaborator {
 
     /// Bindings already reported for a type, so a binding which is dropped
     /// on several paths is reported once.
-    reported: FxHashSet<(StackRoot, Interned<Ty>)>,
+    reported: FxHashSet<(Local, Interned<Ty>)>,
 }
 
 impl DropElaborator {
@@ -109,8 +113,7 @@ impl DropElaborator {
         problem: &mut StackStateProblem<'_>,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
-        let (Some(root), Some(place_state)) =
-            (StackRoot::from_address_root(address.root()), state.place_state(address))
+        let (Some(root), Some(place_state)) = (address.direct_local(), state.place_state(address))
         else {
             return;
         };
@@ -133,7 +136,7 @@ impl DropElaborator {
         edge: ControlFlowEdge,
         exit: &StackState,
         entry: &StackState,
-        drop_order: &[StackRoot],
+        drop_order: &[Local],
         problem: &mut StackStateProblem<'_>,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
@@ -171,7 +174,7 @@ impl DropElaborator {
     async fn balance_place(
         &mut self,
         site: DropSite,
-        root: StackRoot,
+        root: Local,
         address: Address,
         entry: &PlaceState,
         exit: &PlaceState,
@@ -216,7 +219,7 @@ impl DropElaborator {
     async fn drop_place(
         &mut self,
         site: DropSite,
-        root: StackRoot,
+        root: Local,
         address: Address,
         state: &PlaceState,
         ty: Interned<Ty>,
@@ -260,7 +263,7 @@ impl DropElaborator {
     async fn push_drop(
         &mut self,
         site: DropSite,
-        root: StackRoot,
+        root: Local,
         address: Address,
         ty: Interned<Ty>,
         problem: &mut StackStateProblem<'_>,
@@ -334,7 +337,7 @@ impl DropElaborator {
             let value = functions.insert_expression(
                 function_id,
                 IRExpr::new(
-                    IRExprKind::Load(Load::with_kind(drop.address, LoadKind::Move)),
+                    IRExprKind::Load(Load::with_kind(drop.address, LoadKind::Drop)),
                     drop.span,
                     drop.ty,
                 ),

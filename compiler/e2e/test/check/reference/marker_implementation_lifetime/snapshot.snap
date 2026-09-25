@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: invalid marker implementation head
+  ╭▸ compiler/e2e/test/check/reference/marker_implementation_lifetime/main.ray:5:20
+  │
+5 │ impl core.Copy for Unique['static]
+  ╰╴                   ━━━━━━━━━━━━━━━ type constructor arguments in a marker implementation must be type variables
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

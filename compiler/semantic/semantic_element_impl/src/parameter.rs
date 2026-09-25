@@ -3,7 +3,11 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::{discover_parameter_poly_vars, resolver::Resolver};
+use rayc_resolution::{
+    discovery::{GivenTraits, discover_parameter_poly_vars},
+    lifetime::LifetimeElision,
+    resolver::Resolver,
+};
 use rayc_semantic_element::{
     callable_parameter::get_callable_parameters,
     parameter::{Key, Parameter, ParameterMap},
@@ -54,6 +58,28 @@ impl Report for Diagnostic {
     }
 }
 
+/// Returns how the parameter types of a symbol of kind `symbol_kind` treat
+/// elided lifetimes. Only a plain `def` owns lifetimes introduced for elision;
+/// see `discover_parameter_poly_vars`.
+const fn parameter_lifetime_elision(symbol_kind: SymbolKind) -> LifetimeElision {
+    match symbol_kind {
+        SymbolKind::Def => LifetimeElision::FreshParameter,
+        SymbolKind::InstanceDef
+        | SymbolKind::TraitDef
+        | SymbolKind::ExternDef
+        | SymbolKind::EffectOperation
+        | SymbolKind::Effect
+        | SymbolKind::Instance
+        | SymbolKind::MarkerImplementation
+        | SymbolKind::Strut
+        | SymbolKind::Trait
+        | SymbolKind::TraitType
+        | SymbolKind::InstanceType
+        | SymbolKind::Marker
+        | SymbolKind::Module => LifetimeElision::Forbidden,
+    }
+}
+
 impl Build for Key {
     type Diagnostic = Diagnostic;
 
@@ -63,12 +89,14 @@ impl Build for Key {
         let poly_vars = engine.get_enclosing_poly_var_maps(symbol_id).await;
         let diagnostics = Storage::new();
         let obligations = Storage::new();
+
         let mut resolver = Resolver::builder()
             .engine(engine)
             .poly_var_stack(&poly_vars)
             .site(symbol_id)
             .handler(&diagnostics)
             .obligation_handler(&obligations)
+            .lifetime_elision(parameter_lifetime_elision(symbol_kind))
             .build();
         let mut parameters = ParameterMap::new();
 
@@ -110,7 +138,16 @@ impl Build for Key {
         }
 
         if symbol_kind == SymbolKind::ExternDef {
-            if !discover_parameter_poly_vars(syntax.as_ref(), Some(&poly_vars)).is_empty()
+            if !discover_parameter_poly_vars(
+                engine,
+                symbol_id,
+                syntax.as_ref(),
+                &GivenTraits::default(),
+                Some(&poly_vars),
+                false,
+            )
+            .await
+            .is_empty()
                 && let Some(span) = engine.get_span(symbol_id).await
             {
                 diagnostics.receive(Diagnostic::InvalidExternSignature(

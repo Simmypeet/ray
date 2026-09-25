@@ -57,23 +57,14 @@ stderr:
 21 │     def generics(value: int32) -> ():
    ╰╴        ━━━━━━━━ expected 1 polymorphic variables, found 0
 
-[error]: instance member `kinds`: polymorphic variable 1 kind mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:23:24
+[error]: instance member `kinds`: polymorphic variable count mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:23:9
    │
 11 │     def kinds(first: b, second: c) -> ()
-   │                      ─ the corresponding trait declaration is here
+   │         ───── the corresponding trait declaration is here
    ‡
 23 │     def kinds() given (first: Relation[int32, bool], second: Relation[int32, int32]) -> ():
-   ╰╴                       ━━━━━ expected type, found instance
-
-[error]: instance member `kinds`: polymorphic variable 2 kind mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:23:54
-   │
-11 │     def kinds(first: b, second: c) -> ()
-   │                                 ─ the corresponding trait declaration is here
-   ‡
-23 │     def kinds() given (first: Relation[int32, bool], second: Relation[int32, int32]) -> ():
-   ╰╴                                                     ━━━━━━ expected type, found instance
+   ╰╴        ━━━━━ expected 2 polymorphic variables, found 0
 
 [error]: instance member `constraints`: instance parameter at polymorphic position 1 trait reference mismatch
    ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:25:30
@@ -93,23 +84,14 @@ stderr:
 25 │     def constraints() given (first: Relation[bool, int32], second: Relation[bool, bool]) -> ():
    ╰╴                                                           ━━━━━━ expected `main.Relation[int32, int32]`, found `main.Relation[bool, bool]`
 
-[error]: instance member `Kinds`: polymorphic variable 1 kind mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:27:23
+[error]: instance member `Kinds`: polymorphic variable count mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:27:10
    │
 13 │     type Kinds[b, c]
-   │                ─ the corresponding trait declaration is here
+   │          ───── the corresponding trait declaration is here
    ‡
 27 │     type Kinds given (first: Relation[int32, bool], second: Relation[int32, int32]) = int32
-   ╰╴                      ━━━━━ expected type, found instance
-
-[error]: instance member `Kinds`: polymorphic variable 2 kind mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:27:53
-   │
-13 │     type Kinds[b, c]
-   │                   ─ the corresponding trait declaration is here
-   ‡
-27 │     type Kinds given (first: Relation[int32, bool], second: Relation[int32, int32]) = int32
-   ╰╴                                                    ━━━━━━ expected type, found instance
+   ╰╴         ━━━━━ expected 2 polymorphic variables, found 0
 
 [error]: instance member `Constraints`: instance parameter at polymorphic position 1 trait reference mismatch
    ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:28:29
@@ -129,7 +111,7 @@ stderr:
 28 │     type Constraints given (first: Relation[bool, int32], second: Relation[bool, bool]) = int32
    ╰╴                                                          ━━━━━━ expected `main.Relation[int32, int32]`, found `main.Relation[bool, bool]`
 
-[error]: Compilation aborted due to 14 error(s)
+[error]: Compilation aborted due to 12 error(s)
 
 
 

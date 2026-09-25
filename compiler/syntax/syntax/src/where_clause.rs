@@ -1,4 +1,5 @@
-//! Declaration constraints written as `where (left = right, T: Marker, ...)`.
+//! Declaration constraints written as
+//! `where (left = right, T: Marker, T: 'a, ...)`.
 //!
 //! The keyword and opening parenthesis stay on the declaration header's line.
 //! Inside the parentheses, newlines are insignificant and commas separate
@@ -14,7 +15,22 @@ use rayc_parser::{
     parser::{ParserExt, ast},
 };
 
-use crate::{Keyword, Punctuation, path::Path, r#type::Type};
+use crate::{
+    Keyword, Punctuation,
+    path::Path,
+    r#type::{Lifetime, Type},
+};
+
+// `bounded` is a type, so `'a: 'b` is a lifetime written as a type followed by
+// its bound.
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct OutlivesPredicate {
+        pub bounded: Type = ast::<Type>(),
+        pub colon: Punctuation = ':',
+        pub bound: Lifetime = ast::<Lifetime>()
+    }
+}
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -54,6 +70,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub enum Constraint {
         TypeEquality(TypeEquality = ast::<TypeEquality>()),
+        OutlivesPredicate(OutlivesPredicate = ast::<OutlivesPredicate>()),
         MarkerPredicate(MarkerPredicate = ast::<MarkerPredicate>())
     }
 }

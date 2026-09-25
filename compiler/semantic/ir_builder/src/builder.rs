@@ -1,7 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     address::Address,
-    ir_expr::IRExprID,
     ir_function::IRFunctionMap,
     ir_lambda::{CaptureID, LambdaParameterID},
     ir_operation_handler::OperationHandlerParameterID,
@@ -11,7 +10,7 @@ use rayc_memory::drop_resolution::resolve_drop_instance;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{parameter::ParameterID, struct_body::FieldID};
 use rayc_solver::Solver;
-use rayc_type::ty::{Mutability, Ty, TyKind, application::ClosureID};
+use rayc_type::ty::{Ty, TyKind, application::ClosureID};
 use rayc_typed_ast::typed_function::TypedFunctionID;
 
 use self::function_build_state::FunctionBuildState;
@@ -50,10 +49,6 @@ impl Builder {
         self.ir_functions.register_closure(closure_id, function_id);
     }
 
-    pub fn pointer_ty(&self, pointee_ty: Interned<Ty>, mutability: Mutability) -> Interned<Ty> {
-        Ty::new_pointer(pointee_ty, mutability, &self.engine)
-    }
-
     pub fn error_address(&self) -> Address { Address::new_error(&self.engine) }
 
     pub fn variable_address(&self, id: IRVariableID) -> Address {
@@ -76,10 +71,6 @@ impl Builder {
         Address::new_capture(id, &self.engine)
     }
 
-    pub fn dereference_address(&self, value: IRExprID) -> Address {
-        Address::new_deref(value, &self.engine)
-    }
-
     pub fn project_tuple(&self, address: &mut Address, index: usize) {
         address.add_tuple_index(index, &self.engine);
     }
@@ -87,6 +78,10 @@ impl Builder {
     pub fn project_field(&self, address: &mut Address, field_id: FieldID) {
         address.add_field(field_id, &self.engine);
     }
+
+    pub fn project_deref(&self, address: &mut Address) { address.add_deref(&self.engine); }
+
+    pub fn project_raw_deref(&self, address: &mut Address) { address.add_raw_deref(&self.engine); }
 }
 
 impl Builder {
@@ -95,7 +90,7 @@ impl Builder {
     ///
     /// The handlers only borrow their shared captures, so the function running
     /// the `run … with` drops them once the handled body returns. A borrowed
-    /// capture is stored as a pointer, whose dictionary is a no-op. A capture
+    /// capture is stored as a reference, whose dictionary is a no-op. A capture
     /// without a usable dictionary is reported at the captured binding and
     /// gets an error dictionary.
     pub(crate) async fn handler_capture_drops(

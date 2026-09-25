@@ -6,10 +6,13 @@ use rayc_syntax::expression::{
 };
 use rayc_type::{
     subst::Substitutable,
-    ty::{Mutability, Ty, application::View as ApplicationView},
+    ty::{Mutability, Ty, application::View as ApplicationView, lifetime::Lifetime},
 };
 use rayc_typed_ast::typed_expr::{
-    TypedExprID, TypedExprKind, deref::Deref, field_access::FieldAccess, ref_of::RefOf,
+    TypedExprID, TypedExprKind,
+    deref::{Deref, DerefKind},
+    field_access::FieldAccess,
+    ref_of::RefOf,
     tuple_index::TupleIndex,
 };
 
@@ -17,7 +20,8 @@ use crate::{
     bind::Bind,
     diagnostic::{
         Diagnostic, ExpectedPointerType, ExpectedStructType, ExpectedTupleType, LvalueOperation,
-        OutOfBoundsTupleIndex, TypeMustBeKnownAtThisPoint, UnknownStructField,
+        OutOfBoundsTupleIndex, RawPointerDerefOutsideUnsafe, TypeMustBeKnownAtThisPoint,
+        UnknownStructField,
     },
     tast_builder::TAstBuilder,
 };
@@ -118,7 +122,14 @@ impl TAstBuilder {
             Mutability::Immutable
         };
 
-        let pointer_ty = Ty::new_pointer(ty, mutability, self.engine());
+        // Type inference ignores lifetimes, so the borrow's lifetime is left
+        // for the borrow checker.
+        let reference_ty = Ty::new_reference(
+            Ty::new_lifetime(Lifetime::Erased, self.engine()),
+            ty,
+            mutability,
+            self.engine(),
+        );
 
         self.require_lvalue(
             bound,
@@ -133,7 +144,7 @@ impl TAstBuilder {
         self.insert_expression(
             TypedExprKind::RefOf(RefOf::new(bound, mutability)),
             span.join(&ref_of.span()),
-            pointer_ty,
+            reference_ty,
         )
         .await
     }
@@ -181,6 +192,7 @@ impl TAstBuilder {
                 return None;
             }
             Ty::EffectRow(_) => todo!("type-check tuple indexing on an effect-row type"),
+            Ty::Lifetime(_) => unreachable!("an expression cannot have a lifetime as its type"),
         };
 
         let index = index.kind.parse::<usize>().expect("TODO: handle over flow error");
@@ -211,8 +223,21 @@ impl TAstBuilder {
         let ty = self.latest_type(&self.type_of_expression(expr_id)).await;
 
         #[allow(clippy::option_if_let_else)]
-        let pointee = if let Some(pointee) = ty.as_pointee_of_pointer() {
-            pointee.clone()
+        let (pointee, kind) = if let Some(target) = ty.as_dereferenceable() {
+            if target.is_raw() {
+                // Only a raw pointer may be null or dangling, so only its
+                // dereference needs `unsafe`.
+                if !self.is_inside_unsafe() {
+                    self.push_diagnostic(Diagnostic::RawPointerDerefOutsideUnsafe(
+                        RawPointerDerefOutsideUnsafe::builder()
+                            .span(span.join(&deref.span()))
+                            .build(),
+                    ));
+                }
+                (target.pointee().clone(), DerefKind::RawPointer)
+            } else {
+                (target.pointee().clone(), DerefKind::Reference)
+            }
         } else {
             if let Ty::Inference(_) = &*ty {
                 self.push_diagnostic(Diagnostic::TypeMustBeKnownAtThisPoint(
@@ -224,11 +249,11 @@ impl TAstBuilder {
                 ));
             }
 
-            Ty::new_star_error(self.engine())
+            (Ty::new_star_error(self.engine()), DerefKind::RawPointer)
         };
 
         self.insert_expression(
-            TypedExprKind::Deref(Deref::new(expr_id)),
+            TypedExprKind::Deref(Deref::new(expr_id, kind)),
             span.join(&deref.span()),
             pointee,
         )

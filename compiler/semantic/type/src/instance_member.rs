@@ -33,8 +33,10 @@ impl InstanceMember {
     pub const fn instance_member_id(&self) -> GlobalSymbolID { self.implementation_id }
 
     /// Returns the substitution from trait-member polymorphic variables to
-    /// instance-member types. Supports both associated methods and types;
-    /// local variables correspond by position, independently of their names.
+    /// instance-member types. Supports both associated methods and types.
+    /// Each local variable of the trait member maps to exactly one local
+    /// variable of the implementation, paired by declaration order or by
+    /// where it occurs in the signatures, independently of its name.
     #[must_use]
     pub const fn poly_var_substitution(&self) -> &Subst { &self.poly_var_substitution }
 }

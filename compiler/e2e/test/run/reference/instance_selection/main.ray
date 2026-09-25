@@ -1,0 +1,23 @@
+trait Value[a]:
+    def value(input: a) -> int32
+
+# Instance selection ignores lifetimes, so each instance matches references of
+# any lifetime.
+inst ReferenceValue['a] for Value[&'a int32]:
+    def value(input: &'a int32) -> int32:
+        return input.*
+
+struct Ref['a]:
+    value: &'a int32
+
+inst RefValue['a] for Value[Ref['a]]:
+    def value(input: Ref['a]) -> int32:
+        return input.value.*
+
+def read(input: a) given (dictionary: Value[a]) -> int32:
+    return dictionary.value(input)
+
+def main() -> int32:
+    let first = 20
+    let second = 22
+    return read(first.&) + read(Ref { value = second.& })

@@ -3,7 +3,9 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
-use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind};
+use rayc_symbol::{
+    GlobalSymbolID, symbol_kind::SymbolKind, syntax::get_type_parameter_list_syntax,
+};
 use rayc_syntax::{
     effect_row::EffectRow as EffectRowSyntax,
     path::{Path, PathSegment},
@@ -12,10 +14,11 @@ use rayc_syntax::{
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarMap},
     subst::Subst,
-    ty::{Mutability, Primitive, Ty, TyKind, args::Args},
+    ty::{Mutability, Primitive, Ty, TyKind, args::Args, lifetime::Lifetime},
 };
 
 use crate::{
+    lifetime::elided_reference_lifetime_span,
     path::{PathResolution, TraitMemberParent},
     resolver::Resolver,
 };
@@ -46,6 +49,13 @@ impl Resolver<'_> {
 
         let mut inferred = Vec::with_capacity(expected.len());
         for kind in expected {
+            // Type inference ignores lifetimes, so an omitted lifetime in a
+            // body is erased instead of inferred.
+            if *kind == TyKind::Lifetime && self.infers() {
+                inferred.push(Ty::new_lifetime(Lifetime::Erased, self.engine()));
+                continue;
+            }
+
             let Some(ty) = self.new_inference_type(*kind, identifier.span()) else {
                 self.report_type_inference_not_allowed(identifier, expected.len());
                 return expected.iter().map(|kind| self.new_error_type(*kind)).collect();
@@ -220,6 +230,36 @@ impl Resolver<'_> {
         arguments
     }
 
+    /// Returns how many of the leading type parameters of `symbol_id` explicit
+    /// type arguments instantiate, or `None` when they are always inferred.
+    ///
+    /// A definition that declares a type-parameter list accepts arguments for
+    /// exactly the parameters it declares. They precede its generated ones,
+    /// such as fresh elided lifetimes and callable types, which are always
+    /// inferred. A definition without one accepts none, as its parameter
+    /// types introduce its type parameters. Any other symbol accepts arguments
+    /// for all `type_parameter_count` type parameters.
+    async fn explicit_type_parameter_count(
+        &self,
+        symbol_id: GlobalSymbolID,
+        parameters: Option<&PolyVarMap>,
+        type_parameter_count: usize,
+    ) -> Option<usize> {
+        if !self.symbol_kind(symbol_id).await.has_optional_type_parameter_list() {
+            return Some(type_parameter_count);
+        }
+        self.engine().get_type_parameter_list_syntax(symbol_id).await?;
+
+        Some(
+            parameters
+                .into_iter()
+                .flat_map(PolyVarMap::iter)
+                .take(type_parameter_count)
+                .take_while(|(_, parameter)| parameter.is_source())
+                .count(),
+        )
+    }
+
     pub(crate) async fn resolve_arguments(
         &mut self,
         symbol_id: GlobalSymbolID,
@@ -228,7 +268,7 @@ impl Resolver<'_> {
         parameters: Option<&PolyVarMap>,
         mut subst: Subst,
     ) -> Args {
-        let symbol_kind = self.symbol_kind(symbol_id).await;
+        // Type, effect and lifetime parameters precede dictionaries.
         let type_parameter_count = parameters
             .into_iter()
             .flat_map(PolyVarMap::iter)
@@ -241,23 +281,31 @@ impl Resolver<'_> {
             .map(|(_, parameter)| parameter.kind())
             .collect::<Vec<_>>();
 
-        let type_arguments_are_implicit =
-            matches!(symbol_kind, SymbolKind::Def | SymbolKind::TraitDef | SymbolKind::InstanceDef);
+        // Resolve the explicit type arguments and infer the rest.
+        let explicit_count =
+            self.explicit_type_parameter_count(symbol_id, parameters, type_parameter_count).await;
         let has_explicit_type_arguments = path.has_explicit_type_arguments();
 
-        if type_arguments_are_implicit
-            && has_explicit_type_arguments
-            && let Some(span) = path.arguments().map(|arguments| arguments.span())
-        {
-            self.report_explicit_type_arguments_not_allowed(span);
-        }
-
-        let mut resolved = if type_arguments_are_implicit || !has_explicit_type_arguments {
-            self.infer_type_arguments(identifier, &type_kinds)
-        } else {
-            self.resolve_explicit_type_arguments(path, &type_kinds).await
+        let mut resolved = match explicit_count {
+            Some(explicit_count) if has_explicit_type_arguments => {
+                let (explicit, generated) = type_kinds.split_at(explicit_count);
+                let mut resolved = self.resolve_explicit_type_arguments(path, explicit).await;
+                resolved.extend(self.infer_type_arguments(identifier, generated));
+                resolved
+            }
+            Some(_) => self.infer_type_arguments(identifier, &type_kinds),
+            None => {
+                if has_explicit_type_arguments
+                    && let Some(span) = path.arguments().map(|arguments| arguments.span())
+                {
+                    self.report_explicit_type_arguments_not_allowed(span);
+                }
+                self.infer_type_arguments(identifier, &type_kinds)
+            }
         };
 
+        // Given arguments are checked against requirements that mention the
+        // type arguments just resolved.
         let own_subst = parameters
             .into_iter()
             .flat_map(PolyVarMap::iter)
@@ -395,6 +443,25 @@ impl Resolver<'_> {
                 };
                 self.new_pointer_type(pointee, mutability)
             }
+            TypeSyntax::Reference(reference) => {
+                let lifetime = if let Some(lifetime) = reference.explicit_lifetime() {
+                    self.resolve_lifetime(&lifetime).await
+                } else {
+                    self.elided_lifetime(elided_reference_lifetime_span(reference)).await
+                };
+                let pointee = if let Some(pointed_type) = reference.pointed_type() {
+                    Box::pin(self.resolve_type(&pointed_type)).await
+                } else {
+                    self.new_error_type(TyKind::Star)
+                };
+                let mutability = if reference.mut_keyword().is_some() {
+                    Mutability::Mutable
+                } else {
+                    Mutability::Immutable
+                };
+                Ty::new_reference(lifetime, pointee, mutability, self.engine())
+            }
+            TypeSyntax::Lifetime(lifetime) => self.resolve_lifetime(lifetime).await,
             TypeSyntax::Tuple(tuple) => {
                 let mut arguments = Vec::new();
                 for element in tuple.elements() {

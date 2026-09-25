@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched argument types in function call: expected `&mut int32`, but found `&int32`
+   ╭▸ compiler/e2e/test/check/reference/coercion_mismatch/main.ray:14:11
+   │
+14 │     write(value.&)
+   ╰╴          ━━━━━━━
+
+[error]: mismatched argument types in function call: expected `*mut int32`, but found `&int32`
+   ╭▸ compiler/e2e/test/check/reference/coercion_mismatch/main.ray:17:14
+   │
+17 │     writeRaw(value.&)
+   ╰╴             ━━━━━━━
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

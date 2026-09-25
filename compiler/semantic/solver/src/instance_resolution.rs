@@ -259,6 +259,7 @@ impl Solver {
             application.view(),
             rayc_type::ty::application::View::Primitive(_)
                 | rayc_type::ty::application::View::Pointer(_)
+                | rayc_type::ty::application::View::Reference(_)
         ) {
             return None;
         }

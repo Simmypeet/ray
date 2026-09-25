@@ -4,23 +4,16 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_source_file::SourceElement;
 use rayc_symbol::{source_map::to_absolute_span, symbol_kind::SymbolKind};
-use rayc_syntax::{
-    def::{ParameterEntry, ParameterList, ParameterType},
-    effect_row::{EffectRow as EffectRowSyntax, EffectRowAnnotation},
-    r#type::Type as TypeSyntax,
-};
-use rayc_type::{
-    poly_var::{PolyVar, PolyVarMap, PolyVarStack},
-    ty::TyKind,
-};
+use rayc_type::ty::TyKind;
 
+pub mod discovery;
 pub mod obligation;
 pub use obligation::{
     Obligation, PredicateConstraint, PredicateObligation, TraitRefCheck, WfCheck,
 };
 pub mod inference;
+pub mod lifetime;
 pub mod path;
 pub use inference::GenInferWithSpan;
 pub mod resolver;
@@ -46,9 +39,6 @@ pub enum Diagnostic {
     TraitRefCheck(TraitRefCheck),
     /// A resolved symbol's where-clause predicate is not satisfied.
     Predicate(PredicateObligation),
-    /// A polymorphic variable was used without being declared by a parameter
-    /// type.
-    PolyVarNotFound(PolyVarNotFound),
     /// A path segment could not be found in its containing symbol.
     PathSegmentNotFound(PathSegmentNotFound),
     /// Resolving omitted type arguments would require disallowed inference.
@@ -77,9 +67,16 @@ pub enum Diagnostic {
     MissingGivenArgument(MissingGivenArgument),
     /// A given parameter was assigned more than once.
     DuplicateGivenArgument(DuplicateGivenArgument),
+    /// A named lifetime is not declared.
+    LifetimeNotFound(lifetime::LifetimeNotFound),
+    /// A lifetime is elided where elision is not allowed.
+    MissingLifetime(lifetime::MissingLifetime),
 }
 
 impl Report for Diagnostic {
+    // Keep the exhaustive dispatch here so adding a diagnostic forces its
+    // rendering path to be selected explicitly.
+    #[allow(clippy::cognitive_complexity)]
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
             Self::InvalidThisPath(diagnostic) => diagnostic.report(engine).await,
@@ -90,7 +87,6 @@ impl Report for Diagnostic {
             Self::TooManyGivenArguments(diagnostic) => diagnostic.report(engine).await,
             Self::TraitRefCheck(diagnostic) => diagnostic.report(engine).await,
             Self::Predicate(diagnostic) => diagnostic.report(engine).await,
-            Self::PolyVarNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::PathSegmentNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::TypeInferenceNotAllowed(diagnostic) => diagnostic.report(engine).await,
             Self::ExplicitTypeArgumentsNotAllowed(diagnostic) => diagnostic.report(engine).await,
@@ -104,6 +100,8 @@ impl Report for Diagnostic {
             Self::GivenArgumentNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::MissingGivenArgument(diagnostic) => diagnostic.report(engine).await,
             Self::DuplicateGivenArgument(diagnostic) => diagnostic.report(engine).await,
+            Self::LifetimeNotFound(diagnostic) => diagnostic.report(engine).await,
+            Self::MissingLifetime(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -268,6 +266,7 @@ const fn kind_name(kind: TyKind) -> &'static str {
         TyKind::Star => "a value type",
         TyKind::EffectRow => "an effect row",
         TyKind::Instance => "an instance",
+        TyKind::Lifetime => "a lifetime",
     }
 }
 
@@ -529,149 +528,6 @@ impl Report for DuplicateGivenArgument {
             .message(format!("duplicate given argument `{}`", &*self.name))
             .build()
     }
-}
-
-/// A polymorphic variable that is not declared by a function parameter type.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
-pub struct PolyVarNotFound {
-    name: Interned<str>,
-    span: RelativeSpan,
-}
-
-impl Report for PolyVarNotFound {
-    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        Rendered::builder()
-            .primary_highlight(Highlight::new(
-                engine.to_absolute_span(&self.span).await,
-                Some(format!("type `{}` is not found", &*self.name)),
-            ))
-            .message(format!("type `{}` is not found", &*self.name))
-            .help_message("a polymorphic variable must first appear in a parameter type")
-            .build()
-    }
-}
-
-fn is_poly_var_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    let Some(character) = chars.next() else {
-        return false;
-    };
-
-    character.is_ascii_lowercase() && chars.next().is_none()
-}
-
-fn discover_effect_row_poly_var(
-    effect_row: Option<&EffectRowAnnotation>,
-    poly_vars: &mut PolyVarMap,
-) {
-    let variable = match effect_row.and_then(EffectRowAnnotation::effect_row) {
-        Some(EffectRowSyntax::Path(path)) => path.bare_identifier(),
-        Some(EffectRowSyntax::ConcreteEffectRow(effect_row)) => effect_row
-            .tail()
-            .and_then(|tail| tail.variable())
-            .and_then(|path| path.bare_identifier()),
-        None => None,
-    };
-
-    if let Some(variable) = variable {
-        let _ = poly_vars.insert(PolyVar::new_effect(variable.kind.0.clone(), variable.span()));
-    }
-}
-
-fn discover_poly_vars(
-    ty: &TypeSyntax,
-    poly_vars: &mut PolyVarMap,
-    poly_var_stack: Option<&PolyVarStack>,
-) {
-    match ty {
-        TypeSyntax::EffectRow(row) => {
-            if let Some(variable) =
-                row.tail().and_then(|tail| tail.variable()).and_then(|path| path.bare_identifier())
-            {
-                let _ =
-                    poly_vars.insert(PolyVar::new_effect(variable.kind.0.clone(), variable.span()));
-            }
-        }
-        TypeSyntax::Primitive(_) => {}
-        TypeSyntax::Pointer(pointer) => {
-            if let Some(pointed_type) = pointer.pointed_type() {
-                discover_poly_vars(&pointed_type, poly_vars, poly_var_stack);
-            }
-        }
-        TypeSyntax::Tuple(tuple) => {
-            for element in tuple.elements() {
-                discover_poly_vars(&element, poly_vars, poly_var_stack);
-            }
-        }
-        TypeSyntax::Path(path) => {
-            if let Some(identifier) = path.bare_identifier() {
-                let existing =
-                    poly_var_stack.is_some_and(|x| x.find_by_name(&identifier.kind).is_some());
-                if is_poly_var_name(&identifier.kind.0) && !existing {
-                    let _ = poly_vars
-                        .insert(PolyVar::new_type(identifier.kind.0.clone(), identifier.span()));
-                }
-            }
-            for segment in path.segments() {
-                if let Some(arguments) = segment.arguments() {
-                    for argument in arguments.type_arguments() {
-                        discover_poly_vars(&argument, poly_vars, poly_var_stack);
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[must_use]
-pub fn discover_parameter_poly_vars(
-    parameters: Option<&ParameterList>,
-    poly_var_stack: Option<&PolyVarStack>,
-) -> PolyVarMap {
-    let mut poly_vars = PolyVarMap::new();
-
-    if let Some(parameters) = parameters {
-        for entry in parameters.entries() {
-            let ParameterEntry::Parameter(parameter) = entry else { continue };
-
-            if let Some(ty) = parameter.r#type() {
-                match ty {
-                    ParameterType::Type(ty) => {
-                        discover_poly_vars(&ty, &mut poly_vars, poly_var_stack);
-                    }
-                    ParameterType::CallableSugar(callable) => {
-                        if let Some(parameters) = callable.parameters() {
-                            for parameter in parameters.parameters() {
-                                discover_poly_vars(&parameter, &mut poly_vars, poly_var_stack);
-                            }
-                        }
-                        if let Some(return_type) = callable.return_type()
-                            && let Some(return_type) = return_type.r#type()
-                        {
-                            discover_poly_vars(&return_type, &mut poly_vars, poly_var_stack);
-                        }
-                        discover_effect_row_poly_var(
-                            callable.effect_row().as_ref(),
-                            &mut poly_vars,
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    poly_vars
-}
-
-/// Discovers the polymorphic variables declared by a function signature.
-#[must_use]
-pub fn discover_function_poly_vars(
-    parameters: Option<&ParameterList>,
-    poly_var_stack: Option<&PolyVarStack>,
-) -> PolyVarMap {
-    discover_parameter_poly_vars(parameters, poly_var_stack)
 }
 
 /// A `this` path used outside a trait body.

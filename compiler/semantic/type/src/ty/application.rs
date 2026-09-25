@@ -7,6 +7,7 @@ use super::{InferenceConstraint, Mutability, Primitive, Ty, TyKind, inference::I
 use crate::{
     poly_var::build_subst_from_args,
     reduce::Reduce,
+    rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::{Subst, Substitutable},
 };
 
@@ -15,6 +16,9 @@ pub enum Constant {
     Primitive(Primitive),
     Tuple,
     Pointer(Mutability),
+    /// A checked reference. Its arguments are the lifetime followed by the
+    /// referenced type.
+    Reference(Mutability),
     /// A nominal struct identified by its `SymbolKind::Strut` symbol.
     Struct(GlobalSymbolID),
     Instance(GlobalSymbolID),
@@ -25,8 +29,8 @@ pub enum Constant {
     Closure(Closure),
     /// The built-in `Def` dictionary whose sole argument is a closure type.
     DefInstance,
-    /// The built-in no-op `Drop` dictionary for primitives, pointers, and
-    /// `core.NoDrop[t]`.
+    /// The built-in no-op `Drop` dictionary for primitives, pointers,
+    /// references, and `core.NoDrop[t]`.
     NoOpDropInstance,
     /// The built-in `Drop` dictionary for a tuple. Its arguments are the tuple
     /// type followed by one `Drop` dictionary for each element in tuple order.
@@ -137,6 +141,24 @@ pub struct PointerView<'x> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReferenceView<'x> {
+    lifetime: &'x Interned<Ty>,
+    pointee: &'x Interned<Ty>,
+    mutability: Mutability,
+}
+
+impl<'x> ReferenceView<'x> {
+    #[must_use]
+    pub const fn lifetime(&self) -> &'x Interned<Ty> { self.lifetime }
+
+    #[must_use]
+    pub const fn pointee(&self) -> &'x Interned<Ty> { self.pointee }
+
+    #[must_use]
+    pub const fn mutability(&self) -> Mutability { self.mutability }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructView<'x> {
     symbol_id: GlobalSymbolID,
     args: &'x [Interned<Ty>],
@@ -244,6 +266,7 @@ pub enum View<'x> {
     Primitive(Primitive),
     Tuple(TupleView<'x>),
     Pointer(PointerView<'x>),
+    Reference(ReferenceView<'x>),
     Struct(StructView<'x>),
     Instance(InstanceView<'x>),
     InstanceAssociated(InstanceAssociatedView<'x>),
@@ -287,6 +310,11 @@ impl Application {
             Constant::Pointer(mutability) => {
                 View::Pointer(PointerView { arg: &self.args[0], mutability })
             }
+            Constant::Reference(mutability) => View::Reference(ReferenceView {
+                lifetime: &self.args[0],
+                pointee: &self.args[1],
+                mutability,
+            }),
             Constant::Struct(symbol_id) => View::Struct(StructView { symbol_id, args: &self.args }),
             Constant::Instance(symbol_id) => {
                 View::Instance(InstanceView { symbol_id, args: &self.args })
@@ -354,6 +382,7 @@ impl Application {
             | Constant::Primitive(_)
             | Constant::Tuple
             | Constant::Pointer(_)
+            | Constant::Reference(_)
             | Constant::Struct(_) => TyKind::Star,
 
             Constant::InstanceAssociated(symbol_id) => {
@@ -384,6 +413,7 @@ impl Application {
                 View::Error
                 | View::Tuple(_)
                 | View::Pointer(_)
+                | View::Reference(_)
                 | View::Struct(_)
                 | View::Instance(_)
                 | View::DefInstance(_)
@@ -405,6 +435,7 @@ impl Application {
                 View::Error
                 | View::Tuple(_)
                 | View::Pointer(_)
+                | View::Reference(_)
                 | View::Struct(_)
                 | View::Instance(_)
                 | View::DefInstance(_)
@@ -449,6 +480,25 @@ impl Reduce for Application {
         givens: &[crate::where_clause::PredicateKind],
     ) -> Option<Self> {
         self.args.reduce(engine, givens).await.map(|args| Self { constant: self.constant, args })
+    }
+}
+
+impl Rewrite for Application {
+    fn rewrite(&self, rewriter: &mut impl TyRewriter, engine: &TrackedEngine) -> Option<Self> {
+        self.args.rewrite(rewriter, engine).map(|args| Self { constant: self.constant, args })
+    }
+}
+
+impl RewriteAsync for Application {
+    async fn rewrite_async(
+        &self,
+        rewriter: &mut impl TyRewriterAsync,
+        engine: &TrackedEngine,
+    ) -> Option<Self> {
+        self.args
+            .rewrite_async(rewriter, engine)
+            .await
+            .map(|args| Self { constant: self.constant, args })
     }
 }
 

@@ -16,7 +16,7 @@ use rayc_symbol::{
 use rayc_type::{
     poly_var::build_subst_from_args,
     subst::Substitutable,
-    ty::{Ty, application::View as ApplicationView},
+    ty::{Mutability, Ty, application::View as ApplicationView},
     where_clause::{MarkerPredicate, PredicateKind, get_where_clause},
 };
 
@@ -151,6 +151,14 @@ impl Solver {
             && goal.marker_id() == self.engine().get_core_item(CoreItem::Copy).await
         {
             return false;
+	}
+
+        // `Copy` for references is built in: a shared reference is always
+        // `Copy`, and a unique one never is.
+        if let Some(reference) = goal.implementor().as_reference_view()
+            && goal.marker_id() == self.engine().get_core_item(CoreItem::Copy).await
+        {
+            return reference.mutability() == Mutability::Immutable;
         }
 
         // A matching visible predicate is a leaf proof. Equality is checked
@@ -267,6 +275,7 @@ async fn structural_fields(
                 )
             }
             ApplicationView::Pointer(_)
+            | ApplicationView::Reference(_)
             | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
@@ -276,6 +285,10 @@ async fn structural_fields(
             | ApplicationView::DefInstance(_)
             | ApplicationView::Error => None,
         },
-        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => None,
+        Ty::Inference(_)
+        | Ty::PolyVar(_)
+        | Ty::SelfInstance(_)
+        | Ty::EffectRow(_)
+        | Ty::Lifetime(_) => None,
     }
 }

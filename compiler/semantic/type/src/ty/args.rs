@@ -2,6 +2,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 
 use crate::{
     reduce::Reduce,
+    rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::Substitutable,
     ty::{Ty, inference::Inference},
 };
@@ -80,6 +81,26 @@ impl Substitutable for Args {
         Self: Sized,
     {
         self.args.apply_subst(subst, engine).map(|args| Self { args })
+    }
+}
+
+impl Rewrite for Args {
+    fn rewrite(
+        &self,
+        rewriter: &mut impl TyRewriter,
+        engine: &rayc_qbice::TrackedEngine,
+    ) -> Option<Self> {
+        self.args.rewrite(rewriter, engine).map(|args| Self { args })
+    }
+}
+
+impl RewriteAsync for Args {
+    async fn rewrite_async(
+        &self,
+        rewriter: &mut impl TyRewriterAsync,
+        engine: &rayc_qbice::TrackedEngine,
+    ) -> Option<Self> {
+        self.args.rewrite_async(rewriter, engine).await.map(|args| Self { args })
     }
 }
 

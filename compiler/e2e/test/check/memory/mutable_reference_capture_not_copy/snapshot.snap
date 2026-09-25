@@ -1,0 +1,19 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: use of moved value
+   ╭▸ compiler/e2e/test/check/memory/mutable_reference_capture_not_copy/main.ray:13:12
+   │
+10 │     let copy = update
+   │                ────── value moved here
+   ‡
+13 │     invoke(update, ())
+   ╰╴           ━━━━━━ value used here after it was moved
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

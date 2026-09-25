@@ -8,6 +8,7 @@ use rayc_parser::{
 
 use crate::{
     Identifier, Keyword, Punctuation,
+    effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
     given::GivenParameterList,
     irrefutable_pattern::IrrefutablePattern,
@@ -32,6 +33,7 @@ abstract_tree::abstract_tree! {
     pub struct DefSignature {
         pub def_keyword: Keyword = expect::Keyword::Def,
         pub name: Identifier = expect::Identifier,
+        pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
         pub parameter_list: ParameterList = ast::<ParameterList>(),
         pub given_parameter_list: GivenParameterList = ast::<GivenParameterList>().optional(),
         pub return_type: ReturnType = ast::<ReturnType>().optional(),

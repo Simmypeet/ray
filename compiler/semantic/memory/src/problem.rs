@@ -2,10 +2,13 @@ use std::{cmp::Reverse, collections::BTreeMap, convert::Infallible};
 
 use qbice::storage::intern::Interned;
 use rayc_ir::{
-    address::{Address, AddressRoot, Projection},
+    address::{Address, Local, Projection},
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
     dataflow::{DataflowProblem, Direction, JoinLattice},
-    ir_expr::{IRExprKind, load::Load},
+    ir_expr::{
+        IRExprKind,
+        load::{Load, LoadKind},
+    },
     ir_function::{IRContext, IRFunction},
     ir_lambda::CaptureMap,
     scope::ScopeID,
@@ -15,13 +18,12 @@ use rayc_semantic_element::{parameter::get_parameter_map, struct_body::get_struc
 use rayc_solver::Solver;
 use rayc_symbol::core_item::{CoreItem, get_core_item};
 use rayc_type::{
-    capture::LoadKind,
     subst::Substitutable,
     ty::{Ty, application::View as ApplicationView},
     where_clause::MarkerPredicate,
 };
 
-use crate::{PlaceState, PossibleStates, StackRoot, StackState};
+use crate::{PlaceState, PossibleStates, StackState};
 
 /// Dataflow context for stack initialization and move state.
 ///
@@ -46,12 +48,10 @@ impl<'a> StackStateProblem<'a> {
         Self { solver, function, captures }
     }
 
-    pub(crate) async fn binding_type(&self, root: StackRoot) -> Interned<Ty> {
+    pub(crate) async fn binding_type(&self, root: Local) -> Interned<Ty> {
         match root {
-            StackRoot::Variable(variable_id) => {
-                self.function.get_variable(variable_id).ty().clone()
-            }
-            StackRoot::Parameter(parameter_id) => self
+            Local::Variable(variable_id) => self.function.get_variable(variable_id).ty().clone(),
+            Local::Parameter(parameter_id) => self
                 .solver
                 .engine()
                 .get_parameter_map(self.solver.site())
@@ -59,21 +59,21 @@ impl<'a> StackStateProblem<'a> {
                 .iter()
                 .find_map(|(id, parameter)| (id == parameter_id).then(|| parameter.ty().clone()))
                 .expect("parameter address root must exist in the function signature"),
-            StackRoot::LambdaParameter(parameter_id) => self
+            Local::LambdaParameter(parameter_id) => self
                 .function
                 .context()
                 .assert_as_lambda_context()
                 .get_parameter(parameter_id)
                 .ty()
                 .clone(),
-            StackRoot::OperationHandlerParameter(parameter_id) => self
+            Local::OperationHandlerParameter(parameter_id) => self
                 .function
                 .context()
                 .assert_as_operation_handler_context()
                 .get_parameter(parameter_id)
                 .ty()
                 .clone(),
-            StackRoot::Capture(capture_id) => self
+            Local::Capture(capture_id) => self
                 .captures
                 .expect("capture address roots require a nested function capture layout")
                 .get_capture(capture_id)
@@ -82,10 +82,10 @@ impl<'a> StackStateProblem<'a> {
     }
 
     /// Returns the declaration span of a stack root's binding.
-    pub(crate) async fn binding_span(&self, root: StackRoot) -> RelativeSpan {
+    pub(crate) async fn binding_span(&self, root: Local) -> RelativeSpan {
         match root {
-            StackRoot::Variable(variable_id) => self.function.get_variable(variable_id).span(),
-            StackRoot::Parameter(parameter_id) => self
+            Local::Variable(variable_id) => self.function.get_variable(variable_id).span(),
+            Local::Parameter(parameter_id) => self
                 .solver
                 .engine()
                 .get_parameter_map(self.solver.site())
@@ -94,19 +94,19 @@ impl<'a> StackStateProblem<'a> {
                 .find_map(|(id, parameter)| (id == parameter_id).then(|| parameter.span()))
                 .expect("parameter address root must exist in the function signature")
                 .expect("parameters of a function with a body are declared in source"),
-            StackRoot::LambdaParameter(parameter_id) => self
+            Local::LambdaParameter(parameter_id) => self
                 .function
                 .context()
                 .assert_as_lambda_context()
                 .get_parameter(parameter_id)
                 .span(),
-            StackRoot::OperationHandlerParameter(parameter_id) => self
+            Local::OperationHandlerParameter(parameter_id) => self
                 .function
                 .context()
                 .assert_as_operation_handler_context()
                 .get_parameter(parameter_id)
                 .span(),
-            StackRoot::Capture(capture_id) => self
+            Local::Capture(capture_id) => self
                 .captures
                 .expect("capture address roots require a nested function capture layout")
                 .get_capture(capture_id)
@@ -120,9 +120,9 @@ impl<'a> StackStateProblem<'a> {
     /// Values are dropped in reverse of the order they came into scope. Local
     /// variables drop in reverse declaration order. The root scope then drops
     /// the function inputs, as [`Self::push_inputs_in_drop_order`] orders them.
-    pub(crate) async fn scope_roots_in_drop_order(&self, scope_id: ScopeID) -> Vec<StackRoot> {
+    pub(crate) async fn scope_roots_in_drop_order(&self, scope_id: ScopeID) -> Vec<Local> {
         let mut roots =
-            self.function.declared_variables(scope_id).map(StackRoot::Variable).collect::<Vec<_>>();
+            self.function.declared_variables(scope_id).map(Local::Variable).collect::<Vec<_>>();
         roots.reverse();
 
         if self.function.root_scope_id() == scope_id {
@@ -135,7 +135,7 @@ impl<'a> StackStateProblem<'a> {
     /// Returns every stack root of the function in the order their values are
     /// dropped: local variables in reverse declaration order, then the
     /// function inputs, as [`Self::push_inputs_in_drop_order`] orders them.
-    pub(crate) async fn roots_in_drop_order(&self) -> Vec<StackRoot> {
+    pub(crate) async fn roots_in_drop_order(&self) -> Vec<Local> {
         let mut variables = self
             .function
             .variables()
@@ -145,7 +145,7 @@ impl<'a> StackStateProblem<'a> {
 
         let mut roots = variables
             .into_iter()
-            .map(|(_, variable_id)| StackRoot::Variable(variable_id))
+            .map(|(_, variable_id)| Local::Variable(variable_id))
             .collect::<Vec<_>>();
         self.push_inputs_in_drop_order(&mut roots).await;
         roots
@@ -157,7 +157,7 @@ impl<'a> StackStateProblem<'a> {
     ///
     /// An operation handler only borrows its captures, which the enclosing
     /// function drops after the handled body, so they are not included.
-    async fn push_inputs_in_drop_order(&self, roots: &mut Vec<StackRoot>) {
+    async fn push_inputs_in_drop_order(&self, roots: &mut Vec<Local>) {
         let parameters_start = roots.len();
         self.push_parameter_roots(roots).await;
         roots[parameters_start..].reverse();
@@ -169,22 +169,47 @@ impl<'a> StackStateProblem<'a> {
         }
     }
 
-    /// Returns whether `address` is rooted in a capture which this function
-    /// only borrows, so no value may be moved out of it.
+    /// Returns whether `address` selects a capture which this function only
+    /// borrows, or a field of one, so no value may be moved out of it.
+    ///
+    /// A place reached through a pointer or reference held in the capture is
+    /// not part of the capture.
     ///
     /// Operation handlers may run many times over one shared environment, so
     /// every call must find its captures intact.
-    pub(crate) const fn is_borrowed_capture(&self, address: &Address) -> bool {
-        self.borrows_captures() && matches!(address.root(), AddressRoot::Capture(_))
+    pub(crate) fn is_borrowed_capture(&self, address: &Address) -> bool {
+        self.borrows_captures() && matches!(address.direct_local(), Some(Local::Capture(_)))
     }
 
     /// Returns whether `load`, producing a value of type `ty`, moves out of
     /// its place: a forced move always does, and an implicit load does unless
     /// the value is `Copy`.
+    ///
+    /// A load through a dereference never moves: memory behind a raw pointer
+    /// is copied bitwise, and moving out of memory behind a reference is an
+    /// error reported separately.
     pub(crate) async fn load_moves(&mut self, load: &Load, ty: Interned<Ty>) -> bool {
+        if load.address().is_behind_deref() {
+            return false;
+        }
+
         match load.kind() {
             LoadKind::Implicit => !self.type_is_copy(ty).await,
-            LoadKind::Move => true,
+            LoadKind::Move | LoadKind::Drop => true,
+        }
+    }
+
+    /// Returns whether `load` moves a value out of memory behind a reference,
+    /// which is not allowed since the memory is only borrowed.
+    pub(crate) async fn load_moves_out_of_borrow(&mut self, load: &Load, ty: Interned<Ty>) -> bool {
+        if !load.address().is_behind_reference() {
+            return false;
+        }
+
+        match load.kind() {
+            // Errors have already been reported.
+            LoadKind::Implicit => !ty.contains_error() && !self.type_is_copy(ty).await,
+            LoadKind::Move | LoadKind::Drop => true,
         }
     }
 
@@ -208,7 +233,7 @@ impl<'a> StackStateProblem<'a> {
 
     /// Returns every function input: its parameters in declaration order,
     /// followed by its captures in capture-layout order.
-    async fn input_roots(&self) -> Vec<StackRoot> {
+    async fn input_roots(&self) -> Vec<Local> {
         let mut roots = Vec::new();
         self.push_parameter_roots(&mut roots).await;
         roots.extend(self.capture_roots());
@@ -216,34 +241,32 @@ impl<'a> StackStateProblem<'a> {
     }
 
     /// Appends the function's parameters, in declaration order.
-    async fn push_parameter_roots(&self, roots: &mut Vec<StackRoot>) {
+    async fn push_parameter_roots(&self, roots: &mut Vec<Local>) {
         match self.function.context() {
             IRContext::Def => {
                 let parameters = self.solver.engine().get_parameter_map(self.solver.site()).await;
                 roots.extend(
-                    parameters.iter().map(|(parameter_id, _)| StackRoot::Parameter(parameter_id)),
+                    parameters.iter().map(|(parameter_id, _)| Local::Parameter(parameter_id)),
                 );
             }
             IRContext::Lambda(context) => roots.extend(
-                context
-                    .parameters()
-                    .map(|(parameter_id, _)| StackRoot::LambdaParameter(parameter_id)),
+                context.parameters().map(|(parameter_id, _)| Local::LambdaParameter(parameter_id)),
             ),
             IRContext::Thunk(_) => {}
             IRContext::OperationHandler(context) => roots.extend(
                 context
                     .parameters()
-                    .map(|(parameter_id, _)| StackRoot::OperationHandlerParameter(parameter_id)),
+                    .map(|(parameter_id, _)| Local::OperationHandlerParameter(parameter_id)),
             ),
         }
     }
 
     /// Returns the function's captures, in capture-layout order. Only nested
     /// functions have captures.
-    fn capture_roots(&self) -> impl Iterator<Item = StackRoot> + '_ {
-        self.captures.into_iter().flat_map(|captures| {
-            captures.iter().map(|(capture_id, _)| StackRoot::Capture(capture_id))
-        })
+    fn capture_roots(&self) -> impl Iterator<Item = Local> + '_ {
+        self.captures
+            .into_iter()
+            .flat_map(|captures| captures.iter().map(|(capture_id, _)| Local::Capture(capture_id)))
     }
 
     /// Returns the type of the component of `ty` selected by `projection`.
@@ -290,6 +313,9 @@ impl<'a> StackStateProblem<'a> {
         };
 
         match (application.view(), projection) {
+            (_, Projection::Deref | Projection::RawDeref) => {
+                panic!("tracked places never extend past a dereference: {ty:?}");
+            }
             (ApplicationView::Tuple(tuple), Projection::Tuple(index)) => {
                 let projected = tuple
                     .args()
@@ -324,6 +350,7 @@ impl<'a> StackStateProblem<'a> {
             (
                 ApplicationView::Primitive(_)
                 | ApplicationView::Pointer(_)
+                | ApplicationView::Reference(_)
                 | ApplicationView::Instance(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
@@ -394,7 +421,7 @@ impl DataflowProblem for StackStateProblem<'_> {
             Instruction::ScopePush(scope_id) => {
                 // Local variables begin their lifetime uninitialized.
                 for variable_id in self.function.declared_variables(*scope_id) {
-                    slots.set(StackRoot::Variable(variable_id), PlaceState::uninitialized());
+                    slots.set(Local::Variable(variable_id), PlaceState::uninitialized());
                 }
 
                 // Function inputs live for the root scope and arrive initialized.
@@ -407,7 +434,7 @@ impl DataflowProblem for StackStateProblem<'_> {
             Instruction::ScopePop(scope_id) => {
                 // Drop local slots as soon as their scope ends to keep states small.
                 for variable_id in self.function.declared_variables(*scope_id) {
-                    slots.remove(StackRoot::Variable(variable_id));
+                    slots.remove(Local::Variable(variable_id));
                 }
 
                 // Function inputs share the root scope's lifetime.

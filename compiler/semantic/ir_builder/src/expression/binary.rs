@@ -63,7 +63,7 @@ async fn lower_assignment(
 ) -> LoweredExpression {
     let address = builder.lower_lvalue_by_id(context, binary.left()).await;
     let value = builder.lower_rvalue_by_id(context, binary.right()).await;
-    builder.emit_store(address, value);
+    builder.emit_store(address, value, span);
     LoweredExpression::RValue(builder.emit_unit(span, ty))
 }
 

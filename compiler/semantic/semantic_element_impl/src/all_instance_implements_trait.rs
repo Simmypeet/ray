@@ -42,9 +42,11 @@ async fn all_instance_implements_trait_executor(
             .flat_map(Ty::recursive_iter)
             .filter_map(|ty| match ty {
                 Ty::PolyVar(id) => Some(*id),
-                Ty::Application(_) | Ty::Inference(_) | Ty::EffectRow(_) | Ty::SelfInstance(_) => {
-                    None
-                }
+                Ty::Application(_)
+                | Ty::Inference(_)
+                | Ty::EffectRow(_)
+                | Ty::SelfInstance(_)
+                | Ty::Lifetime(_) => None,
             })
             .collect();
         let parameters = engine.get_poly_var_map(symbol_id).await;
@@ -52,7 +54,7 @@ async fn all_instance_implements_trait_executor(
         // premises can be resolved. Occurrences in those premises do not count.
         let eligible = parameters.iter().all(|(id, parameter)| match parameter.kind() {
             TyKind::Instance => true,
-            TyKind::Star | TyKind::EffectRow => {
+            TyKind::Star | TyKind::EffectRow | TyKind::Lifetime => {
                 head_poly_vars.contains(&GlobalPolyVarID::new(symbol_id, id))
             }
         });

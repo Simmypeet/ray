@@ -1,16 +1,22 @@
+use std::collections::BTreeSet;
+
 use derive_more::From;
-use qbice::{Decode, Encode, Identifiable, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::resolver::Resolver;
-use rayc_semantic_element::return_type::Key;
+use rayc_resolution::{lifetime::LifetimeElision, resolver::Resolver};
+use rayc_semantic_element::{parameter::get_parameter_map, return_type::Key};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
+    GlobalSymbolID,
     symbol_kind::{SymbolKind, get_symbol_kind},
     syntax::get_return_type_syntax,
 };
-use rayc_type::{poly_var::get_enclosing_poly_var_maps, ty::Ty};
+use rayc_type::{
+    poly_var::get_enclosing_poly_var_maps,
+    ty::{Ty, TyKind},
+};
 
 use crate::{
     build::{Build, Output},
@@ -46,6 +52,58 @@ impl Report for Diagnostic {
     }
 }
 
+/// Returns the one lifetime the parameter types of `symbol_id` mention, or
+/// `None` when they mention none or more than one. Elided lifetimes in the
+/// return type stand for it, as in Rust.
+async fn sole_parameter_lifetime(
+    engine: &TrackedEngine,
+    symbol_id: GlobalSymbolID,
+) -> Option<Interned<Ty>> {
+    let parameters = engine.get_parameter_map(symbol_id).await;
+    let mut lifetimes = BTreeSet::new();
+    for (_, parameter) in parameters.iter() {
+        for ty in Ty::interned_recursive_iter(parameter.ty()) {
+            // Errors of kind lifetime count too, so that an unresolved lifetime
+            // does not also make elision fail.
+            let is_lifetime = ty.kind_of(engine).await == TyKind::Lifetime;
+            if is_lifetime {
+                lifetimes.insert(ty.clone());
+            }
+        }
+    }
+
+    let mut lifetimes = lifetimes.into_iter();
+    let lifetime = lifetimes.next()?;
+    lifetimes.next().is_none().then_some(lifetime)
+}
+
+/// Returns how the return type of `symbol_id` treats elided lifetimes. Only a
+/// plain `def` allows elision; see `parameter_lifetime_elision`.
+async fn return_lifetime_elision(
+    engine: &TrackedEngine,
+    symbol_id: GlobalSymbolID,
+    symbol_kind: SymbolKind,
+) -> LifetimeElision {
+    match symbol_kind {
+        SymbolKind::Def => {
+            LifetimeElision::Output(sole_parameter_lifetime(engine, symbol_id).await)
+        }
+        SymbolKind::InstanceDef
+        | SymbolKind::TraitDef
+        | SymbolKind::ExternDef
+        | SymbolKind::EffectOperation
+        | SymbolKind::Effect
+        | SymbolKind::Instance
+        | SymbolKind::MarkerImplementation
+        | SymbolKind::Strut
+        | SymbolKind::Trait
+        | SymbolKind::TraitType
+        | SymbolKind::InstanceType
+        | SymbolKind::Marker
+        | SymbolKind::Module => LifetimeElision::Forbidden,
+    }
+}
+
 impl Build for Key {
     type Diagnostic = Diagnostic;
 
@@ -62,6 +120,7 @@ impl Build for Key {
             .site(symbol_id)
             .handler(&diagnostics)
             .obligation_handler(&obligations)
+            .lifetime_elision(return_lifetime_elision(engine, symbol_id, symbol_kind).await)
             .build();
 
         let return_type = if let Some(syntax) = syntax.as_ref() {

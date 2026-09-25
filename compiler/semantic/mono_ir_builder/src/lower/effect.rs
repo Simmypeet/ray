@@ -14,13 +14,14 @@ use rayc_symbol::GlobalSymbolID;
 use crate::{builder::Builder, context::Context};
 
 impl Builder<'_> {
-    pub(super) fn lower_perform(
+    pub(super) async fn lower_perform(
         &mut self,
         context: &Context,
         perform: &Perform,
         expression_id: IRExprID,
     ) {
-        let instance = context.instantiate_effect(perform.effect_id(), perform.substitution());
+        let instance =
+            context.instantiate_effect(perform.effect_id(), perform.substitution()).await;
         let handler = self.handler_place(&instance).dereference();
 
         // access the environment first
@@ -44,7 +45,7 @@ impl Builder<'_> {
         handle: &Handle,
         expression_id: IRExprID,
     ) {
-        let instance = context.instantiate_effect(handle.effect_id(), handle.substitution());
+        let instance = context.instantiate_effect(handle.effect_id(), handle.substitution()).await;
         let (handler_pointer, handler_environment) =
             self.lower_effect_handler_pointer(context, handle, instance.clone());
 

@@ -16,6 +16,7 @@ pub mod postfix;
 pub mod r#return;
 pub mod run_with;
 pub mod struct_initialization;
+pub mod r#unsafe;
 pub mod while_loop;
 
 impl Bind<Expression> for TAstBuilder {
@@ -25,6 +26,7 @@ impl Bind<Expression> for TAstBuilder {
             Expression::Closure(lambda) => Box::pin(self.bind(lambda)).await,
             Expression::IfElse(if_else) => Box::pin(self.bind(if_else)).await,
             Expression::While(while_loop) => Box::pin(self.bind(while_loop)).await,
+            Expression::Unsafe(unsafe_expression) => Box::pin(self.bind(unsafe_expression)).await,
             Expression::Binary(binary) => Box::pin(self.bind(binary)).await,
         }
     }

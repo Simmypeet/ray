@@ -1,0 +1,51 @@
+trait Choose[]:
+    def pick['l, a, b](first: a, second: &'l b) -> a
+
+
+# Declared type parameters correspond in order: `'l` is `'m`, `a` is `x` and
+# `b` is `y`.
+inst Swapped for Choose:
+    def pick['m, x, y](first: x, second: &'m y) -> x:
+        return first
+
+
+# An implementation that discovers its variables pairs them by position in
+# the signature, whatever their names: `a` is `q` and `b` is `p`.
+inst Discovered for Choose:
+    def pick(first: q, second: &'n p) -> q:
+        return first
+
+
+trait Flip[]:
+    def flip(first: a, second: &'l b) -> a
+
+
+# A trait method that discovers its variables pairs them by position too, even
+# with an explicit list in another order: `a` is `x` and `b` is `y`.
+inst Flipped for Flip:
+    def flip['m, y, x](first: x, second: &'m y) -> x:
+        return first
+
+
+def explicitly(value: int32, flag: &bool) given (choose: Choose) -> int32:
+    return choose.pick['_, int32, bool](value, flag)
+
+
+def implicitly(value: int32, flag: &bool) given (choose: Choose) -> int32:
+    return choose.pick(value, flag)
+
+
+def identity[a](value: a) -> a:
+    return value
+
+
+def throughFlip(value: int32, flag: &bool) given (flip: Flip) -> int32:
+    return flip.flip(value, flag)
+
+
+def main() -> int32:
+    let flag = true
+    let flipped = throughFlip[given Flipped](0, flag.&) + Flipped.flip['_, bool, int32](0, flag.&)
+    let swapped = explicitly[given Swapped](10, flag.&) + implicitly[given Swapped](11, flag.&)
+    let discovered = explicitly[given Discovered](10, flag.&) + implicitly[given Discovered](11, flag.&)
+    return identity[int32](swapped + discovered + flipped - 42 + identity(42))

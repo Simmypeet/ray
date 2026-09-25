@@ -4,7 +4,12 @@ use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::{Obligation, discover_function_poly_vars, resolver::Resolver};
+use rayc_resolution::{
+    Obligation,
+    discovery::{GivenTraits, discover_elided_lifetimes, discover_parameter_poly_vars},
+    lifetime::lifetime_parameter_name,
+    resolver::Resolver,
+};
 use rayc_semantic_element::callable_parameter::{CallableParameter, get_callable_parameters};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
@@ -17,8 +22,12 @@ use rayc_symbol::{
         get_given_parameter_list_syntax, get_parameter_list_syntax, get_type_parameter_list_syntax,
     },
 };
+use rayc_syntax::{effect::TypeParameter, r#type::Lifetime as LifetimeSyntax};
 use rayc_type::{
-    poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap, PolyVarOrigin, get_enclosing_poly_var_maps},
+    poly_var::{
+        GlobalPolyVarID, PolyVar, PolyVarMap, PolyVarOrigin, PolyVarStack,
+        get_enclosing_poly_var_maps,
+    },
     trait_ref::TraitRef,
     ty::{Ty, args::Args},
 };
@@ -74,6 +83,40 @@ impl Report for DuplicatePolyVar {
 pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
     DuplicatePolyVar(DuplicatePolyVar),
+    ReservedLifetimeName(ReservedLifetimeName),
+}
+
+/// A lifetime parameter declared as `'static` or `'_`.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct ReservedLifetimeName {
+    span: RelativeSpan,
+}
+
+impl Report for ReservedLifetimeName {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("invalid lifetime parameter name")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("`'static` and `'_` cannot be declared as lifetime parameters")
+                    .build(),
+            )
+            .build()
+    }
 }
 
 impl Report for Diagnostic {
@@ -81,11 +124,59 @@ impl Report for Diagnostic {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::DuplicatePolyVar(diagnostic) => diagnostic.report(engine).await,
+            Self::ReservedLifetimeName(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
 
-fn insert_poly_var(poly_vars: &mut PolyVarMap, poly_var: PolyVar, storage: &Storage<Diagnostic>) {
+/// Returns the lifetime parameter `lifetime` declares, or `None` after
+/// reporting a lifetime that cannot be declared.
+fn lifetime_parameter(
+    engine: &TrackedEngine,
+    lifetime: &LifetimeSyntax,
+    storage: &Storage<Diagnostic>,
+) -> Option<PolyVar> {
+    let identifier = lifetime.identifier();
+    let identifier = match identifier {
+        Some(identifier) if !lifetime.is_placeholder() => identifier,
+
+        // `'static` and `'_` are not names.
+        Some(_) | None => {
+            if lifetime.name().is_some() {
+                storage.receive(Diagnostic::ReservedLifetimeName(ReservedLifetimeName {
+                    span: lifetime.span(),
+                }));
+            }
+            return None;
+        }
+    };
+
+    Some(PolyVar::new_lifetime(
+        engine.intern_unsized(lifetime_parameter_name(&identifier.kind.0)),
+        lifetime.span(),
+    ))
+}
+
+/// Declares `poly_var`, reporting a name that is already declared by this
+/// symbol or by an enclosing one: polymorphic variables cannot shadow.
+fn insert_poly_var(
+    poly_vars: &mut PolyVarMap,
+    enclosing: Option<&PolyVarStack>,
+    poly_var: PolyVar,
+    storage: &Storage<Diagnostic>,
+) {
+    // The shadowing variable is still declared, so the symbol keeps its
+    // arity and uses of the name inside it resolve without further errors.
+    if let Some(original_span) =
+        enclosing.and_then(|stack| stack.span_of(stack.find_by_name(poly_var.name())?))
+    {
+        storage.receive(Diagnostic::DuplicatePolyVar(DuplicatePolyVar {
+            name: poly_var.name().clone(),
+            original_span,
+            duplicate_span: poly_var.span(),
+        }));
+    }
+
     match poly_vars.insert(poly_var) {
         Ok(_) => { /* Yay! */ }
         Err((original, id)) => {
@@ -143,6 +234,7 @@ async fn insert_callable_dictionaries(
 async fn insert_given_parameters(
     engine: &TrackedEngine,
     site: GlobalSymbolID,
+    enclosing: Option<&PolyVarStack>,
     poly_vars: &mut PolyVarMap,
     storage: &Storage<Diagnostic>,
     obligations: &Storage<Obligation>,
@@ -150,16 +242,10 @@ async fn insert_given_parameters(
     if let Some(given_parameters) = engine.get_given_parameter_list_syntax(site).await
         && let Some(given_parameters) = given_parameters.parameters()
     {
-        let parent_poly_var_stack = if let Some(parent_id) = engine.get_parent_global(site).await {
-            Some(engine.get_enclosing_poly_var_maps(parent_id).await)
-        } else {
-            None
-        };
-
         for parameter in given_parameters.parameters() {
             let mut resolver = Resolver::builder()
                 .engine(engine)
-                .maybe_poly_var_stack(parent_poly_var_stack.as_deref())
+                .maybe_poly_var_stack(enclosing)
                 .building_poly_var_map(poly_vars)
                 .site(site)
                 .handler(storage)
@@ -176,11 +262,54 @@ async fn insert_given_parameters(
 
             insert_poly_var(
                 poly_vars,
+                enclosing,
                 PolyVar::new_instance(name.kind.0.clone(), trait_ref, name.span()),
                 storage,
             );
         }
     }
+}
+
+/// Declares the explicit type and lifetime parameters of `symbol_id`.
+async fn declare_type_parameters(
+    engine: &TrackedEngine,
+    symbol_id: GlobalSymbolID,
+    enclosing: Option<&PolyVarStack>,
+    storage: &Storage<Diagnostic>,
+) -> PolyVarMap {
+    let mut poly_vars = PolyVarMap::new();
+
+    if let Some(type_parameters) = engine.get_type_parameter_list_syntax(symbol_id).await {
+        for parameter in type_parameters.parameters() {
+            let parameter = match parameter {
+                TypeParameter::Lifetime(lifetime) => {
+                    if let Some(variable) = lifetime_parameter(engine, &lifetime, storage) {
+                        insert_poly_var(&mut poly_vars, enclosing, variable, storage);
+                    }
+                    continue;
+                }
+                TypeParameter::Variable(parameter) => parameter,
+            };
+            let Some(identifier) = parameter.name() else {
+                continue;
+            };
+            let variable =
+                match crate::associated_type_kind::resolve_kind(parameter.kind_ascription()) {
+                    rayc_type::ty::TyKind::Star => {
+                        PolyVar::new_type(identifier.kind.0.clone(), identifier.span())
+                    }
+                    rayc_type::ty::TyKind::EffectRow => {
+                        PolyVar::new_effect(identifier.kind.0.clone(), identifier.span())
+                    }
+                    rayc_type::ty::TyKind::Instance | rayc_type::ty::TyKind::Lifetime => {
+                        unreachable!("kind ascriptions cannot declare dictionaries or lifetimes")
+                    }
+                };
+            insert_poly_var(&mut poly_vars, enclosing, variable, storage);
+        }
+    }
+
+    poly_vars
 }
 
 impl Build for rayc_type::poly_var::Key {
@@ -190,17 +319,62 @@ impl Build for rayc_type::poly_var::Key {
         let storage = Storage::new();
         let obligations = Storage::new();
 
-        let mut poly_vars = match engine.get_symbol_kind(symbol_id).await {
+        let symbol_kind = engine.get_symbol_kind(symbol_id).await;
+
+        // The variables of every enclosing symbol, which this symbol's
+        // declarations must not shadow.
+        let enclosing = match engine.get_parent_global(symbol_id).await {
+            Some(parent_id) => Some(engine.get_enclosing_poly_var_maps(parent_id).await),
+            None => None,
+        };
+
+        let mut poly_vars = match symbol_kind {
             SymbolKind::Def | SymbolKind::InstanceDef | SymbolKind::TraitDef => {
                 let parameters = engine.get_parameter_list_syntax(symbol_id).await;
-                let parent_id = engine.get_parent_global(symbol_id).await;
-                let enclosing_poly_var_maps = if let Some(x) = parent_id {
-                    Some(engine.get_enclosing_poly_var_maps(x).await)
-                } else {
-                    None
-                };
 
-                discover_function_poly_vars(parameters.as_ref(), enclosing_poly_var_maps.as_deref())
+                // The given parameters are resolved after the type parameters,
+                // but their traits are known to discovery; see `GivenTraits`.
+                let given_parameters = engine.get_given_parameter_list_syntax(symbol_id).await;
+                let given_traits =
+                    GivenTraits::new(engine, symbol_id, given_parameters.as_ref()).await;
+
+                // Only a plain `def` introduces lifetimes for elision. Trait
+                // and instance defs forbid elided lifetimes in their
+                // parameter types.
+                let introduce_elided = symbol_kind == SymbolKind::Def;
+
+                // An explicit type-parameter list declares every named
+                // variable, so only elided lifetimes are discovered after it.
+                // Without one, parameter types introduce their variables.
+                if engine.get_type_parameter_list_syntax(symbol_id).await.is_some() {
+                    let poly_vars =
+                        declare_type_parameters(engine, symbol_id, enclosing.as_deref(), &storage)
+                            .await;
+
+                    if introduce_elided {
+                        discover_elided_lifetimes(
+                            engine,
+                            symbol_id,
+                            parameters.as_ref(),
+                            &given_traits,
+                            enclosing.as_deref(),
+                            poly_vars,
+                        )
+                        .await
+                    } else {
+                        poly_vars
+                    }
+                } else {
+                    discover_parameter_poly_vars(
+                        engine,
+                        symbol_id,
+                        parameters.as_ref(),
+                        &given_traits,
+                        enclosing.as_deref(),
+                        introduce_elided,
+                    )
+                    .await
+                }
             }
             SymbolKind::Effect
             | SymbolKind::Instance
@@ -209,33 +383,7 @@ impl Build for rayc_type::poly_var::Key {
             | SymbolKind::Trait
             | SymbolKind::TraitType
             | SymbolKind::InstanceType => {
-                let mut poly_vars = PolyVarMap::new();
-
-                if let Some(type_parameters) =
-                    engine.get_type_parameter_list_syntax(symbol_id).await
-                {
-                    for parameter in type_parameters.parameters() {
-                        let Some(identifier) = parameter.name() else {
-                            continue;
-                        };
-                        let variable = match crate::associated_type_kind::resolve_kind(
-                            parameter.kind_ascription(),
-                        ) {
-                            rayc_type::ty::TyKind::Star => {
-                                PolyVar::new_type(identifier.kind.0.clone(), identifier.span())
-                            }
-                            rayc_type::ty::TyKind::EffectRow => {
-                                PolyVar::new_effect(identifier.kind.0.clone(), identifier.span())
-                            }
-                            rayc_type::ty::TyKind::Instance => {
-                                unreachable!("kind ascriptions cannot declare dictionaries")
-                            }
-                        };
-                        insert_poly_var(&mut poly_vars, variable, &storage);
-                    }
-                }
-
-                poly_vars
+                declare_type_parameters(engine, symbol_id, enclosing.as_deref(), &storage).await
             }
             SymbolKind::EffectOperation => {
                 panic!("an effect operation does not own a polymorphic-variable map")
@@ -247,9 +395,9 @@ impl Build for rayc_type::poly_var::Key {
             SymbolKind::Module => panic!("a module does not own a polymorphic-variable map"),
         };
 
-        // Function-like symbols order variables by first occurrence in
-        // explicit parameter types; traits and instances order explicit type
-        // parameters by declaration. Generated types follow source types, then
+        // Symbols with an explicit type-parameter list order its variables by
+        // declaration; other function-like symbols order them by first
+        // occurrence in parameter types. Generated types follow source types, then
         // explicit dictionaries precede generated dictionaries. Source given
         // arguments therefore retain their original positional order.
         let callables = engine.get_callable_parameters(symbol_id).await;
@@ -260,7 +408,15 @@ impl Build for rayc_type::poly_var::Key {
             );
         }
 
-        insert_given_parameters(engine, symbol_id, &mut poly_vars, &storage, &obligations).await;
+        insert_given_parameters(
+            engine,
+            symbol_id,
+            enclosing.as_deref(),
+            &mut poly_vars,
+            &storage,
+            &obligations,
+        )
+        .await;
         insert_callable_dictionaries(engine, symbol_id, &callables, &mut poly_vars).await;
 
         Output::new_with(

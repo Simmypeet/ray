@@ -1,0 +1,22 @@
+def increment(value: &mut int32) -> ():
+    value.* = value.* + 1
+    return ()
+
+def read(value: &int32) -> int32:
+    return value.*
+
+# `value` is passed on twice. Each call reborrows it as `value.*.&mut`, so it
+# is not moved into the first call.
+def incrementTwice(value: &mut int32) -> ():
+    increment(value)
+    increment(value)
+    return ()
+
+def main() -> int32:
+    let mut value = 38
+    let reference = value.&mut
+    incrementTwice(reference)
+    incrementTwice(reference)
+
+    # A `&mut int32` coerces to a `&int32`.
+    return read(reference)

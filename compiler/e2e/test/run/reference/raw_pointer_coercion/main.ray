@@ -1,0 +1,15 @@
+def write(pointer: *mut int32, value: int32) -> ():
+    unsafe:
+        pointer.* = value
+    return ()
+
+def read(pointer: *int32) -> int32:
+    return unsafe: pointer.*
+
+def main() -> int32:
+    let mut value = 0
+
+    # A `&mut int32` coerces to a `*mut int32`, and a `&int32` to a `*int32`.
+    write(value.&mut, 21)
+    let pointer: *int32 = value.&
+    return read(pointer) + read(value.&mut)

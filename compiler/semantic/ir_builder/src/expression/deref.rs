@@ -1,4 +1,4 @@
-use rayc_typed_ast::typed_expr::deref::Deref;
+use rayc_typed_ast::typed_expr::deref::{Deref, DerefKind};
 
 use crate::{
     builder::Builder,
@@ -12,7 +12,16 @@ impl<'a> Lower<TypedExprWithID<&'a Deref>> for Builder {
         context: &LoweringContext<'_>,
         expression: TypedExprWithID<&'a Deref>,
     ) -> LoweredExpression {
-        let pointer = self.lower_rvalue_by_id(context, expression.node().pointee()).await;
-        LoweredExpression::LValue(self.dereference_address(pointer))
+        // The dereference extends the pointer's own place, so the pointer is
+        // read where the place is used rather than loaded here. A computed
+        // pointer is first stored to a temporary to give it a place.
+        let pointer_id = expression.node().pointee();
+        let pointer = self.lower_by_id(context, pointer_id).await;
+        let mut address = self.lower_to_address_or_temporary(context, pointer_id, pointer);
+        match expression.node().kind() {
+            DerefKind::Reference => self.project_deref(&mut address),
+            DerefKind::RawPointer => self.project_raw_deref(&mut address),
+        }
+        LoweredExpression::LValue(address)
     }
 }

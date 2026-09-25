@@ -1,0 +1,30 @@
+trait Show[]:
+    def show() -> int32
+
+trait Outer[a, 'l, e: Effect]:
+    # ERROR: associated type parameters cannot shadow the trait's.
+    type Inner[a]
+    type Borrowed['l]
+    type Row[e: Effect]: Effect
+
+    # ERROR: a given parameter cannot shadow the trait's `a`.
+    def named(x: int32) given (a: Show) -> int32
+
+    # OK: an implicit variable reuses the trait's `a` instead of shadowing it.
+    def reuse(x: *a) -> int32
+
+inst Impl[a] for Outer[a, 'static, {}]:
+    # ERROR: an instance type parameter cannot shadow the instance's `a`.
+    type Inner[a] = int32
+    type Borrowed['m] = int32
+    type Row[r: Effect] = r
+
+    # ERROR: a given parameter cannot shadow the instance's `a`.
+    def named(x: int32) given (a: Show) -> int32:
+        return 0
+
+    def reuse(x: *a) -> int32:
+        return 0
+
+def main() -> int32:
+    return 0

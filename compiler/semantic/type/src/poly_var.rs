@@ -36,17 +36,17 @@ impl PolyVarKind {
     }
 }
 
-/// Identifies whether a binder comes from source or callable-parameter
-/// elaboration.
+/// Identifies whether a binder comes from source, callable-parameter
+/// elaboration, or lifetime elision.
 ///
 /// Each `def(...)` parameter annotation generates a fresh callable type and a
 /// `core.Def` dictionary. Their origins pair those binders without using their
 /// display names: generated binders are excluded from source-name lookup, and
 /// generated dictionaries cannot be supplied as explicit `given` arguments.
 ///
-/// Every generated variant carries the zero-based value-parameter index within
-/// the owning declaration, counting ordinary parameters too (but not an
-/// ellipsis). This is a declaration-local occurrence key, not a
+/// Every generated callable variant carries the zero-based value-parameter
+/// index within the owning declaration, counting ordinary parameters too (but
+/// not an ellipsis). This is a declaration-local occurrence key, not a
 /// polymorphic-variable ID or an index among only callable parameters. For `def
 /// apply(x: int32, fn: def())`, the generated binders have origins
 /// `CallableType(1)`, `CallableDictionary(1)` and `CallableDropDictionary(1)`.
@@ -63,6 +63,11 @@ pub enum PolyVarOrigin {
     /// The hidden `core.Drop` dictionary for that parameter's fresh callable
     /// type, used when the callable is dropped instead of called.
     CallableDropDictionary(usize),
+    /// The fresh lifetime parameter introduced for a lifetime elided in a
+    /// parameter type. It is keyed by the span of the elided lifetime: the
+    /// span of `&t` for a reference written without a lifetime, or the span
+    /// of `'_`.
+    ElidedLifetime(RelativeSpan),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -85,6 +90,18 @@ impl PolyVar {
             name,
             origin: PolyVarOrigin::Source,
             kind: PolyVarKind::Type(TyKind::EffectRow),
+            span,
+        }
+    }
+
+    /// Creates a lifetime parameter. Its name includes the leading quote, as
+    /// in `'a`, so lifetimes and types live in separate namespaces.
+    #[must_use]
+    pub const fn new_lifetime(name: Interned<str>, span: RelativeSpan) -> Self {
+        Self {
+            name,
+            origin: PolyVarOrigin::Source,
+            kind: PolyVarKind::Type(TyKind::Lifetime),
             span,
         }
     }
@@ -168,6 +185,25 @@ impl PolyVarMap {
         self.poly_vars.get(id).and_then(PolyVar::trait_ref)
     }
 
+    /// Returns the type, effect and lifetime variables, which type arguments
+    /// instantiate, in order. They precede the dictionaries.
+    pub fn type_parameters(&self) -> impl Iterator<Item = (PolyVarID, &PolyVar)> {
+        self.iter().take_while(|(_, poly_var)| poly_var.kind() != TyKind::Instance)
+    }
+
+    /// Returns the dictionaries, which given arguments instantiate, in order.
+    /// They follow the type parameters.
+    pub fn dictionaries(&self) -> impl Iterator<Item = (PolyVarID, &PolyVar)> {
+        self.iter().skip_while(|(_, poly_var)| poly_var.kind() != TyKind::Instance)
+    }
+
+    /// Returns the kind of the type parameter at `index`; see
+    /// [`Self::type_parameters`].
+    #[must_use]
+    pub fn type_parameter_kind(&self, index: usize) -> Option<TyKind> {
+        self.type_parameters().nth(index).map(|(_, poly_var)| poly_var.kind())
+    }
+
     /// Generated binders deliberately bypass the source-name index.
     pub fn insert_generated(&mut self, mut variable: PolyVar, origin: PolyVarOrigin) -> PolyVarID {
         assert!(!matches!(origin, PolyVarOrigin::Source));
@@ -233,6 +269,13 @@ impl PolyVarStack {
     pub fn kind_of(&self, id: GlobalPolyVarID) -> Option<TyKind> {
         self.poly_var_maps.iter().find_map(|(symbol_id, poly_var_map)| {
             (*symbol_id == id.parent_id()).then(|| poly_var_map.kind_of(id.id()))
+        })
+    }
+
+    #[must_use]
+    pub fn span_of(&self, id: GlobalPolyVarID) -> Option<RelativeSpan> {
+        self.poly_var_maps.iter().find_map(|(symbol_id, poly_var_map)| {
+            (*symbol_id == id.parent_id()).then(|| poly_var_map[id.id()].span())
         })
     }
 

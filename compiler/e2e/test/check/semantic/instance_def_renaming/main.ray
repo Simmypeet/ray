@@ -1,0 +1,109 @@
+trait Choose[]:
+    def pick[a, b](first: *a, second: *b) -> *a
+
+# OK: both declare their type parameters, so they correspond in order: `a` is
+# `x` and `b` is `y`.
+inst Renamed for Choose:
+    def pick[x, y](first: *x, second: *y) -> *x:
+        return first
+
+# ERROR: both declare their type parameters, so they correspond in order, and
+# the swapped signature does not match.
+inst Reordered for Choose:
+    def pick[x, y](first: *y, second: *x) -> *y:
+        return first
+
+# OK: the trait's signature mentions all its variables, so an implementation
+# that discovers its variables pairs them by position: `a` is `q`, `b` is `p`.
+inst Discovered for Choose:
+    def pick(first: *q, second: *p) -> *q:
+        return first
+
+# ERROR: the implementation has a type where the trait has its variable `b`,
+# so `b` has no counterpart.
+inst Instantiated for Choose:
+    def pick(first: *x, second: *(y, int32)) -> *x:
+        return first
+
+# ERROR: no variable of the implementation stands where the trait has `b`.
+inst Unpaired for Choose:
+    def pick(first: *x, second: Handler[{Read[y]}]) -> *x:
+        return first
+
+trait Make[]:
+    def make[a, b](value: *a) -> *a
+
+# ERROR: the trait's `b` is not mentioned in its signature, so an
+# implementation that discovers its variables cannot pair it.
+inst MakeDiscovered for Make:
+    def make(value: *x) -> *x:
+        return value
+
+# OK: declaring the type parameters pairs them in order.
+inst MakeExplicit for Make:
+    def make[x, y](value: *x) -> *x:
+        return value
+
+trait Swap[]:
+    def swap(first: *a, second: *b) -> *b
+
+# OK: the trait discovers its variables, so they pair by position even though
+# the implementation declares its own in another order: `a` is `x`, `b` is `y`.
+inst SwapExplicit for Swap:
+    def swap[y, x](first: *x, second: *y) -> *y:
+        return second
+
+trait Keep[]:
+    def keep(value: *a) given (drop: core.Drop[a]) -> *a
+
+# ERROR: the implementation has no counterpart for the given parameter.
+inst KeepNoGiven for Keep:
+    def keep(value: *a) -> *a:
+        return value
+
+eff Read[t]:
+    def read() -> t
+
+eff Write[t]:
+    def write(value: t)
+
+struct Handler[e: Effect]:
+    value: int32
+
+trait Rows[]:
+    def handle(handler: *Handler[{Read[a], Write[b]}], value: *b) -> *b
+
+# OK: effect labels are unordered, so `a` is `y` and `b` is `x`.
+inst RowsReordered for Rows:
+    def handle(handler: *Handler[{Write[x], Read[y]}], value: *x) -> *x:
+        return value
+
+# ERROR: the implementation has `int32` where the trait has `a`, so `a` has no
+# counterpart.
+inst SwapInstantiated for Swap:
+    def swap[x, y](first: *int32, second: *y) -> *y:
+        return second
+
+# ERROR: `x` already stands for the trait's `a`, so `b` has no counterpart.
+inst SwapMerged for Swap:
+    def swap[x, y](first: *x, second: *x) -> *x:
+        return second
+
+trait Container[]:
+    type Item[t]
+
+trait Project[]:
+    def get(item: *d.Item[a]) given (d: Container) -> int32
+
+# OK: `a` pairs with `x` through the projection's arguments.
+inst ProjectDiscovered for Project:
+    def get(item: *d.Item[x]) given (d: Container) -> int32:
+        return 0
+
+# OK: the trait discovers its variables, so they pair by position here too.
+inst ProjectExplicit for Project:
+    def get[x](item: *d.Item[x]) given (d: Container) -> int32:
+        return 0
+
+def main() -> int32:
+    return 0

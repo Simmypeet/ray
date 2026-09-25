@@ -1,5 +1,7 @@
-use rayc_ir::ir_expr::{IRExpr, IRExprKind, load::Load};
-use rayc_type::capture::LoadKind;
+use rayc_ir::ir_expr::{
+    IRExpr, IRExprKind,
+    load::{Load, LoadKind},
+};
 use rayc_typed_ast::typed_expr::r#move::Move;
 
 use crate::{

@@ -1,0 +1,52 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: use of undeclared lifetime `'a`
+  ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:6:13
+  │
+6 │     value: &'a int32
+  │             ━━ lifetime `'a` is not declared
+  │
+  ╰ help: a `def` without a type-parameter list introduces the lifetimes its parameter types mention; every other declaration must declare its lifetimes
+
+[error]: invalid lifetime parameter name
+  ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:9:17
+  │
+9 │ struct Reserved['static, '_]:
+  ╰╴                ━━━━━━━ `'static` and `'_` cannot be declared as lifetime parameters
+
+[error]: invalid lifetime parameter name
+  ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:9:26
+  │
+9 │ struct Reserved['static, '_]:
+  ╰╴                         ━━ `'static` and `'_` cannot be declared as lifetime parameters
+
+[error]: type kind mismatch
+   ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:13:33
+   │
+13 │ def kindMismatch(reference: Ref[int32, int32]) -> ():
+   ╰╴                                ━━━━━ expected a lifetime, found a value type
+
+[error]: use of undeclared lifetime `'b`
+   ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:17:22
+   │
+17 │ def returnOnly() -> &'b int32:
+   │                      ━━ lifetime `'b` is not declared
+   │
+   ╰ help: a `def` without a type-parameter list introduces the lifetimes its parameter types mention; every other declaration must declare its lifetimes
+
+[error]: use of undeclared lifetime `'c`
+   ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:29:59
+   │
+29 │ def undeclaredOutlives(first: &'a int32) -> () where ('a: 'c):
+   │                                                           ━━ lifetime `'c` is not declared
+   │
+   ╰ help: a `def` without a type-parameter list introduces the lifetimes its parameter types mention; every other declaration must declare its lifetimes
+
+[error]: Compilation aborted due to 6 error(s)
+
+
+
+stdout:

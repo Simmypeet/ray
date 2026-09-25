@@ -18,5 +18,9 @@ qbice.workspace = true
 derive_more.workspace = true
 bon.workspace = true
 
+[dev-dependencies]
+rayc_source_file.path = "../../base/source_file"
+tokio.workspace = true
+
 [lints]
 workspace = true

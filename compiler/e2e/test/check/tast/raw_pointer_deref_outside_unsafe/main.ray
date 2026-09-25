@@ -1,0 +1,31 @@
+def read(pointer: *int32) -> int32:
+    # ERROR: a raw pointer may be dangling.
+    return pointer.*
+
+
+def write(pointer: *mut int32) -> ():
+    # ERROR: writing through a raw pointer is a dereference too.
+    pointer.* = 1
+    return ()
+
+
+def insideUnsafe(pointer: *mut int32) -> int32:
+    unsafe:
+        pointer.* = 2
+    return unsafe: pointer.*
+
+
+def insideClosure(pointer: *int32) -> int32:
+    # A closure inherits the `unsafe` around it.
+    let read = unsafe: () -> pointer.*
+    return read()
+
+
+def reference(value: &mut int32) -> int32:
+    # A reference is checked, so dereferencing it needs no `unsafe`.
+    value.* = 3
+    return value.*
+
+
+def main() -> ():
+    return ()

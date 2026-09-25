@@ -14,6 +14,7 @@ use rayc_symbol::{
     parent::get_closest_module_id,
     symbol_kind::{SymbolKind, get_symbol_kind},
 };
+use rayc_syntax::path::{Path, PathRoot};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarMap, PolyVarStack, get_poly_var_map},
     subst::{Subst, Substitutable},
@@ -28,6 +29,7 @@ use crate::{
     ExpectedTrait, ExplicitTypeArgumentsNotAllowed, GenInferWithSpan, GivenArgumentNotFound,
     MissingGivenArgument, PathSegmentNotFound, PositionalGivenArgumentAfterNamed,
     TypeArgumentArityMismatch, TypeInferenceNotAllowed, TypeKindMismatch,
+    lifetime::LifetimeElision,
 };
 
 /// Resolves syntax relative to a symbol and its polymorphic environment.
@@ -42,6 +44,9 @@ pub struct Resolver<'a> {
     handler: &'a dyn Handler<Diagnostic>,
     obligation_handler: &'a dyn Handler<crate::Obligation>,
     infer_gen: Option<&'a mut dyn GenInferWithSpan>,
+
+    #[builder(default)]
+    lifetime_elision: LifetimeElision,
 }
 
 impl fmt::Debug for Resolver<'_> {
@@ -52,6 +57,7 @@ impl fmt::Debug for Resolver<'_> {
             .field("building_poly_va_map", &self.poly_var_stack)
             .field("site", &self.site)
             .field("has_infer_gen", &self.infer_gen.is_some())
+            .field("lifetime_elision", &self.lifetime_elision)
             .finish_non_exhaustive()
     }
 }
@@ -97,6 +103,22 @@ impl Resolver<'_> {
     }
 
     pub(crate) const fn engine(&self) -> &TrackedEngine { self.engine }
+
+    pub(crate) const fn site(&self) -> GlobalSymbolID { self.site }
+
+    pub(crate) const fn lifetime_elision(&self) -> &LifetimeElision { &self.lifetime_elision }
+
+    /// Replaces how this resolver treats elided lifetimes, returning the
+    /// previous treatment so that it can be restored.
+    pub const fn replace_lifetime_elision(&mut self, elision: LifetimeElision) -> LifetimeElision {
+        std::mem::replace(&mut self.lifetime_elision, elision)
+    }
+
+    /// Returns whether this resolver may create inference variables, which is
+    /// only the case inside a function body.
+    pub(crate) const fn infers(&self) -> bool { self.infer_gen.is_some() }
+
+    pub(crate) fn report(&self, diagnostic: Diagnostic) { self.handler.receive(diagnostic); }
 
     pub(crate) fn require_instance_trait_ref(
         &self,
@@ -263,26 +285,7 @@ impl Resolver<'_> {
         previous: Option<GlobalSymbolID>,
         name: &str,
     ) -> Option<GlobalSymbolID> {
-        if let Some(previous) = previous {
-            self.engine.try_get_members(previous).await.and_then(|members| {
-                members.get_by_name(name).map(|member_id| previous.target_id.make_global(member_id))
-            })
-        } else {
-            let closest_module_id = self.engine.get_closest_module_id(self.site).await;
-            let closest_module_id = self.site.target_id.make_global(closest_module_id);
-            if let Some(local) = self.engine.get_member_by_name(closest_module_id, name).await {
-                return Some(local);
-            }
-            // Only explicitly linked roots are visible, after local names.
-            let targets = self.engine.query(&rayc_target::MapKey).await;
-            let target_id = *targets.get(name)?;
-            let linked =
-                self.engine.query(&rayc_target::LinkKey { target_id: self.site.target_id }).await;
-            if !linked.contains(&target_id) {
-                return None;
-            }
-            Some(target_id.make_global(self.engine.get_target_root_module_id(target_id).await))
-        }
+        find_path_symbol(self.engine, self.site, previous, name).await
     }
 
     pub(crate) fn report_expected_effect(&self, span: RelativeSpan, actual: SymbolKind) {
@@ -374,4 +377,56 @@ impl Resolver<'_> {
         self.handler
             .receive(Diagnostic::TypeKindMismatch(TypeKindMismatch::new(span, expected, actual)));
     }
+}
+
+/// Finds the symbol that `path` names, looking up each segment and ignoring
+/// its arguments. A path rooted at `this` names no symbol.
+pub(crate) async fn find_path_target(
+    engine: &TrackedEngine,
+    site: GlobalSymbolID,
+    path: &Path,
+) -> Option<GlobalSymbolID> {
+    let Some(PathRoot::Segment(_)) = path.root() else { return None };
+
+    let mut target = None;
+    for segment in path.segments() {
+        let name = segment.identifier()?.kind.0;
+        target = Some(find_path_symbol(engine, site, target, &name).await?);
+    }
+    target
+}
+
+/// Finds the symbol named `name` inside `previous`, or, for the first segment
+/// of a path, among the names visible from `site`.
+///
+/// This is shared by the resolver and by polymorphic-variable discovery, which
+/// runs before a resolver can be built for the signature being discovered.
+pub(crate) async fn find_path_symbol(
+    engine: &TrackedEngine,
+    site: GlobalSymbolID,
+    previous: Option<GlobalSymbolID>,
+    name: &str,
+) -> Option<GlobalSymbolID> {
+    // A later segment names a member of the symbol before it.
+    if let Some(previous) = previous {
+        return engine.try_get_members(previous).await.and_then(|members| {
+            members.get_by_name(name).map(|member_id| previous.target_id.make_global(member_id))
+        });
+    }
+
+    // The first segment names a member of the closest enclosing module...
+    let closest_module_id = engine.get_closest_module_id(site).await;
+    let closest_module_id = site.target_id.make_global(closest_module_id);
+    if let Some(local) = engine.get_member_by_name(closest_module_id, name).await {
+        return Some(local);
+    }
+
+    // ...or, after local names, the root of an explicitly linked target.
+    let targets = engine.query(&rayc_target::MapKey).await;
+    let target_id = *targets.get(name)?;
+    let linked = engine.query(&rayc_target::LinkKey { target_id: site.target_id }).await;
+    if !linked.contains(&target_id) {
+        return None;
+    }
+    Some(target_id.make_global(engine.get_target_root_module_id(target_id).await))
 }

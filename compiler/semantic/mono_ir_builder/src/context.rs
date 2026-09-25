@@ -232,12 +232,12 @@ impl Context {
         substitution.compose(self.instance.substitution(), &self.engine);
     }
 
-    pub(crate) fn instantiate_effect(
+    pub(crate) async fn instantiate_effect(
         &self,
         effect_id: GlobalSymbolID,
         substitution: &Subst,
     ) -> MonoEffectInstance {
-        self.engine.instantiate_effect(effect_id, substitution, self.instance.substitution())
+        self.engine.instantiate_effect(effect_id, substitution, self.instance.substitution()).await
     }
 
     pub(crate) async fn definition_instance(
