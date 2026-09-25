@@ -642,36 +642,79 @@ pub struct TyRelate {
   behavior does not change.
 - `TopLevelMatching` may bind lifetime parameters of an instance head through
   substitution. That is ordinary instantiation, not inference.
-- **Lifetime variables are never bound**, not even under invariance. An
-  invariant relation between two lifetimes emits two outlives constraints
-  instead of a substitution. Binding would merge the two regions at every
-  point in the function, which is harmless for location-insensitive
-  inference but loses exactly the precision Polonius adds: a constraint that
-  holds only after `p = q` would then hold everywhere.
+- **There are no lifetime inference variables.** A lifetime is one of three
+  kinds, and none of them is a `Ty::Inference`:
+
+  | Kind                                        | Where it appears    | Bound by substitution?                                                   |
+  |---------------------------------------------|---------------------|--------------------------------------------------------------------------|
+  | lifetime parameter (`Ty::PolyVar` of kind `Lifetime`) | declarations | yes, by **instantiation** (calling a signature, matching an instance head) |
+  | `Lifetime::Erased`                          | typed AST           | nothing to bind; every relation involving it succeeds                    |
+  | `Lifetime::Region`                          | IR type check only  | **never**; it only gathers constraints                                   |
+
+  A `Ty::Inference` of kind `Lifetime` must never be created. The unifier
+  binds `Ty::Inference` variables, and no lifetime may go through that path.
+- **Regions are never bound**, not even under invariance. An invariant
+  relation between two regions emits two outlives constraints instead of a
+  substitution, for two reasons:
+  - **Precision.** An invariant relation at point P means "these two regions
+    exchange loans at P". Binding `'r1 := 'r2` would make them the same region
+    at every point, so loans that were only in `'r2` before P would also be in
+    `'r1` before P. That is harmless for location-insensitive inference but
+    loses exactly the precision Polonius adds.
+  - **Simplicity.** The IR type check has no substitution to apply. Its output
+    is a constraint set that Polonius consumes, and binding would add a
+    union-find-and-rewrite step over every IR type just to express what two
+    constraints already express.
 - **Generalization.** When a type inference variable is bound in a
   non-invariant relation, the solver follows rustc and generalizes the other
-  side first instead of binding to it directly. For `?a <: Vec[&'b int32]`, it
-  binds `?a := Vec[&'c int32]` with a fresh lifetime variable `'c`, then relates
-  `Vec[&'c int32] <: Vec[&'b int32]`, which emits `'c: 'b`. The generalizer
-  walks the type with an ambient variance, composing it with each
-  constructor's variance:
-  - every lifetime becomes a fresh lifetime variable. Under an invariant
-    ambient variance, rustc keeps the original lifetime. Here it becomes a
-    fresh variable with two constraints, following the no-binding rule
-    above;
+  side first instead of binding to it directly. The generalizer walks the
+  type with an ambient variance, composing it with each constructor's
+  variance:
   - every type inference variable in a non-invariant position becomes a
     fresh type inference variable of the same kind **and the same
     `InferenceConstraint`**, since a numeric literal variable must stay
     numeric. Invariant positions keep the original variable;
+  - every lifetime becomes `Erased`. Type inference variables exist only in
+    the typed AST, where no region can be created, so there is never a fresh
+    lifetime to generalize to. On the IR there are no type inference
+    variables, so generalization never triggers there. The generalizer
+    therefore has no region case, and nothing should create lifetime
+    variables to fill one in;
   - the occurs check runs during generalization, as in rustc.
 
-  During typed-AST inference every lifetime is `Erased`, so generalization
-  only introduces extra type variables and the outlives constraints it
-  produces are discarded. It is done anyway so that the relation is correct
-  for every caller. The `RecordingInferenceGenerator` must record the
-  variables it creates like any others, so that numeric defaulting and
-  effect-row finalization still see them. On the IR there are no type
-  inference variables, so generalization never triggers there.
+  In practice, generalization only introduces extra type variables. It is
+  done anyway so that the relation is correct for every caller. The
+  `RecordingInferenceGenerator` must record the variables it creates like any
+  others, so that numeric defaulting and effect-row finalization still see
+  them.
+- **Given equalities match modulo lifetimes.** Associated-type reduction
+  (`reduce_instance_associated`) is pure substitution, so any regions in its
+  input are carried into its output and it needs no constraints. The only
+  comparison in reduction is the given-equality rewrite in
+  `Reduce for Interned<Ty>`, which today checks `equality.left() == self`.
+  That exact check breaks once lifetimes exist. In the typed AST, a given
+  `where d.Out['a] = &'a int32` would not match a body projection
+  `d.Out['erased]`, which makes it a type-inference bug, not only a
+  borrow-checker one. On the IR, a renumbered `d.Out['r7]` would never match
+  anything. The rule becomes:
+  - a given matches when the structure is equal, **ignoring lifetimes**.
+    Lifetimes never decide whether a given applies, just as they never decide
+    which instance is selected;
+  - when it matches, each pair of corresponding lifetimes produces an
+    **invariant** constraint (both directions), because projection arguments
+    are invariant.
+- **Reduction reports constraints.** `Reduce` takes a constraint sink, or
+  returns its constraints next to the reduced value. This uses the same
+  keep-or-drop split as the rest of the solver: typed-AST normalization drops
+  them, and the IR type check records them at the current point.
+- **Rigid projections relate structurally.** `entail_ty_relate` returns
+  `NoProgress` for associated types. Today, two identical projections succeed
+  only through the `lesser == greater` shortcut. On the IR, `d.Return` with
+  renumbered regions on each side is no longer identical, so the relation
+  would leave a residual and fail. Add a rule: two **irreducible** projections
+  of the same member relate by relating their instances and arguments
+  **invariantly**. A projection against any other type keeps today's
+  behavior.
 
 ## Phase 5: IR Type Check (Region Renumbering)
 
@@ -682,10 +725,42 @@ A new crate, `rayc_borrowck`, runs per definition after `rayc_memory::analyze`.
    from Phase 2 (declared, implied, and "`'static` outlives everything") are
    recorded.
 2. **Renumbering.** Every `Erased` lifetime in the type of every IR variable,
-   expression, and capture gets a fresh *existential* region variable.
+   expression, and capture gets a fresh *existential* region variable. The
+   renumbered type stored on an IR expression or variable is only a **slot**:
+   its regions are free, and they are constrained only by the flows into and
+   out of it. It carries no information about where the value came from.
 3. **Constraint generation.** Walk every instruction and emit
    `OutlivesConstraint { longer, shorter, point }` using the Phase 4 solver in
-   keeping mode:
+   keeping mode.
+
+   Every endpoint that comes from a declaration is **re-instantiated** from
+   the declaration with fresh regions, then **normalized eagerly**. Such
+   endpoints are callee signatures, field types, operation signatures,
+   instance associated types, and capture types. There are no type inference
+   variables on the IR, so every reducible projection can be reduced
+   immediately, and the constraints normalization reports are recorded at the
+   current point. Whatever projections remain are rigid and relate
+   structurally (Phase 4). Only then are the normalized endpoints related to
+   the slots. The typed AST stays lazy, because inference variables there can
+   block reduction.
+
+   Normalization must happen **after** re-instantiation, never by reusing the
+   typed AST's already normalized types. For example:
+
+   ```
+   def f(value: t) given (d: Get[t]) -> &'a int32 where d.Out = &'a int32:
+       return d.get(value)
+   ```
+
+   The typed AST stores the call's result type already normalized, as
+   `&'erased int32`. If the IR check only renumbered that to `&'r9 int32`,
+   nothing would tie `'r9` to `'a`. The result would be unconstrained and
+   could be accepted as `'static`, which is unsound. Re-instantiating
+   `d.get`'s signature gives the result type `d.Out`. Normalizing it through
+   the given gives `&'a int32`, and relating that to the slot ties `'r9` to
+   `'a`.
+
+   The relations for each construct:
    - `Store(address, expr)`: `type_of(expr) <: type_of(address)`;
    - `Call`: instantiate the callee signature with fresh regions for its
      lifetime parameters, relate each argument to its parameter type and the
