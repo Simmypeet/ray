@@ -31,23 +31,6 @@ impl Report for UnboundName {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
-pub struct FunctionNotFound {
-    name: Interned<str>,
-    span: RelativeSpan,
-}
-
-impl Report for FunctionNotFound {
-    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        let abs_span = engine.to_absolute_span(&self.span).await;
-
-        Rendered::builder()
-            .message(format!("function `{}` not found", &*self.name))
-            .primary_highlight(Highlight::builder().span(abs_span).build())
-            .build()
-    }
-}
-
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
 )]
@@ -784,7 +767,6 @@ pub enum Diagnostic {
     InstanceResolution(InstanceResolution),
     Resolution(rayc_resolution::Diagnostic),
     UnboundName(UnboundName),
-    FunctionNotFound(FunctionNotFound),
     SymbolNotCallable(SymbolNotCallable),
     MismatchedArgumentCount(MismatchedArgumentCount),
     MismatchedIndirectArgumentCount(MismatchedIndirectArgumentCount),
@@ -819,7 +801,6 @@ impl Report for Diagnostic {
             Self::InstanceResolution(diagnostic) => diagnostic.report(engine).await,
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::UnboundName(unbound_name) => unbound_name.report(engine).await,
-            Self::FunctionNotFound(function_not_found) => function_not_found.report(engine).await,
             Self::SymbolNotCallable(symbol_not_callable) => {
                 symbol_not_callable.report(engine).await
             }
