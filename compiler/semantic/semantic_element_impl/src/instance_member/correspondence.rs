@@ -223,20 +223,23 @@ impl<'a> Correspondence<'a> {
             Ty::EffectRow(expected) => {
                 let Ty::EffectRow(actual) = actual else { return };
 
-                // REVIEW: Does this follow the Koka scoped labels semantics?
-                // Please look at how `Solver` `ty_relate.rs` module `match_effect_row_labels`
-                // function works. Perhaps, expose part of that function to be reused here.
-
-                // Labels are unordered, so each pairs with the first label of
-                // the same effect.
-                for label in expected.labels() {
-                    let arguments =
-                        actual.labels().find_map(|candidate| label.structural_match(candidate));
-                    for (expected, actual) in arguments.into_iter().flatten() {
+                // Labels match as scoped labels, as row unification matches
+                // them; see `EffectRow::match_labels`.
+                let labels = expected.match_labels(actual);
+                for (expected, actual) in labels.matched() {
+                    for (expected, actual) in
+                        expected.structural_match(actual).into_iter().flatten()
+                    {
                         self.pair_types(expected, actual);
                     }
                 }
-                if let (Some(expected), Some(actual)) = (expected.tail(), actual.tail()) {
+
+                // The tails correspond only when every label matches. Otherwise
+                // one tail stands for the other row's remaining labels as
+                // well, which is not a variable to pair with.
+                if labels.is_exact()
+                    && let (Some(expected), Some(actual)) = (expected.tail(), actual.tail())
+                {
                     self.pair_types(expected, actual);
                 }
             }

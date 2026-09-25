@@ -424,22 +424,12 @@ fn match_effect_row_labels(
     lesser: &EffectRow,
     greater: &EffectRow,
 ) -> Result<MatchedEffectRowLabels, Error> {
+    let labels = lesser.match_labels(greater);
+
+    // Matched labels must agree argument by argument.
     let mut constraints = Vec::new();
-    let mut unmatched_lesser = Vec::new();
-    let mut unmatched_greater = greater.labels().cloned().collect::<Vec<_>>();
-
-    for lesser_label in lesser.labels() {
-        let matching_effect = unmatched_greater.iter().position(|greater_label| {
-            greater_label.effect_symbol_id() == lesser_label.effect_symbol_id()
-        });
-
-        let Some(matching_effect) = matching_effect else {
-            unmatched_lesser.push(lesser_label.clone());
-            continue;
-        };
-
-        let greater_label = unmatched_greater.remove(matching_effect);
-        let Some(arguments) = lesser_label.structural_match(&greater_label) else {
+    for (lesser_label, greater_label) in labels.matched() {
+        let Some(arguments) = lesser_label.structural_match(greater_label) else {
             return Err(Error::Conflicted);
         };
         constraints.extend(arguments.enumerate().map(|(argument_index, (lesser, greater))| {
@@ -452,7 +442,11 @@ fn match_effect_row_labels(
         }));
     }
 
-    Ok(MatchedEffectRowLabels { constraints, unmatched_lesser, unmatched_greater })
+    Ok(MatchedEffectRowLabels {
+        constraints,
+        unmatched_lesser: labels.unmatched_left().cloned().collect(),
+        unmatched_greater: labels.unmatched_right().cloned().collect(),
+    })
 }
 
 fn match_effect_row_tails(lesser: &Interned<Ty>, greater: &Interned<Ty>) -> DerivedConstraint {

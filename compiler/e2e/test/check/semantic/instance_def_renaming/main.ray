@@ -89,6 +89,15 @@ inst SwapMerged for Swap:
     def swap[x, y](first: *x, second: *x) -> *x:
         return second
 
+trait Scoped[]:
+    def both(handler: *Handler[{Read[a], Write[c], Read[b]}], value: *a) -> *a
+
+# OK: labels of the same effect keep their order, so the first `Read` is
+# `Read[x]` and the second is `Read[y]`: `a` is `x`, `b` is `y` and `c` is `z`.
+inst ScopedLabels for Scoped:
+    def both(handler: *Handler[{Write[z], Read[x], Read[y]}], value: *x) -> *x:
+        return value
+
 trait Container[]:
     type Item[t]
 
