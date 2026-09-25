@@ -20,8 +20,8 @@ use crate::{Diagnostic, resolver::Resolver};
 /// This follows Rust's elision rules for function signatures.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum LifetimeElision {
-    /// Elision is not allowed, as in struct fields, where clauses and
-    /// instance heads.
+    /// Elision is not allowed, as in struct fields, where clauses, instance
+    /// heads, and the signatures of trait and instance defs.
     #[default]
     Forbidden,
 
@@ -31,12 +31,13 @@ pub enum LifetimeElision {
 
     /// Each elided lifetime is the fresh lifetime parameter of the site that
     /// was introduced for it (see [`PolyVarOrigin::ElidedLifetime`]). This is
-    /// used in parameter types.
+    /// used in the parameter types of a plain `def`.
     FreshParameter,
 
     /// Every elided lifetime is the one lifetime the parameters mention. This
     /// is used in return types. It is `None` when the parameters mention no
-    /// lifetime or more than one, which makes elision an error.
+    /// lifetime or more than one, which makes elision an error. This is used
+    /// in the return type of a plain `def`.
     Output(Option<Interned<Ty>>),
 
     /// Elision is not allowed because it would need a higher-ranked lifetime,
@@ -106,7 +107,8 @@ impl Report for MissingLifetime {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let help = match self.context {
             MissingLifetimeContext::Declaration => {
-                "lifetimes can only be elided in function signatures and bodies"
+                "lifetimes can only be elided in the signatures of plain `def`s and in function \
+                 bodies"
             }
             MissingLifetimeContext::ReturnType => {
                 "an elided lifetime in a return type needs the parameters to mention exactly one \

@@ -256,7 +256,8 @@ impl Build for rayc_type::poly_var::Key {
         let storage = Storage::new();
         let obligations = Storage::new();
 
-        let mut poly_vars = match engine.get_symbol_kind(symbol_id).await {
+        let symbol_kind = engine.get_symbol_kind(symbol_id).await;
+        let mut poly_vars = match symbol_kind {
             SymbolKind::Def | SymbolKind::InstanceDef | SymbolKind::TraitDef => {
                 let parameters = engine.get_parameter_list_syntax(symbol_id).await;
                 let parent_id = engine.get_parent_global(symbol_id).await;
@@ -266,10 +267,15 @@ impl Build for rayc_type::poly_var::Key {
                     None
                 };
 
+                // Only a plain `def` introduces lifetimes for elision. An
+                // instance def must have exactly the poly vars of its trait
+                // def, and conformance cannot yet match lifetimes up to
+                // renaming.
                 discover_function_poly_vars(
                     engine,
                     parameters.as_ref(),
                     enclosing_poly_var_maps.as_deref(),
+                    symbol_kind == SymbolKind::Def,
                 )
             }
             SymbolKind::Effect

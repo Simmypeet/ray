@@ -57,14 +57,14 @@ impl Report for Diagnostic {
 }
 
 /// Returns how the parameter types of a symbol of kind `symbol_kind` treat
-/// elided lifetimes. Only function-like symbols own the lifetimes introduced
-/// for elision; see `discover_function_poly_vars`.
+/// elided lifetimes. Only a plain `def` owns lifetimes introduced for elision;
+/// see `discover_function_poly_vars`.
 const fn parameter_lifetime_elision(symbol_kind: SymbolKind) -> LifetimeElision {
     match symbol_kind {
-        SymbolKind::Def | SymbolKind::InstanceDef | SymbolKind::TraitDef => {
-            LifetimeElision::FreshParameter
-        }
-        SymbolKind::ExternDef
+        SymbolKind::Def => LifetimeElision::FreshParameter,
+        SymbolKind::InstanceDef
+        | SymbolKind::TraitDef
+        | SymbolKind::ExternDef
         | SymbolKind::EffectOperation
         | SymbolKind::Effect
         | SymbolKind::Instance
@@ -136,7 +136,8 @@ impl Build for Key {
         }
 
         if symbol_kind == SymbolKind::ExternDef {
-            if !discover_parameter_poly_vars(engine, syntax.as_ref(), Some(&poly_vars)).is_empty()
+            if !discover_parameter_poly_vars(engine, syntax.as_ref(), Some(&poly_vars), false)
+                .is_empty()
                 && let Some(span) = engine.get_span(symbol_id).await
             {
                 diagnostics.receive(Diagnostic::InvalidExternSignature(

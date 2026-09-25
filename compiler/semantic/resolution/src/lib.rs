@@ -723,11 +723,15 @@ fn discover_poly_vars(
     }
 }
 
+/// Discovers the polymorphic variables the parameter types introduce. When
+/// `introduce_elided` is set, each lifetime elided in a parameter type also
+/// introduces a fresh lifetime parameter.
 #[must_use]
 pub fn discover_parameter_poly_vars(
     engine: &TrackedEngine,
     parameters: Option<&ParameterList>,
     poly_var_stack: Option<&PolyVarStack>,
+    introduce_elided: bool,
 ) -> PolyVarMap {
     let mut poly_vars = PolyVarMap::new();
 
@@ -738,7 +742,13 @@ pub fn discover_parameter_poly_vars(
             if let Some(ty) = parameter.r#type() {
                 match ty {
                     ParameterType::Type(ty) => {
-                        discover_poly_vars(engine, &ty, &mut poly_vars, poly_var_stack, true);
+                        discover_poly_vars(
+                            engine,
+                            &ty,
+                            &mut poly_vars,
+                            poly_var_stack,
+                            introduce_elided,
+                        );
                     }
 
                     // An elided lifetime in a callable type would need a
@@ -780,14 +790,16 @@ pub fn discover_parameter_poly_vars(
     poly_vars
 }
 
-/// Discovers the polymorphic variables declared by a function signature.
+/// Discovers the polymorphic variables declared by a function signature; see
+/// [`discover_parameter_poly_vars`].
 #[must_use]
 pub fn discover_function_poly_vars(
     engine: &TrackedEngine,
     parameters: Option<&ParameterList>,
     poly_var_stack: Option<&PolyVarStack>,
+    introduce_elided: bool,
 ) -> PolyVarMap {
-    discover_parameter_poly_vars(engine, parameters, poly_var_stack)
+    discover_parameter_poly_vars(engine, parameters, poly_var_stack, introduce_elided)
 }
 
 /// A `this` path used outside a trait body.
