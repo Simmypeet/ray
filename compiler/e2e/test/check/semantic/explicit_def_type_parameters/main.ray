@@ -1,0 +1,39 @@
+struct Pair[a, b]:
+    first: a
+    second: b
+
+# OK: an explicit list declares the variables, in any order.
+def swap[b, a](pair: Pair[a, b]) -> Pair[b, a]:
+    return Pair { first = pair.second, second = pair.first }
+
+# OK: an explicit effect parameter.
+def forward[e: Effect](callback: def() -> int32 \ e) -> int32 \ e:
+    return callback()
+
+# ERROR: with an explicit list, parameter types introduce nothing, so `b` is
+# not declared.
+def undeclared[a](value: a, other: *b) -> a:
+    return value
+
+# ERROR: with an explicit list, `'l` must be declared too.
+def undeclaredLifetime[a](value: &'l a) -> &'l a:
+    return value
+
+def implicit(value: a) -> a:
+    return value
+
+trait Scope[a]:
+    # ERROR: an explicit parameter cannot shadow the trait's `a`.
+    def shadow[a](value: *a) -> int32
+
+def main() -> int32:
+    let pair = swap[int32, bool](Pair { first = true, second = 1 })
+    let inferred = swap(pair)
+
+    # ERROR: `implicit` declares no explicit type parameters.
+    let noList = implicit[int32](1)
+
+    # ERROR: `swap` declares two type parameters.
+    let arity = swap[int32](pair)
+
+    return 0

@@ -1,0 +1,64 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: duplicate polymorphic variable `a`
+  ╭▸ compiler/e2e/test/check/semantic/poly_var_shadowing/main.ray:6:16
+  │
+4 │ trait Outer[a, 'l, e: Effect]:
+  │             ─ the original polymorphic variable is here
+5 │     # ERROR: associated type parameters cannot shadow the trait's.
+6 │     type Inner[a]
+  ╰╴               ━ this polymorphic variable is duplicated
+
+[error]: duplicate polymorphic variable `'l`
+  ╭▸ compiler/e2e/test/check/semantic/poly_var_shadowing/main.ray:7:19
+  │
+4 │ trait Outer[a, 'l, e: Effect]:
+  │                ── the original polymorphic variable is here
+  ‡
+7 │     type Borrowed['l]
+  ╰╴                  ━━ this polymorphic variable is duplicated
+
+[error]: duplicate polymorphic variable `e`
+  ╭▸ compiler/e2e/test/check/semantic/poly_var_shadowing/main.ray:8:14
+  │
+4 │ trait Outer[a, 'l, e: Effect]:
+  │                    ─ the original polymorphic variable is here
+  ‡
+8 │     type Row[e: Effect]: Effect
+  ╰╴             ━ this polymorphic variable is duplicated
+
+[error]: duplicate polymorphic variable `a`
+   ╭▸ compiler/e2e/test/check/semantic/poly_var_shadowing/main.ray:11:32
+   │
+ 4 │ trait Outer[a, 'l, e: Effect]:
+   │             ─ the original polymorphic variable is here
+   ‡
+11 │     def named(x: int32) given (a: Show) -> int32
+   ╰╴                               ━ this polymorphic variable is duplicated
+
+[error]: duplicate polymorphic variable `a`
+   ╭▸ compiler/e2e/test/check/semantic/poly_var_shadowing/main.ray:18:16
+   │
+16 │ inst Impl[a] for Outer[a, 'static, {}]:
+   │           ─ the original polymorphic variable is here
+17 │     # ERROR: an instance type parameter cannot shadow the instance's `a`.
+18 │     type Inner[a] = int32
+   ╰╴               ━ this polymorphic variable is duplicated
+
+[error]: duplicate polymorphic variable `a`
+   ╭▸ compiler/e2e/test/check/semantic/poly_var_shadowing/main.ray:23:32
+   │
+16 │ inst Impl[a] for Outer[a, 'static, {}]:
+   │           ─ the original polymorphic variable is here
+   ‡
+23 │     def named(x: int32) given (a: Show) -> int32:
+   ╰╴                               ━ this polymorphic variable is duplicated
+
+[error]: Compilation aborted due to 6 error(s)
+
+
+
+stdout:

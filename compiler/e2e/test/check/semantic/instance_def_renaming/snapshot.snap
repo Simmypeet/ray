@@ -1,0 +1,101 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: instance member `pick`: parameter 1 type mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:13:20
+   │
+ 2 │     def pick[a, b](first: *a, second: *b) -> *a
+   │                    ───────── the corresponding trait declaration is here
+   ‡
+13 │     def pick[x, y](first: *y, second: *x) -> *y:
+   ╰╴                   ━━━━━━━━━ expected `*x`, found `*y`
+
+[error]: instance member `pick`: parameter 2 type mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:13:31
+   │
+ 2 │     def pick[a, b](first: *a, second: *b) -> *a
+   │                               ────────── the corresponding trait declaration is here
+   ‡
+13 │     def pick[x, y](first: *y, second: *x) -> *y:
+   ╰╴                              ━━━━━━━━━━ expected `*y`, found `*x`
+
+[error]: instance member `pick`: return type mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:13:43
+   │
+ 2 │     def pick[a, b](first: *a, second: *b) -> *a
+   │                                           ───── the corresponding trait declaration is here
+   ‡
+13 │     def pick[x, y](first: *y, second: *x) -> *y:
+   ╰╴                                          ━━━━━ expected `*x`, found `*y`
+
+[error]: instance member `pick`: polymorphic variable `b` has no counterpart
+   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:25:9
+   │
+ 2 │     def pick[a, b](first: *a, second: *b) -> *a
+   │                 ─ the trait's variable occurs here
+   ‡
+25 │     def pick(first: *x, second: *(y, int32)) -> *x:
+   │         ━━━━ no variable of this implementation's signature occurs where `b` occurs in the trait's
+   │
+   ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
+
+[error]: instance member `pick`: polymorphic variable `b` has no counterpart
+   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:30:9
+   │
+ 2 │     def pick[a, b](first: *a, second: *b) -> *a
+   │                 ─ the trait's variable occurs here
+   ‡
+30 │     def pick(first: *x, second: Handler[{Read[y]}]) -> *x:
+   │         ━━━━ no variable of this implementation's signature occurs where `b` occurs in the trait's
+   │
+   ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
+
+[error]: instance member `make`: type parameters must be declared explicitly
+   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:39:9
+   │
+34 │     def make[a, b](value: *a) -> *a
+   │                 ─ the trait declares this variable, but its signature does not mention it
+   ‡
+39 │     def make(value: *x) -> *x:
+   │         ━━━━ the trait's `b` cannot be matched with a variable this implementation introduces from its parameter types
+   │
+   ╰ help: declare this implementation's type parameters, as in `def name[a, b](...)`, to match them with the trait's in order
+
+[error]: instance member `keep`: given parameter count mismatch
+   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:61:9
+   │
+57 │     def keep(value: *a) given (drop: core.Drop[a]) -> *a
+   │         ──── the corresponding trait declaration is here
+   ‡
+61 │     def keep(value: *a) -> *a:
+   ╰╴        ━━━━ expected 1 given parameters, found 0
+
+[error]: instance member `swap`: polymorphic variable `a` has no counterpart
+   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:84:9
+   │
+48 │     def swap(first: *a, second: *b) -> *b
+   │                      ─ the trait's variable occurs here
+   ‡
+84 │     def swap[x, y](first: *int32, second: *y) -> *y:
+   │         ━━━━ no variable of this implementation's signature occurs where `a` occurs in the trait's
+   │
+   ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
+
+[error]: instance member `swap`: polymorphic variable `b` has no counterpart
+   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:89:9
+   │
+48 │     def swap(first: *a, second: *b) -> *b
+   │                                  ─ the trait's variable occurs here
+   ‡
+89 │     def swap[x, y](first: *x, second: *x) -> *x:
+   │         ━━━━ no variable of this implementation's signature occurs where `b` occurs in the trait's
+   │
+   ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
+
+[error]: Compilation aborted due to 9 error(s)
+
+
+
+stdout:

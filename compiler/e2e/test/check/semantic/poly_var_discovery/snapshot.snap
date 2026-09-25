@@ -1,0 +1,40 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: symbol `a` is not found
+   ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:55:33
+   │
+55 │ def bareLifetime(reference: Ref[a, int32]) -> int32:
+   ╰╴                                ━ symbol `a` is not found
+
+[error]: expected a value type or an associated type projection
+   ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:59:43
+   │
+59 │ def effectName(callback: def() -> int32 \ IO) -> int32:
+   ╰╴                                          ━━
+
+[error]: symbol `myElem` is not found
+   ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:67:23
+   │
+67 │ def camelName(value: *myElem) -> int32:
+   ╰╴                      ━━━━━━ symbol `myElem` is not found
+
+[error]: type argument arity mismatch
+   ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:71:36
+   │
+71 │ def excessArgument(handler: Handler[{}, t]) -> int32:
+   ╰╴                                   ━━━━━━━ expected 1, found 2
+
+[error]: symbol `t` is not found
+   ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:71:41
+   │
+71 │ def excessArgument(handler: Handler[{}, t]) -> int32:
+   ╰╴                                        ━ symbol `t` is not found
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

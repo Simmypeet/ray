@@ -1,0 +1,75 @@
+eff IO:
+    def output()
+
+eff State[t]:
+    def get() -> t
+
+struct Handler[e: Effect]:
+    value: int32
+
+struct Ref['a, t]:
+    value: &'a t
+
+trait Scoped[e: Effect]:
+    type Row[r: Effect]: Effect
+
+    # OK: the effect-row tail reuses the trait's `e` rather than introducing
+    # its own, so the instance definition conforms.
+    def tail(handler: Handler[{IO | e}]) -> int32
+
+    # OK: `r` instantiates the effect-row parameter of `this.Row`.
+    def project(handler: Handler[this.Row[r]]) -> int32
+
+inst Concrete for Scoped[{}]:
+    type Row[r: Effect] = {IO | r}
+    def tail(handler: Handler[{IO}]) -> int32:
+        return 0
+    def project(handler: Handler[Concrete.Row[r]]) -> int32:
+        return 0
+
+# OK: `e` instantiates an effect-row parameter, so it is an effect variable.
+def effectArgument(handler: Handler[e], callback: def() -> int32 \ e) -> int32:
+    return 0
+
+# OK: a type argument of an effect label introduces a variable.
+def labelArgument(callback: def() -> int32 \ {State[t]}) -> int32:
+    return 0
+
+# OK: `'a` is a lifetime and `t` is a type.
+def lifetimeArgument(reference: Ref['a, t]) -> &'a t:
+    return reference.value
+
+trait Rows[t]:
+    type Row[r: Effect]: Effect
+
+# OK: `d` is this definition's own dictionary, so `r` instantiates the
+# effect-row parameter of `Rows.Row` and is an effect variable. `d`'s trait
+# reference mentions `a`, which is discovered from the first parameter.
+def ownGiven(value: *a, handler: Handler[d.Row[r]]) given (d: Rows[a]) -> int32:
+    return 0
+
+def ownGivenCallable(callback: def() -> int32 \ d.Row[r]) given (d: Rows[int32]) -> int32:
+    return 0
+
+# ERROR: a bare name in a lifetime position does not introduce a variable.
+def bareLifetime(reference: Ref[a, int32]) -> int32:
+    return 0
+
+# ERROR: `IO` names an effect, not an effect-row variable.
+def effectName(callback: def() -> int32 \ IO) -> int32:
+    return 0
+
+# OK: a lowercase name of any length introduces a variable.
+def longNames(value: *elem, other: *row_type, callback: def() -> int32 \ effects) -> int32:
+    return 0
+
+# ERROR: `myElem` is not a lowercase name, so it introduces no variable.
+def camelName(value: *myElem) -> int32:
+    return 0
+
+# ERROR: an argument beyond the arity introduces no variable.
+def excessArgument(handler: Handler[{}, t]) -> int32:
+    return 0
+
+def main() -> int32:
+    return 0

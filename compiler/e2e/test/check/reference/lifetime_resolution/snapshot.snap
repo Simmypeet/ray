@@ -9,7 +9,7 @@ stderr:
 6 │     value: &'a int32
   │             ━━ lifetime `'a` is not declared
   │
-  ╰ help: a `def` introduces the lifetimes its parameter types mention; structs, traits, effects and instances must declare their lifetimes
+  ╰ help: a `def` without a type-parameter list introduces the lifetimes its parameter types mention; every other declaration must declare its lifetimes
 
 [error]: invalid lifetime parameter name
   ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:9:17
@@ -35,7 +35,7 @@ stderr:
 17 │ def returnOnly() -> &'b int32:
    │                      ━━ lifetime `'b` is not declared
    │
-   ╰ help: a `def` introduces the lifetimes its parameter types mention; structs, traits, effects and instances must declare their lifetimes
+   ╰ help: a `def` without a type-parameter list introduces the lifetimes its parameter types mention; every other declaration must declare its lifetimes
 
 [error]: use of undeclared lifetime `'c`
    ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:29:59
@@ -43,7 +43,7 @@ stderr:
 29 │ def undeclaredOutlives(first: &'a int32) -> () where ('a: 'c):
    │                                                           ━━ lifetime `'c` is not declared
    │
-   ╰ help: a `def` introduces the lifetimes its parameter types mention; structs, traits, effects and instances must declare their lifetimes
+   ╰ help: a `def` without a type-parameter list introduces the lifetimes its parameter types mention; every other declaration must declare its lifetimes
 
 [error]: Compilation aborted due to 6 error(s)
 

@@ -21,14 +21,14 @@ stderr:
 13 │     type Constraint[c] given (relation: Relation[c, int32]) = c
    ╰╴                              ━━━━━━━━ expected `main.Relation[int32, c]`, found `main.Relation[c, int32]`
 
-[error]: instance member `Kind`: polymorphic variable 1 kind mismatch
-   ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:14:22
+[error]: instance member `Kind`: polymorphic variable count mismatch
+   ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:14:10
    │
  7 │     type Kind[b]
-   │               ─ the corresponding trait declaration is here
+   │          ──── the corresponding trait declaration is here
    ‡
 14 │     type Kind given (relation: Relation[int32, int32]) = int32
-   ╰╴                     ━━━━━━━━ expected type, found instance
+   ╰╴         ━━━━ expected 1 polymorphic variables, found 0
 
 [error]: instance member `AsMethod`: member kind mismatch
    ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:15:9

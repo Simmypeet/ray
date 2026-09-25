@@ -1,0 +1,59 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: symbol `b` is not found
+   ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:15:37
+   │
+15 │ def undeclared[a](value: a, other: *b) -> a:
+   ╰╴                                    ━ symbol `b` is not found
+
+[error]: use of undeclared lifetime `'l`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:19:35
+   │
+19 │ def undeclaredLifetime[a](value: &'l a) -> &'l a:
+   │                                   ━━ lifetime `'l` is not declared
+   │
+   ╰ help: a `def` without a type-parameter list introduces the lifetimes its parameter types mention; every other declaration must declare its lifetimes
+
+[error]: use of undeclared lifetime `'l`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:19:45
+   │
+19 │ def undeclaredLifetime[a](value: &'l a) -> &'l a:
+   │                                             ━━ lifetime `'l` is not declared
+   │
+   ╰ help: a `def` without a type-parameter list introduces the lifetimes its parameter types mention; every other declaration must declare its lifetimes
+
+[error]: duplicate polymorphic variable `a`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:27:16
+   │
+25 │ trait Scope[a]:
+   │             ─ the original polymorphic variable is here
+26 │     # ERROR: an explicit parameter cannot shadow the trait's `a`.
+27 │     def shadow[a](value: *a) -> int32
+   ╰╴               ━ this polymorphic variable is duplicated
+
+[error]: explicit type arguments are not allowed for a definition
+   ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:34:26
+   │
+34 │     let noList = implicit[int32](1)
+   ╰╴                         ━━━━━━━ these type parameters are implicit
+
+[error]: type argument arity mismatch
+   ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:37:21
+   │
+37 │     let arity = swap[int32](pair)
+   ╰╴                    ━━━━━━━ expected 2, found 1
+
+[error]: mismatched argument types in function call: expected `Pair[<error>, int32]`, but found `Pair[int32, bool]`
+   ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:37:29
+   │
+37 │     let arity = swap[int32](pair)
+   ╰╴                            ━━━━
+
+[error]: Compilation aborted due to 7 error(s)
+
+
+
+stdout:
