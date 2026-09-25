@@ -4,7 +4,9 @@ use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::{Obligation, discover_function_poly_vars, resolver::Resolver};
+use rayc_resolution::{
+    Obligation, discover_function_poly_vars, lifetime::lifetime_parameter_name, resolver::Resolver,
+};
 use rayc_semantic_element::callable_parameter::{CallableParameter, get_callable_parameters};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
@@ -17,6 +19,7 @@ use rayc_symbol::{
         get_given_parameter_list_syntax, get_parameter_list_syntax, get_type_parameter_list_syntax,
     },
 };
+use rayc_syntax::{effect::TypeParameter, r#type::Lifetime as LifetimeSyntax};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap, PolyVarOrigin, get_enclosing_poly_var_maps},
     trait_ref::TraitRef,
@@ -74,6 +77,40 @@ impl Report for DuplicatePolyVar {
 pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
     DuplicatePolyVar(DuplicatePolyVar),
+    ReservedLifetimeName(ReservedLifetimeName),
+}
+
+/// A lifetime parameter declared as `'static` or `'_`.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct ReservedLifetimeName {
+    span: RelativeSpan,
+}
+
+impl Report for ReservedLifetimeName {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("invalid lifetime parameter name")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("`'static` and `'_` cannot be declared as lifetime parameters")
+                    .build(),
+            )
+            .build()
+    }
 }
 
 impl Report for Diagnostic {
@@ -81,8 +118,37 @@ impl Report for Diagnostic {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::DuplicatePolyVar(diagnostic) => diagnostic.report(engine).await,
+            Self::ReservedLifetimeName(diagnostic) => diagnostic.report(engine).await,
         }
     }
+}
+
+/// Returns the lifetime parameter `lifetime` declares, or `None` after
+/// reporting a lifetime that cannot be declared.
+fn lifetime_parameter(
+    engine: &TrackedEngine,
+    lifetime: &LifetimeSyntax,
+    storage: &Storage<Diagnostic>,
+) -> Option<PolyVar> {
+    let identifier = lifetime.identifier();
+    let identifier = match identifier {
+        Some(identifier) if !lifetime.is_placeholder() => identifier,
+
+        // `'static` and `'_` are not names.
+        Some(_) | None => {
+            if lifetime.name().is_some() {
+                storage.receive(Diagnostic::ReservedLifetimeName(ReservedLifetimeName {
+                    span: lifetime.span(),
+                }));
+            }
+            return None;
+        }
+    };
+
+    Some(PolyVar::new_lifetime(
+        engine.intern_unsized(lifetime_parameter_name(&identifier.kind.0)),
+        lifetime.span(),
+    ))
 }
 
 fn insert_poly_var(poly_vars: &mut PolyVarMap, poly_var: PolyVar, storage: &Storage<Diagnostic>) {
@@ -200,7 +266,11 @@ impl Build for rayc_type::poly_var::Key {
                     None
                 };
 
-                discover_function_poly_vars(parameters.as_ref(), enclosing_poly_var_maps.as_deref())
+                discover_function_poly_vars(
+                    engine,
+                    parameters.as_ref(),
+                    enclosing_poly_var_maps.as_deref(),
+                )
             }
             SymbolKind::Effect
             | SymbolKind::Instance
@@ -215,6 +285,17 @@ impl Build for rayc_type::poly_var::Key {
                     engine.get_type_parameter_list_syntax(symbol_id).await
                 {
                     for parameter in type_parameters.parameters() {
+                        let parameter = match parameter {
+                            TypeParameter::Lifetime(lifetime) => {
+                                if let Some(variable) =
+                                    lifetime_parameter(engine, &lifetime, &storage)
+                                {
+                                    insert_poly_var(&mut poly_vars, variable, &storage);
+                                }
+                                continue;
+                            }
+                            TypeParameter::Variable(parameter) => parameter,
+                        };
                         let Some(identifier) = parameter.name() else {
                             continue;
                         };
@@ -227,8 +308,10 @@ impl Build for rayc_type::poly_var::Key {
                             rayc_type::ty::TyKind::EffectRow => {
                                 PolyVar::new_effect(identifier.kind.0.clone(), identifier.span())
                             }
-                            rayc_type::ty::TyKind::Instance => {
-                                unreachable!("kind ascriptions cannot declare dictionaries")
+                            rayc_type::ty::TyKind::Instance | rayc_type::ty::TyKind::Lifetime => {
+                                unreachable!(
+                                    "kind ascriptions cannot declare dictionaries or lifetimes"
+                                )
                             }
                         };
                         insert_poly_var(&mut poly_vars, variable, &storage);

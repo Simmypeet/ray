@@ -241,7 +241,8 @@ async fn valid_explicit(
             | Ty::Inference(_)
             | Ty::PolyVar(_)
             | Ty::SelfInstance(_)
-            | Ty::EffectRow(_) => return false,
+            | Ty::EffectRow(_)
+            | Ty::Lifetime(_) => return false,
         }
     }
 
@@ -318,9 +319,9 @@ impl Evaluator<'_> {
             match &*ty {
                 Ty::PolyVar(_) => Ok(self.external(ty)),
                 Ty::Application(application) => match application.view() {
-                    ApplicationView::Primitive(_) | ApplicationView::Pointer(_) => {
-                        Ok(DictionaryExpr::NoOp(ty))
-                    }
+                    ApplicationView::Primitive(_)
+                    | ApplicationView::Pointer(_)
+                    | ApplicationView::Reference(_) => Ok(DictionaryExpr::NoOp(ty)),
                     ApplicationView::Tuple(tuple) => {
                         let mut elements = Vec::with_capacity(tuple.args().len());
                         for element in tuple.args() {
@@ -398,7 +399,7 @@ impl Evaluator<'_> {
                     | ApplicationView::NominalDropInstance(_)
                     | ApplicationView::Error => Err(DropPlanError::MissingFieldDictionary(ty)),
                 },
-                Ty::Inference(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => {
+                Ty::Inference(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {
                     Err(DropPlanError::MissingFieldDictionary(ty))
                 }
             }

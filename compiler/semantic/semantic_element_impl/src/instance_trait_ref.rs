@@ -51,6 +51,7 @@ pub struct MissingDefinition {
 enum ReservedDropHeadKind {
     Primitive,
     Pointer,
+    Reference,
     Tuple,
 }
 
@@ -156,6 +157,7 @@ impl Report for ReservedDropImplementation {
         let type_kind = match self.kind {
             ReservedDropHeadKind::Primitive => "primitive",
             ReservedDropHeadKind::Pointer => "pointer",
+            ReservedDropHeadKind::Reference => "reference",
             ReservedDropHeadKind::Tuple => "tuple",
         };
 
@@ -249,6 +251,7 @@ fn classify_drop_head(ty: &Ty) -> DropHead {
             ApplicationView::Struct(_) => DropHead::Struct,
             ApplicationView::Primitive(_) => DropHead::Reserved(ReservedDropHeadKind::Primitive),
             ApplicationView::Pointer(_) => DropHead::Reserved(ReservedDropHeadKind::Pointer),
+            ApplicationView::Reference(_) => DropHead::Reserved(ReservedDropHeadKind::Reference),
             ApplicationView::Tuple(_) => DropHead::Reserved(ReservedDropHeadKind::Tuple),
             ApplicationView::InstanceAssociated(_) => {
                 DropHead::NonNominal(NonNominalDropHeadKind::AssociatedType)
@@ -265,7 +268,7 @@ fn classify_drop_head(ty: &Ty) -> DropHead {
             ApplicationView::Error => DropHead::Error,
         },
         Ty::PolyVar(_) => DropHead::NonNominal(NonNominalDropHeadKind::TypeVariable),
-        Ty::Inference(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) => {
+        Ty::Inference(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {
             DropHead::NonNominal(NonNominalDropHeadKind::Other)
         }
     }

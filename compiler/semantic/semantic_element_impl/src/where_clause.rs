@@ -4,7 +4,7 @@ use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::resolver::Resolver;
+use rayc_resolution::{lifetime::LifetimeElision, resolver::Resolver};
 use rayc_semantic_element::callable_parameter::get_callable_parameters;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
@@ -13,7 +13,7 @@ use rayc_symbol::{
     symbol_kind::{SymbolKind, get_symbol_kind},
     syntax::get_where_clause_syntax,
 };
-use rayc_syntax::where_clause::Constraint;
+use rayc_syntax::where_clause::{Constraint, OutlivesPredicate};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarOrigin, get_enclosing_poly_var_maps, get_poly_var_map},
     ty::{Ty, TyKind},
@@ -222,6 +222,9 @@ impl Build for Key {
                         equality.span(),
                     ));
                 }
+                Constraint::OutlivesPredicate(predicate) => {
+                    resolve_outlives_predicate(&mut resolver, &predicate).await;
+                }
                 Constraint::MarkerPredicate(predicate) => {
                     // Incomplete predicates already have parser diagnostics.
                     let (Some(implementor_syntax), Some(marker_syntax)) =
@@ -278,6 +281,21 @@ impl Build for Key {
 
 register_build!(Key);
 
+/// Resolves the names in an outlives predicate.
+///
+/// Outlives predicates become semantic predicates together with the borrow
+/// checker's outlives relation. Until then only their names are resolved, so
+/// that mistakes are reported.
+async fn resolve_outlives_predicate(resolver: &mut Resolver<'_>, predicate: &OutlivesPredicate) {
+    if let Some(bounded) = predicate.bounded() {
+        let _ = resolver.infer_type_term(&bounded).await;
+    }
+    if let Some(bound) = predicate.bound() {
+        let _ = resolver.resolve_lifetime(&bound).await;
+    }
+    // TODO: implement outlives predicate and add it
+}
+
 async fn elaborate_callable(
     engine: &TrackedEngine,
     resolver: &mut Resolver<'_>,
@@ -288,6 +306,9 @@ async fn elaborate_callable(
     let map = engine.get_poly_var_map(entry.owner()).await;
     let id = map.find_generated(&PolyVarOrigin::CallableDictionary(entry.occurrence())).unwrap();
     let dictionary = Ty::new_poly_var(GlobalPolyVarID::new(entry.owner(), id), engine);
+
+    // The callable's own signature cannot elide lifetimes.
+    let elision = resolver.replace_lifetime_elision(LifetimeElision::HigherRanked);
 
     let mut args = Vec::new();
     if let Some(parameters) = syntax.parameters() {
@@ -322,6 +343,7 @@ async fn elaborate_callable(
         // If no effect row is specified, the callable has an empty effect row.
         Ty::new_effect_row([], None, engine)
     };
+    resolver.replace_lifetime_elision(elision);
 
     for (role, right, span) in [
         (
