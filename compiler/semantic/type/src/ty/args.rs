@@ -2,7 +2,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 
 use crate::{
     reduce::Reduce,
-    rewrite::{Rewrite, TyRewriter},
+    rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::Substitutable,
     ty::{Ty, inference::Inference},
 };
@@ -91,6 +91,16 @@ impl Rewrite for Args {
         engine: &rayc_qbice::TrackedEngine,
     ) -> Option<Self> {
         self.args.rewrite(rewriter, engine).map(|args| Self { args })
+    }
+}
+
+impl RewriteAsync for Args {
+    async fn rewrite_async(
+        &self,
+        rewriter: &mut impl TyRewriterAsync,
+        engine: &rayc_qbice::TrackedEngine,
+    ) -> Option<Self> {
+        self.args.rewrite_async(rewriter, engine).await.map(|args| Self { args })
     }
 }
 

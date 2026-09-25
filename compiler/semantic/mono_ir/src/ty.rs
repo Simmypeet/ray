@@ -354,6 +354,10 @@ pub async fn lower_type(
 ) -> Interned<MonoType> {
     let ty = ty.apply_subst_or_clone(substitution, solver.engine());
     let ty = solver.normalize(&ty).await;
+
+    // Lifetimes never affect code generation. Erasing them makes nominal
+    // types that differ only in lifetimes lower to the same type.
+    let ty = Ty::erase_lifetimes(&ty, solver.engine()).await;
     lower_concrete_type(solver, &ty).await
 }
 
@@ -389,6 +393,15 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
             ApplicationView::Pointer(pointer) => {
                 let pointee_type = Box::pin(lower_concrete_type(solver, pointer.pointee())).await;
                 MonoType::new_pointer(pointee_type, lower_mutability(pointer.mutability()), engine)
+            }
+            // A reference has the same representation as a raw pointer.
+            ApplicationView::Reference(reference) => {
+                let pointee_type = Box::pin(lower_concrete_type(solver, reference.pointee())).await;
+                MonoType::new_pointer(
+                    pointee_type,
+                    lower_mutability(reference.mutability()),
+                    engine,
+                )
             }
             ApplicationView::Struct(struct_view) => {
                 let substitution = struct_view.create_subst(engine).await;
@@ -429,6 +442,9 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
         Ty::EffectRow(_) => {
             panic!("compiler-internal invariant violation: effect row used as a value type")
         }
+        Ty::Lifetime(_) => {
+            panic!("compiler-internal invariant violation: lifetime used as a value type")
+        }
     }
 }
 
@@ -440,6 +456,7 @@ pub async fn lower_effects(
 ) -> Vec<MonoEffectInstance> {
     let effect = effect.apply_subst_or_clone(substitution, solver.engine());
     let effect = solver.normalize(&effect).await;
+    let effect = Ty::erase_lifetimes(&effect, solver.engine()).await;
     lower_concrete_effects(solver.engine(), &effect).await
 }
 
@@ -468,7 +485,7 @@ async fn lower_concrete_effects(
 }
 
 #[extend]
-pub fn instantiate_effect(
+pub async fn instantiate_effect(
     self: &TrackedEngine,
     effect_id: GlobalSymbolID,
     substitution: &Subst,
@@ -476,6 +493,7 @@ pub fn instantiate_effect(
 ) -> MonoEffectInstance {
     let mut substitution = substitution.clone();
     substitution.apply_mut_subst(owner_substitution, self);
+    substitution.erase_lifetimes(self).await;
     MonoEffectInstance::new(effect_id, substitution)
 }
 

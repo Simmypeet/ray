@@ -4,7 +4,7 @@ use rayc_symbol::GlobalSymbolID;
 
 use crate::{
     reduce::Reduce,
-    rewrite::{Rewrite, TyRewriter},
+    rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::Substitutable,
     ty::{
         Ty,
@@ -51,6 +51,18 @@ impl Substitutable for Interned<EffectLabel> {
 impl Rewrite for Interned<EffectLabel> {
     fn rewrite(&self, rewriter: &mut impl TyRewriter, engine: &TrackedEngine) -> Option<Self> {
         self.args.rewrite(rewriter, engine).map(|args| {
+            engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
+        })
+    }
+}
+
+impl RewriteAsync for Interned<EffectLabel> {
+    async fn rewrite_async(
+        &self,
+        rewriter: &mut impl TyRewriterAsync,
+        engine: &TrackedEngine,
+    ) -> Option<Self> {
+        self.args.rewrite_async(rewriter, engine).await.map(|args| {
             engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
         })
     }
@@ -187,6 +199,30 @@ impl Rewrite for EffectRow {
         // The labels are visited before the tail.
         let new_labels = self.labels.rewrite(rewriter, engine);
         let new_tail = self.tail.as_ref().and_then(|tail| tail.rewrite(rewriter, engine));
+
+        if new_labels.is_none() && new_tail.is_none() {
+            return None;
+        }
+
+        Some(Self {
+            labels: new_labels.unwrap_or_else(|| self.labels.clone()),
+            tail: new_tail.or_else(|| self.tail.clone()),
+        })
+    }
+}
+
+impl RewriteAsync for EffectRow {
+    async fn rewrite_async(
+        &self,
+        rewriter: &mut impl TyRewriterAsync,
+        engine: &TrackedEngine,
+    ) -> Option<Self> {
+        // The labels are visited before the tail.
+        let new_labels = self.labels.rewrite_async(rewriter, engine).await;
+        let new_tail = match &self.tail {
+            Some(tail) => tail.rewrite_async(rewriter, engine).await,
+            None => None,
+        };
 
         if new_labels.is_none() && new_tail.is_none() {
             return None;

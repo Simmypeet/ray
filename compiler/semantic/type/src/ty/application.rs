@@ -7,7 +7,7 @@ use super::{InferenceConstraint, Mutability, Primitive, Ty, TyKind, inference::I
 use crate::{
     poly_var::build_subst_from_args,
     reduce::Reduce,
-    rewrite::{Rewrite, TyRewriter},
+    rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::{Subst, Substitutable},
 };
 
@@ -486,6 +486,19 @@ impl Reduce for Application {
 impl Rewrite for Application {
     fn rewrite(&self, rewriter: &mut impl TyRewriter, engine: &TrackedEngine) -> Option<Self> {
         self.args.rewrite(rewriter, engine).map(|args| Self { constant: self.constant, args })
+    }
+}
+
+impl RewriteAsync for Application {
+    async fn rewrite_async(
+        &self,
+        rewriter: &mut impl TyRewriterAsync,
+        engine: &TrackedEngine,
+    ) -> Option<Self> {
+        self.args
+            .rewrite_async(rewriter, engine)
+            .await
+            .map(|args| Self { constant: self.constant, args })
     }
 }
 

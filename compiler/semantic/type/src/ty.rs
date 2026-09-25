@@ -11,7 +11,7 @@ use rayc_symbol::{GlobalSymbolID, name::get_name};
 use crate::{
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap, get_poly_var_map},
     reduce::Reduce,
-    rewrite::{Rewrite, TyRewriter},
+    rewrite::{RewriteAsync, TyRewriterAsync},
     subst::{Subst, Substitutable},
     ty::{
         application::{Application, Constant, InstanceView, StructView, View as ApplicationView},
@@ -220,16 +220,15 @@ impl Ty {
         }
     }
 
-    /// Replaces every lifetime that is not a lifetime parameter with
+    /// Replaces every lifetime, lifetime parameters included, with
     /// [`Lifetime::Erased`].
     ///
     /// Lifetimes never affect code generation, so monomorphization erases
     /// them before it interns an instantiated type: `f['a]` and `f['b]` must
     /// share one instance, and `Ref['static, t]` and `Ref['a, t]` must lower
     /// to one type.
-    #[must_use]
-    pub fn erase_lifetimes(ty: &Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
-        ty.rewrite_or_clone(&mut LifetimeEraser { engine }, engine)
+    pub async fn erase_lifetimes(ty: &Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
+        ty.rewrite_async_or_clone(&mut LifetimeEraser { engine }, engine).await
     }
 
     #[must_use]
@@ -245,21 +244,25 @@ impl Ty {
     }
 }
 
-/// The [`TyRewriter`] behind [`Ty::erase_lifetimes`].
+/// The [`TyRewriterAsync`] behind [`Ty::erase_lifetimes`]. It is async
+/// because telling a lifetime parameter from other polymorphic variables needs
+/// the kind recorded in its poly var map.
 struct LifetimeEraser<'e> {
     engine: &'e TrackedEngine,
 }
 
-impl TyRewriter for LifetimeEraser<'_> {
-    fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
+impl TyRewriterAsync for LifetimeEraser<'_> {
+    async fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
+        let erased = || Ty::new_lifetime(Lifetime::Erased, self.engine);
         match &**ty {
-            Ty::Lifetime(Lifetime::Static | Lifetime::Region(_)) => {
-                Some(Ty::new_lifetime(Lifetime::Erased, self.engine))
+            Ty::Lifetime(Lifetime::Static | Lifetime::Region(_)) => Some(erased()),
+            Ty::PolyVar(poly_var) => {
+                let poly_var_map = self.engine.get_poly_var_map(poly_var.parent_id()).await;
+                (poly_var_map.kind_of(poly_var.id()) == TyKind::Lifetime).then(erased)
             }
             Ty::Lifetime(Lifetime::Erased)
             | Ty::Application(_)
             | Ty::Inference(_)
-            | Ty::PolyVar(_)
             | Ty::SelfInstance(_)
             | Ty::EffectRow(_) => None,
         }

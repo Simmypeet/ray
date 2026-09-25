@@ -119,13 +119,14 @@ impl Resolver {
                 // nominal types do not expand indefinitely at the call site.
                 let signature = self.nominal_drop_signature(instance.nominal()).await;
                 InstanceCallable::NominalDrop(
-                    MonoNominalDropInstance::new(dictionary_ty.clone()),
+                    MonoNominalDropInstance::new(&dictionary_ty, &self.solver).await,
                     signature,
                 )
             }
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Pointer(_)
+            | ApplicationView::Reference(_)
             | ApplicationView::Struct(_)
             | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Closure(_)

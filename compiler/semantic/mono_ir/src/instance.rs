@@ -44,9 +44,13 @@ impl MonoDefInstance {
             let value =
                 engine.intern(Ty::PolyVar(variable)).apply_subst_or_clone(&arguments, engine);
             let value = solver.normalize(&value).await;
+
+            // Lifetimes never affect code generation, so `f['a]` and `f['b]`
+            // share one instance.
+            let value = Ty::erase_lifetimes(&value, engine).await;
             assert!(
                 value.recursive_iter().all(|ty| match ty {
-                    Ty::Application(_) | Ty::EffectRow(_) => true,
+                    Ty::Application(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => true,
                     Ty::PolyVar(_) | Ty::Inference(_) | Ty::SelfInstance(_) => false,
                 }),
                 "definition arguments must be concrete: {value:?}"
@@ -115,12 +119,15 @@ pub struct MonoNominalDropInstance {
 }
 
 impl MonoNominalDropInstance {
-    /// Wraps an already normalized, concrete `NominalDropInstance` dictionary.
-    #[must_use]
-    pub fn new(dictionary: Interned<Ty>) -> Self {
+    /// Wraps a concrete `NominalDropInstance` dictionary. The dictionary is
+    /// normalized, even when the caller already did so, and its lifetimes are
+    /// erased. `solver` is shared so callers can reuse its state.
+    pub async fn new(dictionary: &Interned<Ty>, solver: &Solver) -> Self {
+        let dictionary = solver.normalize(dictionary).await;
+        let dictionary = Ty::erase_lifetimes(&dictionary, solver.engine()).await;
         assert!(
             dictionary.recursive_iter().all(|ty| match ty {
-                Ty::Application(_) | Ty::EffectRow(_) => true,
+                Ty::Application(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => true,
                 Ty::PolyVar(_) | Ty::Inference(_) | Ty::SelfInstance(_) => false,
             }),
             "nominal Drop dictionaries must be concrete: {dictionary:?}"

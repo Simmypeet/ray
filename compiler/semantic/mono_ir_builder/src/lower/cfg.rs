@@ -37,7 +37,8 @@ impl Builder<'_> {
                 IRProjection::Field(id) => {
                     place = place.project_struct_field(*id);
                 }
-                IRProjection::RawDeref => {
+                // References and raw pointers have the same representation.
+                IRProjection::Deref | IRProjection::RawDeref => {
                     place = place.dereference();
                 }
             }

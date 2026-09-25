@@ -150,9 +150,9 @@ impl Subst {
 
     /// Erases the lifetimes in every type this substitution maps to; see
     /// [`Ty::erase_lifetimes`].
-    pub fn erase_lifetimes(&mut self, engine: &TrackedEngine) {
+    pub async fn erase_lifetimes(&mut self, engine: &TrackedEngine) {
         for (_, ty) in self.0.iter_mut() {
-            *ty = Ty::erase_lifetimes(ty, engine);
+            *ty = Ty::erase_lifetimes(ty, engine).await;
         }
     }
 }

@@ -77,7 +77,7 @@ impl Builder<'_> {
                 self.lower_call(context, call, expression_id).await;
             }
             IRExprKind::Perform(perform) => {
-                self.lower_perform(context, perform, expression_id);
+                self.lower_perform(context, perform, expression_id).await;
             }
             IRExprKind::Handle(handle) => {
                 self.lower_handle(context, handle, expression_id).await;
