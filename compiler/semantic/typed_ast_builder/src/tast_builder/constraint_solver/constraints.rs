@@ -147,6 +147,9 @@ impl TAstBuilder {
                             PredicateConstraint::Marker(marker) => {
                                 Constraint::MarkerPredicate(marker)
                             }
+                            // Type inference ignores lifetimes; the borrow
+                            // checker re-checks outlives on the IR.
+                            PredicateConstraint::Outlives(_) => continue,
                         };
                         let root_cause_id =
                             self.constraint_solver.provenance.insert_root_cause(predicate.clone());
@@ -160,6 +163,9 @@ impl TAstBuilder {
                         .await;
                     }
                 }
+                // Type inference ignores lifetimes; the borrow checker
+                // re-checks reference well-formedness on the IR.
+                Obligation::ReferenceWf(_) => {}
             }
         }
     }

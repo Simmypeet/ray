@@ -71,6 +71,65 @@ impl Substitutable for MarkerPredicate {
     }
 }
 
+// REVIEW: Should we collapse this into a simple struct, do we really need to
+// differentiate between `Region` and `Type`?
+/// A requirement that one lifetime, or every lifetime in a type, outlives a
+/// lifetime.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub enum OutlivesPredicate {
+    /// `'longer: 'shorter`, where both operands have kind `Lifetime`.
+    Region { longer: Interned<Ty>, shorter: Interned<Ty> },
+
+    /// `ty: 'bound`, where `ty` has kind `Star` or `EffectRow`: every
+    /// lifetime in `ty` outlives `bound`.
+    Type { ty: Interned<Ty>, bound: Interned<Ty> },
+}
+
+impl OutlivesPredicate {
+    /// Returns the operand that must live longer: the longer lifetime or the
+    /// bounded type.
+    #[must_use]
+    pub const fn subject(&self) -> &Interned<Ty> {
+        match self {
+            Self::Region { longer, .. } => longer,
+            Self::Type { ty, .. } => ty,
+        }
+    }
+
+    /// Returns the lifetime that the subject must outlive.
+    #[must_use]
+    pub const fn bound(&self) -> &Interned<Ty> {
+        match self {
+            Self::Region { shorter, .. } => shorter,
+            Self::Type { bound, .. } => bound,
+        }
+    }
+
+    /// Renders the predicate as written in a where clause, such as `t: 'a`.
+    pub async fn display(&self, engine: &TrackedEngine) -> String {
+        format!("{}: {}", self.subject().display(engine).await, self.bound().display(engine).await)
+    }
+}
+
+impl Substitutable for OutlivesPredicate {
+    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+        let subject = self.subject().apply_subst(subst, engine);
+        let bound = self.bound().apply_subst(subst, engine);
+        if subject.is_none() && bound.is_none() {
+            return None;
+        }
+
+        let subject = subject.unwrap_or_else(|| self.subject().clone());
+        let bound = bound.unwrap_or_else(|| self.bound().clone());
+        Some(match self {
+            Self::Region { .. } => Self::Region { longer: subject, shorter: bound },
+            Self::Type { .. } => Self::Type { ty: subject, bound },
+        })
+    }
+}
+
 /// The requirement expressed by a where-clause predicate.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
@@ -78,6 +137,18 @@ impl Substitutable for MarkerPredicate {
 pub enum PredicateKind {
     AssociatedTypeEquality(AssociatedTypeEquality),
     Marker(MarkerPredicate),
+    Outlives(OutlivesPredicate),
+}
+
+impl PredicateKind {
+    /// Returns the outlives predicate, if this is one.
+    #[must_use]
+    pub const fn as_outlives(&self) -> Option<&OutlivesPredicate> {
+        match self {
+            Self::Outlives(predicate) => Some(predicate),
+            Self::AssociatedTypeEquality(_) | Self::Marker(_) => None,
+        }
+    }
 }
 
 impl Substitutable for PredicateKind {
@@ -87,6 +158,7 @@ impl Substitutable for PredicateKind {
                 equality.apply_subst(subst, engine).map(Self::AssociatedTypeEquality)
             }
             Self::Marker(predicate) => predicate.apply_subst(subst, engine).map(Self::Marker),
+            Self::Outlives(predicate) => predicate.apply_subst(subst, engine).map(Self::Outlives),
         }
     }
 }

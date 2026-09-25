@@ -242,6 +242,9 @@ impl TAstBuilder {
             let constraint = match obligation.constraint() {
                 PredicateConstraint::TyRelate(constraint) => Constraint::TyRelate(constraint),
                 PredicateConstraint::Marker(marker) => Constraint::MarkerPredicate(marker),
+                // Type inference ignores lifetimes; the borrow checker
+                // re-checks outlives on the IR.
+                PredicateConstraint::Outlives(_) => continue,
             };
             let predicate_cause_id =
                 self.constraint_solver.provenance.insert_root_cause(obligation.clone());

@@ -305,7 +305,8 @@ impl Reduce for Interned<Ty> {
                 (equality.left() == self && equality.right() != self)
                     .then(|| equality.right().clone())
             }
-            crate::where_clause::PredicateKind::Marker(_) => None,
+            crate::where_clause::PredicateKind::Marker(_)
+            | crate::where_clause::PredicateKind::Outlives(_) => None,
         })
     }
 }
@@ -983,6 +984,41 @@ impl Ty {
         };
 
         Some(instance_view)
+    }
+
+    #[must_use]
+    pub fn as_instance_associated_view(&self) -> Option<application::InstanceAssociatedView<'_>> {
+        let Self::Application(ty_application) = self else {
+            return None;
+        };
+
+        let ApplicationView::InstanceAssociated(view) = ty_application.view() else {
+            return None;
+        };
+
+        Some(view)
+    }
+
+    /// Returns the type arguments of an application, or nothing for any
+    /// other type.
+    pub fn interned_arguments(ty: &Interned<Self>) -> impl Iterator<Item = &Interned<Self>> {
+        let arguments = match &**ty {
+            Self::Application(application) => Some(application.interned_iter()),
+            Self::Inference(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::EffectRow(_)
+            | Self::Lifetime(_) => None,
+        };
+        arguments.into_iter().flatten()
+    }
+
+    /// Returns whether this lifetime takes part in named-lifetime outlives
+    /// checks. Erased lifetimes are checked on the IR instead, and errors
+    /// were already reported.
+    #[must_use]
+    pub fn is_checked_lifetime(&self) -> bool {
+        *self != Self::Lifetime(Lifetime::Erased) && !self.contains_error()
     }
 
     #[must_use]

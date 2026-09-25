@@ -461,7 +461,7 @@ impl Application {
         }
     }
 
-    pub(super) fn interned_iter(&self) -> impl Iterator<Item = &Interned<Ty>> { self.args.iter() }
+    pub(crate) fn interned_iter(&self) -> impl Iterator<Item = &Interned<Ty>> { self.args.iter() }
 
     pub(super) fn iter(&self) -> impl Iterator<Item = &Ty> {
         self.args.iter().map(std::convert::AsRef::as_ref)
