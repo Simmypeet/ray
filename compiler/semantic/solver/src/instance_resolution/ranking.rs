@@ -1,6 +1,5 @@
-use rayc_semantic_element::instance_trait_ref::get_instance_trait_ref;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::trait_ref::TraitRef;
+use rayc_type::trait_ref::{TraitRef, get_instance_trait_ref};
 
 use super::{InstanceResolutionError, InstanceResolutionResult, ResolvedInstance};
 use crate::Solver;

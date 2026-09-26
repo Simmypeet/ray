@@ -615,7 +615,7 @@ impl Solver {
         let where_clause = self.engine().get_where_clause(instance_id).await;
         extend_unique_obligations(
             &mut obligations,
-            where_clause.iter().map(|predicate| {
+            where_clause.predicates().map(|predicate| {
                 InstanceResolutionObligation::new(
                     instance_id,
                     predicate.kind().apply_subst_or_clone(&subst, self.engine()),

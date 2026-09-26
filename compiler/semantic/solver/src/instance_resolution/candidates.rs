@@ -1,12 +1,9 @@
-use rayc_semantic_element::{
-    all_instance_implements_trait::get_all_instance_implements_trait,
-    instance_trait_ref::get_instance_trait_ref,
-};
+use rayc_semantic_element::all_instance_implements_trait::get_all_instance_implements_trait;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarID, PolyVarMap, get_poly_var_map},
     subst::Subst,
-    trait_ref::TraitRef,
+    trait_ref::{TraitRef, get_instance_trait_ref},
 };
 
 use crate::{Solver, instance_resolution::InstanceResolutionError};

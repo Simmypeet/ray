@@ -8,9 +8,9 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{GlobalSymbolID, parent::scope_walker, symbol_kind::get_symbol_kind};
 use rayc_type::where_clause::{PredicateKind, get_where_clause};
 
-/// Collects predicates from the site outward, preserving declaration order
-/// within each clause. Nearer scopes therefore take precedence during
-/// reduction.
+/// Collects predicates from the site outward, implied bounds included,
+/// preserving declaration order within each clause. Nearer scopes therefore
+/// take precedence during reduction.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
@@ -31,8 +31,13 @@ pub async fn givens_executor(
     while let Some(symbol_id) = scopes.next().await {
         let symbol_id = site.target_id.make_global(symbol_id);
         if engine.get_symbol_kind(symbol_id).await.has_where_clause() {
-            let clause = engine.get_where_clause(symbol_id).await;
-            givens.extend(clause.iter().map(|predicate| predicate.kind().clone()));
+            givens.extend(
+                engine
+                    .get_where_clause(symbol_id)
+                    .await
+                    .predicates()
+                    .map(|predicate| predicate.kind().clone()),
+            );
         }
     }
     engine.intern_unsized(givens)

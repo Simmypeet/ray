@@ -196,10 +196,19 @@ impl Solver {
                                 self.evaluate_marker_goal(predicate).await
                             }
 
+                            // TODO: we'll have to properly investigate this.
+                            // Sometimes, these predicates are specified because
+                            // it has to conform to a where-clause requirement
+                            // when naming the marker head.
+
+                            // Lifetimes never decide marker entailment, so
+                            // an outlives premise, such as a bound implied by
+                            // the implementor, is not checked here.
+                            PredicateKind::Outlives(_) => true,
+
                             // shouldn't happen because marker implementation predicates can only
                             // be marker predicates
-                            PredicateKind::AssociatedTypeEquality(_)
-                            | PredicateKind::Outlives(_) => false,
+                            PredicateKind::AssociatedTypeEquality(_) => false,
                         };
                         entailed &= premise;
                     }
@@ -246,7 +255,7 @@ impl Solver {
 
             return Some(ExplicitMarkerRule::Positive(
                 clause
-                    .iter()
+                    .predicates()
                     .map(|predicate| predicate.kind().apply_subst_or_clone(&subst, self.engine()))
                     .collect(),
             ));
