@@ -20,6 +20,7 @@ use crate::{
         inference::{GenInfer, Inference},
         lifetime::Lifetime,
     },
+    variance::Variance,
 };
 
 pub mod application;
@@ -52,6 +53,17 @@ impl Mutability {
         match self {
             Self::Immutable => true,
             Self::Mutable => false,
+        }
+    }
+
+    /// Returns the variance of the pointee of a pointer or reference with this
+    /// mutability: a shared pointee is covariant, and a mutable one is
+    /// invariant.
+    #[must_use]
+    pub const fn pointee_variance(&self) -> Variance {
+        match self {
+            Self::Immutable => Variance::Covariant,
+            Self::Mutable => Variance::Invariant,
         }
     }
 }
