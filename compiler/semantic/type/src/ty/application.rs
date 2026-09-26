@@ -9,6 +9,7 @@ use crate::{
     reduce::Reduce,
     rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::{Subst, Substitutable},
+    variance::Variance,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -368,6 +369,78 @@ impl Application {
     #[must_use]
     pub(super) fn has_same_constant(&self, other: &Self) -> bool {
         self.constant == other.constant && self.args.len() == other.args.len()
+    }
+
+    /// Returns the struct this application instantiates, if it is one.
+    #[must_use]
+    pub const fn struct_id(&self) -> Option<GlobalSymbolID> {
+        match self.constant {
+            Constant::Struct(symbol_id) => Some(symbol_id),
+            Constant::Primitive(_)
+            | Constant::Tuple
+            | Constant::Pointer(_)
+            | Constant::Reference(_)
+            | Constant::Instance(_)
+            | Constant::InstanceAssociated(_)
+            | Constant::Closure(_)
+            | Constant::DefInstance
+            | Constant::NoOpDropInstance
+            | Constant::TupleDropInstance
+            | Constant::ClosureDropInstance
+            | Constant::NominalDropInstance
+            | Constant::Error(_) => None,
+        }
+    }
+
+    /// Returns each argument with the variance of its position.
+    ///
+    /// `struct_variances` are the variances of the struct's parameters when
+    /// this application is a struct (see [`Self::struct_id`]), and are ignored
+    /// otherwise. A struct argument without a variance is invariant.
+    pub fn arguments_with_variance<'a>(
+        &'a self,
+        struct_variances: &'a [Variance],
+    ) -> impl Iterator<Item = (&'a Interned<Ty>, Variance)> {
+        self.args
+            .iter()
+            .enumerate()
+            .map(move |(index, arg)| (arg, self.argument_variance(index, struct_variances)))
+    }
+
+    /// Returns the variance of the argument position `index`; see
+    /// [`Self::arguments_with_variance`].
+    fn argument_variance(&self, index: usize, struct_variances: &[Variance]) -> Variance {
+        match self.constant {
+            Constant::Tuple => Variance::Covariant,
+            Constant::Pointer(mutability) => mutability.pointee_variance(),
+
+            // The lifetime comes first and is always covariant.
+            Constant::Reference(mutability) => {
+                if index == 0 {
+                    Variance::Covariant
+                } else {
+                    mutability.pointee_variance()
+                }
+            }
+
+            Constant::Struct(_) => {
+                struct_variances.get(index).copied().unwrap_or(Variance::Invariant)
+            }
+
+            // Closure types are invariant, as in rustc, and so are
+            // dictionaries and associated type projections. Primitives and
+            // errors have no arguments to relate.
+            Constant::Primitive(_)
+            | Constant::Instance(_)
+            | Constant::InstanceAssociated(_)
+            | Constant::Closure(_)
+            | Constant::DefInstance
+            | Constant::NoOpDropInstance
+            | Constant::TupleDropInstance
+            | Constant::ClosureDropInstance
+            | Constant::NominalDropInstance
+            | Constant::Error(_) => Variance::Invariant,
+        }
     }
 
     #[must_use]

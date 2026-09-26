@@ -203,6 +203,16 @@ pub struct AllNominalTypeIDs {
     pub target: TargetID,
 }
 
+/// Retrieves all effect symbol IDs in a given target.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Arc<[SymbolID]>)]
+#[extend(name = get_all_effect_ids, by_val)]
+pub struct AllEffectIDs {
+    pub target: TargetID,
+}
+
 /// Retrieves all callable definition and effect-operation IDs in a target.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
