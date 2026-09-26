@@ -22,9 +22,11 @@ use crate::{
 /// Retrieves the outlives requirements inferred for a struct from its field
 /// types, as in Rust RFC 2093.
 ///
-/// For `struct Ref['a, t]: value: &'a t` this is `t: 'a`. The requirements
-/// are stated over the struct's own polymorphic variables and hold for every
-/// well-formed use of the struct, next to its declared where clause.
+/// For `struct Ref['a, t]: value: &'a t` this is `t: 'a`. Only references
+/// are a source: the declared outlives predicates of a field's struct are not
+/// inferred. The requirements are stated over the struct's own polymorphic
+/// variables and hold for every well-formed use of the struct, next to its
+/// declared where clause.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]

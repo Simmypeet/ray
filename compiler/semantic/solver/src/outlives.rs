@@ -22,7 +22,7 @@ use rayc_type::{
 
 use crate::givens::get_givens;
 
-pub mod wf;
+pub mod implied;
 
 /// Retrieves the outlives facts known at a site: the outlives predicates
 /// among its givens, implied bounds included.
