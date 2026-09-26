@@ -1,0 +1,39 @@
+trait Project[t]:
+    type Out
+
+# OK: the parameter type `&'a &'b int32` implies `'b: 'a`.
+def parameter(value: &'a &'b int32) given (project: Project[int32]) -> () where (
+    project.Out = &'a &'b int32,
+):
+    return ()
+
+# OK: the return type `&'a t` implies `t: 'a`.
+def returnType(anchor: &'a int32, value: t) given (project: Project[&'a t]) -> &'a t:
+    return returnType(anchor, value)
+
+# ERROR: only plain `def`s and structs have implied bounds, so a trait def's
+# parameter type `&'a t` needs `t: 'a` written out.
+trait Get['a, t]:
+    def get(value: &'a t) -> ()
+
+# OK: the bound is written out.
+trait GetBounded['a, t]:
+    def get(value: &'a t) -> () where (t: 'a)
+
+# ERROR: an instance head implies nothing either.
+inst GetReference['a, t] for Project[&'a t]:
+    type Out = &'a t
+
+# OK: the bound is written out.
+inst GetReferenceBounded['a, t] for Project[(&'a t, int32)] where (t: 'a):
+    type Out = &'a t
+
+# ERROR: an effect row implies nothing, so `t: 'a` is unknown here.
+eff Reader['a, t] where (t: 'a):
+    def ask() -> &'a t
+
+def rowOnly['a, t]() given (project: Project[&'a t]) -> () \{Reader['a, t]}:
+    return ()
+
+def main() -> ():
+    return ()

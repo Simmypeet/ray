@@ -7,5 +7,17 @@ impl[a] !Send for *a where (
     a: Send,
 )
 
+marker Sync
+
+# OK: a negative implementation cannot have a where clause, but it assumes the
+# requirements of its head, so `&'a t` implies `t: 'a`.
+impl['a, t] !Sync for &'a t
+
+struct Bounded['a, t] where (t: 'a):
+    value: *t
+
+# OK: the head also implies the declared where clause of its struct.
+impl['a, t] !Sync for Bounded['a, t]
+
 def main() -> int32:
     return 0

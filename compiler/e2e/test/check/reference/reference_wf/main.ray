@@ -1,0 +1,43 @@
+trait Project[t]:
+    type Out
+
+# ERROR: nothing says `t` outlives `'a`.
+inst Unbounded['a, t] for Project[t]:
+    type Out = &'a t
+
+# OK: the where clause says `t` outlives `'a`.
+inst Bounded['a, t] for Project[t] where (t: 'a):
+    type Out = &'a t
+
+# ERROR: an instance head implies nothing, so `&'a t` in the head and in the
+# associated type both need `t: 'a` written out.
+inst Implied['a, t] for Project[&'a t]:
+    type Out = &'a t
+
+# ERROR: a type in a where clause must be well-formed.
+def whereUnbounded['a, 'b, t]() given (project: Project[t]) -> () where (
+    project.Out = &'a &'b int32,
+):
+    return ()
+
+# OK: `'b: 'a` makes `&'a &'b int32` well-formed.
+def whereBounded['a, 'b, t]() given (project: Project[t]) -> () where (
+    'b: 'a,
+    project.Out = &'a &'b int32,
+):
+    return ()
+
+# ERROR: a given's trait arguments must be well-formed.
+def givenUnbounded['a, t]() given (project: Project[&'a t]) -> ():
+    return ()
+
+# OK: `'static` outlives every lifetime.
+def staticBound['a]() given (project: Project[&'a &'static int32]) -> ():
+    return ()
+
+# OK: an outlives chain `t: 'b`, `'b: 'a` gives `t: 'a`.
+def chained['a, 'b, t]() given (project: Project[&'a t]) -> () where ('b: 'a, t: 'b):
+    return ()
+
+def main() -> ():
+    return ()

@@ -1,0 +1,50 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: the type `t` may not live long enough
+  ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:6:16
+  │
+6 │     type Out = &'a t
+  │                ━━━━━ the reference requires `t: 'a`
+  │
+  ╰ help: consider adding `where (t: 'a)`
+
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:14:33
+   │
+14 │ inst Implied['a, t] for Project[&'a t]:
+   │                                 ━━━━━ the reference requires `t: 'a`
+   │
+   ╰ help: consider adding `where (t: 'a)`
+
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:15:16
+   │
+15 │     type Out = &'a t
+   │                ━━━━━ the reference requires `t: 'a`
+   │
+   ╰ help: consider adding `where (t: 'a)`
+
+[error]: the type `&'b int32` may not live long enough
+   ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:19:19
+   │
+19 │     project.Out = &'a &'b int32,
+   │                   ━━━━━━━━━━━━━ the reference requires `&'b int32: 'a`
+   │
+   ╰ help: consider adding `where (&'b int32: 'a)`
+
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:31:53
+   │
+31 │ def givenUnbounded['a, t]() given (project: Project[&'a t]) -> ():
+   │                                                     ━━━━━ the reference requires `t: 'a`
+   │
+   ╰ help: consider adding `where (t: 'a)`
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:
