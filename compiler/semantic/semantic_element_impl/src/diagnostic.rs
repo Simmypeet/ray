@@ -16,6 +16,7 @@ use rayc_type::poly_var;
 use crate::{
     build::{DiagnosticKey, ObligationKey},
     obligation::solve_obligations,
+    variance::UnusedLifetimeKey,
 };
 
 /// Retrieves all rendered semantic-element diagnostics for a symbol.
@@ -139,6 +140,14 @@ async fn single_rendered_executor(
         let diagnostics = engine.query(&DiagnosticKey::new(key)).await;
         obligations.extend(engine.query(&ObligationKey::new(key)).await.iter().cloned());
         for diagnostic in diagnostics.iter() {
+            rendered.push(diagnostic.report(engine).await);
+        }
+    }
+
+    // Structs and effects report the lifetime parameters that their variance
+    // shows to be unused.
+    if kind.has_variance_map() {
+        for diagnostic in engine.query(&UnusedLifetimeKey { symbol_id }).await.iter() {
             rendered.push(diagnostic.report(engine).await);
         }
     }

@@ -25,6 +25,8 @@ struct Odd['a, t]:
 # are.
 struct Declared['a, t] where (t: 'a):
     value: *t
+    # Uses `'a` without inferring `t: 'a`.
+    lifetime: &'a int32
 
 # ERROR: `Declared['a, t]` requires `t: 'a`, which is not inferred.
 struct UsesDeclared['a, t]:

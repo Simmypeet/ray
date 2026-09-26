@@ -82,6 +82,27 @@ impl SymbolKind {
         )
     }
 
+    /// Checks if this kind of symbol has the variances of its polymorphic
+    /// variables computed, which only structs and effects do.
+    #[must_use]
+    pub const fn has_variance_map(&self) -> bool {
+        match self {
+            Self::Effect | Self::Strut => true,
+            Self::Def
+            | Self::EffectOperation
+            | Self::ExternDef
+            | Self::Instance
+            | Self::InstanceDef
+            | Self::InstanceType
+            | Self::Marker
+            | Self::MarkerImplementation
+            | Self::Module
+            | Self::Trait
+            | Self::TraitDef
+            | Self::TraitType => false,
+        }
+    }
+
     /// Checks if this kind of symbol may leave out its type-parameter list, in
     /// which case its parameter types introduce its type parameters and its
     /// type arguments are always inferred.

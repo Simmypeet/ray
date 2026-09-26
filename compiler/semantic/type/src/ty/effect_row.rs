@@ -11,6 +11,7 @@ use crate::{
         args::Args,
         inference::{GenInfer, Inference},
     },
+    variance::{Variance, VarianceMap},
 };
 
 #[derive(
@@ -82,6 +83,23 @@ impl EffectLabel {
 
     #[must_use]
     pub fn has_arguments(&self) -> bool { !self.args.is_empty() }
+
+    /// Returns each argument with the variance of its position.
+    ///
+    /// `effect_variances` are the variances of the effect's parameters.
+    ///
+    /// # Panics
+    ///
+    /// If `effect_variances` has fewer variances than there are arguments.
+    pub fn arguments_with_variance<'a>(
+        &'a self,
+        effect_variances: &'a VarianceMap,
+    ) -> impl Iterator<Item = (&'a Interned<Ty>, Variance)> {
+        self.args
+            .interned_iter()
+            .enumerate()
+            .map(move |(index, arg)| (arg, effect_variances.get_by_index(index)))
+    }
 
     #[must_use]
     pub fn structural_match<'a>(

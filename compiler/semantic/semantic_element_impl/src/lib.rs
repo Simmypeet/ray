@@ -21,4 +21,5 @@ pub const fn black_box() {}
 mod callable_parameter;
 mod drop_plan;
 mod type_definition;
+mod variance;
 mod where_clause;

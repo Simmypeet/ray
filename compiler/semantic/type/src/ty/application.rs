@@ -9,7 +9,7 @@ use crate::{
     reduce::Reduce,
     rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::{Subst, Substitutable},
-    variance::Variance,
+    variance::{Variance, VarianceMap},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -396,10 +396,15 @@ impl Application {
     ///
     /// `struct_variances` are the variances of the struct's parameters when
     /// this application is a struct (see [`Self::struct_id`]), and are ignored
-    /// otherwise. A struct argument without a variance is invariant.
+    /// otherwise.
+    ///
+    /// # Panics
+    ///
+    /// If this application is a struct and `struct_variances` is `None` or
+    /// has fewer variances than there are arguments.
     pub fn arguments_with_variance<'a>(
         &'a self,
-        struct_variances: &'a [Variance],
+        struct_variances: Option<&'a VarianceMap>,
     ) -> impl Iterator<Item = (&'a Interned<Ty>, Variance)> {
         self.args
             .iter()
@@ -409,7 +414,7 @@ impl Application {
 
     /// Returns the variance of the argument position `index`; see
     /// [`Self::arguments_with_variance`].
-    fn argument_variance(&self, index: usize, struct_variances: &[Variance]) -> Variance {
+    fn argument_variance(&self, index: usize, struct_variances: Option<&VarianceMap>) -> Variance {
         match self.constant {
             Constant::Tuple => Variance::Covariant,
             Constant::Pointer(mutability) => mutability.pointee_variance(),
@@ -423,9 +428,9 @@ impl Application {
                 }
             }
 
-            Constant::Struct(_) => {
-                struct_variances.get(index).copied().unwrap_or(Variance::Invariant)
-            }
+            Constant::Struct(_) => struct_variances
+                .expect("a struct application needs the variances of its struct")
+                .get_by_index(index),
 
             // Closure types are invariant, as in rustc, and so are
             // dictionaries and associated type projections. Primitives and
