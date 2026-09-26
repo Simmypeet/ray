@@ -71,62 +71,48 @@ impl Substitutable for MarkerPredicate {
     }
 }
 
-// REVIEW: Should we collapse this into a simple struct, do we really need to
-// differentiate between `Region` and `Type`?
-/// A requirement that one lifetime, or every lifetime in a type, outlives a
-/// lifetime.
+/// A requirement `subject: bound`: the lifetime `subject`, or every lifetime
+/// in the type, effect row, or dictionary `subject`, outlives the lifetime
+/// `bound`.
+///
+/// Both `'a: 'b` and `t: 'a` share this form, because a lifetime is its own
+/// only outlives component (see [`Ty::outlives_components`]).
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
-pub enum OutlivesPredicate {
-    /// `'longer: 'shorter`, where both operands have kind `Lifetime`.
-    Region { longer: Interned<Ty>, shorter: Interned<Ty> },
-
-    /// `ty: 'bound`, where `ty` has kind `Star` or `EffectRow`: every
-    /// lifetime in `ty` outlives `bound`.
-    Type { ty: Interned<Ty>, bound: Interned<Ty> },
+pub struct OutlivesPredicate {
+    subject: Interned<Ty>,
+    bound: Interned<Ty>,
 }
 
 impl OutlivesPredicate {
-    /// Returns the operand that must live longer: the longer lifetime or the
-    /// bounded type.
     #[must_use]
-    pub const fn subject(&self) -> &Interned<Ty> {
-        match self {
-            Self::Region { longer, .. } => longer,
-            Self::Type { ty, .. } => ty,
-        }
-    }
+    pub const fn new(subject: Interned<Ty>, bound: Interned<Ty>) -> Self { Self { subject, bound } }
+
+    /// Returns the operand that must live longer: a lifetime, a type, an
+    /// effect row, or a dictionary.
+    #[must_use]
+    pub const fn subject(&self) -> &Interned<Ty> { &self.subject }
 
     /// Returns the lifetime that the subject must outlive.
     #[must_use]
-    pub const fn bound(&self) -> &Interned<Ty> {
-        match self {
-            Self::Region { shorter, .. } => shorter,
-            Self::Type { bound, .. } => bound,
-        }
-    }
+    pub const fn bound(&self) -> &Interned<Ty> { &self.bound }
 
     /// Renders the predicate as written in a where clause, such as `t: 'a`.
     pub async fn display(&self, engine: &TrackedEngine) -> String {
-        format!("{}: {}", self.subject().display(engine).await, self.bound().display(engine).await)
+        format!("{}: {}", self.subject.display(engine).await, self.bound.display(engine).await)
     }
 }
 
 impl Substitutable for OutlivesPredicate {
     fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
-        let subject = self.subject().apply_subst(subst, engine);
-        let bound = self.bound().apply_subst(subst, engine);
-        if subject.is_none() && bound.is_none() {
-            return None;
+        match (self.subject.apply_subst(subst, engine), self.bound.apply_subst(subst, engine)) {
+            (None, None) => None,
+            (subject, bound) => Some(Self::new(
+                subject.unwrap_or_else(|| self.subject.clone()),
+                bound.unwrap_or_else(|| self.bound.clone()),
+            )),
         }
-
-        let subject = subject.unwrap_or_else(|| self.subject().clone());
-        let bound = bound.unwrap_or_else(|| self.bound().clone());
-        Some(match self {
-            Self::Region { .. } => Self::Region { longer: subject, shorter: bound },
-            Self::Type { .. } => Self::Type { ty: subject, bound },
-        })
     }
 }
 
@@ -163,25 +149,75 @@ impl Substitutable for PredicateKind {
     }
 }
 
-/// A resolved requirement and the source span where it was declared.
+/// Where a predicate of a [`WhereClause`] comes from.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub enum PredicateOrigin {
+    /// Written by the user in the where clause.
+    Declared,
+
+    /// Implied by the well-formedness of the declaration; see [`WhereClause`].
+    Implied,
+}
+
+/// A resolved requirement, the source span that introduces it, and whether
+/// it was written or implied.
+///
+/// A declared predicate's span is the predicate as written; an implied one's
+/// is the declaration that implies it.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct Predicate {
     kind: PredicateKind,
     span: RelativeSpan,
+    origin: PredicateOrigin,
 }
 
 impl Predicate {
     #[must_use]
-    pub const fn new(kind: PredicateKind, span: RelativeSpan) -> Self { Self { kind, span } }
+    pub const fn new(kind: PredicateKind, span: RelativeSpan, origin: PredicateOrigin) -> Self {
+        Self { kind, span, origin }
+    }
 
     #[must_use]
     pub const fn kind(&self) -> &PredicateKind { &self.kind }
 
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
+
+    #[must_use]
+    pub const fn origin(&self) -> PredicateOrigin { self.origin }
+
+    /// Returns whether the user wrote this predicate in the where clause.
+    #[must_use]
+    pub const fn is_declared(&self) -> bool {
+        match self.origin {
+            PredicateOrigin::Declared => true,
+            PredicateOrigin::Implied => false,
+        }
+    }
 }
 
-/// Predicates in declaration order. An absent clause produces an empty list.
+/// The predicates that hold for a symbol: those declared in its where clause,
+/// in declaration order, followed by the outlives bounds implied by the
+/// well-formedness of its declaration.
+///
+/// Only plain `def`s and structs have implied bounds:
+/// - for a `def`, the well-formedness of its parameter and return types;
+/// - for a struct, its inferred outlives predicates.
+///
+/// Every other declaration spells its bounds out in its where clause.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct WhereClause {
     predicates: Interned<[Predicate]>,
@@ -191,22 +227,40 @@ impl WhereClause {
     #[must_use]
     pub const fn new(predicates: Interned<[Predicate]>) -> Self { Self { predicates } }
 
+    /// Returns every predicate that holds for the symbol: the declared ones,
+    /// in declaration order, followed by the implied bounds.
     #[must_use]
-    pub fn len(&self) -> usize { self.predicates.len() }
+    pub fn predicates(&self) -> impl ExactSizeIterator<Item = &Predicate> { self.predicates.iter() }
 
-    #[must_use]
-    pub fn is_empty(&self) -> bool { self.predicates.is_empty() }
-
-    #[must_use]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Predicate> { self.predicates.iter() }
+    /// Returns the predicates written in the where clause, in declaration
+    /// order.
+    pub fn declared(&self) -> impl Iterator<Item = &Predicate> {
+        self.predicates.iter().filter(|predicate| predicate.is_declared())
+    }
 }
 
-/// Retrieves the resolved where clause for a symbol supporting where clauses.
+/// Retrieves every predicate that holds for a symbol: its declared where
+/// clause and its implied bounds; see [`WhereClause`].
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
 #[value(Interned<WhereClause>)]
 #[extend(by_val, name = get_where_clause)]
 pub struct Key {
+    pub symbol_id: GlobalSymbolID,
+}
+
+/// Retrieves only the predicates written in the where clause of a symbol
+/// supporting where clauses, without implied bounds.
+///
+/// Prefer [`get_where_clause`]. This query exists for computing implied bounds
+/// themselves, which read the declared predicates of other symbols, and for
+/// the diagnostics of resolving the clause.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Interned<WhereClause>)]
+#[extend(by_val, name = get_declared_where_clause)]
+pub struct DeclaredKey {
     pub symbol_id: GlobalSymbolID,
 }

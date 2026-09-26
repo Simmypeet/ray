@@ -1,9 +1,10 @@
 //! The components of an outlives requirement `ty: 'a`.
 //!
 //! Following Rust RFC 1214, `ty: 'a` holds exactly when every component of
-//! `ty` outlives `'a`. A component is a lifetime, a polymorphic type or effect
-//! row variable, or a rigid associated-type projection. Every other type
-//! constructor is transparent: it outlives `'a` when its arguments do.
+//! `ty` outlives `'a`. A component is a lifetime, a polymorphic variable of any
+//! other kind (a type, an effect row, or a dictionary), or a rigid
+//! associated-type projection. Every other type constructor is transparent: it
+//! outlives `'a` when its arguments do.
 
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
@@ -41,8 +42,9 @@ pub enum OutlivesComponent {
     /// component, because it outlives every lifetime.
     Region(Interned<Ty>),
 
-    /// A polymorphic variable of kind `Star` or `EffectRow`. Whether it
-    /// outlives a lifetime can only come from an assumption.
+    /// A polymorphic variable of kind `Star`, `EffectRow` or `Instance`, or
+    /// the rigid `this` dictionary. Whether it outlives a lifetime can only
+    /// come from an assumption.
     Param(Interned<Ty>),
 
     /// A rigid associated-type projection. It outlives a lifetime when an
@@ -71,9 +73,10 @@ impl Ty {
         ty: &Interned<Self>,
         engine: &TrackedEngine,
     ) -> Vec<OutlivesComponent> {
-        // TODO: Let's decide do we really want `TyKind::EffectRow` to participate in
-        // outlives components. To be conservative, we will include it for now, but we
-        // should revisit this decision later.
+        // TODO: Let's decide do we really want `TyKind::EffectRow` and
+        // `TyKind::Instance` to participate in outlives components. To be
+        // conservative, we will include them for now, but we should revisit this
+        // decision later.
         let mut components = Vec::new();
         let mut pending = vec![ty.clone()];
 
@@ -86,15 +89,11 @@ impl Ty {
                 }
                 Self::PolyVar(_) => match ty.kind_of(engine).await {
                     TyKind::Lifetime => components.push(OutlivesComponent::Region(ty.clone())),
-                    TyKind::Star | TyKind::EffectRow => {
+                    TyKind::Instance | TyKind::Star | TyKind::EffectRow => {
                         components.push(OutlivesComponent::Param(ty.clone()));
                     }
-                    // A dictionary's lifetimes are those of its trait
-                    // reference, which a projection accounts for.
-                    TyKind::Instance => {}
                 },
                 Self::Application(application) => {
-                    // REVIEW: Should we guard this to discard `TyKind::Instance`?
                     if application.is_outlives_projection() {
                         components.push(OutlivesComponent::Projection(ty.clone()));
                     } else {
@@ -104,7 +103,8 @@ impl Ty {
                 Self::EffectRow(row) => {
                     pending.extend(row.interned_iter().cloned());
                 }
-                Self::Inference(_) | Self::SelfInstance(_) => {}
+                Self::SelfInstance(_) => components.push(OutlivesComponent::Param(ty.clone())),
+                Self::Inference(_) => {}
             }
         }
 
