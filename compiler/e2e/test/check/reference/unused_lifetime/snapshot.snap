@@ -3,56 +3,6 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: lifetime parameter `'b` is never used
-   ╭▸ compiler/e2e/test/check/reference/unused_lifetime/main.ray:10:18
-   │
-10 │ struct Extra['a, 'b]:
-   │                  ━━ unused lifetime parameter
-   │
-   ╰ help: consider removing `'b` or referring to it in a field
-
-[error]: lifetime parameter `'a` is never used
-   ╭▸ compiler/e2e/test/check/reference/unused_lifetime/main.ray:14:18
-   │
-14 │ struct WhereOnly['a, t] where (t: 'a):
-   │                  ━━ unused lifetime parameter
-   │
-   ╰ help: consider removing `'a` or referring to it in a field
-
-[error]: lifetime parameter `'a` is never used
-   ╭▸ compiler/e2e/test/check/reference/unused_lifetime/main.ray:19:13
-   │
-19 │ struct List['a]:
-   │             ━━ unused lifetime parameter
-   │
-   ╰ help: consider removing `'a` or referring to it in a field
-
-[error]: lifetime parameter `'a` is never used
-   ╭▸ compiler/e2e/test/check/reference/unused_lifetime/main.ray:24:13
-   │
-24 │ struct Even['a]:
-   │             ━━ unused lifetime parameter
-   │
-   ╰ help: consider removing `'a` or referring to it in a field
-
-[error]: lifetime parameter `'a` is never used
-   ╭▸ compiler/e2e/test/check/reference/unused_lifetime/main.ray:27:12
-   │
-27 │ struct Odd['a]:
-   │            ━━ unused lifetime parameter
-   │
-   ╰ help: consider removing `'a` or referring to it in a field
-
-[error]: lifetime parameter `'a` is never used
-   ╭▸ compiler/e2e/test/check/reference/unused_lifetime/main.ray:43:12
-   │
-43 │ eff Unused['a]:
-   │            ━━ unused lifetime parameter
-   │
-   ╰ help: consider removing `'a` or referring to it in an operation signature
-
-[error]: Compilation aborted due to 6 error(s)
-
 
 
 stdout:

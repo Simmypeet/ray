@@ -1,45 +1,32 @@
-# OK: `'a` is used by a field.
-struct Ref['a, t]:
-    value: &'a t
+# Unused lifetime parameters are allowed: they are bivariant, so their
+# arguments are never related.
 
-# OK: `'a` is used through another struct.
-struct Holder['a]:
-    inner: Ref['a, int32]
-
-# ERROR: `'b` is never used, even though `'a` is.
+# OK: `'b` is unused, even though `'a` is used.
 struct Extra['a, 'b]:
     value: &'a int32
 
-# ERROR: a lifetime used only in the where clause is unused.
+# OK: a lifetime used only in the where clause is unused.
 struct WhereOnly['a, t] where (t: 'a):
-    value: *t
+    value: &'static int32
 
-# ERROR: a recursive struct that mentions `'a` only in its own recursion does
-# not use it.
-struct List['a]:
-    next: *List['a]
-
-# ERROR: mutually recursive structs that only pass `'a` to each other do not
+# OK: a recursive struct that mentions `'a` only in its own recursion does not
 # use it.
-struct Even['a]:
-    next: *Odd['a]
+struct List['a, 'n]:
+    next: &'n List['a, 'n]
 
-struct Odd['a]:
-    next: *Even['a]
+# OK: mutually recursive structs that only pass `'a` to each other do not use
+# it.
+struct Even['a, 'n]:
+    next: &'n Odd['a, 'n]
 
-# OK: an unused type parameter is invariant rather than an error.
-struct Phantom[t]:
-    value: int32
+struct Odd['a, 'n]:
+    next: &'n Even['a, 'n]
 
-# OK: `'a` is used in an operation's parameter.
-eff Log['a]:
-    def log(message: &'a int32) -> ()
+# OK: a raw pointer's pointee is not a use.
+struct Raw['a]:
+    value: *&'a int32
 
-# OK: `'a` is used in an operation's return type.
-eff Reader['a]:
-    def get() -> &'a int32
-
-# ERROR: `'a` is not used by any operation.
+# OK: `'a` is not used by any operation.
 eff Unused['a]:
     def get() -> int32
 
