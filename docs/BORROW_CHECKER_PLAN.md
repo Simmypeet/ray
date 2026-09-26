@@ -315,10 +315,10 @@ inside invariant constructors (closure types, `&mut`) stay invariant. An
 effect parameter that stays bivariant is unused, and unused lifetime
 parameters are rejected, as for structs.
 
-Effect variance needs no fixed point of its own. Operation signatures can
-mention structs, but structs mention effects only inside closure types,
-which are invariant. So effect variances are computed after the struct
-fixed point, in the same query.
+Operation signatures can mention structs, and structs can mention effect rows
+inside closure types, so struct and effect variances depend on each other.
+They are computed together as one fixed point in the same query as structs,
+and the arguments of an effect label are related by that effect's variances.
 
 This relies on handlers being tail-resumptive: the handler finishes the
 operation before the computation continues, so the handler really is just an
@@ -614,11 +614,13 @@ its own recursion, and only the variance fixed point sees that it is unused.
   iterates to a fixed point over every struct in the target, following the
   table in [Variance](#variance). Add `get_variance(struct_id)` as a thin
   projection of it.
-- After the struct fixed point, compute the variance of every `eff` parameter
-  in the same query, following [Effect Variance](#effect-variance): operation
+- Compute the variance of every `eff` parameter in the same fixed point as
+  the structs, following [Effect Variance](#effect-variance): operation
   parameter types are walked starting from covariant, return types starting
-  from contravariant. This is a single pass, not a fixed point. Expose it as
-  `get_effect_variance(effect_id)`.
+  from contravariant, and effect labels in rows are walked by their effect's
+  variances. The same `get_variance` query returns it for an `eff`.
+- Variances are returned as a `VarianceMap`, which iterates them in poly var
+  map order (the argument order) and looks one up by poly var ID.
 - Report unused lifetime parameters here, for structs and effects, since
   bivariance is detected here.
 
@@ -647,7 +649,7 @@ pub struct TyRelate {
   matching and tail rewriting unchanged. What changes is the constraints it
   derives for label arguments
   (`DerivationRule::EffectLabelArgumentMatching`): they carry
-  `parent.variance.xform(get_effect_variance(effect)[index])` instead of
+  `parent.variance.xform(get_variance(effect)[index])` instead of
   plain equality. Tail constraints carry the parent variance. When a row sits
   in an invariant position, the parent variance is invariant, so everything
   under it is related by equality.
