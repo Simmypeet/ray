@@ -20,7 +20,8 @@ use rayc_type::{
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{
-        InferenceConstraint, Mutability, Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel,
+        InferenceConstraint, Mutability, Primitive, Ty, TyKind, args::Args,
+        effect_row::EffectLabel, lifetime::Lifetime,
     },
 };
 
@@ -138,6 +139,23 @@ impl Resolver<'_> {
 
     pub(crate) fn require_wf_check(&self, check: crate::WfCheck) {
         self.obligation_handler.receive(crate::Obligation::WfCheck(check));
+    }
+
+    /// Requires `pointee: lifetime` for a written reference type.
+    ///
+    /// Erased lifetimes, as in function bodies, are checked on the IR instead.
+    pub(crate) fn require_reference_wf(
+        &self,
+        pointee: Interned<Ty>,
+        lifetime: Interned<Ty>,
+        span: RelativeSpan,
+    ) {
+        if *lifetime == Ty::Lifetime(Lifetime::Erased) {
+            return;
+        }
+        self.obligation_handler.receive(crate::Obligation::ReferenceWf(crate::ReferenceWf::new(
+            pointee, lifetime, span,
+        )));
     }
 
     pub(crate) fn new_primitive_type(&self, primitive: Primitive) -> Interned<Ty> {

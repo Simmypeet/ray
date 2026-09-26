@@ -459,6 +459,7 @@ impl Resolver<'_> {
                 } else {
                     Mutability::Immutable
                 };
+                self.require_reference_wf(pointee.clone(), lifetime.clone(), reference.span());
                 Ty::new_reference(lifetime, pointee, mutability, self.engine())
             }
             TypeSyntax::Lifetime(lifetime) => self.resolve_lifetime(lifetime).await,
