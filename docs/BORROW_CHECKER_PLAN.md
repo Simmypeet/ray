@@ -138,13 +138,31 @@ Elided lifetimes are not allowed in struct fields.
 - `'a: 'b`: `'a` outlives `'b`;
 - `t: 'a`: every lifetime in `t` outlives `'a`.
 
-**Implied bounds** follow Rust. The types of a function's parameters and its
-return type are assumed well-formed, so `def f(x: &'a &'b int32)` implies
-`'b: 'a` without writing it.
+**Implied bounds** come only from references: `&'a t` implies `t: 'a`. The
+references in a function's parameter and return types are assumed
+well-formed, so `def f(x: &'a &'b int32)` implies `'b: 'a` without writing it.
 
-**Inferred outlives requirements** for structs follow Rust RFC 2093:
-`struct Ref['a, t]: value: &'a t` infers `t: 'a` without a `where` clause.
+**Inferred outlives requirements** for structs follow Rust RFC 2093, with the
+same restriction: `struct Ref['a, t]: value: &'a t` infers `t: 'a` without a
+`where` clause, and a struct holding a `Ref['a, t]` infers it in turn.
 Computing this is a fixed point over struct definitions, like variance.
+
+This deviates from Rust: an outlives predicate declared in a `where` clause is
+never implied or inferred. `struct B['a, t] where (t: 'a)` requires `t: 'a` of
+every use, and a struct holding a `B['a, t]` or a function taking one must
+write `t: 'a` itself.
+
+**Marker implementations** are the one exception. An implementation assumes
+every requirement of naming its head, such as `t: 'a` for
+`impl['a, t] Send for &'a t` or the declared where clause of `S` for
+`impl[t] Send for S[t]`, including marker predicates. An implementation only
+applies to a goal type matching its head, and that type is well-formed where it
+is named, so the requirements hold at every use. A valid head is one
+constructor applied to distinct variables, so the assumptions never claim
+anything about a concrete type. Marker implementation where clauses therefore
+reject outlives predicates and accept only marker predicates. This also lets a
+negative implementation, which cannot have a where clause, name a head with
+requirements.
 
 ## Well-Formedness
 
@@ -556,19 +574,38 @@ behavior.
 
 ## Phase 2: Outlives Predicates and Well-Formedness
 
-- Add `PredicateKind::Outlives` with two forms, `RegionOutlives('a, 'b)` and
-  `TypeOutlives(t, 'a)`, to `where_clause`.
-- Add inferred outlives requirements for structs. This is a target-wide fixed
-  point, and can share its driver with the variance computation in Phase 3.
-- Add implied bounds: given a function signature, compute the set of outlives
-  facts assumed by the body. This set, the "known relations" between
-  universal regions, is consumed in Phase 5.
-- Add declaration-level WF checks for struct fields and signatures. These
-  checks only concern named lifetimes and need no region inference. They
-  compare required outlives facts against declared and implied ones.
+- Add `PredicateKind::Outlives(OutlivesPredicate)`, a `subject: 'bound`
+  requirement, to `where_clause`. The subject may be a lifetime (`'a: 'b`), a
+  type or effect row (`t: 'a`), or, conservatively, a dictionary.
+- Add inferred outlives requirements for structs (`get_inferred_outlives`).
+  This is a target-wide fixed point, and can share its driver with the
+  variance computation in Phase 3. Using a struct requires its inferred
+  outlives predicates as well as its declared ones.
+- Add implied bounds, for plain `def`s, structs, and marker implementations
+  only: the bounds implied by the references in a `def`'s parameter and return
+  types, a struct's inferred outlives, and every requirement of a marker
+  implementation's head. Declared outlives predicates are never implied,
+  except through a marker implementation's head. Every other declaration
+  (trait and instance `def`s, instances, effects) must write its bounds in its
+  where clause, which accepts outlives predicates everywhere except in marker
+  implementations.
+  This deviates from Rust, which also implies bounds from impl headers and
+  trait method signatures. Implied bounds are
+  part of the symbol's `WhereClause` (`get_where_clause`), next to its
+  declared predicates (`get_declared_where_clause`), so every consumer of the
+  where clause sees them. The outlives predicates among the givens form the
+  `OutlivesEnvironment`, whose facts are the "known relations" between
+  universal regions consumed in Phase 5.
+- Add declaration-level WF checks. A written `&'a t` requires `t: 'a`, and a
+  resolved symbol requires its instantiated outlives predicates. These checks
+  only concern named lifetimes and need no region inference. They compare
+  required outlives facts against declared and implied ones. Type inference
+  drops outlives obligations; Phase 5 re-checks them on the IR.
 
-Diagnostics: missing `t: 'a` bounds, unused lifetime parameters, undeclared
-lifetimes in structs.
+Diagnostics: missing `t: 'a` bounds. Undeclared lifetimes in structs are
+already reported by lifetime resolution. Unused lifetime parameters are
+reported in Phase 3, because a recursive struct can mention a lifetime only in
+its own recursion, and only the variance fixed point sees that it is unused.
 
 ## Phase 3: Variance
 
