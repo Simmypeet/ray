@@ -80,6 +80,10 @@ impl ReferenceWf {
     pub fn predicate(&self) -> OutlivesPredicate {
         OutlivesPredicate::new(self.pointee.clone(), self.lifetime.clone())
     }
+
+    /// Returns the span of the written reference type.
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
 impl Substitutable for ReferenceWf {
@@ -138,6 +142,13 @@ impl PredicateObligation {
     ) -> Self {
         Self { predicate, symbol_id, span }
     }
+
+    #[must_use]
+    pub const fn predicate(&self) -> &PredicateKind { &self.predicate }
+
+    /// Returns the span of the use that requires the predicate.
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
 
     #[must_use]
     pub fn constraint(&self) -> PredicateConstraint {

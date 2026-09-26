@@ -2,13 +2,53 @@
 
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::{Obligation, PredicateConstraint, PredicateObligation, TraitRefCheck};
+use rayc_resolution::{
+    Obligation, PredicateConstraint, PredicateObligation, ReferenceWf, TraitRefCheck,
+};
 use rayc_solver::ty_relate::Step;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     reduce::Reduce,
     subst::{Subst, Substitutable},
+    where_clause::OutlivesPredicate,
 };
+
+/// One obligation after where clauses are instantiated, kept whole for its
+/// diagnostic.
+enum ExpandedObligation {
+    TraitRefCheck(TraitRefCheck),
+    Predicate(PredicateObligation),
+    ReferenceWf(ReferenceWf),
+}
+
+impl ExpandedObligation {
+    /// Returns the outlives requirement this obligation stands for, if any.
+    fn outlives_predicate(&self) -> Option<OutlivesPredicate> {
+        match self {
+            Self::Predicate(predicate) => match predicate.constraint() {
+                PredicateConstraint::Outlives(predicate) => Some(predicate),
+                PredicateConstraint::TyRelate(_) | PredicateConstraint::Marker(_) => None,
+            },
+            Self::ReferenceWf(check) => Some(check.predicate()),
+            Self::TraitRefCheck(_) => None,
+        }
+    }
+
+    /// Renders the failed obligation after applying `subst`.
+    async fn report(&self, subst: &Subst, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        match self {
+            Self::TraitRefCheck(check) => {
+                check.apply_subst_or_clone(subst, engine).report(engine).await
+            }
+            Self::Predicate(predicate) => {
+                predicate.apply_subst_or_clone(subst, engine).report(engine).await
+            }
+            Self::ReferenceWf(check) => {
+                check.apply_subst_or_clone(subst, engine).report(engine).await
+            }
+        }
+    }
+}
 
 /// Solves obligations together after construction, retaining each source
 /// obligation for diagnostics.
@@ -17,10 +57,8 @@ pub(crate) async fn solve_obligations(
     site: GlobalSymbolID,
     engine: &TrackedEngine,
 ) -> Vec<Rendered<ByteIndex>> {
-    enum ExpandedObligation {
-        TraitRefCheck(TraitRefCheck),
-        Predicate(PredicateObligation),
-    }
+    // TODO: Currently, this works. But we'd have to find a better way to organize
+    // this!
 
     let mut solver = rayc_solver::Solver::new(engine.clone(), site).await;
     let mut expanded = Vec::new();
@@ -41,6 +79,9 @@ pub(crate) async fn solve_obligations(
                     .into_iter()
                     .map(ExpandedObligation::Predicate),
             ),
+            Obligation::ReferenceWf(check) => {
+                expanded.push(ExpandedObligation::ReferenceWf(check));
+            }
         }
     }
 
@@ -63,6 +104,7 @@ pub(crate) async fn solve_obligations(
                     constraints.push((index, constraint));
                 }
             }
+            ExpandedObligation::ReferenceWf(_) => {}
         }
     }
 
@@ -111,18 +153,40 @@ pub(crate) async fn solve_obligations(
         }
     }
 
+    // Outlives obligations run last, against the site's outlives givens and
+    // implied bounds.
+    failed.extend(failed_outlives(&expanded, &subst, &mut solver).await);
+
     // Report the original obligation after applying every substitution learned
     // while solving the complete set.
     let mut rendered = Vec::new();
     for index in failed {
-        match &expanded[index] {
-            ExpandedObligation::TraitRefCheck(check) => {
-                rendered.push(check.apply_subst_or_clone(&subst, engine).report(engine).await);
-            }
-            ExpandedObligation::Predicate(predicate) => {
-                rendered.push(predicate.apply_subst_or_clone(&subst, engine).report(engine).await);
-            }
-        }
+        rendered.push(expanded[index].report(&subst, engine).await);
     }
     rendered
+}
+
+/// Returns the indices of the outlives obligations that do not follow from the
+/// solver's outlives facts.
+///
+/// They only concern named lifetimes, so an obligation that still mentions an
+/// inference variable is left to later checks.
+async fn failed_outlives(
+    expanded: &[ExpandedObligation],
+    subst: &Subst,
+    solver: &mut rayc_solver::Solver,
+) -> Vec<usize> {
+    let mut failed = Vec::new();
+    for (index, obligation) in expanded.iter().enumerate() {
+        let Some(predicate) = obligation.outlives_predicate() else {
+            continue;
+        };
+
+        let predicate = predicate.apply_subst_or_clone(subst, solver.engine());
+
+        if !solver.entails_outlives(&predicate).await {
+            failed.push(index);
+        }
+    }
+    failed
 }

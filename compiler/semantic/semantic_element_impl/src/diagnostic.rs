@@ -97,9 +97,8 @@ async fn single_rendered_executor(
         let marker_implementation_key =
             rayc_semantic_element::marker_implementation::Key { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(marker_implementation_key)).await;
-        let generated = engine.query(&ObligationKey::new(marker_implementation_key)).await;
-
-        obligations.extend(generated.iter().cloned());
+        // The head's obligations are not checked: the implementation assumes
+        // them as implied predicates of its where clause.
         for diagnostic in diagnostics.iter() {
             rendered.push(diagnostic.report(engine).await);
         }

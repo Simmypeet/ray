@@ -1,29 +1,37 @@
 use derive_more::From;
-use qbice::{Decode, Encode, Identifiable, StableHash};
+use linkme::distributed_slice;
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
-use rayc_qbice::TrackedEngine;
-use rayc_resolution::{lifetime::LifetimeElision, resolver::Resolver};
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
+use rayc_resolution::{Obligation, lifetime::LifetimeElision, resolver::Resolver};
 use rayc_semantic_element::callable_parameter::get_callable_parameters;
+use rayc_solver::outlives::implied::implied_bounds;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
+    GlobalSymbolID,
     core_item::{CoreItem, get_core_item},
     source_map::to_absolute_span,
+    span::get_span,
     symbol_kind::{SymbolKind, get_symbol_kind},
     syntax::get_where_clause_syntax,
 };
-use rayc_syntax::where_clause::{Constraint, OutlivesPredicate};
+use rayc_syntax::where_clause::{Constraint, OutlivesPredicate, TypeEquality};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarOrigin, get_enclosing_poly_var_maps, get_poly_var_map},
     ty::{Ty, TyKind},
     where_clause::{
-        AssociatedTypeEquality, Key, MarkerPredicate, Predicate, PredicateKind, WhereClause,
+        AssociatedTypeEquality, DeclaredKey, Key, MarkerPredicate, Predicate, PredicateKind,
+        PredicateOrigin, WhereClause, get_declared_where_clause,
     },
 };
 
 use crate::{
-    build::{Build, Output},
+    build::{Build, ObligationKey, Output},
     register_build,
 };
 
@@ -155,7 +163,7 @@ impl Report for Diagnostic {
     }
 }
 
-impl Build for Key {
+impl Build for DeclaredKey {
     type Diagnostic = Diagnostic;
 
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
@@ -181,49 +189,39 @@ impl Build for Key {
             constraints.iter().flat_map(rayc_syntax::where_clause::Constraints::constraints)
         {
             match constraint {
-                Constraint::TypeEquality(equality) => {
-                    if is_marker_implementation {
-                        diagnostics.receive(Diagnostic::InvalidMarkerImplementationPredicate(
-                            InvalidMarkerImplementationPredicate {
-                                span: equality
-                                    .equals()
-                                    .map_or_else(|| equality.span(), |equals| equals.span()),
-                                kind: InvalidMarkerImplementationPredicateKind::NonMarkerPredicate,
-                            },
-                        ));
-                        continue;
-                    }
-
-                    // Incomplete constraints already have parser diagnostics.
-                    let (Some(left), Some(right)) = (equality.left(), equality.right()) else {
-                        continue;
-                    };
-                    let left_span = left.span();
-                    // Infer the left operand's kind, then check the right against it.
-                    let left = resolver.infer_type_term(&left).await;
-                    let right =
-                        resolver.resolve_type_term(&right, left.kind_of(engine).await).await;
-
-                    match left.is_opaque_projection() {
-                        Some(true) => {}
-                        Some(false) => {
-                            diagnostics.receive(Diagnostic::InvalidEqualityLeft(
-                                InvalidEqualityLeft { span: left_span },
-                            ));
-                            continue;
-                        }
-                        None => continue,
-                    }
-
-                    predicates.push(Predicate::new(
-                        PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
-                            left, right,
-                        )),
-                        equality.span(),
+                Constraint::TypeEquality(equality) => predicates.extend(
+                    resolve_type_equality(
+                        engine,
+                        &mut resolver,
+                        &diagnostics,
+                        &equality,
+                        is_marker_implementation,
+                    )
+                    .await,
+                ),
+                // Marker implementations assume the requirements of their
+                // head (see `head_requirements`), and marker entailment ignores
+                // lifetimes, so an outlives predicate there has no use.
+                Constraint::OutlivesPredicate(syntax) if is_marker_implementation => {
+                    diagnostics.receive(Diagnostic::InvalidMarkerImplementationPredicate(
+                        InvalidMarkerImplementationPredicate {
+                            span: syntax.span(),
+                            kind: InvalidMarkerImplementationPredicateKind::NonMarkerPredicate,
+                        },
                     ));
                 }
-                Constraint::OutlivesPredicate(predicate) => {
-                    resolve_outlives_predicate(&mut resolver, &predicate).await;
+                // Only `def`s, structs, and marker implementations have implied
+                // bounds, so other declarations must write theirs.
+                Constraint::OutlivesPredicate(syntax) => {
+                    if let Some(predicate) =
+                        resolve_outlives_predicate(&mut resolver, &syntax).await
+                    {
+                        predicates.push(Predicate::new(
+                            PredicateKind::Outlives(predicate),
+                            syntax.span(),
+                            PredicateOrigin::Declared,
+                        ));
+                    }
                 }
                 Constraint::MarkerPredicate(predicate) => {
                     // Incomplete predicates already have parser diagnostics.
@@ -258,6 +256,7 @@ impl Build for Key {
                         predicates.push(Predicate::new(
                             PredicateKind::Marker(MarkerPredicate::new(marker_id, implementor)),
                             predicate.span(),
+                            PredicateOrigin::Declared,
                         ));
                     }
                 }
@@ -270,6 +269,7 @@ impl Build for Key {
         }
 
         // Preserve the predicates as assumptions for later semantic consumers.
+        // Implied bounds are added by the complete where clause query.
         Output::new_with(
             engine.intern(WhereClause::new(engine.intern_unsized(predicates))),
             diagnostics.into_vec(),
@@ -279,21 +279,146 @@ impl Build for Key {
     }
 }
 
-register_build!(Key);
+register_build!(DeclaredKey);
 
-/// Resolves the names in an outlives predicate.
+/// Completes the declared where clause of a symbol with its implied bounds.
+#[executor(config = Config)]
+async fn where_clause_executor(
+    &Key { symbol_id }: &Key,
+    engine: &TrackedEngine,
+) -> Interned<WhereClause> {
+    // Only symbols that support a where clause have declared predicates.
+    let mut predicates = Vec::new();
+    if engine.get_symbol_kind(symbol_id).await.has_where_clause() {
+        let declared = engine.get_declared_where_clause(symbol_id).await;
+        predicates.extend(declared.predicates().cloned());
+    }
+
+    // Implied bounds point at the declaration that implies them.
+    let implied = implied_bounds(symbol_id, engine).await;
+    if !implied.is_empty() {
+        let span =
+            engine.get_span(symbol_id).await.expect("a declaration with implied bounds has a span");
+        predicates.extend(implied.into_iter().map(|predicate| {
+            Predicate::new(PredicateKind::Outlives(predicate), span, PredicateOrigin::Implied)
+        }));
+    }
+
+    if engine.get_symbol_kind(symbol_id).await == SymbolKind::MarkerImplementation {
+        predicates.extend(head_requirements(symbol_id, engine).await);
+    }
+
+    engine.intern(WhereClause::new(engine.intern_unsized(predicates)))
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static WHERE_CLAUSE_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, WhereClauseExecutor>();
+
+/// Returns the requirements for naming the head of a marker implementation,
+/// which the implementation assumes instead of spelling out.
 ///
-/// Outlives predicates become semantic predicates together with the borrow
-/// checker's outlives relation. Until then only their names are resolved, so
-/// that mistakes are reported.
-async fn resolve_outlives_predicate(resolver: &mut Resolver<'_>, predicate: &OutlivesPredicate) {
-    if let Some(bounded) = predicate.bounded() {
-        let _ = resolver.infer_type_term(&bounded).await;
+/// An implementation only applies to a goal type that matches its head, and
+/// that goal type is well-formed where it is named, so these requirements
+/// hold wherever the implementation is used. A valid head is one constructor
+/// applied to distinct variables, so they are the requirements of that
+/// constructor stated over those variables, such as `t: 'a` for `&'a t` or
+/// the where clause of the struct `S[t]`.
+async fn head_requirements(symbol_id: GlobalSymbolID, engine: &TrackedEngine) -> Vec<Predicate> {
+    let key = rayc_semantic_element::marker_implementation::Key { symbol_id };
+    let obligations = engine.query(&ObligationKey::new(key)).await;
+
+    let mut predicates = Vec::new();
+    for obligation in obligations.iter() {
+        match obligation {
+            Obligation::WfCheck(check) => {
+                for obligation in check.predicate_obligations(engine).await {
+                    predicates.push(Predicate::new(
+                        obligation.predicate().clone(),
+                        obligation.span(),
+                        PredicateOrigin::Implied,
+                    ));
+                }
+            }
+            Obligation::ReferenceWf(check) => predicates.push(Predicate::new(
+                PredicateKind::Outlives(check.predicate()),
+                check.span(),
+                PredicateOrigin::Implied,
+            )),
+            // A head has no given arguments to check.
+            Obligation::TraitRefCheck(_) => {}
+        }
     }
-    if let Some(bound) = predicate.bound() {
-        let _ = resolver.resolve_lifetime(&bound).await;
+    predicates
+}
+
+/// Resolves a type equality of a where clause into a predicate, reporting an
+/// equality that is not allowed.
+async fn resolve_type_equality(
+    engine: &TrackedEngine,
+    resolver: &mut Resolver<'_>,
+    diagnostics: &dyn Handler<Diagnostic>,
+    equality: &TypeEquality,
+    is_marker_implementation: bool,
+) -> Option<Predicate> {
+    // Marker implementations only accept marker predicates.
+    if is_marker_implementation {
+        diagnostics.receive(Diagnostic::InvalidMarkerImplementationPredicate(
+            InvalidMarkerImplementationPredicate {
+                span: equality.equals().map_or_else(|| equality.span(), |equals| equals.span()),
+                kind: InvalidMarkerImplementationPredicateKind::NonMarkerPredicate,
+            },
+        ));
+        return None;
     }
-    // TODO: implement outlives predicate and add it
+
+    // Incomplete constraints already have parser diagnostics.
+    let (Some(left), Some(right)) = (equality.left(), equality.right()) else {
+        return None;
+    };
+    let left_span = left.span();
+
+    // Infer the left operand's kind, then check the right against it.
+    let left = resolver.infer_type_term(&left).await;
+    let right = resolver.resolve_type_term(&right, left.kind_of(engine).await).await;
+
+    match left.is_opaque_projection() {
+        Some(true) => {}
+        Some(false) => {
+            diagnostics
+                .receive(Diagnostic::InvalidEqualityLeft(InvalidEqualityLeft { span: left_span }));
+            return None;
+        }
+        None => return None,
+    }
+
+    Some(Predicate::new(
+        PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(left, right)),
+        equality.span(),
+        PredicateOrigin::Declared,
+    ))
+}
+
+/// Resolves an outlives predicate, such as `'a: 'b` or `t: 'a`. The subject
+/// may be of any kind, a dictionary included.
+///
+/// Returns `None` when an operand is missing or failed to resolve, since
+/// those are already reported.
+async fn resolve_outlives_predicate(
+    resolver: &mut Resolver<'_>,
+    syntax: &OutlivesPredicate,
+) -> Option<rayc_type::where_clause::OutlivesPredicate> {
+    let (Some(bounded_syntax), Some(bound_syntax)) = (syntax.bounded(), syntax.bound()) else {
+        return None;
+    };
+
+    let bounded = resolver.infer_type_term(&bounded_syntax).await;
+    let bound = resolver.resolve_lifetime(&bound_syntax).await;
+    if bounded.contains_error() || bound.contains_error() {
+        return None;
+    }
+
+    Some(rayc_type::where_clause::OutlivesPredicate::new(bounded, bound))
 }
 
 async fn elaborate_callable(
@@ -371,6 +496,7 @@ async fn elaborate_callable(
         predicates.push(Predicate::new(
             PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(left, right)),
             span,
+            PredicateOrigin::Declared,
         ));
     }
 }

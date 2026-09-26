@@ -512,7 +512,7 @@ async fn build_handler_layout_executor(
     engine: &TrackedEngine,
 ) -> Interned<HandlerLayout> {
     let instance = &key.instance;
-    let solver = Solver::without_givens(engine.clone());
+    let solver = Solver::without_givens(engine.clone()).await;
     let members = engine.get_members(instance.effect_id()).await;
     let mut operations = members
         .namable_members()

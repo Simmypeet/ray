@@ -31,7 +31,7 @@ use crate::{builder::Builder, resolver::Resolver};
 /// Lowers one generated nominal Drop instance into its own `MonoIR` fragment.
 pub(crate) async fn lower(engine: &TrackedEngine, instance: MonoNominalDropInstance) -> MonoIR {
     // The dictionary key is concrete, so no owner substitution applies.
-    let resolver = Resolver::new(Solver::without_givens(engine.clone()), Subst::new_empty());
+    let resolver = Resolver::new(Solver::without_givens(engine.clone()).await, Subst::new_empty());
     let view = instance.view();
     let nominal = view.nominal().clone();
     let external_instances = view.external_instances().to_vec();

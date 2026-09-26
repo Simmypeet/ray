@@ -125,9 +125,12 @@ impl<'x> ImpliedOutlivesCollector<'x> {
 ///   parameter and return types;
 /// - a struct assumes its inferred outlives predicates.
 ///
-/// No other declaration has implied bounds; its bounds must be written in
-/// its where clause. These become part of the symbol's
-/// [`WhereClause`](rayc_type::where_clause::WhereClause).
+/// These become part of the symbol's
+/// [`WhereClause`](rayc_type::where_clause::WhereClause). A marker
+/// implementation also assumes the requirements of its head, which come from
+/// resolving it and are added to its where clause separately. No other
+/// declaration has implied bounds; its bounds must be written in its where
+/// clause.
 pub async fn implied_bounds(
     symbol_id: GlobalSymbolID,
     engine: &TrackedEngine,

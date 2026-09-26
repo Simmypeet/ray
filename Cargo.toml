@@ -99,7 +99,6 @@ ron = "0.10.1"
 typetag = "0.2.19"
 erased-serde = "0.4.5"
 indicatif = "0.18.2"
-inkwell = { version = "0.5.0", features = ["llvm18-0", "no-libffi-linking"] }
 bon = "3.7.0"
 assert_cmd = "2.0.16"
 backtrace = "0.3.69"
@@ -150,9 +149,6 @@ ropey = "1.6.1"
 annotate-snippets = "0.12"
 ansi_term = "0.12.1"
 tokio-util = "0.7.1"
-
-[patch.crates-io]
-inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }
 
 [workspace.package]
 version = "0.1.0-beta.2"

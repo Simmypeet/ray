@@ -213,9 +213,13 @@ impl Predicate {
 /// in declaration order, followed by the outlives bounds implied by the
 /// well-formedness of its declaration.
 ///
-/// Only plain `def`s and structs have implied bounds:
-/// - for a `def`, the well-formedness of its parameter and return types;
-/// - for a struct, its inferred outlives predicates.
+/// Only plain `def`s, structs, and marker implementations have implied
+/// bounds:
+/// - for a `def`, the bounds implied by the references in its parameter and
+///   return types;
+/// - for a struct, its inferred outlives predicates;
+/// - for a marker implementation, every requirement of naming its head, marker
+///   predicates included.
 ///
 /// Every other declaration spells its bounds out in its where clause.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]

@@ -30,7 +30,7 @@ pub async fn lower_ir(
 ) -> MonoIR {
     // One solver serves the whole fragment, starting with its own key.
     let source = engine.get_ir(def_id).await;
-    let solver = Solver::without_givens(engine.clone());
+    let solver = Solver::without_givens(engine.clone()).await;
     let instance = MonoDefInstance::new(def_id, substitution, &solver).await;
     Context::new(solver, instance, source).lower().await
 }
