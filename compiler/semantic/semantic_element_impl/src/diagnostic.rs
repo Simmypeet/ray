@@ -39,7 +39,7 @@ async fn single_rendered_executor(
     let kind = engine.get_symbol_kind(symbol_id).await;
 
     if kind.has_where_clause() {
-        let where_clause_key = rayc_type::where_clause::Key { symbol_id };
+        let where_clause_key = rayc_type::where_clause::DeclaredKey { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(where_clause_key)).await;
         let generated = engine.query(&ObligationKey::new(where_clause_key)).await;
 
@@ -83,7 +83,7 @@ async fn single_rendered_executor(
     }
 
     if kind == rayc_symbol::symbol_kind::SymbolKind::Instance {
-        let instance_key = rayc_semantic_element::instance_trait_ref::Key { symbol_id };
+        let instance_key = rayc_type::trait_ref::InstanceTraitRefKey { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(instance_key)).await;
         let generated = engine.query(&ObligationKey::new(instance_key)).await;
 

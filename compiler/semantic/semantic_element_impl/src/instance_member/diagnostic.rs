@@ -139,6 +139,11 @@ async fn display_predicate(predicate: &PredicateKind, engine: &TrackedEngine) ->
             predicate.implementor().display(engine).await,
             engine.get_qualified_name(predicate.marker_id()).await
         ),
+        PredicateKind::Outlives(predicate) => format!(
+            "`{}` must outlive `{}`",
+            predicate.subject().display(engine).await,
+            predicate.bound().display(engine).await
+        ),
     }
 }
 

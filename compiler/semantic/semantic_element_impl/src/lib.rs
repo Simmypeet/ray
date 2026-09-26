@@ -5,6 +5,7 @@ pub mod build;
 pub mod diagnostic;
 mod effect_row;
 mod extern_signature;
+mod inferred_outlives;
 pub mod instance_member;
 pub mod instance_trait_ref;
 mod marker_implementation;

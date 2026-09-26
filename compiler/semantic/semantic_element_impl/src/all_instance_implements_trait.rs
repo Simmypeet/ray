@@ -2,14 +2,12 @@ use linkme::distributed_slice;
 use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_hash::FxHashSet;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_semantic_element::{
-    all_instance_implements_trait::AllInstanceImplementsTrait,
-    instance_trait_ref::get_instance_trait_ref,
-};
+use rayc_semantic_element::all_instance_implements_trait::AllInstanceImplementsTrait;
 use rayc_solver::Solver;
 use rayc_symbol::{GlobalSymbolID, symbol_kind::get_all_instance_ids};
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
+    trait_ref::get_instance_trait_ref,
     ty::{Ty, TyKind},
 };
 
