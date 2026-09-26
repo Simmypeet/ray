@@ -7,7 +7,7 @@ use rayc_parser::{
 };
 
 use crate::{
-    Identifier, Keyword,
+    Identifier, Keyword, Punctuation,
     def::{ParameterList, ReturnType},
     given::GivenParameterList,
     kind::KindAscription,
@@ -25,9 +25,30 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    pub enum TypeParameter {
+    pub enum TypeParameterKind {
         Lifetime(Lifetime = ast::<Lifetime>()),
         Variable(TypeVariableParameter = ast::<TypeVariableParameter>())
+    }
+}
+
+abstract_tree::abstract_tree! {
+    /// The variance written before a type parameter: `+` for covariant, `-`
+    /// for contravariant, and `=` for invariant.
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub enum VarianceMarker {
+        Covariant(Punctuation = '+'),
+        Contravariant(Punctuation = '-'),
+        Invariant(Punctuation = '=')
+    }
+}
+
+abstract_tree::abstract_tree! {
+    /// A type or lifetime parameter, optionally preceded by its variance, as
+    /// in `+'a` or `=t`.
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct TypeParameter {
+        pub variance: VarianceMarker = ast::<VarianceMarker>().optional(),
+        pub kind: TypeParameterKind = ast::<TypeParameterKind>()
     }
 }
 

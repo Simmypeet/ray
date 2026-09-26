@@ -3,8 +3,8 @@
 //! Variance is the four-point lattice with [`Variance::Bivariant`] at the
 //! bottom, [`Variance::Invariant`] at the top, and the covariant and
 //! contravariant points in between. The variances of built-in constructors are
-//! fixed. Those of struct and `eff` parameters are computed from their
-//! declarations; see [`VarianceKey`].
+//! fixed. Those of struct and `eff` parameters are declared, as in `+t`, or
+//! computed from their declarations; see [`VarianceKey`].
 
 use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_hash::FxHashMap;
@@ -77,6 +77,38 @@ impl Variance {
         }
     }
 
+    /// Returns whether `self` is at most `bound` in the lattice, so that a
+    /// parameter used at `self` may be declared as `bound`.
+    #[must_use]
+    pub fn is_within(self, bound: Self) -> bool {
+        // The derived order is not the lattice order, but `join` is the least
+        // upper bound.
+        self.join(bound) == bound
+    }
+
+    /// Returns the name of the variance, as in "covariant".
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Bivariant => "bivariant",
+            Self::Covariant => "covariant",
+            Self::Contravariant => "contravariant",
+            Self::Invariant => "invariant",
+        }
+    }
+
+    /// Returns the marker that declares the variance before a parameter, as
+    /// the `+` of `+t`, or `None` for bivariance, which cannot be declared.
+    #[must_use]
+    pub const fn marker(self) -> Option<&'static str> {
+        match self {
+            Self::Bivariant => None,
+            Self::Covariant => Some("+"),
+            Self::Contravariant => Some("-"),
+            Self::Invariant => Some("="),
+        }
+    }
+
     /// Swaps covariance and contravariance.
     #[must_use]
     pub const fn flip(self) -> Self {
@@ -100,12 +132,16 @@ pub struct VarianceMap {
 }
 
 impl VarianceMap {
-    /// Creates a map in which every polymorphic variable of `poly_vars` is
-    /// [`Variance::Bivariant`], that is, not used yet.
+    /// Creates a map in which every polymorphic variable of `poly_vars` has
+    /// its declared variance, or is [`Variance::Bivariant`], that is, not
+    /// used yet.
     #[must_use]
-    pub fn new_unused(poly_vars: &PolyVarMap) -> Self {
+    pub fn new(poly_vars: &PolyVarMap) -> Self {
         Self {
-            variances: vec![Variance::Bivariant; poly_vars.len()],
+            variances: poly_vars
+                .iter()
+                .map(|(_, poly_var)| poly_var.declared_variance().unwrap_or(Variance::Bivariant))
+                .collect(),
             indices_by_id: poly_vars
                 .iter()
                 .enumerate()
@@ -138,7 +174,8 @@ impl VarianceMap {
 
     /// Joins `variance` into the variance of the polymorphic variable with
     /// the given ID, recording one more use of it. Returns whether its
-    /// variance changed.
+    /// variance changed. The variance of a declared variable must not be
+    /// joined into, since it is fixed.
     ///
     /// # Panics
     ///
@@ -158,8 +195,10 @@ impl VarianceMap {
 
     /// Makes every unused polymorphic variable that is not a lifetime
     /// invariant, so that no `PhantomData` equivalent is needed. An unused
-    /// lifetime stays bivariant, to be reported. `poly_vars` must be the map
-    /// this one was created from. Returns whether any variance changed.
+    /// lifetime stays bivariant, so its arguments are never related. A
+    /// declared variable is never bivariant, so it is left alone. `poly_vars`
+    /// must be the map this one was created from. Returns whether any
+    /// variance changed.
     pub fn default_unused(&mut self, poly_vars: &PolyVarMap) -> bool {
         let mut changed = false;
         for (variance, (_, poly_var)) in self.variances.iter_mut().zip(poly_vars.iter()) {
@@ -176,14 +215,15 @@ impl VarianceMap {
 /// `eff`, in the order of its poly var map, which is also the order of its
 /// arguments.
 ///
-/// A struct parameter's variance is the join of its uses in the field types.
-/// A `perform` calls the handler, so an `eff` parameter used in an
-/// operation's parameter types is covariant, one used in its return type is
+/// A parameter declared as `+t`, `-t` or `=t` has that variance. Otherwise, a
+/// struct parameter's variance is the join of its uses in the field types. A
+/// `perform` calls the handler, so an `eff` parameter used in an operation's
+/// parameter types is covariant, one used in its return type is
 /// contravariant, and one used in both is invariant.
 ///
-/// An unused lifetime parameter is [`Variance::Bivariant`] and is reported as
-/// an error. Every other unused parameter is [`Variance::Invariant`], so no
-/// `PhantomData` equivalent is needed.
+/// An unused lifetime parameter is [`Variance::Bivariant`]. Every other
+/// unused parameter is [`Variance::Invariant`], so no `PhantomData`
+/// equivalent is needed.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]

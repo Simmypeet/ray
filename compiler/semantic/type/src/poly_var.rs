@@ -18,6 +18,7 @@ use crate::{
     subst::Subst,
     trait_ref::TraitRef,
     ty::{Ty, TyKind},
+    variance::Variance,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -76,12 +77,21 @@ pub struct PolyVar {
     origin: PolyVarOrigin,
     kind: PolyVarKind,
     span: RelativeSpan,
+
+    /// The variance written on the parameter, as in `+t`, if any.
+    declared_variance: Option<Variance>,
 }
 
 impl PolyVar {
     #[must_use]
     pub const fn new_type(name: Interned<str>, span: RelativeSpan) -> Self {
-        Self { name, origin: PolyVarOrigin::Source, kind: PolyVarKind::Type(TyKind::Star), span }
+        Self {
+            name,
+            origin: PolyVarOrigin::Source,
+            kind: PolyVarKind::Type(TyKind::Star),
+            span,
+            declared_variance: None,
+        }
     }
 
     #[must_use]
@@ -91,6 +101,7 @@ impl PolyVar {
             origin: PolyVarOrigin::Source,
             kind: PolyVarKind::Type(TyKind::EffectRow),
             span,
+            declared_variance: None,
         }
     }
 
@@ -103,6 +114,7 @@ impl PolyVar {
             origin: PolyVarOrigin::Source,
             kind: PolyVarKind::Type(TyKind::Lifetime),
             span,
+            declared_variance: None,
         }
     }
 
@@ -112,8 +124,26 @@ impl PolyVar {
         trait_ref: TraitRef,
         span: RelativeSpan,
     ) -> Self {
-        Self { name, origin: PolyVarOrigin::Source, kind: PolyVarKind::Instance(trait_ref), span }
+        Self {
+            name,
+            origin: PolyVarOrigin::Source,
+            kind: PolyVarKind::Instance(trait_ref),
+            span,
+            declared_variance: None,
+        }
     }
+
+    /// Declares the variance of this parameter, as in `+t`. The declared
+    /// variance replaces the inferred one, which must not exceed it.
+    #[must_use]
+    pub const fn with_declared_variance(mut self, variance: Variance) -> Self {
+        self.declared_variance = Some(variance);
+        self
+    }
+
+    /// Returns the variance written on the parameter, if any.
+    #[must_use]
+    pub const fn declared_variance(&self) -> Option<Variance> { self.declared_variance }
 
     #[must_use]
     pub const fn is_source(&self) -> bool { matches!(self.origin, PolyVarOrigin::Source) }

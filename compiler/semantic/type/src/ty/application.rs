@@ -417,7 +417,9 @@ impl Application {
     fn argument_variance(&self, index: usize, struct_variances: Option<&VarianceMap>) -> Variance {
         match self.constant {
             Constant::Tuple => Variance::Covariant,
-            Constant::Pointer(mutability) => mutability.pointee_variance(),
+
+            // Raw pointers are unchecked, so their pointee is never related.
+            Constant::Pointer(_) => Variance::Bivariant,
 
             // The lifetime comes first and is always covariant.
             Constant::Reference(mutability) => {

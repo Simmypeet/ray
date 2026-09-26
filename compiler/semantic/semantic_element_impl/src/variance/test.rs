@@ -81,7 +81,8 @@ impl Declarations {
     }
 
     /// Declares a symbol whose parameters are named `names`, where a name
-    /// starting with `'` is a lifetime. Returns the symbol and its parameters.
+    /// starting with `'` is a lifetime, and a leading `+`, `-` or `=`
+    /// declares the variance. Returns the symbol and its parameters.
     fn declare<const N: usize>(
         &mut self,
         names: [&'static str; N],
@@ -89,12 +90,21 @@ impl Declarations {
         let symbol_id = self.fresh_id();
         let mut poly_vars = PolyVarMap::new();
         let ids = names.map(|name| {
+            let (declared, name) = match name.split_at(1) {
+                ("+", rest) => (Some(Covariant), rest),
+                ("-", rest) => (Some(Contravariant), rest),
+                ("=", rest) => (Some(Invariant), rest),
+                _ => (None, name),
+            };
             let name_str = self.tracked.intern_unsized(name);
-            let poly_var = if name.starts_with('\'') {
+            let mut poly_var = if name.starts_with('\'') {
                 PolyVar::new_lifetime(name_str, span())
             } else {
                 PolyVar::new_type(name_str, span())
             };
+            if let Some(declared) = declared {
+                poly_var = poly_var.with_declared_variance(declared);
+            }
             poly_vars.insert(poly_var).unwrap()
         });
         self.poly_vars.insert(PolyVarKey { symbol_id }, self.tracked.intern(poly_vars));
@@ -240,52 +250,109 @@ async fn mutable_reference_inside_struct_is_invariant() {
     assert_eq!(variances(&*engine.get_variance(outer).await), [Covariant, Invariant]);
 }
 
-// input: struct List['a, t]: (*t, *List['a, t])
+// input: struct List['a, 'n, t]: (&'n t, &'n List['a, 'n, t])
 // premise: {}
-// output: ['a Bivariant, t Covariant]; the recursion alone does not use 'a
+// output: ['a Bivariant, 'n Covariant, t Covariant]; the recursion alone does
+//         not use 'a
 #[tokio::test]
 async fn recursion_alone_does_not_use_a_parameter() {
     let mut declarations = Declarations::new().await;
-    let (list, [a, t]) = declarations.declare(["'a", "t"]);
-    let list_ty = declarations.structure(list, [&a, &t]);
+    let (list, [a, n, t]) = declarations.declare(["'a", "'n", "t"]);
+    let list_ty = declarations.structure(list, [&a, &n, &t]);
     let fields = [
-        declarations.pointer(&t, Mutability::Immutable),
-        declarations.pointer(&list_ty, Mutability::Immutable),
+        declarations.reference(&n, &t, Mutability::Immutable),
+        declarations.reference(&n, &list_ty, Mutability::Immutable),
     ];
     declarations.define_struct(list, fields);
 
     let engine = declarations.finish().await;
-    assert_eq!(variances(&*engine.get_variance(list).await), [Bivariant, Covariant]);
+    assert_eq!(variances(&*engine.get_variance(list).await), [Bivariant, Covariant, Covariant]);
 }
 
-// input: struct Even['a, 'b]: (&'a int32, *Odd['a, 'b]), and
-//        struct Odd['a, 'b]: (*mut Even['a, 'b], &'b int32)
+// input: struct Even['a, 'b, 'n]: (&'a int32, &'n Odd['a, 'b, 'n]), and
+//        struct Odd['a, 'b, 'n]: (&'n mut Even['a, 'b, 'n], &'b int32)
 // premise: {}
-// output: both are ['a Invariant, 'b Invariant]
+// output: both are ['a Invariant, 'b Invariant, 'n Invariant]
 #[tokio::test]
 async fn invariance_propagates_through_mutual_recursion() {
     let mut declarations = Declarations::new().await;
-    let (even, [even_a, even_b]) = declarations.declare(["'a", "'b"]);
-    let (odd, [odd_a, odd_b]) = declarations.declare(["'a", "'b"]);
+    let (even, [even_a, even_b, even_n]) = declarations.declare(["'a", "'b", "'n"]);
+    let (odd, [odd_a, odd_b, odd_n]) = declarations.declare(["'a", "'b", "'n"]);
     let int32 = declarations.int32();
 
-    let odd_ty = declarations.structure(odd, [&even_a, &even_b]);
+    let odd_ty = declarations.structure(odd, [&even_a, &even_b, &even_n]);
     let even_fields = [
         declarations.reference(&even_a, &int32, Mutability::Immutable),
-        declarations.pointer(&odd_ty, Mutability::Immutable),
+        declarations.reference(&even_n, &odd_ty, Mutability::Immutable),
     ];
     declarations.define_struct(even, even_fields);
 
-    let even_ty = declarations.structure(even, [&odd_a, &odd_b]);
+    let even_ty = declarations.structure(even, [&odd_a, &odd_b, &odd_n]);
     let odd_fields = [
-        declarations.pointer(&even_ty, Mutability::Mutable),
+        declarations.reference(&odd_n, &even_ty, Mutability::Mutable),
         declarations.reference(&odd_b, &int32, Mutability::Immutable),
     ];
     declarations.define_struct(odd, odd_fields);
 
     let engine = declarations.finish().await;
-    assert_eq!(variances(&*engine.get_variance(even).await), [Invariant, Invariant]);
-    assert_eq!(variances(&*engine.get_variance(odd).await), [Invariant, Invariant]);
+    assert_eq!(variances(&*engine.get_variance(even).await), [Invariant; 3]);
+    assert_eq!(variances(&*engine.get_variance(odd).await), [Invariant; 3]);
+}
+
+// input: struct Raw['a, t]: (*t, *mut &'a int32)
+// premise: {}
+// output: ['a Bivariant, t Invariant]; a raw pointer's pointee is not a use
+#[tokio::test]
+async fn raw_pointer_pointee_is_not_a_use() {
+    let mut declarations = Declarations::new().await;
+    let (raw, [a, t]) = declarations.declare(["'a", "t"]);
+    let int32 = declarations.int32();
+    let reference = declarations.reference(&a, &int32, Mutability::Immutable);
+    let fields = [
+        declarations.pointer(&t, Mutability::Immutable),
+        declarations.pointer(&reference, Mutability::Mutable),
+    ];
+    declarations.define_struct(raw, fields);
+
+    let engine = declarations.finish().await;
+    assert_eq!(variances(&*engine.get_variance(raw).await), [Bivariant, Invariant]);
+}
+
+// input: struct Token[-'a, +t, =u]: int32
+// premise: {}
+// output: ['a Contravariant, t Covariant, u Invariant]
+#[tokio::test]
+async fn unused_parameter_has_its_declared_variance() {
+    let mut declarations = Declarations::new().await;
+    let (token, _) = declarations.declare(["-'a", "+t", "=u"]);
+    let int32 = declarations.int32();
+    declarations.define_struct(token, [int32]);
+
+    let engine = declarations.finish().await;
+    assert_eq!(variances(&*engine.get_variance(token).await), [
+        Contravariant,
+        Covariant,
+        Invariant
+    ]);
+}
+
+// input: struct Cell['a, =t]: &'a t, and struct User['b, u]: Cell['b, u]
+// premise: {}
+// output: Cell is ['a Covariant, t Invariant], and so User is
+//         ['b Covariant, u Invariant]
+#[tokio::test]
+async fn declared_variance_replaces_inferred_variance_at_uses() {
+    let mut declarations = Declarations::new().await;
+    let (cell, [a, t]) = declarations.declare(["'a", "=t"]);
+    let (user, [b, u]) = declarations.declare(["'b", "u"]);
+    let cell_field = declarations.reference(&a, &t, Mutability::Immutable);
+    declarations.define_struct(cell, [cell_field]);
+    let user_field = declarations.structure(cell, [&b, &u]);
+    declarations.define_struct(user, [user_field]);
+
+    let engine = declarations.finish().await;
+    assert_eq!(variances(&*engine.get_variance(cell).await), [Covariant, Invariant]);
+    assert_eq!(variances(&*engine.get_variance(user).await), [Covariant, Invariant]);
 }
 
 // input: struct Phantom[t]: int32, and struct User[u]: Phantom[u]

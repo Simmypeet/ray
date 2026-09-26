@@ -22,7 +22,10 @@ use rayc_symbol::{
         get_given_parameter_list_syntax, get_parameter_list_syntax, get_type_parameter_list_syntax,
     },
 };
-use rayc_syntax::{effect::TypeParameter, r#type::Lifetime as LifetimeSyntax};
+use rayc_syntax::{
+    effect::{TypeParameterKind, VarianceMarker},
+    r#type::Lifetime as LifetimeSyntax,
+};
 use rayc_type::{
     poly_var::{
         GlobalPolyVarID, PolyVar, PolyVarMap, PolyVarOrigin, PolyVarStack,
@@ -30,6 +33,7 @@ use rayc_type::{
     },
     trait_ref::TraitRef,
     ty::{Ty, args::Args},
+    variance::Variance,
 };
 
 use crate::{
@@ -84,6 +88,7 @@ pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
     DuplicatePolyVar(DuplicatePolyVar),
     ReservedLifetimeName(ReservedLifetimeName),
+    MisplacedVarianceMarker(MisplacedVarianceMarker),
 }
 
 /// A lifetime parameter declared as `'static` or `'_`.
@@ -119,12 +124,47 @@ impl Report for ReservedLifetimeName {
     }
 }
 
+/// A variance written on a parameter of a declaration other than a struct or
+/// an `eff`, whose parameters have no variance.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct MisplacedVarianceMarker {
+    span: RelativeSpan,
+}
+
+impl Report for MisplacedVarianceMarker {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("variance cannot be declared here")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("only the parameters of a `struct` or an `eff` have a variance")
+                    .build(),
+            )
+            .build()
+    }
+}
+
 impl Report for Diagnostic {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::DuplicatePolyVar(diagnostic) => diagnostic.report(engine).await,
             Self::ReservedLifetimeName(diagnostic) => diagnostic.report(engine).await,
+            Self::MisplacedVarianceMarker(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -270,41 +310,69 @@ async fn insert_given_parameters(
     }
 }
 
+/// Returns the variance a marker such as `+` declares.
+const fn marked_variance(marker: &VarianceMarker) -> Variance {
+    match marker {
+        VarianceMarker::Covariant(_) => Variance::Covariant,
+        VarianceMarker::Contravariant(_) => Variance::Contravariant,
+        VarianceMarker::Invariant(_) => Variance::Invariant,
+    }
+}
+
 /// Declares the explicit type and lifetime parameters of `symbol_id`.
+/// Variance markers are only allowed when `has_variance` is set, and are
+/// reported otherwise.
 async fn declare_type_parameters(
     engine: &TrackedEngine,
     symbol_id: GlobalSymbolID,
     enclosing: Option<&PolyVarStack>,
+    has_variance: bool,
     storage: &Storage<Diagnostic>,
 ) -> PolyVarMap {
     let mut poly_vars = PolyVarMap::new();
 
     if let Some(type_parameters) = engine.get_type_parameter_list_syntax(symbol_id).await {
         for parameter in type_parameters.parameters() {
-            let parameter = match parameter {
-                TypeParameter::Lifetime(lifetime) => {
-                    if let Some(variable) = lifetime_parameter(engine, &lifetime, storage) {
-                        insert_poly_var(&mut poly_vars, enclosing, variable, storage);
-                    }
-                    continue;
+            // Declare the parameter itself.
+            let variable = match parameter.kind() {
+                Some(TypeParameterKind::Lifetime(lifetime)) => {
+                    lifetime_parameter(engine, &lifetime, storage)
                 }
-                TypeParameter::Variable(parameter) => parameter,
+                Some(TypeParameterKind::Variable(parameter)) => {
+                    parameter.name().map(|identifier| {
+                        match crate::associated_type_kind::resolve_kind(parameter.kind_ascription())
+                        {
+                            rayc_type::ty::TyKind::Star => {
+                                PolyVar::new_type(identifier.kind.0.clone(), identifier.span())
+                            }
+                            rayc_type::ty::TyKind::EffectRow => {
+                                PolyVar::new_effect(identifier.kind.0.clone(), identifier.span())
+                            }
+                            rayc_type::ty::TyKind::Instance | rayc_type::ty::TyKind::Lifetime => {
+                                unreachable!(
+                                    "kind ascriptions cannot declare dictionaries or lifetimes"
+                                )
+                            }
+                        }
+                    })
+                }
+                None => None,
             };
-            let Some(identifier) = parameter.name() else {
+            let Some(mut variable) = variable else {
                 continue;
             };
-            let variable =
-                match crate::associated_type_kind::resolve_kind(parameter.kind_ascription()) {
-                    rayc_type::ty::TyKind::Star => {
-                        PolyVar::new_type(identifier.kind.0.clone(), identifier.span())
-                    }
-                    rayc_type::ty::TyKind::EffectRow => {
-                        PolyVar::new_effect(identifier.kind.0.clone(), identifier.span())
-                    }
-                    rayc_type::ty::TyKind::Instance | rayc_type::ty::TyKind::Lifetime => {
-                        unreachable!("kind ascriptions cannot declare dictionaries or lifetimes")
-                    }
-                };
+
+            // Attach its declared variance, where variances exist.
+            if let Some(marker) = parameter.variance() {
+                if has_variance {
+                    variable = variable.with_declared_variance(marked_variance(&marker));
+                } else {
+                    storage.receive(Diagnostic::MisplacedVarianceMarker(MisplacedVarianceMarker {
+                        span: marker.span(),
+                    }));
+                }
+            }
+
             insert_poly_var(&mut poly_vars, enclosing, variable, storage);
         }
     }
@@ -347,9 +415,14 @@ impl Build for rayc_type::poly_var::Key {
                 // variable, so only elided lifetimes are discovered after it.
                 // Without one, parameter types introduce their variables.
                 if engine.get_type_parameter_list_syntax(symbol_id).await.is_some() {
-                    let poly_vars =
-                        declare_type_parameters(engine, symbol_id, enclosing.as_deref(), &storage)
-                            .await;
+                    let poly_vars = declare_type_parameters(
+                        engine,
+                        symbol_id,
+                        enclosing.as_deref(),
+                        symbol_kind.has_variance_map(),
+                        &storage,
+                    )
+                    .await;
 
                     if introduce_elided {
                         discover_elided_lifetimes(
@@ -383,7 +456,14 @@ impl Build for rayc_type::poly_var::Key {
             | SymbolKind::Trait
             | SymbolKind::TraitType
             | SymbolKind::InstanceType => {
-                declare_type_parameters(engine, symbol_id, enclosing.as_deref(), &storage).await
+                declare_type_parameters(
+                    engine,
+                    symbol_id,
+                    enclosing.as_deref(),
+                    symbol_kind.has_variance_map(),
+                    &storage,
+                )
+                .await
             }
             SymbolKind::EffectOperation => {
                 panic!("an effect operation does not own a polymorphic-variable map")

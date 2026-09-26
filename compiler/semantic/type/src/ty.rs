@@ -56,9 +56,9 @@ impl Mutability {
         }
     }
 
-    /// Returns the variance of the pointee of a pointer or reference with this
+    /// Returns the variance of the pointee of a reference with this
     /// mutability: a shared pointee is covariant, and a mutable one is
-    /// invariant.
+    /// invariant. Raw pointers are bivariant in their pointee instead.
     #[must_use]
     pub const fn pointee_variance(&self) -> Variance {
         match self {
