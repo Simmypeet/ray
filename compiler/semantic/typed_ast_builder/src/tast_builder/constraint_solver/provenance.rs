@@ -429,6 +429,7 @@ impl Provenance {
                 subtype: TyRelate::new(
                     self.latest_type(origin.original_subtype.lesser(), solver).await,
                     self.latest_type(origin.original_subtype.greater(), solver).await,
+                    origin.original_subtype.variance(),
                 ),
             },
             RootCauseOrigin::EffectUnification(origin) => {

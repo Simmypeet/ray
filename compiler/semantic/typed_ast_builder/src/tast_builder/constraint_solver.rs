@@ -67,6 +67,12 @@ impl ConstraintSolver {
         }
     }
 
+    /// Takes every lifetime inference generated for this definition so far,
+    /// all of which the solver created while generalizing.
+    fn take_recorded_lifetime_inferences(&mut self) -> Vec<Inference> {
+        self.recorded_mut().take_lifetimes()
+    }
+
     /// Takes every numeric literal inference generated for this definition so
     /// far.
     fn take_recorded_numeric_inferences(&mut self) -> Vec<Inference> {
