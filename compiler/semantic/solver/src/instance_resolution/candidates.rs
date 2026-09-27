@@ -56,7 +56,7 @@ pub(super) async fn selected(
     let engine = solver.engine().clone();
     let head = engine.get_instance_trait_ref(instance_id).await?;
     let head = solver.normalize(&head).await;
-    let (subst, outlives) = solver.head_match(&head, required).await?.into_parts();
+    let (subst, outlives) = solver.type_head_match(&head, required).await?.into_parts();
 
     let parameters = engine.get_poly_var_map(instance_id).await;
     let pending_given_parameters = pending_given_parameters(&parameters, instance_id, &subst);
@@ -84,7 +84,7 @@ pub(super) async fn collect(
         // TODO: actually, we'd like for the instance-trait-ref to already be normalized
         // so that we can avoid this extra normalization step.
         let head = solver.normalize(&head).await;
-        let Some(solution) = solver.head_match(&head, required).await else {
+        let Some(solution) = solver.type_head_match(&head, required).await else {
             continue;
         };
         let (subst, outlives) = solution.into_parts();

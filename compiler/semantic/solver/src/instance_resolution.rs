@@ -11,7 +11,7 @@ use rayc_symbol::{
     core_item::{CoreItem, get_core_item},
 };
 use rayc_type::{
-    constraint::outlives::OutlivesConstraint,
+    constraint::outlives::OutlivesConstraints,
     poly_var::{GlobalPolyVarID, get_poly_var_map},
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
@@ -150,9 +150,8 @@ pub struct ResolvedInstance {
 
     /// Lifetimes never decide which dictionary is selected. Matching the
     /// selected heads and lexical dictionaries against their goals relates
-    /// the lifetimes in them instead, which produces these constraints. They
-    /// are empty when the solver drops outlives constraints.
-    outlives: Vec<OutlivesConstraint>,
+    /// the lifetimes in them instead, which produces these constraints.
+    outlives: OutlivesConstraints,
 }
 
 impl ResolvedInstance {
@@ -160,25 +159,22 @@ impl ResolvedInstance {
     const fn new(
         term: Interned<Ty>,
         obligations: Vec<InstanceResolutionObligation>,
-        outlives: Vec<OutlivesConstraint>,
+        outlives: OutlivesConstraints,
     ) -> Self {
         Self { term, obligations, outlives }
     }
 
     /// Adds outlives constraints that the resolution also requires.
     #[must_use]
-    pub(crate) fn with_outlives(
-        mut self,
-        outlives: impl IntoIterator<Item = OutlivesConstraint>,
-    ) -> Self {
-        self.outlives.extend(outlives);
+    pub(crate) fn with_outlives(mut self, outlives: OutlivesConstraints) -> Self {
+        self.outlives = self.outlives.union(outlives);
         self
     }
 
     /// Creates a resolution that requires nothing.
     #[must_use]
-    const fn new_unconditional(term: Interned<Ty>) -> Self {
-        Self::new(term, Vec::new(), Vec::new())
+    fn new_unconditional(term: Interned<Ty>) -> Self {
+        Self::new(term, Vec::new(), OutlivesConstraints::new())
     }
 
     /// Returns the dictionary term, the instantiated where-clause predicates
@@ -187,7 +183,7 @@ impl ResolvedInstance {
     #[must_use]
     pub fn into_parts(
         self,
-    ) -> (Interned<Ty>, Vec<InstanceResolutionObligation>, Vec<OutlivesConstraint>) {
+    ) -> (Interned<Ty>, Vec<InstanceResolutionObligation>, OutlivesConstraints) {
         (self.term, self.obligations, self.outlives)
     }
 }
@@ -620,7 +616,7 @@ impl Solver {
 
                 subst.compose(&Subst::new_singleton(global_parameter_id, argument), self.engine());
                 extend_unique_obligations(&mut obligations, nested_obligations);
-                outlives.extend(nested_outlives);
+                outlives = outlives.union(nested_outlives);
             }
 
             Ok(())
@@ -661,7 +657,7 @@ impl Solver {
 struct ResolvedElementInstances {
     instances: Vec<Interned<Ty>>,
     obligations: Vec<InstanceResolutionObligation>,
-    outlives: Vec<OutlivesConstraint>,
+    outlives: OutlivesConstraints,
 }
 
 impl ResolvedElementInstances {
@@ -669,7 +665,7 @@ impl ResolvedElementInstances {
         Self {
             instances: Vec::with_capacity(capacity),
             obligations: Vec::new(),
-            outlives: Vec::new(),
+            outlives: OutlivesConstraints::new(),
         }
     }
 
@@ -678,7 +674,7 @@ impl ResolvedElementInstances {
         let (instance, obligations, outlives) = resolved.into_parts();
         self.instances.push(instance);
         extend_unique_obligations(&mut self.obligations, obligations);
-        self.outlives.extend(outlives);
+        self.outlives = std::mem::take(&mut self.outlives).union(outlives);
     }
 }
 

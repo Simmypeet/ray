@@ -65,7 +65,7 @@ async fn maximal_candidates(solver: &mut Solver, heads: &[TraitRef]) -> Vec<usiz
 }
 
 async fn is_more_specific(solver: &mut Solver, a: &TraitRef, b: &TraitRef) -> bool {
-    let b_matches_a = solver.head_match(b, a).await.is_some();
-    let a_matches_b = solver.head_match(a, b).await.is_some();
+    let b_matches_a = solver.type_head_match(b, a).await.is_some();
+    let a_matches_b = solver.type_head_match(a, b).await.is_some();
     b_matches_a && !a_matches_b
 }

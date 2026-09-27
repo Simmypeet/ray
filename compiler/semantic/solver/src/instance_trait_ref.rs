@@ -2,6 +2,7 @@
 
 use rayc_type::{
     constraint::instance_trait_ref::InstanceTraitRef, trait_ref::InstanceTraitRefError,
+    variance::Variance,
 };
 
 use crate::{
@@ -38,9 +39,11 @@ impl Solver {
         Ok(Step::Derived(
             pairs
                 .map(|(actual, expected)| {
+                    // Trait arguments are invariant.
                     DerivedConstraint::new_type_application_matching(
                         actual.clone(),
                         expected.clone(),
+                        Variance::Invariant,
                     )
                 })
                 .collect(),

@@ -241,7 +241,7 @@ impl Solver {
             let implementation = engine.get_marker_implementation(symbol_id).await;
 
             let Some(subst) = self
-                .type_head_match(implementation.implementor().clone(), goal.implementor().clone())
+                .simple_head_match(implementation.implementor().clone(), goal.implementor().clone())
                 .await
             else {
                 continue;
