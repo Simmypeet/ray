@@ -616,7 +616,7 @@ impl Solver {
 
                 subst.compose(&Subst::new_singleton(global_parameter_id, argument), self.engine());
                 extend_unique_obligations(&mut obligations, nested_obligations);
-                outlives = outlives.union(nested_outlives);
+                outlives = std::mem::take(&mut outlives).union(nested_outlives);
             }
 
             Ok(())

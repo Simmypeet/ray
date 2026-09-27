@@ -31,7 +31,9 @@ pub async fn resolve_drop_instance(
 
     // The requirement is ground after type checking, so any failure is final
     // and the drop cannot be emitted.
-    let (instance, obligations) = match solver.resolve_instance(trait_ref.clone()).await {
+    // Lifetimes are checked by the borrow checker, so the outlives
+    // constraints of the selection are not needed here.
+    let (instance, obligations, _) = match solver.resolve_instance(trait_ref.clone()).await {
         Ok(resolved) => resolved.into_parts(),
         Err(InstanceResolutionError::ContainsError(_)) => return Err(Vec::new()),
         Err(error) => return Err(vec![DropFailure::Unresolved(trait_ref, error)]),

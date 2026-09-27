@@ -129,7 +129,10 @@ impl Solver {
 
     /// Solves relations that must hold without binding any variables, and
     /// returns the outlives constraints they require.
-    async fn solve_without_unify(
+    ///
+    /// Returns `None` if any relation fails or could only hold by binding a
+    /// variable.
+    pub async fn solve_without_unify(
         &mut self,
         constraints: Vec<TyRelate>,
     ) -> Option<OutlivesConstraints> {
