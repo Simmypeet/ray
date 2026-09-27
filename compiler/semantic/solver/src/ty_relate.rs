@@ -1,22 +1,29 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
-    constraint::ty_relate::TyRelate,
-    poly_var::{GlobalPolyVarID, get_poly_var_map},
+    constraint::{outlives::OutlivesConstraints, ty_relate::TyRelate},
     subst::Subst,
-    ty::{
-        InferenceConstraint, Ty, TyKind,
-        effect_row::{EffectLabel, EffectRow},
-        inference::Inference,
-    },
+    ty::{Ty, application::Application},
+    variance::Variance,
 };
 
 use crate::solver::{Solver, TyRelatingEnvironment};
 
+mod binding;
+mod effect_row;
+mod generalize;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DerivationRule {
     TypeApplicationMatching,
-    EffectLabelArgumentMatching { effect_symbol_id: GlobalSymbolID, argument_index: usize },
+    EffectLabelArgumentMatching {
+        effect_symbol_id: GlobalSymbolID,
+        argument_index: usize,
+    },
+
+    /// Relates the generalization that an inference variable was bound to
+    /// back to the type it was generalized from; see [`Step::Generalized`].
+    Generalization,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -33,8 +40,9 @@ impl DerivedConstraint {
     pub const fn new_type_application_matching(
         lesser: Interned<Ty>,
         greater: Interned<Ty>,
+        variance: Variance,
     ) -> Self {
-        Self::new(DerivationRule::TypeApplicationMatching, TyRelate::new(lesser, greater))
+        Self::new(DerivationRule::TypeApplicationMatching, TyRelate::new(lesser, greater, variance))
     }
 
     #[must_use]
@@ -43,10 +51,11 @@ impl DerivedConstraint {
         argument_index: usize,
         lesser: Interned<Ty>,
         greater: Interned<Ty>,
+        variance: Variance,
     ) -> Self {
         Self::new(
             DerivationRule::EffectLabelArgumentMatching { effect_symbol_id, argument_index },
-            TyRelate::new(lesser, greater),
+            TyRelate::new(lesser, greater, variance),
         )
     }
 }
@@ -56,11 +65,48 @@ pub enum Step {
     /// A new substitution has been generated
     Subst(Subst),
 
+    /// An inference variable was bound to a generalization of the other
+    /// side. The substitution must be applied first; the derived constraints
+    /// then relate the generalized type to the other side.
+    Generalized { subst: Subst, derived: Vec<DerivedConstraint> },
+
     /// The constraint has been simplified to a set of new constraints
     Derived(Vec<DerivedConstraint>),
 
     /// No applicable rules could be found
     NoProgress,
+}
+
+/// The result of one relation step: what the step did, and the outlives
+/// constraints it requires.
+///
+/// The constraints come from relating two lifetimes, which never binds
+/// anything, and from normalizing the related types through given equalities
+/// that match modulo lifetimes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entailment {
+    step: Step,
+    outlives: OutlivesConstraints,
+}
+
+impl Entailment {
+    /// Creates the result of a step that requires no outlives constraint.
+    #[must_use]
+    pub fn new(step: Step) -> Self { Self::with_outlives(step, OutlivesConstraints::new()) }
+
+    #[must_use]
+    pub const fn with_outlives(step: Step, outlives: OutlivesConstraints) -> Self {
+        Self { step, outlives }
+    }
+
+    #[must_use]
+    pub const fn step(&self) -> &Step { &self.step }
+
+    #[must_use]
+    pub const fn outlives(&self) -> &OutlivesConstraints { &self.outlives }
+
+    #[must_use]
+    pub fn into_parts(self) -> (Step, OutlivesConstraints) { (self.step, self.outlives) }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -94,363 +140,211 @@ enum VariableKind {
     Poly,
 }
 
+#[derive(Clone, Copy)]
 enum TyRelatingSide {
     Lesser,
     Greater,
 }
 
+impl TyRelatingSide {
+    /// Returns the relation between a type on this side and one on the
+    /// other side.
+    const fn relate(
+        self,
+        this_side: Interned<Ty>,
+        other_side: Interned<Ty>,
+        variance: Variance,
+    ) -> TyRelate {
+        match self {
+            Self::Lesser => TyRelate::new(this_side, other_side, variance),
+            Self::Greater => TyRelate::new(other_side, this_side, variance),
+        }
+    }
+}
+
 impl Solver {
-    pub async fn entail_ty_relate(&mut self, ty_relate: &TyRelate) -> Result<Step, Error> {
+    pub async fn entail_ty_relate(&mut self, ty_relate: &TyRelate) -> Result<Entailment, Error> {
         self.entail_ty_relate_with(ty_relate, &TyRelatingEnvironment::Normal).await
     }
 
+    /// Takes one step towards solving `relate`.
+    ///
+    /// Both sides are normalized first, so a projection that the step meets
+    /// is irreducible under the current bindings. A relation that makes no
+    /// progress may still make progress once a variable in it is bound.
     pub async fn entail_ty_relate_with(
         &mut self,
-        substype: &TyRelate,
+        relate: &TyRelate,
         relate_env: &TyRelatingEnvironment,
-    ) -> Result<Step, Error> {
-        if substype.lesser() == substype.greater() {
-            return Ok(Step::Derived(Vec::new()));
+    ) -> Result<Entailment, Error> {
+        // Top-level matching relates instance and marker heads, whose
+        // arguments are invariant. Binding a head variable therefore never
+        // needs generalization, and everything derived stays invariant.
+        assert!(
+            *relate_env != TyRelatingEnvironment::TopLevelMatching
+                || relate.variance() == Variance::Invariant,
+            "top-level matching must relate types invariantly"
+        );
+
+        let (relate, normalization_outlives) = self.normalize_with_outlives(relate).await;
+        let (step, outlives) =
+            self.entail_normalized_ty_relate(&relate, relate_env).await?.into_parts();
+
+        Ok(Entailment::with_outlives(step, normalization_outlives.union(outlives)))
+    }
+
+    /// Takes one step towards solving a normalized `relate`.
+    async fn entail_normalized_ty_relate(
+        &mut self,
+        relate: &TyRelate,
+        relate_env: &TyRelatingEnvironment,
+    ) -> Result<Entailment, Error> {
+        if relate.lesser() == relate.greater() {
+            return Ok(Entailment::new(Step::Derived(Vec::new())));
         }
 
-        let res = match (&**substype.lesser(), &**substype.greater()) {
-            (Ty::Application(l1), Ty::Application(l2)) => {
-                // If either side is an associated type, we'll not attempt to break it down
-                // further. Here're two counterexamples that show why we shouldn't!
-                //
-                // 1. Suppose that's an equality constraint `Col.Elm[List[int32]] ~
-                //    Col.Elm[Set[int32]]`. If we break down the application, we'll get a
-                //    constraint `List[int32] ~ Set[int32]`, which is unsatisfiable, but the
-                //    original constraint is satisfiable if we reduce the associated type to a
-                //    common `int32` type.
-                //
-                // 2. Again, suppose we have `Col.Elm[List[int32]] ~ int32`. If we try to
-                //   `structural_match` the application, we'll definitely get a conflicted
-                //   error, but again, the original constraint is satisfiable if we reduce the
-                //   associated type
-                //
-                // the main point is that we don't want to break down the application since
-                // we'll lose the information that the **associated type** was
-                // there and it could potentially be reduced to type that satisfies the
-                // constraint.
-                if l1.is_instance_associated() || l2.is_instance_associated() {
-                    return Ok(Step::NoProgress);
-                }
+        // Relating two lifetimes never binds anything: it only produces
+        // outlives constraints, even under invariance.
+        if self.is_outlives_relation(relate, relate_env).await {
+            let outlives = OutlivesConstraints::from_relation(
+                relate.lesser(),
+                relate.greater(),
+                relate.variance(),
+            );
+            return Ok(Entailment::with_outlives(Step::Derived(Vec::new()), outlives));
+        }
 
-                l1.structural_match(l2).map_or_else(
-                    || Err(Error::Conflicted),
-                    |arg| {
-                        Ok(Step::Derived(
-                            arg.map(|(l, g)| {
-                                DerivedConstraint::new_type_application_matching(
-                                    l.clone(),
-                                    g.clone(),
-                                )
-                            })
-                            .collect(),
-                        ))
-                    },
-                )
+        let variance = relate.variance();
+        let step = match (&**relate.lesser(), &**relate.greater()) {
+            (Ty::Application(lesser), Ty::Application(greater)) => {
+                match (lesser.is_instance_associated(), greater.is_instance_associated()) {
+                    (true, true) => {
+                        let equal = Ty::equal_modulo_lifetimes(
+                            relate.lesser(),
+                            relate.greater(),
+                            self.engine(),
+                        );
+
+                        return Ok(equal.await.map_or_else(
+                            || Entailment::new(Step::NoProgress),
+                            |outlives| {
+                                Entailment::with_outlives(Step::Derived(Vec::new()), outlives)
+                            },
+                        ));
+                    }
+
+                    // An irreducible projection can still reduce once a
+                    // variable in it is bound, to a type that satisfies the
+                    // relation.
+                    (true, false) | (false, true) => Ok(Step::NoProgress),
+
+                    (false, false) => self.decompose_applications(lesser, greater, variance).await,
+                }
             }
 
-            // Effect rows use exact Koka-style row unification here. Despite the
-            // enclosing `Subtype` name, this is equality: labels are neither
-            // deduplicated nor accepted through subeffect inclusion, and open
-            // rows are rewritten to a shared tail.
+            // Effect rows use exact Koka-style row unification: labels are
+            // neither deduplicated nor accepted through subeffect inclusion,
+            // and open rows are rewritten to a shared tail. Only the
+            // lifetimes in matched labels are related by the variance.
             (Ty::EffectRow(lesser), Ty::EffectRow(greater)) => {
-                self.entail_effect_row_subtype(lesser, greater).map(Step::Derived)
+                self.entail_effect_row_relate(lesser, greater, variance).await.map(Step::Derived)
+            }
+
+            // A head variable that top-level matching may bind is bound first,
+            // even to an inference variable, such as a lifetime inference
+            // variable in the goal.
+            (Ty::PolyVar(poly_var), _)
+                if can_bind(relate_env, TyRelatingSide::Lesser, VariableKind::Poly) =>
+            {
+                self.bind_poly_var(*poly_var, relate.greater(), TyRelatingSide::Lesser, relate_env)
+                    .await
             }
 
             (Ty::Inference(var), _) => {
-                self.bind_infer_var(*var, substype.greater(), TyRelatingSide::Lesser, relate_env)
-                    .await
-            }
-            (_, Ty::Inference(var)) => {
-                self.bind_infer_var(*var, substype.lesser(), TyRelatingSide::Greater, relate_env)
-                    .await
-            }
-
-            (Ty::PolyVar(poly_var), _) => {
-                self.bind_poly_var(
-                    *poly_var,
-                    substype.greater(),
+                self.bind_infer_var(
+                    *var,
+                    relate.greater(),
                     TyRelatingSide::Lesser,
                     relate_env,
+                    variance,
                 )
                 .await
             }
-            (_, Ty::PolyVar(poly_var)) => {
-                self.bind_poly_var(
-                    *poly_var,
-                    substype.lesser(),
+            (_, Ty::Inference(var)) => {
+                self.bind_infer_var(
+                    *var,
+                    relate.lesser(),
                     TyRelatingSide::Greater,
                     relate_env,
+                    variance,
                 )
                 .await
             }
 
             _ => {
-                if substype.lesser().is_instance_associated()
-                    || substype.greater().is_instance_associated()
+                if relate.lesser().is_instance_associated()
+                    || relate.greater().is_instance_associated()
                 {
                     Ok(Step::NoProgress)
                 } else {
                     Err(Error::Conflicted)
                 }
             }
-        };
+        }?;
 
-        match res {
-            Err(Error::Conflicted) => {
-                // TODO: this is a temporary hack. will be removed once we have
-                // subtyping for lifetimes.
-                if self.is_ty_relate_lifetime(substype).await {
-                    Ok(Step::Derived(Vec::new()))
-                } else {
-                    Err(Error::Conflicted)
-                }
-            }
-            res => res,
-        }
+        Ok(Entailment::new(step))
     }
 
-    async fn is_ty_relate_lifetime(&self, ty_relate: &TyRelate) -> bool {
-        self.is_lifetime(ty_relate.lesser()).await && self.is_lifetime(ty_relate.greater()).await
-    }
-
-    fn entail_effect_row_subtype(
-        &mut self,
-        lesser: &EffectRow,
-        greater: &EffectRow,
-    ) -> Result<Vec<DerivedConstraint>, Error> {
-        let MatchedEffectRowLabels { mut constraints, unmatched_lesser, unmatched_greater } =
-            match_effect_row_labels(lesser, greater)?;
-
-        match (lesser.tail(), greater.tail()) {
-            (None, None) => {
-                if !unmatched_lesser.is_empty() || !unmatched_greater.is_empty() {
-                    return Err(Error::Conflicted);
-                }
-            }
-            (Some(lesser_tail), None) => {
-                if !unmatched_lesser.is_empty() {
-                    return Err(Error::Conflicted);
-                }
-                let greater_remainder = Ty::new_effect_row(unmatched_greater, None, self.engine());
-                constraints.push(DerivedConstraint::new_type_application_matching(
-                    lesser_tail.clone(),
-                    greater_remainder,
-                ));
-            }
-            (None, Some(greater_tail)) => {
-                if !unmatched_greater.is_empty() {
-                    return Err(Error::Conflicted);
-                }
-                let lesser_remainder = Ty::new_effect_row(unmatched_lesser, None, self.engine());
-                constraints.push(DerivedConstraint::new_type_application_matching(
-                    lesser_remainder,
-                    greater_tail.clone(),
-                ));
-            }
-            (Some(lesser_tail), Some(greater_tail)) => {
-                if lesser_tail == greater_tail {
-                    if !unmatched_lesser.is_empty() || !unmatched_greater.is_empty() {
-                        return Err(Error::Conflicted);
-                    }
-                } else if unmatched_lesser.is_empty() && unmatched_greater.is_empty() {
-                    constraints.push(match_effect_row_tails(lesser_tail, greater_tail));
-                } else if unmatched_lesser.is_empty() {
-                    let greater_remainder = Ty::new_effect_row(
-                        unmatched_greater,
-                        Some(greater_tail.clone()),
-                        self.engine(),
-                    );
-                    constraints.push(DerivedConstraint::new_type_application_matching(
-                        lesser_tail.clone(),
-                        greater_remainder,
-                    ));
-                } else if unmatched_greater.is_empty() {
-                    let lesser_remainder = Ty::new_effect_row(
-                        unmatched_lesser,
-                        Some(lesser_tail.clone()),
-                        self.engine(),
-                    );
-                    constraints.push(DerivedConstraint::new_type_application_matching(
-                        lesser_remainder,
-                        greater_tail.clone(),
-                    ));
-                } else {
-                    let common_tail = self.new_inference(TyKind::EffectRow);
-                    let common_tail = self.engine().intern(Ty::Inference(common_tail));
-                    let greater_remainder = Ty::new_effect_row(
-                        unmatched_greater,
-                        Some(common_tail.clone()),
-                        self.engine(),
-                    );
-                    let lesser_remainder =
-                        Ty::new_effect_row(unmatched_lesser, Some(common_tail), self.engine());
-                    constraints.extend([
-                        DerivedConstraint::new_type_application_matching(
-                            lesser_tail.clone(),
-                            greater_remainder,
-                        ),
-                        DerivedConstraint::new_type_application_matching(
-                            lesser_remainder,
-                            greater_tail.clone(),
-                        ),
-                    ]);
-                }
-            }
-        }
-
-        Ok(constraints)
-    }
-
-    /// Returns whether `ty` is of kind [`TyKind::Lifetime`]: a lifetime, a
-    /// lifetime parameter, or an error of that kind.
+    /// Returns whether `relate` relates two lifetimes by outlives
+    /// constraints.
     ///
-    /// There are no lifetime inference variables; see
-    /// `Solver::new_inference_with_constraint`.
-    async fn is_lifetime(&self, ty: &Ty) -> bool {
-        ty.kind_of(self.engine()).await == TyKind::Lifetime
-    }
-
-    async fn bind_poly_var(
-        &mut self,
-        poly_var: GlobalPolyVarID,
-        ty: &Interned<Ty>,
-        relating_side: TyRelatingSide,
+    /// A lifetime parameter of an instance head that top-level matching may
+    /// bind is instantiated through substitution instead. That is ordinary
+    /// instantiation, not inference. Lifetime inference variables are never
+    /// bound, not even under invariance.
+    async fn is_outlives_relation(
+        &self,
+        relate: &TyRelate,
         relate_env: &TyRelatingEnvironment,
-    ) -> Result<Step, Error> {
-        if !can_bind(relate_env, relating_side, VariableKind::Poly) {
-            return if ty.is_instance_associated() {
-                Ok(Step::NoProgress)
-            } else {
-                Err(Error::Conflicted)
-            };
+    ) -> bool {
+        if !relate.lesser().is_lifetime(self.engine()).await
+            || !relate.greater().is_lifetime(self.engine()).await
+        {
+            return false;
         }
 
-        if ty.has_poly_variable(&poly_var) {
-            return Err(Error::OccursCheckFailed);
-        }
-
-        let poly_var_map = self.engine().get_poly_var_map(poly_var.parent_id()).await;
-        let kind = poly_var_map[poly_var.id()].kind();
-
-        if kind != ty.kind_of(self.engine()).await {
-            return Err(Error::Conflicted);
-        }
-
-        Ok(Step::Subst(Subst::new_singleton(poly_var, ty.clone())))
+        let is_bindable_head_parameter = matches!(&**relate.lesser(), Ty::PolyVar(_))
+            && can_bind(relate_env, TyRelatingSide::Lesser, VariableKind::Poly);
+        !is_bindable_head_parameter
     }
 
-    async fn bind_infer_var(
-        &mut self,
-        var: Inference,
-        ty: &Interned<Ty>,
-        relating_side: TyRelatingSide,
-        relate_env: &TyRelatingEnvironment,
+    /// Relates two applications of the same type constructor argument by
+    /// argument, each with the variance of its position.
+    async fn decompose_applications(
+        &self,
+        lesser: &Application,
+        greater: &Application,
+        variance: Variance,
     ) -> Result<Step, Error> {
-        if !can_bind(relate_env, relating_side, VariableKind::Inference) {
-            // technically, the instance associated can be reduced into something that can
-            // be equal to this inference variable and thus discharging the
-            // constraint
-            return if ty.is_instance_associated() {
-                Ok(Step::NoProgress)
-            } else {
-                Err(Error::Conflicted)
-            };
-        }
-
-        if ty.has_inference_variable(&var) {
-            return Err(Error::OccursCheckFailed);
-        }
-
-        if var.kind() != ty.kind_of(self.engine()).await {
-            return Err(Error::Conflicted);
-        }
-
-        match &**ty {
-            Ty::Application(ty_application) => {
-                if var.kind() == TyKind::Star
-                    && !ty_application.satisfies_constraint(var.constraint())
-                {
-                    // associated type could reduce to a type that satisfies the constraint in the
-                    // future, don't make it a conflict yet
-                    return if ty_application.is_instance_associated() {
-                        Ok(Step::NoProgress)
-                    } else {
-                        Err(Error::Conflicted)
-                    };
-                }
-
-                Ok(Step::Subst(Subst::new_singleton(var, ty.clone())))
-            }
-
-            Ty::Inference(ty_inference) => {
-                if var.constraint() == ty_inference.constraint() {
-                    return Ok(Step::Subst(Subst::new_singleton(var, ty.clone())));
-                }
-
-                let meet =
-                    var.constraint().meet(&ty_inference.constraint()).ok_or(Error::Conflicted)?;
-
-                let common_var = self.new_inference_with_constraint(var.kind(), meet);
-                let common_var = self.engine().intern(Ty::Inference(common_var));
-
-                Ok(Step::Subst(
-                    [(var, common_var.clone()), (*ty_inference, common_var)].into_iter().collect(),
-                ))
-            }
-
-            Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {
-                if var.constraint() == InferenceConstraint::Any {
-                    Ok(Step::Subst(Subst::new_singleton(var, ty.clone())))
-                } else {
-                    Err(Error::Conflicted)
-                }
-            }
-        }
-    }
-}
-
-struct MatchedEffectRowLabels {
-    constraints: Vec<DerivedConstraint>,
-    unmatched_lesser: Vec<Interned<EffectLabel>>,
-    unmatched_greater: Vec<Interned<EffectLabel>>,
-}
-
-fn match_effect_row_labels(
-    lesser: &EffectRow,
-    greater: &EffectRow,
-) -> Result<MatchedEffectRowLabels, Error> {
-    let labels = lesser.match_labels(greater);
-
-    // Matched labels must agree argument by argument.
-    let mut constraints = Vec::new();
-    for (lesser_label, greater_label) in labels.matched() {
-        let Some(arguments) = lesser_label.structural_match(greater_label) else {
+        let Some(arguments) = lesser.structural_match(greater) else {
             return Err(Error::Conflicted);
         };
-        constraints.extend(arguments.enumerate().map(|(argument_index, (lesser, greater))| {
-            DerivedConstraint::new_effect_label_argument_matching(
-                lesser_label.effect_symbol_id(),
-                argument_index,
-                lesser.clone(),
-                greater.clone(),
-            )
-        }));
+
+        let variances = lesser.arguments_with_ambient_variance(variance, self.engine()).await;
+
+        Ok(Step::Derived(
+            arguments
+                .zip(variances)
+                .map(|((lesser, greater), (_, variance))| {
+                    DerivedConstraint::new_type_application_matching(
+                        lesser.clone(),
+                        greater.clone(),
+                        variance,
+                    )
+                })
+                .collect(),
+        ))
     }
-
-    Ok(MatchedEffectRowLabels {
-        constraints,
-        unmatched_lesser: labels.unmatched_left().cloned().collect(),
-        unmatched_greater: labels.unmatched_right().cloned().collect(),
-    })
-}
-
-fn match_effect_row_tails(lesser: &Interned<Ty>, greater: &Interned<Ty>) -> DerivedConstraint {
-    DerivedConstraint::new_type_application_matching(lesser.clone(), greater.clone())
 }
 
 #[cfg(test)]
