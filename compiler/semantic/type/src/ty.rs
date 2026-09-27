@@ -9,6 +9,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_name};
 
 use crate::{
+    constraint::outlives::OutlivesSink,
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap, get_poly_var_map},
     reduce::Reduce,
     rewrite::{RewriteAsync, TyRewriterAsync},
@@ -243,6 +244,89 @@ impl Ty {
         ty.rewrite_async_or_clone(&mut LifetimeEraser { engine }, engine).await
     }
 
+    /// Returns whether this type is of kind [`TyKind::Lifetime`]: a
+    /// lifetime, a lifetime parameter, or an error of that kind.
+    ///
+    /// There are no lifetime inference variables: type inference ignores
+    /// lifetimes, and the borrow checker's region variables are
+    /// [`Lifetime::Region`]s.
+    pub async fn is_lifetime(&self, engine: &TrackedEngine) -> bool {
+        // REVIEW: can we just `.kind_of(...).await == Tykind::Lifetime`?
+        match self {
+            Self::Lifetime(_) => true,
+            Self::PolyVar(_) => self.kind_of(engine).await == TyKind::Lifetime,
+            Self::Application(application) => application.is_lifetime(),
+            Self::Inference(inference) => inference.kind() == TyKind::Lifetime,
+            Self::SelfInstance(_) | Self::EffectRow(_) => false,
+        }
+    }
+
+    /// Returns whether `left` and `right` are equal when every lifetime is
+    /// considered equal to every other lifetime, and if so, each pair of
+    /// corresponding lifetimes that are not already identical.
+    ///
+    /// Effect rows are compared label by label in their stored order, as by
+    /// `==`.
+    // REVIEW: Let's just call this `equal_modulo_lifetimes` and takes optional
+    // outlives sink.
+    pub async fn lifetime_pairs_modulo_lifetimes(
+        left: &Interned<Self>,
+        right: &Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Option<Vec<(Interned<Self>, Interned<Self>)>> {
+        let mut pairs = Vec::new();
+        let mut pending = vec![(left.clone(), right.clone())];
+
+        while let Some((left, right)) = pending.pop() {
+            if left == right {
+                continue;
+            }
+
+            match (&*left, &*right) {
+                // The same constructor applied to arguments that are equal
+                // modulo lifetimes.
+                (Self::Application(left_application), Self::Application(right_application))
+                    if left_application.has_same_constant(right_application) =>
+                {
+                    let arguments = left_application.structural_match(right_application)?;
+                    pending.extend(arguments.map(|(left, right)| (left.clone(), right.clone())));
+                }
+
+                // Rows with the same labels, in the same order, and tails that
+                // are equal modulo lifetimes.
+                //
+                // REVIEW: let's use `EffectRow::match_labels` instead. This is the actual correct
+                // semantic for effect row
+                (Self::EffectRow(left_row), Self::EffectRow(right_row)) => {
+                    if left_row.labels().len() != right_row.labels().len() {
+                        return None;
+                    }
+                    for (left_label, right_label) in left_row.labels().zip(right_row.labels()) {
+                        let arguments = left_label.structural_match(right_label)?;
+                        pending
+                            .extend(arguments.map(|(left, right)| (left.clone(), right.clone())));
+                    }
+                    match (left_row.tail(), right_row.tail()) {
+                        (None, None) => {}
+                        (Some(left), Some(right)) => pending.push((left.clone(), right.clone())),
+                        (None, Some(_)) | (Some(_), None) => return None,
+                    }
+                }
+
+                // Any two lifetimes are equal; nothing else differs and is
+                // still equal.
+                _ => {
+                    if !left.is_lifetime(engine).await || !right.is_lifetime(engine).await {
+                        return None;
+                    }
+                    pairs.push((left, right));
+                }
+            }
+        }
+
+        Some(pairs)
+    }
+
     #[must_use]
     pub fn has_poly_variable(&self, poly_var: &GlobalPolyVarID) -> bool {
         self.recursive_iter().any(|ty| match ty {
@@ -307,19 +391,37 @@ impl Reduce for Interned<Ty> {
         &self,
         engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
+        outlives: &mut OutlivesSink,
     ) -> Option<Self> {
         // Prefer structural reduction, then the first matching given equality.
-        if let Some(reduced) = reduce_type(self, engine, givens).await {
+        if let Some(reduced) = reduce_type(self, engine, givens, outlives).await {
             return Some(reduced);
         }
-        givens.iter().find_map(|predicate| match predicate {
-            crate::where_clause::PredicateKind::AssociatedTypeEquality(equality) => {
-                (equality.left() == self && equality.right() != self)
-                    .then(|| equality.right().clone())
+        for equality in givens.iter().filter_map(crate::where_clause::PredicateKind::as_equality) {
+            // Lifetimes never decide whether a given applies, just as they
+            // never decide which instance is selected. A rewrite to a type
+            // that only differs in lifetimes is not progress, which also
+            // keeps givens such as `d.Out['a] = d.Out['b]` from looping.
+            let Some(lifetimes) =
+                Ty::lifetime_pairs_modulo_lifetimes(equality.left(), self, engine).await
+            else {
+                continue;
+            };
+
+            // REVIEW: let's just skip this check. We'll implement proper cyclic detection
+            // later.
+            if Ty::lifetime_pairs_modulo_lifetimes(equality.right(), self, engine).await.is_some() {
+                continue;
             }
-            crate::where_clause::PredicateKind::Marker(_)
-            | crate::where_clause::PredicateKind::Outlives(_) => None,
-        })
+
+            // Projection arguments are invariant, so every pair of
+            // corresponding lifetimes is related by equality.
+            for (given, reduced) in &lifetimes {
+                outlives.relate(given, reduced, Variance::Invariant);
+            }
+            return Some(equality.right().clone());
+        }
+        None
     }
 }
 
@@ -327,6 +429,7 @@ async fn reduce_type(
     ty: &Interned<Ty>,
     engine: &TrackedEngine,
     givens: &[crate::where_clause::PredicateKind],
+    outlives: &mut OutlivesSink,
 ) -> Option<Interned<Ty>> {
     match ty.as_ref() {
         Ty::Application(application) => {
@@ -339,7 +442,7 @@ async fn reduce_type(
                     return Some(reduced);
                 }
                 application
-                    .reduce(engine, givens)
+                    .reduce(engine, givens, outlives)
                     .await
                     .map(|application| engine.intern(Ty::Application(application)))
             })
@@ -353,7 +456,9 @@ async fn reduce_type(
             {
                 return Some(tail.clone());
             }
-            Box::pin(row.reduce(engine, givens)).await.map(|row| engine.intern(Ty::EffectRow(row)))
+            Box::pin(row.reduce(engine, givens, outlives))
+                .await
+                .map(|row| engine.intern(Ty::EffectRow(row)))
         }
     }
 }

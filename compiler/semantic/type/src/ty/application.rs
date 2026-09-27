@@ -412,6 +412,46 @@ impl Application {
             .map(move |(index, arg)| (arg, self.argument_variance(index, struct_variances)))
     }
 
+    /// Returns each argument with the variance of its position, when this
+    /// application itself is in a position of variance `ambient`.
+    ///
+    /// An invariant or bivariant position absorbs every variance inside it,
+    /// so `struct_variances` are only needed when `ambient` is covariant or
+    /// contravariant and this application is a struct.
+    ///
+    /// # Panics
+    ///
+    /// If `struct_variances` are needed and `None`, or have fewer variances
+    /// than there are arguments.
+    pub fn arguments_with_ambient_variance<'a>(
+        &'a self,
+        ambient: Variance,
+        struct_variances: Option<&'a VarianceMap>,
+    ) -> impl Iterator<Item = (&'a Interned<Ty>, Variance)> {
+        self.args.iter().enumerate().map(move |(index, arg)| {
+            // OPTIMIZATION: If `ambient` is invariant or bivariant, we don't need to query
+            // the 
+            let variance = match ambient {
+                Variance::Invariant | Variance::Bivariant => ambient,
+                Variance::Covariant | Variance::Contravariant => {
+                    ambient.xform(self.argument_variance(index, struct_variances))
+                }
+            };
+            (arg, variance)
+        })
+    }
+
+    /// Returns the same type constructor applied to `args`.
+    ///
+    /// # Panics
+    ///
+    /// If `args` does not have as many arguments as this application.
+    #[must_use]
+    pub fn with_arguments(&self, args: Interned<[Interned<Ty>]>) -> Self {
+        assert_eq!(args.len(), self.args.len(), "a type constructor keeps its arity");
+        Self { constant: self.constant, args }
+    }
+
     /// Returns the variance of the argument position `index`; see
     /// [`Self::arguments_with_variance`].
     fn argument_variance(&self, index: usize, struct_variances: Option<&VarianceMap>) -> Variance {
@@ -447,6 +487,32 @@ impl Application {
             | Constant::ClosureDropInstance
             | Constant::NominalDropInstance
             | Constant::Error(_) => Variance::Invariant,
+        }
+    }
+
+    /// Returns whether this application is of kind [`TyKind::Lifetime`],
+    /// which only an error of that kind is. Associated types are never of
+    /// kind lifetime, so this needs no query, unlike [`Ty::kind_of`].
+    #[must_use]
+    pub const fn is_lifetime(&self) -> bool {
+        match self.constant {
+            Constant::Error(kind) => match kind {
+                TyKind::Lifetime => true,
+                TyKind::Star | TyKind::EffectRow | TyKind::Instance => false,
+            },
+            Constant::Primitive(_)
+            | Constant::Tuple
+            | Constant::Pointer(_)
+            | Constant::Reference(_)
+            | Constant::Struct(_)
+            | Constant::Instance(_)
+            | Constant::InstanceAssociated(_)
+            | Constant::Closure(_)
+            | Constant::DefInstance
+            | Constant::NoOpDropInstance
+            | Constant::TupleDropInstance
+            | Constant::ClosureDropInstance
+            | Constant::NominalDropInstance => false,
         }
     }
 
@@ -558,8 +624,12 @@ impl Reduce for Application {
         &self,
         engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
+        outlives: &mut crate::constraint::outlives::OutlivesSink,
     ) -> Option<Self> {
-        self.args.reduce(engine, givens).await.map(|args| Self { constant: self.constant, args })
+        self.args
+            .reduce(engine, givens, outlives)
+            .await
+            .map(|args| Self { constant: self.constant, args })
     }
 }
 

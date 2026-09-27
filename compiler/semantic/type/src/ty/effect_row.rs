@@ -27,8 +27,9 @@ impl Reduce for Interned<EffectLabel> {
         &self,
         engine: &rayc_qbice::TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
+        outlives: &mut crate::constraint::outlives::OutlivesSink,
     ) -> Option<Self> {
-        self.args.reduce(engine, givens).await.map(|args| {
+        self.args.reduce(engine, givens, outlives).await.map(|args| {
             engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
         })
     }
@@ -99,6 +100,35 @@ impl EffectLabel {
             .interned_iter()
             .enumerate()
             .map(move |(index, arg)| (arg, effect_variances.get_by_index(index)))
+    }
+
+    /// Returns each argument with the variance of its position, when this
+    /// label is in a position of variance `ambient`.
+    ///
+    /// An invariant or bivariant position absorbs every variance inside it,
+    /// so `effect_variances` are only needed when `ambient` is covariant or
+    /// contravariant.
+    ///
+    /// # Panics
+    ///
+    /// If `effect_variances` are needed and `None`, or have fewer variances
+    /// than there are arguments.
+    pub fn arguments_with_ambient_variance<'a>(
+        &'a self,
+        ambient: Variance,
+        effect_variances: Option<&'a VarianceMap>,
+    ) -> impl Iterator<Item = (&'a Interned<Ty>, Variance)> {
+        self.args.interned_iter().enumerate().map(move |(index, arg)| {
+            let variance = match ambient {
+                Variance::Invariant | Variance::Bivariant => ambient,
+                Variance::Covariant | Variance::Contravariant => ambient.xform(
+                    effect_variances
+                        .expect("a label in a covariant or contravariant position needs variances")
+                        .get_by_index(index),
+                ),
+            };
+            (arg, variance)
+        })
     }
 
     #[must_use]
@@ -225,6 +255,7 @@ impl Reduce for EffectRow {
         &self,
         engine: &rayc_qbice::TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
+        outlives: &mut crate::constraint::outlives::OutlivesSink,
     ) -> Option<Self> {
         if let Some(Ty::EffectRow(tail_row)) = self.tail.as_deref() {
             // reduce the case like `{A, B | {}}` to `{A, B}`.
@@ -239,12 +270,12 @@ impl Reduce for EffectRow {
             ));
         }
 
-        if let Some(labels) = self.labels.reduce(engine, givens).await {
+        if let Some(labels) = self.labels.reduce(engine, givens, outlives).await {
             return Some(Self { labels, tail: self.tail.clone() });
         }
 
         if let Some(tail) = &self.tail
-            && let Some(tail) = tail.reduce(engine, givens).await
+            && let Some(tail) = tail.reduce(engine, givens, outlives).await
         {
             return Some(Self { labels: self.labels.clone(), tail: Some(tail) });
         }

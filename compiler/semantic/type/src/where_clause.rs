@@ -135,6 +135,15 @@ impl PredicateKind {
             Self::AssociatedTypeEquality(_) | Self::Marker(_) => None,
         }
     }
+
+    /// Returns the associated type equality, if this is one.
+    #[must_use]
+    pub const fn as_equality(&self) -> Option<&AssociatedTypeEquality> {
+        match self {
+            Self::AssociatedTypeEquality(equality) => Some(equality),
+            Self::Outlives(_) | Self::Marker(_) => None,
+        }
+    }
 }
 
 impl Substitutable for PredicateKind {
