@@ -1,6 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_type::{
-    constraint::outlives::OutlivesConstraint, poly_var::get_enclosing_poly_var_maps,
+    constraint::outlives::OutlivesConstraints, poly_var::get_enclosing_poly_var_maps,
     trait_ref::TraitRef, ty::Ty,
 };
 
@@ -14,7 +14,7 @@ pub(super) enum LexicalResolution {
     /// lifetimes, which produce `outlives` instead.
     Resolved {
         term: Interned<Ty>,
-        outlives: Vec<OutlivesConstraint>,
+        outlives: OutlivesConstraints,
     },
 }
 

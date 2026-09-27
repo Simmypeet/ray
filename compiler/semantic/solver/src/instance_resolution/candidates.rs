@@ -1,7 +1,7 @@
 use rayc_semantic_element::all_instance_implements_trait::get_all_instance_implements_trait;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
-    constraint::outlives::OutlivesConstraint,
+    constraint::outlives::OutlivesConstraints,
     poly_var::{GlobalPolyVarID, PolyVarID, PolyVarMap, get_poly_var_map},
     subst::Subst,
     trait_ref::{TraitRef, get_instance_trait_ref},
@@ -15,7 +15,7 @@ pub(super) struct InstanceCandidate {
     subst: Subst,
 
     /// The outlives constraints of matching the head against the goal.
-    outlives: Vec<OutlivesConstraint>,
+    outlives: OutlivesConstraints,
     instance_id: GlobalSymbolID,
     pending_given_parameters: Vec<PolyVarID>,
 }
@@ -24,9 +24,7 @@ impl InstanceCandidate {
     #[must_use]
     pub(super) const fn instance_id(&self) -> GlobalSymbolID { self.instance_id }
 
-    pub(super) fn into_parts(
-        self,
-    ) -> (Subst, Vec<OutlivesConstraint>, GlobalSymbolID, Vec<PolyVarID>) {
+    pub(super) fn into_parts(self) -> (Subst, OutlivesConstraints, GlobalSymbolID, Vec<PolyVarID>) {
         (self.subst, self.outlives, self.instance_id, self.pending_given_parameters)
     }
 }
