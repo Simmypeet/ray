@@ -9,7 +9,7 @@ use crate::{
     reduce::Reduce,
     rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::{Subst, Substitutable},
-    variance::{Variance, VarianceMap},
+    variance::{Variance, VarianceMap, get_variance},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -416,25 +416,26 @@ impl Application {
     /// application itself is in a position of variance `ambient`.
     ///
     /// An invariant or bivariant position absorbs every variance inside it,
-    /// so `struct_variances` are only needed when `ambient` is covariant or
-    /// contravariant and this application is a struct.
-    ///
-    /// # Panics
-    ///
-    /// If `struct_variances` are needed and `None`, or have fewer variances
-    /// than there are arguments.
-    pub fn arguments_with_ambient_variance<'a>(
-        &'a self,
+    /// so the variances of a struct are only queried when `ambient` is
+    /// covariant or contravariant.
+    pub async fn arguments_with_ambient_variance(
+        &self,
         ambient: Variance,
-        struct_variances: Option<&'a VarianceMap>,
-    ) -> impl Iterator<Item = (&'a Interned<Ty>, Variance)> {
+        engine: &TrackedEngine,
+    ) -> impl Iterator<Item = (&Interned<Ty>, Variance)> {
+        let struct_variances = match (ambient, self.struct_id()) {
+            (Variance::Covariant | Variance::Contravariant, Some(struct_id)) => {
+                Some(engine.get_variance(struct_id).await)
+            }
+            (Variance::Covariant | Variance::Contravariant, None)
+            | (Variance::Invariant | Variance::Bivariant, _) => None,
+        };
+
         self.args.iter().enumerate().map(move |(index, arg)| {
-            // OPTIMIZATION: If `ambient` is invariant or bivariant, we don't need to query
-            // the 
             let variance = match ambient {
                 Variance::Invariant | Variance::Bivariant => ambient,
                 Variance::Covariant | Variance::Contravariant => {
-                    ambient.xform(self.argument_variance(index, struct_variances))
+                    ambient.xform(self.argument_variance(index, struct_variances.as_deref()))
                 }
             };
             (arg, variance)
@@ -487,32 +488,6 @@ impl Application {
             | Constant::ClosureDropInstance
             | Constant::NominalDropInstance
             | Constant::Error(_) => Variance::Invariant,
-        }
-    }
-
-    /// Returns whether this application is of kind [`TyKind::Lifetime`],
-    /// which only an error of that kind is. Associated types are never of
-    /// kind lifetime, so this needs no query, unlike [`Ty::kind_of`].
-    #[must_use]
-    pub const fn is_lifetime(&self) -> bool {
-        match self.constant {
-            Constant::Error(kind) => match kind {
-                TyKind::Lifetime => true,
-                TyKind::Star | TyKind::EffectRow | TyKind::Instance => false,
-            },
-            Constant::Primitive(_)
-            | Constant::Tuple
-            | Constant::Pointer(_)
-            | Constant::Reference(_)
-            | Constant::Struct(_)
-            | Constant::Instance(_)
-            | Constant::InstanceAssociated(_)
-            | Constant::Closure(_)
-            | Constant::DefInstance
-            | Constant::NoOpDropInstance
-            | Constant::TupleDropInstance
-            | Constant::ClosureDropInstance
-            | Constant::NominalDropInstance => false,
         }
     }
 
@@ -624,12 +599,11 @@ impl Reduce for Application {
         &self,
         engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-        outlives: &mut crate::constraint::outlives::OutlivesSink,
-    ) -> Option<Self> {
+    ) -> Option<(Self, crate::constraint::outlives::OutlivesConstraints)> {
         self.args
-            .reduce(engine, givens, outlives)
+            .reduce(engine, givens)
             .await
-            .map(|args| Self { constant: self.constant, args })
+            .map(|(args, outlives)| (Self { constant: self.constant, args }, outlives))
     }
 }
 

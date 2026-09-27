@@ -1,12 +1,21 @@
 use qbice::storage::intern::Interned;
-use rayc_type::{poly_var::get_enclosing_poly_var_maps, trait_ref::TraitRef, ty::Ty};
+use rayc_type::{
+    constraint::outlives::OutlivesConstraint, poly_var::get_enclosing_poly_var_maps,
+    trait_ref::TraitRef, ty::Ty,
+};
 
 use super::InstanceResolutionError;
 use crate::Solver;
 
 pub(super) enum LexicalResolution {
     NotFound,
-    Resolved(Interned<Ty>),
+
+    /// The requirement is the trait reference of a lexical dictionary, up to
+    /// lifetimes, which produce `outlives` instead.
+    Resolved {
+        term: Interned<Ty>,
+        outlives: Vec<OutlivesConstraint>,
+    },
 }
 
 /// Resolves the nearest exact lexical dictionary before global search begins.
@@ -28,20 +37,21 @@ pub(super) async fn resolve(
             continue;
         };
 
-        if solver.trait_refs_eq_without_unify(candidate, required).await {
+        if let Some(outlives) = solver.relate_trait_refs_without_unify(candidate, required).await {
             matching_scope = Some(candidate_id.parent_id());
-            candidates.push(candidate_id);
+            candidates.push((candidate_id, outlives));
         }
     }
 
-    match candidates.as_slice() {
+    match candidates.as_mut_slice() {
         [] => Ok(LexicalResolution::NotFound),
-        [candidate] => {
-            Ok(LexicalResolution::Resolved(Ty::new_poly_var(*candidate, solver.engine())))
-        }
+        [(candidate, outlives)] => Ok(LexicalResolution::Resolved {
+            term: Ty::new_poly_var(*candidate, solver.engine()),
+            outlives: std::mem::take(outlives),
+        }),
         [_, _, ..] => Err(InstanceResolutionError::AmbiguousLexical {
             required: required.clone(),
-            candidates,
+            candidates: candidates.into_iter().map(|(candidate, _)| candidate).collect(),
         }),
     }
 }

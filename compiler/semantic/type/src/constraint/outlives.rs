@@ -3,9 +3,14 @@
 //!
 //! Relating two lifetimes never binds anything. Instead, it emits outlives
 //! constraints `lesser: greater`, which the borrow checker keeps and type
-//! inference drops; see [`OutlivesSink`].
+//! inference drops; see [`OutlivesConstraints`].
 
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, StableHash,
+    stable_hash::{StableHasher, Value},
+    storage::intern::Interned,
+};
+use rayc_hash::FxImHashSet;
 use rayc_qbice::TrackedEngine;
 
 use crate::{
@@ -91,50 +96,111 @@ impl Substitutable for OutlivesConstraint {
     }
 }
 
-/// Collects the outlives constraints produced while relating or reducing
-/// types, or drops them.
+/// A set of outlives constraints.
 ///
-/// Type inference ignores lifetimes, so it drops every constraint. The IR type
-/// check keeps them and tags each one with the point where it holds.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct OutlivesSink {
-    /// `None` when the constraints are dropped.
-    constraints: Option<Vec<OutlivesConstraint>>,
-}
+/// The set is immutable and shares its structure, so combining the
+/// constraints of several steps with [`Self::union`] is cheap.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct OutlivesConstraints(FxImHashSet<OutlivesConstraint>);
 
-impl OutlivesSink {
-    /// Creates a sink that drops every constraint.
+impl OutlivesConstraints {
+    /// Creates an empty set.
     #[must_use]
-    pub const fn dropping() -> Self { Self { constraints: None } }
+    pub fn new() -> Self { Self::default() }
 
-    /// Creates a sink that keeps every constraint.
-    #[must_use]
-    pub const fn keeping() -> Self { Self { constraints: Some(Vec::new()) } }
-
-    /// Returns whether this sink keeps the constraints pushed into it.
-    #[must_use]
-    pub const fn is_keeping(&self) -> bool { self.constraints.is_some() }
-
-    /// Adds constraints to this sink, or drops them.
-    pub fn extend(&mut self, constraints: impl IntoIterator<Item = OutlivesConstraint>) {
-        if let Some(kept) = &mut self.constraints {
-            kept.extend(constraints);
-        }
-    }
-
-    /// Adds the constraints that relating the lifetime `lesser` to the
+    /// Returns the constraints that relating the lifetime `lesser` to the
     /// lifetime `greater` with `variance` requires; see
     /// [`OutlivesConstraint::from_relation`].
-    pub fn relate(&mut self, lesser: &Interned<Ty>, greater: &Interned<Ty>, variance: Variance) {
-        if self.is_keeping() {
-            self.extend(OutlivesConstraint::from_relation(lesser, greater, variance));
-        }
+    #[must_use]
+    pub fn from_relation(
+        lesser: &Interned<Ty>,
+        greater: &Interned<Ty>,
+        variance: Variance,
+    ) -> Self {
+        OutlivesConstraint::from_relation(lesser, greater, variance).collect()
     }
 
-    /// Returns the kept constraints in the order they were added, or nothing
-    /// if this sink drops them.
+    /// Returns the constraints of both sets.
     #[must_use]
-    pub fn into_constraints(self) -> Vec<OutlivesConstraint> {
-        self.constraints.unwrap_or_default()
+    pub fn union(self, other: Self) -> Self { Self(self.0.union(other.0)) }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+
+    #[must_use]
+    pub fn len(&self) -> usize { self.0.len() }
+
+    /// Returns the constraints in an unspecified order.
+    #[must_use]
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &OutlivesConstraint> { self.0.iter() }
+}
+
+impl FromIterator<OutlivesConstraint> for OutlivesConstraints {
+    fn from_iter<I: IntoIterator<Item = OutlivesConstraint>>(iter: I) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl Substitutable for OutlivesConstraints {
+    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+        let mut changed = false;
+        let constraints = self
+            .0
+            .iter()
+            .map(|constraint| {
+                constraint.apply_subst(subst, engine).map_or_else(
+                    || constraint.clone(),
+                    |substituted| {
+                        changed = true;
+                        substituted
+                    },
+                )
+            })
+            .collect();
+        changed.then_some(Self(constraints))
+    }
+}
+
+impl Encode for OutlivesConstraints {
+    fn encode<E: qbice::serialize::Encoder + ?Sized>(
+        &self,
+        encoder: &mut E,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<()> {
+        encoder.emit_usize(self.0.len())?;
+        for constraint in &self.0 {
+            constraint.encode(encoder, plugin, session)?;
+        }
+        Ok(())
+    }
+}
+
+impl Decode for OutlivesConstraints {
+    fn decode<D: qbice::serialize::Decoder + ?Sized>(
+        decoder: &mut D,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<Self> {
+        let len = decoder.read_usize()?;
+        let mut constraints = FxImHashSet::default();
+        for _ in 0..len {
+            constraints.insert(OutlivesConstraint::decode(decoder, plugin, session)?);
+        }
+        Ok(Self(constraints))
+    }
+}
+
+impl StableHash for OutlivesConstraints {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        // The iteration order of the set is unspecified, so the hashes of the
+        // constraints are combined commutatively.
+        self.0.len().stable_hash(state);
+        let mut combined = H::Hash::default();
+        for constraint in &self.0 {
+            combined =
+                combined.wrapping_add(state.sub_hash(&mut |sub| constraint.stable_hash(sub)));
+        }
+        combined.stable_hash(state);
     }
 }

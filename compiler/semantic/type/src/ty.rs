@@ -9,7 +9,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_name};
 
 use crate::{
-    constraint::outlives::OutlivesSink,
+    constraint::outlives::{OutlivesConstraint, OutlivesConstraints},
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap, get_poly_var_map},
     reduce::Reduce,
     rewrite::{RewriteAsync, TyRewriterAsync},
@@ -195,6 +195,23 @@ impl Ty {
         })
     }
 
+    /// Returns whether this type or a descendant is an inference variable
+    /// that is not a lifetime.
+    ///
+    /// Lifetimes never decide which instance is selected, so a lifetime
+    /// inference variable does not keep a requirement from being resolved.
+    #[must_use]
+    pub fn contains_non_lifetime_inference(&self) -> bool {
+        self.recursive_iter().any(|ty| match ty {
+            Self::Inference(inference) => inference.kind() != TyKind::Lifetime,
+            Self::Application(_)
+            | Self::EffectRow(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::Lifetime(_) => false,
+        })
+    }
+
     /// Includes errors of every kind at the root or in any descendant.
     #[must_use]
     pub fn contains_error(&self) -> bool {
@@ -247,34 +264,28 @@ impl Ty {
     /// Returns whether this type is of kind [`TyKind::Lifetime`]: a
     /// lifetime, a lifetime parameter, or an error of that kind.
     ///
-    /// There are no lifetime inference variables: type inference ignores
-    /// lifetimes, and the borrow checker's region variables are
-    /// [`Lifetime::Region`]s.
+    /// Lifetime inference variables only come from generalization during type
+    /// inference. The borrow checker's region variables are
+    /// [`Lifetime::Region`]s instead.
     pub async fn is_lifetime(&self, engine: &TrackedEngine) -> bool {
-        // REVIEW: can we just `.kind_of(...).await == Tykind::Lifetime`?
-        match self {
-            Self::Lifetime(_) => true,
-            Self::PolyVar(_) => self.kind_of(engine).await == TyKind::Lifetime,
-            Self::Application(application) => application.is_lifetime(),
-            Self::Inference(inference) => inference.kind() == TyKind::Lifetime,
-            Self::SelfInstance(_) | Self::EffectRow(_) => false,
-        }
+        self.kind_of(engine).await == TyKind::Lifetime
     }
 
     /// Returns whether `left` and `right` are equal when every lifetime is
-    /// considered equal to every other lifetime, and if so, each pair of
-    /// corresponding lifetimes that are not already identical.
+    /// considered equal to every other lifetime.
     ///
-    /// Effect rows are compared label by label in their stored order, as by
-    /// `==`.
-    // REVIEW: Let's just call this `equal_modulo_lifetimes` and takes optional
-    // outlives sink.
-    pub async fn lifetime_pairs_modulo_lifetimes(
+    /// Effect rows are matched as scoped labels, as by
+    /// [`EffectRow::match_labels`], so labels of different effects commute.
+    ///
+    /// Returns `None` if they are not equal. Otherwise, returns the outlives
+    /// constraints of relating each pair of corresponding lifetimes
+    /// invariantly.
+    pub async fn equal_modulo_lifetimes(
         left: &Interned<Self>,
         right: &Interned<Self>,
         engine: &TrackedEngine,
-    ) -> Option<Vec<(Interned<Self>, Interned<Self>)>> {
-        let mut pairs = Vec::new();
+    ) -> Option<OutlivesConstraints> {
+        let mut lifetimes = Vec::new();
         let mut pending = vec![(left.clone(), right.clone())];
 
         while let Some((left, right)) = pending.pop() {
@@ -292,16 +303,14 @@ impl Ty {
                     pending.extend(arguments.map(|(left, right)| (left.clone(), right.clone())));
                 }
 
-                // Rows with the same labels, in the same order, and tails that
-                // are equal modulo lifetimes.
-                //
-                // REVIEW: let's use `EffectRow::match_labels` instead. This is the actual correct
-                // semantic for effect row
+                // Rows whose labels all match, argument by argument, and whose
+                // tails are equal modulo lifetimes.
                 (Self::EffectRow(left_row), Self::EffectRow(right_row)) => {
-                    if left_row.labels().len() != right_row.labels().len() {
+                    let labels = left_row.match_labels(right_row);
+                    if !labels.is_exact() {
                         return None;
                     }
-                    for (left_label, right_label) in left_row.labels().zip(right_row.labels()) {
+                    for (left_label, right_label) in labels.matched() {
                         let arguments = left_label.structural_match(right_label)?;
                         pending
                             .extend(arguments.map(|(left, right)| (left.clone(), right.clone())));
@@ -319,12 +328,19 @@ impl Ty {
                     if !left.is_lifetime(engine).await || !right.is_lifetime(engine).await {
                         return None;
                     }
-                    pairs.push((left, right));
+                    lifetimes.push((left, right));
                 }
             }
         }
 
-        Some(pairs)
+        Some(
+            lifetimes
+                .iter()
+                .flat_map(|(left, right)| {
+                    OutlivesConstraint::from_relation(left, right, Variance::Invariant)
+                })
+                .collect(),
+        )
     }
 
     #[must_use]
@@ -391,35 +407,23 @@ impl Reduce for Interned<Ty> {
         &self,
         engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-        outlives: &mut OutlivesSink,
-    ) -> Option<Self> {
+    ) -> Option<(Self, OutlivesConstraints)> {
         // Prefer structural reduction, then the first matching given equality.
-        if let Some(reduced) = reduce_type(self, engine, givens, outlives).await {
+        if let Some(reduced) = reduce_type(self, engine, givens).await {
             return Some(reduced);
         }
         for equality in givens.iter().filter_map(crate::where_clause::PredicateKind::as_equality) {
             // Lifetimes never decide whether a given applies, just as they
-            // never decide which instance is selected. A rewrite to a type
-            // that only differs in lifetimes is not progress, which also
-            // keeps givens such as `d.Out['a] = d.Out['b]` from looping.
-            let Some(lifetimes) =
-                Ty::lifetime_pairs_modulo_lifetimes(equality.left(), self, engine).await
-            else {
-                continue;
-            };
-
-            // REVIEW: let's just skip this check. We'll implement proper cyclic detection
-            // later.
-            if Ty::lifetime_pairs_modulo_lifetimes(equality.right(), self, engine).await.is_some() {
+            // never decide which instance is selected. Projection arguments
+            // are invariant, so the lifetimes of a matching given are related
+            // by equality.
+            if equality.right() == self {
                 continue;
             }
-
-            // Projection arguments are invariant, so every pair of
-            // corresponding lifetimes is related by equality.
-            for (given, reduced) in &lifetimes {
-                outlives.relate(given, reduced, Variance::Invariant);
+            if let Some(outlives) = Ty::equal_modulo_lifetimes(equality.left(), self, engine).await
+            {
+                return Some((equality.right().clone(), outlives));
             }
-            return Some(equality.right().clone());
         }
         None
     }
@@ -429,8 +433,7 @@ async fn reduce_type(
     ty: &Interned<Ty>,
     engine: &TrackedEngine,
     givens: &[crate::where_clause::PredicateKind],
-    outlives: &mut OutlivesSink,
-) -> Option<Interned<Ty>> {
+) -> Option<(Interned<Ty>, OutlivesConstraints)> {
     match ty.as_ref() {
         Ty::Application(application) => {
             Box::pin(async move {
@@ -439,12 +442,11 @@ async fn reduce_type(
                         crate::reduce::reduce_instance_associated(associated, engine).await
                     && reduced != *ty
                 {
-                    return Some(reduced);
+                    return Some((reduced, OutlivesConstraints::new()));
                 }
-                application
-                    .reduce(engine, givens, outlives)
-                    .await
-                    .map(|application| engine.intern(Ty::Application(application)))
+                application.reduce(engine, givens).await.map(|(application, outlives)| {
+                    (engine.intern(Ty::Application(application)), outlives)
+                })
             })
             .await
         }
@@ -454,11 +456,11 @@ async fn reduce_type(
             if row.labels().len() == 0
                 && let Some(tail) = row.tail()
             {
-                return Some(tail.clone());
+                return Some((tail.clone(), OutlivesConstraints::new()));
             }
-            Box::pin(row.reduce(engine, givens, outlives))
+            Box::pin(row.reduce(engine, givens))
                 .await
-                .map(|row| engine.intern(Ty::EffectRow(row)))
+                .map(|(row, outlives)| (engine.intern(Ty::EffectRow(row)), outlives))
         }
     }
 }
@@ -1012,6 +1014,7 @@ impl TyDisplay<'_> {
                 ApplicationView::Error => write!(f, "<error>"),
             },
 
+            Ty::Inference(inference) if inference.kind() == TyKind::Lifetime => f.write_str("'_"),
             Ty::Inference(inference) => match inference.constraint() {
                 InferenceConstraint::Any => write!(f, "{{any}}"),
                 InferenceConstraint::Numeric => {

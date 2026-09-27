@@ -35,6 +35,13 @@ impl TraitRef {
     #[must_use]
     pub fn contains_inference(&self) -> bool { self.args.contains_inference() }
 
+    /// Returns whether an argument mentions an inference variable that is not
+    /// a lifetime; see [`Ty::contains_non_lifetime_inference`].
+    #[must_use]
+    pub fn contains_non_lifetime_inference(&self) -> bool {
+        self.args.iter().any(Ty::contains_non_lifetime_inference)
+    }
+
     /// Whether any argument recursively contains an error type.
     #[must_use]
     pub fn contains_error(&self) -> bool { self.args.contains_error() }
@@ -133,9 +140,11 @@ impl Reduce for TraitRef {
         &self,
         engine: &rayc_qbice::TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-        outlives: &mut crate::constraint::outlives::OutlivesSink,
-    ) -> Option<Self> {
-        self.args.reduce(engine, givens, outlives).await.map(|args| Self::new(self.trait_id, args))
+    ) -> Option<(Self, crate::constraint::outlives::OutlivesConstraints)> {
+        self.args
+            .reduce(engine, givens)
+            .await
+            .map(|(args, outlives)| (Self::new(self.trait_id, args), outlives))
     }
 }
 

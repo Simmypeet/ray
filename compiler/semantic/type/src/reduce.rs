@@ -8,7 +8,7 @@ use rayc_symbol::{
 };
 
 use crate::{
-    constraint::outlives::OutlivesSink,
+    constraint::outlives::OutlivesConstraints,
     instance_member::get_instance_member,
     poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
     subst::Substitutable,
@@ -22,19 +22,17 @@ pub trait Reduce: Sync {
     /// Given equalities rewrite left operands that are equal to the value
     /// ignoring lifetimes to their right operands, in slice order, after
     /// ordinary reduction at each type. Descendants use the same givens.
-    /// Equalities whose right operand is equal to the value ignoring
-    /// lifetimes do not count as progress.
+    /// Reflexive equalities do not count as progress.
     ///
     /// A given equality that matches relates each pair of corresponding
-    /// lifetimes invariantly, and the resulting outlives constraints go to
-    /// `outlives`.
+    /// lifetimes invariantly. The step returns the resulting outlives
+    /// constraints next to the reduced value.
     #[allow(async_fn_in_trait)]
     async fn reduce(
         &self,
         engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-        outlives: &mut OutlivesSink,
-    ) -> Option<Self>
+    ) -> Option<(Self, OutlivesConstraints)>
     where
         Self: Sized;
 }
@@ -47,13 +45,12 @@ where
         &self,
         engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-        outlives: &mut OutlivesSink,
-    ) -> Option<Self> {
+    ) -> Option<(Self, OutlivesConstraints)> {
         for (index, value) in self.iter().enumerate() {
-            if let Some(reduced) = value.reduce(engine, givens, outlives).await {
+            if let Some((reduced, outlives)) = value.reduce(engine, givens).await {
                 let mut values = self.to_vec();
                 values[index] = reduced;
-                return Some(engine.intern_unsized(values));
+                return Some((engine.intern_unsized(values), outlives));
             }
         }
         None
@@ -140,19 +137,37 @@ mod tests {
     use rayc_target::TargetID;
 
     use super::Reduce;
-    use crate::{
-        constraint::outlives::OutlivesSink,
-        ty::{
-            Primitive, Ty, TyKind,
-            args::Args,
-            effect_row::{EffectLabel, EffectRow},
-            inference::Inference,
-        },
+    use crate::ty::{
+        Primitive, Ty, TyKind,
+        args::Args,
+        effect_row::{EffectLabel, EffectRow},
+        inference::Inference,
     };
 
     fn effect_label(id: u128, engine: &TrackedEngine) -> Interned<EffectLabel> {
         let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(id));
         engine.intern(EffectLabel::new(symbol_id, Args::new([], engine)))
+    }
+
+    /// Creates an engine that knows `member_id` as an associated type of
+    /// kind `Star`.
+    async fn engine_with_associated_type(member_id: rayc_symbol::GlobalSymbolID) -> TrackedEngine {
+        use std::{collections::HashMap, sync::Arc};
+
+        use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor};
+
+        let mut engine = Engine::new_with(
+            qbice::serialize::Plugin::default(),
+            InMemoryFactory,
+            qbice::stable_hash::SeededStableHasherBuilder::new(0),
+        )
+        .await
+        .unwrap();
+        engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+            crate::associated_type_kind::Key { symbol_id: member_id },
+            TyKind::Star,
+        )]))));
+        Arc::new(engine).tracked().await
     }
 
     // input: {| int32}
@@ -164,7 +179,7 @@ mod tests {
         let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
         let row = Ty::new_effect_row([], Some(int_ty.clone()), &engine);
 
-        assert_eq!(row.reduce(&engine, &[], &mut OutlivesSink::dropping()).await, Some(int_ty));
+        assert_eq!(row.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(int_ty));
     }
 
     // input: {IO | {State | e}}
@@ -180,7 +195,7 @@ mod tests {
         let outer = EffectRow::new([io.clone()], Some(inner), &engine);
         let expected = EffectRow::new([io, state], Some(tail), &engine);
 
-        assert_eq!(outer.reduce(&engine, &[], &mut OutlivesSink::dropping()).await, Some(expected));
+        assert_eq!(outer.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(expected));
     }
 
     // input: {IO | {}}
@@ -194,7 +209,7 @@ mod tests {
         let row = EffectRow::new([io.clone()], Some(empty), &engine);
         let expected = EffectRow::new([io], None, &engine);
 
-        assert_eq!(row.reduce(&engine, &[], &mut OutlivesSink::dropping()).await, Some(expected));
+        assert_eq!(row.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(expected));
     }
 
     // input: ({| int32}, {| bool})
@@ -210,7 +225,7 @@ mod tests {
         let tuple = Ty::new_tuple(engine.intern_unsized([first, second.clone()]), &engine);
         let expected = Ty::new_tuple(engine.intern_unsized([int_ty, second]), &engine);
 
-        assert_eq!(tuple.reduce(&engine, &[], &mut OutlivesSink::dropping()).await, Some(expected));
+        assert_eq!(tuple.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(expected));
     }
 
     // input: {IO}
@@ -221,7 +236,7 @@ mod tests {
         let engine = rayc_qbice::create_minimal_engine().await;
         let row = Ty::new_effect_row([effect_label(1, &engine)], None, &engine);
 
-        assert_eq!(row.reduce(&engine, &[], &mut OutlivesSink::dropping()).await, None);
+        assert_eq!(row.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), None);
     }
 
     // input: c.Item and the enclosing tuple (c.Item,)
@@ -234,9 +249,9 @@ mod tests {
             where_clause::{AssociatedTypeEquality, PredicateKind},
         };
 
-        let engine = rayc_qbice::create_minimal_engine().await;
         let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
         let member_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
+        let engine = engine_with_associated_type(member_id).await;
         let dictionary = engine.intern(Ty::SelfInstance(SelfInstance::new(trait_id)));
         let projection = Ty::new_instance_associated(member_id, dictionary, [], &engine);
         let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
@@ -246,12 +261,12 @@ mod tests {
         ))];
 
         assert_eq!(
-            projection.reduce(&engine, &givens, &mut OutlivesSink::dropping()).await,
+            projection.reduce(&engine, &givens).await.map(|(reduced, _)| reduced),
             Some(int_ty.clone())
         );
         let tuple = Ty::new_tuple(engine.intern_unsized([projection]), &engine);
         assert_eq!(
-            tuple.reduce(&engine, &givens, &mut OutlivesSink::dropping()).await,
+            tuple.reduce(&engine, &givens).await.map(|(reduced, _)| reduced),
             Some(Ty::new_tuple(engine.intern_unsized([int_ty]), &engine))
         );
     }
@@ -275,7 +290,7 @@ mod tests {
             other,
         ))];
 
-        assert_eq!(row.reduce(&engine, &givens, &mut OutlivesSink::dropping()).await, Some(tail));
+        assert_eq!(row.reduce(&engine, &givens).await.map(|(reduced, _)| reduced), Some(tail));
     }
 
     // input: this.Out['?1]
@@ -289,9 +304,9 @@ mod tests {
             where_clause::{AssociatedTypeEquality, PredicateKind},
         };
 
-        let engine = rayc_qbice::create_minimal_engine().await;
         let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
         let member_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
+        let engine = engine_with_associated_type(member_id).await;
         let this = engine.intern(Ty::SelfInstance(SelfInstance::new(trait_id)));
         let region =
             |index| Ty::new_lifetime(Lifetime::Region(rayc_arena::ID::new(index)), &engine);
@@ -305,15 +320,13 @@ mod tests {
             out(&given),
             reference.clone(),
         ))];
-        let mut outlives = OutlivesSink::keeping();
+        let reduced = out(&used).reduce(&engine, &givens).await;
 
-        let reduced = out(&used).reduce(&engine, &givens, &mut outlives).await;
-
-        assert_eq!(reduced, Some(reference));
-        assert_eq!(outlives.into_constraints(), vec![
+        let outlives = [
             OutlivesConstraint::new(given.clone(), used.clone()),
             OutlivesConstraint::new(used, given),
-        ]);
+        ];
+        assert_eq!(reduced, Some((reference, outlives.into_iter().collect())));
     }
 }
 

@@ -3,6 +3,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
+    constraint::outlives::OutlivesConstraints,
     reduce::Reduce,
     rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::Substitutable,
@@ -11,7 +12,7 @@ use crate::{
         args::Args,
         inference::{GenInfer, Inference},
     },
-    variance::{Variance, VarianceMap},
+    variance::{Variance, VarianceMap, get_variance},
 };
 
 #[derive(
@@ -27,10 +28,10 @@ impl Reduce for Interned<EffectLabel> {
         &self,
         engine: &rayc_qbice::TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-        outlives: &mut crate::constraint::outlives::OutlivesSink,
-    ) -> Option<Self> {
-        self.args.reduce(engine, givens, outlives).await.map(|args| {
-            engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
+    ) -> Option<(Self, OutlivesConstraints)> {
+        self.args.reduce(engine, givens).await.map(|(args, outlives)| {
+            let label = EffectLabel { effect_symbol_id: self.effect_symbol_id, args };
+            (engine.intern(label), outlives)
         })
     }
 }
@@ -106,27 +107,24 @@ impl EffectLabel {
     /// label is in a position of variance `ambient`.
     ///
     /// An invariant or bivariant position absorbs every variance inside it,
-    /// so `effect_variances` are only needed when `ambient` is covariant or
-    /// contravariant.
-    ///
-    /// # Panics
-    ///
-    /// If `effect_variances` are needed and `None`, or have fewer variances
-    /// than there are arguments.
-    pub fn arguments_with_ambient_variance<'a>(
-        &'a self,
+    /// so the variances of the effect are only queried when `ambient` is
+    /// covariant or contravariant.
+    pub async fn arguments_with_ambient_variance(
+        &self,
         ambient: Variance,
-        effect_variances: Option<&'a VarianceMap>,
-    ) -> impl Iterator<Item = (&'a Interned<Ty>, Variance)> {
+        engine: &TrackedEngine,
+    ) -> impl Iterator<Item = (&Interned<Ty>, Variance)> {
+        let effect_variances = match ambient {
+            Variance::Covariant | Variance::Contravariant => {
+                Some(engine.get_variance(self.effect_symbol_id).await)
+            }
+            Variance::Invariant | Variance::Bivariant => None,
+        };
+
         self.args.interned_iter().enumerate().map(move |(index, arg)| {
-            let variance = match ambient {
-                Variance::Invariant | Variance::Bivariant => ambient,
-                Variance::Covariant | Variance::Contravariant => ambient.xform(
-                    effect_variances
-                        .expect("a label in a covariant or contravariant position needs variances")
-                        .get_by_index(index),
-                ),
-            };
+            let variance = effect_variances
+                .as_ref()
+                .map_or(ambient, |variances| ambient.xform(variances.get_by_index(index)));
             (arg, variance)
         })
     }
@@ -255,29 +253,30 @@ impl Reduce for EffectRow {
         &self,
         engine: &rayc_qbice::TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-        outlives: &mut crate::constraint::outlives::OutlivesSink,
-    ) -> Option<Self> {
+    ) -> Option<(Self, OutlivesConstraints)> {
         if let Some(Ty::EffectRow(tail_row)) = self.tail.as_deref() {
             // reduce the case like `{A, B | {}}` to `{A, B}`.
             if tail_row.labels.is_empty() && tail_row.tail.is_none() {
-                return Some(Self { labels: self.labels.clone(), tail: None });
+                let row = Self { labels: self.labels.clone(), tail: None };
+                return Some((row, OutlivesConstraints::new()));
             }
 
-            return Some(Self::new(
+            let row = Self::new(
                 self.labels.iter().cloned().chain(tail_row.labels.iter().cloned()),
                 tail_row.tail.clone(),
                 engine,
-            ));
+            );
+            return Some((row, OutlivesConstraints::new()));
         }
 
-        if let Some(labels) = self.labels.reduce(engine, givens, outlives).await {
-            return Some(Self { labels, tail: self.tail.clone() });
+        if let Some((labels, outlives)) = self.labels.reduce(engine, givens).await {
+            return Some((Self { labels, tail: self.tail.clone() }, outlives));
         }
 
         if let Some(tail) = &self.tail
-            && let Some(tail) = tail.reduce(engine, givens, outlives).await
+            && let Some((tail, outlives)) = tail.reduce(engine, givens).await
         {
-            return Some(Self { labels: self.labels.clone(), tail: Some(tail) });
+            return Some((Self { labels: self.labels.clone(), tail: Some(tail) }, outlives));
         }
         None
     }

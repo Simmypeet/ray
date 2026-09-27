@@ -2,7 +2,7 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 
 use crate::{
-    constraint::outlives::OutlivesSink,
+    constraint::outlives::OutlivesConstraints,
     reduce::Reduce,
     subst::{Subst, Substitutable},
     ty::Ty,
@@ -55,22 +55,22 @@ impl Reduce for TyRelate {
         &self,
         engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-        outlives: &mut OutlivesSink,
-    ) -> Option<Self>
+    ) -> Option<(Self, OutlivesConstraints)>
     where
         Self: Sized,
     {
-        match (
-            self.lesser.reduce(engine, givens, outlives).await,
-            self.greater.reduce(engine, givens, outlives).await,
-        ) {
-            (None, None) => None,
-            (lesser, greater) => Some(Self {
-                lesser: lesser.unwrap_or_else(|| self.lesser.clone()),
-                greater: greater.unwrap_or_else(|| self.greater.clone()),
-                variance: self.variance,
-            }),
+        let lesser = self.lesser.reduce(engine, givens).await;
+        let greater = self.greater.reduce(engine, givens).await;
+        if lesser.is_none() && greater.is_none() {
+            return None;
         }
+
+        let (lesser, lesser_outlives) =
+            lesser.unwrap_or_else(|| (self.lesser.clone(), OutlivesConstraints::new()));
+        let (greater, greater_outlives) =
+            greater.unwrap_or_else(|| (self.greater.clone(), OutlivesConstraints::new()));
+        let relate = Self { lesser, greater, variance: self.variance };
+        Some((relate, lesser_outlives.union(greater_outlives)))
     }
 }
 
