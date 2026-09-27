@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: no implicit instance found: `core.Drop[<closure>() -> a \ {any}]`
+[error]: no implicit instance found: `core.Drop[<closure>() -> a \ {}]`
   ╭▸ compiler/e2e/test/check/tast/closure_drop_missing_instance/main.ray:4:1
   │
 4 │     () -> value

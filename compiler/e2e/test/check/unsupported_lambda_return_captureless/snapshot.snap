@@ -15,10 +15,7 @@ stderr:
 4 │ def main() -> int32:
   │     ━━━━ the function body has effects outside its signature
 5 │     return makeIncrement()(45)
-  │            ┬──────────────────
-  │            │
-  │            effect `{any}.Effect` introduced here
-  ╰╴           effect `{}` introduced here
+  ╰╴           ─────────────────── effect `{any}.Effect` introduced here
 
 [error]: mismatched types in return expression: expected `int32`, but found `{any}.Return`
   ╭▸ compiler/e2e/test/check/unsupported_lambda_return_captureless/main.ray:5:12

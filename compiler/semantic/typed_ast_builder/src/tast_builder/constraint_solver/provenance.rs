@@ -511,6 +511,15 @@ impl Provenance {
         for pending in constraints {
             let latest = pending.constraint().apply_subst(&self.subst, engine);
             let constraint = latest.as_ref().unwrap_or_else(|| pending.constraint());
+
+            // if it's a pair of inference variables waiting to be unified but blocked
+            // because of lifetime generalization, we'll not inlude them in the exclusion
+            // set. This is because the empty effect row need no lifetime
+            // generalization.
+            if constraint.waiting_variable_pair().is_some() {
+                continue;
+            }
+
             inferences
                 .extend(constraint.interned_recursive_iter().filter_map(|ty| ty.as_inference()));
         }

@@ -3,11 +3,11 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: incompatible effect rows `{State[int32] | {any}}` and `{State[bool] | {any}}`
+[error]: incompatible effect rows `{State[int32]}` and `{State[bool]}`
    ╭▸ compiler/e2e/test/check/tast/incompatible_effect_instantiations/main.ray:20:22
    │
 17 │ def main() -> ():
-   │     ──── function body effect `{State[bool] | {any}}` is checked against its signature here
+   │     ──── function body effect `{State[bool]}` is checked against its signature here
    ‡
 20 │     let conflict = (((withPolyState(varInt), ()), (withPolyState(varBool), ())))
    │                      ┯┬────────────────────━━━━━   ────────────────────── effect `{State[bool]}` introduced here

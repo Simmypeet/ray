@@ -1,0 +1,47 @@
+trait Eq[a]:
+    def equals(lhs: a, rhs: a) -> bool
+
+inst EqStatic for Eq[&'static int32]:
+    def equals(lhs: &'static int32, rhs: &'static int32) -> bool:
+        return true
+
+eff Reader[a] given (equality: Eq[a]):
+    def read() -> a
+
+# OK: the given argument implements `Eq[&'static int32]` exactly.
+def exact(callback: def() -> () \ {Reader[&'static int32; given EqStatic]}) -> ():
+    return ()
+
+# ERROR: `EqStatic` implements `Eq[&'static int32]`. Trait arguments are
+# invariant, so passing it as `Eq[&'a int32]` requires `'a: 'static`.
+def shorter['a](callback: def() -> () \ {Reader[&'a int32; given EqStatic]}) -> ():
+    return ()
+
+# OK: the where clause says `'a` outlives `'static`.
+def bounded['a](callback: def() -> () \ {Reader[&'a int32; given EqStatic]}) -> () where (
+    'a: 'static,
+):
+    return ()
+
+trait Box[a]:
+    type Item
+
+inst StaticBox for Box[int32]:
+    type Item = &'static int32
+
+trait HasValue['a]:
+    type Value given (box: Box[int32]) where (box.Item = &'a int32)
+
+# OK: the where clause of `Value` requires `&'static int32 = &'static int32`.
+def equalityExact(value: has.Value[given StaticBox]) given (has: HasValue['static]) -> ():
+    core.NoDrop { value = move value }
+    return ()
+
+# ERROR: the where clause of `Value` requires `&'static int32 = &'a int32`,
+# that is, `'a: 'static`.
+def equalityShorter['a](value: has.Value[given StaticBox]) given (has: HasValue['a]) -> ():
+    core.NoDrop { value = move value }
+    return ()
+
+def main() -> ():
+    return ()

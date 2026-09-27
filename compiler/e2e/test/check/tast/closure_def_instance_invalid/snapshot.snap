@@ -15,7 +15,7 @@ stderr:
 11 │     return invoke(() -> 42, ())
    ╰╴           ━━━━━━━━━━━━━━━━━━━━
 
-[error]: function body effects do not match its signature: expected `{}`, but found `{Read | {any}}`
+[error]: function body effects do not match its signature: expected `{}`, but found `{Read}`
    ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:13:5
    │
 13 │ def effectMismatch() -> int32:
@@ -24,7 +24,7 @@ stderr:
    │            ┬────────────┬───────────────
    │            │            │
    │            │            effect `{Read}` introduced here
-   ╰╴           effect `{Read | {any}}` introduced here
+   ╰╴           effect `{Read}` introduced here
 
 [error]: no implicit instance found: `main.Def[<closure>() -> bool \ {}]`
    ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:25:12

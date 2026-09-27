@@ -7,7 +7,7 @@ stderr:
    ╭▸ compiler/e2e/test/check/typed/callable_effect_contract/main.ray:11:13
    │
 11 │     let a = pure(() -> E.value())
-   ╰╴            ━━━━ `DefInstance[<closure>() -> int32 \ {E | {any}}].Effect` must equal `{}`
+   ╰╴            ━━━━ `DefInstance[<closure>() -> int32 \ {E | {}}].Effect` must equal `{}`
 
 [error]: where-clause obligation for `main.effectful` is not satisfied
    ╭▸ compiler/e2e/test/check/typed/callable_effect_contract/main.ray:14:13
