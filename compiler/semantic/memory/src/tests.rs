@@ -22,7 +22,7 @@ use rayc_semantic_element::{
 use rayc_solver::Solver;
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::{
-    SymbolID,
+    GlobalSymbolID, SymbolID,
     core_item::{CoreItem, Key as CoreItemKey},
 };
 use rayc_target::TargetID;
@@ -52,7 +52,7 @@ fn nested_tuple_type(engine: &TrackedEngine) -> Interned<Ty> {
 }
 
 fn function_with_variable(ty: Interned<Ty>) -> (IRFunctionMap, FunctionID, Local) {
-    let mut functions = IRFunctionMap::new(ty.clone());
+    let mut functions = IRFunctionMap::new(GlobalSymbolID::default());
     let function_id = functions.root_id();
     let scope_id = functions.root_scope_id(function_id);
     let variable_id = functions.create_variable_in_scope(function_id, scope_id, ty, test_span());
@@ -213,7 +213,7 @@ async fn move_rejects_a_never_initialized_place() {
 async fn root_scope_push_initializes_parameters_but_not_variables() {
     let engine = create_minimal_engine().await;
     let ty = leaf_type(&engine);
-    let mut functions = IRFunctionMap::new(ty.clone());
+    let mut functions = IRFunctionMap::new(GlobalSymbolID::default());
     let capture_map = functions.new_capture_map();
     let function_id = functions.insert_lambda(ty.clone(), ty.clone(), capture_map);
     let parameter_id = functions
@@ -242,7 +242,7 @@ async fn root_scope_push_initializes_parameters_but_not_variables() {
 async fn scope_pop_removes_local_and_function_input_slots() {
     let engine = create_minimal_engine().await;
     let ty = leaf_type(&engine);
-    let mut functions = IRFunctionMap::new(ty.clone());
+    let mut functions = IRFunctionMap::new(GlobalSymbolID::default());
     let capture_map = functions.new_capture_map();
     let function_id = functions.insert_lambda(ty.clone(), ty.clone(), capture_map);
     let parameter_id = functions

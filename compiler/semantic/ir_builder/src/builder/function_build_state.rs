@@ -330,7 +330,7 @@ impl Builder {
         return_ty: Interned<Ty>,
         diagnostic_span: Option<RelativeSpan>,
     ) -> Self {
-        let mut ir_functions = IRFunctionMap::new(context.function_effect().clone());
+        let mut ir_functions = IRFunctionMap::new(def_id);
         let building_function =
             FunctionBuildState::new_def(context, &mut ir_functions, return_ty, diagnostic_span);
 
