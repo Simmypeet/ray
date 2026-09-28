@@ -221,6 +221,7 @@ pub async fn solve<P: DataflowProblem>(
     // predecessors in the flow before they are first processed.
     let mut worklist = VecDeque::new();
     let mut queued_blocks = FxHashSet::default();
+    let mut visited_blocks = FxHashSet::default();
     let mut seed_order = cfg.reverse_postorder();
     match P::DIRECTION {
         Direction::Forward => {}
@@ -232,6 +233,10 @@ pub async fn solve<P: DataflowProblem>(
 
     while let Some(block_id) = worklist.pop_front() {
         queued_blocks.remove(&block_id);
+
+        // The first visit propagates even when the block's facts stay at
+        // bottom, since an edge transfer may still add facts of its own.
+        let first_visit = visited_blocks.insert(block_id);
 
         match P::DIRECTION {
             Direction::Forward => {
@@ -252,7 +257,7 @@ pub async fn solve<P: DataflowProblem>(
                     *block_exit = candidate_state.clone();
                 }
 
-                if !block_changed {
+                if !block_changed && !first_visit {
                     continue;
                 }
 
@@ -303,7 +308,7 @@ pub async fn solve<P: DataflowProblem>(
                     *block_entry = candidate_state.clone();
                 }
 
-                if !block_changed {
+                if !block_changed && !first_visit {
                     continue;
                 }
 
