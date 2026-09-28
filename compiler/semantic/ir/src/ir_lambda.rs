@@ -2,7 +2,10 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_arena::{ID, OrderedArena};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_type::{capture::CaptureMode, ty::Ty};
+use rayc_type::{
+    capture::LoadKind,
+    ty::{Mutability, Ty},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IRLambdaContext {
@@ -101,6 +104,18 @@ impl LambdaParameterMap {
     }
 }
 
+/// How a closure environment stores a captured binding.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable,
+)]
+pub enum CaptureMode {
+    /// The binding is loaded into the environment with the given kind.
+    Value(LoadKind),
+
+    /// The environment stores a `&'lifetime` reference to the binding.
+    Reference { mutability: Mutability, lifetime: Interned<Ty> },
+}
+
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable,
 )]
@@ -120,17 +135,17 @@ impl Capture {
     pub const fn binding_ty(&self) -> &Interned<Ty> { &self.binding_ty }
 
     #[must_use]
-    pub const fn mode(&self) -> CaptureMode { self.mode }
+    pub const fn mode(&self) -> &CaptureMode { &self.mode }
 
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
 
     #[must_use]
     pub fn storage_ty(&self, engine: &TrackedEngine) -> Interned<Ty> {
-        match self.mode {
+        match &self.mode {
             CaptureMode::Value(_) => self.binding_ty.clone(),
-            CaptureMode::Reference(mutability) => {
-                Ty::new_pointer(self.binding_ty.clone(), mutability, engine)
+            CaptureMode::Reference { mutability, lifetime } => {
+                Ty::new_reference(lifetime.clone(), self.binding_ty.clone(), *mutability, engine)
             }
         }
     }
