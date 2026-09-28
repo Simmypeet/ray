@@ -9,7 +9,7 @@ use rayc_qbice::TrackedEngine;
 
 use crate::{
     poly_var::GlobalPolyVarID,
-    ty::{Ty, inference::Inference, self_instance::SelfInstance},
+    ty::{Ty, inference::Inference, lifetime::ExternalRegionID, self_instance::SelfInstance},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -18,6 +18,12 @@ pub enum Var {
     Poly(GlobalPolyVarID),
     /// Substitutes a trait’s self dictionary when instantiating its members.
     SelfInstance(SelfInstance),
+    /// Instantiates an external lifetime of a nested IR function.
+    External(ExternalRegionID),
+}
+
+impl From<ExternalRegionID> for Var {
+    fn from(external: ExternalRegionID) -> Self { Self::External(external) }
 }
 
 impl From<SelfInstance> for Var {
@@ -57,7 +63,7 @@ impl Subst {
     pub fn inference_mappings(&self) -> impl Iterator<Item = (Inference, &Interned<Ty>)> {
         self.0.iter().filter_map(|(var, ty)| match var {
             Var::Inference(inference) => Some((*inference, ty)),
-            Var::Poly(_) | Var::SelfInstance(_) => None,
+            Var::Poly(_) | Var::SelfInstance(_) | Var::External(_) => None,
         })
     }
 }

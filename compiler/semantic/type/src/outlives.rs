@@ -122,7 +122,7 @@ impl Lifetime {
             // `'static` outlives everything, and erased lifetimes are checked
             // on the IR.
             Self::Static | Self::Erased => false,
-            Self::Region(_) => true,
+            Self::Region(_) | Self::External(_) => true,
         }
     }
 }

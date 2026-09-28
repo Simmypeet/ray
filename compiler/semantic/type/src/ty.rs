@@ -367,7 +367,9 @@ impl TyRewriterAsync for LifetimeEraser<'_> {
     async fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
         let erased = || Ty::new_lifetime(Lifetime::Erased, self.engine);
         match &**ty {
-            Ty::Lifetime(Lifetime::Static | Lifetime::Region(_)) => Some(erased()),
+            Ty::Lifetime(Lifetime::Static | Lifetime::Region(_) | Lifetime::External(_)) => {
+                Some(erased())
+            }
             Ty::PolyVar(poly_var) => {
                 let poly_var_map = self.engine.get_poly_var_map(poly_var.parent_id()).await;
                 (poly_var_map.kind_of(poly_var.id()) == TyKind::Lifetime).then(erased)
@@ -397,7 +399,8 @@ impl Substitutable for Interned<Ty> {
             Ty::EffectRow(row) => {
                 row.apply_subst(subst, engine).map(|new_row| engine.intern(Ty::EffectRow(new_row)))
             }
-            Ty::Lifetime(_) => None,
+            Ty::Lifetime(Lifetime::External(external)) => subst.get(external).cloned(),
+            Ty::Lifetime(Lifetime::Static | Lifetime::Erased | Lifetime::Region(_)) => None,
         }
     }
 }
@@ -1026,11 +1029,7 @@ impl TyDisplay<'_> {
             },
 
             Ty::SelfInstance(_) => f.write_str("this"),
-            Ty::Lifetime(lifetime) => match lifetime {
-                Lifetime::Static => f.write_str("'static"),
-                Lifetime::Erased => f.write_str("'_"),
-                Lifetime::Region(region) => write!(f, "'?{}", region.index()),
-            },
+            Ty::Lifetime(lifetime) => write!(f, "{lifetime}"),
             Ty::PolyVar(poly_var) => {
                 let poly_var_map = self
                     .poly_var_maps
