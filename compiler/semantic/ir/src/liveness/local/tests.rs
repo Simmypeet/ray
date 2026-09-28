@@ -4,7 +4,7 @@ use rayc_qbice::{TrackedEngine, create_minimal_engine};
 use rayc_source_file::GlobalSourceID;
 use rayc_type::ty::{Primitive, Ty};
 
-use super::{LiveLocals, Liveness};
+use super::{LiveLocals, LocalLiveness};
 use crate::{
     address::{Address, Local},
     cfg::{BlockID, Conditional, Point, Terminator},
@@ -91,7 +91,7 @@ impl FunctionBuilder {
 
     async fn live_before(&self, point: Point) -> LiveLocals {
         let function = self.functions.get_function(self.function_id);
-        Liveness::compute(function).await.live_before(function, point).unwrap()
+        LocalLiveness::compute(function).await.live_before(function, point).unwrap()
     }
 }
 
