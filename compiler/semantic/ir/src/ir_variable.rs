@@ -5,7 +5,7 @@ use rayc_type::ty::Ty;
 
 use crate::{
     scope::ScopeID,
-    visit::{TypeVisitor, VisitType},
+    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
 };
 
 /// Identifies a local variable stored in a function's variable arena.
@@ -66,13 +66,29 @@ impl IRVariableMap {
 }
 
 impl VisitType for IRVariable {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) { visitor.visit_type(&self.ty); }
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type(&self.ty, site);
+    }
 }
 
 impl VisitType for IRVariableMap {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         for (_, variable) in self.variables() {
-            variable.visit_types(visitor);
+            variable.visit_types(site, visitor);
+        }
+    }
+}
+
+impl VisitTypeMut for IRVariable {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type_mut(&mut self.ty, site);
+    }
+}
+
+impl VisitTypeMut for IRVariableMap {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        for (_, variable) in self.variables.iter_mut() {
+            variable.visit_types_mut(site, visitor);
         }
     }
 }

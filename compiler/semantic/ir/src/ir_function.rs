@@ -2,6 +2,9 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
+use rayc_qbice::TrackedEngine;
+use rayc_semantic_element::effect_row::get_effect_row;
+use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::{Ty, application::ClosureID};
 
 use crate::{
@@ -12,7 +15,7 @@ use crate::{
     dataflow::{DataflowProblem, DataflowSolution, solve},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
     ir_lambda::{
-        Capture, CaptureID, CaptureMap, CaptureMapID, IRLambdaContext, IRThunkContext,
+        Capture, CaptureID, CaptureMap, CaptureMapID, CaptureMode, IRLambdaContext, IRThunkContext,
         LambdaParameter, LambdaParameterID,
     },
     ir_operation_handler::{
@@ -20,13 +23,17 @@ use crate::{
     },
     ir_variable::{IRVariable, IRVariableID, IRVariableMap},
     scope::{Scope, ScopeID, ScopeMap},
-    visit::{ExprVisitor, TypeVisitor, VisitExpr, VisitType},
+    visit::{
+        ExprVisitor, TypeSite, TypeVisitor, TypeVisitorMut, VisitExpr, VisitType, VisitTypeMut,
+    },
 };
 
 pub type FunctionID = ID<IRFunction>;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IRFunctionMap {
+    /// The definition whose body this map lowers.
+    def_id: GlobalSymbolID,
     functions: Arena<IRFunction>,
     /// Capture layouts referenced by nested-function contexts. Operation
     /// handlers belonging to one handler record share an entry.
@@ -37,10 +44,21 @@ pub struct IRFunctionMap {
 
 impl IRFunctionMap {
     #[must_use]
-    pub fn new(root_effect: Interned<Ty>) -> Self {
+    pub fn new(def_id: GlobalSymbolID) -> Self {
         let mut functions = Arena::new();
-        let root = functions.insert(IRFunction::new(root_effect));
-        Self { functions, capture_maps: Arena::new(), root, closures: FxHashMap::default() }
+        let root = functions.insert(IRFunction::new_def());
+        Self { def_id, functions, capture_maps: Arena::new(), root, closures: FxHashMap::default() }
+    }
+
+    /// Returns the effect row of a function.
+    ///
+    /// The definition function takes the effect row declared in the
+    /// definition's signature, while a nested function stores its own.
+    pub async fn effect_of(&self, function_id: FunctionID, engine: &TrackedEngine) -> Interned<Ty> {
+        match self.get_function(function_id).context().nested_effect() {
+            Some(effect) => effect.clone(),
+            None => engine.get_effect_row(self.def_id).await,
+        }
     }
 
     #[must_use]
@@ -214,6 +232,48 @@ impl IRFunctionMap {
         self.get_function(function_id).context().capture_map()
     }
 
+    /// Returns the capture layout of a nested function, or `None` for the
+    /// definition function, which does not capture values.
+    #[must_use]
+    pub fn nested_capture_map_id(&self, function_id: FunctionID) -> Option<CaptureMapID> {
+        self.get_function(function_id).context().nested_capture_map()
+    }
+
+    /// Visits every type stored in this map, together with where it is
+    /// stored.
+    ///
+    /// The order is the same as that of [`Self::visit_types_mut`].
+    pub fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+        // Capture layouts first; they may be shared by several functions.
+        for (capture_map_id, capture_map) in self.capture_maps.iter() {
+            capture_map.visit_types(TypeSite::Capture(capture_map_id), visitor);
+        }
+
+        // Then the signature and the body of every function.
+        for (function_id, function) in self.functions() {
+            function.visit_types(function_id, visitor);
+        }
+    }
+
+    /// Visits every type stored in this map mutably, together with where it
+    /// is stored.
+    ///
+    /// Every capture layout is visited before any function, so a visitor
+    /// sees the captures of a nested function before its signature. The
+    /// types of one function's signature are visited together, before the
+    /// types of its body. Otherwise, the iteration order is not stable.
+    pub fn visit_types_mut<V: TypeVisitorMut>(&mut self, visitor: &mut V) {
+        // Capture layouts first; they may be shared by several functions.
+        for (capture_map_id, capture_map) in self.capture_maps.iter_mut() {
+            capture_map.visit_types_mut(TypeSite::Capture(capture_map_id), visitor);
+        }
+
+        // Then the signature and the body of every function.
+        for (function_id, function) in self.functions.iter_mut() {
+            function.visit_types_mut(function_id, visitor);
+        }
+    }
+
     fn capture_map(&self, function_id: FunctionID) -> &CaptureMap {
         let capture_map = self.capture_map_id(function_id);
         self.capture_maps.get(capture_map).expect("IR capture map should exist")
@@ -303,7 +363,8 @@ impl IRFunctionMap {
     }
 
     /// Redirects `edge` of `function_id` through a new empty block and
-    /// returns that block.
+    /// returns that block, rewiring the phis of its target to take their
+    /// value from the new block.
     pub fn split_edge(&mut self, function_id: FunctionID, edge: ControlFlowEdge) -> BlockID {
         self.get_function_mut(function_id).split_edge(edge)
     }
@@ -324,17 +385,6 @@ impl IRFunctionMap {
         block_id: BlockID,
     ) -> Option<&Terminator> {
         self.get_function(function_id).block_terminator(block_id)
-    }
-}
-
-impl VisitType for IRFunctionMap {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
-        for (_, function) in self.functions() {
-            function.visit_types(visitor);
-        }
-        for (_, capture_map) in self.capture_maps.iter() {
-            capture_map.visit_types(visitor);
-        }
     }
 }
 
@@ -410,12 +460,29 @@ impl IRContext {
         }
     }
 
-    fn capture_map(&self) -> CaptureMapID {
+    const fn capture_map(&self) -> CaptureMapID {
+        self.nested_capture_map().expect("a def context does not have captures")
+    }
+
+    /// Returns the effect row stored by a nested function context, or `None`
+    /// for a def context, whose effect row is declared by the definition.
+    const fn nested_effect(&self) -> Option<&Interned<Ty>> {
         match self {
-            Self::Def => panic!("a def context does not have captures"),
-            Self::Lambda(context) => context.capture_map(),
-            Self::Thunk(context) => context.capture_map(),
-            Self::OperationHandler(context) => context.capture_map(),
+            Self::Def => None,
+            Self::Lambda(context) => Some(context.effect()),
+            Self::Thunk(context) => Some(context.effect()),
+            Self::OperationHandler(context) => Some(context.effect()),
+        }
+    }
+
+    /// Returns the capture layout of a nested function context, or `None`
+    /// for a def context.
+    const fn nested_capture_map(&self) -> Option<CaptureMapID> {
+        match self {
+            Self::Def => None,
+            Self::Lambda(context) => Some(context.capture_map()),
+            Self::Thunk(context) => Some(context.capture_map()),
+            Self::OperationHandler(context) => Some(context.capture_map()),
         }
     }
 }
@@ -427,19 +494,17 @@ pub struct IRFunction {
     variable_map: IRVariableMap,
     expression_map: IRExpressionMap,
     context: IRContext,
-    effect: Interned<Ty>,
 }
 
 impl IRFunction {
     #[must_use]
-    pub fn new(effect: Interned<Ty>) -> Self {
+    pub fn new_def() -> Self {
         Self {
             cfg: Cfg::default(),
             scope_map: ScopeMap::new(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
             context: IRContext::Def,
-            effect,
         }
     }
 
@@ -454,8 +519,7 @@ impl IRFunction {
             scope_map: ScopeMap::new(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
-            context: IRContext::Lambda(IRLambdaContext::new(return_ty, capture_map)),
-            effect,
+            context: IRContext::Lambda(IRLambdaContext::new(return_ty, effect, capture_map)),
         }
     }
 
@@ -470,8 +534,7 @@ impl IRFunction {
             scope_map: ScopeMap::new(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
-            context: IRContext::Thunk(IRThunkContext::new(return_ty, capture_map)),
-            effect,
+            context: IRContext::Thunk(IRThunkContext::new(return_ty, effect, capture_map)),
         }
     }
 
@@ -490,17 +553,14 @@ impl IRFunction {
             context: IRContext::OperationHandler(IROperationHandlerContext::new(
                 operation,
                 return_ty,
+                effect,
                 capture_map,
             )),
-            effect,
         }
     }
 
     #[must_use]
     pub const fn context(&self) -> &IRContext { &self.context }
-
-    #[must_use]
-    pub const fn effect(&self) -> &Interned<Ty> { &self.effect }
 
     #[must_use]
     pub fn insert_lambda_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
@@ -618,7 +678,32 @@ impl IRFunction {
     }
 
     /// Redirects `edge` through a new empty block and returns that block.
-    pub fn split_edge(&mut self, edge: ControlFlowEdge) -> BlockID { self.cfg.split_edge(edge) }
+    ///
+    /// Every phi in the edge's target then takes the value that flowed in
+    /// along the edge from the new block.
+    pub fn split_edge(&mut self, edge: ControlFlowEdge) -> BlockID {
+        let split_block = self.cfg.split_edge(edge);
+
+        // The source may still reach the target through another edge, as when
+        // both arms of a conditional target it. The phis then keep the value
+        // on that edge as well.
+        let source_still_incoming = self
+            .cfg
+            .terminator(edge.source())
+            .is_some_and(|terminator| terminator.jump_targets().any(|t| t == edge.target()));
+
+        // Move the value the phis took from the source onto the new block.
+        for instruction in self.cfg.instructions(edge.target()) {
+            let Instruction::Expression(expression_id) = instruction else {
+                continue;
+            };
+            if let Some(phi) = self.expression_map.phi_mut(*expression_id) {
+                phi.split_incoming(edge.source(), split_block, source_still_incoming);
+            }
+        }
+
+        split_block
+    }
 
     pub fn set_terminator(&mut self, block_id: BlockID, terminator: Terminator) {
         self.cfg.set_terminator(block_id, terminator);
@@ -651,66 +736,118 @@ impl IRFunction {
     }
 }
 
-impl VisitType for IRFunction {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
-        self.context.visit_types(visitor);
-        visitor.visit_type(&self.effect);
-        self.variable_map.visit_types(visitor);
-        self.expression_map.visit_types(visitor);
+impl IRFunction {
+    /// Visits every type of the function `function_id`: its signature, then
+    /// its body.
+    ///
+    /// The definition function stores no signature types.
+    fn visit_types<V: TypeVisitor>(&self, function_id: FunctionID, visitor: &mut V) {
+        self.context.visit_types(TypeSite::Signature(function_id), visitor);
+
+        let body = TypeSite::Body(function_id);
+        self.variable_map.visit_types(body, visitor);
+        self.expression_map.visit_types(body, visitor);
+        self.cfg.visit_types(body, visitor);
+    }
+
+    /// Visits every type of the function `function_id` mutably: its
+    /// signature, then its body.
+    ///
+    /// The definition function stores no signature types.
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, function_id: FunctionID, visitor: &mut V) {
+        self.context.visit_types_mut(TypeSite::Signature(function_id), visitor);
+
+        let body = TypeSite::Body(function_id);
+        self.variable_map.visit_types_mut(body, visitor);
+        self.expression_map.visit_types_mut(body, visitor);
+        self.cfg.visit_types_mut(body, visitor);
+    }
+}
+
+impl VisitTypeMut for IRContext {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        match self {
+            Self::Def => {}
+            Self::Lambda(context) => context.visit_types_mut(site, visitor),
+            Self::Thunk(context) => context.visit_types_mut(site, visitor),
+            Self::OperationHandler(context) => context.visit_types_mut(site, visitor),
+        }
     }
 }
 
 impl VisitType for IRContext {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         match self {
             Self::Def => {}
-            Self::Lambda(context) => context.visit_types(visitor),
-            Self::Thunk(context) => context.visit_types(visitor),
-            Self::OperationHandler(context) => context.visit_types(visitor),
+            Self::Lambda(context) => context.visit_types(site, visitor),
+            Self::Thunk(context) => context.visit_types(site, visitor),
+            Self::OperationHandler(context) => context.visit_types(site, visitor),
         }
     }
 }
 
 impl VisitType for IRThunkContext {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) { visitor.visit_type(self.return_ty()); }
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type(self.return_ty(), site);
+        visitor.visit_type(self.effect(), site);
+    }
 }
 
 impl VisitType for IROperationHandlerContext {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         for (_, parameter) in self.parameters() {
-            parameter.visit_types(visitor);
+            parameter.visit_types(site, visitor);
         }
-        visitor.visit_type(self.return_ty());
+        visitor.visit_type(self.return_ty(), site);
+        visitor.visit_type(self.effect(), site);
     }
 }
 
 impl VisitType for IRLambdaContext {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         for (_, parameter) in self.parameters() {
-            parameter.visit_types(visitor);
+            parameter.visit_types(site, visitor);
         }
-        visitor.visit_type(self.return_ty());
+        visitor.visit_type(self.return_ty(), site);
+        visitor.visit_type(self.effect(), site);
     }
 }
 
 impl VisitType for LambdaParameter {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) { visitor.visit_type(self.ty()); }
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type(self.ty(), site);
+    }
 }
 
 impl VisitType for OperationHandlerParameter {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) { visitor.visit_type(self.ty()); }
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type(self.ty(), site);
+    }
 }
 
 impl VisitType for Capture {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
-        visitor.visit_type(self.binding_ty());
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type(self.binding_ty(), site);
+        self.mode().visit_types(site, visitor);
+    }
+}
+
+impl VisitType for CaptureMode {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        match self {
+            Self::Value(_) => {}
+            Self::Reference { lifetime, .. } => visitor.visit_type(lifetime, site),
+        }
     }
 }
 
 impl VisitType for CaptureMap {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         for (_, capture) in self.iter() {
-            capture.visit_types(visitor);
+            capture.visit_types(site, visitor);
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

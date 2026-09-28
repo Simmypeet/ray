@@ -7,34 +7,49 @@ use rayc_type::{
     ty::{Mutability, Ty},
 };
 
+use crate::visit::{TypeSite, TypeVisitorMut, VisitTypeMut};
+
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IRLambdaContext {
     parameters: LambdaParameterMap,
     return_ty: Interned<Ty>,
+    effect: Interned<Ty>,
     capture_map: CaptureMapID,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IRThunkContext {
     return_ty: Interned<Ty>,
+    effect: Interned<Ty>,
     capture_map: CaptureMapID,
 }
 
 impl IRThunkContext {
-    pub(crate) const fn new(return_ty: Interned<Ty>, capture_map: CaptureMapID) -> Self {
-        Self { return_ty, capture_map }
+    pub(crate) const fn new(
+        return_ty: Interned<Ty>,
+        effect: Interned<Ty>,
+        capture_map: CaptureMapID,
+    ) -> Self {
+        Self { return_ty, effect, capture_map }
     }
 
     #[must_use]
     pub const fn return_ty(&self) -> &Interned<Ty> { &self.return_ty }
 
     #[must_use]
+    pub const fn effect(&self) -> &Interned<Ty> { &self.effect }
+
+    #[must_use]
     pub(crate) const fn capture_map(&self) -> CaptureMapID { self.capture_map }
 }
 
 impl IRLambdaContext {
-    pub(crate) fn new(return_ty: Interned<Ty>, capture_map: CaptureMapID) -> Self {
-        Self { parameters: LambdaParameterMap::default(), return_ty, capture_map }
+    pub(crate) fn new(
+        return_ty: Interned<Ty>,
+        effect: Interned<Ty>,
+        capture_map: CaptureMapID,
+    ) -> Self {
+        Self { parameters: LambdaParameterMap::default(), return_ty, effect, capture_map }
     }
 
     #[must_use]
@@ -51,6 +66,9 @@ impl IRLambdaContext {
 
     #[must_use]
     pub const fn return_ty(&self) -> &Interned<Ty> { &self.return_ty }
+
+    #[must_use]
+    pub const fn effect(&self) -> &Interned<Ty> { &self.effect }
 
     #[must_use]
     pub(crate) fn insert_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
@@ -175,5 +193,52 @@ impl CaptureMap {
     #[must_use]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
         self.captures.iter()
+    }
+}
+
+impl VisitTypeMut for IRLambdaContext {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        for (_, parameter) in self.parameters.parameters.iter_mut_unordered() {
+            parameter.visit_types_mut(site, visitor);
+        }
+        visitor.visit_type_mut(&mut self.return_ty, site);
+        visitor.visit_type_mut(&mut self.effect, site);
+    }
+}
+
+impl VisitTypeMut for IRThunkContext {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type_mut(&mut self.return_ty, site);
+        visitor.visit_type_mut(&mut self.effect, site);
+    }
+}
+
+impl VisitTypeMut for LambdaParameter {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type_mut(&mut self.ty, site);
+    }
+}
+
+impl VisitTypeMut for CaptureMode {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        match self {
+            Self::Value(_) => {}
+            Self::Reference { lifetime, .. } => visitor.visit_type_mut(lifetime, site),
+        }
+    }
+}
+
+impl VisitTypeMut for Capture {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type_mut(&mut self.binding_ty, site);
+        self.mode.visit_types_mut(site, visitor);
+    }
+}
+
+impl VisitTypeMut for CaptureMap {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        for (_, capture) in self.captures.iter_mut_unordered() {
+            capture.visit_types_mut(site, visitor);
+        }
     }
 }

@@ -10,7 +10,7 @@ use crate::{
         perform::Perform, phi::Phi, ref_of::RefOf, struct_initialization::StructInitialization,
         tuple::Tuple,
     },
-    visit::{TypeVisitor, VisitType},
+    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
 };
 
 pub mod binary;
@@ -42,6 +42,102 @@ pub enum IRExprKind {
     Tuple(Tuple),
     Closure(Closure),
     StructInitialization(StructInitialization),
+}
+
+impl IRExprKind {
+    /// Returns the phi this expression is, if it is one.
+    #[must_use]
+    pub const fn as_phi(&self) -> Option<&Phi> {
+        match self {
+            Self::Phi(phi) => Some(phi),
+            Self::Error
+            | Self::Literal(_)
+            | Self::RefOf(_)
+            | Self::Load(_)
+            | Self::Binary(_)
+            | Self::Call(_)
+            | Self::Perform(_)
+            | Self::Handle(_)
+            | Self::Tuple(_)
+            | Self::Closure(_)
+            | Self::StructInitialization(_) => None,
+        }
+    }
+
+    /// Returns the phi this expression is, if it is one, for rewiring its
+    /// incoming blocks.
+    pub(crate) const fn as_phi_mut(&mut self) -> Option<&mut Phi> {
+        match self {
+            Self::Phi(phi) => Some(phi),
+            Self::Error
+            | Self::Literal(_)
+            | Self::RefOf(_)
+            | Self::Load(_)
+            | Self::Binary(_)
+            | Self::Call(_)
+            | Self::Perform(_)
+            | Self::Handle(_)
+            | Self::Tuple(_)
+            | Self::Closure(_)
+            | Self::StructInitialization(_) => None,
+        }
+    }
+
+    /// Returns the expressions this expression takes as operands, including
+    /// the incoming values of a phi, in unspecified order.
+    pub fn operands(&self) -> impl Iterator<Item = IRExprID> + '_ {
+        // One variant per shape of operand list, which avoids boxing the
+        // iterator.
+        enum Iter<A, B, C, D, E, F> {
+            None(A),
+            Pair(B),
+            Slice(C),
+            Slices(D),
+            Phi(E),
+            Fields(F),
+        }
+
+        impl<A, B, C, D, E, F> Iterator for Iter<A, B, C, D, E, F>
+        where
+            A: Iterator<Item = IRExprID>,
+            B: Iterator<Item = IRExprID>,
+            C: Iterator<Item = IRExprID>,
+            D: Iterator<Item = IRExprID>,
+            E: Iterator<Item = IRExprID>,
+            F: Iterator<Item = IRExprID>,
+        {
+            type Item = IRExprID;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    Self::None(iter) => iter.next(),
+                    Self::Pair(iter) => iter.next(),
+                    Self::Slice(iter) => iter.next(),
+                    Self::Slices(iter) => iter.next(),
+                    Self::Phi(iter) => iter.next(),
+                    Self::Fields(iter) => iter.next(),
+                }
+            }
+        }
+
+        match self {
+            Self::Error | Self::Literal(_) | Self::RefOf(_) | Self::Load(_) => {
+                Iter::None(std::iter::empty())
+            }
+            Self::Phi(phi) => Iter::Phi(phi.incoming().map(|(_, value)| value)),
+            Self::Binary(binary) => Iter::Pair([binary.left(), binary.right()].into_iter()),
+            Self::Call(call) => Iter::Slice(call.arguments().iter().copied()),
+            Self::Perform(perform) => Iter::Slice(perform.arguments().iter().copied()),
+            Self::Tuple(tuple) => Iter::Slice(tuple.elements().iter().copied()),
+            Self::Closure(closure) => Iter::Slice(closure.captures().iter().copied()),
+            Self::Handle(handle) => {
+                Iter::Slices(handle.captures().iter().chain(handle.handler_captures()).copied())
+            }
+            Self::StructInitialization(initialization) => {
+                Iter::Fields(initialization.initializers().values().copied())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
@@ -88,19 +184,24 @@ impl IRExpressionMap {
         self.expressions.insert(expression)
     }
 
+    /// Returns the phi the expression `id` is, if it is one.
+    pub(crate) fn phi_mut(&mut self, id: IRExprID) -> Option<&mut Phi> {
+        self.expressions.get_mut(id).unwrap().kind.as_phi_mut()
+    }
+
     pub(crate) fn expressions(&self) -> impl ExactSizeIterator<Item = (IRExprID, &IRExpr)> {
         self.expressions.iter()
     }
 }
 
 impl VisitType for IRExpr {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
-        visitor.visit_type(&self.ty);
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type(&self.ty, site);
 
         match &self.kind {
-            IRExprKind::Call(call) => call.visit_types(visitor),
-            IRExprKind::Perform(perform) => perform.visit_types(visitor),
-            IRExprKind::Handle(handle) => handle.visit_types(visitor),
+            IRExprKind::Call(call) => call.visit_types(site, visitor),
+            IRExprKind::Perform(perform) => perform.visit_types(site, visitor),
+            IRExprKind::Handle(handle) => handle.visit_types(site, visitor),
 
             IRExprKind::Error
             | IRExprKind::Literal(_)
@@ -116,9 +217,39 @@ impl VisitType for IRExpr {
 }
 
 impl VisitType for IRExpressionMap {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         for (_, expression) in self.expressions() {
-            expression.visit_types(visitor);
+            expression.visit_types(site, visitor);
+        }
+    }
+}
+
+impl VisitTypeMut for IRExpr {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type_mut(&mut self.ty, site);
+
+        match &mut self.kind {
+            IRExprKind::Call(call) => call.visit_types_mut(site, visitor),
+            IRExprKind::Perform(perform) => perform.visit_types_mut(site, visitor),
+            IRExprKind::Handle(handle) => handle.visit_types_mut(site, visitor),
+
+            IRExprKind::Error
+            | IRExprKind::Literal(_)
+            | IRExprKind::RefOf(_)
+            | IRExprKind::Load(_)
+            | IRExprKind::Phi(_)
+            | IRExprKind::Binary(_)
+            | IRExprKind::Tuple(_)
+            | IRExprKind::StructInitialization(_)
+            | IRExprKind::Closure(_) => {}
+        }
+    }
+}
+
+impl VisitTypeMut for IRExpressionMap {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        for (_, expression) in self.expressions.iter_mut() {
+            expression.visit_types_mut(site, visitor);
         }
     }
 }

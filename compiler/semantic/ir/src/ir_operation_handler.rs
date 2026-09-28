@@ -4,13 +4,17 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::Ty;
 
-use crate::ir_lambda::CaptureMapID;
+use crate::{
+    ir_lambda::CaptureMapID,
+    visit::{TypeSite, TypeVisitorMut, VisitTypeMut},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IROperationHandlerContext {
     operation: GlobalSymbolID,
     parameters: OperationHandlerParameterMap,
     return_ty: Interned<Ty>,
+    effect: Interned<Ty>,
     capture_map: CaptureMapID,
 }
 
@@ -18,12 +22,14 @@ impl IROperationHandlerContext {
     pub(crate) fn new(
         operation: GlobalSymbolID,
         return_ty: Interned<Ty>,
+        effect: Interned<Ty>,
         capture_map: CaptureMapID,
     ) -> Self {
         Self {
             operation,
             parameters: OperationHandlerParameterMap::default(),
             return_ty,
+            effect,
             capture_map,
         }
     }
@@ -53,6 +59,9 @@ impl IROperationHandlerContext {
 
     #[must_use]
     pub const fn return_ty(&self) -> &Interned<Ty> { &self.return_ty }
+
+    #[must_use]
+    pub const fn effect(&self) -> &Interned<Ty> { &self.effect }
 
     #[must_use]
     pub(crate) const fn capture_map(&self) -> CaptureMapID { self.capture_map }
@@ -101,5 +110,21 @@ impl OperationHandlerParameterMap {
     ) -> impl ExactSizeIterator<Item = (OperationHandlerParameterID, &OperationHandlerParameter)>
     {
         self.parameters.iter()
+    }
+}
+
+impl VisitTypeMut for IROperationHandlerContext {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        for (_, parameter) in self.parameters.parameters.iter_mut_unordered() {
+            parameter.visit_types_mut(site, visitor);
+        }
+        visitor.visit_type_mut(&mut self.return_ty, site);
+        visitor.visit_type_mut(&mut self.effect, site);
+    }
+}
+
+impl VisitTypeMut for OperationHandlerParameter {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type_mut(&mut self.ty, site);
     }
 }
