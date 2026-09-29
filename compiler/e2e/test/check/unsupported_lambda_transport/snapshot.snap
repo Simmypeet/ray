@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `&` punctuation, `float32` keyword, `( ... )` block, `*` punctuation, `'` punctuation, identifier, `cstr` keyword
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `usize` keyword, `bool` keyword, `int32` keyword, `uint16` keyword, `&` punctuation, `this` keyword, identifier, `uint64` keyword, `cstr` keyword, `isize` keyword, `int8` keyword, `int64` keyword, `uint32` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `int16` keyword, `uint8` keyword, `'` punctuation
   ╭▸ compiler/e2e/test/check/unsupported_lambda_transport/main.ray:1:49
   │
 1 │ def transport(callback: def(int32) -> int32) -> def(int32) -> int32:

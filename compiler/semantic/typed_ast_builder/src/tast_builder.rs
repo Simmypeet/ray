@@ -28,7 +28,7 @@ use rayc_typed_ast::{
 };
 
 use crate::{
-    diagnostic::Diagnostic,
+    diagnostic::{Diagnostic, NumericLiteralOutOfRange},
     tast_builder::{
         constraint_solver::ConstraintSolver, lvalue_requirements::LvalueRequirements,
         name_env::NameEnv,
@@ -56,6 +56,9 @@ pub struct TAstBuilder {
     unsafe_depth: usize,
 
     closure_captures: Vec<(TypedFunctionID, Interned<Ty>, RelativeSpan)>,
+
+    /// Numeric literals whose value must fit in their inferred type.
+    numeric_literals: Vec<(TypedFunctionID, TypedExprID)>,
     current_def_id: GlobalSymbolID,
 
     name_env: NameEnv,
@@ -88,6 +91,7 @@ impl TAstBuilder {
             suspended_loop_depths: Vec::new(),
             unsafe_depth: 0,
             closure_captures: Vec::new(),
+            numeric_literals: Vec::new(),
             name_env,
             current_def_id,
             constraint_solver,
@@ -163,6 +167,12 @@ impl TAstBuilder {
         let inference = self.new_type_inference();
         self.closure_captures.push((function_id, inference.clone(), span));
         inference
+    }
+
+    /// Records a numeric literal whose value is checked against its type once
+    /// every type has been inferred.
+    pub(crate) fn defer_numeric_literal_range_check(&mut self, id: TypedExprID) {
+        self.numeric_literals.push((self.building_function, id));
     }
 
     pub(crate) fn register_closure(&mut self, function_id: TypedFunctionID) -> ClosureID {
@@ -430,6 +440,15 @@ impl TAstBuilder {
         self.diagnostics.extend(constr_diags);
         let mut ast = TypedAst::new(self.function_map, captures);
         ast.apply_mut_subst(&subst, &self.engine);
+
+        // Every literal type is inferred now, so each numeric literal can be
+        // checked against the range of its type.
+        for (function_id, expr_id) in self.numeric_literals {
+            let expression = ast.functions().get_expression(function_id, expr_id);
+            if let Some(diagnostic) = NumericLiteralOutOfRange::check(expression) {
+                self.diagnostics.push(Diagnostic::NumericLiteralOutOfRange(diagnostic));
+            }
+        }
 
         (ast, self.diagnostics)
     }

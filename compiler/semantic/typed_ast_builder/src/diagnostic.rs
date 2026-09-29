@@ -9,7 +9,11 @@ use rayc_symbol::{
     GlobalSymbolID, name::get_qualified_name, source_map::to_absolute_span,
     symbol_kind::get_symbol_kind,
 };
-use rayc_type::{constraint::ty_relate::TyRelate, ty::Ty};
+use rayc_type::{
+    constraint::ty_relate::TyRelate,
+    ty::{Primitive, Ty},
+};
+use rayc_typed_ast::typed_expr::{TypedExpr, TypedExprKind, literal::Literal};
 
 use crate::tast_builder::constraint_solver::{
     ConstraintError, EffectUnificationSource, SubtypeSource,
@@ -222,6 +226,55 @@ impl Report for EmbeddedNulString {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         Rendered::builder()
             .message("a C string literal must not contain an embedded NUL byte")
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .build()
+    }
+}
+
+/// A numeric literal whose value does not fit in its type, e.g. `300u8`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
+)]
+pub struct NumericLiteralOutOfRange {
+    value: u128,
+    primitive: Primitive,
+    max: u128,
+    span: RelativeSpan,
+}
+
+impl NumericLiteralOutOfRange {
+    /// Checks whether the given numeric literal expression, whose type has
+    /// been inferred, fits in its type.
+    #[must_use]
+    pub fn check(expression: &TypedExpr) -> Option<Self> {
+        let TypedExprKind::Literal(Literal::Numeric(value)) = expression.kind() else {
+            return None;
+        };
+        let primitive = expression.ty().as_primitive()?;
+        let max = primitive.max_numeric_literal()?;
+
+        (*value > max).then(|| {
+            Self::builder()
+                .value(*value)
+                .primitive(primitive)
+                .max(max)
+                .span(expression.span())
+                .build()
+        })
+    }
+}
+
+impl Report for NumericLiteralOutOfRange {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message(format!(
+                "the numeric literal `{}` does not fit in type `{}`, whose maximum value is {}",
+                self.value,
+                self.primitive.keyword(),
+                self.max
+            ))
             .primary_highlight(
                 Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
             )
@@ -795,6 +848,7 @@ pub enum Diagnostic {
     ResidualSubtype(ResidualSubtype),
     IncompatibleEffectRows(IncompatibleEffectRows),
     EmbeddedNulString(EmbeddedNulString),
+    NumericLiteralOutOfRange(NumericLiteralOutOfRange),
     MissingEffectOperationHandler(MissingEffectOperationHandler),
     ExtraneousEffectOperationHandler(ExtraneousEffectOperationHandler),
     DuplicateEffectOperationHandler(DuplicateEffectOperationHandler),
@@ -850,6 +904,7 @@ impl Report for Diagnostic {
                 incompatible_effects.report(engine).await
             }
             Self::EmbeddedNulString(string) => string.report(engine).await,
+            Self::NumericLiteralOutOfRange(literal) => literal.report(engine).await,
             Self::MissingEffectOperationHandler(handler) => handler.report(engine).await,
             Self::ExtraneousEffectOperationHandler(handler) => handler.report(engine).await,
             Self::DuplicateEffectOperationHandler(handler) => handler.report(engine).await,

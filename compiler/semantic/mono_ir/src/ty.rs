@@ -28,7 +28,16 @@ use crate::instance::{MonoEffectInstance, MonoStructInstance};
 )]
 pub enum MonoType {
     Bool,
+    Int8,
+    Int16,
     Int32,
+    Int64,
+    Isize,
+    Uint8,
+    Uint16,
+    Uint32,
+    Uint64,
+    Usize,
     Float32,
     CInt,
     CStr,
@@ -367,7 +376,16 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
         Ty::Application(application) => match application.view() {
             ApplicationView::Primitive(primitive) => {
                 let ty = match primitive {
+                    Primitive::Int8 => MonoType::Int8,
+                    Primitive::Int16 => MonoType::Int16,
                     Primitive::Int32 => MonoType::Int32,
+                    Primitive::Int64 => MonoType::Int64,
+                    Primitive::Isize => MonoType::Isize,
+                    Primitive::Uint8 => MonoType::Uint8,
+                    Primitive::Uint16 => MonoType::Uint16,
+                    Primitive::Uint32 => MonoType::Uint32,
+                    Primitive::Uint64 => MonoType::Uint64,
+                    Primitive::Usize => MonoType::Usize,
                     Primitive::Float32 => MonoType::Float32,
                     Primitive::Bool => MonoType::Bool,
                     Primitive::CInt => MonoType::CInt,

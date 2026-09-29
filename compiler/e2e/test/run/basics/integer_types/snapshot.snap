@@ -1,0 +1,25 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+int8: 77
+int16: 30000
+int32: 2147483646
+int64: 30000000000
+isize: 8
+uint8: 255
+uint16: 1
+uint32: 4294967290
+uint64: 3689348814741910323
+usize: 65
+inferred: 9000000001
+wrap: 0 65535
+equality: 1 1 1
+
+
+stderr:

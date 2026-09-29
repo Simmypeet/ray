@@ -422,7 +422,16 @@ impl Resolver<'_> {
             }
             TypeSyntax::Primitive(primitive) => {
                 let primitive = match primitive {
+                    PrimitiveSyntax::Int8(_) => Primitive::Int8,
+                    PrimitiveSyntax::Int16(_) => Primitive::Int16,
                     PrimitiveSyntax::Int32(_) => Primitive::Int32,
+                    PrimitiveSyntax::Int64(_) => Primitive::Int64,
+                    PrimitiveSyntax::Isize(_) => Primitive::Isize,
+                    PrimitiveSyntax::Uint8(_) => Primitive::Uint8,
+                    PrimitiveSyntax::Uint16(_) => Primitive::Uint16,
+                    PrimitiveSyntax::Uint32(_) => Primitive::Uint32,
+                    PrimitiveSyntax::Uint64(_) => Primitive::Uint64,
+                    PrimitiveSyntax::Usize(_) => Primitive::Usize,
                     PrimitiveSyntax::Bool(_) => Primitive::Bool,
                     PrimitiveSyntax::Float32(_) => Primitive::Float32,
                     PrimitiveSyntax::CInt(_) => Primitive::CInt,

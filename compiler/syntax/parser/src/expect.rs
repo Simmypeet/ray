@@ -58,6 +58,22 @@ pub enum IdentifierValue {
     Star,
     #[display("Effect")]
     Effect,
+    #[display("i8")]
+    I8,
+    #[display("i16")]
+    I16,
+    #[display("i32")]
+    I32,
+    #[display("i64")]
+    I64,
+    #[display("u8")]
+    U8,
+    #[display("u16")]
+    U16,
+    #[display("u32")]
+    U32,
+    #[display("u64")]
+    U64,
 }
 
 impl IdentifierValue {
@@ -68,6 +84,14 @@ impl IdentifierValue {
             Self::X => "x",
             Self::Star => "Star",
             Self::Effect => "Effect",
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
         }
     }
 }

@@ -1,0 +1,22 @@
+def suffixOutOfRange() -> uint8:
+    return 256u8
+
+def inferredOutOfRange() -> int8:
+    let value: int8 = 128
+    return value
+
+def defaultOutOfRange() -> int32:
+    return 2147483648
+
+def inRange() -> int64:
+    return 9223372036854775807i64
+
+def mismatchedSuffixes() -> int8:
+    return 1i8 + 1u8
+
+def mismatchedAnnotation() -> int16:
+    let value: int16 = 1i32
+    return value
+
+def mismatchedEquality() -> bool:
+    return 1usize == 1isize

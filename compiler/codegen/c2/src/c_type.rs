@@ -13,7 +13,16 @@ pub(super) fn declaration(ty: &MonoType, name: &str) -> String {
 fn declaration_with_constness(ty: &MonoType, name: &str, is_const: bool) -> String {
     match ty {
         MonoType::Bool => base_declaration("bool", name, is_const),
+        MonoType::Int8 => base_declaration("int8_t", name, is_const),
+        MonoType::Int16 => base_declaration("int16_t", name, is_const),
         MonoType::Int32 => base_declaration("int32_t", name, is_const),
+        MonoType::Int64 => base_declaration("int64_t", name, is_const),
+        MonoType::Isize => base_declaration("intptr_t", name, is_const),
+        MonoType::Uint8 => base_declaration("uint8_t", name, is_const),
+        MonoType::Uint16 => base_declaration("uint16_t", name, is_const),
+        MonoType::Uint32 => base_declaration("uint32_t", name, is_const),
+        MonoType::Uint64 => base_declaration("uint64_t", name, is_const),
+        MonoType::Usize => base_declaration("uintptr_t", name, is_const),
         MonoType::Float32 => base_declaration("float", name, is_const),
         MonoType::CInt => base_declaration("int", name, is_const),
         MonoType::CStr => pointer_declaration("const char", name, is_const),
@@ -78,4 +87,28 @@ pub(super) fn signature_declaration(
     }
 
     format!("{return_type} {name}({})", parameters.join(", "))
+}
+
+/// Returns whether C's integer promotions turn an unsigned value of this type
+/// into a signed `int`.
+pub(super) const fn promotes_to_signed_int(ty: &MonoType) -> bool {
+    match ty {
+        MonoType::Uint8 | MonoType::Uint16 => true,
+        MonoType::Bool
+        | MonoType::Int8
+        | MonoType::Int16
+        | MonoType::Int32
+        | MonoType::Int64
+        | MonoType::Isize
+        | MonoType::Uint32
+        | MonoType::Uint64
+        | MonoType::Usize
+        | MonoType::Float32
+        | MonoType::CInt
+        | MonoType::CStr
+        | MonoType::OpaquePointer(_)
+        | MonoType::Pointer(_)
+        | MonoType::Aggregate(_)
+        | MonoType::FunctionPointer(_) => false,
+    }
 }

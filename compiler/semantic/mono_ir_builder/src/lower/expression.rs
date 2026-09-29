@@ -133,9 +133,18 @@ impl Builder<'_> {
 fn lower_literal(literal: &Literal, ty: &Interned<MonoType>) -> Constant {
     match literal {
         Literal::Numeric(value) => match &**ty {
-            MonoType::Int32 => Constant::Int32((*value).try_into().unwrap()),
+            MonoType::Int8 => Constant::Int8(fit(*value)),
+            MonoType::Int16 => Constant::Int16(fit(*value)),
+            MonoType::Int32 => Constant::Int32(fit(*value)),
+            MonoType::Int64 => Constant::Int64(fit(*value)),
+            MonoType::Isize => Constant::Isize(fit(*value)),
+            MonoType::Uint8 => Constant::Uint8(fit(*value)),
+            MonoType::Uint16 => Constant::Uint16(fit(*value)),
+            MonoType::Uint32 => Constant::Uint32(fit(*value)),
+            MonoType::Uint64 => Constant::Uint64(fit(*value)),
+            MonoType::Usize => Constant::Usize(fit(*value)),
             MonoType::Float32 => Constant::new_float32(*value as f32),
-            MonoType::CInt => Constant::CInt((*value).try_into().unwrap()),
+            MonoType::CInt => Constant::CInt(fit(*value)),
             MonoType::Bool
             | MonoType::CStr
             | MonoType::OpaquePointer(_)
@@ -148,4 +157,11 @@ fn lower_literal(literal: &Literal, ty: &Interned<MonoType>) -> Constant {
         Literal::Bool(value) => Constant::Bool(*value),
         Literal::String(value) => Constant::CStr(value.clone()),
     }
+}
+
+/// Converts a numeric literal to the representation of its type. The typed AST
+/// builder rejects every literal that does not fit in its type.
+fn fit<T: TryFrom<u128>>(value: u128) -> T {
+    T::try_from(value)
+        .unwrap_or_else(|_| panic!("numeric literal `{value}` should fit in its type"))
 }
