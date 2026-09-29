@@ -236,6 +236,19 @@ impl Tree {
     #[must_use]
     pub fn nodes(&self) -> &[Node] { &self.nodes }
 
+    /// Whether this tree has an error node, where the parser skipped the
+    /// tokens it could not parse.
+    ///
+    /// The fragments that this tree does not step into are not searched.
+    #[must_use]
+    pub fn contains_error(&self) -> bool {
+        self.ast_info.is_none()
+            || self.nodes.iter().any(|node| match node {
+                Node::Branch(tree) => tree.contains_error(),
+                Node::Leaf(_) | Node::SkipFragment(..) => false,
+            })
+    }
+
     pub(crate) fn new(ast_info: Option<AstInfo>, nodes: Vec<Node>) -> Self {
         let mut siphasher = Sip128Hasher::new();
 

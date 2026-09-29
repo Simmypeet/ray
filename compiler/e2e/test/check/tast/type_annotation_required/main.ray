@@ -1,0 +1,51 @@
+def identity(value: a) -> a:
+    return value
+
+def make[a]() -> int32:
+    return 0
+
+struct Phantom[a]:
+    x: int32
+
+def unusedLambdaParameter() -> ():
+    let closure = (x) -> 1
+
+# A call site is reported before a binding, so the unknown parameter type is
+# reported as the type parameter of the call.
+def polymorphicLambdaParameter() -> ():
+    let closure = (x) -> identity(x)
+
+def uninitializedVariable() -> ():
+    let value
+
+# Only the first call site of an unknown type is reported.
+def uninitializedVariableThroughCalls() -> ():
+    let value
+    let copy = identity(identity(value))
+
+# The type parameter flows into no value, so it is reported at the call.
+def unusedTypeParameter() -> int32:
+    return make()
+
+# A struct initialization is an instantiation site, like a call.
+def unknownStructArgument() -> ():
+    let wrapped = Phantom { x = 1 }
+
+# Explicit type arguments determine every type parameter.
+def explicitTypeArguments() -> int32:
+    let wrapped = Phantom[bool] { x = 1 }
+    return make[bool]()
+
+# A lambda parameter that the body constrains needs no annotation.
+def inferredLambdaParameter() -> ():
+    let closure = (x) -> x + 1
+
+# A variable that a later assignment constrains needs no annotation.
+def assignedVariable() -> ():
+    let mut value
+    value = true
+
+# The type of an errored expression is unknown because of the error, which
+# is reported alone.
+def unboundName() -> ():
+    let value = missing

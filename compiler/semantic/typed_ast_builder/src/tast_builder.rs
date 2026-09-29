@@ -40,6 +40,7 @@ pub mod constraint_solver;
 pub mod lvalue_requirements;
 pub mod name_env;
 pub mod resolution;
+mod type_annotation;
 
 #[derive(Debug)]
 pub struct TAstBuilder {
@@ -64,6 +65,11 @@ pub struct TAstBuilder {
     lvalue_requirements: LvalueRequirements,
 
     diagnostics: Vec<Diagnostic>,
+
+    /// Whether the syntax of this definition has an error that the parser
+    /// reported, which may leave types undetermined.
+    tainted_by_syntax_error: bool,
+
     engine: TrackedEngine,
 }
 
@@ -93,6 +99,7 @@ impl TAstBuilder {
             constraint_solver,
             lvalue_requirements: LvalueRequirements::new(),
             diagnostics: Vec::new(),
+            tainted_by_syntax_error: false,
             engine,
         }
     }
@@ -287,6 +294,10 @@ impl TAstBuilder {
 
     pub fn push_diagnostic(&mut self, diagnostic: Diagnostic) { self.diagnostics.push(diagnostic); }
 
+    /// Records that the syntax being bound has an error the parser already
+    /// reported.
+    pub(crate) const fn taint_by_syntax_error(&mut self) { self.tainted_by_syntax_error = true; }
+
     pub fn extend_diagnostics(&mut self, diagnostics: impl IntoIterator<Item = Diagnostic>) {
         self.diagnostics.extend(diagnostics);
     }
@@ -430,6 +441,19 @@ impl TAstBuilder {
         self.diagnostics.extend(constr_diags);
         let mut ast = TypedAst::new(self.function_map, captures);
         ast.apply_mut_subst(&subst, &self.engine);
+
+        // An undetermined type is often a consequence of another error, e.g. an
+        // errored expression has a fresh type that nothing constrains. As rustc
+        // does, only ask for an annotation when no other error explains it.
+        if self.diagnostics.is_empty() && !self.tainted_by_syntax_error {
+            self.diagnostics.extend(
+                type_annotation::type_annotation_required_diagnostics(
+                    ast.functions(),
+                    &self.engine,
+                )
+                .await,
+            );
+        }
 
         (ast, self.diagnostics)
     }

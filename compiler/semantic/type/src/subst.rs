@@ -60,6 +60,17 @@ impl Subst {
             Var::Poly(_) | Var::SelfInstance(_) => None,
         })
     }
+
+    /// Iterates over the polymorphic variables this substitution instantiates
+    /// and their instantiated types.
+    ///
+    /// The iteration order is not stable.
+    pub fn poly_var_mappings(&self) -> impl Iterator<Item = (GlobalPolyVarID, &Interned<Ty>)> {
+        self.0.iter().filter_map(|(var, ty)| match var {
+            Var::Poly(poly_var) => Some((*poly_var, ty)),
+            Var::Inference(_) | Var::SelfInstance(_) => None,
+        })
+    }
 }
 
 impl Encode for Subst {

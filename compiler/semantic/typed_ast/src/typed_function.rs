@@ -230,6 +230,14 @@ impl TypedFunctionMap {
         self.name_binding_map.get_name_binding(id)
     }
 
+    /// Iterates over all name bindings belonging to this def and their IDs.
+    ///
+    /// The iteration order is not stable.
+    #[must_use]
+    pub fn name_bindings(&self) -> impl ExactSizeIterator<Item = (NameBindingID, &NameBinding)> {
+        self.name_binding_map.name_bindings()
+    }
+
     #[must_use]
     pub fn insert_name_binding(&mut self, name_binding: NameBinding) -> NameBindingID {
         self.name_binding_map.insert_name_binding(name_binding)
@@ -304,6 +312,14 @@ impl TypedFunction {
     #[must_use]
     pub fn get_expression(&self, id: TypedExprID) -> &TypedExpr {
         self.typed_expr_map.get_expression(id)
+    }
+
+    /// Iterates over all expressions of this function and their IDs.
+    ///
+    /// The iteration order is not stable.
+    #[must_use]
+    pub fn expressions(&self) -> impl ExactSizeIterator<Item = (TypedExprID, &TypedExpr)> {
+        self.typed_expr_map.expressions()
     }
 
     #[must_use]

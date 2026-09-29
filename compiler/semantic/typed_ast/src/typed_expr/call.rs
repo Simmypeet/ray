@@ -91,6 +91,16 @@ impl Call {
 
     #[must_use]
     pub fn arguments(&self) -> &[TypedExprID] { &self.arguments }
+
+    /// The substitution instantiating the type parameters of the called
+    /// symbol, including those of its enclosing trait or effect.
+    #[must_use]
+    pub const fn instantiation(&self) -> &Subst {
+        match &self.target {
+            CallTarget::Direct { subst, .. } | CallTarget::EffectOperation { subst, .. } => subst,
+            CallTarget::UnresolvedInstanceAssociated { trait_def_subst, .. } => trait_def_subst,
+        }
+    }
 }
 
 impl MutSubstitutable for Call {

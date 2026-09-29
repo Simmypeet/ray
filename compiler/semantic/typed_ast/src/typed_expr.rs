@@ -268,6 +268,14 @@ impl TypedExprMap {
         self.typed_exprs.insert(expression)
     }
 
+    /// Iterates over all expressions and their IDs.
+    ///
+    /// The iteration order is not stable.
+    #[must_use]
+    pub fn expressions(&self) -> impl ExactSizeIterator<Item = (TypedExprID, &TypedExpr)> {
+        self.typed_exprs.iter()
+    }
+
     #[must_use]
     pub fn classify_lvalue(&self, id: TypedExprID) -> LvalueClassification {
         let expression = self.get_expression(id);

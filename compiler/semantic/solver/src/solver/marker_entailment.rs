@@ -151,7 +151,7 @@ impl Solver {
             && goal.marker_id() == self.engine().get_core_item(CoreItem::Copy).await
         {
             return false;
-	}
+        }
 
         // `Copy` for references is built in: a shared reference is always
         // `Copy`, and a unique one never is.

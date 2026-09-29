@@ -1,0 +1,76 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: type annotation required
+   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:11:20
+   │
+11 │     let closure = (x) -> 1
+   │                    ━ cannot infer the type of `x`
+   │
+   ╰ help: the type of a lambda parameter is inferred from how the lambda is called
+
+[error]: type annotation required
+   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:16:26
+   │
+ 1 │ def identity(value: a) -> a:
+   │                     ─ type parameter declared here
+   ‡
+16 │     let closure = (x) -> identity(x)
+   │                          ━━━━━━━━━━━ cannot infer the type parameter `a` of `main.identity`
+   │
+   ╰ help: consider providing the type arguments of `main.identity` explicitly
+
+[error]: type annotation required
+   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:19:9
+   │
+19 │     let value
+   │         ━━━━━ cannot infer the type of `value`
+   │
+   ╰ help: consider giving `value` an explicit type
+
+[error]: type annotation required
+   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:24:25
+   │
+ 1 │ def identity(value: a) -> a:
+   │                     ─ type parameter declared here
+   ‡
+24 │     let copy = identity(identity(value))
+   │                         ━━━━━━━━━━━━━━━ cannot infer the type parameter `a` of `main.identity`
+   │
+   ╰ help: consider providing the type arguments of `main.identity` explicitly
+
+[error]: type annotation required
+   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:28:12
+   │
+ 4 │ def make[a]() -> int32:
+   │          ─ type parameter declared here
+   ‡
+28 │     return make()
+   │            ━━━━━━ cannot infer the type parameter `a` of `main.make`
+   │
+   ╰ help: consider providing the type arguments of `main.make` explicitly
+
+[error]: type annotation required
+   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:32:19
+   │
+ 7 │ struct Phantom[a]:
+   │                ─ type parameter declared here
+   ‡
+32 │     let wrapped = Phantom { x = 1 }
+   │                   ━━━━━━━━━━━━━━━━━ cannot infer the type parameter `a` of `main.Phantom`
+   │
+   ╰ help: consider providing the type arguments of `main.Phantom` explicitly
+
+[error]: unbound name `missing`
+   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:51:17
+   │
+51 │     let value = missing
+   ╰╴                ━━━━━━━
+
+[error]: Compilation aborted due to 7 error(s)
+
+
+
+stdout:
