@@ -10,7 +10,10 @@ use crate::{
         perform::Perform, phi::Phi, ref_of::RefOf, struct_initialization::StructInitialization,
         tuple::Tuple,
     },
-    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
+    visit::{
+        TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
+        VisitTypeMutAsync,
+    },
 };
 
 pub mod binary;
@@ -246,10 +249,48 @@ impl VisitTypeMut for IRExpr {
     }
 }
 
+impl VisitTypeMutAsync for IRExpr {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        visitor.visit_type_mut_async(&mut self.ty, site).await;
+
+        match &mut self.kind {
+            IRExprKind::Call(call) => call.visit_types_mut_async(site, visitor).await,
+            IRExprKind::Perform(perform) => perform.visit_types_mut_async(site, visitor).await,
+            IRExprKind::Handle(handle) => handle.visit_types_mut_async(site, visitor).await,
+
+            IRExprKind::Error
+            | IRExprKind::Literal(_)
+            | IRExprKind::RefOf(_)
+            | IRExprKind::Load(_)
+            | IRExprKind::Phi(_)
+            | IRExprKind::Binary(_)
+            | IRExprKind::Tuple(_)
+            | IRExprKind::StructInitialization(_)
+            | IRExprKind::Closure(_) => {}
+        }
+    }
+}
+
 impl VisitTypeMut for IRExpressionMap {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         for (_, expression) in self.expressions.iter_mut() {
             expression.visit_types_mut(site, visitor);
+        }
+    }
+}
+
+impl VisitTypeMutAsync for IRExpressionMap {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        for (_, expression) in self.expressions.iter_mut() {
+            expression.visit_types_mut_async(site, visitor).await;
         }
     }
 }

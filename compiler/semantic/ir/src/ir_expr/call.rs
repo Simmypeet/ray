@@ -4,7 +4,10 @@ use rayc_type::{subst::Subst, ty::Ty};
 
 use crate::{
     ir_expr::IRExprID,
-    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
+    visit::{
+        TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
+        VisitTypeMutAsync,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
@@ -79,6 +82,30 @@ impl VisitTypeMut for Call {
             }
         }
         visitor.visit_type_mut(&mut self.effect, site);
+    }
+}
+
+impl VisitTypeMutAsync for Call {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        match &mut self.target {
+            CallTarget::Direct { subst, .. } => {
+                for ty in subst.codomain_mut() {
+                    visitor.visit_type_mut_async(ty, site).await;
+                }
+            }
+
+            CallTarget::UnresolvedInstanceAssociated { instance, trait_def_subst, .. } => {
+                visitor.visit_type_mut_async(instance, site).await;
+                for ty in trait_def_subst.codomain_mut() {
+                    visitor.visit_type_mut_async(ty, site).await;
+                }
+            }
+        }
+        visitor.visit_type_mut_async(&mut self.effect, site).await;
     }
 }
 

@@ -15,7 +15,10 @@ use crate::{
     dataflow::Direction,
     ir_expr::IRExprID,
     scope::ScopeID,
-    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
+    visit::{
+        TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
+        VisitTypeMutAsync,
+    },
 };
 
 /// Identifies a basic block stored in a function's control-flow graph.
@@ -360,10 +363,40 @@ impl VisitTypeMut for Cfg {
     }
 }
 
+impl VisitTypeMutAsync for Cfg {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        for (_, block) in self.blocks.iter_mut() {
+            for instruction in &mut block.instructions {
+                instruction.visit_types_mut_async(site, visitor).await;
+            }
+        }
+    }
+}
+
 impl VisitTypeMut for Instruction {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         match self {
             Self::ExprDiscard(discard) => visitor.visit_type_mut(&mut discard.drop_instance, site),
+
+            Self::ScopePush(_) | Self::ScopePop(_) | Self::Expression(_) | Self::Store(_) => {}
+        }
+    }
+}
+
+impl VisitTypeMutAsync for Instruction {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        match self {
+            Self::ExprDiscard(discard) => {
+                visitor.visit_type_mut_async(&mut discard.drop_instance, site).await;
+            }
 
             Self::ScopePush(_) | Self::ScopePop(_) | Self::Expression(_) | Self::Store(_) => {}
         }

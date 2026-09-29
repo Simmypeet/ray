@@ -1795,6 +1795,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayc_borrowck"
+version = "0.1.0-beta.2"
+dependencies = [
+ "qbice",
+ "rayc_arena",
+ "rayc_hash",
+ "rayc_ir",
+ "rayc_qbice",
+ "rayc_type",
+]
+
+[[package]]
 name = "rayc_c2"
 version = "0.1.0-beta.2"
 dependencies = [

@@ -94,3 +94,21 @@ where
 pub trait VisitTypeMut {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V);
 }
+
+/// Like [`TypeVisitorMut`], but may await, for example to query the engine.
+pub trait TypeVisitorMutAsync {
+    #[allow(async_fn_in_trait)]
+    async fn visit_type_mut_async(&mut self, ty: &mut Interned<Ty>, site: TypeSite);
+}
+
+/// Like [`VisitTypeMut`], but visits with a [`TypeVisitorMutAsync`].
+///
+/// This visits the same types, in the same order, as [`VisitTypeMut`].
+pub trait VisitTypeMutAsync {
+    #[allow(async_fn_in_trait)]
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    );
+}

@@ -271,6 +271,21 @@ impl Ty {
         self.kind_of(engine).await == TyKind::Lifetime
     }
 
+    /// Returns whether this type is a universal lifetime: `'static`, a
+    /// lifetime parameter or an external lifetime, a region which the
+    /// function mentioning it does not choose, but is given; see
+    /// [`Lifetime::is_universal`].
+    pub async fn is_universal_lifetime(&self, engine: &TrackedEngine) -> bool {
+        match self {
+            Self::Lifetime(lifetime) => lifetime.is_universal(),
+            Self::PolyVar(_) => self.is_lifetime(engine).await,
+            Self::Application(_)
+            | Self::Inference(_)
+            | Self::SelfInstance(_)
+            | Self::EffectRow(_) => false,
+        }
+    }
+
     /// Returns whether `left` and `right` are equal when every lifetime is
     /// considered equal to every other lifetime.
     ///

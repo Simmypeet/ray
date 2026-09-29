@@ -7,7 +7,9 @@ use rayc_type::{
     ty::{Mutability, Ty},
 };
 
-use crate::visit::{TypeSite, TypeVisitorMut, VisitTypeMut};
+use crate::visit::{
+    TypeSite, TypeVisitorMut, TypeVisitorMutAsync, VisitTypeMut, VisitTypeMutAsync,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IRLambdaContext {
@@ -206,6 +208,20 @@ impl VisitTypeMut for IRLambdaContext {
     }
 }
 
+impl VisitTypeMutAsync for IRLambdaContext {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        for (_, parameter) in self.parameters.parameters.iter_mut_unordered() {
+            parameter.visit_types_mut_async(site, visitor).await;
+        }
+        visitor.visit_type_mut_async(&mut self.return_ty, site).await;
+        visitor.visit_type_mut_async(&mut self.effect, site).await;
+    }
+}
+
 impl VisitTypeMut for IRThunkContext {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         visitor.visit_type_mut(&mut self.return_ty, site);
@@ -213,9 +229,30 @@ impl VisitTypeMut for IRThunkContext {
     }
 }
 
+impl VisitTypeMutAsync for IRThunkContext {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        visitor.visit_type_mut_async(&mut self.return_ty, site).await;
+        visitor.visit_type_mut_async(&mut self.effect, site).await;
+    }
+}
+
 impl VisitTypeMut for LambdaParameter {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         visitor.visit_type_mut(&mut self.ty, site);
+    }
+}
+
+impl VisitTypeMutAsync for LambdaParameter {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        visitor.visit_type_mut_async(&mut self.ty, site).await;
     }
 }
 
@@ -228,6 +265,19 @@ impl VisitTypeMut for CaptureMode {
     }
 }
 
+impl VisitTypeMutAsync for CaptureMode {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        match self {
+            Self::Value(_) => {}
+            Self::Reference { lifetime, .. } => visitor.visit_type_mut_async(lifetime, site).await,
+        }
+    }
+}
+
 impl VisitTypeMut for Capture {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         visitor.visit_type_mut(&mut self.binding_ty, site);
@@ -235,10 +285,33 @@ impl VisitTypeMut for Capture {
     }
 }
 
+impl VisitTypeMutAsync for Capture {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        visitor.visit_type_mut_async(&mut self.binding_ty, site).await;
+        self.mode.visit_types_mut_async(site, visitor).await;
+    }
+}
+
 impl VisitTypeMut for CaptureMap {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         for (_, capture) in self.captures.iter_mut_unordered() {
             capture.visit_types_mut(site, visitor);
+        }
+    }
+}
+
+impl VisitTypeMutAsync for CaptureMap {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        for (_, capture) in self.captures.iter_mut_unordered() {
+            capture.visit_types_mut_async(site, visitor).await;
         }
     }
 }

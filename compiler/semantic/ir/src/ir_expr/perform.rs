@@ -4,7 +4,10 @@ use rayc_type::subst::Subst;
 
 use crate::{
     ir_expr::IRExprID,
-    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
+    visit::{
+        TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
+        VisitTypeMutAsync,
+    },
 };
 
 /// Invokes an operation of the dynamically nearest matching effect handler.
@@ -52,6 +55,18 @@ impl VisitTypeMut for Perform {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         for ty in self.substitution.codomain_mut() {
             visitor.visit_type_mut(ty, site);
+        }
+    }
+}
+
+impl VisitTypeMutAsync for Perform {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        for ty in self.substitution.codomain_mut() {
+            visitor.visit_type_mut_async(ty, site).await;
         }
     }
 }

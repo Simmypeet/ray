@@ -1,0 +1,18 @@
+[package]
+name = "rayc_borrowck"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_arena.path = "../../base/arena"
+rayc_hash.path = "../../base/hash"
+rayc_ir.path = "../ir"
+rayc_qbice.path = "../../base/qbice"
+rayc_type.path = "../type"
+qbice.workspace = true
+
+[lints]
+workspace = true
