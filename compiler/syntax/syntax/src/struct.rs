@@ -6,7 +6,7 @@ use rayc_parser::{
 };
 
 use crate::{
-    Identifier, Keyword, Punctuation, attribute::Attribute, effect::TypeParameterList,
+    Identifier, Keyword, Passable, Punctuation, attribute::Attribute, effect::TypeParameterList,
     given::GivenParameterList, r#type::Type, where_clause::WhereClause,
 };
 
@@ -23,7 +23,8 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     #{fragment = Fragment::Indentation}
     pub struct StructBody {
-        pub fields: #[multi] StructField = ast::<StructField>().line().repeat_all()
+        pub fields: #[multi] Passable<StructField> =
+            ast::<Passable<StructField>>().line().repeat_all()
     }
 }
 

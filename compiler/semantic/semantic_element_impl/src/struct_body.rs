@@ -8,6 +8,7 @@ use rayc_resolution::resolver::Resolver;
 use rayc_semantic_element::struct_body::{Field, Key, StructBody};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{source_map::to_absolute_span, syntax::get_struct_body_syntax};
+use rayc_syntax::Passable;
 use rayc_type::{poly_var::get_enclosing_poly_var_maps, ty::Ty};
 
 use crate::{
@@ -91,6 +92,10 @@ impl Build for Key {
 
         if let Some(syntax) = syntax {
             for field_syntax in syntax.fields() {
+                // A `pass` stands for no field, as in an empty struct body.
+                let Passable::Ast(field_syntax) = field_syntax else {
+                    continue;
+                };
                 let Some(name) = field_syntax.name() else {
                     continue;
                 };
