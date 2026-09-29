@@ -79,7 +79,7 @@ impl Subst {
     pub fn poly_var_mappings(&self) -> impl Iterator<Item = (GlobalPolyVarID, &Interned<Ty>)> {
         self.0.iter().filter_map(|(var, ty)| match var {
             Var::Poly(poly_var) => Some((*poly_var, ty)),
-            Var::Inference(_) | Var::SelfInstance(_) => None,
+            Var::External(_) | Var::Inference(_) | Var::SelfInstance(_) => None,
         })
     }
 }
