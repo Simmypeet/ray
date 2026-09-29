@@ -65,11 +65,6 @@ pub struct TAstBuilder {
     lvalue_requirements: LvalueRequirements,
 
     diagnostics: Vec<Diagnostic>,
-
-    /// Whether the syntax of this definition has an error that the parser
-    /// reported, which may leave types undetermined.
-    tainted_by_syntax_error: bool,
-
     engine: TrackedEngine,
 }
 
@@ -99,7 +94,6 @@ impl TAstBuilder {
             constraint_solver,
             lvalue_requirements: LvalueRequirements::new(),
             diagnostics: Vec::new(),
-            tainted_by_syntax_error: false,
             engine,
         }
     }
@@ -294,10 +288,6 @@ impl TAstBuilder {
 
     pub fn push_diagnostic(&mut self, diagnostic: Diagnostic) { self.diagnostics.push(diagnostic); }
 
-    /// Records that the syntax being bound has an error the parser already
-    /// reported.
-    pub(crate) const fn taint_by_syntax_error(&mut self) { self.tainted_by_syntax_error = true; }
-
     pub fn extend_diagnostics(&mut self, diagnostics: impl IntoIterator<Item = Diagnostic>) {
         self.diagnostics.extend(diagnostics);
     }
@@ -305,6 +295,14 @@ impl TAstBuilder {
     pub async fn push_error_expression(&mut self, span: RelativeSpan) -> TypedExprID {
         let infer = self.new_type_inference();
         self.insert_expression(typed_expr::errored::Errored::new_empty(), span, infer).await
+    }
+
+    /// Inserts an errored expression for syntax that the parser could not
+    /// parse. Its type is the error type rather than an inference, since the
+    /// parser has already reported the error.
+    pub async fn push_syntax_error_expression(&mut self, span: RelativeSpan) -> TypedExprID {
+        let ty = Ty::new_error(TyKind::Star, &self.engine);
+        self.insert_expression(typed_expr::errored::Errored::new_empty(), span, ty).await
     }
 
     pub async fn push_error_expression_with_children(
@@ -445,7 +443,7 @@ impl TAstBuilder {
         // An undetermined type is often a consequence of another error, e.g. an
         // errored expression has a fresh type that nothing constrains. As rustc
         // does, only ask for an annotation when no other error explains it.
-        if self.diagnostics.is_empty() && !self.tainted_by_syntax_error {
+        if self.diagnostics.is_empty() {
             self.diagnostics.extend(
                 type_annotation::type_annotation_required_diagnostics(
                     ast.functions(),

@@ -69,12 +69,6 @@ impl TAstBuilder {
         };
         let body_span = body_syn.span();
 
-        // The parser drops the tokens it cannot parse, e.g. a malformed `let`
-        // annotation, which may leave types undetermined.
-        if body_syn.inner_tree().contains_error() {
-            self.taint_by_syntax_error();
-        }
-
         for stmt in body_syn.statements() {
             self.bind_statement(&stmt).await;
         }

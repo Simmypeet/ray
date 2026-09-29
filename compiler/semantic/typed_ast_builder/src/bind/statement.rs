@@ -1,7 +1,10 @@
 use rayc_source_file::SourceElement;
 use rayc_symbol::core_item::{CoreItem, get_core_item};
 use rayc_syntax::statement::{Return as ReturnSyntax, Statement as StatementSyntax};
-use rayc_type::{trait_ref::TraitRef, ty::args::Args};
+use rayc_type::{
+    trait_ref::TraitRef,
+    ty::{Ty, TyKind, args::Args},
+};
 use rayc_typed_ast::{
     name_binding::Source,
     statement::{Break, Continue, ExpressionStatement, Let, Return, Statement},
@@ -19,22 +22,29 @@ impl TAstBuilder {
     pub async fn bind_statement(&mut self, statement: &StatementSyntax) {
         match statement {
             StatementSyntax::Let(l) => {
-                let expr = l.assignment().and_then(|x| x.expression());
                 let pattern = l.pattern();
 
-                let mut expr_id =
-                    if let Some(expr) = expr { Some(self.bind(expr).await) } else { None };
+                // The parser has already reported a malformed initializer, so it
+                // is bound as an errored expression of the error type.
+                let mut expr_id = match l.assignment().map(|a| (a.expression(), a.span())) {
+                    Some((Some(expr), _)) => Some(self.bind(expr).await),
+                    Some((None, span)) => Some(self.push_syntax_error_expression(span).await),
+                    None => None,
+                };
 
-                // Only an annotated `let` is a coercion site.
-                let var_ty = if let Some(annotation) = l.type_annotation().and_then(|a| a.r#type())
-                {
-                    let var_ty = self.resolve_local_type_annotation(&annotation).await;
-                    if let Some(id) = expr_id {
-                        expr_id = Some(self.coerce(id, &var_ty).await);
+                // Only an annotated `let` is a coercion site. The parser has
+                // already reported a malformed annotation, so its type is the
+                // error type rather than an inference.
+                let var_ty = match l.type_annotation().map(|a| a.r#type()) {
+                    Some(Some(annotation)) => {
+                        let var_ty = self.resolve_local_type_annotation(&annotation).await;
+                        if let Some(id) = expr_id {
+                            expr_id = Some(self.coerce(id, &var_ty).await);
+                        }
+                        var_ty
                     }
-                    var_ty
-                } else {
-                    self.new_type_inference()
+                    Some(None) => Ty::new_error(TyKind::Star, self.engine()),
+                    None => self.new_type_inference(),
                 };
                 let var_id = self.insert_variable(TypedVariable::new(
                     var_ty.clone(),
