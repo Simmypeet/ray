@@ -1,6 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
-    cfg::ExprDiscard,
+    cfg::{AddressDrop, ExprDiscard},
     ir_expr::{
         IRExprID,
         call::{Call as IRCall, CallTarget},
@@ -74,6 +74,21 @@ impl Builder<'_> {
 
         let value = self.expression_place(discard.expression());
         self.lower_drop(resolver, value, discard.drop_instance(), destination).await;
+    }
+
+    /// Drops the value held in a place with the dictionary selected by drop
+    /// elaboration. The place is passed to the drop directly, so no
+    /// temporary holds the moved value.
+    pub(super) async fn lower_address_drop(&mut self, context: &Context, drop: &AddressDrop) {
+        let resolver = context.resolver();
+
+        // `Drop.drop` returns unit, which is unused, so every call writes to
+        // one scratch temporary.
+        let unit = resolver.unit_type().await;
+        let destination = Place::new(self.insert_local(Local::new(unit, LocalKind::Temporary)));
+
+        let value = self.lower_address(drop.address());
+        self.lower_drop(resolver, value, drop.drop_instance(), destination).await;
     }
 
     /// Expands a built-in tuple `Drop` call into the selected element calls.

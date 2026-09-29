@@ -59,7 +59,8 @@ impl ExprLivenessProblem<'_> {
 
             Instruction::Store(store) => state.mark_used(store.expression()),
 
-            Instruction::ScopePush(_) | Instruction::ScopePop(_) => {}
+            // A drop reads a place, not an evaluated expression.
+            Instruction::ScopePush(_) | Instruction::ScopePop(_) | Instruction::AddressDrop(_) => {}
         }
     }
 

@@ -3,7 +3,7 @@
 //! A local is **use-live** at a point when some path from that point reads
 //! its current value before overwriting it. A local is **drop-live** at a
 //! point when its current value is not used again on any path, but is still
-//! passed to a `Drop.drop` call inserted by drop elaboration on some path.
+//! dropped by an [`Instruction::AddressDrop`] on some path.
 //!
 //! Liveness is tracked per local, not per place: using or dropping any part of
 //! a local makes the whole local live, as in rustc.
@@ -15,7 +15,7 @@ use crate::{
     address::{Address, Local},
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
     dataflow::{DataflowProblem, DataflowSolution, Direction},
-    ir_expr::{IRExprKind, load::LoadKind},
+    ir_expr::IRExprKind,
     ir_function::IRFunction,
 };
 
@@ -34,16 +34,7 @@ impl LocalLivenessProblem<'_> {
         match instruction {
             Instruction::Expression(expression_id) => {
                 match self.function.get_expression(*expression_id).kind() {
-                    // Drop elaboration moves a value out only to drop it.
-                    IRExprKind::Load(load) => match load.kind() {
-                        LoadKind::Drop => {
-                            if let Some(local) = load.address().local() {
-                                state.mark_dropped(local);
-                            }
-                        }
-                        LoadKind::Implicit | LoadKind::Move => use_address(load.address(), state),
-                    },
-
+                    IRExprKind::Load(load) => use_address(load.address(), state),
                     IRExprKind::RefOf(ref_of) => use_address(ref_of.address(), state),
 
                     // Every other operand is an already evaluated expression,
@@ -81,6 +72,13 @@ impl LocalLivenessProblem<'_> {
             Instruction::ScopePush(scope_id) | Instruction::ScopePop(scope_id) => {
                 for variable_id in self.function.declared_variables(*scope_id) {
                     state.mark_defined(Local::Variable(variable_id));
+                }
+            }
+
+            // A drop only passes the value to its `Drop.drop` call.
+            Instruction::AddressDrop(drop) => {
+                if let Some(local) = drop.address().local() {
+                    state.mark_dropped(local);
                 }
             }
 

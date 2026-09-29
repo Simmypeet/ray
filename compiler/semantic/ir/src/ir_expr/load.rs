@@ -11,14 +11,6 @@ pub enum LoadKind {
     /// Moves the value even when its type is `Copy`, as written with
     /// `move <expr>`.
     Move,
-
-    /// Moves the value even when its type is `Copy`, only to pass it to its
-    /// `Drop.drop` call. Inserted by drop elaboration.
-    ///
-    /// It moves exactly like [`Self::Move`], but analyses which care about
-    /// how a value is used, such as liveness, can tell a drop apart from
-    /// other uses.
-    Drop,
 }
 
 impl From<rayc_type::capture::LoadKind> for LoadKind {

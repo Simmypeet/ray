@@ -195,7 +195,7 @@ impl<'a> StackStateProblem<'a> {
 
         match load.kind() {
             LoadKind::Implicit => !self.type_is_copy(ty).await,
-            LoadKind::Move | LoadKind::Drop => true,
+            LoadKind::Move => true,
         }
     }
 
@@ -209,7 +209,7 @@ impl<'a> StackStateProblem<'a> {
         match load.kind() {
             // Errors have already been reported.
             LoadKind::Implicit => !ty.contains_error() && !self.type_is_copy(ty).await,
-            LoadKind::Move | LoadKind::Drop => true,
+            LoadKind::Move => true,
         }
     }
 
@@ -462,6 +462,11 @@ impl DataflowProblem for StackStateProblem<'_> {
                 }
             }
             Instruction::ExprDiscard(_) => {}
+            // Drop elaboration only drops places the frame owns, and the drop
+            // consumes the value even when it is `Copy`.
+            Instruction::AddressDrop(drop) => {
+                let _ = state.move_out(drop.address(), point, self).await;
+            }
             Instruction::Store(store) => {
                 let address = store.address().clone();
                 let _ = state.restore(&address, self).await;

@@ -8,11 +8,10 @@ use rayc_type::ty::{Primitive, Ty};
 use super::{LiveLocals, LocalLiveness};
 use crate::{
     address::{Address, Local},
-    cfg::{BlockID, Conditional, Point, Terminator},
-    ir_expr::{
-        IRExpr,
-        load::{Load, LoadKind},
+    cfg::{
+        AddressDrop, BlockID, Conditional, Instruction, InstructionInsertion, Point, Terminator,
     },
+    ir_expr::{IRExpr, load::Load},
     ir_function::{FunctionID, IRFunctionMap},
 };
 
@@ -56,24 +55,28 @@ impl FunctionBuilder {
 
     fn address(&self, local: Local) -> Address { local.to_address(&self.engine) }
 
-    fn load(&mut self, block_id: BlockID, address: Address, kind: LoadKind) -> Point {
+    fn read(&mut self, block_id: BlockID, local: Local) -> Point {
         let point = self.next_point(block_id);
+        let address = self.address(local);
         let expression = self.functions.insert_expression(
             self.function_id,
-            IRExpr::new(Load::with_kind(address, kind), test_span(), self.ty.clone()),
+            IRExpr::new(Load::new(address), test_span(), self.ty.clone()),
         );
         self.functions.push_expression(self.function_id, block_id, expression);
         point
     }
 
-    fn read(&mut self, block_id: BlockID, local: Local) -> Point {
-        let address = self.address(local);
-        self.load(block_id, address, LoadKind::Implicit)
-    }
-
     fn drop(&mut self, block_id: BlockID, local: Local) -> Point {
+        let point = self.next_point(block_id);
         let address = self.address(local);
-        self.load(block_id, address, LoadKind::Drop)
+        let mut insertion = InstructionInsertion::new();
+        insertion.insert_before(point, [Instruction::AddressDrop(AddressDrop::new(
+            address,
+            self.ty.clone(),
+            test_span(),
+        ))]);
+        self.functions.insert_instructions(self.function_id, insertion);
+        point
     }
 
     fn store(&mut self, block_id: BlockID, address: Address) -> Point {
