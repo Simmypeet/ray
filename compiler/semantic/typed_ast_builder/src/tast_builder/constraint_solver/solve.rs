@@ -431,7 +431,10 @@ impl TAstBuilder {
     async fn default_numerics(&mut self) {
         let numerics = self.constraint_solver.take_recorded_numeric_inferences();
 
-        let default = Ty::new_primitive(rayc_type::ty::Primitive::Int32, &self.engine);
+        let default = Ty::new_primitive(
+            rayc_type::ty::Primitive::Integer(rayc_type::ty::Integer::Int32),
+            &self.engine,
+        );
         self.constraint_solver
             .provenance
             .default_unbound_inferences(numerics, &default, &self.constraint_solver.solver)

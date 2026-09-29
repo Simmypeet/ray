@@ -527,18 +527,7 @@ impl Application {
             InferenceConstraint::Any => true,
             InferenceConstraint::Numeric => match self.view() {
                 View::Primitive(primitive) => match primitive {
-                    Primitive::Int8
-                    | Primitive::Int16
-                    | Primitive::Int32
-                    | Primitive::Int64
-                    | Primitive::Isize
-                    | Primitive::Uint8
-                    | Primitive::Uint16
-                    | Primitive::Uint32
-                    | Primitive::Uint64
-                    | Primitive::Usize
-                    | Primitive::Float32
-                    | Primitive::CInt => true,
+                    Primitive::Integer(_) | Primitive::Float32 => true,
                     Primitive::Bool | Primitive::CStr => false,
                 },
 
@@ -558,19 +547,7 @@ impl Application {
             },
             InferenceConstraint::EqualityComparable => match self.view() {
                 View::Primitive(primitive) => match primitive {
-                    Primitive::Int8
-                    | Primitive::Int16
-                    | Primitive::Int32
-                    | Primitive::Int64
-                    | Primitive::Isize
-                    | Primitive::Uint8
-                    | Primitive::Uint16
-                    | Primitive::Uint32
-                    | Primitive::Uint64
-                    | Primitive::Usize
-                    | Primitive::Float32
-                    | Primitive::Bool
-                    | Primitive::CInt => true,
+                    Primitive::Integer(_) | Primitive::Float32 | Primitive::Bool => true,
                     Primitive::CStr => false,
                 },
 

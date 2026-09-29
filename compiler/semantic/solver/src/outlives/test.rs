@@ -8,7 +8,7 @@ use rayc_target::TargetID;
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap},
     trait_ref::TraitRef,
-    ty::{Mutability, Primitive, Ty, TyKind, args::Args, lifetime::Lifetime},
+    ty::{Integer, Mutability, Primitive, Ty, TyKind, args::Args, lifetime::Lifetime},
     where_clause::{OutlivesPredicate, PredicateKind},
 };
 
@@ -187,7 +187,7 @@ async fn type_outlives_requires_every_component() {
         Mutability::Immutable,
         &fixture.engine,
     );
-    let int32 = Ty::new_primitive(Primitive::Int32, &fixture.engine);
+    let int32 = Ty::new_primitive(Primitive::Integer(Integer::Int32), &fixture.engine);
     let tuple = Ty::new_tuple(fixture.engine.intern_unsized([reference, int32]), &fixture.engine);
     let mut solver = fixture.solver([region(&fixture.lt_b, &fixture.lt_a)]).await;
 
@@ -200,7 +200,7 @@ async fn type_outlives_requires_every_component() {
 #[tokio::test]
 async fn type_fact_decomposes_into_its_components() {
     let fixture = Fixture::new().await;
-    let int32 = Ty::new_primitive(Primitive::Int32, &fixture.engine);
+    let int32 = Ty::new_primitive(Primitive::Integer(Integer::Int32), &fixture.engine);
     let inner =
         Ty::new_reference(fixture.lt_b.clone(), int32, Mutability::Immutable, &fixture.engine);
     let outer =

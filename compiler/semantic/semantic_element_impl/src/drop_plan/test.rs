@@ -26,7 +26,7 @@ use rayc_type::{
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVar, PolyVarID, PolyVarMap},
     trait_ref::{InstanceTraitRefKey, TraitRef},
     ty::{
-        Mutability, Primitive, Ty,
+        Integer, Mutability, Primitive, Ty,
         application::{Closure, ClosureID},
         args::Args,
     },
@@ -357,7 +357,7 @@ async fn concrete_associated_argument_does_not_become_external_requirement() {
 
     let mut engine = Arc::new(engine);
     let tracked = engine.clone().tracked().await;
-    let int_ty = Ty::new_primitive(Primitive::Int32, &tracked);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &tracked);
     let instance = Ty::new_instance(implementation, Args::new([], &tracked), &tracked);
     let projection = Ty::new_instance_associated(trait_member, instance, [], &tracked);
     let option_of_projection = Ty::new_struct(option, Args::new([projection], &tracked), &tracked);
@@ -450,7 +450,7 @@ async fn closure_field_resolves_one_dictionary_per_capture() {
     let engine = rayc_qbice::create_minimal_engine().await;
     let owner = TargetID::TEST.make_global(SymbolID::from_u128(1));
     let t = engine.intern(Ty::PolyVar(GlobalPolyVarID::new(owner, PolyVarID::new(0))));
-    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let borrowed = Ty::new_pointer(int_ty.clone(), Mutability::Immutable, &engine);
 
     let captures = Ty::new_tuple(engine.intern_unsized([t.clone(), borrowed.clone()]), &engine);

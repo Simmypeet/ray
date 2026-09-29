@@ -20,3 +20,9 @@ def mismatchedAnnotation() -> int16:
 
 def mismatchedEquality() -> bool:
     return 1usize == 1isize
+
+def exceedsEveryInteger() -> uint64:
+    return 340282366920938463463374607431768211456u64
+
+def exceedsFloat() -> float32:
+    return 340282366920938463463374607431768211456

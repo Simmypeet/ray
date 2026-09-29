@@ -1,7 +1,7 @@
 use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
 use rayc_syntax::expression::{Boolean, Literal as LiteralSyntax, NumericLiteral, NumericSuffix};
-use rayc_type::ty::{Primitive, Ty};
+use rayc_type::ty::{Integer, Primitive, Ty};
 use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, literal::Literal};
 
 use crate::{
@@ -53,37 +53,50 @@ impl TAstBuilder {
         let Some(numeric) = syn.numeric() else {
             return self.push_error_expression(span).await;
         };
-        // TODO: properly handle literals that exceed `u128`
-        let value = numeric.kind.0.parse::<u128>().expect("should've been a valid numeric literal");
+        let digits = numeric.kind.0;
+
+        // The lexer only produces ASCII digits, so parsing fails only when the
+        // value exceeds `u128`. Such a literal fits in no type, which the
+        // deferred range check reports.
+        let value = digits.parse::<u128>().ok();
 
         let ty = match syn.suffix() {
-            Some(suffix) => Ty::new_primitive(suffix_primitive(&suffix), self.engine()),
+            Some(suffix) => {
+                Ty::new_primitive(Primitive::Integer(suffix_integer(&suffix)), self.engine())
+            }
             None => self.new_numeric_type_inference(),
         };
 
-        let id =
-            self.insert_expression(TypedExprKind::Literal(Literal::Numeric(value)), span, ty).await;
+        // An out-of-range literal is always reported, so the placeholder value
+        // of a literal exceeding `u128` never reaches code generation.
+        let id = self
+            .insert_expression(
+                TypedExprKind::Literal(Literal::Numeric(value.unwrap_or(u128::MAX))),
+                span,
+                ty,
+            )
+            .await;
 
         // The literal's type may still be an inference variable here, so its
         // range is checked once every type has been inferred.
-        self.defer_numeric_literal_range_check(id);
+        self.require_numeric_literal_range(id, digits, value);
 
         id
     }
 }
 
-/// Returns the primitive type that a numeric literal suffix fixes.
-const fn suffix_primitive(suffix: &NumericSuffix) -> Primitive {
+/// Returns the integer type that a numeric literal suffix fixes.
+const fn suffix_integer(suffix: &NumericSuffix) -> Integer {
     match suffix {
-        NumericSuffix::I8(_) => Primitive::Int8,
-        NumericSuffix::I16(_) => Primitive::Int16,
-        NumericSuffix::I32(_) => Primitive::Int32,
-        NumericSuffix::I64(_) => Primitive::Int64,
-        NumericSuffix::Isize(_) => Primitive::Isize,
-        NumericSuffix::U8(_) => Primitive::Uint8,
-        NumericSuffix::U16(_) => Primitive::Uint16,
-        NumericSuffix::U32(_) => Primitive::Uint32,
-        NumericSuffix::U64(_) => Primitive::Uint64,
-        NumericSuffix::Usize(_) => Primitive::Usize,
+        NumericSuffix::I8(_) => Integer::Int8,
+        NumericSuffix::I16(_) => Integer::Int16,
+        NumericSuffix::I32(_) => Integer::Int32,
+        NumericSuffix::I64(_) => Integer::Int64,
+        NumericSuffix::Isize(_) => Integer::Isize,
+        NumericSuffix::U8(_) => Integer::Uint8,
+        NumericSuffix::U16(_) => Integer::Uint16,
+        NumericSuffix::U32(_) => Integer::Uint32,
+        NumericSuffix::U64(_) => Integer::Uint64,
+        NumericSuffix::Usize(_) => Integer::Usize,
     }
 }

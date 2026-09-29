@@ -28,7 +28,7 @@ use rayc_symbol::{
 use rayc_target::TargetID;
 use rayc_type::{
     poly_var::{Key as PolyVarMapKey, PolyVarMap},
-    ty::{Primitive, Ty, TyKind, args::Args, self_instance::SelfInstance},
+    ty::{Integer, Primitive, Ty, TyKind, args::Args, self_instance::SelfInstance},
     where_clause::{AssociatedTypeEquality, PredicateKind},
 };
 
@@ -38,7 +38,9 @@ fn point(instruction_idx: usize) -> Point {
     Point::builder().block_id(ID::<Block>::new(0)).instruction_idx(instruction_idx).build()
 }
 
-fn leaf_type(engine: &TrackedEngine) -> Interned<Ty> { Ty::new_primitive(Primitive::Int32, engine) }
+fn leaf_type(engine: &TrackedEngine) -> Interned<Ty> {
+    Ty::new_primitive(Primitive::Integer(Integer::Int32), engine)
+}
 
 fn tuple_type(engine: &TrackedEngine) -> Interned<Ty> {
     let leaf = leaf_type(engine);

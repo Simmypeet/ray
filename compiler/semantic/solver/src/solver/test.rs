@@ -5,7 +5,7 @@ use rayc_type::{
     constraint::{outlives::OutlivesConstraints, ty_relate::TyRelate},
     subst::Subst,
     trait_ref::TraitRef,
-    ty::{Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel},
+    ty::{Integer, Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel},
     variance::Variance,
 };
 
@@ -75,7 +75,7 @@ async fn equality_without_unification_rejects_a_generated_substitution() {
     let engine = rayc_qbice::create_minimal_engine().await;
     let mut solver = Solver::without_givens(engine.clone()).await;
     let inference = engine.intern(Ty::Inference(solver.new_inference(TyKind::Star)));
-    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
 
     assert!(!solver.eq_without_unify(&inference, &int_ty).await);
 }
@@ -89,7 +89,7 @@ async fn head_match_binds_nested_and_repeated_head_variables() {
     let mut solver = Solver::without_givens(engine.clone()).await;
     let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
     let a_ty = engine.intern(Ty::PolyVar(a));
-    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let head = TraitRef::new(
         trait_id,
         Args::new([Ty::new_tuple(engine.intern_unsized([a_ty.clone()]), &engine), a_ty], &engine),
@@ -123,7 +123,7 @@ async fn head_match_rejects_inconsistent_head_bindings() {
         Args::new(
             [
                 Ty::new_primitive(Primitive::Bool, &engine),
-                Ty::new_primitive(Primitive::Int32, &engine),
+                Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine),
             ],
             &engine,
         ),
@@ -140,8 +140,10 @@ async fn head_match_does_not_bind_expected_variables() {
     let (engine, a) = engine_with_type_poly_var().await;
     let mut solver = Solver::without_givens(engine.clone()).await;
     let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
-    let head =
-        TraitRef::new(trait_id, Args::new([Ty::new_primitive(Primitive::Int32, &engine)], &engine));
+    let head = TraitRef::new(
+        trait_id,
+        Args::new([Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine)], &engine),
+    );
     let expected = TraitRef::new(trait_id, Args::new([engine.intern(Ty::PolyVar(a))], &engine));
 
     assert_eq!(solver.type_head_match(&head, &expected).await, None);
@@ -158,7 +160,10 @@ async fn head_match_rejects_trait_identity_and_arity_mismatches() {
     let head = TraitRef::new(trait_id, Args::new([], &engine));
     for expected in [
         TraitRef::new(TargetID::TEST.make_global(SymbolID::from_u128(2)), Args::new([], &engine)),
-        TraitRef::new(trait_id, Args::new([Ty::new_primitive(Primitive::Int32, &engine)], &engine)),
+        TraitRef::new(
+            trait_id,
+            Args::new([Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine)], &engine),
+        ),
     ] {
         assert_eq!(solver.type_head_match(&head, &expected).await, None);
     }
@@ -175,7 +180,7 @@ async fn exhaustive_solve_composes_bindings_from_derived_constraints() {
     let b = solver.new_inference(TyKind::Star);
     let a_ty = engine.intern(Ty::Inference(a));
     let b_ty = engine.intern(Ty::Inference(b));
-    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let constrs = vec![
         TyRelate::new_invariant(
             Ty::new_tuple(engine.intern_unsized([a_ty.clone()]), &engine),
@@ -206,7 +211,7 @@ async fn exhaustive_solve_rejects_conflicting_bindings() {
     let a = engine.intern(Ty::Inference(solver.new_inference(TyKind::Star)));
     let constrs = vec![
         TyRelate::new_invariant(a.clone(), Ty::new_primitive(Primitive::Bool, &engine)),
-        TyRelate::new_invariant(a, Ty::new_primitive(Primitive::Int32, &engine)),
+        TyRelate::new_invariant(a, Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine)),
     ];
 
     assert_eq!(solver.exhaustive_solve(constrs, &TyRelatingEnvironment::Normal).await, None);
@@ -220,7 +225,10 @@ async fn exhaustive_solve_respects_the_relating_environment() {
     let engine = rayc_qbice::create_minimal_engine().await;
     let mut solver = Solver::without_givens(engine.clone()).await;
     let a = engine.intern(Ty::Inference(solver.new_inference(TyKind::Star)));
-    let constrs = vec![TyRelate::new_invariant(a, Ty::new_primitive(Primitive::Int32, &engine))];
+    let constrs = vec![TyRelate::new_invariant(
+        a,
+        Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine),
+    )];
 
     assert_eq!(
         solver.exhaustive_solve(constrs, &TyRelatingEnvironment::TopLevelMatching).await,
@@ -259,7 +267,7 @@ async fn self_instance_entails_its_identity_trait_reference() {
     );
     let specialized = TraitRef::new(
         a.parent_id(),
-        Args::new([Ty::new_primitive(Primitive::Int32, &engine)], &engine),
+        Args::new([Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine)], &engine),
     );
     let result = solver
         .entail_instance_trait_ref(&InstanceTraitRef::new(instance, specialized))
@@ -299,7 +307,7 @@ async fn site_givens_include_parents_and_prefer_the_nearest_scope() {
     let dictionary = types.intern(Ty::SelfInstance(SelfInstance::new(owner)));
     let item = Ty::new_instance_associated(site, dictionary.clone(), [], &types);
     let other = Ty::new_instance_associated(module, dictionary, [], &types);
-    let int_ty = Ty::new_primitive(Primitive::Int32, &types);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &types);
     let bool_ty = Ty::new_primitive(Primitive::Bool, &types);
     let location = RelativeLocation {
         offset: 0,

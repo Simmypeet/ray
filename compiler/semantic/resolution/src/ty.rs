@@ -14,7 +14,7 @@ use rayc_syntax::{
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarMap},
     subst::Subst,
-    ty::{Mutability, Primitive, Ty, TyKind, args::Args, lifetime::Lifetime},
+    ty::{Integer, Mutability, Primitive, Ty, TyKind, args::Args, lifetime::Lifetime},
 };
 
 use crate::{
@@ -422,19 +422,19 @@ impl Resolver<'_> {
             }
             TypeSyntax::Primitive(primitive) => {
                 let primitive = match primitive {
-                    PrimitiveSyntax::Int8(_) => Primitive::Int8,
-                    PrimitiveSyntax::Int16(_) => Primitive::Int16,
-                    PrimitiveSyntax::Int32(_) => Primitive::Int32,
-                    PrimitiveSyntax::Int64(_) => Primitive::Int64,
-                    PrimitiveSyntax::Isize(_) => Primitive::Isize,
-                    PrimitiveSyntax::Uint8(_) => Primitive::Uint8,
-                    PrimitiveSyntax::Uint16(_) => Primitive::Uint16,
-                    PrimitiveSyntax::Uint32(_) => Primitive::Uint32,
-                    PrimitiveSyntax::Uint64(_) => Primitive::Uint64,
-                    PrimitiveSyntax::Usize(_) => Primitive::Usize,
+                    PrimitiveSyntax::Int8(_) => Primitive::Integer(Integer::Int8),
+                    PrimitiveSyntax::Int16(_) => Primitive::Integer(Integer::Int16),
+                    PrimitiveSyntax::Int32(_) => Primitive::Integer(Integer::Int32),
+                    PrimitiveSyntax::Int64(_) => Primitive::Integer(Integer::Int64),
+                    PrimitiveSyntax::Isize(_) => Primitive::Integer(Integer::Isize),
+                    PrimitiveSyntax::Uint8(_) => Primitive::Integer(Integer::Uint8),
+                    PrimitiveSyntax::Uint16(_) => Primitive::Integer(Integer::Uint16),
+                    PrimitiveSyntax::Uint32(_) => Primitive::Integer(Integer::Uint32),
+                    PrimitiveSyntax::Uint64(_) => Primitive::Integer(Integer::Uint64),
+                    PrimitiveSyntax::Usize(_) => Primitive::Integer(Integer::Usize),
                     PrimitiveSyntax::Bool(_) => Primitive::Bool,
                     PrimitiveSyntax::Float32(_) => Primitive::Float32,
-                    PrimitiveSyntax::CInt(_) => Primitive::CInt,
+                    PrimitiveSyntax::CInt(_) => Primitive::Integer(Integer::CInt),
                     PrimitiveSyntax::CStr(_) => Primitive::CStr,
                 };
                 self.new_primitive_type(primitive)

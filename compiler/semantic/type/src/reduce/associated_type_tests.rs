@@ -11,7 +11,7 @@ use crate::{
     instance_member::InstanceMember,
     poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap},
     subst::Subst,
-    ty::{Primitive, Ty, TyKind, args::Args, inference::Inference},
+    ty::{Integer, Primitive, Ty, TyKind, args::Args, inference::Inference},
 };
 
 async fn fixture(local_argument: bool) -> (TrackedEngine, Interned<Ty>, Interned<Ty>) {
@@ -88,7 +88,7 @@ async fn fixture(local_argument: bool) -> (TrackedEngine, Interned<Ty>, Interned
         HashMap::from([(crate::type_definition::Key { symbol_id: member_id }, definition)]),
     )));
     let engine = engine.tracked().await;
-    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
     let instance = Ty::new_instance(instance_id, Args::new([int_ty.clone()], &engine), &engine);
     let projection = Ty::new_instance_associated(
@@ -142,7 +142,7 @@ async fn leaves_unknown_instances_unreduced() {
     let projection = Ty::new_instance_associated(
         TargetID::TEST.make_global(SymbolID::from_u128(1)),
         engine.intern(Ty::Inference(Inference::new(TyKind::Instance, 0))),
-        [Ty::new_primitive(Primitive::Int32, &engine)],
+        [Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine)],
         &engine,
     );
     assert_eq!(projection.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), None);

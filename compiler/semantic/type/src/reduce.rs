@@ -138,7 +138,7 @@ mod tests {
 
     use super::Reduce;
     use crate::ty::{
-        Primitive, Ty, TyKind,
+        Integer, Primitive, Ty, TyKind,
         args::Args,
         effect_row::{EffectLabel, EffectRow},
         inference::Inference,
@@ -176,7 +176,7 @@ mod tests {
     #[tokio::test]
     async fn empty_effect_row_reduces_to_its_tail() {
         let engine = rayc_qbice::create_minimal_engine().await;
-        let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+        let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
         let row = Ty::new_effect_row([], Some(int_ty.clone()), &engine);
 
         assert_eq!(row.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(int_ty));
@@ -218,7 +218,7 @@ mod tests {
     #[tokio::test]
     async fn reduction_descends_to_only_the_first_reducible_child() {
         let engine = rayc_qbice::create_minimal_engine().await;
-        let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+        let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
         let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
         let first = Ty::new_effect_row([], Some(int_ty.clone()), &engine);
         let second = Ty::new_effect_row([], Some(bool_ty), &engine);
@@ -254,7 +254,7 @@ mod tests {
         let engine = engine_with_associated_type(member_id).await;
         let dictionary = engine.intern(Ty::SelfInstance(SelfInstance::new(trait_id)));
         let projection = Ty::new_instance_associated(member_id, dictionary, [], &engine);
-        let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+        let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
         let givens = [PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
             projection.clone(),
             int_ty.clone(),
@@ -314,7 +314,7 @@ mod tests {
         let out = |lifetime: &Interned<Ty>| {
             Ty::new_instance_associated(member_id, this.clone(), [lifetime.clone()], &engine)
         };
-        let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+        let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
         let reference = Ty::new_reference(given.clone(), int_ty, Mutability::Immutable, &engine);
         let givens = [PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
             out(&given),

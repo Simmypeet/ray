@@ -1,0 +1,2 @@
+def main() -> int8:
+    return 23 i8

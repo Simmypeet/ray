@@ -193,7 +193,7 @@ fn expected_string(expected: &Expected) -> String {
     match expected {
         Expected::Identifier(_) => "identifier".to_string(),
         Expected::IdentifierValue(identifier_value) => {
-            format!("`{} identifier`, ", identifier_value.expected_string())
+            format!("`{}` identifier", identifier_value.expected_string())
         }
         Expected::String(_) => "string literal".to_string(),
         Expected::Character(_) => "character literal".to_string(),

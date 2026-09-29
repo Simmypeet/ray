@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: unexpected `i8` identifier, expected `u64` identifier, `/` punctuation, `usize` keyword, new line, `i16` identifier, `u16` identifier, `-` punctuation, `.` punctuation, `isize` keyword, `+` punctuation, `!` punctuation, `u8` identifier, `or` keyword, `( ... )` block, `*` punctuation, `and` keyword, `i32` identifier, `i64` identifier, `i8` identifier, `=` punctuation, `u32` identifier
+  ╭▸ compiler/e2e/test/check/syntax/numeric_literal_suffix_spacing/main.ray:2:15
+  │
+2 │     return 23 i8
+  ╰╴              ━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
