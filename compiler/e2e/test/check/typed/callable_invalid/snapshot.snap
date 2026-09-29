@@ -26,9 +26,7 @@ stderr:
    │
 13 │ def main() -> int32:
    │     ━━━━ the function body has effects outside its signature
-14 │     let ignored = unused((x) -> x + 1)
-   │                   ──────────────────── effect `{}` introduced here
-15 │     let value = 1
+   ‡
 16 │     return value()
    ╰╴           ─────── effect `{any}.Effect` introduced here
 

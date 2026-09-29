@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: function body effects do not match its signature: expected `{}`, but found `{FirstHandlerResidual, SecondHandlerResidual, BodyResidual | {any}}`
+[error]: function body effects do not match its signature: expected `{}`, but found `{FirstHandlerResidual, SecondHandlerResidual, BodyResidual}`
    ╭▸ compiler/e2e/test/check/tast/run_with_effect/main.ray:14:5
    │
 14 │ def test() -> ():

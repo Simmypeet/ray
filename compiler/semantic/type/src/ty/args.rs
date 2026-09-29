@@ -66,8 +66,8 @@ impl Reduce for Args {
         &self,
         engine: &rayc_qbice::TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<Self> {
-        self.args.reduce(engine, givens).await.map(|args| Self { args })
+    ) -> Option<(Self, crate::constraint::outlives::OutlivesConstraints)> {
+        self.args.reduce(engine, givens).await.map(|(args, outlives)| (Self { args }, outlives))
     }
 }
 

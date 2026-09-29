@@ -4,17 +4,24 @@ use rayc_solver::inference_generator::{CountingInferenceGenerator, InferenceGene
 use rayc_type::ty::{InferenceConstraint, TyKind, inference::Inference};
 
 /// Records the inferences generated while typing one definition that are
-/// defaulted once the constraints are solved: numeric literals and effect
-/// rows. Every inference passes through here, including those the solver
-/// creates internally.
+/// defaulted once the constraints are solved: lifetimes, numeric literals and
+/// effect rows. Every inference passes through here, including those the
+/// solver creates internally.
 #[derive(Debug, Default)]
 pub(super) struct RecordingInferenceGenerator {
     counter: CountingInferenceGenerator,
+    lifetimes: Vec<Inference>,
     numerics: Vec<Inference>,
     effect_rows: Vec<Inference>,
 }
 
 impl RecordingInferenceGenerator {
+    /// Moves out the lifetime inferences recorded so far. Later ones are
+    /// recorded afresh.
+    pub(super) fn take_lifetimes(&mut self) -> Vec<Inference> {
+        std::mem::take(&mut self.lifetimes)
+    }
+
     /// Moves out the numeric inferences recorded so far. Later ones are
     /// recorded afresh.
     pub(super) fn take_numerics(&mut self) -> Vec<Inference> { std::mem::take(&mut self.numerics) }
@@ -34,6 +41,9 @@ impl InferenceGenerator for RecordingInferenceGenerator {
         }
         if kind == TyKind::EffectRow {
             self.effect_rows.push(inference);
+        }
+        if kind == TyKind::Lifetime {
+            self.lifetimes.push(inference);
         }
         inference
     }

@@ -46,10 +46,18 @@ async fn check_where_clause(
 
     // Invalid clauses already emit their own resolution diagnostics. Their
     // recovery predicates must not cause additional conformance errors.
-    let trait_key = rayc_type::where_clause::Key { symbol_id: trait_member_id };
-    let instance_key = rayc_type::where_clause::Key { symbol_id: instance_member_id };
-    if !engine.query(&DiagnosticKey::new(trait_key)).await.is_empty()
-        || !engine.query(&DiagnosticKey::new(instance_key)).await.is_empty()
+    if !engine
+        .query(&DiagnosticKey::new(rayc_type::where_clause::DeclaredKey {
+            symbol_id: trait_member_id,
+        }))
+        .await
+        .is_empty()
+        || !engine
+            .query(&DiagnosticKey::new(rayc_type::where_clause::DeclaredKey {
+                symbol_id: instance_member_id,
+            }))
+            .await
+            .is_empty()
     {
         return false;
     }
@@ -57,7 +65,7 @@ async fn check_where_clause(
     let trait_clause = engine.get_where_clause(trait_member_id).await;
     let instance_clause = engine.get_where_clause(instance_member_id).await;
     let substed_trait_predicates = trait_clause
-        .iter()
+        .declared()
         .map(|predicate| {
             predicate.kind().apply_subst_or_clone(member.poly_var_substitution(), engine)
         })
@@ -81,17 +89,22 @@ async fn check_where_clause(
         }),
     );
 
+    // Each direction assumes its member's whole where clause, implied bounds
+    // included, while only the declared predicates are compared.
     let mut trait_givens = ambient.clone();
-    trait_givens.extend(substed_trait_predicates.iter().cloned());
-    let mut trait_solver = Solver::with_givens(engine.clone(), instance_member_id, trait_givens);
+    trait_givens.extend(trait_clause.predicates().map(|predicate| {
+        predicate.kind().apply_subst_or_clone(member.poly_var_substitution(), engine)
+    }));
+    let mut trait_solver =
+        Solver::with_givens(engine.clone(), instance_member_id, trait_givens).await;
 
     let mut instance_givens = ambient;
-    instance_givens.extend(instance_clause.iter().map(|predicate| predicate.kind().clone()));
+    instance_givens.extend(instance_clause.predicates().map(|predicate| predicate.kind().clone()));
     let mut instance_solver =
-        Solver::with_givens(engine.clone(), instance_member_id, instance_givens);
+        Solver::with_givens(engine.clone(), instance_member_id, instance_givens).await;
 
     let mut compatible = true;
-    for predicate in instance_clause.iter() {
+    for predicate in instance_clause.declared() {
         if !trait_solver.entails_predicate(predicate.kind()).await {
             compatibility.report_at(
                 Mismatch::ExtraneousWhereClausePredicate { actual: predicate.kind().clone() },
@@ -107,7 +120,7 @@ async fn check_where_clause(
         .await
         .map_or(compatibility.instance_span(), |syntax| syntax.span());
 
-    for (predicate, expected) in trait_clause.iter().zip(substed_trait_predicates) {
+    for (predicate, expected) in trait_clause.declared().zip(substed_trait_predicates) {
         if !instance_solver.entails_predicate(&expected).await {
             compatibility.report_at(
                 Mismatch::MissingWhereClausePredicate { expected },

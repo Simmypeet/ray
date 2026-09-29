@@ -10,7 +10,13 @@ use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 
-use crate::{address::Address, dataflow::Direction, ir_expr::IRExprID, scope::ScopeID};
+use crate::{
+    address::Address,
+    dataflow::Direction,
+    ir_expr::IRExprID,
+    scope::ScopeID,
+    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
+};
 
 /// Identifies a basic block stored in a function's control-flow graph.
 pub type BlockID = ID<Block>;
@@ -324,6 +330,46 @@ impl Default for Cfg {
     fn default() -> Self { Self::new() }
 }
 
+impl VisitType for Cfg {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        for (_, block) in self.blocks.iter() {
+            for instruction in &block.instructions {
+                instruction.visit_types(site, visitor);
+            }
+        }
+    }
+}
+
+impl VisitType for Instruction {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        match self {
+            Self::ExprDiscard(discard) => visitor.visit_type(discard.drop_instance(), site),
+
+            Self::ScopePush(_) | Self::ScopePop(_) | Self::Expression(_) | Self::Store(_) => {}
+        }
+    }
+}
+
+impl VisitTypeMut for Cfg {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        for (_, block) in self.blocks.iter_mut() {
+            for instruction in &mut block.instructions {
+                instruction.visit_types_mut(site, visitor);
+            }
+        }
+    }
+}
+
+impl VisitTypeMut for Instruction {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        match self {
+            Self::ExprDiscard(discard) => visitor.visit_type_mut(&mut discard.drop_instance, site),
+
+            Self::ScopePush(_) | Self::ScopePop(_) | Self::Expression(_) | Self::Store(_) => {}
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum OutgoingEdgeCursor {
     Empty,
@@ -522,7 +568,11 @@ impl Cfg {
     /// target has multiple incoming edges. Each such edge is replaced by an
     /// edge to a new empty block that unconditionally jumps to the original
     /// target.
-    pub fn split_critical_edges(&mut self) -> usize {
+    ///
+    /// Like [`Self::split_edge`], this leaves the phis of each target
+    /// pointing at the old source, so only the graph's own tests use it.
+    #[cfg(test)]
+    pub(crate) fn split_critical_edges(&mut self) -> usize {
         let mut critical_edges = Vec::new();
 
         // Take a snapshot before mutating the graph so every original critical
@@ -559,7 +609,13 @@ impl Cfg {
     ///
     /// Instructions placed in the new block run only when control follows
     /// this edge.
-    pub fn split_edge(&mut self, edge: ControlFlowEdge) -> BlockID {
+    ///
+    /// The graph holds no expressions, so the phis of the target are left
+    /// pointing at the old source. Use [`IRFunction::split_edge`], which
+    /// rewires them, outside of this crate.
+    ///
+    /// [`IRFunction::split_edge`]: crate::ir_function::IRFunction::split_edge
+    pub(crate) fn split_edge(&mut self, edge: ControlFlowEdge) -> BlockID {
         let split_block = self.create_block();
         self.set_terminator(split_block, Terminator::Jump(edge.target));
         self.redirect_edge(edge, split_block);

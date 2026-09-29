@@ -170,7 +170,9 @@ impl Solver {
                 PredicateKind::Marker(predicate) if predicate.marker_id() == goal.marker_id() => {
                     Some(predicate.implementor().clone())
                 }
-                PredicateKind::AssociatedTypeEquality(_) | PredicateKind::Marker(_) => None,
+                PredicateKind::AssociatedTypeEquality(_)
+                | PredicateKind::Marker(_)
+                | PredicateKind::Outlives(_) => None,
             })
             // we have to collect here because the `eq_without_unify` call below mutably borrows
             // `self`, which prevents us from using the iterator directly
@@ -193,6 +195,16 @@ impl Solver {
                             PredicateKind::Marker(predicate) => {
                                 self.evaluate_marker_goal(predicate).await
                             }
+
+                            // TODO: we'll have to properly investigate this.
+                            // Sometimes, these predicates are specified because
+                            // it has to conform to a where-clause requirement
+                            // when naming the marker head.
+
+                            // Lifetimes never decide marker entailment, so
+                            // an outlives premise, such as a bound implied by
+                            // the implementor, is not checked here.
+                            PredicateKind::Outlives(_) => true,
 
                             // shouldn't happen because marker implementation predicates can only
                             // be marker predicates
@@ -229,7 +241,7 @@ impl Solver {
             let implementation = engine.get_marker_implementation(symbol_id).await;
 
             let Some(subst) = self
-                .type_head_match(implementation.implementor().clone(), goal.implementor().clone())
+                .simple_head_match(implementation.implementor().clone(), goal.implementor().clone())
                 .await
             else {
                 continue;
@@ -243,7 +255,7 @@ impl Solver {
 
             return Some(ExplicitMarkerRule::Positive(
                 clause
-                    .iter()
+                    .predicates()
                     .map(|predicate| predicate.kind().apply_subst_or_clone(&subst, self.engine()))
                     .collect(),
             ));

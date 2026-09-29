@@ -26,6 +26,7 @@ collected at the end.
    implied bounds.
 4. Compute the **variance** of every struct parameter with a whole-target
    fixed-point, and of every `eff` parameter from its operation signatures.
+   A parameter may instead declare its variance, as in `+t`, `-t` or `=t`.
    Effect rows use subtyping on the lifetimes in their labels, while the set
    of labels is still unified exactly.
 5. Make the type relation variance-aware. Type *structure* is still unified
@@ -79,8 +80,8 @@ introduction in `def` signatures, and it only affects syntax.
 |---------------|-------------------------------------|--------|------------------|-----------------|
 | `&'a t`       | shared reference, checked           | yes    | covariant        | covariant       |
 | `&'a mut t`   | unique reference, checked           | no     | covariant        | invariant       |
-| `*t`          | raw pointer, unchecked (existing)   | yes    | —                | covariant       |
-| `*mut t`      | raw pointer, unchecked (existing)   | yes    | —                | invariant       |
+| `*t`          | raw pointer, unchecked (existing)   | yes    | —                | bivariant       |
+| `*mut t`      | raw pointer, unchecked (existing)   | yes    | —                | bivariant       |
 
 - `place.&` has type `&'r t` and `place.&mut` has type `&'r mut t`, where `'r`
   is a fresh region. Taking either one creates a **loan** of `place`.
@@ -138,13 +139,31 @@ Elided lifetimes are not allowed in struct fields.
 - `'a: 'b`: `'a` outlives `'b`;
 - `t: 'a`: every lifetime in `t` outlives `'a`.
 
-**Implied bounds** follow Rust. The types of a function's parameters and its
-return type are assumed well-formed, so `def f(x: &'a &'b int32)` implies
-`'b: 'a` without writing it.
+**Implied bounds** come only from references: `&'a t` implies `t: 'a`. The
+references in a function's parameter and return types are assumed
+well-formed, so `def f(x: &'a &'b int32)` implies `'b: 'a` without writing it.
 
-**Inferred outlives requirements** for structs follow Rust RFC 2093:
-`struct Ref['a, t]: value: &'a t` infers `t: 'a` without a `where` clause.
+**Inferred outlives requirements** for structs follow Rust RFC 2093, with the
+same restriction: `struct Ref['a, t]: value: &'a t` infers `t: 'a` without a
+`where` clause, and a struct holding a `Ref['a, t]` infers it in turn.
 Computing this is a fixed point over struct definitions, like variance.
+
+This deviates from Rust: an outlives predicate declared in a `where` clause is
+never implied or inferred. `struct B['a, t] where (t: 'a)` requires `t: 'a` of
+every use, and a struct holding a `B['a, t]` or a function taking one must
+write `t: 'a` itself.
+
+**Marker implementations** are the one exception. An implementation assumes
+every requirement of naming its head, such as `t: 'a` for
+`impl['a, t] Send for &'a t` or the declared where clause of `S` for
+`impl[t] Send for S[t]`, including marker predicates. An implementation only
+applies to a goal type matching its head, and that type is well-formed where it
+is named, so the requirements hold at every use. A valid head is one
+constructor applied to distinct variables, so the assumptions never claim
+anything about a concrete type. Marker implementation where clauses therefore
+reject outlives predicates and accept only marker predicates. This also lets a
+negative implementation, which cannot have a where clause, name a head with
+requirements.
 
 ## Well-Formedness
 
@@ -167,12 +186,12 @@ contravariant, invariant.
 | tuple                           | covariant                                                       |
 | `&'a t`                         | `'a` covariant, `t` covariant                                   |
 | `&'a mut t`                     | `'a` covariant, `t` invariant                                   |
-| `*t` / `*mut t`                 | covariant / invariant                                           |
-| struct                          | computed (see below)                                            |
+| `*t` / `*mut t`                 | bivariant (raw pointers are unchecked)                          |
+| struct                          | declared or computed (see below)                                |
 | closure type                    | invariant in all arguments (conservative; see below)            |
 | instance / dictionary types     | invariant                                                       |
 | associated type projection      | invariant (as in Rust)                                          |
-| effect label                    | computed per `eff` (see [Effect Variance](#effect-variance))    |
+| effect label                    | declared or computed per `eff` (see [Effect Variance](#effect-variance)) |
 | effect row                      | by label; see [Effects and Lifetimes](#effects-and-lifetimes)   |
 
 The variance of a struct parameter is the join, over every occurrence of the
@@ -185,8 +204,42 @@ per struct, because the dependency graph is cyclic.
 
 A parameter that stays bivariant is unused. Rust rejects unused lifetime
 parameters (and unused type parameters, which need `PhantomData`). This plan
-rejects unused **lifetime** parameters and treats unused type parameters as
-invariant, so Ray needs no `PhantomData` equivalent for now.
+allows both. An unused **lifetime** parameter stays bivariant, so its
+arguments are never related. Every other unused parameter (of kind type,
+effect row or dictionary) is made invariant. That can make a use of it in
+another struct invariant, so the fixed point runs again after defaulting.
+
+Raw pointers are unchecked, so their pointee is bivariant: a parameter used
+only behind `*t` or `*mut t` is unused.
+
+### Declared Variance
+
+A struct or `eff` parameter may declare its variance with a marker: `+` for
+covariant, `-` for contravariant, and `=` for invariant. Bivariance cannot be
+declared.
+
+```
+struct Iter[+'a, +t]:        # 'a is unused, t is only behind a raw pointer
+    ptr: *mut t
+
+struct Cell['a, =t]:         # more restrictive than the inferred covariance
+    value: &'a t
+```
+
+- The declared variance **replaces** the inferred one. Every use of the
+  struct or `eff` elsewhere, and every relation, sees the declared variance.
+  It is a constant in the fixed point, so it also cuts recursion, and editing
+  the fields of a struct cannot silently change its declared variance.
+- Every use of a declared parameter must be **within** the declared variance:
+  the join of its uses in each field, operation parameter or return type must
+  be at most the declared variance in the lattice. Anything else is an error
+  at that use site. Declaring a variance more restrictive than needed is the
+  point of the feature, so it is never a lint.
+- An unused parameter may declare any variance. This replaces Rust's
+  `PhantomData` for giving an unused lifetime a variance.
+- A declared variance only affects variance. It does not add outlives
+  requirements: a struct that needs `t: 'a` writes it in its where clause.
+- Markers are only allowed on the parameters of a `struct` or an `eff`.
 
 Closure types are invariant in all their arguments. This matches rustc, which
 relates the generic arguments of two closure types invariantly. A closure
@@ -294,13 +347,13 @@ eff Reader['a]:
 Positions nested inside a parameter or return type compose with the usual
 transform operation, using struct variances where structs appear. Positions
 inside invariant constructors (closure types, `&mut`) stay invariant. An
-effect parameter that stays bivariant is unused, and unused lifetime
-parameters are rejected, as for structs.
+effect parameter that stays bivariant is unused, and is handled as for
+structs; see [Declared Variance](#declared-variance) for declaring it.
 
-Effect variance needs no fixed point of its own. Operation signatures can
-mention structs, but structs mention effects only inside closure types,
-which are invariant. So effect variances are computed after the struct
-fixed point, in the same query.
+Operation signatures can mention structs, and structs can mention effect rows
+inside closure types, so struct and effect variances depend on each other.
+They are computed together as one fixed point in the same query as structs,
+and the arguments of an effect label are related by that effect's variances.
 
 This relies on handlers being tail-resumptive: the handler finishes the
 operation before the computation continues, so the handler really is just an
@@ -556,19 +609,37 @@ behavior.
 
 ## Phase 2: Outlives Predicates and Well-Formedness
 
-- Add `PredicateKind::Outlives` with two forms, `RegionOutlives('a, 'b)` and
-  `TypeOutlives(t, 'a)`, to `where_clause`.
-- Add inferred outlives requirements for structs. This is a target-wide fixed
-  point, and can share its driver with the variance computation in Phase 3.
-- Add implied bounds: given a function signature, compute the set of outlives
-  facts assumed by the body. This set, the "known relations" between
-  universal regions, is consumed in Phase 5.
-- Add declaration-level WF checks for struct fields and signatures. These
-  checks only concern named lifetimes and need no region inference. They
-  compare required outlives facts against declared and implied ones.
+- Add `PredicateKind::Outlives(OutlivesPredicate)`, a `subject: 'bound`
+  requirement, to `where_clause`. The subject may be a lifetime (`'a: 'b`), a
+  type or effect row (`t: 'a`), or, conservatively, a dictionary.
+- Add inferred outlives requirements for structs (`get_inferred_outlives`).
+  This is a target-wide fixed point, and can share its driver with the
+  variance computation in Phase 3. Using a struct requires its inferred
+  outlives predicates as well as its declared ones.
+- Add implied bounds, for plain `def`s, structs, and marker implementations
+  only: the bounds implied by the references in a `def`'s parameter and return
+  types, a struct's inferred outlives, and every requirement of a marker
+  implementation's head. Declared outlives predicates are never implied,
+  except through a marker implementation's head. Every other declaration
+  (trait and instance `def`s, instances, effects) must write its bounds in its
+  where clause, which accepts outlives predicates everywhere except in marker
+  implementations.
+  This deviates from Rust, which also implies bounds from impl headers and
+  trait method signatures. Implied bounds are
+  part of the symbol's `WhereClause` (`get_where_clause`), next to its
+  declared predicates (`get_declared_where_clause`), so every consumer of the
+  where clause sees them. The outlives predicates among the givens form the
+  `OutlivesEnvironment`, whose facts are the "known relations" between
+  universal regions consumed in Phase 5.
+- Add declaration-level WF checks. A written `&'a t` requires `t: 'a`, and a
+  resolved symbol requires its instantiated outlives predicates. These checks
+  only concern named lifetimes and need no region inference. They compare
+  required outlives facts against declared and implied ones. Type inference
+  drops outlives obligations; Phase 5 re-checks them on the IR.
 
-Diagnostics: missing `t: 'a` bounds, unused lifetime parameters, undeclared
-lifetimes in structs.
+Diagnostics: missing `t: 'a` bounds. Undeclared lifetimes in structs are
+already reported by lifetime resolution. Unused lifetime parameters are
+allowed and bivariant; see [Variance](#variance).
 
 ## Phase 3: Variance
 
@@ -577,18 +648,27 @@ lifetimes in structs.
   iterates to a fixed point over every struct in the target, following the
   table in [Variance](#variance). Add `get_variance(struct_id)` as a thin
   projection of it.
-- After the struct fixed point, compute the variance of every `eff` parameter
-  in the same query, following [Effect Variance](#effect-variance): operation
+- Compute the variance of every `eff` parameter in the same fixed point as
+  the structs, following [Effect Variance](#effect-variance): operation
   parameter types are walked starting from covariant, return types starting
-  from contravariant. This is a single pass, not a fixed point. Expose it as
-  `get_effect_variance(effect_id)`.
-- Report unused lifetime parameters here, for structs and effects, since
-  bivariance is detected here.
+  from contravariant, and effect labels in rows are walked by their effect's
+  variances. The same `get_variance` query returns it for an `eff`.
+- Variances are returned as a `VarianceMap`, which iterates them in poly var
+  map order (the argument order) and looks one up by poly var ID.
+- Unused lifetime parameters are allowed and stay bivariant. Other unused
+  parameters are defaulted to invariant.
+- Parse variance markers (`+`, `-`, `=`) on type parameters and store the
+  declared variance on the poly var. A declared parameter starts the fixed
+  point at its declared variance, which never changes. A separate query,
+  `VarianceMismatchKey`, walks each field and operation signature again with
+  the final variances and reports every use outside the declared variance.
+  Markers on other declarations are reported when the poly var map is built.
 
 Unit tests are justified for this phase: variance is a pure function of
 declarations. The key cases are recursive structs, mutual recursion, `&mut`
-inside another struct, and effect parameters used in operation parameters,
-in operation returns, in both, and through a struct.
+inside another struct, raw pointers, declared variances, and effect
+parameters used in operation parameters, in operation returns, in both, and
+through a struct.
 
 ## Phase 4: Variance-Aware Relation and Outlives Side Output
 
@@ -610,7 +690,7 @@ pub struct TyRelate {
   matching and tail rewriting unchanged. What changes is the constraints it
   derives for label arguments
   (`DerivationRule::EffectLabelArgumentMatching`): they carry
-  `parent.variance.xform(get_effect_variance(effect)[index])` instead of
+  `parent.variance.xform(get_variance(effect)[index])` instead of
   plain equality. Tail constraints carry the parent variance. When a row sits
   in an invariant position, the parent variance is invariant, so everything
   under it is related by equality.
@@ -631,8 +711,9 @@ pub struct TyRelate {
   ```
 
   Covariant `'a <: 'b` becomes `'a: 'b`. Contravariant becomes `'b: 'a`.
-  Invariant produces both. Relating two `Erased` lifetimes, or `Erased` with
-  anything, produces nothing.
+  Invariant produces both. Bivariant produces nothing: relating two lifetimes
+  in a bivariant position always succeeds. Relating two `Erased` lifetimes,
+  or `Erased` with anything, produces nothing.
 - `exhaustive_solve`, `head_match` and instance resolution return the outlives
   constraints they collect next to the substitution. Instance resolution
   appends the chosen instance's `Outlives` predicates, instantiated.

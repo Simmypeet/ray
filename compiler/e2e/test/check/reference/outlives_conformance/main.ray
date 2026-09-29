@@ -1,0 +1,21 @@
+trait Use['a, t]:
+    def plain(value: *t) -> ()
+    def reference(value: &'a t) -> () where (t: 'a)
+    def bounded(value: *t) -> () where (t: 'a)
+
+inst Uses['a, t] for Use['a, t]:
+    # ERROR: the trait member does not promise `t: 'a`.
+    def plain(value: *t) -> () where (t: 'a):
+        return ()
+
+    # ERROR: the trait member promises `t: 'a`, but this member does not write
+    # it, and a trait or instance def has no implied bounds.
+    def reference(value: &'a t) -> ():
+        return ()
+
+    # OK: the same predicate as the trait member.
+    def bounded(value: *t) -> () where (t: 'a):
+        return ()
+
+def main() -> ():
+    return ()

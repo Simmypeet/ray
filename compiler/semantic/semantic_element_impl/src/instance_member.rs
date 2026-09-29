@@ -7,7 +7,6 @@
 
 use rayc_handler::Storage;
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::instance_trait_ref::get_instance_trait_ref;
 use rayc_symbol::{
     member::get_member_by_name,
     name::get_name,
@@ -18,6 +17,7 @@ use rayc_symbol::{
 use rayc_type::{
     instance_member::{InstanceMember, Key},
     subst::Subst,
+    trait_ref::get_instance_trait_ref,
 };
 
 use crate::{

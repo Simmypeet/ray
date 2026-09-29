@@ -1,6 +1,5 @@
-use rayc_semantic_element::instance_trait_ref::get_instance_trait_ref;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::trait_ref::TraitRef;
+use rayc_type::trait_ref::{TraitRef, get_instance_trait_ref};
 
 use super::{InstanceResolutionError, InstanceResolutionResult, ResolvedInstance};
 use crate::Solver;
@@ -66,7 +65,7 @@ async fn maximal_candidates(solver: &mut Solver, heads: &[TraitRef]) -> Vec<usiz
 }
 
 async fn is_more_specific(solver: &mut Solver, a: &TraitRef, b: &TraitRef) -> bool {
-    let b_matches_a = solver.head_match(b, a).await.is_some();
-    let a_matches_b = solver.head_match(a, b).await.is_some();
+    let b_matches_a = solver.type_head_match(b, a).await.is_some();
+    let a_matches_b = solver.type_head_match(a, b).await.is_some();
     b_matches_a && !a_matches_b
 }

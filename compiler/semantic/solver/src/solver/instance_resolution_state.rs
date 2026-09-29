@@ -197,7 +197,20 @@ impl Solver {
         required: TraitRef,
         introduced_by: Option<InstanceResolutionEdge>,
     ) -> InstanceResolutionResult {
-        let required = self.normalize(&required).await;
+        // Normalizing the requirement through a given equality that matches
+        // it modulo lifetimes relates those lifetimes. The resolution relies
+        // on that normalization, so it requires the constraints too.
+        let (required, normalization_outlives) = self.normalize_with_outlives(&required).await;
+        let result = self.resolve_normalized_instance(required, introduced_by).await;
+
+        result.map(|resolved| resolved.with_outlives(normalization_outlives))
+    }
+
+    async fn resolve_normalized_instance(
+        &mut self,
+        required: TraitRef,
+        introduced_by: Option<InstanceResolutionEdge>,
+    ) -> InstanceResolutionResult {
         // Nominal closures determine their Def dictionary without searching or
         // waiting for the signature and captures to finish inference. Their
         // Drop dictionary likewise waits only on the captures.
@@ -207,7 +220,8 @@ impl Solver {
         if let Some(resolution) = self.resolve_closure_drop_instance(&required).await {
             return resolution;
         }
-        if required.contains_inference() {
+        // Lifetimes never decide which instance is selected.
+        if required.contains_non_lifetime_inference() {
             return Err(InstanceResolutionError::NotReady(required));
         }
         if required.contains_error() {

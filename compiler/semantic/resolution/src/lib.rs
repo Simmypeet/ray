@@ -10,7 +10,8 @@ use rayc_type::ty::TyKind;
 pub mod discovery;
 pub mod obligation;
 pub use obligation::{
-    Obligation, PredicateConstraint, PredicateObligation, TraitRefCheck, WfCheck,
+    Obligation, PredicateConstraint, PredicateObligation, ReferenceWf, RelationOrigin,
+    TraitRefCheck, UnsatisfiedRelationOutlives, WfCheck,
 };
 pub mod inference;
 pub mod lifetime;

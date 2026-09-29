@@ -1,12 +1,10 @@
-use rayc_semantic_element::{
-    all_instance_implements_trait::get_all_instance_implements_trait,
-    instance_trait_ref::get_instance_trait_ref,
-};
+use rayc_semantic_element::all_instance_implements_trait::get_all_instance_implements_trait;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
+    constraint::outlives::OutlivesConstraints,
     poly_var::{GlobalPolyVarID, PolyVarID, PolyVarMap, get_poly_var_map},
     subst::Subst,
-    trait_ref::TraitRef,
+    trait_ref::{TraitRef, get_instance_trait_ref},
 };
 
 use crate::{Solver, instance_resolution::InstanceResolutionError};
@@ -15,6 +13,9 @@ use crate::{Solver, instance_resolution::InstanceResolutionError};
 #[derive(Debug)]
 pub(super) struct InstanceCandidate {
     subst: Subst,
+
+    /// The outlives constraints of matching the head against the goal.
+    outlives: OutlivesConstraints,
     instance_id: GlobalSymbolID,
     pending_given_parameters: Vec<PolyVarID>,
 }
@@ -23,8 +24,8 @@ impl InstanceCandidate {
     #[must_use]
     pub(super) const fn instance_id(&self) -> GlobalSymbolID { self.instance_id }
 
-    pub(super) fn into_parts(self) -> (Subst, GlobalSymbolID, Vec<PolyVarID>) {
-        (self.subst, self.instance_id, self.pending_given_parameters)
+    pub(super) fn into_parts(self) -> (Subst, OutlivesConstraints, GlobalSymbolID, Vec<PolyVarID>) {
+        (self.subst, self.outlives, self.instance_id, self.pending_given_parameters)
     }
 }
 
@@ -55,12 +56,12 @@ pub(super) async fn selected(
     let engine = solver.engine().clone();
     let head = engine.get_instance_trait_ref(instance_id).await?;
     let head = solver.normalize(&head).await;
-    let subst = solver.head_match(&head, required).await?;
+    let (subst, outlives) = solver.type_head_match(&head, required).await?.into_parts();
 
     let parameters = engine.get_poly_var_map(instance_id).await;
     let pending_given_parameters = pending_given_parameters(&parameters, instance_id, &subst);
 
-    Some(InstanceCandidate { subst, instance_id, pending_given_parameters })
+    Some(InstanceCandidate { subst, outlives, instance_id, pending_given_parameters })
 }
 
 /// Collects globally eligible instances whose heads match the required trait.
@@ -83,14 +84,20 @@ pub(super) async fn collect(
         // TODO: actually, we'd like for the instance-trait-ref to already be normalized
         // so that we can avoid this extra normalization step.
         let head = solver.normalize(&head).await;
-        let Some(subst) = solver.head_match(&head, required).await else {
+        let Some(solution) = solver.type_head_match(&head, required).await else {
             continue;
         };
+        let (subst, outlives) = solution.into_parts();
 
         let parameters = engine.get_poly_var_map(instance_id).await;
         let pending_given_parameters = pending_given_parameters(&parameters, instance_id, &subst);
 
-        candidates.push(InstanceCandidate { subst, instance_id, pending_given_parameters });
+        candidates.push(InstanceCandidate {
+            subst,
+            outlives,
+            instance_id,
+            pending_given_parameters,
+        });
     }
 
     Ok(candidates)

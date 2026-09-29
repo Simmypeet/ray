@@ -1,0 +1,51 @@
+# OK: a declared variance may equal the inferred one.
+struct Shared[+'a, +t]:
+    value: &'a t
+
+# OK: a declared variance may be more restrictive than the inferred one.
+struct Cell['a, =t]:
+    value: &'a t
+
+# OK: an unused parameter may declare any variance.
+struct Token[-'a, +t]:
+    id: int32
+
+# OK: a raw pointer's pointee is not a use, so any variance is allowed.
+struct Iter[+'a, +t]:
+    ptr: *mut t
+
+# OK: `Cell`'s declared variance is used where `Cell` is used, so `u` is
+# invariant.
+struct UsesCell['b, =u]:
+    cell: Cell['b, u]
+
+# ERROR: `t` is used invariantly through `&mut`.
+struct Exclusive['a, +t]:
+    value: &'a mut t
+
+# ERROR: only the field that uses `t` invariantly is reported.
+struct OneField['a, +t]:
+    first: &'a t
+    second: &'a mut t
+
+# ERROR: `t` is invariant in `Cell`.
+struct ThroughCell['a, +t]:
+    cell: Cell['a, t]
+
+# OK: an operation parameter is covariant, and a return type contravariant.
+eff Log[+'a, -'b]:
+    def log(message: &'a int32) -> &'b int32
+
+# ERROR: the variances are reversed.
+eff Reversed[-'a, +'b]:
+    def log(message: &'a int32) -> &'b int32
+
+# ERROR: only struct and `eff` parameters have a variance.
+def identity[+t](value: t) -> t:
+    return value
+
+trait Show[=t]:
+    def show(value: t) -> ()
+
+def main() -> ():
+    return ()

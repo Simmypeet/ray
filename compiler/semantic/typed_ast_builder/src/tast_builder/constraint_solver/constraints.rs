@@ -5,10 +5,10 @@ use rayc_qbice::TrackedEngine;
 use rayc_resolution::{Obligation, PredicateConstraint};
 use rayc_type::{
     constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
-    reduce::Reduce,
     subst::Substitutable,
     trait_ref::TraitRef,
     ty::{Ty, TyKind, effect_row::EffectLabel},
+    variance::Variance,
     where_clause::MarkerPredicate,
 };
 use rayc_typed_ast::{
@@ -36,38 +36,21 @@ pub enum Constraint {
     InstanceResolve { instance: Interned<Ty>, trait_ref: TraitRef },
 }
 
-impl Reduce for Constraint {
-    async fn reduce(
-        &self,
-        engine: &TrackedEngine,
-        givens: &[rayc_type::where_clause::PredicateKind],
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
+impl Constraint {
+    /// Returns the invariant version of this constraint when it is a
+    /// non-invariant relation between two inference variables, which waits
+    /// for one of them to be bound.
+    pub(super) fn waiting_variable_pair(&self) -> Option<TyRelate> {
         match self {
-            Self::InstanceTraitRef(check) => {
-                check.reduce(engine, givens).await.map(Self::InstanceTraitRef)
-            }
-            Self::TyRelate(ty_relate) => {
-                ty_relate.reduce(engine, givens).await.map(Constraint::TyRelate)
-            }
-            Self::MarkerPredicate(predicate) => {
-                predicate.implementor().reduce(engine, givens).await.map(|implementor| {
-                    Self::MarkerPredicate(MarkerPredicate::new(predicate.marker_id(), implementor))
+            Self::TyRelate(relate) => {
+                let is_variable_pair = relate.lesser().as_inference().is_some()
+                    && relate.greater().as_inference().is_some();
+                (is_variable_pair && relate.variance() != Variance::Invariant).then(|| {
+                    TyRelate::new_invariant(relate.lesser().clone(), relate.greater().clone())
                 })
             }
-            Self::InstanceResolve { instance, trait_ref } => {
-                match (
-                    instance.reduce(engine, givens).await,
-                    trait_ref.reduce(engine, givens).await,
-                ) {
-                    (None, None) => None,
-                    (new_instance, new_trait_ref) => Some(Self::InstanceResolve {
-                        instance: new_instance.unwrap_or_else(|| instance.clone()),
-                        trait_ref: new_trait_ref.unwrap_or_else(|| trait_ref.clone()),
-                    }),
-                }
+            Self::InstanceTraitRef(_) | Self::MarkerPredicate(_) | Self::InstanceResolve { .. } => {
+                None
             }
         }
     }
@@ -147,6 +130,9 @@ impl TAstBuilder {
                             PredicateConstraint::Marker(marker) => {
                                 Constraint::MarkerPredicate(marker)
                             }
+                            // Type inference ignores lifetimes; the borrow
+                            // checker re-checks outlives on the IR.
+                            PredicateConstraint::Outlives(_) => continue,
                         };
                         let root_cause_id =
                             self.constraint_solver.provenance.insert_root_cause(predicate.clone());
@@ -160,6 +146,9 @@ impl TAstBuilder {
                         .await;
                     }
                 }
+                // Type inference ignores lifetimes; the borrow checker
+                // re-checks reference well-formedness on the IR.
+                Obligation::ReferenceWf(_) => {}
             }
         }
     }
@@ -312,7 +301,7 @@ impl TAstBuilder {
         );
 
         PendingConstraint::builder()
-            .constraint(Constraint::TyRelate(TyRelate::new(lesser, greater)))
+            .constraint(Constraint::TyRelate(TyRelate::new(lesser, greater, Variance::Covariant)))
             .cause_id(cause_id)
             .build()
     }
@@ -481,7 +470,9 @@ impl TAstBuilder {
         span: RelativeSpan,
         source: SubtypeSource,
     ) {
-        let subtype = TyRelate::new(expected_ty.clone(), actual_ty.clone());
+        // The actual type must be a subtype of the expected one, that is,
+        // `actual_ty <: expected_ty`. We represent this as a `TyRelate`
+        let subtype = TyRelate::new(actual_ty.clone(), expected_ty.clone(), Variance::Covariant);
 
         let cause_id = self.constraint_solver.provenance.insert_root_cause(
             SubtypeConstraintOrigin::builder()

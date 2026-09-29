@@ -6,7 +6,7 @@ use crate::{
     ir_expr::IRExprID,
     ir_function::FunctionID,
     ir_lambda::CaptureMapID,
-    visit::{TypeVisitor, VisitType},
+    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
 };
 
 /// A nested function paired with the capture operands used to create its
@@ -132,13 +132,25 @@ impl Handle {
 }
 
 impl VisitType for Handle {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         for ty in self.substitution.codomain() {
-            visitor.visit_type(ty);
+            visitor.visit_type(ty, site);
         }
         for drop_instance in &self.handler_capture_drops {
-            visitor.visit_type(drop_instance);
+            visitor.visit_type(drop_instance, site);
         }
-        visitor.visit_type(&self.residual_effect);
+        visitor.visit_type(&self.residual_effect, site);
+    }
+}
+
+impl VisitTypeMut for Handle {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        for ty in self.substitution.codomain_mut() {
+            visitor.visit_type_mut(ty, site);
+        }
+        for drop_instance in &mut self.handler_capture_drops {
+            visitor.visit_type_mut(drop_instance, site);
+        }
+        visitor.visit_type_mut(&mut self.residual_effect, site);
     }
 }

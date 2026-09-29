@@ -802,8 +802,8 @@ impl Report for ResidualSubtype {
             }
         };
 
-        let found = self.subype.greater();
-        let expected = self.subype.lesser();
+        let found = self.subype.lesser();
+        let expected = self.subype.greater();
 
         let expected_display = expected.display(parameter).await;
         let found_display = found.display(parameter).await;

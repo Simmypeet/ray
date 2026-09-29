@@ -1,0 +1,83 @@
+trait Project[t]:
+    type Out
+
+# Infers `t: 'a`.
+struct Ref['a, t]:
+    value: &'a t
+
+# Infers `t: 'a` through `Ref`.
+struct Holder['a, t]:
+    inner: Ref['a, t]
+
+# Infers `'b: 'a` and `t: 'b`, so `t: 'a` holds too.
+struct Nested['a, 'b, t]:
+    value: &'a &'b t
+
+# Mutually recursive structs infer `t: 'a` for both.
+struct Even['a, t]:
+    value: &'a t
+    next: *Odd['a, t]
+
+struct Odd['a, t]:
+    next: *Even['a, t]
+
+# A declared bound is not inferred by the structs that use it: only references
+# are.
+struct Declared['a, t] where (t: 'a):
+    value: *t
+    # Uses `'a` without inferring `t: 'a`.
+    lifetime: &'a int32
+
+# ERROR: `Declared['a, t]` requires `t: 'a`, which is not inferred.
+struct UsesDeclared['a, t]:
+    inner: Declared['a, t]
+
+# OK: the bound is written out, but it is still not inferred.
+struct UsesDeclaredBounded['a, t] where (t: 'a):
+    inner: Declared['a, t]
+
+# OK: the parameter `Holder['a, t]` implies `t: 'a` through inference.
+def holder['a, t](value: *Holder['a, t]) given (project: Project[t]) -> () where (
+    project.Out = &'a t,
+):
+    return ()
+
+# OK: `Odd` only reaches `&'a t` through `Even`, and still implies `t: 'a`.
+def odd['a, t](value: *Odd['a, t]) given (project: Project[t]) -> () where (
+    project.Out = &'a t,
+):
+    return ()
+
+# OK: `Nested['a, 'b, t]` implies `t: 'a` transitively.
+def nested['a, 'b, t](value: *Nested['a, 'b, t]) given (project: Project[t]) -> () where (
+    project.Out = &'a t,
+):
+    return ()
+
+# ERROR: the parameter does not imply the declared bound of
+# `UsesDeclaredBounded`, so both the parameter type and `&'a t` need `t: 'a`
+# written out.
+def usesDeclared['a, t](value: *UsesDeclaredBounded['a, t]) given (
+    project: Project[t],
+) -> () where (project.Out = &'a t):
+    return ()
+
+# ERROR: using `Holder['a, t]` requires `t: 'a`.
+def unbounded['a, t]() given (project: Project[Holder['a, t]]) -> ():
+    return ()
+
+# OK: the bound is declared.
+def bounded['a, t]() given (project: Project[Holder['a, t]]) -> () where (t: 'a):
+    return ()
+
+# ERROR: an instance head implies nothing, so using `Holder['a, t]` there
+# requires `t: 'a` written out.
+inst HolderOut['a, t] for Project[Holder['a, t]]:
+    type Out = int32
+
+# OK: the bound is written out.
+inst OddOut['a, t] for Project[Odd['a, t]] where (t: 'a):
+    type Out = &'a t
+
+def main() -> ():
+    return ()

@@ -1,0 +1,73 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: `t` is declared covariant but used invariantly
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:24:5
+   │
+23 │ struct Exclusive['a, +t]:
+   │                       ─ `t` is declared covariant here
+24 │     value: &'a mut t
+   │     ━━━━━ field `value` uses `t` invariantly
+   │
+   ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
+
+[error]: `t` is declared covariant but used invariantly
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:29:5
+   │
+27 │ struct OneField['a, +t]:
+   │                      ─ `t` is declared covariant here
+28 │     first: &'a t
+29 │     second: &'a mut t
+   │     ━━━━━━ field `second` uses `t` invariantly
+   │
+   ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
+
+[error]: `t` is declared covariant but used invariantly
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:33:5
+   │
+32 │ struct ThroughCell['a, +t]:
+   │                         ─ `t` is declared covariant here
+33 │     cell: Cell['a, t]
+   │     ━━━━ field `cell` uses `t` invariantly
+   │
+   ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
+
+[error]: `'a` is declared contravariant but used covariantly
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:41:13
+   │
+40 │ eff Reversed[-'a, +'b]:
+   │               ── `'a` is declared contravariant here
+41 │     def log(message: &'a int32) -> &'b int32
+   │             ━━━━━━━━━━━━━━━━━━ a parameter of operation `log` uses `'a` covariantly
+   │
+   ╰ help: consider declaring it invariant as `='a`, or removing the marker to infer its variance
+
+[error]: `'b` is declared covariant but used contravariantly
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:41:33
+   │
+40 │ eff Reversed[-'a, +'b]:
+   │                    ── `'b` is declared covariant here
+41 │     def log(message: &'a int32) -> &'b int32
+   │                                 ━━━━━━━━━━━━ the return type of operation `log` uses `'b` contravariantly
+   │
+   ╰ help: consider declaring it invariant as `='b`, or removing the marker to infer its variance
+
+[error]: variance cannot be declared here
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:44:14
+   │
+44 │ def identity[+t](value: t) -> t:
+   ╰╴             ━ only the parameters of a `struct` or an `eff` have a variance
+
+[error]: variance cannot be declared here
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:47:12
+   │
+47 │ trait Show[=t]:
+   ╰╴           ━ only the parameters of a `struct` or an `eff` have a variance
+
+[error]: Compilation aborted due to 7 error(s)
+
+
+
+stdout:

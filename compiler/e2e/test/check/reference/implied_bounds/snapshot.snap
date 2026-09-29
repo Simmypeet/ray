@@ -1,0 +1,48 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:17:20
+   │
+17 │     def get(value: &'a t) -> ()
+   │                    ━━━━━ the reference requires `t: 'a`
+   │
+   ╰ help: consider adding `where (t: 'a)`
+
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:24:38
+   │
+24 │ inst GetReference['a, t] for Project[&'a t]:
+   │                                      ━━━━━ the reference requires `t: 'a`
+   │
+   ╰ help: consider adding `where (t: 'a)`
+
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:25:16
+   │
+25 │     type Out = &'a t
+   │                ━━━━━ the reference requires `t: 'a`
+   │
+   ╰ help: consider adding `where (t: 'a)`
+
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:35:46
+   │
+35 │ def rowOnly['a, t]() given (project: Project[&'a t]) -> () \{Reader['a, t]}:
+   │                                              ━━━━━ the reference requires `t: 'a`
+   │
+   ╰ help: consider adding `where (t: 'a)`
+
+[error]: where-clause obligation for `main.Reader` is not satisfied
+   ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:35:62
+   │
+35 │ def rowOnly['a, t]() given (project: Project[&'a t]) -> () \{Reader['a, t]}:
+   ╰╴                                                             ━━━━━━━━━━━━━ `t` must outlive `'a`
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

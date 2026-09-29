@@ -57,6 +57,9 @@ pub type FxDashSet<T> = dashmap::DashSet<T, BuildHasherDefault<FxHasher>>;
 /// A type alias for an immutable hash map that uses the `fx` hash function.
 pub type FxImHashMap<K, V> = im::HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
+/// A type alias for an immutable hash set that uses the `fx` hash function.
+pub type FxImHashSet<T> = im::HashSet<T, BuildHasherDefault<FxHasher>>;
+
 /// A type alias for a read-only view of a dash map that uses the `fx` hash
 /// function.
 pub type FxReadOnlyView<K, V> = dashmap::ReadOnlyView<K, V, BuildHasherDefault<FxHasher>>;

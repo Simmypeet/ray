@@ -17,7 +17,6 @@ use rayc_semantic_element::{
         DictionaryArgument, DictionaryExpr, DropPlan, DropPlanError, FieldDrop, GeneratedDropPlan,
         NominalDropPlan, TargetDropPlans, get_drop_plan, get_target_drop_plans,
     },
-    instance_trait_ref::get_instance_trait_ref,
     struct_body::get_struct_body,
 };
 use rayc_solver::Solver;
@@ -30,6 +29,7 @@ use rayc_symbol::{
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
     subst::{Subst, Substitutable},
+    trait_ref::get_instance_trait_ref,
     ty::{Ty, application::View as ApplicationView},
     where_clause::get_where_clause,
 };
@@ -268,9 +268,9 @@ async fn valid_explicit(
     // entailment belongs to a later milestone.
     let original = engine.get_where_clause(nominal_id).await;
     let implementation = engine.get_where_clause(instance_id).await;
-    implementation.iter().all(|predicate| {
+    implementation.predicates().all(|predicate| {
         let renamed = predicate.kind().apply_subst_or_clone(&rename, engine);
-        original.iter().any(|nominal_predicate| nominal_predicate.kind() == &renamed)
+        original.predicates().any(|nominal_predicate| nominal_predicate.kind() == &renamed)
     })
 }
 
@@ -286,7 +286,7 @@ async fn build_generated(
 
     let mut evaluator = Evaluator {
         engine,
-        solver: Solver::with_givens(engine.clone(), nominal_id, []),
+        solver: Solver::with_givens(engine.clone(), nominal_id, []).await,
         current_nominal: nominal_id,
         plans,
         requirements: old.requirements().to_vec(),

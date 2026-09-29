@@ -52,7 +52,7 @@ pub async fn write_c_translation_unit(
     output: &mut impl Write,
 ) -> io::Result<()> {
     // Every root key is normalized with the same solver.
-    let solver = Solver::without_givens(engine.clone());
+    let solver = Solver::without_givens(engine.clone()).await;
     let mut initial_definitions = Vec::new();
     for def_id in engine.get_all_def_with_body_ids(target_id).await.iter().copied() {
         let def_id = target_id.make_global(def_id);

@@ -5,6 +5,7 @@ pub mod build;
 pub mod diagnostic;
 mod effect_row;
 mod extern_signature;
+mod inferred_outlives;
 pub mod instance_member;
 pub mod instance_trait_ref;
 mod marker_implementation;
@@ -20,4 +21,5 @@ pub const fn black_box() {}
 mod callable_parameter;
 mod drop_plan;
 mod type_definition;
+mod variance;
 mod where_clause;

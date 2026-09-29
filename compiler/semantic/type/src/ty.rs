@@ -9,6 +9,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_name};
 
 use crate::{
+    constraint::outlives::{OutlivesConstraint, OutlivesConstraints},
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap, get_poly_var_map},
     reduce::Reduce,
     rewrite::{RewriteAsync, TyRewriterAsync},
@@ -20,6 +21,7 @@ use crate::{
         inference::{GenInfer, Inference},
         lifetime::Lifetime,
     },
+    variance::Variance,
 };
 
 pub mod application;
@@ -52,6 +54,17 @@ impl Mutability {
         match self {
             Self::Immutable => true,
             Self::Mutable => false,
+        }
+    }
+
+    /// Returns the variance of the pointee of a reference with this
+    /// mutability: a shared pointee is covariant, and a mutable one is
+    /// invariant. Raw pointers are bivariant in their pointee instead.
+    #[must_use]
+    pub const fn pointee_variance(&self) -> Variance {
+        match self {
+            Self::Immutable => Variance::Covariant,
+            Self::Mutable => Variance::Invariant,
         }
     }
 }
@@ -182,6 +195,23 @@ impl Ty {
         })
     }
 
+    /// Returns whether this type or a descendant is an inference variable
+    /// that is not a lifetime.
+    ///
+    /// Lifetimes never decide which instance is selected, so a lifetime
+    /// inference variable does not keep a requirement from being resolved.
+    #[must_use]
+    pub fn contains_non_lifetime_inference(&self) -> bool {
+        self.recursive_iter().any(|ty| match ty {
+            Self::Inference(inference) => inference.kind() != TyKind::Lifetime,
+            Self::Application(_)
+            | Self::EffectRow(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::Lifetime(_) => false,
+        })
+    }
+
     /// Includes errors of every kind at the root or in any descendant.
     #[must_use]
     pub fn contains_error(&self) -> bool {
@@ -231,6 +261,88 @@ impl Ty {
         ty.rewrite_async_or_clone(&mut LifetimeEraser { engine }, engine).await
     }
 
+    /// Returns whether this type is of kind [`TyKind::Lifetime`]: a
+    /// lifetime, a lifetime parameter, or an error of that kind.
+    ///
+    /// Lifetime inference variables only come from generalization during type
+    /// inference. The borrow checker's region variables are
+    /// [`Lifetime::Region`]s instead.
+    pub async fn is_lifetime(&self, engine: &TrackedEngine) -> bool {
+        self.kind_of(engine).await == TyKind::Lifetime
+    }
+
+    /// Returns whether `left` and `right` are equal when every lifetime is
+    /// considered equal to every other lifetime.
+    ///
+    /// Effect rows are matched as scoped labels, as by
+    /// [`EffectRow::match_labels`], so labels of different effects commute.
+    ///
+    /// Returns `None` if they are not equal. Otherwise, returns the outlives
+    /// constraints of relating each pair of corresponding lifetimes
+    /// invariantly.
+    pub async fn equal_modulo_lifetimes(
+        left: &Interned<Self>,
+        right: &Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Option<OutlivesConstraints> {
+        let mut lifetimes = Vec::new();
+        let mut pending = vec![(left.clone(), right.clone())];
+
+        while let Some((left, right)) = pending.pop() {
+            if left == right {
+                continue;
+            }
+
+            match (&*left, &*right) {
+                // The same constructor applied to arguments that are equal
+                // modulo lifetimes.
+                (Self::Application(left_application), Self::Application(right_application))
+                    if left_application.has_same_constant(right_application) =>
+                {
+                    let arguments = left_application.structural_match(right_application)?;
+                    pending.extend(arguments.map(|(left, right)| (left.clone(), right.clone())));
+                }
+
+                // Rows whose labels all match, argument by argument, and whose
+                // tails are equal modulo lifetimes.
+                (Self::EffectRow(left_row), Self::EffectRow(right_row)) => {
+                    let labels = left_row.match_labels(right_row);
+                    if !labels.is_exact() {
+                        return None;
+                    }
+                    for (left_label, right_label) in labels.matched() {
+                        let arguments = left_label.structural_match(right_label)?;
+                        pending
+                            .extend(arguments.map(|(left, right)| (left.clone(), right.clone())));
+                    }
+                    match (left_row.tail(), right_row.tail()) {
+                        (None, None) => {}
+                        (Some(left), Some(right)) => pending.push((left.clone(), right.clone())),
+                        (None, Some(_)) | (Some(_), None) => return None,
+                    }
+                }
+
+                // Any two lifetimes are equal; nothing else differs and is
+                // still equal.
+                _ => {
+                    if !left.is_lifetime(engine).await || !right.is_lifetime(engine).await {
+                        return None;
+                    }
+                    lifetimes.push((left, right));
+                }
+            }
+        }
+
+        Some(
+            lifetimes
+                .iter()
+                .flat_map(|(left, right)| {
+                    OutlivesConstraint::from_relation(left, right, Variance::Invariant)
+                })
+                .collect(),
+        )
+    }
+
     #[must_use]
     pub fn has_poly_variable(&self, poly_var: &GlobalPolyVarID) -> bool {
         self.recursive_iter().any(|ty| match ty {
@@ -255,7 +367,9 @@ impl TyRewriterAsync for LifetimeEraser<'_> {
     async fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
         let erased = || Ty::new_lifetime(Lifetime::Erased, self.engine);
         match &**ty {
-            Ty::Lifetime(Lifetime::Static | Lifetime::Region(_)) => Some(erased()),
+            Ty::Lifetime(Lifetime::Static | Lifetime::Region(_) | Lifetime::External(_)) => {
+                Some(erased())
+            }
             Ty::PolyVar(poly_var) => {
                 let poly_var_map = self.engine.get_poly_var_map(poly_var.parent_id()).await;
                 (poly_var_map.kind_of(poly_var.id()) == TyKind::Lifetime).then(erased)
@@ -285,7 +399,8 @@ impl Substitutable for Interned<Ty> {
             Ty::EffectRow(row) => {
                 row.apply_subst(subst, engine).map(|new_row| engine.intern(Ty::EffectRow(new_row)))
             }
-            Ty::Lifetime(_) => None,
+            Ty::Lifetime(Lifetime::External(external)) => subst.get(external).cloned(),
+            Ty::Lifetime(Lifetime::Static | Lifetime::Erased | Lifetime::Region(_)) => None,
         }
     }
 }
@@ -295,18 +410,25 @@ impl Reduce for Interned<Ty> {
         &self,
         engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<Self> {
+    ) -> Option<(Self, OutlivesConstraints)> {
         // Prefer structural reduction, then the first matching given equality.
         if let Some(reduced) = reduce_type(self, engine, givens).await {
             return Some(reduced);
         }
-        givens.iter().find_map(|predicate| match predicate {
-            crate::where_clause::PredicateKind::AssociatedTypeEquality(equality) => {
-                (equality.left() == self && equality.right() != self)
-                    .then(|| equality.right().clone())
+        for equality in givens.iter().filter_map(crate::where_clause::PredicateKind::as_equality) {
+            // Lifetimes never decide whether a given applies, just as they
+            // never decide which instance is selected. Projection arguments
+            // are invariant, so the lifetimes of a matching given are related
+            // by equality.
+            if equality.right() == self {
+                continue;
             }
-            crate::where_clause::PredicateKind::Marker(_) => None,
-        })
+            if let Some(outlives) = Ty::equal_modulo_lifetimes(equality.left(), self, engine).await
+            {
+                return Some((equality.right().clone(), outlives));
+            }
+        }
+        None
     }
 }
 
@@ -314,7 +436,7 @@ async fn reduce_type(
     ty: &Interned<Ty>,
     engine: &TrackedEngine,
     givens: &[crate::where_clause::PredicateKind],
-) -> Option<Interned<Ty>> {
+) -> Option<(Interned<Ty>, OutlivesConstraints)> {
     match ty.as_ref() {
         Ty::Application(application) => {
             Box::pin(async move {
@@ -323,12 +445,11 @@ async fn reduce_type(
                         crate::reduce::reduce_instance_associated(associated, engine).await
                     && reduced != *ty
                 {
-                    return Some(reduced);
+                    return Some((reduced, OutlivesConstraints::new()));
                 }
-                application
-                    .reduce(engine, givens)
-                    .await
-                    .map(|application| engine.intern(Ty::Application(application)))
+                application.reduce(engine, givens).await.map(|(application, outlives)| {
+                    (engine.intern(Ty::Application(application)), outlives)
+                })
             })
             .await
         }
@@ -338,9 +459,11 @@ async fn reduce_type(
             if row.labels().len() == 0
                 && let Some(tail) = row.tail()
             {
-                return Some(tail.clone());
+                return Some((tail.clone(), OutlivesConstraints::new()));
             }
-            Box::pin(row.reduce(engine, givens)).await.map(|row| engine.intern(Ty::EffectRow(row)))
+            Box::pin(row.reduce(engine, givens))
+                .await
+                .map(|(row, outlives)| (engine.intern(Ty::EffectRow(row)), outlives))
         }
     }
 }
@@ -894,6 +1017,7 @@ impl TyDisplay<'_> {
                 ApplicationView::Error => write!(f, "<error>"),
             },
 
+            Ty::Inference(inference) if inference.kind() == TyKind::Lifetime => f.write_str("'_"),
             Ty::Inference(inference) => match inference.constraint() {
                 InferenceConstraint::Any => write!(f, "{{any}}"),
                 InferenceConstraint::Numeric => {
@@ -905,11 +1029,7 @@ impl TyDisplay<'_> {
             },
 
             Ty::SelfInstance(_) => f.write_str("this"),
-            Ty::Lifetime(lifetime) => match lifetime {
-                Lifetime::Static => f.write_str("'static"),
-                Lifetime::Erased => f.write_str("'_"),
-                Lifetime::Region(region) => write!(f, "'?{}", region.index()),
-            },
+            Ty::Lifetime(lifetime) => write!(f, "{lifetime}"),
             Ty::PolyVar(poly_var) => {
                 let poly_var_map = self
                     .poly_var_maps
@@ -983,6 +1103,41 @@ impl Ty {
         };
 
         Some(instance_view)
+    }
+
+    #[must_use]
+    pub fn as_instance_associated_view(&self) -> Option<application::InstanceAssociatedView<'_>> {
+        let Self::Application(ty_application) = self else {
+            return None;
+        };
+
+        let ApplicationView::InstanceAssociated(view) = ty_application.view() else {
+            return None;
+        };
+
+        Some(view)
+    }
+
+    /// Returns the type arguments of an application, or nothing for any
+    /// other type.
+    pub fn interned_arguments(ty: &Interned<Self>) -> impl Iterator<Item = &Interned<Self>> {
+        let arguments = match &**ty {
+            Self::Application(application) => Some(application.interned_iter()),
+            Self::Inference(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::EffectRow(_)
+            | Self::Lifetime(_) => None,
+        };
+        arguments.into_iter().flatten()
+    }
+
+    /// Returns whether this lifetime takes part in named-lifetime outlives
+    /// checks. Erased lifetimes are checked on the IR instead, and errors
+    /// were already reported.
+    #[must_use]
+    pub fn is_checked_lifetime(&self) -> bool {
+        *self != Self::Lifetime(Lifetime::Erased) && !self.contains_error()
     }
 
     #[must_use]

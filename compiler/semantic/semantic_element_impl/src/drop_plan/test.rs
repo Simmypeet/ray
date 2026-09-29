@@ -8,7 +8,6 @@ use rayc_semantic_element::{
     drop_plan::{
         DictionaryArgument, DictionaryExpr, DropPlan, get_drop_plan, get_target_drop_plans,
     },
-    instance_trait_ref::Key as InstanceTraitRefKey,
     struct_body::{Field, Key as StructBodyKey, StructBody},
 };
 use rayc_solver::Solver;
@@ -25,7 +24,7 @@ use rayc_target::TargetID;
 use rayc_type::{
     instance_member::{InstanceMember, Key as InstanceMemberKey},
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVar, PolyVarID, PolyVarMap},
-    trait_ref::TraitRef,
+    trait_ref::{InstanceTraitRefKey, TraitRef},
     ty::{
         Mutability, Primitive, Ty,
         application::{Closure, ClosureID},
@@ -426,7 +425,7 @@ async fn concrete_associated_argument_does_not_become_external_requirement() {
         FxHashMap::from_iter([(option.id, tracked.intern(DropPlan::Explicit(option_drop)))]);
     let mut evaluator = Evaluator {
         engine: &tracked,
-        solver: Solver::with_givens(tracked.clone(), owner, []),
+        solver: Solver::with_givens(tracked.clone(), owner, []).await,
         current_nominal: owner,
         plans: &plans,
         requirements: Vec::new(),
@@ -468,7 +467,7 @@ async fn closure_field_resolves_one_dictionary_per_capture() {
     let plans = FxHashMap::default();
     let mut evaluator = Evaluator {
         engine: &engine,
-        solver: Solver::with_givens(engine.clone(), owner, []),
+        solver: Solver::with_givens(engine.clone(), owner, []).await,
         current_nominal: owner,
         plans: &plans,
         requirements: Vec::new(),

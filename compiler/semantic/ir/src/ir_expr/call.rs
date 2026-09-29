@@ -4,7 +4,7 @@ use rayc_type::{subst::Subst, ty::Ty};
 
 use crate::{
     ir_expr::IRExprID,
-    visit::{TypeVisitor, VisitType},
+    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
@@ -43,22 +43,42 @@ pub struct Call {
 }
 
 impl VisitType for Call {
-    fn visit_types<V: TypeVisitor>(&self, visitor: &mut V) {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         match &self.target {
             CallTarget::Direct { subst, .. } => {
                 for ty in subst.codomain() {
-                    visitor.visit_type(ty);
+                    visitor.visit_type(ty, site);
                 }
             }
 
             CallTarget::UnresolvedInstanceAssociated { instance, trait_def_subst, .. } => {
-                visitor.visit_type(instance);
+                visitor.visit_type(instance, site);
                 for ty in trait_def_subst.codomain() {
-                    visitor.visit_type(ty);
+                    visitor.visit_type(ty, site);
                 }
             }
         }
-        visitor.visit_type(&self.effect);
+        visitor.visit_type(&self.effect, site);
+    }
+}
+
+impl VisitTypeMut for Call {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
+        match &mut self.target {
+            CallTarget::Direct { subst, .. } => {
+                for ty in subst.codomain_mut() {
+                    visitor.visit_type_mut(ty, site);
+                }
+            }
+
+            CallTarget::UnresolvedInstanceAssociated { instance, trait_def_subst, .. } => {
+                visitor.visit_type_mut(instance, site);
+                for ty in trait_def_subst.codomain_mut() {
+                    visitor.visit_type_mut(ty, site);
+                }
+            }
+        }
+        visitor.visit_type_mut(&mut self.effect, site);
     }
 }
 

@@ -322,7 +322,7 @@ impl DropElaborator {
         // However, if we'll have a borrow-checker feature with lifetimes stuff in the
         // future, then we must first generalize the lifetimes in the effect row of
         // the function before we can use it as the ambient row for the drop call.
-        let effect = functions.get_function(function_id).effect().clone();
+        let effect = functions.effect_of(function_id, engine).await;
 
         let mut insertion = InstructionInsertion::new();
         let mut edge_points = FxHashMap::<ControlFlowEdge, Point>::default();

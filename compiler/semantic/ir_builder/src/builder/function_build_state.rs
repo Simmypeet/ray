@@ -8,7 +8,8 @@ use rayc_ir::{
     ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load, tuple::Tuple},
     ir_function::{FunctionID as IrFunctionID, IRFunctionMap},
     ir_lambda::{
-        Capture, CaptureID, CaptureMapID, LambdaParameter as IrLambdaParameter, LambdaParameterID,
+        Capture, CaptureID, CaptureMapID, CaptureMode as IrCaptureMode,
+        LambdaParameter as IrLambdaParameter, LambdaParameterID,
     },
     ir_operation_handler::{
         OperationHandlerParameter as IrOperationHandlerParameter,
@@ -20,7 +21,10 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{capture::CaptureMode, ty::Ty};
+use rayc_type::{
+    capture::CaptureMode,
+    ty::{Ty, lifetime::Lifetime},
+};
 use rayc_typed_ast::{
     capture_plan::FunctionCapturePlan, name_binding::Source, typed_function::TypedFunctionID,
     typed_lambda::LambdaParameterID as TypedLambdaParameterID,
@@ -99,6 +103,7 @@ impl FunctionBuildState {
         ir_functions: &mut IRFunctionMap,
         return_ty: Interned<Ty>,
         diagnostic_span: RelativeSpan,
+        engine: &TrackedEngine,
     ) -> Self {
         let typed_function_id = context.typed_function_id();
         let capture_plan = context.capture_plan(typed_function_id);
@@ -109,7 +114,7 @@ impl FunctionBuildState {
             "root TypedAST function should not be a lambda"
         );
         let mut lambda_parameters = FxHashMap::default();
-        let (capture_map, captures) = Self::insert_capture_map(capture_plan, ir_functions);
+        let (capture_map, captures) = Self::insert_capture_map(capture_plan, ir_functions, engine);
         let ir_function_id = ir_functions.insert_lambda(
             return_ty.clone(),
             context.function_effect().clone(),
@@ -143,12 +148,13 @@ impl FunctionBuildState {
         context: &LoweringContext<'_>,
         ir_functions: &mut IRFunctionMap,
         diagnostic_span: RelativeSpan,
+        engine: &TrackedEngine,
     ) -> Self {
         let typed_function_id = context.typed_function_id();
         let capture_plan = context.capture_plan(typed_function_id);
         let thunk_context = context.typed_function_context().assert_as_thunk_context();
         let return_ty = thunk_context.return_type().clone();
-        let (capture_map, captures) = Self::insert_capture_map(capture_plan, ir_functions);
+        let (capture_map, captures) = Self::insert_capture_map(capture_plan, ir_functions, engine);
         let ir_function_id = ir_functions.insert_thunk(
             return_ty.clone(),
             context.function_effect().clone(),
@@ -216,6 +222,7 @@ impl FunctionBuildState {
     fn insert_capture_map(
         capture_plan: &FunctionCapturePlan,
         ir_functions: &mut IRFunctionMap,
+        engine: &TrackedEngine,
     ) -> (CaptureMapID, FxHashMap<Source, CaptureID>) {
         let capture_map_id = ir_functions.new_capture_map();
         let mut captures = FxHashMap::default();
@@ -225,7 +232,7 @@ impl FunctionBuildState {
                 capture_map_id,
                 Capture::new(
                     requirement.binding_ty().clone(),
-                    requirement.mode(),
+                    Self::lower_capture_mode(requirement.mode(), engine),
                     requirement.span(),
                 ),
             );
@@ -233,6 +240,17 @@ impl FunctionBuildState {
         }
 
         (capture_map_id, captures)
+    }
+
+    /// Lowers an analyzed capture mode; reference lifetimes start erased.
+    fn lower_capture_mode(mode: CaptureMode, engine: &TrackedEngine) -> IrCaptureMode {
+        match mode {
+            CaptureMode::Value(kind) => IrCaptureMode::Value(kind),
+            CaptureMode::Reference(mutability) => IrCaptureMode::Reference {
+                mutability,
+                lifetime: Ty::new_lifetime(Lifetime::Erased, engine),
+            },
+        }
     }
 
     fn initialize_scopes(
@@ -312,7 +330,7 @@ impl Builder {
         return_ty: Interned<Ty>,
         diagnostic_span: Option<RelativeSpan>,
     ) -> Self {
-        let mut ir_functions = IRFunctionMap::new(context.function_effect().clone());
+        let mut ir_functions = IRFunctionMap::new(def_id);
         let building_function =
             FunctionBuildState::new_def(context, &mut ir_functions, return_ty, diagnostic_span);
 
@@ -390,6 +408,7 @@ impl Builder {
         FunctionBuildState::insert_capture_map(
             context.capture_plan(typed_function_id),
             &mut self.ir_functions,
+            &self.engine,
         )
     }
 
@@ -409,13 +428,19 @@ impl Builder {
             &mut self.ir_functions,
             return_ty,
             diagnostic_span,
+            &self.engine,
         );
         let enclosing = mem::replace(&mut self.building_function, lambda);
         self.suspended_functions.push(enclosing);
     }
 
     fn start_thunk(&mut self, context: &LoweringContext<'_>, diagnostic_span: RelativeSpan) {
-        let thunk = FunctionBuildState::new_thunk(context, &mut self.ir_functions, diagnostic_span);
+        let thunk = FunctionBuildState::new_thunk(
+            context,
+            &mut self.ir_functions,
+            diagnostic_span,
+            &self.engine,
+        );
         let enclosing = mem::replace(&mut self.building_function, thunk);
         self.suspended_functions.push(enclosing);
     }
@@ -642,8 +667,8 @@ impl Builder {
             .get_capture(self.building_function.ir_function_id, capture_id)
             .mode()
         {
-            CaptureMode::Value(_) => {}
-            CaptureMode::Reference(_) => self.project_deref(&mut address),
+            IrCaptureMode::Value(_) => {}
+            IrCaptureMode::Reference { .. } => self.project_deref(&mut address),
         }
         address
     }

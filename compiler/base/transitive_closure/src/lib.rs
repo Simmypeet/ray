@@ -1,12 +1,13 @@
 //! Contains the definition of [`TransitiveClosure`]
 
 use getset::{CopyGetters, Getters};
+use qbice::{Decode, Encode, StableHash};
 
 /// Used for efficiently representing an array of true/false values.
 ///
 /// Instead of representing each boolean value as a byte, we can represent 64
 /// boolean values as a single 64-bit integer.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct BitSet {
     bits: Vec<u64>,
     size: usize,
@@ -145,7 +146,7 @@ impl BitSet {
 /// Since most of the compiler's analysis is based on the directed graph
 /// problem, this data structure is used to compute the transitive closure of
 /// the graph and check if there is a path between two nodes efficiently.
-#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters, CopyGetters, StableHash, Encode, Decode)]
 pub struct TransitiveClosure {
     /// The number of nodes in the graph
     #[get_copy = "pub"]

@@ -5,7 +5,6 @@ use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::resolver::Resolver;
-use rayc_semantic_element::instance_trait_ref::Key;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     core_item::{CoreItem, get_core_item},
@@ -17,6 +16,7 @@ use rayc_symbol::{
 };
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
+    trait_ref::InstanceTraitRefKey,
     ty::{Ty, application::View as ApplicationView},
 };
 
@@ -309,7 +309,7 @@ fn classify_drop_head(ty: &Ty) -> DropHead {
     }
 }
 
-impl Build for Key {
+impl Build for InstanceTraitRefKey {
     type Diagnostic = Diagnostic;
 
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
@@ -427,4 +427,4 @@ impl Build for Key {
     }
 }
 
-register_build!(Key);
+register_build!(InstanceTraitRefKey);

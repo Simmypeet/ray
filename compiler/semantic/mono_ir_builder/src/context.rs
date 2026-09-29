@@ -149,6 +149,15 @@ impl Context {
         self.source.get_function(source_id).clone()
     }
 
+    /// Lowers the effect row of a source function.
+    pub(crate) async fn lower_source_effects(
+        &self,
+        source_id: IRFunctionID,
+    ) -> Vec<MonoEffectInstance> {
+        let effect = self.source.effect_of(source_id, &self.engine).await;
+        self.lower_effects(&effect).await
+    }
+
     pub(crate) fn source_capture_count(&self, source_id: IRFunctionID) -> usize {
         self.source.captures(source_id).len()
     }

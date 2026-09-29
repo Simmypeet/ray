@@ -102,7 +102,7 @@ impl Context {
         source_id: rayc_ir::ir_function::FunctionID,
         source: &IRFunction,
     ) -> FunctionABI {
-        let effects = self.lower_effects(source.effect()).await;
+        let effects = self.lower_source_effects(source_id).await;
 
         let mut parameter_types = Vec::new();
         let mut capture_ids = Vec::new();

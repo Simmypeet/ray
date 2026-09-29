@@ -2,13 +2,14 @@ use qbice::storage::intern::Interned;
 use rayc_symbol::SymbolID;
 use rayc_target::TargetID;
 use rayc_type::{
-    constraint::ty_relate::TyRelate,
+    constraint::{outlives::OutlivesConstraints, ty_relate::TyRelate},
     subst::Subst,
     trait_ref::TraitRef,
     ty::{Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel},
+    variance::Variance,
 };
 
-use super::{Solver, TyRelatingEnvironment};
+use super::{Solution, Solver, TyRelatingEnvironment};
 
 fn effect_label(id: u128, engine: &rayc_qbice::TrackedEngine) -> Interned<EffectLabel> {
     let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(id));
@@ -61,7 +62,7 @@ async fn equality_without_unification_accepts_semantically_equal_types() {
     let state = effect_label(2, &engine);
     let left = Ty::new_effect_row([io.clone(), state.clone()], None, &engine);
     let right = Ty::new_effect_row([state, io], None, &engine);
-    let mut solver = Solver::without_givens(engine);
+    let mut solver = Solver::without_givens(engine).await;
 
     assert!(solver.eq_without_unify(&left, &right).await);
 }
@@ -72,7 +73,7 @@ async fn equality_without_unification_accepts_semantically_equal_types() {
 #[tokio::test]
 async fn equality_without_unification_rejects_a_generated_substitution() {
     let engine = rayc_qbice::create_minimal_engine().await;
-    let mut solver = Solver::without_givens(engine.clone());
+    let mut solver = Solver::without_givens(engine.clone()).await;
     let inference = engine.intern(Ty::Inference(solver.new_inference(TyKind::Star)));
     let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
 
@@ -85,7 +86,7 @@ async fn equality_without_unification_rejects_a_generated_substitution() {
 #[tokio::test]
 async fn head_match_binds_nested_and_repeated_head_variables() {
     let (engine, a) = engine_with_type_poly_var().await;
-    let mut solver = Solver::without_givens(engine.clone());
+    let mut solver = Solver::without_givens(engine.clone()).await;
     let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
     let a_ty = engine.intern(Ty::PolyVar(a));
     let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
@@ -101,7 +102,10 @@ async fn head_match_binds_nested_and_repeated_head_variables() {
         ),
     );
 
-    assert_eq!(solver.head_match(&head, &expected).await, Some(Subst::new_singleton(a, int_ty)));
+    assert_eq!(
+        solver.type_head_match(&head, &expected).await.map(Solution::into_parts),
+        Some((Subst::new_singleton(a, int_ty), OutlivesConstraints::new()))
+    );
 }
 
 // input: Trait[a, a] matched against Trait[bool, int32]
@@ -110,7 +114,7 @@ async fn head_match_binds_nested_and_repeated_head_variables() {
 #[tokio::test]
 async fn head_match_rejects_inconsistent_head_bindings() {
     let (engine, a) = engine_with_type_poly_var().await;
-    let mut solver = Solver::without_givens(engine.clone());
+    let mut solver = Solver::without_givens(engine.clone()).await;
     let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
     let a_ty = engine.intern(Ty::PolyVar(a));
     let head = TraitRef::new(trait_id, Args::new([a_ty.clone(), a_ty], &engine));
@@ -125,7 +129,7 @@ async fn head_match_rejects_inconsistent_head_bindings() {
         ),
     );
 
-    assert_eq!(solver.head_match(&head, &expected).await, None);
+    assert_eq!(solver.type_head_match(&head, &expected).await, None);
 }
 
 // input: Trait[int32] matched against Trait[a]
@@ -134,13 +138,13 @@ async fn head_match_rejects_inconsistent_head_bindings() {
 #[tokio::test]
 async fn head_match_does_not_bind_expected_variables() {
     let (engine, a) = engine_with_type_poly_var().await;
-    let mut solver = Solver::without_givens(engine.clone());
+    let mut solver = Solver::without_givens(engine.clone()).await;
     let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
     let head =
         TraitRef::new(trait_id, Args::new([Ty::new_primitive(Primitive::Int32, &engine)], &engine));
     let expected = TraitRef::new(trait_id, Args::new([engine.intern(Ty::PolyVar(a))], &engine));
 
-    assert_eq!(solver.head_match(&head, &expected).await, None);
+    assert_eq!(solver.type_head_match(&head, &expected).await, None);
 }
 
 // input: Trait[] matched against OtherTrait[] or Trait[int32]
@@ -149,14 +153,14 @@ async fn head_match_does_not_bind_expected_variables() {
 #[tokio::test]
 async fn head_match_rejects_trait_identity_and_arity_mismatches() {
     let engine = rayc_qbice::create_minimal_engine().await;
-    let mut solver = Solver::without_givens(engine.clone());
+    let mut solver = Solver::without_givens(engine.clone()).await;
     let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
     let head = TraitRef::new(trait_id, Args::new([], &engine));
     for expected in [
         TraitRef::new(TargetID::TEST.make_global(SymbolID::from_u128(2)), Args::new([], &engine)),
         TraitRef::new(trait_id, Args::new([Ty::new_primitive(Primitive::Int32, &engine)], &engine)),
     ] {
-        assert_eq!(solver.head_match(&head, &expected).await, None);
+        assert_eq!(solver.type_head_match(&head, &expected).await, None);
     }
 }
 
@@ -166,23 +170,29 @@ async fn head_match_rejects_trait_identity_and_arity_mismatches() {
 #[tokio::test]
 async fn exhaustive_solve_composes_bindings_from_derived_constraints() {
     let engine = rayc_qbice::create_minimal_engine().await;
-    let mut solver = Solver::without_givens(engine.clone());
+    let mut solver = Solver::without_givens(engine.clone()).await;
     let a = solver.new_inference(TyKind::Star);
     let b = solver.new_inference(TyKind::Star);
     let a_ty = engine.intern(Ty::Inference(a));
     let b_ty = engine.intern(Ty::Inference(b));
     let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
     let constrs = vec![
-        TyRelate::new(
+        TyRelate::new_invariant(
             Ty::new_tuple(engine.intern_unsized([a_ty.clone()]), &engine),
             Ty::new_tuple(engine.intern_unsized([int_ty.clone()]), &engine),
         ),
-        TyRelate::new(b_ty, a_ty),
+        TyRelate::new_invariant(b_ty, a_ty),
     ];
 
     assert_eq!(
-        solver.exhaustive_solve(constrs, &TyRelatingEnvironment::Normal).await,
-        Some([(a, int_ty.clone()), (b, int_ty)].into_iter().collect::<Subst>())
+        solver
+            .exhaustive_solve(constrs, &TyRelatingEnvironment::Normal)
+            .await
+            .map(Solution::into_parts),
+        Some((
+            [(a, int_ty.clone()), (b, int_ty)].into_iter().collect::<Subst>(),
+            OutlivesConstraints::new()
+        ))
     );
 }
 
@@ -192,11 +202,11 @@ async fn exhaustive_solve_composes_bindings_from_derived_constraints() {
 #[tokio::test]
 async fn exhaustive_solve_rejects_conflicting_bindings() {
     let engine = rayc_qbice::create_minimal_engine().await;
-    let mut solver = Solver::without_givens(engine.clone());
+    let mut solver = Solver::without_givens(engine.clone()).await;
     let a = engine.intern(Ty::Inference(solver.new_inference(TyKind::Star)));
     let constrs = vec![
-        TyRelate::new(a.clone(), Ty::new_primitive(Primitive::Bool, &engine)),
-        TyRelate::new(a, Ty::new_primitive(Primitive::Int32, &engine)),
+        TyRelate::new_invariant(a.clone(), Ty::new_primitive(Primitive::Bool, &engine)),
+        TyRelate::new_invariant(a, Ty::new_primitive(Primitive::Int32, &engine)),
     ];
 
     assert_eq!(solver.exhaustive_solve(constrs, &TyRelatingEnvironment::Normal).await, None);
@@ -208,9 +218,9 @@ async fn exhaustive_solve_rejects_conflicting_bindings() {
 #[tokio::test]
 async fn exhaustive_solve_respects_the_relating_environment() {
     let engine = rayc_qbice::create_minimal_engine().await;
-    let mut solver = Solver::without_givens(engine.clone());
+    let mut solver = Solver::without_givens(engine.clone()).await;
     let a = engine.intern(Ty::Inference(solver.new_inference(TyKind::Star)));
-    let constrs = vec![TyRelate::new(a, Ty::new_primitive(Primitive::Int32, &engine))];
+    let constrs = vec![TyRelate::new_invariant(a, Ty::new_primitive(Primitive::Int32, &engine))];
 
     assert_eq!(
         solver.exhaustive_solve(constrs, &TyRelatingEnvironment::TopLevelMatching).await,
@@ -235,7 +245,7 @@ async fn self_instance_entails_its_identity_trait_reference() {
         TraitRef::new(a.parent_id(), Args::new([engine.intern(Ty::PolyVar(a))], &engine));
     assert_eq!(this.trait_ref(&engine).await, identity);
     let instance = engine.intern(Ty::SelfInstance(this));
-    let mut solver = Solver::without_givens(engine.clone());
+    let mut solver = Solver::without_givens(engine.clone()).await;
     let result =
         solver.entail_instance_trait_ref(&InstanceTraitRef::new(instance.clone(), identity)).await;
     let a_ty = engine.intern(Ty::PolyVar(a));
@@ -243,7 +253,8 @@ async fn self_instance_entails_its_identity_trait_reference() {
         result,
         Ok(Step::Derived(vec![DerivedConstraint::new_type_application_matching(
             a_ty.clone(),
-            a_ty
+            a_ty,
+            Variance::Invariant,
         ),]))
     );
     let specialized = TraitRef::new(
@@ -256,7 +267,10 @@ async fn self_instance_entails_its_identity_trait_reference() {
         .unwrap();
     let Step::Derived(constraints) = result else { panic!("expected argument constraints") };
     for constraint in constraints {
-        assert_eq!(solver.entail_ty_relate(&constraint.ty_relate).await, Err(Error::Conflicted));
+        assert_eq!(
+            solver.entail_ty_relate(&constraint.ty_relate).await.map(|_| ()),
+            Err(Error::Conflicted)
+        );
     }
 }
 
@@ -301,6 +315,7 @@ async fn site_givens_include_parents_and_prefer_the_nearest_scope() {
         Predicate::new(
             PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(left, right)),
             span,
+            rayc_type::where_clause::PredicateOrigin::Declared,
         )
     };
     let mut engine = Engine::new_with(
@@ -335,9 +350,41 @@ async fn site_givens_include_parents_and_prefer_the_nearest_scope() {
             ]))),
         ),
     ]))));
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
+        (rayc_type::associated_type_kind::Key { symbol_id: site }, TyKind::Star),
+        (rayc_type::associated_type_kind::Key { symbol_id: module }, TyKind::Star),
+    ]))));
     engine.register_executor(Arc::new(crate::givens::GivensExecutor));
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        crate::outlives::OutlivesEnvironmentKey { site },
+        types.intern(crate::outlives::OutlivesEnvironment::new([], &types).await),
+    )]))));
     let solver = Solver::new(Arc::new(engine).tracked().await, site).await;
 
     assert_eq!(solver.normalize(&item).await, int_ty);
     assert_eq!(solver.normalize(&other).await, bool_ty);
+}
+
+// input: Show['static] matched against Show['?0]
+// premise: the solver keeps outlives constraints
+// output: the head matches with no substitution and requires '?0: 'static
+#[tokio::test]
+async fn head_match_ignores_lifetimes_but_requires_their_outlives() {
+    use rayc_type::{constraint::outlives::OutlivesConstraint, ty::lifetime::Lifetime};
+
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    let static_ = Ty::new_lifetime(Lifetime::Static, &engine);
+    let region = Ty::new_lifetime(Lifetime::Region(rayc_arena::ID::new(0)), &engine);
+    let head = TraitRef::new(trait_id, Args::new([static_.clone()], &engine));
+    let expected = TraitRef::new(trait_id, Args::new([region.clone()], &engine));
+    let mut solver = Solver::without_givens(engine.clone()).await;
+
+    assert_eq!(
+        solver.type_head_match(&head, &expected).await.map(Solution::into_parts),
+        Some((
+            Subst::new_empty(),
+            std::iter::once(OutlivesConstraint::new(region, static_)).collect()
+        ))
+    );
 }

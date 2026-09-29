@@ -9,6 +9,7 @@ use crate::{
     reduce::Reduce,
     rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::{Subst, Substitutable},
+    variance::{Variance, VarianceMap, get_variance},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -370,6 +371,126 @@ impl Application {
         self.constant == other.constant && self.args.len() == other.args.len()
     }
 
+    /// Returns the struct this application instantiates, if it is one.
+    #[must_use]
+    pub const fn struct_id(&self) -> Option<GlobalSymbolID> {
+        match self.constant {
+            Constant::Struct(symbol_id) => Some(symbol_id),
+            Constant::Primitive(_)
+            | Constant::Tuple
+            | Constant::Pointer(_)
+            | Constant::Reference(_)
+            | Constant::Instance(_)
+            | Constant::InstanceAssociated(_)
+            | Constant::Closure(_)
+            | Constant::DefInstance
+            | Constant::NoOpDropInstance
+            | Constant::TupleDropInstance
+            | Constant::ClosureDropInstance
+            | Constant::NominalDropInstance
+            | Constant::Error(_) => None,
+        }
+    }
+
+    /// Returns each argument with the variance of its position.
+    ///
+    /// `struct_variances` are the variances of the struct's parameters when
+    /// this application is a struct (see [`Self::struct_id`]), and are ignored
+    /// otherwise.
+    ///
+    /// # Panics
+    ///
+    /// If this application is a struct and `struct_variances` is `None` or
+    /// has fewer variances than there are arguments.
+    pub fn arguments_with_variance<'a>(
+        &'a self,
+        struct_variances: Option<&'a VarianceMap>,
+    ) -> impl Iterator<Item = (&'a Interned<Ty>, Variance)> {
+        self.args
+            .iter()
+            .enumerate()
+            .map(move |(index, arg)| (arg, self.argument_variance(index, struct_variances)))
+    }
+
+    /// Returns each argument with the variance of its position, when this
+    /// application itself is in a position of variance `ambient`.
+    ///
+    /// An invariant or bivariant position absorbs every variance inside it,
+    /// so the variances of a struct are only queried when `ambient` is
+    /// covariant or contravariant.
+    pub async fn arguments_with_ambient_variance(
+        &self,
+        ambient: Variance,
+        engine: &TrackedEngine,
+    ) -> impl Iterator<Item = (&Interned<Ty>, Variance)> {
+        let struct_variances = match (ambient, self.struct_id()) {
+            (Variance::Covariant | Variance::Contravariant, Some(struct_id)) => {
+                Some(engine.get_variance(struct_id).await)
+            }
+            (Variance::Covariant | Variance::Contravariant, None)
+            | (Variance::Invariant | Variance::Bivariant, _) => None,
+        };
+
+        self.args.iter().enumerate().map(move |(index, arg)| {
+            let variance = match ambient {
+                Variance::Invariant | Variance::Bivariant => ambient,
+                Variance::Covariant | Variance::Contravariant => {
+                    ambient.xform(self.argument_variance(index, struct_variances.as_deref()))
+                }
+            };
+            (arg, variance)
+        })
+    }
+
+    /// Returns the same type constructor applied to `args`.
+    ///
+    /// # Panics
+    ///
+    /// If `args` does not have as many arguments as this application.
+    #[must_use]
+    pub fn with_arguments(&self, args: Interned<[Interned<Ty>]>) -> Self {
+        assert_eq!(args.len(), self.args.len(), "a type constructor keeps its arity");
+        Self { constant: self.constant, args }
+    }
+
+    /// Returns the variance of the argument position `index`; see
+    /// [`Self::arguments_with_variance`].
+    fn argument_variance(&self, index: usize, struct_variances: Option<&VarianceMap>) -> Variance {
+        match self.constant {
+            Constant::Tuple => Variance::Covariant,
+
+            // Raw pointers are unchecked, so their pointee is never related.
+            Constant::Pointer(_) => Variance::Bivariant,
+
+            // The lifetime comes first and is always covariant.
+            Constant::Reference(mutability) => {
+                if index == 0 {
+                    Variance::Covariant
+                } else {
+                    mutability.pointee_variance()
+                }
+            }
+
+            Constant::Struct(_) => struct_variances
+                .expect("a struct application needs the variances of its struct")
+                .get_by_index(index),
+
+            // Closure types are invariant, as in rustc, and so are
+            // dictionaries and associated type projections. Primitives and
+            // errors have no arguments to relate.
+            Constant::Primitive(_)
+            | Constant::Instance(_)
+            | Constant::InstanceAssociated(_)
+            | Constant::Closure(_)
+            | Constant::DefInstance
+            | Constant::NoOpDropInstance
+            | Constant::TupleDropInstance
+            | Constant::ClosureDropInstance
+            | Constant::NominalDropInstance
+            | Constant::Error(_) => Variance::Invariant,
+        }
+    }
+
     #[must_use]
     pub const fn is_instance_associated(&self) -> bool {
         matches!(self.constant, Constant::InstanceAssociated(_))
@@ -461,7 +582,7 @@ impl Application {
         }
     }
 
-    pub(super) fn interned_iter(&self) -> impl Iterator<Item = &Interned<Ty>> { self.args.iter() }
+    pub(crate) fn interned_iter(&self) -> impl Iterator<Item = &Interned<Ty>> { self.args.iter() }
 
     pub(super) fn iter(&self) -> impl Iterator<Item = &Ty> {
         self.args.iter().map(std::convert::AsRef::as_ref)
@@ -478,8 +599,11 @@ impl Reduce for Application {
         &self,
         engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<Self> {
-        self.args.reduce(engine, givens).await.map(|args| Self { constant: self.constant, args })
+    ) -> Option<(Self, crate::constraint::outlives::OutlivesConstraints)> {
+        self.args
+            .reduce(engine, givens)
+            .await
+            .map(|(args, outlives)| (Self { constant: self.constant, args }, outlives))
     }
 }
 

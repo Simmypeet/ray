@@ -11,6 +11,7 @@ use rayc_symbol::{
     core_item::{CoreItem, get_core_item},
 };
 use rayc_type::{
+    constraint::outlives::OutlivesConstraints,
     poly_var::{GlobalPolyVarID, get_poly_var_map},
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
@@ -140,23 +141,50 @@ impl InstanceResolutionObligation {
     }
 }
 
-/// A selected dictionary term and every predicate required by its resolution
-/// tree.
+/// A selected dictionary term, every predicate required by its resolution
+/// tree, and the outlives constraints that selecting it requires.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct ResolvedInstance {
     term: Interned<Ty>,
     obligations: Vec<InstanceResolutionObligation>,
+
+    /// Lifetimes never decide which dictionary is selected. Matching the
+    /// selected heads and lexical dictionaries against their goals relates
+    /// the lifetimes in them instead, which produces these constraints.
+    outlives: OutlivesConstraints,
 }
 
 impl ResolvedInstance {
     #[must_use]
-    const fn new(term: Interned<Ty>, obligations: Vec<InstanceResolutionObligation>) -> Self {
-        Self { term, obligations }
+    const fn new(
+        term: Interned<Ty>,
+        obligations: Vec<InstanceResolutionObligation>,
+        outlives: OutlivesConstraints,
+    ) -> Self {
+        Self { term, obligations, outlives }
     }
 
+    /// Adds outlives constraints that the resolution also requires.
     #[must_use]
-    pub fn into_parts(self) -> (Interned<Ty>, Vec<InstanceResolutionObligation>) {
-        (self.term, self.obligations)
+    pub(crate) fn with_outlives(mut self, outlives: OutlivesConstraints) -> Self {
+        self.outlives = self.outlives.union(outlives);
+        self
+    }
+
+    /// Creates a resolution that requires nothing.
+    #[must_use]
+    fn new_unconditional(term: Interned<Ty>) -> Self {
+        Self::new(term, Vec::new(), OutlivesConstraints::new())
+    }
+
+    /// Returns the dictionary term, the instantiated where-clause predicates
+    /// of the selected proof tree, and the outlives constraints that
+    /// selecting it requires.
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (Interned<Ty>, Vec<InstanceResolutionObligation>, OutlivesConstraints) {
+        (self.term, self.obligations, self.outlives)
     }
 }
 
@@ -237,10 +265,10 @@ impl Solver {
             return None;
         }
 
-        Some(ResolvedInstance::new(
-            Ty::new_def_instance(closure.clone(), self.engine()),
-            Vec::new(),
-        ))
+        Some(ResolvedInstance::new_unconditional(Ty::new_def_instance(
+            closure.clone(),
+            self.engine(),
+        )))
     }
 
     pub(crate) async fn resolve_no_op_drop_instance(
@@ -264,15 +292,15 @@ impl Solver {
             return None;
         }
 
-        Some(ResolvedInstance::new(
-            Ty::new_no_op_drop_instance(ty.clone(), self.engine()),
-            Vec::new(),
-        ))
+        Some(ResolvedInstance::new_unconditional(Ty::new_no_op_drop_instance(
+            ty.clone(),
+            self.engine(),
+        )))
     }
 
     /// Makes `NoDrop` discard its field's dictionary and returns a no-op Drop
     /// dictionary for the wrapper itself.
-    pub(crate) async fn resolve_no_drop_instance(
+    pub(crate) async fn resolve_core_no_drop_instance(
         &self,
         required: &TraitRef,
     ) -> Option<ResolvedInstance> {
@@ -291,10 +319,10 @@ impl Solver {
             return None;
         }
 
-        Some(ResolvedInstance::new(
-            Ty::new_no_op_drop_instance(ty.clone(), self.engine()),
-            Vec::new(),
-        ))
+        Some(ResolvedInstance::new_unconditional(Ty::new_no_op_drop_instance(
+            ty.clone(),
+            self.engine(),
+        )))
     }
 
     /// Builds the intrinsic `Drop` dictionary for a tuple by resolving one
@@ -314,9 +342,10 @@ impl Solver {
         let elements = tuple.as_tuple_view()?.args();
 
         let resolution = self.resolve_element_drop_instances(elements, drop_trait).await;
-        Some(resolution.map(|(element_instances, obligations)| {
-            let term = Ty::new_tuple_drop_instance(tuple.clone(), element_instances, self.engine());
-            ResolvedInstance::new(term, obligations)
+        Some(resolution.map(|resolved| {
+            let term =
+                Ty::new_tuple_drop_instance(tuple.clone(), resolved.instances, self.engine());
+            ResolvedInstance::new(term, resolved.obligations, resolved.outlives)
         }))
     }
 
@@ -337,7 +366,7 @@ impl Solver {
         // Only the captures determine the dictionary, so readiness is checked
         // on them alone. The signature and effect row may stay uninferred,
         // e.g. for a closure that is never called.
-        if captured_tuple.contains_inference() {
+        if captured_tuple.contains_non_lifetime_inference() {
             return Some(Err(InstanceResolutionError::NotReady(required.clone())));
         }
         if captured_tuple.contains_error() {
@@ -349,23 +378,22 @@ impl Solver {
         let captures = captured_tuple.as_tuple_view()?.args();
 
         let resolution = self.resolve_element_drop_instances(captures, drop_trait).await;
-        Some(resolution.map(|(capture_instances, obligations)| {
+        Some(resolution.map(|resolved| {
             let term =
-                Ty::new_closure_drop_instance(closure.clone(), capture_instances, self.engine());
-            ResolvedInstance::new(term, obligations)
+                Ty::new_closure_drop_instance(closure.clone(), resolved.instances, self.engine());
+            ResolvedInstance::new(term, resolved.obligations, resolved.outlives)
         }))
     }
 
     /// Resolves one `Drop` dictionary per element, in element order, and
-    /// collects the obligations of every selected proof tree.
+    /// collects the obligations and outlives constraints of every selected
+    /// proof tree.
     async fn resolve_element_drop_instances(
         &mut self,
         elements: &[Interned<Ty>],
         drop_trait: GlobalSymbolID,
-    ) -> Result<(Vec<Interned<Ty>>, Vec<InstanceResolutionObligation>), InstanceResolutionError>
-    {
-        let mut element_instances = Vec::with_capacity(elements.len());
-        let mut obligations = Vec::new();
+    ) -> Result<ResolvedElementInstances, InstanceResolutionError> {
+        let mut resolved = ResolvedElementInstances::with_capacity(elements.len());
 
         // Retain the selected element dictionaries, including lexical givens,
         // and propagate every obligation from their proof trees.
@@ -373,14 +401,11 @@ impl Solver {
             for element in elements {
                 let element_requirement =
                     TraitRef::new(drop_trait, Args::new([element.clone()], self.engine()));
-                let resolved = self.resolve_instance_from(element_requirement, None).await?;
-
-                let (element_instance, element_obligations) = resolved.into_parts();
-                element_instances.push(element_instance);
-                extend_unique_obligations(&mut obligations, element_obligations);
+                let element = self.resolve_instance_from(element_requirement, None).await?;
+                resolved.push(element);
             }
 
-            Ok((element_instances, obligations))
+            Ok(resolved)
         })
         .await
     }
@@ -434,8 +459,8 @@ impl Solver {
         let engine = self.engine().clone();
 
         Box::pin(async move {
-            let mut external_instances = Vec::with_capacity(generated.requirements().len());
-            let mut obligations = Vec::new();
+            let mut external =
+                ResolvedElementInstances::with_capacity(generated.requirements().len());
 
             for ty in generated
                 .requirements()
@@ -443,16 +468,11 @@ impl Solver {
                 .map(|ty| ty.apply_subst_or_clone(&substitution, &engine))
             {
                 let requirement = TraitRef::new(drop_trait, Args::new([ty], &engine));
-                let resolved = self.resolve_instance_from(requirement, None).await?;
-                let (instance, nested_obligations) = resolved.into_parts();
-
-                external_instances.push(instance);
-
-                extend_unique_obligations(&mut obligations, nested_obligations);
+                external.push(self.resolve_instance_from(requirement, None).await?);
             }
 
-            let term = Ty::new_nominal_drop_instance(nominal, external_instances, self.engine());
-            Ok(ResolvedInstance::new(term, obligations))
+            let term = Ty::new_nominal_drop_instance(nominal, external.instances, self.engine());
+            Ok(ResolvedInstance::new(term, external.obligations, external.outlives))
         })
         .await
     }
@@ -492,7 +512,7 @@ impl Solver {
     pub async fn search_active_goal(&mut self, required: &TraitRef) -> InstanceResolutionResult {
         // This wrapper's contract discards all Drop implementations, including
         // dictionaries that would otherwise be found lexically.
-        if let Some(resolved) = self.resolve_no_drop_instance(required).await {
+        if let Some(resolved) = self.resolve_core_no_drop_instance(required).await {
             return Ok(resolved);
         }
 
@@ -516,8 +536,8 @@ impl Solver {
         // Lexical evidence is the nearest dictionary for ordinary requirements.
         match lexical::resolve(self, required).await {
             Ok(LexicalResolution::NotFound) => {}
-            Ok(LexicalResolution::Resolved(term)) => {
-                return Ok(ResolvedInstance::new(term, Vec::new()));
+            Ok(LexicalResolution::Resolved { term, outlives }) => {
+                return Ok(ResolvedInstance::new(term, Vec::new(), outlives));
             }
             Err(error) => return Err(error),
         }
@@ -570,7 +590,8 @@ impl Solver {
         &mut self,
         candidate: InstanceCandidate,
     ) -> Result<ResolvedInstance, InstanceCandidateFailure> {
-        let (mut subst, instance_id, pending_given_parameters) = candidate.into_parts();
+        let (mut subst, mut outlives, instance_id, pending_given_parameters) =
+            candidate.into_parts();
         let parameters = self.engine().get_poly_var_map(instance_id).await;
         let mut obligations = Vec::new();
 
@@ -591,10 +612,11 @@ impl Solver {
                             error: Box::new(error),
                         }
                     })?;
-                let (argument, nested_obligations) = resolved.into_parts();
+                let (argument, nested_obligations, nested_outlives) = resolved.into_parts();
 
                 subst.compose(&Subst::new_singleton(global_parameter_id, argument), self.engine());
                 extend_unique_obligations(&mut obligations, nested_obligations);
+                outlives = std::mem::take(&mut outlives).union(nested_outlives);
             }
 
             Ok(())
@@ -615,7 +637,7 @@ impl Solver {
         let where_clause = self.engine().get_where_clause(instance_id).await;
         extend_unique_obligations(
             &mut obligations,
-            where_clause.iter().map(|predicate| {
+            where_clause.predicates().map(|predicate| {
                 InstanceResolutionObligation::new(
                     instance_id,
                     predicate.kind().apply_subst_or_clone(&subst, self.engine()),
@@ -625,7 +647,34 @@ impl Solver {
 
         let term =
             Ty::new_instance(instance_id, Args::new(arguments, self.engine()), self.engine());
-        Ok(ResolvedInstance::new(term, obligations))
+        Ok(ResolvedInstance::new(term, obligations, outlives))
+    }
+}
+
+/// The dictionaries selected for several requirements of one intrinsic
+/// `Drop` dictionary, in requirement order, with the obligations and outlives
+/// constraints of their proof trees.
+struct ResolvedElementInstances {
+    instances: Vec<Interned<Ty>>,
+    obligations: Vec<InstanceResolutionObligation>,
+    outlives: OutlivesConstraints,
+}
+
+impl ResolvedElementInstances {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            instances: Vec::with_capacity(capacity),
+            obligations: Vec::new(),
+            outlives: OutlivesConstraints::new(),
+        }
+    }
+
+    /// Appends the dictionary selected for the next requirement.
+    fn push(&mut self, resolved: ResolvedInstance) {
+        let (instance, obligations, outlives) = resolved.into_parts();
+        self.instances.push(instance);
+        extend_unique_obligations(&mut self.obligations, obligations);
+        self.outlives = std::mem::take(&mut self.outlives).union(outlives);
     }
 }
 

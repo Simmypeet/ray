@@ -1007,29 +1007,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "inkwell"
-version = "0.5.0"
-source = "git+https://github.com/Simmypeet/inkwell?rev=4366f7b37b4e732b4c567494077f3d871e2a2a60#4366f7b37b4e732b4c567494077f3d871e2a2a60"
-dependencies = [
- "either",
- "inkwell_internals",
- "libc",
- "llvm-sys",
- "once_cell",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "inkwell_internals"
-version = "0.10.0"
-source = "git+https://github.com/Simmypeet/inkwell?rev=4366f7b37b4e732b4c567494077f3d871e2a2a60#4366f7b37b4e732b4c567494077f3d871e2a2a60"
-dependencies = [
- "proc-macro2 1.0.106",
- "quote 1.0.44",
- "syn 2.0.114",
-]
-
-[[package]]
 name = "insta"
 version = "1.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1156,20 +1133,6 @@ name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
-
-[[package]]
-name = "llvm-sys"
-version = "181.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e24aad69cbdb0c6ebe777262e9e6314dceba0d6e6a2a63e47563ccd293a2eda8"
-dependencies = [
- "anyhow",
- "cc",
- "lazy_static",
- "libc",
- "regex-lite",
- "semver",
-]
 
 [[package]]
 name = "lock_api"
@@ -1577,7 +1540,7 @@ dependencies = [
  "qbice_stable_type_id",
  "qbice_storage",
  "scc",
- "thiserror 2.0.18",
+ "thiserror",
  "thread_local",
  "tokio",
  "tracing",
@@ -1892,7 +1855,6 @@ version = "0.1.0-beta.2"
 dependencies = [
  "annotate-snippets",
  "ansi_term",
- "inkwell",
  "linkme",
  "qbice",
  "rayc_c2",
@@ -2030,7 +1992,7 @@ dependencies = [
  "siphasher",
  "strum",
  "strum_macros",
- "thiserror 2.0.18",
+ "thiserror",
 ]
 
 [[package]]
@@ -2209,6 +2171,7 @@ dependencies = [
  "rayc_source_file",
  "rayc_symbol",
  "rayc_target",
+ "rayc_transitive_closure",
  "rayc_type",
  "tokio",
 ]
@@ -2228,7 +2191,7 @@ dependencies = [
  "rayon",
  "ropey",
  "siphasher",
- "thiserror 2.0.18",
+ "thiserror",
 ]
 
 [[package]]
@@ -2350,7 +2313,7 @@ name = "rayc_tokio"
 version = "0.1.0-beta.2"
 dependencies = [
  "rayc_extend",
- "thiserror 2.0.18",
+ "thiserror",
  "tokio",
 ]
 
@@ -2359,6 +2322,7 @@ name = "rayc_transitive_closure"
 version = "0.1.0-beta.2"
 dependencies = [
  "getset",
+ "qbice",
 ]
 
 [[package]]
@@ -2476,12 +2440,6 @@ dependencies = [
  "memchr",
  "regex-syntax",
 ]
-
-[[package]]
-name = "regex-lite"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
 
 [[package]]
 name = "regex-syntax"
@@ -2908,31 +2866,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
 dependencies = [
- "thiserror-impl 2.0.18",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2 1.0.106",
- "quote 1.0.44",
- "syn 2.0.114",
+ "thiserror-impl",
 ]
 
 [[package]]

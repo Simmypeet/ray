@@ -1,0 +1,37 @@
+marker Send
+
+trait Project[t]:
+    type Out
+
+# OK: lifetime, type, and effect-row subjects.
+def forms['a, 'b, t, e: Effect]() -> () where ('a: 'b, t: 'a, e: 'a, int32: 'a):
+    return ()
+
+# OK: a dictionary can be bounded by a lifetime.
+def dictionary['a, t]() given (project: Project[t]) -> () where (project: 'a):
+    return ()
+
+# OK: a projection can be bounded by a lifetime.
+def projection['a, t]() given (project: Project[t]) -> () where (project.Out: 'a):
+    return ()
+
+# OK: a marker implementation assumes the requirements of its head, so the
+# implementor `&'a t` implies `t: 'a`.
+impl['a, t] Send for &'a t
+
+marker Sync
+
+# ERROR: marker implementations reject outlives predicates; the head's are
+# implied, and marker entailment ignores lifetimes.
+impl['a, t] Sync for &'a t where (t: 'a)
+
+struct Bounded['a, t] where (t: 'a):
+    value: *t
+    # Uses `'a` without inferring `t: 'a`.
+    lifetime: &'a int32
+
+# OK: the head implies the declared where clause of its struct.
+impl['a, t] Sync for Bounded['a, t]
+
+def main() -> ():
+    return ()

@@ -13,6 +13,7 @@ rayc_hash.path = "../../base/hash"
 rayc_qbice.path = "../../base/qbice"
 rayc_semantic_element.path = "../semantic_element"
 rayc_symbol.path = "../symbol"
+rayc_transitive_closure.path = "../../base/transitive_closure"
 rayc_type.path = "../type"
 
 [dev-dependencies]

@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: invalid marker implementation where-clause predicate
+   ╭▸ compiler/e2e/test/check/reference/outlives_predicate_resolution/main.ray:26:35
+   │
+26 │ impl['a, t] Sync for &'a t where (t: 'a)
+   ╰╴                                  ━━━━━ marker implementation where clauses may only contain marker predicates
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

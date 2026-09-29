@@ -1,0 +1,28 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: lifetime `'a` does not outlive `'static`
+   ╭▸ compiler/e2e/test/check/reference/relation_outlives/main.ray:17:66
+   │
+17 │ def shorter['a](callback: def() -> () \ {Reader[&'a int32; given EqStatic]}) -> ():
+   │                                                                  ━━━━━━━━ requires `'a: 'static`
+   │
+   ╰ help: consider adding `where ('a: 'static)`
+[note]: this is required when checking that `main.EqStatic` implements `main.Eq[&'a int32]`
+
+[error]: lifetime `'a` does not outlive `'static`
+   ╭▸ compiler/e2e/test/check/reference/relation_outlives/main.ray:42:36
+   │
+42 │ def equalityShorter['a](value: has.Value[given StaticBox]) given (has: HasValue['a]) -> ():
+   │                                    ━━━━━━━━━━━━━━━━━━━━━━ requires `'a: 'static`
+   │
+   ╰ help: consider adding `where ('a: 'static)`
+[note]: this is required by the where clause of `main.HasValue.Value`: `StaticBox.Item` must equal `&'a int32`
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

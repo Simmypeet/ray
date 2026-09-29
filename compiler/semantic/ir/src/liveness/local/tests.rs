@@ -2,9 +2,10 @@ use qbice::storage::intern::Interned;
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
 use rayc_qbice::{TrackedEngine, create_minimal_engine};
 use rayc_source_file::GlobalSourceID;
+use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::{Primitive, Ty};
 
-use super::{LiveLocals, Liveness};
+use super::{LiveLocals, LocalLiveness};
 use crate::{
     address::{Address, Local},
     cfg::{BlockID, Conditional, Point, Terminator},
@@ -28,7 +29,7 @@ impl FunctionBuilder {
     async fn new() -> Self {
         let engine = create_minimal_engine().await;
         let ty = Ty::new_primitive(Primitive::Int32, &engine);
-        let functions = IRFunctionMap::new(ty.clone());
+        let functions = IRFunctionMap::new(GlobalSymbolID::default());
         let function_id = functions.root_id();
         Self { engine, functions, function_id, ty }
     }
@@ -91,7 +92,7 @@ impl FunctionBuilder {
 
     async fn live_before(&self, point: Point) -> LiveLocals {
         let function = self.functions.get_function(self.function_id);
-        Liveness::compute(function).await.live_before(function, point).unwrap()
+        LocalLiveness::compute(function).await.live_before(function, point).unwrap()
     }
 }
 

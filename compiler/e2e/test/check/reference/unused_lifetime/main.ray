@@ -1,0 +1,34 @@
+# Unused lifetime parameters are allowed: they are bivariant, so their
+# arguments are never related.
+
+# OK: `'b` is unused, even though `'a` is used.
+struct Extra['a, 'b]:
+    value: &'a int32
+
+# OK: a lifetime used only in the where clause is unused.
+struct WhereOnly['a, t] where (t: 'a):
+    value: &'static int32
+
+# OK: a recursive struct that mentions `'a` only in its own recursion does not
+# use it.
+struct List['a, 'n]:
+    next: &'n List['a, 'n]
+
+# OK: mutually recursive structs that only pass `'a` to each other do not use
+# it.
+struct Even['a, 'n]:
+    next: &'n Odd['a, 'n]
+
+struct Odd['a, 'n]:
+    next: &'n Even['a, 'n]
+
+# OK: a raw pointer's pointee is not a use.
+struct Raw['a]:
+    value: *&'a int32
+
+# OK: `'a` is not used by any operation.
+eff Unused['a]:
+    def get() -> int32
+
+def main() -> ():
+    return ()

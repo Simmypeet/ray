@@ -1,0 +1,36 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: instance member `plain`: extraneous where-clause predicate
+  ╭▸ compiler/e2e/test/check/reference/outlives_conformance/main.ray:8:39
+  │
+2 │     def plain(value: *t) -> ()
+  │         ───── the corresponding trait member declares no equivalent requirement
+  ‡
+8 │     def plain(value: *t) -> () where (t: 'a):
+  ╰╴                                      ━━━━━ extra requirement: `t` must outlive `'a`
+
+[error]: instance member `reference`: missing where-clause predicate
+   ╭▸ compiler/e2e/test/check/reference/outlives_conformance/main.ray:13:9
+   │
+ 3 │     def reference(value: &'a t) -> () where (t: 'a)
+   │                                              ───── the required trait predicate is declared here
+   ‡
+13 │     def reference(value: &'a t) -> ():
+   ╰╴        ━━━━━━━━━ missing requirement: `t` must outlive `'a`
+
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/reference/outlives_conformance/main.ray:13:26
+   │
+13 │     def reference(value: &'a t) -> ():
+   │                          ━━━━━ the reference requires `t: 'a`
+   │
+   ╰ help: consider adding `where (t: 'a)`
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

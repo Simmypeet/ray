@@ -249,7 +249,7 @@ async fn self_instance_substitution_composes_without_capturing_other_traits() {
         Ty::new_instance_associated(id(3), engine.intern(Ty::SelfInstance(binder)), [], &engine)
     };
     let original = projection(this);
-    assert_eq!(original.reduce(&engine, &[]).await, None);
+    assert_eq!(original.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), None);
     let other = projection(SelfInstance::new(id(2)));
     let tuple = Ty::new_tuple(engine.intern_unsized([original, other.clone()]), &engine);
     let inference = Inference::new(TyKind::Instance, 0);

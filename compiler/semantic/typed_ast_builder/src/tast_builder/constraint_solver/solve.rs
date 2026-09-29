@@ -1,6 +1,5 @@
 use bon::Builder;
 use qbice::storage::intern::Interned;
-use rayc_qbice::TrackedEngine;
 use rayc_resolution::{PredicateConstraint, PredicateObligation};
 use rayc_solver::{
     instance_resolution::{InstanceResolutionError, InstanceResolutionObligation},
@@ -8,11 +7,12 @@ use rayc_solver::{
 };
 use rayc_type::{
     constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
-    reduce::Reduce,
+    subst::Subst,
     trait_ref::TraitRef,
     ty::{
         InferenceConstraint, Ty, TyKind,
         inference::{GenInfer, Inference},
+        lifetime::Lifetime,
     },
 };
 
@@ -59,22 +59,6 @@ impl PendingConstraint {
 
     pub fn interned_recursive_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
         self.constraint.interned_recursive_iter()
-    }
-}
-
-impl Reduce for PendingConstraint {
-    async fn reduce(
-        &self,
-        engine: &TrackedEngine,
-        givens: &[rayc_type::where_clause::PredicateKind],
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        self.constraint
-            .reduce(engine, givens)
-            .await
-            .map(|new_constraint| Self { constraint: new_constraint, cause_id: self.cause_id })
     }
 }
 
@@ -176,7 +160,7 @@ impl TAstBuilder {
                 ConstraintError::TyRelate(error),
                 PendingConstraint { constraint: Constraint::InstanceTraitRef(check), cause_id },
             )),
-            Ok(Step::Subst(_)) => {
+            Ok(Step::Subst(_) | Step::Generalized { .. }) => {
                 unreachable!("trait checks only derive type relations")
             }
         }
@@ -193,7 +177,9 @@ impl TAstBuilder {
             Ok(resolved) => {
                 let cause_id =
                     self.constraint_solver.provenance.insert_instance_resolution_cause(cause_id);
-                let (result, obligations) = resolved.into_parts();
+                // Type inference ignores lifetimes, so the outlives
+                // constraints of the selection are dropped.
+                let (result, obligations, _) = resolved.into_parts();
 
                 // Instance search returns the predicates contributed by the selected proof
                 // tree.
@@ -202,7 +188,7 @@ impl TAstBuilder {
                 // Relate the requested dictionary after its predicates have been queued. The
                 // worklist is LIFO, so this relation is solved before those predicates.
                 queued.push(PendingConstraint {
-                    constraint: Constraint::TyRelate(TyRelate::new(instance, result)),
+                    constraint: Constraint::TyRelate(TyRelate::new_invariant(instance, result)),
                     cause_id,
                 });
             }
@@ -242,6 +228,9 @@ impl TAstBuilder {
             let constraint = match obligation.constraint() {
                 PredicateConstraint::TyRelate(constraint) => Constraint::TyRelate(constraint),
                 PredicateConstraint::Marker(marker) => Constraint::MarkerPredicate(marker),
+                // Type inference ignores lifetimes; the borrow checker
+                // re-checks outlives on the IR.
+                PredicateConstraint::Outlives(_) => continue,
             };
             let predicate_cause_id =
                 self.constraint_solver.provenance.insert_root_cause(obligation.clone());
@@ -256,41 +245,30 @@ impl TAstBuilder {
         cause_id: CauseID,
         queued: &mut Vec<PendingConstraint>,
     ) {
-        match self.constraint_solver.solver.entail_ty_relate(&ty_relate).await {
+        // Type inference ignores lifetimes, so the outlives constraints of the
+        // step are dropped; the borrow checker re-infers them on the IR.
+        let step = self.constraint_solver.solver.entail_ty_relate(&ty_relate).await;
+        match step.map(|entailment| entailment.into_parts().0) {
             Ok(Step::Derived(constrs)) => {
                 queued.extend(
                     constrs.into_iter().map(|x| self.register_derived_constraint(cause_id, x)),
                 );
             }
 
-            Ok(Step::Subst(subst)) => {
-                self.constraint_solver.provenance.compose_subst(&subst, cause_id, &self.engine);
-                self.move_constraints_from_residual(queued);
+            Ok(Step::Subst(subst)) => self.apply_step_subst(&subst, cause_id, queued),
 
-                for queued_constraint in queued {
-                    if let Some(new_constraint) = self
-                        .constraint_solver
-                        .provenance
-                        .apply_subst_with_causes(queued_constraint, &self.engine)
-                    {
-                        *queued_constraint = new_constraint;
-                    }
-                }
+            Ok(Step::Generalized { subst, derived }) => {
+                self.apply_step_subst(&subst, cause_id, queued);
+                queued.extend(
+                    derived.into_iter().map(|x| self.register_derived_constraint(cause_id, x)),
+                );
             }
 
+            // The relation was normalized, so it waits for a binding.
             Ok(Step::NoProgress) => {
-                if let Some(reduced_constraint) =
-                    ty_relate.reduce(&self.engine, self.constraint_solver.solver.givens()).await
-                {
-                    queued.push(PendingConstraint {
-                        constraint: Constraint::TyRelate(reduced_constraint),
-                        cause_id,
-                    });
-                } else {
-                    self.constraint_solver.constraint_set.residual_constraints.push(
-                        PendingConstraint { constraint: Constraint::TyRelate(ty_relate), cause_id },
-                    );
-                }
+                self.constraint_solver.constraint_set.residual_constraints.push(
+                    PendingConstraint { constraint: Constraint::TyRelate(ty_relate), cause_id },
+                );
             }
 
             Err(err) => {
@@ -298,6 +276,28 @@ impl TAstBuilder {
                     ConstraintError::TyRelate(err),
                     PendingConstraint { constraint: Constraint::TyRelate(ty_relate), cause_id },
                 ));
+            }
+        }
+    }
+
+    /// Composes a substitution produced for the constraint with `cause_id`
+    /// and applies it to every pending constraint.
+    fn apply_step_subst(
+        &mut self,
+        subst: &Subst,
+        cause_id: CauseID,
+        queued: &mut Vec<PendingConstraint>,
+    ) {
+        self.constraint_solver.provenance.compose_subst(subst, cause_id, &self.engine);
+        self.move_constraints_from_residual(queued);
+
+        for queued_constraint in queued {
+            if let Some(new_constraint) = self
+                .constraint_solver
+                .provenance
+                .apply_subst_with_causes(queued_constraint, &self.engine)
+            {
+                *queued_constraint = new_constraint;
             }
         }
     }
@@ -349,10 +349,81 @@ impl TAstBuilder {
     pub async fn finish_constraints(&mut self) {
         self.default_numerics().await;
 
-        // Effect rows are defaulted last: retrying the residuals after numeric
-        // defaulting can still bind them, e.g. when a `Def` requirement fixes
-        // a closure's effect.
+        // Effect rows are defaulted after numerics: retrying the residuals
+        // after numeric defaulting can still bind them, e.g. when a `Def`
+        // requirement fixes a closure's effect.
         self.default_effect_rows().await;
+
+        // No residual is retried from here on: whatever remains is an error,
+        // except relations between two variables that wait for a binding.
+        self.bind_waiting_variables().await;
+
+        // Lifetimes are defaulted last, because retrying the residuals above
+        // can generalize types and create new lifetime inference variables.
+        self.default_lifetimes().await;
+    }
+
+    /// Binds the pairs of inference variables whose non-invariant relation,
+    /// such as `?x <: ?y`, still waits for one of them to be bound.
+    ///
+    /// Such a relation waits so that the variable bound second is bound to a
+    /// generalization of the first one; see `Solver::entail_ty_relate`. Once
+    /// the constraints reach a fixed point, nothing else binds either
+    /// variable, so each pair is related invariantly instead, which binds the
+    /// variables if their inference constraints allow it.
+    ///
+    /// This is a single pass: no other residual constraint is retried after
+    /// these bindings, so every other residual constraint stays an error.
+    async fn bind_waiting_variables(&mut self) {
+        let residual =
+            std::mem::take(&mut self.constraint_solver.constraint_set.residual_constraints);
+
+        for pending in residual {
+            let Some(unified) = pending.constraint.waiting_variable_pair() else {
+                self.constraint_solver.constraint_set.residual_constraints.push(pending);
+                continue;
+            };
+
+            // Type inference ignores lifetimes, so the outlives constraints of
+            // the step are dropped.
+            let step = self.constraint_solver.solver.entail_ty_relate(&unified).await;
+            match step.map(|entailment| entailment.into_parts().0) {
+                Ok(Step::Subst(subst)) => {
+                    let cause_id = pending.cause_id;
+                    self.constraint_solver.provenance.compose_subst(&subst, cause_id, &self.engine);
+                }
+
+                // An earlier binding already made the variables the same.
+                Ok(Step::Derived(derived)) if derived.is_empty() => {}
+
+                Ok(Step::Derived(_) | Step::Generalized { .. } | Step::NoProgress) => {
+                    self.constraint_solver.constraint_set.residual_constraints.push(pending);
+                }
+
+                Err(error) => {
+                    self.constraint_solver
+                        .constraint_set
+                        .errored_constraints
+                        .push((ConstraintError::TyRelate(error), pending));
+                }
+            }
+        }
+    }
+
+    /// Erases every lifetime inference variable.
+    ///
+    /// Lifetime inference variables are never bound. Type inference ignores
+    /// lifetimes, and the borrow checker re-infers them on the IR, so they
+    /// can take any lifetime. They never keep a constraint from being solved,
+    /// so no residual is retried.
+    async fn default_lifetimes(&mut self) {
+        let lifetimes = self.constraint_solver.take_recorded_lifetime_inferences();
+
+        let erased = Ty::new_lifetime(Lifetime::Erased, &self.engine);
+        self.constraint_solver
+            .provenance
+            .default_unbound_inferences(lifetimes, &erased, &self.constraint_solver.solver)
+            .await;
     }
 
     /// Defaults every numeric literal that no constraint determined to

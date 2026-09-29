@@ -3,9 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
 use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor, TrackedEngine};
-use rayc_semantic_element::{
-    drop_plan::{DropPlan, DropPlanError, GeneratedDropPlan, NominalDropPlan},
-    instance_trait_ref::Key as InstanceTraitRefKey,
+use rayc_semantic_element::drop_plan::{
+    DropPlan, DropPlanError, GeneratedDropPlan, NominalDropPlan,
 };
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::{
@@ -17,7 +16,7 @@ use rayc_type::{
     poly_var::{
         EnclosingMapsKey, GlobalPolyVarID, Key as PolyVarKey, PolyVar, PolyVarMap, PolyVarStack,
     },
-    trait_ref::TraitRef,
+    trait_ref::{InstanceTraitRefKey, TraitRef},
     ty::{Ty, application::View, args::Args},
     where_clause::{Key as WhereClauseKey, WhereClause},
 };
@@ -151,9 +150,9 @@ async fn generated_nominal_drop_retains_selected_external_dictionary() {
     let nominal = Ty::new_struct(wrapper, Args::new([site_ty], &engine), &engine);
     let drop_trait = TargetID::TEST.make_global(SymbolID::from_u128(3));
     let required = TraitRef::new(drop_trait, Args::new([nominal.clone()], &engine));
-    let mut solver = Solver::with_givens(engine.clone(), site, []);
+    let mut solver = Solver::with_givens(engine.clone(), site, []).await;
 
-    let (term, obligations) = solver.resolve_instance(required).await.unwrap().into_parts();
+    let (term, obligations, _) = solver.resolve_instance(required).await.unwrap().into_parts();
     let Ty::Application(application) = &*term else { panic!("expected an instance application") };
     let View::NominalDropInstance(instance) = application.view() else {
         panic!("expected a generated nominal Drop dictionary")
@@ -172,7 +171,7 @@ async fn invalid_nominal_drop_plan_cannot_resolve() {
     let nominal = Ty::new_struct(wrapper, Args::new([site_ty], &engine), &engine);
     let drop_trait = TargetID::TEST.make_global(SymbolID::from_u128(3));
     let required = TraitRef::new(drop_trait, Args::new([nominal], &engine));
-    let mut solver = Solver::with_givens(engine, site, []);
+    let mut solver = Solver::with_givens(engine, site, []).await;
 
     assert_eq!(
         solver.resolve_instance(required.clone()).await,
@@ -191,9 +190,9 @@ async fn explicit_nominal_drop_uses_only_planned_instance() {
     let drop_trait = TargetID::TEST.make_global(SymbolID::from_u128(3));
     let explicit = TargetID::TEST.make_global(SymbolID::from_u128(4));
     let required = TraitRef::new(drop_trait, Args::new([nominal], &engine));
-    let mut solver = Solver::with_givens(engine.clone(), site, []);
+    let mut solver = Solver::with_givens(engine.clone(), site, []).await;
 
-    let (term, obligations) = solver.resolve_instance(required).await.unwrap().into_parts();
+    let (term, obligations, _) = solver.resolve_instance(required).await.unwrap().into_parts();
     assert_eq!(
         term,
         Ty::new_instance(
@@ -254,9 +253,9 @@ async fn built_in_drop_takes_precedence_over_lexical_given() {
 
     let engine = engine.tracked().await;
     let required = TraitRef::new(drop_trait, Args::new([int_ty.clone()], &engine));
-    let mut solver = Solver::with_givens(engine.clone(), site, []);
+    let mut solver = Solver::with_givens(engine.clone(), site, []).await;
 
-    let (term, obligations) = solver.resolve_instance(required).await.unwrap().into_parts();
+    let (term, obligations, _) = solver.resolve_instance(required).await.unwrap().into_parts();
     assert_eq!(term, Ty::new_no_op_drop_instance(int_ty, &engine));
     assert!(obligations.is_empty());
 }

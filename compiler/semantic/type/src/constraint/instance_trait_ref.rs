@@ -4,6 +4,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_qbice::TrackedEngine;
 
 use crate::{
+    constraint::outlives::OutlivesConstraints,
     reduce::Reduce,
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
@@ -41,17 +42,18 @@ impl Reduce for InstanceTraitRef {
         &self,
         engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<Self> {
-        match (
-            self.instance.reduce(engine, givens).await,
-            self.expected.reduce(engine, givens).await,
-        ) {
-            (None, None) => None,
-            (instance, expected) => Some(Self::new(
-                instance.unwrap_or_else(|| self.instance.clone()),
-                expected.unwrap_or_else(|| self.expected.clone()),
-            )),
+    ) -> Option<(Self, OutlivesConstraints)> {
+        let instance = self.instance.reduce(engine, givens).await;
+        let expected = self.expected.reduce(engine, givens).await;
+        if instance.is_none() && expected.is_none() {
+            return None;
         }
+
+        let (instance, instance_outlives) =
+            instance.unwrap_or_else(|| (self.instance.clone(), OutlivesConstraints::new()));
+        let (expected, expected_outlives) =
+            expected.unwrap_or_else(|| (self.expected.clone(), OutlivesConstraints::new()));
+        Some((Self::new(instance, expected), instance_outlives.union(expected_outlives)))
     }
 }
 
