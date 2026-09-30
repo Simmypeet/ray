@@ -200,21 +200,28 @@ impl IRExpressionMap {
 impl VisitType for IRExpr {
     fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         visitor.visit_type(&self.ty, site);
+        self.kind.visit_types(site, visitor);
+    }
+}
 
-        match &self.kind {
-            IRExprKind::Call(call) => call.visit_types(site, visitor),
-            IRExprKind::Perform(perform) => perform.visit_types(site, visitor),
-            IRExprKind::Handle(handle) => handle.visit_types(site, visitor),
+/// Visits the types the operation itself uses, such as the substitution of a
+/// call, but not the type of the value it produces; see [`IRExpr::ty`].
+impl VisitType for IRExprKind {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        match self {
+            Self::Call(call) => call.visit_types(site, visitor),
+            Self::Perform(perform) => perform.visit_types(site, visitor),
+            Self::Handle(handle) => handle.visit_types(site, visitor),
 
-            IRExprKind::Error
-            | IRExprKind::Literal(_)
-            | IRExprKind::RefOf(_)
-            | IRExprKind::Load(_)
-            | IRExprKind::Phi(_)
-            | IRExprKind::Binary(_)
-            | IRExprKind::Tuple(_)
-            | IRExprKind::StructInitialization(_)
-            | IRExprKind::Closure(_) => {}
+            Self::Error
+            | Self::Literal(_)
+            | Self::RefOf(_)
+            | Self::Load(_)
+            | Self::Phi(_)
+            | Self::Binary(_)
+            | Self::Tuple(_)
+            | Self::StructInitialization(_)
+            | Self::Closure(_) => {}
         }
     }
 }

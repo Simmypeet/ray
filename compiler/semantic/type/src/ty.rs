@@ -19,7 +19,7 @@ use crate::{
         args::Args,
         effect_row::EffectRow,
         inference::{GenInfer, Inference},
-        lifetime::Lifetime,
+        lifetime::{Lifetime, RegionID},
     },
     variance::Variance,
 };
@@ -1208,6 +1208,13 @@ impl Ty {
     #[must_use]
     pub const fn as_poly_var(&self) -> Option<&GlobalPolyVarID> {
         if let Self::PolyVar(poly_var) = self { Some(poly_var) } else { None }
+    }
+
+    /// Returns the region variable this type is, if it is one; see
+    /// [`Lifetime::Region`].
+    #[must_use]
+    pub const fn as_region(&self) -> Option<RegionID> {
+        if let Self::Lifetime(Lifetime::Region(region)) = self { Some(*region) } else { None }
     }
 
     #[must_use]
