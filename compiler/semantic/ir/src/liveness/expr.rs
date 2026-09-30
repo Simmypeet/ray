@@ -19,7 +19,7 @@
 
 use std::convert::Infallible;
 
-use super::LiveSet;
+use super::{LiveEffects, LiveRanges, LiveSet, block_live_ranges};
 use crate::{
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
     dataflow::{DataflowProblem, DataflowSolution, Direction},
@@ -38,7 +38,7 @@ struct ExprLivenessProblem<'a> {
 
 impl ExprLivenessProblem<'_> {
     /// Moves `state` from just after `instruction` to just before it.
-    fn transfer(&self, instruction: &Instruction, state: &mut LiveExprs) {
+    fn transfer(&self, instruction: &Instruction, state: &mut impl LiveEffects<IRExprID>) {
         match instruction {
             // The value is defined here, after its operands are consumed.
             Instruction::Expression(expression_id) => {
@@ -68,7 +68,7 @@ impl ExprLivenessProblem<'_> {
     }
 
     /// Moves `state` from just after `terminator` to just before it.
-    fn transfer_across_terminator(terminator: &Terminator, state: &mut LiveExprs) {
+    fn transfer_across_terminator(terminator: &Terminator, state: &mut impl LiveEffects<IRExprID>) {
         match terminator {
             Terminator::Conditional(conditional) => state.mark_used(conditional.condition()),
             Terminator::Return(Some(value)) => state.mark_used(*value),
@@ -181,6 +181,34 @@ impl ExprLiveness {
             problem.transfer(instruction, &mut state);
         }
         Some(state)
+    }
+
+    /// Returns the points at which each expression value is live.
+    ///
+    /// The values a terminator consumes are live at its point, and the
+    /// incoming values of a phi are live up to the terminator of the
+    /// predecessor they come from.
+    #[must_use]
+    pub fn live_ranges(&self, function: &IRFunction) -> LiveRanges<IRExprID> {
+        let problem = ExprLivenessProblem { function };
+
+        LiveRanges::from_blocks(self.solution.reachable_blocks().map(|block_id| {
+            let exit = self.solution.block_exit(block_id).expect("reachable blocks are solved");
+            let instructions = function.block_instructions(block_id);
+            let terminator = function.block_terminator(block_id);
+
+            let ranges = block_live_ranges(
+                exit,
+                instructions,
+                |recorder| {
+                    if let Some(terminator) = terminator {
+                        ExprLivenessProblem::transfer_across_terminator(terminator, recorder);
+                    }
+                },
+                |instruction, recorder| problem.transfer(instruction, recorder),
+            );
+            (block_id, ranges)
+        }))
     }
 
     /// Returns the expression values live on entry to `block_id`, or `None`

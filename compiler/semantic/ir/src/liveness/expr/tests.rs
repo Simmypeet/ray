@@ -10,6 +10,7 @@ use crate::{
     cfg::{BlockID, Conditional, Point, Terminator},
     ir_expr::{IRExpr, IRExprID, IRExprKind, phi::Phi, tuple::Tuple},
     ir_function::{FunctionID, IRFunctionMap},
+    liveness::{LiveMode, LiveRanges},
 };
 
 /// Builds the root function of an [`IRFunctionMap`] one instruction at a
@@ -72,6 +73,29 @@ impl FunctionBuilder {
 
     async fn liveness(&self) -> ExprLiveness {
         ExprLiveness::compute(self.functions.get_function(self.function_id)).await
+    }
+
+    async fn live_ranges(&self) -> LiveRanges<IRExprID> {
+        let function = self.functions.get_function(self.function_id);
+        self.liveness().await.live_ranges(function)
+    }
+
+    /// Returns the live mode of `expression` at every point of `block_id`,
+    /// its terminator included.
+    async fn modes_in_block(
+        &self,
+        expression: IRExprID,
+        block_id: BlockID,
+    ) -> Vec<Option<LiveMode>> {
+        let ranges = self.live_ranges().await;
+        let len = self.functions.get_function(self.function_id).block_instructions(block_id).len();
+        (0..=len)
+            .map(|instruction_idx| {
+                let point =
+                    Point::builder().block_id(block_id).instruction_idx(instruction_idx).build();
+                ranges.live_mode(expression, point)
+            })
+            .collect()
     }
 
     async fn live_before(&self, point: Point) -> LiveExprs {
@@ -182,4 +206,56 @@ async fn phi_operand_is_live_only_on_its_incoming_edge() {
         else_value
     ]);
     assert_eq!(builder.liveness().await.block_entry(merge), Some(&LiveExprs::default()));
+}
+
+// input: live modes of `v` and `t` at every point of the block
+// premise: v = ..; t = (v,); return t
+// output: `v` is use-live only at `t`, and `t` only at the return, which
+//         consumes it
+#[tokio::test]
+async fn expression_live_range_includes_the_terminator_that_consumes_it() {
+    let mut builder = FunctionBuilder::new().await;
+    let entry = builder.entry();
+    let v = builder.value(entry);
+    let (t, _) = builder.define(entry, Tuple::new(vec![v]));
+    builder.terminate(entry, Terminator::Return(Some(t)));
+
+    assert_eq!(builder.modes_in_block(v, entry).await, vec![None, Some(LiveMode::Use), None]);
+    assert_eq!(builder.modes_in_block(t, entry).await, vec![None, None, Some(LiveMode::Use)]);
+}
+
+// input: live mode of the `then_block` operand of a phi in each block
+// premise: entry: c = ..; if c then then_block else else_block
+//          then_block: x = ..; jump merge
+//          else_block: y = ..; jump merge
+//          merge: p = phi(then_block: x, else_block: y); return p
+// output: `x` is use-live only at the jump from `then_block`, and dead in
+//         `else_block` and `merge`
+#[tokio::test]
+async fn phi_operand_live_range_ends_at_the_jump_from_its_predecessor() {
+    let mut builder = FunctionBuilder::new().await;
+    let entry = builder.entry();
+    let then_block = builder.block();
+    let else_block = builder.block();
+    let merge = builder.block();
+
+    let condition = builder.value(entry);
+    builder.terminate(
+        entry,
+        Terminator::Conditional(Conditional::new(condition, then_block, else_block)),
+    );
+    let then_value = builder.value(then_block);
+    builder.terminate(then_block, Terminator::Jump(merge));
+    let else_value = builder.value(else_block);
+    builder.terminate(else_block, Terminator::Jump(merge));
+    let incoming = [(then_block, then_value), (else_block, else_value)].into_iter().collect();
+    let (merged, _) = builder.define(merge, Phi::new(incoming));
+    builder.terminate(merge, Terminator::Return(Some(merged)));
+
+    assert_eq!(builder.modes_in_block(then_value, then_block).await, vec![
+        None,
+        Some(LiveMode::Use)
+    ]);
+    assert_eq!(builder.modes_in_block(then_value, else_block).await, vec![None, None]);
+    assert_eq!(builder.modes_in_block(then_value, merge).await, vec![None, None]);
 }

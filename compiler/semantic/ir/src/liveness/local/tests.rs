@@ -13,6 +13,7 @@ use crate::{
     },
     ir_expr::{IRExpr, load::Load},
     ir_function::{FunctionID, IRFunctionMap},
+    liveness::{LiveMode, LiveRanges},
 };
 
 /// Builds the root function of an [`IRFunctionMap`] one instruction at a
@@ -91,6 +92,25 @@ impl FunctionBuilder {
 
     fn terminate(&mut self, block_id: BlockID, terminator: Terminator) {
         self.functions.set_terminator(self.function_id, block_id, terminator);
+    }
+
+    async fn live_ranges(&self) -> LiveRanges<Local> {
+        let function = self.functions.get_function(self.function_id);
+        LocalLiveness::compute(function).await.live_ranges(function)
+    }
+
+    /// Returns the live mode of `local` at every point of `block_id`, its
+    /// terminator included.
+    async fn modes_in_block(&self, local: Local, block_id: BlockID) -> Vec<Option<LiveMode>> {
+        let ranges = self.live_ranges().await;
+        let len = self.functions.get_function(self.function_id).block_instructions(block_id).len();
+        (0..=len)
+            .map(|instruction_idx| {
+                let point =
+                    Point::builder().block_id(block_id).instruction_idx(instruction_idx).build();
+                ranges.live_mode(local, point)
+            })
+            .collect()
     }
 
     async fn live_before(&self, point: Point) -> LiveLocals {
@@ -263,4 +283,51 @@ async fn local_read_in_a_loop_without_exit_is_live() {
     builder.terminate(loop_block, Terminator::Jump(loop_block));
 
     assert!(builder.live_before(jump).await.is_use_live(x));
+}
+
+// input: live mode of `x` at every point of the block
+// premise: v = ..; x = v; read(x); drop(x); return
+// output: dead, dead, use-live, drop-live, dead
+#[tokio::test]
+async fn local_live_range_follows_its_definition_use_and_drop() {
+    let mut builder = FunctionBuilder::new().await;
+    let x = builder.variable();
+    let entry = builder.entry();
+    let address = builder.address(x);
+    builder.store(entry, address);
+    builder.read(entry, x);
+    builder.drop(entry, x, builder.ty.clone());
+    builder.terminate(entry, Terminator::Return(None));
+
+    assert_eq!(builder.modes_in_block(x, entry).await, vec![
+        None,
+        None,
+        Some(LiveMode::Use),
+        Some(LiveMode::Drop),
+        None
+    ]);
+}
+
+// input: live mode of `x` at every point of `middle`
+// premise: entry: jump middle; middle: read(y); jump exit;
+//          exit: read(x); return
+// output: `x` is use-live at every point of `middle`, which never mentions it
+#[tokio::test]
+async fn local_live_range_spans_a_block_that_does_not_mention_it() {
+    let mut builder = FunctionBuilder::new().await;
+    let x = builder.variable();
+    let y = builder.variable();
+    let entry = builder.entry();
+    let middle = builder.block();
+    let exit = builder.block();
+    builder.terminate(entry, Terminator::Jump(middle));
+    builder.read(middle, y);
+    builder.terminate(middle, Terminator::Jump(exit));
+    builder.read(exit, x);
+    builder.terminate(exit, Terminator::Return(None));
+
+    assert_eq!(builder.modes_in_block(x, middle).await, vec![
+        Some(LiveMode::Use),
+        Some(LiveMode::Use)
+    ]);
 }

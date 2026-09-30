@@ -11,7 +11,7 @@
 
 use std::convert::Infallible;
 
-use super::LiveSet;
+use super::{LiveEffects, LiveRanges, LiveSet, block_live_ranges};
 use crate::{
     address::{Address, Local},
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
@@ -31,7 +31,7 @@ struct LocalLivenessProblem<'a> {
 
 impl LocalLivenessProblem<'_> {
     /// Moves `state` from just after `instruction` to just before it.
-    fn transfer(&self, instruction: &Instruction, state: &mut LiveLocals) {
+    fn transfer(&self, instruction: &Instruction, state: &mut impl LiveEffects<Local>) {
         match instruction {
             Instruction::Expression(expression_id) => {
                 match self.function.get_expression(*expression_id).kind() {
@@ -93,7 +93,7 @@ impl LocalLivenessProblem<'_> {
 
 /// Records a read of the place `address`, which uses its local, or the
 /// pointer it dereferences.
-fn use_address(address: &Address, state: &mut LiveLocals) {
+fn use_address(address: &Address, state: &mut impl LiveEffects<Local>) {
     if let Some(local) = address.local() {
         state.mark_used(local);
     }
@@ -178,6 +178,28 @@ impl LocalLiveness {
             problem.transfer(instruction, &mut state);
         }
         Some(state)
+    }
+
+    /// Returns the points at which each local is live.
+    #[must_use]
+    pub fn live_ranges(&self, function: &IRFunction) -> LiveRanges<Local> {
+        let problem = LocalLivenessProblem { function };
+
+        LiveRanges::from_blocks(self.solution.reachable_blocks().map(|block_id| {
+            let exit = self.solution.block_exit(block_id).expect("reachable blocks are solved");
+            let instructions = function.block_instructions(block_id);
+
+            // Terminators only read evaluated expressions.
+            let ranges = block_live_ranges(
+                exit,
+                instructions,
+                |_| {},
+                |instruction, recorder| {
+                    problem.transfer(instruction, recorder);
+                },
+            );
+            (block_id, ranges)
+        }))
     }
 
     /// Returns the locals live on entry to `block_id`, or `None` when the
