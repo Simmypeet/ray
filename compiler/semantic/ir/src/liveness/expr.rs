@@ -11,12 +11,11 @@
 //! - an [`Instruction::ExprDiscard`], which drops it.
 //!
 //! An expression is **use-live** at a point when some path from that point
-//! reaches its use, and **drop-live** when it only reaches its discard. On a
-//! well-formed function, whose every path consumes each defined value
-//! exactly once, this is exactly the set of values defined and not yet
-//! consumed. Where a path leaves a value unconsumed, such as an early `return`
-//! in the middle of an evaluation, the value is dead on that path, since it is
-//! never read again.
+//! reaches its use, and **drop-live** when it only reaches a discard with a
+//! non-no-op `Drop` instance. A no-op discard does not keep its value live.
+//! Where a path leaves a value unconsumed, such as an early `return` in the
+//! middle of an evaluation, the value is dead on that path, since it is never
+//! read again.
 
 use std::convert::Infallible;
 
@@ -55,7 +54,11 @@ impl ExprLivenessProblem<'_> {
                 }
             }
 
-            Instruction::ExprDiscard(discard) => state.mark_dropped(discard.expression()),
+            Instruction::ExprDiscard(discard) => {
+                if !discard.drop_instance().is_no_op_drop_instance() {
+                    state.mark_dropped(discard.expression());
+                }
+            }
 
             Instruction::Store(store) => state.mark_used(store.expression()),
 

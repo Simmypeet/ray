@@ -3,7 +3,8 @@
 //! A local is **use-live** at a point when some path from that point reads
 //! its current value before overwriting it. A local is **drop-live** at a
 //! point when its current value is not used again on any path, but is still
-//! dropped by an [`Instruction::AddressDrop`] on some path.
+//! dropped by an [`Instruction::AddressDrop`] with a non-no-op `Drop`
+//! instance on some path.
 //!
 //! Liveness is tracked per local, not per place: using or dropping any part of
 //! a local makes the whole local live, as in rustc.
@@ -77,6 +78,9 @@ impl LocalLivenessProblem<'_> {
 
             // A drop only passes the value to its `Drop.drop` call.
             Instruction::AddressDrop(drop) => {
+                if drop.drop_instance().is_no_op_drop_instance() {
+                    return;
+                }
                 if let Some(local) = drop.address().local() {
                     state.mark_dropped(local);
                 }

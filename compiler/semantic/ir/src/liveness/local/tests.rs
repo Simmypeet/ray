@@ -66,13 +66,13 @@ impl FunctionBuilder {
         point
     }
 
-    fn drop(&mut self, block_id: BlockID, local: Local) -> Point {
+    fn drop(&mut self, block_id: BlockID, local: Local, drop_instance: Interned<Ty>) -> Point {
         let point = self.next_point(block_id);
         let address = self.address(local);
         let mut insertion = InstructionInsertion::new();
         insertion.insert_before(point, [Instruction::AddressDrop(AddressDrop::new(
             address,
-            self.ty.clone(),
+            drop_instance,
             test_span(),
         ))]);
         self.functions.insert_instructions(self.function_id, insertion);
@@ -182,7 +182,7 @@ async fn local_is_drop_live_after_its_last_use() {
     let x = builder.variable();
     let entry = builder.entry();
     let read = builder.read(entry, x);
-    let drop = builder.drop(entry, x);
+    let drop = builder.drop(entry, x, builder.ty.clone());
     builder.terminate(entry, Terminator::Return(None));
 
     let before_read = builder.live_before(read).await;
@@ -192,6 +192,28 @@ async fn local_is_drop_live_after_its_last_use() {
     let before_drop = builder.live_before(drop).await;
     assert!(!before_drop.is_use_live(x));
     assert!(before_drop.is_drop_live(x));
+}
+
+// input: liveness before the read and no-op drop of `x`
+// premise: entry: read(x); jump exit; exit: no_op_drop(x); return
+// output: `x` is use-live before its read and dead on entry to `exit`
+#[tokio::test]
+async fn no_op_drop_does_not_keep_the_local_live() {
+    let mut builder = FunctionBuilder::new().await;
+    let x = builder.variable();
+    let entry = builder.entry();
+    let exit = builder.block();
+    let read = builder.read(entry, x);
+    builder.terminate(entry, Terminator::Jump(exit));
+    let no_op = Ty::new_no_op_drop_instance(builder.ty.clone(), &builder.engine);
+    let drop = builder.drop(exit, x, no_op);
+    builder.terminate(exit, Terminator::Return(None));
+
+    let function = builder.functions.get_function(builder.function_id);
+    let liveness = LocalLiveness::compute(function).await;
+    assert!(liveness.live_before(function, read).unwrap().is_use_live(x));
+    assert_eq!(liveness.block_entry(exit), Some(&LiveLocals::default()));
+    assert_eq!(liveness.live_before(function, drop), Some(LiveLocals::default()));
 }
 
 // input: liveness at a branch on `c`
@@ -216,7 +238,7 @@ async fn use_on_one_branch_subsumes_drop_on_another() {
     );
     builder.read(then_block, x);
     builder.terminate(then_block, Terminator::Jump(merge));
-    builder.drop(else_block, x);
+    builder.drop(else_block, x, builder.ty.clone());
     builder.terminate(else_block, Terminator::Jump(merge));
     builder.terminate(merge, Terminator::Return(None));
 

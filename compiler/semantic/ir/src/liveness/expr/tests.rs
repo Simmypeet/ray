@@ -1,6 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
-use rayc_qbice::create_minimal_engine;
+use rayc_qbice::{TrackedEngine, create_minimal_engine};
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::{Primitive, Ty};
@@ -15,6 +15,7 @@ use crate::{
 /// Builds the root function of an [`IRFunctionMap`] one instruction at a
 /// time, recording the point of each instruction it appends.
 struct FunctionBuilder {
+    engine: TrackedEngine,
     functions: IRFunctionMap,
     function_id: FunctionID,
     ty: Interned<Ty>,
@@ -26,7 +27,7 @@ impl FunctionBuilder {
         let ty = Ty::new_primitive(Primitive::Int32, &engine);
         let functions = IRFunctionMap::new(GlobalSymbolID::default());
         let function_id = functions.root_id();
-        Self { functions, function_id, ty }
+        Self { engine, functions, function_id, ty }
     }
 
     fn entry(&self) -> BlockID { self.functions.entry_block(self.function_id) }
@@ -54,9 +55,14 @@ impl FunctionBuilder {
         self.define(block_id, IRExprKind::Error).0
     }
 
-    fn discard(&mut self, block_id: BlockID, expression: IRExprID) -> Point {
+    fn discard(
+        &mut self,
+        block_id: BlockID,
+        expression: IRExprID,
+        drop_instance: Interned<Ty>,
+    ) -> Point {
         let point = self.next_point(block_id);
-        self.functions.push_expr_discard(self.function_id, block_id, expression, self.ty.clone());
+        self.functions.push_expr_discard(self.function_id, block_id, expression, drop_instance);
         point
     }
 
@@ -109,12 +115,34 @@ async fn discarded_expression_is_only_drop_live() {
     let mut builder = FunctionBuilder::new().await;
     let entry = builder.entry();
     let v = builder.value(entry);
-    let discard = builder.discard(entry, v);
+    let discard = builder.discard(entry, v, builder.ty.clone());
     builder.terminate(entry, Terminator::Return(None));
 
     let live = builder.live_before(discard).await;
     assert!(!live.is_use_live(v));
     assert!(live.is_drop_live(v));
+}
+
+// input: liveness between the definition and no-op discard of `v`
+// premise: entry: v = ..; jump exit; exit: no_op_discard(v); return
+// output: `v` is dead at the jump and on entry to `exit`
+#[tokio::test]
+async fn no_op_discard_does_not_keep_the_expression_live() {
+    let mut builder = FunctionBuilder::new().await;
+    let entry = builder.entry();
+    let exit = builder.block();
+    let v = builder.value(entry);
+    let jump = builder.next_point(entry);
+    builder.terminate(entry, Terminator::Jump(exit));
+    let no_op = Ty::new_no_op_drop_instance(builder.ty.clone(), &builder.engine);
+    let discard = builder.discard(exit, v, no_op);
+    builder.terminate(exit, Terminator::Return(None));
+
+    let function = builder.functions.get_function(builder.function_id);
+    let liveness = builder.liveness().await;
+    assert_eq!(liveness.live_before(function, jump), Some(LiveExprs::default()));
+    assert_eq!(liveness.block_entry(exit), Some(&LiveExprs::default()));
+    assert_eq!(liveness.live_before(function, discard), Some(LiveExprs::default()));
 }
 
 // input: liveness at the jumps into `merge` and on entry to `merge`

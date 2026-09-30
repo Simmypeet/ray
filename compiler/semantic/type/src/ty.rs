@@ -117,6 +117,43 @@ pub enum Ty {
 }
 
 impl Ty {
+    /// Returns whether this is a built-in `Drop` dictionary that does nothing.
+    ///
+    /// Tuple and closure dictionaries are no-ops when all their element or
+    /// capture dictionaries are recursively no-ops, including empty ones.
+    #[must_use]
+    pub fn is_no_op_drop_instance(&self) -> bool {
+        match self {
+            Self::Application(application) => match application.view() {
+                ApplicationView::NoOpDropInstance(_) => true,
+                ApplicationView::TupleDropInstance(instance) => instance
+                    .element_instances()
+                    .iter()
+                    .all(|instance| instance.is_no_op_drop_instance()),
+                ApplicationView::ClosureDropInstance(instance) => instance
+                    .capture_instances()
+                    .iter()
+                    .all(|instance| instance.is_no_op_drop_instance()),
+                ApplicationView::Primitive(_)
+                | ApplicationView::Tuple(_)
+                | ApplicationView::Pointer(_)
+                | ApplicationView::Reference(_)
+                | ApplicationView::Struct(_)
+                | ApplicationView::Instance(_)
+                | ApplicationView::InstanceAssociated(_)
+                | ApplicationView::Closure(_)
+                | ApplicationView::DefInstance(_)
+                | ApplicationView::NominalDropInstance(_)
+                | ApplicationView::Error => false,
+            },
+            Self::Inference(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::EffectRow(_)
+            | Self::Lifetime(_) => false,
+        }
+    }
+
     /// Returns whether both types are applications of the same outer type
     /// constructor with the same arity.
     #[must_use]
