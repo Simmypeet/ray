@@ -99,6 +99,13 @@ pub struct LocalizedConstraints {
 
     /// The loans issued by the borrows of the function.
     loans: Arena<Loan>,
+
+    /// The loan issued by each borrow expression.
+    loans_by_ref_of_id: FxHashMap<IRExprID, LoanID>,
+
+    /// The loans of the places in each local, including the places reached
+    /// through a dereference of it.
+    loans_by_local: FxHashMap<Local, Vec<LoanID>>,
 }
 
 impl LocalizedConstraints {
@@ -150,6 +157,31 @@ impl LocalizedConstraints {
     #[must_use]
     pub fn get_loan(&self, id: LoanID) -> &Loan { self.loans.get(id).expect("loan should exist") }
 
+    /// Returns the loan issued by the borrow expression `expression_id`, or
+    /// `None` when the expression is not a borrow, or borrows an error
+    /// address.
+    #[must_use]
+    pub fn loan_of_ref_of(&self, expression_id: IRExprID) -> Option<LoanID> {
+        self.loans_by_ref_of_id.get(&expression_id).copied()
+    }
+
+    /// Iterates over the loans of the places in `local`, including the places
+    /// reached through a dereference of it, in unspecified order.
+    pub fn loans_of_local(&self, local: Local) -> impl Iterator<Item = LoanID> + '_ {
+        self.loans_by_local.get(&local).into_iter().flatten().copied()
+    }
+
+    /// Records `loan`, issued by the borrow expression `expression_id`.
+    fn issue_loan(&mut self, expression_id: IRExprID, loan: Loan) {
+        // A loan is only issued for a place with a type, which an error
+        // address does not have.
+        let local = loan.address.local().expect("a loan should borrow a place of a local");
+
+        let loan_id = self.loans.insert(loan);
+        self.loans_by_ref_of_id.insert(expression_id, loan_id);
+        self.loans_by_local.entry(local).or_default().push(loan_id);
+    }
+
     /// Adds the edge `'lesser@point -> 'greater@point` for the constraint
     /// `'lesser: 'greater` required at `point`.
     fn add(&mut self, point: Point, constraint: &OutlivesConstraint) {
@@ -197,7 +229,9 @@ impl ConstraintCollector<'_> {
         let expression = self.function.get_expression(expression_id);
 
         match expression.kind() {
-            IRExprKind::RefOf(ref_of) => self.collect_borrow(point, ref_of, expression.ty()).await,
+            IRExprKind::RefOf(ref_of) => {
+                self.collect_borrow(point, expression_id, ref_of, expression.ty()).await;
+            }
             IRExprKind::Load(load) => self.collect_load(point, load, expression.ty()).await,
 
             // Neither reads a place nor relates two values.
@@ -216,9 +250,15 @@ impl ConstraintCollector<'_> {
         }
     }
 
-    /// Collects the constraints of the borrow `ref_of`, whose reference has
-    /// type `ty`, and issues its loan.
-    async fn collect_borrow(&mut self, point: Point, ref_of: &RefOf, ty: &Interned<Ty>) {
+    /// Collects the constraints of the borrow `ref_of`, the expression
+    /// `expression_id` whose reference has type `ty`, and issues its loan.
+    async fn collect_borrow(
+        &mut self,
+        point: Point,
+        expression_id: IRExprID,
+        ref_of: &RefOf,
+        ty: &Interned<Ty>,
+    ) {
         let mut dereferenced = Vec::new();
         let Some(place_ty) =
             self.place_type(ref_of.address(), |pointer| dereferenced.push(pointer.clone())).await
@@ -235,7 +275,7 @@ impl ConstraintCollector<'_> {
 
         self.collect_reborrow(point, reference.lifetime(), &dereferenced);
 
-        self.constraints.loans.insert(Loan {
+        self.constraints.issue_loan(expression_id, Loan {
             region: reference.lifetime().clone(),
             point,
             address: ref_of.address().clone(),
