@@ -186,6 +186,17 @@ impl Address {
     #[must_use]
     pub fn projections(&self) -> &[Projection] { &self.projections }
 
+    /// Returns whether the place `other` selects lies within the place this
+    /// address selects: both start from the same root, and the projections of
+    /// this address are a prefix of those of `other`.
+    ///
+    /// Every address contains itself. `x` contains `x.0` and `*x`, but `x.0`
+    /// contains neither `x` nor `x.1`.
+    #[must_use]
+    pub fn contains(&self, other: &Self) -> bool {
+        self.root == other.root && other.projections.starts_with(&self.projections)
+    }
+
     /// Returns whether this address reaches memory through a pointer, that is,
     /// whether any of its projections is a dereference.
     #[must_use]
