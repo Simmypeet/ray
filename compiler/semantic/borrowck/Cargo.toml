@@ -16,5 +16,11 @@ rayc_solver.path = "../solver"
 rayc_type.path = "../type"
 qbice.workspace = true
 
+[dev-dependencies]
+rayc_lexical.path = "../../syntax/lexical"
+rayc_source_file.path = "../../base/source_file"
+rayc_symbol.path = "../symbol"
+tokio.workspace = true
+
 [lints]
 workspace = true

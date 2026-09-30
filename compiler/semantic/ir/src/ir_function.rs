@@ -740,6 +740,18 @@ impl IRFunction {
         self.cfg.instructions_with_points(block_id)
     }
 
+    /// Iterates over the points control reaches right after `point`; see
+    /// [`Cfg::successor_points`].
+    pub fn successor_points(&self, point: Point) -> impl Iterator<Item = Point> + '_ {
+        self.cfg.successor_points(point)
+    }
+
+    /// Iterates over the points control comes from right before `point`; see
+    /// [`Cfg::predecessor_points`].
+    pub fn predecessor_points(&self, point: Point) -> impl Iterator<Item = Point> + '_ {
+        self.cfg.predecessor_points(point)
+    }
+
     #[must_use]
     pub fn block_terminator(&self, block_id: BlockID) -> Option<&Terminator> {
         self.cfg.terminator(block_id)

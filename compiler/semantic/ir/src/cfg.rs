@@ -786,6 +786,51 @@ impl Cfg {
             })
     }
 
+    /// Iterates over the points control reaches right after `point`: the next
+    /// instruction of its block, or, from its terminator, the first point of
+    /// each block it jumps to.
+    ///
+    /// A point one past the last instruction of a block stands for its
+    /// terminator.
+    pub fn successor_points(&self, point: Point) -> impl Iterator<Item = Point> + '_ {
+        let Point { block_id, instruction_idx } = point;
+        let is_terminator = instruction_idx == self.instructions(block_id).len();
+
+        let next =
+            (!is_terminator).then(|| Point { block_id, instruction_idx: instruction_idx + 1 });
+        let jumps = is_terminator
+            .then(|| self.terminator(block_id))
+            .flatten()
+            .into_iter()
+            .flat_map(Terminator::jump_targets)
+            .map(|target| Point { block_id: target, instruction_idx: 0 });
+
+        next.into_iter().chain(jumps)
+    }
+
+    /// Iterates over the points control comes from right before `point`: the
+    /// previous instruction of its block, or, from its first point, the
+    /// terminator of each predecessor block.
+    ///
+    /// A point one past the last instruction of a block stands for its
+    /// terminator.
+    pub fn predecessor_points(&self, point: Point) -> impl Iterator<Item = Point> + '_ {
+        let Point { block_id, instruction_idx } = point;
+
+        let previous = instruction_idx
+            .checked_sub(1)
+            .map(|instruction_idx| Point { block_id, instruction_idx });
+        let jumps =
+            (instruction_idx == 0).then(|| &self[block_id].predecessors).into_iter().flatten().map(
+                |&predecessor| Point {
+                    block_id: predecessor,
+                    instruction_idx: self.instructions(predecessor).len(),
+                },
+            );
+
+        previous.into_iter().chain(jumps)
+    }
+
     #[must_use]
     pub fn instructions(&self, block_id: BlockID) -> &[Instruction] {
         &self.blocks.get(block_id).expect("Block should exist").instructions
