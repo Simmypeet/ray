@@ -10,7 +10,8 @@ use rayc_type::ty::{Ty, application::ClosureID};
 use crate::{
     address::Address,
     cfg::{
-        BlockID, Cfg, ControlFlowEdge, Instruction, InstructionInsertion, Reachables, Terminator,
+        BlockID, Cfg, ControlFlowEdge, Instruction, InstructionInsertion, Point, Reachables,
+        Terminator,
     },
     dataflow::{DataflowProblem, DataflowSolution, solve},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
@@ -727,6 +728,16 @@ impl IRFunction {
     #[must_use]
     pub fn block_instructions(&self, block_id: BlockID) -> &[Instruction] {
         self.cfg.instructions(block_id)
+    }
+
+    /// Iterates over the instructions of a block, in order, each with the
+    /// point it sits at.
+    #[must_use]
+    pub fn block_instructions_with_points(
+        &self,
+        block_id: BlockID,
+    ) -> impl ExactSizeIterator<Item = (Point, &Instruction)> {
+        self.cfg.instructions_with_points(block_id)
     }
 
     #[must_use]

@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 use bon::Builder;
 use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_arena::{ID, OrderedArena};
@@ -56,6 +58,12 @@ impl ParameterMap {
     pub fn push(&mut self, parameter: Parameter) -> ID<Parameter> {
         self.parameters.insert(parameter)
     }
+}
+
+impl Index<ID<Parameter>> for ParameterMap {
+    type Output = Parameter;
+
+    fn index(&self, index: ID<Parameter>) -> &Self::Output { &self.parameters[index] }
 }
 
 /// Retrieves the parameters of a function symbol
