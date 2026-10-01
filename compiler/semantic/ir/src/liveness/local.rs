@@ -47,6 +47,7 @@ impl LocalLivenessProblem<'_> {
                     | IRExprKind::Phi(_)
                     | IRExprKind::Perform(_)
                     | IRExprKind::Tuple(_)
+                    | IRExprKind::RefToPointer(_)
                     | IRExprKind::Closure(_)
                     | IRExprKind::Handle(_)
                     | IRExprKind::StructInitialization(_) => {}

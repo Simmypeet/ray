@@ -6,7 +6,9 @@
 //! - `&mut t` to `&t`, as the reborrow `r.*.&`;
 //! - `&mut t` to `&mut t`, as the implicit reborrow `r.*.&mut`, so that passing
 //!   a unique reference along does not move it;
-//! - `&t` to `*t`, and `&mut t` to `*t` or `*mut t`, as a raw borrow of `r.*`.
+//! - `&t` to `*t`, and `&mut t` to `*t` or `*mut t`, as a [`RefToPointer`] of
+//!   the reference, which is first reborrowed when it is unique so that the
+//!   coercion does not move it.
 //!
 //! Coercion only looks at the outermost type constructors, and only at what
 //! inference knows when the coercion site is bound. Everything else is left to
@@ -18,6 +20,7 @@ use rayc_typed_ast::typed_expr::{
     TypedExprID, TypedExprKind,
     deref::{Deref, DerefKind},
     ref_of::RefOf,
+    ref_to_pointer::RefToPointer,
 };
 
 use crate::tast_builder::TAstBuilder;
@@ -28,8 +31,8 @@ enum Coercion {
     /// Reborrows the referenced place as a reference of this mutability.
     Reborrow(Mutability),
 
-    /// Borrows the referenced place as a raw pointer of this mutability.
-    RawBorrow(Mutability),
+    /// Turns the reference into a raw pointer of this mutability.
+    RawPointer(Mutability),
 }
 
 impl TAstBuilder {
@@ -60,34 +63,56 @@ impl TAstBuilder {
             // either reborrow to immutable or mutable
             (Mutability::Mutable, mutability, false) => Coercion::Reborrow(mutability),
             // coerce to a row pointer, either from a shared or unique reference
-            (_, mutability, true) => Coercion::RawBorrow(mutability),
+            (_, mutability, true) => Coercion::RawPointer(mutability),
         };
 
-        // Borrow the referenced place again, now with the expected pointer
-        // type.
-        let span = self.span_of_expression(expression);
-        let pointee = actual.pointee().clone();
+        match coercion {
+            Coercion::Reborrow(mutability) => self.reborrow(expression, mutability).await,
+            Coercion::RawPointer(mutability) => {
+                // A unique reference is not `Copy`, so it is reborrowed to
+                // keep the coercion from moving it.
+                let reference = match actual.mutability() {
+                    Mutability::Immutable => expression,
+                    Mutability::Mutable => self.reborrow(expression, mutability).await,
+                };
+
+                let span = self.span_of_expression(expression);
+                let ty = Ty::new_pointer(actual.pointee().clone(), mutability, self.engine());
+                self.insert_expression(
+                    TypedExprKind::RefToPointer(RefToPointer::new(reference)),
+                    span,
+                    ty,
+                )
+                .await
+            }
+        }
+    }
+
+    /// Borrows the place referenced by `reference` again, as the reference
+    /// `reference.*.&` of the given mutability.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `reference` is not of reference type.
+    async fn reborrow(&mut self, reference: TypedExprID, mutability: Mutability) -> TypedExprID {
+        let span = self.span_of_expression(reference);
+        let ty = self.latest_type(&self.type_of_expression(reference)).await;
+        let pointee =
+            ty.as_reference_view().expect("only a reference can be reborrowed").pointee().clone();
+
         let place = self
             .insert_expression(
-                TypedExprKind::Deref(Deref::new(expression, DerefKind::Reference)),
+                TypedExprKind::Deref(Deref::new(reference, DerefKind::Reference)),
                 span,
                 pointee.clone(),
             )
             .await;
-        let (mutability, ty) = match coercion {
-            Coercion::Reborrow(mutability) => (
-                mutability,
-                Ty::new_reference(
-                    Ty::new_lifetime(Lifetime::Erased, self.engine()),
-                    pointee,
-                    mutability,
-                    self.engine(),
-                ),
-            ),
-            Coercion::RawBorrow(mutability) => {
-                (mutability, Ty::new_pointer(pointee, mutability, self.engine()))
-            }
-        };
+        let ty = Ty::new_reference(
+            Ty::new_lifetime(Lifetime::Erased, self.engine()),
+            pointee,
+            mutability,
+            self.engine(),
+        );
         self.insert_expression(TypedExprKind::RefOf(RefOf::new(place, mutability)), span, ty).await
     }
 }

@@ -401,6 +401,16 @@ impl<O: CopyOracle> Analyzer<'_, O> {
                 )
                 .await;
             }
+            TypedExprKind::RefToPointer(coercion) => {
+                self.visit_expression(
+                    function_id,
+                    functions,
+                    coercion.reference(),
+                    UseMode::new_value_implicit(),
+                    plan,
+                )
+                .await;
+            }
             TypedExprKind::Deref(deref) => {
                 self.visit_expression(
                     function_id,

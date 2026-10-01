@@ -254,6 +254,10 @@ impl ConstraintCollector<'_> {
             // Neither reads a place nor relates two values.
             IRExprKind::Error | IRExprKind::Literal(_) => {}
 
+            // The memory behind a raw pointer is not tracked, so the pointer
+            // carries no region to relate with the reference it came from.
+            IRExprKind::RefToPointer(_) => {}
+
             // TODO: the remaining expressions move their operands into a new
             // value, or pass them to a function, which is not handled yet.
             IRExprKind::Phi(_)
@@ -276,13 +280,8 @@ impl ConstraintCollector<'_> {
         ref_of: &RefOf,
         ty: &Interned<Ty>,
     ) {
-        // A borrow coerced to a raw pointer, as `value.&` stored in a
-        // `*int32`, makes no reference at all. The memory behind a raw pointer
-        // is not tracked, so it issues no loan.
-        // TODO: We'll make all RefOf expressions creates a reference type,
-        let Some(reference) = ty.as_reference_view() else {
-            return;
-        };
+        let reference =
+            ty.as_reference_view().expect("a `RefOf` expression always has a reference type");
 
         let mut dereferenced = Vec::new();
         let Some(place_ty) =

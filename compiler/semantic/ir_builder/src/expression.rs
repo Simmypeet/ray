@@ -18,6 +18,7 @@ mod literal;
 mod r#move;
 mod paren;
 mod ref_of;
+mod ref_to_pointer;
 mod run_with;
 mod statement_block;
 mod struct_initialization;
@@ -100,6 +101,9 @@ impl Builder {
             }
             TypedExprKind::RefOf(reference) => {
                 self.lower(context, TypedExprWithID::new(reference, expression_id)).await
+            }
+            TypedExprKind::RefToPointer(coercion) => {
+                self.lower(context, TypedExprWithID::new(coercion, expression_id)).await
             }
             TypedExprKind::Deref(deref) => {
                 self.lower(context, TypedExprWithID::new(deref, expression_id)).await
