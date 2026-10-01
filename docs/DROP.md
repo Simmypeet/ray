@@ -461,17 +461,17 @@ passes involved.
 
 ## IR
 
-There is no dedicated drop instruction. Every inserted drop is two ordinary
-instructions:
-
-1. a `Load` of the place with `LoadKind::Move`, which consumes the value even
-   when it is `Copy`;
-2. a `Call` with `CallTarget::UnresolvedInstanceAssociated`, calling the core
-   `Drop.drop` method (`CoreItem::DropMethod`) through the selected dictionary.
+Every inserted drop is one `AddressDrop` instruction, which carries the
+dropped place, the selected `Drop` dictionary, and the span of the dropped
+binding. It means a forced move out of the place, consuming the value even
+when it is `Copy`, followed by a `Drop.drop` call on the moved value. It is
+kept as one instruction, rather than a `Load` and a `Call`, so analyses such
+as liveness can tell a drop apart from other uses of a place. The MonoIR
+builder lowers it by passing the place straight to the calls the dictionary
+selects (`Builder::lower_address_drop`).
 
 `LoadKind` (in `rayc_type::capture`) is `Implicit` for ordinary reads, which
-copy `Copy` values and move everything else, and `Move` for `move <expr>` and
-for inserted drops.
+copy `Copy` values and move everything else, and `Move` for `move <expr>`.
 
 Discarded expression statements are the exception: they are lowered to an
 `ExprDiscard` instruction that carries the dictionary chosen during type

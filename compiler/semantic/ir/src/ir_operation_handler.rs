@@ -6,7 +6,7 @@ use rayc_type::ty::Ty;
 
 use crate::{
     ir_lambda::CaptureMapID,
-    visit::{TypeSite, TypeVisitorMut, VisitTypeMut},
+    visit::{TypeSite, TypeVisitorMut, TypeVisitorMutAsync, VisitTypeMut, VisitTypeMutAsync},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
@@ -123,8 +123,32 @@ impl VisitTypeMut for IROperationHandlerContext {
     }
 }
 
+impl VisitTypeMutAsync for IROperationHandlerContext {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        for (_, parameter) in self.parameters.parameters.iter_mut_unordered() {
+            parameter.visit_types_mut_async(site, visitor).await;
+        }
+        visitor.visit_type_mut_async(&mut self.return_ty, site).await;
+        visitor.visit_type_mut_async(&mut self.effect, site).await;
+    }
+}
+
 impl VisitTypeMut for OperationHandlerParameter {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         visitor.visit_type_mut(&mut self.ty, site);
+    }
+}
+
+impl VisitTypeMutAsync for OperationHandlerParameter {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        visitor.visit_type_mut_async(&mut self.ty, site).await;
     }
 }

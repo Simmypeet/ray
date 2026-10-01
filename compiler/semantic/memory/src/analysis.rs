@@ -50,7 +50,7 @@ pub async fn analyze(
         let mut elaborator = DropElaborator::default();
         analyze_function(engine, def_id, functions, function_id, &mut elaborator, &mut diagnostics)
             .await;
-        elaborator.insert_drops(engine, functions, function_id).await;
+        elaborator.insert_drops(functions, function_id);
     }
 
     diagnostics
@@ -66,6 +66,7 @@ pub async fn analyze(
 /// joined state, which is exactly what dropping it on the other edges
 /// produces. Later scope exits and reassignments therefore see every place
 /// initialized on all paths or on none.
+#[expect(clippy::too_many_lines)]
 async fn analyze_function(
     engine: &TrackedEngine,
     def_id: GlobalSymbolID,
@@ -148,6 +149,7 @@ async fn analyze_function(
                         | IRExprKind::Phi(_)
                         | IRExprKind::Perform(_)
                         | IRExprKind::Tuple(_)
+                        | IRExprKind::RefToPointer(_)
                         | IRExprKind::Closure(_)
                         | IRExprKind::Handle(_)
                         | IRExprKind::StructInitialization(_) => {}
@@ -186,7 +188,9 @@ async fn analyze_function(
                         .await;
                 }
 
-                Instruction::ScopePush(_) | Instruction::ExprDiscard(_) => {}
+                Instruction::ScopePush(_)
+                | Instruction::ExprDiscard(_)
+                | Instruction::AddressDrop(_) => {}
             }
 
             problem.transfer_instruction(point, instruction, &mut state).await.unwrap();

@@ -91,7 +91,10 @@ impl DataflowProblem for ScopeStackProblem {
                 }
                 scopes.pop();
             }
-            Instruction::Expression(_) | Instruction::ExprDiscard(_) | Instruction::Store(_) => {}
+            Instruction::Expression(_)
+            | Instruction::ExprDiscard(_)
+            | Instruction::AddressDrop(_)
+            | Instruction::Store(_) => {}
         }
 
         Ok(())

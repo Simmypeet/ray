@@ -15,7 +15,10 @@ use crate::{
     dataflow::Direction,
     ir_expr::IRExprID,
     scope::ScopeID,
-    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
+    visit::{
+        TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
+        VisitTypeMutAsync,
+    },
 };
 
 /// Identifies a basic block stored in a function's control-flow graph.
@@ -164,6 +167,51 @@ impl ExprDiscard {
     pub const fn drop_instance(&self) -> &Interned<Ty> { &self.drop_instance }
 }
 
+/// Drops the value held in a place with its `Drop` implementation.
+///
+/// Drop elaboration inserts one wherever a place still holds a value that
+/// must be destroyed: before a scope pops, before a place is overwritten, and
+/// on the edges where only some paths moved the value out.
+///
+/// Semantically, it is equivalent to a forced move out of the place followed
+/// by a `Drop.drop` call on the moved value, and it consumes the place even
+/// when its type is `Copy`. It is kept as a single instruction, rather than
+/// being broken down into a `Load` and a `Call`, so analyses that care about
+/// why a place is used can see that the place is only dropped. For instance,
+/// liveness treats a local which is only dropped afterwards as drop-live
+/// rather than use-live.
+///
+/// The `MonoIR` builder lowers it to the calls selected by the `Drop`
+/// dictionary, passing the place directly without an intermediate temporary.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct AddressDrop {
+    address: Address,
+
+    /// The `Drop` dictionary selected for the type of the value held in
+    /// [`Self::address`].
+    drop_instance: Interned<Ty>,
+
+    /// The source construct responsible for the drop, such as the binding
+    /// going out of scope or the assignment overwriting the place.
+    span: RelativeSpan,
+}
+
+impl AddressDrop {
+    #[must_use]
+    pub const fn new(address: Address, drop_instance: Interned<Ty>, span: RelativeSpan) -> Self {
+        Self { address, drop_instance, span }
+    }
+
+    #[must_use]
+    pub const fn address(&self) -> &Address { &self.address }
+
+    #[must_use]
+    pub const fn drop_instance(&self) -> &Interned<Ty> { &self.drop_instance }
+
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
+}
+
 /// An operation evaluated at a precise position in a basic block.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum Instruction {
@@ -183,6 +231,8 @@ pub enum Instruction {
     Expression(IRExprID),
     /// Drops the unused result of an evaluated expression.
     ExprDiscard(ExprDiscard),
+    /// Drops the value held in a place. See [`AddressDrop`].
+    AddressDrop(AddressDrop),
     /// Writes an already-defined expression value to an address.
     Store(Store),
 }
@@ -344,6 +394,7 @@ impl VisitType for Instruction {
     fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         match self {
             Self::ExprDiscard(discard) => visitor.visit_type(discard.drop_instance(), site),
+            Self::AddressDrop(drop) => visitor.visit_type(drop.drop_instance(), site),
 
             Self::ScopePush(_) | Self::ScopePop(_) | Self::Expression(_) | Self::Store(_) => {}
         }
@@ -360,10 +411,44 @@ impl VisitTypeMut for Cfg {
     }
 }
 
+impl VisitTypeMutAsync for Cfg {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        for (_, block) in self.blocks.iter_mut() {
+            for instruction in &mut block.instructions {
+                instruction.visit_types_mut_async(site, visitor).await;
+            }
+        }
+    }
+}
+
 impl VisitTypeMut for Instruction {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         match self {
             Self::ExprDiscard(discard) => visitor.visit_type_mut(&mut discard.drop_instance, site),
+            Self::AddressDrop(drop) => visitor.visit_type_mut(&mut drop.drop_instance, site),
+
+            Self::ScopePush(_) | Self::ScopePop(_) | Self::Expression(_) | Self::Store(_) => {}
+        }
+    }
+}
+
+impl VisitTypeMutAsync for Instruction {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        match self {
+            Self::ExprDiscard(discard) => {
+                visitor.visit_type_mut_async(&mut discard.drop_instance, site).await;
+            }
+            Self::AddressDrop(drop) => {
+                visitor.visit_type_mut_async(&mut drop.drop_instance, site).await;
+            }
 
             Self::ScopePush(_) | Self::ScopePop(_) | Self::Expression(_) | Self::Store(_) => {}
         }
@@ -701,6 +786,51 @@ impl Cfg {
             })
     }
 
+    /// Iterates over the points control reaches right after `point`: the next
+    /// instruction of its block, or, from its terminator, the first point of
+    /// each block it jumps to.
+    ///
+    /// A point one past the last instruction of a block stands for its
+    /// terminator.
+    pub fn successor_points(&self, point: Point) -> impl Iterator<Item = Point> + '_ {
+        let Point { block_id, instruction_idx } = point;
+        let is_terminator = instruction_idx == self.instructions(block_id).len();
+
+        let next =
+            (!is_terminator).then(|| Point { block_id, instruction_idx: instruction_idx + 1 });
+        let jumps = is_terminator
+            .then(|| self.terminator(block_id))
+            .flatten()
+            .into_iter()
+            .flat_map(Terminator::jump_targets)
+            .map(|target| Point { block_id: target, instruction_idx: 0 });
+
+        next.into_iter().chain(jumps)
+    }
+
+    /// Iterates over the points control comes from right before `point`: the
+    /// previous instruction of its block, or, from its first point, the
+    /// terminator of each predecessor block.
+    ///
+    /// A point one past the last instruction of a block stands for its
+    /// terminator.
+    pub fn predecessor_points(&self, point: Point) -> impl Iterator<Item = Point> + '_ {
+        let Point { block_id, instruction_idx } = point;
+
+        let previous = instruction_idx
+            .checked_sub(1)
+            .map(|instruction_idx| Point { block_id, instruction_idx });
+        let jumps =
+            (instruction_idx == 0).then(|| &self[block_id].predecessors).into_iter().flatten().map(
+                |&predecessor| Point {
+                    block_id: predecessor,
+                    instruction_idx: self.instructions(predecessor).len(),
+                },
+            );
+
+        previous.into_iter().chain(jumps)
+    }
+
     #[must_use]
     pub fn instructions(&self, block_id: BlockID) -> &[Instruction] {
         &self.blocks.get(block_id).expect("Block should exist").instructions
@@ -784,6 +914,7 @@ impl Cfg {
                 match instruction {
                     Instruction::ScopePush(_)
                     | Instruction::ScopePop(_)
+                    | Instruction::AddressDrop(_)
                     | Instruction::Store(_) => {}
                     Instruction::ExprDiscard(discard) => {
                         if visited_expressions.insert(discard.expression) {

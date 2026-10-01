@@ -51,14 +51,11 @@ impl<'a> StackStateProblem<'a> {
     pub(crate) async fn binding_type(&self, root: Local) -> Interned<Ty> {
         match root {
             Local::Variable(variable_id) => self.function.get_variable(variable_id).ty().clone(),
-            Local::Parameter(parameter_id) => self
-                .solver
-                .engine()
-                .get_parameter_map(self.solver.site())
-                .await
-                .iter()
-                .find_map(|(id, parameter)| (id == parameter_id).then(|| parameter.ty().clone()))
-                .expect("parameter address root must exist in the function signature"),
+            Local::Parameter(parameter_id) => {
+                self.solver.engine().get_parameter_map(self.solver.site()).await[parameter_id]
+                    .ty()
+                    .clone()
+            }
             Local::LambdaParameter(parameter_id) => self
                 .function
                 .context()
@@ -85,15 +82,11 @@ impl<'a> StackStateProblem<'a> {
     pub(crate) async fn binding_span(&self, root: Local) -> RelativeSpan {
         match root {
             Local::Variable(variable_id) => self.function.get_variable(variable_id).span(),
-            Local::Parameter(parameter_id) => self
-                .solver
-                .engine()
-                .get_parameter_map(self.solver.site())
-                .await
-                .iter()
-                .find_map(|(id, parameter)| (id == parameter_id).then(|| parameter.span()))
-                .expect("parameter address root must exist in the function signature")
-                .expect("parameters of a function with a body are declared in source"),
+            Local::Parameter(parameter_id) => {
+                self.solver.engine().get_parameter_map(self.solver.site()).await[parameter_id]
+                    .span()
+                    .expect("parameters of a function with a body are declared in source")
+            }
             Local::LambdaParameter(parameter_id) => self
                 .function
                 .context()
@@ -195,7 +188,7 @@ impl<'a> StackStateProblem<'a> {
 
         match load.kind() {
             LoadKind::Implicit => !self.type_is_copy(ty).await,
-            LoadKind::Move | LoadKind::Drop => true,
+            LoadKind::Move => true,
         }
     }
 
@@ -209,7 +202,7 @@ impl<'a> StackStateProblem<'a> {
         match load.kind() {
             // Errors have already been reported.
             LoadKind::Implicit => !ty.contains_error() && !self.type_is_copy(ty).await,
-            LoadKind::Move | LoadKind::Drop => true,
+            LoadKind::Move => true,
         }
     }
 
@@ -333,13 +326,7 @@ impl<'a> StackStateProblem<'a> {
                 let engine = self.solver.engine();
                 let substitution = struct_ty.create_subst(engine).await;
                 let body = engine.get_struct_body(struct_ty.symbol_id()).await;
-                let field = body
-                    .iter()
-                    .find_map(|(id, field)| (id == field_id).then_some(field))
-                    .unwrap_or_else(|| {
-                        panic!("struct projection references missing field {field_id:?}")
-                    });
-                let projected = field.ty().apply_subst_or_clone(&substitution, engine);
+                let projected = body[field_id].ty().apply_subst_or_clone(&substitution, engine);
                 let components = uniform.map(|state| {
                     body.iter()
                         .map(|(id, _)| (Projection::Field(id), PlaceState::Uniform(state.clone())))
@@ -462,6 +449,11 @@ impl DataflowProblem for StackStateProblem<'_> {
                 }
             }
             Instruction::ExprDiscard(_) => {}
+            // Drop elaboration only drops places the frame owns, and the drop
+            // consumes the value even when it is `Copy`.
+            Instruction::AddressDrop(drop) => {
+                let _ = state.move_out(drop.address(), point, self).await;
+            }
             Instruction::Store(store) => {
                 let address = store.address().clone();
                 let _ = state.restore(&address, self).await;

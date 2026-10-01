@@ -55,6 +55,24 @@ pub enum Lifetime {
     External(ExternalRegionID),
 }
 
+impl Lifetime {
+    /// Returns whether this lifetime is universal: a region the function
+    /// mentioning it does not choose, but is given.
+    ///
+    /// `'static` is universal everywhere, and an external lifetime is
+    /// universal to the nested function whose interface mentions it, which
+    /// its creator instantiates. Lifetime parameters are universal as well,
+    /// but they are [`Ty::PolyVar`](super::Ty::PolyVar)s rather than
+    /// lifetimes of this kind.
+    #[must_use]
+    pub const fn is_universal(&self) -> bool {
+        match self {
+            Self::Static | Self::External(_) => true,
+            Self::Erased | Self::Region(_) => false,
+        }
+    }
+}
+
 impl fmt::Display for Lifetime {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

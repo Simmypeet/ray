@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: borrowed value does not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/does_not_live_long_enough/main.ray:10:13
+   │
+ 8 │         let inner = 2
+   │             ───── this variable goes out of scope while it is still borrowed
+ 9 │         # ERROR: `p` still holds this borrow when `inner` goes out of scope.
+10 │         p = inner.&
+   │             ━━━━━━━ borrowed value does not live long enough
+11 │     consume(p.*)
+   ╰╴            ─── borrow later used here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

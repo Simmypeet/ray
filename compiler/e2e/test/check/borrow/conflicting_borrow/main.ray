@@ -1,0 +1,48 @@
+def consume(x: t) given(_: core.Drop[t]):
+    let _ = x
+
+def mutableWhileShared():
+    let mut x = 1
+    let shared = x.&
+    # ERROR: `shared` is used after `x` is borrowed mutably.
+    let unique = x.&mut
+    unique.* = 2
+    consume(shared.*)
+
+def sharedWhileMutable():
+    let mut x = 1
+    let unique = x.&mut
+    # ERROR: `unique` is used after `x` is borrowed again.
+    let shared = x.&
+    consume(shared.*)
+    unique.* = 2
+
+def mutableTwice():
+    let mut x = 1
+    let first = x.&mut
+    # ERROR: `first` is used after `x` is borrowed mutably again.
+    let second = x.&mut
+    second.* = 2
+    first.* = 3
+
+def sharedTwice():
+    let x = 1
+    # OK: shared borrows do not conflict.
+    let first = x.&
+    let second = x.&
+    consume(first.* + second.*)
+
+def mutableAfterLastUse():
+    let mut x = 1
+    let shared = x.&
+    consume(shared.*)
+    # OK: `shared` is not used after this point.
+    let unique = x.&mut
+    unique.* = 2
+
+def main():
+    mutableWhileShared()
+    sharedWhileMutable()
+    mutableTwice()
+    sharedTwice()
+    mutableAfterLastUse()
