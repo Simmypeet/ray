@@ -116,6 +116,7 @@ async fn instantiation_of(expression: &TypedExpr, engine: &TrackedEngine) -> Opt
         | TypedExprKind::Paren(_)
         | TypedExprKind::RunWith(_)
         | TypedExprKind::StatementBlock(_)
+        | TypedExprKind::RefToPointer(_)
         | TypedExprKind::Errored(_) => None,
     }
 }
