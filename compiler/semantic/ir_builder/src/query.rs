@@ -15,7 +15,7 @@ use rayc_symbol::{
 use rayc_target::{TargetID, get_ir_verification};
 use rayc_typed_ast::get_typed_ast;
 
-use crate::{diagnostic::Diagnostic, lower_function};
+use crate::{diagnostic::Diagnostic, erase::erase_lifetimes, lower_function};
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
@@ -75,10 +75,14 @@ async fn build_ir_executor(
         // checking placeholder nodes, and reporting what it finds there would
         // only cascade from that error.
         if diagnostics.is_empty() {
-            let borrow_diagnostics = borrow_check(&function, engine).await;
+            let borrow_diagnostics = borrow_check(&mut function, engine).await;
             diagnostics.extend(borrow_diagnostics.into_iter().map(Diagnostic::from));
         }
     }
+
+    // Lifetimes are of no use past borrow checking, so they are erased
+    // whether or not it ran.
+    erase_lifetimes(&mut function, engine).await;
 
     if engine.get_ir_verification(def_id.target_id).await
         && let Err(error) = crate::verification::verify(&function).await

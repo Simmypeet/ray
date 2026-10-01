@@ -32,19 +32,20 @@ mod test_util;
 ///
 /// This expects IR without errors, after the memory analysis has elaborated
 /// its drops.
-pub async fn borrow_check(ir: &IRFunctionMap, engine: &TrackedEngine) -> Vec<Diagnostic> {
-    // Renumbering rewrites the lifetimes of the IR, which is lowered further
-    // as type inference left it, so the borrow checker works on a copy.
-    let mut ir = ir.clone();
-    let _ = Renumbering::renumber(&mut ir, engine).await;
-    let variances = LifetimeVariances::compute(&ir, engine).await;
+///
+/// The lifetimes of `ir` are renumbered in place for the check and left that
+/// way: the caller is expected to erase the lifetimes of `ir` afterwards.
+pub async fn borrow_check(ir: &mut IRFunctionMap, engine: &TrackedEngine) -> Vec<Diagnostic> {
+    // Give every lifetime the borrow checker chooses its own region.
+    let _ = Renumbering::renumber(ir, engine).await;
+    let variances = LifetimeVariances::compute(ir, engine).await;
     let mut solver = Solver::new(engine.clone(), ir.def_id()).await;
 
     let mut diagnostics = Vec::new();
     for (function_id, function) in ir.functions() {
         let captures = ir.captures_for_function(function_id);
         let constraints = LocalizedConstraints::collect(function, captures, &mut solver).await;
-        let liveness = RegionLiveness::compute(&ir, function_id).await;
+        let liveness = RegionLiveness::compute(ir, function_id).await;
         let live_loans = LiveLoans::compute(function, &constraints, &liveness, &variances);
         let activity = LoanActivity::compute(function, &constraints, &live_loans).await;
 

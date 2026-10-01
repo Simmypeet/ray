@@ -409,28 +409,19 @@ impl Ty {
 }
 
 /// The [`TyRewriterAsync`] behind [`Ty::erase_lifetimes`]. It is async
-/// because telling a lifetime parameter from other polymorphic variables needs
-/// the kind recorded in its poly var map.
+/// because the kind of a type is queried from the engine.
 struct LifetimeEraser<'e> {
     engine: &'e TrackedEngine,
 }
 
 impl TyRewriterAsync for LifetimeEraser<'_> {
     async fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
-        let erased = || Ty::new_lifetime(Lifetime::Erased, self.engine);
-        match &**ty {
-            Ty::Lifetime(Lifetime::Static | Lifetime::Region(_) | Lifetime::External(_)) => {
-                Some(erased())
-            }
-            Ty::PolyVar(poly_var) => {
-                let poly_var_map = self.engine.get_poly_var_map(poly_var.parent_id()).await;
-                (poly_var_map.kind_of(poly_var.id()) == TyKind::Lifetime).then(erased)
-            }
-            Ty::Lifetime(Lifetime::Erased)
-            | Ty::Application(_)
-            | Ty::Inference(_)
-            | Ty::SelfInstance(_)
-            | Ty::EffectRow(_) => None,
+        // An erased lifetime is kept as it is, so that a type with nothing
+        // left to erase is not rebuilt.
+        if ty.is_lifetime(self.engine).await && **ty != Ty::Lifetime(Lifetime::Erased) {
+            Some(Ty::new_lifetime(Lifetime::Erased, self.engine))
+        } else {
+            None
         }
     }
 }
