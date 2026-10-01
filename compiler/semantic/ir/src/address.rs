@@ -197,6 +197,13 @@ impl Address {
         self.root == other.root && other.projections.starts_with(&self.projections)
     }
 
+    /// Returns whether the places this address and `other` select may share
+    /// memory: one of them contains the other.
+    ///
+    /// `x.0` overlaps `x` and `x.0.1`, but not `x.1`.
+    #[must_use]
+    pub fn overlaps(&self, other: &Self) -> bool { self.contains(other) || other.contains(self) }
+
     /// Returns whether this address reaches memory through a pointer, that is,
     /// whether any of its projections is a dereference.
     #[must_use]

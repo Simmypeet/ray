@@ -8,28 +8,14 @@ use crate::{
 
 /// Returns the loans active just before the instruction at `point`, which
 /// its accesses are checked against.
-///
-/// This replays the block of `point` from its solved entry fact, so it is
-/// only meant for checking one point at a time.
 fn active_before(activity: &LoanActivity<'_>, point: Point) -> ActiveLoans {
-    let problem = &activity.problem;
-    let mut state = activity
-        .solution
-        .block_entry(point.block_id())
-        .expect("the point should be reachable")
-        .clone();
-
-    for (earlier, instruction) in problem
-        .function
-        .block_instructions_with_points(point.block_id())
-        .take(point.instruction_idx())
-    {
-        problem.kill_dead_loans(earlier, &mut state);
-        problem.apply_instruction(instruction, &mut state);
-    }
-
-    problem.kill_dead_loans(point, &mut state);
-    state
+    let mut active = None;
+    activity.visit_block(point.block_id(), |visited, _, loans| {
+        if visited == point {
+            active = Some(loans.clone());
+        }
+    });
+    active.expect("the point should be reachable")
 }
 
 /// Returns whether `loan` is active just before the instruction at `point`.

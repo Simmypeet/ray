@@ -86,7 +86,7 @@ impl ActiveLoansProblem<'_> {
 
             // Only a borrow issues a loan, and every borrow is an expression.
             Instruction::Expression(expression_id) => {
-                if let Some(loan) = self.constraints.loan_of_ref_of(*expression_id) {
+                if let Some(loan) = self.constraints.loan_id_of_ref_of(*expression_id) {
                     state.loans.insert(loan);
                 }
             }
@@ -198,6 +198,34 @@ impl<'a> LoanActivity<'a> {
         let mut problem = ActiveLoansProblem { function, constraints, live_loans };
         let Ok(solution) = function.solve_dataflow(&mut problem).await;
         Self { problem, solution }
+    }
+
+    /// Walks `block_id` once from its solved entry fact, calling `visit` at
+    /// each of its points with the instruction there, or `None` for its
+    /// terminator, and the loans active just before it: the loans its
+    /// accesses are checked against.
+    ///
+    /// Does nothing for an unreachable block.
+    pub fn visit_block(
+        &self,
+        block_id: BlockID,
+        mut visit: impl FnMut(Point, Option<&Instruction>, &ActiveLoans),
+    ) {
+        let Some(entry) = self.solution.block_entry(block_id) else {
+            return;
+        };
+
+        let problem = &self.problem;
+        let mut state = entry.clone();
+        for (point, instruction) in problem.function.block_instructions_with_points(block_id) {
+            problem.kill_dead_loans(point, &mut state);
+            visit(point, Some(instruction), &state);
+            problem.apply_instruction(instruction, &mut state);
+        }
+
+        let terminator = problem.terminator_point(block_id);
+        problem.kill_dead_loans(terminator, &mut state);
+        visit(terminator, None, &state);
     }
 }
 

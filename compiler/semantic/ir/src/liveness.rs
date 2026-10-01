@@ -126,6 +126,34 @@ where
     }
 }
 
+/// Finds how the effects of one instruction touch one value: whether they
+/// use it, only drop it, or neither.
+struct UseProbe<T> {
+    value: T,
+    mode: Option<LiveMode>,
+}
+
+impl<T> UseProbe<T> {
+    const fn new(value: T) -> Self { Self { value, mode: None } }
+}
+
+impl<T: PartialEq> LiveEffects<T> for UseProbe<T> {
+    fn mark_used(&mut self, value: T) {
+        if value == self.value {
+            self.mode = Some(LiveMode::Use);
+        }
+    }
+
+    fn mark_dropped(&mut self, value: T) {
+        if value == self.value && self.mode.is_none() {
+            self.mode = Some(LiveMode::Drop);
+        }
+    }
+
+    // A definition makes the previous value dead, rather than using it.
+    fn mark_defined(&mut self, _value: T) {}
+}
+
 /// A run of consecutive points of one block at which a value keeps one live
 /// mode.
 #[derive(Debug, Clone, PartialEq, Eq)]

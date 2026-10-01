@@ -2,6 +2,7 @@ use linkme::distributed_slice;
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
 };
+use rayc_borrowck::borrow_check;
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_ir::ir_function::IRFunctionMap;
 use rayc_memory::analyze;
@@ -68,6 +69,15 @@ async fn build_ir_executor(
     if control_flow_valid && typed_diagnostics.is_empty() {
         let memory_diagnostics = analyze(engine, def_id, &mut function).await;
         diagnostics.extend(memory_diagnostics.into_iter().map(Diagnostic::from));
+
+        // Borrow checking runs last, on IR whose drops are elaborated, and
+        // only when nothing else went wrong: an earlier error would leave it
+        // checking placeholder nodes, and reporting what it finds there would
+        // only cascade from that error.
+        if diagnostics.is_empty() {
+            let borrow_diagnostics = borrow_check(&function, engine).await;
+            diagnostics.extend(borrow_diagnostics.into_iter().map(Diagnostic::from));
+        }
     }
 
     if engine.get_ir_verification(def_id.target_id).await

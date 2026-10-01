@@ -33,6 +33,7 @@ use rayc_ir::{
     ir_function::IRFunction,
     ir_lambda::CaptureMap,
 };
+use rayc_lexical::tree::RelativeSpan;
 use rayc_semantic_element::{parameter::get_parameter_map, struct_body::get_struct_body};
 use rayc_solver::Solver;
 use rayc_type::{
@@ -60,6 +61,9 @@ pub struct Loan {
 
     /// Whether the borrow is shared or mutable.
     mutability: Mutability,
+
+    /// The source of the borrow expression.
+    span: RelativeSpan,
 }
 
 impl Loan {
@@ -78,6 +82,10 @@ impl Loan {
     /// Returns whether the borrow is shared or mutable.
     #[must_use]
     pub const fn mutability(&self) -> Mutability { self.mutability }
+
+    /// Returns the source of the borrow expression.
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
 /// A region at a point: a node of the localized constraint graph.
@@ -161,8 +169,17 @@ impl LocalizedConstraints {
     /// `None` when the expression is not a borrow, or borrows an error
     /// address.
     #[must_use]
-    pub fn loan_of_ref_of(&self, expression_id: IRExprID) -> Option<LoanID> {
+    pub fn loan_id_of_ref_of(&self, expression_id: IRExprID) -> Option<LoanID> {
         self.loans_by_ref_of_id.get(&expression_id).copied()
+    }
+
+    /// Returns the loan issued by the borrow expression `expression_id`, or
+    /// `None` when the expression is not a borrow, or borrows an error
+    /// address.
+    #[must_use]
+    pub fn load_of_ref_of(&self, expression_id: IRExprID) -> Option<&Loan> {
+        let loan_id = self.loans_by_ref_of_id.get(&expression_id)?;
+        self.loans.get(*loan_id)
     }
 
     /// Iterates over the loans of the places in `local`, including the places
@@ -251,7 +268,7 @@ impl ConstraintCollector<'_> {
     }
 
     /// Collects the constraints of the borrow `ref_of`, the expression
-    /// `expression_id` whose reference has type `ty`, and issues its loan.
+    /// `expression_id` of type `ty`, and issues its loan.
     async fn collect_borrow(
         &mut self,
         point: Point,
@@ -259,6 +276,14 @@ impl ConstraintCollector<'_> {
         ref_of: &RefOf,
         ty: &Interned<Ty>,
     ) {
+        // A borrow coerced to a raw pointer, as `value.&` stored in a
+        // `*int32`, makes no reference at all. The memory behind a raw pointer
+        // is not tracked, so it issues no loan.
+        // TODO: We'll make all RefOf expressions creates a reference type,
+        let Some(reference) = ty.as_reference_view() else {
+            return;
+        };
+
         let mut dereferenced = Vec::new();
         let Some(place_ty) =
             self.place_type(ref_of.address(), |pointer| dereferenced.push(pointer.clone())).await
@@ -269,7 +294,6 @@ impl ConstraintCollector<'_> {
         // `&'r place` has type `&'r typeof(place)`, which must be a subtype
         // of `ty`. The lifetime of `ty` is the loan's own region, so only the
         // pointees are related, with the variance of the reference's pointee.
-        let reference = ty.as_reference_view().expect("a borrow should have a reference type");
         let variance = reference.mutability().pointee_variance();
         self.relate(point, &place_ty, reference.pointee(), variance).await;
 
@@ -280,6 +304,7 @@ impl ConstraintCollector<'_> {
             point,
             address: ref_of.address().clone(),
             mutability: reference.mutability(),
+            span: self.function.get_expression(expression_id).span(),
         });
     }
 

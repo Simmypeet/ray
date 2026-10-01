@@ -1,0 +1,46 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot borrow a place as mutable because it is also borrowed as immutable
+   ╭▸ compiler/e2e/test/check/borrow/conflicting_borrow/main.ray:8:18
+   │
+ 6 │     let shared = x.&
+   │                  ─── immutable borrow occurs here
+ 7 │     # ERROR: `shared` is used after `x` is borrowed mutably.
+ 8 │     let unique = x.&mut
+   │                  ━━━━━━ mutable borrow occurs here
+ 9 │     unique.* = 2
+10 │     consume(shared.*)
+   ╰╴            ──────── borrow later used here
+
+[error]: cannot borrow a place as immutable because it is also borrowed as mutable
+   ╭▸ compiler/e2e/test/check/borrow/conflicting_borrow/main.ray:16:18
+   │
+14 │     let unique = x.&mut
+   │                  ────── mutable borrow occurs here
+15 │     # ERROR: `unique` is used after `x` is borrowed again.
+16 │     let shared = x.&
+   │                  ━━━ immutable borrow occurs here
+17 │     consume(shared.*)
+18 │     unique.* = 2
+   ╰╴    ──────────── borrow later used here
+
+[error]: cannot borrow a place as mutable more than once at a time
+   ╭▸ compiler/e2e/test/check/borrow/conflicting_borrow/main.ray:24:18
+   │
+22 │     let first = x.&mut
+   │                 ────── first mutable borrow occurs here
+23 │     # ERROR: `first` is used after `x` is borrowed mutably again.
+24 │     let second = x.&mut
+   │                  ━━━━━━ second mutable borrow occurs here
+25 │     second.* = 2
+26 │     first.* = 3
+   ╰╴    ─────────── borrow later used here
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

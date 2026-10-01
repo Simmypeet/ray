@@ -45,6 +45,7 @@ impl Report for NotAllPathsReturnValue {
 pub enum Diagnostic {
     NotAllPathsReturnValue(NotAllPathsReturnValue),
     Memory(rayc_memory::Diagnostic),
+    Borrow(rayc_borrowck::diagnostic::Diagnostic),
 }
 
 impl Report for Diagnostic {
@@ -52,6 +53,7 @@ impl Report for Diagnostic {
         match self {
             Self::NotAllPathsReturnValue(diagnostic) => diagnostic.report(engine).await,
             Self::Memory(diagnostic) => diagnostic.report(engine).await,
+            Self::Borrow(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }

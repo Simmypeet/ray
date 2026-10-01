@@ -19,7 +19,7 @@
 
 use std::convert::Infallible;
 
-use super::{LiveEffects, LiveRanges, LiveSet, block_live_ranges};
+use super::{LiveEffects, LiveMode, LiveRanges, LiveSet, UseProbe, block_live_ranges};
 use crate::{
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
     dataflow::{DataflowProblem, DataflowSolution, Direction},
@@ -146,6 +146,28 @@ pub struct ExprLiveness {
 }
 
 impl ExprLiveness {
+    /// Returns how the instruction at `point` consumes the value of
+    /// `expression`: [`LiveMode::Use`] when it uses it, [`LiveMode::Drop`]
+    /// when it only discards it, and `None` otherwise.
+    ///
+    /// A point one past the last instruction of a block stands for its
+    /// terminator. The incoming value of a phi is consumed on the edge into
+    /// the phi's block rather than at any point, so it is not reported.
+    #[must_use]
+    pub fn use_at(function: &IRFunction, point: Point, expression: IRExprID) -> Option<LiveMode> {
+        let mut probe = UseProbe::new(expression);
+
+        match function.block_instructions(point.block_id()).get(point.instruction_idx()) {
+            Some(instruction) => ExprLivenessProblem { function }.transfer(instruction, &mut probe),
+            None => {
+                if let Some(terminator) = function.block_terminator(point.block_id()) {
+                    ExprLivenessProblem::transfer_across_terminator(terminator, &mut probe);
+                }
+            }
+        }
+        probe.mode
+    }
+
     /// Computes the liveness of every expression value of `function`.
     pub async fn compute(function: &IRFunction) -> Self {
         let mut problem = ExprLivenessProblem { function };

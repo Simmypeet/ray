@@ -11,7 +11,7 @@
 
 use std::convert::Infallible;
 
-use super::{LiveEffects, LiveRanges, LiveSet, block_live_ranges};
+use super::{LiveEffects, LiveMode, LiveRanges, LiveSet, UseProbe, block_live_ranges};
 use crate::{
     address::{Address, Local},
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
@@ -150,6 +150,22 @@ pub struct LocalLiveness {
 }
 
 impl LocalLiveness {
+    /// Returns how the instruction at `point` uses `local`: [`LiveMode::Use`]
+    /// when it reads it, [`LiveMode::Drop`] when it only drops it, and `None`
+    /// otherwise.
+    ///
+    /// A point one past the last instruction of a block stands for its
+    /// terminator, which reads no local.
+    #[must_use]
+    pub fn use_at(function: &IRFunction, point: Point, local: Local) -> Option<LiveMode> {
+        let instruction =
+            function.block_instructions(point.block_id()).get(point.instruction_idx())?;
+
+        let mut probe = UseProbe::new(local);
+        LocalLivenessProblem { function }.transfer(instruction, &mut probe);
+        probe.mode
+    }
+
     /// Computes the liveness of every local of `function`.
     pub async fn compute(function: &IRFunction) -> Self {
         let mut problem = LocalLivenessProblem { function };

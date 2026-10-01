@@ -53,7 +53,7 @@ impl LiveLoans {
         liveness: &RegionLiveness,
         variances: &LifetimeVariances,
     ) -> Self {
-        let traversal = Traversal { function, constraints, liveness, variances };
+        let traversal = Traversal::new(function, constraints, liveness, variances);
         let mut live_loans = Self::default();
 
         for (loan_id, loan) in constraints.loans() {
@@ -103,27 +103,60 @@ impl LivenessEdges {
     }
 }
 
-/// The inputs of the search for the live points of each loan.
-struct Traversal<'a> {
+/// The search of the localized constraint graph for where each loan flows.
+pub(crate) struct Traversal<'a> {
     function: &'a IRFunction,
     constraints: &'a LocalizedConstraints,
     liveness: &'a RegionLiveness,
     variances: &'a LifetimeVariances,
 }
 
-impl Traversal<'_> {
+impl<'a> Traversal<'a> {
+    /// Creates the search over the graph of `function`, whose constraints,
+    /// region liveness and variances are `constraints`, `liveness` and
+    /// `variances`.
+    pub(crate) const fn new(
+        function: &'a IRFunction,
+        constraints: &'a LocalizedConstraints,
+        liveness: &'a RegionLiveness,
+        variances: &'a LifetimeVariances,
+    ) -> Self {
+        Self { function, constraints, liveness, variances }
+    }
+
     /// Returns every point at which `loan` flows into a live region.
-    fn live_points(&self, loan: &Loan) -> FxHashSet<Point> {
+    fn live_points(&self, loan: &Loan) -> impl Iterator<Item = Point> {
+        self.reached(loan)
+            .into_iter()
+            .filter(|node| self.liveness.is_live(&node.region, node.point))
+            .map(|node| node.point)
+    }
+
+    /// Returns the regions that hold `loan` at `point` and are live there:
+    /// the reasons the loan is live at `point`.
+    ///
+    /// This searches the graph again, which is only worth it when reporting
+    /// an error.
+    pub(crate) fn regions_holding(
+        &self,
+        loan: &Loan,
+        point: Point,
+    ) -> impl Iterator<Item = Interned<Ty>> + '_ {
+        self.reached(loan)
+            .into_iter()
+            .filter(move |node| node.point == point && self.liveness.is_live(&node.region, point))
+            .map(|node| node.region)
+    }
+
+    /// Returns every node that `loan` reaches from the node of its own region
+    /// at the point of its borrow.
+    fn reached(&self, loan: &Loan) -> FxHashSet<Node> {
         let start = Node { region: loan.region().clone(), point: loan.point() };
         let mut visited = FxHashSet::from_iter([start.clone()]);
         let mut stack = vec![start];
-        let mut live_points = FxHashSet::default();
 
         while let Some(node) = stack.pop() {
             let is_live = self.liveness.is_live(&node.region, node.point);
-            if is_live {
-                live_points.insert(node.point);
-            }
 
             let mut visit = |next: Node| {
                 if visited.insert(next.clone()) {
@@ -157,7 +190,7 @@ impl Traversal<'_> {
             }
         }
 
-        live_points
+        visited
     }
 
     /// Returns the liveness edges of `region`.

@@ -82,10 +82,36 @@ impl RegionLiveness {
     #[must_use]
     pub fn is_live(&self, region: &Interned<Ty>, point: Point) -> bool {
         let Some(region) = region.as_region() else {
+            // if reaches `else` here, it means the region is universal, so it is live
+            // everywhere
             return true;
         };
 
         self.owners.get(&region).is_some_and(|owner| self.is_owner_live(*owner, point))
+    }
+
+    /// Returns whether the instruction at `point` uses or drops the value
+    /// that owns `region`, which may still hold the loans in the region.
+    ///
+    /// A universal region, or one without an owner, belongs to no value of
+    /// the function, so no instruction uses it.
+    pub(crate) fn is_used_at(
+        &self,
+        function: &IRFunction,
+        region: &Interned<Ty>,
+        point: Point,
+    ) -> bool {
+        let Some(owner) = region.as_region().and_then(|region| self.owners.get(&region)) else {
+            return false;
+        };
+
+        match *owner {
+            RegionOwner::Local(local) => LocalLiveness::use_at(function, point, local).is_some(),
+            RegionOwner::Expression(expression_id) => {
+                ExprLiveness::use_at(function, point, expression_id).is_some()
+            }
+            RegionOwner::Instruction(instruction_point) => instruction_point == point,
+        }
     }
 
     /// Returns whether `owner` keeps its regions live at `point`.

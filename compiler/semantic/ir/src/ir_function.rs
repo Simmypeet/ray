@@ -109,6 +109,10 @@ impl IRFunctionMap {
         self.get_function_mut(function_id).cfg.fill_return_on_unterminated_blocks();
     }
 
+    /// Returns the definition whose body this map lowers.
+    #[must_use]
+    pub const fn def_id(&self) -> GlobalSymbolID { self.def_id }
+
     #[must_use]
     pub const fn root_id(&self) -> FunctionID { self.root }
 
