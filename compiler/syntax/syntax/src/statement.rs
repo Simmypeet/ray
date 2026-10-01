@@ -6,8 +6,8 @@ use rayc_parser::{
 };
 
 use crate::{
-    Keyword, Punctuation, expression::Expression, irrefutable_pattern::IrrefutablePattern,
-    r#type::Type,
+    Keyword, Passable, Punctuation, expression::Expression,
+    irrefutable_pattern::IrrefutablePattern, r#type::Type,
 };
 
 abstract_tree::abstract_tree! {
@@ -130,7 +130,7 @@ abstract_tree::abstract_tree! {
     )]
     #{fragment = Fragment::Indentation}
     pub struct Block {
-        pub statements: #[multi] Statement = ast::<Statement>()
+        pub statements: #[multi] Passable<Statement> = ast::<Passable<Statement>>()
             .line().repeat_all()
     }
 }

@@ -114,7 +114,7 @@ impl TAstBuilder {
             }
             IfElseArmSyntax::Block(block) => {
                 self.enter_statement_block(false);
-                for statement in block.statements() {
+                for statement in block.statements().filter_map(rayc_syntax::Passable::into_option) {
                     Box::pin(self.bind_statement(&statement)).await;
                 }
                 Some((Arm::Block(self.exit_statement_block(false)), span))
