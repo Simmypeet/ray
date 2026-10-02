@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `&` punctuation, `float32` keyword, `( ... )` block, `*` punctuation, `'` punctuation, identifier, `cstr` keyword
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `usize` keyword, `bool` keyword, `int32` keyword, `uint16` keyword, `&` punctuation, `this` keyword, identifier, `uint64` keyword, `cstr` keyword, `isize` keyword, `int8` keyword, `int64` keyword, `uint32` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `int16` keyword, `uint8` keyword, `'` punctuation
   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:5:18
   │
 5 │     type Value = def(int32) -> int32
@@ -21,25 +21,25 @@ stderr:
 10 │ extern def foreign(fn: def(int32) -> int32) -> int32
    ╰╴                       ━━━━━━━━━━━━━━━━━━━
 
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `&` punctuation, `float32` keyword, `( ... )` block, `*` punctuation, `'` punctuation, identifier, `cstr` keyword
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `usize` keyword, `bool` keyword, `int32` keyword, `uint16` keyword, `&` punctuation, `this` keyword, identifier, `uint64` keyword, `cstr` keyword, `isize` keyword, `int8` keyword, `int64` keyword, `uint32` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `int16` keyword, `uint8` keyword, `'` punctuation
    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:12:17
    │
 12 │ def result() -> def(int32) -> int32:
    ╰╴                ━━━
 
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `&` punctuation, `float32` keyword, `( ... )` block, `*` punctuation, `'` punctuation, identifier, `cstr` keyword
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `usize` keyword, `bool` keyword, `int32` keyword, `uint16` keyword, `&` punctuation, `this` keyword, identifier, `uint64` keyword, `cstr` keyword, `isize` keyword, `int8` keyword, `int64` keyword, `uint32` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `int16` keyword, `uint8` keyword, `'` punctuation
    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:15:20
    │
 15 │ def nested(fn: def(def(int32) -> int32)):
    ╰╴                   ━━━
 
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `&` punctuation, identifier, `cstr` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `'` punctuation
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `usize` keyword, `bool` keyword, `int32` keyword, `uint16` keyword, `&` punctuation, `this` keyword, identifier, `uint64` keyword, `cstr` keyword, `isize` keyword, `int8` keyword, `int64` keyword, `uint32` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `int16` keyword, `uint8` keyword, `'` punctuation
    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:18:23
    │
 18 │ def components(pair: (def(int32),), pointer: *def(int32)):
    ╰╴                      ━━━
 
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `&` punctuation, `float32` keyword, `( ... )` block, `*` punctuation, `'` punctuation, identifier, `mut` keyword, `cstr` keyword
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `usize` keyword, `bool` keyword, `int32` keyword, `uint16` keyword, `&` punctuation, `this` keyword, identifier, `uint64` keyword, `cstr` keyword, `isize` keyword, `int8` keyword, `int64` keyword, `uint32` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `int16` keyword, `uint8` keyword, `mut` keyword, `'` punctuation
    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:18:47
    │
 18 │ def components(pair: (def(int32),), pointer: *def(int32)):
@@ -53,13 +53,13 @@ stderr:
    │
    ╰ help: provide all type arguments explicitly
 
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `&` punctuation, identifier, `given` keyword, `cstr` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `'` punctuation, `]` punctuation
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `usize` keyword, `bool` keyword, `int32` keyword, `uint16` keyword, `&` punctuation, `this` keyword, identifier, `given` keyword, `uint64` keyword, `cstr` keyword, `isize` keyword, `int8` keyword, `int64` keyword, `uint32` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `int16` keyword, `uint8` keyword, `'` punctuation, `]` punctuation
    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:21:42
    │
 21 │ def arguments(value: a) given (d: Holder[def(int32)], drop: core.Drop[a]):
    ╰╴                                         ━━━
 
-[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `this` keyword, `bool` keyword, `int32` keyword, `&` punctuation, identifier, `cstr` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `'` punctuation
+[error]: unexpected `def` keyword, expected `{ ... }` block, `c_int` keyword, `usize` keyword, `bool` keyword, `int32` keyword, `uint16` keyword, `&` punctuation, `this` keyword, identifier, `uint64` keyword, `cstr` keyword, `isize` keyword, `int8` keyword, `int64` keyword, `uint32` keyword, `( ... )` block, `float32` keyword, `*` punctuation, `int16` keyword, `uint8` keyword, `'` punctuation
    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:25:16
    │
 25 │     let local: def(int32) -> int32 = (x) -> x

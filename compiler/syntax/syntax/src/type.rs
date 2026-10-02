@@ -42,7 +42,16 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub enum Primitive {
+        Int8(Keyword = expect::Keyword::Int8),
+        Int16(Keyword = expect::Keyword::Int16),
         Int32(Keyword = expect::Keyword::Int32),
+        Int64(Keyword = expect::Keyword::Int64),
+        Isize(Keyword = expect::Keyword::Isize),
+        Uint8(Keyword = expect::Keyword::Uint8),
+        Uint16(Keyword = expect::Keyword::Uint16),
+        Uint32(Keyword = expect::Keyword::Uint32),
+        Uint64(Keyword = expect::Keyword::Uint64),
+        Usize(Keyword = expect::Keyword::Usize),
         Bool(Keyword = expect::Keyword::Bool),
         Float32(Keyword = expect::Keyword::Float32),
         CInt(Keyword = expect::Keyword::CInt),

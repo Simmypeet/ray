@@ -222,7 +222,10 @@ async fn built_in_drop_takes_precedence_over_lexical_given() {
     let no_drop = target.make_global(SymbolID::from_u128(5));
     let mut engine = Arc::new(engine);
     let tracked = engine.clone().tracked().await;
-    let int_ty = Ty::new_primitive(rayc_type::ty::Primitive::Int32, &tracked);
+    let int_ty = Ty::new_primitive(
+        rayc_type::ty::Primitive::Integer(rayc_type::ty::Integer::Int32),
+        &tracked,
+    );
 
     // The site declares `given (intDrop: Drop[int32])`.
     let mut site_params = PolyVarMap::new();

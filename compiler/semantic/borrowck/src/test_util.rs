@@ -14,7 +14,7 @@ use rayc_qbice::{TrackedEngine, create_minimal_engine};
 use rayc_solver::Solver;
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::ty::{Mutability, Primitive, Ty, lifetime::Lifetime};
+use rayc_type::ty::{Integer, Mutability, Primitive, Ty, lifetime::Lifetime};
 
 use crate::{
     active_loans::LoanActivity,
@@ -41,7 +41,9 @@ impl FunctionBuilder {
         Self { engine, functions, function_id }
     }
 
-    pub fn int32(&self) -> Interned<Ty> { Ty::new_primitive(Primitive::Int32, &self.engine) }
+    pub fn int32(&self) -> Interned<Ty> {
+        Ty::new_primitive(Primitive::Integer(Integer::Int32), &self.engine)
+    }
 
     pub fn bool(&self) -> Interned<Ty> { Ty::new_primitive(Primitive::Bool, &self.engine) }
 

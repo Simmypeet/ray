@@ -552,7 +552,16 @@ fn emit_constant(constant: &Constant, expected_type: Option<&MonoType>) -> Strin
             format!("(({}){{ ._unit = 0 }})", aggregate_typedef_name(&aggregate))
         }
         Constant::Bool(value) => value.to_string(),
+        Constant::Int8(value) => format!("INT8_C({value})"),
+        Constant::Int16(value) => format!("INT16_C({value})"),
         Constant::Int32(value) => format!("INT32_C({value})"),
+        Constant::Int64(value) => format!("INT64_C({value})"),
+        Constant::Uint8(value) => format!("UINT8_C({value})"),
+        Constant::Uint16(value) => format!("UINT16_C({value})"),
+        Constant::Uint32(value) => format!("UINT32_C({value})"),
+        Constant::Uint64(value) => format!("UINT64_C({value})"),
+        Constant::Isize(value) => format!("((intptr_t)INT64_C({value}))"),
+        Constant::Usize(value) => format!("((uintptr_t)UINT64_C({value}))"),
         Constant::Float32(bits) => {
             let value = f32::from_bits(*bits);
             if value.is_nan() {

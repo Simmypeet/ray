@@ -3,7 +3,7 @@ use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeS
 use rayc_qbice::{TrackedEngine, create_minimal_engine};
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::ty::{Primitive, Ty};
+use rayc_type::ty::{Integer, Primitive, Ty};
 
 use super::{LiveLocals, LocalLiveness};
 use crate::{
@@ -28,7 +28,7 @@ struct FunctionBuilder {
 impl FunctionBuilder {
     async fn new() -> Self {
         let engine = create_minimal_engine().await;
-        let ty = Ty::new_primitive(Primitive::Int32, &engine);
+        let ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
         let functions = IRFunctionMap::new(GlobalSymbolID::default());
         let function_id = functions.root_id();
         Self { engine, functions, function_id, ty }

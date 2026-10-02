@@ -1,4 +1,4 @@
-use super::{Mutability, Primitive, Ty};
+use super::{Integer, Mutability, Primitive, Ty};
 
 // input: tuple -> closure -> tuple dictionaries with a selected leaf dictionary
 // premise: the other elements and captures have no-op Drop dictionaries
@@ -18,7 +18,7 @@ async fn no_op_drop_instance_recurses_through_tuple_and_closure_dictionaries() {
     let engine = rayc_qbice::create_minimal_engine().await;
     let owner = TargetID::TEST.make_global(SymbolID::from_u128(1));
     let instance_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
-    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let no_op = Ty::new_no_op_drop_instance(int_ty.clone(), &engine);
     let nominal = Ty::new_struct(owner, Args::new([], &engine), &engine);
     let custom = Ty::new_instance(instance_id, Args::new([], &engine), &engine);
@@ -107,7 +107,7 @@ async fn struct_application_preserves_nominal_identity_and_substitutes_arguments
     let struct_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
     let other_struct_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
     let poly_var = GlobalPolyVarID::new(struct_id, PolyVarID::new(0));
-    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let generic = Ty::new_struct(
         struct_id,
         Args::new([Ty::new_poly_var(poly_var, &engine)], &engine),
@@ -148,7 +148,7 @@ async fn closure_substitution_preserves_unused_owner_arguments_separately_from_s
     let b = GlobalPolyVarID::new(owner, PolyVarID::new(0));
     let a = GlobalPolyVarID::new(parent, PolyVarID::new(0));
     let closure_id = ClosureID::new(0);
-    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
     let float_ty = Ty::new_primitive(Primitive::Float32, &engine);
     let effect = Ty::new_effect_row([], None, &engine);
@@ -219,7 +219,7 @@ async fn closure_identity_distinguishes_owners_and_local_closures() {
 #[tokio::test]
 async fn recursive_iter_yields_root_and_descendants_in_breadth_first_order() {
     let engine = rayc_qbice::create_minimal_engine().await;
-    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
     let float_ty = Ty::new_primitive(Primitive::Float32, &engine);
     let pointer_ty = Ty::new_pointer(int_ty.clone(), Mutability::Immutable, &engine);
@@ -288,7 +288,7 @@ async fn associated_type_substitution_replaces_instance_and_member_arguments() {
     let instance_var = Inference::new(TyKind::Instance, 0);
     let arg_var = Inference::new(TyKind::Star, 1);
     let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
-    let int_ty = Ty::new_primitive(Primitive::Int32, &engine);
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let projection = Ty::new_instance_associated(
         member_id,
         engine.intern(Ty::Inference(instance_var)),

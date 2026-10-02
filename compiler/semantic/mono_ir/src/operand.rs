@@ -13,7 +13,16 @@ use crate::{
 pub enum Constant {
     Unit,
     Bool(bool),
+    Int8(i8),
+    Int16(i16),
     Int32(i32),
+    Int64(i64),
+    Isize(i64),
+    Uint8(u8),
+    Uint16(u16),
+    Uint32(u32),
+    Uint64(u64),
+    Usize(u64),
     /// Stores the IEEE-754 bit pattern so constants retain total equality.
     Float32(u32),
     CInt(i32),

@@ -527,7 +527,7 @@ impl Application {
             InferenceConstraint::Any => true,
             InferenceConstraint::Numeric => match self.view() {
                 View::Primitive(primitive) => match primitive {
-                    Primitive::Int32 | Primitive::Float32 | Primitive::CInt => true,
+                    Primitive::Integer(_) | Primitive::Float32 => true,
                     Primitive::Bool | Primitive::CStr => false,
                 },
 
@@ -547,9 +547,7 @@ impl Application {
             },
             InferenceConstraint::EqualityComparable => match self.view() {
                 View::Primitive(primitive) => match primitive {
-                    Primitive::Int32 | Primitive::Float32 | Primitive::Bool | Primitive::CInt => {
-                        true
-                    }
+                    Primitive::Integer(_) | Primitive::Float32 | Primitive::Bool => true,
                     Primitive::CStr => false,
                 },
 

@@ -285,7 +285,16 @@ impl<'engine> Generator<'engine> {
     fn collect_type(&mut self, ty: &MonoType) {
         match ty {
             MonoType::Bool
+            | MonoType::Int8
+            | MonoType::Int16
             | MonoType::Int32
+            | MonoType::Int64
+            | MonoType::Isize
+            | MonoType::Uint8
+            | MonoType::Uint16
+            | MonoType::Uint32
+            | MonoType::Uint64
+            | MonoType::Usize
             | MonoType::Float32
             | MonoType::CInt
             | MonoType::CStr
@@ -374,7 +383,16 @@ impl<'engine> Generator<'engine> {
                 Constant::NullPointer(ty) => self.collect_type(ty),
                 Constant::Unit
                 | Constant::Bool(_)
+                | Constant::Int8(_)
+                | Constant::Int16(_)
                 | Constant::Int32(_)
+                | Constant::Int64(_)
+                | Constant::Isize(_)
+                | Constant::Uint8(_)
+                | Constant::Uint16(_)
+                | Constant::Uint32(_)
+                | Constant::Uint64(_)
+                | Constant::Usize(_)
                 | Constant::Float32(_)
                 | Constant::CInt(_)
                 | Constant::CStr(_) => {}
@@ -580,7 +598,16 @@ fn by_value_dependencies(aggregate: &AggregateType) -> Vec<AggregateType> {
             .filter_map(|ty| match &**ty {
                 MonoType::Aggregate(aggregate) => Some(aggregate.clone()),
                 MonoType::Bool
+                | MonoType::Int8
+                | MonoType::Int16
                 | MonoType::Int32
+                | MonoType::Int64
+                | MonoType::Isize
+                | MonoType::Uint8
+                | MonoType::Uint16
+                | MonoType::Uint32
+                | MonoType::Uint64
+                | MonoType::Usize
                 | MonoType::Float32
                 | MonoType::CInt
                 | MonoType::CStr

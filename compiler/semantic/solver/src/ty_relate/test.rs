@@ -10,7 +10,7 @@ use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap},
     subst::{Subst, Substitutable},
     ty::{
-        Mutability, Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel,
+        Integer, Mutability, Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel,
         inference::Inference, lifetime::Lifetime,
     },
     variance::{Variance, VarianceKey, VarianceMap},
@@ -108,7 +108,7 @@ async fn instance_inference_binds_to_concrete_instance() {
     let symbol = TargetID::TEST.make_global(SymbolID::from_u128(1));
     let instance = Ty::new_instance(
         symbol,
-        Args::new([Ty::new_primitive(Primitive::Int32, &engine)], &engine),
+        Args::new([Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine)], &engine),
         &engine,
     );
     for reverse in [false, true] {
@@ -151,7 +151,7 @@ async fn inference_rejects_cross_kind_bindings() {
     let symbol = TargetID::TEST.make_global(SymbolID::from_u128(1));
     let kinds = [TyKind::Star, TyKind::Instance, TyKind::EffectRow];
     let concrete = [
-        (TyKind::Star, Ty::new_primitive(Primitive::Int32, &engine)),
+        (TyKind::Star, Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine)),
         (TyKind::Instance, Ty::new_instance(symbol, Args::new([], &engine), &engine)),
         (TyKind::EffectRow, Ty::new_effect_row([], None, &engine)),
     ];
@@ -183,9 +183,9 @@ async fn star_application_constraints_remain_enforced() {
 
     let engine = rayc_qbice::create_minimal_engine().await;
     for (constraint, primitive, allowed) in [
-        (InferenceConstraint::Numeric, Primitive::Int32, true),
+        (InferenceConstraint::Numeric, Primitive::Integer(Integer::Int32), true),
         (InferenceConstraint::Numeric, Primitive::Float32, true),
-        (InferenceConstraint::Numeric, Primitive::CInt, true),
+        (InferenceConstraint::Numeric, Primitive::Integer(Integer::CInt), true),
         (InferenceConstraint::Numeric, Primitive::Bool, false),
         (InferenceConstraint::Numeric, Primitive::CStr, false),
         (InferenceConstraint::EqualityComparable, Primitive::Bool, true),
@@ -451,7 +451,7 @@ async fn effect_row_inference_binds_to_an_effect_row() {
 #[tokio::test]
 async fn same_effect_constructor_occurrences_cannot_swap() {
     let engine = rayc_qbice::create_minimal_engine().await;
-    let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+    let int32 = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let bool = Ty::new_primitive(Primitive::Bool, &engine);
     let state_int32 = effect_label_with_args(1, [int32], &engine);
     let state_bool = effect_label_with_args(1, [bool], &engine);
@@ -470,7 +470,7 @@ async fn same_effect_constructor_occurrences_cannot_swap() {
 #[tokio::test]
 async fn same_effect_constructor_inferences_bind_in_occurrence_order() {
     let engine = rayc_qbice::create_minimal_engine().await;
-    let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+    let int32 = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let bool = Ty::new_primitive(Primitive::Bool, &engine);
     let mut solver = Solver::without_givens(engine.clone()).await;
     let a = solver.new_inference(TyKind::Star);
@@ -534,7 +534,7 @@ async fn associated_types_are_not_structurally_decomposed() {
     let engine = engine_with_associated_types([id(2)]).await;
     let this = engine.intern(Ty::SelfInstance(SelfInstance::new(id(1))));
     let item = |argument| Ty::new_instance_associated(id(2), this.clone(), [argument], &engine);
-    let int_item = item(Ty::new_primitive(Primitive::Int32, &engine));
+    let int_item = item(Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine));
     let bool_item = item(Ty::new_primitive(Primitive::Bool, &engine));
     let mut solver = Solver::without_givens(engine.clone()).await;
 
@@ -553,7 +553,7 @@ async fn syntactically_identical_associated_types_are_discharged() {
     let id = |n| TargetID::TEST.make_global(SymbolID::from_u128(n));
     let engine = engine_with_associated_types([id(2)]).await;
     let this = engine.intern(Ty::SelfInstance(SelfInstance::new(id(1))));
-    let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+    let int32 = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let element = Ty::new_instance_associated(id(2), this, [int32], &engine);
     let mut solver = Solver::without_givens(engine.clone()).await;
 
@@ -690,7 +690,7 @@ async fn outlives_constraints_that_always_hold_are_left_out() {
 #[tokio::test]
 async fn mutable_reference_relates_its_pointee_invariantly() {
     let engine = rayc_qbice::create_minimal_engine().await;
-    let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+    let int32 = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let r = |outer, inner| {
         let pointee = Ty::new_reference(
             region(inner, &engine),
@@ -756,7 +756,7 @@ async fn covariant_binding_generalizes_the_other_side() {
     let mut solver = Solver::without_givens(engine.clone()).await;
     let t = solver.new_inference(TyKind::Star);
     let u = engine.intern(Ty::Inference(solver.new_inference(TyKind::Star)));
-    let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+    let int32 = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let reference =
         |lifetime| Ty::new_reference(lifetime, int32.clone(), Mutability::Immutable, &engine);
     let tuple = |first, second| Ty::new_tuple(engine.intern_unsized([first, second]), &engine);
@@ -792,7 +792,7 @@ async fn invariant_binding_does_not_generalize() {
     let mut solver = Solver::without_givens(engine.clone()).await;
     let t = solver.new_inference(TyKind::Star);
     let u = engine.intern(Ty::Inference(solver.new_inference(TyKind::Star)));
-    let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+    let int32 = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let reference = Ty::new_reference(region(0, &engine), int32, Mutability::Immutable, &engine);
     let target = Ty::new_tuple(engine.intern_unsized([reference, u]), &engine);
 

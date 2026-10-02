@@ -35,11 +35,78 @@ use self_instance::SelfInstance;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Primitive {
-    Int32,
+    Integer(Integer),
     Float32,
     Bool,
-    CInt,
     CStr,
+}
+
+impl Primitive {
+    /// Returns the keyword that names this primitive type in source code.
+    #[must_use]
+    pub const fn keyword(&self) -> &'static str {
+        match self {
+            Self::Integer(integer) => integer.keyword(),
+            Self::Float32 => "float32",
+            Self::Bool => "bool",
+            Self::CStr => "cstr",
+        }
+    }
+}
+
+/// A primitive integer type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum Integer {
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    Isize,
+    Uint8,
+    Uint16,
+    Uint32,
+    Uint64,
+    Usize,
+    CInt,
+}
+
+impl Integer {
+    /// Returns the keyword that names this integer type in source code.
+    #[must_use]
+    pub const fn keyword(&self) -> &'static str {
+        match self {
+            Self::Int8 => "int8",
+            Self::Int16 => "int16",
+            Self::Int32 => "int32",
+            Self::Int64 => "int64",
+            Self::Isize => "isize",
+            Self::Uint8 => "uint8",
+            Self::Uint16 => "uint16",
+            Self::Uint32 => "uint32",
+            Self::Uint64 => "uint64",
+            Self::Usize => "usize",
+            Self::CInt => "c_int",
+        }
+    }
+
+    /// Returns the largest value of this integer type.
+    ///
+    /// `isize` and `usize` are bounded by their 64-bit counterparts, and
+    /// `c_int` by `int32`, matching how their constants are represented after
+    /// monomorphization.
+    #[must_use]
+    pub const fn max_value(&self) -> u128 {
+        match self {
+            Self::Int8 => i8::MAX as u128,
+            Self::Int16 => i16::MAX as u128,
+            Self::Int32 | Self::CInt => i32::MAX as u128,
+            Self::Int64 | Self::Isize => i64::MAX as u128,
+            Self::Uint8 => u8::MAX as u128,
+            Self::Uint16 => u16::MAX as u128,
+            Self::Uint32 => u32::MAX as u128,
+            Self::Uint64 | Self::Usize => u64::MAX as u128,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -997,13 +1064,7 @@ impl TyDisplay<'_> {
     fn fmt_ty(&self, ty: &Ty, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match ty {
             Ty::Application(ty_application) => match ty_application.view() {
-                ApplicationView::Primitive(primitive) => match primitive {
-                    Primitive::Int32 => write!(f, "int32"),
-                    Primitive::Float32 => write!(f, "float32"),
-                    Primitive::Bool => write!(f, "bool"),
-                    Primitive::CInt => write!(f, "c_int"),
-                    Primitive::CStr => write!(f, "cstr"),
-                },
+                ApplicationView::Primitive(primitive) => f.write_str(primitive.keyword()),
 
                 view @ (ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
@@ -1398,9 +1459,22 @@ impl Ty {
         }
     }
 
+    /// Returns the primitive type this type is, if any.
+    #[must_use]
+    pub fn as_primitive(&self) -> Option<Primitive> {
+        let Self::Application(application) = self else {
+            return None;
+        };
+        let ApplicationView::Primitive(primitive) = application.view() else {
+            return None;
+        };
+
+        Some(primitive)
+    }
+
     #[must_use]
     pub fn is_int32(&self) -> bool {
-        matches!(self, Self::Application(application) if matches!(application.view(), ApplicationView::Primitive(Primitive::Int32)))
+        matches!(self, Self::Application(application) if matches!(application.view(), ApplicationView::Primitive(Primitive::Integer(Integer::Int32))))
     }
 }
 

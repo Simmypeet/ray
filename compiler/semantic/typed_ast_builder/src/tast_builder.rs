@@ -31,7 +31,7 @@ use crate::{
     diagnostic::Diagnostic,
     tast_builder::{
         constraint_solver::ConstraintSolver, lvalue_requirements::LvalueRequirements,
-        name_env::NameEnv,
+        name_env::NameEnv, numeric_literal_ranges::NumericLiteralRanges,
     },
 };
 
@@ -39,6 +39,7 @@ pub mod coercion;
 pub mod constraint_solver;
 pub mod lvalue_requirements;
 pub mod name_env;
+pub mod numeric_literal_ranges;
 pub mod resolution;
 mod type_annotation;
 
@@ -63,6 +64,7 @@ pub struct TAstBuilder {
 
     constraint_solver: ConstraintSolver,
     lvalue_requirements: LvalueRequirements,
+    numeric_literal_ranges: NumericLiteralRanges,
 
     diagnostics: Vec<Diagnostic>,
     engine: TrackedEngine,
@@ -93,6 +95,7 @@ impl TAstBuilder {
             current_def_id,
             constraint_solver,
             lvalue_requirements: LvalueRequirements::new(),
+            numeric_literal_ranges: NumericLiteralRanges::new(),
             diagnostics: Vec::new(),
             engine,
         }
@@ -433,6 +436,7 @@ impl TAstBuilder {
 
         self.validate_lvalue_requirements().await;
         self.finish_constraints().await;
+        self.validate_numeric_literal_ranges().await;
 
         let (constr_diags, subst) = self.constraint_solver.residual_into_diags().await;
 

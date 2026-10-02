@@ -17,7 +17,7 @@ use rayc_symbol::{GlobalSymbolID, member::get_members};
 use rayc_type::{
     poly_var::build_subst_from_args,
     subst::{MutSubstitutable, Subst, Substitutable},
-    ty::{Mutability, Primitive, Ty, application::View as ApplicationView},
+    ty::{Integer, Mutability, Primitive, Ty, application::View as ApplicationView},
 };
 
 use crate::instance::{MonoEffectInstance, MonoStructInstance};
@@ -28,7 +28,16 @@ use crate::instance::{MonoEffectInstance, MonoStructInstance};
 )]
 pub enum MonoType {
     Bool,
+    Int8,
+    Int16,
     Int32,
+    Int64,
+    Isize,
+    Uint8,
+    Uint16,
+    Uint32,
+    Uint64,
+    Usize,
     Float32,
     CInt,
     CStr,
@@ -39,6 +48,24 @@ pub enum MonoType {
 }
 
 impl MonoType {
+    /// Returns the runtime representation of the given integer type.
+    #[must_use]
+    pub const fn from_integer(integer: Integer) -> Self {
+        match integer {
+            Integer::Int8 => Self::Int8,
+            Integer::Int16 => Self::Int16,
+            Integer::Int32 => Self::Int32,
+            Integer::Int64 => Self::Int64,
+            Integer::Isize => Self::Isize,
+            Integer::Uint8 => Self::Uint8,
+            Integer::Uint16 => Self::Uint16,
+            Integer::Uint32 => Self::Uint32,
+            Integer::Uint64 => Self::Uint64,
+            Integer::Usize => Self::Usize,
+            Integer::CInt => Self::CInt,
+        }
+    }
+
     #[must_use]
     pub const fn is_opauque_mut_pointer(&self) -> bool {
         matches!(self, Self::OpaquePointer(PointerMutability::Mut))
@@ -367,10 +394,9 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
         Ty::Application(application) => match application.view() {
             ApplicationView::Primitive(primitive) => {
                 let ty = match primitive {
-                    Primitive::Int32 => MonoType::Int32,
+                    Primitive::Integer(integer) => MonoType::from_integer(integer),
                     Primitive::Float32 => MonoType::Float32,
                     Primitive::Bool => MonoType::Bool,
-                    Primitive::CInt => MonoType::CInt,
                     Primitive::CStr => MonoType::CStr,
                 };
                 engine.intern(ty)

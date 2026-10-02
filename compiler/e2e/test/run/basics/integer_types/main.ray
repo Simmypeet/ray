@@ -1,0 +1,44 @@
+extern def printf(format: cstr, ...) -> c_int
+
+def main() -> int32:
+    # suffixed literals fix the type of an arithmetic expression
+    let i8Value = 100i8 - 28i8 + 5i8
+    let i16Value = 300i16 * 100i16
+    let i32Value = 2147483647i32 - 1
+    let i64Value = 10000000000i64 * 3i64
+    let isizeValue = 42isize / 5isize
+
+    let u8Value = 200u8 + 55u8
+    let u16Value = 300u16 * 200u16
+    let u32Value = 4294967295u32 - 5u32
+    let u64Value = 18446744073709551615u64 / 5u64
+    let usizeValue = 64usize + 1usize
+
+    # an unsuffixed literal takes the type it is used with
+    let annotated: uint64 = 1
+    let inferred = annotated + 9000000000
+
+    # unsigned arithmetic wraps around
+    let wrapAdd = 255u8 + 1u8
+    let wrapSub = 0u16 - 1u16
+
+    # equality operators on every integer type
+    let equal = 1i8 == 1i8 and 2i16 == 2i16 and 3i32 == 3i32 and 4i64 == 4i64 and 5isize == 5isize
+    let unsignedEqual = 1u8 == 1u8 and 2u16 == 2u16 and 3u32 == 3u32 and 4u64 == 4u64 and 5usize == 5usize
+    let notEqual = 1i8 != 2i8 and 1u64 != 2u64 and 1usize != 2usize and inferred != annotated
+
+    printf("int8: %d\n", i8Value)
+    printf("int16: %d\n", i16Value)
+    printf("int32: %d\n", i32Value)
+    printf("int64: %ld\n", i64Value)
+    printf("isize: %ld\n", isizeValue)
+    printf("uint8: %u\n", u8Value)
+    printf("uint16: %u\n", u16Value)
+    printf("uint32: %u\n", u32Value)
+    printf("uint64: %lu\n", u64Value)
+    printf("usize: %lu\n", usizeValue)
+    printf("inferred: %lu\n", inferred)
+    printf("wrap: %u %u\n", wrapAdd, wrapSub)
+    printf("equality: %d %d %d\n", equal, unsignedEqual, notEqual)
+
+    return if equal and unsignedEqual and notEqual: 0 else: 1

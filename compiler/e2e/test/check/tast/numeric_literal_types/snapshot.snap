@@ -1,0 +1,58 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: the numeric literal `256` does not fit in type `uint8`, whose maximum value is 255
+  ╭▸ compiler/e2e/test/check/tast/numeric_literal_types/main.ray:2:12
+  │
+2 │     return 256u8
+  ╰╴           ━━━━━
+
+[error]: the numeric literal `128` does not fit in type `int8`, whose maximum value is 127
+  ╭▸ compiler/e2e/test/check/tast/numeric_literal_types/main.ray:5:23
+  │
+5 │     let value: int8 = 128
+  ╰╴                      ━━━
+
+[error]: the numeric literal `2147483648` does not fit in type `int32`, whose maximum value is 2147483647
+  ╭▸ compiler/e2e/test/check/tast/numeric_literal_types/main.ray:9:12
+  │
+9 │     return 2147483648
+  ╰╴           ━━━━━━━━━━
+
+[error]: mismatched types in binary operation: expected `int8`, but found `uint8`
+   ╭▸ compiler/e2e/test/check/tast/numeric_literal_types/main.ray:15:18
+   │
+15 │     return 1i8 + 1u8
+   ╰╴                 ━━━
+
+[error]: mismatched types in variable assignment: expected `int16`, but found `int32`
+   ╭▸ compiler/e2e/test/check/tast/numeric_literal_types/main.ray:18:24
+   │
+18 │     let value: int16 = 1i32
+   ╰╴                       ━━━━
+
+[error]: mismatched types in binary operation: expected `usize`, but found `isize`
+   ╭▸ compiler/e2e/test/check/tast/numeric_literal_types/main.ray:22:22
+   │
+22 │     return 1usize == 1isize
+   ╰╴                     ━━━━━━
+
+[error]: the numeric literal `340282366920938463463374607431768211456` is too large to fit in any numeric type
+   ╭▸ compiler/e2e/test/check/tast/numeric_literal_types/main.ray:25:12
+   │
+25 │     return 340282366920938463463374607431768211456u64
+   ╰╴           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[error]: the numeric literal `340282366920938463463374607431768211456` is too large to fit in any numeric type
+   ╭▸ compiler/e2e/test/check/tast/numeric_literal_types/main.ray:28:12
+   │
+28 │     return 340282366920938463463374607431768211456
+   ╰╴           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 8 error(s)
+
+
+
+stdout:

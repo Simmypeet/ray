@@ -18,7 +18,7 @@ use rayc_symbol::{
 use rayc_target::TargetID;
 use rayc_type::{
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVar, PolyVarMap},
-    ty::{Mutability, Primitive, Ty, args::Args},
+    ty::{Integer, Mutability, Primitive, Ty, args::Args},
     variance::{Variance, VarianceMap, get_variance},
 };
 
@@ -165,7 +165,9 @@ impl Declarations {
         Ty::new_pointer(pointee.clone(), mutability, &self.tracked)
     }
 
-    fn int32(&self) -> Interned<Ty> { Ty::new_primitive(Primitive::Int32, &self.tracked) }
+    fn int32(&self) -> Interned<Ty> {
+        Ty::new_primitive(Primitive::Integer(Integer::Int32), &self.tracked)
+    }
 
     fn structure<const N: usize>(
         &self,

@@ -211,8 +211,57 @@ abstract_tree::abstract_tree! {
     )]
     pub enum Literal {
         Boolean(Boolean = ast::<Boolean>()),
-        Numeric(Numeric = expect::Numeric),
+        Numeric(NumericLiteral = ast::<NumericLiteral>()),
         String(StringToken = expect::String)
+    }
+}
+
+// The suffix must follow the digits directly: `23i8` is a suffixed literal,
+// while `23 i8` is not. `isize` and `usize` are keywords, whereas the other
+// suffixes are plain identifiers.
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub enum NumericSuffix {
+        I8(Identifier = expect::IdentifierValue::I8.no_prior_insignificant()),
+        I16(Identifier = expect::IdentifierValue::I16.no_prior_insignificant()),
+        I32(Identifier = expect::IdentifierValue::I32.no_prior_insignificant()),
+        I64(Identifier = expect::IdentifierValue::I64.no_prior_insignificant()),
+        Isize(Keyword = expect::Keyword::Isize.no_prior_insignificant()),
+        U8(Identifier = expect::IdentifierValue::U8.no_prior_insignificant()),
+        U16(Identifier = expect::IdentifierValue::U16.no_prior_insignificant()),
+        U32(Identifier = expect::IdentifierValue::U32.no_prior_insignificant()),
+        U64(Identifier = expect::IdentifierValue::U64.no_prior_insignificant()),
+        Usize(Keyword = expect::Keyword::Usize.no_prior_insignificant()),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct NumericLiteral {
+        pub numeric: Numeric = expect::Numeric,
+        pub suffix: NumericSuffix = ast::<NumericSuffix>().optional()
     }
 }
 
