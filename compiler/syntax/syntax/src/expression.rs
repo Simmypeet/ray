@@ -216,8 +216,9 @@ abstract_tree::abstract_tree! {
     }
 }
 
-// `isize` and `usize` are keywords, whereas the other suffixes are plain
-// identifiers.
+// The suffix must follow the digits directly: `23i8` is a suffixed literal,
+// while `23 i8` is not. `isize` and `usize` are keywords, whereas the other
+// suffixes are plain identifiers.
 abstract_tree::abstract_tree! {
     #[derive(
         Debug,
@@ -232,21 +233,19 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub enum NumericSuffix {
-        I8(Identifier = expect::IdentifierValue::I8),
-        I16(Identifier = expect::IdentifierValue::I16),
-        I32(Identifier = expect::IdentifierValue::I32),
-        I64(Identifier = expect::IdentifierValue::I64),
-        Isize(Keyword = expect::Keyword::Isize),
-        U8(Identifier = expect::IdentifierValue::U8),
-        U16(Identifier = expect::IdentifierValue::U16),
-        U32(Identifier = expect::IdentifierValue::U32),
-        U64(Identifier = expect::IdentifierValue::U64),
-        Usize(Keyword = expect::Keyword::Usize),
+        I8(Identifier = expect::IdentifierValue::I8.no_prior_insignificant()),
+        I16(Identifier = expect::IdentifierValue::I16.no_prior_insignificant()),
+        I32(Identifier = expect::IdentifierValue::I32.no_prior_insignificant()),
+        I64(Identifier = expect::IdentifierValue::I64.no_prior_insignificant()),
+        Isize(Keyword = expect::Keyword::Isize.no_prior_insignificant()),
+        U8(Identifier = expect::IdentifierValue::U8.no_prior_insignificant()),
+        U16(Identifier = expect::IdentifierValue::U16.no_prior_insignificant()),
+        U32(Identifier = expect::IdentifierValue::U32.no_prior_insignificant()),
+        U64(Identifier = expect::IdentifierValue::U64.no_prior_insignificant()),
+        Usize(Keyword = expect::Keyword::Usize.no_prior_insignificant()),
     }
 }
 
-// The suffix must follow the digits directly: `23i8` is a suffixed literal,
-// while `23 i8` is not.
 abstract_tree::abstract_tree! {
     #[derive(
         Debug,
@@ -262,7 +261,7 @@ abstract_tree::abstract_tree! {
     )]
     pub struct NumericLiteral {
         pub numeric: Numeric = expect::Numeric,
-        pub suffix: NumericSuffix = ast::<NumericSuffix>().no_prior_insignificant().optional()
+        pub suffix: NumericSuffix = ast::<NumericSuffix>().optional()
     }
 }
 

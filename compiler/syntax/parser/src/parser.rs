@@ -230,7 +230,7 @@ macro_rules! expect_impl_parser {
             return Err(Unexpected);
         };
 
-        if !$self.expect(leaf) || !$state.satisfies_adjacency(leaf, node_index) {
+        if !$self.expect(leaf) {
             $state.add_error(std::iter::once((*$self).into()), Cursor {
                 branch_id: $state.branch_id(),
                 node_index,
@@ -262,20 +262,6 @@ expect_impl_parser! {
 /// See [`ast`] for more information.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Ast<T>(pub PhantomData<T>);
-
-/// Requires the first token of the node to have no prior insignificant token,
-/// e.g. the suffix of `23i8`.
-impl<T: AbstractTree> expect::Ext for Ast<T> {
-    fn no_prior_insignificant(self) -> expect::NoPriorInsignificant<Self> {
-        expect::NoPriorInsignificant(self)
-    }
-}
-
-impl<I: Interner, T: AbstractTree> Parser<I> for expect::NoPriorInsignificant<Ast<T>> {
-    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
-        state.require_next_token_adjacent(|state| self.0.parse(state))
-    }
-}
 
 impl<I: Interner, T: AbstractTree> Parser<I> for Ast<T> {
     fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {

@@ -6,11 +6,7 @@ use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
 use qbice::{Decode, Encode, StableHash};
 use rayc_arena::ID;
-use rayc_lexical::{
-    kind::Kind,
-    token::Token,
-    tree::{ROOT_BRANCH_ID, RelativeLocation},
-};
+use rayc_lexical::{kind::Kind, token::Token, tree::ROOT_BRANCH_ID};
 use rayc_qbice::Interner;
 
 use crate::{
@@ -44,10 +40,6 @@ pub struct State<'a, 'cache, I> {
     /// Determines whether the new line character is considered a significant
     /// token.
     new_line_significant: bool,
-
-    /// Determines whether the next token must directly follow the previous
-    /// one, without any insignificant token such as a whitespace between them.
-    next_token_adjacent: bool,
 
     /// The current error that the parser encountered.
     ///
@@ -86,7 +78,6 @@ pub struct ResultCheckpoint {
 pub struct StateCheckpoint {
     node_index: usize,
     new_line_significant: bool,
-    next_token_adjacent: bool,
 }
 
 impl StateCheckpoint {
@@ -134,7 +125,6 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
             branch: &tree[rayc_lexical::tree::ROOT_BRANCH_ID],
             cursor: Cursor { branch_id: rayc_lexical::tree::ROOT_BRANCH_ID, node_index: 0 },
             new_line_significant: false,
-            next_token_adjacent: false,
             emitted_erorrs: Vec::default(),
             current_error: Error {
                 expecteds: HashSet::default(),
@@ -151,7 +141,6 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
         StateCheckpoint {
             node_index: self.cursor.node_index,
             new_line_significant: self.new_line_significant,
-            next_token_adjacent: self.next_token_adjacent,
         }
     }
 
@@ -213,7 +202,6 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
     pub(crate) const fn restore_state(&mut self, checkpoint: StateCheckpoint) {
         self.cursor.node_index = checkpoint.node_index;
         self.new_line_significant = checkpoint.new_line_significant;
-        self.next_token_adjacent = checkpoint.next_token_adjacent;
     }
 
     /// Returns the current cursor position in the token tree.
@@ -267,7 +255,6 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
 
         // update the cursor position
         self.cursor.node_index += count;
-        self.next_token_adjacent = false;
     }
 
     /// Adds an [`Event::Error`] event that takes the given number of tokens,
@@ -287,7 +274,6 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
 
         // update the cursor position
         self.cursor.node_index += count;
-        self.next_token_adjacent = false;
     }
 
     /// The current branch id that the cursor is in.
@@ -369,36 +355,6 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
         result
     }
 
-    /// Requires the next token to directly follow the previous one and runs
-    /// the given operation. The requirement ends once a token is eaten, and
-    /// at the latest after the operation is done.
-    ///
-    /// The requirement is checked by the token expectations; stepping into a
-    /// fragment ends it without a check.
-    pub fn require_next_token_adjacent<T>(&mut self, op: impl FnOnce(&mut Self) -> T) -> T {
-        let old_next_token_adjacent = self.next_token_adjacent;
-        self.next_token_adjacent = true;
-
-        let result = op(self);
-
-        self.next_token_adjacent = old_next_token_adjacent;
-
-        result
-    }
-
-    /// Checks whether the token at the given node index satisfies the
-    /// [`Self::require_next_token_adjacent`] requirement, if any. A skipped
-    /// new line token also separates the token from the previous one.
-    #[must_use]
-    pub const fn satisfies_adjacency(
-        &self,
-        token: &Token<Kind, RelativeLocation>,
-        node_index: usize,
-    ) -> bool {
-        !self.next_token_adjacent
-            || (token.prior_insignificant.is_none() && node_index == self.cursor.node_index)
-    }
-
     /// Returns the current node index in the branch.
     #[must_use]
     pub const fn node_index(&self) -> usize { self.cursor.node_index }
@@ -447,7 +403,6 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
 
             // eat the token up until the fragment
             self.eat_token(node_index - starting_node_index);
-            self.next_token_adjacent = false;
 
             // start the event
             self.events.push(Event::NewNode(AstInfo {
@@ -466,7 +421,6 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
                 events: Vec::with_capacity(branch.nodes.len()),
                 emitted_erorrs: Vec::new(),
                 new_line_significant: false,
-                next_token_adjacent: false,
                 current_error: std::mem::take(&mut self.current_error),
                 cache: self.cache,
                 interner: self.interner,
