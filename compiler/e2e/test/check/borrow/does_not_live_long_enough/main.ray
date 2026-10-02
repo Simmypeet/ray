@@ -1,0 +1,26 @@
+def consume(x: t) given(_: core.Drop[t]):
+    let _ = x
+
+def storedPastScope():
+    let outer = 1
+    let mut p = outer.&
+    if true:
+        let inner = 2
+        # ERROR: `p` still holds this borrow when `inner` goes out of scope.
+        p = inner.&
+    consume(p.*)
+
+def usedWithinScope():
+    let outer = 1
+    let mut p = outer.&
+    if true:
+        let inner = 2
+        # OK: the borrow of `inner` is last used before `inner` goes out of
+        # scope.
+        let r = inner.&
+        consume(r.*)
+    consume(p.*)
+
+def main():
+    storedPastScope()
+    usedWithinScope()

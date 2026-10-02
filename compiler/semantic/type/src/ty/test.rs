@@ -1,5 +1,94 @@
 use super::{Integer, Mutability, Primitive, Ty};
 
+// input: tuple -> closure -> tuple dictionaries with a selected leaf dictionary
+// premise: the other elements and captures have no-op Drop dictionaries
+// output: the nested dictionaries are no-ops exactly when the leaf is a no-op
+#[tokio::test]
+async fn no_op_drop_instance_recurses_through_tuple_and_closure_dictionaries() {
+    use rayc_symbol::SymbolID;
+    use rayc_target::TargetID;
+
+    use super::{
+        TyKind,
+        application::{Closure, ClosureID},
+        args::Args,
+        inference::Inference,
+    };
+
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let owner = TargetID::TEST.make_global(SymbolID::from_u128(1));
+    let instance_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
+    let no_op = Ty::new_no_op_drop_instance(int_ty.clone(), &engine);
+    let nominal = Ty::new_struct(owner, Args::new([], &engine), &engine);
+    let custom = Ty::new_instance(instance_id, Args::new([], &engine), &engine);
+    let generated = Ty::new_nominal_drop_instance(nominal.clone(), [], &engine);
+    let unresolved = engine.intern(Ty::Inference(Inference::new(TyKind::Instance, 0)));
+
+    for (leaf_ty, leaf_drop, expected) in [
+        (int_ty.clone(), no_op.clone(), true),
+        (nominal.clone(), custom, false),
+        (nominal, generated, false),
+        (int_ty.clone(), unresolved, false),
+    ] {
+        let tuple = Ty::new_tuple(engine.intern_unsized([int_ty.clone(), leaf_ty]), &engine);
+        let tuple_drop =
+            Ty::new_tuple_drop_instance(tuple.clone(), [no_op.clone(), leaf_drop], &engine);
+        let captures = Ty::new_tuple(engine.intern_unsized([tuple, int_ty.clone()]), &engine);
+        let closure = Ty::new_closure(
+            Closure::new(owner, ClosureID::new(0), 0),
+            [],
+            [],
+            Ty::new_unit(&engine),
+            Ty::new_effect_row([], None, &engine),
+            captures,
+            &engine,
+        );
+        let closure_drop = Ty::new_closure_drop_instance(
+            closure.clone(),
+            [tuple_drop.clone(), no_op.clone()],
+            &engine,
+        );
+        let outer_tuple = Ty::new_tuple(engine.intern_unsized([closure, int_ty.clone()]), &engine);
+        let outer_drop = Ty::new_tuple_drop_instance(
+            outer_tuple,
+            [closure_drop.clone(), no_op.clone()],
+            &engine,
+        );
+
+        assert_eq!(tuple_drop.is_no_op_drop_instance(), expected);
+        assert_eq!(closure_drop.is_no_op_drop_instance(), expected);
+        assert_eq!(outer_drop.is_no_op_drop_instance(), expected);
+    }
+}
+
+// input: Drop dictionaries for an empty tuple and a captureless closure
+// premise: there are no element or capture dictionaries to drop
+// output: both dictionaries are no-ops
+#[tokio::test]
+async fn no_op_drop_instance_includes_empty_tuples_and_captureless_closures() {
+    use rayc_symbol::GlobalSymbolID;
+
+    use super::application::{Closure, ClosureID};
+
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let unit = Ty::new_unit(&engine);
+    let tuple_drop = Ty::new_tuple_drop_instance(unit.clone(), [], &engine);
+    let closure = Ty::new_closure(
+        Closure::new(GlobalSymbolID::default(), ClosureID::new(0), 0),
+        [],
+        [],
+        unit.clone(),
+        Ty::new_effect_row([], None, &engine),
+        unit,
+        &engine,
+    );
+    let closure_drop = Ty::new_closure_drop_instance(closure, [], &engine);
+
+    assert!(tuple_drop.is_no_op_drop_instance());
+    assert!(closure_drop.is_no_op_drop_instance());
+}
+
 // input: Box[a], substituted with a := int32, and Other[int32]
 // premise: struct applications are nominal and carry substitutable type
 // arguments output: Box[int32] has star kind and does not match Other[int32]

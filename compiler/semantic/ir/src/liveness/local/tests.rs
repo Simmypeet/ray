@@ -8,12 +8,12 @@ use rayc_type::ty::{Integer, Primitive, Ty};
 use super::{LiveLocals, LocalLiveness};
 use crate::{
     address::{Address, Local},
-    cfg::{BlockID, Conditional, Point, Terminator},
-    ir_expr::{
-        IRExpr,
-        load::{Load, LoadKind},
+    cfg::{
+        AddressDrop, BlockID, Conditional, Instruction, InstructionInsertion, Point, Terminator,
     },
+    ir_expr::{IRExpr, load::Load},
     ir_function::{FunctionID, IRFunctionMap},
+    liveness::{LiveMode, LiveRanges},
 };
 
 /// Builds the root function of an [`IRFunctionMap`] one instruction at a
@@ -56,24 +56,28 @@ impl FunctionBuilder {
 
     fn address(&self, local: Local) -> Address { local.to_address(&self.engine) }
 
-    fn load(&mut self, block_id: BlockID, address: Address, kind: LoadKind) -> Point {
+    fn read(&mut self, block_id: BlockID, local: Local) -> Point {
         let point = self.next_point(block_id);
+        let address = self.address(local);
         let expression = self.functions.insert_expression(
             self.function_id,
-            IRExpr::new(Load::with_kind(address, kind), test_span(), self.ty.clone()),
+            IRExpr::new(Load::new(address), test_span(), self.ty.clone()),
         );
         self.functions.push_expression(self.function_id, block_id, expression);
         point
     }
 
-    fn read(&mut self, block_id: BlockID, local: Local) -> Point {
+    fn drop(&mut self, block_id: BlockID, local: Local, drop_instance: Interned<Ty>) -> Point {
+        let point = self.next_point(block_id);
         let address = self.address(local);
-        self.load(block_id, address, LoadKind::Implicit)
-    }
-
-    fn drop(&mut self, block_id: BlockID, local: Local) -> Point {
-        let address = self.address(local);
-        self.load(block_id, address, LoadKind::Drop)
+        let mut insertion = InstructionInsertion::new();
+        insertion.insert_before(point, [Instruction::AddressDrop(AddressDrop::new(
+            address,
+            drop_instance,
+            test_span(),
+        ))]);
+        self.functions.insert_instructions(self.function_id, insertion);
+        point
     }
 
     fn store(&mut self, block_id: BlockID, address: Address) -> Point {
@@ -88,6 +92,25 @@ impl FunctionBuilder {
 
     fn terminate(&mut self, block_id: BlockID, terminator: Terminator) {
         self.functions.set_terminator(self.function_id, block_id, terminator);
+    }
+
+    async fn live_ranges(&self) -> LiveRanges<Local> {
+        let function = self.functions.get_function(self.function_id);
+        LocalLiveness::compute(function).await.live_ranges(function)
+    }
+
+    /// Returns the live mode of `local` at every point of `block_id`, its
+    /// terminator included.
+    async fn modes_in_block(&self, local: Local, block_id: BlockID) -> Vec<Option<LiveMode>> {
+        let ranges = self.live_ranges().await;
+        let len = self.functions.get_function(self.function_id).block_instructions(block_id).len();
+        (0..=len)
+            .map(|instruction_idx| {
+                let point =
+                    Point::builder().block_id(block_id).instruction_idx(instruction_idx).build();
+                ranges.live_mode(local, point)
+            })
+            .collect()
     }
 
     async fn live_before(&self, point: Point) -> LiveLocals {
@@ -179,7 +202,7 @@ async fn local_is_drop_live_after_its_last_use() {
     let x = builder.variable();
     let entry = builder.entry();
     let read = builder.read(entry, x);
-    let drop = builder.drop(entry, x);
+    let drop = builder.drop(entry, x, builder.ty.clone());
     builder.terminate(entry, Terminator::Return(None));
 
     let before_read = builder.live_before(read).await;
@@ -189,6 +212,28 @@ async fn local_is_drop_live_after_its_last_use() {
     let before_drop = builder.live_before(drop).await;
     assert!(!before_drop.is_use_live(x));
     assert!(before_drop.is_drop_live(x));
+}
+
+// input: liveness before the read and no-op drop of `x`
+// premise: entry: read(x); jump exit; exit: no_op_drop(x); return
+// output: `x` is use-live before its read and dead on entry to `exit`
+#[tokio::test]
+async fn no_op_drop_does_not_keep_the_local_live() {
+    let mut builder = FunctionBuilder::new().await;
+    let x = builder.variable();
+    let entry = builder.entry();
+    let exit = builder.block();
+    let read = builder.read(entry, x);
+    builder.terminate(entry, Terminator::Jump(exit));
+    let no_op = Ty::new_no_op_drop_instance(builder.ty.clone(), &builder.engine);
+    let drop = builder.drop(exit, x, no_op);
+    builder.terminate(exit, Terminator::Return(None));
+
+    let function = builder.functions.get_function(builder.function_id);
+    let liveness = LocalLiveness::compute(function).await;
+    assert!(liveness.live_before(function, read).unwrap().is_use_live(x));
+    assert_eq!(liveness.block_entry(exit), Some(&LiveLocals::default()));
+    assert_eq!(liveness.live_before(function, drop), Some(LiveLocals::default()));
 }
 
 // input: liveness at a branch on `c`
@@ -213,7 +258,7 @@ async fn use_on_one_branch_subsumes_drop_on_another() {
     );
     builder.read(then_block, x);
     builder.terminate(then_block, Terminator::Jump(merge));
-    builder.drop(else_block, x);
+    builder.drop(else_block, x, builder.ty.clone());
     builder.terminate(else_block, Terminator::Jump(merge));
     builder.terminate(merge, Terminator::Return(None));
 
@@ -238,4 +283,51 @@ async fn local_read_in_a_loop_without_exit_is_live() {
     builder.terminate(loop_block, Terminator::Jump(loop_block));
 
     assert!(builder.live_before(jump).await.is_use_live(x));
+}
+
+// input: live mode of `x` at every point of the block
+// premise: v = ..; x = v; read(x); drop(x); return
+// output: dead, dead, use-live, drop-live, dead
+#[tokio::test]
+async fn local_live_range_follows_its_definition_use_and_drop() {
+    let mut builder = FunctionBuilder::new().await;
+    let x = builder.variable();
+    let entry = builder.entry();
+    let address = builder.address(x);
+    builder.store(entry, address);
+    builder.read(entry, x);
+    builder.drop(entry, x, builder.ty.clone());
+    builder.terminate(entry, Terminator::Return(None));
+
+    assert_eq!(builder.modes_in_block(x, entry).await, vec![
+        None,
+        None,
+        Some(LiveMode::Use),
+        Some(LiveMode::Drop),
+        None
+    ]);
+}
+
+// input: live mode of `x` at every point of `middle`
+// premise: entry: jump middle; middle: read(y); jump exit;
+//          exit: read(x); return
+// output: `x` is use-live at every point of `middle`, which never mentions it
+#[tokio::test]
+async fn local_live_range_spans_a_block_that_does_not_mention_it() {
+    let mut builder = FunctionBuilder::new().await;
+    let x = builder.variable();
+    let y = builder.variable();
+    let entry = builder.entry();
+    let middle = builder.block();
+    let exit = builder.block();
+    builder.terminate(entry, Terminator::Jump(middle));
+    builder.read(middle, y);
+    builder.terminate(middle, Terminator::Jump(exit));
+    builder.read(exit, x);
+    builder.terminate(exit, Terminator::Return(None));
+
+    assert_eq!(builder.modes_in_block(x, middle).await, vec![
+        Some(LiveMode::Use),
+        Some(LiveMode::Use)
+    ]);
 }

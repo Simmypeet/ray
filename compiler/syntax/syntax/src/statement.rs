@@ -26,8 +26,9 @@ abstract_tree::abstract_tree! {
     pub struct Let {
         pub let_keyword: Keyword = expect::Keyword::Let,
         pub pattern: IrrefutablePattern = ast::<IrrefutablePattern>(),
-        pub type_annotation: TypeAnnotation = ast::<TypeAnnotation>().optional(),
-        pub assignment: VariableInitialization = ast::<VariableInitialization>().optional(),
+        pub type_annotation: TypeAnnotation = ast::<TypeAnnotation>().commit_if(':'.lookahead()),
+        pub assignment: VariableInitialization =
+            ast::<VariableInitialization>().commit_if('='.lookahead()),
     }
 }
 

@@ -10,7 +10,8 @@ use rayc_type::ty::{Ty, application::ClosureID};
 use crate::{
     address::Address,
     cfg::{
-        BlockID, Cfg, ControlFlowEdge, Instruction, InstructionInsertion, Reachables, Terminator,
+        BlockID, Cfg, ControlFlowEdge, Instruction, InstructionInsertion, Point, Reachables,
+        Terminator,
     },
     dataflow::{DataflowProblem, DataflowSolution, solve},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
@@ -24,7 +25,8 @@ use crate::{
     ir_variable::{IRVariable, IRVariableID, IRVariableMap},
     scope::{Scope, ScopeID, ScopeMap},
     visit::{
-        ExprVisitor, TypeSite, TypeVisitor, TypeVisitorMut, VisitExpr, VisitType, VisitTypeMut,
+        ExprVisitor, TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitExpr,
+        VisitType, VisitTypeMut, VisitTypeMutAsync,
     },
 };
 
@@ -106,6 +108,10 @@ impl IRFunctionMap {
     pub fn fill_return_on_unterminated_blocks(&mut self, function_id: FunctionID) {
         self.get_function_mut(function_id).cfg.fill_return_on_unterminated_blocks();
     }
+
+    /// Returns the definition whose body this map lowers.
+    #[must_use]
+    pub const fn def_id(&self) -> GlobalSymbolID { self.def_id }
 
     #[must_use]
     pub const fn root_id(&self) -> FunctionID { self.root }
@@ -271,6 +277,20 @@ impl IRFunctionMap {
         // Then the signature and the body of every function.
         for (function_id, function) in self.functions.iter_mut() {
             function.visit_types_mut(function_id, visitor);
+        }
+    }
+
+    /// Like [`Self::visit_types_mut`], but with a visitor that may await,
+    /// for example to query the engine. The order is the same.
+    pub async fn visit_types_mut_async<V: TypeVisitorMutAsync>(&mut self, visitor: &mut V) {
+        // Capture layouts first; they may be shared by several functions.
+        for (capture_map_id, capture_map) in self.capture_maps.iter_mut() {
+            capture_map.visit_types_mut_async(TypeSite::Capture(capture_map_id), visitor).await;
+        }
+
+        // Then the signature and the body of every function.
+        for (function_id, function) in self.functions.iter_mut() {
+            function.visit_types_mut_async(function_id, visitor).await;
         }
     }
 
@@ -714,6 +734,28 @@ impl IRFunction {
         self.cfg.instructions(block_id)
     }
 
+    /// Iterates over the instructions of a block, in order, each with the
+    /// point it sits at.
+    #[must_use]
+    pub fn block_instructions_with_points(
+        &self,
+        block_id: BlockID,
+    ) -> impl ExactSizeIterator<Item = (Point, &Instruction)> {
+        self.cfg.instructions_with_points(block_id)
+    }
+
+    /// Iterates over the points control reaches right after `point`; see
+    /// [`Cfg::successor_points`].
+    pub fn successor_points(&self, point: Point) -> impl Iterator<Item = Point> + '_ {
+        self.cfg.successor_points(point)
+    }
+
+    /// Iterates over the points control comes from right before `point`; see
+    /// [`Cfg::predecessor_points`].
+    pub fn predecessor_points(&self, point: Point) -> impl Iterator<Item = Point> + '_ {
+        self.cfg.predecessor_points(point)
+    }
+
     #[must_use]
     pub fn block_terminator(&self, block_id: BlockID) -> Option<&Terminator> {
         self.cfg.terminator(block_id)
@@ -762,6 +804,20 @@ impl IRFunction {
         self.expression_map.visit_types_mut(body, visitor);
         self.cfg.visit_types_mut(body, visitor);
     }
+
+    /// Like [`Self::visit_types_mut`], but with a visitor that may await.
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        function_id: FunctionID,
+        visitor: &mut V,
+    ) {
+        self.context.visit_types_mut_async(TypeSite::Signature(function_id), visitor).await;
+
+        let body = TypeSite::Body(function_id);
+        self.variable_map.visit_types_mut_async(body, visitor).await;
+        self.expression_map.visit_types_mut_async(body, visitor).await;
+        self.cfg.visit_types_mut_async(body, visitor).await;
+    }
 }
 
 impl VisitTypeMut for IRContext {
@@ -771,6 +827,21 @@ impl VisitTypeMut for IRContext {
             Self::Lambda(context) => context.visit_types_mut(site, visitor),
             Self::Thunk(context) => context.visit_types_mut(site, visitor),
             Self::OperationHandler(context) => context.visit_types_mut(site, visitor),
+        }
+    }
+}
+
+impl VisitTypeMutAsync for IRContext {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        match self {
+            Self::Def => {}
+            Self::Lambda(context) => context.visit_types_mut_async(site, visitor).await,
+            Self::Thunk(context) => context.visit_types_mut_async(site, visitor).await,
+            Self::OperationHandler(context) => context.visit_types_mut_async(site, visitor).await,
         }
     }
 }

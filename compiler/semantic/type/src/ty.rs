@@ -19,7 +19,7 @@ use crate::{
         args::Args,
         effect_row::EffectRow,
         inference::{GenInfer, Inference},
-        lifetime::Lifetime,
+        lifetime::{Lifetime, RegionID},
     },
     variance::Variance,
 };
@@ -184,6 +184,43 @@ pub enum Ty {
 }
 
 impl Ty {
+    /// Returns whether this is a built-in `Drop` dictionary that does nothing.
+    ///
+    /// Tuple and closure dictionaries are no-ops when all their element or
+    /// capture dictionaries are recursively no-ops, including empty ones.
+    #[must_use]
+    pub fn is_no_op_drop_instance(&self) -> bool {
+        match self {
+            Self::Application(application) => match application.view() {
+                ApplicationView::NoOpDropInstance(_) => true,
+                ApplicationView::TupleDropInstance(instance) => instance
+                    .element_instances()
+                    .iter()
+                    .all(|instance| instance.is_no_op_drop_instance()),
+                ApplicationView::ClosureDropInstance(instance) => instance
+                    .capture_instances()
+                    .iter()
+                    .all(|instance| instance.is_no_op_drop_instance()),
+                ApplicationView::Primitive(_)
+                | ApplicationView::Tuple(_)
+                | ApplicationView::Pointer(_)
+                | ApplicationView::Reference(_)
+                | ApplicationView::Struct(_)
+                | ApplicationView::Instance(_)
+                | ApplicationView::InstanceAssociated(_)
+                | ApplicationView::Closure(_)
+                | ApplicationView::DefInstance(_)
+                | ApplicationView::NominalDropInstance(_)
+                | ApplicationView::Error => false,
+            },
+            Self::Inference(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::EffectRow(_)
+            | Self::Lifetime(_) => false,
+        }
+    }
+
     /// Returns whether both types are applications of the same outer type
     /// constructor with the same arity.
     #[must_use]
@@ -338,6 +375,21 @@ impl Ty {
         self.kind_of(engine).await == TyKind::Lifetime
     }
 
+    /// Returns whether this type is a universal lifetime: `'static`, a
+    /// lifetime parameter or an external lifetime, a region which the
+    /// function mentioning it does not choose, but is given; see
+    /// [`Lifetime::is_universal`].
+    pub async fn is_universal_lifetime(&self, engine: &TrackedEngine) -> bool {
+        match self {
+            Self::Lifetime(lifetime) => lifetime.is_universal(),
+            Self::PolyVar(_) => self.is_lifetime(engine).await,
+            Self::Application(_)
+            | Self::Inference(_)
+            | Self::SelfInstance(_)
+            | Self::EffectRow(_) => false,
+        }
+    }
+
     /// Returns whether `left` and `right` are equal when every lifetime is
     /// considered equal to every other lifetime.
     ///
@@ -424,28 +476,19 @@ impl Ty {
 }
 
 /// The [`TyRewriterAsync`] behind [`Ty::erase_lifetimes`]. It is async
-/// because telling a lifetime parameter from other polymorphic variables needs
-/// the kind recorded in its poly var map.
+/// because the kind of a type is queried from the engine.
 struct LifetimeEraser<'e> {
     engine: &'e TrackedEngine,
 }
 
 impl TyRewriterAsync for LifetimeEraser<'_> {
     async fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
-        let erased = || Ty::new_lifetime(Lifetime::Erased, self.engine);
-        match &**ty {
-            Ty::Lifetime(Lifetime::Static | Lifetime::Region(_) | Lifetime::External(_)) => {
-                Some(erased())
-            }
-            Ty::PolyVar(poly_var) => {
-                let poly_var_map = self.engine.get_poly_var_map(poly_var.parent_id()).await;
-                (poly_var_map.kind_of(poly_var.id()) == TyKind::Lifetime).then(erased)
-            }
-            Ty::Lifetime(Lifetime::Erased)
-            | Ty::Application(_)
-            | Ty::Inference(_)
-            | Ty::SelfInstance(_)
-            | Ty::EffectRow(_) => None,
+        // An erased lifetime is kept as it is, so that a type with nothing
+        // left to erase is not rebuilt.
+        if ty.is_lifetime(self.engine).await && **ty != Ty::Lifetime(Lifetime::Erased) {
+            Some(Ty::new_lifetime(Lifetime::Erased, self.engine))
+        } else {
+            None
         }
     }
 }
@@ -1217,6 +1260,13 @@ impl Ty {
     #[must_use]
     pub const fn as_poly_var(&self) -> Option<&GlobalPolyVarID> {
         if let Self::PolyVar(poly_var) = self { Some(poly_var) } else { None }
+    }
+
+    /// Returns the region variable this type is, if it is one; see
+    /// [`Lifetime::Region`].
+    #[must_use]
+    pub const fn as_region(&self) -> Option<RegionID> {
+        if let Self::Lifetime(Lifetime::Region(region)) = self { Some(*region) } else { None }
     }
 
     #[must_use]

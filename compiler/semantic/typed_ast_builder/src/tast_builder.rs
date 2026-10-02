@@ -41,6 +41,7 @@ pub mod lvalue_requirements;
 pub mod name_env;
 pub mod numeric_literal_ranges;
 pub mod resolution;
+mod type_annotation;
 
 #[derive(Debug)]
 pub struct TAstBuilder {
@@ -299,6 +300,14 @@ impl TAstBuilder {
         self.insert_expression(typed_expr::errored::Errored::new_empty(), span, infer).await
     }
 
+    /// Inserts an errored expression for syntax that the parser could not
+    /// parse. Its type is the error type rather than an inference, since the
+    /// parser has already reported the error.
+    pub async fn push_syntax_error_expression(&mut self, span: RelativeSpan) -> TypedExprID {
+        let ty = Ty::new_error(TyKind::Star, &self.engine);
+        self.insert_expression(typed_expr::errored::Errored::new_empty(), span, ty).await
+    }
+
     pub async fn push_error_expression_with_children(
         &mut self,
         span: RelativeSpan,
@@ -434,6 +443,19 @@ impl TAstBuilder {
         self.diagnostics.extend(constr_diags);
         let mut ast = TypedAst::new(self.function_map, captures);
         ast.apply_mut_subst(&subst, &self.engine);
+
+        // An undetermined type is often a consequence of another error, e.g. an
+        // errored expression has a fresh type that nothing constrains. As rustc
+        // does, only ask for an annotation when no other error explains it.
+        if self.diagnostics.is_empty() {
+            self.diagnostics.extend(
+                type_annotation::type_annotation_required_diagnostics(
+                    ast.functions(),
+                    &self.engine,
+                )
+                .await,
+            );
+        }
 
         (ast, self.diagnostics)
     }

@@ -2,39 +2,16 @@ use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_ir::{
     address::{Address, Local},
-    cfg::{ControlFlowEdge, Instruction, InstructionInsertion, Point, Terminator},
-    ir_expr::{
-        IRExpr, IRExprKind,
-        call::Call,
-        load::{Load, LoadKind},
-    },
+    cfg::{AddressDrop, ControlFlowEdge, Instruction, InstructionInsertion, Point, Terminator},
     ir_function::{FunctionID, IRFunctionMap},
     scope::ScopeID,
 };
-use rayc_lexical::tree::RelativeSpan;
-use rayc_qbice::TrackedEngine;
-use rayc_symbol::core_item::{CoreItem, get_core_item};
-use rayc_type::{subst::Subst, ty::Ty};
+use rayc_type::ty::Ty;
 
 use crate::{
     Diagnostic, PlaceState, PossibleStates, StackState, StackStateProblem,
     drop_resolution::{DropFailure, resolve_drop_instance},
 };
-
-/// A drop of a stack place selected during a replay, applied to the IR once
-/// that replay has finished.
-#[derive(Debug)]
-struct PendingDrop {
-    address: Address,
-    ty: Interned<Ty>,
-
-    /// The `Drop` dictionary selected for `ty`.
-    drop_instance: Interned<Ty>,
-
-    /// The declaration of the dropped binding, which the inserted
-    /// expressions are attributed to.
-    span: RelativeSpan,
-}
 
 /// Where a selected drop runs.
 #[derive(Debug, Clone, Copy)]
@@ -55,8 +32,9 @@ enum DropSite {
 /// them never invalidates the points of the replay.
 #[derive(Debug, Default)]
 pub(crate) struct DropElaborator {
-    /// The selected drops, in the order they run at each site.
-    drops: Vec<(DropSite, PendingDrop)>,
+    /// The selected drops, in the order they run at each site. Each is
+    /// attributed to the declaration of the dropped binding.
+    drops: Vec<(DropSite, AddressDrop)>,
 
     /// The selected `Drop` dictionary of each type, or why none is usable.
     instances: FxHashMap<Interned<Ty>, Result<Interned<Ty>, Vec<DropFailure>>>,
@@ -272,7 +250,7 @@ impl DropElaborator {
         match self.drop_instance(ty.clone(), problem).await {
             Ok(drop_instance) => {
                 let span = problem.binding_span(root).await;
-                self.drops.push((site, PendingDrop { address, ty, drop_instance, span }));
+                self.drops.push((site, AddressDrop::new(address, drop_instance, span)));
             }
 
             // Each binding is a separate fix site, but a binding which leaves
@@ -287,43 +265,13 @@ impl DropElaborator {
         }
     }
 
-    /// Inserts every selected drop into `function_id`: a forced move out of
-    /// each place followed by a `Drop.drop` call on the moved value.
+    /// Inserts every selected drop into `function_id` as an
+    /// [`Instruction::AddressDrop`].
     ///
-    /// The move is forced so a `Copy` value is consumed by its drop as well.
     /// A drop on an edge runs where it runs only when control follows that
     /// edge: at the end of the source block when the edge is the source's
     /// only one, and otherwise in a new block which splits the edge.
-    pub(crate) async fn insert_drops(
-        self,
-        engine: &TrackedEngine,
-        functions: &mut IRFunctionMap,
-        function_id: FunctionID,
-    ) {
-        if self.drops.is_empty() {
-            return;
-        }
-
-        let drop_method = engine.get_core_item(CoreItem::DropMethod).await;
-        let unit = Ty::new_unit(engine);
-
-        // `Drop.drop` has no effects of its own, so the function's row is a
-        // conservative ambient row for the call.
-
-        // TODO: This is an interesting point, this is correct under the assumption
-        // that every expression in a function has the same effect as the function
-        // itself, which is generally true in the current design of effect system.
-        // One might think that the statement "every expression in a function has
-        // the same effect as the function itself" is not true since we have a
-        // handler expression that can subtract the effect out. However, the
-        // handler body is always **a separate function** with its own effect,
-        // so the statement is still true.
-        //
-        // However, if we'll have a borrow-checker feature with lifetimes stuff in the
-        // future, then we must first generalize the lifetimes in the effect row of
-        // the function before we can use it as the ambient row for the drop call.
-        let effect = functions.effect_of(function_id, engine).await;
-
+    pub(crate) fn insert_drops(self, functions: &mut IRFunctionMap, function_id: FunctionID) {
         let mut insertion = InstructionInsertion::new();
         let mut edge_points = FxHashMap::<ControlFlowEdge, Point>::default();
         for (site, drop) in self.drops {
@@ -334,37 +282,7 @@ impl DropElaborator {
                     .or_insert_with(|| edge_drop_point(functions, function_id, edge)),
             };
 
-            let value = functions.insert_expression(
-                function_id,
-                IRExpr::new(
-                    IRExprKind::Load(Load::with_kind(drop.address, LoadKind::Drop)),
-                    drop.span,
-                    drop.ty,
-                ),
-            );
-
-            // `Drop.drop` declares no method-local type variables, so its
-            // trait call substitution is empty. The unit result is unused and
-            // trivially dropped.
-            let call = functions.insert_expression(
-                function_id,
-                IRExpr::new(
-                    IRExprKind::Call(Call::new_unresolved_instance_associated(
-                        drop.drop_instance,
-                        drop_method,
-                        Subst::new_empty(),
-                        vec![value],
-                        effect.clone(),
-                    )),
-                    drop.span,
-                    unit.clone(),
-                ),
-            );
-
-            insertion.insert_before(point, [
-                Instruction::Expression(value),
-                Instruction::Expression(call),
-            ]);
+            insertion.insert_before(point, [Instruction::AddressDrop(drop)]);
         }
 
         functions.insert_instructions(function_id, insertion);

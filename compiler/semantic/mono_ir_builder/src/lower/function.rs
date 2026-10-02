@@ -28,6 +28,9 @@ impl Builder<'_> {
                     IRInstruction::ExprDiscard(discard) => {
                         self.lower_expr_discard(context, discard).await;
                     }
+                    IRInstruction::AddressDrop(drop) => {
+                        self.lower_address_drop(context, drop).await;
+                    }
                     IRInstruction::Expression(expression_id) => {
                         self.lower_expression(context, *expression_id, &source).await;
                     }

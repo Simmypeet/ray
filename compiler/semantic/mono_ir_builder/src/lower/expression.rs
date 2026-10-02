@@ -48,6 +48,14 @@ impl Builder<'_> {
                     )),
                 );
             }
+            // References and raw pointers share a representation, so the
+            // coercion only forwards the address.
+            IRExprKind::RefToPointer(coercion) => {
+                self.assign(
+                    destination,
+                    Rvalue::Use(self.expression_operand(coercion.reference())),
+                );
+            }
             IRExprKind::Load(load) => {
                 self.assign(
                     destination,

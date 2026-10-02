@@ -13,6 +13,7 @@ use rayc_symbol::{
 };
 use rayc_type::{
     constraint::ty_relate::TyRelate,
+    poly_var::{GlobalPolyVarID, get_poly_var_map},
     ty::{Primitive, Ty},
 };
 
@@ -282,6 +283,135 @@ impl Report for TypeMustBeKnownAtThisPoint {
                     .message("consider annotating the explicit type for this expression")
                     .build(),
             )
+            .build()
+    }
+}
+
+/// What a [`TypeAnnotationRequired`] diagnostic points at.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub enum TypeAnnotationSubject {
+    /// A name binding whose type can be annotated, such as a `let` variable.
+    NameBinding(Interned<str>),
+
+    /// A lambda parameter, whose type cannot be annotated.
+    LambdaParameter(Interned<str>),
+
+    /// A type parameter that an instantiation site, such as a call or a struct
+    /// initialization, leaves undetermined.
+    TypeParameter(GlobalPolyVarID),
+
+    /// An expression whose type flows into no name binding.
+    Expression,
+}
+
+impl TypeAnnotationSubject {
+    /// The noun phrase naming the subject in a rendered diagnostic.
+    async fn description(&self, engine: &TrackedEngine) -> String {
+        match self {
+            Self::NameBinding(name) | Self::LambdaParameter(name) => {
+                format!("the type of `{}`", &**name)
+            }
+            Self::TypeParameter(poly_var_id) => {
+                let poly_var_map = engine.get_poly_var_map(poly_var_id.parent_id()).await;
+                let poly_var = &poly_var_map[poly_var_id.id()];
+                let owner = engine.get_qualified_name(poly_var_id.parent_id()).await;
+
+                // A generated callable type has no name the program can refer to.
+                if poly_var.is_source() {
+                    format!("the type parameter `{}` of `{owner}`", &**poly_var.name())
+                } else {
+                    format!("the callable type of a parameter of `{owner}`")
+                }
+            }
+            Self::Expression => "the type of this expression".to_owned(),
+        }
+    }
+
+    /// How the program can determine the type of the subject.
+    async fn advice(&self, engine: &TrackedEngine) -> String {
+        match self {
+            Self::NameBinding(name) => format!("consider giving `{}` an explicit type", &**name),
+            Self::LambdaParameter(_) => "the type of a lambda parameter is inferred from how the \
+                                         lambda is called"
+                .to_owned(),
+            Self::TypeParameter(poly_var_id) => {
+                let poly_var_map = engine.get_poly_var_map(poly_var_id.parent_id()).await;
+                let owner = engine.get_qualified_name(poly_var_id.parent_id()).await;
+
+                if poly_var_map[poly_var_id.id()].is_source() {
+                    format!("consider providing the type arguments of `{owner}` explicitly")
+                } else {
+                    "the callable type is inferred from the argument passed for this parameter"
+                        .to_owned()
+                }
+            }
+            Self::Expression => {
+                "consider binding this expression to a variable with an explicit type".to_owned()
+            }
+        }
+    }
+
+    /// Where the subject is declared, when that is elsewhere than the
+    /// reported site.
+    async fn declaration(&self, engine: &TrackedEngine) -> Option<Highlight<ByteIndex>> {
+        match self {
+            Self::TypeParameter(poly_var_id) => {
+                let poly_var_map = engine.get_poly_var_map(poly_var_id.parent_id()).await;
+                let poly_var = &poly_var_map[poly_var_id.id()];
+                let message = if poly_var.is_source() {
+                    "type parameter declared here"
+                } else {
+                    "callable parameter declared here"
+                };
+
+                Some(
+                    Highlight::builder()
+                        .span(engine.to_absolute_span(&poly_var.span()).await)
+                        .message(message)
+                        .build(),
+                )
+            }
+            Self::NameBinding(_) | Self::LambdaParameter(_) | Self::Expression => None,
+        }
+    }
+}
+
+/// A type that the constraints did not determine, so the program must
+/// annotate it explicitly (Rust E0282).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct TypeAnnotationRequired {
+    subject: TypeAnnotationSubject,
+
+    /// The type of the subject, with the undetermined parts left as
+    /// inferences.
+    ty: Interned<Ty>,
+
+    span: RelativeSpan,
+}
+
+impl Report for TypeAnnotationRequired {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let subject = self.subject.description(engine).await;
+        let advice = self.subject.advice(engine).await;
+
+        // A partially inferred type is shown, since it tells which part of the
+        // type is missing.
+        let help = if self.ty.as_inference().is_some() {
+            advice
+        } else {
+            format!("{subject} is only known to be `{}`; {advice}", self.ty.display(engine).await)
+        };
+
+        Rendered::builder()
+            .message("type annotation required")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message(format!("cannot infer {subject}"))
+                    .build(),
+            )
+            .related(self.subject.declaration(engine).await.into_iter().collect())
+            .help_message(help)
             .build()
     }
 }
@@ -814,6 +944,7 @@ pub enum Diagnostic {
     MismatchedArgumentCount(MismatchedArgumentCount),
     MismatchedIndirectArgumentCount(MismatchedIndirectArgumentCount),
     TypeMustBeKnownAtThisPoint(TypeMustBeKnownAtThisPoint),
+    TypeAnnotationRequired(TypeAnnotationRequired),
     ExpectedTupleType(ExpectedTupleType),
     ExpectedStructType(ExpectedStructType),
     ExpectedPointerType(ExpectedPointerType),
@@ -857,6 +988,9 @@ impl Report for Diagnostic {
 
             Self::TypeMustBeKnownAtThisPoint(type_must_be_known) => {
                 type_must_be_known.report(engine).await
+            }
+            Self::TypeAnnotationRequired(type_annotation_required) => {
+                type_annotation_required.report(engine).await
             }
             Self::ExpectedTupleType(expected_tuple_type) => {
                 expected_tuple_type.report(engine).await

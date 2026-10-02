@@ -58,6 +58,9 @@ impl NameBinding {
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
 
     #[must_use]
+    pub const fn name(&self) -> &Interned<str> { &self.name }
+
+    #[must_use]
     pub const fn is_mutable(&self) -> bool { self.mutable }
 
     #[must_use]
@@ -129,6 +132,14 @@ impl NameBindingMap {
     #[must_use]
     pub fn get_name_binding(&self, id: NameBindingID) -> &NameBinding {
         self.name_bindings.get(id).expect("NameBindingID should be valid")
+    }
+
+    /// Iterates over all name bindings and their IDs.
+    ///
+    /// The iteration order is not stable.
+    #[must_use]
+    pub fn name_bindings(&self) -> impl ExactSizeIterator<Item = (NameBindingID, &NameBinding)> {
+        self.name_bindings.iter()
     }
 }
 

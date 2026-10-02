@@ -7,10 +7,13 @@ use rayc_type::ty::Ty;
 use crate::{
     ir_expr::{
         binary::Binary, call::Call, closure::Closure, handle::Handle, literal::Literal, load::Load,
-        perform::Perform, phi::Phi, ref_of::RefOf, struct_initialization::StructInitialization,
-        tuple::Tuple,
+        perform::Perform, phi::Phi, ref_of::RefOf, ref_to_pointer::RefToPointer,
+        struct_initialization::StructInitialization, tuple::Tuple,
     },
-    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
+    visit::{
+        TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
+        VisitTypeMutAsync,
+    },
 };
 
 pub mod binary;
@@ -22,6 +25,7 @@ pub mod load;
 pub mod perform;
 pub mod phi;
 pub mod ref_of;
+pub mod ref_to_pointer;
 pub mod struct_initialization;
 pub mod tuple;
 
@@ -33,6 +37,7 @@ pub enum IRExprKind {
     Error,
     Literal(Literal),
     RefOf(RefOf),
+    RefToPointer(RefToPointer),
     Load(Load),
     Phi(Phi),
     Binary(Binary),
@@ -53,6 +58,7 @@ impl IRExprKind {
             Self::Error
             | Self::Literal(_)
             | Self::RefOf(_)
+            | Self::RefToPointer(_)
             | Self::Load(_)
             | Self::Binary(_)
             | Self::Call(_)
@@ -72,6 +78,7 @@ impl IRExprKind {
             Self::Error
             | Self::Literal(_)
             | Self::RefOf(_)
+            | Self::RefToPointer(_)
             | Self::Load(_)
             | Self::Binary(_)
             | Self::Call(_)
@@ -88,8 +95,9 @@ impl IRExprKind {
     pub fn operands(&self) -> impl Iterator<Item = IRExprID> + '_ {
         // One variant per shape of operand list, which avoids boxing the
         // iterator.
-        enum Iter<A, B, C, D, E, F> {
+        enum Iter<A, B, C, D, E, F, G> {
             None(A),
+            Single(G),
             Pair(B),
             Slice(C),
             Slices(D),
@@ -97,7 +105,7 @@ impl IRExprKind {
             Fields(F),
         }
 
-        impl<A, B, C, D, E, F> Iterator for Iter<A, B, C, D, E, F>
+        impl<A, B, C, D, E, F, G> Iterator for Iter<A, B, C, D, E, F, G>
         where
             A: Iterator<Item = IRExprID>,
             B: Iterator<Item = IRExprID>,
@@ -105,12 +113,14 @@ impl IRExprKind {
             D: Iterator<Item = IRExprID>,
             E: Iterator<Item = IRExprID>,
             F: Iterator<Item = IRExprID>,
+            G: Iterator<Item = IRExprID>,
         {
             type Item = IRExprID;
 
             fn next(&mut self) -> Option<Self::Item> {
                 match self {
                     Self::None(iter) => iter.next(),
+                    Self::Single(iter) => iter.next(),
                     Self::Pair(iter) => iter.next(),
                     Self::Slice(iter) => iter.next(),
                     Self::Slices(iter) => iter.next(),
@@ -129,6 +139,7 @@ impl IRExprKind {
             Self::Call(call) => Iter::Slice(call.arguments().iter().copied()),
             Self::Perform(perform) => Iter::Slice(perform.arguments().iter().copied()),
             Self::Tuple(tuple) => Iter::Slice(tuple.elements().iter().copied()),
+            Self::RefToPointer(coercion) => Iter::Single(std::iter::once(coercion.reference())),
             Self::Closure(closure) => Iter::Slice(closure.captures().iter().copied()),
             Self::Handle(handle) => {
                 Iter::Slices(handle.captures().iter().chain(handle.handler_captures()).copied())
@@ -197,21 +208,29 @@ impl IRExpressionMap {
 impl VisitType for IRExpr {
     fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         visitor.visit_type(&self.ty, site);
+        self.kind.visit_types(site, visitor);
+    }
+}
 
-        match &self.kind {
-            IRExprKind::Call(call) => call.visit_types(site, visitor),
-            IRExprKind::Perform(perform) => perform.visit_types(site, visitor),
-            IRExprKind::Handle(handle) => handle.visit_types(site, visitor),
+/// Visits the types the operation itself uses, such as the substitution of a
+/// call, but not the type of the value it produces; see [`IRExpr::ty`].
+impl VisitType for IRExprKind {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        match self {
+            Self::Call(call) => call.visit_types(site, visitor),
+            Self::Perform(perform) => perform.visit_types(site, visitor),
+            Self::Handle(handle) => handle.visit_types(site, visitor),
 
-            IRExprKind::Error
-            | IRExprKind::Literal(_)
-            | IRExprKind::RefOf(_)
-            | IRExprKind::Load(_)
-            | IRExprKind::Phi(_)
-            | IRExprKind::Binary(_)
-            | IRExprKind::Tuple(_)
-            | IRExprKind::StructInitialization(_)
-            | IRExprKind::Closure(_) => {}
+            Self::Error
+            | Self::Literal(_)
+            | Self::RefOf(_)
+            | Self::RefToPointer(_)
+            | Self::Load(_)
+            | Self::Phi(_)
+            | Self::Binary(_)
+            | Self::Tuple(_)
+            | Self::StructInitialization(_)
+            | Self::Closure(_) => {}
         }
     }
 }
@@ -236,6 +255,34 @@ impl VisitTypeMut for IRExpr {
             IRExprKind::Error
             | IRExprKind::Literal(_)
             | IRExprKind::RefOf(_)
+            | IRExprKind::RefToPointer(_)
+            | IRExprKind::Load(_)
+            | IRExprKind::Phi(_)
+            | IRExprKind::Binary(_)
+            | IRExprKind::Tuple(_)
+            | IRExprKind::StructInitialization(_)
+            | IRExprKind::Closure(_) => {}
+        }
+    }
+}
+
+impl VisitTypeMutAsync for IRExpr {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        visitor.visit_type_mut_async(&mut self.ty, site).await;
+
+        match &mut self.kind {
+            IRExprKind::Call(call) => call.visit_types_mut_async(site, visitor).await,
+            IRExprKind::Perform(perform) => perform.visit_types_mut_async(site, visitor).await,
+            IRExprKind::Handle(handle) => handle.visit_types_mut_async(site, visitor).await,
+
+            IRExprKind::Error
+            | IRExprKind::Literal(_)
+            | IRExprKind::RefOf(_)
+            | IRExprKind::RefToPointer(_)
             | IRExprKind::Load(_)
             | IRExprKind::Phi(_)
             | IRExprKind::Binary(_)
@@ -250,6 +297,18 @@ impl VisitTypeMut for IRExpressionMap {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         for (_, expression) in self.expressions.iter_mut() {
             expression.visit_types_mut(site, visitor);
+        }
+    }
+}
+
+impl VisitTypeMutAsync for IRExpressionMap {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        for (_, expression) in self.expressions.iter_mut() {
+            expression.visit_types_mut_async(site, visitor).await;
         }
     }
 }

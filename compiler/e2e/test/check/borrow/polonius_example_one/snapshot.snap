@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/polonius_example_one/main.ray:17:5
+   │
+10 │     let mut q = y.&  # Loan L1, borrowing `y`
+   │                 ─── immutable borrow occurs here
+   ‡
+17 │     y = y + 1        # (D) Mutate `y` -- is this ok?
+   │     ━━━━━━━━━ the borrowed place is assigned here
+18 │     consume(p.*)      # use `p` again here
+   ╰╴            ─── borrow later used here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

@@ -11,16 +11,15 @@
 //! - an [`Instruction::ExprDiscard`], which drops it.
 //!
 //! An expression is **use-live** at a point when some path from that point
-//! reaches its use, and **drop-live** when it only reaches its discard. On a
-//! well-formed function, whose every path consumes each defined value
-//! exactly once, this is exactly the set of values defined and not yet
-//! consumed. Where a path leaves a value unconsumed, such as an early `return`
-//! in the middle of an evaluation, the value is dead on that path, since it is
-//! never read again.
+//! reaches its use, and **drop-live** when it only reaches a discard with a
+//! non-no-op `Drop` instance. A no-op discard does not keep its value live.
+//! Where a path leaves a value unconsumed, such as an early `return` in the
+//! middle of an evaluation, the value is dead on that path, since it is never
+//! read again.
 
 use std::convert::Infallible;
 
-use super::LiveSet;
+use super::{LiveEffects, LiveMode, LiveRanges, LiveSet, UseProbe, block_live_ranges};
 use crate::{
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
     dataflow::{DataflowProblem, DataflowSolution, Direction},
@@ -39,7 +38,7 @@ struct ExprLivenessProblem<'a> {
 
 impl ExprLivenessProblem<'_> {
     /// Moves `state` from just after `instruction` to just before it.
-    fn transfer(&self, instruction: &Instruction, state: &mut LiveExprs) {
+    fn transfer(&self, instruction: &Instruction, state: &mut impl LiveEffects<IRExprID>) {
         match instruction {
             // The value is defined here, after its operands are consumed.
             Instruction::Expression(expression_id) => {
@@ -55,16 +54,21 @@ impl ExprLivenessProblem<'_> {
                 }
             }
 
-            Instruction::ExprDiscard(discard) => state.mark_dropped(discard.expression()),
+            Instruction::ExprDiscard(discard) => {
+                if !discard.drop_instance().is_no_op_drop_instance() {
+                    state.mark_dropped(discard.expression());
+                }
+            }
 
             Instruction::Store(store) => state.mark_used(store.expression()),
 
-            Instruction::ScopePush(_) | Instruction::ScopePop(_) => {}
+            // A drop reads a place, not an evaluated expression.
+            Instruction::ScopePush(_) | Instruction::ScopePop(_) | Instruction::AddressDrop(_) => {}
         }
     }
 
     /// Moves `state` from just after `terminator` to just before it.
-    fn transfer_across_terminator(terminator: &Terminator, state: &mut LiveExprs) {
+    fn transfer_across_terminator(terminator: &Terminator, state: &mut impl LiveEffects<IRExprID>) {
         match terminator {
             Terminator::Conditional(conditional) => state.mark_used(conditional.condition()),
             Terminator::Return(Some(value)) => state.mark_used(*value),
@@ -142,6 +146,28 @@ pub struct ExprLiveness {
 }
 
 impl ExprLiveness {
+    /// Returns how the instruction at `point` consumes the value of
+    /// `expression`: [`LiveMode::Use`] when it uses it, [`LiveMode::Drop`]
+    /// when it only discards it, and `None` otherwise.
+    ///
+    /// A point one past the last instruction of a block stands for its
+    /// terminator. The incoming value of a phi is consumed on the edge into
+    /// the phi's block rather than at any point, so it is not reported.
+    #[must_use]
+    pub fn use_at(function: &IRFunction, point: Point, expression: IRExprID) -> Option<LiveMode> {
+        let mut probe = UseProbe::new(expression);
+
+        match function.block_instructions(point.block_id()).get(point.instruction_idx()) {
+            Some(instruction) => ExprLivenessProblem { function }.transfer(instruction, &mut probe),
+            None => {
+                if let Some(terminator) = function.block_terminator(point.block_id()) {
+                    ExprLivenessProblem::transfer_across_terminator(terminator, &mut probe);
+                }
+            }
+        }
+        probe.mode
+    }
+
     /// Computes the liveness of every expression value of `function`.
     pub async fn compute(function: &IRFunction) -> Self {
         let mut problem = ExprLivenessProblem { function };
@@ -177,6 +203,34 @@ impl ExprLiveness {
             problem.transfer(instruction, &mut state);
         }
         Some(state)
+    }
+
+    /// Returns the points at which each expression value is live.
+    ///
+    /// The values a terminator consumes are live at its point, and the
+    /// incoming values of a phi are live up to the terminator of the
+    /// predecessor they come from.
+    #[must_use]
+    pub fn live_ranges(&self, function: &IRFunction) -> LiveRanges<IRExprID> {
+        let problem = ExprLivenessProblem { function };
+
+        LiveRanges::from_blocks(self.solution.reachable_blocks().map(|block_id| {
+            let exit = self.solution.block_exit(block_id).expect("reachable blocks are solved");
+            let instructions = function.block_instructions(block_id);
+            let terminator = function.block_terminator(block_id);
+
+            let ranges = block_live_ranges(
+                exit,
+                instructions,
+                |recorder| {
+                    if let Some(terminator) = terminator {
+                        ExprLivenessProblem::transfer_across_terminator(terminator, recorder);
+                    }
+                },
+                |instruction, recorder| problem.transfer(instruction, recorder),
+            );
+            (block_id, ranges)
+        }))
     }
 
     /// Returns the expression values live on entry to `block_id`, or `None`

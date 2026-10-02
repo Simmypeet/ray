@@ -3,19 +3,20 @@
 //! A local is **use-live** at a point when some path from that point reads
 //! its current value before overwriting it. A local is **drop-live** at a
 //! point when its current value is not used again on any path, but is still
-//! passed to a `Drop.drop` call inserted by drop elaboration on some path.
+//! dropped by an [`Instruction::AddressDrop`] with a non-no-op `Drop`
+//! instance on some path.
 //!
 //! Liveness is tracked per local, not per place: using or dropping any part of
 //! a local makes the whole local live, as in rustc.
 
 use std::convert::Infallible;
 
-use super::LiveSet;
+use super::{LiveEffects, LiveMode, LiveRanges, LiveSet, UseProbe, block_live_ranges};
 use crate::{
     address::{Address, Local},
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
     dataflow::{DataflowProblem, DataflowSolution, Direction},
-    ir_expr::{IRExprKind, load::LoadKind},
+    ir_expr::IRExprKind,
     ir_function::IRFunction,
 };
 
@@ -30,20 +31,11 @@ struct LocalLivenessProblem<'a> {
 
 impl LocalLivenessProblem<'_> {
     /// Moves `state` from just after `instruction` to just before it.
-    fn transfer(&self, instruction: &Instruction, state: &mut LiveLocals) {
+    fn transfer(&self, instruction: &Instruction, state: &mut impl LiveEffects<Local>) {
         match instruction {
             Instruction::Expression(expression_id) => {
                 match self.function.get_expression(*expression_id).kind() {
-                    // Drop elaboration moves a value out only to drop it.
-                    IRExprKind::Load(load) => match load.kind() {
-                        LoadKind::Drop => {
-                            if let Some(local) = load.address().local() {
-                                state.mark_dropped(local);
-                            }
-                        }
-                        LoadKind::Implicit | LoadKind::Move => use_address(load.address(), state),
-                    },
-
+                    IRExprKind::Load(load) => use_address(load.address(), state),
                     IRExprKind::RefOf(ref_of) => use_address(ref_of.address(), state),
 
                     // Every other operand is an already evaluated expression,
@@ -55,6 +47,7 @@ impl LocalLivenessProblem<'_> {
                     | IRExprKind::Phi(_)
                     | IRExprKind::Perform(_)
                     | IRExprKind::Tuple(_)
+                    | IRExprKind::RefToPointer(_)
                     | IRExprKind::Closure(_)
                     | IRExprKind::Handle(_)
                     | IRExprKind::StructInitialization(_) => {}
@@ -84,6 +77,16 @@ impl LocalLivenessProblem<'_> {
                 }
             }
 
+            // A drop only passes the value to its `Drop.drop` call.
+            Instruction::AddressDrop(drop) => {
+                if drop.drop_instance().is_no_op_drop_instance() {
+                    return;
+                }
+                if let Some(local) = drop.address().local() {
+                    state.mark_dropped(local);
+                }
+            }
+
             Instruction::ExprDiscard(_) => {}
         }
     }
@@ -91,7 +94,7 @@ impl LocalLivenessProblem<'_> {
 
 /// Records a read of the place `address`, which uses its local, or the
 /// pointer it dereferences.
-fn use_address(address: &Address, state: &mut LiveLocals) {
+fn use_address(address: &Address, state: &mut impl LiveEffects<Local>) {
     if let Some(local) = address.local() {
         state.mark_used(local);
     }
@@ -148,6 +151,22 @@ pub struct LocalLiveness {
 }
 
 impl LocalLiveness {
+    /// Returns how the instruction at `point` uses `local`: [`LiveMode::Use`]
+    /// when it reads it, [`LiveMode::Drop`] when it only drops it, and `None`
+    /// otherwise.
+    ///
+    /// A point one past the last instruction of a block stands for its
+    /// terminator, which reads no local.
+    #[must_use]
+    pub fn use_at(function: &IRFunction, point: Point, local: Local) -> Option<LiveMode> {
+        let instruction =
+            function.block_instructions(point.block_id()).get(point.instruction_idx())?;
+
+        let mut probe = UseProbe::new(local);
+        LocalLivenessProblem { function }.transfer(instruction, &mut probe);
+        probe.mode
+    }
+
     /// Computes the liveness of every local of `function`.
     pub async fn compute(function: &IRFunction) -> Self {
         let mut problem = LocalLivenessProblem { function };
@@ -176,6 +195,28 @@ impl LocalLiveness {
             problem.transfer(instruction, &mut state);
         }
         Some(state)
+    }
+
+    /// Returns the points at which each local is live.
+    #[must_use]
+    pub fn live_ranges(&self, function: &IRFunction) -> LiveRanges<Local> {
+        let problem = LocalLivenessProblem { function };
+
+        LiveRanges::from_blocks(self.solution.reachable_blocks().map(|block_id| {
+            let exit = self.solution.block_exit(block_id).expect("reachable blocks are solved");
+            let instructions = function.block_instructions(block_id);
+
+            // Terminators only read evaluated expressions.
+            let ranges = block_live_ranges(
+                exit,
+                instructions,
+                |_| {},
+                |instruction, recorder| {
+                    problem.transfer(instruction, recorder);
+                },
+            );
+            (block_id, ranges)
+        }))
     }
 
     /// Returns the locals live on entry to `block_id`, or `None` when the

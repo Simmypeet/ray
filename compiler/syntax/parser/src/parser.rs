@@ -84,6 +84,18 @@ pub trait ParserExt {
         CommitIf { commit, parser: self }
     }
 
+    /// Checks whether this parser succeeds at the current position without
+    /// consuming any token or producing any tree.
+    ///
+    /// This is useful as the `commit` parser of [`ParserExt::commit_if`] when
+    /// the committing token belongs to the main parser's tree.
+    fn lookahead(self) -> Lookahead<Self>
+    where
+        Self: Sized,
+    {
+        Lookahead(self)
+    }
+
     /// Repeats the `self` parser withe a `separator` parser in between. The
     /// parser will be ran until all of the tokens are consumed in the
     /// branch.
@@ -917,6 +929,20 @@ impl<T: Output> Output for NewLineSignificant<T> {
 
     fn output<'a>(&self, node: &'a crate::concrete_tree::Node) -> Option<Self::Output<'a>> {
         T::output(&self.0, node)
+    }
+}
+
+/// See [`ParserExt::lookahead`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Lookahead<T>(pub T);
+
+impl<I: Interner, T: Parser<I>> Parser<I> for Lookahead<T> {
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
+        let checkpoint = state.checkpoint();
+        let result = self.0.parse(state);
+        state.restore(checkpoint);
+
+        result
     }
 }
 

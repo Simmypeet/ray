@@ -6,7 +6,10 @@ use crate::{
     ir_expr::IRExprID,
     ir_function::FunctionID,
     ir_lambda::CaptureMapID,
-    visit::{TypeSite, TypeVisitor, TypeVisitorMut, VisitType, VisitTypeMut},
+    visit::{
+        TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
+        VisitTypeMutAsync,
+    },
 };
 
 /// A nested function paired with the capture operands used to create its
@@ -152,5 +155,21 @@ impl VisitTypeMut for Handle {
             visitor.visit_type_mut(drop_instance, site);
         }
         visitor.visit_type_mut(&mut self.residual_effect, site);
+    }
+}
+
+impl VisitTypeMutAsync for Handle {
+    async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
+        &mut self,
+        site: TypeSite,
+        visitor: &mut V,
+    ) {
+        for ty in self.substitution.codomain_mut() {
+            visitor.visit_type_mut_async(ty, site).await;
+        }
+        for drop_instance in &mut self.handler_capture_drops {
+            visitor.visit_type_mut_async(drop_instance, site).await;
+        }
+        visitor.visit_type_mut_async(&mut self.residual_effect, site).await;
     }
 }
