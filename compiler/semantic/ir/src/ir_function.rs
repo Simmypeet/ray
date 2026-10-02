@@ -495,6 +495,19 @@ impl IRContext {
         }
     }
 
+    /// Returns the return type stored by a nested function context, or
+    /// `None` for a def context, whose return type is declared by the
+    /// definition.
+    #[must_use]
+    pub const fn nested_return_ty(&self) -> Option<&Interned<Ty>> {
+        match self {
+            Self::Def => None,
+            Self::Lambda(context) => Some(context.return_ty()),
+            Self::Thunk(context) => Some(context.return_ty()),
+            Self::OperationHandler(context) => Some(context.return_ty()),
+        }
+    }
+
     /// Returns the capture layout of a nested function context, or `None`
     /// for a def context.
     const fn nested_capture_map(&self) -> Option<CaptureMapID> {
@@ -759,6 +772,16 @@ impl IRFunction {
     #[must_use]
     pub fn block_terminator(&self, block_id: BlockID) -> Option<&Terminator> {
         self.cfg.terminator(block_id)
+    }
+
+    /// Returns the point that stands for the terminator of `block_id`: one
+    /// past its last instruction.
+    #[must_use]
+    pub fn terminator_point(&self, block_id: BlockID) -> Point {
+        Point::builder()
+            .block_id(block_id)
+            .instruction_idx(self.cfg.instructions(block_id).len())
+            .build()
     }
 
     /// Iterates over blocks that do not have a terminator.

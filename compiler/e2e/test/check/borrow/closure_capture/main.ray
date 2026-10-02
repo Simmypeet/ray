@@ -1,0 +1,12 @@
+def main() -> int32:
+    let mut value = 32
+    let mut other = 0
+
+    # The closure holds the borrow of its capture for as long as it is live.
+    let address = () -> value.&
+    other = 1           # <-- Expect NO error here: `other` is not captured.
+    value = 42          # <-- Expect an error here: `address` borrows `value`.
+    let read = address().*
+
+    value = 42          # <-- Expect NO error here: `address` is not used again.
+    return read + other

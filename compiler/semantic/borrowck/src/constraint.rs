@@ -12,7 +12,7 @@
 //! It also records the loans the function issues: one per borrow, whose
 //! region is the lifetime of the reference the borrow creates.
 //!
-//! Only these operations are handled so far:
+//! These operations state constraints:
 //!
 //! - a borrow `&place` issues a loan and relates the type of the place to the
 //!   pointee of the reference. When the place is behind references, it is a
@@ -23,9 +23,24 @@
 //!   the return type to the type of the call, with the callee's signature
 //!   instantiated by the substitution of the call. It also requires the
 //!   callee's where clause, instantiated the same way.
+//! - a `perform` is a call of the signature of its operation.
 //! - a struct initialization relates the type of each initializer to the type
 //!   of its field, and requires the where clause of the struct, instantiated
 //!   with the arguments of the struct type.
+//! - a tuple relates the type of each element to its element of the tuple type.
+//! - a closure relates the type of each capture operand to its element of the
+//!   captured tuple of the closure type.
+//! - a phi relates the type of each incoming value to the type of the phi, at
+//!   the terminator of the block the value comes from.
+//! - a `return` relates the type of the returned value to the return type of
+//!   the function, at its terminator.
+//! - a drop relates the type of the dropped value to the type its `Drop`
+//!   dictionary implements the trait for.
+//!
+//! What a nested function requires of its creator is not collected yet: the
+//! regions in the interface of a closure body, a handled body or an operation
+//! handler are universal regions of that function, which nothing maps to the
+//! regions of its creator so far. So a `handle` states no constraint.
 //!
 //! This is meant to run after [renumbering](crate::renumber), so that every
 //! lifetime the constraints mention is a region or a universal lifetime.
@@ -35,10 +50,10 @@ use rayc_arena::{Arena, ID};
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_ir::{
     address::{Address, Local, Projection},
-    cfg::{Instruction, Point, Store},
+    cfg::{BlockID, Instruction, Point, Store, Terminator},
     ir_expr::{
-        IRExprID, IRExprKind, call::Call, load::Load, ref_of::RefOf,
-        struct_initialization::StructInitialization,
+        IRExprID, IRExprKind, call::Call, closure::Closure, load::Load, perform::Perform, phi::Phi,
+        ref_of::RefOf, struct_initialization::StructInitialization, tuple::Tuple,
     },
     ir_function::IRFunction,
     ir_lambda::CaptureMap,
@@ -146,13 +161,13 @@ impl LocalizedConstraints {
         let mut collector =
             ConstraintCollector { function, captures, solver, constraints: Self::default() };
 
-        // Terminators are not visited yet: relating a returned value to the
-        // return type is left for later.
         let reachables = function.reachables();
         for block_id in reachables.blocks() {
             for (point, instruction) in function.block_instructions_with_points(block_id) {
                 collector.collect_instruction(point, instruction).await;
             }
+
+            collector.collect_terminator(block_id).await;
         }
 
         collector.constraints
@@ -248,9 +263,34 @@ impl ConstraintCollector<'_> {
             // outlives constraint.
             Instruction::ScopePush(_) | Instruction::ScopePop(_) => {}
 
-            // TODO: a drop requires the regions its `Drop` implementation
-            // may use to be live, which is not handled yet.
-            Instruction::ExprDiscard(_) | Instruction::AddressDrop(_) => {}
+            Instruction::ExprDiscard(discard) => {
+                let value_ty = self.function.get_expression(discard.expression()).ty();
+                self.collect_drop(point, value_ty, discard.drop_instance()).await;
+            }
+            Instruction::AddressDrop(drop) => {
+                let Some(place_ty) = self.place_type(drop.address()).await else {
+                    return;
+                };
+
+                self.collect_drop(point, &place_ty, drop.drop_instance()).await;
+            }
+        }
+    }
+
+    /// Collects the constraints of the terminator of `block_id`, at the
+    /// point that stands for it.
+    async fn collect_terminator(&mut self, block_id: BlockID) {
+        match self.function.block_terminator(block_id) {
+            Some(Terminator::Return(Some(value))) => {
+                let point = self.function.terminator_point(block_id);
+                self.collect_return(point, *value).await;
+            }
+
+            // A bare return gives back unit, which holds no region, and a
+            // jump only reads a condition, if anything. The values a jump
+            // passes to the phis of its target are related by those phis.
+            Some(Terminator::Return(None) | Terminator::Jump(_) | Terminator::Conditional(_))
+            | None => {}
         }
     }
 
@@ -266,6 +306,16 @@ impl ConstraintCollector<'_> {
             }
             IRExprKind::Load(load) => self.collect_load(point, load, expression.ty()).await,
             IRExprKind::Call(call) => self.collect_call(point, call, expression.ty()).await,
+            IRExprKind::Perform(perform) => {
+                self.collect_perform(point, perform, expression.ty()).await;
+            }
+            IRExprKind::Tuple(tuple) => self.collect_tuple(point, tuple, expression.ty()).await,
+            IRExprKind::Closure(closure) => {
+                self.collect_closure(point, closure, expression.ty()).await;
+            }
+
+            // The incoming values are related where they flow in, not here.
+            IRExprKind::Phi(phi) => self.collect_phi(phi, expression.ty()).await,
             IRExprKind::StructInitialization(initialization) => {
                 self.collect_struct_initialization(point, initialization, expression.ty()).await;
             }
@@ -277,14 +327,16 @@ impl ConstraintCollector<'_> {
             // carries no region to relate with the reference it came from.
             IRExprKind::RefToPointer(_) => {}
 
-            // TODO: the remaining expressions move their operands into a new
-            // value, or pass them to an operation, which is not handled yet.
-            IRExprKind::Phi(_)
-            | IRExprKind::Binary(_)
-            | IRExprKind::Perform(_)
-            | IRExprKind::Handle(_)
-            | IRExprKind::Tuple(_)
-            | IRExprKind::Closure(_) => {}
+            // The operands and the result are primitives, which hold no
+            // region.
+            IRExprKind::Binary(_) => {}
+
+            // TODO: the capture operands are passed to the handled body and
+            // to the operation handlers, whose capture layouts and return
+            // type are made of their own universal regions. Relating them
+            // needs those regions mapped to the regions of this function,
+            // along with the outlives requirements of the nested bodies.
+            IRExprKind::Handle(_) => {}
         }
     }
 
@@ -301,8 +353,9 @@ impl ConstraintCollector<'_> {
             ty.as_reference_view().expect("a `RefOf` expression always has a reference type");
 
         let mut dereferenced = Vec::new();
-        let Some(place_ty) =
-            self.place_type(ref_of.address(), |pointer| dereferenced.push(pointer.clone())).await
+        let Some(place_ty) = self
+            .place_type_with_derefs(ref_of.address(), |pointer| dereferenced.push(pointer.clone()))
+            .await
         else {
             return;
         };
@@ -364,7 +417,7 @@ impl ConstraintCollector<'_> {
     /// Collects the constraints of `load`, whose loaded value has type `ty`:
     /// `typeof(place) <: ty`.
     async fn collect_load(&mut self, point: Point, load: &Load, ty: &Interned<Ty>) {
-        let Some(place_ty) = self.place_type(load.address(), |_| {}).await else {
+        let Some(place_ty) = self.place_type(load.address()).await else {
             return;
         };
 
@@ -373,7 +426,7 @@ impl ConstraintCollector<'_> {
 
     /// Collects the constraints of `store`: `typeof(value) <: typeof(place)`.
     async fn collect_store(&mut self, point: Point, store: &Store) {
-        let Some(place_ty) = self.place_type(store.address(), |_| {}).await else {
+        let Some(place_ty) = self.place_type(store.address()).await else {
             return;
         };
 
@@ -381,24 +434,56 @@ impl ConstraintCollector<'_> {
         self.relate(point, value_ty, &place_ty, Variance::Covariant).await;
     }
 
-    /// Collects the constraints of `call`, whose result has type `ty`:
-    /// `typeof(argument) <: parameter type` for each argument, and
+    /// Collects the constraints of `call`, whose result has type `ty`, as an
+    /// invocation of the callee's signature, instantiated with the
+    /// substitution of the call.
+    async fn collect_call(&mut self, point: Point, call: &Call, ty: &Interned<Ty>) {
+        let signature_id = call.target().signature_id();
+        let substitution = call.target().signature_subst(self.solver.engine()).await;
+
+        self.collect_invocation(point, signature_id, &substitution, call.arguments(), ty).await;
+    }
+
+    /// Collects the constraints of `perform`, whose result has type `ty`, as
+    /// an invocation of the signature of its operation, instantiated with
+    /// the substitution of the `perform`.
+    ///
+    /// Whichever handler runs the operation is checked against the same
+    /// signature, so the operation stands for it here.
+    async fn collect_perform(&mut self, point: Point, perform: &Perform, ty: &Interned<Ty>) {
+        self.collect_invocation(
+            point,
+            perform.operation_id(),
+            perform.substitution(),
+            perform.arguments(),
+            ty,
+        )
+        .await;
+    }
+
+    /// Collects the constraints of invoking the signature of `signature_id`,
+    /// instantiated with `substitution`, with `arguments`, for a result of
+    /// type `ty`: `typeof(argument) <: parameter type` for each argument, and
     /// `return type <: ty`.
     ///
-    /// The signature is the callee's, instantiated with the substitution of
-    /// the call. Renumbering gave the lifetimes of that substitution their
-    /// own regions, which the parameters and the return type share: a loan
-    /// passed in one argument flows through them into the other arguments
-    /// and the result that mention the same type parameter.
-    async fn collect_call(&mut self, point: Point, call: &Call, ty: &Interned<Ty>) {
+    /// Renumbering gave the lifetimes of the substitution their own regions,
+    /// which the parameters and the return type share: a loan passed in one
+    /// argument flows through them into the other arguments and the result
+    /// that mention the same type parameter.
+    async fn collect_invocation(
+        &mut self,
+        point: Point,
+        signature_id: GlobalSymbolID,
+        substitution: &Subst,
+        arguments: &[IRExprID],
+        ty: &Interned<Ty>,
+    ) {
         let engine = self.solver.engine().clone();
-        let signature_id = call.target().signature_id();
-        let substitution = &call.target().signature_subst(&engine).await;
 
         // Each argument is passed to its parameter. A variadic call has more
         // arguments than parameters; the extra ones have no type to relate to.
         let parameters = engine.get_parameter_map(signature_id).await;
-        for ((_, parameter), argument) in parameters.iter().zip(call.arguments()) {
+        for ((_, parameter), argument) in parameters.iter().zip(arguments) {
             let parameter_ty = parameter.ty().apply_subst_or_clone(substitution, &engine);
             let argument_ty = self.function.get_expression(*argument).ty();
             self.relate(point, argument_ty, &parameter_ty, Variance::Covariant).await;
@@ -411,6 +496,105 @@ impl ConstraintCollector<'_> {
 
         // The callee assumes its where clause, so the call must prove it.
         self.collect_where_clause(point, signature_id, substitution).await;
+    }
+
+    /// Collects the constraints of `tuple`, whose value has type `ty`:
+    /// `typeof(element) <: element type` for each element.
+    async fn collect_tuple(&mut self, point: Point, tuple: &Tuple, ty: &Interned<Ty>) {
+        let tuple_ty = ty.as_tuple_view().expect("a `Tuple` expression always has a tuple type");
+
+        for (element, element_ty) in tuple.elements().iter().zip(tuple_ty.args()) {
+            let value_ty = self.function.get_expression(*element).ty();
+            self.relate(point, value_ty, element_ty, Variance::Covariant).await;
+        }
+    }
+
+    /// Collects the constraints of `closure`, whose value has type `ty`:
+    /// `typeof(capture operand) <: capture type` for each capture, where the
+    /// capture types are the elements of the captured tuple of `ty`.
+    ///
+    /// The closure value then holds the loans of its captures, in the
+    /// regions of its type, for as long as it is live.
+    async fn collect_closure(&mut self, point: Point, closure: &Closure, ty: &Interned<Ty>) {
+        let closure_ty =
+            ty.as_closure_view().expect("a `Closure` expression always has a closure type");
+        let captured = closure_ty
+            .captured_tuple()
+            .as_tuple_view()
+            .expect("the captures of a closure type should be a tuple");
+
+        for (operand, capture_ty) in closure.captures().iter().zip(captured.args()) {
+            let operand_ty = self.function.get_expression(*operand).ty();
+            self.relate(point, operand_ty, capture_ty, Variance::Covariant).await;
+        }
+
+        // TODO: the body of the closure may require its captures and its
+        // signature to outlive one another, which is not required of the
+        // closure type here yet.
+    }
+
+    /// Collects the constraints of `phi`, whose value has type `ty`:
+    /// `typeof(incoming value) <: ty` for each incoming value.
+    ///
+    /// Each is required at the terminator of the block the value comes from,
+    /// since that is where the value is last live: the phi consumes it on the
+    /// edge into its block.
+    async fn collect_phi(&mut self, phi: &Phi, ty: &Interned<Ty>) {
+        for (predecessor, value) in phi.incoming() {
+            let point = self.function.terminator_point(predecessor);
+            let value_ty = self.function.get_expression(value).ty();
+            self.relate(point, value_ty, ty, Variance::Covariant).await;
+        }
+    }
+
+    /// Collects the constraints of returning `value` at `point`:
+    /// `typeof(value) <: return type`.
+    ///
+    /// The lifetimes of the return type are universal, so a loan that flows
+    /// into them escapes the function.
+    async fn collect_return(&mut self, point: Point, value: IRExprID) {
+        // A nested function stores its return type; the definition function
+        // takes the one its definition declares.
+        let return_ty = match self.function.context().nested_return_ty() {
+            Some(return_ty) => return_ty.clone(),
+            None => self.solver.engine().get_return_type(self.solver.site()).await,
+        };
+
+        let value_ty = self.function.get_expression(value).ty();
+        self.relate(point, value_ty, &return_ty, Variance::Covariant).await;
+    }
+
+    /// Collects the constraints of dropping a value of type `value_ty` with
+    /// the `Drop` dictionary `drop_instance`: `value_ty <: implementor`,
+    /// where the dictionary implements `Drop[implementor]`.
+    ///
+    /// The value is moved into `Drop.drop`, so the loans it holds flow into
+    /// the regions of the dictionary.
+    async fn collect_drop(
+        &mut self,
+        point: Point,
+        value_ty: &Interned<Ty>,
+        drop_instance: &Interned<Ty>,
+    ) {
+        // A no-op dictionary reads nothing of the value.
+        if drop_instance.is_no_op_drop_instance() {
+            return;
+        }
+
+        // A dictionary without a trait reference is recovery from an invalid
+        // declaration, which was reported already.
+        let Ok(trait_ref) = drop_instance.instance_trait_ref(self.solver.engine()).await else {
+            return;
+        };
+        let Some(implementor) = trait_ref.args().interned_iter().next() else {
+            return;
+        };
+
+        self.relate(point, value_ty, implementor, Variance::Covariant).await;
+
+        // TODO: the dictionary assumes the where clause of its instance,
+        // which is not required here yet. The same holds for the
+        // dictionaries in the substitution of a call.
     }
 
     /// Collects the constraints of `initialization`, whose struct value has
@@ -521,10 +705,16 @@ impl ConstraintCollector<'_> {
 
     /// Returns the type of the place `address` selects, or `None` for an
     /// error address.
+    async fn place_type(&self, address: &Address) -> Option<Interned<Ty>> {
+        self.place_type_with_derefs(address, |_| {}).await
+    }
+
+    /// Returns the type of the place `address` selects, or `None` for an
+    /// error address.
     ///
     /// `on_deref` is called with the type of every pointer the address
     /// dereferences, outermost first.
-    async fn place_type(
+    async fn place_type_with_derefs(
         &self,
         address: &Address,
         mut on_deref: impl FnMut(&Interned<Ty>),

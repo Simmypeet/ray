@@ -11,7 +11,7 @@
 //! - a variable, whose type mentions it: the region is live wherever the
 //!   variable is;
 //! - an expression, whose value type mentions it: the region is live wherever
-//!   the value is;
+//!   the value is, and, for a phi, from the entry of its block;
 //! - an instruction, whose operation uses a type that no value holds, such as
 //!   the substitution of a call or a `Drop` dictionary: the region is live only
 //!   at that instruction.
@@ -40,6 +40,12 @@ enum RegionOwner {
 
     /// An expression whose value type mentions the region.
     Expression(IRExprID),
+
+    /// A phi, evaluated at this point, whose value type mentions the region.
+    ///
+    /// A phi takes its value on the edge into its block, so its regions are
+    /// live from the entry of the block, not only once it is evaluated.
+    Phi(IRExprID, Point),
 
     /// The instruction at this point, whose operation uses a type that
     /// mentions the region.
@@ -107,7 +113,7 @@ impl RegionLiveness {
 
         match *owner {
             RegionOwner::Local(local) => LocalLiveness::use_at(function, point, local).is_some(),
-            RegionOwner::Expression(expression_id) => {
+            RegionOwner::Expression(expression_id) | RegionOwner::Phi(expression_id, _) => {
                 ExprLiveness::use_at(function, point, expression_id).is_some()
             }
             RegionOwner::Instruction(instruction_point) => instruction_point == point,
@@ -123,6 +129,16 @@ impl RegionLiveness {
             RegionOwner::Local(local) => self.locals.live_mode(local, point).is_some(),
             RegionOwner::Expression(expression_id) => {
                 self.expressions.live_mode(expression_id, point).is_some()
+            }
+
+            // The incoming values flow into the phi at the terminators of
+            // its predecessors, and must still be held when control reaches
+            // the phi itself.
+            RegionOwner::Phi(expression_id, phi_point) => {
+                let is_pending = point.block_id() == phi_point.block_id()
+                    && point.instruction_idx() <= phi_point.instruction_idx();
+
+                is_pending || self.expressions.live_mode(expression_id, point).is_some()
             }
             RegionOwner::Instruction(instruction_point) => instruction_point == point,
         }
@@ -175,7 +191,12 @@ impl OwnerCollector {
             // it.
             Instruction::Expression(expression_id) => {
                 let expression = function.get_expression(*expression_id);
-                self.record(expression.ty(), RegionOwner::Expression(*expression_id));
+                let owner = if expression.kind().as_phi().is_some() {
+                    RegionOwner::Phi(*expression_id, point)
+                } else {
+                    RegionOwner::Expression(*expression_id)
+                };
+                self.record(expression.ty(), owner);
                 expression.kind().visit_types(self.site, &mut |ty: &Interned<Ty>, _| {
                     self.record(ty, RegionOwner::Instruction(point));
                 });

@@ -3,6 +3,6 @@ def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect
 
 def main() -> int32:
     let mut value = 10
-    let read = () -> value.&.*
     value = 42
+    let read = () -> value.&.*
     return invoke(read, ())

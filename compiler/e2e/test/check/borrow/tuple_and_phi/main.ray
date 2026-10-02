@@ -1,0 +1,21 @@
+def consume(_: t) given (_: core.Drop[t]):
+    pass
+
+
+def main():
+    let mut x = 0
+    let mut y = 0
+
+    # A tuple holds the loans of its elements.
+    let pair = (x.&, y.&)
+    let p = pair.1
+    x = x + 1           # <-- Expect NO error here: `p` only borrows `y`.
+    y = y + 1           # <-- Expect an error here: `p` came from `y.&`.
+    consume(p.*)
+
+    # The value of an `if` holds the loans of both of its branches.
+    let mut z = 0
+    let q = if true: y.& else: z.&
+    x = x + 1           # <-- Expect NO error here: neither branch borrows `x`.
+    z = z + 1           # <-- Expect an error here: `q` may borrow `z`.
+    consume(q.*)
