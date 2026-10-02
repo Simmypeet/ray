@@ -55,10 +55,9 @@ pub(crate) fn check_universal_regions(
 }
 
 /// A constraint `'lesser: 'greater` out of a region `'lesser`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Edge {
-    /// The point of the instruction requiring the constraint. It comes
-    /// first so that the edges of a region are ordered by where they arise.
+    /// The point of the instruction requiring the constraint.
     point: Point,
 
     greater: Interned<Ty>,
@@ -81,13 +80,10 @@ impl SubsetGraph {
         Self { edges }
     }
 
-    /// Iterates over the universal regions with a constraint out of them, in
-    /// a fixed order.
-    fn universal_sources(&self) -> impl Iterator<Item = &Interned<Ty>> {
-        self.edges.keys().filter(|region| is_universal(region))
-    }
+    /// Iterates over the regions with a constraint out of them.
+    fn sources(&self) -> impl Iterator<Item = &Interned<Ty>> { self.edges.keys() }
 
-    /// Iterates over the constraints out of `region`, in a fixed order.
+    /// Iterates over the constraints out of `region`.
     fn edges_of(&self, region: &Interned<Ty>) -> impl Iterator<Item = &Edge> {
         self.edges.get(region).into_iter().flatten()
     }
@@ -134,7 +130,13 @@ impl UniversalRegionChecker<'_> {
         let environment = self.solver.outlives_environment();
         let mut diagnostics = Vec::new();
 
-        for longer in self.graph.universal_sources() {
+        for longer in self.graph.sources() {
+            // A region of the body is only passed through on the way from
+            // one universal region to another.
+            if !longer.is_universal_region() {
+                continue;
+            }
+
             let reached = self.reach_from(longer);
 
             for &shorter in &reached.universals {
@@ -173,7 +175,7 @@ impl UniversalRegionChecker<'_> {
 
                 // The search from a universal region continues the paths
                 // through it; see the module documentation.
-                if is_universal(greater) {
+                if greater.is_universal_region() {
                     reached.universals.push(greater);
                 } else {
                     pending.push_back(greater);
@@ -211,9 +213,3 @@ impl UniversalRegionChecker<'_> {
         ))
     }
 }
-
-/// Returns whether `region` is universal to the function mentioning it.
-///
-/// After [renumbering](crate::renumber), every lifetime a function chooses
-/// is a region variable, so any other lifetime is given to it.
-const fn is_universal(region: &Ty) -> bool { region.as_region().is_none() }

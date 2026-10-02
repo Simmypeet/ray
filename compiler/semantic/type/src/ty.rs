@@ -376,14 +376,20 @@ impl Ty {
         self.kind_of(engine).await == TyKind::Lifetime
     }
 
-    /// Returns whether this type is a universal lifetime: `'static`, a
-    /// lifetime parameter or an external lifetime, a region which the
-    /// function mentioning it does not choose, but is given; see
+    /// Returns whether this type, which the caller knows to be of kind
+    /// [`TyKind::Lifetime`], is a universal lifetime: `'static`, a lifetime
+    /// parameter or an external lifetime, a region which the function
+    /// mentioning it does not choose, but is given; see
     /// [`Lifetime::is_universal`].
-    pub async fn is_universal_lifetime(&self, engine: &TrackedEngine) -> bool {
+    ///
+    /// A parameter of kind lifetime is a lifetime parameter, so its kind is
+    /// not looked up. For a type of another kind, the answer is meaningless:
+    /// check [`Self::is_lifetime`] first when the kind is not known.
+    #[must_use]
+    pub const fn is_universal_region(&self) -> bool {
         match self {
             Self::Lifetime(lifetime) => lifetime.is_universal(),
-            Self::PolyVar(_) => self.is_lifetime(engine).await,
+            Self::PolyVar(_) => true,
             Self::Application(_)
             | Self::Inference(_)
             | Self::SelfInstance(_)

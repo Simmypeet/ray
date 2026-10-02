@@ -164,7 +164,7 @@ struct LifetimeRenumberer<'e, F> {
 
 impl<F: FnMut() -> Lifetime> TyRewriterAsync for LifetimeRenumberer<'_, F> {
     async fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
-        if ty.is_lifetime(self.engine).await && !ty.is_universal_lifetime(self.engine).await {
+        if ty.is_lifetime(self.engine).await && !ty.is_universal_region() {
             Some(Ty::new_lifetime((self.fresh)(), self.engine))
         } else {
             None

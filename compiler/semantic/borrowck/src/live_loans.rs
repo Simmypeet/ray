@@ -202,7 +202,7 @@ impl<'a> Traversal<'a> {
     fn liveness_edges(&self, region: &Interned<Ty>) -> LivenessEdges {
         // A universal region only needs forward edges; see the module
         // documentation.
-        if region.as_region().is_none() {
+        if region.is_universal_region() {
             return LivenessEdges::of_variance(Variance::Covariant);
         }
 

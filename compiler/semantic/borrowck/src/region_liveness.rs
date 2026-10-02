@@ -81,19 +81,19 @@ impl RegionLiveness {
 
     /// Returns whether `region` is live at `point`.
     ///
-    /// Any lifetime other than a region variable is universal to the
-    /// function, and is live everywhere. A region variable is live wherever
-    /// its owner is, and never when it has none, since its code is
-    /// unreachable.
+    /// A universal region is given to the function, and is live everywhere.
+    /// A region variable is live wherever its owner is, and never when it
+    /// has none, since its code is unreachable.
     #[must_use]
     pub fn is_live(&self, region: &Interned<Ty>, point: Point) -> bool {
-        let Some(region) = region.as_region() else {
-            // if reaches `else` here, it means the region is universal, so it is live
-            // everywhere
+        if region.is_universal_region() {
             return true;
-        };
+        }
 
-        self.owners.get(&region).is_some_and(|owner| self.is_owner_live(*owner, point))
+        region
+            .as_region()
+            .and_then(|region| self.owners.get(&region))
+            .is_some_and(|owner| self.is_owner_live(*owner, point))
     }
 
     /// Returns whether the instruction at `point` uses or drops the value
