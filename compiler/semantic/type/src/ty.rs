@@ -9,7 +9,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_name};
 
 use crate::{
-    constraint::outlives::{OutlivesConstraint, OutlivesConstraints},
+    constraint::outlives::OutlivesConstraints,
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap, get_poly_var_map},
     reduce::Reduce,
     rewrite::{RewriteAsync, TyRewriterAsync},
@@ -22,6 +22,7 @@ use crate::{
         lifetime::{Lifetime, RegionID},
     },
     variance::Variance,
+    where_clause::OutlivesPredicate,
 };
 
 pub mod application;
@@ -456,7 +457,7 @@ impl Ty {
             lifetimes
                 .iter()
                 .flat_map(|(left, right)| {
-                    OutlivesConstraint::from_relation(left, right, Variance::Invariant)
+                    OutlivesPredicate::from_relation(left, right, Variance::Invariant)
                 })
                 .collect(),
         )

@@ -4,7 +4,6 @@ use rayc_ir::cfg::Point;
 use rayc_solver::givens::get_givens;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
-    constraint::outlives::OutlivesConstraint,
     outlives::OutlivesComponent,
     subst::{Subst, Substitutable},
     ty::Ty,
@@ -54,13 +53,13 @@ impl ConstraintCollector<'_> {
     /// predicate `subject: bound`: each lifetime in `subject` must outlive
     /// `bound`.
     pub(super) async fn collect_outlives(&mut self, point: Point, predicate: &OutlivesPredicate) {
-        let subject = self.solver.normalize(predicate.subject()).await;
+        let subject = self.solver.normalize(predicate.lesser()).await;
 
         for component in Ty::outlives_components(&subject, self.solver.engine()).await {
             match component {
                 OutlivesComponent::Region(region) => {
                     self.constraints
-                        .add(point, &OutlivesConstraint::new(region, predicate.bound().clone()));
+                        .add(point, &OutlivesPredicate::new(region, predicate.greater().clone()));
                 }
 
                 // TODO: a type parameter or a projection that must outlive

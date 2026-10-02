@@ -6,7 +6,7 @@ use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor, TrackedEngine};
 use rayc_symbol::{GlobalSymbolID, SymbolID};
 use rayc_target::TargetID;
 use rayc_type::{
-    constraint::outlives::{OutlivesConstraint, OutlivesConstraints},
+    constraint::outlives::OutlivesConstraints,
     poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap},
     subst::{Subst, Substitutable},
     ty::{
@@ -14,6 +14,7 @@ use rayc_type::{
         inference::Inference, lifetime::Lifetime,
     },
     variance::{Variance, VarianceKey, VarianceMap},
+    where_clause::OutlivesPredicate,
 };
 
 use super::{Solver, TyRelate};
@@ -566,11 +567,11 @@ fn region(index: u64, engine: &TrackedEngine) -> Interned<Ty> {
     Ty::new_lifetime(Lifetime::Region(rayc_arena::ID::new(index)), engine)
 }
 
-fn outlives_of(lesser: &Interned<Ty>, greater: &Interned<Ty>) -> OutlivesConstraint {
-    OutlivesConstraint::new(lesser.clone(), greater.clone())
+fn outlives_of(lesser: &Interned<Ty>, greater: &Interned<Ty>) -> OutlivesPredicate {
+    OutlivesPredicate::new(lesser.clone(), greater.clone())
 }
 
-fn constraints<const N: usize>(constraints: [OutlivesConstraint; N]) -> OutlivesConstraints {
+fn constraints<const N: usize>(constraints: [OutlivesPredicate; N]) -> OutlivesConstraints {
     constraints.into_iter().collect()
 }
 

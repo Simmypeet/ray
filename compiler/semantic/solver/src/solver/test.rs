@@ -378,7 +378,7 @@ async fn site_givens_include_parents_and_prefer_the_nearest_scope() {
 // output: the head matches with no substitution and requires '?0: 'static
 #[tokio::test]
 async fn head_match_ignores_lifetimes_but_requires_their_outlives() {
-    use rayc_type::{constraint::outlives::OutlivesConstraint, ty::lifetime::Lifetime};
+    use rayc_type::{ty::lifetime::Lifetime, where_clause::OutlivesPredicate};
 
     let engine = rayc_qbice::create_minimal_engine().await;
     let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
@@ -392,7 +392,7 @@ async fn head_match_ignores_lifetimes_but_requires_their_outlives() {
         solver.type_head_match(&head, &expected).await.map(Solution::into_parts),
         Some((
             Subst::new_empty(),
-            std::iter::once(OutlivesConstraint::new(region, static_)).collect()
+            std::iter::once(OutlivesPredicate::new(region, static_)).collect()
         ))
     );
 }

@@ -9,10 +9,10 @@ use rayc_ir::{
 };
 use rayc_semantic_element::{parameter::get_parameter_map, struct_body::get_struct_body};
 use rayc_type::{
-    constraint::outlives::OutlivesConstraint,
     subst::Substitutable,
     ty::{Mutability, Ty},
     variance::Variance,
+    where_clause::OutlivesPredicate,
 };
 
 use super::{ConstraintCollector, Loan};
@@ -79,10 +79,10 @@ impl ConstraintCollector<'_> {
                 break;
             };
 
-            for constraint in
-                OutlivesConstraint::from_relation(reference.lifetime(), region, Variance::Covariant)
+            for predicate in
+                OutlivesPredicate::from_relation(reference.lifetime(), region, Variance::Covariant)
             {
-                self.constraints.add(point, &constraint);
+                self.constraints.add(point, &predicate);
             }
 
             match reference.mutability() {

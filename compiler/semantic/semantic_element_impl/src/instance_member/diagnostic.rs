@@ -141,8 +141,8 @@ async fn display_predicate(predicate: &PredicateKind, engine: &TrackedEngine) ->
         ),
         PredicateKind::Outlives(predicate) => format!(
             "`{}` must outlive `{}`",
-            predicate.subject().display(engine).await,
-            predicate.bound().display(engine).await
+            predicate.lesser().display(engine).await,
+            predicate.greater().display(engine).await
         ),
     }
 }

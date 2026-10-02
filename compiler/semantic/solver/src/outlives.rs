@@ -88,13 +88,13 @@ impl OutlivesEnvironment {
         };
 
         for fact in facts {
-            for component in Ty::outlives_components(fact.subject(), engine).await {
+            for component in Ty::outlives_components(fact.lesser(), engine).await {
                 match component {
                     OutlivesComponent::Region(region) => {
-                        edges.push((index_of(&region), index_of(fact.bound())));
+                        edges.push((index_of(&region), index_of(fact.greater())));
                     }
                     OutlivesComponent::Param(subject) | OutlivesComponent::Projection(subject) => {
-                        type_facts.push(OutlivesPredicate::new(subject, fact.bound().clone()));
+                        type_facts.push(OutlivesPredicate::new(subject, fact.greater().clone()));
                     }
                 }
             }
@@ -137,7 +137,7 @@ impl OutlivesEnvironment {
         // equality to a proper subtyping relationship.
         self.type_facts
             .iter()
-            .any(|fact| fact.subject() == subject && self.region_outlives(fact.bound(), bound))
+            .any(|fact| fact.lesser() == subject && self.region_outlives(fact.greater(), bound))
     }
 }
 
@@ -145,8 +145,8 @@ impl crate::Solver {
     /// Returns whether an outlives predicate follows from the facts visible
     /// at this solver's site.
     pub async fn entails_outlives(&mut self, predicate: &OutlivesPredicate) -> bool {
-        let subject = self.normalize(predicate.subject()).await;
-        Box::pin(self.entails_type_outlives(&subject, predicate.bound())).await
+        let subject = self.normalize(predicate.lesser()).await;
+        Box::pin(self.entails_type_outlives(&subject, predicate.greater())).await
     }
 
     /// Returns whether every component of `ty` outlives `bound`.

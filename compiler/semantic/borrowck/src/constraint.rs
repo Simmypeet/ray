@@ -65,9 +65,10 @@ use rayc_ir::{
 use rayc_lexical::tree::RelativeSpan;
 use rayc_solver::Solver;
 use rayc_type::{
-    constraint::{outlives::OutlivesConstraint, ty_relate::TyRelate},
+    constraint::ty_relate::TyRelate,
     ty::{Mutability, Ty},
     variance::Variance,
+    where_clause::OutlivesPredicate,
 };
 
 mod instance;
@@ -232,13 +233,13 @@ impl LocalizedConstraints {
         self.loans_by_local.entry(local).or_default().push(loan_id);
     }
 
-    /// Adds the edge `'lesser@point -> 'greater@point` for the constraint
-    /// `'lesser: 'greater` required at `point`.
-    fn add(&mut self, point: Point, constraint: &OutlivesConstraint) {
+    /// Adds the edge `'lesser@point -> 'greater@point` for the predicate
+    /// `'lesser: 'greater` between two lifetimes required at `point`.
+    fn add(&mut self, point: Point, predicate: &OutlivesPredicate) {
         self.edges
-            .entry(LocalizedRegion { region: constraint.lesser().clone(), point })
+            .entry(LocalizedRegion { region: predicate.lesser().clone(), point })
             .or_default()
-            .insert(constraint.greater().clone());
+            .insert(predicate.greater().clone());
     }
 }
 

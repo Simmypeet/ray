@@ -121,16 +121,16 @@ async fn decompose(
     requirement: OutlivesPredicate,
     engine: &TrackedEngine,
 ) -> impl Iterator<Item = OutlivesPredicate> {
-    Ty::outlives_components(requirement.subject(), engine).await.into_iter().map(move |component| {
-        OutlivesPredicate::new(component.ty().clone(), requirement.bound().clone())
+    Ty::outlives_components(requirement.lesser(), engine).await.into_iter().map(move |component| {
+        OutlivesPredicate::new(component.ty().clone(), requirement.greater().clone())
     })
 }
 
 /// Returns whether a decomposed requirement can be stated over the struct's
 /// own variables and does not hold trivially.
 fn is_inferable(predicate: &OutlivesPredicate, struct_id: GlobalSymbolID) -> bool {
-    let subject = predicate.subject();
-    let bound = predicate.bound();
+    let subject = predicate.lesser();
+    let bound = predicate.greater();
 
     // `'a: 'a` holds trivially, and erased or erroneous lifetimes are never
     // checked here.
