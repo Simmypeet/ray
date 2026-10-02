@@ -10,7 +10,13 @@ fn main() {
         .build()
         .unwrap()
         .block_on(async {
-            let (service, socket) = LspService::new(ray_lsp::Backend::new);
-            Server::new(tokio::io::stdin(), tokio::io::stdout(), socket).serve(service).await;
+            // `block_on` polls on the main thread, whose stack is only 1MB on
+            // Windows; run the server on a worker with the stack size above.
+            tokio::spawn(async {
+                let (service, socket) = LspService::new(ray_lsp::Backend::new);
+                Server::new(tokio::io::stdin(), tokio::io::stdout(), socket).serve(service).await;
+            })
+            .await
+            .unwrap();
         });
 }
