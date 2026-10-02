@@ -1,0 +1,23 @@
+def consume(_: t) given (_: core.Drop[t]):
+    pass
+
+
+def shorten['a, 'b](x: &'a int32) -> &'b int32 where ('a: 'b):
+    return x
+
+
+def unrelated['a, 'b](x: &'a int32, y: &'b int32) -> &'b int32:
+    return y
+
+
+def main():
+    let mut x = 0
+    let mut y = 0
+
+    let p = unrelated(x.&, y.&)
+    x = x + 1           # <-- Expect NO error here: `p` only borrows `y`.
+    consume(p.*)
+
+    let q = shorten(x.&)
+    x = x + 1           # <-- Expect an error here: `'a: 'b` keeps `x` borrowed.
+    consume(q.*)

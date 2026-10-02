@@ -1,0 +1,33 @@
+def consume(_: t) given (_: core.Drop[t]):
+    pass
+
+
+struct Pair['a, 'b]:
+    first: &'a int32
+    second: &'b int32
+
+
+struct Tied['a, 'b] where ('a: 'b):
+    first: &'a int32
+    second: &'b int32
+
+
+def main():
+    let mut x = 0
+    let mut y = 0
+
+    # The structs live in a nested scope, so that only what flows out of
+    # their `second` field is still live at the assignments to `x`.
+    let mut p = y.&
+    if true:
+        let pair = Pair{first=x.&, second=y.&}
+        p = pair.second
+    x = x + 1           # <-- Expect NO error here: `p` only borrows `y`.
+    consume(p.*)
+
+    let mut q = y.&
+    if true:
+        let tied = Tied{first=x.&, second=y.&}
+        q = tied.second
+    x = x + 1           # <-- Expect an error here: `'a: 'b` keeps `x` borrowed.
+    consume(q.*)

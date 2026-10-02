@@ -1,6 +1,11 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{subst::Subst, ty::Ty};
+use rayc_type::{
+    poly_var::build_subst_from_args,
+    subst::Subst,
+    ty::{Ty, self_instance::SelfInstance},
+};
 
 use crate::{
     ir_expr::IRExprID,
@@ -43,6 +48,60 @@ pub struct Call {
     target: CallTarget,
     arguments: Vec<IRExprID>,
     effect: Interned<Ty>,
+}
+
+impl CallTarget {
+    /// Returns the symbol whose signature the call is checked against: the
+    /// called function, or the abstract trait def of an unresolved instance.
+    #[must_use]
+    pub const fn signature_id(&self) -> GlobalSymbolID {
+        match self {
+            Self::Direct { function_id, .. } => *function_id,
+            Self::UnresolvedInstanceAssociated { trait_def_id, .. } => *trait_def_id,
+        }
+    }
+
+    /// Returns the substitution that instantiates the signature of
+    /// [`Self::signature_id`] at the call.
+    ///
+    /// For an unresolved instance, the signature of the trait def also
+    /// mentions the parameters of its enclosing trait and the trait's self
+    /// dictionary. Those are instantiated with the arguments of the trait
+    /// reference that the instance implements, and with the instance itself.
+    pub async fn signature_subst(&self, engine: &TrackedEngine) -> Subst {
+        match self {
+            Self::Direct { subst, .. } => subst.clone(),
+
+            Self::UnresolvedInstanceAssociated { instance, trait_def_subst, .. } => {
+                let mut subst = trait_def_subst.clone();
+
+                // An instance without a trait reference is recovery from an
+                // invalid declaration, which was reported already.
+                let Ok(trait_ref) = instance.instance_trait_ref(engine).await else {
+                    return subst;
+                };
+                let trait_id = trait_ref.trait_id();
+
+                // The mappings already chosen at the call take precedence.
+                // The trait reference's arguments are types of the caller,
+                // so they are added as they are, not composed.
+                let trait_subst =
+                    engine.build_subst_from_args(trait_id, trait_ref.args().interned_iter()).await;
+                for (poly_var_id, argument) in trait_subst.poly_var_mappings() {
+                    if subst.get(&poly_var_id).is_none() {
+                        subst.insert(poly_var_id, argument.clone());
+                    }
+                }
+
+                let self_instance = SelfInstance::new(trait_id);
+                if subst.get(&self_instance).is_none() {
+                    subst.insert(self_instance, instance.clone());
+                }
+
+                subst
+            }
+        }
+    }
 }
 
 impl VisitType for Call {

@@ -12,13 +12,20 @@
 //! It also records the loans the function issues: one per borrow, whose
 //! region is the lifetime of the reference the borrow creates.
 //!
-//! Only the primitive operations are handled so far:
+//! Only these operations are handled so far:
 //!
 //! - a borrow `&place` issues a loan and relates the type of the place to the
 //!   pointee of the reference. When the place is behind references, it is a
 //!   reborrow, and the references it goes through must outlive the loan.
 //! - a load relates the type of the place to the type of the loaded value.
 //! - a store relates the type of the stored value to the type of the place.
+//! - a call relates the type of each argument to the type of its parameter, and
+//!   the return type to the type of the call, with the callee's signature
+//!   instantiated by the substitution of the call. It also requires the
+//!   callee's where clause, instantiated the same way.
+//! - a struct initialization relates the type of each initializer to the type
+//!   of its field, and requires the where clause of the struct, instantiated
+//!   with the arguments of the struct type.
 //!
 //! This is meant to run after [renumbering](crate::renumber), so that every
 //! lifetime the constraints mention is a region or a universal lifetime.
@@ -29,18 +36,26 @@ use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_ir::{
     address::{Address, Local, Projection},
     cfg::{Instruction, Point, Store},
-    ir_expr::{IRExprID, IRExprKind, load::Load, ref_of::RefOf},
+    ir_expr::{
+        IRExprID, IRExprKind, call::Call, load::Load, ref_of::RefOf,
+        struct_initialization::StructInitialization,
+    },
     ir_function::IRFunction,
     ir_lambda::CaptureMap,
 };
 use rayc_lexical::tree::RelativeSpan;
-use rayc_semantic_element::{parameter::get_parameter_map, struct_body::get_struct_body};
-use rayc_solver::Solver;
+use rayc_semantic_element::{
+    parameter::get_parameter_map, return_type::get_return_type, struct_body::get_struct_body,
+};
+use rayc_solver::{Solver, givens::get_givens};
+use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     constraint::{outlives::OutlivesConstraint, ty_relate::TyRelate},
-    subst::Substitutable,
+    outlives::OutlivesComponent,
+    subst::{Subst, Substitutable},
     ty::{Mutability, Ty},
     variance::Variance,
+    where_clause::{OutlivesPredicate, PredicateKind},
 };
 
 /// Identifies a loan issued in an IR function.
@@ -250,6 +265,10 @@ impl ConstraintCollector<'_> {
                 self.collect_borrow(point, expression_id, ref_of, expression.ty()).await;
             }
             IRExprKind::Load(load) => self.collect_load(point, load, expression.ty()).await,
+            IRExprKind::Call(call) => self.collect_call(point, call, expression.ty()).await,
+            IRExprKind::StructInitialization(initialization) => {
+                self.collect_struct_initialization(point, initialization, expression.ty()).await;
+            }
 
             // Neither reads a place nor relates two values.
             IRExprKind::Error | IRExprKind::Literal(_) => {}
@@ -259,15 +278,13 @@ impl ConstraintCollector<'_> {
             IRExprKind::RefToPointer(_) => {}
 
             // TODO: the remaining expressions move their operands into a new
-            // value, or pass them to a function, which is not handled yet.
+            // value, or pass them to an operation, which is not handled yet.
             IRExprKind::Phi(_)
             | IRExprKind::Binary(_)
-            | IRExprKind::Call(_)
             | IRExprKind::Perform(_)
             | IRExprKind::Handle(_)
             | IRExprKind::Tuple(_)
-            | IRExprKind::Closure(_)
-            | IRExprKind::StructInitialization(_) => {}
+            | IRExprKind::Closure(_) => {}
         }
     }
 
@@ -362,6 +379,122 @@ impl ConstraintCollector<'_> {
 
         let value_ty = self.function.get_expression(store.expression()).ty();
         self.relate(point, value_ty, &place_ty, Variance::Covariant).await;
+    }
+
+    /// Collects the constraints of `call`, whose result has type `ty`:
+    /// `typeof(argument) <: parameter type` for each argument, and
+    /// `return type <: ty`.
+    ///
+    /// The signature is the callee's, instantiated with the substitution of
+    /// the call. Renumbering gave the lifetimes of that substitution their
+    /// own regions, which the parameters and the return type share: a loan
+    /// passed in one argument flows through them into the other arguments
+    /// and the result that mention the same type parameter.
+    async fn collect_call(&mut self, point: Point, call: &Call, ty: &Interned<Ty>) {
+        let engine = self.solver.engine().clone();
+        let signature_id = call.target().signature_id();
+        let substitution = &call.target().signature_subst(&engine).await;
+
+        // Each argument is passed to its parameter. A variadic call has more
+        // arguments than parameters; the extra ones have no type to relate to.
+        let parameters = engine.get_parameter_map(signature_id).await;
+        for ((_, parameter), argument) in parameters.iter().zip(call.arguments()) {
+            let parameter_ty = parameter.ty().apply_subst_or_clone(substitution, &engine);
+            let argument_ty = self.function.get_expression(*argument).ty();
+            self.relate(point, argument_ty, &parameter_ty, Variance::Covariant).await;
+        }
+
+        // The returned value becomes the value of the call.
+        let return_ty =
+            engine.get_return_type(signature_id).await.apply_subst_or_clone(substitution, &engine);
+        self.relate(point, &return_ty, ty, Variance::Covariant).await;
+
+        // The callee assumes its where clause, so the call must prove it.
+        self.collect_where_clause(point, signature_id, substitution).await;
+    }
+
+    /// Collects the constraints of `initialization`, whose struct value has
+    /// type `ty`: `typeof(initializer) <: field type` for each field, with
+    /// the field types instantiated by the arguments of `ty`.
+    async fn collect_struct_initialization(
+        &mut self,
+        point: Point,
+        initialization: &StructInitialization,
+        ty: &Interned<Ty>,
+    ) {
+        for (&field_id, &initializer) in initialization.initializers() {
+            let field_ty = self.projected_type(ty, Projection::Field(field_id)).await;
+            let initializer_ty = self.function.get_expression(initializer).ty();
+            self.relate(point, initializer_ty, &field_ty, Variance::Covariant).await;
+        }
+
+        // A value of the struct type only exists when the where clause of
+        // the struct holds, its inferred outlives predicates included.
+        let struct_ty = ty.as_struct_view().expect("a struct initialization has a struct type");
+        let substitution = struct_ty.create_subst(self.solver.engine()).await;
+        self.collect_where_clause(point, initialization.struct_id(), &substitution).await;
+    }
+
+    /// Requires, at `point`, the predicates that `symbol_id` assumes,
+    /// instantiated with `substitution`: its where clause and implied bounds,
+    /// and those of the declarations enclosing it.
+    async fn collect_where_clause(
+        &mut self,
+        point: Point,
+        symbol_id: GlobalSymbolID,
+        substitution: &Subst,
+    ) {
+        let engine = self.solver.engine().clone();
+        let predicates = engine.get_givens(symbol_id).await;
+
+        for predicate in predicates.iter() {
+            let predicate = predicate.apply_subst_or_clone(substitution, &engine);
+            self.collect_predicate(point, &predicate).await;
+        }
+    }
+
+    /// Adds, at `point`, the outlives constraints that proving the
+    /// instantiated where-clause `predicate` requires.
+    async fn collect_predicate(&mut self, point: Point, predicate: &PredicateKind) {
+        match predicate {
+            // The two sides were proven equal modulo lifetimes by type
+            // checking; their lifetimes must be equal too.
+            PredicateKind::AssociatedTypeEquality(equality) => {
+                self.relate(point, equality.left(), equality.right(), Variance::Invariant).await;
+            }
+
+            PredicateKind::Outlives(outlives) => self.collect_outlives(point, outlives).await,
+
+            // Lifetimes never decide whether a type satisfies a marker, so
+            // type checking proved it in full.
+            PredicateKind::Marker(_) => {}
+        }
+    }
+
+    /// Adds, at `point`, the outlives constraints of the instantiated
+    /// predicate `subject: bound`: each lifetime in `subject` must outlive
+    /// `bound`.
+    async fn collect_outlives(&mut self, point: Point, predicate: &OutlivesPredicate) {
+        let subject = self.solver.normalize(predicate.subject()).await;
+
+        for component in Ty::outlives_components(&subject, self.solver.engine()).await {
+            match component {
+                OutlivesComponent::Region(region) => {
+                    for constraint in OutlivesConstraint::from_relation(
+                        &region,
+                        predicate.bound(),
+                        Variance::Covariant,
+                    ) {
+                        self.constraints.add(point, &constraint);
+                    }
+                }
+
+                // TODO: a type parameter or a projection that must outlive
+                // `bound` is a type test, to check against the outlives
+                // environment once the constraint graph is complete.
+                OutlivesComponent::Param(_) | OutlivesComponent::Projection(_) => {}
+            }
+        }
     }
 
     /// Adds, at `point`, the outlives constraints of relating `lesser` to

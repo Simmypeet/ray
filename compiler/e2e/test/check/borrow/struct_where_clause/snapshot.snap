@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/struct_where_clause/main.ray:32:5
+   │
+30 │         let tied = Tied{first=x.&, second=y.&}
+   │                               ─── immutable borrow occurs here
+31 │         q = tied.second
+32 │     x = x + 1           # <-- Expect an error here: `'a: 'b` keeps `x` borrowed.
+   │     ━━━━━━━━━ the borrowed place is assigned here
+33 │     consume(q.*)
+   ╰╴            ─── borrow later used here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
