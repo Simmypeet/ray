@@ -9,7 +9,7 @@ def main() -> int32:
     let isizeValue = 42isize / 5isize
 
     let u8Value = 200u8 + 55u8
-    let u16Value = 65535u16 * 65535u16
+    let u16Value = 300u16 * 200u16
     let u32Value = 4294967295u32 - 5u32
     let u64Value = 18446744073709551615u64 / 5u64
     let usizeValue = 64usize + 1usize

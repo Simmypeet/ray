@@ -14,7 +14,7 @@ use rayc_mono_ir::{
 };
 
 use crate::{
-    c_type::{declaration, promotes_to_signed_int, signature_declaration, type_name},
+    c_type::{declaration, signature_declaration, type_name},
     generator::Generator,
     name::{
         aggregate_name, aggregate_typedef_name, block_name, environment_field_name,
@@ -301,17 +301,6 @@ impl Generator<'_> {
                 };
                 let left = self.emit_operand(binary.left(), ir, function, None).await;
                 let right = self.emit_operand(binary.right(), ir, function, None).await;
-
-                // C promotes `uint8` and `uint16` operands to a signed `int`,
-                // whose multiplication can overflow, e.g. `65535u16 * 65535u16`.
-                // Multiplying as `uint32_t` wraps instead, and the assignment
-                // truncates the product back to the operand type.
-                if matches!(binary.operator(), BinaryOperator::Multiply)
-                    && expected_type.is_some_and(promotes_to_signed_int)
-                {
-                    return format!("((uint32_t){left} * (uint32_t){right})");
-                }
-
                 format!("({left} {operator} {right})")
             }
             Rvalue::Cast(cast) => {

@@ -88,27 +88,3 @@ pub(super) fn signature_declaration(
 
     format!("{return_type} {name}({})", parameters.join(", "))
 }
-
-/// Returns whether C's integer promotions turn an unsigned value of this type
-/// into a signed `int`.
-pub(super) const fn promotes_to_signed_int(ty: &MonoType) -> bool {
-    match ty {
-        MonoType::Uint8 | MonoType::Uint16 => true,
-        MonoType::Bool
-        | MonoType::Int8
-        | MonoType::Int16
-        | MonoType::Int32
-        | MonoType::Int64
-        | MonoType::Isize
-        | MonoType::Uint32
-        | MonoType::Uint64
-        | MonoType::Usize
-        | MonoType::Float32
-        | MonoType::CInt
-        | MonoType::CStr
-        | MonoType::OpaquePointer(_)
-        | MonoType::Pointer(_)
-        | MonoType::Aggregate(_)
-        | MonoType::FunctionPointer(_) => false,
-    }
-}
