@@ -94,7 +94,7 @@ impl OutlivesEnvironment {
                     OutlivesComponent::Region(region) => {
                         edges.push((index_of(&region), index_of(fact.greater())));
                     }
-                    OutlivesComponent::Param(subject) | OutlivesComponent::Projection(subject) => {
+                    OutlivesComponent::Opaque(subject) => {
                         type_facts.push(OutlivesPredicate::new(subject, fact.greater().clone()));
                     }
                 }
@@ -210,7 +210,7 @@ impl crate::Solver {
                 // TODO: consider also entailing a projection's outlives from
                 // everything it projects from with
                 // `entails_projection_outlives`; see the concern noted there.
-                OutlivesComponent::Param(subject) | OutlivesComponent::Projection(subject) => {
+                OutlivesComponent::Opaque(subject) => {
                     self.has_type_fact(subject, bound, regions).await
                 }
             };

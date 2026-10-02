@@ -72,7 +72,7 @@ impl ConstraintCollector<'_> {
                 // parameter or a projection outlives `bound`, and which of
                 // its facts are needed depends on the universal regions
                 // `bound` turns out to outlive.
-                OutlivesComponent::Param(subject) | OutlivesComponent::Projection(subject) => {
+                OutlivesComponent::Opaque(subject) => {
                     self.constraints.add_type_test(point, subject, predicate.greater().clone());
                 }
             }
