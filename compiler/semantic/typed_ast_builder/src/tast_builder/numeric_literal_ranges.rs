@@ -32,8 +32,7 @@ struct NumericLiteralRange {
     /// The digits of the literal as written in the source code.
     digits: Interned<str>,
 
-    /// The value of the literal, or `None` if it exceeds `u128`.
-    value: Option<u128>,
+    value: u128,
 }
 
 impl NumericLiteralRange {
@@ -43,22 +42,21 @@ impl NumericLiteralRange {
         match primitive {
             Primitive::Integer(integer) => {
                 let max = integer.max_value();
-                (matches!(self.value, Some(value) if value <= max), Some(max))
+                (self.value <= max, Some(max))
             }
-            Primitive::Float32 | Primitive::Bool | Primitive::CStr => (self.value.is_some(), None),
+            Primitive::Float32 | Primitive::Bool | Primitive::CStr => (true, None),
         }
     }
 }
 
 impl TAstBuilder {
     /// Requires the value of the given numeric literal expression to fit in
-    /// its type. A `None` value is a literal whose value exceeds `u128`, which
-    /// fits in no type.
+    /// its type.
     pub(crate) fn require_numeric_literal_range(
         &mut self,
         expression: TypedExprID,
         digits: Interned<str>,
-        value: Option<u128>,
+        value: u128,
     ) {
         self.numeric_literal_ranges.push(NumericLiteralRange {
             expression: TypedFunctionLocalID::new(self.current_typed_function_id(), expression),

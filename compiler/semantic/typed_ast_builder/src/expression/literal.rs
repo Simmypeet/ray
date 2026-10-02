@@ -1,3 +1,5 @@
+use std::num::IntErrorKind;
+
 use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
 use rayc_syntax::expression::{Boolean, Literal as LiteralSyntax, NumericLiteral, NumericSuffix};
@@ -6,7 +8,7 @@ use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, literal::Literal};
 
 use crate::{
     bind::Bind,
-    diagnostic::{Diagnostic, EmbeddedNulString},
+    diagnostic::{Diagnostic, EmbeddedNulString, NumericLiteralTooLarge},
     tast_builder::TAstBuilder,
 };
 
@@ -55,10 +57,23 @@ impl TAstBuilder {
         };
         let digits = numeric.kind.0;
 
-        // The lexer only produces ASCII digits, so parsing fails only when the
-        // value exceeds `u128`. Such a literal fits in no type, which the
-        // deferred range check reports.
-        let value = digits.parse::<u128>().ok();
+        let value = match digits.parse::<u128>() {
+            Ok(value) => value,
+
+            // The literal exceeds every integer type, so it is reported right
+            // away instead of by the deferred range check.
+            Err(error) if *error.kind() == IntErrorKind::PosOverflow => {
+                self.push_diagnostic(Diagnostic::NumericLiteralTooLarge(
+                    NumericLiteralTooLarge::builder().literal(digits).span(span).build(),
+                ));
+                return self.push_error_expression(span).await;
+            }
+
+            // The lexer only produces non-empty sequences of ASCII digits.
+            Err(error) => {
+                panic!("numeric literal `{}` should've been valid digits: {error}", &*digits)
+            }
+        };
 
         let ty = match syn.suffix() {
             Some(suffix) => {
@@ -67,15 +82,8 @@ impl TAstBuilder {
             None => self.new_numeric_type_inference(),
         };
 
-        // An out-of-range literal is always reported, so the placeholder value
-        // of a literal exceeding `u128` never reaches code generation.
-        let id = self
-            .insert_expression(
-                TypedExprKind::Literal(Literal::Numeric(value.unwrap_or(u128::MAX))),
-                span,
-                ty,
-            )
-            .await;
+        let id =
+            self.insert_expression(TypedExprKind::Literal(Literal::Numeric(value)), span, ty).await;
 
         // The literal's type may still be an inference variable here, so its
         // range is checked once every type has been inferred.

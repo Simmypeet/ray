@@ -235,6 +235,27 @@ impl Report for EmbeddedNulString {
     }
 }
 
+/// A numeric literal whose value exceeds `u128`, so it fits in no type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct NumericLiteralTooLarge {
+    literal: Interned<str>,
+    span: RelativeSpan,
+}
+
+impl Report for NumericLiteralTooLarge {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message(format!(
+                "the numeric literal `{}` is too large to fit in any numeric type",
+                &*self.literal
+            ))
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .build()
+    }
+}
+
 /// A numeric literal whose value does not fit in its type, e.g. `300u8`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct NumericLiteralOutOfRange {
@@ -961,6 +982,7 @@ pub enum Diagnostic {
     IncompatibleEffectRows(IncompatibleEffectRows),
     EmbeddedNulString(EmbeddedNulString),
     NumericLiteralOutOfRange(NumericLiteralOutOfRange),
+    NumericLiteralTooLarge(NumericLiteralTooLarge),
     MissingEffectOperationHandler(MissingEffectOperationHandler),
     ExtraneousEffectOperationHandler(ExtraneousEffectOperationHandler),
     DuplicateEffectOperationHandler(DuplicateEffectOperationHandler),
@@ -1020,6 +1042,7 @@ impl Report for Diagnostic {
             }
             Self::EmbeddedNulString(string) => string.report(engine).await,
             Self::NumericLiteralOutOfRange(literal) => literal.report(engine).await,
+            Self::NumericLiteralTooLarge(literal) => literal.report(engine).await,
             Self::MissingEffectOperationHandler(handler) => handler.report(engine).await,
             Self::ExtraneousEffectOperationHandler(handler) => handler.report(engine).await,
             Self::DuplicateEffectOperationHandler(handler) => handler.report(engine).await,

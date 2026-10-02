@@ -39,13 +39,13 @@ stderr:
 22 │     return 1usize == 1isize
    ╰╴                     ━━━━━━
 
-[error]: the numeric literal `340282366920938463463374607431768211456` does not fit in type `uint64`, whose maximum value is 18446744073709551615
+[error]: the numeric literal `340282366920938463463374607431768211456` is too large to fit in any numeric type
    ╭▸ compiler/e2e/test/check/tast/numeric_literal_types/main.ray:25:12
    │
 25 │     return 340282366920938463463374607431768211456u64
    ╰╴           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-[error]: the numeric literal `340282366920938463463374607431768211456` does not fit in type `float32`
+[error]: the numeric literal `340282366920938463463374607431768211456` is too large to fit in any numeric type
    ╭▸ compiler/e2e/test/check/tast/numeric_literal_types/main.ray:28:12
    │
 28 │     return 340282366920938463463374607431768211456
