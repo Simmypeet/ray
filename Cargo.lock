@@ -1809,6 +1809,7 @@ dependencies = [
  "rayc_solver",
  "rayc_source_file",
  "rayc_symbol",
+ "rayc_transitive_closure",
  "rayc_type",
  "tokio",
 ]

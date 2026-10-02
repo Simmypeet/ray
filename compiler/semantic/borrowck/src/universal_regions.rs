@@ -12,12 +12,8 @@
 //! function requires `'a: 'b`. That is an error unless the environment
 //! entails it.
 //!
-//! The paths are searched in the location-insensitive constraint graph: the
-//! union of the constraints of every point. A universal region is live at
-//! every point, so what flows into one at any point stays in it at every
-//! other, and the points do not matter. Compared with following the points,
-//! this only rejects more when a value is overwritten before it is used
-//! again, as NLL does.
+//! The paths are searched in the location-insensitive constraint graph; see
+//! [`SubsetGraph`].
 //!
 //! The search from `'a` stops at each universal region it reaches. A path
 //! that goes on through `'b` to `'c` is found again by the search from `'b`,
@@ -25,94 +21,30 @@
 //! `'a: 'c` does too. This also reports a missing relation once, where it
 //! arises, and not again for every region upstream of it.
 
-use std::collections::VecDeque;
-
 use qbice::storage::intern::Interned;
-use rayc_hash::FxHashMap;
 use rayc_ir::{cfg::Point, ir_function::IRFunction};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_solver::Solver;
 use rayc_type::ty::Ty;
 
 use crate::{
-    constraint::LocalizedConstraints,
     diagnostic::{Diagnostic, LifetimeMayNotLiveLongEnough},
+    subset_graph::SubsetGraph,
 };
 
 /// Checks that every relation between two universal regions that the
-/// `constraints` of `function` require follows from the outlives environment
-/// of `solver`, and returns the ones that do not.
+/// constraints of `function`, gathered in `graph`, require follows from the
+/// outlives environment of `solver`, and returns the ones that do not.
 ///
 /// `solver` must be created at the definition the function belongs to.
 pub(crate) fn check_universal_regions(
     function: &IRFunction,
-    constraints: &LocalizedConstraints,
+    graph: &SubsetGraph,
     solver: &Solver,
 ) -> Vec<Diagnostic> {
-    let checker = UniversalRegionChecker { function, solver, graph: SubsetGraph::new(constraints) };
+    let checker = UniversalRegionChecker { function, solver, graph };
 
     checker.check()
-}
-
-/// A constraint `'lesser: 'greater` out of a region `'lesser`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Edge {
-    /// The point of the instruction requiring the constraint.
-    point: Point,
-
-    greater: Interned<Ty>,
-}
-
-/// The location-insensitive constraint graph: for each region, the regions
-/// it must outlive at any point.
-struct SubsetGraph {
-    edges: FxHashMap<Interned<Ty>, Vec<Edge>>,
-}
-
-impl SubsetGraph {
-    /// Builds the graph of the union of `constraints` over every point.
-    fn new(constraints: &LocalizedConstraints) -> Self {
-        let mut edges = FxHashMap::<_, Vec<Edge>>::default();
-        for (lesser, point, greater) in constraints.outlives() {
-            edges.entry(lesser.clone()).or_default().push(Edge { point, greater: greater.clone() });
-        }
-
-        Self { edges }
-    }
-
-    /// Iterates over the regions with a constraint out of them.
-    fn sources(&self) -> impl Iterator<Item = &Interned<Ty>> { self.edges.keys() }
-
-    /// Iterates over the constraints out of `region`.
-    fn edges_of(&self, region: &Interned<Ty>) -> impl Iterator<Item = &Edge> {
-        self.edges.get(region).into_iter().flatten()
-    }
-}
-
-/// The universal regions a search reached from its source, and how.
-struct Reached<'a> {
-    /// The universal regions reached, in the order the search found them.
-    universals: Vec<&'a Interned<Ty>>,
-
-    /// For each region reached, the region it was reached from and the point
-    /// of the constraint between them.
-    parents: FxHashMap<&'a Interned<Ty>, (&'a Interned<Ty>, Point)>,
-}
-
-impl Reached<'_> {
-    /// Returns the points of the constraints on the path the search took to
-    /// `region`, from the source of the search onwards.
-    fn path_points(&self, region: &Interned<Ty>) -> Vec<Point> {
-        let mut points = Vec::new();
-        let mut current = region;
-        while let Some(&(parent, point)) = self.parents.get(current) {
-            points.push(point);
-            current = parent;
-        }
-
-        points.reverse();
-        points
-    }
 }
 
 /// Checks the universal regions of an IR function for
@@ -120,7 +52,7 @@ impl Reached<'_> {
 struct UniversalRegionChecker<'a> {
     function: &'a IRFunction,
     solver: &'a Solver,
-    graph: SubsetGraph,
+    graph: &'a SubsetGraph,
 }
 
 impl UniversalRegionChecker<'_> {
@@ -130,25 +62,29 @@ impl UniversalRegionChecker<'_> {
         let environment = self.solver.outlives_environment();
         let mut diagnostics = Vec::new();
 
-        for longer in self.graph.sources() {
-            // A region of the body is only passed through on the way from
-            // one universal region to another.
-            if !longer.is_universal_region() {
+        // TODO: a relation with an external region is not known to the
+        // environment of the definition. It is a requirement for the creator
+        // of the nested function to prove, where it instantiates the external
+        // regions, and not an error here.
+        let holds = |longer: &Interned<Ty>, shorter: &Interned<Ty>| {
+            longer.is_external_lifetime()
+                || shorter.is_external_lifetime()
+                || environment.region_outlives(longer, shorter)
+        };
+
+        for longer in self.graph.universals() {
+            // Nearly every function requires nothing it may not assume,
+            // which the closure of the graph tells without a search.
+            if self.graph.reachable_universals(longer).all(|shorter| holds(longer, shorter)) {
                 continue;
             }
 
-            let reached = self.reach_from(longer);
+            // Search for the relations that do not hold, and for the
+            // constraints that require them.
+            let reached = self.graph.reach_universals_from(longer);
 
-            for &shorter in &reached.universals {
-                // TODO: a relation with an external region is not known to
-                // the environment of the definition. It is a requirement for
-                // the creator of the nested function to prove, where it
-                // instantiates the external regions, and not an error here.
-                if longer.is_external_lifetime() || shorter.is_external_lifetime() {
-                    continue;
-                }
-
-                if environment.region_outlives(longer, shorter) {
+            for shorter in reached.universals() {
+                if holds(longer, shorter) {
                     continue;
                 }
 
@@ -157,33 +93,6 @@ impl UniversalRegionChecker<'_> {
         }
 
         diagnostics
-    }
-
-    /// Searches the graph breadth-first from the universal region `source`,
-    /// through the regions of the body, up to each universal region.
-    fn reach_from<'s>(&'s self, source: &'s Interned<Ty>) -> Reached<'s> {
-        let mut reached = Reached { universals: Vec::new(), parents: FxHashMap::default() };
-        let mut pending = VecDeque::from_iter([source]);
-
-        while let Some(region) = pending.pop_front() {
-            for edge in self.graph.edges_of(region) {
-                let greater = &edge.greater;
-                if greater == source || reached.parents.contains_key(greater) {
-                    continue;
-                }
-                reached.parents.insert(greater, (region, edge.point));
-
-                // The search from a universal region continues the paths
-                // through it; see the module documentation.
-                if greater.is_universal_region() {
-                    reached.universals.push(greater);
-                } else {
-                    pending.push_back(greater);
-                }
-            }
-        }
-
-        reached
     }
 
     /// Describes the unproven requirement `longer: shorter`, which arises

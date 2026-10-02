@@ -112,7 +112,7 @@ impl ConflictChecker<'_> {
     ///
     /// Reads of borrowed places are not checked yet, so only borrows are.
     fn check_expression(&mut self, point: Point, expression_id: IRExprID, active: &ActiveLoans) {
-        let Some(borrow) = self.constraints.load_of_ref_of(expression_id) else {
+        let Some(borrow) = self.constraints.loan_of_ref_of(expression_id) else {
             return;
         };
 

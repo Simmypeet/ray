@@ -44,6 +44,10 @@
 //!   dictionary implements the trait for, and requires what the dictionary was
 //!   built from, as for a dictionary passed to a call.
 //!
+//! A where clause may also require a type parameter or a projection to
+//! outlive a lifetime. That is recorded as a [`TypeTest`] rather than a
+//! constraint, and checked by [`type_test`](crate::type_test).
+//!
 //! What a nested function requires of its creator is not collected yet: the
 //! regions in the interface of a closure body, a handled body or an operation
 //! handler are universal regions of that function, which nothing maps to the
@@ -122,6 +126,38 @@ impl Loan {
     pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
+/// A requirement `subject: 'bound` on a type parameter or a rigid projection,
+/// which no outlives constraint between regions can express.
+///
+/// Whether it holds depends on the universal regions `'bound` must outlive,
+/// so it is checked once every constraint is collected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeTest {
+    /// The type parameter or projection required to outlive `bound`.
+    subject: Interned<Ty>,
+
+    /// The lifetime `subject` must outlive.
+    bound: Interned<Ty>,
+
+    /// The point of the instruction requiring it.
+    point: Point,
+}
+
+impl TypeTest {
+    /// Returns the type parameter or projection required to outlive the
+    /// bound.
+    #[must_use]
+    pub const fn subject(&self) -> &Interned<Ty> { &self.subject }
+
+    /// Returns the lifetime the subject must outlive.
+    #[must_use]
+    pub const fn bound(&self) -> &Interned<Ty> { &self.bound }
+
+    /// Returns the point of the instruction requiring the test.
+    #[must_use]
+    pub const fn point(&self) -> Point { self.point }
+}
+
 /// A region at a point: a node of the localized constraint graph.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct LocalizedRegion {
@@ -130,7 +166,8 @@ struct LocalizedRegion {
 }
 
 /// The outlives constraints the instructions of an IR function require, each
-/// at the point of its instruction, and the loans the function issues.
+/// at the point of its instruction, the type tests they require, and the
+/// loans the function issues.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LocalizedConstraints {
     /// For each region at a point, the regions it must outlive there. These
@@ -138,6 +175,10 @@ pub struct LocalizedConstraints {
     /// at the point states (rustc: `Locations::Single`). A region with no
     /// constraint at a point has no entry.
     edges: FxHashMap<LocalizedRegion, FxHashSet<Interned<Ty>>>,
+
+    /// The type tests the instructions require, in the order they were
+    /// collected.
+    type_tests: Vec<TypeTest>,
 
     /// The loans issued by the borrows of the function.
     loans: Arena<Loan>,
@@ -196,6 +237,11 @@ impl LocalizedConstraints {
         })
     }
 
+    /// Iterates over the type tests of the function, in the order of the
+    /// instructions requiring them.
+    #[must_use]
+    pub fn type_tests(&self) -> impl ExactSizeIterator<Item = &TypeTest> { self.type_tests.iter() }
+
     /// Iterates over the loans issued in the function, in unspecified order.
     #[must_use]
     pub fn loans(&self) -> impl ExactSizeIterator<Item = (LoanID, &Loan)> { self.loans.iter() }
@@ -220,7 +266,7 @@ impl LocalizedConstraints {
     /// `None` when the expression is not a borrow, or borrows an error
     /// address.
     #[must_use]
-    pub fn load_of_ref_of(&self, expression_id: IRExprID) -> Option<&Loan> {
+    pub fn loan_of_ref_of(&self, expression_id: IRExprID) -> Option<&Loan> {
         let loan_id = self.loans_by_ref_of_id.get(&expression_id)?;
         self.loans.get(*loan_id)
     }
@@ -249,6 +295,11 @@ impl LocalizedConstraints {
             .entry(LocalizedRegion { region: predicate.lesser().clone(), point })
             .or_default()
             .insert(predicate.greater().clone());
+    }
+
+    /// Records the type test `subject: 'bound` required at `point`.
+    fn add_type_test(&mut self, point: Point, subject: Interned<Ty>, bound: Interned<Ty>) {
+        self.type_tests.push(TypeTest { subject, bound, point });
     }
 }
 

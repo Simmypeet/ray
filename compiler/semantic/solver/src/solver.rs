@@ -335,7 +335,9 @@ impl Solver {
 
     /// Returns the outlives facts visible at this solver's site.
     #[must_use]
-    pub fn outlives_environment(&self) -> &OutlivesEnvironment { &self.outlives_environment }
+    pub const fn outlives_environment(&self) -> &Interned<OutlivesEnvironment> {
+        &self.outlives_environment
+    }
 
     /// Reduces a value and its descendants until no further step is available.
     ///

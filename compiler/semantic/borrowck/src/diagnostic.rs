@@ -6,9 +6,10 @@
 //! loan is still live. A loan that outlives the function, such as one stored
 //! behind a parameter, has no later use within it.
 //!
-//! The one exception is a relation between two universal lifetimes that the
-//! function requires but may not assume, which involves no loan: it points at
-//! the instruction that requires it.
+//! The exceptions are a relation between two universal lifetimes, and a type
+//! outliving a universal lifetime, that the function requires but may not
+//! assume. Neither involves a loan: they point at the instruction that
+//! requires them.
 
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
@@ -143,6 +144,36 @@ impl LifetimeMayNotLiveLongEnough {
     }
 }
 
+/// The function requires a type parameter or a projection to outlive a
+/// universal lifetime, which neither its where clause nor its signature lets
+/// it assume.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct TypeMayNotLiveLongEnough {
+    /// The instruction that requires the type to outlive a lifetime.
+    span: RelativeSpan,
+
+    /// The type parameter or projection required to outlive `bound`.
+    subject: Interned<Ty>,
+
+    /// The universal lifetime `subject` is required to outlive.
+    bound: Interned<Ty>,
+
+    /// Where the lifetime required at `span` is itself required to outlive
+    /// `bound`, when that is not at `span`.
+    bound_span: Option<RelativeSpan>,
+}
+
+impl TypeMayNotLiveLongEnough {
+    pub(crate) const fn new(
+        span: RelativeSpan,
+        subject: Interned<Ty>,
+        bound: Interned<Ty>,
+        bound_span: Option<RelativeSpan>,
+    ) -> Self {
+        Self { span, subject, bound, bound_span }
+    }
+}
+
 /// An error found by the borrow checker.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable,
@@ -152,6 +183,7 @@ pub enum Diagnostic {
     ConflictingBorrow(ConflictingBorrow),
     DoesNotLiveLongEnough(DoesNotLiveLongEnough),
     LifetimeMayNotLiveLongEnough(LifetimeMayNotLiveLongEnough),
+    TypeMayNotLiveLongEnough(TypeMayNotLiveLongEnough),
 }
 
 impl Report for Diagnostic {
@@ -168,6 +200,9 @@ impl Report for Diagnostic {
             }
             Self::LifetimeMayNotLiveLongEnough(diagnostic) => {
                 lifetime_may_not_live_long_enough_report(engine, diagnostic).await
+            }
+            Self::TypeMayNotLiveLongEnough(diagnostic) => {
+                type_may_not_live_long_enough_report(engine, diagnostic).await
             }
         }
     }
@@ -287,6 +322,36 @@ async fn lifetime_may_not_live_long_enough_report(
         )
         .related(origin)
         .maybe_help_message(help)
+        .build()
+}
+
+async fn type_may_not_live_long_enough_report(
+    engine: &TrackedEngine,
+    diagnostic: &TypeMayNotLiveLongEnough,
+) -> Rendered<ByteIndex> {
+    let subject = diagnostic.subject.display(engine).await.to_string();
+    let bound = diagnostic.bound.display(engine).await.to_string();
+
+    let mut related = Vec::new();
+    if let Some(bound_span) = &diagnostic.bound_span {
+        related.push(
+            Highlight::builder()
+                .span(engine.to_absolute_span(bound_span).await)
+                .message(format!("the value is required to be valid for `{bound}` here"))
+                .build(),
+        );
+    }
+
+    Rendered::builder()
+        .message(format!("the type `{subject}` may not live long enough"))
+        .primary_highlight(
+            Highlight::builder()
+                .span(engine.to_absolute_span(&diagnostic.span).await)
+                .message(format!("this requires `{subject}` to outlive `{bound}`"))
+                .build(),
+        )
+        .related(related)
+        .help_message(format!("consider adding `{subject}: {bound}` to the where clause"))
         .build()
 }
 

@@ -49,11 +49,17 @@ impl ConstraintCollector<'_> {
         }
     }
 
-    /// Adds, at `point`, the outlives constraints of the instantiated
-    /// predicate `subject: bound`: each lifetime in `subject` must outlive
-    /// `bound`.
+    /// Adds, at `point`, the requirements of the instantiated predicate
+    /// `subject: bound`: each lifetime in `subject` must outlive `bound`, as
+    /// an outlives constraint, and so must each type parameter and
+    /// projection in it, as a type test.
     pub(super) async fn collect_outlives(&mut self, point: Point, predicate: &OutlivesPredicate) {
-        let subject = self.solver.normalize(predicate.lesser()).await;
+        // Normalizing the subject may use a given equality that matches it
+        // up to lifetimes, which then requires those lifetimes to be equal.
+        let (subject, outlives) = self.solver.normalize_with_outlives(predicate.lesser()).await;
+        for constraint in outlives.iter() {
+            self.constraints.add(point, constraint);
+        }
 
         for component in Ty::outlives_components(&subject, self.solver.engine()).await {
             match component {
@@ -62,10 +68,13 @@ impl ConstraintCollector<'_> {
                         .add(point, &OutlivesPredicate::new(region, predicate.greater().clone()));
                 }
 
-                // TODO: a type parameter or a projection that must outlive
-                // `bound` is a type test, to check against the outlives
-                // environment once the constraint graph is complete.
-                OutlivesComponent::Param(_) | OutlivesComponent::Projection(_) => {}
+                // Only the outlives environment can tell whether a type
+                // parameter or a projection outlives `bound`, and which of
+                // its facts are needed depends on the universal regions
+                // `bound` turns out to outlive.
+                OutlivesComponent::Param(subject) | OutlivesComponent::Projection(subject) => {
+                    self.constraints.add_type_test(point, subject, predicate.greater().clone());
+                }
             }
         }
     }

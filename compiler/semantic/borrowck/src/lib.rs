@@ -12,6 +12,8 @@ use crate::{
     live_loans::{LiveLoans, Traversal},
     region_liveness::RegionLiveness,
     renumber::Renumbering,
+    subset_graph::SubsetGraph,
+    type_test::check_type_tests,
     universal_regions::check_universal_regions,
     variance::LifetimeVariances,
 };
@@ -23,6 +25,8 @@ pub mod diagnostic;
 pub mod live_loans;
 pub mod region_liveness;
 pub mod renumber;
+mod subset_graph;
+mod type_test;
 mod universal_regions;
 pub mod variance;
 
@@ -48,9 +52,12 @@ pub async fn borrow_check(ir: &mut IRFunctionMap, engine: &TrackedEngine) -> Vec
         let captures = ir.captures_for_function(function_id);
         let constraints = LocalizedConstraints::collect(function, captures, &mut solver).await;
 
-        // The relations between universal regions hold at every point or at
-        // none, so they are checked on the constraints alone.
-        diagnostics.extend(check_universal_regions(function, &constraints, &solver));
+        // What the function requires of its universal regions, and of the
+        // types that must outlive them, holds at every point or at none, so
+        // it is checked on the constraints alone.
+        let graph = SubsetGraph::new(&constraints, solver.outlives_environment());
+        diagnostics.extend(check_universal_regions(function, &graph, &solver));
+        diagnostics.extend(check_type_tests(function, &constraints, &graph, &mut solver).await);
 
         let liveness = RegionLiveness::compute(ir, function_id).await;
         let live_loans = LiveLoans::compute(function, &constraints, &liveness, &variances);
