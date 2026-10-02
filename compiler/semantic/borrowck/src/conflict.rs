@@ -22,7 +22,7 @@ use qbice::storage::intern::Interned;
 use rayc_hash::FxHashSet;
 use rayc_ir::{
     address::{Address, Local},
-    cfg::{Instruction, Point, Store, Terminator},
+    cfg::{Instruction, Point, Store},
     ir_expr::IRExprID,
     ir_function::IRFunction,
     scope::ScopeID,
@@ -197,45 +197,11 @@ impl ConflictChecker<'_> {
             }
 
             if self.liveness.is_used_at(self.function, region, point) {
-                return self.use_span(point);
+                return self.function.point_span(point);
             }
             pending.extend(self.function.successor_points(point));
         }
 
         None
-    }
-
-    /// Returns the source of the instruction or terminator at `point` that
-    /// uses a value, or `None` for one that uses no value.
-    fn use_span(&self, point: Point) -> Option<RelativeSpan> {
-        let function = self.function;
-        let Some(instruction) =
-            function.block_instructions(point.block_id()).get(point.instruction_idx())
-        else {
-            return function.block_terminator(point.block_id()).and_then(|terminator| {
-                terminator_use(terminator).map(|value| function.get_expression(value).span())
-            });
-        };
-
-        match instruction {
-            Instruction::Expression(expression_id) => {
-                Some(function.get_expression(*expression_id).span())
-            }
-            Instruction::Store(store) => Some(store.span()),
-            Instruction::ExprDiscard(discard) => {
-                Some(function.get_expression(discard.expression()).span())
-            }
-            Instruction::AddressDrop(drop) => Some(drop.span()),
-            Instruction::ScopePush(_) | Instruction::ScopePop(_) => None,
-        }
-    }
-}
-
-/// Returns the value `terminator` consumes, if any.
-const fn terminator_use(terminator: &Terminator) -> Option<IRExprID> {
-    match terminator {
-        Terminator::Conditional(conditional) => Some(conditional.condition()),
-        Terminator::Return(value) => *value,
-        Terminator::Jump(_) => None,
     }
 }

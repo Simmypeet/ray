@@ -1270,6 +1270,19 @@ impl Ty {
         if let Self::Lifetime(Lifetime::Region(region)) = self { Some(*region) } else { None }
     }
 
+    /// Returns whether this type is the `'static` lifetime.
+    #[must_use]
+    pub const fn is_static_lifetime(&self) -> bool {
+        matches!(self, Self::Lifetime(Lifetime::Static))
+    }
+
+    /// Returns whether this type is an external lifetime; see
+    /// [`Lifetime::External`].
+    #[must_use]
+    pub const fn is_external_lifetime(&self) -> bool {
+        matches!(self, Self::Lifetime(Lifetime::External(_)))
+    }
+
     #[must_use]
     pub fn open_closed_row(
         ty: &Interned<Self>,

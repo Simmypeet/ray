@@ -784,6 +784,33 @@ impl IRFunction {
             .build()
     }
 
+    /// Returns the source of the instruction or terminator at `point`, or
+    /// `None` for one that has no source of its own: a scope instruction, a
+    /// jump, or a bare return.
+    #[must_use]
+    pub fn point_span(&self, point: Point) -> Option<RelativeSpan> {
+        let Some(instruction) =
+            self.block_instructions(point.block_id()).get(point.instruction_idx())
+        else {
+            return self
+                .block_terminator(point.block_id())
+                .and_then(Terminator::used_value)
+                .map(|value| self.get_expression(value).span());
+        };
+
+        match instruction {
+            Instruction::Expression(expression_id) => {
+                Some(self.get_expression(*expression_id).span())
+            }
+            Instruction::Store(store) => Some(store.span()),
+            Instruction::ExprDiscard(discard) => {
+                Some(self.get_expression(discard.expression()).span())
+            }
+            Instruction::AddressDrop(drop) => Some(drop.span()),
+            Instruction::ScopePush(_) | Instruction::ScopePop(_) => None,
+        }
+    }
+
     /// Iterates over blocks that do not have a terminator.
     pub fn unterminated_blocks(&self) -> impl Iterator<Item = BlockID> + '_ {
         self.cfg.unterminated_blocks()

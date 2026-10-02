@@ -12,6 +12,7 @@ use crate::{
     live_loans::{LiveLoans, Traversal},
     region_liveness::RegionLiveness,
     renumber::Renumbering,
+    universal_regions::check_universal_regions,
     variance::LifetimeVariances,
 };
 
@@ -22,6 +23,7 @@ pub mod diagnostic;
 pub mod live_loans;
 pub mod region_liveness;
 pub mod renumber;
+mod universal_regions;
 pub mod variance;
 
 #[cfg(test)]
@@ -45,6 +47,11 @@ pub async fn borrow_check(ir: &mut IRFunctionMap, engine: &TrackedEngine) -> Vec
     for (function_id, function) in ir.functions() {
         let captures = ir.captures_for_function(function_id);
         let constraints = LocalizedConstraints::collect(function, captures, &mut solver).await;
+
+        // The relations between universal regions hold at every point or at
+        // none, so they are checked on the constraints alone.
+        diagnostics.extend(check_universal_regions(function, &constraints, &solver));
+
         let liveness = RegionLiveness::compute(ir, function_id).await;
         let live_loans = LiveLoans::compute(function, &constraints, &liveness, &variances);
         let activity = LoanActivity::compute(function, &constraints, &live_loans).await;

@@ -1,0 +1,71 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: lifetime may not live long enough
+  ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:8:12
+  │
+8 │     return x
+  │            ━ this requires `'a` to outlive `'b`
+  │
+  ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:18:12
+   │
+18 │     return x
+   ╰╴           ━ this requires `'a` to outlive `'static`
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:29:5
+   │
+28 │     let y = x
+   │     ───────── the value of lifetime `'a` flows in here
+29 │     out.* = y
+   │     ━━━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:44:12
+   │
+41 │         r = y
+   │         ───── the value of lifetime `'b` flows in here
+   ‡
+44 │     return r
+   │            ━ this requires `'b` to outlive `'c`
+   │
+   ╰ help: consider adding `'b: 'c` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:50:12
+   │
+49 │     let s = shorten(x)
+   │             ────────── the value of lifetime `'a` flows in here
+50 │     return s
+   │            ━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:66:12
+   │
+66 │     return x.*.*.&mut
+   │            ━━━━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:74:5
+   │
+74 │     out.* = mid.*
+   │     ━━━━━━━━━━━━━ this requires `'b` to outlive `'c`
+   │
+   ╰ help: consider adding `'b: 'c` to the where clause
+
+[error]: Compilation aborted due to 7 error(s)
+
+
+
+stdout:

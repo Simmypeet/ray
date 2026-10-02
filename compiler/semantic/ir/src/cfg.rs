@@ -336,6 +336,17 @@ impl Terminator {
             Self::Return(_) => Iter::C(std::iter::empty()),
         }
     }
+
+    /// Returns the value this terminator consumes, if any: the condition of
+    /// a branch, or the returned value.
+    #[must_use]
+    pub const fn used_value(&self) -> Option<IRExprID> {
+        match self {
+            Self::Conditional(conditional) => Some(conditional.condition()),
+            Self::Return(value) => *value,
+            Self::Jump(_) => None,
+        }
+    }
 }
 
 /// The blocks and expressions reachable from a control-flow graph's entry

@@ -187,6 +187,15 @@ impl LocalizedConstraints {
         self.edges.get(&LocalizedRegion { region: region.clone(), point }).into_iter().flatten()
     }
 
+    /// Iterates over every outlives constraint of the function, as the
+    /// lesser region, the point requiring the constraint and the greater
+    /// region of `'lesser: 'greater`, in unspecified order.
+    pub fn outlives(&self) -> impl Iterator<Item = (&Interned<Ty>, Point, &Interned<Ty>)> {
+        self.edges.iter().flat_map(|(lesser, greaters)| {
+            greaters.iter().map(move |greater| (&lesser.region, lesser.point, greater))
+        })
+    }
+
     /// Iterates over the loans issued in the function, in unspecified order.
     #[must_use]
     pub fn loans(&self) -> impl ExactSizeIterator<Item = (LoanID, &Loan)> { self.loans.iter() }
