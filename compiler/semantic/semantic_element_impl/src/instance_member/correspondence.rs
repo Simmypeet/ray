@@ -162,10 +162,10 @@ impl<'a> Correspondence<'a> {
         }
     }
 
-    /// Pairs the dictionaries in declaration order.
-    fn pair_dictionaries(&mut self) {
+    /// Pairs the instances in declaration order.
+    fn pair_instances(&mut self) {
         for ((expected, _), (actual, _)) in
-            self.trait_poly_vars.dictionaries().zip(self.instance_poly_vars.dictionaries())
+            self.trait_poly_vars.instances().zip(self.instance_poly_vars.instances())
         {
             self.pairs.insert(expected, actual);
             self.paired_instance_poly_vars.insert(actual);
@@ -374,7 +374,7 @@ pub(super) async fn poly_var_substitution(
         &trait_poly_vars,
         &instance_poly_vars,
     );
-    correspondence.pair_dictionaries();
+    correspondence.pair_instances();
     match &style {
         PairingStyle::Sequence => correspondence.pair_type_parameters_in_sequence(),
         PairingStyle::Signature { expected, actual } => {
@@ -434,14 +434,14 @@ fn check_poly_var_counts(
         return false;
     }
 
-    let expected = trait_poly_vars.dictionaries().count();
-    let actual = instance_poly_vars.dictionaries().count();
+    let expected = trait_poly_vars.instances().count();
+    let actual = instance_poly_vars.instances().count();
     if expected != actual {
         // Callable parameters bring hidden dictionaries, which the diagnostic
         // explains.
         let callable = trait_poly_vars
-            .dictionaries()
-            .chain(instance_poly_vars.dictionaries())
+            .instances()
+            .chain(instance_poly_vars.instances())
             .any(|(_, poly_var)| !poly_var.is_source());
         compatibility.report(Mismatch::GivenParameterCount { expected, actual, callable });
         return false;

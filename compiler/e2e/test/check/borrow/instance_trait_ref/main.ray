@@ -1,0 +1,57 @@
+def consume(_: t) given (_: core.Drop[t]):
+    pass
+
+
+trait Wrap[t]:
+    type Out
+
+    def wrap(value: t) -> this.Out
+
+
+inst WrapReference['a] for Wrap[&'a int32]:
+    type Out = &'a int32
+
+    def wrap(value: &'a int32) -> &'a int32:
+        return value
+
+
+inst WrapValue['a] for Wrap[&'a int32]:
+    type Out = int32
+
+    def wrap(value: &'a int32) -> int32:
+        return value.*
+
+
+inst WrapNested[t] for Wrap[(t,)] given (inner: Wrap[t]):
+    type Out = inner.Out
+
+    def wrap(value: (t,)) -> inner.Out:
+        return inner.wrap(value.0)
+
+
+def wrap(value: t) given (w: Wrap[t]) -> w.Out:
+    return w.wrap(value)
+
+
+def main():
+    let mut x = 0
+    let mut y = 0
+
+    # The result type is projected from the dictionary, whose lifetime
+    # argument must be the lifetime of the reference passed in.
+    let p = wrap[given WrapReference](x.&)
+    y = y + 1           # <-- Expect NO error here: nothing borrows `y`.
+    x = x + 1           # <-- Expect an error here: `p` came from `x.&`.
+    consume(p.*)
+
+    let n = wrap[given WrapValue](x.&)
+    x = x + 1           # <-- Expect NO error here: `n` is a plain `int32`.
+    consume(n)
+
+    # The dictionary is built from another one, which is checked the same
+    # way: its lifetime argument is tied through the outer dictionary.
+    let mut z = 0
+    let q = wrap[given WrapNested[given WrapReference]]((z.&,))
+    x = x + 1           # <-- Expect NO error here: `q` only borrows `z`.
+    z = z + 1           # <-- Expect an error here: `q` came from `z.&`.
+    consume(q.*)

@@ -1,0 +1,32 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/instance_trait_ref/main.ray:44:5
+   │
+42 │     let p = wrap[given WrapReference](x.&)
+   │                                       ─── immutable borrow occurs here
+43 │     y = y + 1           # <-- Expect NO error here: nothing borrows `y`.
+44 │     x = x + 1           # <-- Expect an error here: `p` came from `x.&`.
+   │     ━━━━━━━━━ the borrowed place is assigned here
+45 │     consume(p.*)
+   ╰╴            ─── borrow later used here
+
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/instance_trait_ref/main.ray:56:5
+   │
+54 │     let q = wrap[given WrapNested[given WrapReference]]((z.&,))
+   │                                                          ─── immutable borrow occurs here
+55 │     x = x + 1           # <-- Expect NO error here: `q` only borrows `z`.
+56 │     z = z + 1           # <-- Expect an error here: `q` came from `z.&`.
+   │     ━━━━━━━━━ the borrowed place is assigned here
+57 │     consume(q.*)
+   ╰╴            ─── borrow later used here
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

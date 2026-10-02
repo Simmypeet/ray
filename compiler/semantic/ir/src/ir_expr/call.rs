@@ -61,6 +61,16 @@ impl CallTarget {
         }
     }
 
+    /// Returns the dictionary the call dispatches through: the instance of
+    /// an unresolved instance call, or `None` for a direct call.
+    #[must_use]
+    pub const fn dispatch_instance(&self) -> Option<&Interned<Ty>> {
+        match self {
+            Self::Direct { .. } => None,
+            Self::UnresolvedInstanceAssociated { instance, .. } => Some(instance),
+        }
+    }
+
     /// Returns the substitution that instantiates the signature of
     /// [`Self::signature_id`] at the call.
     ///
