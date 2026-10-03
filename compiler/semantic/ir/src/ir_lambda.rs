@@ -7,8 +7,9 @@ use rayc_type::{
     ty::{Mutability, Ty},
 };
 
-use crate::visit::{
-    TypeSite, TypeVisitorMut, TypeVisitorMutAsync, VisitTypeMut, VisitTypeMutAsync,
+use crate::{
+    address::Local,
+    visit::{TypeSite, TypeVisitorMut, TypeVisitorMutAsync, VisitTypeMut, VisitTypeMutAsync},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
@@ -195,6 +196,12 @@ impl CaptureMap {
     #[must_use]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
         self.captures.iter()
+    }
+
+    /// Returns the local of each capture, in capture-layout order.
+    #[must_use]
+    pub fn locals(&self) -> impl ExactSizeIterator<Item = Local> + '_ {
+        self.captures.iter().map(|(capture_id, _)| Local::Capture(capture_id))
     }
 }
 

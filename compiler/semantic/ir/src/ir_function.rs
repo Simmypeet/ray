@@ -3,12 +3,14 @@ use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::{effect_row::get_effect_row, return_type::get_return_type};
+use rayc_semantic_element::{
+    effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
+};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::{Ty, application::ClosureID};
 
 use crate::{
-    address::Address,
+    address::{Address, Local},
     cfg::{
         BlockID, Cfg, ControlFlowEdge, Instruction, InstructionInsertion, Point, Reachables,
         Terminator,
@@ -520,6 +522,46 @@ impl IRContext {
         }
     }
 
+    /// Returns the parameters of a function of this context, which belongs
+    /// to the definition `def_id`, in declaration order.
+    ///
+    /// The definition function takes the parameters declared in the
+    /// definition's signature, while a nested function stores its own.
+    pub async fn parameter_locals(
+        &self,
+        def_id: GlobalSymbolID,
+        engine: &TrackedEngine,
+    ) -> Vec<Local> {
+        match self {
+            Self::Def => {
+                let parameters = engine.get_parameter_map(def_id).await;
+                parameters.iter().map(|(parameter_id, _)| Local::Parameter(parameter_id)).collect()
+            }
+            Self::Lambda(context) => context
+                .parameters()
+                .map(|(parameter_id, _)| Local::LambdaParameter(parameter_id))
+                .collect(),
+            Self::Thunk(_) => Vec::new(),
+            Self::OperationHandler(context) => context
+                .parameters()
+                .map(|(parameter_id, _)| Local::OperationHandlerParameter(parameter_id))
+                .collect(),
+        }
+    }
+
+    /// Returns whether a function of this context borrows its captures
+    /// rather than owning them.
+    ///
+    /// An operation handler may run many times over one environment, which
+    /// the function creating it drops after the handled body.
+    #[must_use]
+    pub const fn borrows_captures(&self) -> bool {
+        match self {
+            Self::OperationHandler(_) => true,
+            Self::Def | Self::Lambda(_) | Self::Thunk(_) => false,
+        }
+    }
+
     /// Returns the return type stored by a nested function context, or
     /// `None` for a def context, whose return type is declared by the
     /// definition.
@@ -618,6 +660,17 @@ impl IRFunction {
 
     #[must_use]
     pub const fn context(&self) -> &IRContext { &self.context }
+
+    /// Returns the parameters of this function, which belongs to the
+    /// definition `def_id`, in declaration order; see
+    /// [`IRContext::parameter_locals`].
+    pub async fn parameter_locals(
+        &self,
+        def_id: GlobalSymbolID,
+        engine: &TrackedEngine,
+    ) -> Vec<Local> {
+        self.context.parameter_locals(def_id, engine).await
+    }
 
     /// Returns the return type of this function, which belongs to the
     /// definition `def_id`; see [`IRContext::return_ty`].

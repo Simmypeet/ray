@@ -45,7 +45,7 @@ use rayc_ir::{
         IRExprID, IRExprKind,
         load::{Load, LoadEffect},
     },
-    ir_function::{IRContext, IRFunction},
+    ir_function::IRFunction,
     ir_lambda::CaptureMap,
     scope::ScopeID,
 };
@@ -113,28 +113,11 @@ async fn owned_inputs(
     captures: Option<&CaptureMap>,
     solver: &Solver,
 ) -> Vec<Local> {
-    let capture_locals = || {
-        captures
-            .into_iter()
-            .flat_map(|captures| captures.iter().map(|(capture_id, _)| Local::Capture(capture_id)))
-    };
-
-    match function.context() {
-        IRContext::Def => {
-            let parameters = solver.engine().get_parameter_map(solver.site()).await;
-            parameters.iter().map(|(parameter_id, _)| Local::Parameter(parameter_id)).collect()
-        }
-        IRContext::Lambda(context) => context
-            .parameters()
-            .map(|(parameter_id, _)| Local::LambdaParameter(parameter_id))
-            .chain(capture_locals())
-            .collect(),
-        IRContext::Thunk(_) => capture_locals().collect(),
-        IRContext::OperationHandler(context) => context
-            .parameters()
-            .map(|(parameter_id, _)| Local::OperationHandlerParameter(parameter_id))
-            .collect(),
+    let mut inputs = function.parameter_locals(solver.site(), solver.engine()).await;
+    if !function.context().borrows_captures() {
+        inputs.extend(captures.into_iter().flat_map(CaptureMap::locals));
     }
+    inputs
 }
 
 /// A loan that a drop conflicts with.
