@@ -34,7 +34,9 @@ impl ConstraintCollector<'_> {
 
         let mut dereferenced = Vec::new();
         let Some(place_ty) = self
-            .place_type_with_derefs(ref_of.address(), |pointer| dereferenced.push(pointer.clone()))
+            .place_type_with_derefs(point, ref_of.address(), |pointer| {
+                dereferenced.push(pointer.clone());
+            })
             .await
         else {
             return;
@@ -85,6 +87,8 @@ impl ConstraintCollector<'_> {
                 break;
             }
 
+            // The outlives constraints of normalizing these prefixes are
+            // collected with the type of the borrowed place.
             let base = self.solver.normalize(&ty).await;
             if let Some(struct_ty) = base.as_struct_view()
                 && self.solver.engine().get_drop_plan(struct_ty.symbol_id()).await.is_explicit()
@@ -138,7 +142,7 @@ impl ConstraintCollector<'_> {
     /// Collects the constraints of `load`, whose loaded value has type `ty`:
     /// `typeof(place) <: ty`.
     pub(super) async fn collect_load(&mut self, point: Point, load: &Load, ty: &Interned<Ty>) {
-        let Some(place_ty) = self.place_type(load.address()).await else {
+        let Some(place_ty) = self.place_type(point, load.address()).await else {
             return;
         };
 
@@ -147,7 +151,7 @@ impl ConstraintCollector<'_> {
 
     /// Collects the constraints of `store`: `typeof(value) <: typeof(place)`.
     pub(super) async fn collect_store(&mut self, point: Point, store: &Store) {
-        let Some(place_ty) = self.place_type(store.address()).await else {
+        let Some(place_ty) = self.place_type(point, store.address()).await else {
             return;
         };
 
@@ -156,9 +160,13 @@ impl ConstraintCollector<'_> {
     }
 
     /// Returns the type of the place `address` selects, or `None` for an
-    /// error address.
-    pub(super) async fn place_type(&self, address: &Address) -> Option<Interned<Ty>> {
-        self.place_type_with_derefs(address, |_| {}).await
+    /// error address. See [`Self::place_type_with_derefs`].
+    pub(super) async fn place_type(
+        &mut self,
+        point: Point,
+        address: &Address,
+    ) -> Option<Interned<Ty>> {
+        self.place_type_with_derefs(point, address, |_| {}).await
     }
 
     /// Returns the type of the place `address` selects, or `None` for an
@@ -166,8 +174,13 @@ impl ConstraintCollector<'_> {
     ///
     /// `on_deref` is called with the type of every pointer the address
     /// dereferences, outermost first.
+    ///
+    /// Normalizing a prefix may use a given equality that matches it up to
+    /// lifetimes, which then requires those lifetimes to be equal. Those
+    /// constraints are added at `point`, where the place is accessed.
     pub(super) async fn place_type_with_derefs(
-        &self,
+        &mut self,
+        point: Point,
         address: &Address,
         mut on_deref: impl FnMut(&Interned<Ty>),
     ) -> Option<Interned<Ty>> {
@@ -176,7 +189,11 @@ impl ConstraintCollector<'_> {
         // Normalize each prefix before inspecting its shape, since a field
         // or pointee may be an associated type.
         for &projection in address.projections() {
-            let base = self.solver.normalize(&ty).await;
+            let (base, outlives) = self.solver.normalize_with_outlives(&ty).await;
+            for constraint in outlives.iter() {
+                self.constraints.add(point, constraint);
+            }
+
             if projection.is_deref() {
                 on_deref(&base);
             }

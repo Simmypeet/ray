@@ -382,7 +382,7 @@ impl ConstraintCollector<'_> {
                 self.collect_drop(point, value_ty, discard.drop_instance()).await;
             }
             Instruction::AddressDrop(drop) => {
-                let Some(place_ty) = self.place_type(drop.address()).await else {
+                let Some(place_ty) = self.place_type(point, drop.address()).await else {
                     return;
                 };
 

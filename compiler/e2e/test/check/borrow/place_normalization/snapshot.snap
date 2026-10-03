@@ -1,0 +1,58 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:11:12
+   │
+11 │     return item.*.&
+   │            ━━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:11:12
+   │
+11 │     return item.*.&
+   │            ━━━━━━━━ this requires `'b` to outlive `'a`
+   │
+   ╰ help: consider adding `'b: 'a` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:34:12
+   │
+34 │     return item.*
+   │            ━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:34:12
+   │
+34 │     return item.*
+   │            ━━━━━━ this requires `'b` to outlive `'a`
+   │
+   ╰ help: consider adding `'b: 'a` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:48:5
+   │
+48 │     item.* = value
+   │     ━━━━━━━━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:48:5
+   │
+48 │     item.* = value
+   │     ━━━━━━━━━━━━━━ this requires `'b` to outlive `'a`
+   │
+   ╰ help: consider adding `'b: 'a` to the where clause
+
+[error]: Compilation aborted due to 6 error(s)
+
+
+
+stdout:
