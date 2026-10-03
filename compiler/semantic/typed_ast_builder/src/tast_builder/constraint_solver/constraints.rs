@@ -7,7 +7,7 @@ use rayc_type::{
     constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
     subst::Substitutable,
     trait_ref::TraitRef,
-    ty::{Ty, TyKind, effect_row::EffectLabel},
+    ty::{Ty, TyKind, effect_row::EffectLabel, inference::GenInfer},
     variance::Variance,
     where_clause::MarkerPredicate,
 };
@@ -21,8 +21,8 @@ use crate::tast_builder::{
     TAstBuilder,
     constraint_solver::{
         provenance::{
-            EffectUnificationOrigin, EffectUnificationSource, SubtypeConstraintOrigin,
-            SubtypeSource,
+            EffectUnificationOrigin, EffectUnificationSource, NumericOperandOrigin,
+            NumericOperation, SubtypeConstraintOrigin, SubtypeSource,
         },
         solve::PendingConstraint,
     },
@@ -393,26 +393,35 @@ impl TAstBuilder {
         .await;
     }
 
-    pub async fn push_negation_operand_constraint(
+    /// Requires the operand of a numeric operation to have a type that the
+    /// operation supports, e.g. a signed numeric type for `-x`.
+    ///
+    /// The operand's type is unified with a fresh inference variable that
+    /// carries the operation's constraint. A failure is reported as an
+    /// invalid operand of the operation, against the operand's own type.
+    pub async fn push_numeric_operand_constraint(
         &mut self,
-        expected_ty: &Interned<Ty>,
-        expression: TypedExprID,
+        operation: NumericOperation,
+        operand: TypedExprID,
     ) {
-        self.push_subtype_constraint_with_expr(
-            expression,
-            expected_ty,
-            SubtypeSource::NegationOperand,
-        )
-        .await;
-    }
+        let operand_ty = self.type_of_expression(operand);
+        let required = self.gen_infer(TyKind::Star, operation.operand_constraint());
+        let required = self.engine().intern(Ty::Inference(required));
 
-    pub async fn push_cast_operand_constraint(
-        &mut self,
-        expected_ty: &Interned<Ty>,
-        expression: TypedExprID,
-    ) {
-        self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::CastOperand)
-            .await;
+        let cause_id = self.constraint_solver.provenance.insert_root_cause(
+            NumericOperandOrigin::builder()
+                .operation(operation)
+                .operand(operand_ty.clone())
+                .span(self.span_of_expression(operand))
+                .build(),
+        );
+
+        let pending_constraint = PendingConstraint::builder()
+            .constraint(Constraint::TyRelate(TyRelate::new_invariant(operand_ty, required)))
+            .cause_id(cause_id)
+            .build();
+
+        self.push_constraint(pending_constraint).await;
     }
 
     pub async fn push_if_condition_constraint(

@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: while loop condition must be `bool`: expected `bool`, but found `{numeric}`
+[error]: while loop condition must be `bool`: expected `bool`, but found `int32`
   ╭▸ compiler/e2e/test/check/tast/while_condition/main.ray:2:11
   │
 2 │     while 1:

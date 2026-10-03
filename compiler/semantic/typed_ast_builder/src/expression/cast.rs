@@ -8,7 +8,7 @@ use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, cast::Cast};
 use crate::{
     bind::Bind,
     diagnostic::{Diagnostic, InvalidCastTarget},
-    tast_builder::TAstBuilder,
+    tast_builder::{TAstBuilder, constraint_solver::NumericOperation},
 };
 
 impl Bind<CastSyntax> for TAstBuilder {
@@ -57,8 +57,7 @@ impl TAstBuilder {
             return self.push_error_expression_with_expression_children(span, [operand]).await;
         }
 
-        let operand_ty = self.new_numeric_type_inference();
-        self.push_cast_operand_constraint(&operand_ty, operand).await;
+        self.push_numeric_operand_constraint(NumericOperation::Cast, operand).await;
 
         self.insert_expression(TypedExprKind::Cast(Cast::new(operand)), span, target).await
     }

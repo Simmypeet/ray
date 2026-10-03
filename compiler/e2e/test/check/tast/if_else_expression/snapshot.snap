@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: if expression condition must be `bool`: expected `bool`, but found `{numeric}`
+[error]: if expression condition must be `bool`: expected `bool`, but found `int32`
   ╭▸ compiler/e2e/test/check/tast/if_else_expression/main.ray:2:15
   │
 2 │     return if 1: 2 else: 3

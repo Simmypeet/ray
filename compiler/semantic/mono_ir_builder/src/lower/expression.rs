@@ -181,47 +181,9 @@ fn lower_literal(literal: &Literal, ty: &Interned<MonoType>) -> Constant {
                 panic!("numeric literal has a non-numeric MonoIR type")
             }
         },
-        Literal::NegatedNumeric(magnitude) => lower_negated_literal(*magnitude, ty),
         Literal::Float(digits) => lower_float_literal(digits, ty),
         Literal::Bool(value) => Constant::Bool(*value),
         Literal::String(value) => Constant::CStr(value.clone()),
-    }
-}
-
-/// Converts a negated numeric literal to the representation of its type. The
-/// typed AST builder only negates signed types, and rejects every literal
-/// whose negation does not fit in its type.
-#[allow(clippy::cast_precision_loss)]
-fn lower_negated_literal(magnitude: u128, ty: &Interned<MonoType>) -> Constant {
-    let negated = || {
-        let magnitude = i128::try_from(magnitude).unwrap_or_else(|_| {
-            panic!("negated numeric literal `-{magnitude}` should fit in its type")
-        });
-        -magnitude
-    };
-
-    match &**ty {
-        MonoType::Int8 => Constant::Int8(fit(negated())),
-        MonoType::Int16 => Constant::Int16(fit(negated())),
-        MonoType::Int32 => Constant::Int32(fit(negated())),
-        MonoType::Int64 => Constant::Int64(fit(negated())),
-        MonoType::Isize => Constant::Isize(fit(negated())),
-        MonoType::CInt => Constant::CInt(fit(negated())),
-        MonoType::Float32 => Constant::new_float32(-(magnitude as f32)),
-        MonoType::Float64 => Constant::new_float64(-(magnitude as f64)),
-        MonoType::Uint8
-        | MonoType::Uint16
-        | MonoType::Uint32
-        | MonoType::Uint64
-        | MonoType::Usize
-        | MonoType::Bool
-        | MonoType::CStr
-        | MonoType::OpaquePointer(_)
-        | MonoType::Pointer(_)
-        | MonoType::Aggregate(_)
-        | MonoType::FunctionPointer(_) => {
-            panic!("negated numeric literal has a non-signed MonoIR type")
-        }
     }
 }
 
@@ -263,7 +225,7 @@ fn lower_float_literal(digits: &str, ty: &Interned<MonoType>) -> Constant {
 
 /// Converts a numeric literal to the representation of its type. The typed AST
 /// builder rejects every literal that does not fit in its type.
-fn fit<T: TryFrom<V>, V: Copy + std::fmt::Display>(value: V) -> T {
+fn fit<T: TryFrom<i128>>(value: i128) -> T {
     T::try_from(value)
         .unwrap_or_else(|_| panic!("numeric literal `{value}` should fit in its type"))
 }

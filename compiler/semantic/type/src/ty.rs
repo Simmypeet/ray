@@ -121,16 +121,29 @@ impl Integer {
     /// `c_int` by `int32`, matching how their constants are represented after
     /// monomorphization.
     #[must_use]
-    pub const fn max_value(&self) -> u128 {
+    pub const fn max_value(&self) -> i128 {
         match self {
-            Self::Int8 => i8::MAX as u128,
-            Self::Int16 => i16::MAX as u128,
-            Self::Int32 | Self::CInt => i32::MAX as u128,
-            Self::Int64 | Self::Isize => i64::MAX as u128,
-            Self::Uint8 => u8::MAX as u128,
-            Self::Uint16 => u16::MAX as u128,
-            Self::Uint32 => u32::MAX as u128,
-            Self::Uint64 | Self::Usize => u64::MAX as u128,
+            Self::Int8 => i8::MAX as i128,
+            Self::Int16 => i16::MAX as i128,
+            Self::Int32 | Self::CInt => i32::MAX as i128,
+            Self::Int64 | Self::Isize => i64::MAX as i128,
+            Self::Uint8 => u8::MAX as i128,
+            Self::Uint16 => u16::MAX as i128,
+            Self::Uint32 => u32::MAX as i128,
+            Self::Uint64 | Self::Usize => u64::MAX as i128,
+        }
+    }
+
+    /// Returns the smallest value of this integer type, with the same
+    /// representation as [`Self::max_value`].
+    #[must_use]
+    pub const fn min_value(&self) -> i128 {
+        match self {
+            Self::Int8 => i8::MIN as i128,
+            Self::Int16 => i16::MIN as i128,
+            Self::Int32 | Self::CInt => i32::MIN as i128,
+            Self::Int64 | Self::Isize => i64::MIN as i128,
+            Self::Uint8 | Self::Uint16 | Self::Uint32 | Self::Uint64 | Self::Usize => 0,
         }
     }
 

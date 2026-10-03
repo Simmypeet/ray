@@ -31,13 +31,10 @@ impl ConstraintSet {
     }
 
     pub(super) fn failed_pending_constraints(&self) -> impl Iterator<Item = &PendingConstraint> {
-        self.errored_pending_constraints().chain(self.residual_constraints.iter())
-    }
-
-    /// The constraints that are known to fail, unlike the residual ones,
-    /// which may still be solved.
-    pub(super) fn errored_pending_constraints(&self) -> impl Iterator<Item = &PendingConstraint> {
-        self.errored_constraints.iter().map(|(_, pending)| pending)
+        self.errored_constraints
+            .iter()
+            .map(|(_, pending)| pending)
+            .chain(self.residual_constraints.iter())
     }
 }
 
@@ -439,16 +436,8 @@ impl TAstBuilder {
     /// Each type defaults according to the inference constraint of its latest
     /// representative: `int32` for a numeric or signed numeric type, and
     /// `float64` for a floating-point type.
-    ///
-    /// A type mentioned by an errored constraint is left undetermined, so the
-    /// error is reported against its constraint, e.g. `{signed numeric}`,
-    /// rather than against an arbitrary default.
     async fn default_numerics(&mut self) {
         let numerics = self.constraint_solver.take_recorded_numeric_inferences();
-        let excluded = self.constraint_solver.provenance.inferences_in(
-            self.constraint_solver.constraint_set.errored_pending_constraints(),
-            &self.engine,
-        );
 
         let engine = self.engine.clone();
         self.constraint_solver
@@ -456,10 +445,6 @@ impl TAstBuilder {
             .default_unbound_inferences(
                 numerics,
                 |inference| {
-                    if excluded.contains(inference) {
-                        return None;
-                    }
-
                     inference
                         .constraint()
                         .default_primitive()
@@ -514,11 +499,6 @@ impl TAstBuilder {
 
     pub fn new_numeric_type_inference(&mut self) -> Interned<Ty> {
         let inference = self.gen_infer(TyKind::Star, InferenceConstraint::Numeric);
-        self.engine.intern(Ty::Inference(inference))
-    }
-
-    pub fn new_signed_numeric_type_inference(&mut self) -> Interned<Ty> {
-        let inference = self.gen_infer(TyKind::Star, InferenceConstraint::SignedNumeric);
         self.engine.intern(Ty::Inference(inference))
     }
 

@@ -213,8 +213,8 @@ abstract_tree::abstract_tree! {
     }
 }
 
-// `-x.0` negates `x.0`: a prefix operator binds looser than every postfix
-// operator.
+// `-x.0` negates `x.0`, and `move x.0` moves `x.0`: a prefix operator binds
+// looser than every postfix operator.
 abstract_tree::abstract_tree! {
     #[derive(
         Debug,
@@ -248,7 +248,10 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub enum PrefixOperator {
+        /// Negates a signed numeric operand.
         Negate(Punctuation = '-'),
+        /// Moves out of the operand, even when its type is `Copy`.
+        Move(Keyword = expect::Keyword::Move),
     }
 }
 
@@ -373,28 +376,7 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(
-        Debug,
-        Clone,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Hash,
-        StableHash,
-        Encode,
-        Decode
-    )]
-    /// Moves out of the operand, even when its type is `Copy`.
-    pub struct Move {
-        pub move_keyword: Keyword = expect::Keyword::Move,
-        pub operand: Postfix = ast::<Postfix>(),
-    }
-}
-
-abstract_tree::abstract_tree! {
 pub enum Leaf {
-        Move(Move = ast::<Move>()),
         StructInitialization(StructInitialization = ast::<StructInitialization>()),
         DirectCall(DirectCall = ast::<DirectCall>()),
         Identifier(Identifier = expect::Identifier),

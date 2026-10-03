@@ -1,13 +1,9 @@
 use std::num::IntErrorKind;
 
+use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
-use rayc_syntax::{
-    Numeric,
-    expression::{
-        Boolean, Literal as LiteralSyntax, NumericFraction, NumericLiteral, NumericSuffix,
-    },
-};
+use rayc_syntax::expression::{Boolean, Literal as LiteralSyntax, NumericLiteral, NumericSuffix};
 use rayc_type::ty::{Float, InferenceConstraint, Integer, Primitive, Ty};
 use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind, literal::Literal};
 
@@ -16,7 +12,7 @@ use crate::{
     diagnostic::{
         Diagnostic, EmbeddedNulString, FloatLiteralIntegerSuffix, NumericLiteralTooLarge,
     },
-    tast_builder::TAstBuilder,
+    tast_builder::{TAstBuilder, constraint_solver::NumericOperation},
 };
 
 impl Bind<LiteralSyntax> for TAstBuilder {
@@ -56,9 +52,9 @@ impl TAstBuilder {
     /// literal's type; otherwise the type is inferred, defaulting to `int32`
     /// for an integer literal and to `float64` for a floating-point literal.
     ///
-    /// `negated` tells whether the literal is the operand of a negation, as
-    /// in `-128i8`, so its value may be one more than the largest value of a
-    /// signed integer type.
+    /// When `negated` is set, the literal is the operand of a negation, as in
+    /// `-128i8`, and is bound as a single negative literal spanning `span`.
+    /// Its type must then be a signed numeric type.
     pub(crate) async fn bind_numeric_literal(
         &mut self,
         syn: &NumericLiteral,
@@ -69,29 +65,50 @@ impl TAstBuilder {
             return self.push_error_expression(span).await;
         };
 
-        match syn.fraction() {
-            Some(fraction) => self.bind_float_literal(syn, &numeric, &fraction, span).await,
-            None => self.bind_integer_literal(syn, &numeric, span, negated).await,
+        // The sign is part of the literal's digits, so a negated literal is
+        // parsed and range checked as a negative value.
+        let sign = if negated { "-" } else { "" };
+        let id = if let Some(fraction) = syn.fraction() {
+            let Some(fraction_digits) = fraction.numeric() else {
+                return self.push_error_expression(span).await;
+            };
+            let digits = format!("{sign}{}.{}", &*numeric.kind.0, &*fraction_digits.kind.0);
+            self.bind_float_literal(syn, digits, span).await
+        } else {
+            let digits = format!("{sign}{}", &*numeric.kind.0);
+            self.bind_integer_literal(syn, digits, span).await
+        };
+
+        // A negative literal of an unsigned type, such as `-1u32`, is reported
+        // as an invalid negation.
+        if negated {
+            self.push_numeric_operand_constraint(NumericOperation::Negation, id).await;
         }
+
+        id
     }
 
     /// Binds a numeric literal without a fractional part, such as `23`,
-    /// `23i8`, or `23f32`.
+    /// `-23i8`, or `23f32`.
     async fn bind_integer_literal(
         &mut self,
         syn: &NumericLiteral,
-        numeric: &Numeric,
+        digits: String,
         span: RelativeSpan,
-        negated: bool,
     ) -> TypedExprID {
-        let digits = numeric.kind.0.clone();
+        let digits: Interned<str> = self.engine().intern_unsized(digits);
 
-        let value = match digits.parse::<u128>() {
+        let value = match digits.parse::<i128>() {
             Ok(value) => value,
 
             // The literal exceeds every integer type, so it is reported right
             // away instead of by the deferred range check.
-            Err(error) if *error.kind() == IntErrorKind::PosOverflow => {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    IntErrorKind::PosOverflow | IntErrorKind::NegOverflow
+                ) =>
+            {
                 self.push_diagnostic(Diagnostic::NumericLiteralTooLarge(
                     NumericLiteralTooLarge::builder().literal(digits).span(span).build(),
                 ));
@@ -114,25 +131,19 @@ impl TAstBuilder {
 
         // The literal's type may still be an inference variable here, so its
         // range is checked once every type has been inferred.
-        self.require_numeric_literal_range(id, digits, value, negated);
+        self.require_numeric_literal_range(id, digits, value);
 
         id
     }
 
     /// Binds a numeric literal with a fractional part, such as `1.5` or
-    /// `1.5f32`.
+    /// `-1.5f32`.
     async fn bind_float_literal(
         &mut self,
         syn: &NumericLiteral,
-        numeric: &Numeric,
-        fraction: &NumericFraction,
+        digits: String,
         span: RelativeSpan,
     ) -> TypedExprID {
-        let Some(fraction_digits) = fraction.numeric() else {
-            return self.push_error_expression(span).await;
-        };
-        let digits = format!("{}.{}", &*numeric.kind.0, &*fraction_digits.kind.0);
-
         let ty = match syn.suffix() {
             Some(suffix) => {
                 let primitive = suffix_primitive(&suffix);

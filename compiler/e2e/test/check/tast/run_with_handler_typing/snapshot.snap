@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: mismatched types in variable assignment: expected `bool`, but found `{numeric}`
+[error]: mismatched types in variable assignment: expected `bool`, but found `int32`
   ╭▸ compiler/e2e/test/check/tast/run_with_handler_typing/main.ray:7:32
   │
 7 │         let body_value: bool = 1

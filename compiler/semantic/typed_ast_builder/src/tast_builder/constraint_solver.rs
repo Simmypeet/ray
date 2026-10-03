@@ -25,7 +25,7 @@ mod resolution_inference;
 mod solve;
 
 // re-exports
-pub use provenance::{EffectUnificationSource, SubtypeSource};
+pub use provenance::{EffectUnificationSource, NumericOperation, SubtypeSource};
 pub use resolution_inference::ResolutionInference;
 pub use solve::ConstraintError;
 

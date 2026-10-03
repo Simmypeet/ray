@@ -9,7 +9,7 @@ stderr:
 8 │     return invoke((x) -> x + 1, (true,))
   ╰╴                               ━━━━━━━━
 
-[error]: mismatched types in return expression: expected `bool`, but found `{numeric}`
+[error]: mismatched types in return expression: expected `bool`, but found `int32`
    ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:11:12
    │
 11 │     return invoke(() -> 42, ())

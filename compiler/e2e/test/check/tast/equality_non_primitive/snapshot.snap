@@ -3,13 +3,13 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: mismatched types in binary operation: expected `{equality comparable}`, but found `({numeric}, {numeric})`
+[error]: mismatched types in binary operation: expected `{equality comparable}`, but found `(int32, int32)`
   ╭▸ compiler/e2e/test/check/tast/equality_non_primitive/main.ray:2:11
   │
 2 │     return (1, 2) == (1, 2)
   ╰╴          ━━━━━━━
 
-[error]: mismatched types in binary operation: expected `{equality comparable}`, but found `({numeric}, {numeric})`
+[error]: mismatched types in binary operation: expected `{equality comparable}`, but found `(int32, int32)`
   ╭▸ compiler/e2e/test/check/tast/equality_non_primitive/main.ray:2:21
   │
 2 │     return (1, 2) == (1, 2)
@@ -51,7 +51,7 @@ stderr:
 11 │     return callback != callback
    ╰╴                       ━━━━━━━━
 
-[error]: mismatched types in binary operation: expected `bool`, but found `{numeric}`
+[error]: mismatched types in binary operation: expected `bool`, but found `int32`
    ╭▸ compiler/e2e/test/check/tast/equality_non_primitive/main.ray:14:20
    │
 14 │     return true == 1

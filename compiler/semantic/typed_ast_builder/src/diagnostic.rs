@@ -18,7 +18,7 @@ use rayc_type::{
 };
 
 use crate::tast_builder::constraint_solver::{
-    ConstraintError, EffectUnificationSource, SubtypeSource,
+    ConstraintError, EffectUnificationSource, NumericOperation, SubtypeSource,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
@@ -262,34 +262,24 @@ impl Report for NumericLiteralTooLarge {
 pub struct NumericLiteralOutOfRange {
     literal: Interned<str>,
     primitive: Primitive,
-    max: Option<u128>,
 
-    /// Whether the literal is the operand of a negation, in which case it is
-    /// reported against the smallest value of the type.
-    negated: bool,
+    /// The bound of the type that the literal exceeds, if it is an integer
+    /// type: the smallest value for a negative literal, and the largest value
+    /// otherwise.
+    bound: Option<i128>,
     span: RelativeSpan,
 }
 
 impl Report for NumericLiteralOutOfRange {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        let sign = if self.negated { "-" } else { "" };
         let mut message = format!(
-            "the numeric literal `{sign}{}` does not fit in type `{}`",
+            "the numeric literal `{}` does not fit in type `{}`",
             &*self.literal,
             self.primitive.keyword()
         );
-
-        // A negated literal of a signed integer type is bounded by the
-        // smallest value of the type, one past the negated largest value.
-        // An unsigned type has no negative values at all.
-        let bounded_below = self.negated
-            && matches!(self.primitive, Primitive::Integer(integer) if integer.is_signed());
-        if let Some(max) = self.max {
-            if bounded_below {
-                let _ = write!(message, ", whose minimum value is -{}", max + 1);
-            } else {
-                let _ = write!(message, ", whose maximum value is {max}");
-            }
+        if let Some(bound) = self.bound {
+            let kind = if bound < 0 { "minimum" } else { "maximum" };
+            let _ = write!(message, ", whose {kind} value is {bound}");
         }
 
         Rendered::builder()
@@ -321,6 +311,39 @@ impl Report for FloatLiteralIntegerSuffix {
                 Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
             )
             .help_message("use the `f32` or `f64` suffix, or cast the literal with `as`")
+            .build()
+    }
+}
+
+/// An operand that a numeric operation does not support, e.g. `-true` or
+/// `true as int32`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct InvalidNumericOperand {
+    operation: NumericOperation,
+    operand: Interned<Ty>,
+    span: RelativeSpan,
+}
+
+impl Report for InvalidNumericOperand {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let operand = self.operand.display(engine).await;
+        let (message, help) = match self.operation {
+            NumericOperation::Negation => (
+                format!("cannot negate a value of type `{operand}`"),
+                "only signed integer and floating-point types can be negated",
+            ),
+            NumericOperation::Cast => (
+                format!("cannot cast a value of type `{operand}`"),
+                "only integer and floating-point types can be cast",
+            ),
+        };
+
+        Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .help_message(help)
             .build()
     }
 }
@@ -906,8 +929,6 @@ impl Report for ResidualSubtype {
             SubtypeSource::ClosureCaptures => "incompatible closure capture types",
             SubtypeSource::VariableAssignment => "mismatched types in variable assignment",
             SubtypeSource::BinaryOperator => "mismatched types in binary operation",
-            SubtypeSource::NegationOperand => "mismatched type in negation",
-            SubtypeSource::CastOperand => "mismatched type in cast",
             SubtypeSource::IfCondition => "if expression condition must be `bool`",
             SubtypeSource::WhileCondition => "while loop condition must be `bool`",
             SubtypeSource::IfBranch => "mismatched types in if expression branches",
@@ -1048,6 +1069,7 @@ pub enum Diagnostic {
     NumericLiteralTooLarge(NumericLiteralTooLarge),
     FloatLiteralIntegerSuffix(FloatLiteralIntegerSuffix),
     InvalidCastTarget(InvalidCastTarget),
+    InvalidNumericOperand(InvalidNumericOperand),
     MissingEffectOperationHandler(MissingEffectOperationHandler),
     ExtraneousEffectOperationHandler(ExtraneousEffectOperationHandler),
     DuplicateEffectOperationHandler(DuplicateEffectOperationHandler),
@@ -1110,6 +1132,7 @@ impl Report for Diagnostic {
             Self::NumericLiteralTooLarge(literal) => literal.report(engine).await,
             Self::FloatLiteralIntegerSuffix(literal) => literal.report(engine).await,
             Self::InvalidCastTarget(cast) => cast.report(engine).await,
+            Self::InvalidNumericOperand(operand) => operand.report(engine).await,
             Self::MissingEffectOperationHandler(handler) => handler.report(engine).await,
             Self::ExtraneousEffectOperationHandler(handler) => handler.report(engine).await,
             Self::DuplicateEffectOperationHandler(handler) => handler.report(engine).await,

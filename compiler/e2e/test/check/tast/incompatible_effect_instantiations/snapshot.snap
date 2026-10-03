@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: incompatible effect rows `{State[{numeric}]}` and `{State[bool]}`
+[error]: incompatible effect rows `{State[int32]}` and `{State[bool]}`
    ╭▸ compiler/e2e/test/check/tast/incompatible_effect_instantiations/main.ray:20:22
    │
 17 │ def main() -> ():
@@ -12,7 +12,7 @@ stderr:
 20 │     let conflict = (((withPolyState(varInt), ()), (withPolyState(varBool), ())))
    │                      ┯┬────────────────────━━━━━   ────────────────────── effect `{State[bool]}` introduced here
    │                      ││
-   │                      │effect `{State[{numeric}]}` introduced here
+   │                      │effect `{State[int32]}` introduced here
    ╰╴                     these effect rows cannot be composed
 
 [error]: Compilation aborted due to 1 error(s)
