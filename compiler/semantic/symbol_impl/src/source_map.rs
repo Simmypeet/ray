@@ -7,7 +7,7 @@ use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_extend::extend;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_source_file::{FilePathKey, GlobalSourceID, SourceFile, get_stable_path_id};
-use rayc_target::{TargetID, get_invocation_arguments};
+use rayc_target::TargetID;
 
 use crate::table;
 
@@ -18,13 +18,9 @@ async fn file_path_executor(
 ) -> Interned<Path> {
     let table = engine.query(&table::Key { target_id: id.target_id }).await;
 
-    if table.source_id() == Some(id.id) {
-        let args = engine.get_invocation_arguments(id.target_id).await;
-
-        engine.intern_unsized(args.file_path().to_path_buf())
-    } else {
-        todo!()
-    }
+    table
+        .get_source_file_path(id.id)
+        .expect("a source ID is only created for a source file loaded into its target")
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -43,13 +39,16 @@ pub struct SourceMap(pub HashMap<GlobalSourceID, SourceFile>);
 pub async fn create_source_map(self: &TrackedEngine, target_id: TargetID) -> SourceMap {
     let mut map = HashMap::new();
     for target_id in [target_id, TargetID::CORE] {
-        let args = self.get_invocation_arguments(target_id).await;
-        let path: Interned<Path> = self.intern_unsized(args.file_path().to_path_buf());
-        if let (Ok(file), Ok(id)) = (
-            self.query(&rayc_source_file::Key { path: path.clone(), target_id }).await,
-            self.get_stable_path_id(path, target_id).await,
-        ) {
-            map.insert(target_id.make_global(id), file);
+        let table = self.query(&table::Key { target_id }).await;
+
+        // every file loaded into the table has been read successfully
+        for path in table.source_file_paths() {
+            if let (Ok(file), Ok(id)) = (
+                self.query(&rayc_source_file::Key { path: path.clone(), target_id }).await,
+                self.get_stable_path_id(path.clone(), target_id).await,
+            ) {
+                map.insert(target_id.make_global(id), file);
+            }
         }
     }
     SourceMap(map)

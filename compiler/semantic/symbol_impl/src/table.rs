@@ -21,6 +21,7 @@ use rayc_syntax::{
     effect_row::EffectRowAnnotation,
     given::GivenParameterList,
     kind::KindAscription,
+    module::ModuleContent,
     path::Path as SyntaxPath,
     statement::Block,
     r#struct::StructBody,
@@ -89,7 +90,7 @@ pub struct Table {
     names: Map<Interned<str>>,
 
     syntaxes: SyntaxTable,
-    source_id: Option<LocalSourceID>,
+    source_files: FxHashMap<LocalSourceID, Interned<Path>>,
 
     diagnostics: Vec<Diagnostic>,
 }
@@ -145,6 +146,11 @@ impl MemberBuilder {
             redef_errors: Vec::new(),
         }
     }
+
+    /// Checks whether a member with the given name has already been
+    /// registered.
+    #[must_use]
+    pub(crate) fn has_member(&self, name: &str) -> bool { self.member.get_by_name(name).is_some() }
 
     #[must_use]
     pub(crate) fn child(&self, current_id: GlobalSymbolID, name: Interned<str>) -> Self {
@@ -264,8 +270,66 @@ impl Table {
         self.syntaxes.kind_ascriptions.get(&symbol_id).cloned().unwrap()
     }
 
+    /// Returns the path of the loaded source file with the given ID, if the
+    /// file belongs to this target.
     #[must_use]
-    pub const fn source_id(&self) -> Option<LocalSourceID> { self.source_id }
+    pub fn get_source_file_path(&self, source_id: LocalSourceID) -> Option<Interned<Path>> {
+        self.source_files.get(&source_id).cloned()
+    }
+
+    /// Returns the paths of every source file loaded into this target: the
+    /// root file and the files of its file modules.
+    pub fn source_file_paths(&self) -> impl Iterator<Item = &Interned<Path>> {
+        self.source_files.values()
+    }
+
+    /// Loads the module content of the source file at `path` and records the
+    /// file as part of this target.
+    ///
+    /// Loading failures are reported as diagnostics, pointing at
+    /// `submodule_span` when the file is loaded for a file module declaration.
+    pub(crate) async fn load_source_file(
+        &mut self,
+        path: Interned<Path>,
+        target_id: TargetID,
+        submodule_span: Option<RelativeSpan>,
+        engine: &TrackedEngine,
+    ) -> Option<ModuleContent> {
+        let report_failure = |table: &mut Self, error_message: String| {
+            table.diagnostics.push(Diagnostic::SourceFileLoadFail(SourceFileLoadFail {
+                error_message,
+                path: path.clone(),
+                submodule_span,
+            }));
+        };
+
+        // read the file first so that a missing or unreadable file is reported
+        // with its IO error
+        if let Err(error) =
+            engine.query(&rayc_source_file::Key { path: path.clone(), target_id }).await
+        {
+            report_failure(self, error.to_string());
+            return None;
+        }
+
+        // the token tree requires the file to have a stable ID, which fails
+        // when the file lies outside of the target directory
+        match engine.get_stable_path_id(path.clone(), target_id).await {
+            Ok(source_id) => {
+                self.source_files.insert(source_id, path.clone());
+            }
+            Err(error) => {
+                report_failure(self, error.to_string());
+                return None;
+            }
+        }
+
+        engine
+            .query(&rayc_syntax::Key { path, target_id })
+            .await
+            .expect("the source file has been loaded successfully")
+            .0
+    }
 
     fn insert_member_as_root_module(&mut self, member: MemberBuilder, engine: &TrackedEngine) {
         self.insert_info(
@@ -473,36 +537,24 @@ pub async fn table_executor(&Key { target_id }: &Key, engine: &TrackedEngine) ->
     let mut table = Table::default();
 
     let arg = engine.get_invocation_arguments(target_id).await;
-    let internred_path: Interned<Path> = engine.intern_unsized(arg.file_path().to_path_buf());
+    let root_path: Interned<Path> = engine.intern_unsized(arg.file_path().to_path_buf());
 
     let target_name = arg.target_name();
-
-    let syntax_key =
-        engine.query(&rayc_syntax::Key { path: internred_path.clone(), target_id }).await;
-
-    let stable_path_id = engine.get_stable_path_id(internred_path.clone(), target_id).await.ok();
 
     let mut member =
         MemberBuilder::new_root_module_id(target_id, engine.intern_unsized(target_name), engine)
             .await;
 
-    match syntax_key {
-        Ok((Some(syntax), _)) => {
-            table.register_module_members(&mut member, &syntax, engine).await;
-        }
+    // the root module owns the directory containing the root file; its file
+    // modules are looked up there
+    let root_directory = root_path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
 
-        Ok((None, _)) => {}
-
-        Err(err) => {
-            table.diagnostics.push(Diagnostic::SourceFileLoadFail(SourceFileLoadFail {
-                error_message: err.to_string(),
-                path: internred_path,
-                submodule_span: None,
-            }));
-        }
+    if let Some(module_content) = table.load_source_file(root_path, target_id, None, engine).await {
+        table
+            .register_module_members(&mut member, module_content.members(), &root_directory, engine)
+            .await;
     }
 
-    table.source_id = stable_path_id;
     table.insert_member_as_root_module(member, engine);
 
     Arc::new(table)

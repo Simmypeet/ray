@@ -102,7 +102,7 @@ async fn test(file_path: &Path) {
     // Convert crlf to lf.
     settings.add_filter(r"\r\n", "\n");
     // Replace the IO error message with a generic one.
-    settings.add_filter(r": [^(\r\n]*\(os error (\d+)\)", ": general IO error (os error $1)");
+    settings.add_filter(r": [^(\r\n:]*\(os error (\d+)\)", ": general IO error (os error $1)");
 
     let full_path = std::fs::canonicalize(file_path).unwrap();
     settings.set_snapshot_path(full_path.parent().unwrap());

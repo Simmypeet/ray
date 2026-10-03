@@ -11,7 +11,7 @@ use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID, get_target_root_module_id,
     member::{get_member_by_name, try_get_members},
-    parent::get_closest_module_id,
+    parent::{get_closest_module_id, get_parent_global},
     symbol_kind::{SymbolKind, get_symbol_kind},
 };
 use rayc_syntax::path::{Path, PathRoot};
@@ -73,6 +73,15 @@ impl Resolver<'_> {
 
     pub(crate) fn report_invalid_this_path(&self, span: RelativeSpan) {
         self.handler.receive(Diagnostic::InvalidThisPath(crate::InvalidThisPath::new(span)));
+    }
+
+    pub(crate) fn report_super_path_in_root_module(&self, span: RelativeSpan) {
+        self.handler
+            .receive(Diagnostic::SuperPathInRootModule(crate::SuperPathInRootModule::new(span)));
+    }
+
+    pub(crate) async fn find_module_path_root(&self, root: &PathRoot) -> Option<GlobalSymbolID> {
+        find_module_path_root(self.engine, self.site, root).await
     }
 
     pub(crate) fn report_named_trait_type_projection(&self, span: RelativeSpan) {
@@ -404,14 +413,43 @@ pub(crate) async fn find_path_target(
     site: GlobalSymbolID,
     path: &Path,
 ) -> Option<GlobalSymbolID> {
-    let Some(PathRoot::Segment(_)) = path.root() else { return None };
+    let root = path.root()?;
+    let mut target = match root {
+        PathRoot::Segment(_) => None,
+        PathRoot::Target(_) | PathRoot::Super(_) => {
+            Some(find_module_path_root(engine, site, &root).await?)
+        }
+        PathRoot::This(_) => return None,
+    };
 
-    let mut target = None;
     for segment in path.segments() {
         let name = segment.identifier()?.kind.0;
         target = Some(find_path_symbol(engine, site, target, &name).await?);
     }
     target
+}
+
+/// Finds the module that a `target` or `super` path root names from `site`.
+///
+/// `target` names the root module of the site's target, and `super` names the
+/// parent of the module enclosing the site. Returns `None` for `super` in the
+/// root module, which has no parent, and for the other path roots, which do
+/// not name a module.
+pub(crate) async fn find_module_path_root(
+    engine: &TrackedEngine,
+    site: GlobalSymbolID,
+    root: &PathRoot,
+) -> Option<GlobalSymbolID> {
+    match root {
+        PathRoot::Target(_) => {
+            Some(site.target_id.make_global(engine.get_target_root_module_id(site.target_id).await))
+        }
+        PathRoot::Super(_) => {
+            let closest_module_id = engine.get_closest_module_id(site).await;
+            engine.get_parent_global(site.target_id.make_global(closest_module_id)).await
+        }
+        PathRoot::This(_) | PathRoot::Segment(_) => None,
+    }
 }
 
 /// Finds the symbol named `name` inside `previous`, or, for the first segment

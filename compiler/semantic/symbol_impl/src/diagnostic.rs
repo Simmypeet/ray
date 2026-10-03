@@ -19,7 +19,7 @@ use rayc_symbol::{
     source_map::to_absolute_span,
     span::get_span,
 };
-use rayc_target::{TargetID, get_invocation_arguments};
+use rayc_target::TargetID;
 
 use crate::table;
 
@@ -233,26 +233,26 @@ async fn rendered_executor(
     &RenderedKey(target_id): &RenderedKey,
     engine: &TrackedEngine,
 ) -> Interned<[Rendered<ByteIndex>]> {
-    let arg = engine.get_invocation_arguments(target_id).await;
-    let internred_path: Interned<Path> = engine.intern_unsized(arg.file_path().to_path_buf());
-
     let table = engine.query(&table::Key { target_id }).await;
 
     let mut rendered = Vec::new();
 
-    if let Ok((_, errors)) =
-        engine.query(&rayc_lexical::Key { path: internred_path.clone(), target_id }).await
-    {
-        for error in errors.iter() {
-            rendered.push(error.report(engine).await);
+    // the lexical and syntax errors of every source file in the target
+    for path in table.source_file_paths() {
+        if let Ok((_, errors)) =
+            engine.query(&rayc_lexical::Key { path: path.clone(), target_id }).await
+        {
+            for error in errors.iter() {
+                rendered.push(error.report(engine).await);
+            }
         }
-    }
 
-    if let Ok((_, errors)) =
-        engine.query(&rayc_syntax::Key { path: internred_path, target_id }).await
-    {
-        for error in errors.iter() {
-            rendered.push(error.report(engine).await);
+        if let Ok((_, errors)) =
+            engine.query(&rayc_syntax::Key { path: path.clone(), target_id }).await
+        {
+            for error in errors.iter() {
+                rendered.push(error.report(engine).await);
+            }
         }
     }
 

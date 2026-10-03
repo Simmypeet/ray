@@ -1,0 +1,10 @@
+module shapes:
+    def area() -> int32:
+        return 1
+
+# A module shares its namespace with the other items of its parent.
+struct shapes:
+    width: int32
+
+def main() -> int32:
+    return shapes.area()

@@ -44,6 +44,8 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub enum PathRoot {
         This(Keyword = expect::Keyword::This),
+        Target(Keyword = expect::Keyword::Target),
+        Super(Keyword = expect::Keyword::Super),
         Segment(PathSegment = ast::<PathSegment>())
     }
 }
@@ -69,7 +71,7 @@ impl Path {
     pub fn segments(&self) -> impl Iterator<Item = PathSegment> {
         let root = match self.root() {
             Some(PathRoot::Segment(segment)) => Some(segment),
-            Some(PathRoot::This(_)) | None => None,
+            Some(PathRoot::This(_) | PathRoot::Target(_) | PathRoot::Super(_)) | None => None,
         };
         root.into_iter().chain(self.rest().filter_map(|part| part.segment()))
     }

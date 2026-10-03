@@ -1,5 +1,7 @@
+use std::path::Path;
+
 use rayc_qbice::TrackedEngine;
-use rayc_source_file::SourceElement;
+use rayc_source_file::{SOURCE_FILE_EXTENSION, SourceElement};
 use rayc_symbol::symbol_kind::SymbolKind;
 use rayc_syntax::{
     Passable,
@@ -8,7 +10,7 @@ use rayc_syntax::{
     extern_def::ExternDef,
     instance::{Instance, InstanceAssociatedType, InstanceMember},
     marker::{Marker, MarkerImplementation},
-    module::ModuleMember,
+    module::{Module, ModuleMember},
     r#struct::Struct,
     r#trait::{Trait, TraitAssociatedType, TraitMember},
 };
@@ -524,13 +526,81 @@ impl Table {
         .await;
     }
 
+    /// Registers a submodule declared in the module of `member_builder`, whose
+    /// directory is `directory`.
+    ///
+    /// Like in Rust, every module owns a directory named after it inside its
+    /// parent's directory, and the root module owns the directory of the root
+    /// file. A file module `name` declared in a module owning the directory
+    /// `dir` is loaded from `dir/name.ray`.
+    async fn register_module(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        module: Module,
+        directory: &Path,
+        engine: &TrackedEngine,
+    ) {
+        let Some(ident) = module.name() else {
+            return;
+        };
+        let name = ident.kind.0.clone();
+        let redefined = member_builder.has_member(&name);
+        let module_id = self
+            .insert_symbol(
+                member_builder,
+                Infos::builder()
+                    .symbol_kind(SymbolKind::Module)
+                    .name(name.clone())
+                    .span(ident.span)
+                    .build(),
+                engine,
+            )
+            .await;
+
+        let module_directory = directory.join(name.as_ref());
+        let mut module_members = member_builder.child(module_id, name.clone());
+
+        if let Some(body) = module.body() {
+            // an inline module defines its members in its body
+            Box::pin(self.register_module_members(
+                &mut module_members,
+                body.members(),
+                &module_directory,
+                engine,
+            ))
+            .await;
+        } else if !redefined {
+            // a file module loads its members from its file. A redefined
+            // module would load the same file again, so it is left empty.
+            let path = engine.intern_unsized(
+                directory.join(format!("{}.{SOURCE_FILE_EXTENSION}", name.as_ref())),
+            );
+            let module_content =
+                self.load_source_file(path, module_id.target_id, Some(ident.span), engine).await;
+
+            if let Some(module_content) = module_content {
+                Box::pin(self.register_module_members(
+                    &mut module_members,
+                    module_content.members(),
+                    &module_directory,
+                    engine,
+                ))
+                .await;
+            }
+        }
+
+        self.insert_symbol_members(module_id.id, module_members, engine);
+    }
+
+    /// Registers the members of a module whose directory is `directory`.
     pub(crate) async fn register_module_members(
         &mut self,
         member_builder: &mut MemberBuilder,
-        module_content: &rayc_syntax::module::ModuleContent,
+        members: impl Iterator<Item = Passable<ModuleMember>>,
+        directory: &Path,
         engine: &TrackedEngine,
     ) {
-        for member in module_content.members() {
+        for member in members {
             let Passable::Ast(member) = member else {
                 continue;
             };
@@ -564,6 +634,9 @@ impl Table {
                         engine,
                     )
                     .await;
+                }
+                ModuleMember::Module(module) => {
+                    self.register_module(member_builder, module.clone(), directory, engine).await;
                 }
             }
         }

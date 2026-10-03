@@ -1,0 +1,4 @@
+def square(side: int32) -> int32:
+    # `target` names the root module of the target.
+    target.puts("shapes")
+    return side * side

@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: `super` cannot be used in the root module, which has no parent module
+  ╭▸ compiler/e2e/test/check/module/module_super_in_root/main.ray:6:12
+  │
+6 │     return super.helper()
+  ╰╴           ━━━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

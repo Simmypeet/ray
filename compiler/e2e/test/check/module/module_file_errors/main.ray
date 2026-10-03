@@ -1,0 +1,9 @@
+module inner:
+    def helper() -> int32:
+        return 1
+
+    # Loaded from `inner/broken.ray`.
+    module broken
+
+def main():
+    let _ = inner.broken.value() + inner.broken.other()
