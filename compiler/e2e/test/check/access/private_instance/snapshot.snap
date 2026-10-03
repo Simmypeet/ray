@@ -1,0 +1,27 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: no implicit instance found: `main.Describe[int32]`
+   ╭▸ compiler/e2e/test/check/access/private_instance/main.ray:22:15
+   │
+22 │     let int = Describe.describe(number)
+   ╰╴              ━━━━━━━━━━━━━━━━━
+
+[error]: instance `DescribeInt` is not accessible here
+   ╭▸ compiler/e2e/test/check/access/private_instance/main.ray:23:28
+   │
+ 7 │     inst DescribeInt for super.Describe[int32]:
+   │          ─────────── `DescribeInt` is declared here
+   ‡
+23 │     let explicit = numbers.DescribeInt.describe(number)
+   │                            ━━━━━━━━━━━ `DescribeInt` is not accessible here
+   │
+   ╰ help: `DescribeInt` is only accessible within `main.numbers`; declare it with `pub` to make it public
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

@@ -6,12 +6,14 @@ use rayc_parser::{
 
 use crate::{
     Identifier, Keyword,
+    access_modifier::AccessModifier,
     def::{ParameterList, ReturnType},
 };
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct ExternDef {
+        pub access_modifier: AccessModifier = ast::<AccessModifier>().optional(),
         pub extern_keyword: Keyword = expect::Keyword::Extern,
         pub def_keyword: Keyword = expect::Keyword::Def,
         pub name: Identifier = expect::Identifier,

@@ -5,7 +5,7 @@ use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::In
 use rayc_arena::{ID, OrderedArena};
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
-use rayc_symbol::GlobalSymbolID;
+use rayc_symbol::{GlobalSymbolID, accessibility::Accessibility};
 use rayc_type::ty::Ty;
 
 /// A resolved field declared by a struct.
@@ -14,6 +14,7 @@ pub struct Field {
     name: Interned<str>,
     span: RelativeSpan,
     ty: Interned<Ty>,
+    accessibility: Accessibility,
 }
 
 impl Field {
@@ -25,6 +26,10 @@ impl Field {
 
     #[must_use]
     pub const fn ty(&self) -> &Interned<Ty> { &self.ty }
+
+    /// Returns from where the field can be accessed.
+    #[must_use]
+    pub const fn accessibility(&self) -> Accessibility { self.accessibility }
 }
 
 pub type FieldID = ID<Field>;

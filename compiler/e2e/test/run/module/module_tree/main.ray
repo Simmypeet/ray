@@ -2,12 +2,12 @@ extern def puts(message: cstr) -> c_int
 
 # An inline module defines its members in its body.
 module greeting:
-    def hello():
+    pub def hello():
         # `super` names the parent module.
         super.puts("hello from greeting")
 
-    module nested:
-        def hello():
+    pub module nested:
+        pub def hello():
             target.puts("hello from greeting.nested")
             # `super` names `greeting` here.
             super.hello()

@@ -1,3 +1,4 @@
+pub mod accessibility;
 pub mod associated_type_kind;
 pub mod capture;
 pub mod constraint;

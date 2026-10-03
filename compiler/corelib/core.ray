@@ -1,21 +1,21 @@
-trait Def[f]:
-    type Args
-    type Return
-    type Effect: Effect
+pub trait Def[f]:
+    pub type Args
+    pub type Return
+    pub type Effect: Effect
 
-    def call(fn: f, a: this.Args) -> this.Return \ this.Effect
+    pub def call(fn: f, a: this.Args) -> this.Return \ this.Effect
 
 
-marker Copy
+pub marker Copy
 
 
 impl[t] Copy for *t
 impl[t] Copy for *mut t
 
 
-trait Drop[t]:
-    def drop(self: t)
+pub trait Drop[t]:
+    pub def drop(self: t)
 
 
-struct NoDrop[t]:
-    value: t
+pub struct NoDrop[t]:
+    pub value: t

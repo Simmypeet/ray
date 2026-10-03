@@ -38,6 +38,7 @@ pub enum Diagnostic {
     InvalidDefDeclaration(InvalidDefDeclaration),
     InvalidEffectOperationDeclaration(InvalidEffectOperationDeclaration),
     InvalidAttribute(InvalidAttribute),
+    InvalidAccessModifier(InvalidAccessModifier),
 }
 
 impl Report for Diagnostic {
@@ -48,6 +49,7 @@ impl Report for Diagnostic {
             Self::InvalidDefDeclaration(diagnostic) => diagnostic.report(engine).await,
             Self::InvalidEffectOperationDeclaration(diagnostic) => diagnostic.report(engine).await,
             Self::InvalidAttribute(diagnostic) => diagnostic.report(engine).await,
+            Self::InvalidAccessModifier(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -87,6 +89,50 @@ impl Report for InvalidAttribute {
         Rendered::builder()
             .message(message)
             .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
+    }
+}
+
+/// The kind of declaration that can't have an access modifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum InvalidAccessModifierKind {
+    /// An instance member has the accessibility of the trait member it
+    /// implements.
+    InstanceMember,
+
+    /// A marker implementation has no name to be referred to by.
+    MarkerImplementation,
+}
+
+/// An access modifier written on a declaration that can't have one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub struct InvalidAccessModifier {
+    kind: InvalidAccessModifierKind,
+    span: RelativeSpan,
+}
+
+impl InvalidAccessModifier {
+    pub(crate) const fn new(kind: InvalidAccessModifierKind, span: RelativeSpan) -> Self {
+        Self { kind, span }
+    }
+}
+
+impl Report for InvalidAccessModifier {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let (message, help_message) = match self.kind {
+            InvalidAccessModifierKind::InstanceMember => (
+                "an instance member cannot have an access modifier",
+                "an instance member has the accessibility of the trait member it implements",
+            ),
+            InvalidAccessModifierKind::MarkerImplementation => (
+                "a marker implementation cannot have an access modifier",
+                "a marker implementation applies wherever its marker is accessible",
+            ),
+        };
+        Rendered::builder()
+            .message(message)
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .help_message(help_message)
             .build()
     }
 }

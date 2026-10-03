@@ -1,16 +1,15 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-assertion_line: 112
 expression: run
 ---
 stderr:
-[error]: unexpected `extern` keyword, expected `def` keyword, `type` keyword
+[error]: unexpected `extern` keyword, expected `def` keyword, `type` keyword, `pub` keyword
   ╭▸ compiler/e2e/test/check/ffi/invalid_member_syntax/main.ray:2:5
   │
 2 │     extern def invoke() -> c_int
   ╰╴    ━━━━━━
 
-[error]: unexpected `extern` keyword, expected `def` keyword, `type` keyword
+[error]: unexpected `extern` keyword, expected `def` keyword, `type` keyword, `pub` keyword
   ╭▸ compiler/e2e/test/check/ffi/invalid_member_syntax/main.ray:5:5
   │
 5 │     extern def invoke() -> c_int:

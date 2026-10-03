@@ -7,6 +7,7 @@ use rayc_parser::{
 
 use crate::{
     Identifier, Keyword, Passable,
+    access_modifier::AccessModifier,
     def::Def,
     effect::Effect,
     extern_def::ExternDef,
@@ -48,6 +49,7 @@ abstract_tree::abstract_tree! {
     /// file `name.ray` in the directory owned by the enclosing module.
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct Module {
+        pub access_modifier: AccessModifier = ast::<AccessModifier>().optional(),
         pub module_keyword: Keyword = expect::Keyword::Module,
         pub name: Identifier = expect::Identifier,
         pub body: ModuleBody = ast::<ModuleBody>().optional()

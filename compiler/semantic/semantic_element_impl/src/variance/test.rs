@@ -12,6 +12,7 @@ use rayc_semantic_element::{
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::{
     GlobalSymbolID, SymbolID,
+    accessibility::Accessibility,
     member::{Key as MemberKey, Member},
     symbol_kind::{AllEffectIDs, AllNominalTypeIDs},
 };
@@ -121,7 +122,15 @@ impl Declarations {
         let mut body = StructBody::new();
         for (index, ty) in fields.into_iter().enumerate() {
             let name = self.tracked.intern_unsized(format!("field{index}"));
-            body.insert(Field::builder().name(name).span(span()).ty(ty).build()).unwrap();
+            body.insert(
+                Field::builder()
+                    .name(name)
+                    .span(span())
+                    .ty(ty)
+                    .accessibility(Accessibility::Public)
+                    .build(),
+            )
+            .unwrap();
         }
         self.struct_bodies.insert(StructBodyKey { symbol_id }, self.tracked.intern(body));
         self.structs.push(symbol_id.id);

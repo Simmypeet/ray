@@ -1,6 +1,7 @@
 use rayc_semantic_element::all_instance_implements_trait::get_all_instance_implements_trait;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
+    accessibility::is_symbol_accessible_from,
     constraint::outlives::OutlivesConstraints,
     poly_var::{GlobalPolyVarID, PolyVarID, PolyVarMap, get_poly_var_map},
     subst::Subst,
@@ -76,6 +77,11 @@ pub(super) async fn collect(
 
     let mut candidates = Vec::new();
     for instance_id in instance_ids.iter().copied() {
+        // Only an instance accessible from the site is resolved implicitly.
+        if !engine.is_symbol_accessible_from(instance_id, solver.site()).await {
+            continue;
+        }
+
         let Some(head) = engine.get_instance_trait_ref(instance_id).await else {
             continue;
         };

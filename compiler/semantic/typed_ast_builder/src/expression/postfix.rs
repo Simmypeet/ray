@@ -1,5 +1,7 @@
-use rayc_semantic_element::struct_body::get_struct_body;
+use rayc_lexical::tree::RelativeSpan;
+use rayc_semantic_element::struct_body::{Field, get_struct_body};
 use rayc_source_file::SourceElement;
+use rayc_symbol::GlobalSymbolID;
 use rayc_syntax::expression::{
     Deref as DerefSyntax, FieldAccess as FieldAccessSyntax, Postfix, PostfixOperator,
     RefOf as RefOfSyntax, TupleIndex as TupleIndexSyntax,
@@ -19,9 +21,9 @@ use rayc_typed_ast::typed_expr::{
 use crate::{
     bind::Bind,
     diagnostic::{
-        Diagnostic, ExpectedPointerType, ExpectedStructType, ExpectedTupleType, LvalueOperation,
-        OutOfBoundsTupleIndex, RawPointerDerefOutsideUnsafe, TypeMustBeKnownAtThisPoint,
-        UnknownStructField,
+        Diagnostic, ExpectedPointerType, ExpectedStructType, ExpectedTupleType,
+        InaccessibleStructField, LvalueOperation, OutOfBoundsTupleIndex,
+        RawPointerDerefOutsideUnsafe, TypeMustBeKnownAtThisPoint, UnknownStructField,
     },
     tast_builder::TAstBuilder,
 };
@@ -62,6 +64,31 @@ impl Bind<Postfix> for TAstBuilder {
 }
 
 impl TAstBuilder {
+    /// Reports the field of the struct `struct_id` named at `span` if it is
+    /// not accessible from the definition being built.
+    ///
+    /// The field is still bound, so that the rest of the body is checked.
+    pub(crate) async fn check_field_accessibility(
+        &mut self,
+        struct_id: GlobalSymbolID,
+        field: &Field,
+        span: RelativeSpan,
+    ) {
+        if field.accessibility().is_accessible_from(self.current_def_id(), self.engine()).await {
+            return;
+        }
+
+        self.push_diagnostic(Diagnostic::InaccessibleStructField(
+            InaccessibleStructField::builder()
+                .struct_id(struct_id)
+                .name(field.name().clone())
+                .span(span)
+                .field_span(field.span())
+                .accessibility(field.accessibility())
+                .build(),
+        ));
+    }
+
     async fn build_field_access(
         &mut self,
         bound: TypedExprID,
@@ -99,6 +126,8 @@ impl TAstBuilder {
             ));
             return None;
         };
+
+        self.check_field_accessibility(st.symbol_id(), field, name.span).await;
 
         let subst = st.create_subst(self.engine()).await;
         let field_ty = field.ty().apply_subst_or_clone(&subst, self.engine());

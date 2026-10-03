@@ -3,7 +3,7 @@ module inner:
         return 1
 
     # Loaded from `inner/broken.ray`.
-    module broken
+    pub module broken
 
 def main():
     let _ = inner.broken.value() + inner.broken.other()

@@ -1,0 +1,19 @@
+module geometry:
+    pub struct Point:
+        pub x: int32
+        y: int32
+
+    pub def new_point(x: int32, y: int32) -> Point:
+        # A private field is accessible within the module of its struct.
+        return Point { x = x, y = y }
+
+    pub def y_of(point: Point) -> int32:
+        return point.y
+
+
+def main() -> int32:
+    let point = geometry.new_point(1, 2)
+    let x = point.x
+    let y = point.y
+    let other = geometry.Point { x = 3, y = 4 }
+    return x + y + geometry.y_of(other)

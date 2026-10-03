@@ -7,8 +7,11 @@ use rayc_qbice::TrackedEngine;
 use rayc_resolution::resolver::Resolver;
 use rayc_semantic_element::struct_body::{Field, Key, StructBody};
 use rayc_source_file::SourceElement;
-use rayc_symbol::{source_map::to_absolute_span, syntax::get_struct_body_syntax};
-use rayc_syntax::Passable;
+use rayc_symbol::{
+    accessibility::Accessibility, parent::get_closest_module_id, source_map::to_absolute_span,
+    syntax::get_struct_body_syntax,
+};
+use rayc_syntax::{Passable, access_modifier::AccessModifier};
 use rayc_type::{poly_var::get_enclosing_poly_var_maps, ty::Ty};
 
 use crate::{
@@ -90,6 +93,15 @@ impl Build for Key {
             .build();
         let mut body = StructBody::new();
 
+        // Like in Rust, a field without an access modifier is accessible only
+        // within the module declaring its struct.
+        let module_id =
+            symbol_id.target_id.make_global(engine.get_closest_module_id(symbol_id).await);
+        let field_accessibility = |access_modifier: Option<AccessModifier>| match access_modifier {
+            Some(AccessModifier::Public(_)) => Accessibility::Public,
+            None => Accessibility::Scoped(module_id),
+        };
+
         if let Some(syntax) = syntax {
             for field_syntax in syntax.fields() {
                 // A `pass` stands for no field, as in an empty struct body.
@@ -104,8 +116,12 @@ impl Build for Key {
                 } else {
                     Ty::new_star_error(engine)
                 };
-                let field =
-                    Field::builder().name(name.kind.0.clone()).span(name.span()).ty(ty).build();
+                let field = Field::builder()
+                    .name(name.kind.0.clone())
+                    .span(name.span())
+                    .ty(ty)
+                    .accessibility(field_accessibility(field_syntax.access_modifier()))
+                    .build();
 
                 if let Err((duplicate, original_id)) = body.insert(field) {
                     diagnostics.receive(Diagnostic::DuplicateField(DuplicateField {

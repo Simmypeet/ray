@@ -6,6 +6,7 @@ use rayc_source_file::SourceElement;
 use rayc_symbol::{GlobalSymbolID, symbol_kind::SymbolKind};
 use rayc_syntax::path::{Path, PathRoot, PathSegment};
 use rayc_type::{
+    accessibility::is_symbol_accessible_from,
     poly_var::{GlobalPolyVarID, get_poly_var_map},
     subst::Subst,
     trait_ref::TraitRef,
@@ -517,12 +518,43 @@ impl Resolver<'_> {
             }
             None => return Err(PathResolutionError::MissingIdentifier),
         };
+
+        // Once a segment is reported as inaccessible, its members are not
+        // reported again.
+        let mut accessible = match path.root() {
+            Some(PathRoot::Segment(first)) => self.check_accessibility(&resolution, &first).await,
+            Some(PathRoot::This(_) | PathRoot::Target(_) | PathRoot::Super(_)) | None => true,
+        };
         for part in path.rest() {
             let Some(segment) = part.segment() else { continue };
             resolution = self.resolve_path_segment(&segment, Some(resolution)).await?;
+
+            if accessible {
+                accessible = self.check_accessibility(&resolution, &segment).await;
+            }
         }
 
         Ok(resolution)
+    }
+
+    /// Checks that the symbol `segment` resolves to is accessible from the
+    /// site, reporting it otherwise.
+    async fn check_accessibility(
+        &self,
+        resolution: &PathResolution,
+        segment: &PathSegment,
+    ) -> bool {
+        // A polymorphic variable or the enclosing trait dictionary is always
+        // accessible where it can be named.
+        let Some(symbol_id) = resolution.global_id() else { return true };
+
+        if self.engine().is_symbol_accessible_from(symbol_id, self.site()).await {
+            return true;
+        }
+
+        let span = segment.identifier().map_or_else(|| segment.span(), |x| x.span);
+        self.report_inaccessible_symbol(symbol_id, span);
+        false
     }
 
     async fn resolve_path_segment(

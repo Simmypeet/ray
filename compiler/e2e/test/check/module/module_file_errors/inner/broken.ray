@@ -1,8 +1,8 @@
-def value() -> int32:
+pub def value() -> int32:
     # A sibling module's items are not visible without a prefix.
     return helper()
 
-def other() -> int32:
+pub def other() -> int32:
     return super.helper()
 
 # A syntax error in a file module is reported against that file.
