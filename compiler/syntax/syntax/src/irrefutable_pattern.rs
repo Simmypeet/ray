@@ -38,6 +38,7 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
+    #{label = rayc_parser::expect::Label::Pattern}
     pub enum IrrefutablePattern {
         Name(Name = ast::<Name>()),
     }

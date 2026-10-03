@@ -190,6 +190,15 @@ pub trait AbstractTree:
     #[must_use]
     fn step_into_fragment() -> Option<expect::Fragment> { None }
 
+    /// Returns the label that names this tree in diagnostics.
+    ///
+    /// If the tree fails to parse without consuming any token, the
+    /// expectations collected while parsing it are replaced by this single
+    /// label. Default is `None`, which reports the collected expectations as
+    /// they are.
+    #[must_use]
+    fn label() -> Option<expect::Label> { None }
+
     /// Parses the given tree and returns the result.
     #[must_use]
     fn parse(
@@ -264,11 +273,30 @@ pub trait AbstractTree:
 ///     }
 /// }
 /// ```
+///
+/// # Labels
+///
+/// Both variants accept an optional `#{label = ...}` attribute, placed after
+/// the optional `#{fragment = ...}` attribute, which implements
+/// [`AbstractTree::label`]. Label the trees that users think of as a single
+/// syntactic category, so a failure at their first token reports "expected
+/// type" rather than every token that could start a type.
+///
+/// ``` ignore
+/// ast! {
+///     #{label = expect::Label::Type}
+///     pub enum Type {
+///         Primitive(Primitive = parser::ast::<Primitive>()),
+///         Path(Path = parser::ast::<Path>()),
+///     }
+/// }
+/// ```
 #[macro_export]
 macro_rules! abstract_tree {
     {
         $( #[$struct_meta:meta] )*
         $( #{fragment = $fragment:expr} )?
+        $( #{label = $label:expr} )?
         $struct_vis:vis
         struct
         $struct_name:ident
@@ -469,6 +497,12 @@ macro_rules! abstract_tree {
                         Some($fragment)
                     }
                 )?
+
+                $(
+                    fn label() -> Option<$crate::expect::Label> {
+                        Some($label)
+                    }
+                )?
             }
 
 
@@ -496,6 +530,7 @@ macro_rules! abstract_tree {
     {
         $( #[$enum_meta:meta] )*
         $( #{fragment = $fragment:expr} )?
+        $( #{label = $label:expr} )?
         $enum_vis:vis
         enum
         $enum_name:ident
@@ -609,6 +644,12 @@ macro_rules! abstract_tree {
                 $(
                     fn step_into_fragment() -> Option<$crate::expect::Fragment> {
                         Some($fragment)
+                    }
+                )?
+
+                $(
+                    fn label() -> Option<$crate::expect::Label> {
+                        Some($label)
                     }
                 )?
             }

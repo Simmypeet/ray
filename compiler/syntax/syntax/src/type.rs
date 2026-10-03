@@ -179,6 +179,7 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
+    #{label = rayc_parser::expect::Label::Type}
     pub enum Type {
         Primitive(Primitive = ast::<Primitive>()),
         Pointer(Pointer = ast::<Pointer>()),

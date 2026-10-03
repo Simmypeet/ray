@@ -105,6 +105,7 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
+    #{label = rayc_parser::expect::Label::Statement}
     pub enum Statement {
         Let(Let = ast::<Let>()),
         Break(Break = ast::<Break>()),

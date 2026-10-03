@@ -18,6 +18,7 @@ use crate::{
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    #{label = rayc_parser::expect::Label::ModuleMember}
     pub enum ModuleMember {
         Def(Def = ast::<Def>()),
         ExternDef(ExternDef = ast::<ExternDef>()),

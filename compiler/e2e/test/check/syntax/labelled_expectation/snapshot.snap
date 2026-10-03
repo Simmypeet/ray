@@ -1,0 +1,84 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: unexpected `)` punctuation, expected type or `def` keyword
+  ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:1:33
+  │
+1 │ def missingParameterType(value: ) -> int32:
+  ╰╴                                ━
+
+[error]: unexpected indentation block, expected type
+  ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:4:27
+  │
+4 │   def missingReturnType() -> :
+  │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+5 │ ┃     return 0
+  ╰╴┗━━━━━━━━━━━━┛
+
+[error]: unexpected `)` punctuation, expected type, `'` punctuation, or `mut` keyword
+  ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:7:29
+  │
+7 │ def missingReferent(value: &) -> int32:
+  ╰╴                            ━
+
+[error]: expected a value type or an associated type projection
+   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:10:27
+   │
+10 │ def incompletePath(value: core.) -> int32:
+   ╰╴                          ━━━━
+
+[error]: unexpected `)` punctuation, expected identifier
+   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:10:32
+   │
+10 │ def incompletePath(value: core.) -> int32:
+   ╰╴                               ━
+
+[error]: unexpected `,` punctuation, expected expression
+   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:14:17
+   │
+14 │     let value = ,
+   ╰╴                ━
+
+[error]: mismatched types in return expression: expected `int32`, but found `<error>`
+   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:15:12
+   │
+15 │     return value
+   ╰╴           ━━━━━
+
+[error]: unexpected `,` punctuation, expected statement
+   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:18:5
+   │
+18 │     ,
+   ╰╴    ━
+
+[error]: unexpected `=` punctuation, expected pattern
+   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:22:9
+   │
+22 │     let = 0
+   ╰╴        ━
+
+[error]: unexpected `=` punctuation, expected trait member
+   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:26:5
+   │
+26 │     = int32
+   ╰╴    ━
+
+[error]: unexpected `=` punctuation, expected instance member
+   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:29:5
+   │
+29 │     = int32
+   ╰╴    ━
+
+[error]: unexpected `,` punctuation, expected module member or `pass` keyword
+   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:31:1
+   │
+31 │ ,
+   ╰╴━
+
+[error]: Compilation aborted due to 12 error(s)
+
+
+
+stdout:

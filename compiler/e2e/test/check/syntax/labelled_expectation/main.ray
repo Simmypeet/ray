@@ -1,0 +1,34 @@
+def missingParameterType(value: ) -> int32:
+    return 0
+
+def missingReturnType() -> :
+    return 0
+
+def missingReferent(value: &) -> int32:
+    return 0
+
+def incompletePath(value: core.) -> int32:
+    return 0
+
+def missingInitializer() -> int32:
+    let value = ,
+    return value
+
+def missingStatement() -> int32:
+    ,
+    return 0
+
+def missingPattern() -> int32:
+    let = 0
+    return 0
+
+trait Shape[a]:
+    = int32
+
+inst ShapeInt32 for Shape[int32]:
+    = int32
+
+,
+
+def main() -> int32:
+    return 0
