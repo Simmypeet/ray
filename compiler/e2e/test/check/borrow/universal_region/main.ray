@@ -75,8 +75,8 @@ def chained['a, 'b, 'c](x: &'a int32, mid: &mut &'b int32, out: &mut &'c int32) 
 
 
 def capturedByClosure['a, 'b](x: &'a int32, y: &'b int32) -> int32:
-    # OK: the lifetimes in the interface of a closure body are not checked
-    # against one another yet.
+    # OK: the closure body only reads its captures, so it requires nothing of
+    # the lifetimes in its interface.
     let read = () -> x.* + y.*
     return read()
 

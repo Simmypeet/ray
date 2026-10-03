@@ -25,7 +25,8 @@ use std::collections::VecDeque;
 
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
-use rayc_ir::cfg::Point;
+use rayc_ir::{cfg::Point, ir_function::IRFunction};
+use rayc_lexical::tree::RelativeSpan;
 use rayc_solver::outlives::{OutlivesEnvironment, RegionRelation};
 use rayc_transitive_closure::TransitiveClosure;
 use rayc_type::ty::Ty;
@@ -38,8 +39,21 @@ struct Edge {
     /// The point of the instruction requiring the constraint.
     point: Point,
 
+    /// The source that requires the constraint, when that is not the
+    /// instruction at `point`: where a nested function created there
+    /// requires it.
+    blame: Option<RelativeSpan>,
+
     /// The index of `'greater` in the graph.
     greater: usize,
+}
+
+impl Edge {
+    /// Returns the source that requires the constraint in `function`, or
+    /// `None` when it is an instruction that has no source of its own.
+    fn span(&self, function: &IRFunction) -> Option<RelativeSpan> {
+        self.blame.or_else(|| function.point_span(self.point))
+    }
 }
 
 /// Numbers the regions of a [`SubsetGraph`] as they are first met.
@@ -110,9 +124,11 @@ impl SubsetGraph {
         // Number the regions the constraints of the body mention.
         let mut numbering = RegionNumbering::default();
         let mut constraint_edges = Vec::new();
-        for (lesser, point, greater) in constraints.outlives() {
-            let (lesser, greater) = (numbering.index_of(lesser), numbering.index_of(greater));
-            constraint_edges.push((lesser, Edge { point, greater }));
+        for constraint in constraints.outlives() {
+            let lesser = numbering.index_of(constraint.lesser());
+            let greater = numbering.index_of(constraint.greater());
+            let edge = Edge { point: constraint.point(), blame: constraint.blame(), greater };
+            constraint_edges.push((lesser, edge));
         }
 
         // The universal regions the environment relates are part of the
@@ -213,7 +229,7 @@ impl SubsetGraph {
                 if greater == source || reached.parents.contains_key(&greater) {
                     continue;
                 }
-                reached.parents.insert(greater, (region, edge.point));
+                reached.parents.insert(greater, (region, *edge));
 
                 if self.regions[greater].is_universal_region() {
                     reached.universals.push(greater);
@@ -279,9 +295,9 @@ pub(crate) struct Reached<'a> {
     /// The universal regions reached, in the order the search found them.
     universals: Vec<usize>,
 
-    /// For each region reached, the region it was reached from and the point
-    /// of the constraint between them.
-    parents: FxHashMap<usize, (usize, Point)>,
+    /// For each region reached, the region it was reached from and the
+    /// constraint between them.
+    parents: FxHashMap<usize, (usize, Edge)>,
 }
 
 impl<'a> Reached<'a> {
@@ -292,18 +308,24 @@ impl<'a> Reached<'a> {
         self.universals.iter().map(move |&universal| &graph.regions[universal])
     }
 
-    /// Returns the points of the constraints on the path the search took to
-    /// `region`, from the source of the search onwards. There is none when
-    /// the search did not reach `region`.
-    pub(crate) fn path_points(&self, region: &Interned<Ty>) -> Vec<Point> {
-        let mut points = Vec::new();
+    /// Returns the source of each constraint on the path the search took to
+    /// `region`, from the source of the search onwards, in `function`, the
+    /// function the graph is of. A constraint required by an instruction
+    /// that has no source of its own has none. The path is empty when the
+    /// search did not reach `region`.
+    pub(crate) fn path_spans(
+        &self,
+        region: &Interned<Ty>,
+        function: &IRFunction,
+    ) -> Vec<Option<RelativeSpan>> {
+        let mut spans = Vec::new();
         let mut current = self.graph.indices.get(region).copied();
-        while let Some(&(parent, point)) = current.and_then(|current| self.parents.get(&current)) {
-            points.push(point);
-            current = Some(parent);
+        while let Some((parent, edge)) = current.and_then(|current| self.parents.get(&current)) {
+            spans.push(edge.span(function));
+            current = Some(*parent);
         }
 
-        points.reverse();
-        points
+        spans.reverse();
+        spans
     }
 }

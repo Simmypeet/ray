@@ -1,6 +1,7 @@
 //! The constraints of proving the where clause of a declaration.
 
 use rayc_ir::cfg::Point;
+use rayc_lexical::tree::RelativeSpan;
 use rayc_solver::givens::get_givens;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
@@ -54,18 +55,34 @@ impl ConstraintCollector<'_> {
     /// an outlives constraint, and so must each type parameter and
     /// projection in it, as a type test.
     pub(super) async fn collect_outlives(&mut self, point: Point, predicate: &OutlivesPredicate) {
+        self.collect_outlives_blaming(point, predicate, None).await;
+    }
+
+    /// Adds, at `point`, the requirements of [`Self::collect_outlives`],
+    /// required by the source `blame` rather than by the instruction at
+    /// `point`, when there is one: where a nested function created at `point`
+    /// requires `predicate`.
+    pub(super) async fn collect_outlives_blaming(
+        &mut self,
+        point: Point,
+        predicate: &OutlivesPredicate,
+        blame: Option<RelativeSpan>,
+    ) {
         // Normalizing the subject may use a given equality that matches it
         // up to lifetimes, which then requires those lifetimes to be equal.
         let (subject, outlives) = self.solver.normalize_with_outlives(predicate.lesser()).await;
         for constraint in outlives.iter() {
-            self.constraints.add(point, constraint);
+            self.constraints.add_blaming(point, constraint, blame);
         }
 
         for component in Ty::outlives_components(&subject, self.solver.engine()).await {
             match component {
                 OutlivesComponent::Region(region) => {
-                    self.constraints
-                        .add(point, &OutlivesPredicate::new(region, predicate.greater().clone()));
+                    self.constraints.add_blaming(
+                        point,
+                        &OutlivesPredicate::new(region, predicate.greater().clone()),
+                        blame,
+                    );
                 }
 
                 // Only the outlives environment can tell whether a type
@@ -73,7 +90,12 @@ impl ConstraintCollector<'_> {
                 // its facts are needed depends on the universal regions
                 // `bound` turns out to outlive.
                 OutlivesComponent::Opaque(subject) => {
-                    self.constraints.add_type_test(point, subject, predicate.greater().clone());
+                    self.constraints.add_type_test(
+                        point,
+                        subject,
+                        predicate.greater().clone(),
+                        blame,
+                    );
                 }
             }
         }

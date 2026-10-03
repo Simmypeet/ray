@@ -1,0 +1,88 @@
+# Gives back `anchor`, and requires `t: 'a` of its callers.
+def pick['a, t](anchor: &'a int32, value: &t) -> &'a int32 where (t: 'a):
+    return anchor
+
+
+def returned['a, 'b](x: &'a int32) -> &'b int32:
+    # ERROR: the closure gives back its argument, so the lifetime of its
+    # argument must outlive the lifetime of its result, and nothing states
+    # `'a: 'b`.
+    let same = (value) -> value
+    return same(x)
+
+
+def returnedOutlived['a, 'b](x: &'a int32) -> &'b int32 where ('a: 'b):
+    # OK: the where clause states `'a: 'b`.
+    let same = (value) -> value
+    return same(x)
+
+
+def stored['a, 'b](x: &'a int32, out: &mut &'b int32):
+    # ERROR: the closure stores its argument where a `&'b int32` is expected.
+    # The error points at the store, within the closure.
+    let store = (value) -> out.* = value
+    store(x)
+
+
+def storedOutlived['a, 'b](x: &'a int32, out: &mut &'b int32) where ('a: 'b):
+    # OK: the where clause states `'a: 'b`.
+    let store = (value) -> out.* = value
+    store(x)
+
+
+def twoLevels['a, 'b](x: &'a int32) -> &'b int32:
+    # ERROR: what the inner closure requires of its argument and its result
+    # is required of the outer closure, and then of this function.
+    let outer = (value) -> ((inner) -> inner)(value)
+    return outer(x)
+
+
+def typeTest['a, t](anchor: &'a int32, value: &t) -> &'a int32:
+    # ERROR: the call within the closure requires `t` to outlive the lifetime
+    # of `other`, which is `'a` where the closure is called, and nothing
+    # states `t: 'a`.
+    let picker = (other) -> pick(other, value)
+    return picker(anchor)
+
+
+def typeTestDeclared['a, t](anchor: &'a int32, value: &t) -> &'a int32 where (t: 'a):
+    # OK: the where clause states `t: 'a`.
+    let picker = (other) -> pick(other, value)
+    return picker(anchor)
+
+
+def typeTestNotReturned['a, t](anchor: &'a int32, value: &t) -> int32:
+    # OK: the lifetime of the result need not outlive `'a`, and any type is
+    # valid for a lifetime within the body.
+    let picker = (other) -> pick(other, value)
+    return picker(anchor).*
+
+
+def main() -> int32:
+    let mut value = 32
+
+    # The result of the closure is a reborrow of its capture, so it keeps the
+    # borrow of `value` once the closure itself is no longer used.
+    let address = () -> value.&
+    let p = address()
+    value = 42          # <-- Expect an error here: `p` borrows `value`.
+    let read = p.*
+
+    # Only the first argument is given back.
+    let first = (kept, dropped) -> kept
+    let mut x = 1
+    let mut y = 2
+    let q = first(x.&, y.&)
+    y = 3               # <-- Expect NO error here: `q` did not come from `y.&`.
+    x = 3               # <-- Expect an error here: `q` came from `x.&`.
+    let kept = q.*
+
+    # The closure stores its argument in `r`, which is used after `b` is gone.
+    let a = 1
+    let mut r = a.&
+    let assign = (shorter) -> r = shorter
+    if true:
+        let b = 2
+        assign(b.&)     # <-- Expect an error here: `r` is used after `b`.
+
+    return read + kept + r.*

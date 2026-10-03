@@ -41,8 +41,9 @@ impl ConstraintCollector<'_> {
         self.collect_introduced_effect(point, &effect).await;
 
         // The signature was instantiated from the trait reference of the
-        // dictionary the call dispatches through, so that dictionary matches
-        // it already; only what it was built from is left to require.
+        // dictionary the call dispatches through, and from the dictionary
+        // itself, so that dictionary matches it already; only what it was
+        // built from is left to require.
         if let Some(instance) = call.target().dispatch_instance() {
             self.collect_dictionary_requirements(point, instance).await;
         }

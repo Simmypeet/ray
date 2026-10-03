@@ -41,7 +41,8 @@
 //!   with the arguments of the struct type.
 //! - a tuple relates the type of each element to its element of the tuple type.
 //! - a closure relates the type of each capture operand to its element of the
-//!   captured tuple of the closure type.
+//!   captured tuple of the closure type. It also requires what the body of the
+//!   closure requires of the lifetimes in its interface; see below.
 //! - a phi relates the type of each incoming value to the type of the phi, at
 //!   the terminator of the block the value comes from.
 //! - a `return` relates the type of the returned value to the return type of
@@ -54,22 +55,36 @@
 //! outlive a lifetime. That is recorded as a [`TypeTest`] rather than a
 //! constraint, and checked by [`type_test`](crate::type_test).
 //!
-//! What a nested function requires of its creator is not collected yet: the
-//! regions in the interface of a closure body, a handled body or an operation
-//! handler are universal regions of that function, which nothing maps to the
-//! regions of its creator so far. So a `handle` states no constraint.
+//! The lifetimes in the interface of a closure body, its captures, parameters,
+//! return type and effect, are external regions: universal regions of the
+//! body, which is checked on its own before the function creating it. What
+//! the body requires of them and may not assume, it leaves to its creator as
+//! [requirements](crate::requirement). The closure type of the closure
+//! expression holds a region of the creator at the position of each external
+//! region, so the requirements are instantiated with those regions and
+//! required at the point of the closure expression, as the where clause of a
+//! callee is at a call. Closure types are invariant, so the regions keep what
+//! is required of them wherever the closure value flows, and is called.
+//!
+//! A constraint required for a nested function is blamed on the source that
+//! requires it within that function, rather than on the whole expression
+//! creating the function.
+//!
+//! The requirements of a handled body and of an operation handler are not
+//! required of their creator yet: nothing maps their external regions to the
+//! regions of the `handle` so far. So a `handle` states no constraint.
 //!
 //! This is meant to run after [renumbering](crate::renumber), so that every
 //! lifetime the constraints mention is a region or a universal lifetime.
 
 use qbice::storage::intern::Interned;
 use rayc_arena::{Arena, ID};
-use rayc_hash::{FxHashMap, FxHashSet};
+use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::{Address, Local},
     cfg::{BlockID, Instruction, Point, Terminator},
     ir_expr::{IRExprID, IRExprKind},
-    ir_function::IRFunction,
+    ir_function::{FunctionID, IRFunction, IRFunctionMap},
     ir_lambda::CaptureMap,
 };
 use rayc_lexical::tree::RelativeSpan;
@@ -80,6 +95,8 @@ use rayc_type::{
     variance::Variance,
     where_clause::OutlivesPredicate,
 };
+
+use crate::requirement::NestedRequirements;
 
 mod instance;
 mod invocation;
@@ -170,6 +187,10 @@ pub struct TypeTest {
 
     /// The point of the instruction requiring it.
     point: Point,
+
+    /// The source that requires it, when that is not the instruction at
+    /// `point`: where a nested function created there requires it.
+    blame: Option<RelativeSpan>,
 }
 
 impl TypeTest {
@@ -185,6 +206,46 @@ impl TypeTest {
     /// Returns the point of the instruction requiring the test.
     #[must_use]
     pub const fn point(&self) -> Point { self.point }
+
+    /// Returns the source that requires the test in `function`: where a
+    /// nested function requires it, when the instruction at its point creates
+    /// one that does, and that instruction otherwise. There is none when the
+    /// instruction has no source of its own.
+    #[must_use]
+    pub fn span(&self, function: &IRFunction) -> Option<RelativeSpan> {
+        self.blame.or_else(|| function.point_span(self.point))
+    }
+}
+
+/// An outlives constraint `'lesser: 'greater` that an IR function requires at
+/// a point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Outlives<'a> {
+    lesser: &'a Interned<Ty>,
+    greater: &'a Interned<Ty>,
+    point: Point,
+    blame: Option<RelativeSpan>,
+}
+
+impl<'a> Outlives<'a> {
+    /// Returns the region required to outlive the other, whose loans flow
+    /// into it.
+    #[must_use]
+    pub const fn lesser(&self) -> &'a Interned<Ty> { self.lesser }
+
+    /// Returns the region the lesser region is required to outlive.
+    #[must_use]
+    pub const fn greater(&self) -> &'a Interned<Ty> { self.greater }
+
+    /// Returns the point of the instruction requiring the constraint.
+    #[must_use]
+    pub const fn point(&self) -> Point { self.point }
+
+    /// Returns the source that requires the constraint, when that is not the
+    /// instruction at its point: where a nested function created there
+    /// requires it.
+    #[must_use]
+    pub const fn blame(&self) -> Option<RelativeSpan> { self.blame }
 }
 
 /// A region at a point: a node of the localized constraint graph.
@@ -203,7 +264,11 @@ pub struct LocalizedConstraints {
     /// are the edges of the localized constraint graph that the instruction
     /// at the point states (rustc: `Locations::Single`). A region with no
     /// constraint at a point has no entry.
-    edges: FxHashMap<LocalizedRegion, FxHashSet<Interned<Ty>>>,
+    ///
+    /// Each comes with the source that requires it, when that is not the
+    /// instruction at the point: where a nested function created there
+    /// requires it.
+    edges: FxHashMap<LocalizedRegion, FxHashMap<Interned<Ty>, Option<RelativeSpan>>>,
 
     /// The type tests the instructions require, in the order they were
     /// collected.
@@ -222,24 +287,27 @@ pub struct LocalizedConstraints {
 
 impl LocalizedConstraints {
     /// Collects the outlives constraints and the loans of every reachable
-    /// instruction of `function`.
+    /// instruction of the function `function_id` of `ir`.
     ///
-    /// `captures` is the capture layout of a nested function, and `None` for
-    /// the definition function. `effect` is the effect row of the function,
-    /// as [`IRFunctionMap::effect_of`] gives it. `solver` must be created at
-    /// the definition the function belongs to.
-    ///
-    /// [`IRFunctionMap::effect_of`]: rayc_ir::ir_function::IRFunctionMap::effect_of
+    /// `effect` is the effect row of the function, as
+    /// [`IRFunctionMap::effect_of`] gives it. `nested` holds what the nested
+    /// functions that the function creates require of it, so they must be
+    /// checked first. `solver` must be created at the definition the function
+    /// belongs to.
     pub async fn collect(
-        function: &IRFunction,
-        captures: Option<&CaptureMap>,
+        ir: &IRFunctionMap,
+        function_id: FunctionID,
         effect: &Interned<Ty>,
+        nested: &NestedRequirements,
         solver: &mut Solver,
     ) -> Self {
+        let function = ir.get_function(function_id);
         let mut collector = ConstraintCollector {
+            ir,
             function,
-            captures,
+            captures: ir.captures_for_function(function_id),
             effect,
+            nested,
             solver,
             constraints: Self::default(),
         };
@@ -263,15 +331,22 @@ impl LocalizedConstraints {
         region: &Interned<Ty>,
         point: Point,
     ) -> impl Iterator<Item = &Interned<Ty>> {
-        self.edges.get(&LocalizedRegion { region: region.clone(), point }).into_iter().flatten()
+        self.edges
+            .get(&LocalizedRegion { region: region.clone(), point })
+            .into_iter()
+            .flat_map(FxHashMap::keys)
     }
 
-    /// Iterates over every outlives constraint of the function, as the
-    /// lesser region, the point requiring the constraint and the greater
-    /// region of `'lesser: 'greater`, in unspecified order.
-    pub fn outlives(&self) -> impl Iterator<Item = (&Interned<Ty>, Point, &Interned<Ty>)> {
+    /// Iterates over every outlives constraint of the function, in
+    /// unspecified order.
+    pub fn outlives(&self) -> impl Iterator<Item = Outlives<'_>> {
         self.edges.iter().flat_map(|(lesser, greaters)| {
-            greaters.iter().map(move |greater| (&lesser.region, lesser.point, greater))
+            greaters.iter().map(move |(greater, &blame)| Outlives {
+                lesser: &lesser.region,
+                greater,
+                point: lesser.point,
+                blame,
+            })
         })
     }
 
@@ -334,15 +409,41 @@ impl LocalizedConstraints {
     /// Adds the edge `'lesser@point -> 'greater@point` for the predicate
     /// `'lesser: 'greater` between two lifetimes required at `point`.
     fn add(&mut self, point: Point, predicate: &OutlivesPredicate) {
-        self.edges
-            .entry(LocalizedRegion { region: predicate.lesser().clone(), point })
-            .or_default()
-            .insert(predicate.greater().clone());
+        self.add_blaming(point, predicate, None);
     }
 
-    /// Records the type test `subject: 'bound` required at `point`.
-    fn add_type_test(&mut self, point: Point, subject: Interned<Ty>, bound: Interned<Ty>) {
-        self.type_tests.push(TypeTest { subject, bound, point });
+    /// Adds the edge of [`Self::add`], required by the source `blame` rather
+    /// than by the instruction at `point`, when there is one.
+    fn add_blaming(
+        &mut self,
+        point: Point,
+        predicate: &OutlivesPredicate,
+        blame: Option<RelativeSpan>,
+    ) {
+        let required_by = self
+            .edges
+            .entry(LocalizedRegion { region: predicate.lesser().clone(), point })
+            .or_default()
+            .entry(predicate.greater().clone())
+            .or_default();
+
+        // The same constraint may be required more than once at a point. A
+        // source blamed for it tells more than the instruction does, and the
+        // first one is kept.
+        *required_by = required_by.or(blame);
+    }
+
+    /// Records the type test `subject: 'bound` required at `point`, by the
+    /// source `blame` rather than by the instruction there, when there is
+    /// one.
+    fn add_type_test(
+        &mut self,
+        point: Point,
+        subject: Interned<Ty>,
+        bound: Interned<Ty>,
+        blame: Option<RelativeSpan>,
+    ) {
+        self.type_tests.push(TypeTest { subject, bound, point, blame });
     }
 }
 
@@ -352,12 +453,21 @@ impl LocalizedConstraints {
 /// The rules are grouped by what they are about, each in its own submodule:
 /// [`place`], [`value`], [`invocation`], [`instance`] and [`predicate`].
 struct ConstraintCollector<'a> {
+    /// The IR functions of the definition, for the interface of the nested
+    /// functions that `function` creates.
+    ir: &'a IRFunctionMap,
     function: &'a IRFunction,
+
+    /// The capture layout of a nested function, and `None` for the
+    /// definition function.
     captures: Option<&'a CaptureMap>,
 
     /// The effect row of the function, which every effect introduced in it
     /// is a part of.
     effect: &'a Interned<Ty>,
+
+    /// What the nested functions that `function` creates require of it.
+    nested: &'a NestedRequirements,
     solver: &'a mut Solver,
     constraints: LocalizedConstraints,
 }

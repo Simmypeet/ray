@@ -19,8 +19,20 @@
 //! of the body make `'r` and `'x` the same lifetime: when each must outlive
 //! the other. A projection is never proven from what it projects from.
 //!
-//! An error names such a projection by the universal regions its regions are
-//! the same lifetime as, since a region of the body has no name to show.
+//! The environment states nothing of an external lifetime: the function
+//! creating the nested function chooses it. So a test the environment does
+//! not entail, whose bound is an external lifetime or whose subject mentions
+//! one, is not an error, but a [requirement](crate::requirement) for the
+//! creator to prove, where it creates the nested function. The creator knows
+//! no region of the body, so the subject is first stated over universal
+//! regions: each region of the body in it is replaced with a universal region
+//! the constraints make the same lifetime. A subject with a region that is
+//! the same lifetime as none cannot be required of the creator, and is an
+//! error (rustc: `try_promote_type_test_subject`).
+//!
+//! An error names a projection the same way, by the universal regions its
+//! regions are the same lifetime as, since a region of the body has no name
+//! to show.
 
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashSet;
@@ -37,11 +49,15 @@ use rayc_type::{
 use crate::{
     constraint::{LocalizedConstraints, TypeTest},
     diagnostic::{Diagnostic, TypeMayNotLiveLongEnough},
+    requirement::ExternalRequirements,
     subset_graph::{Reached, SubsetGraph},
 };
 
 /// Checks that every type test of `constraints` follows from the outlives
 /// environment, and returns the ones that do not.
+///
+/// A test about an external lifetime is added to `requirements` instead, for
+/// the function creating `function` to prove.
 ///
 /// `graph` must be built from `constraints`, and `solver` must be created at
 /// the definition `function` belongs to.
@@ -50,12 +66,14 @@ pub(crate) async fn check_type_tests(
     constraints: &LocalizedConstraints,
     graph: &SubsetGraph,
     solver: &mut Solver,
+    requirements: &mut ExternalRequirements,
 ) -> Vec<Diagnostic> {
     let mut checker = TypeTestChecker {
         function,
         graph,
         solver,
-        reported: FxHashSet::default(),
+        requirements,
+        handled: FxHashSet::default(),
         diagnostics: Vec::new(),
     };
 
@@ -72,10 +90,13 @@ struct TypeTestChecker<'a> {
     graph: &'a SubsetGraph,
     solver: &'a mut Solver,
 
-    /// The subject, the universal region and the source of each error
-    /// reported so far. The predicates of one call often require the same
-    /// thing more than once.
-    reported: FxHashSet<(Interned<Ty>, Interned<Ty>, RelativeSpan)>,
+    /// What the function leaves for its creator to prove.
+    requirements: &'a mut ExternalRequirements,
+
+    /// The subject, the universal region and the source of each test that
+    /// was reported, or required of the creator, so far. The predicates of
+    /// one call often require the same thing more than once.
+    handled: FxHashSet<(Interned<Ty>, Interned<Ty>, RelativeSpan)>,
 
     /// The errors found so far.
     diagnostics: Vec<Diagnostic>,
@@ -83,18 +104,13 @@ struct TypeTestChecker<'a> {
 
 impl TypeTestChecker<'_> {
     /// Checks that the subject of `test` outlives each universal region its
-    /// bound stands for, and records an error for each one the environment
-    /// does not entail.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the instruction requiring `test` has no source. A test is
-    /// required by a where clause, which only an expression or a drop proves.
+    /// bound stands for. Each one the environment does not entail is required
+    /// of the creator of the function, or recorded as an error.
     async fn check(&mut self, test: &TypeTest) {
         // A universal bound is asked of the environment as it is.
         if test.bound().is_universal_region() {
             if !self.entails(test.subject(), test.bound()).await {
-                self.report(test, test.bound(), None).await;
+                self.fail(test, test.bound(), None).await;
             }
 
             return;
@@ -112,56 +128,65 @@ impl TypeTestChecker<'_> {
             }
 
             let reached = reached.get_or_insert_with(|| graph.reach_universals_from(test.bound()));
-            self.report(test, universal, Some(reached)).await;
+            self.fail(test, universal, Some(reached)).await;
         }
     }
 
     /// Returns whether the environment entails `subject: 'universal`.
     async fn entails(&mut self, subject: &Interned<Ty>, universal: &Interned<Ty>) -> bool {
-        // TODO: a test on an external region is not known to the environment
-        // of the definition. It is a requirement for the creator of the
-        // nested function to prove, where it instantiates the external
-        // regions, and not an error here.
-        if universal.is_external_lifetime() {
-            return true;
-        }
-
         // The graph tells how the regions of the body in a projection relate
         // to the universal regions a fact is about.
         let predicate = OutlivesPredicate::new(subject.clone(), universal.clone());
         self.solver.entails_outlives_with(&predicate, self.graph).await
     }
 
-    /// Records the error of the subject of `test` not being known to
-    /// outlive `universal`, which is the bound of the test or a universal
-    /// region `reached` from it, unless it was reported for the same source
-    /// already.
-    async fn report(
+    /// Handles the subject of `test` not being known to outlive `universal`,
+    /// which is the bound of the test or a universal region `reached` from
+    /// it, unless that was handled for the same source already.
+    ///
+    /// When the predicate is about an external lifetime, it is required of
+    /// the creator of the function. Otherwise, it is recorded as an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `test` has no source. A test is required by a where clause,
+    /// which only an expression or a drop proves, or by a nested function.
+    async fn fail(
         &mut self,
         test: &TypeTest,
         universal: &Interned<Ty>,
         reached: Option<&Reached<'_>>,
     ) {
-        let span = self
-            .function
-            .point_span(test.point())
+        let span = test
+            .span(self.function)
             .expect("an instruction requiring a type test should have a source");
 
-        if !self.reported.insert((test.subject().clone(), universal.clone(), span)) {
+        if !self.handled.insert((test.subject().clone(), universal.clone(), span)) {
+            return;
+        }
+
+        // State the subject over universal regions, which the creator of
+        // the function knows, and the programmer wrote.
+        let engine = self.solver.engine();
+        let mut promoter = RegionPromoter { graph: self.graph, engine, is_promoted: true };
+        let subject = test.subject().rewrite_async_or_clone(&mut promoter, engine).await;
+
+        // The creator of a nested function chooses its external lifetimes,
+        // so only the creator can tell what outlives them.
+        let is_external = universal.is_external_lifetime()
+            || subject.recursive_iter().any(Ty::is_external_lifetime);
+
+        if promoter.is_promoted && is_external {
+            self.requirements.require(subject, universal.clone(), span);
             return;
         }
 
         // Point at where the bound is required to outlive the universal
         // region too, when another instruction requires that.
         let bound_span = reached
-            .and_then(|reached| reached.path_points(universal).last().copied())
-            .and_then(|point| self.function.point_span(point))
+            .and_then(|reached| reached.path_spans(universal, self.function).last().copied())
+            .flatten()
             .filter(|&bound_span| bound_span != span);
-
-        // Name the subject by lifetimes the programmer wrote.
-        let engine = self.solver.engine();
-        let mut namer = RegionNamer { graph: self.graph, engine };
-        let subject = test.subject().rewrite_async_or_clone(&mut namer, engine).await;
 
         self.diagnostics.push(Diagnostic::TypeMayNotLiveLongEnough(TypeMayNotLiveLongEnough::new(
             span,
@@ -173,20 +198,29 @@ impl TypeTestChecker<'_> {
 }
 
 /// Replaces each region of the body in a type with a universal region the
-/// constraints make the same lifetime, or with the erased lifetime when there
-/// is none, to show the type in an error.
-struct RegionNamer<'a> {
+/// constraints make the same lifetime, to state the type over lifetimes that
+/// are known outside the body.
+///
+/// A region that is the same lifetime as no universal region is replaced with
+/// the erased lifetime, which is only fit for showing the type in an error.
+struct RegionPromoter<'a> {
     graph: &'a SubsetGraph,
     engine: &'a TrackedEngine,
+
+    /// Whether every region of the body met so far was replaced with a
+    /// universal region.
+    is_promoted: bool,
 }
 
-impl TyRewriterAsync for RegionNamer<'_> {
+impl TyRewriterAsync for RegionPromoter<'_> {
     async fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
         if !ty.is_lifetime(self.engine).await || ty.is_universal_region() {
             return None;
         }
 
-        let named = self.graph.equal_universal(ty).cloned();
-        Some(named.unwrap_or_else(|| Ty::new_lifetime(Lifetime::Erased, self.engine)))
+        let promoted = self.graph.equal_universal(ty).cloned();
+        self.is_promoted &= promoted.is_some();
+
+        Some(promoted.unwrap_or_else(|| Ty::new_lifetime(Lifetime::Erased, self.engine)))
     }
 }
