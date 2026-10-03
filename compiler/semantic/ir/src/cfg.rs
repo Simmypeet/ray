@@ -337,6 +337,24 @@ impl Terminator {
         }
     }
 
+    /// Returns whether this terminator returns from the function.
+    #[must_use]
+    pub const fn is_return(&self) -> bool {
+        match self {
+            Self::Return(_) => true,
+            Self::Jump(_) | Self::Conditional(_) => false,
+        }
+    }
+
+    /// Returns the value this terminator returns from the function, if any.
+    #[must_use]
+    pub const fn returned_value(&self) -> Option<IRExprID> {
+        match self {
+            Self::Return(value) => *value,
+            Self::Jump(_) | Self::Conditional(_) => None,
+        }
+    }
+
     /// Returns the value this terminator consumes, if any: the condition of
     /// a branch, or the returned value.
     #[must_use]

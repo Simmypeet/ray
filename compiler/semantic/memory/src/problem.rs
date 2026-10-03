@@ -7,7 +7,7 @@ use rayc_ir::{
     dataflow::{DataflowProblem, Direction, JoinLattice},
     ir_expr::{
         IRExprKind,
-        load::{Load, LoadKind},
+        load::{Load, LoadEffect, LoadKind},
     },
     ir_function::{IRContext, IRFunction},
     ir_lambda::CaptureMap,
@@ -182,13 +182,10 @@ impl<'a> StackStateProblem<'a> {
     /// is copied bitwise, and moving out of memory behind a reference is an
     /// error reported separately.
     pub(crate) async fn load_moves(&mut self, load: &Load, ty: Interned<Ty>) -> bool {
-        if load.address().is_behind_deref() {
-            return false;
-        }
-
-        match load.kind() {
-            LoadKind::Implicit => !self.type_is_copy(ty).await,
-            LoadKind::Move => true,
+        match load.effect() {
+            LoadEffect::Copies => false,
+            LoadEffect::Moves => true,
+            LoadEffect::MovesUnlessCopy => !self.type_is_copy(ty).await,
         }
     }
 

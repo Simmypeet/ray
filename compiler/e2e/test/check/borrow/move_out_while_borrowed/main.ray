@@ -1,0 +1,70 @@
+struct Token:
+    value: int32
+
+impl !core.Copy for Token
+
+def consume(x: t) given(_: core.Drop[t]):
+    let _ = x
+
+def read(token: &Token) -> int32:
+    return token.*.value
+
+def moveWhileShared():
+    let token = Token{value=1}
+    let shared = token.&
+    # ERROR: `token` is moved while `shared` is used afterwards.
+    consume(token)
+    consume(read(shared))
+
+def moveWhileMutablyBorrowed():
+    let mut token = Token{value=1}
+    let unique = token.&mut
+    # ERROR: `token` is moved while `unique` is used afterwards.
+    let moved = token
+    unique.*.value = 2
+    consume(moved)
+
+def moveFieldOfBorrowed():
+    let pair = (Token{value=1}, Token{value=2})
+    let shared = pair.&
+    # ERROR: `pair.0` lies within the borrowed `pair`.
+    consume(pair.0)
+    consume(read(shared.*.1.&))
+
+def forcedMoveOfCopyWhileShared():
+    let x = 1
+    let shared = x.&
+    # ERROR: `move` moves the value out even though `int32` is `Copy`.
+    consume(move x)
+    consume(shared.*)
+
+def moveReferenceWhileReborrowed(p: &mut Token):
+    let unique = p.*.&mut
+    # ERROR: `p` is moved while the memory behind it is reborrowed.
+    let q = p
+    unique.*.value = 2
+    q.*.value = 3
+
+def moveAfterLastUse():
+    let token = Token{value=1}
+    let shared = token.&
+    consume(read(shared))
+    # OK: `shared` is not used after this point.
+    consume(token)
+
+def moveSiblingOfBorrowedField():
+    let pair = (Token{value=1}, Token{value=2})
+    let shared = pair.0.&
+    # OK: `pair.1` does not overlap `pair.0`.
+    consume(pair.1)
+    consume(read(shared))
+
+def main():
+    let mut token = Token{value=0}
+    moveWhileShared()
+    moveWhileMutablyBorrowed()
+    moveFieldOfBorrowed()
+    forcedMoveOfCopyWhileShared()
+    moveReferenceWhileReborrowed(token.&mut)
+    moveAfterLastUse()
+    moveSiblingOfBorrowedField()

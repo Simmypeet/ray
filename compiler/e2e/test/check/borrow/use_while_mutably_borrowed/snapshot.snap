@@ -1,0 +1,54 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot use a place because it is mutably borrowed
+  ╭▸ compiler/e2e/test/check/borrow/use_while_mutably_borrowed/main.ray:8:13
+  │
+6 │     let unique = x.&mut
+  │                  ────── mutable borrow occurs here
+7 │     # ERROR: `x` is read while `unique` is used afterwards.
+8 │     let y = x
+  │             ━ the borrowed place is used here
+9 │     unique.* = 2
+  ╰╴    ──────────── borrow later used here
+
+[error]: cannot use a place because it is mutably borrowed
+   ╭▸ compiler/e2e/test/check/borrow/use_while_mutably_borrowed/main.ray:16:17
+   │
+14 │     let unique = pair.&mut
+   │                  ───────── mutable borrow occurs here
+15 │     # ERROR: `pair.0` lies within the mutably borrowed `pair`.
+16 │     let first = pair.0
+   │                 ━━━━ the borrowed place is used here
+17 │     unique.*.1 = 3
+   ╰╴    ────────────── borrow later used here
+
+[error]: cannot use a place because it is mutably borrowed
+   ╭▸ compiler/e2e/test/check/borrow/use_while_mutably_borrowed/main.ray:24:16
+   │
+22 │     let unique = pair.0.&mut
+   │                  ─────────── mutable borrow occurs here
+23 │     # ERROR: `pair` contains the mutably borrowed `pair.0`.
+24 │     let copy = pair
+   │                ━━━━ the borrowed place is used here
+25 │     unique.* = 3
+   ╰╴    ──────────── borrow later used here
+
+[error]: cannot use a place because it is mutably borrowed
+   ╭▸ compiler/e2e/test/check/borrow/use_while_mutably_borrowed/main.ray:31:13
+   │
+29 │     let unique = p.*.&mut
+   │                  ──────── mutable borrow occurs here
+30 │     # ERROR: `p.*` is read while it is mutably reborrowed.
+31 │     let y = p.*
+   │             ━━━ the borrowed place is used here
+32 │     unique.* = 2
+   ╰╴    ──────────── borrow later used here
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

@@ -206,10 +206,10 @@ impl<'a> LoanActivity<'a> {
     /// accesses are checked against.
     ///
     /// Does nothing for an unreachable block.
-    pub fn visit_block(
+    pub async fn visit_block(
         &self,
         block_id: BlockID,
-        mut visit: impl FnMut(Point, Option<&Instruction>, &ActiveLoans),
+        mut visit: impl AsyncFnMut(Point, Option<&Instruction>, &ActiveLoans),
     ) {
         let Some(entry) = self.solution.block_entry(block_id) else {
             return;
@@ -219,13 +219,13 @@ impl<'a> LoanActivity<'a> {
         let mut state = entry.clone();
         for (point, instruction) in problem.function.block_instructions_with_points(block_id) {
             problem.kill_dead_loans(point, &mut state);
-            visit(point, Some(instruction), &state);
+            visit(point, Some(instruction), &state).await;
             problem.apply_instruction(instruction, &mut state);
         }
 
         let terminator = problem.terminator_point(block_id);
         problem.kill_dead_loans(terminator, &mut state);
-        visit(terminator, None, &state);
+        visit(terminator, None, &state).await;
     }
 }
 

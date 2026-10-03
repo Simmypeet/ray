@@ -9,8 +9,10 @@
 //! control-flow graph and region liveness, so the graph is never built in
 //! full.
 //!
-//! It also records the loans the function issues: one per borrow, whose
-//! region is the lifetime of the reference the borrow creates.
+//! It also records the loans the function issues: one per borrow of a place
+//! the function may be kept from accessing, whose region is the lifetime of
+//! the reference the borrow creates. A place behind a shared reference or a
+//! raw pointer issues none; see [`LocalizedConstraints::loans`].
 //!
 //! These operations state constraints:
 //!
@@ -102,6 +104,11 @@ pub struct Loan {
 
     /// The source of the borrow expression.
     span: RelativeSpan,
+
+    /// The number of projections of `address` up to the innermost struct
+    /// that owns the borrowed place and has a declared `Drop` instance, if
+    /// there is one. See [`Self::is_used_by_drop_of`].
+    declared_drop_depth: Option<usize>,
 }
 
 impl Loan {
@@ -124,6 +131,24 @@ impl Loan {
     /// Returns the source of the borrow expression.
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
+
+    /// Returns whether dropping the value in `dropped` may use the borrowed
+    /// place.
+    ///
+    /// A drop uses the storage of the value it drops, so it conflicts with a
+    /// loan of that storage or of a place around it. It does not go through
+    /// the pointers the value holds, which drop nothing, unless a struct on
+    /// the way from `dropped` to the pointer has a `Drop` instance declared
+    /// for it: that implementation may use anything the struct can reach.
+    #[must_use]
+    pub fn is_used_by_drop_of(&self, dropped: &Address) -> bool {
+        if self.address.contains(dropped) || dropped.holds(&self.address) {
+            return true;
+        }
+
+        dropped.contains(&self.address)
+            && self.declared_drop_depth.is_some_and(|depth| dropped.projections().len() <= depth)
+    }
 }
 
 /// A requirement `subject: 'bound` on a type parameter or a rigid projection,
@@ -243,6 +268,13 @@ impl LocalizedConstraints {
     pub fn type_tests(&self) -> impl ExactSizeIterator<Item = &TypeTest> { self.type_tests.iter() }
 
     /// Iterates over the loans issued in the function, in unspecified order.
+    ///
+    /// A borrow of a place behind a shared reference or a raw pointer issues
+    /// no loan. Nothing can be written, moved or mutably borrowed through a
+    /// shared reference, so no access conflicts with such a borrow; the
+    /// references it goes through are required to outlive it instead, which
+    /// keeps the loans they came from live. The memory behind a raw pointer is
+    /// not tracked at all.
     #[must_use]
     pub fn loans(&self) -> impl ExactSizeIterator<Item = (LoanID, &Loan)> { self.loans.iter() }
 
@@ -255,16 +287,14 @@ impl LocalizedConstraints {
     pub fn get_loan(&self, id: LoanID) -> &Loan { self.loans.get(id).expect("loan should exist") }
 
     /// Returns the loan issued by the borrow expression `expression_id`, or
-    /// `None` when the expression is not a borrow, or borrows an error
-    /// address.
+    /// `None` when the expression is not a borrow, or issues no loan.
     #[must_use]
     pub fn loan_id_of_ref_of(&self, expression_id: IRExprID) -> Option<LoanID> {
         self.loans_by_ref_of_id.get(&expression_id).copied()
     }
 
     /// Returns the loan issued by the borrow expression `expression_id`, or
-    /// `None` when the expression is not a borrow, or borrows an error
-    /// address.
+    /// `None` when the expression is not a borrow, or issues no loan.
     #[must_use]
     pub fn loan_of_ref_of(&self, expression_id: IRExprID) -> Option<&Loan> {
         let loan_id = self.loans_by_ref_of_id.get(&expression_id)?;

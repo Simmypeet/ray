@@ -11,7 +11,6 @@ use rayc_ir::{
         tuple::Tuple,
     },
 };
-use rayc_semantic_element::return_type::get_return_type;
 use rayc_type::{ty::Ty, variance::Variance};
 
 use super::ConstraintCollector;
@@ -77,12 +76,7 @@ impl ConstraintCollector<'_> {
     /// The lifetimes of the return type are universal, so a loan that flows
     /// into them escapes the function.
     pub(super) async fn collect_return(&mut self, point: Point, value: IRExprID) {
-        // A nested function stores its return type; the definition function
-        // takes the one its definition declares.
-        let return_ty = match self.function.context().nested_return_ty() {
-            Some(return_ty) => return_ty.clone(),
-            None => self.solver.engine().get_return_type(self.solver.site()).await,
-        };
+        let return_ty = self.function.return_ty(self.solver.site(), self.solver.engine()).await;
 
         let value_ty = self.function.get_expression(value).ty();
         self.relate(point, value_ty, &return_ty, Variance::Covariant).await;

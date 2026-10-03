@@ -3,7 +3,7 @@ use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::effect_row::get_effect_row;
+use rayc_semantic_element::{effect_row::get_effect_row, return_type::get_return_type};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::{Ty, application::ClosureID};
 
@@ -322,7 +322,20 @@ impl IRFunctionMap {
         ty: Interned<Ty>,
         span: RelativeSpan,
     ) -> IRVariableID {
-        self.get_function_mut(function_id).create_variable_in_scope(scope_id, ty, span)
+        self.get_function_mut(function_id).create_variable_in_scope(scope_id, ty, span, false)
+    }
+
+    /// Creates a temporary in `scope_id`: a variable which gives a place to a
+    /// computed value, rather than a binding declared in the source.
+    #[must_use]
+    pub fn create_temporary_in_scope(
+        &mut self,
+        function_id: FunctionID,
+        scope_id: ScopeID,
+        ty: Interned<Ty>,
+        span: RelativeSpan,
+    ) -> IRVariableID {
+        self.get_function_mut(function_id).create_variable_in_scope(scope_id, ty, span, true)
     }
 
     pub fn push_expression(
@@ -495,11 +508,22 @@ impl IRContext {
         }
     }
 
+    /// Returns the return type of a function of this context, which belongs
+    /// to the definition `def_id`.
+    ///
+    /// The definition function takes the return type declared in the
+    /// definition's signature, while a nested function stores its own.
+    pub async fn return_ty(&self, def_id: GlobalSymbolID, engine: &TrackedEngine) -> Interned<Ty> {
+        match self.nested_return_ty() {
+            Some(return_ty) => return_ty.clone(),
+            None => engine.get_return_type(def_id).await,
+        }
+    }
+
     /// Returns the return type stored by a nested function context, or
     /// `None` for a def context, whose return type is declared by the
     /// definition.
-    #[must_use]
-    pub const fn nested_return_ty(&self) -> Option<&Interned<Ty>> {
+    const fn nested_return_ty(&self) -> Option<&Interned<Ty>> {
         match self {
             Self::Def => None,
             Self::Lambda(context) => Some(context.return_ty()),
@@ -595,6 +619,12 @@ impl IRFunction {
     #[must_use]
     pub const fn context(&self) -> &IRContext { &self.context }
 
+    /// Returns the return type of this function, which belongs to the
+    /// definition `def_id`; see [`IRContext::return_ty`].
+    pub async fn return_ty(&self, def_id: GlobalSymbolID, engine: &TrackedEngine) -> Interned<Ty> {
+        self.context.return_ty(def_id, engine).await
+    }
+
     #[must_use]
     pub fn insert_lambda_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
         self.context.assert_as_lambda_context_mut().insert_parameter(parameter)
@@ -668,8 +698,9 @@ impl IRFunction {
         scope_id: ScopeID,
         ty: Interned<Ty>,
         span: RelativeSpan,
+        is_temporary: bool,
     ) -> IRVariableID {
-        let variable_id = self.variable_map.insert_variable(ty, span, scope_id);
+        let variable_id = self.variable_map.insert_variable(ty, span, scope_id, is_temporary);
         self.scope_map.register_variable(scope_id, variable_id);
         variable_id
     }

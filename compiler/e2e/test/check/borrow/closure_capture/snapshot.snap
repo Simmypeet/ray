@@ -6,9 +6,9 @@ stderr:
 [error]: cannot assign to a place because it is borrowed
   ╭▸ compiler/e2e/test/check/borrow/closure_capture/main.ray:8:5
   │
-2 │     let mut value = 32
-  │         ───────── immutable borrow occurs here
-  ‡
+6 │     let address = () -> value.&
+  │                  ────────────── immutable borrow occurs here, by a capture
+7 │     other = 1           # <-- Expect NO error here: `other` is not captured.
 8 │     value = 42          # <-- Expect an error here: `address` borrows `value`.
   │     ━━━━━━━━━━ the borrowed place is assigned here
 9 │     let read = address().*

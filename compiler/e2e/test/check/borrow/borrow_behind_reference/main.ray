@@ -1,0 +1,47 @@
+struct Holder['a]:
+    inner: &'a int32
+
+impl['a] !core.Copy for Holder['a]
+
+def consume(x: t) given(_: core.Drop[t]):
+    let _ = x
+
+def repointMutableWhileReborrowed(a: &mut int32, b: &mut int32):
+    let mut p = a
+    let unique = p.*.&mut
+    # OK: the assignment replaces the pointer in `p`, not the memory `unique`
+    # points to.
+    p = b
+    unique.* = 1
+    p.* = 2
+
+def repointSharedWhileReborrowed(a: &int32, b: &int32):
+    let mut p = a
+    let shared = p.*.&
+    # OK: likewise for a shared reference.
+    p = b
+    consume(shared.* + p.*)
+
+def moveHolderWhileReborrowed(x: &int32):
+    let holder = Holder{inner=x}
+    let shared = holder.inner.*.&
+    # OK: nothing can be done to the memory behind a shared reference that the
+    # reborrow forbids, wherever the reference goes.
+    let moved = holder
+    consume(shared.* + moved.inner.*)
+
+def assignThroughWhileReborrowed(p: &mut int32):
+    let unique = p.*.&mut
+    # ERROR: the memory behind `p` is written while it is reborrowed.
+    p.* = 1
+    unique.* = 2
+
+def main():
+    let mut a = 1
+    let mut b = 2
+    let c = 3
+    let d = 4
+    repointMutableWhileReborrowed(a.&mut, b.&mut)
+    repointSharedWhileReborrowed(c.&, d.&)
+    moveHolderWhileReborrowed(c.&)
+    assignThroughWhileReborrowed(a.&mut)

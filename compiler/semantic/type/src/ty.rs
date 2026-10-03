@@ -125,6 +125,15 @@ impl Mutability {
         }
     }
 
+    /// Returns how this mutability is named in diagnostics.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Immutable => "immutable",
+            Self::Mutable => "mutable",
+        }
+    }
+
     /// Returns the variance of the pointee of a reference with this
     /// mutability: a shared pointee is covariant, and a mutable one is
     /// invariant. Raw pointers are bivariant in their pointee instead.

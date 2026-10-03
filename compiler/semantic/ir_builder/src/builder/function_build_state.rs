@@ -564,7 +564,7 @@ impl Builder {
     pub fn create_temporary(&mut self, ty: Interned<Ty>, span: RelativeSpan) -> IRVariableID {
         let function_id = self.building_function.ir_function_id;
         let scope_id = self.building_function.scopes.current();
-        self.ir_functions.create_variable_in_scope(function_id, scope_id, ty, span)
+        self.ir_functions.create_temporary_in_scope(function_id, scope_id, ty, span)
     }
 
     pub fn register_source_variable(

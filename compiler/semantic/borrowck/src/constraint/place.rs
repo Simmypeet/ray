@@ -7,7 +7,9 @@ use rayc_ir::{
     cfg::{Point, Store},
     ir_expr::{IRExprID, load::Load, ref_of::RefOf},
 };
-use rayc_semantic_element::{parameter::get_parameter_map, struct_body::get_struct_body};
+use rayc_semantic_element::{
+    drop_plan::get_drop_plan, parameter::get_parameter_map, struct_body::get_struct_body,
+};
 use rayc_type::{
     subst::Substitutable,
     ty::{Mutability, Ty},
@@ -46,13 +48,54 @@ impl ConstraintCollector<'_> {
 
         self.collect_reborrow(point, reference.lifetime(), &dereferenced);
 
+        // Only a place the function owns, or reaches through mutable
+        // references alone, can be accessed in a way the borrow forbids.
+        let is_tracked = dereferenced.iter().all(|pointer| {
+            pointer
+                .as_reference_view()
+                .is_some_and(|reference| reference.mutability() == Mutability::Mutable)
+        });
+        if !is_tracked {
+            return;
+        }
+
+        let declared_drop_depth = self.declared_drop_depth(ref_of.address()).await;
         self.constraints.issue_loan(expression_id, Loan {
+            declared_drop_depth,
             region: reference.lifetime().clone(),
             point,
             address: ref_of.address().clone(),
             mutability: reference.mutability(),
             span: self.function.get_expression(expression_id).span(),
         });
+    }
+
+    /// Returns the number of projections of `address` up to the innermost
+    /// struct that owns the place `address` selects and has a `Drop` instance
+    /// declared for it, if there is one.
+    ///
+    /// A struct owns the places within its storage: the search stops at the
+    /// first dereference of `address`.
+    async fn declared_drop_depth(&self, address: &Address) -> Option<usize> {
+        let mut ty = self.binding_type(address.local()?).await;
+        let mut innermost = None;
+
+        for (depth, &projection) in address.projections().iter().enumerate() {
+            if projection.is_deref() {
+                break;
+            }
+
+            let base = self.solver.normalize(&ty).await;
+            if let Some(struct_ty) = base.as_struct_view()
+                && self.solver.engine().get_drop_plan(struct_ty.symbol_id()).await.is_explicit()
+            {
+                innermost = Some(depth);
+            }
+
+            ty = self.projected_type(&base, projection).await;
+        }
+
+        innermost
     }
 
     /// Requires the references that a borrowed place is reached through to

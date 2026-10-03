@@ -64,13 +64,18 @@ pub async fn borrow_check(ir: &mut IRFunctionMap, engine: &TrackedEngine) -> Vec
         let activity = LoanActivity::compute(function, &constraints, &live_loans).await;
 
         let traversal = Traversal::new(function, &constraints, &liveness, &variances);
-        diagnostics.extend(check_conflicts(
-            function,
-            &constraints,
-            &liveness,
-            &traversal,
-            &activity,
-        ));
+        diagnostics.extend(
+            check_conflicts(
+                function,
+                captures,
+                &constraints,
+                &liveness,
+                &traversal,
+                &activity,
+                &mut solver,
+            )
+            .await,
+        );
     }
 
     diagnostics

@@ -1,0 +1,73 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot return a value referencing data owned by the current function
+  ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:4:12
+  │
+4 │     return x.&
+  │            ┯━━
+  │            │
+  │            this returns a value referencing data owned by the current function
+  ╰╴           the data is borrowed here
+
+[error]: cannot return a value referencing data owned by the current function
+  ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:8:12
+  │
+8 │     return x.&
+  │            ┯━━
+  │            │
+  │            this returns a value referencing data owned by the current function
+  ╰╴           the data is borrowed here
+
+[error]: cannot return a value referencing data owned by the current function
+   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:12:12
+   │
+12 │     return param.&
+   │            ┯━━━━━━
+   │            │
+   │            this returns a value referencing data owned by the current function
+   ╰╴           the data is borrowed here
+
+[error]: cannot return a value referencing data owned by the current function
+   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:16:12
+   │
+16 │     return pair.1.&
+   │            ┯━━━━━━━
+   │            │
+   │            this returns a value referencing data owned by the current function
+   ╰╴           the data is borrowed here
+
+[error]: cannot return a value referencing data owned by the current function
+   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:22:16
+   │
+22 │         return y.&
+   │                ┯━━
+   │                │
+   │                this returns a value referencing data owned by the current function
+   ╰╴               the data is borrowed here
+
+[error]: cannot return a value referencing data owned by the current function
+   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:28:11
+   │
+28 │     return (x, y.&)
+   │           ┯━━━━┬──━
+   │           │    │
+   │           │    the data is borrowed here
+   ╰╴          this returns a value referencing data owned by the current function
+
+[error]: borrowed value does not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:32:13
+   │
+30 │ def storesParameter['a](out: &mut &'a int32, x: int32):
+   │                                              ──────── this variable goes out of scope while it is still borrowed
+31 │     # ERROR: the borrow outlives `x` without being returned.
+32 │     out.* = x.&
+   ╰╴            ━━━ borrowed value does not live long enough
+
+[error]: Compilation aborted due to 7 error(s)
+
+
+
+stdout:

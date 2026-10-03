@@ -8,20 +8,22 @@ use crate::{
 
 /// Returns the loans active just before the instruction at `point`, which
 /// its accesses are checked against.
-fn active_before(activity: &LoanActivity<'_>, point: Point) -> ActiveLoans {
+async fn active_before(activity: &LoanActivity<'_>, point: Point) -> ActiveLoans {
     let mut active = None;
-    activity.visit_block(point.block_id(), |visited, _, loans| {
-        if visited == point {
-            active = Some(loans.clone());
-        }
-    });
+    activity
+        .visit_block(point.block_id(), async |visited, _, loans| {
+            if visited == point {
+                active = Some(loans.clone());
+            }
+        })
+        .await;
     active.expect("the point should be reachable")
 }
 
 /// Returns whether `loan` is active just before the instruction at `point`.
 async fn is_active_before(analysis: &Analysis, loan: LoanID, point: Point) -> bool {
     let activity = analysis.loan_activity().await;
-    active_before(&activity, point).contains(loan)
+    active_before(&activity, point).await.contains(loan)
 }
 
 // input: whether `L1` is active before `y = ..` in `bb4`

@@ -45,6 +45,12 @@ impl ConstraintCollector<'_> {
             return;
         };
 
+        // The value is passed to `Drop.drop` as any argument is to its
+        // parameter, so its type only has to be a subtype of the implementor.
+        // `collect_drop_dictionary` would require `Drop[value_ty]` exactly:
+        // trait arguments are invariant, which also makes what the where
+        // clause of the instance lets flow between the regions of the
+        // dictionary flow back into the regions of the place.
         self.relate(point, value_ty, implementor, Variance::Covariant).await;
 
         self.collect_dictionary_requirements(point, drop_instance).await;

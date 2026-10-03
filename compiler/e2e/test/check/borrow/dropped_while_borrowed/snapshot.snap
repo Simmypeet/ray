@@ -1,0 +1,39 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: borrow may still be in use when the value is dropped
+   ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:20:13
+   │
+16 │     let guard = Guard{inner=x}
+   │         ───── the value of this binding is dropped while the borrow is still in use
+   ‡
+20 │     out.* = guard.inner.*.&mut
+   ╰╴            ━━━━━━━━━━━━━━━━━━ what the dropped value may use is borrowed here
+
+[error]: borrow may still be in use when the value is dropped
+   ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:30:13
+   │
+28 │     let pair = (Guard{inner=x}, 1)
+   │         ──── the value of this binding is dropped while the borrow is still in use
+29 │     # ERROR: dropping `pair` drops the guard in it.
+30 │     out.* = pair.0.inner.*.&mut
+   ╰╴            ━━━━━━━━━━━━━━━━━━━ what the dropped value may use is borrowed here
+
+[error]: borrow may still be in use when the value is dropped
+   ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:40:13
+   │
+38 │     let mut guard = Guard{inner=x}
+   │         ───────── the value of this binding is dropped while the borrow is still in use
+39 │     # ERROR: the assignment below drops the guard holding `x`.
+40 │     out.* = guard.inner.*.&mut
+   │             ━━━━━━━━━━━━━━━━━━ what the dropped value may use is borrowed here
+41 │     guard = Guard{inner=y}
+   ╰╴    ────────────────────── borrow later used here
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

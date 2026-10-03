@@ -1,0 +1,65 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot move out of a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:16:13
+   │
+14 │     let shared = token.&
+   │                  ─────── immutable borrow occurs here
+15 │     # ERROR: `token` is moved while `shared` is used afterwards.
+16 │     consume(token)
+   │             ━━━━━ the borrowed place is moved out of here
+17 │     consume(read(shared))
+   ╰╴                 ────── borrow later used here
+
+[error]: cannot move out of a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:23:17
+   │
+21 │     let unique = token.&mut
+   │                  ────────── mutable borrow occurs here
+22 │     # ERROR: `token` is moved while `unique` is used afterwards.
+23 │     let moved = token
+   │                 ━━━━━ the borrowed place is moved out of here
+24 │     unique.*.value = 2
+   ╰╴    ────────────────── borrow later used here
+
+[error]: cannot move out of a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:31:13
+   │
+29 │     let shared = pair.&
+   │                  ────── immutable borrow occurs here
+30 │     # ERROR: `pair.0` lies within the borrowed `pair`.
+31 │     consume(pair.0)
+   │             ━━━━ the borrowed place is moved out of here
+32 │     consume(read(shared.*.1.&))
+   ╰╴                 ──────────── borrow later used here
+
+[error]: cannot move out of a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:38:13
+   │
+36 │     let shared = x.&
+   │                  ─── immutable borrow occurs here
+37 │     # ERROR: `move` moves the value out even though `int32` is `Copy`.
+38 │     consume(move x)
+   │             ━━━━━━ the borrowed place is moved out of here
+39 │     consume(shared.*)
+   ╰╴            ──────── borrow later used here
+
+[error]: cannot move out of a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:44:13
+   │
+42 │     let unique = p.*.&mut
+   │                  ──────── mutable borrow occurs here
+43 │     # ERROR: `p` is moved while the memory behind it is reborrowed.
+44 │     let q = p
+   │             ━ the borrowed place is moved out of here
+45 │     unique.*.value = 2
+   ╰╴    ────────────────── borrow later used here
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

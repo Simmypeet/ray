@@ -90,6 +90,29 @@ impl IRExprKind {
         }
     }
 
+    /// Returns the operands this expression stores in the capture layout of
+    /// a nested function it creates: the captures of a closure, or those of
+    /// the handled body and of the operation handlers of a `handle`.
+    pub fn capture_operands(&self) -> impl Iterator<Item = IRExprID> + '_ {
+        let (captures, handler_captures): (&[IRExprID], &[IRExprID]) = match self {
+            Self::Closure(closure) => (closure.captures(), &[]),
+            Self::Handle(handle) => (handle.captures(), handle.handler_captures()),
+            Self::Error
+            | Self::Literal(_)
+            | Self::RefOf(_)
+            | Self::RefToPointer(_)
+            | Self::Load(_)
+            | Self::Phi(_)
+            | Self::Binary(_)
+            | Self::Call(_)
+            | Self::Perform(_)
+            | Self::Tuple(_)
+            | Self::StructInitialization(_) => (&[], &[]),
+        };
+
+        captures.iter().chain(handler_captures).copied()
+    }
+
     /// Returns the expressions this expression takes as operands, including
     /// the incoming values of a phi, in unspecified order.
     pub fn operands(&self) -> impl Iterator<Item = IRExprID> + '_ {

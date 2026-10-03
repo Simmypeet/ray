@@ -197,6 +197,20 @@ impl Address {
         self.root == other.root && other.projections.starts_with(&self.projections)
     }
 
+    /// Returns whether the place `other` selects lies within the storage of
+    /// the place this address selects: this address contains `other`, without
+    /// a dereference between the two.
+    ///
+    /// `x` holds `x.0`, but not `*x`, which is memory the pointer in `x` only
+    /// points to.
+    #[must_use]
+    pub fn holds(&self, other: &Self) -> bool {
+        self.contains(other)
+            && !other.projections[self.projections.len()..]
+                .iter()
+                .any(|projection| projection.is_deref())
+    }
+
     /// Returns whether the places this address and `other` select may share
     /// memory: one of them contains the other.
     ///
