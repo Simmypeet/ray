@@ -1,0 +1,35 @@
+module sealed:
+    pub trait Shape[t]:
+        pub def sides(shape: t) -> int32
+        def corners(shape: t) -> int32
+
+    pub struct Square:
+        pub side: int32
+
+    # A trait can be implemented where all of its members are accessible.
+    pub inst SquareShape for Shape[Square]:
+        def sides(shape: Square) -> int32:
+            return 4
+
+        def corners(shape: Square) -> int32:
+            return 4
+
+
+pub struct Triangle:
+    pub side: int32
+
+
+inst TriangleShape for sealed.Shape[Triangle]:
+    def sides(shape: Triangle) -> int32:
+        return 3
+
+    def corners(shape: Triangle) -> int32:
+        return 3
+
+
+def main() -> int32:
+    let sides = sealed.SquareShape.sides(sealed.Square { side = 1 })
+
+    # An instance member has the accessibility of its trait member.
+    let corners = sealed.SquareShape.corners(sealed.Square { side = 1 })
+    return sides + corners + sealed.Shape.corners(sealed.Square { side = 1 })

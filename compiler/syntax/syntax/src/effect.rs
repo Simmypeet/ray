@@ -8,6 +8,7 @@ use rayc_parser::{
 
 use crate::{
     Identifier, Keyword, Punctuation,
+    access_modifier::AccessModifier,
     def::{ParameterList, ReturnType},
     given::GivenParameterList,
     kind::KindAscription,
@@ -83,6 +84,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct Effect {
+        pub access_modifier: AccessModifier = ast::<AccessModifier>().optional(),
         pub eff_keyword: Keyword = expect::Keyword::Eff,
         pub name: Identifier = expect::Identifier,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),

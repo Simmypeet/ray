@@ -1,0 +1,19 @@
+pub trait Show[t]:
+    pub type Output
+    pub def show(value: t) -> int32
+
+
+pub inst ShowInt for Show[int32]:
+    pub type Output = int32
+    pub def show(value: int32) -> int32:
+        return value
+
+
+pub marker Plain
+
+
+pub impl Plain for int32
+
+
+def main() -> int32:
+    return 0

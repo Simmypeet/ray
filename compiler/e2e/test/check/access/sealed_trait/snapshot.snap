@@ -1,0 +1,43 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot implement the trait here, its member `corners` is not accessible
+   ╭▸ compiler/e2e/test/check/access/sealed_trait/main.ray:22:24
+   │
+ 4 │         def corners(shape: t) -> int32
+   │             ─────── `corners` is declared here
+   ‡
+22 │ inst TriangleShape for sealed.Shape[Triangle]:
+   │                        ━━━━━━━━━━━━━━━━━━━━━━ `corners` is not accessible here
+   │
+   ╰ help: the trait can only be implemented within `main.sealed`, where `corners` is accessible
+
+[error]: instance def `corners` is not accessible here
+   ╭▸ compiler/e2e/test/check/access/sealed_trait/main.ray:34:38
+   │
+14 │         def corners(shape: Square) -> int32:
+   │             ─────── `corners` is declared here
+   ‡
+34 │     let corners = sealed.SquareShape.corners(sealed.Square { side = 1 })
+   │                                      ━━━━━━━ `corners` is not accessible here
+   │
+   ╰ help: `corners` has the accessibility of the trait member it implements, which is only accessible within `main.sealed`
+
+[error]: trait def `corners` is not accessible here
+   ╭▸ compiler/e2e/test/check/access/sealed_trait/main.ray:35:43
+   │
+ 4 │         def corners(shape: t) -> int32
+   │             ─────── `corners` is declared here
+   ‡
+35 │     return sides + corners + sealed.Shape.corners(sealed.Square { side = 1 })
+   │                                           ━━━━━━━ `corners` is not accessible here
+   │
+   ╰ help: `corners` is only accessible within `main.sealed`; declare it with `pub` to make it public
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

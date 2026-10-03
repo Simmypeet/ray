@@ -1,2 +1,2 @@
-def area() -> int32:
+pub def area() -> int32:
     return 1

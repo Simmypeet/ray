@@ -359,6 +359,12 @@ impl Resolver<'_> {
         }));
     }
 
+    pub(crate) fn report_inaccessible_symbol(&self, symbol_id: GlobalSymbolID, span: RelativeSpan) {
+        self.handler.receive(Diagnostic::InaccessibleSymbol(crate::InaccessibleSymbol::new(
+            symbol_id, span,
+        )));
+    }
+
     pub(crate) fn report_path_segment_not_found(&self, identifier: rayc_syntax::Identifier) {
         self.handler.receive(Diagnostic::PathSegmentNotFound(PathSegmentNotFound::new(
             identifier.kind.0,

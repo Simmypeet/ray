@@ -1,14 +1,14 @@
 # The submodules of `geometry` live in the `geometry` directory.
-module shapes
+pub module shapes
 
-struct Point:
-    x: int32
-    y: int32
+pub struct Point:
+    pub x: int32
+    pub y: int32
 
-def describe() -> cstr:
+pub def describe() -> cstr:
     return "geometry"
 
-def manhattan(point: Point) -> int32:
+pub def manhattan(point: Point) -> int32:
     # Items of the same module are named without a prefix.
     return sum(point.x, point.y)
 

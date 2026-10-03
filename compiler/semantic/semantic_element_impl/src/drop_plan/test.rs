@@ -14,6 +14,7 @@ use rayc_solver::Solver;
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::{
     GlobalSymbolID, SymbolID,
+    accessibility::Accessibility,
     core_item::{CoreItem, Key as CoreItemKey},
     member::{Key as MemberKey, Member},
     name::Key as NameKey,
@@ -97,16 +98,33 @@ async fn mutually_recursive_plans_share_external_requirement() {
     let mut a_body = StructBody::new();
     let a_next = a_body
         .insert(
-            Field::builder().name(tracked.intern_unsized("next")).span(span()).ty(b_of_a_t).build(),
+            Field::builder()
+                .name(tracked.intern_unsized("next"))
+                .span(span())
+                .ty(b_of_a_t)
+                .accessibility(Accessibility::Public)
+                .build(),
         )
         .unwrap();
     let mut b_body = StructBody::new();
     let b_value = b_body
-        .insert(Field::builder().name(tracked.intern_unsized("value")).span(span()).ty(b_t).build())
+        .insert(
+            Field::builder()
+                .name(tracked.intern_unsized("value"))
+                .span(span())
+                .ty(b_t)
+                .accessibility(Accessibility::Public)
+                .build(),
+        )
         .unwrap();
     b_body
         .insert(
-            Field::builder().name(tracked.intern_unsized("next")).span(span()).ty(a_of_b_t).build(),
+            Field::builder()
+                .name(tracked.intern_unsized("next"))
+                .span(span())
+                .ty(a_of_b_t)
+                .accessibility(Accessibility::Public)
+                .build(),
         )
         .unwrap();
     let a_body: Interned<StructBody> = tracked.intern(a_body);
@@ -184,6 +202,7 @@ async fn foreign_field_uses_its_defining_targets_plan() {
                 .name(tracked.intern_unsized("leaf"))
                 .span(span())
                 .ty(leaf_ty.clone())
+                .accessibility(Accessibility::Public)
                 .build(),
         )
         .unwrap();
@@ -271,11 +290,13 @@ async fn recursive_field_applies_generated_dictionary_to_explicit_wrapper() {
         .name(tracked.intern_unsized("next"))
         .span(span())
         .ty(option_of_node)
+        .accessibility(Accessibility::Public)
         .build();
     let value = Field::builder()
         .name(tracked.intern_unsized("value"))
         .span(span())
         .ty(node_t.clone())
+        .accessibility(Accessibility::Public)
         .build();
     node_body.insert(next).unwrap();
     node_body.insert(value).unwrap();

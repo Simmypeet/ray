@@ -1,6 +1,5 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-assertion_line: 112
 expression: run
 ---
 stderr:
@@ -11,10 +10,10 @@ stderr:
   ╰╴                  ━━━━━ expected an effect row, found a value type
 
 [error]: instance member `call`: parameter 1 type mismatch
-  ╭▸ __ray_core__/core.ray:6:14
+  ╭▸ __ray_core__/core.ray:6:18
   │
-6 │     def call(fn: f, a: this.Args) -> this.Return \ this.Effect
-  │              ───── the corresponding trait declaration is here
+6 │     pub def call(fn: f, a: this.Args) -> this.Return \ this.Effect
+  │                  ───── the corresponding trait declaration is here
   │
   ⸬  compiler/e2e/test/check/semantic/core_def_invalid/main.ray:5:14
   │
@@ -22,10 +21,10 @@ stderr:
   ╰╴             ━━━━━━━━━━━ expected `int32`, found `bool`
 
 [error]: instance member `call`: return type mismatch
-  ╭▸ __ray_core__/core.ray:6:35
+  ╭▸ __ray_core__/core.ray:6:39
   │
-6 │     def call(fn: f, a: this.Args) -> this.Return \ this.Effect
-  │                                   ────────────── the corresponding trait declaration is here
+6 │     pub def call(fn: f, a: this.Args) -> this.Return \ this.Effect
+  │                                       ────────────── the corresponding trait declaration is here
   │
   ⸬  compiler/e2e/test/check/semantic/core_def_invalid/main.ray:5:37
   │
@@ -33,10 +32,10 @@ stderr:
   ╰╴                                    ━━━━━━━ expected `int32`, found `bool`
 
 [error]: instance is missing trait method `Args`
-  ╭▸ __ray_core__/core.ray:2:10
+  ╭▸ __ray_core__/core.ray:2:14
   │
-2 │     type Args
-  │          ──── the trait method is declared here
+2 │     pub type Args
+  │              ──── the trait method is declared here
   │
   ⸬  compiler/e2e/test/check/semantic/core_def_invalid/main.ray:8:6
   │
@@ -44,10 +43,10 @@ stderr:
   ╰╴     ━━━━━━━ implement `Args` in this instance
 
 [error]: instance is missing trait method `Effect`
-  ╭▸ __ray_core__/core.ray:4:10
+  ╭▸ __ray_core__/core.ray:4:14
   │
-4 │     type Effect: Effect
-  │          ────── the trait method is declared here
+4 │     pub type Effect: Effect
+  │              ────── the trait method is declared here
   │
   ⸬  compiler/e2e/test/check/semantic/core_def_invalid/main.ray:8:6
   │
@@ -55,10 +54,10 @@ stderr:
   ╰╴     ━━━━━━━ implement `Effect` in this instance
 
 [error]: instance is missing trait method `call`
-  ╭▸ __ray_core__/core.ray:6:9
+  ╭▸ __ray_core__/core.ray:6:13
   │
-6 │     def call(fn: f, a: this.Args) -> this.Return \ this.Effect
-  │         ──── the trait method is declared here
+6 │     pub def call(fn: f, a: this.Args) -> this.Return \ this.Effect
+  │             ──── the trait method is declared here
   │
   ⸬  compiler/e2e/test/check/semantic/core_def_invalid/main.ray:8:6
   │

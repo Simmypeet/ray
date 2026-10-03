@@ -1,0 +1,43 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: struct `Hidden` is not accessible here
+   ╭▸ compiler/e2e/test/check/access/private_symbol/main.ray:22:27
+   │
+ 9 │     struct Hidden:
+   │            ────── `Hidden` is declared here
+   ‡
+22 │ def unwrap(hidden: shapes.Hidden) -> int32:
+   │                           ━━━━━━ `Hidden` is not accessible here
+   │
+   ╰ help: `Hidden` is only accessible within `main.shapes`; declare it with `pub` to make it public
+
+[error]: def `square` is not accessible here
+   ╭▸ compiler/e2e/test/check/access/private_symbol/main.ray:29:25
+   │
+ 6 │     def square(side: int32) -> int32:
+   │         ────── `square` is declared here
+   ‡
+29 │     let square = shapes.square(2)
+   │                         ━━━━━━ `square` is not accessible here
+   │
+   ╰ help: `square` is only accessible within `main.shapes`; declare it with `pub` to make it public
+
+[error]: module `detail` is not accessible here
+   ╭▸ compiler/e2e/test/check/access/private_symbol/main.ray:30:24
+   │
+12 │     module detail:
+   │            ────── `detail` is declared here
+   ‡
+30 │     let twice = shapes.detail.twice(2)
+   │                        ━━━━━━ `detail` is not accessible here
+   │
+   ╰ help: `detail` is only accessible within `main.shapes`; declare it with `pub` to make it public
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

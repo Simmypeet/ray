@@ -15,6 +15,7 @@ use rayc_target::TargetID;
 
 use crate::module::ModuleContent;
 
+pub mod access_modifier;
 pub mod attribute;
 pub mod def;
 pub mod effect;
