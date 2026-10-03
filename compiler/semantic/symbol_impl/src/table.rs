@@ -3,7 +3,8 @@ use std::{collections::hash_map::Entry, path::Path, sync::Arc};
 use bon::Builder;
 use linkme::distributed_slice;
 use qbice::{
-    Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
+    Decode, Encode, Identifiable, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
 };
 use rayc_extend::extend;
 use rayc_hash::FxHashMap;
@@ -84,8 +85,8 @@ struct SyntaxTable {
 /// maps the symbol ID to its related information.
 ///
 /// A file module is declared in one file and defines its members in another:
-/// its declaration is stored in the table of the declaring file, which links
-/// to the table of the module's own file, where its members are stored.
+/// its information and members are stored in the table of its own file, which
+/// the table of the declaring file links to.
 #[derive(Debug, Default, StableHash, Encode, Decode)]
 pub struct Table {
     symbol_kinds: Map<SymbolKind>,
@@ -102,7 +103,7 @@ pub struct Table {
 
     /// The tables of the file modules declared in this file, in declaration
     /// order.
-    next_tables: Vec<TableKey>,
+    next_tables: Vec<Interned<TableKey>>,
 
     diagnostics: Vec<Diagnostic>,
 }
@@ -147,9 +148,59 @@ impl MemberBuilder {
     #[must_use]
     pub(crate) fn has_member(&self, name: &str) -> bool { self.member.get_by_name(name).is_some() }
 
-    /// Returns the qualified name of the symbol whose members are being built.
-    #[must_use]
-    pub(crate) fn qualified_name(&self) -> &[Interned<str>] { &self.current_qualified_name }
+    /// Declares a member named `name` at `span` and returns its ID, without
+    /// storing any of its information.
+    ///
+    /// A member with an already declared name is still given a distinct ID,
+    /// and the redefinition is reported.
+    pub(crate) async fn declare(
+        &mut self,
+        name: Interned<str>,
+        span: RelativeSpan,
+        engine: &TrackedEngine,
+    ) -> GlobalSymbolID {
+        // retrieves the occurrence count of the member name. normally,
+        // this `count` should be 0 if no redefinition has been encountered.
+        let count = match self.occurrences.entry(name.clone()) {
+            Entry::Occupied(mut occupied_entry) => {
+                let result = *occupied_entry.get();
+                *occupied_entry.get_mut() += 1;
+                result + 1
+            }
+            Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(0);
+                0
+            }
+        };
+
+        // generating the symbol ID for the member
+        let id = engine
+            .calculate_qualified_name_id(
+                self.current_qualified_name.iter().map(|x| &**x).chain(std::iter::once(&*name)),
+                self.current_id.target_id,
+                Some(self.current_id.id),
+                count,
+            )
+            .await;
+
+        match self.member.insert(name, id) {
+            // cool
+            Insertion::Inserted => {}
+
+            // a redefinition has been encountered
+            Insertion::Conflicted(symbol_id) => {
+                self.redef_errors.push(
+                    ItemRedefinition::builder()
+                        .existing_id(self.current_id.target_id.make_global(symbol_id))
+                        .redefinition_span(span)
+                        .in_id(self.current_id)
+                        .build(),
+                );
+            }
+        }
+
+        self.current_id.target_id.make_global(id)
+    }
 
     #[must_use]
     pub(crate) fn child(&self, current_id: GlobalSymbolID, name: Interned<str>) -> Self {
@@ -277,20 +328,13 @@ impl Table {
     /// Returns the keys of the tables of the file modules declared in this
     /// file.
     #[must_use]
-    pub fn next_tables(&self) -> impl DoubleEndedIterator<Item = &TableKey> {
+    pub fn next_tables(&self) -> impl DoubleEndedIterator<Item = &Interned<TableKey>> {
         self.next_tables.iter()
     }
 
-    /// Returns the key of the table storing the members of the given file
-    /// module declared in this file.
-    #[must_use]
-    pub fn file_module_table(&self, symbol_id: SymbolID) -> Option<&TableKey> {
-        self.next_tables.iter().find(|table_key| table_key.module_id == symbol_id)
-    }
-
     /// Records the table of a file module declared in this file, which stores
-    /// the members of the module.
-    pub(crate) fn push_next_table(&mut self, table_key: TableKey) {
+    /// the information of the module.
+    pub(crate) fn push_next_table(&mut self, table_key: Interned<TableKey>) {
         self.next_tables.push(table_key);
     }
 
@@ -307,8 +351,7 @@ impl Table {
             table.diagnostics.push(Diagnostic::SourceFileLoadFail(SourceFileLoadFail {
                 error_message,
                 path: key.path.clone(),
-                file_module_id: (!key.is_target_root())
-                    .then(|| key.target_id.make_global(key.module_id)),
+                submodule_span: key.declaration.map(|declaration| declaration.span),
             }));
         };
 
@@ -339,13 +382,15 @@ impl Table {
             .0
     }
 
-    fn insert_member_as_root_module(&mut self, member: MemberBuilder, engine: &TrackedEngine) {
+    /// Inserts the module whose members the file of `key` defines.
+    fn insert_module(&mut self, key: &TableKey, member: MemberBuilder, engine: &TrackedEngine) {
         self.insert_info(
-            member.current_id.id,
-            None,
+            key.module_id,
+            key.declaration.map(|declaration| declaration.parent_id),
             Infos::builder()
                 .symbol_kind(SymbolKind::Module)
-                .name(member.current_qualified_name[0].clone())
+                .name(key.qualified_name.last().expect("a module has a name").clone())
+                .maybe_span(key.declaration.map(|declaration| declaration.span))
                 .member(member)
                 .build(),
             engine,
@@ -441,54 +486,14 @@ impl Table {
         info: Infos,
         engine: &TrackedEngine,
     ) -> GlobalSymbolID {
-        // retrieves the occurrence count of the member name. normally,
-        // this `count` should be 0 if no redefinition has been encountered.
-        let count = match member_builder.occurrences.entry(info.name.clone()) {
-            Entry::Occupied(mut occupied_entry) => {
-                let result = *occupied_entry.get();
-                *occupied_entry.get_mut() += 1;
-                result + 1
-            }
-            Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(0);
-                0
-            }
-        };
-
-        // generating the symbol ID for the member
-        let id = engine
-            .calculate_qualified_name_id(
-                member_builder
-                    .current_qualified_name
-                    .iter()
-                    .map(|x| &**x)
-                    .chain(std::iter::once(&*info.name)),
-                member_builder.current_id.target_id,
-                Some(member_builder.current_id.id),
-                count,
-            )
+        let id = member_builder
+            .declare(info.name.clone(), info.span.expect("should have a span"), engine)
             .await;
 
-        match member_builder.member.insert(info.name.clone(), id) {
-            // cool
-            Insertion::Inserted => {}
-
-            // a redefinition has been encountered
-            Insertion::Conflicted(symbol_id) => {
-                member_builder.redef_errors.push(
-                    ItemRedefinition::builder()
-                        .existing_id(member_builder.current_id.target_id.make_global(symbol_id))
-                        .redefinition_span(info.span.expect("should have a span"))
-                        .in_id(member_builder.current_id)
-                        .build(),
-                );
-            }
-        }
-
         // finally, insert the symbol information into the table
-        self.insert_info(id, Some(member_builder.current_id.id), info, engine);
+        self.insert_info(id.id, Some(member_builder.current_id.id), info, engine);
 
-        member_builder.current_id.target_id.make_global(id)
+        id
     }
 
     pub async fn insert_unnamed_symbol(
@@ -544,10 +549,13 @@ impl Table {
 ///
 /// The key carries everything needed to build the table from its file alone,
 /// so that the table of a file module does not depend on the table of the
-/// file declaring the module, and is reused when only the declaring file
-/// changes.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query)]
-#[value(Arc<Table>)]
+/// file declaring the module. It is reused when the declaring file changes,
+/// unless the edit moves the span of the module's declaration, which the key
+/// carries.
+///
+/// It is always passed around interned, as cloning an [`Interned`] key bumps
+/// a single reference count rather than one per field.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable)]
 pub struct TableKey {
     target_id: TargetID,
 
@@ -563,6 +571,33 @@ pub struct TableKey {
 
     /// The qualified name of the module, starting with the target name.
     qualified_name: Interned<[Interned<str>]>,
+
+    /// Where the module is declared, or `None` for the root module of the
+    /// target, which is not declared anywhere.
+    declaration: Option<ModuleDeclaration>,
+}
+
+/// The declaration `module name` of a file module in another file.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+struct ModuleDeclaration {
+    /// The module in which the file module is declared.
+    parent_id: SymbolID,
+
+    /// The span of the name of the file module in its declaration.
+    span: RelativeSpan,
 }
 
 impl TableKey {
@@ -582,32 +617,37 @@ impl TableKey {
             directory,
             module_id: engine.get_target_root_module_id(target_id).await,
             qualified_name: engine.intern_unsized(vec![engine.intern_unsized(arg.target_name())]),
+            declaration: None,
         }
     }
 
-    /// Creates the key of the table of the file module `module_id`, named
-    /// `qualified_name`, declared in a module owning the directory `directory`.
+    /// Creates the key of the table of the file module `module_id`, declared
+    /// as `name` at `span` in the module of `parent`, which owns the directory
+    /// `directory`.
     ///
     /// Like in Rust, the file module `name` declared in a module owning the
     /// directory `dir` is loaded from `dir/name.ray` and owns the directory
     /// `dir/name`.
     pub(crate) fn new_file_module(
-        target_id: TargetID,
-        directory: &Path,
+        parent: &MemberBuilder,
         module_id: SymbolID,
-        qualified_name: Vec<Interned<str>>,
+        name: &Interned<str>,
+        span: RelativeSpan,
+        directory: &Path,
         engine: &TrackedEngine,
     ) -> Self {
-        let name = qualified_name.last().expect("a file module has a name").clone();
+        let mut qualified_name = parent.current_qualified_name.clone();
+        qualified_name.push(name.clone());
 
         Self {
-            target_id,
+            target_id: parent.current_id.target_id,
             path: engine.intern_unsized(
                 directory.join(format!("{}.{SOURCE_FILE_EXTENSION}", name.as_ref())),
             ),
             directory: engine.intern_unsized(directory.join(name.as_ref())),
             module_id,
             qualified_name: engine.intern_unsized(qualified_name),
+            declaration: Some(ModuleDeclaration { parent_id: parent.current_id.id, span }),
         }
     }
 
@@ -618,22 +658,23 @@ impl TableKey {
     /// Returns the path of the source file.
     #[must_use]
     pub const fn path(&self) -> &Interned<Path> { &self.path }
+}
 
-    /// Returns whether the file is the root file of its target, which defines
-    /// the root module. Any other file defines a file module declared in
-    /// another file.
-    #[must_use]
-    pub fn is_target_root(&self) -> bool { self.qualified_name.len() == 1 }
+/// A query for the [`Table`] of the source file identified by a [`TableKey`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query)]
+#[value(Arc<Table>)]
+struct Key {
+    table_key: Interned<TableKey>,
 }
 
 /// Returns the table of the source file identified by `table_key`.
 #[extend]
-pub async fn get_table(self: &TrackedEngine, table_key: &TableKey) -> Arc<Table> {
-    self.query(table_key).await
+pub async fn get_table(self: &TrackedEngine, table_key: &Interned<TableKey>) -> Arc<Table> {
+    self.query(&Key { table_key: table_key.clone() }).await
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
-pub async fn table_executor(key: &TableKey, engine: &TrackedEngine) -> Arc<Table> {
+async fn table_executor(Key { table_key: key }: &Key, engine: &TrackedEngine) -> Arc<Table> {
     let mut table = Table::default();
     let mut member =
         MemberBuilder::new(key.target_id.make_global(key.module_id), key.qualified_name.to_vec());
@@ -645,16 +686,12 @@ pub async fn table_executor(key: &TableKey, engine: &TrackedEngine) -> Arc<Table
             .await;
     }
 
-    // the root file declares the root module itself, whereas a file module is
-    // declared in another file and only gets its members from this one
-    if key.is_target_root() {
-        table.insert_member_as_root_module(member, engine);
-    } else {
-        table.insert_symbol_members(key.module_id, member, engine);
-    }
+    // a file module is declared in another file, but its information is
+    // stored here, alongside its members
+    table.insert_module(key, member, engine);
 
     Arc::new(table)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
-static TABLE_EXECUTOR: Registration<Config> = Registration::new::<TableKey, TableExecutor>();
+static TABLE_EXECUTOR: Registration<Config> = Registration::new::<Key, TableExecutor>();

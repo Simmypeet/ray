@@ -21,11 +21,11 @@ use crate::table::{Table, TableKey, get_table};
 #[derive(Debug, Default, StableHash, Encode, Decode)]
 pub struct TableIndex {
     /// The table storing the information of each symbol.
-    symbol_tables: FxHashMap<SymbolID, TableKey>,
+    symbol_tables: FxHashMap<SymbolID, Interned<TableKey>>,
 
     /// The tables of the target: the root file's first, followed by the
     /// tables of the file modules in declaration order, depth-first.
-    table_keys: Vec<TableKey>,
+    table_keys: Vec<Interned<TableKey>>,
 
     /// The paths of the source files loaded into the target.
     source_files: FxHashMap<LocalSourceID, Interned<Path>>,
@@ -35,7 +35,7 @@ impl TableIndex {
     /// Returns the key of the table storing the information of the given
     /// symbol.
     #[must_use]
-    pub fn symbol_table(&self, symbol_id: SymbolID) -> Option<&TableKey> {
+    pub fn symbol_table(&self, symbol_id: SymbolID) -> Option<&Interned<TableKey>> {
         self.symbol_tables.get(&symbol_id)
     }
 
@@ -45,7 +45,7 @@ impl TableIndex {
     }
 
     /// Returns the keys of the tables of every source file of the target.
-    pub fn table_keys(&self) -> impl Iterator<Item = &TableKey> { self.table_keys.iter() }
+    pub fn table_keys(&self) -> impl Iterator<Item = &Interned<TableKey>> { self.table_keys.iter() }
 
     /// Returns the path of the loaded source file with the given ID, if the
     /// file belongs to the target.
@@ -60,7 +60,7 @@ impl TableIndex {
     }
 
     /// Records the symbols and the source file of the given table.
-    fn insert_table(&mut self, table_key: TableKey, table: &Table) {
+    fn insert_table(&mut self, table_key: Interned<TableKey>, table: &Table) {
         for symbol_id in table.all_symbol_ids() {
             self.symbol_tables.insert(symbol_id, table_key.clone());
         }
@@ -92,7 +92,7 @@ async fn table_index_executor(
 
     // follows the tables of the file modules from the root file, depth-first
     // and in declaration order
-    let mut pending = vec![TableKey::new_target_root(target_id, engine).await];
+    let mut pending = vec![engine.intern(TableKey::new_target_root(target_id, engine).await)];
     while let Some(table_key) = pending.pop() {
         let table = engine.get_table(&table_key).await;
 
@@ -115,7 +115,7 @@ static TABLE_INDEX_EXECUTOR: Registration<Config> =
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
-#[value(Option<TableKey>)]
+#[value(Option<Interned<TableKey>>)]
 struct SymbolTableKey {
     symbol_id: GlobalSymbolID,
 }
@@ -124,7 +124,7 @@ struct SymbolTableKey {
 async fn symbol_table_executor(
     &SymbolTableKey { symbol_id }: &SymbolTableKey,
     engine: &TrackedEngine,
-) -> Option<TableKey> {
+) -> Option<Interned<TableKey>> {
     engine.get_table_index(symbol_id.target_id).await.symbol_table(symbol_id.id).cloned()
 }
 

@@ -197,27 +197,21 @@ pub struct SourceFileLoadFail {
     /// The path to the source file that failed to load.
     pub path: Interned<Path>,
 
-    /// The file module whose file failed to load. `None` for root file load
-    /// failures.
-    pub file_module_id: Option<GlobalSymbolID>,
+    /// The span of the submodule identifier declaration, if this failure
+    /// occurred when loading a submodule. `None` for root file load failures.
+    pub submodule_span: Option<RelativeSpan>,
 }
 
 impl Report for SourceFileLoadFail {
     async fn report(&self, engine: &TrackedEngine) -> rayc_diagnostic::Rendered<ByteIndex> {
-        let (highlight, context_message) = match self.file_module_id {
-            Some(file_module_id) => {
-                // the declaration of the file module lies in another file
-                let span = engine.get_span(file_module_id).await;
-                let highlight = match span {
-                    Some(span) => Some(Highlight::new(
-                        engine.to_absolute_span(&span).await,
-                        Some("submodule declaration here".to_string()),
-                    )),
-                    None => None,
-                };
-
-                (highlight, format!("failed to load submodule file `{}`", self.path.display()))
-            }
+        let (highlight, context_message) = match self.submodule_span.as_ref() {
+            Some(submodule_span) => (
+                Some(Highlight::new(
+                    engine.to_absolute_span(submodule_span).await,
+                    Some("submodule declaration here".to_string()),
+                )),
+                format!("failed to load submodule file `{}`", self.path.display()),
+            ),
             None => (None, format!("failed to load root file `{}`", self.path.display())),
         };
 
@@ -234,7 +228,7 @@ impl Report for SourceFileLoadFail {
 /// its table.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query)]
 #[value(Interned<[Rendered<ByteIndex>]>)]
-struct FileRenderedKey(TableKey);
+struct FileRenderedKey(Interned<TableKey>);
 
 #[executor(config = Config)]
 async fn file_rendered_executor(

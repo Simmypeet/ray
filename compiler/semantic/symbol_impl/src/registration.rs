@@ -532,7 +532,7 @@ impl Table {
     /// Like in Rust, every module owns a directory named after it inside its
     /// parent's directory, and the root module owns the directory of the root
     /// file. A file module `name` declared in a module owning the directory
-    /// `dir` defines its members in `dir/name.ray`, which gets its own table.
+    /// `dir` defines its members in `dir/name.ray`.
     async fn register_module(
         &mut self,
         member_builder: &mut MemberBuilder,
@@ -544,7 +544,27 @@ impl Table {
             return;
         };
         let name = ident.kind.0.clone();
-        let redefined = member_builder.has_member(&name);
+        let body = module.body();
+
+        // a file module is only declared here: its information is stored in
+        // the table of its own file, alongside its members. A redefined file
+        // module would share the file of the original one, so it is kept here
+        // instead, with no members.
+        if body.is_none() && !member_builder.has_member(&name) {
+            let module_id = member_builder.declare(name.clone(), ident.span, engine).await;
+            let table_key = TableKey::new_file_module(
+                member_builder,
+                module_id.id,
+                &name,
+                ident.span,
+                directory,
+                engine,
+            );
+
+            self.push_next_table(engine.intern(table_key));
+            return;
+        }
+
         let module_id = self
             .insert_symbol(
                 member_builder,
@@ -557,35 +577,19 @@ impl Table {
             )
             .await;
 
-        let module_directory = directory.join(name.as_ref());
+        // an inline module defines its members in its body
         let mut module_members = member_builder.child(module_id, name.clone());
-
-        if let Some(body) = module.body() {
-            // an inline module defines its members in its body
+        if let Some(body) = body {
             Box::pin(self.register_module_members(
                 &mut module_members,
                 body.members(),
-                &module_directory,
+                &directory.join(name.as_ref()),
                 engine,
             ))
             .await;
-            self.insert_symbol_members(module_id.id, module_members, engine);
-        } else if redefined {
-            // a redefined file module would share the file of the original
-            // one, so it is left empty
-            self.insert_symbol_members(module_id.id, module_members, engine);
-        } else {
-            // a file module defines its members in its own file, whose table
-            // is built separately
-            let table_key = TableKey::new_file_module(
-                module_id.target_id,
-                directory,
-                module_id.id,
-                module_members.qualified_name().to_vec(),
-                engine,
-            );
-            self.push_next_table(table_key);
         }
+
+        self.insert_symbol_members(module_id.id, module_members, engine);
     }
 
     /// Registers the members of a module whose directory is `directory`.
