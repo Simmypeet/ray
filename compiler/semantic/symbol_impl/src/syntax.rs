@@ -21,14 +21,14 @@ use rayc_syntax::{
     where_clause::WhereClause,
 };
 
-use crate::table::get_table;
+use crate::index::get_symbol_table;
 
 #[executor(config = Config)]
 pub async fn parameter_list_syntax_executor(
     &ParameterListSyntaxKey { symbol_id }: &ParameterListSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<ParameterList> {
-    let table = engine.get_table(symbol_id.target_id).await;
+    let table = engine.get_symbol_table(symbol_id).await;
 
     table.get_parameter_list_syntax(symbol_id.id)
 }
@@ -42,7 +42,7 @@ pub async fn return_type_syntax_executor(
     &ReturnTypeSyntaxKey { symbol_id }: &ReturnTypeSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<ReturnType> {
-    let table = engine.get_table(symbol_id.target_id).await;
+    let table = engine.get_symbol_table(symbol_id).await;
 
     table.get_return_type_syntax(symbol_id.id)
 }
@@ -56,7 +56,7 @@ pub async fn effect_row_syntax_executor(
     &EffectRowSyntaxKey { symbol_id }: &EffectRowSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<EffectRowAnnotation> {
-    let table = engine.get_table(symbol_id.target_id).await;
+    let table = engine.get_symbol_table(symbol_id).await;
 
     table.get_effect_row_syntax(symbol_id.id)
 }
@@ -70,7 +70,7 @@ pub async fn def_body_syntax_executor(
     &DefBodySyntaxKey { symbol_id }: &DefBodySyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<Block> {
-    let table = engine.get_table(symbol_id.target_id).await;
+    let table = engine.get_symbol_table(symbol_id).await;
 
     table.get_def_body_syntax(symbol_id.id)
 }
@@ -84,7 +84,7 @@ pub async fn struct_body_syntax_executor(
     &StructBodySyntaxKey { symbol_id }: &StructBodySyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<StructBody> {
-    engine.get_table(symbol_id.target_id).await.get_struct_body_syntax(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.get_struct_body_syntax(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -96,7 +96,7 @@ pub async fn linear_struct_executor(
     &LinearStructKey { symbol_id }: &LinearStructKey,
     engine: &TrackedEngine,
 ) -> bool {
-    engine.get_table(symbol_id.target_id).await.is_linear_struct(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.is_linear_struct(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -108,7 +108,7 @@ pub async fn variadic_def_executor(
     &VariadicDefKey { symbol_id }: &VariadicDefKey,
     engine: &TrackedEngine,
 ) -> bool {
-    engine.get_table(symbol_id.target_id).await.is_variadic_def(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.is_variadic_def(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -120,7 +120,7 @@ pub async fn type_parameter_list_syntax_executor(
     &TypeParameterListSyntaxKey { symbol_id }: &TypeParameterListSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<TypeParameterList> {
-    engine.get_table(symbol_id.target_id).await.get_type_parameter_list_syntax(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.get_type_parameter_list_syntax(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -132,7 +132,7 @@ pub async fn given_parameter_list_syntax_executor(
     &GivenParameterListSyntaxKey { symbol_id }: &GivenParameterListSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<GivenParameterList> {
-    engine.get_table(symbol_id.target_id).await.get_given_parameter_list_syntax(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.get_given_parameter_list_syntax(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -144,7 +144,7 @@ pub async fn instance_trait_syntax_executor(
     &InstanceTraitSyntaxKey { symbol_id }: &InstanceTraitSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<Path> {
-    engine.get_table(symbol_id.target_id).await.get_instance_trait_syntax(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.get_instance_trait_syntax(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -156,10 +156,7 @@ pub async fn marker_implementation_marker_syntax_executor(
     &MarkerImplementationMarkerSyntaxKey { symbol_id }: &MarkerImplementationMarkerSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<Path> {
-    engine
-        .get_table(symbol_id.target_id)
-        .await
-        .get_marker_implementation_marker_syntax(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.get_marker_implementation_marker_syntax(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -173,7 +170,7 @@ pub async fn negative_marker_implementation_syntax_executor(
     &NegativeMarkerImplementationSyntaxKey { symbol_id }: &NegativeMarkerImplementationSyntaxKey,
     engine: &TrackedEngine,
 ) -> bool {
-    engine.get_table(symbol_id.target_id).await.is_negative_marker_implementation(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.is_negative_marker_implementation(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -187,7 +184,7 @@ pub async fn marker_implementation_type_syntax_executor(
     &MarkerImplementationTypeSyntaxKey { symbol_id }: &MarkerImplementationTypeSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<Type> {
-    engine.get_table(symbol_id.target_id).await.get_marker_implementation_type_syntax(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.get_marker_implementation_type_syntax(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -200,7 +197,7 @@ pub async fn type_definition_syntax_executor(
     &TypeDefinitionSyntaxKey { symbol_id }: &TypeDefinitionSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<Type> {
-    engine.get_table(symbol_id.target_id).await.get_type_definition_syntax(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.get_type_definition_syntax(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -212,7 +209,7 @@ pub async fn where_clause_syntax_executor(
     &WhereClauseSyntaxKey { symbol_id }: &WhereClauseSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<WhereClause> {
-    engine.get_table(symbol_id.target_id).await.get_where_clause_syntax(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.get_where_clause_syntax(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -224,7 +221,7 @@ pub async fn kind_ascription_syntax_executor(
     &KindAscriptionSyntaxKey { symbol_id }: &KindAscriptionSyntaxKey,
     engine: &TrackedEngine,
 ) -> Option<KindAscription> {
-    engine.get_table(symbol_id.target_id).await.get_kind_ascription_syntax(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.get_kind_ascription_syntax(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]

@@ -6,7 +6,7 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::member::{Key, Member};
 use rayc_target::Global;
 
-use crate::table::get_table;
+use crate::{index::get_symbol_table, table::get_table};
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
@@ -22,9 +22,14 @@ async fn projection_executor(
     engine: &TrackedEngine,
 ) -> Option<Interned<Member>> {
     let id = key.symbol_id;
-    let table = engine.get_table(id.target_id).await;
+    let table = engine.get_symbol_table(id).await;
 
-    table.member(id.id).cloned()
+    // a file module is declared in one file and defines its members in its
+    // own file, which has its own table
+    match table.file_module_table(id.id) {
+        Some(table_key) => engine.get_table(table_key).await.member(id.id).cloned(),
+        None => table.member(id.id).cloned(),
+    }
 }
 
 #[distributed_slice(RAY_PROGRAM)]

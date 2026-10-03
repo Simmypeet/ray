@@ -1,4 +1,5 @@
 pub mod diagnostic;
+pub mod index;
 pub mod member;
 pub mod name;
 pub mod parent;

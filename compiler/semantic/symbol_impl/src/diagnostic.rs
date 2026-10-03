@@ -21,7 +21,10 @@ use rayc_symbol::{
 };
 use rayc_target::TargetID;
 
-use crate::table;
+use crate::{
+    index::get_table_index,
+    table::{TableKey, get_table},
+};
 
 /// Enumeration of all diagnostics that can be reported while building table
 /// tree.
@@ -194,21 +197,27 @@ pub struct SourceFileLoadFail {
     /// The path to the source file that failed to load.
     pub path: Interned<Path>,
 
-    /// The span of the submodule identifier declaration, if this failure
-    /// occurred when loading a submodule. `None` for root file load failures.
-    pub submodule_span: Option<RelativeSpan>,
+    /// The file module whose file failed to load. `None` for root file load
+    /// failures.
+    pub file_module_id: Option<GlobalSymbolID>,
 }
 
 impl Report for SourceFileLoadFail {
     async fn report(&self, engine: &TrackedEngine) -> rayc_diagnostic::Rendered<ByteIndex> {
-        let (highlight, context_message) = match self.submodule_span.as_ref() {
-            Some(submodule_span) => (
-                Some(Highlight::new(
-                    engine.to_absolute_span(submodule_span).await,
-                    Some("submodule declaration here".to_string()),
-                )),
-                format!("failed to load submodule file `{}`", self.path.display()),
-            ),
+        let (highlight, context_message) = match self.file_module_id {
+            Some(file_module_id) => {
+                // the declaration of the file module lies in another file
+                let span = engine.get_span(file_module_id).await;
+                let highlight = match span {
+                    Some(span) => Some(Highlight::new(
+                        engine.to_absolute_span(&span).await,
+                        Some("submodule declaration here".to_string()),
+                    )),
+                    None => None,
+                };
+
+                (highlight, format!("failed to load submodule file `{}`", self.path.display()))
+            }
             None => (None, format!("failed to load root file `{}`", self.path.display())),
         };
 
@@ -220,6 +229,50 @@ impl Report for SourceFileLoadFail {
     }
 }
 
+/// A query for retrieving the rendered diagnostics of a single source file of
+/// a target: its lexical and syntax errors and the errors found while building
+/// its table.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query)]
+#[value(Interned<[Rendered<ByteIndex>]>)]
+struct FileRenderedKey(TableKey);
+
+#[executor(config = Config)]
+async fn file_rendered_executor(
+    FileRenderedKey(table_key): &FileRenderedKey,
+    engine: &TrackedEngine,
+) -> Interned<[Rendered<ByteIndex>]> {
+    let path = table_key.path().clone();
+    let target_id = table_key.target_id();
+
+    let mut rendered = Vec::new();
+
+    // the lexical and syntax errors of the file
+    if let Ok((_, errors)) =
+        engine.query(&rayc_lexical::Key { path: path.clone(), target_id }).await
+    {
+        for error in errors.iter() {
+            rendered.push(error.report(engine).await);
+        }
+    }
+
+    if let Ok((_, errors)) = engine.query(&rayc_syntax::Key { path, target_id }).await {
+        for error in errors.iter() {
+            rendered.push(error.report(engine).await);
+        }
+    }
+
+    // the errors found while building the table of the file
+    for diagnostic in engine.get_table(table_key).await.diagnostics() {
+        rendered.push(diagnostic.report(engine).await);
+    }
+
+    engine.intern_unsized(rendered)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static FILE_RENDERED_EXECUTOR: Registration<Config> =
+    Registration::new::<FileRenderedKey, FileRenderedExecutor>();
+
 /// A query for retrieving all rendered diagnostics for a target.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
@@ -228,36 +281,15 @@ impl Report for SourceFileLoadFail {
 pub struct RenderedKey(pub TargetID);
 
 #[executor(config = Config)]
-#[allow(clippy::too_many_lines)]
 async fn rendered_executor(
     &RenderedKey(target_id): &RenderedKey,
     engine: &TrackedEngine,
 ) -> Interned<[Rendered<ByteIndex>]> {
-    let table = engine.query(&table::Key { target_id }).await;
+    let index = engine.get_table_index(target_id).await;
 
     let mut rendered = Vec::new();
-
-    // the lexical and syntax errors of every source file in the target
-    for path in table.source_file_paths() {
-        if let Ok((_, errors)) =
-            engine.query(&rayc_lexical::Key { path: path.clone(), target_id }).await
-        {
-            for error in errors.iter() {
-                rendered.push(error.report(engine).await);
-            }
-        }
-
-        if let Ok((_, errors)) =
-            engine.query(&rayc_syntax::Key { path: path.clone(), target_id }).await
-        {
-            for error in errors.iter() {
-                rendered.push(error.report(engine).await);
-            }
-        }
-    }
-
-    for diagnostic in table.diagnostics() {
-        rendered.push(diagnostic.report(engine).await);
+    for table_key in index.table_keys() {
+        rendered.extend(engine.query(&FileRenderedKey(table_key.clone())).await.iter().cloned());
     }
 
     engine.intern_unsized(rendered)

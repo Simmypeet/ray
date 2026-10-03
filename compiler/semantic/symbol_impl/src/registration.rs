@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use rayc_qbice::TrackedEngine;
-use rayc_source_file::{SOURCE_FILE_EXTENSION, SourceElement};
+use rayc_source_file::SourceElement;
 use rayc_symbol::symbol_kind::SymbolKind;
 use rayc_syntax::{
     Passable,
@@ -20,7 +20,7 @@ use crate::{
         Diagnostic, InvalidAttribute, InvalidAttributeKind, InvalidDefDeclaration,
         InvalidDefDeclarationKind, InvalidEffectOperationDeclaration,
     },
-    table::{Infos, MemberBuilder, Table},
+    table::{Infos, MemberBuilder, Table, TableKey},
 };
 
 impl Table {
@@ -532,7 +532,7 @@ impl Table {
     /// Like in Rust, every module owns a directory named after it inside its
     /// parent's directory, and the root module owns the directory of the root
     /// file. A file module `name` declared in a module owning the directory
-    /// `dir` is loaded from `dir/name.ray`.
+    /// `dir` defines its members in `dir/name.ray`, which gets its own table.
     async fn register_module(
         &mut self,
         member_builder: &mut MemberBuilder,
@@ -569,27 +569,23 @@ impl Table {
                 engine,
             ))
             .await;
-        } else if !redefined {
-            // a file module loads its members from its file. A redefined
-            // module would load the same file again, so it is left empty.
-            let path = engine.intern_unsized(
-                directory.join(format!("{}.{SOURCE_FILE_EXTENSION}", name.as_ref())),
+            self.insert_symbol_members(module_id.id, module_members, engine);
+        } else if redefined {
+            // a redefined file module would share the file of the original
+            // one, so it is left empty
+            self.insert_symbol_members(module_id.id, module_members, engine);
+        } else {
+            // a file module defines its members in its own file, whose table
+            // is built separately
+            let table_key = TableKey::new_file_module(
+                module_id.target_id,
+                directory,
+                module_id.id,
+                module_members.qualified_name().to_vec(),
+                engine,
             );
-            let module_content =
-                self.load_source_file(path, module_id.target_id, Some(ident.span), engine).await;
-
-            if let Some(module_content) = module_content {
-                Box::pin(self.register_module_members(
-                    &mut module_members,
-                    module_content.members(),
-                    &module_directory,
-                    engine,
-                ))
-                .await;
-            }
+            self.push_next_table(table_key);
         }
-
-        self.insert_symbol_members(module_id.id, module_members, engine);
     }
 
     /// Registers the members of a module whose directory is `directory`.

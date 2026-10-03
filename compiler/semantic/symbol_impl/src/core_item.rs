@@ -5,11 +5,11 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{
     GlobalSymbolID, calculate_core_root_target_module_id,
     core_item::{CoreItem, Key},
-    symbol_kind::SymbolKind,
+    member::get_members,
+    name::get_name,
+    symbol_kind::{SymbolKind, get_symbol_kind},
 };
 use rayc_target::TargetID;
-
-use crate::table::get_table;
 
 async fn find(
     engine: &TrackedEngine,
@@ -18,18 +18,20 @@ async fn find(
     name: &str,
     expected: SymbolKind,
 ) -> GlobalSymbolID {
-    let table = engine.get_table(TargetID::CORE).await;
-    let members = table.member(parent.id).unwrap_or_else(|| {
-        panic!("invalid core item {role:?}: missing containing declaration {parent:?}")
-    });
+    let members = engine.get_members(parent).await;
 
     // Include redefinitions kept in the ordinary table's unnamed member set.
-    let matches: Vec<_> =
-        members.all_ids().filter(|id| table.get_name(*id).as_ref() == name).collect();
+    let mut matches = Vec::new();
+    for id in members.all_ids() {
+        let id = TargetID::CORE.make_global(id);
+        if engine.get_name(id).await.as_ref() == name {
+            matches.push(id);
+        }
+    }
 
     assert_eq!(matches.len(), 1, "invalid core item {role:?}: expected one {name} declaration");
-    let id = TargetID::CORE.make_global(matches[0]);
-    let actual = table.get_symbol_kind(id.id);
+    let id = matches[0];
+    let actual = engine.get_symbol_kind(id).await;
     assert_eq!(actual, expected, "invalid core item {role:?}: wrong symbol kind for {name}");
 
     id

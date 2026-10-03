@@ -5,10 +5,11 @@ use linkme::distributed_slice;
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
 };
+use rayc_extend::extend;
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_source_file::{LocalSourceID, get_stable_path_id};
+use rayc_source_file::{LocalSourceID, SOURCE_FILE_EXTENSION, get_stable_path_id};
 use rayc_symbol::{
     GlobalSymbolID, SymbolID, calculate_implements_id, calculate_qualified_name_id,
     get_target_root_module_id,
@@ -79,8 +80,12 @@ struct SyntaxTable {
     kind_ascriptions: Map<Option<KindAscription>>,
 }
 
-/// Stores the symbol information. It maps the symbol ID to its related
-/// information.
+/// Stores the information of the symbols declared in a single source file. It
+/// maps the symbol ID to its related information.
+///
+/// A file module is declared in one file and defines its members in another:
+/// its declaration is stored in the table of the declaring file, which links
+/// to the table of the module's own file, where its members are stored.
 #[derive(Debug, Default, StableHash, Encode, Decode)]
 pub struct Table {
     symbol_kinds: Map<SymbolKind>,
@@ -90,7 +95,14 @@ pub struct Table {
     names: Map<Interned<str>>,
 
     syntaxes: SyntaxTable,
-    source_files: FxHashMap<LocalSourceID, Interned<Path>>,
+
+    /// The ID of the source file of this table, or `None` if the file could
+    /// not be loaded.
+    source_id: Option<LocalSourceID>,
+
+    /// The tables of the file modules declared in this file, in declaration
+    /// order.
+    next_tables: Vec<TableKey>,
 
     diagnostics: Vec<Diagnostic>,
 }
@@ -119,23 +131,6 @@ pub struct MemberBuilder {
 }
 
 impl MemberBuilder {
-    pub async fn new_root_module_id(
-        target_id: TargetID,
-        target_name: Interned<str>,
-        engine: &TrackedEngine,
-    ) -> Self {
-        Self {
-            current_id: target_id.make_global(engine.get_target_root_module_id(target_id).await),
-
-            current_qualified_name: vec![target_name],
-            member: Member::default(),
-            occurrences: FxHashMap::default(),
-            redef_errors: Vec::new(),
-        }
-    }
-}
-
-impl MemberBuilder {
     #[must_use]
     pub fn new(current_id: GlobalSymbolID, current_qualified_name: Vec<Interned<str>>) -> Self {
         Self {
@@ -151,6 +146,10 @@ impl MemberBuilder {
     /// registered.
     #[must_use]
     pub(crate) fn has_member(&self, name: &str) -> bool { self.member.get_by_name(name).is_some() }
+
+    /// Returns the qualified name of the symbol whose members are being built.
+    #[must_use]
+    pub(crate) fn qualified_name(&self) -> &[Interned<str>] { &self.current_qualified_name }
 
     #[must_use]
     pub(crate) fn child(&self, current_id: GlobalSymbolID, name: Interned<str>) -> Self {
@@ -270,43 +269,54 @@ impl Table {
         self.syntaxes.kind_ascriptions.get(&symbol_id).cloned().unwrap()
     }
 
-    /// Returns the path of the loaded source file with the given ID, if the
-    /// file belongs to this target.
+    /// Returns the ID of the source file of this table, or `None` if the file
+    /// could not be loaded.
     #[must_use]
-    pub fn get_source_file_path(&self, source_id: LocalSourceID) -> Option<Interned<Path>> {
-        self.source_files.get(&source_id).cloned()
+    pub const fn source_id(&self) -> Option<LocalSourceID> { self.source_id }
+
+    /// Returns the keys of the tables of the file modules declared in this
+    /// file.
+    #[must_use]
+    pub fn next_tables(&self) -> impl DoubleEndedIterator<Item = &TableKey> {
+        self.next_tables.iter()
     }
 
-    /// Returns the paths of every source file loaded into this target: the
-    /// root file and the files of its file modules.
-    pub fn source_file_paths(&self) -> impl Iterator<Item = &Interned<Path>> {
-        self.source_files.values()
+    /// Returns the key of the table storing the members of the given file
+    /// module declared in this file.
+    #[must_use]
+    pub fn file_module_table(&self, symbol_id: SymbolID) -> Option<&TableKey> {
+        self.next_tables.iter().find(|table_key| table_key.module_id == symbol_id)
     }
 
-    /// Loads the module content of the source file at `path` and records the
-    /// file as part of this target.
+    /// Records the table of a file module declared in this file, which stores
+    /// the members of the module.
+    pub(crate) fn push_next_table(&mut self, table_key: TableKey) {
+        self.next_tables.push(table_key);
+    }
+
+    /// Loads the module content of the source file of `key`.
     ///
-    /// Loading failures are reported as diagnostics, pointing at
-    /// `submodule_span` when the file is loaded for a file module declaration.
-    pub(crate) async fn load_source_file(
+    /// Loading failures are reported as diagnostics, pointing at the
+    /// declaration of the file module when the file belongs to one.
+    async fn load_source_file(
         &mut self,
-        path: Interned<Path>,
-        target_id: TargetID,
-        submodule_span: Option<RelativeSpan>,
+        key: &TableKey,
         engine: &TrackedEngine,
     ) -> Option<ModuleContent> {
         let report_failure = |table: &mut Self, error_message: String| {
             table.diagnostics.push(Diagnostic::SourceFileLoadFail(SourceFileLoadFail {
                 error_message,
-                path: path.clone(),
-                submodule_span,
+                path: key.path.clone(),
+                file_module_id: (!key.is_target_root())
+                    .then(|| key.target_id.make_global(key.module_id)),
             }));
         };
 
         // read the file first so that a missing or unreadable file is reported
         // with its IO error
-        if let Err(error) =
-            engine.query(&rayc_source_file::Key { path: path.clone(), target_id }).await
+        if let Err(error) = engine
+            .query(&rayc_source_file::Key { path: key.path.clone(), target_id: key.target_id })
+            .await
         {
             report_failure(self, error.to_string());
             return None;
@@ -314,10 +324,8 @@ impl Table {
 
         // the token tree requires the file to have a stable ID, which fails
         // when the file lies outside of the target directory
-        match engine.get_stable_path_id(path.clone(), target_id).await {
-            Ok(source_id) => {
-                self.source_files.insert(source_id, path.clone());
-            }
+        match engine.get_stable_path_id(key.path.clone(), key.target_id).await {
+            Ok(source_id) => self.source_id = Some(source_id),
             Err(error) => {
                 report_failure(self, error.to_string());
                 return None;
@@ -325,7 +333,7 @@ impl Table {
         }
 
         engine
-            .query(&rayc_syntax::Key { path, target_id })
+            .query(&rayc_syntax::Key { path: key.path.clone(), target_id: key.target_id })
             .await
             .expect("the source file has been loaded successfully")
             .0
@@ -514,6 +522,14 @@ impl Table {
         self.symbol_kinds.keys().copied()
     }
 
+    /// Returns the IDs of the symbols of the given kind declared in this
+    /// file.
+    pub fn symbol_ids_of_kind(&self, kind: SymbolKind) -> impl Iterator<Item = SymbolID> + '_ {
+        self.symbol_kinds
+            .iter()
+            .filter_map(move |(id, symbol_kind)| (*symbol_kind == kind).then_some(*id))
+    }
+
     pub fn all_def_with_body_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
         self.symbol_kinds.iter().filter_map(|(id, kind)| kind.has_def_body().then_some(*id))
     }
@@ -523,42 +539,122 @@ impl Table {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
-)]
+/// Identifies the table of a single source file: the root file of a target or
+/// the file of a file module.
+///
+/// The key carries everything needed to build the table from its file alone,
+/// so that the table of a file module does not depend on the table of the
+/// file declaring the module, and is reused when only the declaring file
+/// changes.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query)]
 #[value(Arc<Table>)]
-#[extend(name = get_table, by_val)]
-pub struct Key {
-    pub target_id: TargetID,
+pub struct TableKey {
+    target_id: TargetID,
+
+    /// The path of the source file.
+    path: Interned<Path>,
+
+    /// The directory owned by the module, where its file modules are looked
+    /// up.
+    directory: Interned<Path>,
+
+    /// The module whose members the file defines.
+    module_id: SymbolID,
+
+    /// The qualified name of the module, starting with the target name.
+    qualified_name: Interned<[Interned<str>]>,
+}
+
+impl TableKey {
+    /// Creates the key of the table of the root file of the given target.
+    ///
+    /// Like in Rust, the root module owns the directory containing the root
+    /// file.
+    pub(crate) async fn new_target_root(target_id: TargetID, engine: &TrackedEngine) -> Self {
+        let arg = engine.get_invocation_arguments(target_id).await;
+        let path: Interned<Path> = engine.intern_unsized(arg.file_path().to_path_buf());
+        let directory =
+            engine.intern_unsized(path.parent().unwrap_or_else(|| Path::new("")).to_path_buf());
+
+        Self {
+            target_id,
+            path,
+            directory,
+            module_id: engine.get_target_root_module_id(target_id).await,
+            qualified_name: engine.intern_unsized(vec![engine.intern_unsized(arg.target_name())]),
+        }
+    }
+
+    /// Creates the key of the table of the file module `module_id`, named
+    /// `qualified_name`, declared in a module owning the directory `directory`.
+    ///
+    /// Like in Rust, the file module `name` declared in a module owning the
+    /// directory `dir` is loaded from `dir/name.ray` and owns the directory
+    /// `dir/name`.
+    pub(crate) fn new_file_module(
+        target_id: TargetID,
+        directory: &Path,
+        module_id: SymbolID,
+        qualified_name: Vec<Interned<str>>,
+        engine: &TrackedEngine,
+    ) -> Self {
+        let name = qualified_name.last().expect("a file module has a name").clone();
+
+        Self {
+            target_id,
+            path: engine.intern_unsized(
+                directory.join(format!("{}.{SOURCE_FILE_EXTENSION}", name.as_ref())),
+            ),
+            directory: engine.intern_unsized(directory.join(name.as_ref())),
+            module_id,
+            qualified_name: engine.intern_unsized(qualified_name),
+        }
+    }
+
+    /// Returns the target the file belongs to.
+    #[must_use]
+    pub const fn target_id(&self) -> TargetID { self.target_id }
+
+    /// Returns the path of the source file.
+    #[must_use]
+    pub const fn path(&self) -> &Interned<Path> { &self.path }
+
+    /// Returns whether the file is the root file of its target, which defines
+    /// the root module. Any other file defines a file module declared in
+    /// another file.
+    #[must_use]
+    pub fn is_target_root(&self) -> bool { self.qualified_name.len() == 1 }
+}
+
+/// Returns the table of the source file identified by `table_key`.
+#[extend]
+pub async fn get_table(self: &TrackedEngine, table_key: &TableKey) -> Arc<Table> {
+    self.query(table_key).await
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
-pub async fn table_executor(&Key { target_id }: &Key, engine: &TrackedEngine) -> Arc<Table> {
+pub async fn table_executor(key: &TableKey, engine: &TrackedEngine) -> Arc<Table> {
     let mut table = Table::default();
-
-    let arg = engine.get_invocation_arguments(target_id).await;
-    let root_path: Interned<Path> = engine.intern_unsized(arg.file_path().to_path_buf());
-
-    let target_name = arg.target_name();
-
     let mut member =
-        MemberBuilder::new_root_module_id(target_id, engine.intern_unsized(target_name), engine)
-            .await;
+        MemberBuilder::new(key.target_id.make_global(key.module_id), key.qualified_name.to_vec());
 
-    // the root module owns the directory containing the root file; its file
-    // modules are looked up there
-    let root_directory = root_path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
-
-    if let Some(module_content) = table.load_source_file(root_path, target_id, None, engine).await {
+    // register the members the file defines for its module
+    if let Some(module_content) = table.load_source_file(key, engine).await {
         table
-            .register_module_members(&mut member, module_content.members(), &root_directory, engine)
+            .register_module_members(&mut member, module_content.members(), &key.directory, engine)
             .await;
     }
 
-    table.insert_member_as_root_module(member, engine);
+    // the root file declares the root module itself, whereas a file module is
+    // declared in another file and only gets its members from this one
+    if key.is_target_root() {
+        table.insert_member_as_root_module(member, engine);
+    } else {
+        table.insert_symbol_members(key.module_id, member, engine);
+    }
 
     Arc::new(table)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
-static TABLE_EXECUTOR: Registration<Config> = Registration::new::<Key, TableExecutor>();
+static TABLE_EXECUTOR: Registration<Config> = Registration::new::<TableKey, TableExecutor>();
