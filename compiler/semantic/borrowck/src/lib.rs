@@ -50,7 +50,9 @@ pub async fn borrow_check(ir: &mut IRFunctionMap, engine: &TrackedEngine) -> Vec
     let mut diagnostics = Vec::new();
     for (function_id, function) in ir.functions() {
         let captures = ir.captures_for_function(function_id);
-        let constraints = LocalizedConstraints::collect(function, captures, &mut solver).await;
+        let effect = ir.effect_of(function_id, engine).await;
+        let constraints =
+            LocalizedConstraints::collect(function, captures, &effect, &mut solver).await;
 
         // What the function requires of its universal regions, and of the
         // types that must outlive them, holds at every point or at none, so

@@ -1,6 +1,11 @@
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::subst::Subst;
+use rayc_type::{
+    poly_var::{GlobalPolyVarID, get_poly_var_map},
+    subst::{Subst, Substitutable},
+    ty::{Ty, args::Args, effect_row::EffectLabel},
+};
 
 use crate::{
     ir_expr::IRExprID,
@@ -41,6 +46,21 @@ impl Perform {
 
     #[must_use]
     pub const fn substitution(&self) -> &Subst { &self.substitution }
+
+    /// Returns the effect row the `perform` introduces: the label of its
+    /// effect alone, instantiated with the substitution of the `perform`.
+    pub async fn effect_row(&self, engine: &TrackedEngine) -> Interned<Ty> {
+        let parameters = engine.get_poly_var_map(self.effect_id).await;
+        let arguments = Args::new(
+            parameters.iter().map(|(parameter_id, _)| {
+                Ty::new_poly_var(GlobalPolyVarID::new(self.effect_id, parameter_id), engine)
+            }),
+            engine,
+        );
+        let label = engine.intern(EffectLabel::new(self.effect_id, arguments));
+
+        Ty::new_effect_row([label], None, engine).apply_subst_or_clone(&self.substitution, engine)
+    }
 }
 
 impl VisitType for Perform {

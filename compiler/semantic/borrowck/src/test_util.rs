@@ -182,7 +182,10 @@ impl FunctionBuilder {
         let mut solver = Solver::without_givens(self.engine.clone()).await;
 
         let function = self.functions.get_function(self.function_id);
-        let constraints = LocalizedConstraints::collect(function, None, &mut solver).await;
+        // The definition of the function is not declared anywhere, so it has
+        // no effect row to look up; the functions built here perform nothing.
+        let effect = Ty::new_effect_row([], None, &self.engine);
+        let constraints = LocalizedConstraints::collect(function, None, &effect, &mut solver).await;
         let liveness = RegionLiveness::compute(&self.functions, self.function_id).await;
         let live_loans = LiveLoans::compute(function, &constraints, &liveness, &variances);
 

@@ -26,6 +26,10 @@
 //!   instantiated by the substitution of the call. It also requires the
 //!   callee's where clause, instantiated the same way.
 //! - a `perform` is a call of the signature of its operation.
+//! - a call or a `perform` also relates the effect it introduces, the effect
+//!   row of the callee instantiated the same way or the label of the performed
+//!   effect, to the effect of the function it is in. Each label is related to
+//!   the label of the function that handles it.
 //! - a dictionary passed to an instance parameter, by a call, a `perform` or a
 //!   struct initialization, must implement the trait reference the parameter
 //!   declares. The trait reference it does implement is related to that one,
@@ -221,15 +225,24 @@ impl LocalizedConstraints {
     /// instruction of `function`.
     ///
     /// `captures` is the capture layout of a nested function, and `None` for
-    /// the definition function. `solver` must be created at the definition
-    /// the function belongs to.
+    /// the definition function. `effect` is the effect row of the function,
+    /// as [`IRFunctionMap::effect_of`] gives it. `solver` must be created at
+    /// the definition the function belongs to.
+    ///
+    /// [`IRFunctionMap::effect_of`]: rayc_ir::ir_function::IRFunctionMap::effect_of
     pub async fn collect(
         function: &IRFunction,
         captures: Option<&CaptureMap>,
+        effect: &Interned<Ty>,
         solver: &mut Solver,
     ) -> Self {
-        let mut collector =
-            ConstraintCollector { function, captures, solver, constraints: Self::default() };
+        let mut collector = ConstraintCollector {
+            function,
+            captures,
+            effect,
+            solver,
+            constraints: Self::default(),
+        };
 
         let reachables = function.reachables();
         for block_id in reachables.blocks() {
@@ -341,6 +354,10 @@ impl LocalizedConstraints {
 struct ConstraintCollector<'a> {
     function: &'a IRFunction,
     captures: Option<&'a CaptureMap>,
+
+    /// The effect row of the function, which every effect introduced in it
+    /// is a part of.
+    effect: &'a Interned<Ty>,
     solver: &'a mut Solver,
     constraints: LocalizedConstraints,
 }

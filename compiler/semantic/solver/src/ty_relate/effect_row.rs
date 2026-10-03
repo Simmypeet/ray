@@ -3,6 +3,7 @@
 
 use qbice::storage::intern::Interned;
 use rayc_type::{
+    constraint::{outlives::OutlivesConstraints, ty_relate::TyRelate},
     ty::{
         Ty, TyKind,
         effect_row::{EffectLabel, EffectRow},
@@ -14,6 +15,53 @@ use super::{DerivedConstraint, Error};
 use crate::solver::Solver;
 
 impl Solver {
+    /// Returns the outlives constraints that let something whose effect is
+    /// `introduced`, such as a call, run where the effect is `ambient`,
+    /// without binding any variables.
+    ///
+    /// Type checking opens a closed `introduced` row before unifying it with
+    /// `ambient`, so its labels only have to be a part of those of
+    /// `ambient`: each is related to the label it matches, covariantly, and
+    /// the labels and the tail of `ambient` that are left stand for the tail
+    /// the row was opened with. Any other `introduced` effect is related to
+    /// the whole of `ambient`.
+    ///
+    /// Returns `None` if the relation fails or could only hold by binding a
+    /// variable; see [`Self::solve_without_unify`].
+    pub async fn relate_introduced_effect_without_unify(
+        &mut self,
+        introduced: &Interned<Ty>,
+        ambient: &Interned<Ty>,
+    ) -> Option<OutlivesConstraints> {
+        // A row that a substitution or a projection put in the tail of
+        // another is flattened first, so that every label is matched.
+        let (introduced, introduced_outlives) = self.normalize_with_outlives(introduced).await;
+        let (ambient, ambient_outlives) = self.normalize_with_outlives(ambient).await;
+
+        let constraints = if let (Ty::EffectRow(introduced_row), Ty::EffectRow(ambient_row)) =
+            (&*introduced, &*ambient)
+            && introduced_row.tail().is_none()
+        {
+            let labels = self
+                .match_effect_row_labels(introduced_row, ambient_row, Variance::Covariant)
+                .await
+                .ok()?;
+
+            // The tail the row was opened with only stands for labels of
+            // `ambient`.
+            if !labels.unmatched_lesser.is_empty() {
+                return None;
+            }
+
+            labels.constraints.into_iter().map(|derived| derived.ty_relate).collect()
+        } else {
+            vec![TyRelate::new(introduced.clone(), ambient.clone(), Variance::Covariant)]
+        };
+
+        let outlives = self.solve_without_unify(constraints).await?;
+        Some(introduced_outlives.union(ambient_outlives).union(outlives))
+    }
+
     pub(super) async fn entail_effect_row_relate(
         &mut self,
         lesser: &EffectRow,

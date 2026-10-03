@@ -1,11 +1,17 @@
 //! The constraints of invoking a signature: calls and `perform`s.
+//!
+//! An invocation also introduces an effect, which whoever handles the effect
+//! of the enclosing function handles too; see
+//! [`ConstraintCollector::collect_introduced_effect`].
 
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     cfg::Point,
     ir_expr::{IRExprID, call::Call, perform::Perform},
 };
-use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
+use rayc_semantic_element::{
+    effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
+};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     subst::{Subst, Substitutable},
@@ -24,6 +30,15 @@ impl ConstraintCollector<'_> {
         let substitution = call.target().signature_subst(self.solver.engine()).await;
 
         self.collect_invocation(point, signature_id, &substitution, call.arguments(), ty).await;
+
+        // The callee performs the effect row it declares.
+        let effect = self
+            .solver
+            .engine()
+            .get_effect_row(signature_id)
+            .await
+            .apply_subst_or_clone(&substitution, self.solver.engine());
+        self.collect_introduced_effect(point, &effect).await;
 
         // The signature was instantiated from the trait reference of the
         // dictionary the call dispatches through, so that dictionary matches
@@ -53,6 +68,45 @@ impl ConstraintCollector<'_> {
             ty,
         )
         .await;
+
+        // The operation is performed in its effect, which no signature
+        // declares.
+        let effect = perform.effect_row(self.solver.engine()).await;
+        self.collect_introduced_effect(point, &effect).await;
+    }
+
+    /// Collects the constraints of running, at `point`, something whose
+    /// effect is `introduced`: `introduced <: effect of the function`.
+    ///
+    /// The operations of `introduced` are performed in the handlers of the
+    /// effect of the enclosing function, so a value passed to one of them
+    /// reaches whoever handles that effect, and a value one of them gives
+    /// back comes from there. Renumbering gave the lifetimes in the arguments
+    /// of `introduced` their own regions, which this ties to the regions of
+    /// the effect of the function: without it, a loan passed to an operation
+    /// would end with the call, and what an operation gives back could be kept
+    /// for any lifetime.
+    ///
+    /// The effect of a function is part of its signature, so its regions are
+    /// universal: those of the declared effect row for a definition, and
+    /// external regions for a nested function.
+    pub(super) async fn collect_introduced_effect(
+        &mut self,
+        point: Point,
+        introduced: &Interned<Ty>,
+    ) {
+        // Type checking already made every label of `introduced` a label of
+        // the effect of the function modulo lifetimes, so the relation only
+        // fails when one side is an error, which was reported already.
+        let Some(outlives) =
+            self.solver.relate_introduced_effect_without_unify(introduced, self.effect).await
+        else {
+            return;
+        };
+
+        for constraint in outlives.iter() {
+            self.constraints.add(point, constraint);
+        }
     }
 
     /// Collects the constraints of invoking the signature of `signature_id`,

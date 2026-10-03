@@ -1,0 +1,102 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: borrowed value does not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:21:14
+   │
+18 │     let x = 1
+   │         ─ this variable goes out of scope while it is still borrowed
+   ‡
+21 │     Sink.put(x.&)
+   ╰╴             ━━━ borrowed value does not live long enough
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:26:5
+   │
+26 │     Sink.put(x)
+   │     ━━━━━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:42:12
+   │
+42 │     return Source.get()
+   │            ━━━━━━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: borrowed value does not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:58:16
+   │
+56 │     let x = 1
+   │         ─ this variable goes out of scope while it is still borrowed
+57 │     # ERROR: the saved reference outlives `x`.
+58 │     State.save(x.&)
+   ╰╴               ━━━ borrowed value does not live long enough
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:63:12
+   │
+63 │     return State.load()
+   │            ━━━━━━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: borrowed value does not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:75:19
+   │
+73 │     let x = 1
+   │         ─ this variable goes out of scope while it is still borrowed
+74 │     # ERROR: the callee passes the reference on to the handler of `Sink['a]`.
+75 │     putsParameter(x.&)
+   ╰╴                  ━━━ borrowed value does not live long enough
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:81:5
+   │
+81 │     putsParameter(x)
+   │     ━━━━━━━━━━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:97:5
+   │
+97 │     putsParameter(x)
+   │     ━━━━━━━━━━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+    ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:100:12
+    │
+100 │     return getsReference()
+    │            ━━━━━━━━━━━━━━━ this requires `'b` to outlive `'a`
+    │
+    ╰ help: consider adding `'b: 'a` to the where clause
+
+[error]: lifetime may not live long enough
+    ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:110:5
+    │
+110 │     callback(x)
+    │     ━━━━━━━━━━━ this requires `'a` to outlive `'b`
+    │
+    ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: borrowed value does not live long enough
+    ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:121:18
+    │
+116 │         let inner = 2
+    │             ───── this variable goes out of scope while it is still borrowed
+    ‡
+121 │         Sink.put(inner.&)
+    ╰╴                 ━━━━━━━ borrowed value does not live long enough
+
+[error]: Compilation aborted due to 11 error(s)
+
+
+
+stdout:
