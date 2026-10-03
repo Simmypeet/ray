@@ -1,0 +1,24 @@
+extern def puts(message: cstr) -> c_int
+
+# An inline module defines its members in its body.
+module greeting:
+    def hello():
+        # `super` names the parent module.
+        super.puts("hello from greeting")
+
+    module nested:
+        def hello():
+            target.puts("hello from greeting.nested")
+            # `super` names `greeting` here.
+            super.hello()
+
+# A file module loads its members from `geometry.ray`.
+module geometry
+
+def main() -> int32:
+    greeting.hello()
+    greeting.nested.hello()
+
+    let point = geometry.Point { x = 3, y = 4 }
+    puts(geometry.describe())
+    return geometry.manhattan(point) + geometry.shapes.square(2)

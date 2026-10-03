@@ -6,25 +6,22 @@ use linkme::distributed_slice;
 use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_extend::extend;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_source_file::{FilePathKey, GlobalSourceID, SourceFile, get_stable_path_id};
-use rayc_target::{TargetID, get_invocation_arguments};
+use rayc_source_file::{FilePathKey, GlobalSourceID, SourceFile};
+use rayc_target::TargetID;
 
-use crate::table;
+use crate::index::get_table_index;
 
 #[executor(config = Config)]
 async fn file_path_executor(
     &FilePathKey { id }: &FilePathKey,
     engine: &TrackedEngine,
 ) -> Interned<Path> {
-    let table = engine.query(&table::Key { target_id: id.target_id }).await;
-
-    if table.source_id() == Some(id.id) {
-        let args = engine.get_invocation_arguments(id.target_id).await;
-
-        engine.intern_unsized(args.file_path().to_path_buf())
-    } else {
-        todo!()
-    }
+    engine
+        .get_table_index(id.target_id)
+        .await
+        .source_file_path(id.id)
+        .cloned()
+        .expect("a source ID is only created for a source file loaded into its target")
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -43,13 +40,15 @@ pub struct SourceMap(pub HashMap<GlobalSourceID, SourceFile>);
 pub async fn create_source_map(self: &TrackedEngine, target_id: TargetID) -> SourceMap {
     let mut map = HashMap::new();
     for target_id in [target_id, TargetID::CORE] {
-        let args = self.get_invocation_arguments(target_id).await;
-        let path: Interned<Path> = self.intern_unsized(args.file_path().to_path_buf());
-        if let (Ok(file), Ok(id)) = (
-            self.query(&rayc_source_file::Key { path: path.clone(), target_id }).await,
-            self.get_stable_path_id(path, target_id).await,
-        ) {
-            map.insert(target_id.make_global(id), file);
+        let index = self.get_table_index(target_id).await;
+
+        // every file loaded into the target has been read successfully
+        for (id, path) in index.source_files() {
+            if let Ok(file) =
+                self.query(&rayc_source_file::Key { path: path.clone(), target_id }).await
+            {
+                map.insert(target_id.make_global(id), file);
+            }
         }
     }
     SourceMap(map)

@@ -1,0 +1,5 @@
+# The file `missing.ray` does not exist.
+module missing
+
+def main() -> int32:
+    return 0

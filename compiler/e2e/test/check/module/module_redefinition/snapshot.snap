@@ -1,0 +1,19 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: symbol `shapes` is already defined in the scope `main`
+  ╭▸ compiler/e2e/test/check/module/module_redefinition/main.ray:6:8
+  │
+1 │ module shapes:
+  │        ────── symbol `shapes` is already defined here
+  ‡
+6 │ struct shapes:
+  ╰╴       ━━━━━━ redefinition here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

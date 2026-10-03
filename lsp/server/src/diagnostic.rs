@@ -37,8 +37,14 @@ fn location(
             Url::parse(rayc_corelib::SOURCE_URI).expect("valid core URI"),
             range(highlight, &source.content()),
         ))
-    } else {
+    } else if uri.to_file_path().is_ok_and(|path| path.as_path() == source.path().as_ref()) {
         Some(Location::new(uri.clone(), range(highlight, text)))
+    } else {
+        // a file module of the document's target, read from the disk
+        Some(Location::new(
+            Url::from_file_path(source.path().as_ref()).ok()?,
+            range(highlight, &source.content()),
+        ))
     }
 }
 
@@ -96,6 +102,16 @@ pub(crate) fn convert(
                 message: diagnostic.message().to_owned(),
             });
         }
+    } else if let Some(location) = diagnostic
+        .primary_highlight()
+        .and_then(|highlight| location(highlight, uri, text, sources))
+        .filter(|location| &location.uri != uri)
+    {
+        // the diagnostic belongs to a file module of the document's target
+        related.push(DiagnosticRelatedInformation {
+            location,
+            message: diagnostic.message().to_owned(),
+        });
     }
     Diagnostic {
         range: diagnostic

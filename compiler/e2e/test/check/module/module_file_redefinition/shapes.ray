@@ -1,0 +1,2 @@
+def area() -> int32:
+    return 1

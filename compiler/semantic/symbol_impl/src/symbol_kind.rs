@@ -11,11 +11,11 @@ use rayc_symbol::{
     },
 };
 
-use crate::table::get_table;
+use crate::index::{get_symbol_table, get_table_index, get_target_tables};
 
 #[executor(config = Config)]
 pub async fn symbol_kind_executor(&Key { symbol_id }: &Key, engine: &TrackedEngine) -> SymbolKind {
-    engine.get_table(symbol_id.target_id).await.get_symbol_kind(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.get_symbol_kind(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -26,8 +26,7 @@ pub async fn all_symbol_ids_executor(
     &AllSymbolIDs { target }: &AllSymbolIDs,
     engine: &TrackedEngine,
 ) -> Arc<[SymbolID]> {
-    let table = engine.get_table(target).await;
-    table.all_symbol_ids().collect::<Arc<_>>()
+    engine.get_table_index(target).await.all_symbol_ids().collect()
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -39,8 +38,8 @@ pub async fn all_def_with_body_ids_executor(
     &AllDefWithBodyIDs { target }: &AllDefWithBodyIDs,
     engine: &TrackedEngine,
 ) -> Arc<[SymbolID]> {
-    let table = engine.get_table(target).await;
-    table.all_def_with_body_ids().collect::<Arc<_>>()
+    let tables = engine.get_target_tables(target).await;
+    tables.iter().flat_map(|table| table.all_def_with_body_ids()).collect()
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -52,8 +51,8 @@ pub async fn all_instance_ids_executor(
     &AllInstanceIDs { target }: &AllInstanceIDs,
     engine: &TrackedEngine,
 ) -> Arc<[SymbolID]> {
-    let table = engine.get_table(target).await;
-    table.all_symbol_ids().filter(|&id| table.get_symbol_kind(id) == SymbolKind::Instance).collect()
+    let tables = engine.get_target_tables(target).await;
+    tables.iter().flat_map(|table| table.symbol_ids_of_kind(SymbolKind::Instance)).collect()
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -65,8 +64,8 @@ pub async fn all_nominal_type_ids_executor(
     &AllNominalTypeIDs { target }: &AllNominalTypeIDs,
     engine: &TrackedEngine,
 ) -> Arc<[SymbolID]> {
-    let table = engine.get_table(target).await;
-    table.all_symbol_ids().filter(|&id| table.get_symbol_kind(id) == SymbolKind::Strut).collect()
+    let tables = engine.get_target_tables(target).await;
+    tables.iter().flat_map(|table| table.symbol_ids_of_kind(SymbolKind::Strut)).collect()
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -78,8 +77,8 @@ pub async fn all_effect_ids_executor(
     &AllEffectIDs { target }: &AllEffectIDs,
     engine: &TrackedEngine,
 ) -> Arc<[SymbolID]> {
-    let table = engine.get_table(target).await;
-    table.all_symbol_ids().filter(|&id| table.get_symbol_kind(id) == SymbolKind::Effect).collect()
+    let tables = engine.get_target_tables(target).await;
+    tables.iter().flat_map(|table| table.symbol_ids_of_kind(SymbolKind::Effect)).collect()
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -91,8 +90,8 @@ pub async fn all_callable_def_ids_executor(
     &AllCallableDefIDs { target }: &AllCallableDefIDs,
     engine: &TrackedEngine,
 ) -> Arc<[SymbolID]> {
-    let table = engine.get_table(target).await;
-    table.all_callable_def_ids().collect::<Arc<_>>()
+    let tables = engine.get_target_tables(target).await;
+    tables.iter().flat_map(|table| table.all_callable_def_ids()).collect()
 }
 
 #[distributed_slice(RAY_PROGRAM)]
