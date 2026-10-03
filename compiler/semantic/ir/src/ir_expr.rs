@@ -6,9 +6,9 @@ use rayc_type::ty::Ty;
 
 use crate::{
     ir_expr::{
-        binary::Binary, call::Call, closure::Closure, handle::Handle, literal::Literal, load::Load,
-        perform::Perform, phi::Phi, ref_of::RefOf, ref_to_pointer::RefToPointer,
-        struct_initialization::StructInitialization, tuple::Tuple,
+        binary::Binary, call::Call, cast::Cast, closure::Closure, handle::Handle, literal::Literal,
+        load::Load, perform::Perform, phi::Phi, ref_of::RefOf, ref_to_pointer::RefToPointer,
+        struct_initialization::StructInitialization, tuple::Tuple, unary::Unary,
     },
     visit::{
         TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
@@ -18,6 +18,7 @@ use crate::{
 
 pub mod binary;
 pub mod call;
+pub mod cast;
 pub mod closure;
 pub mod handle;
 pub mod literal;
@@ -28,6 +29,7 @@ pub mod ref_of;
 pub mod ref_to_pointer;
 pub mod struct_initialization;
 pub mod tuple;
+pub mod unary;
 
 /// Identifies an expression value stored in a function's expression arena.
 pub type IRExprID = ID<IRExpr>;
@@ -41,6 +43,8 @@ pub enum IRExprKind {
     Load(Load),
     Phi(Phi),
     Binary(Binary),
+    Unary(Unary),
+    Cast(Cast),
     Call(Call),
     Perform(Perform),
     Handle(Handle),
@@ -61,6 +65,8 @@ impl IRExprKind {
             | Self::RefToPointer(_)
             | Self::Load(_)
             | Self::Binary(_)
+            | Self::Unary(_)
+            | Self::Cast(_)
             | Self::Call(_)
             | Self::Perform(_)
             | Self::Handle(_)
@@ -81,6 +87,8 @@ impl IRExprKind {
             | Self::RefToPointer(_)
             | Self::Load(_)
             | Self::Binary(_)
+            | Self::Unary(_)
+            | Self::Cast(_)
             | Self::Call(_)
             | Self::Perform(_)
             | Self::Handle(_)
@@ -136,6 +144,8 @@ impl IRExprKind {
             }
             Self::Phi(phi) => Iter::Phi(phi.incoming().map(|(_, value)| value)),
             Self::Binary(binary) => Iter::Pair([binary.left(), binary.right()].into_iter()),
+            Self::Unary(unary) => Iter::Single(std::iter::once(unary.operand())),
+            Self::Cast(cast) => Iter::Single(std::iter::once(cast.operand())),
             Self::Call(call) => Iter::Slice(call.arguments().iter().copied()),
             Self::Perform(perform) => Iter::Slice(perform.arguments().iter().copied()),
             Self::Tuple(tuple) => Iter::Slice(tuple.elements().iter().copied()),
@@ -228,6 +238,8 @@ impl VisitType for IRExprKind {
             | Self::Load(_)
             | Self::Phi(_)
             | Self::Binary(_)
+            | Self::Unary(_)
+            | Self::Cast(_)
             | Self::Tuple(_)
             | Self::StructInitialization(_)
             | Self::Closure(_) => {}
@@ -259,6 +271,8 @@ impl VisitTypeMut for IRExpr {
             | IRExprKind::Load(_)
             | IRExprKind::Phi(_)
             | IRExprKind::Binary(_)
+            | IRExprKind::Unary(_)
+            | IRExprKind::Cast(_)
             | IRExprKind::Tuple(_)
             | IRExprKind::StructInitialization(_)
             | IRExprKind::Closure(_) => {}
@@ -286,6 +300,8 @@ impl VisitTypeMutAsync for IRExpr {
             | IRExprKind::Load(_)
             | IRExprKind::Phi(_)
             | IRExprKind::Binary(_)
+            | IRExprKind::Unary(_)
+            | IRExprKind::Cast(_)
             | IRExprKind::Tuple(_)
             | IRExprKind::StructInitialization(_)
             | IRExprKind::Closure(_) => {}

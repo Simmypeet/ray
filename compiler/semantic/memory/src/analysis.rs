@@ -145,6 +145,8 @@ async fn analyze_function(
                         IRExprKind::Error
                         | IRExprKind::Literal(_)
                         | IRExprKind::Binary(_)
+                        | IRExprKind::Unary(_)
+                        | IRExprKind::Cast(_)
                         | IRExprKind::Call(_)
                         | IRExprKind::Phi(_)
                         | IRExprKind::Perform(_)

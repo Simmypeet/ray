@@ -258,6 +258,9 @@ impl ConstraintCollector<'_> {
             // carries no region to relate with the reference it came from.
             IRExprKind::RefToPointer(_) => {}
 
+            // Both compute a new numeric value, which carries no region.
+            IRExprKind::Unary(_) | IRExprKind::Cast(_) => {}
+
             // TODO: the remaining expressions move their operands into a new
             // value, or pass them to a function, which is not handled yet.
             IRExprKind::Phi(_)

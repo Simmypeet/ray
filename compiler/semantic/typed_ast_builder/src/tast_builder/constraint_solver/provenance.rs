@@ -57,6 +57,8 @@ pub enum SubtypeSource {
     ClosureCaptures,
     VariableAssignment,
     BinaryOperator,
+    NegationOperand,
+    CastOperand,
     IfCondition,
     WhileCondition,
     IfBranch,
@@ -447,10 +449,12 @@ impl Provenance {
         }
     }
 
+    /// Binds every inference in `inferences` that is still unbound to the
+    /// type `default` gives for it, if any.
     pub(super) async fn default_unbound_inferences(
         &mut self,
         inferences: impl IntoIterator<Item = Inference>,
-        default: &Interned<Ty>,
+        default: impl Fn(&Inference) -> Option<Interned<Ty>>,
         solver: &Solver,
     ) {
         let engine = solver.engine();
@@ -462,8 +466,10 @@ impl Provenance {
             // can we do this without interning?
             let latest = self.latest_type(&engine.intern(Ty::Inference(inference)), solver).await;
 
-            if let Ty::Inference(infer) = &*latest {
-                defaults.insert(*infer, default.clone());
+            if let Ty::Inference(infer) = &*latest
+                && let Some(default) = default(infer)
+            {
+                defaults.insert(*infer, default);
             }
         }
 

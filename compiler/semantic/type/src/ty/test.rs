@@ -1,4 +1,4 @@
-use super::{Integer, Mutability, Primitive, Ty};
+use super::{Float, Integer, Mutability, Primitive, Ty};
 
 // input: tuple -> closure -> tuple dictionaries with a selected leaf dictionary
 // premise: the other elements and captures have no-op Drop dictionaries
@@ -150,7 +150,7 @@ async fn closure_substitution_preserves_unused_owner_arguments_separately_from_s
     let closure_id = ClosureID::new(0);
     let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
-    let float_ty = Ty::new_primitive(Primitive::Float32, &engine);
+    let float_ty = Ty::new_primitive(Primitive::Float(Float::Float32), &engine);
     let effect = Ty::new_effect_row([], None, &engine);
     let captures = Ty::new_unit(&engine);
     let ty = Ty::new_closure(
@@ -221,7 +221,7 @@ async fn recursive_iter_yields_root_and_descendants_in_breadth_first_order() {
     let engine = rayc_qbice::create_minimal_engine().await;
     let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
-    let float_ty = Ty::new_primitive(Primitive::Float32, &engine);
+    let float_ty = Ty::new_primitive(Primitive::Float(Float::Float32), &engine);
     let pointer_ty = Ty::new_pointer(int_ty.clone(), Mutability::Immutable, &engine);
     let tuple_ty =
         Ty::new_tuple(engine.intern_unsized([bool_ty.clone(), float_ty.clone()]), &engine);

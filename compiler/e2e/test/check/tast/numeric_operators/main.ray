@@ -1,0 +1,36 @@
+def negateUnsigned() -> uint32:
+    return -1u32
+
+def negateUnsignedVariable(value: usize) -> usize:
+    return -value
+
+def negateBool() -> bool:
+    return -true
+
+def negatedOutOfRange() -> int8:
+    return -129i8
+
+def negatedInferredOutOfRange() -> int32:
+    return -2147483649
+
+def negatedInRange() -> int64:
+    return -9223372036854775808
+
+def castToBool() -> bool:
+    return 1 as bool
+
+def castFromBool() -> int32:
+    return true as int32
+
+def castFromString() -> int32:
+    return "hello" as int32
+
+def castToTuple() -> int32:
+    let value = 1 as (int32, int32)
+    return 0
+
+def castToUnknown() -> int32:
+    return 1 as Missing
+
+def castInRange() -> float32:
+    return -(5 as float32) + 1.5 as float32

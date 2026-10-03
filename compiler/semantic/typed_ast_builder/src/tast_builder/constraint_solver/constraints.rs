@@ -393,6 +393,28 @@ impl TAstBuilder {
         .await;
     }
 
+    pub async fn push_negation_operand_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(
+            expression,
+            expected_ty,
+            SubtypeSource::NegationOperand,
+        )
+        .await;
+    }
+
+    pub async fn push_cast_operand_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(expression, expected_ty, SubtypeSource::CastOperand)
+            .await;
+    }
+
     pub async fn push_if_condition_constraint(
         &mut self,
         expected_ty: &Interned<Ty>,

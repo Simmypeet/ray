@@ -14,7 +14,7 @@ use rayc_syntax::{
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarMap},
     subst::Subst,
-    ty::{Integer, Mutability, Primitive, Ty, TyKind, args::Args, lifetime::Lifetime},
+    ty::{Float, Integer, Mutability, Primitive, Ty, TyKind, args::Args, lifetime::Lifetime},
 };
 
 use crate::{
@@ -433,7 +433,8 @@ impl Resolver<'_> {
                     PrimitiveSyntax::Uint64(_) => Primitive::Integer(Integer::Uint64),
                     PrimitiveSyntax::Usize(_) => Primitive::Integer(Integer::Usize),
                     PrimitiveSyntax::Bool(_) => Primitive::Bool,
-                    PrimitiveSyntax::Float32(_) => Primitive::Float32,
+                    PrimitiveSyntax::Float32(_) => Primitive::Float(Float::Float32),
+                    PrimitiveSyntax::Float64(_) => Primitive::Float(Float::Float64),
                     PrimitiveSyntax::CInt(_) => Primitive::Integer(Integer::CInt),
                     PrimitiveSyntax::CStr(_) => Primitive::CStr,
                 };

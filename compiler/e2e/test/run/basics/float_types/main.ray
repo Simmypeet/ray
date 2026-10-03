@@ -1,0 +1,32 @@
+extern def printf(format: cstr, ...) -> c_int
+
+def half(value: float32) -> float32:
+    return value / 2.0
+
+def main() -> int32:
+    # suffixed literals fix the floating-point type
+    let f32Value = 1.5f32 * 4.0f32
+    let f64Value = 0.1f64 + 0.2f64
+
+    # an unsuffixed floating-point literal defaults to `float64`
+    let defaulted = 2.5 * 2.0
+    let annotated: float32 = 0.25
+
+    # an unsuffixed floating-point literal takes the type it is used with
+    let halved = half(5.0)
+
+    # an integer literal can be given a floating-point type
+    let fromInteger: float64 = 3
+    let suffixedInteger = 7f32
+
+    let equal = 1.5 == 1.5 and 2.0f32 != 3.0f32
+
+    printf("float32: %.2f\n", f32Value)
+    printf("float64: %.17g\n", f64Value)
+    printf("defaulted: %.2f\n", defaulted)
+    printf("annotated: %.2f\n", annotated)
+    printf("halved: %.2f\n", halved)
+    printf("integers: %.1f %.1f\n", fromInteger, suffixedInteger)
+    printf("equality: %d\n", equal)
+
+    return if equal: 0 else: 1

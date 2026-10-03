@@ -296,6 +296,7 @@ impl<'engine> Generator<'engine> {
             | MonoType::Uint64
             | MonoType::Usize
             | MonoType::Float32
+            | MonoType::Float64
             | MonoType::CInt
             | MonoType::CStr
             | MonoType::OpaquePointer(_) => {}
@@ -394,6 +395,7 @@ impl<'engine> Generator<'engine> {
                 | Constant::Uint64(_)
                 | Constant::Usize(_)
                 | Constant::Float32(_)
+                | Constant::Float64(_)
                 | Constant::CInt(_)
                 | Constant::CStr(_) => {}
             },
@@ -609,6 +611,7 @@ fn by_value_dependencies(aggregate: &AggregateType) -> Vec<AggregateType> {
                 | MonoType::Uint64
                 | MonoType::Usize
                 | MonoType::Float32
+                | MonoType::Float64
                 | MonoType::CInt
                 | MonoType::CStr
                 | MonoType::OpaquePointer(_)

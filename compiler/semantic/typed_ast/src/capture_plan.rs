@@ -380,6 +380,26 @@ impl<O: CopyOracle> Analyzer<'_, O> {
             TypedExprKind::Binary(binary) => {
                 self.visit_binary(function_id, functions, *binary, plan).await;
             }
+            TypedExprKind::Unary(unary) => {
+                self.visit_expression(
+                    function_id,
+                    functions,
+                    unary.operand(),
+                    UseMode::new_value_implicit(),
+                    plan,
+                )
+                .await;
+            }
+            TypedExprKind::Cast(cast) => {
+                self.visit_expression(
+                    function_id,
+                    functions,
+                    cast.operand(),
+                    UseMode::new_value_implicit(),
+                    plan,
+                )
+                .await;
+            }
             TypedExprKind::IfElse(if_else) => {
                 self.visit_if_else(function_id, functions, if_else, plan).await;
             }

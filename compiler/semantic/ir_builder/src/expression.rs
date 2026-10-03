@@ -8,6 +8,7 @@ use crate::{builder::Builder, context::LoweringContext};
 
 mod binary;
 mod call;
+mod cast;
 mod closure;
 mod deref;
 mod errored;
@@ -25,6 +26,7 @@ mod struct_initialization;
 mod tuple;
 mod tuple_index;
 mod typed_expr_id;
+mod unary;
 mod while_loop;
 
 pub use typed_expr_id::TypedExprWithID;
@@ -89,6 +91,12 @@ impl Builder {
             }
             TypedExprKind::Binary(binary) => {
                 self.lower(context, TypedExprWithID::new(binary, expression_id)).await
+            }
+            TypedExprKind::Unary(unary) => {
+                self.lower(context, TypedExprWithID::new(unary, expression_id)).await
+            }
+            TypedExprKind::Cast(cast) => {
+                self.lower(context, TypedExprWithID::new(cast, expression_id)).await
             }
             TypedExprKind::IfElse(if_else) => {
                 self.lower(context, TypedExprWithID::new(if_else, expression_id)).await

@@ -33,18 +33,25 @@ struct NumericLiteralRange {
     digits: Interned<str>,
 
     value: u128,
+
+    /// Whether the literal is the operand of a negation, as in `-128i8`.
+    negated: bool,
 }
 
 impl NumericLiteralRange {
     /// Checks whether the literal fits in the given primitive type. Returns
     /// the largest value of the type too, if it is an integer type.
+    ///
+    /// A negated literal may be one more than the largest value of a signed
+    /// integer type, since its negation is the smallest value of the type.
     const fn fits_in(&self, primitive: Primitive) -> (bool, Option<u128>) {
         match primitive {
             Primitive::Integer(integer) => {
                 let max = integer.max_value();
-                (self.value <= max, Some(max))
+                let limit = if self.negated && integer.is_signed() { max + 1 } else { max };
+                (self.value <= limit, Some(max))
             }
-            Primitive::Float32 | Primitive::Bool | Primitive::CStr => (true, None),
+            Primitive::Float(_) | Primitive::Bool | Primitive::CStr => (true, None),
         }
     }
 }
@@ -57,11 +64,13 @@ impl TAstBuilder {
         expression: TypedExprID,
         digits: Interned<str>,
         value: u128,
+        negated: bool,
     ) {
         self.numeric_literal_ranges.push(NumericLiteralRange {
             expression: TypedFunctionLocalID::new(self.current_typed_function_id(), expression),
             digits,
             value,
+            negated,
         });
     }
 
@@ -88,6 +97,7 @@ impl TAstBuilder {
                     .literal(range.digits)
                     .primitive(primitive)
                     .maybe_max(max)
+                    .negated(range.negated)
                     .span(self.span_of_local_expression(range.expression))
                     .build(),
             ));

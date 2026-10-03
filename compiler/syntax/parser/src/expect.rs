@@ -74,6 +74,10 @@ pub enum IdentifierValue {
     U32,
     #[display("u64")]
     U64,
+    #[display("f32")]
+    F32,
+    #[display("f64")]
+    F64,
 }
 
 impl IdentifierValue {
@@ -92,6 +96,8 @@ impl IdentifierValue {
             Self::U16 => "u16",
             Self::U32 => "u32",
             Self::U64 => "u64",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
         }
     }
 }

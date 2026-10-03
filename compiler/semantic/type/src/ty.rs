@@ -36,7 +36,7 @@ use self_instance::SelfInstance;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum Primitive {
     Integer(Integer),
-    Float32,
+    Float(Float),
     Bool,
     CStr,
 }
@@ -47,9 +47,35 @@ impl Primitive {
     pub const fn keyword(&self) -> &'static str {
         match self {
             Self::Integer(integer) => integer.keyword(),
-            Self::Float32 => "float32",
+            Self::Float(float) => float.keyword(),
             Self::Bool => "bool",
             Self::CStr => "cstr",
+        }
+    }
+
+    /// Returns whether this primitive type satisfies the given inference
+    /// constraint.
+    #[must_use]
+    pub const fn satisfies_constraint(&self, constraint: InferenceConstraint) -> bool {
+        match constraint {
+            InferenceConstraint::Any => true,
+            InferenceConstraint::EqualityComparable => match self {
+                Self::Integer(_) | Self::Float(_) | Self::Bool => true,
+                Self::CStr => false,
+            },
+            InferenceConstraint::Numeric => match self {
+                Self::Integer(_) | Self::Float(_) => true,
+                Self::Bool | Self::CStr => false,
+            },
+            InferenceConstraint::SignedNumeric => match self {
+                Self::Integer(integer) => integer.is_signed(),
+                Self::Float(_) => true,
+                Self::Bool | Self::CStr => false,
+            },
+            InferenceConstraint::FloatingPoint => match self {
+                Self::Float(_) => true,
+                Self::Integer(_) | Self::Bool | Self::CStr => false,
+            },
         }
     }
 }
@@ -107,6 +133,33 @@ impl Integer {
             Self::Uint64 | Self::Usize => u64::MAX as u128,
         }
     }
+
+    /// Returns whether this integer type can represent negative values.
+    #[must_use]
+    pub const fn is_signed(&self) -> bool {
+        match self {
+            Self::Int8 | Self::Int16 | Self::Int32 | Self::Int64 | Self::Isize | Self::CInt => true,
+            Self::Uint8 | Self::Uint16 | Self::Uint32 | Self::Uint64 | Self::Usize => false,
+        }
+    }
+}
+
+/// A primitive IEEE-754 floating-point type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum Float {
+    Float32,
+    Float64,
+}
+
+impl Float {
+    /// Returns the keyword that names this floating-point type in source code.
+    #[must_use]
+    pub const fn keyword(&self) -> &'static str {
+        match self {
+            Self::Float32 => "float32",
+            Self::Float64 => "float64",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -144,27 +197,77 @@ pub enum TyKind {
     Lifetime,
 }
 
+/// Restricts the types an inference variable can be bound to.
+///
+/// The constraints form a chain, from the most to the least permissive:
+/// `Any`, `EqualityComparable`, `Numeric`, `SignedNumeric`, and
+/// `FloatingPoint`. Each constraint accepts a subset of the types its
+/// predecessor accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum InferenceConstraint {
+    /// Accepts any type.
     Any,
-    Numeric,
+
+    /// Accepts the integer, floating-point, and `bool` primitive types.
     EqualityComparable,
+
+    /// Accepts the integer and floating-point primitive types, e.g. the type
+    /// of an integer literal without a suffix.
+    Numeric,
+
+    /// Accepts the signed integer and floating-point primitive types, e.g.
+    /// the operand of a negation.
+    SignedNumeric,
+
+    /// Accepts the floating-point primitive types, e.g. the type of a
+    /// floating-point literal without a suffix.
+    FloatingPoint,
 }
 
 impl InferenceConstraint {
+    /// Returns the constraint that accepts exactly the types both constraints
+    /// accept, if any.
     #[must_use]
-    #[allow(clippy::match_same_arms)]
     pub const fn meet(&self, other: &Self) -> Option<Self> {
-        match (self, other) {
-            (Self::Any, Self::Any) => Some(Self::Any),
-            (Self::Any, Self::Numeric) | (Self::Numeric, Self::Any) => Some(Self::Numeric),
-            (Self::Any, Self::EqualityComparable) | (Self::EqualityComparable, Self::Any) => {
-                Some(Self::EqualityComparable)
-            }
-            (Self::Numeric, Self::Numeric) => Some(Self::Numeric),
-            (Self::Numeric, Self::EqualityComparable)
-            | (Self::EqualityComparable, Self::Numeric) => Some(Self::Numeric),
-            (Self::EqualityComparable, Self::EqualityComparable) => Some(Self::EqualityComparable),
+        // The constraints form a chain, so the meet is the more restrictive
+        // of the two.
+        if self.restrictiveness() >= other.restrictiveness() { Some(*self) } else { Some(*other) }
+    }
+
+    /// Returns the position of this constraint in the chain of constraints;
+    /// a constraint accepts a subset of the types any less restrictive one
+    /// accepts.
+    const fn restrictiveness(self) -> u8 {
+        match self {
+            Self::Any => 0,
+            Self::EqualityComparable => 1,
+            Self::Numeric => 2,
+            Self::SignedNumeric => 3,
+            Self::FloatingPoint => 4,
+        }
+    }
+
+    /// Returns whether an inference variable with this constraint can only
+    /// stand for a primitive type, which has no lifetimes.
+    #[must_use]
+    pub const fn is_lifetime_free(&self) -> bool {
+        match self {
+            Self::EqualityComparable
+            | Self::Numeric
+            | Self::SignedNumeric
+            | Self::FloatingPoint => true,
+            Self::Any => false,
+        }
+    }
+
+    /// Returns the primitive type that an inference variable with this
+    /// constraint defaults to when no other constraint determines it, if any.
+    #[must_use]
+    pub const fn default_primitive(&self) -> Option<Primitive> {
+        match self {
+            Self::Numeric | Self::SignedNumeric => Some(Primitive::Integer(Integer::Int32)),
+            Self::FloatingPoint => Some(Primitive::Float(Float::Float64)),
+            Self::Any | Self::EqualityComparable => None,
         }
     }
 }
@@ -1130,6 +1233,8 @@ impl TyDisplay<'_> {
                 InferenceConstraint::EqualityComparable => {
                     write!(f, "{{equality comparable}}")
                 }
+                InferenceConstraint::SignedNumeric => write!(f, "{{signed numeric}}"),
+                InferenceConstraint::FloatingPoint => write!(f, "{{floating point}}"),
             },
 
             Ty::SelfInstance(_) => f.write_str("this"),

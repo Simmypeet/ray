@@ -145,10 +145,7 @@ impl Solver {
         other_ty: &Interned<Ty>,
         variance: Variance,
     ) -> Result<Step, Error> {
-        let is_lifetime_free = |inference: Inference| match inference.constraint() {
-            InferenceConstraint::Numeric | InferenceConstraint::EqualityComparable => true,
-            InferenceConstraint::Any => false,
-        };
+        let is_lifetime_free = |inference: Inference| inference.constraint().is_lifetime_free();
         let may_unify = match variance {
             Variance::Invariant => true,
             Variance::Covariant | Variance::Contravariant | Variance::Bivariant => {

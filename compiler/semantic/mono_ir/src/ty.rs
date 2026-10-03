@@ -17,7 +17,7 @@ use rayc_symbol::{GlobalSymbolID, member::get_members};
 use rayc_type::{
     poly_var::build_subst_from_args,
     subst::{MutSubstitutable, Subst, Substitutable},
-    ty::{Integer, Mutability, Primitive, Ty, application::View as ApplicationView},
+    ty::{Float, Integer, Mutability, Primitive, Ty, application::View as ApplicationView},
 };
 
 use crate::instance::{MonoEffectInstance, MonoStructInstance};
@@ -39,6 +39,7 @@ pub enum MonoType {
     Uint64,
     Usize,
     Float32,
+    Float64,
     CInt,
     CStr,
     OpaquePointer(PointerMutability),
@@ -63,6 +64,15 @@ impl MonoType {
             Integer::Uint64 => Self::Uint64,
             Integer::Usize => Self::Usize,
             Integer::CInt => Self::CInt,
+        }
+    }
+
+    /// Returns the runtime representation of the given floating-point type.
+    #[must_use]
+    pub const fn from_float(float: Float) -> Self {
+        match float {
+            Float::Float32 => Self::Float32,
+            Float::Float64 => Self::Float64,
         }
     }
 
@@ -395,7 +405,7 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
             ApplicationView::Primitive(primitive) => {
                 let ty = match primitive {
                     Primitive::Integer(integer) => MonoType::from_integer(integer),
-                    Primitive::Float32 => MonoType::Float32,
+                    Primitive::Float(float) => MonoType::from_float(float),
                     Primitive::Bool => MonoType::Bool,
                     Primitive::CStr => MonoType::CStr,
                 };

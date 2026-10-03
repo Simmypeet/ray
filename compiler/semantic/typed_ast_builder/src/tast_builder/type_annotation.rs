@@ -108,6 +108,8 @@ async fn instantiation_of(expression: &TypedExpr, engine: &TrackedEngine) -> Opt
         | TypedExprKind::Tuple(_)
         | TypedExprKind::Closure(_)
         | TypedExprKind::Binary(_)
+        | TypedExprKind::Unary(_)
+        | TypedExprKind::Cast(_)
         | TypedExprKind::IfElse(_)
         | TypedExprKind::While(_)
         | TypedExprKind::RefOf(_)

@@ -19,6 +19,7 @@ impl<'a> Lower<TypedExprWithID<&'a Literal>> for Builder {
         let literal = expression.node();
         let literal = match literal {
             Literal::Numeric(value) => IrLiteral::Numeric(*value),
+            Literal::Float(digits) => IrLiteral::Float(digits.clone()),
             Literal::Bool(value) => IrLiteral::Bool(*value),
             Literal::String(value) => IrLiteral::String(value.clone()),
         };
