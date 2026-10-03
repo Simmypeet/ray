@@ -19,7 +19,7 @@ use crate::{
         args::Args,
         effect_row::EffectRow,
         inference::{GenInfer, Inference},
-        lifetime::{Lifetime, RegionID},
+        lifetime::{ExternalRegionID, Lifetime, RegionID},
     },
     variance::Variance,
     where_clause::OutlivesPredicate,
@@ -420,6 +420,31 @@ impl Ty {
         right: &Interned<Self>,
         engine: &TrackedEngine,
     ) -> Option<OutlivesConstraints> {
+        let lifetimes = Self::corresponding_lifetimes(left, right, engine).await?;
+
+        Some(
+            lifetimes
+                .iter()
+                .flat_map(|(left, right)| {
+                    OutlivesPredicate::from_relation(left, right, Variance::Invariant)
+                })
+                .collect(),
+        )
+    }
+
+    /// Pairs each lifetime of `left` with the lifetime at the same position
+    /// in `right`, when the two types are equal up to their lifetimes; see
+    /// [`Self::equal_modulo_lifetimes`].
+    ///
+    /// Returns `None` if they are not equal. Otherwise, returns the pairs
+    /// whose lifetimes differ, in unspecified order, the lifetime of `left`
+    /// first. A position where both types have the same lifetime has no
+    /// pair.
+    pub async fn corresponding_lifetimes(
+        left: &Interned<Self>,
+        right: &Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Option<Vec<(Interned<Self>, Interned<Self>)>> {
         let mut lifetimes = Vec::new();
         let mut pending = vec![(left.clone(), right.clone())];
 
@@ -468,14 +493,7 @@ impl Ty {
             }
         }
 
-        Some(
-            lifetimes
-                .iter()
-                .flat_map(|(left, right)| {
-                    OutlivesPredicate::from_relation(left, right, Variance::Invariant)
-                })
-                .collect(),
-        )
+        Some(lifetimes)
     }
 
     #[must_use]
@@ -1296,6 +1314,13 @@ impl Ty {
     #[must_use]
     pub const fn is_external_lifetime(&self) -> bool {
         matches!(self, Self::Lifetime(Lifetime::External(_)))
+    }
+
+    /// Returns the external lifetime this type is, if it is one; see
+    /// [`Lifetime::External`].
+    #[must_use]
+    pub const fn as_external_region(&self) -> Option<ExternalRegionID> {
+        if let Self::Lifetime(Lifetime::External(external)) = self { Some(*external) } else { None }
     }
 
     #[must_use]

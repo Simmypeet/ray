@@ -97,16 +97,13 @@ impl CallTarget {
                 // so they are added as they are, not composed.
                 let trait_subst =
                     engine.build_subst_from_args(trait_id, trait_ref.args().interned_iter()).await;
+
                 for (poly_var_id, argument) in trait_subst.poly_var_mappings() {
-                    if subst.get(&poly_var_id).is_none() {
-                        subst.insert(poly_var_id, argument.clone());
-                    }
+                    assert!(subst.insert(poly_var_id, argument.clone()).is_none());
                 }
 
                 let self_instance = SelfInstance::new(trait_id);
-                if subst.get(&self_instance).is_none() {
-                    subst.insert(self_instance, instance.clone());
-                }
+                assert!(subst.insert(self_instance, instance.clone()).is_none());
 
                 subst
             }

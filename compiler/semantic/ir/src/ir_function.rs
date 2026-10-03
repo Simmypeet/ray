@@ -1,6 +1,6 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
-use rayc_hash::FxHashMap;
+use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
@@ -138,6 +138,45 @@ impl IRFunctionMap {
     #[must_use]
     pub fn functions(&self) -> impl ExactSizeIterator<Item = (FunctionID, &IRFunction)> {
         self.functions.iter()
+    }
+
+    /// Returns every IR function of the source def, each after the nested
+    /// functions it creates: a closure body comes before the function whose
+    /// closure expression creates it, and a handled body and its operation
+    /// handlers come before the function of their `handle`.
+    ///
+    /// Otherwise, the order is not stable.
+    #[must_use]
+    pub fn functions_innermost_first(&self) -> Vec<FunctionID> {
+        let mut order = Vec::with_capacity(self.functions.len());
+        let mut visited = FxHashSet::default();
+
+        // Walk the functions each function creates before the function
+        // itself. Starting from every function covers the ones that no
+        // expression creates, which is only the definition function in valid
+        // IR.
+        for (start, _) in self.functions() {
+            let mut pending = vec![(start, false)];
+
+            while let Some((function_id, is_expanded)) = pending.pop() {
+                if is_expanded {
+                    order.push(function_id);
+                    continue;
+                }
+                if !visited.insert(function_id) {
+                    continue;
+                }
+
+                pending.push((function_id, true));
+                pending.extend(
+                    self.get_function(function_id)
+                        .created_functions()
+                        .map(|created| (created, false)),
+                );
+            }
+        }
+
+        order
     }
 
     #[must_use]
@@ -660,6 +699,16 @@ impl IRFunction {
 
     #[must_use]
     pub const fn context(&self) -> &IRContext { &self.context }
+
+    /// Iterates over the nested functions the expressions of this function
+    /// create, in unspecified order; see [`IRExprKind::created_functions`].
+    ///
+    /// [`IRExprKind::created_functions`]: crate::ir_expr::IRExprKind::created_functions
+    pub fn created_functions(&self) -> impl Iterator<Item = FunctionID> + '_ {
+        self.expression_map
+            .expressions()
+            .flat_map(|(_, expression)| expression.kind().created_functions())
+    }
 
     /// Returns the parameters of this function, which belongs to the
     /// definition `def_id`, in declaration order; see

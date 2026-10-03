@@ -1,5 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
+use rayc_qbice::TrackedEngine;
 use rayc_resolution::path::{Effect, PathResolution, TraitMemberParent};
 use rayc_semantic_element::{
     effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
@@ -13,7 +14,7 @@ use rayc_symbol::{
 };
 use rayc_syntax::expression::{Call as CallSyn, DirectCall as DirectCallSyn};
 use rayc_type::{
-    poly_var::build_subst_from_args,
+    poly_var::{build_subst_from_args, get_poly_var_map},
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{Ty, args::Args, effect_row::EffectLabel, self_instance::SelfInstance},
@@ -27,9 +28,23 @@ use crate::{
 };
 
 enum ResolvedCallTarget<'a> {
-    Direct { function_id: GlobalSymbolID, symbol_kind: SymbolKind },
-    UnresolvedInstanceAssociated { instance: Interned<Ty>, trait_def_id: GlobalSymbolID },
-    EffectOperation { effect: &'a Effect, operation_id: GlobalSymbolID },
+    Direct {
+        function_id: GlobalSymbolID,
+        symbol_kind: SymbolKind,
+    },
+    UnresolvedInstanceAssociated {
+        /// The dictionary the call dispatches through.
+        instance: Interned<Ty>,
+
+        /// The trait reference `instance` implements: the trait enclosing the
+        /// trait def, with the arguments it is called through.
+        trait_ref: TraitRef,
+        trait_def_id: GlobalSymbolID,
+    },
+    EffectOperation {
+        effect: &'a Effect,
+        operation_id: GlobalSymbolID,
+    },
 }
 
 impl ResolvedCallTarget<'_> {
@@ -49,14 +64,71 @@ impl ResolvedCallTarget<'_> {
         }
     }
 
-    fn into_call(self, arguments: Vec<TypedExprID>, subst: Subst) -> Call {
+    /// Returns the substitution instantiating the signature of this target,
+    /// where `call_subst` instantiates the type parameters of the called
+    /// symbol.
+    ///
+    /// The signature of a trait def also mentions the parameters of its
+    /// enclosing trait and the trait's self dictionary, which `call_subst`
+    /// leaves out: they are instantiated with the arguments of the trait
+    /// reference the call goes through, and with its dictionary.
+    async fn signature_subst(&self, call_subst: &Subst, engine: &TrackedEngine) -> Subst {
         match self {
-            Self::Direct { function_id, .. } => Call::new_direct(function_id, arguments, subst),
-            Self::UnresolvedInstanceAssociated { instance, trait_def_id } => {
-                Call::new_unresolved_instance_associated(instance, trait_def_id, subst, arguments)
+            Self::Direct { .. } | Self::EffectOperation { .. } => call_subst.clone(),
+            Self::UnresolvedInstanceAssociated { instance, trait_ref, .. } => {
+                let trait_id = trait_ref.trait_id();
+                let mut subst =
+                    engine.build_subst_from_args(trait_id, trait_ref.args().interned_iter()).await;
+
+                // Associated types in the signature must use the selected
+                // dictionary.
+                subst.insert(SelfInstance::new(trait_id), instance.clone());
+                subst.compose(call_subst, engine);
+                subst
+            }
+        }
+    }
+
+    /// Builds the call of this target with `arguments`, where `call_subst`
+    /// instantiates the type parameters of the called symbol.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `call_subst` does not instantiate exactly the type
+    /// parameters of the trait def of a call through an unresolved instance:
+    /// the dictionary tells those of the enclosing trait.
+    async fn into_call(
+        self,
+        arguments: Vec<TypedExprID>,
+        call_subst: Subst,
+        engine: &TrackedEngine,
+    ) -> Call {
+        match self {
+            Self::Direct { function_id, .. } => {
+                Call::new_direct(function_id, arguments, call_subst)
+            }
+            Self::UnresolvedInstanceAssociated { instance, trait_def_id, .. } => {
+                // Every mapping belongs to the trait def, and there are as
+                // many as it has parameters, so none is missing either.
+                let own_count = call_subst
+                    .poly_var_mappings()
+                    .filter(|(poly_var_id, _)| poly_var_id.parent_id() == trait_def_id)
+                    .count();
+                assert!(
+                    own_count == call_subst.len()
+                        && own_count == engine.get_poly_var_map(trait_def_id).await.len(),
+                    "a call should instantiate exactly the parameters of its trait def"
+                );
+
+                Call::new_unresolved_instance_associated(
+                    instance,
+                    trait_def_id,
+                    call_subst,
+                    arguments,
+                )
             }
             Self::EffectOperation { effect, operation_id } => {
-                Call::new_effect_operation(effect.symbol_id(), operation_id, arguments, subst)
+                Call::new_effect_operation(effect.symbol_id(), operation_id, arguments, call_subst)
             }
         }
     }
@@ -121,25 +193,24 @@ impl TAstBuilder {
             PathResolution::TraitMember(def)
                 if resolution.symbol_kind() == Some(SymbolKind::TraitDef) =>
             {
-                let (instance, trait_id) = match def.parent() {
-                    TraitMemberParent::Named(trait_ref) => (
-                        self.infer_trait_instance(trait_ref, path.span()).await,
-                        trait_ref.trait_id(),
-                    ),
+                let (instance, trait_ref) = match def.parent() {
+                    TraitMemberParent::Named(trait_ref) => {
+                        (self.infer_trait_instance(trait_ref, path.span()).await, trait_ref.clone())
+                    }
                     TraitMemberParent::This(instance) => (
                         self.engine().intern(Ty::SelfInstance(*instance)),
-                        instance.trait_ref(self.engine()).await.trait_id(),
+                        instance.trait_ref(self.engine()).await,
                     ),
                 };
-                // Associated types in the signature must use the selected dictionary.
-                let mut subst = def.substitution(self.engine()).await;
-                subst.insert(SelfInstance::new(trait_id), instance.clone());
                 (
                     ResolvedCallTarget::UnresolvedInstanceAssociated {
                         instance,
+                        trait_ref,
                         trait_def_id: def.symbol_id(),
                     },
-                    subst,
+                    self.engine()
+                        .build_subst_from_args(def.symbol_id(), def.args().interned_iter())
+                        .await,
                 )
             }
             PathResolution::ResolvedInstanceMember(def)
@@ -159,9 +230,12 @@ impl TAstBuilder {
                 (
                     ResolvedCallTarget::UnresolvedInstanceAssociated {
                         instance: Ty::new_poly_var(def.instance(), self.engine()),
+                        trait_ref: def.trait_ref().clone(),
                         trait_def_id: def.trait_member_id(),
                     },
-                    def.substitution(self.engine()).await,
+                    self.engine()
+                        .build_subst_from_args(def.trait_member_id(), def.args().interned_iter())
+                        .await,
                 )
             }
             resolution => {
@@ -177,6 +251,8 @@ impl TAstBuilder {
         self.build_resolved_direct_call(target, arguments, call_subst, syn.span(), None).await
     }
 
+    /// Builds the call of `target` with `arguments`, where `call_subst`
+    /// instantiates the type parameters of the called symbol alone.
     async fn build_resolved_direct_call(
         &mut self,
         target: ResolvedCallTarget<'_>,
@@ -186,20 +262,23 @@ impl TAstBuilder {
         // Is `Some` when the call is a lambda call
         value_arguments: Option<&[TypedExprID]>,
     ) -> TypedExprID {
+        let signature_subst = target.signature_subst(&call_subst, self.engine()).await;
+
         // Check arguments before reading the resulting signature: constraints may
         // resolve inference variables and associated types used by the call.
         self.check_resolved_call_arguments(
             &target,
             &mut arguments,
-            &call_subst,
+            &signature_subst,
             span,
             value_arguments,
         )
         .await;
-        let (return_type, effect_row) = self.resolve_call_signature(&target, &call_subst).await;
+        let (return_type, effect_row) =
+            self.resolve_call_signature(&target, &signature_subst).await;
 
         // Construct the call and introduce its effect exactly once.
-        let call = target.into_call(arguments, call_subst);
+        let call = target.into_call(arguments, call_subst, self.engine()).await;
         let expr_id = self.insert_expression(TypedExprKind::Call(call), span, return_type).await;
         self.push_effect_introduction(expr_id, &effect_row).await;
         expr_id
@@ -209,7 +288,7 @@ impl TAstBuilder {
         &mut self,
         target: &ResolvedCallTarget<'_>,
         arguments: &mut [TypedExprID],
-        call_subst: &Subst,
+        signature_subst: &Subst,
         span: RelativeSpan,
         value_arguments: Option<&[TypedExprID]>,
     ) {
@@ -219,7 +298,7 @@ impl TAstBuilder {
         // Def.call's second parameter packages the source value-call arguments.
         // Keep their individual locations available for argument diagnostics.
         for (index, ((_, parameter), argument)) in parameters.iter().zip(arguments).enumerate() {
-            let parameter_ty = parameter.ty().apply_subst_or_clone(call_subst, self.engine());
+            let parameter_ty = parameter.ty().apply_subst_or_clone(signature_subst, self.engine());
             if index == 1
                 && let Some(value_arguments) = value_arguments
             {
@@ -293,10 +372,10 @@ impl TAstBuilder {
     async fn resolve_call_signature(
         &self,
         target: &ResolvedCallTarget<'_>,
-        call_subst: &Subst,
+        signature_subst: &Subst,
     ) -> (Interned<Ty>, Interned<Ty>) {
         let return_type = self.engine().get_return_type(target.function_id()).await;
-        let return_type = return_type.apply_subst_or_clone(call_subst, self.engine());
+        let return_type = return_type.apply_subst_or_clone(signature_subst, self.engine());
 
         // Operations introduce their enclosing effect; other calls use the
         // declaration's effect row instantiated with the selected arguments.
@@ -312,7 +391,7 @@ impl TAstBuilder {
                 .engine()
                 .get_effect_row(target.function_id())
                 .await
-                .apply_subst_or_clone(call_subst, self.engine()),
+                .apply_subst_or_clone(signature_subst, self.engine()),
         };
         (return_type, effect_row)
     }
@@ -348,16 +427,13 @@ impl TAstBuilder {
             .await;
 
         // Use the same signature substitution and effect introduction as
-        // dictionary.call.
-        let mut subst =
-            self.engine().build_subst_from_args(trait_id, trait_ref.args().interned_iter()).await;
-        subst.insert(SelfInstance::new(trait_id), instance.clone());
+        // dictionary.call. `Def.call` has no type parameter of its own.
         let trait_def_id = self.engine().get_core_item(CoreItem::DefCall).await;
 
         self.build_resolved_direct_call(
-            ResolvedCallTarget::UnresolvedInstanceAssociated { instance, trait_def_id },
+            ResolvedCallTarget::UnresolvedInstanceAssociated { instance, trait_ref, trait_def_id },
             vec![callee, tuple],
-            subst,
+            Subst::new_empty(),
             span,
             Some(&arguments),
         )
