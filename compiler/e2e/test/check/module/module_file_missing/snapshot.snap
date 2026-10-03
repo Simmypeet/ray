@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: failed to load submodule file `compiler/e2e/test/check/module/module_file_missing/missing.ray`: general IO error (os error 2)
+  ╭▸ compiler/e2e/test/check/module/module_file_missing/main.ray:2:8
+  │
+2 │ module missing
+  │        ━━━━━━━ submodule declaration here
+  │
+  ╰ help: check if the file exists and is accessible
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

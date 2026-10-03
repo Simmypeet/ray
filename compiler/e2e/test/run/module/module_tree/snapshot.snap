@@ -1,0 +1,17 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 11
+
+stdout:
+hello from greeting
+hello from greeting.nested
+hello from greeting
+geometry
+shapes
+
+
+stderr:

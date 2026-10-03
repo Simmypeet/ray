@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::SourceElement;
 use rayc_symbol::symbol_kind::SymbolKind;
@@ -8,7 +10,7 @@ use rayc_syntax::{
     extern_def::ExternDef,
     instance::{Instance, InstanceAssociatedType, InstanceMember},
     marker::{Marker, MarkerImplementation},
-    module::ModuleMember,
+    module::{Module, ModuleMember},
     r#struct::Struct,
     r#trait::{Trait, TraitAssociatedType, TraitMember},
 };
@@ -18,7 +20,7 @@ use crate::{
         Diagnostic, InvalidAttribute, InvalidAttributeKind, InvalidDefDeclaration,
         InvalidDefDeclarationKind, InvalidEffectOperationDeclaration,
     },
-    table::{Infos, MemberBuilder, Table},
+    table::{Infos, MemberBuilder, Table, TableKey},
 };
 
 impl Table {
@@ -524,13 +526,81 @@ impl Table {
         .await;
     }
 
+    /// Registers a submodule declared in the module of `member_builder`, whose
+    /// directory is `directory`.
+    ///
+    /// Like in Rust, every module owns a directory named after it inside its
+    /// parent's directory, and the root module owns the directory of the root
+    /// file. A file module `name` declared in a module owning the directory
+    /// `dir` defines its members in `dir/name.ray`.
+    async fn register_module(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        module: Module,
+        directory: &Path,
+        engine: &TrackedEngine,
+    ) {
+        let Some(ident) = module.name() else {
+            return;
+        };
+        let name = ident.kind.0.clone();
+        let body = module.body();
+
+        // a file module is only declared here: its information is stored in
+        // the table of its own file, alongside its members. A redefined file
+        // module would share the file of the original one, so it is kept here
+        // instead, with no members.
+        if body.is_none() && !member_builder.has_member(&name) {
+            let module_id = member_builder.declare(name.clone(), ident.span, engine).await;
+            let table_key = TableKey::new_file_module(
+                member_builder,
+                module_id.id,
+                &name,
+                ident.span,
+                directory,
+                engine,
+            );
+
+            self.push_next_table(engine.intern(table_key));
+            return;
+        }
+
+        let module_id = self
+            .insert_symbol(
+                member_builder,
+                Infos::builder()
+                    .symbol_kind(SymbolKind::Module)
+                    .name(name.clone())
+                    .span(ident.span)
+                    .build(),
+                engine,
+            )
+            .await;
+
+        // an inline module defines its members in its body
+        let mut module_members = member_builder.child(module_id, name.clone());
+        if let Some(body) = body {
+            Box::pin(self.register_module_members(
+                &mut module_members,
+                body.members(),
+                &directory.join(name.as_ref()),
+                engine,
+            ))
+            .await;
+        }
+
+        self.insert_symbol_members(module_id.id, module_members, engine);
+    }
+
+    /// Registers the members of a module whose directory is `directory`.
     pub(crate) async fn register_module_members(
         &mut self,
         member_builder: &mut MemberBuilder,
-        module_content: &rayc_syntax::module::ModuleContent,
+        members: impl Iterator<Item = Passable<ModuleMember>>,
+        directory: &Path,
         engine: &TrackedEngine,
     ) {
-        for member in module_content.members() {
+        for member in members {
             let Passable::Ast(member) = member else {
                 continue;
             };
@@ -564,6 +634,9 @@ impl Table {
                         engine,
                     )
                     .await;
+                }
+                ModuleMember::Module(module) => {
+                    self.register_module(member_builder, module.clone(), directory, engine).await;
                 }
             }
         }

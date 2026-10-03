@@ -37,7 +37,7 @@ use rayc_type::{
 
 use crate::{
     lifetime,
-    resolver::{find_path_symbol, find_path_target},
+    resolver::{find_module_path_root, find_path_symbol, find_path_target},
 };
 
 /// Discovers the polymorphic variables the parameter types of `site`
@@ -396,6 +396,11 @@ impl Discovery<'_> {
     async fn root_context(&self, path: &Path) -> Option<PathContext> {
         match path.root() {
             Some(PathRoot::This(_)) => Some(self.this_trait().await),
+            Some(root @ (PathRoot::Target(_) | PathRoot::Super(_))) => Some(
+                find_module_path_root(self.engine, self.site, &root)
+                    .await
+                    .map_or(PathContext::Unknown, PathContext::Symbol),
+            ),
             Some(PathRoot::Segment(_)) | None => None,
         }
     }

@@ -508,6 +508,13 @@ impl Resolver<'_> {
                 };
                 PathResolution::SelfInstance(instance)
             }
+            Some(root @ (PathRoot::Target(_) | PathRoot::Super(_))) => {
+                let Some(module_id) = self.find_module_path_root(&root).await else {
+                    self.report_super_path_in_root_module(root.span());
+                    return Err(PathResolutionError::SymbolNotFound);
+                };
+                PathResolution::Module(Module::new(module_id))
+            }
             None => return Err(PathResolutionError::MissingIdentifier),
         };
         for part in path.rest() {

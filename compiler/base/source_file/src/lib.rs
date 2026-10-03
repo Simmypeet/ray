@@ -23,6 +23,9 @@ use ropey::{Rope, RopeSlice, iter::Chunks};
 
 pub mod simple_source_map;
 
+/// The file extension of Ray source files, without the leading dot.
+pub const SOURCE_FILE_EXTENSION: &str = "ray";
+
 /// Represents an source file input for the compiler.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct SourceFile {

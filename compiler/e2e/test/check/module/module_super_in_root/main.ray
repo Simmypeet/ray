@@ -1,0 +1,6 @@
+def helper() -> int32:
+    return 0
+
+def main() -> int32:
+    # The root module has no parent module.
+    return super.helper()

@@ -1,0 +1,10 @@
+def value() -> int32:
+    # A sibling module's items are not visible without a prefix.
+    return helper()
+
+def other() -> int32:
+    return super.helper()
+
+# A syntax error in a file module is reported against that file.
+def third() -> int32
+    return 3

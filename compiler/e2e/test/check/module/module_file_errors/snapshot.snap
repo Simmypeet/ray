@@ -1,0 +1,24 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: symbol `helper` is not found
+  ╭▸ compiler/e2e/test/check/module/module_file_errors/inner/broken.ray:3:12
+  │
+3 │     return helper()
+  ╰╴           ━━━━━━ symbol `helper` is not found
+
+[error]: unexpected new line, expected indentation block, `\` punctuation, `where` keyword
+  ╭▸ compiler/e2e/test/check/module/module_file_errors/inner/broken.ray:9:21
+  │
+9 │   def third() -> int32
+  │ ┏━━━━━━━━━━━━━━━━━━━━━┛
+10│ ┃     return 3
+  ╰╴┗━┛
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

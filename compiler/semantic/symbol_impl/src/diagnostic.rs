@@ -19,9 +19,12 @@ use rayc_symbol::{
     source_map::to_absolute_span,
     span::get_span,
 };
-use rayc_target::{TargetID, get_invocation_arguments};
+use rayc_target::TargetID;
 
-use crate::table;
+use crate::{
+    index::get_table_index,
+    table::{TableKey, get_table},
+};
 
 /// Enumeration of all diagnostics that can be reported while building table
 /// tree.
@@ -220,6 +223,50 @@ impl Report for SourceFileLoadFail {
     }
 }
 
+/// A query for retrieving the rendered diagnostics of a single source file of
+/// a target: its lexical and syntax errors and the errors found while building
+/// its table.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query)]
+#[value(Interned<[Rendered<ByteIndex>]>)]
+struct FileRenderedKey(Interned<TableKey>);
+
+#[executor(config = Config)]
+async fn file_rendered_executor(
+    FileRenderedKey(table_key): &FileRenderedKey,
+    engine: &TrackedEngine,
+) -> Interned<[Rendered<ByteIndex>]> {
+    let path = table_key.path().clone();
+    let target_id = table_key.target_id();
+
+    let mut rendered = Vec::new();
+
+    // the lexical and syntax errors of the file
+    if let Ok((_, errors)) =
+        engine.query(&rayc_lexical::Key { path: path.clone(), target_id }).await
+    {
+        for error in errors.iter() {
+            rendered.push(error.report(engine).await);
+        }
+    }
+
+    if let Ok((_, errors)) = engine.query(&rayc_syntax::Key { path, target_id }).await {
+        for error in errors.iter() {
+            rendered.push(error.report(engine).await);
+        }
+    }
+
+    // the errors found while building the table of the file
+    for diagnostic in engine.get_table(table_key).await.diagnostics() {
+        rendered.push(diagnostic.report(engine).await);
+    }
+
+    engine.intern_unsized(rendered)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static FILE_RENDERED_EXECUTOR: Registration<Config> =
+    Registration::new::<FileRenderedKey, FileRenderedExecutor>();
+
 /// A query for retrieving all rendered diagnostics for a target.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
@@ -228,36 +275,15 @@ impl Report for SourceFileLoadFail {
 pub struct RenderedKey(pub TargetID);
 
 #[executor(config = Config)]
-#[allow(clippy::too_many_lines)]
 async fn rendered_executor(
     &RenderedKey(target_id): &RenderedKey,
     engine: &TrackedEngine,
 ) -> Interned<[Rendered<ByteIndex>]> {
-    let arg = engine.get_invocation_arguments(target_id).await;
-    let internred_path: Interned<Path> = engine.intern_unsized(arg.file_path().to_path_buf());
-
-    let table = engine.query(&table::Key { target_id }).await;
+    let index = engine.get_table_index(target_id).await;
 
     let mut rendered = Vec::new();
-
-    if let Ok((_, errors)) =
-        engine.query(&rayc_lexical::Key { path: internred_path.clone(), target_id }).await
-    {
-        for error in errors.iter() {
-            rendered.push(error.report(engine).await);
-        }
-    }
-
-    if let Ok((_, errors)) =
-        engine.query(&rayc_syntax::Key { path: internred_path, target_id }).await
-    {
-        for error in errors.iter() {
-            rendered.push(error.report(engine).await);
-        }
-    }
-
-    for diagnostic in table.diagnostics() {
-        rendered.push(diagnostic.report(engine).await);
+    for table_key in index.table_keys() {
+        rendered.extend(engine.query(&FileRenderedKey(table_key.clone())).await.iter().cloned());
     }
 
     engine.intern_unsized(rendered)

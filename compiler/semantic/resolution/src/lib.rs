@@ -27,6 +27,8 @@ pub mod ty;
 pub enum Diagnostic {
     /// A `this` path used outside a trait body.
     InvalidThisPath(InvalidThisPath),
+    /// A `super` path used in the root module.
+    SuperPathInRootModule(SuperPathInRootModule),
     /// An associated type selected through a named trait without a dictionary.
     NamedTraitTypeProjection(NamedTraitTypeProjection),
     /// An instance associated type with no corresponding trait type
@@ -81,6 +83,7 @@ impl Report for Diagnostic {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
             Self::InvalidThisPath(diagnostic) => diagnostic.report(engine).await,
+            Self::SuperPathInRootModule(diagnostic) => diagnostic.report(engine).await,
             Self::NamedTraitTypeProjection(diagnostic) => diagnostic.report(engine).await,
             Self::MissingTraitTypeDeclaration(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectedValueType(diagnostic) => diagnostic.report(engine).await,
@@ -558,6 +561,38 @@ impl Report for InvalidThisPath {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         Rendered::builder()
             .message("`this` is only valid within a trait body")
+            .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
+            .build()
+    }
+}
+
+/// A `super` path used in the root module, which has no parent module.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct SuperPathInRootModule {
+    span: RelativeSpan,
+}
+
+impl SuperPathInRootModule {
+    const fn new(span: RelativeSpan) -> Self { Self { span } }
+}
+
+impl Report for SuperPathInRootModule {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("`super` cannot be used in the root module, which has no parent module")
             .primary_highlight(Highlight::new(engine.to_absolute_span(&self.span).await, None))
             .build()
     }

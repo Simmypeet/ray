@@ -1,0 +1,12 @@
+# Loaded from `shapes.ray`.
+module shapes
+
+# A file module shares its namespace with the other items of its parent.
+struct shapes:
+    width: int32
+
+# A redefined file module does not load `shapes.ray` again.
+module shapes
+
+def main() -> int32:
+    return shapes.area()
