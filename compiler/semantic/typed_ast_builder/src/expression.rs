@@ -5,14 +5,15 @@ use crate::{bind::Bind, tast_builder::TAstBuilder};
 
 pub mod binary;
 pub mod call;
+pub mod cast;
 pub mod identifier;
 pub mod if_else;
 pub mod lambda;
 pub mod leaf;
 pub mod literal;
-pub mod r#move;
 pub mod parenthesized;
 pub mod postfix;
+pub mod prefix;
 pub mod r#return;
 pub mod run_with;
 pub mod struct_initialization;

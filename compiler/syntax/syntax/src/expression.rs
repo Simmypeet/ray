@@ -8,7 +8,10 @@ use rayc_parser::{
 
 use crate::{
     Identifier, Keyword, Numeric, Punctuation, String as StringToken,
-    irrefutable_pattern::IrrefutablePattern, path::Path, statement::Block, r#type::Arrow,
+    irrefutable_pattern::IrrefutablePattern,
+    path::Path,
+    statement::Block,
+    r#type::{Arrow, Type},
 };
 
 abstract_tree::abstract_tree! {
@@ -145,7 +148,7 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub struct Binary {
-        pub postfix: Postfix = ast::<Postfix>(),
+        pub cast: Cast = ast::<Cast>(),
         pub subsequent: #[multi] BinarySubsequent = ast::<BinarySubsequent>()
             .repeat()
     }
@@ -166,7 +169,89 @@ abstract_tree::abstract_tree! {
     )]
     pub struct BinarySubsequent {
         pub operator: BinaryOperator = ast::<BinaryOperator>(),
+        pub cast: Cast = ast::<Cast>(),
+    }
+}
+
+// `-x as int64` casts `-x`, and `a + b as int64` casts only `b`: a cast binds
+// tighter than every binary operator, but looser than a prefix operator.
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct Cast {
+        pub prefix: Prefix = ast::<Prefix>(),
+        pub casts: #[multi] CastTarget = ast::<CastTarget>().repeat()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct CastTarget {
+        pub as_keyword: Keyword = expect::Keyword::As,
+        pub ty: Type = ast::<Type>(),
+    }
+}
+
+// `-x.0` negates `x.0`, and `move x.0` moves `x.0`: a prefix operator binds
+// looser than every postfix operator.
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct Prefix {
+        pub operators: #[multi] PrefixOperator = ast::<PrefixOperator>().repeat(),
         pub postfix: Postfix = ast::<Postfix>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub enum PrefixOperator {
+        /// Negates a signed numeric operand.
+        Negate(Punctuation = '-'),
+        /// Moves out of the operand, even when its type is `Copy`.
+        Move(Keyword = expect::Keyword::Move),
     }
 }
 
@@ -243,6 +328,30 @@ abstract_tree::abstract_tree! {
         U32(Identifier = expect::IdentifierValue::U32.no_prior_insignificant()),
         U64(Identifier = expect::IdentifierValue::U64.no_prior_insignificant()),
         Usize(Keyword = expect::Keyword::Usize.no_prior_insignificant()),
+        F32(Identifier = expect::IdentifierValue::F32.no_prior_insignificant()),
+        F64(Identifier = expect::IdentifierValue::F64.no_prior_insignificant()),
+    }
+}
+
+// The fractional part of a floating-point literal, e.g. the `.5` in `1.5`. The
+// dot and the digits must follow the integral part directly: `1.5` is a
+// floating-point literal, while `1 . 5` and `1. 5` are not.
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    pub struct NumericFraction {
+        pub dot: Punctuation = '.'.no_prior_insignificant(),
+        pub numeric: Numeric = expect::Numeric.no_prior_insignificant(),
     }
 }
 
@@ -261,33 +370,13 @@ abstract_tree::abstract_tree! {
     )]
     pub struct NumericLiteral {
         pub numeric: Numeric = expect::Numeric,
+        pub fraction: NumericFraction = ast::<NumericFraction>().optional(),
         pub suffix: NumericSuffix = ast::<NumericSuffix>().optional()
     }
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(
-        Debug,
-        Clone,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Hash,
-        StableHash,
-        Encode,
-        Decode
-    )]
-    /// Moves out of the operand, even when its type is `Copy`.
-    pub struct Move {
-        pub move_keyword: Keyword = expect::Keyword::Move,
-        pub operand: Postfix = ast::<Postfix>(),
-    }
-}
-
-abstract_tree::abstract_tree! {
 pub enum Leaf {
-        Move(Move = ast::<Move>()),
         StructInitialization(StructInitialization = ast::<StructInitialization>()),
         DirectCall(DirectCall = ast::<DirectCall>()),
         Identifier(Identifier = expect::Identifier),

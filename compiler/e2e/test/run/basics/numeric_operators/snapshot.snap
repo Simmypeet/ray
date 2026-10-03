@@ -1,0 +1,17 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+negation: -128 -600 -2147483648 9223372036854775807 5 -9223372036854775808
+float negation: -1.50 -1.25
+precedence: 13 -6
+integer casts: 1200 44 4294967295 4464
+float casts: 3.50 3 -3 1.25 0.50
+
+
+stderr:

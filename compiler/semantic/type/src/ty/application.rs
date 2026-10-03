@@ -525,11 +525,11 @@ impl Application {
     pub fn satisfies_constraint(&self, con: InferenceConstraint) -> bool {
         match con {
             InferenceConstraint::Any => true,
-            InferenceConstraint::Numeric => match self.view() {
-                View::Primitive(primitive) => match primitive {
-                    Primitive::Integer(_) | Primitive::Float32 => true,
-                    Primitive::Bool | Primitive::CStr => false,
-                },
+            InferenceConstraint::EqualityComparable
+            | InferenceConstraint::Numeric
+            | InferenceConstraint::SignedNumeric
+            | InferenceConstraint::FloatingPoint => match self.view() {
+                View::Primitive(primitive) => primitive.satisfies_constraint(con),
 
                 View::Error
                 | View::Tuple(_)
@@ -544,26 +544,6 @@ impl Application {
                 | View::ClosureDropInstance(_)
                 | View::NominalDropInstance(_)
                 | View::InstanceAssociated(_) => false,
-            },
-            InferenceConstraint::EqualityComparable => match self.view() {
-                View::Primitive(primitive) => match primitive {
-                    Primitive::Integer(_) | Primitive::Float32 | Primitive::Bool => true,
-                    Primitive::CStr => false,
-                },
-
-                View::Error
-                | View::Tuple(_)
-                | View::Pointer(_)
-                | View::Reference(_)
-                | View::Struct(_)
-                | View::Instance(_)
-                | View::DefInstance(_)
-                | View::InstanceAssociated(_)
-                | View::NoOpDropInstance(_)
-                | View::TupleDropInstance(_)
-                | View::ClosureDropInstance(_)
-                | View::NominalDropInstance(_)
-                | View::Closure(_) => false,
             },
         }
     }

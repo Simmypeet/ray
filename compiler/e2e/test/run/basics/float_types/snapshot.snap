@@ -1,0 +1,19 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+float32: 6.00
+float64: 0.30000000000000004
+defaulted: 5.00
+annotated: 0.25
+halved: 2.50
+integers: 3.0 7.0
+equality: 1
+
+
+stderr:

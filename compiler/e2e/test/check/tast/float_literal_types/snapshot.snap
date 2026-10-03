@@ -1,0 +1,44 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: the floating-point literal `1.5` cannot have the type `int32`
+  ╭▸ compiler/e2e/test/check/tast/float_literal_types/main.ray:2:12
+  │
+2 │     return 1.5i32
+  │            ━━━━━━
+  │
+  ╰ help: use the `f32` or `f64` suffix, or cast the literal with `as`
+
+[error]: the floating-point literal `2.0` cannot have the type `uint8`
+  ╭▸ compiler/e2e/test/check/tast/float_literal_types/main.ray:5:12
+  │
+5 │     return 2.0u8
+  │            ━━━━━
+  │
+  ╰ help: use the `f32` or `f64` suffix, or cast the literal with `as`
+
+[error]: mismatched types in return expression: expected `int32`, but found `float64`
+  ╭▸ compiler/e2e/test/check/tast/float_literal_types/main.ray:8:12
+  │
+8 │     return 1.5
+  ╰╴           ━━━
+
+[error]: mismatched types in binary operation: expected `float32`, but found `float64`
+   ╭▸ compiler/e2e/test/check/tast/float_literal_types/main.ray:11:21
+   │
+11 │     return 1.0f32 + 1.0f64
+   ╰╴                    ━━━━━━
+
+[error]: mismatched types in variable assignment: expected `int64`, but found `float64`
+   ╭▸ compiler/e2e/test/check/tast/float_literal_types/main.ray:14:24
+   │
+14 │     let value: int64 = 0.5
+   ╰╴                       ━━━
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

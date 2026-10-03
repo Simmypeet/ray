@@ -6,7 +6,7 @@ use rayc_symbol::{
     core_item::{CoreItem, get_core_item},
 };
 use rayc_type::{
-    ty::{InferenceConstraint, Ty, inference::Inference},
+    ty::{Ty, inference::Inference},
     where_clause::MarkerPredicate,
 };
 use rayc_typed_ast::capture_plan::CopyOracle;
@@ -25,7 +25,7 @@ mod resolution_inference;
 mod solve;
 
 // re-exports
-pub use provenance::{EffectUnificationSource, SubtypeSource};
+pub use provenance::{EffectUnificationSource, NumericOperation, SubtypeSource};
 pub use resolution_inference::ResolutionInference;
 pub use solve::ConstraintError;
 
@@ -46,7 +46,7 @@ impl CopyOracle for ConstraintSolver {
 
         // any numeric type is `Copy`, even if it is undetermined.
         if let Ty::Inference(inference) = &*ty
-            && inference.constraint() == InferenceConstraint::Numeric
+            && inference.constraint().default_primitive().is_some()
         {
             return true;
         }
@@ -73,8 +73,7 @@ impl ConstraintSolver {
         self.recorded_mut().take_lifetimes()
     }
 
-    /// Takes every numeric literal inference generated for this definition so
-    /// far.
+    /// Takes every numeric inference generated for this definition so far.
     fn take_recorded_numeric_inferences(&mut self) -> Vec<Inference> {
         self.recorded_mut().take_numerics()
     }

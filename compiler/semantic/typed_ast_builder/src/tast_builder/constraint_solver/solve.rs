@@ -422,22 +422,36 @@ impl TAstBuilder {
         let erased = Ty::new_lifetime(Lifetime::Erased, &self.engine);
         self.constraint_solver
             .provenance
-            .default_unbound_inferences(lifetimes, &erased, &self.constraint_solver.solver)
+            .default_unbound_inferences(
+                lifetimes,
+                |_| Some(erased.clone()),
+                &self.constraint_solver.solver,
+            )
             .await;
     }
 
-    /// Defaults every numeric literal that no constraint determined to
-    /// `int32`, then retries the residual constraints it may unblock.
+    /// Defaults every numeric type that no constraint determined, then
+    /// retries the residual constraints it may unblock.
+    ///
+    /// Each type defaults according to the inference constraint of its latest
+    /// representative: `int32` for a numeric or signed numeric type, and
+    /// `float64` for a floating-point type.
     async fn default_numerics(&mut self) {
         let numerics = self.constraint_solver.take_recorded_numeric_inferences();
 
-        let default = Ty::new_primitive(
-            rayc_type::ty::Primitive::Integer(rayc_type::ty::Integer::Int32),
-            &self.engine,
-        );
+        let engine = self.engine.clone();
         self.constraint_solver
             .provenance
-            .default_unbound_inferences(numerics, &default, &self.constraint_solver.solver)
+            .default_unbound_inferences(
+                numerics,
+                |inference| {
+                    inference
+                        .constraint()
+                        .default_primitive()
+                        .map(|primitive| Ty::new_primitive(primitive, &engine))
+                },
+                &self.constraint_solver.solver,
+            )
             .await;
 
         let mut queued = Vec::new();
@@ -485,6 +499,11 @@ impl TAstBuilder {
 
     pub fn new_numeric_type_inference(&mut self) -> Interned<Ty> {
         let inference = self.gen_infer(TyKind::Star, InferenceConstraint::Numeric);
+        self.engine.intern(Ty::Inference(inference))
+    }
+
+    pub fn new_floating_point_type_inference(&mut self) -> Interned<Ty> {
+        let inference = self.gen_infer(TyKind::Star, InferenceConstraint::FloatingPoint);
         self.engine.intern(Ty::Inference(inference))
     }
 

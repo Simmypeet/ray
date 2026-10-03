@@ -11,7 +11,7 @@ use crate::{bind::Bind, diagnostic::LvalueOperation, tast_builder::TAstBuilder};
 impl Bind<BinarySyntax> for TAstBuilder {
     async fn bind(&mut self, syn: BinarySyntax) -> TypedExprID {
         let span = syn.span();
-        let Some(first) = syn.postfix() else {
+        let Some(first) = syn.cast() else {
             return self.push_error_expression(span).await;
         };
 
@@ -22,8 +22,8 @@ impl Bind<BinarySyntax> for TAstBuilder {
 
         for next in syn.subsequent() {
             let operator = next.operator().as_ref().map(map_operator);
-            let right = if let Some(postfix) = next.postfix() {
-                let right = self.bind(postfix).await;
+            let right = if let Some(cast) = next.cast() {
+                let right = self.bind(cast).await;
                 bound_operands.push(right);
                 Some(right)
             } else {

@@ -54,6 +54,7 @@ abstract_tree::abstract_tree! {
         Usize(Keyword = expect::Keyword::Usize),
         Bool(Keyword = expect::Keyword::Bool),
         Float32(Keyword = expect::Keyword::Float32),
+        Float64(Keyword = expect::Keyword::Float64),
         CInt(Keyword = expect::Keyword::CInt),
         CStr(Keyword = expect::Keyword::CStr),
     }

@@ -10,7 +10,7 @@ use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap},
     subst::{Subst, Substitutable},
     ty::{
-        Integer, Mutability, Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel,
+        Float, Integer, Mutability, Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel,
         inference::Inference, lifetime::Lifetime,
     },
     variance::{Variance, VarianceKey, VarianceMap},
@@ -174,8 +174,10 @@ async fn inference_rejects_cross_kind_bindings() {
     }
 }
 
-// input: ?numeric or ?equality = a primitive, tuple, or star error
-// premise: numeric accepts numbers; equality also accepts bool
+// input: ?equality, ?numeric, ?signed, or ?float = a primitive, tuple, or star
+//        error
+// premise: numeric accepts numbers; equality also accepts bool; signed accepts
+//          signed integers and floats; float accepts floats only
 // output: a singleton substitution for allowed primitives, otherwise Conflicted
 #[tokio::test]
 async fn star_application_constraints_remain_enforced() {
@@ -184,12 +186,22 @@ async fn star_application_constraints_remain_enforced() {
     let engine = rayc_qbice::create_minimal_engine().await;
     for (constraint, primitive, allowed) in [
         (InferenceConstraint::Numeric, Primitive::Integer(Integer::Int32), true),
-        (InferenceConstraint::Numeric, Primitive::Float32, true),
+        (InferenceConstraint::Numeric, Primitive::Float(Float::Float32), true),
         (InferenceConstraint::Numeric, Primitive::Integer(Integer::CInt), true),
         (InferenceConstraint::Numeric, Primitive::Bool, false),
         (InferenceConstraint::Numeric, Primitive::CStr, false),
         (InferenceConstraint::EqualityComparable, Primitive::Bool, true),
         (InferenceConstraint::EqualityComparable, Primitive::CStr, false),
+        (InferenceConstraint::SignedNumeric, Primitive::Integer(Integer::Int8), true),
+        (InferenceConstraint::SignedNumeric, Primitive::Integer(Integer::Isize), true),
+        (InferenceConstraint::SignedNumeric, Primitive::Float(Float::Float64), true),
+        (InferenceConstraint::SignedNumeric, Primitive::Integer(Integer::Uint32), false),
+        (InferenceConstraint::SignedNumeric, Primitive::Integer(Integer::Usize), false),
+        (InferenceConstraint::SignedNumeric, Primitive::Bool, false),
+        (InferenceConstraint::FloatingPoint, Primitive::Float(Float::Float32), true),
+        (InferenceConstraint::FloatingPoint, Primitive::Float(Float::Float64), true),
+        (InferenceConstraint::FloatingPoint, Primitive::Integer(Integer::Int32), false),
+        (InferenceConstraint::FloatingPoint, Primitive::Bool, false),
     ] {
         let mut solver = Solver::without_givens(engine.clone()).await;
         let inference = solver.new_inference_with_constraint(TyKind::Star, constraint);
@@ -892,4 +904,45 @@ async fn subtyping_between_variables_waits_unless_one_is_lifetime_free() {
         3,
     )));
     assert_eq!(unified, Ok(Step::Subst([(t, common.clone()), (n, common)].into_iter().collect())));
+}
+
+// input: ?numeric = ?float, then ?common = ?signed
+// premise: ?float is a floating-point literal; ?signed is a negation operand
+// output: both relations unify their variables with a fresh variable that has
+//         the more restrictive constraint, which is floating point both times
+#[tokio::test]
+async fn unifying_numeric_variables_meets_their_constraints() {
+    use rayc_type::ty::InferenceConstraint;
+
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let mut solver = Solver::without_givens(engine.clone()).await;
+    let numeric = solver.new_inference_with_constraint(TyKind::Star, InferenceConstraint::Numeric);
+    let float =
+        solver.new_inference_with_constraint(TyKind::Star, InferenceConstraint::FloatingPoint);
+    let signed =
+        solver.new_inference_with_constraint(TyKind::Star, InferenceConstraint::SignedNumeric);
+    let [numeric_ty, float_ty, signed_ty] =
+        [numeric, float, signed].map(|var| engine.intern(Ty::Inference(var)));
+
+    let first = entail_step(&mut solver, &TyRelate::new_invariant(numeric_ty, float_ty)).await;
+    let common =
+        Inference::new_with_constraint(TyKind::Star, InferenceConstraint::FloatingPoint, 3);
+    let common_ty = engine.intern(Ty::Inference(common));
+    assert_eq!(
+        first,
+        Ok(Step::Subst(
+            [(numeric, common_ty.clone()), (float, common_ty.clone())].into_iter().collect()
+        ))
+    );
+
+    let second = entail_step(&mut solver, &TyRelate::new_invariant(common_ty, signed_ty)).await;
+    let meet = engine.intern(Ty::Inference(Inference::new_with_constraint(
+        TyKind::Star,
+        InferenceConstraint::FloatingPoint,
+        4,
+    )));
+    assert_eq!(
+        second,
+        Ok(Step::Subst([(common, meet.clone()), (signed, meet)].into_iter().collect()))
+    );
 }

@@ -1,0 +1,80 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot negate a value of type `uint32`
+  ╭▸ compiler/e2e/test/check/tast/numeric_operators/main.ray:2:12
+  │
+2 │     return -1u32
+  │            ━━━━━
+  │
+  ╰ help: only signed integer and floating-point types can be negated
+
+[error]: cannot negate a value of type `usize`
+  ╭▸ compiler/e2e/test/check/tast/numeric_operators/main.ray:5:13
+  │
+5 │     return -value
+  │             ━━━━━
+  │
+  ╰ help: only signed integer and floating-point types can be negated
+
+[error]: cannot negate a value of type `bool`
+  ╭▸ compiler/e2e/test/check/tast/numeric_operators/main.ray:8:13
+  │
+8 │     return -true
+  │             ━━━━
+  │
+  ╰ help: only signed integer and floating-point types can be negated
+
+[error]: the numeric literal `-129` does not fit in type `int8`, whose minimum value is -128
+   ╭▸ compiler/e2e/test/check/tast/numeric_operators/main.ray:11:12
+   │
+11 │     return -129i8
+   ╰╴           ━━━━━━
+
+[error]: the numeric literal `-2147483649` does not fit in type `int32`, whose minimum value is -2147483648
+   ╭▸ compiler/e2e/test/check/tast/numeric_operators/main.ray:14:12
+   │
+14 │     return -2147483649
+   ╰╴           ━━━━━━━━━━━
+
+[error]: cannot cast to type `bool`: only casts between numeric types are supported
+   ╭▸ compiler/e2e/test/check/tast/numeric_operators/main.ray:20:12
+   │
+20 │     return 1 as bool
+   ╰╴           ━━━━━━━━━
+
+[error]: cannot cast a value of type `bool`
+   ╭▸ compiler/e2e/test/check/tast/numeric_operators/main.ray:23:12
+   │
+23 │     return true as int32
+   │            ━━━━
+   │
+   ╰ help: only integer and floating-point types can be cast
+
+[error]: cannot cast a value of type `cstr`
+   ╭▸ compiler/e2e/test/check/tast/numeric_operators/main.ray:26:12
+   │
+26 │     return "hello" as int32
+   │            ━━━━━━━
+   │
+   ╰ help: only integer and floating-point types can be cast
+
+[error]: cannot cast to type `(int32, int32)`: only casts between numeric types are supported
+   ╭▸ compiler/e2e/test/check/tast/numeric_operators/main.ray:29:17
+   │
+29 │     let value = 1 as (int32, int32)
+   ╰╴                ━━━━━━━━━━━━━━━━━━━
+
+[error]: symbol `Missing` is not found
+   ╭▸ compiler/e2e/test/check/tast/numeric_operators/main.ray:33:17
+   │
+33 │     return 1 as Missing
+   ╰╴                ━━━━━━━ symbol `Missing` is not found
+
+[error]: Compilation aborted due to 10 error(s)
+
+
+
+stdout:

@@ -11,16 +11,17 @@ use rayc_type::{
 use crate::{
     name_binding::NameBindingID,
     typed_expr::{
-        binary::Binary, call::Call, closure::Closure, deref::Deref, errored::Errored,
+        binary::Binary, call::Call, cast::Cast, closure::Closure, deref::Deref, errored::Errored,
         field_access::FieldAccess, identifier::Identifier, if_else::IfElse, literal::Literal,
         r#move::Move, paren::Paren, ref_of::RefOf, ref_to_pointer::RefToPointer, run_with::RunWith,
         statement_block::StatementBlock, struct_initialization::StructInitialization, tuple::Tuple,
-        tuple_index::TupleIndex, while_loop::While,
+        tuple_index::TupleIndex, unary::Unary, while_loop::While,
     },
 };
 
 pub mod binary;
 pub mod call;
+pub mod cast;
 pub mod closure;
 pub mod deref;
 pub mod errored;
@@ -38,6 +39,7 @@ pub mod statement_block;
 pub mod struct_initialization;
 pub mod tuple;
 pub mod tuple_index;
+pub mod unary;
 pub mod while_loop;
 
 /// Retrieves the child expressions of the current expression node.
@@ -55,6 +57,8 @@ pub enum TypedExprKind {
     Call(Call),
     Closure(Closure),
     Binary(Binary),
+    Unary(Unary),
+    Cast(Cast),
     IfElse(IfElse),
     While(While),
     RefOf(RefOf),
@@ -72,7 +76,7 @@ impl SubExprs for TypedExprKind {
     fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
         // There must be a better way to do this while doesn't require boxing the
         // iterator 😭
-        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S> {
+        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U> {
             A(A),
             B(B),
             C(C),
@@ -92,10 +96,12 @@ impl SubExprs for TypedExprKind {
             Q(Q),
             R(R),
             S(S),
+            T(T),
+            U(U),
         }
 
-        impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S> Iterator
-            for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>
+        impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U> Iterator
+            for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U>
         where
             A: Iterator<Item = TypedExprID>,
             B: Iterator<Item = TypedExprID>,
@@ -116,6 +122,8 @@ impl SubExprs for TypedExprKind {
             Q: Iterator<Item = TypedExprID>,
             R: Iterator<Item = TypedExprID>,
             S: Iterator<Item = TypedExprID>,
+            T: Iterator<Item = TypedExprID>,
+            U: Iterator<Item = TypedExprID>,
         {
             type Item = TypedExprID;
 
@@ -140,6 +148,8 @@ impl SubExprs for TypedExprKind {
                     Self::Q(iter) => iter.next(),
                     Self::R(iter) => iter.next(),
                     Self::S(iter) => iter.next(),
+                    Self::T(iter) => iter.next(),
+                    Self::U(iter) => iter.next(),
                 }
             }
         }
@@ -164,6 +174,8 @@ impl SubExprs for TypedExprKind {
             Self::Move(x) => Iter::Q(x.sub_exprs()),
             Self::StatementBlock(x) => Iter::R(x.sub_exprs()),
             Self::RefToPointer(x) => Iter::S(x.sub_exprs()),
+            Self::Unary(x) => Iter::T(x.sub_exprs()),
+            Self::Cast(x) => Iter::U(x.sub_exprs()),
         }
     }
 }
@@ -247,6 +259,8 @@ impl MutSubstitutable for TypedExpr {
             | TypedExprKind::Tuple(_)
             | TypedExprKind::Closure(_)
             | TypedExprKind::Binary(_)
+            | TypedExprKind::Unary(_)
+            | TypedExprKind::Cast(_)
             | TypedExprKind::RefOf(_)
             | TypedExprKind::RefToPointer(_)
             | TypedExprKind::Deref(_)
@@ -312,6 +326,8 @@ impl TypedExprMap {
             | TypedExprKind::Call(_)
             | TypedExprKind::Closure(_)
             | TypedExprKind::Binary(_)
+            | TypedExprKind::Unary(_)
+            | TypedExprKind::Cast(_)
             | TypedExprKind::IfElse(_)
             | TypedExprKind::While(_)
             | TypedExprKind::StatementBlock(_)

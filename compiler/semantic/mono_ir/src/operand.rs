@@ -25,6 +25,8 @@ pub enum Constant {
     Usize(u64),
     /// Stores the IEEE-754 bit pattern so constants retain total equality.
     Float32(u32),
+    /// Stores the IEEE-754 bit pattern so constants retain total equality.
+    Float64(u64),
     CInt(i32),
     CStr(Interned<str>),
     NullPointer(Interned<MonoType>),
@@ -33,6 +35,9 @@ pub enum Constant {
 impl Constant {
     #[must_use]
     pub const fn new_float32(value: f32) -> Self { Self::Float32(value.to_bits()) }
+
+    #[must_use]
+    pub const fn new_float64(value: f64) -> Self { Self::Float64(value.to_bits()) }
 }
 
 /// A function address together with its concrete calling signature.

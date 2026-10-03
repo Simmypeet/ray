@@ -8,7 +8,8 @@ use super::{
     solve::{ConstraintError, PendingConstraint},
 };
 use crate::diagnostic::{
-    Diagnostic, EffectUnificationSite, IncompatibleEffectRows, ResidualSubtype,
+    Diagnostic, EffectUnificationSite, IncompatibleEffectRows, InvalidNumericOperand,
+    ResidualSubtype,
 };
 
 impl ConstraintSolver {
@@ -139,6 +140,15 @@ impl ConstraintSolver {
                             .source(source)
                             .span(span)
                             .subype(subtype)
+                            .build(),
+                    ));
+                }
+                ResolvedRootCause::NumericOperand { operation, operand, span } => {
+                    diags.push(Diagnostic::InvalidNumericOperand(
+                        InvalidNumericOperand::builder()
+                            .operation(operation)
+                            .operand(operand)
+                            .span(span)
                             .build(),
                     ));
                 }

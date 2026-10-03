@@ -24,6 +24,7 @@ fn declaration_with_constness(ty: &MonoType, name: &str, is_const: bool) -> Stri
         MonoType::Uint64 => base_declaration("uint64_t", name, is_const),
         MonoType::Usize => base_declaration("uintptr_t", name, is_const),
         MonoType::Float32 => base_declaration("float", name, is_const),
+        MonoType::Float64 => base_declaration("double", name, is_const),
         MonoType::CInt => base_declaration("int", name, is_const),
         MonoType::CStr => pointer_declaration("const char", name, is_const),
         MonoType::OpaquePointer(mutability) => {

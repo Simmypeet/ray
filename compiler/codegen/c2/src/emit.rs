@@ -552,15 +552,26 @@ fn emit_constant(constant: &Constant, expected_type: Option<&MonoType>) -> Strin
             format!("(({}){{ ._unit = 0 }})", aggregate_typedef_name(&aggregate))
         }
         Constant::Bool(value) => value.to_string(),
-        Constant::Int8(value) => format!("INT8_C({value})"),
-        Constant::Int16(value) => format!("INT16_C({value})"),
-        Constant::Int32(value) => format!("INT32_C({value})"),
-        Constant::Int64(value) => format!("INT64_C({value})"),
+        Constant::Int8(value) => {
+            signed_constant((*value).into(), i8::MIN.into(), |value| format!("INT8_C({value})"))
+        }
+        Constant::Int16(value) => {
+            signed_constant((*value).into(), i16::MIN.into(), |value| format!("INT16_C({value})"))
+        }
+        Constant::Int32(value) => {
+            signed_constant((*value).into(), i32::MIN.into(), |value| format!("INT32_C({value})"))
+        }
+        Constant::Int64(value) => {
+            signed_constant(*value, i64::MIN, |value| format!("INT64_C({value})"))
+        }
         Constant::Uint8(value) => format!("UINT8_C({value})"),
         Constant::Uint16(value) => format!("UINT16_C({value})"),
         Constant::Uint32(value) => format!("UINT32_C({value})"),
         Constant::Uint64(value) => format!("UINT64_C({value})"),
-        Constant::Isize(value) => format!("((intptr_t)INT64_C({value}))"),
+        Constant::Isize(value) => format!(
+            "((intptr_t){})",
+            signed_constant(*value, i64::MIN, |value| format!("INT64_C({value})"))
+        ),
         Constant::Usize(value) => format!("((uintptr_t)UINT64_C({value}))"),
         Constant::Float32(bits) => {
             let value = f32::from_bits(*bits);
@@ -574,10 +585,34 @@ fn emit_constant(constant: &Constant, expected_type: Option<&MonoType>) -> Strin
                 format!("{value:?}f")
             }
         }
-        Constant::CInt(value) => value.to_string(),
+        Constant::Float64(bits) => {
+            let value = f64::from_bits(*bits);
+            if value.is_nan() {
+                "((double)NAN)".to_owned()
+            } else if value == f64::INFINITY {
+                "((double)INFINITY)".to_owned()
+            } else if value == f64::NEG_INFINITY {
+                "(-(double)INFINITY)".to_owned()
+            } else {
+                format!("{value:?}")
+            }
+        }
+        Constant::CInt(value) => {
+            signed_constant((*value).into(), i32::MIN.into(), |value| value.to_string())
+        }
         Constant::CStr(value) => c_string_literal(value),
         Constant::NullPointer(ty) => format!("(({})0)", type_name(ty)),
     }
+}
+
+/// Emits a signed integer constant with `literal`, which writes a value as a
+/// C literal of the constant's type.
+///
+/// The smallest value of the type is written as one past it minus one: C
+/// parses `-2147483648` as the negation of `2147483648`, which does not fit
+/// in the type.
+fn signed_constant(value: i64, min: i64, literal: impl Fn(i64) -> String) -> String {
+    if value == min { format!("({} - 1)", literal(value + 1)) } else { literal(value) }
 }
 
 fn c_string_literal(value: &str) -> String {

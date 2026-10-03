@@ -32,19 +32,28 @@ struct NumericLiteralRange {
     /// The digits of the literal as written in the source code.
     digits: Interned<str>,
 
-    value: u128,
+    value: i128,
 }
 
 impl NumericLiteralRange {
     /// Checks whether the literal fits in the given primitive type. Returns
-    /// the largest value of the type too, if it is an integer type.
-    const fn fits_in(&self, primitive: Primitive) -> (bool, Option<u128>) {
+    /// the bound of the type that the literal exceeds too, if it is an
+    /// integer type: the smallest value for a negative literal, and the
+    /// largest value otherwise.
+    const fn fits_in(&self, primitive: Primitive) -> (bool, Option<i128>) {
         match primitive {
+            // A negative literal of an unsigned type is reported as an invalid
+            // negation instead.
+            Primitive::Integer(integer) if self.value < 0 && !integer.is_signed() => (true, None),
+            Primitive::Integer(integer) if self.value < 0 => {
+                let min = integer.min_value();
+                (self.value >= min, Some(min))
+            }
             Primitive::Integer(integer) => {
                 let max = integer.max_value();
                 (self.value <= max, Some(max))
             }
-            Primitive::Float32 | Primitive::Bool | Primitive::CStr => (true, None),
+            Primitive::Float(_) | Primitive::Bool | Primitive::CStr => (true, None),
         }
     }
 }
@@ -56,7 +65,7 @@ impl TAstBuilder {
         &mut self,
         expression: TypedExprID,
         digits: Interned<str>,
-        value: u128,
+        value: i128,
     ) {
         self.numeric_literal_ranges.push(NumericLiteralRange {
             expression: TypedFunctionLocalID::new(self.current_typed_function_id(), expression),
@@ -78,7 +87,7 @@ impl TAstBuilder {
                 continue;
             };
 
-            let (fits, max) = range.fits_in(primitive);
+            let (fits, bound) = range.fits_in(primitive);
             if fits {
                 continue;
             }
@@ -87,7 +96,7 @@ impl TAstBuilder {
                 NumericLiteralOutOfRange::builder()
                     .literal(range.digits)
                     .primitive(primitive)
-                    .maybe_max(max)
+                    .maybe_bound(bound)
                     .span(self.span_of_local_expression(range.expression))
                     .build(),
             ));

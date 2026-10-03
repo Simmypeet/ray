@@ -10,7 +10,7 @@ use rayc_solver::{Solver, ty_relate::DerivationRule};
 use rayc_type::{
     constraint::ty_relate::TyRelate,
     subst::{Subst, Substitutable},
-    ty::{Ty, inference::Inference},
+    ty::{InferenceConstraint, Ty, inference::Inference},
 };
 
 use crate::tast_builder::{
@@ -86,12 +86,43 @@ pub enum EffectUnificationSource {
     FunctionBodyEffect,
 }
 
+/// An operation whose operand must have a numeric type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum NumericOperation {
+    /// The `-` prefix operator, which requires a signed numeric operand.
+    Negation,
+    /// The `as` operator, which requires a numeric operand.
+    Cast,
+}
+
+impl NumericOperation {
+    /// Returns the inference constraint that the operand of this operation
+    /// must satisfy.
+    #[must_use]
+    pub const fn operand_constraint(&self) -> InferenceConstraint {
+        match self {
+            Self::Negation => InferenceConstraint::SignedNumeric,
+            Self::Cast => InferenceConstraint::Numeric,
+        }
+    }
+}
+
+/// Requires the operand of a numeric operation, such as `-x`, to have a type
+/// that the operation supports.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
+pub struct NumericOperandOrigin {
+    operation: NumericOperation,
+    operand: Interned<Ty>,
+    span: RelativeSpan,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]
 pub enum RootCauseOrigin {
     TraitRefCheck(TraitRefCheck),
     PredicateObligation(PredicateObligation),
     InstanceResolve { trait_ref: rayc_type::trait_ref::TraitRef, span: RelativeSpan },
     Subtype(SubtypeConstraintOrigin),
+    NumericOperand(NumericOperandOrigin),
     EffectUnification(EffectUnificationOrigin),
 }
 
@@ -168,6 +199,7 @@ pub(super) enum ResolvedRootCause {
     PredicateObligation(PredicateObligation),
     InstanceResolve { trait_ref: rayc_type::trait_ref::TraitRef, span: RelativeSpan },
     Subtype { source: SubtypeSource, span: RelativeSpan, subtype: TyRelate },
+    NumericOperand { operation: NumericOperation, operand: Interned<Ty>, span: RelativeSpan },
     EffectUnification(ResolvedEffectUnification),
 }
 
@@ -432,6 +464,11 @@ impl Provenance {
                     origin.original_subtype.variance(),
                 ),
             },
+            RootCauseOrigin::NumericOperand(origin) => ResolvedRootCause::NumericOperand {
+                operation: origin.operation,
+                operand: self.latest_type(&origin.operand, solver).await,
+                span: origin.span,
+            },
             RootCauseOrigin::EffectUnification(origin) => {
                 ResolvedRootCause::EffectUnification(ResolvedEffectUnification {
                     lesser: self.latest_type(&origin.lesser, solver).await,
@@ -447,10 +484,12 @@ impl Provenance {
         }
     }
 
+    /// Binds every inference in `inferences` that is still unbound to the
+    /// type `default` gives for it, if any.
     pub(super) async fn default_unbound_inferences(
         &mut self,
         inferences: impl IntoIterator<Item = Inference>,
-        default: &Interned<Ty>,
+        default: impl Fn(&Inference) -> Option<Interned<Ty>>,
         solver: &Solver,
     ) {
         let engine = solver.engine();
@@ -462,8 +501,10 @@ impl Provenance {
             // can we do this without interning?
             let latest = self.latest_type(&engine.intern(Ty::Inference(inference)), solver).await;
 
-            if let Ty::Inference(infer) = &*latest {
-                defaults.insert(*infer, default.clone());
+            if let Ty::Inference(infer) = &*latest
+                && let Some(default) = default(infer)
+            {
+                defaults.insert(*infer, default);
             }
         }
 

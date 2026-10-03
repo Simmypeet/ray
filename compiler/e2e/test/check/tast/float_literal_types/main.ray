@@ -1,0 +1,22 @@
+def integerSuffix() -> int32:
+    return 1.5i32
+
+def unsignedSuffix() -> uint8:
+    return 2.0u8
+
+def floatToInteger() -> int32:
+    return 1.5
+
+def mismatchedFloats() -> float32:
+    return 1.0f32 + 1.0f64
+
+def floatIntoAnnotation() -> int64:
+    let value: int64 = 0.5
+    return value
+
+def defaultedFloat() -> float32:
+    let value = 2.5
+    return value
+
+def inRange() -> float64:
+    return 1.5f64 + 7f64 + 2

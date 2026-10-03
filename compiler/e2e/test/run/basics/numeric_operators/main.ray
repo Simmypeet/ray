@@ -1,0 +1,40 @@
+extern def printf(format: cstr, ...) -> c_int
+
+def negate(value: int64) -> int64:
+    return -value
+
+def main() -> int32:
+    # negation of every signed type
+    let i8Value = -128i8
+    let i16Value = -(300i16 * 2i16)
+    let i32Value = -2147483648
+    let i64Value = negate(-9223372036854775807i64)
+    let isizeValue = - -5isize
+    let i64Min = -9223372036854775808i64
+    let f32Value = -1.5f32
+    let f64Value = -0.25 - 1.0
+
+    # a prefix operator binds tighter than a binary operator
+    let difference = 10 - -3
+    let product = -2 * 3
+
+    # casts between integer types
+    let widened = 200u8 as int64 + 1000
+    let truncated = 300 as uint8
+    let reinterpreted = -1 as uint32
+    let chained = 70000 as int16 as int64
+
+    # casts between integer and floating-point types
+    let toFloat = 7 as float64 / 2.0
+    let toInteger = 3.99 as int32
+    let negativeToInteger = -3.99 as int32
+    let narrowed = 1.25 as float32
+    let widenedFloat = 0.5f32 as float64
+
+    printf("negation: %d %d %d %lld %lld %lld\n", i8Value, i16Value, i32Value, i64Value, isizeValue, i64Min)
+    printf("float negation: %.2f %.2f\n", f32Value, f64Value)
+    printf("precedence: %d %d\n", difference, product)
+    printf("integer casts: %lld %u %u %lld\n", widened, truncated, reinterpreted, chained)
+    printf("float casts: %.2f %d %d %.2f %.2f\n", toFloat, toInteger, negativeToInteger, narrowed, widenedFloat)
+
+    return 0

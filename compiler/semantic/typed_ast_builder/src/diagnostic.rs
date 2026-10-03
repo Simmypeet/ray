@@ -18,7 +18,7 @@ use rayc_type::{
 };
 
 use crate::tast_builder::constraint_solver::{
-    ConstraintError, EffectUnificationSource, SubtypeSource,
+    ConstraintError, EffectUnificationSource, NumericOperation, SubtypeSource,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
@@ -256,12 +256,17 @@ impl Report for NumericLiteralTooLarge {
     }
 }
 
-/// A numeric literal whose value does not fit in its type, e.g. `300u8`.
+/// A numeric literal whose value does not fit in its type, e.g. `300u8` or
+/// `-129i8`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct NumericLiteralOutOfRange {
     literal: Interned<str>,
     primitive: Primitive,
-    max: Option<u128>,
+
+    /// The bound of the type that the literal exceeds, if it is an integer
+    /// type: the smallest value for a negative literal, and the largest value
+    /// otherwise.
+    bound: Option<i128>,
     span: RelativeSpan,
 }
 
@@ -272,12 +277,91 @@ impl Report for NumericLiteralOutOfRange {
             &*self.literal,
             self.primitive.keyword()
         );
-        if let Some(max) = self.max {
-            let _ = write!(message, ", whose maximum value is {max}");
+        if let Some(bound) = self.bound {
+            let kind = if bound < 0 { "minimum" } else { "maximum" };
+            let _ = write!(message, ", whose {kind} value is {bound}");
         }
 
         Rendered::builder()
             .message(message)
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .build()
+    }
+}
+
+/// A floating-point literal with an integer suffix, e.g. `1.5i32`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct FloatLiteralIntegerSuffix {
+    literal: Interned<str>,
+    primitive: Primitive,
+    span: RelativeSpan,
+}
+
+impl Report for FloatLiteralIntegerSuffix {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message(format!(
+                "the floating-point literal `{}` cannot have the type `{}`",
+                &*self.literal,
+                self.primitive.keyword()
+            ))
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .help_message("use the `f32` or `f64` suffix, or cast the literal with `as`")
+            .build()
+    }
+}
+
+/// An operand that a numeric operation does not support, e.g. `-true` or
+/// `true as int32`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct InvalidNumericOperand {
+    operation: NumericOperation,
+    operand: Interned<Ty>,
+    span: RelativeSpan,
+}
+
+impl Report for InvalidNumericOperand {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let operand = self.operand.display(engine).await;
+        let (message, help) = match self.operation {
+            NumericOperation::Negation => (
+                format!("cannot negate a value of type `{operand}`"),
+                "only signed integer and floating-point types can be negated",
+            ),
+            NumericOperation::Cast => (
+                format!("cannot cast a value of type `{operand}`"),
+                "only integer and floating-point types can be cast",
+            ),
+        };
+
+        Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .help_message(help)
+            .build()
+    }
+}
+
+/// A cast whose target is not a numeric primitive type, e.g. `x as bool`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct InvalidCastTarget {
+    target: Interned<Ty>,
+    span: RelativeSpan,
+}
+
+impl Report for InvalidCastTarget {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message(format!(
+                "cannot cast to type `{}`: only casts between numeric types are supported",
+                self.target.display(engine).await
+            ))
             .primary_highlight(
                 Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
             )
@@ -983,6 +1067,9 @@ pub enum Diagnostic {
     EmbeddedNulString(EmbeddedNulString),
     NumericLiteralOutOfRange(NumericLiteralOutOfRange),
     NumericLiteralTooLarge(NumericLiteralTooLarge),
+    FloatLiteralIntegerSuffix(FloatLiteralIntegerSuffix),
+    InvalidCastTarget(InvalidCastTarget),
+    InvalidNumericOperand(InvalidNumericOperand),
     MissingEffectOperationHandler(MissingEffectOperationHandler),
     ExtraneousEffectOperationHandler(ExtraneousEffectOperationHandler),
     DuplicateEffectOperationHandler(DuplicateEffectOperationHandler),
@@ -1043,6 +1130,9 @@ impl Report for Diagnostic {
             Self::EmbeddedNulString(string) => string.report(engine).await,
             Self::NumericLiteralOutOfRange(literal) => literal.report(engine).await,
             Self::NumericLiteralTooLarge(literal) => literal.report(engine).await,
+            Self::FloatLiteralIntegerSuffix(literal) => literal.report(engine).await,
+            Self::InvalidCastTarget(cast) => cast.report(engine).await,
+            Self::InvalidNumericOperand(operand) => operand.report(engine).await,
             Self::MissingEffectOperationHandler(handler) => handler.report(engine).await,
             Self::ExtraneousEffectOperationHandler(handler) => handler.report(engine).await,
             Self::DuplicateEffectOperationHandler(handler) => handler.report(engine).await,

@@ -3,6 +3,7 @@ use rayc_ir::{
     ir_expr::{
         IRExprID, IRExprKind, binary::BinaryOp as IRBinaryOperator, literal::Literal,
         struct_initialization::StructInitialization, tuple::Tuple,
+        unary::UnaryOp as IRUnaryOperator,
     },
     ir_function::IRFunction,
 };
@@ -10,7 +11,7 @@ use rayc_mono_ir::{
     instruction::{Assign, Instruction},
     operand::{Constant, Operand},
     place::Place,
-    rvalue::{AddressOf, Binary, BinaryOperator, Rvalue},
+    rvalue::{AddressOf, Binary, BinaryOperator, Cast, Rvalue, Unary, UnaryOperator},
     ty::MonoType,
 };
 
@@ -79,6 +80,23 @@ impl Builder<'_> {
                         operator,
                         self.expression_operand(binary.right()),
                     )),
+                );
+            }
+            IRExprKind::Unary(unary) => {
+                let operator = match unary.operator() {
+                    IRUnaryOperator::Negate => UnaryOperator::Negate,
+                };
+                self.assign(
+                    destination,
+                    Rvalue::Unary(Unary::new(operator, self.expression_operand(unary.operand()))),
+                );
+            }
+            // The cast converts to the type of its own destination.
+            IRExprKind::Cast(cast) => {
+                let target = self.local_type(destination.local()).clone();
+                self.assign(
+                    destination,
+                    Rvalue::Cast(Cast::new(self.expression_operand(cast.operand()), target)),
                 );
             }
             IRExprKind::Call(call) => {
@@ -152,6 +170,7 @@ fn lower_literal(literal: &Literal, ty: &Interned<MonoType>) -> Constant {
             MonoType::Uint64 => Constant::Uint64(fit(*value)),
             MonoType::Usize => Constant::Usize(fit(*value)),
             MonoType::Float32 => Constant::new_float32(*value as f32),
+            MonoType::Float64 => Constant::new_float64(*value as f64),
             MonoType::CInt => Constant::CInt(fit(*value)),
             MonoType::Bool
             | MonoType::CStr
@@ -162,14 +181,51 @@ fn lower_literal(literal: &Literal, ty: &Interned<MonoType>) -> Constant {
                 panic!("numeric literal has a non-numeric MonoIR type")
             }
         },
+        Literal::Float(digits) => lower_float_literal(digits, ty),
         Literal::Bool(value) => Constant::Bool(*value),
         Literal::String(value) => Constant::CStr(value.clone()),
     }
 }
 
+/// Converts a floating-point literal to the representation of its type.
+///
+/// The digits are parsed directly in the precision of the type, so the
+/// literal is rounded only once.
+fn lower_float_literal(digits: &str, ty: &Interned<MonoType>) -> Constant {
+    fn parse<T: std::str::FromStr<Err = std::num::ParseFloatError>>(digits: &str) -> T {
+        digits.parse().unwrap_or_else(|error| {
+            panic!("floating-point literal `{digits}` should be valid: {error}")
+        })
+    }
+
+    match &**ty {
+        MonoType::Float32 => Constant::new_float32(parse(digits)),
+        MonoType::Float64 => Constant::new_float64(parse(digits)),
+        MonoType::Int8
+        | MonoType::Int16
+        | MonoType::Int32
+        | MonoType::Int64
+        | MonoType::Isize
+        | MonoType::Uint8
+        | MonoType::Uint16
+        | MonoType::Uint32
+        | MonoType::Uint64
+        | MonoType::Usize
+        | MonoType::CInt
+        | MonoType::Bool
+        | MonoType::CStr
+        | MonoType::OpaquePointer(_)
+        | MonoType::Pointer(_)
+        | MonoType::Aggregate(_)
+        | MonoType::FunctionPointer(_) => {
+            panic!("floating-point literal has a non-floating-point MonoIR type")
+        }
+    }
+}
+
 /// Converts a numeric literal to the representation of its type. The typed AST
 /// builder rejects every literal that does not fit in its type.
-fn fit<T: TryFrom<u128>>(value: u128) -> T {
+fn fit<T: TryFrom<i128>>(value: i128) -> T {
     T::try_from(value)
         .unwrap_or_else(|_| panic!("numeric literal `{value}` should fit in its type"))
 }

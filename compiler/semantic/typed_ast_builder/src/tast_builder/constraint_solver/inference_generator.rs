@@ -4,7 +4,7 @@ use rayc_solver::inference_generator::{CountingInferenceGenerator, InferenceGene
 use rayc_type::ty::{InferenceConstraint, TyKind, inference::Inference};
 
 /// Records the inferences generated while typing one definition that are
-/// defaulted once the constraints are solved: lifetimes, numeric literals and
+/// defaulted once the constraints are solved: lifetimes, numeric types and
 /// effect rows. Every inference passes through here, including those the
 /// solver creates internally.
 #[derive(Debug, Default)]
@@ -36,7 +36,7 @@ impl RecordingInferenceGenerator {
 impl InferenceGenerator for RecordingInferenceGenerator {
     fn generate(&mut self, kind: TyKind, constraint: InferenceConstraint) -> Inference {
         let inference = self.counter.generate(kind, constraint);
-        if kind == TyKind::Star && constraint == InferenceConstraint::Numeric {
+        if kind == TyKind::Star && constraint.default_primitive().is_some() {
             self.numerics.push(inference);
         }
         if kind == TyKind::EffectRow {
