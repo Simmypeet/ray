@@ -27,6 +27,7 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    #{label = rayc_parser::expect::Label::InstanceMember}
     pub enum InstanceMember {
         Definition(Def = ast::<Def>()),
         AssociatedType(InstanceAssociatedType = ast::<InstanceAssociatedType>())
