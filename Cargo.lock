@@ -2118,6 +2118,8 @@ dependencies = [
  "fxhash",
  "linkme",
  "qbice",
+ "rayc_extend",
+ "rayc_tokio",
  "tokio",
 ]
 

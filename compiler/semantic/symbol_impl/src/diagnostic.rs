@@ -11,7 +11,7 @@ use qbice::{
 };
 use rayc_diagnostic::{Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
-use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine, unordered::query_all};
 use rayc_source_file::ByteIndex;
 use rayc_symbol::{
     GlobalSymbolID,
@@ -281,10 +281,11 @@ async fn rendered_executor(
 ) -> Interned<[Rendered<ByteIndex>]> {
     let index = engine.get_table_index(target_id).await;
 
-    let mut rendered = Vec::new();
-    for table_key in index.table_keys() {
-        rendered.extend(engine.query(&FileRenderedKey(table_key.clone())).await.iter().cloned());
-    }
+    // the diagnostics of each source file are independent from the others
+    let rendered_by_file = engine.query_all(index.table_keys().cloned().map(FileRenderedKey)).await;
+
+    let rendered =
+        rendered_by_file.iter().flat_map(|rendered| rendered.iter().cloned()).collect::<Vec<_>>();
 
     engine.intern_unsized(rendered)
 }

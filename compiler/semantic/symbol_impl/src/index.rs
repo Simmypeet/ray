@@ -40,7 +40,10 @@ impl TableIndex {
     }
 
     /// Returns the keys of the tables of every source file of the target.
-    pub fn table_keys(&self) -> impl Iterator<Item = &Interned<TableKey>> { self.table_keys.iter() }
+    #[must_use]
+    pub fn table_keys(&self) -> impl ExactSizeIterator<Item = &Interned<TableKey>> {
+        self.table_keys.iter()
+    }
 
     /// Returns the path of the loaded source file with the given ID, if the
     /// file belongs to the target.
