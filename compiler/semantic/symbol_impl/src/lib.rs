@@ -1,3 +1,4 @@
+pub mod accessibility;
 pub mod diagnostic;
 pub mod index;
 pub mod member;

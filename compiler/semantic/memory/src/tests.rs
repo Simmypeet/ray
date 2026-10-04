@@ -23,6 +23,7 @@ use rayc_solver::Solver;
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::{
     GlobalSymbolID, SymbolID,
+    accessibility::Accessibility,
     core_item::{CoreItem, Key as CoreItemKey},
 };
 use rayc_target::TargetID;
@@ -181,6 +182,7 @@ async fn recursive_struct() -> (TrackedEngine, Interned<Ty>, Projection) {
                 .name(tracked.intern_unsized("tail"))
                 .span(test_span())
                 .ty(recursive_ty.clone())
+                .accessibility(Accessibility::Public)
                 .build(),
         )
         .unwrap();

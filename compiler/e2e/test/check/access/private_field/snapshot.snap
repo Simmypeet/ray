@@ -1,0 +1,32 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: field `y` of struct `main.geometry.Point` is not accessible here
+   ╭▸ compiler/e2e/test/check/access/private_field/main.ray:17:19
+   │
+ 4 │         y: int32
+   │         ─ `y` is declared here
+   ‡
+17 │     let y = point.y
+   │                   ━ `y` is not accessible here
+   │
+   ╰ help: `y` is only accessible within `main.geometry`; declare it with `pub` to make it public
+
+[error]: field `y` of struct `main.geometry.Point` is not accessible here
+   ╭▸ compiler/e2e/test/check/access/private_field/main.ray:18:41
+   │
+ 4 │         y: int32
+   │         ─ `y` is declared here
+   ‡
+18 │     let other = geometry.Point { x = 3, y = 4 }
+   │                                         ━ `y` is not accessible here
+   │
+   ╰ help: `y` is only accessible within `main.geometry`; declare it with `pub` to make it public
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

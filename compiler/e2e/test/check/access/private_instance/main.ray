@@ -1,0 +1,24 @@
+pub trait Describe[t]:
+    pub def describe(value: t) -> int32
+
+
+module numbers:
+    # A private instance is resolved implicitly only within its module.
+    inst DescribeInt for super.Describe[int32]:
+        def describe(value: int32) -> int32:
+            return value
+
+    pub inst DescribeBool for super.Describe[bool]:
+        def describe(value: bool) -> int32:
+            return if value: 1 else: 0
+
+    pub def describe_int(value: int32) -> int32:
+        return super.Describe.describe(value)
+
+
+def main() -> int32:
+    let number: int32 = 1
+    let boolean = Describe.describe(true)
+    let int = Describe.describe(number)
+    let explicit = numbers.DescribeInt.describe(number)
+    return boolean + int + explicit + numbers.describe_int(number)

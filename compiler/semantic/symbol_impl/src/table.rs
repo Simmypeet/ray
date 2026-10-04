@@ -12,12 +12,14 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_source_file::{LocalSourceID, SOURCE_FILE_EXTENSION, get_stable_path_id};
 use rayc_symbol::{
-    GlobalSymbolID, SymbolID, calculate_implements_id, calculate_qualified_name_id,
-    get_target_root_module_id,
+    GlobalSymbolID, SymbolID,
+    accessibility::{Accessibility, DeclaredAccessibility},
+    calculate_implements_id, calculate_qualified_name_id, get_target_root_module_id,
     member::{Insertion, Member},
     symbol_kind::SymbolKind,
 };
 use rayc_syntax::{
+    access_modifier::AccessModifier,
     def::{ParameterList, ReturnType},
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
@@ -42,6 +44,7 @@ pub struct Infos {
     name: Interned<str>,
     span: Option<RelativeSpan>,
     symbol_kind: SymbolKind,
+    accessibility: DeclaredAccessibility,
     parameter_list: Option<Option<ParameterList>>,
     return_type: Option<Option<ReturnType>>,
     effect_row: Option<Option<EffectRowAnnotation>>,
@@ -94,6 +97,7 @@ pub struct Table {
     parents: Map<Option<SymbolID>>,
     spans: Map<Option<RelativeSpan>>,
     names: Map<Interned<str>>,
+    accessibilities: Map<DeclaredAccessibility>,
 
     syntaxes: SyntaxTable,
 
@@ -125,6 +129,10 @@ pub struct MemberBuilder {
     current_id: GlobalSymbolID,
     current_qualified_name: Vec<Interned<str>>,
 
+    /// The closest module enclosing the members, which is the symbol itself
+    /// when it is a module.
+    module_id: SymbolID,
+
     member: Member,
     occurrences: FxHashMap<Interned<str>, usize>,
 
@@ -137,6 +145,7 @@ impl MemberBuilder {
         Self {
             current_id,
             current_qualified_name,
+            module_id: current_id.id,
             member: Member::default(),
             occurrences: FxHashMap::default(),
             redef_errors: Vec::new(),
@@ -202,11 +211,36 @@ impl MemberBuilder {
         self.current_id.target_id.make_global(id)
     }
 
+    /// Creates the builder of the members of `current_id`, a member named
+    /// `name` that is not a module.
     #[must_use]
     pub(crate) fn child(&self, current_id: GlobalSymbolID, name: Interned<str>) -> Self {
+        Self { module_id: self.module_id, ..self.child_module(current_id, name) }
+    }
+
+    /// Creates the builder of the members of the module `current_id`, a
+    /// member named `name`.
+    #[must_use]
+    pub(crate) fn child_module(&self, current_id: GlobalSymbolID, name: Interned<str>) -> Self {
         let mut qualified_name = self.current_qualified_name.clone();
         qualified_name.push(name);
         Self::new(current_id, qualified_name)
+    }
+
+    /// Returns the accessibility of a member declared with the given access
+    /// modifier.
+    ///
+    /// Like in Rust, a member without an access modifier is accessible only
+    /// within the closest module enclosing it.
+    #[must_use]
+    pub(crate) const fn accessibility(
+        &self,
+        access_modifier: Option<&AccessModifier>,
+    ) -> Accessibility {
+        match access_modifier {
+            Some(AccessModifier::Public(_)) => Accessibility::Public,
+            None => Accessibility::Scoped(self.current_id.target_id.make_global(self.module_id)),
+        }
     }
 }
 
@@ -227,6 +261,11 @@ impl Table {
     #[must_use]
     pub fn get_name(&self, symbol_id: SymbolID) -> Interned<str> {
         self.names.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
+    pub fn get_declared_accessibility(&self, symbol_id: SymbolID) -> DeclaredAccessibility {
+        self.accessibilities.get(&symbol_id).copied().unwrap()
     }
 
     #[must_use]
@@ -389,6 +428,10 @@ impl Table {
             key.declaration.map(|declaration| declaration.parent_id),
             Infos::builder()
                 .symbol_kind(SymbolKind::Module)
+                .accessibility(DeclaredAccessibility::Declared(
+                    key.declaration
+                        .map_or(Accessibility::Public, |declaration| declaration.accessibility),
+                ))
                 .name(key.qualified_name.last().expect("a module has a name").clone())
                 .maybe_span(key.declaration.map(|declaration| declaration.span))
                 .member(member)
@@ -408,6 +451,7 @@ impl Table {
         self.names.insert(symbol_id, info.name);
         self.parents.insert(symbol_id, parent);
         self.symbol_kinds.insert(symbol_id, info.symbol_kind);
+        self.accessibilities.insert(symbol_id, info.accessibility);
 
         if let Some(parameter_list) = info.parameter_list {
             self.syntaxes.parameter_lists.insert(symbol_id, parameter_list);
@@ -598,6 +642,9 @@ struct ModuleDeclaration {
 
     /// The span of the name of the file module in its declaration.
     span: RelativeSpan,
+
+    /// The accessibility the file module is declared with.
+    accessibility: Accessibility,
 }
 
 impl TableKey {
@@ -622,8 +669,8 @@ impl TableKey {
     }
 
     /// Creates the key of the table of the file module `module_id`, declared
-    /// as `name` at `span` in the module of `parent`, which owns the directory
-    /// `directory`.
+    /// as `name` at `span` with `accessibility` in the module of `parent`,
+    /// which owns the directory `directory`.
     ///
     /// Like in Rust, the file module `name` declared in a module owning the
     /// directory `dir` is loaded from `dir/name.ray` and owns the directory
@@ -633,6 +680,7 @@ impl TableKey {
         module_id: SymbolID,
         name: &Interned<str>,
         span: RelativeSpan,
+        accessibility: Accessibility,
         directory: &Path,
         engine: &TrackedEngine,
     ) -> Self {
@@ -647,7 +695,11 @@ impl TableKey {
             directory: engine.intern_unsized(directory.join(name.as_ref())),
             module_id,
             qualified_name: engine.intern_unsized(qualified_name),
-            declaration: Some(ModuleDeclaration { parent_id: parent.current_id.id, span }),
+            declaration: Some(ModuleDeclaration {
+                parent_id: parent.current_id.id,
+                span,
+                accessibility,
+            }),
         }
     }
 
