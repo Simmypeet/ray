@@ -5,7 +5,7 @@ use std::fmt::{self, Display, Write as _};
 
 use rayc_mono_ir::{
     operand::Constant,
-    place::{Place, Projection},
+    place::Place,
     rvalue::{BinaryOperator, UnaryOperator},
     ty::{AggregateType, MonoType},
 };
@@ -16,33 +16,31 @@ use crate::c::{
 };
 
 /// The lvalue expression designating a [`Place`], e.g.
-/// `((*(ray_local_0))).elem1`.
+/// `(*ray_local_0).elem1`.
+///
+/// Member access is postfix and binds tighter than a dereference, so only
+/// dereferences need parentheses; the result is always a postfix or
+/// parenthesized expression and can be used as an operand anywhere.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PlaceExpr<'a>(pub(crate) &'a Place);
 
 impl Display for PlaceExpr<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Each projection wraps the expression built so far, so the last
-        // projection is outermost: open them in reverse, then close them in
-        // order around the local.
+        // The last projection is outermost: open every dereference in
+        // reverse, then apply the projections in order around the local.
         let projections = self.0.projections();
         for projection in projections.iter().rev() {
-            formatter.write_str(match projection {
-                Projection::Dereference => "(*(",
-                Projection::EnvironmentFieldIndex(_)
-                | Projection::TupleFieldIndex(_)
-                | Projection::StructFieldIndex(_)
-                | Projection::OperationRecordEnvironmentField(_)
-                | Projection::OperationRecordFunctionPointerField(_) => "(",
-            })?;
+            if FieldName::of_projection(*projection).is_none() {
+                formatter.write_str("(*")?;
+            }
         }
 
         LocalName(self.0.local()).fmt(formatter)?;
 
         for projection in projections {
             match FieldName::of_projection(*projection) {
-                Some(field) => write!(formatter, ").{field}")?,
-                None => formatter.write_str("))")?,
+                Some(field) => write!(formatter, ".{field}")?,
+                None => formatter.write_char(')')?,
             }
         }
         Ok(())

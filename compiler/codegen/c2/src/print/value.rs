@@ -52,7 +52,7 @@ impl<'a> FunctionPrinter<'a> {
     ) -> fmt::Result {
         match value {
             Rvalue::Use(operand) => self.write_operand(out, operand, expected),
-            Rvalue::AddressOf(address) => write!(out, "&({})", PlaceExpr(address.place())),
+            Rvalue::AddressOf(address) => write!(out, "&{}", PlaceExpr(address.place())),
             Rvalue::Unary(unary) => {
                 write!(out, "({}", unary_operator_token(unary.operator()))?;
                 self.write_operand(out, unary.operand(), None)?;

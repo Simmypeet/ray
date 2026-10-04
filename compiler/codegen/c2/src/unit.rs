@@ -1,9 +1,6 @@
 //! The sections of a generated C translation unit.
 
-use std::{
-    fmt::{self, Display, Write as _},
-    ops::Range,
-};
+use std::fmt::{self, Display, Write as _};
 
 use crate::{
     aggregates::AggregateRegistry,
@@ -24,24 +21,29 @@ const WRITE_TO_STRING: &str = "writing to a String cannot fail";
 pub(crate) struct TranslationUnit {
     aggregate_declarations: String,
     aggregate_definitions: String,
-    function_declarations: DeclarationList,
+    function_declarations: String,
     function_definitions: String,
 }
 
 impl TranslationUnit {
     /// Adds a forward declaration, written without its trailing `;`.
+    ///
+    /// Every function is declared once, in the order it is generated; the
+    /// order is deterministic because the fragment worklist is.
     pub(crate) fn declare_function(&mut self, declaration: impl Display) {
-        self.function_declarations.push(declaration);
+        writeln!(self.function_declarations, "{declaration};").expect(WRITE_TO_STRING);
     }
 
     /// Adds a function definition written by `print`.
     pub(crate) fn define_function(&mut self, print: impl FnOnce(&mut String) -> fmt::Result) {
+        start_definition(&mut self.function_definitions);
         print(&mut self.function_definitions).expect(WRITE_TO_STRING);
-        self.function_definitions.push_str("\n\n");
+        self.function_definitions.push('\n');
     }
 
     /// Adds a `main` that runs the given Ray entry point.
     pub(crate) fn define_entry_point(&mut self, entry_point: DefinitionName) {
+        start_definition(&mut self.function_definitions);
         writeln!(self.function_definitions, "int main(void) {{ return {entry_point}(); }}")
             .expect(WRITE_TO_STRING);
     }
@@ -53,7 +55,8 @@ impl TranslationUnit {
             writeln!(self.aggregate_declarations, "typedef struct {name} {};", name.typedef())
                 .expect(WRITE_TO_STRING);
             let definition = AggregateDefinition::new(aggregate, handler_layout);
-            write!(self.aggregate_definitions, "{definition}\n\n").expect(WRITE_TO_STRING);
+            start_definition(&mut self.aggregate_definitions);
+            writeln!(self.aggregate_definitions, "{definition}").expect(WRITE_TO_STRING);
         }
     }
 }
@@ -61,78 +64,23 @@ impl TranslationUnit {
 impl Display for TranslationUnit {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(PRELUDE)?;
-        write_section(
-            formatter,
-            "Aggregate type forward declarations",
-            &self.aggregate_declarations,
-            self.aggregate_declarations.is_empty(),
-        )?;
-        write_section(
-            formatter,
-            "Aggregate type definitions",
-            &self.aggregate_definitions,
-            self.aggregate_definitions.is_empty(),
-        )?;
-        write_section(
-            formatter,
-            "Function forward declarations",
-            &self.function_declarations,
-            self.function_declarations.is_empty(),
-        )?;
-        write_section(
-            formatter,
-            "Function definitions",
-            &self.function_definitions,
-            self.function_definitions.is_empty(),
-        )
-    }
-}
-
-/// Writes a commented section. Non-empty contents end with a newline; an
-/// empty section still gets a blank line so sections stay visually separate.
-fn write_section(
-    formatter: &mut fmt::Formatter<'_>,
-    heading: &str,
-    contents: &dyn Display,
-    is_empty: bool,
-) -> fmt::Result {
-    writeln!(formatter, "/* {heading} */")?;
-    contents.fmt(formatter)?;
-    if is_empty {
-        formatter.write_char('\n')?;
-    }
-    formatter.write_char('\n')
-}
-
-/// Forward declarations, rendered sorted and without duplicates.
-///
-/// All declarations share one text buffer and are tracked by their byte
-/// ranges, avoiding an allocation per declaration.
-#[derive(Debug, Default)]
-struct DeclarationList {
-    text: String,
-    spans: Vec<Range<usize>>,
-}
-
-impl DeclarationList {
-    fn push(&mut self, declaration: impl Display) {
-        let start = self.text.len();
-        write!(self.text, "{declaration}").expect(WRITE_TO_STRING);
-        self.spans.push(start..self.text.len());
-    }
-
-    const fn is_empty(&self) -> bool { self.spans.is_empty() }
-}
-
-impl Display for DeclarationList {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut declarations =
-            self.spans.iter().map(|span| &self.text[span.clone()]).collect::<Vec<_>>();
-        declarations.sort_unstable();
-        declarations.dedup();
-        for declaration in declarations {
-            writeln!(formatter, "{declaration};")?;
+        let sections = [
+            ("Aggregate type forward declarations", &self.aggregate_declarations),
+            ("Aggregate type definitions", &self.aggregate_definitions),
+            ("Function forward declarations", &self.function_declarations),
+            ("Function definitions", &self.function_definitions),
+        ];
+        for (heading, contents) in sections {
+            // Contents are newline-terminated lines, so a blank line follows.
+            write!(formatter, "/* {heading} */\n{contents}\n")?;
         }
         Ok(())
+    }
+}
+
+/// Separates a definition from the previous one with a blank line.
+fn start_definition(buffer: &mut String) {
+    if !buffer.is_empty() {
+        buffer.push('\n');
     }
 }

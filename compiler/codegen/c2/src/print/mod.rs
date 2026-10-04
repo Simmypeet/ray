@@ -21,7 +21,7 @@ use crate::{
     c::{
         expr::PlaceExpr,
         name::{BlockName, FragmentName, FunctionName, LocalName},
-        ty::{Declaration, SignatureDeclaration},
+        ty::{Declaration, FunctionDeclaration},
     },
     functions::FunctionRegistry,
 };
@@ -81,7 +81,7 @@ impl<'a> FunctionPrinter<'a> {
     /// Writes the definition of the function called `name`.
     pub(crate) fn print(&self, out: &mut String, name: FunctionName) -> fmt::Result {
         let function = self.function;
-        let signature = SignatureDeclaration::new(function.signature(), &name);
+        let signature = FunctionDeclaration::new(function.signature(), &name);
         writeln!(out, "{} {{", signature.with_parameters_of(function))?;
 
         // Locals other than parameters are declared up front.

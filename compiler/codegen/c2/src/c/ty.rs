@@ -1,10 +1,11 @@
 //! Rendering of C types, declarations, and function signatures.
 //!
-//! C spells a declaration "inside out": the declared identifier is nested in
-//! pointer and function-pointer syntax around it, e.g. `int32_t *const *x`.
-//! A [`Declarator`] is a stack-allocated linked list of those wrappers, built
-//! while walking down a [`MonoType`] and rendered once the base type is
-//! reached, so no intermediate strings are allocated.
+//! C spells a declaration "inside out": a base type followed by a declarator
+//! that nests the identifier in pointer and function syntax, e.g.
+//! `int32_t *const *x` or `int32_t (*f(void))(int32_t)`. A [`Declarator`] is a
+//! stack-allocated linked list of those wrappers, built while walking down a
+//! [`MonoType`] and rendered once the base type is reached, so no
+//! intermediate strings are allocated.
 
 use std::fmt::{self, Display};
 
@@ -17,15 +18,15 @@ use crate::c::name::{AggregateName, LocalName};
 
 /// The part of a C declaration that surrounds the declared identifier.
 #[derive(Clone, Copy)]
-pub(crate) enum Declarator<'a> {
+enum Declarator<'a> {
     /// No identifier, as in a type name used by a cast.
     Abstract,
     /// The declared identifier itself.
     Name(&'a dyn Display),
-    /// `*inner`, or `* const inner` when the pointer object is `const`.
+    /// `*inner`, or `*const inner` when the pointer object is `const`.
     Pointer { is_const: bool, inner: &'a Self },
-    /// `(inner)`, required around a pointer to a function.
-    Parenthesized(&'a Self),
+    /// `inner(parameters)`: a function returning the base type.
+    Function { inner: &'a Self, signature: &'a FunctionSignature, parameters: Parameters<'a> },
 }
 
 impl fmt::Debug for Declarator<'_> {
@@ -43,10 +44,57 @@ impl Display for Declarator<'_> {
         match self {
             Self::Abstract => Ok(()),
             Self::Name(name) => name.fmt(formatter),
-            Self::Pointer { is_const: true, inner } => write!(formatter, "* const {inner}"),
-            Self::Pointer { is_const: false, inner } => write!(formatter, "*{inner}"),
-            Self::Parenthesized(inner) => write!(formatter, "({inner})"),
+            Self::Pointer { is_const, inner } => {
+                formatter.write_str("*")?;
+                if *is_const {
+                    formatter.write_str("const")?;
+                    if !inner.is_abstract() {
+                        formatter.write_str(" ")?;
+                    }
+                }
+                inner.fmt(formatter)
+            }
+            // A postfix `(...)` binds tighter than a prefix `*`, so a pointer
+            // being called through needs parentheses: `(*f)(int32_t)`.
+            Self::Function { inner, signature, parameters } => {
+                match inner {
+                    Self::Pointer { .. } => write!(formatter, "({inner})"),
+                    Self::Abstract | Self::Name(_) | Self::Function { .. } => inner.fmt(formatter),
+                }?;
+                write!(formatter, "({})", ParameterList { signature, parameters: *parameters })
+            }
         }
+    }
+}
+
+/// Writes `base declarator`, qualifying the base when the declared object is
+/// `const`.
+fn write_declaration(
+    formatter: &mut fmt::Formatter<'_>,
+    base: &dyn Display,
+    is_const: bool,
+    declarator: &Declarator<'_>,
+) -> fmt::Result {
+    if is_const {
+        formatter.write_str("const ")?;
+    }
+    base.fmt(formatter)?;
+    if declarator.is_abstract() {
+        return Ok(());
+    }
+    write!(formatter, " {declarator}")
+}
+
+/// Writes a function returning the signature's return type, where
+/// `declarator` is a [`Declarator::Function`].
+fn write_function_declaration(
+    formatter: &mut fmt::Formatter<'_>,
+    signature: &FunctionSignature,
+    declarator: Declarator<'_>,
+) -> fmt::Result {
+    match signature.return_type() {
+        ReturnType::Void => write_declaration(formatter, &"void", false, &declarator),
+        ReturnType::Value(ty) => Declaration { ty, declarator, is_const: false }.fmt(formatter),
     }
 }
 
@@ -64,23 +112,19 @@ impl<'a> Declaration<'a> {
         Self { ty, declarator: Declarator::Name(name), is_const: false }
     }
 
-    /// Writes `base declarator`, qualifying the base when the object is
-    /// `const`.
     fn write_base(&self, formatter: &mut fmt::Formatter<'_>, base: &dyn Display) -> fmt::Result {
-        if self.is_const {
-            formatter.write_str("const ")?;
-        }
-        base.fmt(formatter)?;
-        if self.declarator.is_abstract() {
-            return Ok(());
-        }
-        write!(formatter, " {}", self.declarator)
+        write_declaration(formatter, base, self.is_const, &self.declarator)
     }
 
     /// Writes a pointer to the named `pointee` base type.
     fn write_pointer_to(&self, formatter: &mut fmt::Formatter<'_>, pointee: &str) -> fmt::Result {
-        let declarator = Declarator::Pointer { is_const: self.is_const, inner: &self.declarator };
-        write!(formatter, "{pointee} {declarator}")
+        write_declaration(formatter, &pointee, false, &self.pointer_declarator())
+    }
+
+    /// The current declarator wrapped in a pointer, which carries the
+    /// declared object's constness.
+    const fn pointer_declarator(&self) -> Declarator<'_> {
+        Declarator::Pointer { is_const: self.is_const, inner: &self.declarator }
     }
 }
 
@@ -112,33 +156,30 @@ impl Display for Declaration<'_> {
                 self.write_pointer_to(formatter, "void")
             }
 
-            // The pointer wraps the current declarator; the pointee's own
-            // constness comes from the pointer's mutability.
+            // The pointee is declared with the pointer wrapped around the
+            // current declarator; its own constness comes from the pointer's
+            // mutability.
             MonoType::Pointer(pointer) => Declaration {
                 ty: pointer.pointee(),
-                declarator: Declarator::Pointer {
-                    is_const: self.is_const,
-                    inner: &self.declarator,
-                },
+                declarator: self.pointer_declarator(),
                 is_const: pointer.mutability() == PointerMutability::Const,
             }
             .fmt(formatter),
 
             MonoType::FunctionPointer(signature) => {
-                let pointer =
-                    Declarator::Pointer { is_const: self.is_const, inner: &self.declarator };
-                SignatureDeclaration {
+                let pointer = self.pointer_declarator();
+                let function = Declarator::Function {
+                    inner: &pointer,
                     signature,
-                    declarator: Declarator::Parenthesized(&pointer),
-                    parameters: ParameterNames::Unnamed,
-                }
-                .fmt(formatter)
+                    parameters: Parameters::Unnamed,
+                };
+                write_function_declaration(formatter, signature, function)
             }
         }
     }
 }
 
-/// A C type name without an identifier, as used in casts and prototypes.
+/// A C type name without an identifier, as used in casts.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TypeName<'a>(pub(crate) &'a MonoType);
 
@@ -150,57 +191,31 @@ impl Display for TypeName<'_> {
 
 /// Whether a signature's parameters are spelled with their local names.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum ParameterNames<'a> {
-    /// Parameters appear as bare type names, as in a function-pointer type.
+enum Parameters<'a> {
+    /// Parameters appear as bare type names, as in a prototype.
     Unnamed,
     /// Parameters are named after the given function's parameter locals.
-    Of(&'a MonoFunction),
+    NamedAfter(&'a MonoFunction),
 }
 
-/// A function declarator together with its return type, e.g.
-/// `int32_t f(int32_t ray_local_0)`.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct SignatureDeclaration<'a> {
+/// The contents of a function declarator's parentheses.
+struct ParameterList<'a> {
     signature: &'a FunctionSignature,
-    declarator: Declarator<'a>,
-    parameters: ParameterNames<'a>,
+    parameters: Parameters<'a>,
 }
 
-impl<'a> SignatureDeclaration<'a> {
-    /// Declares a function called `name` with unnamed parameters.
-    pub(crate) const fn new(signature: &'a FunctionSignature, name: &'a dyn Display) -> Self {
-        Self { signature, declarator: Declarator::Name(name), parameters: ParameterNames::Unnamed }
-    }
-
-    /// Declares the function-pointer object `declarator`.
-    pub(crate) const fn function_pointer(
-        signature: &'a FunctionSignature,
-        declarator: &'a Declarator<'a>,
-    ) -> Self {
-        Self {
-            signature,
-            declarator: Declarator::Parenthesized(declarator),
-            parameters: ParameterNames::Unnamed,
-        }
-    }
-
-    /// Spells the parameters with the local names of `function`.
-    pub(crate) const fn with_parameters_of(mut self, function: &'a MonoFunction) -> Self {
-        self.parameters = ParameterNames::Of(function);
-        self
-    }
-
-    fn write_parameters(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for ParameterList<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let types = self.signature.parameter_types();
         match self.parameters {
-            ParameterNames::Unnamed => {
+            Parameters::Unnamed => {
                 write_separated(formatter, types.iter().map(|ty| TypeName(ty)))?;
             }
-            ParameterNames::Of(function) => {
+            Parameters::NamedAfter(function) => {
                 assert_eq!(types.len(), function.parameters().len());
                 let names = function.parameters().map(LocalName);
                 let declarations =
-                    types.iter().zip(names).map(|(ty, name)| OwnedNameDeclaration { ty, name });
+                    types.iter().zip(names).map(|(ty, name)| NamedParameter { ty, name });
                 write_separated(formatter, declarations)?;
             }
         }
@@ -214,33 +229,66 @@ impl<'a> SignatureDeclaration<'a> {
     }
 }
 
-impl Display for SignatureDeclaration<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.signature.return_type() {
-            ReturnType::Void => formatter.write_str("void")?,
-            ReturnType::Value(ty) => TypeName(ty).fmt(formatter)?,
-        }
-        write!(formatter, " {}(", self.declarator)?;
-        self.write_parameters(formatter)?;
-        formatter.write_str(")")
-    }
-}
-
-/// A declaration whose name is held by value, so it can be produced by an
-/// iterator adaptor.
-struct OwnedNameDeclaration<'a> {
+/// A parameter declaration whose name is held by value, so it can be
+/// produced by an iterator adaptor.
+struct NamedParameter<'a> {
     ty: &'a MonoType,
     name: LocalName,
 }
 
-impl Display for OwnedNameDeclaration<'_> {
+impl Display for NamedParameter<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         Declaration::new(self.ty, &self.name).fmt(formatter)
     }
 }
 
+/// A function, or a pointer to one, with the given signature, e.g.
+/// `int32_t f(int32_t ray_local_0)` or `int32_t (*f)(int32_t)`.
+#[derive(Clone, Copy)]
+pub(crate) struct FunctionDeclaration<'a> {
+    signature: &'a FunctionSignature,
+    name: &'a dyn Display,
+    parameters: Parameters<'a>,
+    is_pointer: bool,
+}
+
+impl fmt::Debug for FunctionDeclaration<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "FunctionDeclaration({self})")
+    }
+}
+
+impl<'a> FunctionDeclaration<'a> {
+    /// Declares a function called `name`.
+    pub(crate) const fn new(signature: &'a FunctionSignature, name: &'a dyn Display) -> Self {
+        Self { signature, name, parameters: Parameters::Unnamed, is_pointer: false }
+    }
+
+    /// Declares a function-pointer object called `name`.
+    pub(crate) const fn pointer(signature: &'a FunctionSignature, name: &'a dyn Display) -> Self {
+        Self { signature, name, parameters: Parameters::Unnamed, is_pointer: true }
+    }
+
+    /// Spells the parameters with the local names of `function`.
+    pub(crate) const fn with_parameters_of(mut self, function: &'a MonoFunction) -> Self {
+        self.parameters = Parameters::NamedAfter(function);
+        self
+    }
+}
+
+impl Display for FunctionDeclaration<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = Declarator::Name(self.name);
+        let pointer = Declarator::Pointer { is_const: false, inner: &name };
+        let inner = if self.is_pointer { &pointer } else { &name };
+        let function =
+            Declarator::Function { inner, signature: self.signature, parameters: self.parameters };
+        write_function_declaration(formatter, self.signature, function)
+    }
+}
+
 /// Writes `items` separated by `", "`.
-pub(crate) fn write_separated(
+fn write_separated(
     out: &mut impl fmt::Write,
     items: impl IntoIterator<Item = impl Display>,
 ) -> fmt::Result {

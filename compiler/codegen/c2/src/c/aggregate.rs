@@ -6,7 +6,7 @@ use rayc_mono_ir::ty::{AggregateType, HandlerLayout, MonoType};
 
 use crate::c::{
     name::{AggregateName, FieldName},
-    ty::{Declaration, Declarator, SignatureDeclaration},
+    ty::{Declaration, FunctionDeclaration},
 };
 
 /// The member every empty aggregate carries, since C forbids empty structs.
@@ -47,13 +47,7 @@ impl<'a> AggregateDefinition<'a> {
             writeln!(formatter, "    {};", Declaration::new(environment_type, &environment))?;
 
             let function = FieldName::OperationFunction(operation.operation_id());
-            let pointer =
-                Declarator::Pointer { is_const: false, inner: &Declarator::Name(&function) };
-            writeln!(
-                formatter,
-                "    {};",
-                SignatureDeclaration::function_pointer(signature, &pointer)
-            )?;
+            writeln!(formatter, "    {};", FunctionDeclaration::pointer(signature, &function))?;
         }
         Ok(())
     }

@@ -6,7 +6,7 @@ use rayc_qbice::TrackedEngine;
 
 use crate::{
     aggregates::AggregateRegistry,
-    c::{name::DefinitionName, ty::SignatureDeclaration},
+    c::{name::DefinitionName, ty::FunctionDeclaration},
     collect::DependencyCollector,
     functions::{FunctionRegistry, Linkage},
     print::{FragmentFunctions, FunctionPrinter},
@@ -112,7 +112,7 @@ impl<'engine> Generator<'engine> {
     fn declare_extern(&mut self, instance: &MonoDefInstance, name: &str) {
         let signature = self.functions.extern_signature(instance);
         self.aggregates.visit_signature(signature);
-        let declaration = SignatureDeclaration::new(signature, &name);
+        let declaration = FunctionDeclaration::new(signature, &name);
         self.unit.declare_function(format_args!("extern {declaration}"));
     }
 
@@ -137,7 +137,7 @@ impl<'engine> Generator<'engine> {
         // Print.
         for (function_id, name) in fragment.iter() {
             let function = ir.get_function(function_id);
-            let signature = SignatureDeclaration::new(function.signature(), &name);
+            let signature = FunctionDeclaration::new(function.signature(), &name);
             self.unit.declare_function(signature.with_parameters_of(function));
 
             let printer =
