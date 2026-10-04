@@ -47,7 +47,7 @@ stderr:
 15 │     return value
    ╰╴           ━━━━━
 
-[error]: unexpected `,` punctuation, expected statement
+[error]: unexpected `,` punctuation, expected statement or `pass` keyword
    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:18:5
    │
 18 │     ,
