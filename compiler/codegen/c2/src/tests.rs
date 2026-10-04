@@ -18,8 +18,8 @@ use rayc_target::TargetID;
 use rayc_type::subst::Subst;
 
 use crate::{
+    c::name::{AggregateName, DefinitionName},
     generator::Generator,
-    name::{aggregate_name, definition_name},
     write_c_translation_unit_from_mono_ir,
 };
 
@@ -72,12 +72,12 @@ async fn writes_ordered_translation_unit_from_mono_ir() {
     assert!(function_forwards < function_definitions);
 
     let inner_definition =
-        output.find(&format!("struct {} {{", aggregate_name(&inner_aggregate))).unwrap();
+        output.find(&format!("struct {} {{", AggregateName::of(&inner_aggregate))).unwrap();
     let outer_definition =
-        output.find(&format!("struct {} {{", aggregate_name(&outer_aggregate))).unwrap();
+        output.find(&format!("struct {} {{", AggregateName::of(&outer_aggregate))).unwrap();
     assert!(inner_definition < outer_definition);
 
-    let definition_name = definition_name(&instance);
+    let definition_name = DefinitionName::of(&instance);
     assert!(output.contains(&format!("{definition_name}(")));
 
     assert_compiles(&output);
@@ -135,10 +135,12 @@ async fn discovers_called_definition_through_worklist() {
         Terminator::Return(Some(Operand::Constant(Constant::Unit))),
     );
 
-    let output =
-        Generator::new(&engine, [root_instance.clone()], [root, dependency], None).generate().await;
-    assert!(output.contains(&format!("{}(void) {{", definition_name(&root_instance))));
-    assert!(output.contains(&format!("{}(void) {{", definition_name(&dependency_instance))));
+    let output = Generator::new(&engine, [root_instance.clone()], [root, dependency], None)
+        .generate()
+        .await
+        .to_string();
+    assert!(output.contains(&format!("{}(void) {{", DefinitionName::of(&root_instance))));
+    assert!(output.contains(&format!("{}(void) {{", DefinitionName::of(&dependency_instance))));
 
     assert_compiles(&output);
 }
