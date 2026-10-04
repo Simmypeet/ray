@@ -7,8 +7,12 @@ use rayc_type::{
     ty::{Mutability, Ty},
 };
 
-use crate::visit::{
-    TypeSite, TypeVisitorMut, TypeVisitorMutAsync, VisitTypeMut, VisitTypeMutAsync,
+use crate::{
+    address::Local,
+    visit::{
+        TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
+        VisitTypeMutAsync,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
@@ -196,6 +200,22 @@ impl CaptureMap {
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
         self.captures.iter()
     }
+
+    /// Returns the local of each capture, in capture-layout order.
+    #[must_use]
+    pub fn locals(&self) -> impl ExactSizeIterator<Item = Local> + '_ {
+        self.captures.iter().map(|(capture_id, _)| Local::Capture(capture_id))
+    }
+}
+
+impl VisitType for IRLambdaContext {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        for (_, parameter) in self.parameters() {
+            parameter.visit_types(site, visitor);
+        }
+        visitor.visit_type(self.return_ty(), site);
+        visitor.visit_type(self.effect(), site);
+    }
 }
 
 impl VisitTypeMut for IRLambdaContext {
@@ -222,6 +242,13 @@ impl VisitTypeMutAsync for IRLambdaContext {
     }
 }
 
+impl VisitType for IRThunkContext {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type(self.return_ty(), site);
+        visitor.visit_type(self.effect(), site);
+    }
+}
+
 impl VisitTypeMut for IRThunkContext {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         visitor.visit_type_mut(&mut self.return_ty, site);
@@ -240,6 +267,12 @@ impl VisitTypeMutAsync for IRThunkContext {
     }
 }
 
+impl VisitType for LambdaParameter {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type(self.ty(), site);
+    }
+}
+
 impl VisitTypeMut for LambdaParameter {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         visitor.visit_type_mut(&mut self.ty, site);
@@ -253,6 +286,15 @@ impl VisitTypeMutAsync for LambdaParameter {
         visitor: &mut V,
     ) {
         visitor.visit_type_mut_async(&mut self.ty, site).await;
+    }
+}
+
+impl VisitType for CaptureMode {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        match self {
+            Self::Value(_) => {}
+            Self::Reference { lifetime, .. } => visitor.visit_type(lifetime, site),
+        }
     }
 }
 
@@ -278,6 +320,13 @@ impl VisitTypeMutAsync for CaptureMode {
     }
 }
 
+impl VisitType for Capture {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        visitor.visit_type(self.binding_ty(), site);
+        self.mode().visit_types(site, visitor);
+    }
+}
+
 impl VisitTypeMut for Capture {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         visitor.visit_type_mut(&mut self.binding_ty, site);
@@ -293,6 +342,14 @@ impl VisitTypeMutAsync for Capture {
     ) {
         visitor.visit_type_mut_async(&mut self.binding_ty, site).await;
         self.mode.visit_types_mut_async(site, visitor).await;
+    }
+}
+
+impl VisitType for CaptureMap {
+    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
+        for (_, capture) in self.iter() {
+            capture.visit_types(site, visitor);
+        }
     }
 }
 

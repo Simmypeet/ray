@@ -1,0 +1,33 @@
+trait Hold[t]:
+    def hold(value: t) -> t
+
+
+inst HoldReference['a] for Hold[&'a int32]:
+    def hold(value: &'a int32) -> &'a int32:
+        return value
+
+
+trait Keep[t]:
+    def keep(value: t) -> t
+
+
+inst KeepStatic for Keep[&'static int32]:
+    def keep(value: &'static int32) -> &'static int32:
+        return value
+
+
+def main() -> int32:
+    let mut x = 0
+
+    # The member is called through the dictionary found for `Hold[&int32]`,
+    # whose lifetime argument must be the lifetime of the reference passed in.
+    let p = Hold[&int32].hold(x.&)
+    x = x + 1           # <-- Expect an error here: `p` came from `x.&`.
+    let held = p.*
+    x = x + 1           # <-- Expect NO error here: `p` is not used again.
+
+    # The only dictionary for `Keep[&int32]` implements `Keep[&'static int32]`,
+    # so the reference passed in must live for `'static`.
+    let y = 0
+    let q = Keep[&int32].keep(y.&)      # <-- Expect an error here.
+    return held + q.*

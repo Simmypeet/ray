@@ -14,10 +14,7 @@ use rayc_resolution::{
 };
 use rayc_solver::{Solver, ty_relate::Step};
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{
-    constraint::outlives::{OutlivesConstraint, OutlivesConstraints},
-    where_clause::OutlivesPredicate,
-};
+use rayc_type::{constraint::outlives::OutlivesConstraints, where_clause::OutlivesPredicate};
 
 /// Checks obligations after construction, rendering a diagnostic for each
 /// one that fails.
@@ -79,8 +76,8 @@ impl ExpandedObligation {
         let Some(origin) = self.relation_origin() else {
             return;
         };
-        for constraint in unsatisfied_outlives(&outlives, solver).await {
-            let diagnostic = UnsatisfiedRelationOutlives::new(constraint, origin.clone());
+        for predicate in unsatisfied_outlives(&outlives, solver).await {
+            let diagnostic = UnsatisfiedRelationOutlives::new(predicate, origin.clone());
             diagnostics.push(diagnostic.report(&engine).await);
         }
     }
@@ -137,18 +134,16 @@ impl ExpandedObligation {
     }
 }
 
-/// Returns the constraints among `outlives` that do not follow from the
+/// Returns the predicates among `outlives` that do not follow from the
 /// solver's outlives facts.
 async fn unsatisfied_outlives(
     outlives: &OutlivesConstraints,
     solver: &mut Solver,
-) -> Vec<OutlivesConstraint> {
+) -> Vec<OutlivesPredicate> {
     let mut unsatisfied = Vec::new();
-    for constraint in outlives.iter() {
-        let predicate =
-            OutlivesPredicate::new(constraint.lesser().clone(), constraint.greater().clone());
-        if !solver.entails_outlives(&predicate).await {
-            unsatisfied.push(constraint.clone());
+    for predicate in outlives.iter() {
+        if !solver.entails_outlives(predicate).await {
+            unsatisfied.push(predicate.clone());
         }
     }
 

@@ -1,0 +1,65 @@
+def consume(x: t) given(_: core.Drop[t]):
+    let _ = x
+
+def readWhileMutablyBorrowed():
+    let mut x = 1
+    let unique = x.&mut
+    # ERROR: `x` is read while `unique` is used afterwards.
+    let y = x
+    unique.* = 2
+    consume(y)
+
+def readFieldOfMutablyBorrowed():
+    let mut pair = (1, 2)
+    let unique = pair.&mut
+    # ERROR: `pair.0` lies within the mutably borrowed `pair`.
+    let first = pair.0
+    unique.*.1 = 3
+    consume(first)
+
+def readWholeOfMutablyBorrowedField():
+    let mut pair = (1, 2)
+    let unique = pair.0.&mut
+    # ERROR: `pair` contains the mutably borrowed `pair.0`.
+    let copy = pair
+    unique.* = 3
+    consume(copy)
+
+def readThroughReborrowed(p: &mut int32):
+    let unique = p.*.&mut
+    # ERROR: `p.*` is read while it is mutably reborrowed.
+    let y = p.*
+    unique.* = 2
+    consume(y)
+
+def readWhileShared():
+    let x = 1
+    let shared = x.&
+    # OK: a shared borrow allows reads.
+    let y = x
+    consume(shared.* + y)
+
+def readSiblingOfMutablyBorrowedField():
+    let mut pair = (1, 2)
+    let unique = pair.0.&mut
+    # OK: `pair.1` does not overlap `pair.0`.
+    let second = pair.1
+    unique.* = 3
+    consume(second)
+
+def readAfterLastUse():
+    let mut x = 1
+    let unique = x.&mut
+    unique.* = 2
+    # OK: `unique` is not used after this point.
+    consume(x)
+
+def main():
+    let mut value = 0
+    readWhileMutablyBorrowed()
+    readFieldOfMutablyBorrowed()
+    readWholeOfMutablyBorrowedField()
+    readThroughReborrowed(value.&mut)
+    readWhileShared()
+    readSiblingOfMutablyBorrowedField()
+    readAfterLastUse()

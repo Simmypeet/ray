@@ -1,0 +1,129 @@
+eff Sink['a]:
+    def put(value: &'a int32)
+
+eff Source['a]:
+    def get() -> &'a int32
+
+eff State[s]:
+    def load() -> s
+    def save(value: s)
+
+
+def putsParameter['a](x: &'a int32) -> () \ {Sink['a]}:
+    # OK: the handler of `Sink['a]` takes a `&'a int32`.
+    Sink.put(x)
+
+
+def putsLocal['a]() -> () \ {Sink['a]}:
+    let x = 1
+    # ERROR: the handler may keep the reference for `'a`, and `x` is gone
+    # when the function returns.
+    Sink.put(x.&)
+
+
+def putsUnrelated['a, 'b](x: &'a int32) -> () \ {Sink['b]}:
+    # ERROR: the handler takes a `&'b int32`, and nothing states `'a: 'b`.
+    Sink.put(x)
+
+
+def putsOutlived['a, 'b](x: &'a int32) -> () \ {Sink['b]} where ('a: 'b):
+    # OK: the where clause states `'a: 'b`.
+    Sink.put(x)
+
+
+def getsReference['a]() -> &'a int32 \ {Source['a]}:
+    # OK: the handler of `Source['a]` gives back a `&'a int32`.
+    return Source.get()
+
+
+def getsUnrelated['a, 'b]() -> &'b int32 \ {Source['a]}:
+    # ERROR: the handler gives back a `&'a int32`, and nothing states
+    # `'a: 'b`.
+    return Source.get()
+
+
+def getsShortened['a, 'b]() -> &'b int32 \ {Source['a]} where ('a: 'b):
+    # OK: the where clause states `'a: 'b`.
+    return Source.get()
+
+
+def savesParameter['a](x: &'a int32) -> () \ {State[&'a int32]}:
+    # OK: the state is a `&'a int32`.
+    State.save(x)
+
+
+def savesLocal['a]() -> () \ {State[&'a int32]}:
+    let x = 1
+    # ERROR: the saved reference outlives `x`.
+    State.save(x.&)
+
+
+def loadsUnrelated['a, 'b]() -> &'b int32 \ {State[&'a int32]}:
+    # ERROR: the state is a `&'a int32`, and nothing states `'a: 'b`.
+    return State.load()
+
+
+def callsWithParameter['a](x: &'a int32) -> () \ {Sink['a]}:
+    # OK: the callee performs `Sink['a]`, which is the effect of this
+    # function.
+    putsParameter(x)
+
+
+def callsWithLocal['a]() -> () \ {Sink['a]}:
+    let x = 1
+    # ERROR: the callee passes the reference on to the handler of `Sink['a]`.
+    putsParameter(x.&)
+
+
+def callsUnrelated['a, 'b](x: &'a int32) -> () \ {Sink['b]}:
+    # ERROR: the callee performs `Sink` with the lifetime of its argument,
+    # and nothing states `'a: 'b`.
+    putsParameter(x)
+
+
+def callsOutlived['a, 'b](x: &'a int32) -> () \ {Sink['b]} where ('a: 'b):
+    # OK: the where clause states `'a: 'b`.
+    putsParameter(x)
+
+
+def callsAmongOthers['a, 'b](x: &'a int32) -> &'b int32 \ {Source['b], Sink['a]}:
+    # OK: each callee performs a part of the effect of this function.
+    putsParameter(x)
+    return getsReference()
+
+
+def callsAmongOthersUnrelated['a, 'b](x: &'a int32) -> &'a int32 \ {Source['b], Sink['b]}:
+    # ERROR: `Sink['b]` takes a `&'b int32`, and nothing states `'a: 'b`.
+    putsParameter(x)
+    # ERROR: `Source['b]` gives back a `&'b int32`, and nothing states
+    # `'b: 'a`.
+    return getsReference()
+
+
+def callsCallback['a](callback: def(&'a int32) \ {Sink['a]}, x: &'a int32) -> () \ {Sink['a]}:
+    # OK: the callback performs the effect of this function.
+    callback(x)
+
+
+def callsCallbackUnrelated['a, 'b](callback: def(&'a int32) \ {Sink['a]}, x: &'a int32) -> () \ {Sink['b]}:
+    # ERROR: the callback performs `Sink['a]`, and nothing states `'a: 'b`.
+    callback(x)
+
+
+def handlesLocal() -> int32:
+    let outer = 1
+    return run:
+        let inner = 2
+        # OK: `outer` outlives the handlers.
+        Sink.put(outer.&)
+        # ERROR: the handler may keep the reference past the handled body,
+        # where `inner` is gone.
+        Sink.put(inner.&)
+        return 0
+    with Sink:
+        def put(value):
+            return ()
+
+
+def main():
+    pass

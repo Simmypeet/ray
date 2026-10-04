@@ -71,46 +71,52 @@ impl Substitutable for MarkerPredicate {
     }
 }
 
-/// A requirement `subject: bound`: the lifetime `subject`, or every lifetime
-/// in the type, effect row, or dictionary `subject`, outlives the lifetime
-/// `bound`.
+/// A requirement `lesser: greater`: the lifetime `lesser`, or every lifetime
+/// in the type, effect row, or dictionary `lesser`, outlives the lifetime
+/// `greater`.
 ///
 /// Both `'a: 'b` and `t: 'a` share this form, because a lifetime is its own
 /// only outlives component (see [`Ty::outlives_components`]).
+///
+/// The names follow [`TyRelate`](crate::constraint::ty_relate::TyRelate): a
+/// lifetime that outlives another is its subtype, so `'lesser: 'greater`
+/// holds exactly when `'lesser <: 'greater`.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub struct OutlivesPredicate {
-    subject: Interned<Ty>,
-    bound: Interned<Ty>,
+    lesser: Interned<Ty>,
+    greater: Interned<Ty>,
 }
 
 impl OutlivesPredicate {
     #[must_use]
-    pub const fn new(subject: Interned<Ty>, bound: Interned<Ty>) -> Self { Self { subject, bound } }
+    pub const fn new(lesser: Interned<Ty>, greater: Interned<Ty>) -> Self {
+        Self { lesser, greater }
+    }
 
     /// Returns the operand that must live longer: a lifetime, a type, an
     /// effect row, or a dictionary.
     #[must_use]
-    pub const fn subject(&self) -> &Interned<Ty> { &self.subject }
+    pub const fn lesser(&self) -> &Interned<Ty> { &self.lesser }
 
-    /// Returns the lifetime that the subject must outlive.
+    /// Returns the lifetime that the lesser operand must outlive.
     #[must_use]
-    pub const fn bound(&self) -> &Interned<Ty> { &self.bound }
+    pub const fn greater(&self) -> &Interned<Ty> { &self.greater }
 
     /// Renders the predicate as written in a where clause, such as `t: 'a`.
     pub async fn display(&self, engine: &TrackedEngine) -> String {
-        format!("{}: {}", self.subject.display(engine).await, self.bound.display(engine).await)
+        format!("{}: {}", self.lesser.display(engine).await, self.greater.display(engine).await)
     }
 }
 
 impl Substitutable for OutlivesPredicate {
     fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
-        match (self.subject.apply_subst(subst, engine), self.bound.apply_subst(subst, engine)) {
+        match (self.lesser.apply_subst(subst, engine), self.greater.apply_subst(subst, engine)) {
             (None, None) => None,
-            (subject, bound) => Some(Self::new(
-                subject.unwrap_or_else(|| self.subject.clone()),
-                bound.unwrap_or_else(|| self.bound.clone()),
+            (lesser, greater) => Some(Self::new(
+                lesser.unwrap_or_else(|| self.lesser.clone()),
+                greater.unwrap_or_else(|| self.greater.clone()),
             )),
         }
     }

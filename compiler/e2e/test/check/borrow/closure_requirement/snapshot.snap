@@ -1,0 +1,101 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:11:12
+   │
+11 │     return same(x)
+   │            ━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:23:28
+   │
+23 │     let store = (value) -> out.* = value
+   │                            ━━━━━━━━━━━━━ this requires `'a` to outlive `'b`
+24 │     store(x)
+   │     ──────── the value of lifetime `'a` flows in here
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:37:12
+   │
+37 │     return outer(x)
+   │            ━━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:44:29
+   │
+44 │     let picker = (other) -> pick(other, value)
+   │                             ━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'a`
+45 │     return picker(anchor)
+   │            ────────────── the value is required to be valid for `'a` here
+   │
+   ╰ help: consider adding `t: 'a` to the where clause
+
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:68:5
+   │
+66 │     let address = () -> value.&
+   │                  ────────────── immutable borrow occurs here, by a capture
+67 │     let p = address()
+68 │     value = 42          # <-- Expect an error here: `p` borrows `value`.
+   │     ━━━━━━━━━━ the borrowed place is assigned here
+69 │     let read = p.*
+   ╰╴               ─── borrow later used here
+
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:77:5
+   │
+75 │     let q = first(x.&, y.&)
+   │                   ─── immutable borrow occurs here
+76 │     y = 3               # <-- Expect NO error here: `q` did not come from `y.&`.
+77 │     x = 3               # <-- Expect an error here: `q` came from `x.&`.
+   │     ━━━━━ the borrowed place is assigned here
+78 │     let kept = q.*
+   ╰╴               ─── borrow later used here
+
+[error]: borrowed value does not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:86:16
+   │
+85 │         let b = 2
+   │             ─ this variable goes out of scope while it is still borrowed
+86 │         assign(b.&)     # <-- Expect an error here: `r` is used after `b`.
+   │                ━━━ borrowed value does not live long enough
+87 │
+88 │     return read + kept + r.*
+   ╰╴                         ─── borrow later used here
+
+[error]: lifetime may not live long enough
+    ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:99:5
+    │
+ 99 │     let local = item
+    │     ━━━━━━━━━━━━━━━━ this requires `'b` to outlive `'a`
+100 │     let same = (value) -> value
+101 │     return same(local)
+    │            ─────────── the value of lifetime `'b` flows in here
+    │
+    ╰ help: consider adding `'b: 'a` to the where clause
+
+[error]: lifetime may not live long enough
+    ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:101:12
+    │
+ 99 │     let local = item
+    │     ──────────────── the value of lifetime `'a` flows in here
+100 │     let same = (value) -> value
+101 │     return same(local)
+    │            ━━━━━━━━━━━ this requires `'a` to outlive `'b`
+    │
+    ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: Compilation aborted due to 9 error(s)
+
+
+
+stdout:

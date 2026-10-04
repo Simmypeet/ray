@@ -1,21 +1,22 @@
 ---
 source: compiler/e2e/test/check/mod.rs
+assertion_line: 112
 expression: run
 ---
 stderr:
-[error]: unexpected `extern` keyword, expected `def` keyword, `type` keyword, `pub` keyword
+[error]: unexpected `extern` keyword, expected trait member
   ╭▸ compiler/e2e/test/check/ffi/invalid_member_syntax/main.ray:2:5
   │
 2 │     extern def invoke() -> c_int
   ╰╴    ━━━━━━
 
-[error]: unexpected `extern` keyword, expected `def` keyword, `type` keyword, `pub` keyword
+[error]: unexpected `extern` keyword, expected instance member
   ╭▸ compiler/e2e/test/check/ffi/invalid_member_syntax/main.ray:5:5
   │
 5 │     extern def invoke() -> c_int:
   ╰╴    ━━━━━━
 
-[error]: unexpected new line, expected `where` keyword, indentation block, `\` punctuation
+[error]: unexpected new line, expected `\` punctuation, `where` keyword, or indentation block
    ╭▸ compiler/e2e/test/check/ffi/invalid_member_syntax/main.ray:12:26
    │
 12 │     def invoke() -> c_int

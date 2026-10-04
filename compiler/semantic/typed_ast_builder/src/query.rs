@@ -69,7 +69,7 @@ impl TAstBuilder {
         };
         let body_span = body_syn.span();
 
-        for stmt in body_syn.statements() {
+        for stmt in body_syn.statements().filter_map(rayc_syntax::Passable::into_option) {
             self.bind_statement(&stmt).await;
         }
 

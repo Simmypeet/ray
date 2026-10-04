@@ -38,6 +38,31 @@ pub enum TyRelatingEnvironment {
     ///
     /// [`Variance::Invariant`]: rayc_type::variance::Variance::Invariant
     TopLevelMatching,
+
+    /// One-way matching where only external lifetimes on the lesser side may
+    /// be bound. Used for matching the interface of a nested IR function
+    /// against the types its creator gives it.
+    ///
+    /// Every other lifetime is related by outlives constraints, and a
+    /// polymorphic variable stays rigid: it stands for the same thing in the
+    /// nested function and in its creator. Relations in this environment
+    /// must be [`Variance::Invariant`] as well, since an external lifetime is
+    /// instantiated with the very lifetime the creator has in its place.
+    ///
+    /// [`Variance::Invariant`]: rayc_type::variance::Variance::Invariant
+    InterfaceMatching,
+}
+
+impl TyRelatingEnvironment {
+    /// Returns whether this environment matches one side against the other,
+    /// which relates the two invariantly and never generalizes.
+    #[must_use]
+    pub const fn is_matching(&self) -> bool {
+        match self {
+            Self::Normal => false,
+            Self::TopLevelMatching | Self::InterfaceMatching => true,
+        }
+    }
 }
 
 /// The result of solving a set of relations: the substitution that solves
@@ -199,6 +224,29 @@ impl Solver {
         .map(|solution| solution.into_parts().0)
     }
 
+    /// Matches each type in the interface of a nested IR function against the
+    /// type its creator gives it, binding the external lifetimes of the
+    /// interface.
+    ///
+    /// `interface` pairs each interface type with the type of the creator.
+    /// Returns the creator's lifetime for each external lifetime, and the
+    /// outlives constraints the match requires: those that make the
+    /// lifetimes of the two types equal wherever the interface has a
+    /// lifetime that is not external.
+    ///
+    /// Returns `None` if a pair of types differs in more than lifetimes.
+    pub async fn interface_match(
+        &mut self,
+        interface: impl IntoIterator<Item = (Interned<Ty>, Interned<Ty>)>,
+    ) -> Option<Solution> {
+        let constrs = interface
+            .into_iter()
+            .map(|(interface, created)| TyRelate::new_invariant(interface, created))
+            .collect();
+
+        self.exhaustive_solve(constrs, &TyRelatingEnvironment::InterfaceMatching).await
+    }
+
     /// Solves all constraints, returning the composed substitution and the
     /// outlives constraints they require.
     ///
@@ -335,7 +383,9 @@ impl Solver {
 
     /// Returns the outlives facts visible at this solver's site.
     #[must_use]
-    pub fn outlives_environment(&self) -> &OutlivesEnvironment { &self.outlives_environment }
+    pub const fn outlives_environment(&self) -> &Interned<OutlivesEnvironment> {
+        &self.outlives_environment
+    }
 
     /// Reduces a value and its descendants until no further step is available.
     ///

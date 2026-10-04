@@ -22,6 +22,7 @@ use crate::{
     live_loans::LiveLoans,
     region_liveness::RegionLiveness,
     renumber::Renumbering,
+    requirement::NestedRequirements,
     variance::LifetimeVariances,
 };
 
@@ -182,7 +183,18 @@ impl FunctionBuilder {
         let mut solver = Solver::without_givens(self.engine.clone()).await;
 
         let function = self.functions.get_function(self.function_id);
-        let constraints = LocalizedConstraints::collect(function, None, &mut solver).await;
+        // The functions built here perform nothing, and create no nested
+        // function.
+        let effect = Ty::new_effect_row([], None, &self.engine);
+        let nested = NestedRequirements::default();
+        let constraints = LocalizedConstraints::collect(
+            &self.functions,
+            self.function_id,
+            &effect,
+            &nested,
+            &mut solver,
+        )
+        .await;
         let liveness = RegionLiveness::compute(&self.functions, self.function_id).await;
         let live_loans = LiveLoans::compute(function, &constraints, &liveness, &variances);
 

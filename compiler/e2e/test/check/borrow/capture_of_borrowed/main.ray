@@ -1,0 +1,62 @@
+struct Token:
+    value: int32
+
+impl !core.Copy for Token
+
+def consume(x: t) given(_: core.Drop[t]):
+    let _ = x
+
+def captureMutablyWhileShared():
+    let mut value = 1
+    let shared = value.&
+    # ERROR: the closure captures `value` by mutable reference.
+    let write = () -> value = 2
+    write()
+    consume(shared.*)
+
+def captureSharedWhileMutablyBorrowed():
+    let mut value = 1
+    let unique = value.&mut
+    # ERROR: the closure captures `value` by shared reference.
+    let read = () -> value
+    unique.* = 2
+    consume(read())
+
+def captureByMoveWhileBorrowed():
+    let token = Token{value=1}
+    let shared = token.&
+    # ERROR: the closure moves `token` into its environment.
+    let take = () -> move token
+    consume(shared.*.value)
+    consume(take())
+
+def useWhileCapturedMutably():
+    let mut value = 1
+    let write = () -> value = 2
+    # ERROR: `value` is read while `write` holds a mutable borrow of it.
+    let copy = value
+    write()
+    consume(copy)
+
+def captureSharedTwice():
+    let value = 1
+    let shared = value.&
+    # OK: both borrows are shared.
+    let read = () -> value
+    consume(shared.* + read())
+
+def captureAfterLastUse():
+    let mut value = 1
+    let shared = value.&
+    consume(shared.*)
+    # OK: `shared` is not used after this point.
+    let write = () -> value = 2
+    write()
+
+def main():
+    captureMutablyWhileShared()
+    captureSharedWhileMutablyBorrowed()
+    captureByMoveWhileBorrowed()
+    useWhileCapturedMutably()
+    captureSharedTwice()
+    captureAfterLastUse()

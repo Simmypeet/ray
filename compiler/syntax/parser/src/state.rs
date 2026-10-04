@@ -362,7 +362,52 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
     /// Starts a new node with the given [`AstInfo`] and pushes it onto the
     /// stack. If [`AstInfo::step_into_fragment`] is present, the parser shall
     /// step into the fragment as well.
+    ///
+    /// If the node has an [`AbstractTree::label`] and fails without consuming
+    /// any token, the expectations collected while parsing it are replaced by
+    /// the label.
     pub fn start_node<A: AbstractTree>(
+        &mut self,
+        op: impl for<'x> FnOnce(&mut State<'a, 'x, I>) -> Result<(), crate::parser::Unexpected>,
+    ) -> (Option<Result<(), crate::parser::Unexpected>>, bool) {
+        let Some(label) = A::label() else {
+            return self.start_unlabelled_node::<A>(op);
+        };
+
+        // collect the node's expectations apart from the ones collected
+        // before it, so that they can be replaced by the label
+        let start_offset = self.start_location_of_cursor(Cursor {
+            branch_id: self.branch_id(),
+            node_index: self.peek().map_or(self.branch.nodes.len(), |(_, index)| index),
+        });
+        let outer_error = std::mem::take(&mut self.current_error);
+
+        let (result, stepped_into) = self.start_unlabelled_node::<A>(op);
+
+        let mut node_error = std::mem::replace(&mut self.current_error, outer_error);
+
+        // The node consumed nothing if it neither stepped into a fragment nor
+        // got past its first significant token. The error can also be placed
+        // before that token when the node made new lines significant.
+        let failed = !matches!(result, Some(Ok(())));
+        let consumed_nothing = !stepped_into
+            && !node_error.expecteds.is_empty()
+            && self.start_location_of_cursor(node_error.at) <= start_offset;
+
+        if failed && consumed_nothing {
+            node_error.expecteds.clear();
+            node_error.expecteds.insert(label.into());
+        }
+
+        // merge the node's expectations back with the ones collected before
+        if !node_error.expecteds.is_empty() {
+            self.add_error(node_error.expecteds, node_error.at);
+        }
+
+        (result, stepped_into)
+    }
+
+    fn start_unlabelled_node<A: AbstractTree>(
         &mut self,
         op: impl for<'x> FnOnce(&mut State<'a, 'x, I>) -> Result<(), crate::parser::Unexpected>,
     ) -> (Option<Result<(), crate::parser::Unexpected>>, bool) {

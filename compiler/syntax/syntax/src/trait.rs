@@ -26,6 +26,7 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    #{label = rayc_parser::expect::Label::TraitMember}
     pub enum TraitMember {
         Definition(DefSignature = ast::<DefSignature>()),
         AssociatedType(TraitAssociatedType = ast::<TraitAssociatedType>())

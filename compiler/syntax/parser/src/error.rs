@@ -191,6 +191,7 @@ impl Cursor {
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn expected_string(expected: &Expected) -> String {
     match expected {
+        Expected::Label(label) => label.to_string(),
         Expected::Identifier(_) => "identifier".to_string(),
         Expected::IdentifierValue(identifier_value) => {
             format!("`{}` identifier", identifier_value.expected_string())
@@ -308,10 +309,32 @@ async fn found_string(
     }
 }
 
+impl Error {
+    /// Lists the expectations in a stable order, e.g. "`a`, `b`, or `c`".
+    fn expected_list_string(&self) -> String {
+        // the set has no stable order, sort for a deterministic diagnostic
+        // that lists the labels first
+        let mut expecteds = self.expecteds.iter().copied().collect::<Vec<_>>();
+        expecteds.sort_unstable();
+
+        match expecteds.as_slice() {
+            [] => String::new(),
+            [only] => expected_string(only),
+            [first, second] => {
+                format!("{} or {}", expected_string(first), expected_string(second))
+            }
+            [init @ .., last] => {
+                let init = init.iter().map(expected_string).collect::<Vec<_>>().join(", ");
+
+                format!("{init}, or {}", expected_string(last))
+            }
+        }
+    }
+}
+
 impl Report for Error {
     async fn report(&self, engine: &TrackedEngine) -> rayc_diagnostic::Rendered<ByteIndex> {
-        let expected_string =
-            self.expecteds.iter().map(expected_string).collect::<Vec<_>>().join(", ");
+        let expected_string = self.expected_list_string();
 
         let (found_string, found_span) = found_string(engine, self.source_id, &self.at).await;
 

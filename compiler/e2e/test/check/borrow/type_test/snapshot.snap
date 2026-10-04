@@ -1,0 +1,62 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: the type `t` may not live long enough
+  ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:9:12
+  │
+9 │     return pick(anchor, value)
+  │            ━━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'a`
+  │
+  ╰ help: consider adding `t: 'a` to the where clause
+
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:37:18
+   │
+37 │     let picked = pick(anchor, value)
+   │                  ━━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'a`
+38 │     return picked
+   │            ────── the value is required to be valid for `'a` here
+   │
+   ╰ help: consider adding `t: 'a` to the where clause
+
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:47:5
+   │
+47 │     needsStatic(value)
+   │     ━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'static`
+   │
+   ╰ help: consider adding `t: 'static` to the where clause
+
+[error]: the type `t` may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:62:18
+   │
+62 │     let tagged = Tagged{anchor=anchor, value=value}
+   │                  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'a`
+63 │     return tagged.anchor
+   │            ───────────── the value is required to be valid for `'a` here
+   │
+   ╰ help: consider adding `t: 'a` to the where clause
+
+[error]: the type `s.Item['x]` may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:87:12
+   │
+87 │     return pickItem(anchor, item)
+   │            ━━━━━━━━━━━━━━━━━━━━━━ this requires `s.Item['x]` to outlive `'a`
+   │
+   ╰ help: consider adding `s.Item['x]: 'a` to the where clause
+
+[error]: the type `s.Item['x]` may not live long enough
+    ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:102:12
+    │
+102 │     return pickItem(anchor, item)
+    │            ━━━━━━━━━━━━━━━━━━━━━━ this requires `s.Item['x]` to outlive `'a`
+    │
+    ╰ help: consider adding `s.Item['x]: 'a` to the where clause
+
+[error]: Compilation aborted due to 6 error(s)
+
+
+
+stdout:

@@ -1,0 +1,85 @@
+def shorten['a, 'b](x: &'a int32) -> &'b int32 where ('a: 'b):
+    # OK: the where clause states `'a: 'b`.
+    return x
+
+
+def unrelated['a, 'b](x: &'a int32) -> &'b int32:
+    # ERROR: nothing states `'a: 'b`.
+    return x
+
+
+def sameLifetime['a](x: &'a int32) -> &'a int32:
+    # OK: the value keeps its lifetime.
+    return x
+
+
+def toStatic['a](x: &'a int32) -> &'static int32:
+    # ERROR: `'a` is not known to outlive `'static`.
+    return x
+
+
+def fromStatic['a](x: &'static int32) -> &'a int32:
+    # OK: `'static` outlives every lifetime.
+    return x
+
+
+def storeThrough['a, 'b](x: &'a int32, out: &mut &'b int32):
+    # ERROR: the value is stored where a `&'b int32` is expected.
+    let y = x
+    out.* = y
+
+
+def storeThroughOutlived['a, 'b](x: &'a int32, out: &mut &'b int32) where ('a: 'b):
+    # OK: the where clause states `'a: 'b`.
+    let y = x
+    out.* = y
+
+
+def eitherBranch['a, 'b, 'c](c: bool, x: &'a int32, y: &'b int32) -> &'c int32 where ('a: 'c):
+    let mut r = x
+    if c:
+        r = y
+    # ERROR: `r` may hold `y`, and nothing states `'b: 'c`. That it may hold
+    # `x` is fine.
+    return r
+
+
+def throughCall['a, 'b](x: &'a int32) -> &'b int32:
+    # ERROR: `shorten` gives back a reference that `'a` must outlive.
+    let s = shorten(x)
+    return s
+
+
+def impliedBound['a, 'b](x: &'a &'b int32) -> &'a int32:
+    # OK: `&'a &'b int32` being well-formed implies `'b: 'a`.
+    return x.*
+
+
+def copiedOut['a, 'b](x: &'a &'b int32) -> &'b int32:
+    # OK: the inner shared reference is copied out, whatever `'a` is.
+    return x.*.*.&
+
+
+def reborrowedMut['a, 'b](x: &'a mut &'b mut int32) -> &'b mut int32:
+    # ERROR: the data is only reachable through `x` for `'a`, and the implied
+    # bound is `'b: 'a`, not `'a: 'b`.
+    return x.*.*.&mut
+
+
+def chained['a, 'b, 'c](x: &'a int32, mid: &mut &'b int32, out: &mut &'c int32) where ('a: 'b):
+    # OK: the where clause states `'a: 'b`.
+    mid.* = x
+    # ERROR: nothing states `'b: 'c`. This is reported once, and not again
+    # as `'a: 'c`.
+    out.* = mid.*
+
+
+def capturedByClosure['a, 'b](x: &'a int32, y: &'b int32) -> int32:
+    # OK: the closure body only reads its captures, so it requires nothing of
+    # the lifetimes in its interface.
+    let read = () -> x.* + y.*
+    return read()
+
+
+def main():
+    pass

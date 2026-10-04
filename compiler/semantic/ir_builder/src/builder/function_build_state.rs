@@ -183,6 +183,7 @@ impl FunctionBuildState {
         diagnostic_span: RelativeSpan,
         capture_map: CaptureMapID,
         captures: FxHashMap<Source, CaptureID>,
+        engine: &TrackedEngine,
     ) -> Self {
         let typed_function_id = context.typed_function_id();
         let handler_context =
@@ -193,6 +194,7 @@ impl FunctionBuildState {
             return_ty.clone(),
             context.function_effect().clone(),
             capture_map,
+            engine,
         );
         let mut operation_handler_parameters = FxHashMap::default();
         for (typed_id, parameter) in handler_context.parameters() {
@@ -458,6 +460,7 @@ impl Builder {
             diagnostic_span,
             capture_map,
             captures,
+            &self.engine,
         );
         let enclosing = mem::replace(&mut self.building_function, handler);
         self.suspended_functions.push(enclosing);
@@ -564,7 +567,7 @@ impl Builder {
     pub fn create_temporary(&mut self, ty: Interned<Ty>, span: RelativeSpan) -> IRVariableID {
         let function_id = self.building_function.ir_function_id;
         let scope_id = self.building_function.scopes.current();
-        self.ir_functions.create_variable_in_scope(function_id, scope_id, ty, span)
+        self.ir_functions.create_temporary_in_scope(function_id, scope_id, ty, span)
     }
 
     pub fn register_source_variable(

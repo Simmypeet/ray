@@ -1,0 +1,64 @@
+# A struct with a declared `Drop` implementation, which may use the memory
+# behind the reference it holds.
+struct Guard['a]:
+    inner: &'a mut int32
+
+inst GuardDrop['a] for core.Drop[Guard['a]]:
+    def drop(self: Guard['a]):
+        self.inner.* = 0
+        core.NoDrop { value = move self }
+
+# A struct without one: dropping it does not go through its reference.
+struct Plain['a]:
+    inner: &'a mut int32
+
+def declaredDropUsesBorrowed['a](out: &mut &'a mut int32, x: &'a mut int32):
+    let guard = Guard{inner=x}
+    # ERROR: `guard` is dropped at the end of the function, where its `Drop`
+    # implementation may write through `guard.inner` while `out` still holds
+    # this borrow.
+    out.* = guard.inner.*.&mut
+
+def structuralDropSkipsBorrowed['a](out: &mut &'a mut int32, x: &'a mut int32):
+    let plain = Plain{inner=x}
+    # OK: nothing runs when `plain` goes out of scope.
+    out.* = plain.inner.*.&mut
+
+def declaredDropWithinTuple['a](out: &mut &'a mut int32, x: &'a mut int32):
+    let pair = (Guard{inner=x}, 1)
+    # ERROR: dropping `pair` drops the guard in it.
+    out.* = pair.0.inner.*.&mut
+
+def declaredDropOfSibling['a](out: &mut &'a mut int32, x: &'a mut int32, y: &'a mut int32):
+    let pair = (Guard{inner=x}, y)
+    # OK: the `Drop` implementation of `pair.0` cannot reach `pair.1`.
+    out.* = pair.1.*.&mut
+
+def declaredDropOnReassign['a](out: &mut &'a mut int32, x: &'a mut int32, y: &'a mut int32):
+    let mut guard = Guard{inner=x}
+    # ERROR: the assignment below drops the guard holding `x`.
+    out.* = guard.inner.*.&mut
+    guard = Guard{inner=y}
+
+def declaredDropAfterLastUse(x: &mut int32):
+    let guard = Guard{inner=x}
+    let unique = guard.inner.*.&mut
+    # OK: `unique` is not used after this point.
+    unique.* = 1
+
+def main():
+    let mut a = 1
+    let mut b = 2
+    let mut c = 3
+    let mut d = 4
+    let mut e = 5
+    let mut f = 6
+    let mut g = 7
+    let mut h = 8
+    let mut slot = a.&mut
+    declaredDropUsesBorrowed(slot.&mut, b.&mut)
+    structuralDropSkipsBorrowed(slot.&mut, c.&mut)
+    declaredDropWithinTuple(slot.&mut, d.&mut)
+    declaredDropOfSibling(slot.&mut, e.&mut, f.&mut)
+    declaredDropOnReassign(slot.&mut, g.&mut, h.&mut)
+    declaredDropAfterLastUse(slot)

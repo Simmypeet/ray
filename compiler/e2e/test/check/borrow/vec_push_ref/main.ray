@@ -1,0 +1,27 @@
+struct Vector[+t]:
+    pass
+
+
+impl[t] !core.Copy for Vector[t]
+
+
+def newVec[t]() -> Vector[t]:
+    return Vector{}
+
+
+def push[t](v: &mut Vector[t], x: t):
+    core.NoDrop{value=x}
+
+
+def consume(_: t) given (_: core.Drop[t]):
+    pass
+
+
+def main():
+    let mut x = 0
+    let mut v = newVec()
+    let p = v.&mut      # Loan L0
+    x = x + 1           # <-- Expect NO error here.
+    push(p, x.&)        # Loan 1
+    x = x + 1           # <-- 💥 Expect an error here!
+    consume(v)

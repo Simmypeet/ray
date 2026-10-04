@@ -1,0 +1,32 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/tuple_and_phi/main.ray:13:5
+   │
+10 │     let pair = (x.&, y.&)
+   │                      ─── immutable borrow occurs here
+   ‡
+13 │     y = y + 1           # <-- Expect an error here: `p` came from `y.&`.
+   │     ━━━━━━━━━ the borrowed place is assigned here
+14 │     consume(p.*)
+   ╰╴            ─── borrow later used here
+
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/tuple_and_phi/main.ray:20:5
+   │
+18 │     let q = if true: y.& else: z.&
+   │                                ─── immutable borrow occurs here
+19 │     x = x + 1           # <-- Expect NO error here: neither branch borrows `x`.
+20 │     z = z + 1           # <-- Expect an error here: `q` may borrow `z`.
+   │     ━━━━━━━━━ the borrowed place is assigned here
+21 │     consume(q.*)
+   ╰╴            ─── borrow later used here
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

@@ -1,0 +1,60 @@
+def returnsVariable['a]() -> &'a int32:
+    let x = 1
+    # ERROR: `x` is gone when the function returns.
+    return x.&
+
+def returnsParameter['a](x: int32) -> &'a int32:
+    # ERROR: so is a parameter taken by value.
+    return x.&
+
+def returnsParameterBesideReference['a](a: &'a int32, param: int32) -> &'a int32:
+    # ERROR: `param` is gone with the root scope, whatever `a` points to.
+    return param.&
+
+def returnsFieldOfParameter['a](pair: (int32, int32)) -> &'a int32:
+    # ERROR: and a place within one.
+    return pair.1.&
+
+def returnsOnOnePath['a](c: bool, x: &'a int32) -> &'a int32:
+    let y = 2
+    if c:
+        # ERROR: only this path returns a borrow of a local.
+        return y.&
+    return x
+
+def returnsInTuple['a](x: &'a int32) -> (&'a int32, &'a int32):
+    let y = 2
+    # ERROR: the returned tuple holds a borrow of `y`.
+    return (x, y.&)
+
+def storesParameter['a](out: &mut &'a int32, x: int32):
+    # ERROR: the borrow outlives `x` without being returned.
+    out.* = x.&
+
+def returnsReborrow['a](x: &'a int32) -> &'a int32:
+    # OK: the memory behind `x` outlives the function.
+    return x.*.&
+
+def returnsMutableReborrow['a](x: &'a mut (int32, int32)) -> &'a mut int32:
+    # OK: so does the memory behind a mutable reference.
+    return x.*.0.&mut
+
+def returnsCopy(x: int32) -> int32:
+    let r = x.&
+    # OK: the value is copied out of the borrow.
+    return r.*
+
+def main():
+    let value = 1
+    let mut slot = value.&
+    let mut pair = (1, 2)
+    let _ = returnsVariable()
+    let _ = returnsParameter(1)
+    let _ = returnsParameterBesideReference(value.&, 1)
+    let _ = returnsFieldOfParameter((1, 2))
+    let _ = returnsOnOnePath(true, value.&)
+    let _ = returnsInTuple(value.&)
+    storesParameter(slot.&mut, 1)
+    let _ = returnsReborrow(value.&)
+    let _ = returnsMutableReborrow(pair.&mut)
+    let _ = returnsCopy(1)

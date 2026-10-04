@@ -1,14 +1,16 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
-use rayc_hash::FxHashMap;
+use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::effect_row::get_effect_row;
+use rayc_semantic_element::{
+    effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
+};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::{Ty, application::ClosureID};
 
 use crate::{
-    address::Address,
+    address::{Address, Local},
     cfg::{
         BlockID, Cfg, ControlFlowEdge, Instruction, InstructionInsertion, Point, Reachables,
         Terminator,
@@ -16,7 +18,7 @@ use crate::{
     dataflow::{DataflowProblem, DataflowSolution, solve},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
     ir_lambda::{
-        Capture, CaptureID, CaptureMap, CaptureMapID, CaptureMode, IRLambdaContext, IRThunkContext,
+        Capture, CaptureID, CaptureMap, CaptureMapID, IRLambdaContext, IRThunkContext,
         LambdaParameter, LambdaParameterID,
     },
     ir_operation_handler::{
@@ -138,6 +140,45 @@ impl IRFunctionMap {
         self.functions.iter()
     }
 
+    /// Returns every IR function of the source def, each after the nested
+    /// functions it creates: a closure body comes before the function whose
+    /// closure expression creates it, and a handled body and its operation
+    /// handlers come before the function of their `handle`.
+    ///
+    /// Otherwise, the order is not stable.
+    #[must_use]
+    pub fn functions_innermost_first(&self) -> Vec<FunctionID> {
+        let mut order = Vec::with_capacity(self.functions.len());
+        let mut visited = FxHashSet::default();
+
+        // Walk the functions each function creates before the function
+        // itself. Starting from every function covers the ones that no
+        // expression creates, which is only the definition function in valid
+        // IR.
+        for (start, _) in self.functions() {
+            let mut pending = vec![(start, false)];
+
+            while let Some((function_id, is_expanded)) = pending.pop() {
+                if is_expanded {
+                    order.push(function_id);
+                    continue;
+                }
+                if !visited.insert(function_id) {
+                    continue;
+                }
+
+                pending.push((function_id, true));
+                pending.extend(
+                    self.get_function(function_id)
+                        .created_functions()
+                        .map(|created| (created, false)),
+                );
+            }
+        }
+
+        order
+    }
+
     #[must_use]
     pub fn insert_lambda(
         &mut self,
@@ -165,12 +206,14 @@ impl IRFunctionMap {
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
+        engine: &TrackedEngine,
     ) -> FunctionID {
         self.functions.insert(IRFunction::new_operation_handler(
             operation,
             return_ty,
             effect,
             capture_map,
+            engine,
         ))
     }
 
@@ -203,6 +246,11 @@ impl IRFunctionMap {
             .get_mut(capture_map_id)
             .expect("IR capture map should exist")
             .insert_capture(capture)
+    }
+
+    #[must_use]
+    pub fn get_capture_map(&self, capture_map_id: CaptureMapID) -> &CaptureMap {
+        self.capture_maps.get(capture_map_id).expect("IR capture map should exist")
     }
 
     #[must_use]
@@ -322,7 +370,20 @@ impl IRFunctionMap {
         ty: Interned<Ty>,
         span: RelativeSpan,
     ) -> IRVariableID {
-        self.get_function_mut(function_id).create_variable_in_scope(scope_id, ty, span)
+        self.get_function_mut(function_id).create_variable_in_scope(scope_id, ty, span, false)
+    }
+
+    /// Creates a temporary in `scope_id`: a variable which gives a place to a
+    /// computed value, rather than a binding declared in the source.
+    #[must_use]
+    pub fn create_temporary_in_scope(
+        &mut self,
+        function_id: FunctionID,
+        scope_id: ScopeID,
+        ty: Interned<Ty>,
+        span: RelativeSpan,
+    ) -> IRVariableID {
+        self.get_function_mut(function_id).create_variable_in_scope(scope_id, ty, span, true)
     }
 
     pub fn push_expression(
@@ -495,6 +556,82 @@ impl IRContext {
         }
     }
 
+    /// Returns the return type of a function of this context, which belongs
+    /// to the definition `def_id`.
+    ///
+    /// The definition function takes the return type declared in the
+    /// definition's signature, while a nested function stores its own.
+    pub async fn return_ty(&self, def_id: GlobalSymbolID, engine: &TrackedEngine) -> Interned<Ty> {
+        match self.nested_return_ty() {
+            Some(return_ty) => return_ty.clone(),
+            None => engine.get_return_type(def_id).await,
+        }
+    }
+
+    /// Returns the parameters of a function of this context, which belongs
+    /// to the definition `def_id`, in declaration order.
+    ///
+    /// The definition function takes the parameters declared in the
+    /// definition's signature, while a nested function stores its own.
+    pub async fn parameter_locals(
+        &self,
+        def_id: GlobalSymbolID,
+        engine: &TrackedEngine,
+    ) -> Vec<Local> {
+        match self {
+            Self::Def => {
+                let parameters = engine.get_parameter_map(def_id).await;
+                parameters.iter().map(|(parameter_id, _)| Local::Parameter(parameter_id)).collect()
+            }
+            Self::Lambda(context) => context
+                .parameters()
+                .map(|(parameter_id, _)| Local::LambdaParameter(parameter_id))
+                .collect(),
+            Self::Thunk(_) => Vec::new(),
+            Self::OperationHandler(context) => context
+                .parameters()
+                .map(|(parameter_id, _)| Local::OperationHandlerParameter(parameter_id))
+                .collect(),
+        }
+    }
+
+    /// Returns whether a function of this context borrows its captures
+    /// rather than owning them.
+    ///
+    /// An operation handler may run many times over one environment, which
+    /// the function creating it drops after the handled body.
+    #[must_use]
+    pub const fn borrows_captures(&self) -> bool {
+        match self {
+            Self::OperationHandler(_) => true,
+            Self::Def | Self::Lambda(_) | Self::Thunk(_) => false,
+        }
+    }
+
+    /// Returns the lifetime that a run of a function of this context borrows
+    /// the environment holding its captures for, or `None` for a function
+    /// that owns its captures, or has none; see
+    /// [`IROperationHandlerContext::environment_lifetime`].
+    #[must_use]
+    pub const fn environment_lifetime(&self) -> Option<&Interned<Ty>> {
+        match self {
+            Self::OperationHandler(context) => Some(context.environment_lifetime()),
+            Self::Def | Self::Lambda(_) | Self::Thunk(_) => None,
+        }
+    }
+
+    /// Returns the return type stored by a nested function context, or
+    /// `None` for a def context, whose return type is declared by the
+    /// definition.
+    const fn nested_return_ty(&self) -> Option<&Interned<Ty>> {
+        match self {
+            Self::Def => None,
+            Self::Lambda(context) => Some(context.return_ty()),
+            Self::Thunk(context) => Some(context.return_ty()),
+            Self::OperationHandler(context) => Some(context.return_ty()),
+        }
+    }
+
     /// Returns the capture layout of a nested function context, or `None`
     /// for a def context.
     const fn nested_capture_map(&self) -> Option<CaptureMapID> {
@@ -564,6 +701,7 @@ impl IRFunction {
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
+        engine: &TrackedEngine,
     ) -> Self {
         Self {
             cfg: Cfg::default(),
@@ -575,12 +713,48 @@ impl IRFunction {
                 return_ty,
                 effect,
                 capture_map,
+                engine,
             )),
         }
     }
 
     #[must_use]
     pub const fn context(&self) -> &IRContext { &self.context }
+
+    /// Returns the lifetime that a run of this function borrows the
+    /// environment holding its captures for, when it does not own them; see
+    /// [`IRContext::environment_lifetime`].
+    #[must_use]
+    pub const fn environment_lifetime(&self) -> Option<&Interned<Ty>> {
+        self.context.environment_lifetime()
+    }
+
+    /// Iterates over the nested functions the expressions of this function
+    /// create, in unspecified order; see [`IRExprKind::created_functions`].
+    ///
+    /// [`IRExprKind::created_functions`]: crate::ir_expr::IRExprKind::created_functions
+    pub fn created_functions(&self) -> impl Iterator<Item = FunctionID> + '_ {
+        self.expression_map
+            .expressions()
+            .flat_map(|(_, expression)| expression.kind().created_functions())
+    }
+
+    /// Returns the parameters of this function, which belongs to the
+    /// definition `def_id`, in declaration order; see
+    /// [`IRContext::parameter_locals`].
+    pub async fn parameter_locals(
+        &self,
+        def_id: GlobalSymbolID,
+        engine: &TrackedEngine,
+    ) -> Vec<Local> {
+        self.context.parameter_locals(def_id, engine).await
+    }
+
+    /// Returns the return type of this function, which belongs to the
+    /// definition `def_id`; see [`IRContext::return_ty`].
+    pub async fn return_ty(&self, def_id: GlobalSymbolID, engine: &TrackedEngine) -> Interned<Ty> {
+        self.context.return_ty(def_id, engine).await
+    }
 
     #[must_use]
     pub fn insert_lambda_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
@@ -655,8 +829,9 @@ impl IRFunction {
         scope_id: ScopeID,
         ty: Interned<Ty>,
         span: RelativeSpan,
+        is_temporary: bool,
     ) -> IRVariableID {
-        let variable_id = self.variable_map.insert_variable(ty, span, scope_id);
+        let variable_id = self.variable_map.insert_variable(ty, span, scope_id, is_temporary);
         self.scope_map.register_variable(scope_id, variable_id);
         variable_id
     }
@@ -761,6 +936,43 @@ impl IRFunction {
         self.cfg.terminator(block_id)
     }
 
+    /// Returns the point that stands for the terminator of `block_id`: one
+    /// past its last instruction.
+    #[must_use]
+    pub fn terminator_point(&self, block_id: BlockID) -> Point {
+        Point::builder()
+            .block_id(block_id)
+            .instruction_idx(self.cfg.instructions(block_id).len())
+            .build()
+    }
+
+    /// Returns the source of the instruction or terminator at `point`, or
+    /// `None` for one that has no source of its own: a scope instruction, a
+    /// jump, or a bare return.
+    #[must_use]
+    pub fn point_span(&self, point: Point) -> Option<RelativeSpan> {
+        let Some(instruction) =
+            self.block_instructions(point.block_id()).get(point.instruction_idx())
+        else {
+            return self
+                .block_terminator(point.block_id())
+                .and_then(Terminator::used_value)
+                .map(|value| self.get_expression(value).span());
+        };
+
+        match instruction {
+            Instruction::Expression(expression_id) => {
+                Some(self.get_expression(*expression_id).span())
+            }
+            Instruction::Store(store) => Some(store.span()),
+            Instruction::ExprDiscard(discard) => {
+                Some(self.get_expression(discard.expression()).span())
+            }
+            Instruction::AddressDrop(drop) => Some(drop.span()),
+            Instruction::ScopePush(_) | Instruction::ScopePop(_) => None,
+        }
+    }
+
     /// Iterates over blocks that do not have a terminator.
     pub fn unterminated_blocks(&self) -> impl Iterator<Item = BlockID> + '_ {
         self.cfg.unterminated_blocks()
@@ -853,69 +1065,6 @@ impl VisitType for IRContext {
             Self::Lambda(context) => context.visit_types(site, visitor),
             Self::Thunk(context) => context.visit_types(site, visitor),
             Self::OperationHandler(context) => context.visit_types(site, visitor),
-        }
-    }
-}
-
-impl VisitType for IRThunkContext {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        visitor.visit_type(self.return_ty(), site);
-        visitor.visit_type(self.effect(), site);
-    }
-}
-
-impl VisitType for IROperationHandlerContext {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        for (_, parameter) in self.parameters() {
-            parameter.visit_types(site, visitor);
-        }
-        visitor.visit_type(self.return_ty(), site);
-        visitor.visit_type(self.effect(), site);
-    }
-}
-
-impl VisitType for IRLambdaContext {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        for (_, parameter) in self.parameters() {
-            parameter.visit_types(site, visitor);
-        }
-        visitor.visit_type(self.return_ty(), site);
-        visitor.visit_type(self.effect(), site);
-    }
-}
-
-impl VisitType for LambdaParameter {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        visitor.visit_type(self.ty(), site);
-    }
-}
-
-impl VisitType for OperationHandlerParameter {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        visitor.visit_type(self.ty(), site);
-    }
-}
-
-impl VisitType for Capture {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        visitor.visit_type(self.binding_ty(), site);
-        self.mode().visit_types(site, visitor);
-    }
-}
-
-impl VisitType for CaptureMode {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        match self {
-            Self::Value(_) => {}
-            Self::Reference { lifetime, .. } => visitor.visit_type(lifetime, site),
-        }
-    }
-}
-
-impl VisitType for CaptureMap {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        for (_, capture) in self.iter() {
-            capture.visit_types(site, visitor);
         }
     }
 }

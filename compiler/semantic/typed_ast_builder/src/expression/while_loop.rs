@@ -19,7 +19,7 @@ impl Bind<WhileSyntax> for TAstBuilder {
         // are valid.
         self.enter_statement_block(true);
         if let Some(block) = syn.block() {
-            for statement in block.statements() {
+            for statement in block.statements().filter_map(rayc_syntax::Passable::into_option) {
                 Box::pin(self.bind_statement(&statement)).await;
             }
         }

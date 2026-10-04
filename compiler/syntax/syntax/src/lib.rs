@@ -75,6 +75,17 @@ abstract_tree::abstract_tree! {
     }
 }
 
+impl<T: AbstractTree> Passable<T> {
+    /// Returns the inner syntax tree, or [`None`] if this is a `pass`.
+    #[must_use]
+    pub fn into_option(self) -> Option<T> {
+        match self {
+            Self::Ast(ast) => Some(ast),
+            Self::Pass(_) => None,
+        }
+    }
+}
+
 /// Query for parsing a token tree from the given source file path.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query)]
 #[value(Result<

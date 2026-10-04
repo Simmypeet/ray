@@ -9,7 +9,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_name};
 
 use crate::{
-    constraint::outlives::{OutlivesConstraint, OutlivesConstraints},
+    constraint::outlives::OutlivesConstraints,
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVarMap, get_poly_var_map},
     reduce::Reduce,
     rewrite::{RewriteAsync, TyRewriterAsync},
@@ -19,9 +19,10 @@ use crate::{
         args::Args,
         effect_row::EffectRow,
         inference::{GenInfer, Inference},
-        lifetime::{Lifetime, RegionID},
+        lifetime::{ExternalRegionID, Lifetime, RegionID},
     },
     variance::Variance,
+    where_clause::OutlivesPredicate,
 };
 
 pub mod application;
@@ -121,6 +122,15 @@ impl Mutability {
         match self {
             Self::Immutable => true,
             Self::Mutable => false,
+        }
+    }
+
+    /// Returns how this mutability is named in diagnostics.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Immutable => "immutable",
+            Self::Mutable => "mutable",
         }
     }
 
@@ -375,14 +385,20 @@ impl Ty {
         self.kind_of(engine).await == TyKind::Lifetime
     }
 
-    /// Returns whether this type is a universal lifetime: `'static`, a
-    /// lifetime parameter or an external lifetime, a region which the
-    /// function mentioning it does not choose, but is given; see
+    /// Returns whether this type, which the caller knows to be of kind
+    /// [`TyKind::Lifetime`], is a universal lifetime: `'static`, a lifetime
+    /// parameter or an external lifetime, a region which the function
+    /// mentioning it does not choose, but is given; see
     /// [`Lifetime::is_universal`].
-    pub async fn is_universal_lifetime(&self, engine: &TrackedEngine) -> bool {
+    ///
+    /// A parameter of kind lifetime is a lifetime parameter, so its kind is
+    /// not looked up. For a type of another kind, the answer is meaningless:
+    /// check [`Self::is_lifetime`] first when the kind is not known.
+    #[must_use]
+    pub const fn is_universal_region(&self) -> bool {
         match self {
             Self::Lifetime(lifetime) => lifetime.is_universal(),
-            Self::PolyVar(_) => self.is_lifetime(engine).await,
+            Self::PolyVar(_) => true,
             Self::Application(_)
             | Self::Inference(_)
             | Self::SelfInstance(_)
@@ -404,6 +420,31 @@ impl Ty {
         right: &Interned<Self>,
         engine: &TrackedEngine,
     ) -> Option<OutlivesConstraints> {
+        let lifetimes = Self::corresponding_lifetimes(left, right, engine).await?;
+
+        Some(
+            lifetimes
+                .iter()
+                .flat_map(|(left, right)| {
+                    OutlivesPredicate::from_relation(left, right, Variance::Invariant)
+                })
+                .collect(),
+        )
+    }
+
+    /// Pairs each lifetime of `left` with the lifetime at the same position
+    /// in `right`, when the two types are equal up to their lifetimes; see
+    /// [`Self::equal_modulo_lifetimes`].
+    ///
+    /// Returns `None` if they are not equal. Otherwise, returns the pairs
+    /// whose lifetimes differ, in unspecified order, the lifetime of `left`
+    /// first. A position where both types have the same lifetime has no
+    /// pair.
+    pub async fn corresponding_lifetimes(
+        left: &Interned<Self>,
+        right: &Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Option<Vec<(Interned<Self>, Interned<Self>)>> {
         let mut lifetimes = Vec::new();
         let mut pending = vec![(left.clone(), right.clone())];
 
@@ -452,14 +493,7 @@ impl Ty {
             }
         }
 
-        Some(
-            lifetimes
-                .iter()
-                .flat_map(|(left, right)| {
-                    OutlivesConstraint::from_relation(left, right, Variance::Invariant)
-                })
-                .collect(),
-        )
+        Some(lifetimes)
     }
 
     #[must_use]
@@ -1267,6 +1301,26 @@ impl Ty {
     #[must_use]
     pub const fn as_region(&self) -> Option<RegionID> {
         if let Self::Lifetime(Lifetime::Region(region)) = self { Some(*region) } else { None }
+    }
+
+    /// Returns whether this type is the `'static` lifetime.
+    #[must_use]
+    pub const fn is_static_lifetime(&self) -> bool {
+        matches!(self, Self::Lifetime(Lifetime::Static))
+    }
+
+    /// Returns whether this type is an external lifetime; see
+    /// [`Lifetime::External`].
+    #[must_use]
+    pub const fn is_external_lifetime(&self) -> bool {
+        matches!(self, Self::Lifetime(Lifetime::External(_)))
+    }
+
+    /// Returns the external lifetime this type is, if it is one; see
+    /// [`Lifetime::External`].
+    #[must_use]
+    pub const fn as_external_region(&self) -> Option<ExternalRegionID> {
+        if let Self::Lifetime(Lifetime::External(external)) = self { Some(*external) } else { None }
     }
 
     #[must_use]

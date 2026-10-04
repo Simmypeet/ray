@@ -23,6 +23,13 @@ pub struct IRVariable {
     /// The position of this variable among its function's variables, in the
     /// order they were declared. Later declarations are dropped first.
     declaration_order: usize,
+
+    /// Whether the variable is a temporary, which gives a place to a computed
+    /// value, rather than a binding declared in the source.
+    ///
+    /// This doesn't have significant semantic meaning, but it can be used to
+    /// provide better diagnostics.
+    is_temporary: bool,
 }
 
 impl IRVariable {
@@ -37,6 +44,11 @@ impl IRVariable {
 
     #[must_use]
     pub const fn declaration_order(&self) -> usize { self.declaration_order }
+
+    /// Returns whether the variable is a temporary, which gives a place to a
+    /// computed value, rather than a binding declared in the source.
+    #[must_use]
+    pub const fn is_temporary(&self) -> bool { self.is_temporary }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
@@ -52,9 +64,10 @@ impl IRVariableMap {
         ty: Interned<Ty>,
         span: RelativeSpan,
         scope_id: ScopeID,
+        is_temporary: bool,
     ) -> IRVariableID {
         let declaration_order = self.variables.len();
-        self.variables.insert(IRVariable { ty, span, scope_id, declaration_order })
+        self.variables.insert(IRVariable { ty, span, scope_id, declaration_order, is_temporary })
     }
 
     #[must_use]

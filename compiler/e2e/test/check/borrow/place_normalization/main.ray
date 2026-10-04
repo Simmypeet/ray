@@ -1,0 +1,59 @@
+trait Source[t]:
+    type Item['x]
+
+
+def reborrowed['a, 'b](item: s.Item['a]) given (s: Source[int32]) -> &'b int32 where (
+    s.Item['b] = &'b int32,
+):
+    # ERROR: `item` is only known to be a reference through the equality of
+    # `s.Item['b]`, which applies to `s.Item['a]` when `'a` and `'b` are the
+    # same lifetime.
+    return item.*.&
+
+
+def reborrowedEqualLifetimes['a, 'b](item: s.Item['a]) given (s: Source[int32]) -> &'b int32 where (
+    s.Item['b] = &'b int32,
+    'a: 'b,
+    'b: 'a,
+):
+    # OK: `'a` and `'b` outlive each other, so they are the same lifetime.
+    return item.*.&
+
+
+def reborrowedSameLifetime['b](item: s.Item['b]) given (s: Source[int32]) -> &'b int32 where (
+    s.Item['b] = &'b int32,
+):
+    # OK: the equality is about the type of `item` itself.
+    return item.*.&
+
+
+def loaded['a, 'b](item: s.Item['a]) given (s: Source[int32]) -> &'b int32 where (
+    s.Item['b] = &'b &'b int32,
+):
+    # ERROR: the inner reference is read out of `item` as a `&'b &'b int32`.
+    return item.*
+
+
+def loadedSameLifetime['b](item: s.Item['b]) given (s: Source[int32]) -> &'b int32 where (
+    s.Item['b] = &'b &'b int32,
+):
+    # OK: the equality is about the type of `item` itself.
+    return item.*
+
+
+def stored['a, 'b](item: s.Item['a], value: &'b int32) given (s: Source[int32]) where (
+    s.Item['b] = &'b mut &'b int32,
+):
+    # ERROR: the value is written through `item` as a `&'b mut &'b int32`.
+    item.* = value
+
+
+def storedSameLifetime['b](item: s.Item['b], value: &'b int32) given (s: Source[int32]) where (
+    s.Item['b] = &'b mut &'b int32,
+):
+    # OK: the equality is about the type of `item` itself.
+    item.* = value
+
+
+def main():
+    pass

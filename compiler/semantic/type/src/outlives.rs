@@ -44,14 +44,11 @@ pub enum OutlivesComponent {
     /// component, because it outlives every lifetime.
     Region(Interned<Ty>),
 
-    /// A polymorphic variable of kind `Star`, `EffectRow` or `Instance`, or
-    /// the rigid `this` dictionary. Whether it outlives a lifetime can only
-    /// come from an assumption.
-    Param(Interned<Ty>),
-
-    /// A rigid associated-type projection. It outlives a lifetime when an
-    /// assumption says so, or when everything it projects from does.
-    Projection(Interned<Ty>),
+    /// A type that cannot be decomposed any further: a polymorphic variable of
+    /// kind `Star`, `EffectRow` or `Instance`, the rigid `this` dictionary, or
+    /// a rigid associated-type projection. Whether it outlives a lifetime can
+    /// only come from an assumption.
+    Opaque(Interned<Ty>),
 }
 
 impl OutlivesComponent {
@@ -59,7 +56,7 @@ impl OutlivesComponent {
     #[must_use]
     pub const fn ty(&self) -> &Interned<Ty> {
         match self {
-            Self::Region(ty) | Self::Param(ty) | Self::Projection(ty) => ty,
+            Self::Region(ty) | Self::Opaque(ty) => ty,
         }
     }
 }
@@ -92,12 +89,12 @@ impl Ty {
                 Self::PolyVar(_) => match ty.kind_of(engine).await {
                     TyKind::Lifetime => components.push(OutlivesComponent::Region(ty.clone())),
                     TyKind::Instance | TyKind::Star | TyKind::EffectRow => {
-                        components.push(OutlivesComponent::Param(ty.clone()));
+                        components.push(OutlivesComponent::Opaque(ty.clone()));
                     }
                 },
                 Self::Application(application) => {
                     if application.is_outlives_projection() {
-                        components.push(OutlivesComponent::Projection(ty.clone()));
+                        components.push(OutlivesComponent::Opaque(ty.clone()));
                     } else {
                         pending.extend(application.interned_iter().cloned());
                     }
@@ -105,7 +102,7 @@ impl Ty {
                 Self::EffectRow(row) => {
                     pending.extend(row.interned_iter().cloned());
                 }
-                Self::SelfInstance(_) => components.push(OutlivesComponent::Param(ty.clone())),
+                Self::SelfInstance(_) => components.push(OutlivesComponent::Opaque(ty.clone())),
                 Self::Inference(_) => {}
             }
         }

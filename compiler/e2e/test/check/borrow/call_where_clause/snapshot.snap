@@ -1,0 +1,20 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/call_where_clause/main.ray:22:5
+   │
+21 │     let q = shorten(x.&)
+   │                     ─── immutable borrow occurs here
+22 │     x = x + 1           # <-- Expect an error here: `'a: 'b` keeps `x` borrowed.
+   │     ━━━━━━━━━ the borrowed place is assigned here
+23 │     consume(q.*)
+   ╰╴            ─── borrow later used here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

@@ -1,0 +1,24 @@
+def identity(x: &'a mut int32) -> &'a mut int32:
+    return x
+
+# A dereferenced call result is held in a temporary, which goes out of scope
+# at the end of the statement. Only the pointer is stored there: the memory it
+# points to is not part of the temporary.
+
+def reborrowPastStatement():
+    let mut x = 1
+    # OK: `unique` borrows the memory behind the temporary pointer, which
+    # outlives the statement.
+    let unique = identity(x.&mut).*.&mut
+    unique.* = 2
+
+def reborrowKeepsOriginalBorrowed():
+    let mut x = 1
+    let unique = identity(x.&mut).*.&mut
+    # ERROR: `unique` still borrows `x`, through the temporary pointer.
+    x = 3
+    unique.* = 2
+
+def main():
+    reborrowPastStatement()
+    reborrowKeepsOriginalBorrowed()

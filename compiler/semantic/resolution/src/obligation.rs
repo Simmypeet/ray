@@ -6,9 +6,7 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_qualified_name, source_map::to_absolute_span};
 use rayc_type::{
-    constraint::{
-        instance_trait_ref::InstanceTraitRef, outlives::OutlivesConstraint, ty_relate::TyRelate,
-    },
+    constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
     subst::{Subst, Substitutable},
     ty::Ty,
     where_clause::{MarkerPredicate, OutlivesPredicate, PredicateKind, get_where_clause},
@@ -187,8 +185,8 @@ impl PredicateObligation {
                 format!("`{implementor}` must satisfy marker `{marker}`")
             }
             PredicateKind::Outlives(predicate) => {
-                let subject = predicate.subject().display(engine).await;
-                let bound = predicate.bound().display(engine).await;
+                let subject = predicate.lesser().display(engine).await;
+                let bound = predicate.greater().display(engine).await;
                 format!("`{subject}` must outlive `{bound}`")
             }
         }
@@ -308,28 +306,28 @@ impl RelationOrigin {
     }
 }
 
-/// An outlives constraint that relating the types of an obligation requires,
-/// which the outlives facts at the site do not entail.
+/// An outlives predicate between two lifetimes that relating the types of an
+/// obligation requires, which the outlives facts at the site do not entail.
 ///
 /// Lifetimes never decide whether two types relate, so such a relation
 /// succeeds and reports the lifetimes it could not prove separately.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnsatisfiedRelationOutlives {
-    constraint: OutlivesConstraint,
+    predicate: OutlivesPredicate,
     origin: RelationOrigin,
 }
 
 impl UnsatisfiedRelationOutlives {
     #[must_use]
-    pub const fn new(constraint: OutlivesConstraint, origin: RelationOrigin) -> Self {
-        Self { constraint, origin }
+    pub const fn new(predicate: OutlivesPredicate, origin: RelationOrigin) -> Self {
+        Self { predicate, origin }
     }
 }
 
 impl Report for UnsatisfiedRelationOutlives {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        let lesser = self.constraint.lesser().display(engine).await;
-        let greater = self.constraint.greater().display(engine).await;
+        let lesser = self.predicate.lesser().display(engine).await;
+        let greater = self.predicate.greater().display(engine).await;
 
         Rendered::builder()
             .message(format!("lifetime `{lesser}` does not outlive `{greater}`"))

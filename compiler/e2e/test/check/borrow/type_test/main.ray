@@ -1,0 +1,113 @@
+# Gives back `anchor`, and requires `t: 'a` of its callers.
+def pick['a, t](anchor: &'a int32, value: &t) -> &'a int32 where (t: 'a):
+    return anchor
+
+
+def undeclared['a, t](anchor: &'a int32, value: &t) -> &'a int32:
+    # ERROR: the result is returned as a `&'a int32`, and nothing states
+    # `t: 'a`.
+    return pick(anchor, value)
+
+
+def declared['a, t](anchor: &'a int32, value: &t) -> &'a int32 where (t: 'a):
+    # OK: the where clause states `t: 'a`.
+    return pick(anchor, value)
+
+
+def implied['a, t](anchor: &'a int32, value: &'a t) -> &'a int32:
+    # OK: `&'a t` being well-formed implies `t: 'a`.
+    return pick(anchor, value)
+
+
+def throughLonger['a, 'b, t](anchor: &'b int32, value: &t) -> &'b int32 where (t: 'a, 'a: 'b):
+    # OK: `t: 'a` and `'a: 'b` give `t: 'b`.
+    return pick(anchor, value)
+
+
+def notReturned['a, t](anchor: &'a int32, value: &t) -> int32:
+    # OK: the lifetime `pick` is called with need not outlive `'a`, and any
+    # type is valid for a lifetime within the body.
+    let picked = pick(anchor, value)
+    return picked.*
+
+
+def returnedLater['a, t](anchor: &'a int32, value: &t) -> &'a int32:
+    # ERROR: the call requires `t` to outlive the lifetime of `picked`, which
+    # the `return` requires to outlive `'a`.
+    let picked = pick(anchor, value)
+    return picked
+
+
+def needsStatic[t](value: &t) where (t: 'static):
+    pass
+
+
+def notStatic[t](value: &t):
+    # ERROR: nothing states `t: 'static`.
+    needsStatic(value)
+
+
+def isStatic[t](value: &t) where (t: 'static):
+    # OK: the where clause states `t: 'static`.
+    needsStatic(value)
+
+
+struct Tagged['a, 'b, t] where (t: 'a):
+    anchor: &'a int32
+    value: &'b t
+
+
+def initialized['a, 'b, t](anchor: &'a int32, value: &'b t) -> &'a int32:
+    # ERROR: the where clause of `Tagged` requires `t: 'a`.
+    let tagged = Tagged{anchor=anchor, value=value}
+    return tagged.anchor
+
+
+def initializedBounded['a, 'b, t](anchor: &'a int32, value: &'b t) -> &'a int32 where (t: 'a):
+    # OK: the where clause states `t: 'a`.
+    let tagged = Tagged{anchor=anchor, value=value}
+    return tagged.anchor
+
+
+trait Source[t]:
+    type Item['x]
+
+
+# Gives back `anchor`, and requires `s.Item['x]: 'a` of its callers.
+def pickItem['a, 'x](anchor: &'a int32, item: &s.Item['x]) given (s: Source[int32]) -> &'a int32 where (
+    s.Item['x]: 'a,
+):
+    return anchor
+
+
+def projectionUndeclared['a, 'x](anchor: &'a int32, item: &s.Item['x]) given (
+    s: Source[int32],
+) -> &'a int32:
+    # ERROR: nothing states `s.Item['x]: 'a`.
+    return pickItem(anchor, item)
+
+
+def projectionDeclared['a, 'x](anchor: &'a int32, item: &s.Item['x]) given (
+    s: Source[int32],
+) -> &'a int32 where (s.Item['x]: 'a):
+    # OK: passing `item` makes the lifetime argument of the projection `'x`,
+    # which the where clause is about.
+    return pickItem(anchor, item)
+
+
+def projectionOtherLifetime['a, 'x, 'y](anchor: &'a int32, item: &s.Item['x]) given (
+    s: Source[int32],
+) -> &'a int32 where (s.Item['y]: 'a):
+    # ERROR: the where clause is about `s.Item['y]`, which is another type.
+    return pickItem(anchor, item)
+
+
+def projectionEqualLifetimes['a, 'x, 'y](anchor: &'a int32, item: &s.Item['x]) given (
+    s: Source[int32],
+) -> &'a int32 where (s.Item['y]: 'a, 'x: 'y, 'y: 'x):
+    # OK: `'x` and `'y` outlive each other, so they are the same lifetime.
+    return pickItem(anchor, item)
+
+
+def main():
+    pass

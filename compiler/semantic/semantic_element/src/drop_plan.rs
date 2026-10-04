@@ -108,6 +108,19 @@ pub enum DropPlan {
     CannotDerive(DropPlanError),
 }
 
+impl DropPlan {
+    /// Returns whether the struct is dropped by a `Drop` instance declared
+    /// for it in source, which may use anything a value of the struct can
+    /// reach, rather than by dropping its fields one by one.
+    #[must_use]
+    pub const fn is_explicit(&self) -> bool {
+        match self {
+            Self::Explicit(_) => true,
+            Self::Linear | Self::Generated(_) | Self::CannotDerive(_) => false,
+        }
+    }
+}
+
 /// Computes all nominal plans in a target together, allowing recursive
 /// constructors to reach a common fixed point without recursive query calls.
 #[derive(

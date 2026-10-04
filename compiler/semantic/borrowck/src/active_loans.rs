@@ -1,26 +1,6 @@
-//! The loans active at each point of an IR function.
-//!
-//! A loan is active at a point when its borrow happened on some path to the
-//! point and nothing has ended it since. Each access to a place is checked
-//! against the loans active just before it.
-//!
-//! This is a forward gen/kill dataflow problem over sets of loans, joined by
-//! union. The instruction at a point takes effect in two steps:
-//!
-//! 1. The loans that are not [live](crate::live_loans) at the point are killed:
-//!    nothing uses them afterwards, so they no longer restrict access to their
-//!    places. This is what makes a borrow end at its last use rather than at
-//!    the end of its lexical scope.
-//! 2. The instruction's own effect applies:
-//!    - a store kills the loans of every place within the place it overwrites,
-//!      so `x = ..` ends the loans of `x` and `x.0`, while `x.0 = ..` ends
-//!      neither the loans of `x` nor those of `x.1`;
-//!    - the end of a scope kills the loans of the places in its variables,
-//!      whose storage is gone;
-//!    - a borrow gens its loan, which is active after the borrow.
-//!
-//! The loans an instruction's accesses are checked against are those after
-//! the first step.
+//! The loans active at each point of an IR function: those borrowed on some
+//! path to the point that nothing has ended since. A forward gen/kill dataflow,
+//! where a loan is also killed once it is no longer live.
 
 use std::convert::Infallible;
 
@@ -188,8 +168,6 @@ pub struct LoanActivity<'a> {
 
 impl<'a> LoanActivity<'a> {
     /// Computes the loans active at each point of `function`.
-    ///
-    /// `constraints` and `live_loans` must describe `function`.
     pub async fn compute(
         function: &'a IRFunction,
         constraints: &'a LocalizedConstraints,
@@ -200,16 +178,13 @@ impl<'a> LoanActivity<'a> {
         Self { problem, solution }
     }
 
-    /// Walks `block_id` once from its solved entry fact, calling `visit` at
-    /// each of its points with the instruction there, or `None` for its
-    /// terminator, and the loans active just before it: the loans its
-    /// accesses are checked against.
-    ///
-    /// Does nothing for an unreachable block.
-    pub fn visit_block(
+    /// Calls `visit` at each point of `block_id` with the instruction there, or
+    /// `None` for the terminator, and the loans active just before it. Does
+    /// nothing for an unreachable block.
+    pub async fn visit_block(
         &self,
         block_id: BlockID,
-        mut visit: impl FnMut(Point, Option<&Instruction>, &ActiveLoans),
+        mut visit: impl AsyncFnMut(Point, Option<&Instruction>, &ActiveLoans),
     ) {
         let Some(entry) = self.solution.block_entry(block_id) else {
             return;
@@ -219,13 +194,13 @@ impl<'a> LoanActivity<'a> {
         let mut state = entry.clone();
         for (point, instruction) in problem.function.block_instructions_with_points(block_id) {
             problem.kill_dead_loans(point, &mut state);
-            visit(point, Some(instruction), &state);
+            visit(point, Some(instruction), &state).await;
             problem.apply_instruction(instruction, &mut state);
         }
 
         let terminator = problem.terminator_point(block_id);
         problem.kill_dead_loans(terminator, &mut state);
-        visit(terminator, None, &state);
+        visit(terminator, None, &state).await;
     }
 }
 

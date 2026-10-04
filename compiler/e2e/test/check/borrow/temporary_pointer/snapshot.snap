@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/temporary_pointer/main.ray:19:5
+   │
+17 │     let unique = identity(x.&mut).*.&mut
+   │                           ────── mutable borrow occurs here
+18 │     # ERROR: `unique` still borrows `x`, through the temporary pointer.
+19 │     x = 3
+   │     ━━━━━ the borrowed place is assigned here
+20 │     unique.* = 2
+   ╰╴    ──────────── borrow later used here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

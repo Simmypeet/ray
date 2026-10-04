@@ -1,6 +1,10 @@
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::subst::Subst;
+use rayc_type::{
+    subst::Subst,
+    ty::{Ty, effect_row::EffectLabel},
+};
 
 use crate::{
     ir_expr::IRExprID,
@@ -41,6 +45,14 @@ impl Perform {
 
     #[must_use]
     pub const fn substitution(&self) -> &Subst { &self.substitution }
+
+    /// Returns the effect row the `perform` introduces: the label of its
+    /// effect alone, instantiated with the substitution of the `perform`.
+    pub async fn effect_row(&self, engine: &TrackedEngine) -> Interned<Ty> {
+        let label = EffectLabel::instantiated(self.effect_id, &self.substitution, engine).await;
+
+        Ty::new_effect_row([label], None, engine)
+    }
 }
 
 impl VisitType for Perform {

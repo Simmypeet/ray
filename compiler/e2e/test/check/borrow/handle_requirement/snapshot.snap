@@ -1,0 +1,117 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:17:12
+   │
+17 │       return run:
+   │ ┏━━━━━━━━━━━━┛
+18 │ ┃         Counter.tick()
+19 │ ┃         return x
+   │ ┃                ─ the value of lifetime `'a` flows in here
+20 │ ┃     with Counter:
+21 │ ┃         def tick():
+22 │ ┃             return 0
+   │ ┗━━━━━━━━━━━━━━━━━━━━┛ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:43:20
+   │
+43 │             return x
+   │                    ━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:62:13
+   │
+62 │             out.* = value
+   │             ━━━━━━━━━━━━━ this requires `'a` to outlive `'b`
+   │
+   ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:90:12
+   │
+90 │        return run:
+   │ ┏━━━━━━━━━━━━━┛
+91 │ ┃          return run:
+   │ ┃┌────────────────┘
+92 │ ┃│             return Source.get()
+93 │ ┃│         with Source['b]:
+94 │ ┃│             def get():
+95 │ ┃│                 return y
+   │ ┃└────────────────────────┘ the value of lifetime `'b` flows in here
+96 │ ┃      with Source['a]:
+97 │ ┃          def get():
+98 │ ┃              return x
+   │ ┗━━━━━━━━━━━━━━━━━━━━━┛ this requires `'b` to outlive `'a`
+   │
+   ╰ help: consider adding `'b: 'a` to the where clause
+
+[error]: lifetime may not live long enough
+    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:104:5
+    │
+104 │ ┏     run:
+105 │ ┃         Counter.tick()
+106 │ ┃     with Counter:
+107 │ ┃         def tick():
+108 │ ┃             Sink.put(x)
+    │ ┃             ─────────── the value of lifetime `'a` flows in here
+109 │ ┃             return 0
+    │ ┗━━━━━━━━━━━━━━━━━━━━┛ this requires `'a` to outlive `'b`
+    │
+    ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: the type `t` may not live long enough
+    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:115:12
+    │
+115 │       return run:
+    │ ┏━━━━━━━━━━━━┛
+116 │ ┃         return Anchor.anchor(witness).*
+117 │ ┃     with Anchor['a, 'w, t]:
+118 │ ┃         def anchor(witness):
+119 │ ┃             return x
+    │ ┗━━━━━━━━━━━━━━━━━━━━┛ this requires `t` to outlive `'a`
+    │
+    ╰ help: consider adding `t: 'a` to the where clause
+
+[error]: cannot assign to a place because it is borrowed
+    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:140:5
+    │
+135 │       let p = run:
+    │ ┌─────────────┘
+136 │ │         return Source.get()
+137 │ │     with Source:
+138 │ │         def get():
+139 │ │             return value.&
+    │ └──────────────────────────┘ immutable borrow occurs here, by a capture
+140 │       value = 42          # <-- Expect an error here: `p` borrows `value`.
+    │       ━━━━━━━━━━ the borrowed place is assigned here
+141 │       let read = p.*
+    ╰╴                 ─── borrow later used here
+
+[error]: borrowed value does not live long enough
+    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:170:9
+    │
+169 │           let b = 2
+    │               ─ this variable goes out of scope while it is still borrowed
+170 │ ┏         run:            # <-- Expect an error here: `kept` is used after `b`.
+171 │ ┃             Sink.put(b.&)
+172 │ ┃         with Sink:
+173 │ ┃             def put(value):
+174 │ ┃                 kept = value
+    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ borrowed value does not live long enough, by a capture
+175 │
+176 │       return read + copied + count + kept.*
+    ╰╴                                     ────── borrow later used here
+
+[error]: Compilation aborted due to 8 error(s)
+
+
+
+stdout:

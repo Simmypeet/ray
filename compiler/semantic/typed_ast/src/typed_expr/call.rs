@@ -32,7 +32,9 @@ pub enum CallTarget {
         trait_def_id: GlobalSymbolID,
 
         /// The substitution containing all the type parameters of the
-        /// [`trait_def_id`].
+        /// [`trait_def_id`], and nothing else: the parameters of its
+        /// enclosing trait and the trait's self dictionary are told by
+        /// `instance`.
         trait_def_subst: Subst,
     },
 
@@ -93,7 +95,11 @@ impl Call {
     pub fn arguments(&self) -> &[TypedExprID] { &self.arguments }
 
     /// The substitution instantiating the type parameters of the called
-    /// symbol, including those of its enclosing trait or effect.
+    /// symbol, including those of its enclosing effect for an operation.
+    ///
+    /// A call through an unresolved instance instantiates the parameters of
+    /// its trait def alone; the dictionary it dispatches through tells those
+    /// of the enclosing trait.
     #[must_use]
     pub const fn instantiation(&self) -> &Subst {
         match &self.target {

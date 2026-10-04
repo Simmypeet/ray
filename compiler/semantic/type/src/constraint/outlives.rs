@@ -2,7 +2,7 @@
 //! relating and reducing types.
 //!
 //! Relating two lifetimes never binds anything. Instead, it emits outlives
-//! constraints `lesser: greater`, which the borrow checker keeps and type
+//! predicates `lesser: greater`, which the borrow checker keeps and type
 //! inference drops; see [`OutlivesConstraints`].
 
 use qbice::{
@@ -17,45 +17,21 @@ use crate::{
     subst::{Subst, Substitutable},
     ty::{Ty, lifetime::Lifetime},
     variance::Variance,
+    where_clause::OutlivesPredicate,
 };
 
-/// The requirement that the lifetime `lesser` outlives the lifetime
-/// `greater`, as in `'lesser: 'greater`.
-///
-/// The names follow [`TyRelate`](crate::constraint::ty_relate::TyRelate): a
-/// lifetime that outlives another is its subtype, so `'lesser: 'greater`
-/// holds exactly when `'lesser <: 'greater`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub struct OutlivesConstraint {
-    lesser: Interned<Ty>,
-    greater: Interned<Ty>,
-}
-
-impl OutlivesConstraint {
-    /// Creates the constraint `lesser: greater`. Both must be of kind
-    /// [`TyKind::Lifetime`](crate::ty::TyKind::Lifetime).
-    #[must_use]
-    pub const fn new(lesser: Interned<Ty>, greater: Interned<Ty>) -> Self {
-        Self { lesser, greater }
-    }
-
-    /// Returns the lifetime that must outlive the other one.
-    #[must_use]
-    pub const fn lesser(&self) -> &Interned<Ty> { &self.lesser }
-
-    /// Returns the lifetime that the other one must outlive.
-    #[must_use]
-    pub const fn greater(&self) -> &Interned<Ty> { &self.greater }
-
-    /// Returns the constraints that relating the lifetime `lesser` to the
+impl OutlivesPredicate {
+    /// Returns the predicates that relating the lifetime `lesser` to the
     /// lifetime `greater` with `variance` requires.
     ///
-    /// Covariant `'a <: 'b` requires `'a: 'b`, contravariant requires
-    /// `'b: 'a`, invariant requires both, and bivariant requires nothing.
-    /// Constraints that always hold are left out: those between a lifetime
-    /// and itself, those whose lesser lifetime is `'static`, and those that
-    /// mention an erased lifetime or an error, since erased lifetimes are
-    /// checked on the IR and errors were already reported.
+    /// A lifetime that outlives another is its subtype, so `'lesser <:
+    /// 'greater` holds exactly when `'lesser: 'greater`. Covariant `'a <: 'b`
+    /// requires `'a: 'b`, contravariant requires `'b: 'a`, invariant requires
+    /// both, and bivariant requires nothing. Predicates that always hold are
+    /// left out: those between a lifetime and itself, those whose lesser
+    /// lifetime is `'static`, and those that mention an erased lifetime or
+    /// an error, since erased lifetimes are checked on the IR and errors
+    /// were already reported.
     pub fn from_relation(
         lesser: &Interned<Ty>,
         greater: &Interned<Ty>,
@@ -71,37 +47,25 @@ impl OutlivesConstraint {
         let forward = forward.then(|| Self::new(lesser.clone(), greater.clone()));
         let backward = backward.then(|| Self::new(greater.clone(), lesser.clone()));
 
-        forward.into_iter().chain(backward).filter(|constraint| !constraint.is_trivial())
+        forward.into_iter().chain(backward).filter(|predicate| !predicate.is_trivial())
     }
 
-    /// Returns whether this constraint holds whatever the lifetimes are; see
-    /// [`Self::from_relation`].
+    /// Returns whether this predicate between two lifetimes holds whatever
+    /// the lifetimes are; see [`Self::from_relation`].
     fn is_trivial(&self) -> bool {
-        self.lesser == self.greater
-            || *self.lesser == Ty::Lifetime(Lifetime::Static)
-            || !self.lesser.is_checked_lifetime()
-            || !self.greater.is_checked_lifetime()
+        self.lesser() == self.greater()
+            || **self.lesser() == Ty::Lifetime(Lifetime::Static)
+            || !self.lesser().is_checked_lifetime()
+            || !self.greater().is_checked_lifetime()
     }
 }
 
-impl Substitutable for OutlivesConstraint {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
-        match (self.lesser.apply_subst(subst, engine), self.greater.apply_subst(subst, engine)) {
-            (None, None) => None,
-            (lesser, greater) => Some(Self::new(
-                lesser.unwrap_or_else(|| self.lesser.clone()),
-                greater.unwrap_or_else(|| self.greater.clone()),
-            )),
-        }
-    }
-}
-
-/// A set of outlives constraints.
+/// A set of outlives predicates between two lifetimes, `'lesser: 'greater`.
 ///
 /// The set is immutable and shares its structure, so combining the
 /// constraints of several steps with [`Self::union`] is cheap.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct OutlivesConstraints(FxImHashSet<OutlivesConstraint>);
+pub struct OutlivesConstraints(FxImHashSet<OutlivesPredicate>);
 
 impl OutlivesConstraints {
     /// Creates an empty set.
@@ -110,14 +74,14 @@ impl OutlivesConstraints {
 
     /// Returns the constraints that relating the lifetime `lesser` to the
     /// lifetime `greater` with `variance` requires; see
-    /// [`OutlivesConstraint::from_relation`].
+    /// [`OutlivesPredicate::from_relation`].
     #[must_use]
     pub fn from_relation(
         lesser: &Interned<Ty>,
         greater: &Interned<Ty>,
         variance: Variance,
     ) -> Self {
-        OutlivesConstraint::from_relation(lesser, greater, variance).collect()
+        OutlivesPredicate::from_relation(lesser, greater, variance).collect()
     }
 
     /// Returns the constraints of both sets.
@@ -132,11 +96,11 @@ impl OutlivesConstraints {
 
     /// Returns the constraints in an unspecified order.
     #[must_use]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &OutlivesConstraint> { self.0.iter() }
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &OutlivesPredicate> { self.0.iter() }
 }
 
-impl FromIterator<OutlivesConstraint> for OutlivesConstraints {
-    fn from_iter<I: IntoIterator<Item = OutlivesConstraint>>(iter: I) -> Self {
+impl FromIterator<OutlivesPredicate> for OutlivesConstraints {
+    fn from_iter<I: IntoIterator<Item = OutlivesPredicate>>(iter: I) -> Self {
         Self(iter.into_iter().collect())
     }
 }
@@ -185,7 +149,7 @@ impl Decode for OutlivesConstraints {
         let len = decoder.read_usize()?;
         let mut constraints = FxImHashSet::default();
         for _ in 0..len {
-            constraints.insert(OutlivesConstraint::decode(decoder, plugin, session)?);
+            constraints.insert(OutlivesPredicate::decode(decoder, plugin, session)?);
         }
         Ok(Self(constraints))
     }

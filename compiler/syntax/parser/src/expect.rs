@@ -321,7 +321,37 @@ pub enum Fragment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash)]
 pub struct IndentationEnd;
 
+/// A named syntactic category that stands in for all of the tokens that could
+/// start a syntax tree.
+///
+/// When a labelled syntax tree fails to parse without consuming any token,
+/// the parser reports the label (e.g. "expected type") instead of every token
+/// that each of its alternatives could have started with.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Encode, Decode, StableHash,
+)]
+#[allow(missing_docs)]
+pub enum Label {
+    #[display("type")]
+    Type,
+    #[display("expression")]
+    Expression,
+    #[display("statement")]
+    Statement,
+    #[display("pattern")]
+    Pattern,
+    #[display("module member")]
+    ModuleMember,
+    #[display("trait member")]
+    TraitMember,
+    #[display("instance member")]
+    InstanceMember,
+}
+
 /// An enumeration of all the possible expected token types.
+///
+/// The variant order is the order in which the expectations are listed in a
+/// diagnostic, so the [`Expected::Label`] comes first.
 #[derive(
     Debug,
     Clone,
@@ -339,6 +369,7 @@ pub struct IndentationEnd;
 )]
 #[allow(missing_docs)]
 pub enum Expected {
+    Label(Label),
     Identifier(Identifier),
     IdentifierValue(IdentifierValue),
     String(String),

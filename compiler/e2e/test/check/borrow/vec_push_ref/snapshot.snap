@@ -1,0 +1,20 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/vec_push_ref/main.ray:26:5
+   │
+25 │     push(p, x.&)        # Loan 1
+   │             ─── immutable borrow occurs here
+26 │     x = x + 1           # <-- 💥 Expect an error here!
+   │     ━━━━━━━━━ the borrowed place is assigned here
+27 │     consume(v)
+   ╰╴            ─ borrow later used here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

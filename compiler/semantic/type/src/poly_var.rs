@@ -221,9 +221,9 @@ impl PolyVarMap {
         self.iter().take_while(|(_, poly_var)| poly_var.kind() != TyKind::Instance)
     }
 
-    /// Returns the dictionaries, which given arguments instantiate, in order.
+    /// Returns the instances, which given arguments instantiate, in order.
     /// They follow the type parameters.
-    pub fn dictionaries(&self) -> impl Iterator<Item = (PolyVarID, &PolyVar)> {
+    pub fn instances(&self) -> impl Iterator<Item = (PolyVarID, &PolyVar)> {
         self.iter().skip_while(|(_, poly_var)| poly_var.kind() != TyKind::Instance)
     }
 
@@ -331,6 +331,16 @@ impl PolyVarStack {
                     .iter()
                     .map(|(_, poly_var)| (poly_var.name.clone(), poly_var.kind()))
                     .collect()
+            })
+        })
+    }
+
+    /// Returns every instances of the stack, with the trait reference its
+    /// declaration requires the given argument to implement.
+    pub fn instances(&self) -> impl Iterator<Item = (GlobalPolyVarID, &TraitRef)> {
+        self.poly_var_maps.iter().flat_map(|(symbol_id, poly_var_map)| {
+            poly_var_map.instances().filter_map(move |(poly_var_id, poly_var)| {
+                Some((GlobalPolyVarID::new(*symbol_id, poly_var_id), poly_var.trait_ref()?))
             })
         })
     }

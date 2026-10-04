@@ -1,0 +1,63 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: captured variable cannot escape the operation handler
+   ╭▸ compiler/e2e/test/check/borrow/handler_capture_escape/main.ray:27:20
+   │
+27 │             return a.&      # <-- Expect an error here.
+   │                    ━━━ this lets a borrow of a captured variable escape the operation handler
+   │
+   ╰ help: an operation handler may run again while the borrow is still in use, so a borrow of what it captures mutably may only be used within the handler
+
+[error]: captured variable cannot escape the operation handler
+   ╭▸ compiler/e2e/test/check/borrow/handler_capture_escape/main.ray:53:20
+   │
+53 │             return x.*.&
+   │                    ━━━━━ this lets a borrow of a captured variable escape the operation handler
+   │
+   ╰ help: an operation handler may run again while the borrow is still in use, so a borrow of what it captures mutably may only be used within the handler
+
+[error]: captured variable cannot escape the operation handler
+   ╭▸ compiler/e2e/test/check/borrow/handler_capture_escape/main.ray:68:13
+   │
+68 │             slot = a.&      # <-- Expect an error here: `slot` outlives a run.
+   │             ┯━━━━━━┬──
+   │             │      │
+   │             │      the captured variable is borrowed here
+   │             this lets a borrow of a captured variable escape the operation handler
+   │
+   ╰ help: an operation handler may run again while the borrow is still in use, so a borrow of what it captures mutably may only be used within the handler
+
+[error]: borrowed value does not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/handler_capture_escape/main.ray:77:5
+   │
+74 │       let mut a = 1
+   │           ───── this variable goes out of scope while it is still borrowed
+   ‡
+77 │ ┏     run:
+78 │ ┃         Counter.tick()
+79 │ ┃     with Counter:
+80 │ ┃         def tick():
+   ‡ ┃
+84 │ ┃             Sink.put(a.&)
+85 │ ┃             return 0
+   ╰╴┗━━━━━━━━━━━━━━━━━━━━┛ borrowed value does not live long enough, by a capture
+
+[error]: captured variable cannot escape the operation handler
+   ╭▸ compiler/e2e/test/check/borrow/handler_capture_escape/main.ray:84:13
+   │
+84 │             Sink.put(a.&)
+   │             ┯━━━━━━━━┬──━
+   │             │        │
+   │             │        the captured variable is borrowed here
+   │             this lets a borrow of a captured variable escape the operation handler
+   │
+   ╰ help: an operation handler may run again while the borrow is still in use, so a borrow of what it captures mutably may only be used within the handler
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

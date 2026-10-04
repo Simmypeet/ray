@@ -1,0 +1,20 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot borrow a place as mutable because it is also borrowed as immutable
+  ╭▸ compiler/e2e/test/check/borrow/nested_closure_capture/main.ray:6:36
+  │
+6 │     let outer = () -> (() -> value, () -> value = 42)
+  │                      ┬─┬───────────┯━━━━━━━━━━━━━━━━─
+  │                      │ │           │
+  │                      │ │           mutable borrow occurs here, by a capture
+  │                      │ immutable borrow occurs here, by a capture
+  ╰╴                     borrow later used here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

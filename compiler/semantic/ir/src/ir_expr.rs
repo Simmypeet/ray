@@ -6,10 +6,20 @@ use rayc_type::ty::Ty;
 
 use crate::{
     ir_expr::{
-        binary::Binary, call::Call, closure::Closure, handle::Handle, literal::Literal, load::Load,
-        perform::Perform, phi::Phi, ref_of::RefOf, ref_to_pointer::RefToPointer,
-        struct_initialization::StructInitialization, tuple::Tuple,
+        binary::Binary,
+        call::Call,
+        closure::Closure,
+        handle::{Handle, OperationHandler},
+        literal::Literal,
+        load::Load,
+        perform::Perform,
+        phi::Phi,
+        ref_of::RefOf,
+        ref_to_pointer::RefToPointer,
+        struct_initialization::StructInitialization,
+        tuple::Tuple,
     },
+    ir_function::FunctionID,
     visit::{
         TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
         VisitTypeMutAsync,
@@ -88,6 +98,51 @@ impl IRExprKind {
             | Self::Closure(_)
             | Self::StructInitialization(_) => None,
         }
+    }
+
+    /// Returns the operands this expression stores in the capture layout of
+    /// a nested function it creates: the captures of a closure, or those of
+    /// the handled body and of the operation handlers of a `handle`.
+    pub fn capture_operands(&self) -> impl Iterator<Item = IRExprID> + '_ {
+        let (captures, handler_captures): (&[IRExprID], &[IRExprID]) = match self {
+            Self::Closure(closure) => (closure.captures(), &[]),
+            Self::Handle(handle) => (handle.captures(), handle.handler_captures()),
+            Self::Error
+            | Self::Literal(_)
+            | Self::RefOf(_)
+            | Self::RefToPointer(_)
+            | Self::Load(_)
+            | Self::Phi(_)
+            | Self::Binary(_)
+            | Self::Call(_)
+            | Self::Perform(_)
+            | Self::Tuple(_)
+            | Self::StructInitialization(_) => (&[], &[]),
+        };
+
+        captures.iter().chain(handler_captures).copied()
+    }
+
+    /// Returns the nested functions this expression creates: the body of a
+    /// closure, or the handled body and the operation handlers of a `handle`.
+    pub fn created_functions(&self) -> impl Iterator<Item = FunctionID> + '_ {
+        let (function, handlers): (Option<FunctionID>, &[OperationHandler]) = match self {
+            Self::Closure(closure) => (Some(closure.function_id()), &[]),
+            Self::Handle(handle) => (Some(handle.body().function_id()), handle.handlers()),
+            Self::Error
+            | Self::Literal(_)
+            | Self::RefOf(_)
+            | Self::RefToPointer(_)
+            | Self::Load(_)
+            | Self::Phi(_)
+            | Self::Binary(_)
+            | Self::Call(_)
+            | Self::Perform(_)
+            | Self::Tuple(_)
+            | Self::StructInitialization(_) => (None, &[]),
+        };
+
+        function.into_iter().chain(handlers.iter().map(OperationHandler::function_id))
     }
 
     /// Returns the expressions this expression takes as operands, including

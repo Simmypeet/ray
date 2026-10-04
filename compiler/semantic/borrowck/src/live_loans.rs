@@ -1,24 +1,5 @@
-//! The points at which each loan of an IR function is live.
-//!
-//! A loan is live at a point when it may still be used there: when it flows,
-//! through the localized constraint graph, into a region that is live at that
-//! point. Each loan is found by a depth-first search from the node `'r@p` of
-//! its own region at the point of its borrow, where the graph is built on the
-//! fly from three kinds of edges out of a node `'r@p`:
-//!
-//! - an outlives constraint `'r: 's` required at `p` gives `'r@p -> 's@p`, from
-//!   [`LocalizedConstraints`];
-//! - a forward liveness edge `'r@p -> 'r@q`, to each successor `q` of `p` at
-//!   which `'r` is live, when `'r` is covariant or invariant: the region keeps
-//!   holding its loans as control moves on;
-//! - a backward liveness edge `'r@p -> 'r@q`, to each predecessor `q` of `p`,
-//!   when `'r` is contravariant or invariant and live at `p`: a loan flowing
-//!   into a contravariant region may be used by what flowed into it earlier.
-//!
-//! Universal regions only take forward edges. They are live everywhere, so
-//! the forward edges alone reach every point after the loan enters them, and
-//! a backward edge could only reach points before the borrow, where the loan
-//! is not issued yet.
+//! The points at which each loan of an IR function is live: where it flows,
+//! through the localized constraint graph, into a region that is live there.
 
 use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
@@ -43,9 +24,6 @@ pub struct LiveLoans {
 
 impl LiveLoans {
     /// Computes the points at which each loan of `constraints` is live.
-    ///
-    /// `constraints`, `liveness` and `variances` must all describe
-    /// `function`, after [renumbering](crate::renumber).
     #[must_use]
     pub fn compute(
         function: &IRFunction,
@@ -87,12 +65,8 @@ struct LivenessEdges {
 }
 
 impl LivenessEdges {
-    /// Returns the liveness edges of a region with `variance` where it
-    /// occurs.
-    ///
-    /// A bivariant region, such as one behind a raw pointer, is never
-    /// related to another, so no loan can flow into it and it needs no
-    /// edges.
+    /// Returns the liveness edges of a region with `variance`. A bivariant
+    /// region is never related to another, so it needs none.
     const fn of_variance(variance: Variance) -> Self {
         match variance {
             Variance::Covariant => Self { forward: true, backward: false },
@@ -112,9 +86,7 @@ pub(crate) struct Traversal<'a> {
 }
 
 impl<'a> Traversal<'a> {
-    /// Creates the search over the graph of `function`, whose constraints,
-    /// region liveness and variances are `constraints`, `liveness` and
-    /// `variances`.
+    /// Creates the search over the localized constraint graph of `function`.
     pub(crate) const fn new(
         function: &'a IRFunction,
         constraints: &'a LocalizedConstraints,
@@ -132,11 +104,8 @@ impl<'a> Traversal<'a> {
             .map(|node| node.point)
     }
 
-    /// Returns the regions that hold `loan` at `point` and are live there:
-    /// the reasons the loan is live at `point`.
-    ///
-    /// This searches the graph again, which is only worth it when reporting
-    /// an error.
+    /// Returns the regions that hold `loan` at `point` and are live there. This
+    /// searches the graph again, so it is only for reporting an error.
     pub(crate) fn regions_holding(
         &self,
         loan: &Loan,
@@ -194,15 +163,10 @@ impl<'a> Traversal<'a> {
     }
 
     /// Returns the liveness edges of `region`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `region` is a region variable that occurs in no type of the
-    /// function, which renumbering never creates.
     fn liveness_edges(&self, region: &Interned<Ty>) -> LivenessEdges {
-        // A universal region only needs forward edges; see the module
-        // documentation.
-        if region.as_region().is_none() {
+        // A universal region is live everywhere, so forward edges alone reach
+        // every point after the loan enters it.
+        if region.is_universal_region() {
             return LivenessEdges::of_variance(Variance::Covariant);
         }
 

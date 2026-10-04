@@ -1,8 +1,10 @@
 def main() -> int32:
     let mut value = 32
-    # Both inner closures borrow `main`'s `value`, so the reader observes the
-    # writer's assignment.
-    let outer = () -> (() -> value, () -> value = 42)
+    let mut other = 0
+    # The inner closures borrow `main`'s `value` and `other` through `outer`:
+    # the reader immutably, the writer mutably.
+    let outer = () -> (() -> value, () -> other = 10)
     let callbacks = outer()
     callbacks.1()
-    return callbacks.0()
+    let read = callbacks.0()
+    return read + other

@@ -4,7 +4,7 @@ use qbice::storage::intern::Interned;
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
     subst::Subst,
-    ty::{InferenceConstraint, Ty, TyKind, inference::Inference},
+    ty::{InferenceConstraint, Ty, TyKind, inference::Inference, lifetime::ExternalRegionID},
     variance::Variance,
 };
 
@@ -46,6 +46,23 @@ impl Solver {
         }
 
         Ok(Step::Subst(Subst::new_singleton(poly_var, ty.clone())))
+    }
+
+    /// Instantiates an external lifetime with the lifetime `ty`, which only
+    /// interface matching allows.
+    ///
+    /// Interface matching is invariant, as top-level matching is, so the
+    /// external lifetime is bound to the lifetime itself.
+    pub(super) async fn bind_external_lifetime(
+        &self,
+        external: ExternalRegionID,
+        ty: &Interned<Ty>,
+    ) -> Result<Step, Error> {
+        if !ty.is_lifetime(self.engine()).await {
+            return Err(Error::Conflicted);
+        }
+
+        Ok(Step::Subst(Subst::new_singleton(external, ty.clone())))
     }
 
     /// Binds an inference variable to `ty`.

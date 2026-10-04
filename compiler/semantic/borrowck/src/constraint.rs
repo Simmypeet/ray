@@ -1,47 +1,34 @@
-//! The localized outlives constraints of an IR function.
-//!
-//! Polonius finds where a loan is live by walking a graph whose nodes are a
-//! region at a point, written `'r@p`. This module collects the part of that
-//! graph which the instructions of a function state: each outlives constraint
-//! `'a: 'b` required by the instruction at `p` becomes an edge
-//! `'a@p -> 'b@p`, along which loans flow from `'a` into `'b`. The liveness
-//! edges between points are not stored; the traversal derives them from the
-//! control-flow graph and region liveness, so the graph is never built in
-//! full.
-//!
-//! It also records the loans the function issues: one per borrow, whose
-//! region is the lifetime of the reference the borrow creates.
-//!
-//! Only the primitive operations are handled so far:
-//!
-//! - a borrow `&place` issues a loan and relates the type of the place to the
-//!   pointee of the reference. When the place is behind references, it is a
-//!   reborrow, and the references it goes through must outlive the loan.
-//! - a load relates the type of the place to the type of the loaded value.
-//! - a store relates the type of the stored value to the type of the place.
-//!
-//! This is meant to run after [renumbering](crate::renumber), so that every
-//! lifetime the constraints mention is a region or a universal lifetime.
+//! The localized outlives constraints of an IR function: each `'a: 'b` required
+//! by the instruction at `p` is an edge `'a@p -> 'b@p`. Also records the loans
+//! the function issues and the type tests it requires.
 
 use qbice::storage::intern::Interned;
 use rayc_arena::{Arena, ID};
-use rayc_hash::{FxHashMap, FxHashSet};
+use rayc_hash::FxHashMap;
 use rayc_ir::{
-    address::{Address, Local, Projection},
-    cfg::{Instruction, Point, Store},
-    ir_expr::{IRExprID, IRExprKind, load::Load, ref_of::RefOf},
-    ir_function::IRFunction,
+    address::{Address, Local},
+    cfg::{BlockID, Instruction, Point, Terminator},
+    ir_expr::{IRExprID, IRExprKind},
+    ir_function::{FunctionID, IRFunction, IRFunctionMap},
     ir_lambda::CaptureMap,
 };
 use rayc_lexical::tree::RelativeSpan;
-use rayc_semantic_element::{parameter::get_parameter_map, struct_body::get_struct_body};
 use rayc_solver::Solver;
 use rayc_type::{
-    constraint::{outlives::OutlivesConstraint, ty_relate::TyRelate},
-    subst::Substitutable,
+    constraint::ty_relate::TyRelate,
     ty::{Mutability, Ty},
     variance::Variance,
+    where_clause::OutlivesPredicate,
 };
+
+use crate::requirement::NestedRequirements;
+
+mod instance;
+mod invocation;
+mod nested;
+mod place;
+mod predicate;
+mod value;
 
 /// Identifies a loan issued in an IR function.
 pub type LoanID = ID<Loan>;
@@ -49,8 +36,7 @@ pub type LoanID = ID<Loan>;
 /// A borrow issued in an IR function, as `&'r place` or `&'r mut place`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Loan {
-    /// The lifetime of the reference the borrow creates. The loan is live
-    /// wherever it flows, through the constraint graph, into a live region.
+    /// The lifetime of the reference the borrow creates.
     region: Interned<Ty>,
 
     /// The point of the borrow.
@@ -64,6 +50,10 @@ pub struct Loan {
 
     /// The source of the borrow expression.
     span: RelativeSpan,
+
+    /// The projection depth of the innermost struct owning the borrowed place
+    /// that has a declared `Drop` instance, if there is one.
+    declared_drop_depth: Option<usize>,
 }
 
 impl Loan {
@@ -86,6 +76,86 @@ impl Loan {
     /// Returns the source of the borrow expression.
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
+
+    /// Returns whether dropping the value in `dropped` may use the borrowed
+    /// place: its storage, or anything a struct with a declared `Drop` instance
+    /// can reach.
+    #[must_use]
+    pub fn is_used_by_drop_of(&self, dropped: &Address) -> bool {
+        if self.address.contains(dropped) || dropped.holds(&self.address) {
+            return true;
+        }
+
+        dropped.contains(&self.address)
+            && self.declared_drop_depth.is_some_and(|depth| dropped.projections().len() <= depth)
+    }
+}
+
+/// A requirement `subject: 'bound` on a type parameter or a rigid projection,
+/// which no outlives constraint between regions can express.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeTest {
+    /// The type parameter or projection required to outlive `bound`.
+    subject: Interned<Ty>,
+
+    /// The lifetime `subject` must outlive.
+    bound: Interned<Ty>,
+
+    /// The point of the instruction requiring it.
+    point: Point,
+
+    /// The source requiring it, when a nested function created at `point` does.
+    blame: Option<RelativeSpan>,
+}
+
+impl TypeTest {
+    /// Returns the type parameter or projection required to outlive the
+    /// bound.
+    #[must_use]
+    pub const fn subject(&self) -> &Interned<Ty> { &self.subject }
+
+    /// Returns the lifetime the subject must outlive.
+    #[must_use]
+    pub const fn bound(&self) -> &Interned<Ty> { &self.bound }
+
+    /// Returns the point of the instruction requiring the test.
+    #[must_use]
+    pub const fn point(&self) -> Point { self.point }
+
+    /// Returns the source requiring the test in `function`, if it has one.
+    #[must_use]
+    pub fn span(&self, function: &IRFunction) -> Option<RelativeSpan> {
+        self.blame.or_else(|| function.point_span(self.point))
+    }
+}
+
+/// An outlives constraint `'lesser: 'greater` that an IR function requires at
+/// a point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Outlives<'a> {
+    lesser: &'a Interned<Ty>,
+    greater: &'a Interned<Ty>,
+    point: Point,
+    blame: Option<RelativeSpan>,
+}
+
+impl<'a> Outlives<'a> {
+    /// Returns the region required to outlive the other.
+    #[must_use]
+    pub const fn lesser(&self) -> &'a Interned<Ty> { self.lesser }
+
+    /// Returns the region the lesser region is required to outlive.
+    #[must_use]
+    pub const fn greater(&self) -> &'a Interned<Ty> { self.greater }
+
+    /// Returns the point of the instruction requiring the constraint.
+    #[must_use]
+    pub const fn point(&self) -> Point { self.point }
+
+    /// Returns the source requiring the constraint, when a nested function
+    /// created at its point does.
+    #[must_use]
+    pub const fn blame(&self) -> Option<RelativeSpan> { self.blame }
 }
 
 /// A region at a point: a node of the localized constraint graph.
@@ -95,15 +165,15 @@ struct LocalizedRegion {
     point: Point,
 }
 
-/// The outlives constraints the instructions of an IR function require, each
-/// at the point of its instruction, and the loans the function issues.
+/// The outlives constraints, type tests and loans of an IR function.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LocalizedConstraints {
-    /// For each region at a point, the regions it must outlive there. These
-    /// are the edges of the localized constraint graph that the instruction
-    /// at the point states (rustc: `Locations::Single`). A region with no
-    /// constraint at a point has no entry.
-    edges: FxHashMap<LocalizedRegion, FxHashSet<Interned<Ty>>>,
+    /// For each region at a point, the regions it must outlive there, each with
+    /// the source requiring it when a nested function created there does.
+    edges: FxHashMap<LocalizedRegion, FxHashMap<Interned<Ty>, Option<RelativeSpan>>>,
+
+    /// The type tests the instructions require, in collection order.
+    type_tests: Vec<TypeTest>,
 
     /// The loans issued by the borrows of the function.
     loans: Arena<Loan>,
@@ -111,79 +181,94 @@ pub struct LocalizedConstraints {
     /// The loan issued by each borrow expression.
     loans_by_ref_of_id: FxHashMap<IRExprID, LoanID>,
 
-    /// The loans of the places in each local, including the places reached
-    /// through a dereference of it.
+    /// The loans of the places in each local, dereferences included.
     loans_by_local: FxHashMap<Local, Vec<LoanID>>,
 }
 
 impl LocalizedConstraints {
-    /// Collects the outlives constraints and the loans of every reachable
-    /// instruction of `function`.
-    ///
-    /// `captures` is the capture layout of a nested function, and `None` for
-    /// the definition function. `solver` must be created at the definition
-    /// the function belongs to.
+    /// Collects the constraints and loans of every reachable instruction of the
+    /// function `function_id`, whose nested functions must be in `nested`.
     pub async fn collect(
-        function: &IRFunction,
-        captures: Option<&CaptureMap>,
+        ir: &IRFunctionMap,
+        function_id: FunctionID,
+        effect: &Interned<Ty>,
+        nested: &NestedRequirements,
         solver: &mut Solver,
     ) -> Self {
-        let mut collector =
-            ConstraintCollector { function, captures, solver, constraints: Self::default() };
+        let function = ir.get_function(function_id);
+        let mut collector = ConstraintCollector {
+            ir,
+            function,
+            captures: ir.captures_for_function(function_id),
+            effect,
+            nested,
+            solver,
+            constraints: Self::default(),
+        };
 
-        // Terminators are not visited yet: relating a returned value to the
-        // return type is left for later.
         let reachables = function.reachables();
         for block_id in reachables.blocks() {
             for (point, instruction) in function.block_instructions_with_points(block_id) {
                 collector.collect_instruction(point, instruction).await;
             }
+
+            collector.collect_terminator(block_id).await;
         }
 
         collector.constraints
     }
 
-    /// Iterates over the regions that `region` must outlive at `point`: the
-    /// regions its loans flow into there.
+    /// Iterates over the regions that `region` must outlive at `point`.
     pub fn outlived_regions(
         &self,
         region: &Interned<Ty>,
         point: Point,
     ) -> impl Iterator<Item = &Interned<Ty>> {
-        self.edges.get(&LocalizedRegion { region: region.clone(), point }).into_iter().flatten()
+        self.edges
+            .get(&LocalizedRegion { region: region.clone(), point })
+            .into_iter()
+            .flat_map(FxHashMap::keys)
     }
 
-    /// Iterates over the loans issued in the function, in unspecified order.
+    /// Iterates over every outlives constraint, in unspecified order.
+    pub fn outlives(&self) -> impl Iterator<Item = Outlives<'_>> {
+        self.edges.iter().flat_map(|(lesser, greaters)| {
+            greaters.iter().map(move |(greater, &blame)| Outlives {
+                lesser: &lesser.region,
+                greater,
+                point: lesser.point,
+                blame,
+            })
+        })
+    }
+
+    /// Iterates over the type tests, in the order they were collected.
+    #[must_use]
+    pub fn type_tests(&self) -> impl ExactSizeIterator<Item = &TypeTest> { self.type_tests.iter() }
+
+    /// Iterates over the loans issued in the function, in unspecified order. A
+    /// borrow behind a shared reference or a raw pointer issues none.
     #[must_use]
     pub fn loans(&self) -> impl ExactSizeIterator<Item = (LoanID, &Loan)> { self.loans.iter() }
 
     /// Returns the loan identified by `id`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `id` does not identify a loan of this function.
     #[must_use]
     pub fn get_loan(&self, id: LoanID) -> &Loan { self.loans.get(id).expect("loan should exist") }
 
-    /// Returns the loan issued by the borrow expression `expression_id`, or
-    /// `None` when the expression is not a borrow, or borrows an error
-    /// address.
+    /// Returns the ID of the loan issued by the borrow `expression_id`, if any.
     #[must_use]
     pub fn loan_id_of_ref_of(&self, expression_id: IRExprID) -> Option<LoanID> {
         self.loans_by_ref_of_id.get(&expression_id).copied()
     }
 
-    /// Returns the loan issued by the borrow expression `expression_id`, or
-    /// `None` when the expression is not a borrow, or borrows an error
-    /// address.
+    /// Returns the loan issued by the borrow `expression_id`, if any.
     #[must_use]
-    pub fn load_of_ref_of(&self, expression_id: IRExprID) -> Option<&Loan> {
+    pub fn loan_of_ref_of(&self, expression_id: IRExprID) -> Option<&Loan> {
         let loan_id = self.loans_by_ref_of_id.get(&expression_id)?;
         self.loans.get(*loan_id)
     }
 
-    /// Iterates over the loans of the places in `local`, including the places
-    /// reached through a dereference of it, in unspecified order.
+    /// Iterates over the loans of the places in `local`, dereferences included.
     pub fn loans_of_local(&self, local: Local) -> impl Iterator<Item = LoanID> + '_ {
         self.loans_by_local.get(&local).into_iter().flatten().copied()
     }
@@ -199,21 +284,57 @@ impl LocalizedConstraints {
         self.loans_by_local.entry(local).or_default().push(loan_id);
     }
 
-    /// Adds the edge `'lesser@point -> 'greater@point` for the constraint
-    /// `'lesser: 'greater` required at `point`.
-    fn add(&mut self, point: Point, constraint: &OutlivesConstraint) {
-        self.edges
-            .entry(LocalizedRegion { region: constraint.lesser().clone(), point })
+    /// Adds the edge `'lesser@point -> 'greater@point` for `predicate`.
+    fn add(&mut self, point: Point, predicate: &OutlivesPredicate) {
+        self.add_blaming(point, predicate, None);
+    }
+
+    /// As [`Self::add`], blaming the source `blame` when there is one.
+    fn add_blaming(
+        &mut self,
+        point: Point,
+        predicate: &OutlivesPredicate,
+        blame: Option<RelativeSpan>,
+    ) {
+        let required_by = self
+            .edges
+            .entry(LocalizedRegion { region: predicate.lesser().clone(), point })
             .or_default()
-            .insert(constraint.greater().clone());
+            .entry(predicate.greater().clone())
+            .or_default();
+
+        // A constraint may be required more than once: the first source blamed
+        // for it is kept.
+        *required_by = required_by.or(blame);
+    }
+
+    /// Records the type test `subject: 'bound` required at `point`.
+    fn add_type_test(
+        &mut self,
+        point: Point,
+        subject: Interned<Ty>,
+        bound: Interned<Ty>,
+        blame: Option<RelativeSpan>,
+    ) {
+        self.type_tests.push(TypeTest { subject, bound, point, blame });
     }
 }
 
 /// Walks the instructions of an IR function for
 /// [`LocalizedConstraints::collect`].
 struct ConstraintCollector<'a> {
+    /// The IR functions of the definition `function` belongs to.
+    ir: &'a IRFunctionMap,
     function: &'a IRFunction,
+
+    /// The capture layout of a nested function.
     captures: Option<&'a CaptureMap>,
+
+    /// The effect row of the function.
+    effect: &'a Interned<Ty>,
+
+    /// What the nested functions that `function` creates require of it.
+    nested: &'a NestedRequirements,
     solver: &'a mut Solver,
     constraints: LocalizedConstraints,
 }
@@ -228,19 +349,40 @@ impl ConstraintCollector<'_> {
             }
             Instruction::Store(store) => self.collect_store(point, store).await,
 
-            // Scopes require no constraint: a borrow still live when the
-            // storage of its place ends is an invalidated loan, not an
-            // outlives constraint.
+            // A borrow live past the storage of its place is a conflict, not a
+            // constraint.
             Instruction::ScopePush(_) | Instruction::ScopePop(_) => {}
 
-            // TODO: a drop requires the regions its `Drop` implementation
-            // may use to be live, which is not handled yet.
-            Instruction::ExprDiscard(_) | Instruction::AddressDrop(_) => {}
+            Instruction::ExprDiscard(discard) => {
+                let value_ty = self.function.get_expression(discard.expression()).ty();
+                self.collect_drop(point, value_ty, discard.drop_instance()).await;
+            }
+            Instruction::AddressDrop(drop) => {
+                let Some(place_ty) = self.place_type(point, drop.address()).await else {
+                    return;
+                };
+
+                self.collect_drop(point, &place_ty, drop.drop_instance()).await;
+            }
         }
     }
 
-    /// Collects the constraints of evaluating the expression `expression_id`
-    /// at `point`.
+    /// Collects the constraints of the terminator of `block_id`.
+    async fn collect_terminator(&mut self, block_id: BlockID) {
+        match self.function.block_terminator(block_id) {
+            Some(Terminator::Return(Some(value))) => {
+                let point = self.function.terminator_point(block_id);
+                self.collect_return(point, *value).await;
+            }
+
+            // Unit holds no region, and the values a jump passes are related by
+            // the phis of its target.
+            Some(Terminator::Return(None) | Terminator::Jump(_) | Terminator::Conditional(_))
+            | None => {}
+        }
+    }
+
+    /// Collects the constraints of evaluating `expression_id` at `point`.
     #[allow(clippy::match_same_arms)]
     async fn collect_expression(&mut self, point: Point, expression_id: IRExprID) {
         let expression = self.function.get_expression(expression_id);
@@ -250,118 +392,34 @@ impl ConstraintCollector<'_> {
                 self.collect_borrow(point, expression_id, ref_of, expression.ty()).await;
             }
             IRExprKind::Load(load) => self.collect_load(point, load, expression.ty()).await,
+            IRExprKind::Call(call) => self.collect_call(point, call, expression.ty()).await,
+            IRExprKind::Perform(perform) => {
+                self.collect_perform(point, perform, expression.ty()).await;
+            }
+            IRExprKind::Tuple(tuple) => self.collect_tuple(point, tuple, expression.ty()).await,
+            IRExprKind::Closure(closure) => {
+                self.collect_closure(point, closure, expression.ty()).await;
+            }
+
+            // The incoming values are related where they flow in, not here.
+            IRExprKind::Phi(phi) => self.collect_phi(phi, expression.ty()).await,
+            IRExprKind::StructInitialization(initialization) => {
+                self.collect_struct_initialization(point, initialization, expression.ty()).await;
+            }
 
             // Neither reads a place nor relates two values.
             IRExprKind::Error | IRExprKind::Literal(_) => {}
 
-            // The memory behind a raw pointer is not tracked, so the pointer
-            // carries no region to relate with the reference it came from.
+            // The memory behind a raw pointer is not tracked.
             IRExprKind::RefToPointer(_) => {}
 
-            // TODO: the remaining expressions move their operands into a new
-            // value, or pass them to a function, which is not handled yet.
-            IRExprKind::Phi(_)
-            | IRExprKind::Binary(_)
-            | IRExprKind::Call(_)
-            | IRExprKind::Perform(_)
-            | IRExprKind::Handle(_)
-            | IRExprKind::Tuple(_)
-            | IRExprKind::Closure(_)
-            | IRExprKind::StructInitialization(_) => {}
-        }
-    }
+            // Primitives hold no region.
+            IRExprKind::Binary(_) => {}
 
-    /// Collects the constraints of the borrow `ref_of`, the expression
-    /// `expression_id` of type `ty`, and issues its loan.
-    async fn collect_borrow(
-        &mut self,
-        point: Point,
-        expression_id: IRExprID,
-        ref_of: &RefOf,
-        ty: &Interned<Ty>,
-    ) {
-        let reference =
-            ty.as_reference_view().expect("a `RefOf` expression always has a reference type");
-
-        let mut dereferenced = Vec::new();
-        let Some(place_ty) =
-            self.place_type(ref_of.address(), |pointer| dereferenced.push(pointer.clone())).await
-        else {
-            return;
-        };
-
-        // `&'r place` has type `&'r typeof(place)`, which must be a subtype
-        // of `ty`. The lifetime of `ty` is the loan's own region, so only the
-        // pointees are related, with the variance of the reference's pointee.
-        let variance = reference.mutability().pointee_variance();
-        self.relate(point, &place_ty, reference.pointee(), variance).await;
-
-        self.collect_reborrow(point, reference.lifetime(), &dereferenced);
-
-        self.constraints.issue_loan(expression_id, Loan {
-            region: reference.lifetime().clone(),
-            point,
-            address: ref_of.address().clone(),
-            mutability: reference.mutability(),
-            span: self.function.get_expression(expression_id).span(),
-        });
-    }
-
-    /// Requires the references that a borrowed place is reached through to
-    /// outlive the loan `region`.
-    ///
-    /// `dereferenced` holds the type of every pointer dereferenced on the way
-    /// to the place, outermost first. Borrowing `**p`, where
-    /// `p: &'a mut &'b mut T`, borrows data that is only reachable for `'a`
-    /// and `'b`, so both must outlive the new loan.
-    ///
-    /// The references are visited innermost first, stopping after the first
-    /// shared one: the data behind a shared reference stays borrowed for its
-    /// lifetime however that reference was reached, since it can be copied
-    /// out of the references holding it. A raw pointer stops the walk too,
-    /// since the memory behind it is not tracked.
-    fn collect_reborrow(
-        &mut self,
-        point: Point,
-        region: &Interned<Ty>,
-        dereferenced: &[Interned<Ty>],
-    ) {
-        for pointer in dereferenced.iter().rev() {
-            let Some(reference) = pointer.as_reference_view() else {
-                break;
-            };
-
-            for constraint in
-                OutlivesConstraint::from_relation(reference.lifetime(), region, Variance::Covariant)
-            {
-                self.constraints.add(point, &constraint);
-            }
-
-            match reference.mutability() {
-                Mutability::Immutable => break,
-                Mutability::Mutable => {}
+            IRExprKind::Handle(handle) => {
+                self.collect_handle(point, handle, expression.ty()).await;
             }
         }
-    }
-
-    /// Collects the constraints of `load`, whose loaded value has type `ty`:
-    /// `typeof(place) <: ty`.
-    async fn collect_load(&mut self, point: Point, load: &Load, ty: &Interned<Ty>) {
-        let Some(place_ty) = self.place_type(load.address(), |_| {}).await else {
-            return;
-        };
-
-        self.relate(point, &place_ty, ty, Variance::Covariant).await;
-    }
-
-    /// Collects the constraints of `store`: `typeof(value) <: typeof(place)`.
-    async fn collect_store(&mut self, point: Point, store: &Store) {
-        let Some(place_ty) = self.place_type(store.address(), |_| {}).await else {
-            return;
-        };
-
-        let value_ty = self.function.get_expression(store.expression()).ty();
-        self.relate(point, value_ty, &place_ty, Variance::Covariant).await;
     }
 
     /// Adds, at `point`, the outlives constraints of relating `lesser` to
@@ -373,9 +431,8 @@ impl ConstraintCollector<'_> {
         greater: &Interned<Ty>,
         variance: Variance,
     ) {
-        // Type checking already made the two types equal modulo lifetimes,
-        // so the relation only fails when one side is an error, which was
-        // reported already.
+        // The two types only differ in lifetimes, so this only fails on an
+        // error that was reported already.
         let relation = TyRelate::new(lesser.clone(), greater.clone(), variance);
         let Some(outlives) = self.solver.solve_without_unify(vec![relation]).await else {
             return;
@@ -383,94 +440,6 @@ impl ConstraintCollector<'_> {
 
         for constraint in outlives.iter() {
             self.constraints.add(point, constraint);
-        }
-    }
-
-    /// Returns the type of the place `address` selects, or `None` for an
-    /// error address.
-    ///
-    /// `on_deref` is called with the type of every pointer the address
-    /// dereferences, outermost first.
-    async fn place_type(
-        &self,
-        address: &Address,
-        mut on_deref: impl FnMut(&Interned<Ty>),
-    ) -> Option<Interned<Ty>> {
-        let mut ty = self.binding_type(address.local()?).await;
-
-        // Normalize each prefix before inspecting its shape, since a field
-        // or pointee may be an associated type.
-        for &projection in address.projections() {
-            let base = self.solver.normalize(&ty).await;
-            if projection.is_deref() {
-                on_deref(&base);
-            }
-            ty = self.projected_type(&base, projection).await;
-        }
-
-        Some(ty)
-    }
-
-    /// Returns the type of the component of the normalized type `base` that
-    /// `projection` selects.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `projection` does not match the shape of `base`.
-    async fn projected_type(&self, base: &Interned<Ty>, projection: Projection) -> Interned<Ty> {
-        match projection {
-            Projection::Deref | Projection::RawDeref => base
-                .as_dereferenceable()
-                .unwrap_or_else(|| panic!("dereferenced type should be a pointer: {base:?}"))
-                .pointee()
-                .clone(),
-
-            Projection::Tuple(index) => base
-                .as_tuple_view()
-                .and_then(|tuple| tuple.args().get(index))
-                .unwrap_or_else(|| panic!("tuple projection {index} does not match {base:?}"))
-                .clone(),
-
-            Projection::Field(field_id) => {
-                let struct_ty = base
-                    .as_struct_view()
-                    .unwrap_or_else(|| panic!("field projection does not match {base:?}"));
-                let engine = self.solver.engine();
-                let substitution = struct_ty.create_subst(engine).await;
-                let body = engine.get_struct_body(struct_ty.symbol_id()).await;
-                body[field_id].ty().apply_subst_or_clone(&substitution, engine)
-            }
-        }
-    }
-
-    /// Returns the type of the binding stored in `local`.
-    async fn binding_type(&self, local: Local) -> Interned<Ty> {
-        match local {
-            Local::Variable(variable_id) => self.function.get_variable(variable_id).ty().clone(),
-            Local::Parameter(parameter_id) => {
-                self.solver.engine().get_parameter_map(self.solver.site()).await[parameter_id]
-                    .ty()
-                    .clone()
-            }
-            Local::LambdaParameter(parameter_id) => self
-                .function
-                .context()
-                .assert_as_lambda_context()
-                .get_parameter(parameter_id)
-                .ty()
-                .clone(),
-            Local::OperationHandlerParameter(parameter_id) => self
-                .function
-                .context()
-                .assert_as_operation_handler_context()
-                .get_parameter(parameter_id)
-                .ty()
-                .clone(),
-            Local::Capture(capture_id) => self
-                .captures
-                .expect("capture address roots should have a capture layout")
-                .get_capture(capture_id)
-                .storage_ty(self.solver.engine()),
         }
     }
 }

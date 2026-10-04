@@ -299,9 +299,8 @@ mod tests {
     #[tokio::test]
     async fn given_equalities_match_modulo_lifetimes() {
         use crate::{
-            constraint::outlives::OutlivesConstraint,
             ty::{Mutability, lifetime::Lifetime, self_instance::SelfInstance},
-            where_clause::{AssociatedTypeEquality, PredicateKind},
+            where_clause::{AssociatedTypeEquality, OutlivesPredicate, PredicateKind},
         };
 
         let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
@@ -323,8 +322,8 @@ mod tests {
         let reduced = out(&used).reduce(&engine, &givens).await;
 
         let outlives = [
-            OutlivesConstraint::new(given.clone(), used.clone()),
-            OutlivesConstraint::new(used, given),
+            OutlivesPredicate::new(given.clone(), used.clone()),
+            OutlivesPredicate::new(used, given),
         ];
         assert_eq!(reduced, Some((reference, outlives.into_iter().collect())));
     }

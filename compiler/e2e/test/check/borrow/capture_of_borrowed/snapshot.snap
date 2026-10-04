@@ -1,0 +1,55 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot borrow a place as mutable because it is also borrowed as immutable
+   ╭▸ compiler/e2e/test/check/borrow/capture_of_borrowed/main.ray:13:16
+   │
+11 │     let shared = value.&
+   │                  ─────── immutable borrow occurs here
+12 │     # ERROR: the closure captures `value` by mutable reference.
+13 │     let write = () -> value = 2
+   │                ━━━━━━━━━━━━━━━━ mutable borrow occurs here, by a capture
+14 │     write()
+15 │     consume(shared.*)
+   ╰╴            ──────── borrow later used here
+
+[error]: cannot borrow a place as immutable because it is also borrowed as mutable
+   ╭▸ compiler/e2e/test/check/borrow/capture_of_borrowed/main.ray:21:15
+   │
+19 │     let unique = value.&mut
+   │                  ────────── mutable borrow occurs here
+20 │     # ERROR: the closure captures `value` by shared reference.
+21 │     let read = () -> value
+   │               ━━━━━━━━━━━━ immutable borrow occurs here, by a capture
+22 │     unique.* = 2
+   ╰╴    ──────────── borrow later used here
+
+[error]: cannot move out of a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/capture_of_borrowed/main.ray:29:15
+   │
+27 │     let shared = token.&
+   │                  ─────── immutable borrow occurs here
+28 │     # ERROR: the closure moves `token` into its environment.
+29 │     let take = () -> move token
+   │               ━━━━━━━━━━━━━━━━━ the borrowed place is moved out of here, by a capture
+30 │     consume(shared.*.value)
+   ╰╴            ────────────── borrow later used here
+
+[error]: cannot use a place because it is mutably borrowed
+   ╭▸ compiler/e2e/test/check/borrow/capture_of_borrowed/main.ray:37:16
+   │
+35 │     let write = () -> value = 2
+   │                ──────────────── mutable borrow occurs here, by a capture
+36 │     # ERROR: `value` is read while `write` holds a mutable borrow of it.
+37 │     let copy = value
+   │                ━━━━━ the borrowed place is used here
+38 │     write()
+   ╰╴    ───── borrow later used here
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

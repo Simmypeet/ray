@@ -218,6 +218,11 @@ impl UnresolvedInstanceMember {
     #[must_use]
     pub const fn instance(&self) -> GlobalPolyVarID { self.instance }
 
+    /// Returns the trait reference that the unresolved parent instance
+    /// implements.
+    #[must_use]
+    pub const fn trait_ref(&self) -> &TraitRef { &self.trait_ref }
+
     /// Returns the selected symbol ID, which is guaranteed to identify a
     /// [`SymbolKind::TraitDef`] or [`SymbolKind::TraitType`].
     #[must_use]

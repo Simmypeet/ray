@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/borrow/borrow_behind_reference/main.ray:36:5
+   │
+34 │     let unique = p.*.&mut
+   │                  ──────── mutable borrow occurs here
+35 │     # ERROR: the memory behind `p` is written while it is reborrowed.
+36 │     p.* = 1
+   │     ━━━━━━━ the borrowed place is assigned here
+37 │     unique.* = 2
+   ╰╴    ──────────── borrow later used here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

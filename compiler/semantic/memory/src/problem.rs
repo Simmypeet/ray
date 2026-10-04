@@ -7,9 +7,9 @@ use rayc_ir::{
     dataflow::{DataflowProblem, Direction, JoinLattice},
     ir_expr::{
         IRExprKind,
-        load::{Load, LoadKind},
+        load::{Load, LoadEffect, LoadKind},
     },
-    ir_function::{IRContext, IRFunction},
+    ir_function::IRFunction,
     ir_lambda::CaptureMap,
     scope::ScopeID,
 };
@@ -155,7 +155,7 @@ impl<'a> StackStateProblem<'a> {
         self.push_parameter_roots(roots).await;
         roots[parameters_start..].reverse();
 
-        if !self.borrows_captures() {
+        if !self.function.context().borrows_captures() {
             let captures_start = roots.len();
             roots.extend(self.capture_roots());
             roots[captures_start..].reverse();
@@ -171,7 +171,8 @@ impl<'a> StackStateProblem<'a> {
     /// Operation handlers may run many times over one shared environment, so
     /// every call must find its captures intact.
     pub(crate) fn is_borrowed_capture(&self, address: &Address) -> bool {
-        self.borrows_captures() && matches!(address.direct_local(), Some(Local::Capture(_)))
+        self.function.context().borrows_captures()
+            && matches!(address.direct_local(), Some(Local::Capture(_)))
     }
 
     /// Returns whether `load`, producing a value of type `ty`, moves out of
@@ -182,13 +183,10 @@ impl<'a> StackStateProblem<'a> {
     /// is copied bitwise, and moving out of memory behind a reference is an
     /// error reported separately.
     pub(crate) async fn load_moves(&mut self, load: &Load, ty: Interned<Ty>) -> bool {
-        if load.address().is_behind_deref() {
-            return false;
-        }
-
-        match load.kind() {
-            LoadKind::Implicit => !self.type_is_copy(ty).await,
-            LoadKind::Move => true,
+        match load.effect() {
+            LoadEffect::Copies => false,
+            LoadEffect::Moves => true,
+            LoadEffect::MovesUnlessCopy => !self.type_is_copy(ty).await,
         }
     }
 
@@ -203,15 +201,6 @@ impl<'a> StackStateProblem<'a> {
             // Errors have already been reported.
             LoadKind::Implicit => !ty.contains_error() && !self.type_is_copy(ty).await,
             LoadKind::Move => true,
-        }
-    }
-
-    /// Returns whether the function borrows its captures rather than owning
-    /// them.
-    const fn borrows_captures(&self) -> bool {
-        match self.function.context() {
-            IRContext::OperationHandler(_) => true,
-            IRContext::Def | IRContext::Lambda(_) | IRContext::Thunk(_) => false,
         }
     }
 
@@ -235,31 +224,14 @@ impl<'a> StackStateProblem<'a> {
 
     /// Appends the function's parameters, in declaration order.
     async fn push_parameter_roots(&self, roots: &mut Vec<Local>) {
-        match self.function.context() {
-            IRContext::Def => {
-                let parameters = self.solver.engine().get_parameter_map(self.solver.site()).await;
-                roots.extend(
-                    parameters.iter().map(|(parameter_id, _)| Local::Parameter(parameter_id)),
-                );
-            }
-            IRContext::Lambda(context) => roots.extend(
-                context.parameters().map(|(parameter_id, _)| Local::LambdaParameter(parameter_id)),
-            ),
-            IRContext::Thunk(_) => {}
-            IRContext::OperationHandler(context) => roots.extend(
-                context
-                    .parameters()
-                    .map(|(parameter_id, _)| Local::OperationHandlerParameter(parameter_id)),
-            ),
-        }
+        let site = self.solver.site();
+        roots.extend(self.function.parameter_locals(site, self.solver.engine()).await);
     }
 
     /// Returns the function's captures, in capture-layout order. Only nested
     /// functions have captures.
     fn capture_roots(&self) -> impl Iterator<Item = Local> + '_ {
-        self.captures
-            .into_iter()
-            .flat_map(|captures| captures.iter().map(|(capture_id, _)| Local::Capture(capture_id)))
+        self.captures.into_iter().flat_map(CaptureMap::locals)
     }
 
     /// Returns the type of the component of `ty` selected by `projection`.

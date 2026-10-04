@@ -583,6 +583,7 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
+    #{label = rayc_parser::expect::Label::Expression}
     pub enum Expression {
         RunWith(RunWith = ast::<RunWith>()),
         Closure(Closure = ast::<Closure>()),

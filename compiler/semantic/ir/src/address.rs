@@ -50,6 +50,19 @@ impl Local {
             Self::Capture(capture) => Address::new_capture(capture, engine),
         }
     }
+
+    /// Returns whether this local is a capture of a nested function, which
+    /// is stored in the environment the function was created with.
+    #[must_use]
+    pub const fn is_capture(self) -> bool {
+        match self {
+            Self::Capture(_) => true,
+            Self::Variable(_)
+            | Self::Parameter(_)
+            | Self::LambdaParameter(_)
+            | Self::OperationHandlerParameter(_) => false,
+        }
+    }
 }
 
 #[derive(
@@ -195,6 +208,20 @@ impl Address {
     #[must_use]
     pub fn contains(&self, other: &Self) -> bool {
         self.root == other.root && other.projections.starts_with(&self.projections)
+    }
+
+    /// Returns whether the place `other` selects lies within the storage of
+    /// the place this address selects: this address contains `other`, without
+    /// a dereference between the two.
+    ///
+    /// `x` holds `x.0`, but not `*x`, which is memory the pointer in `x` only
+    /// points to.
+    #[must_use]
+    pub fn holds(&self, other: &Self) -> bool {
+        self.contains(other)
+            && !other.projections[self.projections.len()..]
+                .iter()
+                .any(|projection| projection.is_deref())
     }
 
     /// Returns whether the places this address and `other` select may share

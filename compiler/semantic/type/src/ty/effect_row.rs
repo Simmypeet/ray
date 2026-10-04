@@ -4,9 +4,10 @@ use rayc_symbol::GlobalSymbolID;
 
 use crate::{
     constraint::outlives::OutlivesConstraints,
+    poly_var::{GlobalPolyVarID, get_poly_var_map},
     reduce::Reduce,
     rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
-    subst::Substitutable,
+    subst::{Subst, Substitutable},
     ty::{
         Ty,
         args::Args,
@@ -75,6 +76,28 @@ impl EffectLabel {
     #[must_use]
     pub const fn new(effect_symbol_id: GlobalSymbolID, args: Args) -> Self {
         Self { effect_symbol_id, args }
+    }
+
+    /// Returns the label of the effect `effect_symbol_id` instantiated with
+    /// `substitution`: the effect applied to what `substitution` maps each of
+    /// its parameters to. A parameter that `substitution` leaves out stays as
+    /// it is.
+    pub async fn instantiated(
+        effect_symbol_id: GlobalSymbolID,
+        substitution: &Subst,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        // The effect applied to its own parameters.
+        let parameters = engine.get_poly_var_map(effect_symbol_id).await;
+        let arguments = Args::new(
+            parameters.iter().map(|(parameter_id, _)| {
+                Ty::new_poly_var(GlobalPolyVarID::new(effect_symbol_id, parameter_id), engine)
+            }),
+            engine,
+        );
+        let label = engine.intern(Self::new(effect_symbol_id, arguments));
+
+        label.apply_subst_or_clone(substitution, engine)
     }
 
     #[must_use]

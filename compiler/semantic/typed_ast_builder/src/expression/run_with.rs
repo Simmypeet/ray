@@ -97,7 +97,7 @@ impl TAstBuilder {
         // TODO: determining return type like this is quite fragile, we should probably
         // have a more robust way
         if let Some(body) = syn.block() {
-            for statement in body.statements() {
+            for statement in body.statements().filter_map(rayc_syntax::Passable::into_option) {
                 has_explicit_return |=
                     matches!(&statement, rayc_syntax::statement::Statement::Return(_));
                 Box::pin(self.bind_statement(&statement)).await;
@@ -219,7 +219,7 @@ impl TAstBuilder {
             substitution,
         );
         if let Some(body) = handler.block() {
-            for statement in body.statements() {
+            for statement in body.statements().filter_map(rayc_syntax::Passable::into_option) {
                 Box::pin(self.bind_statement(&statement)).await;
             }
         }

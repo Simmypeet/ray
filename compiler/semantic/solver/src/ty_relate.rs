@@ -3,7 +3,7 @@ use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     constraint::{outlives::OutlivesConstraints, ty_relate::TyRelate},
     subst::Subst,
-    ty::{Ty, application::Application},
+    ty::{Ty, application::Application, lifetime::Lifetime},
     variance::Variance,
 };
 
@@ -127,17 +127,43 @@ const fn can_bind(
     #[expect(clippy::match_same_arms)]
     match (environment, side, var_kind) {
         (TyRelatingEnvironment::Normal, _, VariableKind::Inference) => true,
-        (TyRelatingEnvironment::Normal, _, VariableKind::Poly) => false,
+        (TyRelatingEnvironment::Normal, _, VariableKind::Poly | VariableKind::External) => false,
         (TyRelatingEnvironment::TopLevelMatching, TyRelatingSide::Lesser, VariableKind::Poly) => {
             true
         }
         (TyRelatingEnvironment::TopLevelMatching, _, _) => false,
+        (
+            TyRelatingEnvironment::InterfaceMatching,
+            TyRelatingSide::Lesser,
+            VariableKind::External,
+        ) => true,
+        (TyRelatingEnvironment::InterfaceMatching, _, _) => false,
     }
 }
 
 enum VariableKind {
     Inference,
     Poly,
+
+    /// An external lifetime of a nested IR function.
+    External,
+}
+
+impl VariableKind {
+    /// Returns the kind of variable that matching binds the lifetime `ty`
+    /// as, if it is one that some matching binds: a lifetime parameter or an
+    /// external lifetime.
+    const fn of_matched_lifetime(ty: &Ty) -> Option<Self> {
+        match ty {
+            Ty::PolyVar(_) => Some(Self::Poly),
+            Ty::Lifetime(Lifetime::External(_)) => Some(Self::External),
+            Ty::Lifetime(Lifetime::Static | Lifetime::Erased | Lifetime::Region(_))
+            | Ty::Application(_)
+            | Ty::Inference(_)
+            | Ty::SelfInstance(_)
+            | Ty::EffectRow(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -177,13 +203,13 @@ impl Solver {
         relate: &TyRelate,
         relate_env: &TyRelatingEnvironment,
     ) -> Result<Entailment, Error> {
-        // Top-level matching relates instance and marker heads, whose
-        // arguments are invariant. Binding a head variable therefore never
-        // needs generalization, and everything derived stays invariant.
+        // Matching relates instance and marker heads, whose arguments are
+        // invariant, or an interface to the very types it is created with.
+        // Binding a matched variable therefore never needs generalization, and
+        // everything derived stays invariant.
         assert!(
-            *relate_env != TyRelatingEnvironment::TopLevelMatching
-                || relate.variance() == Variance::Invariant,
-            "top-level matching must relate types invariantly"
+            !relate_env.is_matching() || relate.variance() == Variance::Invariant,
+            "matching must relate types invariantly"
         );
 
         let (relate, normalization_outlives) = self.normalize_with_outlives(relate).await;
@@ -218,20 +244,30 @@ impl Solver {
         let step = match (&**relate.lesser(), &**relate.greater()) {
             (Ty::Application(lesser), Ty::Application(greater)) => {
                 match (lesser.is_instance_associated(), greater.is_instance_associated()) {
-                    (true, true) => {
-                        let equal = Ty::equal_modulo_lifetimes(
-                            relate.lesser(),
-                            relate.greater(),
-                            self.engine(),
-                        );
-
-                        return Ok(equal.await.map_or_else(
-                            || Entailment::new(Step::NoProgress),
-                            |outlives| {
-                                Entailment::with_outlives(Step::Derived(Vec::new()), outlives)
-                            },
-                        ));
-                    }
+                    // Two irreducible projections are only known to be equal
+                    // when they are equal modulo lifetimes. Their arguments
+                    // are invariant, so each pair of lifetimes is related
+                    // invariantly, which may bind a matched one.
+                    (true, true) => Ok(Ty::corresponding_lifetimes(
+                        relate.lesser(),
+                        relate.greater(),
+                        self.engine(),
+                    )
+                    .await
+                    .map_or(Step::NoProgress, |lifetimes| {
+                        Step::Derived(
+                            lifetimes
+                                .into_iter()
+                                .map(|(lesser, greater)| {
+                                    DerivedConstraint::new_type_application_matching(
+                                        lesser,
+                                        greater,
+                                        Variance::Invariant,
+                                    )
+                                })
+                                .collect(),
+                        )
+                    })),
 
                     // An irreducible projection can still reduce once a
                     // variable in it is bound, to a type that satisfies the
@@ -258,6 +294,14 @@ impl Solver {
             {
                 self.bind_poly_var(*poly_var, relate.greater(), TyRelatingSide::Lesser, relate_env)
                     .await
+            }
+
+            // An external lifetime that interface matching may bind is
+            // instantiated with the lifetime the creator has in its place.
+            (Ty::Lifetime(Lifetime::External(external)), _)
+                if can_bind(relate_env, TyRelatingSide::Lesser, VariableKind::External) =>
+            {
+                self.bind_external_lifetime(*external, relate.greater()).await
             }
 
             (Ty::Inference(var), _) => {
@@ -298,10 +342,11 @@ impl Solver {
     /// Returns whether `relate` relates two lifetimes by outlives
     /// constraints.
     ///
-    /// A lifetime parameter of an instance head that top-level matching may
-    /// bind is instantiated through substitution instead. That is ordinary
-    /// instantiation, not inference. Lifetime inference variables are never
-    /// bound, not even under invariance.
+    /// A lifetime that matching may bind is instantiated through substitution
+    /// instead: a lifetime parameter of an instance head, or an external
+    /// lifetime of an interface. That is ordinary instantiation, not
+    /// inference. Lifetime inference variables are never bound, not even
+    /// under invariance.
     async fn is_outlives_relation(
         &self,
         relate: &TyRelate,
@@ -313,9 +358,9 @@ impl Solver {
             return false;
         }
 
-        let is_bindable_head_parameter = matches!(&**relate.lesser(), Ty::PolyVar(_))
-            && can_bind(relate_env, TyRelatingSide::Lesser, VariableKind::Poly);
-        !is_bindable_head_parameter
+        let is_matched = VariableKind::of_matched_lifetime(relate.lesser())
+            .is_some_and(|kind| can_bind(relate_env, TyRelatingSide::Lesser, kind));
+        !is_matched
     }
 
     /// Relates two applications of the same type constructor argument by
