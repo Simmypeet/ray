@@ -414,7 +414,7 @@ async fn interface_match_binds_external_lifetimes_and_relates_the_others() {
     let reference = |lifetime: &Interned<Ty>| {
         Ty::new_reference(
             lifetime.clone(),
-            Ty::new_primitive(Primitive::Int32, &engine),
+            Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine),
             Mutability::Immutable,
             &engine,
         )
@@ -453,7 +453,7 @@ async fn interface_match_does_not_bind_external_lifetimes_of_the_creator() {
     let reference = |lifetime: &Interned<Ty>| {
         Ty::new_reference(
             lifetime.clone(),
-            Ty::new_primitive(Primitive::Int32, &engine),
+            Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine),
             Mutability::Immutable,
             &engine,
         )
@@ -485,7 +485,7 @@ async fn interface_match_rejects_types_of_different_shapes() {
     use rayc_type::ty::{Mutability, lifetime::Lifetime};
 
     let engine = rayc_qbice::create_minimal_engine().await;
-    let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+    let int32 = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let external = Ty::new_lifetime(Lifetime::External(rayc_arena::ID::new(0)), &engine);
     let region = Ty::new_lifetime(Lifetime::Region(rayc_arena::ID::new(0)), &engine);
     let interface = Ty::new_tuple(
