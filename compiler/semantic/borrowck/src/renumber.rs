@@ -1,26 +1,6 @@
-//! Region renumbering.
-//!
-//! Before the borrow checker can collect outlives constraints, every lifetime
-//! in the IR that is not universal is given its own region. These are mostly
-//! erased lifetimes, since type inference ignores lifetimes, but a region
-//! already in the IR is replaced as well:
-//!
-//! - a lifetime in the interface of a nested function (its captures,
-//!   parameters, return type and effect) becomes a fresh
-//!   [`Lifetime::External`], a universal region of that nested function which
-//!   its creator later instantiates with one of its own regions;
-//! - every other lifetime becomes a fresh [`Lifetime::Region`], shared by every
-//!   IR function of the definition.
-//!
-//! Both kinds are numbered by one counter shared by every IR function of the
-//! definition, so no two regions created share an ID. The external regions
-//! created are recorded by capture layout and by function signature; see
-//! [`Renumbering::capture_externals`] and
-//! [`Renumbering::signature_externals`].
-//!
-//! Universal lifetimes, `'static`, lifetime parameters and external
-//! lifetimes, are given rather than chosen by the function mentioning them,
-//! and are kept as they are.
+//! Region renumbering: every lifetime in the IR that is not universal gets its
+//! own region, a [`Lifetime::External`] in the interface of a nested function
+//! and a [`Lifetime::Region`] anywhere else.
 
 use qbice::storage::intern::Interned;
 use rayc_arena::ID;
@@ -42,17 +22,13 @@ use rayc_type::{
 /// The regions created by renumbering the IR functions of a definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Renumbering {
-    /// The number of IDs handed out. [`Lifetime::Region`]s and
-    /// [`Lifetime::External`]s are numbered by one counter, so every region
-    /// created, of either kind, has a distinct ID below it.
+    /// The number of IDs handed out, to regions of either kind.
     id_count: u64,
 
-    /// The external regions created in each capture layout. They belong to
-    /// the interface of every nested function using the layout.
+    /// The external regions created in each capture layout.
     capture_externals: FxHashMap<CaptureMapID, FxHashSet<ExternalRegionID>>,
 
-    /// The external regions created in the signature of each nested
-    /// function: its parameters, return type and effect.
+    /// The external regions created in the signature of each nested function.
     signature_externals: FxHashMap<FunctionID, FxHashSet<ExternalRegionID>>,
 }
 
@@ -76,8 +52,7 @@ impl Renumbering {
         }
     }
 
-    /// Returns the number of IDs handed out: every [`Lifetime::Region`] and
-    /// [`Lifetime::External`] created has a distinct ID below it.
+    /// Returns the number of IDs handed out, to regions of either kind.
     #[must_use]
     pub const fn id_count(&self) -> u64 { self.id_count }
 
@@ -89,11 +64,8 @@ impl Renumbering {
         self.capture_externals.get(&capture_map_id).into_iter().flatten().copied()
     }
 
-    /// Iterates over the external regions created in the signature of a
+    /// Iterates over the external regions created in the signature of a nested
     /// function.
-    ///
-    /// The definition function has none: its signature is declared, with
-    /// lifetime parameters, and is not stored in the IR.
     pub fn signature_externals(
         &self,
         function_id: FunctionID,
@@ -112,8 +84,7 @@ struct Renumberer<'e> {
     /// The external regions created in each capture layout.
     capture_externals: FxHashMap<CaptureMapID, FxHashSet<ExternalRegionID>>,
 
-    /// The external regions created in the signature of each nested
-    /// function.
+    /// The external regions created in the signature of each nested function.
     signature_externals: FxHashMap<FunctionID, FxHashSet<ExternalRegionID>>,
 }
 

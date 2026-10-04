@@ -821,9 +821,9 @@ async fn generalization_runs_the_occurs_check() {
     assert_eq!(step, Err(Error::OccursCheckFailed));
 }
 
-// input: this.Out['?0] = this.Out['?1]
+// input: this.Out['?0] <: this.Out['?1]
 // premise: no given reduces this.Out
-// output: '?0: '?1, '?1: '?0, since projection arguments are invariant
+// output: '?0 = '?1 is derived, since projection arguments are invariant
 #[tokio::test]
 async fn rigid_projections_differing_in_lifetimes_relate_them_invariantly() {
     use rayc_type::ty::self_instance::SelfInstance;
@@ -837,11 +837,16 @@ async fn rigid_projections_differing_in_lifetimes_relate_them_invariantly() {
     };
     let mut solver = Solver::without_givens(engine.clone()).await;
 
-    let step = entail(&mut solver, &TyRelate::new(out(&a), out(&b), Variance::Covariant)).await;
+    let step =
+        entail_step(&mut solver, &TyRelate::new(out(&a), out(&b), Variance::Covariant)).await;
 
     assert_eq!(
         step,
-        Ok((Step::Derived(Vec::new()), constraints([outlives_of(&a, &b), outlives_of(&b, &a)])))
+        Ok(Step::Derived(vec![DerivedConstraint::new_type_application_matching(
+            a,
+            b,
+            Variance::Invariant
+        )]))
     );
 }
 

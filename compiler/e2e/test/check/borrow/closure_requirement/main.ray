@@ -86,3 +86,23 @@ def main() -> int32:
         assign(b.&)     # <-- Expect an error here: `r` is used after `b`.
 
     return read + kept + r.*
+
+
+trait Source[t]:
+    type Item['x]
+
+
+def projected['a, 'b](item: s.Item['a]) given (s: Source[int32]) -> s.Item['b]:
+    # ERROR: the closure gives back its argument, whose type is a projection
+    # that nothing reduces. The lifetimes of the projection are those of the
+    # closure type, and the arguments of a projection are invariant.
+    let local = item
+    let same = (value) -> value
+    return same(local)
+
+
+def projectedSameLifetime['a](item: s.Item['a]) given (s: Source[int32]) -> s.Item['a]:
+    # OK: the argument and the result have the same lifetime.
+    let local = item
+    let same = (value) -> value
+    return same(local)

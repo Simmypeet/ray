@@ -1,18 +1,5 @@
-//! The errors the borrow checker reports.
-//!
-//! Each error is an access that invalidates a loan while the loan is still
-//! live, and points at three places: the access that invalidates the loan,
-//! the borrow that issued it, and a later use of the borrow, which is why the
-//! loan is still live. A loan that outlives the function, such as one stored
-//! behind a parameter, has no later use within it.
-//!
-//! A borrow, a read or a move made to capture a place into a nested function
-//! points at the expression creating that function, and says so.
-//!
-//! The exceptions are a relation between two universal lifetimes, and a type
-//! outliving a universal lifetime, that the function requires but may not
-//! assume. Neither involves a loan: they point at the instruction that
-//! requires them.
+//! The errors the borrow checker reports: mostly an access that invalidates a
+//! live loan, pointing at the access, the borrow and a later use of it.
 
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
@@ -28,8 +15,7 @@ pub struct AccessSite {
     /// creating the nested function that captures it.
     span: RelativeSpan,
 
-    /// Whether the place is accessed to capture it into a nested function: a
-    /// closure, a handled body or an operation handler.
+    /// Whether the place is accessed to capture it into a nested function.
     is_capture: bool,
 }
 
@@ -38,8 +24,7 @@ impl AccessSite {
         Self { span, is_capture }
     }
 
-    /// Returns the highlight of the access, labelled `message`, which says
-    /// what happens there.
+    /// Returns the highlight of the access, labelled `message`.
     async fn highlight(&self, engine: &TrackedEngine, message: &str) -> Highlight<ByteIndex> {
         let message =
             if self.is_capture { format!("{message}, by a capture") } else { message.to_owned() };
@@ -60,8 +45,7 @@ pub struct ConflictingLoan {
     /// Whether the loan is shared or mutable.
     mutability: Mutability,
 
-    /// A use of the borrow after the conflicting access, if the borrow is used
-    /// within the function.
+    /// A use of the borrow after the conflicting access, if there is one.
     later_use_span: Option<RelativeSpan>,
 }
 
@@ -118,9 +102,7 @@ impl AssignToBorrowed {
     }
 }
 
-/// A place is borrowed while a conflicting loan of it is live: a mutable
-/// borrow while it is borrowed at all, or a shared borrow while it is
-/// mutably borrowed.
+/// A place is borrowed while a conflicting loan of it is live.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct ConflictingBorrow {
     borrow: AccessSite,
@@ -164,10 +146,8 @@ impl MoveOfBorrowed {
     }
 }
 
-/// A variable goes out of scope while a loan of it is live.
-///
-/// Scopes carry no span of their own, so the variable's declaration stands
-/// for the end of its scope.
+/// A variable goes out of scope while a loan of it is live. Its declaration
+/// stands for the end of its scope, which has no span.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct DoesNotLiveLongEnough {
     binding_span: RelativeSpan,
@@ -197,9 +177,6 @@ impl TemporaryDroppedWhileBorrowed {
 
 /// A value is dropped while a loan of what its `Drop` implementation may use
 /// is live, such as the memory behind a mutable reference it holds.
-///
-/// A loan of the storage of the value itself is reported where that storage
-/// ends instead, as [`DoesNotLiveLongEnough`] or [`AssignToBorrowed`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct BorrowedWhenDropped {
     /// The declaration of the binding holding the dropped value.
@@ -232,8 +209,7 @@ impl ReturnsBorrowOfLocal {
 /// neither its where clause nor its signature lets it assume.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct LifetimeMayNotLiveLongEnough {
-    /// The instruction that requires the relation: where a value of the
-    /// longer lifetime flows into the shorter one.
+    /// The instruction that requires the relation.
     span: RelativeSpan,
 
     /// The lifetime required to outlive `shorter`.
@@ -258,9 +234,25 @@ impl LifetimeMayNotLiveLongEnough {
     }
 }
 
+/// An operation handler lets a borrow of one of its captures leave the run
+/// borrowing it, where a later run could borrow or write the same capture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct HandlerCaptureEscapes {
+    /// The instruction that lets the borrow leave the handler.
+    span: RelativeSpan,
+
+    /// The borrow of the capture, when that is not at `span` itself.
+    borrow_span: Option<RelativeSpan>,
+}
+
+impl HandlerCaptureEscapes {
+    pub(crate) const fn new(span: RelativeSpan, borrow_span: Option<RelativeSpan>) -> Self {
+        Self { span, borrow_span }
+    }
+}
+
 /// The function requires a type parameter or a projection to outlive a
-/// universal lifetime, which neither its where clause nor its signature lets
-/// it assume.
+/// universal lifetime, which it may not assume.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct TypeMayNotLiveLongEnough {
     /// The instruction that requires the type to outlive a lifetime.
@@ -302,6 +294,7 @@ pub enum Diagnostic {
     BorrowedWhenDropped(BorrowedWhenDropped),
     ReturnsBorrowOfLocal(ReturnsBorrowOfLocal),
     LifetimeMayNotLiveLongEnough(LifetimeMayNotLiveLongEnough),
+    HandlerCaptureEscapes(HandlerCaptureEscapes),
     TypeMayNotLiveLongEnough(TypeMayNotLiveLongEnough),
 }
 
@@ -332,6 +325,9 @@ impl Report for Diagnostic {
             }
             Self::LifetimeMayNotLiveLongEnough(diagnostic) => {
                 lifetime_may_not_live_long_enough_report(engine, diagnostic).await
+            }
+            Self::HandlerCaptureEscapes(diagnostic) => {
+                handler_capture_escapes_report(engine, diagnostic).await
             }
             Self::TypeMayNotLiveLongEnough(diagnostic) => {
                 type_may_not_live_long_enough_report(engine, diagnostic).await
@@ -530,6 +526,36 @@ async fn lifetime_may_not_live_long_enough_report(
         )
         .related(origin)
         .maybe_help_message(help)
+        .build()
+}
+
+async fn handler_capture_escapes_report(
+    engine: &TrackedEngine,
+    diagnostic: &HandlerCaptureEscapes,
+) -> Rendered<ByteIndex> {
+    let mut borrow = Vec::new();
+    if let Some(borrow_span) = &diagnostic.borrow_span {
+        borrow.push(
+            Highlight::builder()
+                .span(engine.to_absolute_span(borrow_span).await)
+                .message("the captured variable is borrowed here")
+                .build(),
+        );
+    }
+
+    Rendered::builder()
+        .message("captured variable cannot escape the operation handler")
+        .primary_highlight(
+            Highlight::builder()
+                .span(engine.to_absolute_span(&diagnostic.span).await)
+                .message("this lets a borrow of a captured variable escape the operation handler")
+                .build(),
+        )
+        .related(borrow)
+        .help_message(
+            "an operation handler may run again while the borrow is still in use, so a borrow of \
+             what it captures mutably may only be used within the handler",
+        )
         .build()
 }
 

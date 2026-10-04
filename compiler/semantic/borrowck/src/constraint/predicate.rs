@@ -51,17 +51,14 @@ impl ConstraintCollector<'_> {
     }
 
     /// Adds, at `point`, the requirements of the instantiated predicate
-    /// `subject: bound`: each lifetime in `subject` must outlive `bound`, as
-    /// an outlives constraint, and so must each type parameter and
-    /// projection in it, as a type test.
+    /// `subject: bound`: an outlives constraint for each lifetime in `subject`,
+    /// and a type test for each type parameter and projection.
     pub(super) async fn collect_outlives(&mut self, point: Point, predicate: &OutlivesPredicate) {
         self.collect_outlives_blaming(point, predicate, None).await;
     }
 
-    /// Adds, at `point`, the requirements of [`Self::collect_outlives`],
-    /// required by the source `blame` rather than by the instruction at
-    /// `point`, when there is one: where a nested function created at `point`
-    /// requires `predicate`.
+    /// As [`Self::collect_outlives`], blaming the source `blame` when there is
+    /// one.
     pub(super) async fn collect_outlives_blaming(
         &mut self,
         point: Point,
@@ -86,9 +83,7 @@ impl ConstraintCollector<'_> {
                 }
 
                 // Only the outlives environment can tell whether a type
-                // parameter or a projection outlives `bound`, and which of
-                // its facts are needed depends on the universal regions
-                // `bound` turns out to outlive.
+                // parameter or a projection outlives `bound`.
                 OutlivesComponent::Opaque(subject) => {
                     self.constraints.add_type_test(
                         point,

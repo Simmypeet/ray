@@ -1,33 +1,6 @@
-//! Checks the relations an IR function requires between its universal
-//! regions.
-//!
-//! A universal region is one the function is given rather than one it
-//! chooses: `'static`, a lifetime parameter of the definition, or an external
-//! lifetime of a nested function. The function may only assume of them what
-//! its outlives environment states: its where clause and the bounds implied
-//! by its signature.
-//!
-//! When the constraints of the body lead from a universal region `'a` to a
-//! universal region `'b`, through any number of regions of the body, the
-//! function requires `'a: 'b`. That is an error unless the environment
-//! entails it.
-//!
-//! The environment states nothing of an external lifetime: the function
-//! creating the nested function chooses it. So when `'a` or `'b` is one, the
-//! relation is not an error, but a [requirement](crate::requirement) for the
-//! creator to prove of the region it chooses, where it creates the nested
-//! function.
-//!
-//! The paths are searched in the location-insensitive constraint graph; see
-//! [`SubsetGraph`].
-//!
-//! The search from `'a` stops at each universal region it reaches. A path
-//! that goes on through `'b` to `'c` is found again by the search from `'b`,
-//! and the environment is transitive, so `'a: 'b` and `'b: 'c` holding means
-//! `'a: 'c` does too. This also reports a missing relation once, where it
-//! arises, and not again for every region upstream of it. The same goes for a
-//! path through an external region: the creator is required each step of it,
-//! which it then checks as a path through the region it chooses.
+//! Checks the relations an IR function requires between its universal regions:
+//! `'a: 'b` whenever its constraints lead from `'a` to `'b`. One the
+//! environment does not entail is an error, or a requirement of the creator.
 
 use qbice::storage::intern::Interned;
 use rayc_ir::ir_function::IRFunction;
@@ -36,19 +9,14 @@ use rayc_solver::Solver;
 use rayc_type::ty::Ty;
 
 use crate::{
-    diagnostic::{Diagnostic, LifetimeMayNotLiveLongEnough},
+    diagnostic::{Diagnostic, HandlerCaptureEscapes, LifetimeMayNotLiveLongEnough},
     requirement::ExternalRequirements,
     subset_graph::{Reached, SubsetGraph},
 };
 
-/// Checks that every relation between two universal regions that the
-/// constraints of `function`, gathered in `graph`, require follows from the
-/// outlives environment of `solver`, and returns the ones that do not.
-///
-/// A relation with an external lifetime is added to `requirements` instead,
-/// for the function creating `function` to prove.
-///
-/// `solver` must be created at the definition the function belongs to.
+/// Returns the relations between universal regions that `function` requires but
+/// may not assume. One with an external lifetime is added to `requirements`
+/// instead.
 pub(crate) fn check_universal_regions(
     function: &IRFunction,
     graph: &SubsetGraph,
@@ -69,9 +37,8 @@ struct UniversalRegionChecker<'a> {
 }
 
 impl UniversalRegionChecker<'_> {
-    /// Checks the relations required of each universal region, and returns
-    /// the errors found. The relations left for the creator of the function
-    /// to prove are added to `requirements`.
+    /// Returns the errors found, adding what is left for the creator to prove
+    /// to `requirements`.
     fn check(&self, requirements: &mut ExternalRequirements) -> Vec<Diagnostic> {
         let environment = self.solver.outlives_environment();
         let mut diagnostics = Vec::new();
@@ -98,6 +65,14 @@ impl UniversalRegionChecker<'_> {
 
                 let source = self.source(&reached, shorter);
 
+                // A run of an operation handler borrows its environment for a
+                // lifetime nobody chooses, so nothing can make it outlive
+                // another.
+                if self.function.environment_lifetime() == Some(longer) {
+                    diagnostics.push(Self::explain_escape(source));
+                    continue;
+                }
+
                 // The creator of a nested function chooses its external
                 // lifetimes, so only the creator can tell what they outlive.
                 if longer.is_external_lifetime() || shorter.is_external_lifetime() {
@@ -111,16 +86,8 @@ impl UniversalRegionChecker<'_> {
         diagnostics
     }
 
-    /// Returns where the relation between the source of the search `reached`
-    /// and the universal region `shorter` it reached arises: at the last
-    /// constraint of the path between them, where the value flows into
-    /// `shorter`, and at the first, where the value comes from.
-    ///
-    /// # Panics
-    ///
-    /// Panics if no constraint of the path has a source. A constraint with a
-    /// universal region is required by an instruction reading or writing a
-    /// value, which always has one.
+    /// Returns where the relation between the source of `reached` and `shorter`
+    /// arises: the last and the first constraint of the path between them.
     fn source(&self, reached: &Reached<'_>, shorter: &Interned<Ty>) -> RequirementSource {
         let mut spans = reached.path_spans(shorter, self.function).into_iter().flatten();
 
@@ -131,12 +98,8 @@ impl UniversalRegionChecker<'_> {
         RequirementSource { span, origin_span }
     }
 
-    /// Describes the unproven requirement `longer: shorter`, which arises at
+    /// Describes the unproven requirement `longer: shorter` arising at
     /// `source`.
-    ///
-    /// The error points at the last constraint, where the value flows into
-    /// `shorter`, and at the first, where the value of `longer` comes from,
-    /// when that is somewhere else.
     fn explain(
         longer: &Interned<Ty>,
         shorter: &Interned<Ty>,
@@ -149,16 +112,24 @@ impl UniversalRegionChecker<'_> {
             (source.origin_span != source.span).then_some(source.origin_span),
         ))
     }
+
+    /// Describes a borrow of a capture that leaves the run of an operation
+    /// handler, arising at `source`.
+    fn explain_escape(source: RequirementSource) -> Diagnostic {
+        Diagnostic::HandlerCaptureEscapes(HandlerCaptureEscapes::new(
+            source.span,
+            (source.origin_span != source.span).then_some(source.origin_span),
+        ))
+    }
 }
 
 /// Where a relation between two universal regions arises in a function.
 #[derive(Debug, Clone, Copy)]
 struct RequirementSource {
-    /// The source of the last constraint of the path between the two regions:
-    /// where the value of the longer lifetime flows into the shorter one.
+    /// The last constraint of the path: where the value flows into the shorter
+    /// lifetime.
     span: RelativeSpan,
 
-    /// The source of the first constraint of the path: where the value of
-    /// the longer lifetime comes from.
+    /// The first constraint of the path: where the value comes from.
     origin_span: RelativeSpan,
 }

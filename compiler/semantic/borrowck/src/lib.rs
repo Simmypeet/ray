@@ -36,18 +36,8 @@ pub mod variance;
 mod test_util;
 
 /// Borrow checks every IR function of the definition that `ir` lowers, and
-/// returns the errors found.
-///
-/// This expects IR without errors, after the memory analysis has elaborated
-/// its drops.
-///
-/// Each function is checked on its own, after the nested functions it
-/// creates: what a nested function requires of the lifetimes in its interface
-/// is required of its creator, where the creator creates it; see
-/// [`requirement`].
-///
-/// The lifetimes of `ir` are renumbered in place for the check and left that
-/// way: the caller is expected to erase the lifetimes of `ir` afterwards.
+/// returns the errors found. The lifetimes of `ir` are left renumbered, for the
+/// caller to erase.
 pub async fn borrow_check(ir: &mut IRFunctionMap, engine: &TrackedEngine) -> Vec<Diagnostic> {
     // Give every lifetime the borrow checker chooses its own region.
     let _ = Renumbering::renumber(ir, engine).await;
@@ -64,10 +54,8 @@ pub async fn borrow_check(ir: &mut IRFunctionMap, engine: &TrackedEngine) -> Vec
         let constraints =
             LocalizedConstraints::collect(ir, function_id, &effect, &nested, &mut solver).await;
 
-        // What the function requires of its universal regions, and of the
-        // types that must outlive them, holds at every point or at none, so
-        // it is checked on the constraints alone. What it requires of its
-        // external lifetimes is left for its creator to prove.
+        // What the function requires of its universal regions holds at every
+        // point or at none, so it is checked on the constraints alone.
         let graph = SubsetGraph::new(&constraints, solver.outlives_environment());
         let mut requirements = ExternalRequirements::default();
         diagnostics.extend(check_universal_regions(function, &graph, &solver, &mut requirements));

@@ -2,9 +2,8 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
-    poly_var::{GlobalPolyVarID, get_poly_var_map},
-    subst::{Subst, Substitutable},
-    ty::{Ty, args::Args, effect_row::EffectLabel},
+    subst::Subst,
+    ty::{Ty, effect_row::EffectLabel},
 };
 
 use crate::{
@@ -50,16 +49,9 @@ impl Perform {
     /// Returns the effect row the `perform` introduces: the label of its
     /// effect alone, instantiated with the substitution of the `perform`.
     pub async fn effect_row(&self, engine: &TrackedEngine) -> Interned<Ty> {
-        let parameters = engine.get_poly_var_map(self.effect_id).await;
-        let arguments = Args::new(
-            parameters.iter().map(|(parameter_id, _)| {
-                Ty::new_poly_var(GlobalPolyVarID::new(self.effect_id, parameter_id), engine)
-            }),
-            engine,
-        );
-        let label = engine.intern(EffectLabel::new(self.effect_id, arguments));
+        let label = EffectLabel::instantiated(self.effect_id, &self.substitution, engine).await;
 
-        Ty::new_effect_row([label], None, engine).apply_subst_or_clone(&self.substitution, engine)
+        Ty::new_effect_row([label], None, engine)
     }
 }
 

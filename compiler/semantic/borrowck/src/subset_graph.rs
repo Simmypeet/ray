@@ -1,25 +1,6 @@
-//! The location-insensitive constraint graph of an IR function.
-//!
-//! This is the union of the constraints of every point: for each region, the
-//! regions it must outlive somewhere in the body. A universal region is live
-//! at every point, so what flows into one at any point stays in it at every
-//! other, and the points do not matter to a question about universal regions.
-//! Compared with following the points, the graph only relates more regions
-//! when a value is overwritten before it is used again, as NLL does.
-//!
-//! Two transitive closures of the graph are computed once, and answer what
-//! outlives what:
-//!
-//! - the closure of the constraints alone tells what the body requires, such as
-//!   which universal regions a region of the body must outlive. Whether the
-//!   function may assume that is then asked of the environment.
-//! - the closure of the constraints together with what the environment states
-//!   between universal regions tells what holds in a function without errors,
-//!   such as whether two regions are the same lifetime. A type test asks it.
-//!
-//! A closure does not tell which constraints lead from one region to another,
-//! so the path an error points at is searched for in the graph, only once a
-//! closure has shown that there is an error to report.
+//! The location-insensitive constraint graph of an IR function: for each
+//! region, the regions it must outlive somewhere in the body. It answers what
+//! the body requires of universal regions, which are live at every point.
 
 use std::collections::VecDeque;
 
@@ -39,9 +20,8 @@ struct Edge {
     /// The point of the instruction requiring the constraint.
     point: Point,
 
-    /// The source that requires the constraint, when that is not the
-    /// instruction at `point`: where a nested function created there
-    /// requires it.
+    /// The source requiring the constraint, when a nested function created at
+    /// `point` does.
     blame: Option<RelativeSpan>,
 
     /// The index of `'greater` in the graph.
@@ -49,8 +29,8 @@ struct Edge {
 }
 
 impl Edge {
-    /// Returns the source that requires the constraint in `function`, or
-    /// `None` when it is an instruction that has no source of its own.
+    /// Returns the source requiring the constraint in `function`, if it has
+    /// one.
     fn span(&self, function: &IRFunction) -> Option<RelativeSpan> {
         self.blame.or_else(|| function.point_span(self.point))
     }
@@ -84,9 +64,7 @@ impl RegionNumbering {
 /// The location-insensitive constraint graph: for each region, the regions
 /// it must outlive at any point.
 pub(crate) struct SubsetGraph {
-    /// The regions with a constraint into or out of them, and the universal
-    /// regions the environment mentions. A region is referred to by its
-    /// index here.
+    /// The regions of the graph, each referred to by its index here.
     regions: Vec<Interned<Ty>>,
 
     /// The index of each region in `regions`.
@@ -101,22 +79,17 @@ pub(crate) struct SubsetGraph {
     /// The index of `'static`.
     static_region: usize,
 
-    /// `required.has_path(a, b)` means that the constraints of the body
-    /// require region `a` to outlive region `b`. Every region has a path to
-    /// itself.
+    /// Has a path from `a` to `b` when the constraints of the body require `a:
+    /// b`.
     required: TransitiveClosure,
 
-    /// `implied.has_path(a, b)` means that region `a` outlives region `b`
-    /// when the constraints of the body hold, given what the environment
-    /// states between universal regions.
+    /// Has a path from `a` to `b` when `a: b` follows from the constraints of
+    /// the body and the environment.
     implied: TransitiveClosure,
 }
 
 impl SubsetGraph {
     /// Builds the graph of the union of `constraints` over every point.
-    ///
-    /// `environment` must be the outlives environment of the definition the
-    /// function belongs to.
     pub(crate) fn new(
         constraints: &LocalizedConstraints,
         environment: &OutlivesEnvironment,
@@ -131,9 +104,7 @@ impl SubsetGraph {
             constraint_edges.push((lesser, edge));
         }
 
-        // The universal regions the environment relates are part of the
-        // graph even when no constraint mentions them: a where clause may be
-        // about a lifetime the body never uses.
+        // A where clause may be about a lifetime the body never uses.
         for lifetime in environment.lifetimes() {
             numbering.index_of(lifetime);
         }
@@ -179,16 +150,13 @@ impl SubsetGraph {
         Self { regions, indices, edges, universals, static_region, required, implied }
     }
 
-    /// Iterates over the universal regions of the graph: the ones with a
-    /// constraint into or out of them, and the ones the environment
-    /// mentions.
+    /// Iterates over the universal regions of the graph.
     pub(crate) fn universals(&self) -> impl Iterator<Item = &Interned<Ty>> {
         self.universals.iter().map(|&universal| &self.regions[universal])
     }
 
     /// Iterates over the universal regions other than `region` that the
-    /// constraints of the body require it to outlive, through any number of
-    /// regions, universal ones included.
+    /// constraints of the body require it to outlive.
     pub(crate) fn reachable_universals<'s>(
         &'s self,
         region: &Interned<Ty>,
@@ -206,15 +174,8 @@ impl SubsetGraph {
         })
     }
 
-    /// Searches the graph breadth-first from `source`, through the regions of
-    /// the body, up to each universal region, recording the constraints it
-    /// follows.
-    ///
-    /// The search stops at each universal region it reaches: what that
-    /// region must outlive in turn is found by the search from it.
-    ///
-    /// This search is indeed expensive, but it is only done when there is an
-    /// error to report
+    /// Searches breadth-first from `source` up to each universal region,
+    /// recording the constraints followed. Only done to explain an error.
     pub(crate) fn reach_universals_from(&self, source: &Interned<Ty>) -> Reached<'_> {
         let mut reached =
             Reached { graph: self, universals: Vec::new(), parents: FxHashMap::default() };
@@ -242,12 +203,8 @@ impl SubsetGraph {
         reached
     }
 
-    /// Returns whether `'lesser: 'greater` follows from the constraints of
-    /// the body together with the relations the environment states between
-    /// universal regions.
-    ///
-    /// When it follows in both directions, the two regions are the same
-    /// lifetime in every solution of the constraints.
+    /// Returns whether `'lesser: 'greater` follows from the constraints of the
+    /// body and the environment.
     pub(crate) fn implies_outlives(&self, lesser: &Interned<Ty>, greater: &Interned<Ty>) -> bool {
         if lesser == greater {
             return true;
@@ -270,9 +227,8 @@ impl SubsetGraph {
         self.implied.has_path(lesser, greater).expect("both are indexed")
     }
 
-    /// Returns a universal region that the constraints of the body and the
-    /// environment make the same lifetime as `region`, if there is one:
-    /// the least of them, so that the choice is stable.
+    /// Returns the least universal region that the constraints and the
+    /// environment make the same lifetime as `region`, if there is one.
     pub(crate) fn equal_universal(&self, region: &Interned<Ty>) -> Option<&Interned<Ty>> {
         self.universals()
             .filter(|universal| {
@@ -301,18 +257,14 @@ pub(crate) struct Reached<'a> {
 }
 
 impl<'a> Reached<'a> {
-    /// Iterates over the universal regions reached, in the order the search
-    /// found them.
+    /// Iterates over the universal regions reached, in the order found.
     pub(crate) fn universals(&self) -> impl Iterator<Item = &'a Interned<Ty>> + '_ {
         let graph = self.graph;
         self.universals.iter().map(move |&universal| &graph.regions[universal])
     }
 
     /// Returns the source of each constraint on the path the search took to
-    /// `region`, from the source of the search onwards, in `function`, the
-    /// function the graph is of. A constraint required by an instruction
-    /// that has no source of its own has none. The path is empty when the
-    /// search did not reach `region`.
+    /// `region`, in order. The path is empty when `region` was not reached.
     pub(crate) fn path_spans(
         &self,
         region: &Interned<Ty>,

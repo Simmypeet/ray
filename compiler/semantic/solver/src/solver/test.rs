@@ -396,3 +396,109 @@ async fn head_match_ignores_lifetimes_but_requires_their_outlives() {
         ))
     );
 }
+
+// input: (&'^0 int32, &'static int32) matched against (&'?0 int32, &'?1 int32)
+// premise: interface matching only binds external lifetimes
+// output: '^0 is instantiated with '?0, and '?1: 'static is required
+#[tokio::test]
+async fn interface_match_binds_external_lifetimes_and_relates_the_others() {
+    use rayc_type::{
+        ty::{Mutability, lifetime::Lifetime},
+        where_clause::OutlivesPredicate,
+    };
+
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let external = rayc_arena::ID::new(0);
+    let region = |index| Ty::new_lifetime(Lifetime::Region(rayc_arena::ID::new(index)), &engine);
+    let static_ = Ty::new_lifetime(Lifetime::Static, &engine);
+    let reference = |lifetime: &Interned<Ty>| {
+        Ty::new_reference(
+            lifetime.clone(),
+            Ty::new_primitive(Primitive::Int32, &engine),
+            Mutability::Immutable,
+            &engine,
+        )
+    };
+    let interface = [
+        (
+            reference(&Ty::new_lifetime(Lifetime::External(external), &engine)),
+            reference(&region(0)),
+        ),
+        (reference(&static_), reference(&region(1))),
+    ];
+    let mut solver = Solver::without_givens(engine.clone()).await;
+
+    assert_eq!(
+        solver.interface_match(interface).await.map(Solution::into_parts),
+        Some((
+            Subst::new_singleton(external, region(0)),
+            std::iter::once(OutlivesPredicate::new(region(1), static_)).collect()
+        ))
+    );
+}
+
+// input: &'?0 int32 matched against &'^0 int32
+// premise: interface matching is one-way
+// output: nothing is instantiated; '?0: '^0 and '^0: '?0 are required
+#[tokio::test]
+async fn interface_match_does_not_bind_external_lifetimes_of_the_creator() {
+    use rayc_type::{
+        ty::{Mutability, lifetime::Lifetime},
+        where_clause::OutlivesPredicate,
+    };
+
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let region = Ty::new_lifetime(Lifetime::Region(rayc_arena::ID::new(0)), &engine);
+    let external = Ty::new_lifetime(Lifetime::External(rayc_arena::ID::new(0)), &engine);
+    let reference = |lifetime: &Interned<Ty>| {
+        Ty::new_reference(
+            lifetime.clone(),
+            Ty::new_primitive(Primitive::Int32, &engine),
+            Mutability::Immutable,
+            &engine,
+        )
+    };
+    let mut solver = Solver::without_givens(engine.clone()).await;
+
+    assert_eq!(
+        solver
+            .interface_match([(reference(&region), reference(&external))])
+            .await
+            .map(Solution::into_parts),
+        Some((
+            Subst::new_empty(),
+            [
+                OutlivesPredicate::new(region.clone(), external.clone()),
+                OutlivesPredicate::new(external, region)
+            ]
+            .into_iter()
+            .collect()
+        ))
+    );
+}
+
+// input: (&'^0 int32,) matched against &'?0 int32
+// premise: the two types differ in more than lifetimes
+// output: None
+#[tokio::test]
+async fn interface_match_rejects_types_of_different_shapes() {
+    use rayc_type::ty::{Mutability, lifetime::Lifetime};
+
+    let engine = rayc_qbice::create_minimal_engine().await;
+    let int32 = Ty::new_primitive(Primitive::Int32, &engine);
+    let external = Ty::new_lifetime(Lifetime::External(rayc_arena::ID::new(0)), &engine);
+    let region = Ty::new_lifetime(Lifetime::Region(rayc_arena::ID::new(0)), &engine);
+    let interface = Ty::new_tuple(
+        engine.intern_unsized([Ty::new_reference(
+            external,
+            int32.clone(),
+            Mutability::Immutable,
+            &engine,
+        )]),
+        &engine,
+    );
+    let created = Ty::new_reference(region, int32, Mutability::Immutable, &engine);
+    let mut solver = Solver::without_givens(engine.clone()).await;
+
+    assert_eq!(solver.interface_match([(interface, created)]).await, None);
+}

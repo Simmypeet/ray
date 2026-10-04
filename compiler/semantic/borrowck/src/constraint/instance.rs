@@ -19,12 +19,8 @@ use rayc_type::{
 use super::ConstraintCollector;
 
 impl ConstraintCollector<'_> {
-    /// Collects the constraints of dropping a value of type `value_ty` with
-    /// the `Drop` dictionary `drop_instance`: `value_ty <: implementor`,
-    /// where the dictionary implements `Drop[implementor]`.
-    ///
-    /// The value is moved into `Drop.drop`, so the loans it holds flow into
-    /// the regions of the dictionary.
+    /// Collects the constraints of dropping a value of type `value_ty` with the
+    /// `Drop` dictionary `drop_instance`: `value_ty <: implementor`.
     pub(super) async fn collect_drop(
         &mut self,
         point: Point,
@@ -36,8 +32,7 @@ impl ConstraintCollector<'_> {
             return;
         }
 
-        // A dictionary without a trait reference is recovery from an invalid
-        // declaration, which was reported already.
+        // A missing trait reference is recovery from an error reported already.
         let Ok(trait_ref) = drop_instance.instance_trait_ref(self.solver.engine()).await else {
             return;
         };
@@ -45,21 +40,16 @@ impl ConstraintCollector<'_> {
             return;
         };
 
-        // The value is passed to `Drop.drop` as any argument is to its
-        // parameter, so its type only has to be a subtype of the implementor.
-        // `collect_drop_dictionary` would require `Drop[value_ty]` exactly:
-        // trait arguments are invariant, which also makes what the where
-        // clause of the instance lets flow between the regions of the
-        // dictionary flow back into the regions of the place.
+        // Only a subtype is required: `collect_drop_dictionary` would require
+        // `Drop[value_ty]` exactly, making the regions of the dictionary flow
+        // back into those of the place.
         self.relate(point, value_ty, implementor, Variance::Covariant).await;
 
         self.collect_dictionary_requirements(point, drop_instance).await;
     }
 
-    /// Requires, at `point`, each dictionary that `substitution` passes to
-    /// an instance parameter of `symbol_id`, or of a declaration enclosing
-    /// it, to implement the trait reference the parameter declares,
-    /// instantiated with `substitution`.
+    /// Requires each dictionary that `substitution` passes to an instance
+    /// parameter of `symbol_id` to implement the trait reference it declares.
     pub(super) async fn collect_instance_arguments(
         &mut self,
         point: Point,
@@ -69,9 +59,8 @@ impl ConstraintCollector<'_> {
         let poly_vars = self.solver.engine().get_enclosing_poly_var_maps(symbol_id).await;
 
         for (parameter_id, trait_ref) in poly_vars.instances() {
-            // A parameter the substitution leaves out is not instantiated
-            // here, as with the parameters of an enclosing declaration that
-            // the current function shares.
+            // The substitution leaves out the parameters of an enclosing
+            // declaration that the current function shares.
             let Some(instance) = substitution.get(&parameter_id) else {
                 continue;
             };
@@ -81,29 +70,22 @@ impl ConstraintCollector<'_> {
         }
     }
 
-    /// Requires, at `point`, the dictionary `instance` to implement
-    /// `expected`, and everything the dictionary was built from to hold.
-    ///
-    /// Type checking chose the dictionary with lifetimes erased, and
-    /// renumbering then gave its lifetimes their own regions. Relating the
-    /// trait reference it implements to `expected` is what ties those regions
-    /// to the regions of the type arguments it was chosen for: without it, a
-    /// loan would not flow through a type projected from the dictionary.
+    /// Requires the dictionary `instance` to implement `expected`, which ties
+    /// its regions to those of the type arguments it was chosen for, and what
+    /// it was built from to hold.
     pub(super) async fn collect_instance(
         &mut self,
         point: Point,
         instance: &Interned<Ty>,
         expected: &TraitRef,
     ) {
-        // A dictionary without a trait reference is recovery from an invalid
-        // declaration, which was reported already.
+        // A missing trait reference is recovery from an error reported already.
         let Ok(actual) = instance.instance_trait_ref(self.solver.engine()).await else {
             return;
         };
 
-        // Type checking already made the two trait references equal modulo
-        // lifetimes, so the relation only fails on an error, which was
-        // reported already.
+        // The two only differ in lifetimes, so this only fails on an error that
+        // was reported already.
         if let Some(outlives) = self.solver.relate_trait_refs_without_unify(&actual, expected).await
         {
             for constraint in outlives.iter() {
@@ -115,9 +97,8 @@ impl ConstraintCollector<'_> {
         Box::pin(self.collect_dictionary_requirements(point, instance)).await;
     }
 
-    /// Requires, at `point`, what the dictionary `instance` was built from:
-    /// the where clause of its instance declaration, and each dictionary
-    /// passed to it to implement the trait reference it stands for.
+    /// Requires what the dictionary `instance` was built from: the where clause
+    /// of its instance declaration, and the dictionaries passed to it.
     #[allow(clippy::match_same_arms)]
     pub(super) async fn collect_dictionary_requirements(
         &mut self,
@@ -126,8 +107,8 @@ impl ConstraintCollector<'_> {
     ) {
         match &**instance {
             Ty::Application(application) => match application.view() {
-                // A declared instance assumes its where clause and the trait
-                // references of its own instance parameters.
+                // A declared instance assumes its where clause and instance
+                // parameters.
                 ApplicationView::Instance(view) => {
                     let substitution = self
                         .solver
@@ -169,9 +150,8 @@ impl ConstraintCollector<'_> {
                     .await;
                 }
 
-                // One `Drop` dictionary per requirement of the generated
-                // plan of the struct, instantiated with the arguments of the
-                // struct type.
+                // One `Drop` dictionary per requirement of the generated drop
+                // plan.
                 ApplicationView::NominalDropInstance(view) => {
                     let nominal = view
                         .nominal()
@@ -193,8 +173,7 @@ impl ConstraintCollector<'_> {
                     }
                 }
 
-                // These dictionaries are built from a type alone, not from
-                // other dictionaries.
+                // Built from a type alone.
                 ApplicationView::DefInstance(_) | ApplicationView::NoOpDropInstance(_) => {}
 
                 // Not dictionaries.
@@ -208,8 +187,8 @@ impl ConstraintCollector<'_> {
                 | ApplicationView::Error => {}
             },
 
-            // A dictionary the current function is given: whoever passed it
-            // has proven what it requires.
+            // Given to the current function, whose caller proved what it
+            // requires.
             Ty::PolyVar(_) | Ty::SelfInstance(_) => {}
 
             // Not dictionaries.

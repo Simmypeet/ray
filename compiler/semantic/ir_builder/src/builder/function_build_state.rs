@@ -183,6 +183,7 @@ impl FunctionBuildState {
         diagnostic_span: RelativeSpan,
         capture_map: CaptureMapID,
         captures: FxHashMap<Source, CaptureID>,
+        engine: &TrackedEngine,
     ) -> Self {
         let typed_function_id = context.typed_function_id();
         let handler_context =
@@ -193,6 +194,7 @@ impl FunctionBuildState {
             return_ty.clone(),
             context.function_effect().clone(),
             capture_map,
+            engine,
         );
         let mut operation_handler_parameters = FxHashMap::default();
         for (typed_id, parameter) in handler_context.parameters() {
@@ -458,6 +460,7 @@ impl Builder {
             diagnostic_span,
             capture_map,
             captures,
+            &self.engine,
         );
         let enclosing = mem::replace(&mut self.building_function, handler);
         self.suspended_functions.push(enclosing);

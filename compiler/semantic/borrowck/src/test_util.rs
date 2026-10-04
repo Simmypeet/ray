@@ -183,9 +183,8 @@ impl FunctionBuilder {
         let mut solver = Solver::without_givens(self.engine.clone()).await;
 
         let function = self.functions.get_function(self.function_id);
-        // The definition of the function is not declared anywhere, so it has
-        // no effect row to look up; the functions built here perform nothing,
-        // and create no nested function.
+        // The functions built here perform nothing, and create no nested
+        // function.
         let effect = Ty::new_effect_row([], None, &self.engine);
         let nested = NestedRequirements::default();
         let constraints = LocalizedConstraints::collect(

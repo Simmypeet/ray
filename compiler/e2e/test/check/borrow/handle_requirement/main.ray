@@ -1,0 +1,176 @@
+eff Sink['a]:
+    def put(value: &'a int32)
+
+eff Source['a]:
+    def get() -> &'a int32
+
+eff Counter:
+    def tick() -> int32
+
+eff Anchor['a, 'w, t] where (t: 'a, t: 'w):
+    def anchor(witness: &'w t) -> &'a int32
+
+
+def bodyReturns['a, 'b](x: &'a int32) -> &'b int32:
+    # ERROR: the handled body gives back `x`, which is the value of the
+    # `run`, and nothing states `'a: 'b`.
+    return run:
+        Counter.tick()
+        return x
+    with Counter:
+        def tick():
+            return 0
+
+
+def bodyReturnsOutlived['a, 'b](x: &'a int32) -> &'b int32 where ('a: 'b):
+    # OK: the where clause states `'a: 'b`.
+    return run:
+        Counter.tick()
+        return x
+    with Counter:
+        def tick():
+            return 0
+
+
+def handlerGives['a, 'b](x: &'a int32) -> &'b int32:
+    # ERROR: the handler of `Source['b]` gives back `x` where a `&'b int32`
+    # is expected, and nothing states `'a: 'b`. The error points at the
+    # `return`, within the handler.
+    return run:
+        return Source.get()
+    with Source['b]:
+        def get():
+            return x
+
+
+def handlerGivesOutlived['a, 'b](x: &'a int32) -> &'b int32 where ('a: 'b):
+    # OK: the where clause states `'a: 'b`.
+    return run:
+        return Source.get()
+    with Source['b]:
+        def get():
+            return x
+
+
+def handlerStores['a, 'b](x: &'a int32, out: &mut &'b int32):
+    # ERROR: the handler of `Sink['a]` stores its argument where a
+    # `&'b int32` is expected, and nothing states `'a: 'b`.
+    run:
+        Sink.put(x)
+    with Sink['a]:
+        def put(value):
+            out.* = value
+
+
+def handlerStoresOutlived['a, 'b](x: &'a int32, out: &mut &'b int32) where ('a: 'b):
+    # OK: the where clause states `'a: 'b`.
+    run:
+        Sink.put(x)
+    with Sink['a]:
+        def put(value):
+            out.* = value
+
+
+def nearest['a, 'b](x: &'a int32, y: &'b int32) -> &'a int32:
+    # OK: the body performs the nearest `Source`, which gives back `x`.
+    return run:
+        return run:
+            return Source.get()
+        with Source['a]:
+            def get():
+                return x
+    with Source['b]:
+        def get():
+            return y
+
+
+def notNearest['a, 'b](x: &'a int32, y: &'b int32) -> &'a int32:
+    # ERROR: the body performs the nearest `Source`, which gives back `y`,
+    # and nothing states `'b: 'a`.
+    return run:
+        return run:
+            return Source.get()
+        with Source['b]:
+            def get():
+                return y
+    with Source['a]:
+        def get():
+            return x
+
+
+def residual['a, 'b](x: &'a int32) -> () \ {Sink['b]}:
+    # ERROR: the handler performs `Sink['b]` with `x`, in the effect of this
+    # function, and nothing states `'a: 'b`.
+    run:
+        Counter.tick()
+    with Counter:
+        def tick():
+            Sink.put(x)
+            return 0
+
+
+def whereClause['a, 'w, t](x: &'a int32, witness: &'w t) -> int32:
+    # ERROR: handling `Anchor['a, 'w, t]` requires its where clause, and
+    # nothing states `t: 'a`.
+    return run:
+        return Anchor.anchor(witness).*
+    with Anchor['a, 'w, t]:
+        def anchor(witness):
+            return x
+
+
+def whereClauseDeclared['a, 'w, t](x: &'a int32, witness: &'w t) -> int32 where (t: 'a):
+    # OK: the where clause states `t: 'a`.
+    return run:
+        return Anchor.anchor(witness).*
+    with Anchor['a, 'w, t]:
+        def anchor(witness):
+            return x
+
+
+def main() -> int32:
+    # The handler gives back a borrow of `value`, which the body returns, so
+    # the value of the `run` keeps the borrow.
+    let mut value = 32
+    let p = run:
+        return Source.get()
+    with Source:
+        def get():
+            return value.&
+    value = 42          # <-- Expect an error here: `p` borrows `value`.
+    let read = p.*
+
+    # The body only reads what the handler gives back, so the borrow ends
+    # with the `run`.
+    let mut other = 1
+    let copied = run:
+        return Source.get().*
+    with Source:
+        def get():
+            return other.&
+    other = 2           # <-- Expect NO error here.
+
+    # The handlers borrow `count` mutably for the `run` alone.
+    let mut count = 0
+    run:
+        Counter.tick()
+        Counter.tick()
+    with Counter:
+        def tick():
+            count = count + 1
+            return count
+    count = count + 1   # <-- Expect NO error here.
+
+    # The handler stores its argument in `kept`, which is used after `b` is
+    # gone.
+    let a = 1
+    let mut kept = a.&
+    if true:
+        let b = 2
+        run:            # <-- Expect an error here: `kept` is used after `b`.
+            Sink.put(b.&)
+        with Sink:
+            def put(value):
+                kept = value
+
+    return read + copied + count + kept.*

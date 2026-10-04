@@ -18,7 +18,7 @@ use crate::{
     dataflow::{DataflowProblem, DataflowSolution, solve},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
     ir_lambda::{
-        Capture, CaptureID, CaptureMap, CaptureMapID, CaptureMode, IRLambdaContext, IRThunkContext,
+        Capture, CaptureID, CaptureMap, CaptureMapID, IRLambdaContext, IRThunkContext,
         LambdaParameter, LambdaParameterID,
     },
     ir_operation_handler::{
@@ -206,12 +206,14 @@ impl IRFunctionMap {
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
+        engine: &TrackedEngine,
     ) -> FunctionID {
         self.functions.insert(IRFunction::new_operation_handler(
             operation,
             return_ty,
             effect,
             capture_map,
+            engine,
         ))
     }
 
@@ -244,6 +246,11 @@ impl IRFunctionMap {
             .get_mut(capture_map_id)
             .expect("IR capture map should exist")
             .insert_capture(capture)
+    }
+
+    #[must_use]
+    pub fn get_capture_map(&self, capture_map_id: CaptureMapID) -> &CaptureMap {
+        self.capture_maps.get(capture_map_id).expect("IR capture map should exist")
     }
 
     #[must_use]
@@ -601,6 +608,18 @@ impl IRContext {
         }
     }
 
+    /// Returns the lifetime that a run of a function of this context borrows
+    /// the environment holding its captures for, or `None` for a function
+    /// that owns its captures, or has none; see
+    /// [`IROperationHandlerContext::environment_lifetime`].
+    #[must_use]
+    pub const fn environment_lifetime(&self) -> Option<&Interned<Ty>> {
+        match self {
+            Self::OperationHandler(context) => Some(context.environment_lifetime()),
+            Self::Def | Self::Lambda(_) | Self::Thunk(_) => None,
+        }
+    }
+
     /// Returns the return type stored by a nested function context, or
     /// `None` for a def context, whose return type is declared by the
     /// definition.
@@ -682,6 +701,7 @@ impl IRFunction {
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
+        engine: &TrackedEngine,
     ) -> Self {
         Self {
             cfg: Cfg::default(),
@@ -693,12 +713,21 @@ impl IRFunction {
                 return_ty,
                 effect,
                 capture_map,
+                engine,
             )),
         }
     }
 
     #[must_use]
     pub const fn context(&self) -> &IRContext { &self.context }
+
+    /// Returns the lifetime that a run of this function borrows the
+    /// environment holding its captures for, when it does not own them; see
+    /// [`IRContext::environment_lifetime`].
+    #[must_use]
+    pub const fn environment_lifetime(&self) -> Option<&Interned<Ty>> {
+        self.context.environment_lifetime()
+    }
 
     /// Iterates over the nested functions the expressions of this function
     /// create, in unspecified order; see [`IRExprKind::created_functions`].
@@ -1036,69 +1065,6 @@ impl VisitType for IRContext {
             Self::Lambda(context) => context.visit_types(site, visitor),
             Self::Thunk(context) => context.visit_types(site, visitor),
             Self::OperationHandler(context) => context.visit_types(site, visitor),
-        }
-    }
-}
-
-impl VisitType for IRThunkContext {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        visitor.visit_type(self.return_ty(), site);
-        visitor.visit_type(self.effect(), site);
-    }
-}
-
-impl VisitType for IROperationHandlerContext {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        for (_, parameter) in self.parameters() {
-            parameter.visit_types(site, visitor);
-        }
-        visitor.visit_type(self.return_ty(), site);
-        visitor.visit_type(self.effect(), site);
-    }
-}
-
-impl VisitType for IRLambdaContext {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        for (_, parameter) in self.parameters() {
-            parameter.visit_types(site, visitor);
-        }
-        visitor.visit_type(self.return_ty(), site);
-        visitor.visit_type(self.effect(), site);
-    }
-}
-
-impl VisitType for LambdaParameter {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        visitor.visit_type(self.ty(), site);
-    }
-}
-
-impl VisitType for OperationHandlerParameter {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        visitor.visit_type(self.ty(), site);
-    }
-}
-
-impl VisitType for Capture {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        visitor.visit_type(self.binding_ty(), site);
-        self.mode().visit_types(site, visitor);
-    }
-}
-
-impl VisitType for CaptureMode {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        match self {
-            Self::Value(_) => {}
-            Self::Reference { lifetime, .. } => visitor.visit_type(lifetime, site),
-        }
-    }
-}
-
-impl VisitType for CaptureMap {
-    fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        for (_, capture) in self.iter() {
-            capture.visit_types(site, visitor);
         }
     }
 }

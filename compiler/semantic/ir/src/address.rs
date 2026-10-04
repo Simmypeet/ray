@@ -50,6 +50,19 @@ impl Local {
             Self::Capture(capture) => Address::new_capture(capture, engine),
         }
     }
+
+    /// Returns whether this local is a capture of a nested function, which
+    /// is stored in the environment the function was created with.
+    #[must_use]
+    pub const fn is_capture(self) -> bool {
+        match self {
+            Self::Capture(_) => true,
+            Self::Variable(_)
+            | Self::Parameter(_)
+            | Self::LambdaParameter(_)
+            | Self::OperationHandlerParameter(_) => false,
+        }
+    }
 }
 
 #[derive(

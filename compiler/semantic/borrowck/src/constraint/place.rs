@@ -42,9 +42,8 @@ impl ConstraintCollector<'_> {
             return;
         };
 
-        // `&'r place` has type `&'r typeof(place)`, which must be a subtype
-        // of `ty`. The lifetime of `ty` is the loan's own region, so only the
-        // pointees are related, with the variance of the reference's pointee.
+        // The lifetime of `ty` is the loan's own region, so only the pointees
+        // are related.
         let variance = reference.mutability().pointee_variance();
         self.relate(point, &place_ty, reference.pointee(), variance).await;
 
@@ -61,6 +60,8 @@ impl ConstraintCollector<'_> {
             return;
         }
 
+        self.collect_environment_reborrow(point, ref_of.address(), reference.lifetime());
+
         let declared_drop_depth = self.declared_drop_depth(ref_of.address()).await;
         self.constraints.issue_loan(expression_id, Loan {
             declared_drop_depth,
@@ -72,12 +73,8 @@ impl ConstraintCollector<'_> {
         });
     }
 
-    /// Returns the number of projections of `address` up to the innermost
-    /// struct that owns the place `address` selects and has a `Drop` instance
-    /// declared for it, if there is one.
-    ///
-    /// A struct owns the places within its storage: the search stops at the
-    /// first dereference of `address`.
+    /// Returns the projection depth of the innermost struct with a declared
+    /// `Drop` instance that owns the place `address` selects, if there is one.
     async fn declared_drop_depth(&self, address: &Address) -> Option<usize> {
         let mut ty = self.binding_type(address.local()?).await;
         let mut innermost = None;
@@ -102,19 +99,9 @@ impl ConstraintCollector<'_> {
         innermost
     }
 
-    /// Requires the references that a borrowed place is reached through to
-    /// outlive the loan `region`.
-    ///
-    /// `dereferenced` holds the type of every pointer dereferenced on the way
-    /// to the place, outermost first. Borrowing `**p`, where
-    /// `p: &'a mut &'b mut T`, borrows data that is only reachable for `'a`
-    /// and `'b`, so both must outlive the new loan.
-    ///
-    /// The references are visited innermost first, stopping after the first
-    /// shared one: the data behind a shared reference stays borrowed for its
-    /// lifetime however that reference was reached, since it can be copied
-    /// out of the references holding it. A raw pointer stops the walk too,
-    /// since the memory behind it is not tracked.
+    /// Requires the references in `dereferenced`, the pointers a borrowed place
+    /// is reached through, to outlive the loan `region`: innermost first, up
+    /// to the first shared reference or raw pointer.
     pub(super) fn collect_reborrow(
         &mut self,
         point: Point,
@@ -139,6 +126,25 @@ impl ConstraintCollector<'_> {
         }
     }
 
+    /// Requires the environment lifetime `'env` of an operation handler to
+    /// outlive the loan `region` when `address` is rooted at a capture, which
+    /// the handler reaches through `&'env mut Env`, as an `FnMut` closure does.
+    fn collect_environment_reborrow(
+        &mut self,
+        point: Point,
+        address: &Address,
+        region: &Interned<Ty>,
+    ) {
+        let Some(environment) = self.function.environment_lifetime() else {
+            return;
+        };
+
+        if address.local().is_some_and(Local::is_capture) {
+            self.constraints
+                .add(point, &OutlivesPredicate::new(environment.clone(), region.clone()));
+        }
+    }
+
     /// Collects the constraints of `load`, whose loaded value has type `ty`:
     /// `typeof(place) <: ty`.
     pub(super) async fn collect_load(&mut self, point: Point, load: &Load, ty: &Interned<Ty>) {
@@ -159,8 +165,8 @@ impl ConstraintCollector<'_> {
         self.relate(point, value_ty, &place_ty, Variance::Covariant).await;
     }
 
-    /// Returns the type of the place `address` selects, or `None` for an
-    /// error address. See [`Self::place_type_with_derefs`].
+    /// Returns the type of the place `address` selects, or `None` for an error
+    /// address.
     pub(super) async fn place_type(
         &mut self,
         point: Point,
@@ -169,15 +175,8 @@ impl ConstraintCollector<'_> {
         self.place_type_with_derefs(point, address, |_| {}).await
     }
 
-    /// Returns the type of the place `address` selects, or `None` for an
-    /// error address.
-    ///
-    /// `on_deref` is called with the type of every pointer the address
-    /// dereferences, outermost first.
-    ///
-    /// Normalizing a prefix may use a given equality that matches it up to
-    /// lifetimes, which then requires those lifetimes to be equal. Those
-    /// constraints are added at `point`, where the place is accessed.
+    /// Returns the type of the place `address` selects, or `None` for an error
+    /// address, calling `on_deref` with the type of each pointer dereferenced.
     pub(super) async fn place_type_with_derefs(
         &mut self,
         point: Point,
@@ -205,10 +204,6 @@ impl ConstraintCollector<'_> {
 
     /// Returns the type of the component of the normalized type `base` that
     /// `projection` selects.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `projection` does not match the shape of `base`.
     pub(super) async fn projected_type(
         &self,
         base: &Interned<Ty>,

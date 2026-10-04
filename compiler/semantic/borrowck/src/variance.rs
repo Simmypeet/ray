@@ -1,23 +1,5 @@
-//! The variance of every lifetime in the IR.
-//!
-//! The localized constraint graph orients the liveness edges of a region by
-//! its variance where it occurs: forward for covariant, backward for
-//! contravariant, and both ways for invariant. This module finds that
-//! variance by walking every type stored in an [`IRFunctionMap`].
-//!
-//! Each type is walked from a covariant position, and each position below it
-//! composes with the variance of its type constructor: the built-in table for
-//! references, tuples, pointers, closures and dictionaries, and
-//! [`get_variance`](rayc_type::variance::get_variance) for structs and effect
-//! labels. A lifetime that occurs at more than one position has the join of
-//! their variances.
-//!
-//! This is meant to run after [renumbering](crate::renumber). Renumbering
-//! gives each occurrence of an erased lifetime its own region, so every
-//! [`Lifetime::Region`](rayc_type::ty::lifetime::Lifetime::Region) has the
-//! variance of its one position. Universal lifetimes, such as `'static`, a
-//! lifetime parameter or an external lifetime, may occur at several
-//! positions, and have the join of them.
+//! The variance of every lifetime in the IR, which orients the liveness edges
+//! of its region. A lifetime at several positions has the join of them.
 
 use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
@@ -28,9 +10,7 @@ use rayc_type::{ty::Ty, variance::Variance};
 /// The variance of every lifetime in the types of an [`IRFunctionMap`].
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LifetimeVariances {
-    /// The join of the variances of every position at which each lifetime
-    /// occurs. The keys are the lifetimes themselves: [`Ty::Lifetime`]s,
-    /// lifetime parameters and errors of kind lifetime.
+    /// The join of the variances of every position each lifetime occurs at.
     variances: FxHashMap<Interned<Ty>, Variance>,
 }
 
@@ -38,8 +18,6 @@ impl LifetimeVariances {
     /// Computes the variance of every lifetime in the types stored in `ir`.
     pub async fn compute(ir: &IRFunctionMap, engine: &TrackedEngine) -> Self {
         // Collect the distinct types first, since the visitor cannot await.
-        // Walking the same type twice joins the same variances, so each is
-        // walked once.
         let mut types = FxHashSet::default();
         ir.visit_types(&mut |ty: &Interned<Ty>, _| {
             types.insert(ty.clone());
@@ -77,10 +55,6 @@ struct VarianceCollector<'e> {
 impl VarianceCollector<'_> {
     /// Joins the variance of every lifetime in `root`, which occurs at a
     /// position of variance `ambient`.
-    ///
-    /// A lifetime under a bivariant position, such as behind a raw pointer,
-    /// is still recorded, as bivariant, so that every lifetime of the IR has
-    /// a variance.
     async fn walk(&mut self, root: Interned<Ty>, ambient: Variance) {
         let mut pending = vec![(root, ambient)];
 

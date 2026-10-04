@@ -1,6 +1,10 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{subst::Subst, ty::Ty};
+use rayc_type::{
+    subst::Subst,
+    ty::{Ty, effect_row::EffectLabel},
+};
 
 use crate::{
     ir_expr::IRExprID,
@@ -130,8 +134,24 @@ impl Handle {
     #[must_use]
     pub fn captures(&self) -> &[IRExprID] { self.body.captures() }
 
+    /// Returns the effect row that is left of the effect of the handled body
+    /// once the handled effect is taken out of it: what the body performs
+    /// that the function creating it performs too. It is also the effect of
+    /// each operation handler.
     #[must_use]
     pub const fn residual_effect(&self) -> &Interned<Ty> { &self.residual_effect }
+
+    /// Returns the effect row of the handled body, as the `handle` gives it:
+    /// the label of the handled effect, instantiated with the substitution of
+    /// the `handle`, in front of the [residual effect](Self::residual_effect).
+    ///
+    /// The handled label comes first, so it is the label of its effect that a
+    /// `perform` of the body reaches: labels of one effect are scoped.
+    pub async fn body_effect_row(&self, engine: &TrackedEngine) -> Interned<Ty> {
+        let label = EffectLabel::instantiated(self.effect_id, &self.substitution, engine).await;
+
+        Ty::new_effect_row([label], Some(self.residual_effect.clone()), engine)
+    }
 }
 
 impl VisitType for Handle {

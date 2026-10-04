@@ -1,8 +1,4 @@
 //! The constraints of invoking a signature: calls and `perform`s.
-//!
-//! An invocation also introduces an effect, which whoever handles the effect
-//! of the enclosing function handles too; see
-//! [`ConstraintCollector::collect_introduced_effect`].
 
 use qbice::storage::intern::Interned;
 use rayc_ir::{
@@ -23,8 +19,7 @@ use super::ConstraintCollector;
 
 impl ConstraintCollector<'_> {
     /// Collects the constraints of `call`, whose result has type `ty`, as an
-    /// invocation of the callee's signature, instantiated with the
-    /// substitution of the call.
+    /// invocation of the callee's signature.
     pub(super) async fn collect_call(&mut self, point: Point, call: &Call, ty: &Interned<Ty>) {
         let signature_id = call.target().signature_id();
         let substitution = call.target().signature_subst(self.solver.engine()).await;
@@ -40,21 +35,15 @@ impl ConstraintCollector<'_> {
             .apply_subst_or_clone(&substitution, self.solver.engine());
         self.collect_introduced_effect(point, &effect).await;
 
-        // The signature was instantiated from the trait reference of the
-        // dictionary the call dispatches through, and from the dictionary
-        // itself, so that dictionary matches it already; only what it was
-        // built from is left to require.
+        // The dispatched dictionary already matches the signature instantiated
+        // from it; only what it was built from is left to require.
         if let Some(instance) = call.target().dispatch_instance() {
             self.collect_dictionary_requirements(point, instance).await;
         }
     }
 
-    /// Collects the constraints of `perform`, whose result has type `ty`, as
-    /// an invocation of the signature of its operation, instantiated with
-    /// the substitution of the `perform`.
-    ///
-    /// Whichever handler runs the operation is checked against the same
-    /// signature, so the operation stands for it here.
+    /// Collects the constraints of `perform`, whose result has type `ty`, as an
+    /// invocation of the signature of its operation.
     pub(super) async fn collect_perform(
         &mut self,
         point: Point,
@@ -76,29 +65,16 @@ impl ConstraintCollector<'_> {
         self.collect_introduced_effect(point, &effect).await;
     }
 
-    /// Collects the constraints of running, at `point`, something whose
-    /// effect is `introduced`: `introduced <: effect of the function`.
-    ///
-    /// The operations of `introduced` are performed in the handlers of the
-    /// effect of the enclosing function, so a value passed to one of them
-    /// reaches whoever handles that effect, and a value one of them gives
-    /// back comes from there. Renumbering gave the lifetimes in the arguments
-    /// of `introduced` their own regions, which this ties to the regions of
-    /// the effect of the function: without it, a loan passed to an operation
-    /// would end with the call, and what an operation gives back could be kept
-    /// for any lifetime.
-    ///
-    /// The effect of a function is part of its signature, so its regions are
-    /// universal: those of the declared effect row for a definition, and
-    /// external regions for a nested function.
+    /// Collects the constraints of running, at `point`, something whose effect
+    /// is `introduced`: `introduced <: effect of the function`, which ties the
+    /// regions of its arguments to whoever handles that effect.
     pub(super) async fn collect_introduced_effect(
         &mut self,
         point: Point,
         introduced: &Interned<Ty>,
     ) {
-        // Type checking already made every label of `introduced` a label of
-        // the effect of the function modulo lifetimes, so the relation only
-        // fails when one side is an error, which was reported already.
+        // The labels only differ in lifetimes, so this only fails on an error
+        // that was reported already.
         let Some(outlives) =
             self.solver.relate_introduced_effect_without_unify(introduced, self.effect).await
         else {
@@ -111,14 +87,8 @@ impl ConstraintCollector<'_> {
     }
 
     /// Collects the constraints of invoking the signature of `signature_id`,
-    /// instantiated with `substitution`, with `arguments`, for a result of
-    /// type `ty`: `typeof(argument) <: parameter type` for each argument, and
-    /// `return type <: ty`.
-    ///
-    /// Renumbering gave the lifetimes of the substitution their own regions,
-    /// which the parameters and the return type share: a loan passed in one
-    /// argument flows through them into the other arguments and the result
-    /// that mention the same type parameter.
+    /// instantiated with `substitution`: `typeof(argument) <: parameter type`
+    /// for each of `arguments`, and `return type <: ty`.
     pub(super) async fn collect_invocation(
         &mut self,
         point: Point,

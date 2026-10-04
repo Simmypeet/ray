@@ -72,7 +72,29 @@ stderr:
 88 │     return read + kept + r.*
    ╰╴                         ─── borrow later used here
 
-[error]: Compilation aborted due to 7 error(s)
+[error]: lifetime may not live long enough
+    ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:99:5
+    │
+ 99 │     let local = item
+    │     ━━━━━━━━━━━━━━━━ this requires `'b` to outlive `'a`
+100 │     let same = (value) -> value
+101 │     return same(local)
+    │            ─────────── the value of lifetime `'b` flows in here
+    │
+    ╰ help: consider adding `'b: 'a` to the where clause
+
+[error]: lifetime may not live long enough
+    ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:101:12
+    │
+ 99 │     let local = item
+    │     ──────────────── the value of lifetime `'a` flows in here
+100 │     let same = (value) -> value
+101 │     return same(local)
+    │            ━━━━━━━━━━━ this requires `'a` to outlive `'b`
+    │
+    ╰ help: consider adding `'a: 'b` to the where clause
+
+[error]: Compilation aborted due to 9 error(s)
 
 
 

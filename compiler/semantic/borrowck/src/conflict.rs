@@ -1,38 +1,5 @@
 //! Checks each access of an IR function against the loans active just before
-//! it.
-//!
-//! An access conflicts with an active loan when:
-//!
-//! - it assigns a place whose storage is borrowed, or which lies within the
-//!   borrowed place. A borrow of the memory behind a pointer held in the
-//!   assigned place is not invalidated: the assignment only replaces the
-//!   pointer.
-//! - it borrows a place that overlaps the borrowed place, and at least one of
-//!   the two borrows is mutable;
-//! - it reads a place that overlaps the borrowed place, to copy its value, and
-//!   the loan is mutable;
-//! - it moves a value out of a place that overlaps the borrowed place;
-//! - it drops a value whose `Drop` dictionary may use the borrowed place; see
-//!   [`Loan::is_used_by_drop_of`];
-//! - it ends the scope of a variable whose own storage is borrowed. A borrow of
-//!   the memory behind a pointer held in the variable does not end there.
-//! - it ends the root scope of the function while the storage of a parameter or
-//!   a capture the function owns is borrowed. That storage ends with the
-//!   function, and only a loan held by a universal region, or by the returned
-//!   value, is still live there.
-//!
-//! The operands a closure or a `handle` captures are borrows, reads and moves
-//! like any other. Their errors point at the expression that creates the
-//! nested function.
-//!
-//! Each conflict is reported with the borrow of the loan and a later use of
-//! it. The later use is searched for forward from the access, through the
-//! points where a region holding the loan stays live, until an instruction
-//! uses the value that owns the region.
-//!
-//! A value is dropped right before its place is overwritten, or its storage
-//! ends. A loan that both the drop and what follows it conflict with is
-//! reported once, by what follows the drop.
+//! it: assignments, borrows, reads, moves, drops and scope ends.
 
 use std::collections::VecDeque;
 
@@ -72,10 +39,6 @@ use crate::{
 
 /// Checks every reachable access of `function` against the loans active
 /// before it, and returns the conflicts found.
-///
-/// `captures` is the capture layout of a nested function, and `None` for the
-/// definition function. `solver` must be created at the definition the
-/// function belongs to.
 pub(crate) async fn check_conflicts(
     function: &IRFunction,
     captures: Option<&CaptureMap>,
@@ -103,11 +66,8 @@ pub(crate) async fn check_conflicts(
     checker.finish()
 }
 
-/// Returns the inputs of `function` whose storage ends with its root scope:
-/// its parameters, followed by the captures it owns.
-///
-/// An operation handler only borrows its captures, which the function
-/// creating it drops after the handled body.
+/// Returns the inputs of `function` whose storage ends with its root scope: its
+/// parameters, and the captures it owns.
 async fn owned_inputs(
     function: &IRFunction,
     captures: Option<&CaptureMap>,
@@ -153,9 +113,8 @@ struct ConflictChecker<'a> {
     /// the nested function that captures it.
     captured_loans: FxHashMap<LoanID, RelativeSpan>,
 
-    /// The loans reported where a place of a local is overwritten or its
-    /// storage ends, which a drop of the value in the place is not reported
-    /// for again.
+    /// The loans reported where a place of a local is overwritten or ends,
+    /// which a drop of that place is not reported for again.
     ended: FxHashSet<(LoanID, Local)>,
 
     /// The loans that drops conflict with, in the order they were found.
@@ -173,8 +132,7 @@ impl<'a> ConflictChecker<'a> {
         traversal: &'a Traversal<'a>,
         solver: &'a mut Solver,
     ) -> Self {
-        // Find the operands captured into nested functions, and the loans
-        // they issue.
+        // Find the operands captured into nested functions, and their loans.
         let mut capture_sites = FxHashMap::default();
         let mut captured_loans = FxHashMap::default();
 
@@ -224,8 +182,7 @@ impl<'a> ConflictChecker<'a> {
         self.diagnostics
     }
 
-    /// Checks the accesses of the instruction at `point` against the loans
-    /// in `active`.
+    /// Checks the accesses of the instruction at `point` against `active`.
     async fn check_instruction(
         &mut self,
         point: Point,
@@ -250,26 +207,11 @@ impl<'a> ConflictChecker<'a> {
 
     /// Checks that `store` does not assign a borrowed place.
     fn check_store(&mut self, point: Point, store: &Store, active: &ActiveLoans) {
-        // The assignment only writes the storage of the place: what a pointer
-        // held there points to stays as it is.
         let assigned = store.address();
 
-        //
-        // The first condition is an assignment within the borrowed place:
-        //
-        //     let r = pair.&
-        //     pair.0 = 1        # `pair` contains `pair.0`
-        //
-        // The second is an assignment of a place that the borrowed place is
-        // stored in:
-        //
-        //     let r = pair.0.&
-        //     pair = (3, 4)     # `pair` holds `pair.0`
-        //
-        // It leaves out a borrowed place which is only pointed to:
-        //
-        //     let r = p.*.&mut
-        //     p = other.&mut    # `p` does not hold `p.*`
+        // The assignment is within the borrowed place, or replaces a place the
+        // borrowed place is stored in. What a pointer held there points to
+        // stays as it is, so a borrow behind it does not conflict.
         let conflicts =
             |loan: &Loan| loan.address().contains(assigned) || assigned.holds(loan.address());
 
@@ -287,7 +229,7 @@ impl<'a> ConflictChecker<'a> {
     }
 
     /// Checks the accesses of the expression `expression_id`: a borrow or a
-    /// load of a borrowed place.
+    /// load.
     async fn check_expression(
         &mut self,
         point: Point,
@@ -315,8 +257,7 @@ impl<'a> ConflictChecker<'a> {
                 self.check_load(point, expression_id, load, moves, active);
             }
 
-            // These only take evaluated values as operands, and access no
-            // place.
+            // These take evaluated values as operands, and access no place.
             IRExprKind::Error
             | IRExprKind::Literal(_)
             | IRExprKind::RefToPointer(_)
@@ -359,10 +300,8 @@ impl<'a> ConflictChecker<'a> {
         )));
     }
 
-    /// Returns whether `load`, producing a value of type `ty`, moves the
-    /// value out of its place. A load that does not copies the value.
-    ///
-    /// The memory analysis decides it the same way; see [`Load::effect`].
+    /// Returns whether `load`, producing a value of type `ty`, moves the value
+    /// out of its place rather than copying it.
     async fn load_moves(&mut self, load: &Load, ty: &Interned<Ty>) -> bool {
         match load.effect() {
             LoadEffect::Copies => false,
@@ -447,8 +386,7 @@ impl<'a> ConflictChecker<'a> {
     }
 
     /// Checks that the storage ending with the scope `scope_id` is not
-    /// borrowed there: that of the variables the scope declares, and, for
-    /// the root scope, that of the function inputs.
+    /// borrowed: its variables, and the function inputs for the root scope.
     async fn check_scope_end(&mut self, point: Point, scope_id: ScopeID, active: &ActiveLoans) {
         let function = self.function;
         let variables = function.declared_variables(scope_id).map(Local::Variable);
@@ -508,11 +446,8 @@ impl<'a> ConflictChecker<'a> {
         }
     }
 
-    /// Returns the first loan in `active`, in the order they were issued,
-    /// that `conflicts` with the access being checked.
-    ///
-    /// Only one conflict is reported per access, and taking the first keeps
-    /// the report deterministic.
+    /// Returns the first loan in `active`, in the order they were issued, that
+    /// `conflicts` with the access, which keeps the report deterministic.
     fn first_conflict(
         &self,
         active: &ActiveLoans,
@@ -521,9 +456,8 @@ impl<'a> ConflictChecker<'a> {
         active.iter().filter(|&loan| conflicts(self.constraints.get_loan(loan))).min()
     }
 
-    /// Returns where the expression `expression_id` accesses its place: at
-    /// the expression itself, or, for a captured operand, at the expression
-    /// creating the nested function.
+    /// Returns where `expression_id` accesses its place: at itself, or at the
+    /// expression capturing it into a nested function.
     fn access_site(&self, expression_id: IRExprID) -> AccessSite {
         match self.capture_sites.get(&expression_id) {
             Some(&capture_span) => AccessSite::new(capture_span, true),
@@ -531,8 +465,7 @@ impl<'a> ConflictChecker<'a> {
         }
     }
 
-    /// Describes the loan `loan_id`, which an access at `point` conflicts
-    /// with.
+    /// Describes the loan `loan_id`, which an access at `point` conflicts with.
     fn conflicting_loan(&self, loan_id: LoanID, point: Point) -> ConflictingLoan {
         let loan = self.constraints.get_loan(loan_id);
         let borrow = match self.captured_loans.get(&loan_id) {
@@ -591,9 +524,6 @@ impl<'a> ConflictChecker<'a> {
     }
 
     /// Returns the source of a use of `loan` after `point`, where it is live.
-    ///
-    /// The loan is live at `point` because it flows into regions live there;
-    /// the first of them whose value is used later gives the use.
     fn later_use(&self, loan: &Loan, point: Point) -> Option<RelativeSpan> {
         let mut regions = self.traversal.regions_holding(loan, point);
         regions.find_map(|region| self.first_use_after(&region, point))
