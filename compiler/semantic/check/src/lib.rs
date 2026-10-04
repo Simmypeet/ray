@@ -5,7 +5,11 @@ use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
 };
 use rayc_diagnostic::Rendered;
-use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
+use rayc_qbice::{
+    Config, RAY_PROGRAM, TrackedEngine,
+    unordered::{UnorderedCalleeGroup, query_in_task},
+};
+
 /// The main data structure collecting all diagnostics for semantic analysis
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Check {
@@ -40,12 +44,19 @@ pub struct Key {
 
 #[executor(config = Config)]
 async fn check_executor(&Key { target_id }: &Key, engine: &TrackedEngine) -> Check {
-    let sym_diags = engine.query(&rayc_symbol_impl::diagnostic::RenderedKey(target_id)).await;
-    let semantic_diags =
-        engine.query(&rayc_semantic_element_impl::diagnostic::RenderedKey { target_id }).await;
-    let typed_ast_diags =
-        engine.query(&rayc_typed_ast_builder::query::RenderedKey { target_id }).await;
-    let ir_diags = engine.query(&rayc_ir_builder::query::RenderedKey { target_id }).await;
+    // collects the diagnostics of every phase in parallel, one task per phase
+    let (sym_diags, semantic_diags, typed_ast_diags, ir_diags) = {
+        // SAFETY: the diagnostics of every phase are always collected,
+        // whatever the diagnostics of the other phases are
+        let _group = unsafe { UnorderedCalleeGroup::start(engine) };
+
+        tokio::join!(
+            engine.query_in_task(rayc_symbol_impl::diagnostic::RenderedKey(target_id)),
+            engine.query_in_task(rayc_semantic_element_impl::diagnostic::RenderedKey { target_id }),
+            engine.query_in_task(rayc_typed_ast_builder::query::RenderedKey { target_id }),
+            engine.query_in_task(rayc_ir_builder::query::RenderedKey { target_id }),
+        )
+    };
 
     Check {
         symbol_immpl: sym_diags,

@@ -11,7 +11,7 @@ use rayc_symbol::{
     },
 };
 
-use crate::index::{get_symbol_table, get_table_index, get_target_tables};
+use crate::index::{get_symbol_table, get_target_tables};
 
 #[executor(config = Config)]
 pub async fn symbol_kind_executor(&Key { symbol_id }: &Key, engine: &TrackedEngine) -> SymbolKind {
@@ -26,7 +26,8 @@ pub async fn all_symbol_ids_executor(
     &AllSymbolIDs { target }: &AllSymbolIDs,
     engine: &TrackedEngine,
 ) -> Arc<[SymbolID]> {
-    engine.get_table_index(target).await.all_symbol_ids().collect()
+    let tables = engine.get_target_tables(target).await;
+    tables.iter().flat_map(|table| table.all_symbol_ids()).collect()
 }
 
 #[distributed_slice(RAY_PROGRAM)]
