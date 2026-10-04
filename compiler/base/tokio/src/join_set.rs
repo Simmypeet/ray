@@ -33,9 +33,11 @@ impl<T: 'static> JoinSet<T> {
     }
 
     /// Pops the next task from the list and awaits it, returning its result.
+    ///
+    /// A panic thrown from the task is resumed with its original payload.
     pub async fn next(&mut self) -> Option<T> {
         let inner = self.inner.join_next().await?;
-        let inner = inner.unwrap();
+        let inner = inner.panic_propagate().expect("the tasks of the set are never aborted");
 
         Some(inner)
     }
