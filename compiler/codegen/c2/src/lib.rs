@@ -1,8 +1,20 @@
 //! Worklist-driven C code generation from [`rayc_mono_ir::MonoIR`].
 //!
-//! This backend consumes independently lowered definition fragments. Global
-//! calls enqueue further definition instances, while concrete aggregate types
-//! enter a separate layout worklist.
+//! The backend consumes independently lowered definition fragments. Calls to
+//! other fragments schedule them on a worklist, and every aggregate type the
+//! generated code mentions is collected so its `struct` can be defined before
+//! use.
+//!
+//! The crate is organized in layers:
+//!
+//! - [`c`] renders C syntax (names, types, expressions) as allocation-free
+//!   [`std::fmt::Display`] adaptors;
+//! - `program` holds the program-wide state discovered while generating: the
+//!   fragment `worklist` and the `aggregates` used so far. Everything else,
+//!   such as signatures and linkage, comes from engine queries;
+//! - `print` writes a fragment's functions, recording what they refer to, and
+//!   `generator` drives it over the worklist;
+//! - `unit` assembles the final translation unit.
 
 use std::io::{self, Write};
 
@@ -14,14 +26,21 @@ use rayc_symbol::{
     symbol_kind::{SymbolKind, get_all_def_with_body_ids, get_symbol_kind},
 };
 use rayc_target::TargetID;
-use rayc_type::{poly_var::get_poly_var_map, subst::Subst};
+use rayc_type::{
+    poly_var::get_enclosing_poly_var_maps,
+    subst::Subst,
+    ty::{Ty, TyKind, lifetime::Lifetime},
+};
 
 use crate::generator::Generator;
 
-mod c_type;
-mod emit;
+mod aggregates;
+mod c;
 mod generator;
-mod name;
+mod print;
+mod program;
+mod unit;
+mod worklist;
 
 /// Options controlling the contents of a generated C translation unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,7 +63,8 @@ impl CTranslationUnitOptions {
 }
 
 /// Generates a C translation unit for all definition instantiations reachable
-/// from the non-generic definitions in `target_id`.
+/// from the definitions in `target_id` that are polymorphic over lifetimes at
+/// most.
 pub async fn write_c_translation_unit(
     engine: &TrackedEngine,
     target_id: TargetID,
@@ -53,48 +73,21 @@ pub async fn write_c_translation_unit(
 ) -> io::Result<()> {
     // Every root key is normalized with the same solver.
     let solver = Solver::without_givens(engine.clone()).await;
-    let mut initial_definitions = Vec::new();
-    for def_id in engine.get_all_def_with_body_ids(target_id).await.iter().copied() {
-        let def_id = target_id.make_global(def_id);
-        match engine.get_symbol_kind(def_id).await {
-            SymbolKind::Def => {
-                if engine.get_poly_var_map(def_id).await.is_empty() {
-                    initial_definitions
-                        .push(MonoDefInstance::new(def_id, Subst::new_empty(), &solver).await);
-                }
-            }
-            SymbolKind::InstanceDef | SymbolKind::ExternDef => {}
-
-            SymbolKind::Effect
-            | SymbolKind::EffectOperation
-            | SymbolKind::Instance
-            | SymbolKind::Marker
-            | SymbolKind::MarkerImplementation
-            | SymbolKind::Module
-            | SymbolKind::Strut
-            | SymbolKind::Trait
-            | SymbolKind::TraitType
-            | SymbolKind::InstanceType
-            | SymbolKind::TraitDef => {
-                panic!("non-definition symbol returned by the definition inventory")
-            }
-        }
-    }
-    initial_definitions.sort();
-
+    let roots = root_definitions(engine, target_id, &solver).await;
     let entry_point = match options.entry_point {
-        Some(entry_point) => {
-            Some(MonoDefInstance::new(entry_point, Subst::new_empty(), &solver).await)
-        }
+        Some(entry_point) => Some(
+            lifetime_erased_instance(engine, entry_point, &solver)
+                .await
+                .expect("a validated entry point should not be polymorphic"),
+        ),
         None => None,
     };
+
     // The worklist future holds per-fragment lowering state such as its
     // solver; keep it on the heap so callers' futures stay small.
-    let generated = Box::pin(
-        Generator::new(engine, initial_definitions, std::iter::empty(), entry_point).generate(),
-    )
-    .await;
-    output.write_all(generated.as_bytes())
+    let unit =
+        Box::pin(Generator::new(engine, roots, std::iter::empty(), entry_point).generate()).await;
+    write!(output, "{unit}")
 }
 
 /// Generates a C translation unit starting with already-lowered `MonoIR`
@@ -106,10 +99,82 @@ pub async fn write_c_translation_unit_from_mono_ir(
     output: &mut impl Write,
 ) -> io::Result<()> {
     let definitions = definitions.into_iter().collect::<Vec<_>>();
-    let initial_definitions =
+    let roots =
         definitions.iter().map(|definition| definition.instance().clone()).collect::<Vec<_>>();
-    let generated = Generator::new(engine, initial_definitions, definitions, None).generate().await;
-    output.write_all(generated.as_bytes())
+    let unit = Generator::new(engine, roots, definitions, None).generate().await;
+    write!(output, "{unit}")
+}
+
+/// The definitions of `target_id` that need no caller to choose their
+/// arguments.
+async fn root_definitions(
+    engine: &TrackedEngine,
+    target_id: TargetID,
+    solver: &Solver,
+) -> Vec<MonoDefInstance> {
+    let mut roots = Vec::new();
+    for def_id in engine.get_all_def_with_body_ids(target_id).await.iter().copied() {
+        let def_id = target_id.make_global(def_id);
+        if !is_lowered_from_body(engine.get_symbol_kind(def_id).await) {
+            continue;
+        }
+        if let Some(root) = lifetime_erased_instance(engine, def_id, solver).await {
+            roots.push(root);
+        }
+    }
+    roots
+}
+
+/// The only instance of `def_id` when neither it nor any enclosing symbol
+/// declares a polymorphic variable other than a lifetime.
+///
+/// Lifetimes do not affect code generation, so they are instantiated with the
+/// erased lifetime; any other variable needs a caller to choose it.
+async fn lifetime_erased_instance(
+    engine: &TrackedEngine,
+    def_id: GlobalSymbolID,
+    solver: &Solver,
+) -> Option<MonoDefInstance> {
+    let poly_vars = engine.get_enclosing_poly_var_maps(def_id).await;
+    if !poly_vars.all_poly_vars_with_kind().all(|(_, kind)| is_erased_by_codegen(kind)) {
+        return None;
+    }
+
+    let erased = Ty::new_lifetime(Lifetime::Erased, engine);
+    let substitution =
+        poly_vars.all_poly_vars().map(|poly_var| (poly_var, erased.clone())).collect::<Subst>();
+    Some(MonoDefInstance::new(def_id, substitution, solver).await)
+}
+
+/// Whether arguments of this kind are erased before code generation.
+const fn is_erased_by_codegen(kind: TyKind) -> bool {
+    match kind {
+        TyKind::Lifetime => true,
+        TyKind::Star | TyKind::EffectRow | TyKind::Instance => false,
+    }
+}
+
+/// Whether a symbol with a body is generated from that body, as opposed to
+/// being provided by the C environment.
+fn is_lowered_from_body(kind: SymbolKind) -> bool {
+    match kind {
+        SymbolKind::Def | SymbolKind::InstanceDef => true,
+        SymbolKind::ExternDef => false,
+
+        SymbolKind::Effect
+        | SymbolKind::EffectOperation
+        | SymbolKind::Instance
+        | SymbolKind::Marker
+        | SymbolKind::MarkerImplementation
+        | SymbolKind::Module
+        | SymbolKind::Strut
+        | SymbolKind::Trait
+        | SymbolKind::TraitType
+        | SymbolKind::InstanceType
+        | SymbolKind::TraitDef => {
+            panic!("non-definition symbol returned by the definition inventory")
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,21 @@
+trait Value[a]:
+    def value(input: a) -> int32
+
+# Nothing below `main` calls these definitions. They are still generated
+# because they are polymorphic over lifetimes only, which code generation
+# erases.
+inst ReferenceValue['a] for Value[&'a int32]:
+    def value(input: &'a int32) -> int32:
+        return input.* + 1
+
+inst IntValue for Value[int32]:
+    def value(input: int32) -> int32:
+        return input + 2
+
+def either(first: &'a int32, second: &'a int32, pickFirst: bool) -> &'a int32:
+    if pickFirst:
+        return first
+    return second
+
+def main() -> int32:
+    return 7

@@ -29,6 +29,7 @@ pub mod instruction;
 pub mod operand;
 pub mod place;
 pub mod rvalue;
+pub mod signature;
 pub mod ty;
 
 pub use instance::{

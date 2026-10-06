@@ -265,6 +265,15 @@ impl Context {
         let root_source_id = self.source.root_id();
         let root_source = self.source.root().clone();
         let root_abi = self.plan_function(root_source_id, &root_source).await;
+
+        // Callers spell this definition through its declared signature, so
+        // the body must implement exactly that interface.
+        assert_eq!(
+            root_abi.signature(),
+            self.resolver.def_signature(&self.instance).await.signature(),
+            "a lowered definition should implement its declared signature"
+        );
+
         let source_ids = self.source.functions().map(|(id, _)| id).collect::<Vec<_>>();
 
         let mut output = MonoIR::new(self.instance.clone(), root_abi.signature().clone());

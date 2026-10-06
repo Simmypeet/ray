@@ -11,7 +11,7 @@ use rayc_mono_ir::{
     function::{Local, LocalKind},
     instance::FunctionReference,
     instruction::{Call, Instruction},
-    operand::{Constant, FunctionOperand, Operand},
+    operand::{Constant, Operand},
     place::{FieldIndex, Place},
     rvalue::Rvalue,
     ty::{AggregateType, FunctionSignature, MonoType},
@@ -47,13 +47,8 @@ impl Builder<'_> {
                 Box::pin(self.lower_closure_drop(resolver, value, &capture_instances, destination))
                     .await;
             }
-            InstanceCallable::NominalDrop(instance, signature) => {
-                self.lower_nominal_drop_call(
-                    instance,
-                    signature,
-                    vec![Operand::Copy(value)],
-                    destination,
-                );
+            InstanceCallable::NominalDrop(instance) => {
+                self.lower_nominal_drop_call(instance, vec![Operand::Copy(value)], destination);
             }
             InstanceCallable::NoOp => {}
             InstanceCallable::Closure(_, _, _) => {
@@ -130,14 +125,10 @@ impl Builder<'_> {
     fn lower_nominal_drop_call(
         &mut self,
         instance: MonoNominalDropInstance,
-        signature: FunctionSignature,
         arguments: Vec<Operand>,
         destination: Place,
     ) {
-        let callee = Operand::Function(FunctionOperand::new(
-            FunctionReference::NominalDrop(instance),
-            signature,
-        ));
+        let callee = Operand::Function(FunctionReference::NominalDrop(instance));
         self.push_instruction(Instruction::Call(Call::new(Some(destination), callee, arguments)));
     }
 
@@ -148,26 +139,27 @@ impl Builder<'_> {
         mut arguments: Vec<Operand>,
         destination: Place,
     ) {
-        let (signature, effects, is_void) =
-            resolver.global_signature(callee.def_id(), callee.substitution()).await;
+        let callee_signature = resolver.def_signature(&callee).await;
 
         // appends additional effect handler arguments to the call
-        for effect in effects {
-            arguments.push(self.handler_operand(&effect));
+        for effect in callee_signature.effects() {
+            arguments.push(self.handler_operand(effect));
         }
 
-        let callee =
-            Operand::Function(FunctionOperand::new(FunctionReference::Global(callee), signature));
+        let is_void = callee_signature.signature().return_type().is_void();
+        let callee = Operand::Function(FunctionReference::Global(callee));
 
-        // if the function has `void` return type, which is mostly from `extern def`, we
-        // don't need to assign the return value to the destination place
+        // if the function has `void` return type, which is mostly from `extern
+        // def`, we don't need to assign the return value to the
+        // destination place
         let call_destination = (!is_void).then(|| destination.clone());
 
         self.push_instruction(Instruction::Call(Call::new(call_destination, callee, arguments)));
 
-        // if we are calling a `void`  function, we need to assign "fake" unit value to
-        // the destination place. (Actually, we don't need to assign anything, since
-        // unit type has only one value, and we can just use uninitialized value)
+        // if we are calling a `void`  function, we need to assign "fake" unit
+        // value to the destination place. (Actually, we don't need to
+        // assign anything, since unit type has only one value, and we
+        // can just use uninitialized value)
         if is_void {
             self.assign(destination, Rvalue::Use(Operand::Constant(Constant::Unit)));
         }
@@ -179,7 +171,7 @@ impl Builder<'_> {
         &mut self,
         call: &IRCall,
         instance: MonoClosureInstance,
-        signature: FunctionSignature,
+        signature: &FunctionSignature,
         effects: &[MonoEffectInstance],
         expression_id: IRExprID,
     ) {
@@ -209,10 +201,7 @@ impl Builder<'_> {
 
         // Resolve handlers at the call site, outside the capture storage.
         arguments.extend(effects.iter().map(|effect| self.handler_operand(effect)));
-        let callee = Operand::Function(FunctionOperand::new(
-            FunctionReference::Closure(instance),
-            signature,
-        ));
+        let callee = Operand::Function(FunctionReference::Closure(instance));
 
         self.push_instruction(Instruction::Call(Call::new(
             Some(self.expression_place(expression_id)),
@@ -254,7 +243,13 @@ impl Builder<'_> {
                         self.lower_global_call(resolver, callee, arguments, destination).await;
                     }
                     InstanceCallable::Closure(instance, signature, effects) => {
-                        self.lower_closure_call(call, instance, signature, &effects, expression_id);
+                        self.lower_closure_call(
+                            call,
+                            instance,
+                            &signature,
+                            &effects,
+                            expression_id,
+                        );
                     }
                     InstanceCallable::TupleDrop(element_instances) => {
                         assert_eq!(call.arguments().len(), 1);
@@ -268,9 +263,9 @@ impl Builder<'_> {
                         self.lower_closure_drop(resolver, closure, &capture_instances, destination)
                             .await;
                     }
-                    InstanceCallable::NominalDrop(instance, signature) => {
+                    InstanceCallable::NominalDrop(instance) => {
                         assert_eq!(call.arguments().len(), 1);
-                        self.lower_nominal_drop_call(instance, signature, arguments, destination);
+                        self.lower_nominal_drop_call(instance, arguments, destination);
                     }
                     // The arguments have already been evaluated by their own IR
                     // expressions. A built-in no-op Drop call emits no instruction.
