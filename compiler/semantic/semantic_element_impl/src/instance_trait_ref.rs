@@ -7,16 +7,19 @@ use rayc_qbice::TrackedEngine;
 use rayc_resolution::resolver::Resolver;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
+    GlobalSymbolID,
+    accessibility::Accessibility,
     core_item::{CoreItem, get_core_item},
     member::{get_member_by_name, get_members},
-    name::get_name,
+    name::{get_name, get_qualified_name},
     source_map::to_absolute_span,
     span::get_span,
     syntax::{get_instance_trait_syntax, is_linear_struct},
 };
 use rayc_type::{
+    accessibility::get_accessibility,
     poly_var::get_enclosing_poly_var_maps,
-    trait_ref::InstanceTraitRefKey,
+    trait_ref::{InstanceTraitRefKey, TraitRef},
     ty::{Ty, application::View as ApplicationView},
 };
 
@@ -161,6 +164,51 @@ impl Report for MissingDefinition {
     }
 }
 
+/// An instance implementing a trait with a member that is not accessible
+/// where the instance is declared, which seals the trait.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct InaccessibleTraitMember {
+    name: Interned<str>,
+    trait_span: RelativeSpan,
+    trait_member_span: RelativeSpan,
+    accessibility: Accessibility,
+}
+
+impl Report for InaccessibleTraitMember {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let help_message = match self.accessibility {
+            Accessibility::Public => None,
+            Accessibility::Scoped(scope) => Some(format!(
+                "the trait can only be implemented within `{}`, where `{}` is accessible",
+                engine.get_qualified_name(scope).await,
+                &*self.name
+            )),
+        };
+
+        Rendered::builder()
+            .message(format!(
+                "cannot implement the trait here, its member `{}` is not accessible",
+                &*self.name
+            ))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.trait_span).await)
+                    .message(format!("`{}` is not accessible here", &*self.name))
+                    .build(),
+            )
+            .related(vec![
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.trait_member_span).await)
+                    .message(format!("`{}` is declared here", &*self.name))
+                    .build(),
+            ])
+            .maybe_help_message(help_message)
+            .build()
+    }
+}
+
 impl Report for ReservedDropImplementation {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let type_kind = match self.kind {
@@ -251,6 +299,7 @@ impl Report for LinearDropImplementation {
 pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
     MissingDefinition(MissingDefinition),
+    InaccessibleTraitMember(InaccessibleTraitMember),
     ReservedDropImplementation(ReservedDropImplementation),
     NonNominalDropImplementation(NonNominalDropImplementation),
     ForeignNominalDropImplementation(ForeignNominalDropImplementation),
@@ -262,6 +311,7 @@ impl Report for Diagnostic {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::MissingDefinition(diagnostic) => diagnostic.report(engine).await,
+            Self::InaccessibleTraitMember(diagnostic) => diagnostic.report(engine).await,
             Self::ReservedDropImplementation(diagnostic) => diagnostic.report(engine).await,
             Self::NonNominalDropImplementation(diagnostic) => diagnostic.report(engine).await,
             Self::ForeignNominalDropImplementation(diagnostic) => diagnostic.report(engine).await,
@@ -305,6 +355,55 @@ fn classify_drop_head(ty: &Ty) -> DropHead {
         Ty::PolyVar(_) => DropHead::NonNominal(NonNominalDropHeadKind::TypeVariable),
         Ty::Inference(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {
             DropHead::NonNominal(NonNominalDropHeadKind::Other)
+        }
+    }
+}
+
+/// Checks that the instance `symbol_id` implements every member of the trait
+/// it implements, `trait_ref` written at `trait_span`, and that each of them
+/// is accessible where the instance is declared.
+async fn check_trait_members(
+    engine: &TrackedEngine,
+    symbol_id: GlobalSymbolID,
+    trait_ref: &TraitRef,
+    trait_span: RelativeSpan,
+    diagnostics: &Storage<Diagnostic>,
+) {
+    let instance_span =
+        engine.get_span(symbol_id).await.expect("an instance symbol should have a source span");
+    let trait_members = engine.get_members(trait_ref.trait_id()).await;
+
+    let mut trait_definitions = Vec::new();
+    for trait_def_id in trait_members.namable_members() {
+        let trait_def_id = trait_ref.trait_id().target_id.make_global(trait_def_id);
+        trait_definitions.push((engine.get_name(trait_def_id).await, trait_def_id));
+    }
+
+    for (name, trait_def_id) in trait_definitions {
+        let trait_def_span = engine
+            .get_span(trait_def_id)
+            .await
+            .expect("a trait definition symbol should have a source span");
+
+        // Every member of the trait must be accessible where the instance
+        // implements it, so a trait with a private member is sealed
+        // outside of that member's scope.
+        let accessibility = engine.get_accessibility(trait_def_id).await;
+        if !accessibility.is_accessible_from(symbol_id, engine).await {
+            diagnostics.receive(Diagnostic::InaccessibleTraitMember(InaccessibleTraitMember {
+                name: name.clone(),
+                trait_span,
+                trait_member_span: trait_def_span,
+                accessibility,
+            }));
+        }
+
+        if engine.get_member_by_name(symbol_id, &name).await.is_none() {
+            diagnostics.receive(Diagnostic::MissingDefinition(MissingDefinition {
+                name,
+                instance_span,
+                trait_def_span,
+            }));
         }
     }
 }
@@ -398,30 +497,7 @@ impl Build for InstanceTraitRefKey {
             }
         }
 
-        let instance_span =
-            engine.get_span(symbol_id).await.expect("an instance symbol should have a source span");
-        let trait_members = engine.get_members(trait_ref.trait_id()).await;
-
-        let mut trait_definitions = Vec::new();
-        for trait_def_id in trait_members.namable_members() {
-            let trait_def_id = trait_ref.trait_id().target_id.make_global(trait_def_id);
-            trait_definitions.push((engine.get_name(trait_def_id).await, trait_def_id));
-        }
-
-        for (name, trait_def_id) in trait_definitions {
-            let trait_def_span = engine
-                .get_span(trait_def_id)
-                .await
-                .expect("a trait definition symbol should have a source span");
-
-            if engine.get_member_by_name(symbol_id, &name).await.is_none() {
-                diagnostics.receive(Diagnostic::MissingDefinition(MissingDefinition {
-                    name,
-                    instance_span,
-                    trait_def_span,
-                }));
-            }
-        }
+        check_trait_members(engine, symbol_id, &trait_ref, syntax.span(), &diagnostics).await;
 
         Output::new_with(Some(trait_ref), diagnostics.into_vec(), obligations.into_vec(), engine)
     }

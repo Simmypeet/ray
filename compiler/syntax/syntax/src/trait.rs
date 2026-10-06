@@ -6,13 +6,15 @@ use rayc_parser::{
 };
 
 use crate::{
-    Identifier, Keyword, def::DefSignature, effect::TypeParameterList, given::GivenParameterList,
-    kind::KindAscription, where_clause::WhereClause,
+    Identifier, Keyword, access_modifier::AccessModifier, def::DefSignature,
+    effect::TypeParameterList, given::GivenParameterList, kind::KindAscription,
+    where_clause::WhereClause,
 };
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct TraitAssociatedType {
+        pub access_modifier: AccessModifier = ast::<AccessModifier>().optional(),
         pub type_keyword: Keyword = expect::Keyword::Type,
         pub name: Identifier = expect::Identifier,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>().optional(),
@@ -52,6 +54,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct Trait {
+        pub access_modifier: AccessModifier = ast::<AccessModifier>().optional(),
         pub trait_keyword: Keyword = expect::Keyword::Trait,
         pub name: Identifier = expect::Identifier,
         pub type_parameters: TypeParameterList = ast::<TypeParameterList>(),

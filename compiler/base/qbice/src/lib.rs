@@ -27,6 +27,8 @@ use qbice::{
     },
 };
 
+pub mod unordered;
+
 /// The configuration struct specificly for Ray compiler.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Identifiable)]
 pub struct Config;

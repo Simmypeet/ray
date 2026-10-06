@@ -11,6 +11,8 @@ qbice.workspace = true
 fxhash.workspace = true
 linkme.workspace = true
 enum-as-inner.workspace = true
+rayc_extend = { path = "../extend" }
+rayc_tokio = { path = "../tokio" }
 
 [dev-dependencies]
 tokio.workspace = true

@@ -8,8 +8,8 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::drop_plan::linear_drop_help;
 use rayc_symbol::{
-    GlobalSymbolID, name::get_qualified_name, source_map::to_absolute_span,
-    symbol_kind::get_symbol_kind,
+    GlobalSymbolID, accessibility::Accessibility, name::get_qualified_name,
+    source_map::to_absolute_span, symbol_kind::get_symbol_kind,
 };
 use rayc_type::{
     constraint::ty_relate::TyRelate,
@@ -690,6 +690,51 @@ impl Report for UnknownStructField {
     }
 }
 
+/// A struct field accessed or initialized from a site it is not accessible
+/// from.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
+pub struct InaccessibleStructField {
+    struct_id: GlobalSymbolID,
+    name: Interned<str>,
+    span: RelativeSpan,
+    field_span: RelativeSpan,
+    accessibility: Accessibility,
+}
+
+impl Report for InaccessibleStructField {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let struct_name = engine.get_qualified_name(self.struct_id).await;
+        let help_message = match self.accessibility {
+            Accessibility::Public => None,
+            Accessibility::Scoped(scope) => Some(format!(
+                "`{}` is only accessible within `{}`; declare it with `pub` to make it public",
+                &*self.name,
+                engine.get_qualified_name(scope).await
+            )),
+        };
+
+        Rendered::builder()
+            .message(format!(
+                "field `{}` of struct `{struct_name}` is not accessible here",
+                &*self.name
+            ))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message(format!("`{}` is not accessible here", &*self.name))
+                    .build(),
+            )
+            .related(vec![
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.field_span).await)
+                    .message(format!("`{}` is declared here", &*self.name))
+                    .build(),
+            ])
+            .maybe_help_message(help_message)
+            .build()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct MissingStructFieldInitialization {
     struct_id: GlobalSymbolID,
@@ -976,6 +1021,7 @@ pub enum Diagnostic {
     DuplicateNameBinding(DuplicateNameBinding),
     StructInitialization(StructInitializationDiagnostic),
     UnknownStructField(UnknownStructField),
+    InaccessibleStructField(InaccessibleStructField),
     BreakOutsideLoop(BreakOutsideLoop),
     ContinueOutsideLoop(ContinueOutsideLoop),
     ResidualSubtype(ResidualSubtype),
@@ -1034,6 +1080,7 @@ impl Report for Diagnostic {
             }
             Self::StructInitialization(diagnostic) => diagnostic.report(engine).await,
             Self::UnknownStructField(diagnostic) => diagnostic.report(engine).await,
+            Self::InaccessibleStructField(diagnostic) => diagnostic.report(engine).await,
             Self::BreakOutsideLoop(diagnostic) => diagnostic.report(engine).await,
             Self::ContinueOutsideLoop(diagnostic) => diagnostic.report(engine).await,
             Self::ResidualSubtype(residual_subtype) => residual_subtype.report(engine).await,

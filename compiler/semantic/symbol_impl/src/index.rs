@@ -13,6 +13,7 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_source_file::LocalSourceID;
 use rayc_symbol::{GlobalSymbolID, SymbolID};
 use rayc_target::TargetID;
+use rayc_tokio::join_set::JoinSet;
 
 use crate::table::{Table, TableKey, get_table};
 
@@ -23,8 +24,7 @@ pub struct TableIndex {
     /// The table storing the information of each symbol.
     symbol_tables: FxHashMap<SymbolID, Interned<TableKey>>,
 
-    /// The tables of the target: the root file's first, followed by the
-    /// tables of the file modules in declaration order, depth-first.
+    /// The tables of the target, sorted by their keys.
     table_keys: Vec<Interned<TableKey>>,
 
     /// The paths of the source files loaded into the target.
@@ -39,13 +39,11 @@ impl TableIndex {
         self.symbol_tables.get(&symbol_id)
     }
 
-    /// Returns the IDs of every symbol of the target.
-    pub fn all_symbol_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
-        self.symbol_tables.keys().copied()
-    }
-
     /// Returns the keys of the tables of every source file of the target.
-    pub fn table_keys(&self) -> impl Iterator<Item = &Interned<TableKey>> { self.table_keys.iter() }
+    #[must_use]
+    pub fn table_keys(&self) -> impl ExactSizeIterator<Item = &Interned<TableKey>> {
+        self.table_keys.iter()
+    }
 
     /// Returns the path of the loaded source file with the given ID, if the
     /// file belongs to the target.
@@ -71,6 +69,12 @@ impl TableIndex {
 
         self.table_keys.push(table_key);
     }
+
+    /// Sorts the tables by their keys.
+    ///
+    /// The tables are recorded in the order their tasks finish, which varies
+    /// from one run to another, whereas the index of a target must not.
+    fn sort_tables(&mut self) { self.table_keys.sort_unstable(); }
 }
 
 /// A query for the [`TableIndex`] of a target.
@@ -83,22 +87,40 @@ pub struct TableIndexKey {
     pub target_id: TargetID,
 }
 
+/// Retrieves the table of the given key, handing the key back so that the
+/// table can be told apart from the ones retrieved by the other tasks.
+async fn load_table(
+    engine: TrackedEngine,
+    table_key: Interned<TableKey>,
+) -> (Interned<TableKey>, Arc<Table>) {
+    let table = engine.get_table(&table_key).await;
+
+    (table_key, table)
+}
+
 #[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
 async fn table_index_executor(
     &TableIndexKey { target_id }: &TableIndexKey,
     engine: &TrackedEngine,
 ) -> Arc<TableIndex> {
+    let root_key = engine.intern(TableKey::new_target_root(target_id, engine).await);
+
+    // retrieves the tables concurrently, one task per source file: the tables
+    // of the file modules are requested as soon as the table of the file
+    // declaring them is available
     let mut index = TableIndex::default();
+    let mut tasks = JoinSet::new();
+    tasks.spawn(load_table(engine.clone(), root_key));
 
-    // follows the tables of the file modules from the root file, depth-first
-    // and in declaration order
-    let mut pending = vec![engine.intern(TableKey::new_target_root(target_id, engine).await)];
-    while let Some(table_key) = pending.pop() {
-        let table = engine.get_table(&table_key).await;
+    while let Some((table_key, table)) = tasks.next().await {
+        for next_table_key in table.next_tables() {
+            tasks.spawn(load_table(engine.clone(), next_table_key.clone()));
+        }
 
-        pending.extend(table.next_tables().rev().cloned());
         index.insert_table(table_key, &table);
     }
+
+    index.sort_tables();
 
     Arc::new(index)
 }

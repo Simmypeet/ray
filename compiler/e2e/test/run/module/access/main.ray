@@ -1,0 +1,26 @@
+extern def puts(message: cstr) -> c_int
+
+
+module shapes:
+    pub trait Area[t]:
+        pub def area(shape: t) -> int32
+
+    pub struct Rectangle:
+        pub width: int32
+        pub height: int32
+        scale: int32
+
+    pub def rectangle(width: int32, height: int32) -> Rectangle:
+        return Rectangle { width = width, height = height, scale = 1 }
+
+    # A public instance is resolved implicitly outside of its module.
+    pub inst RectangleArea for Area[Rectangle]:
+        def area(shape: Rectangle) -> int32:
+            return shape.width * shape.height * shape.scale
+
+
+def main() -> int32:
+    target.puts("access")
+    let rectangle = shapes.rectangle(3, 4)
+    let width = rectangle.width
+    return width + shapes.Area.area(rectangle)

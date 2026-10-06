@@ -9,6 +9,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_target::{CORE_TARGET_SEED, Global, TargetID, get_invocation_arguments, get_target_seed};
 use siphasher::sip128::Hasher128;
 
+pub mod accessibility;
 pub mod core_item;
 pub mod member;
 pub mod name;

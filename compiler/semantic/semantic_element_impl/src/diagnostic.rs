@@ -5,7 +5,7 @@ use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
 };
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
-use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine, unordered::query_all};
 use rayc_symbol::{
     GlobalSymbolID,
     symbol_kind::{get_all_symbol_ids, get_symbol_kind},
@@ -189,12 +189,12 @@ async fn rendered_executor(
     &RenderedKey { target_id }: &RenderedKey,
     engine: &TrackedEngine,
 ) -> Interned<[Interned<[Rendered<ByteIndex>]>]> {
-    let mut rendered_by_def = Vec::new();
     let ids = engine.get_all_symbol_ids(target_id).await;
 
-    for id in ids.iter().copied().map(|x| target_id.make_global(x)) {
-        rendered_by_def.push(engine.query(&SingleRenderedKey { symbol_id: id }).await);
-    }
+    // the diagnostics of each symbol are independent from the others
+    let rendered_by_def = engine
+        .query_all(ids.iter().map(|&id| SingleRenderedKey { symbol_id: target_id.make_global(id) }))
+        .await;
 
     engine.intern_unsized(rendered_by_def)
 }

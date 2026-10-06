@@ -6,7 +6,7 @@ use rayc_borrowck::borrow_check;
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_ir::ir_function::IRFunctionMap;
 use rayc_memory::analyze;
-use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine, unordered::query_all};
 use rayc_semantic_element::return_type::get_return_type;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
@@ -149,12 +149,17 @@ async fn rendered_executor(
     &RenderedKey { target_id }: &RenderedKey,
     engine: &TrackedEngine,
 ) -> Interned<[Interned<[Rendered<ByteIndex>]>]> {
-    let mut rendered = Vec::new();
     let def_ids = engine.get_all_def_with_body_ids(target_id).await;
-    for def_id in def_ids.iter().copied() {
-        rendered
-            .push(engine.query(&SingleRenderedKey { def_id: target_id.make_global(def_id) }).await);
-    }
+
+    // the diagnostics of each definition are independent from the others
+    let rendered = engine
+        .query_all(
+            def_ids
+                .iter()
+                .map(|&def_id| SingleRenderedKey { def_id: target_id.make_global(def_id) }),
+        )
+        .await;
+
     engine.intern_unsized(rendered)
 }
 

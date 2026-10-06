@@ -4,8 +4,15 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::{source_map::to_absolute_span, symbol_kind::SymbolKind};
-use rayc_type::ty::TyKind;
+use rayc_symbol::{
+    GlobalSymbolID,
+    accessibility::{Accessibility, DeclaredAccessibility, get_declared_accessibility},
+    name::{get_name, get_qualified_name},
+    source_map::to_absolute_span,
+    span::get_span,
+    symbol_kind::{SymbolKind, get_symbol_kind},
+};
+use rayc_type::{accessibility::get_accessibility, ty::TyKind};
 
 pub mod discovery;
 pub mod obligation;
@@ -44,6 +51,8 @@ pub enum Diagnostic {
     Predicate(PredicateObligation),
     /// A path segment could not be found in its containing symbol.
     PathSegmentNotFound(PathSegmentNotFound),
+    /// A path segment names a symbol that is not accessible from the site.
+    InaccessibleSymbol(InaccessibleSymbol),
     /// Resolving omitted type arguments would require disallowed inference.
     TypeInferenceNotAllowed(TypeInferenceNotAllowed),
     /// Explicit type arguments were supplied to a symbol whose parameters are
@@ -92,6 +101,7 @@ impl Report for Diagnostic {
             Self::TraitRefCheck(diagnostic) => diagnostic.report(engine).await,
             Self::Predicate(diagnostic) => diagnostic.report(engine).await,
             Self::PathSegmentNotFound(diagnostic) => diagnostic.report(engine).await,
+            Self::InaccessibleSymbol(diagnostic) => diagnostic.report(engine).await,
             Self::TypeInferenceNotAllowed(diagnostic) => diagnostic.report(engine).await,
             Self::ExplicitTypeArgumentsNotAllowed(diagnostic) => diagnostic.report(engine).await,
             Self::TypeArgumentArityMismatch(diagnostic) => diagnostic.report(engine).await,
@@ -131,6 +141,77 @@ impl Report for PathSegmentNotFound {
                 Some(format!("symbol `{}` is not found", &*self.name)),
             ))
             .message(format!("symbol `{}` is not found", &*self.name))
+            .build()
+    }
+}
+
+/// A symbol referred to from a site it is not accessible from.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct InaccessibleSymbol {
+    symbol_id: GlobalSymbolID,
+    span: RelativeSpan,
+}
+
+impl InaccessibleSymbol {
+    /// Creates the diagnostic of `symbol_id` referred to at `span`.
+    #[must_use]
+    pub const fn new(symbol_id: GlobalSymbolID, span: RelativeSpan) -> Self {
+        Self { symbol_id, span }
+    }
+}
+
+impl Report for InaccessibleSymbol {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let name = engine.get_name(self.symbol_id).await;
+        let kind = engine.get_symbol_kind(self.symbol_id).await;
+
+        let declaration = match engine.get_span(self.symbol_id).await {
+            Some(span) => vec![Highlight::new(
+                engine.to_absolute_span(&span).await,
+                Some(format!("`{}` is declared here", &*name)),
+            )],
+            None => Vec::new(),
+        };
+        let help_message = match engine.get_accessibility(self.symbol_id).await {
+            Accessibility::Public => None,
+            Accessibility::Scoped(scope) => {
+                let scope = engine.get_qualified_name(scope).await;
+                Some(match engine.get_declared_accessibility(self.symbol_id).await {
+                    DeclaredAccessibility::Declared(_) => format!(
+                        "`{}` is only accessible within `{scope}`; declare it with `pub` to make \
+                         it public",
+                        &*name
+                    ),
+                    DeclaredAccessibility::InheritedFromTraitMember => format!(
+                        "`{}` has the accessibility of the trait member it implements, which is \
+                         only accessible within `{scope}`",
+                        &*name
+                    ),
+                })
+            }
+        };
+
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
+                engine.to_absolute_span(&self.span).await,
+                Some(format!("`{}` is not accessible here", &*name)),
+            ))
+            .message(format!("{} `{}` is not accessible here", kind.str(), &*name))
+            .related(declaration)
+            .maybe_help_message(help_message)
             .build()
     }
 }

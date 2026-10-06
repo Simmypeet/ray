@@ -2,9 +2,13 @@ use std::path::Path;
 
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::SourceElement;
-use rayc_symbol::symbol_kind::SymbolKind;
+use rayc_symbol::{
+    accessibility::{Accessibility, DeclaredAccessibility},
+    symbol_kind::SymbolKind,
+};
 use rayc_syntax::{
     Passable,
+    access_modifier::AccessModifier,
     def::{Def, DefSignature, ParameterEntry},
     effect::{Effect, OperationSignature},
     extern_def::ExternDef,
@@ -17,13 +21,36 @@ use rayc_syntax::{
 
 use crate::{
     diagnostic::{
-        Diagnostic, InvalidAttribute, InvalidAttributeKind, InvalidDefDeclaration,
-        InvalidDefDeclarationKind, InvalidEffectOperationDeclaration,
+        Diagnostic, InvalidAccessModifier, InvalidAccessModifierKind, InvalidAttribute,
+        InvalidAttributeKind, InvalidDefDeclaration, InvalidDefDeclarationKind,
+        InvalidEffectOperationDeclaration,
     },
     table::{Infos, MemberBuilder, Table, TableKey},
 };
 
+impl MemberBuilder {
+    /// Returns the declared accessibility of a member declared with the
+    /// given access modifier.
+    const fn declared_accessibility(
+        &self,
+        access_modifier: Option<&AccessModifier>,
+    ) -> DeclaredAccessibility {
+        DeclaredAccessibility::Declared(self.accessibility(access_modifier))
+    }
+}
+
 impl Table {
+    /// Reports the access modifier written on an instance member, which has
+    /// the accessibility of the trait member it implements instead.
+    fn report_instance_member_access_modifier(&mut self, access_modifier: Option<&AccessModifier>) {
+        if let Some(access_modifier) = access_modifier {
+            self.push_diagnostic(Diagnostic::InvalidAccessModifier(InvalidAccessModifier::new(
+                InvalidAccessModifierKind::InstanceMember,
+                access_modifier.span(),
+            )));
+        }
+    }
+
     async fn register_struct(
         &mut self,
         member_builder: &mut MemberBuilder,
@@ -40,6 +67,9 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::Strut)
+                .accessibility(
+                    member_builder.declared_accessibility(r#struct.access_modifier().as_ref()),
+                )
                 .name(ident.kind.0.clone())
                 .span(ident.span)
                 .type_parameters(r#struct.type_parameters())
@@ -98,6 +128,9 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::Marker)
+                .accessibility(
+                    member_builder.declared_accessibility(marker.access_modifier().as_ref()),
+                )
                 .name(ident.kind.0.clone())
                 .span(ident.span)
                 .build(),
@@ -112,10 +145,18 @@ impl Table {
         implementation: MarkerImplementation,
         engine: &TrackedEngine,
     ) {
+        if let Some(access_modifier) = implementation.access_modifier() {
+            self.push_diagnostic(Diagnostic::InvalidAccessModifier(InvalidAccessModifier::new(
+                InvalidAccessModifierKind::MarkerImplementation,
+                access_modifier.span(),
+            )));
+        }
+
         self.insert_unnamed_symbol(
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::MarkerImplementation)
+                .accessibility(DeclaredAccessibility::Declared(Accessibility::Public))
                 .name(engine.intern_unsized("[marker implementation]"))
                 .span(implementation.span())
                 .type_parameters(implementation.type_parameters())
@@ -162,6 +203,9 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::Def)
+                .accessibility(
+                    member_builder.declared_accessibility(signature.access_modifier().as_ref()),
+                )
                 .name(ident.kind.0.clone())
                 .span(ident.span)
                 .type_parameters(signature.type_parameters())
@@ -211,6 +255,9 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::ExternDef)
+                .accessibility(
+                    member_builder.declared_accessibility(def.access_modifier().as_ref()),
+                )
                 .name(ident.kind.0.clone())
                 .span(ident.span)
                 .parameter_list(parameters)
@@ -226,6 +273,7 @@ impl Table {
         &mut self,
         member_builder: &mut MemberBuilder,
         operation: OperationSignature,
+        accessibility: DeclaredAccessibility,
         engine: &TrackedEngine,
     ) {
         let Some(ident) = operation.name() else {
@@ -249,6 +297,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::EffectOperation)
+                .accessibility(accessibility)
                 .name(ident.kind.0.clone())
                 .span(ident.span)
                 .parameter_list(parameters)
@@ -269,11 +318,14 @@ impl Table {
             return;
         };
         let name = ident.kind.0.clone();
+        let accessibility =
+            member_builder.declared_accessibility(effect.access_modifier().as_ref());
         let effect_id = self
             .insert_symbol(
                 member_builder,
                 Infos::builder()
                     .symbol_kind(SymbolKind::Effect)
+                    .accessibility(accessibility)
                     .name(name.clone())
                     .span(ident.span)
                     .type_parameters(effect.type_parameters())
@@ -284,11 +336,17 @@ impl Table {
             )
             .await;
 
+        // an operation is accessible wherever its effect is
         let mut effect_members = member_builder.child(effect_id, name);
         if let Some(body) = effect.body() {
             for operation in body.operation_signatures() {
-                self.register_effect_operation(&mut effect_members, operation.clone(), engine)
-                    .await;
+                self.register_effect_operation(
+                    &mut effect_members,
+                    operation.clone(),
+                    accessibility,
+                    engine,
+                )
+                .await;
             }
         }
 
@@ -322,6 +380,9 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::TraitDef)
+                .accessibility(
+                    member_builder.declared_accessibility(signature.access_modifier().as_ref()),
+                )
                 .name(ident.kind.0.clone())
                 .span(ident.span)
                 .type_parameters(signature.type_parameters())
@@ -345,11 +406,13 @@ impl Table {
         let Some(ident) = ty.name() else {
             return;
         };
+        self.report_instance_member_access_modifier(ty.access_modifier().as_ref());
 
         self.insert_symbol(
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::InstanceType)
+                .accessibility(DeclaredAccessibility::InheritedFromTraitMember)
                 .name(ident.kind.0.clone())
                 .span(ident.span)
                 .type_parameters(ty.type_parameters())
@@ -377,6 +440,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::TraitType)
+                .accessibility(member_builder.declared_accessibility(ty.access_modifier().as_ref()))
                 .name(ident.kind.0.clone())
                 .span(ident.span)
                 .type_parameters(ty.type_parameters())
@@ -404,6 +468,9 @@ impl Table {
                 member_builder,
                 Infos::builder()
                     .symbol_kind(SymbolKind::Trait)
+                    .accessibility(
+                        member_builder.declared_accessibility(r#trait.access_modifier().as_ref()),
+                    )
                     .name(name.clone())
                     .span(ident.span)
                     .type_parameters(r#trait.type_parameters())
@@ -447,6 +514,9 @@ impl Table {
                 member_builder,
                 Infos::builder()
                     .symbol_kind(SymbolKind::Instance)
+                    .accessibility(
+                        member_builder.declared_accessibility(instance.access_modifier().as_ref()),
+                    )
                     .name(name.clone())
                     .span(ident.span)
                     .type_parameters(instance.type_parameters())
@@ -493,6 +563,7 @@ impl Table {
         let Some(ident) = signature.name() else {
             return;
         };
+        self.report_instance_member_access_modifier(signature.access_modifier().as_ref());
         let parameters = signature.parameter_list();
         let ellipsis = parameters.as_ref().and_then(|parameters| {
             parameters.entries().find_map(|entry| match entry {
@@ -511,6 +582,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::InstanceDef)
+                .accessibility(DeclaredAccessibility::InheritedFromTraitMember)
                 .name(ident.kind.0.clone())
                 .span(ident.span)
                 .type_parameters(signature.type_parameters())
@@ -545,6 +617,7 @@ impl Table {
         };
         let name = ident.kind.0.clone();
         let body = module.body();
+        let accessibility = member_builder.accessibility(module.access_modifier().as_ref());
 
         // a file module is only declared here: its information is stored in
         // the table of its own file, alongside its members. A redefined file
@@ -557,6 +630,7 @@ impl Table {
                 module_id.id,
                 &name,
                 ident.span,
+                accessibility,
                 directory,
                 engine,
             );
@@ -570,6 +644,7 @@ impl Table {
                 member_builder,
                 Infos::builder()
                     .symbol_kind(SymbolKind::Module)
+                    .accessibility(DeclaredAccessibility::Declared(accessibility))
                     .name(name.clone())
                     .span(ident.span)
                     .build(),
@@ -578,7 +653,7 @@ impl Table {
             .await;
 
         // an inline module defines its members in its body
-        let mut module_members = member_builder.child(module_id, name.clone());
+        let mut module_members = member_builder.child_module(module_id, name.clone());
         if let Some(body) = body {
             Box::pin(self.register_module_members(
                 &mut module_members,
