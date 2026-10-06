@@ -90,6 +90,10 @@ coroutine is currently suspended. It follows the shape of `core.Def[f]`, and
 generic code constrains it the same way, with
 `where (co.Return = ..., co.Effect = ...)`.
 
+For every `c` that has an instance, `&mut c` has one too, with the same
+`Return` and `Effect`. This is what the [pinned](#pinned-storage)
+continuations of the first prototype use.
+
 ## The `Continuation[r, c]` type
 
 ```ray
@@ -99,7 +103,9 @@ pub type Continuation[r, c] = ...
 A `Continuation[r, c]` is a suspended coroutine of type `c` that is waiting
 for a value of type `r`.
 
-- `c` stays the same for the whole life of the coroutine.
+- `c` stays the same for the whole life of the coroutine. In the first
+  prototype it is always a `&mut` to a coroutine
+  [pinned to the stack](#pinned-storage).
 - `r` is the type needed to resume it from the point where it is suspended.
   It changes from one suspension to the next.
 
@@ -115,15 +121,51 @@ each suspension creates the next.
 ## Creating a coroutine: `coro`
 
 ```ray
-let k = coro numbers()      # k: Continuation[(), <coroutine type of numbers>]
+let k = coro numbers()      # k: Continuation[(), &mut <coroutine type of numbers>]
 ```
 
 `coro f(args)` evaluates the arguments, stores them in a new coroutine and
-returns it without running any of `f`. For the coroutine type `c` it creates:
+gives back a continuation for it, without running any of `f`. For the
+coroutine type `c` it creates:
 
 - `Coroutine[c].Return` is the return type of `f`;
 - `Coroutine[c].Effect` is the effect row of `f`;
 - the first continuation has `r = ()`.
+
+### Pinned storage
+
+In the first prototype, `coro` pins the coroutine to the stack. The coroutine
+itself is placed in hidden storage in the enclosing scope, and the
+continuation only refers to it: `coro` gives back a
+`Continuation[(), &'a mut c]`, where `'a` is the lifetime of that storage.
+
+This is the idea of `std::pin::pin!` in Rust. The pinned value can no longer
+be named; it can only be reached through the reference that the macro gives
+back, a `Pin<&mut T>`.
+
+What follows from it:
+
+- **The coroutine never moves.** Moving a continuation moves a reference. A
+  continuation does not give out the `&mut` it holds, so nothing can move the
+  coroutine from behind it.
+- **A continuation cannot outlive the scope that created it.** Returning it,
+  or storing it in something that lives longer, is an ordinary borrow error,
+  which the borrow checker already reports:
+
+  ```ray
+  def make() -> Continuation[(), ...]:
+      return coro numbers()       # ERROR: borrows storage local to `make`
+  ```
+
+- **It can still be passed down.** A continuation can be given to a callee,
+  kept in a local, and assigned again, as the [example](#example) does with
+  `con = k`. Generic code needs nothing new: its `c` is instantiated with
+  `&'a mut <coroutine type>`.
+- **No boxing and no type erasure by the user.** Both need a coroutine that
+  can leave the stack.
+
+These restrictions are meant to be lifted once moving and pinning have a
+design; see [open questions](#open-questions).
 
 ## Invoking a continuation
 
@@ -275,16 +317,18 @@ and every later one for an `int32`, which is why `supply` is generic over
 it. There is no return clause, so when the coroutine completes its value is
 the value of the innermost `handle`, and each `supply` returns it outwards.
 
-Later, type erasure could remove the coroutine type as well, giving something
-like `Continuation[(), BoxedCoroutine]` that a scheduler can keep in a queue.
+Later, once a coroutine can be boxed, type erasure could remove the coroutine
+type as well, giving something like `Continuation[(), BoxedCoroutine]` that a
+scheduler can keep in a queue.
 
 ## Ownership and drop
 
 - A continuation is **one-shot**. Invoking or handling it consumes it by
   value, and `Continuation` is never `Copy`.
-- A continuation **can be dropped** instead of resumed. Dropping it cancels
-  the coroutine: every local that is live at the suspension point is dropped,
-  as if the coroutine's scopes had ended there.
+- A continuation **can be dropped** instead of resumed, which abandons the
+  coroutine. The coroutine's [storage](#pinned-storage) owns its locals:
+  those still live at the suspension point are dropped when the storage goes
+  out of scope, as if the coroutine's scopes had ended there.
 
 # Lowering
 
@@ -425,6 +469,9 @@ A recursive function would therefore have to store itself, so recursion needs
 an indirection. For the first version the compiler boxes the state machine
 implicitly, rather than asking the user to do it.
 
+This boxing is internal to the lowering. It is separate from letting the user
+box a coroutine, which the first prototype does not support.
+
 # Borrow Checker Impact
 
 `BORROW_CHECKER_PLAN.md` assumes every handler is tail-resumptive: "the
@@ -440,18 +487,22 @@ needs a rule:
 - **Regions held by a continuation.** A suspended coroutine holds its
   arguments and every local live at the suspension. The coroutine type has to
   account for the regions in them, and `Continuation[r, c]: 'a` needs a
-  definition.
+  definition. In the first prototype the continuation also carries the
+  lifetime of its [pinned storage](#pinned-storage), which is what keeps it
+  from escaping.
 - **Yielding borrows of the coroutine's own locals.** In direct mode a
   `perform` may pass a borrow of a local to the handler, because the handler
   returns before the local goes away. In a coroutine the argument is handed
-  to a clause together with the continuation that owns the local it borrows
-  from. **The first prototype disallows this**: an operation argument may not
-  carry a lifetime local to the coroutine. How to allow it needs its own
-  discussion.
+  to a clause together with the continuation, and resuming the continuation
+  can end the life of the local it borrows from. **The first prototype
+  disallows this**: an operation argument may not carry a lifetime local to
+  the coroutine. How to allow it needs its own discussion.
 - **Borrows held across a suspension.** A local that borrows another local of
   the same coroutine, and is still live at a `perform`, makes the coroutine
-  self-referential. Moving the continuation would then invalidate the borrow.
-  Rust handles this with `Pin`; Ray needs a decision.
+  self-referential. The first prototype can allow this, because the coroutine
+  is pinned to the stack and never moves. It becomes a problem again as soon
+  as a coroutine can be moved, returned or boxed; see moving and pinning
+  under [open questions](#open-questions).
 - **Effect variance.** The variance of effect parameters was derived for
   handlers that are called by the computation. It has to be re-derived for
   yielded arguments and resume values, together with the variance of `r` in
@@ -464,6 +515,19 @@ them.
 
 # Open Questions
 
+- **Moving and pinning.** Pinning every coroutine to the stack is a
+  restriction of the first prototype. Returning a coroutine, boxing it and
+  erasing its type all need a way to say that a value must not move once it
+  has been resumed. The candidates, which do not exclude each other:
+  - **`Pin`**, as in Rust: a wrapper type around a pointer. It needs no new
+    kind of type, but brings pin projection and an API that leans on
+    `unsafe`.
+  - **A `Move` marker**: types that cannot be moved are known to the type
+    system. This fits the existing markers such as `core.Copy`, but every
+    generic parameter then needs a default bound and a way to opt out of it.
+  - **In-place construction**: a value is built directly where it will live,
+    so it never has to move there. Returning or boxing an immovable coroutine
+    needs this under either of the other two.
 - **Syntax of the clauses.** The semantics are settled, the spelling is not:
   - The return clause `return x:` sits at the indentation of the `handle`,
     where a `return` statement could also start. Only the colon after the
@@ -482,12 +546,10 @@ them.
 - **Indirect calls.** A coroutine that calls through a `def(...) -> ...`
   value or a `Def` dictionary does not know the callee's state machine type.
   This probably needs the same boxing as recursion, plus an erased `resume`.
-- **Scope of boxing.** Boxing is decided for recursion. If every coroutine
-  were boxed, a continuation would be a pointer, which would also settle
-  moving a self-referential coroutine.
-- **Linear values.** Dropping a continuation drops the coroutine's live
-  locals. If one of them is `@linear`, it has no `Drop` instance, so the
-  continuation presumably has none either and must be run to completion.
+- **Linear values.** A coroutine that is abandoned has its live locals
+  dropped with its storage. If one of them is `@linear`, it has no `Drop`
+  instance, so the coroutine presumably has none either and must be run to
+  completion.
 - **Cost of reification.** `coro` turns every effect in the row into a
   suspension, including ones the driver only forwards. Each forwarded
   operation costs a suspend and a resume. It may be worth letting an effect
@@ -499,4 +561,5 @@ them.
   for which label a clause handles. A callee with a smaller row than its
   caller needs its variants mapped into the caller's at each call.
 - **Type erasure.** `Continuation[(), BoxedCoroutine]`, as mentioned under
-  [continuations of different types](#continuations-of-different-types).
+  [continuations of different types](#continuations-of-different-types). It
+  depends on moving and pinning above.
