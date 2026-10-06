@@ -10,20 +10,16 @@
 use qbice::storage::intern::Interned;
 use rayc_mono_ir::{
     MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoNominalDropInstance,
-    ty::{FunctionSignature, MonoType, ReturnType, lower_effects, lower_type, nominal_signature},
+    signature::{DefSignature, get_def_signature},
+    ty::{FunctionSignature, MonoType, lower_effects, lower_type, nominal_signature},
 };
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::{
-    effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
-};
 use rayc_solver::Solver;
 use rayc_symbol::{
     GlobalSymbolID,
     core_item::{CoreItem, get_core_item},
     member::get_member_by_name,
     name::get_name,
-    symbol_kind::{SymbolKind, get_symbol_kind},
-    syntax::is_variadic_def,
 };
 use rayc_type::{
     instance_member::get_instance_member,
@@ -42,7 +38,7 @@ pub(crate) enum InstanceCallable {
     Closure(MonoClosureInstance, FunctionSignature, Vec<MonoEffectInstance>),
     TupleDrop(Vec<Interned<Ty>>),
     ClosureDrop(Vec<Interned<Ty>>),
-    NominalDrop(MonoNominalDropInstance, FunctionSignature),
+    NominalDrop(MonoNominalDropInstance),
     NoOp,
 }
 
@@ -112,15 +108,13 @@ impl Resolver {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
                 InstanceCallable::ClosureDrop(instance.capture_instances().to_vec())
             }
-            ApplicationView::NominalDropInstance(instance) => {
+            ApplicationView::NominalDropInstance(_) => {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
 
                 // The generated body is a separate fragment so recursive
                 // nominal types do not expand indefinitely at the call site.
-                let signature = self.nominal_drop_signature(instance.nominal()).await;
                 InstanceCallable::NominalDrop(
                     MonoNominalDropInstance::new(&dictionary_ty, &self.solver).await,
-                    signature,
                 )
             }
             ApplicationView::Primitive(_)
@@ -169,7 +163,8 @@ impl Resolver {
             panic!("DefInstance requires a nominal closure")
         };
 
-        // Leave owner-body discovery to the backend worklist to allow fragment cycles.
+        // Leave owner-body discovery to the backend worklist to allow fragment
+        // cycles.
         let instance = MonoClosureInstance::from_closure(&self.solver, closure).await;
         let (signature, effects) = nominal_signature(&self.solver, closure).await;
         InstanceCallable::Closure(instance, signature, effects)
@@ -182,9 +177,10 @@ impl Resolver {
         trait_def_id: GlobalSymbolID,
         trait_call_substitution: &Subst,
     ) -> InstanceCallable {
-        // Trait and instance methods correspond by name. The InstanceMember query
-        // verifies that correspondence and provides the precomputed mapping
-        // from trait-owned polymorphic variables to instance-owned variables.
+        // Trait and instance methods correspond by name. The InstanceMember
+        // query verifies that correspondence and provides the
+        // precomputed mapping from trait-owned polymorphic variables to
+        // instance-owned variables.
         let trait_def_name = self.engine.get_name(trait_def_id).await;
         let instance_def_id = self
             .engine
@@ -203,16 +199,17 @@ impl Resolver {
         );
 
         // Seed the callee substitution with arguments belonging to the instance
-        // declaration itself. For `SomeInstance[int32]`, this maps the instance's
-        // type variables to `int32`.
+        // declaration itself. For `SomeInstance[int32]`, this maps the
+        // instance's type variables to `int32`.
         let instance_args = Args::new(instance.args().iter().cloned(), &self.engine);
         let mut substitution =
             self.engine.build_subst_from_args(instance.symbol_id(), &instance_args).await;
 
-        // Method-local variables have different IDs in the trait declaration and
-        // its instance implementation. First make the trait call substitution
-        // concrete, then use InstanceMember's mapping to move each value
-        // into the corresponding instance-method variable.
+        // Method-local variables have different IDs in the trait declaration
+        // and its instance implementation. First make the trait call
+        // substitution concrete, then use InstanceMember's mapping to
+        // move each value into the corresponding instance-method
+        // variable.
         let mut trait_call_substitution = trait_call_substitution.clone();
         trait_call_substitution.compose(&self.substitution, &self.engine);
         let trait_def_poly_vars = self.engine.get_poly_var_map(trait_def_id).await;
@@ -238,43 +235,9 @@ impl Resolver {
         InstanceCallable::Definition(self.definition_instance(instance_def_id, substitution).await)
     }
 
-    pub(crate) async fn global_signature(
-        &self,
-        function_id: GlobalSymbolID,
-        substitution: &Subst,
-    ) -> (FunctionSignature, Vec<MonoEffectInstance>, bool) {
-        let parameters = self.engine.get_parameter_map(function_id).await;
-        let mut parameter_types = Vec::new();
-        for (_, parameter) in parameters.iter() {
-            parameter_types.push(lower_type(&self.solver, parameter.ty(), substitution).await);
-        }
-        let symbol_kind = self.engine.get_symbol_kind(function_id).await;
-        let effects = if matches!(symbol_kind, SymbolKind::Def | SymbolKind::InstanceDef) {
-            let effect = self.engine.get_effect_row(function_id).await;
-            lower_effects(&self.solver, &effect, substitution).await
-        } else {
-            Vec::new()
-        };
-        for effect in &effects {
-            parameter_types.push(MonoType::new_handler_pointer(effect.clone(), &self.engine));
-        }
-
-        let return_type = self.engine.get_return_type(function_id).await;
-        let return_type = lower_type(&self.solver, &return_type, substitution).await;
-        let is_void = symbol_kind == SymbolKind::ExternDef && return_type.is_unit();
-
-        let return_type = if is_void { ReturnType::Void } else { ReturnType::Value(return_type) };
-        let is_variadic = if matches!(symbol_kind, SymbolKind::Def | SymbolKind::ExternDef) {
-            self.engine.is_variadic_def(function_id).await
-        } else {
-            false
-        };
-        let parameter_types = self.engine.intern_unsized(parameter_types);
-        let signature = if is_variadic {
-            FunctionSignature::new_variadic(parameter_types, return_type)
-        } else {
-            FunctionSignature::new(parameter_types, return_type)
-        };
-        (signature, effects, is_void)
+    /// The calling signature of a global definition instance, including the
+    /// effects whose handlers the caller must pass.
+    pub(crate) async fn def_signature(&self, instance: &MonoDefInstance) -> Interned<DefSignature> {
+        self.engine.get_def_signature(instance.clone()).await
     }
 }

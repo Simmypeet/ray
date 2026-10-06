@@ -1,10 +1,11 @@
-use rayc_hash::FxHashMap;
+use std::collections::BTreeMap;
+
 use rayc_ir::ir_expr::{IRExprID, handle::Handle, perform::Perform};
 use rayc_mono_ir::{
     MonoEffectInstance,
     function::{Local, LocalID, LocalKind},
     instance::FunctionReference,
-    operand::{FunctionOperand, Operand},
+    operand::Operand,
     place::{FieldIndex, Place},
     rvalue::{AddressOf, OperationHandlerSlot, Rvalue},
     ty::PointerMutability,
@@ -66,9 +67,8 @@ impl Builder<'_> {
         }
 
         let destination = self.expression_place(expression_id);
-        let callee = Operand::Function(FunctionOperand::new(
-            FunctionReference::Local(context.target_function_id(handle.body().function_id())),
-            body_abi.signature().clone(),
+        let callee = Operand::Function(FunctionReference::Local(
+            context.target_function_id(handle.body().function_id()),
         ));
         self.push_call_with_destination(destination, callee, arguments);
 
@@ -139,8 +139,8 @@ impl Builder<'_> {
         &mut self,
         context: &Context,
         handle: &Handle,
-    ) -> (FxHashMap<GlobalSymbolID, OperationHandlerSlot>, Option<LocalID>) {
-        let mut slots = FxHashMap::default();
+    ) -> (BTreeMap<GlobalSymbolID, OperationHandlerSlot>, Option<LocalID>) {
+        let mut slots = BTreeMap::new();
         let Some(capture_map_id) = handle.handler_capture_map() else {
             assert!(handle.handlers().is_empty());
             return (slots, None);
@@ -154,10 +154,8 @@ impl Builder<'_> {
 
         for handler in handle.handlers() {
             context.assert_function_uses_capture_environment(handler.function_id(), capture_map_id);
-            let abi = context.function_abi(handler.function_id());
-            let fn_ptr = Operand::Function(FunctionOperand::new(
-                FunctionReference::Local(context.target_function_id(handler.function_id())),
-                abi.signature().clone(),
+            let fn_ptr = Operand::Function(FunctionReference::Local(
+                context.target_function_id(handler.function_id()),
             ));
 
             assert!(

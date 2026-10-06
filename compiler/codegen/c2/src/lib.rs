@@ -9,10 +9,11 @@
 //!
 //! - [`c`] renders C syntax (names, types, expressions) as allocation-free
 //!   [`std::fmt::Display`] adaptors;
-//! - `worklist`, `functions`, and `aggregates` hold the program-wide state
-//!   discovered while generating;
-//! - `collect` discovers a fragment's dependencies, `print` writes its
-//!   functions, and `generator` drives both;
+//! - `program` holds the program-wide state discovered while generating: the
+//!   fragment `worklist` and the `aggregates` used so far. Everything else,
+//!   such as signatures and linkage, comes from engine queries;
+//! - `print` writes a fragment's functions, recording what they refer to, and
+//!   `generator` drives it over the worklist;
 //! - `unit` assembles the final translation unit.
 
 use std::io::{self, Write};
@@ -35,10 +36,9 @@ use crate::generator::Generator;
 
 mod aggregates;
 mod c;
-mod collect;
-mod functions;
 mod generator;
 mod print;
+mod program;
 mod unit;
 mod worklist;
 

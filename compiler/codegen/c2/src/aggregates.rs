@@ -14,18 +14,76 @@ use crate::c::name::AggregateName;
 
 /// Every aggregate type reachable from generated code, closed under the types
 /// of their members.
+///
+/// Each insertion completes before returning: newly found aggregates have
+/// their members, and effect handlers their layouts, registered as part of
+/// the same call.
 #[derive(Debug, Default)]
 pub(crate) struct AggregateRegistry {
-    /// Each discovered aggregate with its precomputed C name.
+    /// Each registered aggregate with its precomputed C name.
     names: FxHashMap<AggregateType, AggregateName>,
-    /// Discovered aggregates whose member types have not been visited yet.
-    pending: Vec<AggregateType>,
     handler_layouts: FxHashMap<MonoEffectInstance, Interned<HandlerLayout>>,
 }
 
 impl AggregateRegistry {
-    /// Discovers every aggregate that `ty` mentions.
-    pub(crate) fn visit_type(&mut self, ty: &MonoType) {
+    /// Registers every aggregate that `ty` mentions.
+    pub(crate) async fn insert_type(&mut self, engine: &TrackedEngine, ty: &MonoType) {
+        let mut found = Vec::new();
+        self.discover_type(ty, &mut found);
+        self.complete(engine, found).await;
+    }
+
+    /// Registers every aggregate that `signature` mentions.
+    pub(crate) async fn insert_signature(
+        &mut self,
+        engine: &TrackedEngine,
+        signature: &FunctionSignature,
+    ) {
+        let mut found = Vec::new();
+        self.discover_signature(signature, &mut found);
+        self.complete(engine, found).await;
+    }
+
+    /// Registers `aggregate` itself.
+    pub(crate) async fn insert(&mut self, engine: &TrackedEngine, aggregate: AggregateType) {
+        let mut found = Vec::new();
+        self.discover(aggregate, &mut found);
+        self.complete(engine, found).await;
+    }
+
+    /// Registers the members of each newly `found` aggregate, which may find
+    /// further aggregates in turn.
+    ///
+    /// `found` is a local worklist rather than async recursion, which would
+    /// need a heap-allocated future per level.
+    async fn complete(&mut self, engine: &TrackedEngine, mut found: Vec<AggregateType>) {
+        while let Some(aggregate) = found.pop() {
+            match &aggregate {
+                AggregateType::EffectHandler(handler) => {
+                    let instance = handler.mono_effect_instance();
+                    let layout = engine.build_handler_layout(instance.clone()).await;
+                    for operation in layout.operations() {
+                        self.discover_signature(operation.signature(), &mut found);
+                    }
+                    self.handler_layouts.insert(instance.clone(), layout);
+                }
+                AggregateType::Tuple(tuple) => {
+                    tuple.fields().iter().for_each(|field| self.discover_type(field, &mut found));
+                }
+                AggregateType::Environment(environment) => {
+                    for capture in environment.captures() {
+                        self.discover_type(capture, &mut found);
+                    }
+                }
+                AggregateType::Struct(st) => {
+                    st.fields().values().for_each(|field| self.discover_type(field, &mut found));
+                }
+            }
+        }
+    }
+
+    /// Names every aggregate in `ty` not seen before, adding it to `found`.
+    fn discover_type(&mut self, ty: &MonoType, found: &mut Vec<AggregateType>) {
         match ty {
             MonoType::Bool
             | MonoType::Int8
@@ -42,75 +100,46 @@ impl AggregateRegistry {
             | MonoType::CInt
             | MonoType::CStr
             | MonoType::OpaquePointer(_) => {}
-            MonoType::Pointer(pointer) => self.visit_type(pointer.pointee()),
+            MonoType::Pointer(pointer) => self.discover_type(pointer.pointee(), found),
             // Check before cloning: most visits find an already-known type.
             MonoType::Aggregate(aggregate) => {
                 if !self.names.contains_key(aggregate) {
-                    self.insert(aggregate.clone());
+                    self.discover(aggregate.clone(), found);
                 }
             }
-            MonoType::FunctionPointer(signature) => self.visit_signature(signature),
+            MonoType::FunctionPointer(signature) => self.discover_signature(signature, found),
         }
     }
 
-    /// Discovers every aggregate that `signature` mentions.
-    pub(crate) fn visit_signature(&mut self, signature: &FunctionSignature) {
+    fn discover_signature(
+        &mut self,
+        signature: &FunctionSignature,
+        found: &mut Vec<AggregateType>,
+    ) {
         for parameter in signature.parameter_types() {
-            self.visit_type(parameter);
+            self.discover_type(parameter, found);
         }
         match signature.return_type() {
             ReturnType::Void => {}
-            ReturnType::Value(ty) => self.visit_type(ty),
+            ReturnType::Value(ty) => self.discover_type(ty, found),
         }
     }
 
-    /// Discovers `aggregate` itself.
-    pub(crate) fn insert(&mut self, aggregate: AggregateType) {
+    fn discover(&mut self, aggregate: AggregateType, found: &mut Vec<AggregateType>) {
         if !self.names.contains_key(&aggregate) {
             self.names.insert(aggregate.clone(), AggregateName::of(&aggregate));
-            self.pending.push(aggregate);
+            found.push(aggregate);
         }
-    }
-
-    /// Visits the members of every pending aggregate, resolving effect-handler
-    /// layouts, until the discovered set is closed.
-    pub(crate) async fn resolve_pending(&mut self, engine: &TrackedEngine) {
-        while let Some(aggregate) = self.pending.pop() {
-            match &aggregate {
-                AggregateType::EffectHandler(handler) => {
-                    let instance = handler.mono_effect_instance();
-                    let layout = engine.build_handler_layout(instance.clone()).await;
-                    for operation in layout.operations() {
-                        self.visit_signature(operation.signature());
-                    }
-                    self.handler_layouts.insert(instance.clone(), layout);
-                }
-                AggregateType::Tuple(tuple) => {
-                    tuple.fields().iter().for_each(|field| self.visit_type(field));
-                }
-                AggregateType::Environment(environment) => {
-                    environment.captures().iter().for_each(|capture| self.visit_type(capture));
-                }
-                AggregateType::Struct(st) => {
-                    st.fields().values().for_each(|field| self.visit_type(field));
-                }
-            }
-        }
-    }
-
-    /// The operation slots of a resolved effect handler.
-    pub(crate) fn handler_layout(&self, instance: &MonoEffectInstance) -> &HandlerLayout {
-        self.handler_layouts
-            .get(instance)
-            .expect("effect handler should have been resolved before printing")
     }
 
     /// The operation slots of `aggregate` if it is an effect handler.
     fn layout_of(&self, aggregate: &AggregateType) -> Option<&HandlerLayout> {
         match aggregate {
-            AggregateType::EffectHandler(handler) => {
-                Some(self.handler_layout(handler.mono_effect_instance()))
-            }
+            AggregateType::EffectHandler(handler) => Some(
+                self.handler_layouts
+                    .get(handler.mono_effect_instance())
+                    .expect("a registered effect handler should have its layout"),
+            ),
             AggregateType::Tuple(_) | AggregateType::Environment(_) | AggregateType::Struct(_) => {
                 None
             }
@@ -123,8 +152,6 @@ impl AggregateRegistry {
     pub(crate) fn in_definition_order(
         &self,
     ) -> impl Iterator<Item = (AggregateName, &AggregateType, Option<&HandlerLayout>)> {
-        assert!(self.pending.is_empty(), "aggregates should be resolved before being ordered");
-
         let mut roots =
             self.names.iter().map(|(aggregate, name)| (*name, aggregate)).collect::<Vec<_>>();
         roots.sort_unstable_by_key(|(name, _)| *name);

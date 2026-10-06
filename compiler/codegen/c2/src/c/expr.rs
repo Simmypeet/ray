@@ -7,7 +7,7 @@ use rayc_mono_ir::{
     operand::Constant,
     place::Place,
     rvalue::{BinaryOperator, UnaryOperator},
-    ty::{AggregateType, MonoType},
+    ty::AggregateType,
 };
 
 use crate::c::{
@@ -59,34 +59,23 @@ impl Display for EmptyAggregateLiteral<'_> {
 }
 
 /// A constant operand.
-///
-/// `expected` is the type the surrounding context requires; it is only
-/// consulted for the unit constant, whose C type is not inherent in it.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ConstantExpr<'a> {
     constant: &'a Constant,
-    expected: Option<&'a MonoType>,
+    /// The empty tuple type, which a unit constant is a value of.
+    unit: &'a AggregateType,
 }
 
 impl<'a> ConstantExpr<'a> {
-    pub(crate) const fn new(constant: &'a Constant, expected: Option<&'a MonoType>) -> Self {
-        Self { constant, expected }
-    }
-
-    fn write_unit(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Some(MonoType::Aggregate(aggregate @ AggregateType::Tuple(tuple))) = self.expected
-        else {
-            panic!("a unit constant requires its expected tuple type during C emission")
-        };
-        assert!(tuple.is_empty(), "a unit constant requires an empty tuple type");
-        EmptyAggregateLiteral(aggregate).fmt(formatter)
+    pub(crate) const fn new(constant: &'a Constant, unit: &'a AggregateType) -> Self {
+        Self { constant, unit }
     }
 }
 
 impl Display for ConstantExpr<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.constant {
-            Constant::Unit => self.write_unit(formatter),
+            Constant::Unit => EmptyAggregateLiteral(self.unit).fmt(formatter),
             Constant::Bool(value) => value.fmt(formatter),
             Constant::Int8(value) => write!(formatter, "INT8_C({value})"),
             Constant::Int16(value) => write!(formatter, "INT16_C({value})"),

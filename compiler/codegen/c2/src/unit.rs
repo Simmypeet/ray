@@ -34,10 +34,10 @@ impl TranslationUnit {
         writeln!(self.function_declarations, "{declaration};").expect(WRITE_TO_STRING);
     }
 
-    /// Adds a function definition written by `print`.
-    pub(crate) fn define_function(&mut self, print: impl FnOnce(&mut String) -> fmt::Result) {
+    /// Adds a function definition.
+    pub(crate) fn define_function(&mut self, definition: &str) {
         start_definition(&mut self.function_definitions);
-        print(&mut self.function_definitions).expect(WRITE_TO_STRING);
+        self.function_definitions.push_str(definition);
         self.function_definitions.push('\n');
     }
 

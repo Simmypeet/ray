@@ -283,6 +283,17 @@ pub enum ReturnType {
     Value(Interned<MonoType>),
 }
 
+impl ReturnType {
+    /// Whether the function returns no value at all, as C `void`.
+    #[must_use]
+    pub const fn is_void(&self) -> bool {
+        match self {
+            Self::Void => true,
+            Self::Value(_) => false,
+        }
+    }
+}
+
 /// A concrete calling signature shared by direct and indirect calls.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
@@ -433,7 +444,8 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
                 let substitution = struct_view.create_subst(engine).await;
                 let struct_body = engine.get_struct_body(struct_view.symbol_id()).await;
 
-                // Lower each struct field's type under the concrete type argument substitution.
+                // Lower each struct field's type under the concrete type
+                // argument substitution.
                 let mut fields = BTreeMap::new();
                 for (field_id, field) in struct_body.iter() {
                     let field_type = Box::pin(lower_type(solver, field.ty(), &substitution)).await;

@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
-use rayc_hash::FxHashMap;
 use rayc_semantic_element::struct_body::FieldID;
 use rayc_symbol::GlobalSymbolID;
 
@@ -204,7 +203,10 @@ impl OperationHandlerSlot {
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct AggregateEffectHandler {
     effect: MonoEffectInstance,
-    slots: FxHashMap<GlobalSymbolID, OperationHandlerSlot>,
+    /// One slot per operation, ordered by operation like [`HandlerLayout`].
+    ///
+    /// [`HandlerLayout`]: crate::ty::HandlerLayout
+    slots: BTreeMap<GlobalSymbolID, OperationHandlerSlot>,
 }
 
 impl AggregateEffectHandler {
@@ -212,7 +214,7 @@ impl AggregateEffectHandler {
     pub const fn effect(&self) -> &MonoEffectInstance { &self.effect }
 
     #[must_use]
-    pub const fn slots(&self) -> &FxHashMap<GlobalSymbolID, OperationHandlerSlot> { &self.slots }
+    pub const fn slots(&self) -> &BTreeMap<GlobalSymbolID, OperationHandlerSlot> { &self.slots }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
@@ -260,7 +262,7 @@ impl Rvalue {
     #[must_use]
     pub const fn new_effect_handler(
         effect: MonoEffectInstance,
-        slots: FxHashMap<GlobalSymbolID, OperationHandlerSlot>,
+        slots: BTreeMap<GlobalSymbolID, OperationHandlerSlot>,
     ) -> Self {
         Self::Aggregate(AggregateValue::EffectHandler(AggregateEffectHandler { effect, slots }))
     }

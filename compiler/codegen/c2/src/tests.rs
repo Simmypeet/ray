@@ -8,7 +8,7 @@ use rayc_mono_ir::{
     cfg::Terminator,
     instance::FunctionReference,
     instruction::{Call, Instruction},
-    operand::{Constant, FunctionOperand, Operand},
+    operand::{Constant, Operand},
     ty::{AggregateType, FunctionSignature, MonoType, ReturnType, Tuple},
 };
 use rayc_qbice::create_minimal_engine;
@@ -115,10 +115,7 @@ async fn discovers_called_definition_through_worklist() {
         root.entry_block(root.root_id()),
         Instruction::Call(Call::new(
             None,
-            Operand::Function(FunctionOperand::new(
-                FunctionReference::Global(dependency_instance.clone()),
-                signature.clone(),
-            )),
+            Operand::Function(FunctionReference::Global(dependency_instance.clone())),
             Vec::new(),
         )),
     );

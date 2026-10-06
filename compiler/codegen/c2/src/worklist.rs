@@ -21,6 +21,9 @@ pub(crate) struct FragmentWorklist {
     pending: VecDeque<MonoFragmentInstance>,
     seen: FxHashSet<MonoFragmentInstance>,
     preloaded: FxHashMap<MonoFragmentInstance, MonoIR>,
+    /// The source definitions among `preloaded`, kept after their bodies are
+    /// taken.
+    preloaded_definitions: FxHashSet<MonoDefInstance>,
 }
 
 impl FragmentWorklist {
@@ -29,6 +32,9 @@ impl FragmentWorklist {
     pub(crate) fn with_preloaded(preloaded: impl IntoIterator<Item = MonoIR>) -> Self {
         let mut worklist = Self::default();
         for ir in preloaded {
+            if let MonoFragmentInstance::Definition(instance) = ir.instance() {
+                worklist.preloaded_definitions.insert(instance.clone());
+            }
             let previous = worklist.preloaded.insert(ir.instance().clone(), ir);
             assert!(
                 previous.is_none(),
@@ -38,12 +44,9 @@ impl FragmentWorklist {
         worklist
     }
 
-    /// The source definitions whose bodies were supplied up front.
-    pub(crate) fn preloaded_definitions(&self) -> impl Iterator<Item = &MonoDefInstance> {
-        self.preloaded.keys().filter_map(|fragment| match fragment {
-            MonoFragmentInstance::Definition(instance) => Some(instance),
-            MonoFragmentInstance::NominalDrop(_) => None,
-        })
+    /// Whether `instance`'s body was supplied up front.
+    pub(crate) fn is_preloaded_definition(&self, instance: &MonoDefInstance) -> bool {
+        self.preloaded_definitions.contains(instance)
     }
 
     /// Schedules `fragment` unless it has been scheduled before.

@@ -1,49 +1,39 @@
 //! The worklist driver that turns `MonoIR` fragments into a translation unit.
 
-use rayc_mono_ir::{MonoDefInstance, MonoFragmentInstance, MonoIR};
-use rayc_mono_ir_builder::{lower_ir, lower_nominal_drop};
-use rayc_qbice::TrackedEngine;
+use rayc_mono_ir::{MonoDefInstance, MonoFragmentInstance, MonoIR, signature::get_def_signature};
 
 use crate::{
-    aggregates::AggregateRegistry,
     c::{name::DefinitionName, ty::FunctionDeclaration},
-    collect::DependencyCollector,
-    functions::{FunctionRegistry, Linkage},
     print::{FragmentFunctions, FunctionPrinter},
+    program::{Linkage, Program},
     unit::TranslationUnit,
     worklist::{FragmentWorklist, PendingFragment},
 };
 
 /// Generates C for every fragment reachable from a set of roots.
 ///
-/// Each fragment goes through three phases:
-///
-/// 1. **collect** — walk its functions, scheduling called fragments and
-///    discovering used aggregate types and cross-fragment interfaces;
-/// 2. **resolve** — run the engine queries those discoveries need (handler
-///    layouts, global linkage);
-/// 3. **print** — write its declarations and definitions synchronously.
+/// Fragments are printed one at a time. Printing a fragment schedules the
+/// fragments it calls and records the aggregate types it uses; the aggregate
+/// definitions are added last, once all of them are known.
 #[derive(Debug)]
 pub(crate) struct Generator<'engine> {
-    engine: &'engine TrackedEngine,
-    fragments: FragmentWorklist,
-    functions: FunctionRegistry,
-    aggregates: AggregateRegistry,
+    program: Program<'engine>,
     unit: TranslationUnit,
     entry_point: Option<MonoDefInstance>,
+    /// A reusable buffer for the function being printed.
+    definition: String,
 }
 
 impl<'engine> Generator<'engine> {
     /// Creates a generator starting from `roots`. Fragments in `preloaded`
     /// are used as-is when reached instead of being lowered.
     pub(crate) fn new(
-        engine: &'engine TrackedEngine,
+        engine: &'engine rayc_qbice::TrackedEngine,
         roots: impl IntoIterator<Item = impl Into<MonoFragmentInstance>>,
         preloaded: impl IntoIterator<Item = MonoIR>,
         entry_point: Option<MonoDefInstance>,
     ) -> Self {
         let mut fragments = FragmentWorklist::with_preloaded(preloaded);
-        let functions = FunctionRegistry::with_internal(fragments.preloaded_definitions());
 
         // Roots are scheduled in a canonical order so the output does not
         // depend on the order the caller listed them in.
@@ -54,30 +44,23 @@ impl<'engine> Generator<'engine> {
         }
 
         Self {
-            engine,
-            fragments,
-            functions,
-            aggregates: AggregateRegistry::default(),
+            program: Program::new(engine, fragments),
             unit: TranslationUnit::default(),
             entry_point,
+            definition: String::new(),
         }
     }
 
     /// Processes fragments until the worklist is exhausted.
     pub(crate) async fn generate(mut self) -> TranslationUnit {
-        while let Some(fragment) = self.fragments.pop() {
+        while let Some(fragment) = self.program.next_fragment() {
             self.process_fragment(fragment).await;
         }
-
-        // An extern declaration processed last may still have discovered
-        // aggregates through its signature.
-        self.aggregates.resolve_pending(self.engine).await;
-        self.functions.assert_closures_have_bodies();
-        self.unit.define_aggregates(&self.aggregates);
+        self.program.define_aggregates(&mut self.unit);
 
         if let Some(entry_point) = &self.entry_point {
             assert!(
-                self.fragments.contains(&MonoFragmentInstance::Definition(entry_point.clone())),
+                self.program.has_scheduled(&MonoFragmentInstance::Definition(entry_point.clone())),
                 "the executable entry point should be present in the definition worklist"
             );
             self.unit.define_entry_point(DefinitionName::of(entry_point));
@@ -86,63 +69,47 @@ impl<'engine> Generator<'engine> {
     }
 
     async fn process_fragment(&mut self, fragment: PendingFragment) {
-        let engine = self.engine;
         let ir = match fragment {
             PendingFragment::Lowered(ir) => ir,
-            PendingFragment::Unlowered(MonoFragmentInstance::NominalDrop(instance)) => {
-                lower_nominal_drop(engine, instance).await
-            }
             PendingFragment::Unlowered(MonoFragmentInstance::Definition(instance)) => {
-                match self.functions.linkage(engine, &instance).await {
+                match self.program.linkage(&instance).await {
                     Linkage::Internal => {
-                        lower_ir(engine, instance.def_id(), instance.substitution().clone()).await
+                        self.program.lower(MonoFragmentInstance::Definition(instance)).await
                     }
                     Linkage::Extern(name) => {
-                        self.declare_extern(&instance, &name);
+                        self.declare_extern(instance, &name).await;
                         return;
                     }
                 }
             }
+            PendingFragment::Unlowered(fragment) => self.program.lower(fragment).await,
         };
-        self.process_ir(&ir).await;
+        self.print_ir(&ir).await;
     }
 
-    /// Declares an extern definition using the signature its call sites
-    /// agreed on.
-    fn declare_extern(&mut self, instance: &MonoDefInstance, name: &str) {
-        let signature = self.functions.extern_signature(instance);
-        self.aggregates.visit_signature(signature);
+    /// Declares an extern definition through its declared signature.
+    async fn declare_extern(&mut self, instance: MonoDefInstance, name: &str) {
+        let signature = self.program.engine().get_def_signature(instance).await;
+        let signature = signature.signature();
+        self.program.use_signature(signature).await;
         let declaration = FunctionDeclaration::new(signature, &name);
         self.unit.declare_function(format_args!("extern {declaration}"));
     }
 
-    async fn process_ir(&mut self, ir: &MonoIR) {
+    async fn print_ir(&mut self, ir: &MonoIR) {
         let fragment = FragmentFunctions::of(ir);
-
-        // Collect.
-        let mut collector = DependencyCollector::new(
-            ir,
-            &mut self.fragments,
-            &mut self.functions,
-            &mut self.aggregates,
-        );
-        for (function_id, _) in fragment.iter() {
-            collector.collect_function(function_id);
-        }
-
-        // Resolve.
-        self.aggregates.resolve_pending(self.engine).await;
-        self.functions.resolve_linkages(self.engine).await;
-
-        // Print.
         for (function_id, name) in fragment.iter() {
             let function = ir.get_function(function_id);
-            let signature = FunctionDeclaration::new(function.signature(), &name);
-            self.unit.declare_function(signature.with_parameters_of(function));
 
-            let printer =
-                FunctionPrinter::new(function, &fragment, &self.functions, &self.aggregates);
-            self.unit.define_function(|out| printer.print(out, name));
+            self.definition.clear();
+            FunctionPrinter::new(&mut self.program, &fragment, function)
+                .print(&mut self.definition, name)
+                .await
+                .expect("writing to a String cannot fail");
+            self.unit.define_function(&self.definition);
+
+            let declaration = FunctionDeclaration::new(function.signature(), &name);
+            self.unit.declare_function(declaration.with_parameters_of(function));
         }
     }
 }

@@ -1,9 +1,10 @@
 //! Printing of function definitions.
 //!
-//! Printing is synchronous: it runs after a fragment's dependencies have been
-//! collected and resolved, and writes straight into the definitions buffer.
-//! Statements are printed here; [`value`] prints operands and rvalues, and
-//! [`place`] computes the types of places.
+//! The printer writes straight into a definition buffer and records, through
+//! [`Program`], everything the printed code refers to: the aggregate types it
+//! spells and the fragments it calls. Every type is recorded where it is
+//! printed, so a type can only appear in the output if its definition will
+//! too. Statements are printed here; [`value`] prints operands and rvalues.
 
 use std::fmt::{self, Write as _};
 
@@ -12,21 +13,17 @@ use rayc_mono_ir::{
     cfg::Terminator,
     function::{LocalKind, MonoFunction, MonoFunctionID},
     instruction::{Call, Instruction},
-    operand::Operand,
-    ty::{MonoType, ReturnType},
 };
 
 use crate::{
-    aggregates::AggregateRegistry,
     c::{
         expr::PlaceExpr,
         name::{BlockName, FragmentName, FunctionName, LocalName},
         ty::{Declaration, FunctionDeclaration},
     },
-    functions::FunctionRegistry,
+    program::Program,
 };
 
-mod place;
 mod value;
 
 /// The functions of one fragment with their C names, in ID order.
@@ -60,34 +57,34 @@ impl FragmentFunctions {
 }
 
 /// Prints one function definition of a fragment.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct FunctionPrinter<'a> {
-    function: &'a MonoFunction,
-    fragment: &'a FragmentFunctions,
-    functions: &'a FunctionRegistry,
-    aggregates: &'a AggregateRegistry,
+#[derive(Debug)]
+pub(crate) struct FunctionPrinter<'p, 'engine> {
+    program: &'p mut Program<'engine>,
+    fragment: &'p FragmentFunctions,
+    function: &'p MonoFunction,
 }
 
-impl<'a> FunctionPrinter<'a> {
+impl<'p, 'engine> FunctionPrinter<'p, 'engine> {
     pub(crate) const fn new(
-        function: &'a MonoFunction,
-        fragment: &'a FragmentFunctions,
-        functions: &'a FunctionRegistry,
-        aggregates: &'a AggregateRegistry,
+        program: &'p mut Program<'engine>,
+        fragment: &'p FragmentFunctions,
+        function: &'p MonoFunction,
     ) -> Self {
-        Self { function, fragment, functions, aggregates }
+        Self { program, fragment, function }
     }
 
     /// Writes the definition of the function called `name`.
-    pub(crate) fn print(&self, out: &mut String, name: FunctionName) -> fmt::Result {
+    pub(crate) async fn print(&mut self, out: &mut String, name: FunctionName) -> fmt::Result {
         let function = self.function;
-        let signature = FunctionDeclaration::new(function.signature(), &name);
-        writeln!(out, "{} {{", signature.with_parameters_of(function))?;
+        self.program.use_signature(function.signature()).await;
+        let declaration = FunctionDeclaration::new(function.signature(), &name);
+        writeln!(out, "{} {{", declaration.with_parameters_of(function))?;
 
         // Locals other than parameters are declared up front.
         let mut has_body_locals = false;
         for (local_id, local) in function.locals() {
             if is_declared_in_body(local.kind()) {
+                self.program.use_type(local.ty()).await;
                 writeln!(out, "    {};", Declaration::new(local.ty(), &LocalName(local_id)))?;
                 has_body_locals = true;
             }
@@ -105,13 +102,13 @@ impl<'a> FunctionPrinter<'a> {
             writeln!(out, "{}:", BlockName(block_id))?;
             for instruction in block.instructions() {
                 out.push_str("    ");
-                self.write_instruction(out, instruction)?;
+                self.write_instruction(out, instruction).await?;
                 out.push('\n');
             }
             let terminator =
                 block.terminator().expect("reachable MonoIR block should have a terminator");
             out.push_str("    ");
-            self.write_terminator(out, terminator)?;
+            self.write_terminator(out, terminator).await?;
             out.push('\n');
         }
 
@@ -119,56 +116,44 @@ impl<'a> FunctionPrinter<'a> {
         Ok(())
     }
 
-    fn write_instruction(&self, out: &mut String, instruction: &Instruction) -> fmt::Result {
+    async fn write_instruction(
+        &mut self,
+        out: &mut String,
+        instruction: &Instruction,
+    ) -> fmt::Result {
         match instruction {
             Instruction::Assign(assign) => {
-                let destination = assign.destination();
-                write!(out, "{} = ", PlaceExpr(destination))?;
-                let expected = self.place_type(destination).as_value();
-                self.write_rvalue(out, assign.value(), expected)?;
+                write!(out, "{} = ", PlaceExpr(assign.destination()))?;
+                self.write_rvalue(out, assign.value()).await?;
                 out.push(';');
                 Ok(())
             }
-            Instruction::Call(call) => self.write_call(out, call),
+            Instruction::Call(call) => self.write_call(out, call).await,
         }
     }
 
-    fn write_call(&self, out: &mut String, call: &Call) -> fmt::Result {
-        let signature = match call.callee() {
-            Operand::Function(callee) => callee.signature(),
-            Operand::Copy(place) => self.place_type(place).expect_function_signature(),
-            Operand::Constant(_) => panic!("a constant cannot be used as a MonoIR call target"),
-        };
-        if !signature.is_variadic() {
-            assert_eq!(
-                call.arguments().len(),
-                signature.parameter_types().len(),
-                "a non-variadic MonoIR call should match its signature"
-            );
-        }
-
+    async fn write_call(&mut self, out: &mut String, call: &Call) -> fmt::Result {
         if let Some(destination) = call.destination() {
             write!(out, "{} = ", PlaceExpr(destination))?;
         }
-        self.write_operand(out, call.callee(), None)?;
+        self.write_operand(out, call.callee()).await?;
         out.push('(');
         for (index, argument) in call.arguments().iter().enumerate() {
             if index != 0 {
                 out.push_str(", ");
             }
-            let expected = signature.parameter_types().get(index).map(AsRef::as_ref);
-            self.write_operand(out, argument, expected)?;
+            self.write_operand(out, argument).await?;
         }
         out.push_str(");");
         Ok(())
     }
 
-    fn write_terminator(&self, out: &mut String, terminator: &Terminator) -> fmt::Result {
+    async fn write_terminator(&mut self, out: &mut String, terminator: &Terminator) -> fmt::Result {
         match terminator {
             Terminator::Goto(target) => write!(out, "goto {};", BlockName(*target)),
             Terminator::Branch(branch) => {
                 out.push_str("if (");
-                self.write_operand(out, branch.condition(), Some(&MonoType::Bool))?;
+                self.write_operand(out, branch.condition()).await?;
                 write!(
                     out,
                     ") goto {}; else goto {};",
@@ -177,11 +162,8 @@ impl<'a> FunctionPrinter<'a> {
                 )
             }
             Terminator::Return(Some(value)) => {
-                let ReturnType::Value(return_type) = self.function.signature().return_type() else {
-                    panic!("a void MonoIR return cannot carry an operand")
-                };
                 out.push_str("return ");
-                self.write_operand(out, value, Some(return_type))?;
+                self.write_operand(out, value).await?;
                 out.push(';');
                 Ok(())
             }
