@@ -25,7 +25,11 @@ use rayc_symbol::{
     symbol_kind::{SymbolKind, get_all_def_with_body_ids, get_symbol_kind},
 };
 use rayc_target::TargetID;
-use rayc_type::{poly_var::get_poly_var_map, subst::Subst};
+use rayc_type::{
+    poly_var::get_enclosing_poly_var_maps,
+    subst::Subst,
+    ty::{Ty, TyKind, lifetime::Lifetime},
+};
 
 use crate::generator::Generator;
 
@@ -59,7 +63,8 @@ impl CTranslationUnitOptions {
 }
 
 /// Generates a C translation unit for all definition instantiations reachable
-/// from the non-generic definitions in `target_id`.
+/// from the definitions in `target_id` that are polymorphic over lifetimes at
+/// most.
 pub async fn write_c_translation_unit(
     engine: &TrackedEngine,
     target_id: TargetID,
@@ -70,9 +75,11 @@ pub async fn write_c_translation_unit(
     let solver = Solver::without_givens(engine.clone()).await;
     let roots = root_definitions(engine, target_id, &solver).await;
     let entry_point = match options.entry_point {
-        Some(entry_point) => {
-            Some(MonoDefInstance::new(entry_point, Subst::new_empty(), &solver).await)
-        }
+        Some(entry_point) => Some(
+            lifetime_erased_instance(engine, entry_point, &solver)
+                .await
+                .expect("a validated entry point should not be polymorphic"),
+        ),
         None => None,
     };
 
@@ -98,8 +105,8 @@ pub async fn write_c_translation_unit_from_mono_ir(
     write!(output, "{unit}")
 }
 
-/// The monomorphic definitions of `target_id`, which need no caller to
-/// choose their type arguments.
+/// The definitions of `target_id` that need no caller to choose their
+/// arguments.
 async fn root_definitions(
     engine: &TrackedEngine,
     target_id: TargetID,
@@ -108,21 +115,51 @@ async fn root_definitions(
     let mut roots = Vec::new();
     for def_id in engine.get_all_def_with_body_ids(target_id).await.iter().copied() {
         let def_id = target_id.make_global(def_id);
-        if is_free_standing_definition(engine.get_symbol_kind(def_id).await)
-            && engine.get_poly_var_map(def_id).await.is_empty()
-        {
-            roots.push(MonoDefInstance::new(def_id, Subst::new_empty(), solver).await);
+        if !is_lowered_from_body(engine.get_symbol_kind(def_id).await) {
+            continue;
+        }
+        if let Some(root) = lifetime_erased_instance(engine, def_id, solver).await {
+            roots.push(root);
         }
     }
     roots
 }
 
-/// Whether a symbol with a body is a free-standing definition rather than
-/// one reached only through an instance or an extern declaration.
-fn is_free_standing_definition(kind: SymbolKind) -> bool {
+/// The only instance of `def_id` when neither it nor any enclosing symbol
+/// declares a polymorphic variable other than a lifetime.
+///
+/// Lifetimes do not affect code generation, so they are instantiated with the
+/// erased lifetime; any other variable needs a caller to choose it.
+async fn lifetime_erased_instance(
+    engine: &TrackedEngine,
+    def_id: GlobalSymbolID,
+    solver: &Solver,
+) -> Option<MonoDefInstance> {
+    let poly_vars = engine.get_enclosing_poly_var_maps(def_id).await;
+    if !poly_vars.all_poly_vars_with_kind().all(|(_, kind)| is_erased_by_codegen(kind)) {
+        return None;
+    }
+
+    let erased = Ty::new_lifetime(Lifetime::Erased, engine);
+    let substitution =
+        poly_vars.all_poly_vars().map(|poly_var| (poly_var, erased.clone())).collect::<Subst>();
+    Some(MonoDefInstance::new(def_id, substitution, solver).await)
+}
+
+/// Whether arguments of this kind are erased before code generation.
+const fn is_erased_by_codegen(kind: TyKind) -> bool {
     match kind {
-        SymbolKind::Def => true,
-        SymbolKind::InstanceDef | SymbolKind::ExternDef => false,
+        TyKind::Lifetime => true,
+        TyKind::Star | TyKind::EffectRow | TyKind::Instance => false,
+    }
+}
+
+/// Whether a symbol with a body is generated from that body, as opposed to
+/// being provided by the C environment.
+fn is_lowered_from_body(kind: SymbolKind) -> bool {
+    match kind {
+        SymbolKind::Def | SymbolKind::InstanceDef => true,
+        SymbolKind::ExternDef => false,
 
         SymbolKind::Effect
         | SymbolKind::EffectOperation
