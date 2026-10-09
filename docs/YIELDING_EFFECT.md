@@ -472,6 +472,128 @@ implicitly, rather than asking the user to do it.
 This boxing is internal to the lowering. It is separate from letting the user
 box a coroutine, which the first prototype does not support.
 
+## The Anonymous Coroutine Type
+
+The type-system has to represent the internal coroutine type in some way. This
+allows the user to ask whether `c: 'static` or `c: Send` like they can with 
+closures. 
+
+We closely follow the model of the existing closure type, which is also an
+annonymous type.
+
+For instance, currently, the closure type is represented as a Constant::Closure, 
+which has the following type arguments:
+
+```
+Closure(
+  poly_args, 
+  parameter_types, 
+  return_type, 
+  effect_row, 
+  (capture_1, capture_2, ...)
+)
+```
+
+- `poly_args` is a list of polymorphic arguments in its surrounding scope. For 
+  instance, if the closure is defined inside a function with polymorphic type 
+  variable `a`, then `poly_ars` will contain `a`.
+- `parameter_types`, `return_type`, and `effect_row` are the signature of the 
+  closure.
+- `(capture_1, capture_2, ...)` is a list of the captured variables in the 
+  closure, packed into a tuple.
+
+Coroutine will also follow the similar model, with the following type arguments:
+
+```
+Coroutine(poly_args, return_type, effect_row, (upvars_1, upvars_2, ...))
+```
+
+- The `poly_args` has the same meaning as in closure.
+- The `return_type` and `effect_row` directly correspond to the 
+  `Coroutine[c].Return` and `Coroutine[c].Effect`.
+- The `(upvars_1, upvars_2, ...)` is a list of the parameter types of the 
+  coroutine, packed into a tuple. Somestimes, they are also called "upvars".
+
+### Saved Local Types
+
+However, that's not the end of the story. The coroutine type has to expose the
+types of all saved locals in the coroutine, which is not shown in the above type 
+arguments. 
+
+The saved locals are the variables that are live across a suspension
+point. They are important for marker entailment, for instance, when entailing
+whether a coroutine is `Send` or not, we need to check whether all the saved
+locals are `Send` as well.
+
+Thus, we define a new query to the compiler that allows us to retrieve all the 
+saved local types of a coroutine. The signature will look something like 
+`def_id -> Vec<Ty>`. This is very similar to how you query the fields of the
+struct type through a query.
+
+The reason that we don't include the saved locals directly in the Coroutine
+type is that the Coroutine type may recrusively refer to itself, and we don't
+have a recursive type in the type system. This is exactly the same scenario as
+the struct type, which may recursively refer to itself (of course, through some
+indirection).
+
+This means that during the marker entailment, for instance `c: Send`, where
+`c` is some anonymous coroutine type, we will have to query for the saved local
+types of `c`, and check whether they are all `Send`.
+
+### Lifetimes of Saved Local Types
+
+The final thing to mention is that all the lifetimes that appear in the saved
+locals are erased. If we follow the Rust implementation as a baseline, each
+type in the saved locals will have higher-ranked lifetimes. The reasons are:
+
+- Our marker entailment is much simpler, we only allow simple instance head. 
+  Therefore, no additional constraints are generated during the marker 
+  entailment. This is different from Rust.
+- But the actual main reason is that, we don't have higher-ranked lifetimes in
+  the type system yet :P As soon as we have higher-ranked lifetimes, we'll 
+  definitely use them in the saved locals instead of erasing them.
+
+Therefore, once we relax the restriction on the marker's instance head, we will
+have to reconsider the lifetimes of the saved locals. Perhaps, we could even
+be more precise by using the actual lifetimes solved by the borrow checker,
+instead of over-approximating them with higher-ranked lifetimes.
+
+## Compute the saved locals of a coroutine
+
+**Drafting!**
+
+- probably some form of dataflow analysis?
+
+## Optimal coroutine storage layout
+
+**Drafting!**
+
+- concerns about how do we assign a storage location for each saved local
+- aligment optimization!
+- once the local is saved into the coroutine storage, it will be pinned
+- how do we reuse the storage of a coroutine once some of its locals are 
+  dropped or no longer used?
+
+## IR Update
+
+**Drafting!**
+
+- we probably have some new IR instructions to go along with the new lowering
+- should we have a new level of IR? my guts say 80% no, but who knows
+- if we don't have a new level of IR, we probably have to mutate the existing 
+  IR into a coroutine form.
+- currently, the effectful function can be lowered into two forms: 
+  direct/callback form and coroutine form. i'm thinking that the borrow checker
+  should operate on the coroutine form, since the coroutine form is a more 
+  "restrictive" form of the function. what i mean is that, if the borrow checker
+  can accept the coroutine form, it should also accept the direct form. but not
+  the other way around.
+
+## MonoIR Update
+
+**Drafting!**
+
+
 # Borrow Checker Impact
 
 `BORROW_CHECKER_PLAN.md` assumes every handler is tail-resumptive: "the
