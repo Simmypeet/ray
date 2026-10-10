@@ -1481,6 +1481,23 @@ impl Ty {
         }
     }
 
+    /// Returns whether this is an effect row that is syntactically empty; see
+    /// [`EffectRow::is_empty`].
+    ///
+    /// Anything that is not a row is not empty: a row variable may be
+    /// instantiated with an effect.
+    #[must_use]
+    pub fn is_empty_effect_row(&self) -> bool {
+        match self {
+            Self::EffectRow(row) => row.is_empty(),
+            Self::Application(_)
+            | Self::Inference(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::Lifetime(_) => false,
+        }
+    }
+
     #[must_use]
     pub fn is_unit_type(&self) -> bool {
         matches!(self, Self::Application(application) if matches!(application.view(), ApplicationView::Tuple(tuple) if tuple.args().is_empty()))

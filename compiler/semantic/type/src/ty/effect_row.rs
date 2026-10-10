@@ -189,6 +189,16 @@ impl EffectRow {
     #[must_use]
     pub const fn tail(&self) -> Option<&Interned<Ty>> { self.tail.as_ref() }
 
+    /// Returns whether this row is syntactically empty: it has no label, and
+    /// no tail other than an empty row.
+    ///
+    /// A row variable in the tail is not empty, because it may be
+    /// instantiated with an effect.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.labels.is_empty() && self.tail.as_ref().is_none_or(|tail| tail.is_empty_effect_row())
+    }
+
     pub fn interned_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
         self.labels.iter().flat_map(|x| x.args.interned_iter()).chain(self.tail.as_ref())
     }
