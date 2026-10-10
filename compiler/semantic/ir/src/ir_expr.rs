@@ -2,6 +2,7 @@ use derive_more::From;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_lexical::tree::RelativeSpan;
+use rayc_qbice::TrackedEngine;
 use rayc_type::ty::Ty;
 
 use crate::{
@@ -97,6 +98,39 @@ impl IRExprKind {
             | Self::Tuple(_)
             | Self::Closure(_)
             | Self::StructInitialization(_) => None,
+        }
+    }
+
+    /// Returns whether evaluating this expression is a suspension point: the
+    /// function may be suspended there, so a [`Terminator::Suspend`] has to
+    /// evaluate it.
+    ///
+    /// That is every `perform`, every call whose callee has an effect, and
+    /// every `handle` that has an effect of its own. An effect row counts
+    /// unless it is syntactically empty, so a row variable does.
+    ///
+    /// The effect of a `handle` is its residual effect, which is also the
+    /// effect of the function creating it. A `handle` whose body and
+    /// handlers perform nothing, in a function that has an effect, is
+    /// therefore still a suspension point.
+    ///
+    /// [`Terminator::Suspend`]: crate::cfg::Terminator::Suspend
+    pub async fn suspends(&self, engine: &TrackedEngine) -> bool {
+        match self {
+            Self::Perform(_) => true,
+            Self::Call(call) => !call.callee_effect_row(engine).await.is_empty_effect_row(),
+            Self::Handle(handle) => !handle.residual_effect().is_empty_effect_row(),
+
+            Self::Error
+            | Self::Literal(_)
+            | Self::RefOf(_)
+            | Self::RefToPointer(_)
+            | Self::Load(_)
+            | Self::Phi(_)
+            | Self::Binary(_)
+            | Self::Tuple(_)
+            | Self::Closure(_)
+            | Self::StructInitialization(_) => false,
         }
     }
 

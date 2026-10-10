@@ -1,9 +1,10 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
+use rayc_semantic_element::effect_row::get_effect_row;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     poly_var::build_subst_from_args,
-    subst::Subst,
+    subst::{Subst, Substitutable},
     ty::{Ty, self_instance::SelfInstance},
 };
 
@@ -214,4 +215,15 @@ impl Call {
     /// Returns the conservative ambient effect row at this invocation site.
     #[must_use]
     pub const fn effect(&self) -> &Interned<Ty> { &self.effect }
+
+    /// Returns the effect row the callee performs: the one its signature
+    /// declares, instantiated at this call.
+    pub async fn callee_effect_row(&self, engine: &TrackedEngine) -> Interned<Ty> {
+        let substitution = self.target.signature_subst(engine).await;
+
+        engine
+            .get_effect_row(self.target.signature_id())
+            .await
+            .apply_subst_or_clone(&substitution, engine)
+    }
 }

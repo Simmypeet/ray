@@ -125,7 +125,8 @@ impl DataflowProblem for LocalLivenessProblem<'_> {
         Ok(())
     }
 
-    // Terminators only read evaluated expressions.
+    // Terminators only read evaluated expressions, and so does the
+    // expression a suspension point evaluates.
     async fn transfer_terminator(
         &mut self,
         _block_id: BlockID,

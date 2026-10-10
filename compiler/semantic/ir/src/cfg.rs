@@ -110,13 +110,14 @@ impl<'a> Iterator for Traverser<'a> {
 /// A basic block whose instructions execute in insertion order.
 ///
 /// Expression instructions define their value exactly once at their position in
-/// the block. Non-phi operands must already be defined on every path reaching
-/// that instruction. Phi operands are instead defined on their corresponding
-/// incoming predecessor. Store instructions consume an already-defined value
-/// and perform their write at their position in the block. Expression discard
-/// instructions drop an evaluated value that is otherwise unused. A block is
-/// sealed when its single terminator is set and cannot then be changed or
-/// extended.
+/// the block. An expression that may suspend is evaluated by the terminator
+/// instead; see [`Suspend`]. Non-phi operands must already be defined on every
+/// path reaching that instruction. Phi operands are instead defined on their
+/// corresponding incoming predecessor. Store instructions consume an
+/// already-defined value and perform their write at their position in the
+/// block. Expression discard instructions drop an evaluated value that is
+/// otherwise unused. A block is sealed when its single terminator is set and
+/// cannot then be changed or extended.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
 pub struct Block {
     predecessors: FxHashSet<BlockID>,
@@ -260,6 +261,39 @@ impl Conditional {
     pub const fn else_block(&self) -> BlockID { self.false_block }
 }
 
+/// Ends a block at a suspension point: an expression from which control may
+/// not come back, because the function may be suspended there.
+///
+/// The expression is still an expression and still defines its value. The
+/// terminator only says where it is evaluated: at the point of the
+/// terminator, with the value defined on the resume edge only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub struct Suspend {
+    expression: IRExprID,
+    resume: BlockID,
+    abandon: Option<BlockID>,
+}
+
+impl Suspend {
+    #[must_use]
+    pub const fn new(expression: IRExprID, resume: BlockID, abandon: Option<BlockID>) -> Self {
+        Self { expression, resume, abandon }
+    }
+
+    /// Returns the `Call`, `Perform` or `Handle` expression evaluated here.
+    #[must_use]
+    pub const fn expression(&self) -> IRExprID { self.expression }
+
+    /// Returns the block that continues with the value of the expression.
+    #[must_use]
+    pub const fn resume_block(&self) -> BlockID { self.resume }
+
+    /// Returns the block taken when the function is dropped while it is
+    /// suspended here, if there is one.
+    #[must_use]
+    pub const fn abandon_block(&self) -> Option<BlockID> { self.abandon }
+}
+
 /// Describes the kind of control-flow edge between two blocks in a control-flow
 /// graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -270,6 +304,12 @@ pub enum ControlFlowEdgeKind {
     ConditionalTrue,
     /// A control-flow edge that is taken when a condition evaluates to false.
     ConditionalFalse,
+    /// A control-flow edge that is taken when a suspension point continues
+    /// with its value.
+    SuspendResume,
+    /// A control-flow edge that is taken when the function is dropped while
+    /// it is suspended.
+    SuspendAbandon,
 }
 
 /// Describes a control-flow edge between two blocks in a control-flow graph.
@@ -301,40 +341,23 @@ pub enum Terminator {
     Jump(BlockID),
     Conditional(Conditional),
     Return(Option<IRExprID>),
+    /// Evaluates an expression at a suspension point. See [`Suspend`].
+    Suspend(Suspend),
 }
 
 impl Terminator {
     pub fn jump_targets(&self) -> impl Iterator<Item = BlockID> + '_ {
-        pub enum Iter<A, B, C> {
-            A(A),
-            B(B),
-            C(C),
-        }
-
-        impl<A, B, C> Iterator for Iter<A, B, C>
-        where
-            A: Iterator<Item = BlockID>,
-            B: Iterator<Item = BlockID>,
-            C: Iterator<Item = BlockID>,
-        {
-            type Item = BlockID;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                match self {
-                    Self::A(a) => a.next(),
-                    Self::B(b) => b.next(),
-                    Self::C(c) => c.next(),
-                }
-            }
-        }
-
-        match self {
-            Self::Jump(block_id) => Iter::A(std::iter::once(*block_id)),
+        // No terminator has more than two successors.
+        let targets = match self {
+            Self::Jump(block_id) => [Some(*block_id), None],
             Self::Conditional(conditional) => {
-                Iter::B([conditional.true_block, conditional.false_block].into_iter())
+                [Some(conditional.true_block), Some(conditional.false_block)]
             }
-            Self::Return(_) => Iter::C(std::iter::empty()),
-        }
+            Self::Return(_) => [None, None],
+            Self::Suspend(suspend) => [Some(suspend.resume), suspend.abandon],
+        };
+
+        targets.into_iter().flatten()
     }
 
     /// Returns whether this terminator returns from the function.
@@ -342,7 +365,7 @@ impl Terminator {
     pub const fn is_return(&self) -> bool {
         match self {
             Self::Return(_) => true,
-            Self::Jump(_) | Self::Conditional(_) => false,
+            Self::Jump(_) | Self::Conditional(_) | Self::Suspend(_) => false,
         }
     }
 
@@ -351,7 +374,7 @@ impl Terminator {
     pub const fn returned_value(&self) -> Option<IRExprID> {
         match self {
             Self::Return(value) => *value,
-            Self::Jump(_) | Self::Conditional(_) => None,
+            Self::Jump(_) | Self::Conditional(_) | Self::Suspend(_) => None,
         }
     }
 
@@ -362,7 +385,17 @@ impl Terminator {
         match self {
             Self::Conditional(conditional) => Some(conditional.condition()),
             Self::Return(value) => *value,
-            Self::Jump(_) => None,
+            Self::Jump(_) | Self::Suspend(_) => None,
+        }
+    }
+
+    /// Returns the expression this terminator evaluates, if any: the one of
+    /// a suspension point. Its value is defined on the resume edge.
+    #[must_use]
+    pub const fn evaluated_expression(&self) -> Option<IRExprID> {
+        match self {
+            Self::Suspend(suspend) => Some(suspend.expression),
+            Self::Jump(_) | Self::Conditional(_) | Self::Return(_) => None,
         }
     }
 }
@@ -489,6 +522,7 @@ enum OutgoingEdgeCursor {
     Empty,
     Unconditional(Option<ControlFlowEdge>),
     Conditional { true_edge: Option<ControlFlowEdge>, false_edge: Option<ControlFlowEdge> },
+    Suspend { resume_edge: Option<ControlFlowEdge>, abandon_edge: Option<ControlFlowEdge> },
 }
 
 /// Iterates over the outgoing edges of a block without heap allocation.
@@ -508,6 +542,10 @@ impl Iterator for OutgoingEdges {
 
             OutgoingEdgeCursor::Conditional { true_edge, false_edge } => {
                 true_edge.take().or_else(|| false_edge.take())
+            }
+
+            OutgoingEdgeCursor::Suspend { resume_edge, abandon_edge } => {
+                resume_edge.take().or_else(|| abandon_edge.take())
             }
         }
     }
@@ -659,15 +697,8 @@ impl Cfg {
 
     pub fn set_terminator(&mut self, block_id: BlockID, terminator: Terminator) {
         // set the predecessors of the successor blocks to include this block
-        match &terminator {
-            Terminator::Jump(id) => {
-                self.blocks[*id].predecessors.insert(block_id);
-            }
-            Terminator::Conditional(conditional) => {
-                self.blocks[conditional.true_block].predecessors.insert(block_id);
-                self.blocks[conditional.false_block].predecessors.insert(block_id);
-            }
-            Terminator::Return(_) => {}
+        for target in terminator.jump_targets() {
+            self.blocks[target].predecessors.insert(block_id);
         }
 
         let block = self.blocks.get_mut(block_id).expect("Block should exist");
@@ -741,41 +772,35 @@ impl Cfg {
         // still connects the original source and target.
         let source = self.blocks.get_mut(edge.source).expect("Source block should exist");
         let terminator = source.terminator.as_mut().expect("Source block should be sealed");
-        match edge.kind {
-            ControlFlowEdgeKind::Jump => match terminator {
-                Terminator::Jump(target) => {
-                    assert_eq!(*target, edge.target, "Edge target should match its terminator");
-                    *target = new_target;
-                }
-                Terminator::Conditional(_) | Terminator::Return(_) => {
-                    panic!("Jump edge should have a jump terminator")
-                }
-            },
-            ControlFlowEdgeKind::ConditionalTrue => match terminator {
-                Terminator::Conditional(conditional) => {
-                    assert_eq!(
-                        conditional.true_block, edge.target,
-                        "Edge target should match its terminator"
-                    );
-                    conditional.true_block = new_target;
-                }
-                Terminator::Jump(_) | Terminator::Return(_) => {
-                    panic!("Conditional edge should have a conditional terminator")
-                }
-            },
-            ControlFlowEdgeKind::ConditionalFalse => match terminator {
-                Terminator::Conditional(conditional) => {
-                    assert_eq!(
-                        conditional.false_block, edge.target,
-                        "Edge target should match its terminator"
-                    );
-                    conditional.false_block = new_target;
-                }
-                Terminator::Jump(_) | Terminator::Return(_) => {
-                    panic!("Conditional edge should have a conditional terminator")
-                }
-            },
-        }
+        let target = match (edge.kind, &mut *terminator) {
+            (ControlFlowEdgeKind::Jump, Terminator::Jump(target)) => target,
+            (ControlFlowEdgeKind::ConditionalTrue, Terminator::Conditional(conditional)) => {
+                &mut conditional.true_block
+            }
+            (ControlFlowEdgeKind::ConditionalFalse, Terminator::Conditional(conditional)) => {
+                &mut conditional.false_block
+            }
+            (ControlFlowEdgeKind::SuspendResume, Terminator::Suspend(suspend)) => {
+                &mut suspend.resume
+            }
+            (ControlFlowEdgeKind::SuspendAbandon, Terminator::Suspend(suspend)) => {
+                suspend.abandon.as_mut().expect("Abandon edge should have an abandon block")
+            }
+
+            (
+                ControlFlowEdgeKind::Jump
+                | ControlFlowEdgeKind::ConditionalTrue
+                | ControlFlowEdgeKind::ConditionalFalse
+                | ControlFlowEdgeKind::SuspendResume
+                | ControlFlowEdgeKind::SuspendAbandon,
+                Terminator::Jump(_)
+                | Terminator::Conditional(_)
+                | Terminator::Return(_)
+                | Terminator::Suspend(_),
+            ) => panic!("Edge kind should match its terminator"),
+        };
+        assert_eq!(*target, edge.target, "Edge target should match its terminator");
+        *target = new_target;
         let still_targets_original = terminator.jump_targets().any(|target| target == edge.target);
 
         // Keep the cached predecessor sets consistent with the rewritten
@@ -960,16 +985,15 @@ impl Cfg {
             let terminator =
                 block.terminator.as_ref().expect("Reachable block should have a terminator");
 
-            match terminator {
-                Terminator::Jump(successor) => {
-                    pending.push_back(*successor);
-                }
-                Terminator::Conditional(conditional) => {
-                    pending.push_back(conditional.true_block);
-                    pending.push_back(conditional.false_block);
-                }
-                Terminator::Return(_) => {}
+            // A suspension point evaluates its expression after the
+            // instructions of its block.
+            if let Some(expression_id) = terminator.evaluated_expression()
+                && visited_expressions.insert(expression_id)
+            {
+                reachable_expressions.push(expression_id);
             }
+
+            pending.extend(terminator.jump_targets());
         }
 
         Reachables { reachable_blocks, reachable_expressions }
@@ -1001,6 +1025,19 @@ impl Cfg {
                     source: block_id,
                     target: conditional.false_block,
                     kind: ControlFlowEdgeKind::ConditionalFalse,
+                }),
+            },
+
+            Some(Terminator::Suspend(suspend)) => OutgoingEdgeCursor::Suspend {
+                resume_edge: Some(ControlFlowEdge {
+                    source: block_id,
+                    target: suspend.resume,
+                    kind: ControlFlowEdgeKind::SuspendResume,
+                }),
+                abandon_edge: suspend.abandon.map(|abandon| ControlFlowEdge {
+                    source: block_id,
+                    target: abandon,
+                    kind: ControlFlowEdgeKind::SuspendAbandon,
                 }),
             },
         };

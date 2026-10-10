@@ -969,6 +969,32 @@ impl IRFunction {
             .build()
     }
 
+    /// Iterates over the expressions `block_id` evaluates, in order, each
+    /// with the point it is evaluated at: its expression instructions, then
+    /// the expression of a suspension point that ends it.
+    pub fn block_evaluations(
+        &self,
+        block_id: BlockID,
+    ) -> impl Iterator<Item = (Point, IRExprID)> + '_ {
+        let instructions =
+            self.block_instructions_with_points(block_id).filter_map(|(point, instruction)| {
+                match instruction {
+                    Instruction::Expression(expression_id) => Some((point, *expression_id)),
+                    Instruction::ScopePush(_)
+                    | Instruction::ScopePop(_)
+                    | Instruction::ExprDiscard(_)
+                    | Instruction::AddressDrop(_)
+                    | Instruction::Store(_) => None,
+                }
+            });
+        let terminator = self
+            .block_terminator(block_id)
+            .and_then(Terminator::evaluated_expression)
+            .map(|expression_id| (self.terminator_point(block_id), expression_id));
+
+        instructions.chain(terminator)
+    }
+
     /// Returns the source of the instruction or terminator at `point`, or
     /// `None` for one that has no source of its own: a scope instruction, a
     /// jump, or a bare return.
@@ -977,9 +1003,12 @@ impl IRFunction {
         let Some(instruction) =
             self.block_instructions(point.block_id()).get(point.instruction_idx())
         else {
-            return self
-                .block_terminator(point.block_id())
-                .and_then(Terminator::used_value)
+            // A terminator has the source of the value it consumes, or of
+            // the expression it evaluates.
+            let terminator = self.block_terminator(point.block_id())?;
+            return terminator
+                .used_value()
+                .or_else(|| terminator.evaluated_expression())
                 .map(|value| self.get_expression(value).span());
         };
 

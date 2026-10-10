@@ -1,7 +1,8 @@
 //! Backward liveness of the expression values of an IR function.
 //!
-//! Every [`IRExprID`] is defined by exactly one [`Instruction::Expression`]
-//! and consumed at most once, by one of:
+//! Every [`IRExprID`] is defined exactly once, by an
+//! [`Instruction::Expression`] or by the [`Terminator::Suspend`] evaluating
+//! it, and consumed at most once, by one of:
 //!
 //! - an operand of another expression;
 //! - the value of a [`Instruction::Store`];
@@ -40,19 +41,7 @@ impl ExprLivenessProblem<'_> {
     /// Moves `state` from just after `instruction` to just before it.
     fn transfer(&self, instruction: &Instruction, state: &mut impl LiveEffects<IRExprID>) {
         match instruction {
-            // The value is defined here, after its operands are consumed.
-            Instruction::Expression(expression_id) => {
-                state.mark_defined(*expression_id);
-
-                // A phi's incoming values are consumed on the edges into its
-                // block instead; see `phi_operands`.
-                let kind = self.function.get_expression(*expression_id).kind();
-                if kind.as_phi().is_none() {
-                    for operand in kind.operands() {
-                        state.mark_used(operand);
-                    }
-                }
-            }
+            Instruction::Expression(expression_id) => self.evaluate(*expression_id, state),
 
             Instruction::ExprDiscard(discard) => {
                 if !discard.drop_instance().is_no_op_drop_instance() {
@@ -67,11 +56,36 @@ impl ExprLivenessProblem<'_> {
         }
     }
 
+    /// Moves `state` from just after the evaluation of `expression_id` to
+    /// just before it.
+    fn evaluate(&self, expression_id: IRExprID, state: &mut impl LiveEffects<IRExprID>) {
+        // The value is defined here, after its operands are consumed.
+        state.mark_defined(expression_id);
+
+        // A phi's incoming values are consumed on the edges into its block
+        // instead; see `phi_operands`.
+        let kind = self.function.get_expression(expression_id).kind();
+        if kind.as_phi().is_none() {
+            for operand in kind.operands() {
+                state.mark_used(operand);
+            }
+        }
+    }
+
     /// Moves `state` from just after `terminator` to just before it.
-    fn transfer_across_terminator(terminator: &Terminator, state: &mut impl LiveEffects<IRExprID>) {
+    fn transfer_across_terminator(
+        &self,
+        terminator: &Terminator,
+        state: &mut impl LiveEffects<IRExprID>,
+    ) {
         match terminator {
             Terminator::Conditional(conditional) => state.mark_used(conditional.condition()),
             Terminator::Return(Some(value)) => state.mark_used(*value),
+
+            // The value is defined on the resume edge, so it is dead at the
+            // terminator and live from the entry of the resume block.
+            Terminator::Suspend(suspend) => self.evaluate(suspend.expression(), state),
+
             Terminator::Return(None) | Terminator::Jump(_) => {}
         }
     }
@@ -123,7 +137,7 @@ impl DataflowProblem for ExprLivenessProblem<'_> {
         terminator: &Terminator,
         state: &mut LiveExprs,
     ) -> Result<(), Infallible> {
-        Self::transfer_across_terminator(terminator, state);
+        self.transfer_across_terminator(terminator, state);
         Ok(())
     }
 
@@ -155,13 +169,14 @@ impl ExprLiveness {
     /// the phi's block rather than at any point, so it is not reported.
     #[must_use]
     pub fn use_at(function: &IRFunction, point: Point, expression: IRExprID) -> Option<LiveMode> {
+        let problem = ExprLivenessProblem { function };
         let mut probe = UseProbe::new(expression);
 
         match function.block_instructions(point.block_id()).get(point.instruction_idx()) {
-            Some(instruction) => ExprLivenessProblem { function }.transfer(instruction, &mut probe),
+            Some(instruction) => problem.transfer(instruction, &mut probe),
             None => {
                 if let Some(terminator) = function.block_terminator(point.block_id()) {
-                    ExprLivenessProblem::transfer_across_terminator(terminator, &mut probe);
+                    problem.transfer_across_terminator(terminator, &mut probe);
                 }
             }
         }
@@ -193,7 +208,7 @@ impl ExprLiveness {
 
         // Replay the block backward from its exit, terminator first.
         if let Some(terminator) = function.block_terminator(point.block_id()) {
-            ExprLivenessProblem::transfer_across_terminator(terminator, &mut state);
+            problem.transfer_across_terminator(terminator, &mut state);
         }
 
         let instructions = function.block_instructions(point.block_id());
@@ -224,7 +239,7 @@ impl ExprLiveness {
                 instructions,
                 |recorder| {
                     if let Some(terminator) = terminator {
-                        ExprLivenessProblem::transfer_across_terminator(terminator, recorder);
+                        problem.transfer_across_terminator(terminator, recorder);
                     }
                 },
                 |instruction, recorder| problem.transfer(instruction, recorder),
