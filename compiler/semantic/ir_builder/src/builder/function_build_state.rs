@@ -4,7 +4,7 @@ use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::Address,
-    cfg::{BlockID, Terminator},
+    cfg::{BlockID, Suspend, Terminator},
     ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load, tuple::Tuple},
     ir_function::{FunctionID as IrFunctionID, IRFunctionMap},
     ir_lambda::{
@@ -545,6 +545,30 @@ impl Builder {
             self.building_function.current_block,
             expression_id,
         );
+        expression_id
+    }
+
+    /// Emits an expression that may be a suspension point: a call, a
+    /// `perform` or a `handle`.
+    ///
+    /// One that suspends ends the current block with a
+    /// [`Terminator::Suspend`], and lowering continues in the resume block,
+    /// where its value is defined. Any other is an ordinary instruction; see
+    /// [`IRExprKind::suspends`].
+    pub async fn emit_suspendable_expression(&mut self, expression: IRExpr) -> IRExprID {
+        if !expression.kind().suspends(&self.engine).await {
+            return self.emit_expression(expression);
+        }
+
+        let function_id = self.building_function.ir_function_id;
+        let expression_id = self.ir_functions.insert_expression(function_id, expression);
+
+        // TODO: every suspension point gets an abandon block once the
+        // abandon edges are lowered.
+        let resume_block = self.create_block();
+        self.terminate(Terminator::Suspend(Suspend::new(expression_id, resume_block, None)));
+        self.select_block(resume_block);
+
         expression_id
     }
 

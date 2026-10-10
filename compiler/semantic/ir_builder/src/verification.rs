@@ -103,10 +103,17 @@ impl DataflowProblem for ScopeStackProblem {
     async fn transfer_terminator(
         &mut self,
         _block_id: BlockID,
-        _terminator: &Terminator,
+        terminator: &Terminator,
         _state: &mut ScopeStack,
     ) -> Result<(), ScopeStackError> {
-        Ok(())
+        match terminator {
+            // No terminator opens or closes a scope. A suspension point
+            // resumes in the scopes it was suspended in.
+            Terminator::Jump(_)
+            | Terminator::Conditional(_)
+            | Terminator::Return(_)
+            | Terminator::Suspend(_) => Ok(()),
+        }
     }
 
     async fn transfer_edge(
@@ -176,7 +183,7 @@ pub async fn verify(functions: &IRFunctionMap) -> Result<(), VerificationError> 
         // Every path that leaves the function must close all scopes. Infinite
         // paths have no return boundary and are checked by merges instead.
         for block_id in solution.reachable_blocks() {
-            if !matches!(function.block_terminator(block_id), Some(Terminator::Return(_))) {
+            if !function.block_terminator(block_id).is_some_and(Terminator::is_return) {
                 continue;
             }
             if let Some(ScopeStack::Active(scopes)) = solution.block_exit(block_id)

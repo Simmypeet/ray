@@ -80,10 +80,13 @@ impl<'a> Lower<TypedExprWithID<&'a RunWith>> for Builder {
             typed_expression.effect().clone(),
         );
 
-        LoweredExpression::RValue(self.emit_expression(IRExpr::new(
-            IRExprKind::Handle(handle),
-            typed_expression.span(),
-            typed_expression.ty().clone(),
-        )))
+        LoweredExpression::RValue(
+            self.emit_suspendable_expression(IRExpr::new(
+                IRExprKind::Handle(handle),
+                typed_expression.span(),
+                typed_expression.ty().clone(),
+            ))
+            .await,
+        )
     }
 }

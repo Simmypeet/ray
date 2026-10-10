@@ -38,11 +38,10 @@ impl<'a> Lower<TypedExprWithID<&'a Call>> for Builder {
             CallTarget::Direct { function_id, subst } => {
                 let arguments = self.lower_call_arguments(context, call).await;
                 let call = IrCall::new_direct(*function_id, arguments, subst.clone(), effect);
-                LoweredExpression::RValue(self.emit_expression(IRExpr::new(
-                    IRExprKind::Call(call),
-                    span,
-                    ty,
-                )))
+                LoweredExpression::RValue(
+                    self.emit_suspendable_expression(IRExpr::new(IRExprKind::Call(call), span, ty))
+                        .await,
+                )
             }
 
             CallTarget::UnresolvedInstanceAssociated {
@@ -58,21 +57,23 @@ impl<'a> Lower<TypedExprWithID<&'a Call>> for Builder {
                     arguments,
                     effect,
                 );
-                LoweredExpression::RValue(self.emit_expression(IRExpr::new(
-                    IRExprKind::Call(call),
-                    span,
-                    ty,
-                )))
+                LoweredExpression::RValue(
+                    self.emit_suspendable_expression(IRExpr::new(IRExprKind::Call(call), span, ty))
+                        .await,
+                )
             }
 
             CallTarget::EffectOperation { effect_id, operation_id, subst } => {
                 let arguments = self.lower_call_arguments(context, call).await;
                 let perform = Perform::new(*effect_id, *operation_id, arguments, subst.clone());
-                LoweredExpression::RValue(self.emit_expression(IRExpr::new(
-                    IRExprKind::Perform(perform),
-                    span,
-                    ty,
-                )))
+                LoweredExpression::RValue(
+                    self.emit_suspendable_expression(IRExpr::new(
+                        IRExprKind::Perform(perform),
+                        span,
+                        ty,
+                    ))
+                    .await,
+                )
             }
         }
     }
