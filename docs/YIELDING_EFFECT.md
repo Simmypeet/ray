@@ -13,13 +13,15 @@ which is a first-class value that can be resumed later or passed around. The
 coroutines are stackless, in the style of Rust's `Coroutine` trait, which is
 the basis of Rust's `async`.
 
-The document has three parts:
+The document has four parts:
 
 1. [Surface design](#surface-design): what the user writes and how it is
    typed.
-2. [Lowering](#lowering): how an effectful function becomes a state machine.
+2. [The coroutine type](#the-coroutine-type): how the anonymous type of a
+   coroutine is represented, and what the type system can ask of it.
+3. [Lowering](#lowering): how an effectful function becomes a state machine.
    Nothing in this part is visible to the user.
-3. [Borrow checker impact](#borrow-checker-impact) and
+4. [Borrow checker impact](#borrow-checker-impact) and
    [open questions](#open-questions).
 
 ## Example
@@ -80,6 +82,7 @@ pub trait Coroutine[c]:
 
 - `c` is a coroutine type: the type of a suspended function. It is generated
   by the compiler and cannot be named, like the type of a closure.
+  [The coroutine type](#the-coroutine-type) describes how it is represented.
 - `Return` is the type the coroutine completes with. It is the counterpart of
   `Coroutine::Return` in Rust.
 - `Effect` is the row of effects the coroutine may perform while it runs.
@@ -329,6 +332,520 @@ scheduler can keep in a queue.
   coroutine. The coroutine's [storage](#pinned-storage) owns its locals:
   those still live at the suspension point are dropped when the storage goes
   out of scope, as if the coroutine's scopes had ended there.
+  [Dropping a coroutine](#dropping-a-coroutine) describes how.
+
+# The Coroutine Type
+
+The type system needs a representation for the anonymous coroutine type `c`.
+This is more than an implementation detail: the user can ask `c: Send` or
+`c: 'static` of it, as they can of a closure type, and the answers are part
+of the language.
+
+The representation follows the closure type where it can. Where a coroutine
+differs from a closure, this part says so.
+
+## Representation
+
+A closure type is a `Constant::Closure` applied to these arguments:
+
+```
+Closure(poly_args, parameter_types, return_type, effect_row, (capture_1, capture_2, ...))
+```
+
+- `poly_args` are the polymorphic arguments of the scope the closure is
+  written in. A closure inside a function with a type variable `a` has `a` in
+  its `poly_args`.
+- `parameter_types`, `return_type` and `effect_row` are the signature of the
+  closure.
+- The last argument is a tuple of the types of the captured variables.
+
+A closure carries its signature and its captures as arguments because they
+are inferred from its body. A coroutine has nothing to infer. It suspends a
+declared function, and the declaration already fixes all of it. So a
+coroutine type is only the function and its polymorphic arguments:
+
+```
+Coroutine(def_id, poly_args)
+```
+
+- `def_id` is the function given to `coro`. It is part of the constant, like
+  the identity of a closure, and not a type argument. There is one coroutine
+  type per function, not one per `coro` expression: `coro f(1)` and
+  `coro f(2)` have the same type.
+- `poly_args` are the arguments for the polymorphic parameters of that
+  function, followed by those of each enclosing symbol. For a closure they
+  belong to the scope the closure is written in; for a coroutine they belong
+  to the function it suspends.
+
+Everything else is derived by substituting `poly_args` into the signature of
+`def_id`, which is a query:
+
+- `Coroutine[c].Return` is the return type;
+- `Coroutine[c].Effect` is the effect row;
+- the **upvars** are the parameter types. A coroutine that has not been
+  resumed yet holds its arguments, so they count as part of its contents.
+
+Storing these as arguments would only repeat what `poly_args` already
+determine.
+
+Like a closure type, a coroutine type is invariant in all its arguments.
+
+### Nested bodies
+
+A `def` is not the only body that can be suspended. A closure, the body of a
+`run ... with` and an operation handler are bodies of their own, and each of
+them can perform effects.
+
+**A closure** is the same kind of thing as a `def`. `coro` can be applied to
+a call of it, so its coroutine type is a first-class type, created during
+type checking. It is a `Coroutine` keyed by the identity of the closure
+instead of a `def_id`. It takes the closure type as its argument, which
+already carries the polymorphic arguments and the captures. Its saved locals
+are looked up by the [query](#saved-locals), as for a `def`.
+
+**The body and the handlers of a `run ... with`** are different. Their
+coroutines are never values. They only appear among the saved locals of the
+enclosing function (see
+[`run ... with` in a coroutine](#run--with-in-a-coroutine)). They get a
+constant of their own, the **local coroutine type**, which is laid out like
+a closure type, with everything it holds embedded:
+
+```
+LocalCoroutine(poly_args, (upvar_1, upvar_2, ...), (saved_1, saved_2, ...))
+```
+
+- The constant identifies the nested body inside its enclosing definition,
+  as the constant of a closure type does.
+- `poly_args` are those of the enclosing function, as for a closure.
+- The upvars are the captures of the body. For a handler they are the
+  parameters of the operation and its captures.
+- The last argument is a tuple of the saved locals of the nested body.
+
+A `Coroutine` cannot embed its saved locals, for the two reasons given under
+[saved locals](#saved-locals). Neither applies here:
+
+- **They are known when the type is created.** Only the saved-locals query
+  of the enclosing function creates a local coroutine type. That query runs
+  after `BuildIR`, which builds the nested bodies together with the
+  enclosing one.
+- **They cannot mention the type itself.** The body and the handlers of a
+  `run` have no name, so nothing can call them recursively. What they hold
+  is either a `Coroutine`, which is named and not expanded, or the local
+  coroutine type of a `run` nested inside them, which is strictly smaller.
+
+What follows from the layout:
+
+- **Markers** are structural, as for a tuple: every upvar and every saved
+  local has to satisfy the marker. There is no query and nothing to
+  [defer](#staging), because the type does not exist before the saved locals
+  do.
+- **Lifetimes** in it are erased, like everything the saved-locals query
+  returns.
+- **`Drop`, `Copy` and outlives** are never asked of it. It is not a value:
+  it is dropped only as part of abandoning the `run` that owns it.
+
+## Saved locals
+
+The upvars are not everything a coroutine holds. It also holds its **saved
+locals**: the locals that are live across a suspension point. They decide
+questions like `c: Send`, so the type system has to be able to see their
+types.
+
+They are not arguments of the coroutine type, for two reasons:
+
+- **They are not known when the type is created.** `coro f()` is typed from
+  the signature of `f`. The saved locals come from the body of `f`.
+- **They can mention the coroutine type itself.** While `f` waits for a
+  callee `g`, the state machine of `g` is one of the saved locals of `f`. A
+  recursive `f` therefore lists its own coroutine type, and the type system
+  has no recursive types. The [box](#recursion) that makes such a coroutine
+  finite is a matter of layout: the query lists the callee's coroutine type
+  itself.
+
+A struct has the second problem too, and solves it the same way: its fields
+are not part of its type, they are looked up. So the saved locals are a
+query, with a signature like `def_id -> Vec<Ty>`. The types it returns are
+written over the polymorphic parameters of `def_id`, and the caller
+substitutes `poly_args`, as it does for the fields of a struct.
+
+### What counts as saved
+
+Which locals are saved decides whether a program is accepted, so it needs a
+fixed definition, not whatever the lowering happens to do:
+
+```ray
+def f() -> () \ {Yield[int32]}:
+    let guard = lock()      # not `Send`, and has a `Drop` instance
+    use(&guard)
+    Yield.yield(1)
+    # `guard` is not used again, but it is dropped here
+```
+
+If only later uses counted, `guard` would not be saved and the coroutine of
+`f` would be `Send`. But `guard` is dropped at the end of the scope, after
+the `perform`, so it has to survive the suspension. The rules:
+
+- **Drops are uses.** The saved locals are computed on the IR after memory
+  analysis has inserted the drops. `guard` above is saved, and the coroutine
+  is not `Send`. This is the same rule as in Rust, where a guard held across
+  an `await` makes the future `!Send`. The fix is the same too: end the scope
+  of `guard` before the `perform`.
+- **Suspension points are fixed by the source.** Every `perform`, and every
+  call of an effectful function, is a suspension point for this query,
+  however it is lowered.
+- **Precision is a promise.** A more precise analysis accepts more programs
+  and can be added later. A less precise one breaks programs that used to
+  compile.
+
+There are therefore two notions of saved locals:
+
+- The **typed saved locals** are the result of this query. They are fixed by
+  the rules above and are what the type system sees.
+- The **layout saved locals** are what the code generator stores. It
+  computes them after monomorphisation and may store less, for example if an
+  effect [stays a callback](#open-questions) inside a coroutine.
+
+Only the first is part of the language. An optimisation may change the
+layout of a coroutine, never whether `c: Send` holds.
+
+[Computing the saved locals](#compute-the-saved-locals-of-a-coroutine)
+describes how the query is implemented.
+
+## Markers
+
+Marker entailment treats a coroutine type like a struct. `c: M` holds if
+every upvar and every saved local, after substituting `poly_args`, satisfies
+`M`.
+
+The solver is already coinductive, so a recursive coroutine is not a
+problem: the goal for the inner coroutine is the goal being solved, and it
+is assumed.
+
+`Copy` is the exception. **A coroutine type is never `Copy`**, and this is
+hard-wired before the structural rule:
+
+- Copying a suspended coroutine would let it be resumed twice, which
+  contradicts [one-shot](#ownership-and-drop) continuations.
+- A coroutine may hold borrows of its own locals, so a bitwise copy would
+  point into the original.
+
+It also means that `Copy` never needs the saved locals. That matters for
+[staging](#staging), because the type checker asks `Copy` on every implicit
+load.
+
+## Staging
+
+The fields of a struct come from its declaration. The saved locals come from
+a body: they need its typed AST, its IR and its memory analysis. Marker
+entailment, however, already runs during type checking. Asked naively, a
+function that wants a marker of its own coroutine type is a cyclic query:
+
+```ray
+def f() -> () \ {Yield[int32]}:
+    requireSend(coro f())
+    # type check f -> `Send` for the coroutine of f -> saved locals of f
+    #   -> IR of f -> type check f
+```
+
+Mutually recursive functions give the same cycle. The coinductive solver
+does not help here: it handles a goal that depends on itself, not a query
+that does.
+
+The rule that avoids it:
+
+> The saved-locals query sits above `BuildIR`. Nothing that runs during type
+> checking or during `BuildIR` may call it. Until then a coroutine type is
+> opaque.
+
+Each consumer has to follow this rule in its own way:
+
+| Question                 | Answer without the saved locals                     |
+| ------------------------ | --------------------------------------------------- |
+| `c: Copy`                | always false ([markers](#markers))                  |
+| `c: 'a`                  | from `poly_args` alone ([lifetimes](#lifetimes))    |
+| `Drop` dictionary of `c` | from the upvars alone ([drop](#dropping-a-coroutine)) |
+| any other marker         | deferred, see below                                 |
+
+A marker goal that reaches a coroutine type is neither proved nor refuted
+during type checking. The solver answers "deferred", the goal is recorded
+with the body, and the borrow checker phase proves it. That phase runs on
+the IR, after `BuildIR`.
+
+Deferring is sound because a marker goal is a yes-or-no check. It binds no
+inference variable and selects no instance, so answering it later cannot
+change what type inference concludes. `Copy` is the one marker that feeds
+back into inference, through moves and capture modes, and it is never
+deferred.
+
+No cycle is left. Proving the deferred goals of `f` needs the saved locals
+of some `g`, which need `BuildIR` of `g`, which needs the typed AST of `g`.
+Nothing in that chain proves a deferred goal or asks for saved locals, so it
+ends even when `g` is `f`.
+
+rustc does the same: obligations on a coroutine are stalled during type
+checking and checked once its MIR is built.
+
+The alternative is to declare instead of infer: a function states which
+markers its coroutine form has, the body is checked against that, and
+callers trust the declaration. Nothing then depends on a body, and changing
+a body cannot break a caller. The cost is an annotation on every function
+whose coroutine is sent anywhere. It is not pursued for now.
+
+## Lifetimes
+
+The types returned by the saved-locals query have their lifetimes erased
+(`Lifetime::Erased`, which already means "any lifetime, it does not
+matter").
+
+This is sound because of what a lifetime in a saved local can be:
+
+- **Local to the coroutine**: a borrow of another saved local. Nothing
+  outside the coroutine can name it.
+- **External.** A body can only get an external lifetime through its
+  parameters, its effect row or its polymorphic parameters. All three are
+  the signature instantiated with `poly_args`, so every external lifetime in
+  a saved local also appears in `poly_args`.
+
+Each question the type system asks then has an answer that does not need the
+erased lifetimes:
+
+- **Markers.** Lifetimes never decide marker entailment, and a marker
+  implementation cannot depend on one (see
+  [instance selection ignores lifetimes](BORROW_CHECKER_PLAN.md#instance-selection-ignores-lifetimes)).
+  Erasing them loses nothing.
+- **Outlives.** `c: 'a` holds when every argument in `poly_args` outlives
+  `'a`. This is how a closure type is decomposed today, so it needs no
+  change and no query. It is conservative: an argument that reaches no
+  parameter, effect or saved local still counts. Looking only at the derived
+  upvars and effect row would be more precise, but unsound. A function
+  `f[t]` that builds a `t` from a `given` dictionary and keeps it across a
+  `perform` has a saved local of type `t`, and `t` appears in neither.
+- **Drop check.** This has two halves.
+  - *Inside.* What an abandoned coroutine drops is code in the coroutine's
+    own function (see [dropping a coroutine](#dropping-a-coroutine)). The
+    borrow checker checks it there, on the IR, with real lifetimes.
+  - *Outside.* The owner of a coroutine drops it at the end of the storage's
+    scope, and the owner's borrow checker has to know which of the owner's
+    regions that drop uses. For a struct it reads this from the fields. For
+    a coroutine the fields are saved locals with erased lifetimes, so it
+    cannot tell. Dropping a coroutine therefore uses every region in
+    `poly_args`, as dropping through a `given Drop[a]` dictionary uses every
+    region in `a`.
+
+The outside half is where a coroutine is stricter than a closure:
+
+```ray
+def f(p: &'a int32) -> () \ {Yield[int32]}:
+    ...
+
+
+def owner():
+    let mut x = 1
+    let k = coro f(&x)
+    x = 2       # ERROR: the coroutine is dropped at the end of `owner`,
+                # and that drop may use the borrow of `x`
+```
+
+A closure that captured `&x` and is not used again would allow `x = 2`,
+because dropping a reference uses no region. The coroutine might hold a
+saved local with a user-written `Drop` instance that reads through `p`, and
+the owner cannot see whether it does.
+
+All of this has to be revisited if a marker implementation is ever allowed
+to depend on a lifetime, that is, once marker heads are no longer restricted
+to one constructor applied to distinct variables. The saved locals then need
+real lifetimes. Rust binds them as higher-ranked lifetimes, which Ray does
+not have yet. It may also be possible to be more precise than that, by
+writing them over the external lifetimes that the borrow checker solved for
+the body.
+
+## Dropping a coroutine
+
+A coroutine can be [dropped](#ownership-and-drop) instead of resumed. What
+it holds at that moment depends on its state:
+
+- A coroutine that was **never resumed** holds its upvars, the arguments it
+  was created with.
+- A **suspended** coroutine holds the saved locals of the suspension point
+  it is at.
+- A **completed** coroutine holds nothing.
+
+The two kinds of contents are dropped in different ways.
+
+**Upvars are dropped like the captures of a closure.** `Drop[c]` for a
+coroutine type `c` is a built-in instance that takes one `Drop` dictionary
+per upvar, as the instance of a closure takes one per capture. The upvars
+come from a signature, so this needs no body. The dictionaries are requested
+where the coroutine is created: `coro f(args)` needs `Drop` for the type of
+every argument, resolved with the solver and givens of the function that
+contains the `coro`. A `@linear` argument has no `Drop` instance, so giving
+one to `coro` is an error.
+
+Only a coroutine created by `coro` can be dropped before it starts. The
+coroutine of a callee, and of the body or a handler of a `run ... with`, is
+started as soon as it is created, so its upvar dictionaries are never
+needed. An ordinary call of an effectful function is therefore not
+restricted: it may take a `@linear` argument.
+
+**Saved locals cannot be dropped that way**:
+
+- What has to be dropped depends on where the coroutine is suspended.
+- The saved locals are not in the type. A dictionary per saved local in the
+  instance would bring back the recursion that the query avoids.
+- Memory analysis of the owner selects the drop, and by the
+  [staging](#staging) rule it may not ask for the saved locals.
+
+So their drop is compiled into the coroutine's own function, as **abandon
+edges**. In the coroutine form, every suspension point gets a second
+successor, the abandon edge. It is taken when the coroutine is dropped while
+it is suspended there, and it leaves the function through the enclosing
+scopes. Memory analysis of the coroutine's own function treats it like any
+other edge: it inserts drops for whatever is initialised there, and resolves
+their dictionaries with the function's own solver and givens. This is the
+`drop` edge of a `Yield` terminator in rustc.
+
+Dropping a coroutine dispatches on its state. Before the first resume it
+drops the upvars with the dictionaries of the instance, in the order a
+function drops its parameters. At a suspension it runs the abandon edge.
+After completion it does nothing.
+
+This is the first place the saved locals matter, before any marker: in the
+first prototype every coroutine is dropped, at the end of its
+[storage](#pinned-storage).
+
+### What a function may hold across a suspension
+
+The abandon edge drops every local that is live across its suspension point,
+so each of them must have a `Drop` dictionary in the function itself:
+
+- A local of an opaque type, such as a polymorphic `t`, needs `Drop[t]`
+  among the function's own givens.
+- A `@linear` local has no `Drop` instance. Holding one across a suspension
+  point is an error.
+
+The start of a function is not a suspension point. A parameter that is
+consumed before the first suspension needs nothing here: before the
+coroutine starts, its arguments are dropped with the dictionaries from the
+`coro`. A parameter that is live across a suspension is a saved local like
+any other.
+
+Every `perform` and every call of an effectful function is a suspension
+point, and any effectful function can be given to `coro`. So these rules
+apply to every effectful function, whether or not it is ever suspended.
+
+They are stricter than the direct form needs:
+
+```ray
+def keep[t](x: t) -> t \ {Yield[int32]}:
+    Yield.yield(1)
+    return x
+```
+
+In direct form `keep` never drops `x`, but `x` is live across the `perform`,
+so `keep` needs a `given` for `Drop[t]`. This is a known rough edge.
+
+In return, whether a coroutine type has a `Drop` instance depends only on
+its upvars, which come from a signature. No question about dropping a
+coroutine depends on a body, and nothing about `Drop` has to be
+[deferred](#staging).
+
+A coroutine that is itself linear, one that must be run to completion, would
+have no abandon edges and would lift these restrictions. See
+[open questions](#open-questions).
+
+## Coroutines of unresolved calls
+
+`Coroutine(def_id, poly_args)` needs to know the callee. A call knows it
+when its target is a function (`CallTarget::Direct`). A call through an
+instance that is not known yet does not
+(`CallTarget::UnresolvedInstanceAssociated`): in
+`def f[t]() given (d: Tr[t])`, the callee of `d.m()` is known only when `d`
+is. Calling a callable value is the same case, because `fn(x)` is
+`Def.call` on the `Def` dictionary of `fn`.
+
+The coroutine type of such a call is needed in two places:
+
+- as a saved local: while `f` waits for `d.m()`, the state machine of
+  `d.m` is a saved local of `f`;
+- as the type of `coro d.m()` itself.
+
+So there is a second constant, which mirrors the call target. Its name is a
+placeholder:
+
+```
+InstanceCoroutine(trait_def_id, instance, poly_args)
+```
+
+- `trait_def_id` is the trait method. Like `def_id` above, it is part of the
+  constant.
+- `instance` is the instance term, such as `d`.
+- `poly_args` are the arguments for the method's own polymorphic parameters.
+  Those of the trait are told by `instance`.
+
+It is a projection, and behaves like an associated type of an instance
+(`Constant::InstanceAssociated`):
+
+- **It reduces.** Once `instance` normalises to a concrete instance, the
+  type reduces to the `Coroutine(...)` of that instance's implementation of
+  the method. For the built-in `Def` instance of a closure, it reduces to
+  the coroutine of the closure body: a `Coroutine` that is keyed by the
+  closure instead of a `def_id`, and takes the closure type as its argument.
+  After monomorphisation every instance is concrete, so every
+  `InstanceCoroutine` has reduced.
+- **Until then it is rigid.** It is equal only to itself.
+  `Coroutine[c].Return` and `Coroutine[c].Effect` come from the signature of
+  the trait method. For `Def.call` they are `d.Return` and `d.Effect`.
+- **Markers.** It is opaque: a marker goal on it fails unless a given proves
+  it. `Copy` is never proved, even with a given.
+- **Outlives.** It is kept whole as an outlives component, like an
+  associated type.
+- **Drop.** It has the same built-in instance as every other coroutine
+  type: one dictionary per upvar, where the upvars are the parameter types
+  of the trait method. The projection itself needs no given. This works
+  because the `Drop` instance of a coroutine
+  [never depends on a body](#what-a-function-may-hold-across-a-suspension).
+
+Two consequences for the lowering:
+
+- **Indirect calls need no boxing.** Ray has no function-pointer types
+  today, so every indirect call goes through a dictionary, and the
+  dictionary is known after monomorphisation. The layout is only computed
+  then, when the callee's state machine has a concrete type.
+- **Recursion can hide behind an instance.** A call through `d` may turn out
+  to be a call back into the same function. The [boxing](#recursion) for
+  recursion therefore has to look for cycles among the concrete coroutine
+  types after monomorphisation, not in the source.
+
+### Naming it in a bound
+
+While an `InstanceCoroutine` does not reduce, a marker goal on it needs a
+given, so the user needs a way to write one. This is the problem Rust has
+with `Send` bounds on the future returned by a trait method. It only comes
+up when the goal is asked while the instance is still abstract. At a
+concrete instantiation the type reduces and the goal is solved as usual.
+
+The spelling is not decided. The proposal is `coro` in type position:
+
+```ray
+def sendIt[t]() given (d: Tr[t]) where (coro d.m: Send):
+    requireSend(coro d.m())
+```
+
+- `coro d.m` names the coroutine type of the call target, without its
+  arguments: there is one coroutine type per callee. A method with its own
+  type parameters is written `coro d.m[a]`.
+- Lifetime arguments are left out. Markers never depend on a lifetime, so
+  one bound covers all of them. This is why Ray does not need the `(..)` of
+  Rust's return type notation.
+- A bound on `coro d.m[a]` is for that `a` only. A bound for every `a` needs
+  higher-ranked bounds over types, which Ray does not have.
+- The callable shorthand `fn: def(int32) -> int32` hides its dictionary, so
+  there is nothing to write `coro` on. Either the bound requires the
+  explicit form, `given (d: core.Def[f])` and `coro d.call`, or the
+  shorthand gets its own spelling.
+- The same syntax could name the coroutine type of a known function, as in
+  `coro f[int32]`. Whether that should be allowed is open: so far a
+  coroutine type cannot be named, like the type of a closure.
 
 # Lowering
 
@@ -346,8 +863,10 @@ Every effectful function can be compiled in two ways:
   live locals in the coroutine, returns to whoever resumed it, and continues
   from the same point on the next resume.
 
-`coro f()` uses the coroutine form of `f`. A function called from a coroutine
-has to be able to suspend too, so it is also used in its coroutine form.
+`coro f()` uses the coroutine form of `f`. An effectful function called from
+a coroutine has to be able to suspend too, so it is also used in its
+coroutine form. The exception is a call under a `run ... with` that lets no
+effect escape; see [`run ... with` in a coroutine](#run--with-in-a-coroutine).
 
 ## The state machine
 
@@ -462,6 +981,81 @@ successor of it.
 Invoking a continuation directly is the same without step 3, with a return
 clause that passes the value through.
 
+## `run ... with` in a coroutine
+
+`run ... with` is not merged into `handle`. The two differ in where control
+is when a clause runs:
+
+- In a `run`, the body is still on the stack, in the middle of a call. The
+  handler runs on top of it. So a handler is a function, it reaches the
+  enclosing variables through its captures, and all it can do is answer.
+- In a `handle`, the body is suspended and control is back in the enclosing
+  function. So a clause is a branch, and it may `break`, `return` or drop
+  the continuation.
+
+They are still the same thing semantically. `run body with E: ...` means:
+create the coroutine of the body and drive it to completion, answering every
+operation of `E` with the result of its handler. Passing the handlers as
+callbacks, as the compiler does today, is an optimisation of that, valid
+because a `run` handler always resumes, exactly once and at once.
+
+A function in direct form compiles every `run` as it does today. In a
+function in coroutine form, it depends on the effect of the `run` itself.
+That effect has two sources: effects of the body that the handlers do not
+handle, and effects that the handlers perform.
+
+1. **Nothing escapes.** Every effect of the body is handled and no handler
+   performs an effect. The `run` is not a suspension point. It is compiled
+   as today: the body is a regular function and the handlers are callbacks.
+   The same holds for everything the body calls.
+2. **The body has an unhandled effect.** The effect has to propagate through
+   the `run`, so the body has to be able to suspend. It is reified into a
+   coroutine like any other function.
+3. **A handler performs an effect.** The handler is reified. This forces the
+   body to be reified as well, even when none of its own effects escape. A
+   handler runs when the body performs the operation, that is, from inside
+   the body. Coroutines are stackless: for the handler to suspend the
+   enclosing function, every frame between them has to be a state machine,
+   and the body, with whatever it called to reach the `perform`, is between
+   them.
+
+| Body has an unhandled effect | A handler performs an effect | Body      | Handlers            |
+| ---------------------------- | ---------------------------- | --------- | ------------------- |
+| no                           | no                           | function  | callbacks           |
+| yes                          | no                           | coroutine | called at the `run` |
+| either                       | yes                          | coroutine | coroutines          |
+
+In cases 2 and 3 the `run` becomes a driver, in place, of the same shape as
+[lowering `handle`](#lowering-handle):
+
+1. Build the coroutine of the body from its captures and start it.
+2. On `Complete(value)`, the `run` has the value `value`.
+3. On `Yielded` with an operation of `E`, call its handler. If the handler
+   is reified, drive it in the same way: every operation it yields is
+   forwarded, until it completes. Resume the body with the result and go
+   back to step 2.
+4. On `Yielded` with any other operation, forward it: perform it in the
+   enclosing function, resume the body with the result, and go back to
+   step 2.
+
+Inside a reified body, a `perform` of `E` is therefore a suspension that
+goes up to the `run`, not a call of the handler. This keeps every callee
+static. The `run` knows its body and its handlers, which are nested bodies
+of the same function, so it can hold their state machines without a box. A
+`perform` does not know which handler it will reach, so it could not.
+
+The price is that an operation of `E` now passes through every frame
+between the `perform` and the `run`, where a callback is one indirect call.
+In case 2 that is not necessary: the handlers do not suspend, so `E` could
+stay a callback inside the reified body. That needs a function to be
+compiled per effect, with some effects suspending and others not; see
+[cost of reification](#open-questions).
+
+For the type system, a `run` that is a suspension point adds to the
+[typed saved locals](#what-counts-as-saved) of the enclosing function: the
+[local coroutine type](#nested-bodies) of the body, the local coroutine
+type of each handler, and the handler captures.
+
 ## Recursion
 
 A coroutine stores the state machine of the function it is currently calling.
@@ -472,122 +1066,198 @@ implicitly, rather than asking the user to do it.
 This boxing is internal to the lowering. It is separate from letting the user
 box a coroutine, which the first prototype does not support.
 
-## The Anonymous Coroutine Type
-
-The type-system has to represent the internal coroutine type in some way. This
-allows the user to ask whether `c: 'static` or `c: Send` like they can with 
-closures. 
-
-We closely follow the model of the existing closure type, which is also an
-annonymous type.
-
-For instance, currently, the closure type is represented as a Constant::Closure, 
-which has the following type arguments:
-
-```
-Closure(
-  poly_args, 
-  parameter_types, 
-  return_type, 
-  effect_row, 
-  (capture_1, capture_2, ...)
-)
-```
-
-- `poly_args` is a list of polymorphic arguments in its surrounding scope. For 
-  instance, if the closure is defined inside a function with polymorphic type 
-  variable `a`, then `poly_ars` will contain `a`.
-- `parameter_types`, `return_type`, and `effect_row` are the signature of the 
-  closure.
-- `(capture_1, capture_2, ...)` is a list of the captured variables in the 
-  closure, packed into a tuple.
-
-Coroutine will also follow the similar model, with the following type arguments:
-
-```
-Coroutine(poly_args, return_type, effect_row, (upvars_1, upvars_2, ...))
-```
-
-- The `poly_args` has the same meaning as in closure.
-- The `return_type` and `effect_row` directly correspond to the 
-  `Coroutine[c].Return` and `Coroutine[c].Effect`.
-- The `(upvars_1, upvars_2, ...)` is a list of the parameter types of the 
-  coroutine, packed into a tuple. Somestimes, they are also called "upvars".
-
-### Saved Local Types
-
-However, that's not the end of the story. The coroutine type has to expose the
-types of all saved locals in the coroutine, which is not shown in the above type 
-arguments. 
-
-The saved locals are the variables that are live across a suspension
-point. They are important for marker entailment, for instance, when entailing
-whether a coroutine is `Send` or not, we need to check whether all the saved
-locals are `Send` as well.
-
-Thus, we define a new query to the compiler that allows us to retrieve all the 
-saved local types of a coroutine. The signature will look something like 
-`def_id -> Vec<Ty>`. This is very similar to how you query the fields of the
-struct type through a query.
-
-The reason that we don't include the saved locals directly in the Coroutine
-type is that the Coroutine type may recrusively refer to itself, and we don't
-have a recursive type in the type system. This is exactly the same scenario as
-the struct type, which may recursively refer to itself (of course, through some
-indirection).
-
-This means that during the marker entailment, for instance `c: Send`, where
-`c` is some anonymous coroutine type, we will have to query for the saved local
-types of `c`, and check whether they are all `Send`.
-
-### Lifetimes of Saved Local Types
-
-The final thing to mention is that all the lifetimes that appear in the saved
-locals are erased. If we follow the Rust implementation as a baseline, each
-type in the saved locals will have higher-ranked lifetimes. The reasons are:
-
-- Our marker entailment is much simpler, we only allow simple instance head. 
-  Therefore, no additional constraints are generated during the marker 
-  entailment. This is different from Rust.
-- But the actual main reason is that, we don't have higher-ranked lifetimes in
-  the type system yet :P As soon as we have higher-ranked lifetimes, we'll 
-  definitely use them in the saved locals instead of erasing them.
-
-Therefore, once we relax the restriction on the marker's instance head, we will
-have to reconsider the lifetimes of the saved locals. Perhaps, we could even
-be more precise by using the actual lifetimes solved by the borrow checker,
-instead of over-approximating them with higher-ranked lifetimes.
-
 ## Compute the saved locals of a coroutine
 
 **Drafting!**
 
-- probably some form of dataflow analysis?
+[What counts as saved](#what-counts-as-saved) defines the typed saved
+locals. This section is about how to compute them, and the layout saved
+locals.
+
+- The typed saved locals are computed on the IR after memory analysis, from
+  the liveness at each `Suspend` and each forwarding `Resume` (see
+  [IR update](#ir-update)). `rayc_ir::liveness` already computes what is
+  needed: the locals and the expression values that are use-live or
+  drop-live.
+- A local or expression value is saved if it is live on either edge out of
+  the terminator.
+- Liveness is not enough for a borrowed local. A `RefOf` is a use only where
+  it is evaluated, so a local that is borrowed, has a no-op drop and is not
+  used again is not live, but its storage has to survive the suspension. A
+  local that may be borrowed while its storage is live is saved too.
+- What the expression waits for is saved as well: the coroutine type of the
+  callee, or what a `run` adds.
 
 ## Optimal coroutine storage layout
 
 **Drafting!**
 
 - concerns about how do we assign a storage location for each saved local
-- aligment optimization!
+- alignment optimization!
 - once the local is saved into the coroutine storage, it will be pinned
 - how do we reuse the storage of a coroutine once some of its locals are 
   dropped or no longer used?
 
 ## IR Update
 
-**Drafting!**
+There is no new level of IR, and the IR is not rewritten into a coroutine
+form. A body is lowered to IR once, by the IR builder, and that IR serves
+both [compilation modes](#two-compilation-modes). What changes is that the
+IR makes suspension explicit, so that every analysis sees what the coroutine
+form can do. The two modes only part when the IR is lowered to MonoIR.
 
-- we probably have some new IR instructions to go along with the new lowering
-- should we have a new level of IR? my guts say 80% no, but who knows
-- if we don't have a new level of IR, we probably have to mutate the existing 
-  IR into a coroutine form.
-- currently, the effectful function can be lowered into two forms: 
-  direct/callback form and coroutine form. i'm thinking that the borrow checker
-  should operate on the coroutine form, since the coroutine form is a more 
-  "restrictive" form of the function. what i mean is that, if the borrow checker
-  can accept the coroutine form, it should also accept the direct form. but not
-  the other way around.
+The analyses therefore run once, and they check the rules of the coroutine
+form. That is the stricter of the two. The direct form runs the same
+control-flow graph and never takes an abandon edge, so a body that is
+accepted here is valid in both.
+
+The names below are placeholders.
+
+### Suspension points
+
+Today a `perform` and a call are expressions in the middle of a block. An
+[abandon edge](#dropping-a-coroutine) is an edge of the control-flow graph,
+so a suspension point has to end its block. A new terminator does that:
+
+```
+Suspend { expression, resume, abandon }
+```
+
+- `expression` is the `Perform`, `Call` or `Handle` expression. It is
+  unchanged: it is still an expression and still defines the value. The
+  terminator only says where it is evaluated, and that control may not come
+  back from it.
+- `resume` is the block that continues with the value. The value is defined
+  on this edge only.
+- `abandon` is the block taken when the coroutine is dropped while it is
+  suspended here.
+
+The expressions that suspend are:
+
+- every `perform`;
+- every call whose effect row is not empty. A row variable counts, because
+  it may be instantiated with an effect;
+- a `run ... with` that has an effect of its own (see
+  [below](#run--with-in-the-ir)).
+
+A call with an empty row stays an ordinary instruction.
+
+The abandon block does what a `return` at the same point does: it pops the
+enclosing scopes, in order. It ends in a new exit terminator, `Abandon`,
+which is a `Return` without a value.
+
+Taking the abandon edge first abandons whatever the expression was waiting
+for: the coroutine of the callee, or the body and the handler of a `run`.
+The terminator implies this and the lowering adds it. That coroutine has
+been started, so it is at a suspension point of its own and no upvar
+dictionary is involved. The arguments of a call are not dropped on the
+abandon edge. They were moved into the callee.
+
+The start of a function is not a suspension point and has no abandon block.
+A coroutine that was never resumed is dropped by its
+[`Drop` instance](#dropping-a-coroutine), with the dictionaries of its
+upvars.
+
+### `coro`
+
+`coro f(args)` is lowered to several instructions, not one:
+
+1. A hidden variable is declared for the
+   [pinned storage](#pinned-storage). Its type is the coroutine type.
+2. A new `Coroutine` expression, analogous to `Closure`, builds the
+   coroutine from the call target and the arguments, and a `Store` puts it
+   in the variable. The call target is the one a `Call` has, so the type is
+   a `Coroutine(...)` for a known function and an
+   [`InstanceCoroutine(...)`](#coroutines-of-unresolved-calls) for a call
+   through an instance.
+3. A `RefOf` borrows the variable mutably.
+4. The reference is wrapped in a `Continuation[(), &mut c]`.
+
+The borrow checker then sees an ordinary `&mut` loan of an ordinary
+variable, and pinning needs no rule of its own:
+
+- A continuation that escapes is "borrowed value does not live long enough".
+- Moving the storage is a move out of a borrowed variable.
+- The drop at the end of the scope is an ordinary `AddressDrop`. Its
+  dictionary is the built-in `Drop` instance of the coroutine type, with one
+  dictionary per argument. Memory analysis resolves them here, in the
+  function that contains the `coro`, and reports a missing one at the
+  `coro`.
+
+The hidden variable belongs to the enclosing block scope, not to the
+temporary scope of the statement. Otherwise the storage of
+`let k = coro f()` would end with the statement.
+
+### `handle`
+
+A `handle` is a terminator too. Its clauses are
+[branches](#clauses-are-branches), so they are its successors:
+
+```
+Resume { continuation, value, return, clauses, abandon }
+```
+
+- `continuation` and `value` are the operands. The continuation is moved.
+- `return` is the block of the return clause. It starts with the value the
+  coroutine returned.
+- `clauses` has one block per operation clause. Each starts with the
+  arguments of the operation and the next continuation `k`.
+- `abandon` is present when the `handle` forwards effects.
+
+No clause is a nested function, and there are no captures.
+
+The forwarding loop of [lowering `handle`](#lowering-handle) is not written
+out in the IR. One `Resume` means: resume the coroutine until it completes or
+performs an operation that has a clause, and forward every other operation.
+A `handle` that forwards is a suspension point of the enclosing function,
+which is why it has an abandon edge.
+
+Invoking a continuation, `k(v)`, is a `Resume` with no operation clauses.
+
+### `run ... with` in the IR
+
+A `run ... with` keeps its shape. It is still a `Handle` expression, and its
+body and handlers are still nested bodies with their own IR. Only two things
+change:
+
+- A `run` has an effect of its own when its body has an effect that is not
+  handled, or when a handler performs one. Such a `run` is evaluated by a
+  `Suspend`, like an effectful call.
+- The nested bodies have suspension points of their own, like any other
+  body.
+
+Whether those bodies are compiled as coroutines is not visible in the IR. It
+is decided when the IR is lowered; see
+[`run ... with` in a coroutine](#run--with-in-a-coroutine).
+
+On the abandon edge of a `run`, the handler captures are dropped as they are
+when the `run` returns, after the body and the handler have been abandoned.
+
+### What the analyses see
+
+- **Memory analysis.** An abandon edge is an ordinary edge, and `Abandon` is
+  an exit where nothing is initialised any more. The existing rule that
+  balances every edge selects the drops, and their dictionaries are resolved
+  with the solver of the body, as for a scope exit. A missing dictionary or
+  a `@linear` value on an abandon edge is the error of
+  [what a function may hold across a suspension](#what-a-function-may-hold-across-a-suspension),
+  and it should say so.
+- **Liveness.** A `Suspend` uses the operands of its expression and defines
+  the value on the resume edge. The
+  [typed saved locals](#compute-the-saved-locals-of-a-coroutine) are read
+  off the liveness at these terminators.
+- **Borrow checker.** Abandon edges are ordinary edges and the drops on them
+  are ordinary uses. A `coro` is an ordinary borrow. A `Resume` moves the
+  continuation, and each clause is one of its successors.
+- **Verification.** Scopes have to balance on the abandon paths as well.
+- **Lowering to MonoIR.** In direct form a `Suspend` evaluates its
+  expression and jumps to `resume`, and the abandon blocks are unreachable
+  and left out. In coroutine form every `Suspend` is a state.
+
+### Not decided
+
+- **Size.** Every suspension point adds a block. Suspension points that
+  drop the same things could share one abandon block.
 
 ## MonoIR Update
 
@@ -607,18 +1277,23 @@ checker rules have to be revised before this feature can be checked. What
 needs a rule:
 
 - **Regions held by a continuation.** A suspended coroutine holds its
-  arguments and every local live at the suspension. The coroutine type has to
-  account for the regions in them, and `Continuation[r, c]: 'a` needs a
-  definition. In the first prototype the continuation also carries the
-  lifetime of its [pinned storage](#pinned-storage), which is what keeps it
-  from escaping.
-- **Yielding borrows of the coroutine's own locals.** In direct mode a
-  `perform` may pass a borrow of a local to the handler, because the handler
-  returns before the local goes away. In a coroutine the argument is handed
-  to a clause together with the continuation, and resuming the continuation
-  can end the life of the local it borrows from. **The first prototype
-  disallows this**: an operation argument may not carry a lifetime local to
-  the coroutine. How to allow it needs its own discussion.
+  arguments and every local live at the suspension. The saved locals are not
+  part of the coroutine type and their lifetimes are erased.
+  [Lifetimes](#lifetimes) explains why the arguments of the coroutine type
+  still account for every region that matters, and gives the rules for
+  `c: 'a` and for dropping a coroutine. `Continuation[r, c]: 'a` then holds
+  when `r: 'a` and `c: 'a`. In the first prototype `c` is a `&mut` to the
+  [pinned storage](#pinned-storage), and the lifetime of that reference is
+  what keeps the continuation from escaping.
+- **Yielding borrows of the coroutine's own locals.** This cannot be written
+  today, in either form. An operation has no lifetime parameters of its own:
+  a lifetime in its signature is a parameter of the effect, as in
+  `eff Log['a]`, and the label `Log['a]` is part of the signature of the
+  function that performs it. So an operation argument can only carry an
+  external lifetime, or one from an upvar, never a borrow of a local. The
+  first prototype keeps this and needs no new rule. It is more restrictive
+  than necessary; see yielding local borrows under
+  [open questions](#open-questions).
 - **Borrows held across a suspension.** A local that borrows another local of
   the same coroutine, and is still live at a `perform`, makes the coroutine
   self-referential. The first prototype can allow this, because the coroutine
@@ -658,24 +1333,63 @@ them.
     `run ... with`, but they are branches and not functions. `return` inside
     one returns from the enclosing function, while inside a `run` handler it
     gives the result of the operation. A different spelling may be clearer.
+    Koka has the same split in one construct, as `fun` clauses, which answer
+    in place, and `ctl` clauses, which get the continuation. Keeping `def`
+    for the first kind and a new keyword for the second would leave room for
+    a `def` clause inside `handle` later.
   - A clause gives the `handle` a value only in the `: expression` form,
     following `if`. That is a proposal, not a decision.
+- **Yielding local borrows.** `Log.log(&msg)` with a local `msg` is rejected
+  today (see [borrow checker impact](#borrow-checker-impact)), although
+  under a `run` it would be safe. Allowing it needs a lifetime that is
+  chosen by each `perform`. There are two spellings:
+  - *A lifetime parameter on the operation*: `def log['x](msg: &'x str)`.
+    Rows do not change.
+  - *A higher-ranked label*: `{for['x] Log['x]}`. This also works with the
+    generic effects that exist: `{for['x] Yield[&'x int32]}` makes
+    `Yield[t]` lend. An operation parameter cannot do that, because the
+    effect has to fix the shape of the borrow. The price is binders in rows,
+    and rules for when a higher-ranked label matches an instantiated one.
+
+  Both need the same thing at the handling site, so the operation parameter
+  is the natural first step:
+  - A `run` handler is a function that is generic over `'x`. It cannot keep
+    the borrow, and it returns before the body continues.
+  - In a `handle` clause, `'x` is a fresh lifetime that carries a loan of
+    `k`: the arguments are treated as borrowed from the continuation. Moving
+    `k` while a value with `'x` is live, by resuming it or by storing it as
+    in `con = k`, is then the ordinary "moved while borrowed" error, and an
+    argument cannot outlive `k`. The borrow checker needs no new concept.
+  - An operation that returns `'x`, as in
+    `def get['x](key: &'x k) -> &'x v`, does not fit yet: the value given to
+    `k` is used at the very point that moves `k`, which conflicts with the
+    loan.
 - **Syntax of `handle` and `coro`.** `handle expr1(expr2)` reads as `handle`
   applied to a call. That matches "invoke the continuation, and intercept
   some effects", but the grammar has to say how `expr1` is delimited when it
   is itself a call, as in `handle f(x)(y)`. Also undecided: whether `coro`
   accepts only a call or any expression.
-- **Indirect calls.** A coroutine that calls through a `def(...) -> ...`
-  value or a `Def` dictionary does not know the callee's state machine type.
-  This probably needs the same boxing as recursion, plus an erased `resume`.
-- **Linear values.** A coroutine that is abandoned has its live locals
-  dropped with its storage. If one of them is `@linear`, it has no `Drop`
-  instance, so the coroutine presumably has none either and must be run to
-  completion.
+- **Naming a coroutine type.** A bound on the coroutine of an unresolved
+  call needs syntax. `coro d.m` in type position is the proposal; see
+  [naming it in a bound](#naming-it-in-a-bound) for what is undecided.
+- **Linear coroutines.** Because any coroutine may be abandoned, a function
+  may not hold a `@linear` local across a suspension point, and needs a
+  `Drop` given for a local of an opaque type
+  ([details](#what-a-function-may-hold-across-a-suspension)). For the same
+  reason `coro` needs `Drop` for its arguments. A coroutine
+  that is itself linear must be run to completion, has no abandon edges, and
+  would lift these restrictions. It needs a way to say which coroutines are
+  linear.
 - **Cost of reification.** `coro` turns every effect in the row into a
   suspension, including ones the driver only forwards. Each forwarded
   operation costs a suspend and a resume. It may be worth letting an effect
-  stay a plain callback inside a coroutine.
+  stay a plain callback inside a coroutine. The clear case is an effect
+  handled by a `run ... with` whose handlers do not suspend (case 2 of
+  [`run ... with` in a coroutine](#run--with-in-a-coroutine)). It makes the
+  compilation mode a property of each effect of a function, not of the
+  function. Whatever is done here may change
+  the layout of a coroutine but not
+  [what counts as saved](#what-counts-as-saved) for the type system.
 - **Rows in the lowering.** Labels of different effects commute, so
   `{State[int32], Print}` and `{Print, State[int32]}` need the same generated
   sum types. A row can also hold the same effect twice, for example
