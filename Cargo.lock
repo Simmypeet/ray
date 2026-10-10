@@ -1798,6 +1798,7 @@ dependencies = [
 name = "rayc_borrowck"
 version = "0.1.0-beta.2"
 dependencies = [
+ "linkme",
  "qbice",
  "rayc_arena",
  "rayc_diagnostic",
@@ -1809,6 +1810,7 @@ dependencies = [
  "rayc_solver",
  "rayc_source_file",
  "rayc_symbol",
+ "rayc_target",
  "rayc_transitive_closure",
  "rayc_type",
  "tokio",
@@ -1837,6 +1839,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "linkme",
  "qbice",
+ "rayc_borrowck",
  "rayc_diagnostic",
  "rayc_ir_builder",
  "rayc_qbice",
@@ -1973,7 +1976,6 @@ dependencies = [
  "linkme",
  "qbice",
  "rayc_arena",
- "rayc_borrowck",
  "rayc_diagnostic",
  "rayc_hash",
  "rayc_ir",
@@ -1987,7 +1989,6 @@ dependencies = [
  "rayc_target",
  "rayc_type",
  "rayc_typed_ast",
- "rayc_typed_ast_builder",
  "tokio",
 ]
 

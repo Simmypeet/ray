@@ -16,9 +16,11 @@ rayc_qbice.path = "../../base/qbice"
 rayc_semantic_element.path = "../semantic_element"
 rayc_solver.path = "../solver"
 rayc_symbol.path = "../symbol"
+rayc_target.path = "../../base/target"
 rayc_transitive_closure.path = "../../base/transitive_closure"
 rayc_type.path = "../type"
 qbice.workspace = true
+linkme.workspace = true
 
 [dev-dependencies]
 rayc_source_file.path = "../../base/source_file"

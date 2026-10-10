@@ -24,6 +24,7 @@ mod conflict;
 pub mod constraint;
 pub mod diagnostic;
 pub mod live_loans;
+pub mod query;
 pub mod region_liveness;
 pub mod renumber;
 pub mod requirement;

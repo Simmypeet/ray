@@ -17,6 +17,10 @@ use crate::ir_function::IRFunctionMap;
 
 /// Retrieves the completed control-flow IR functions for a source function
 /// definition.
+///
+/// This IR still carries its lifetimes, which only the borrow checker reads.
+/// Nothing erases them here: a later consumer, like the lowering to `MonoIR`,
+/// erases the lifetimes of the types it takes out of the IR.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]

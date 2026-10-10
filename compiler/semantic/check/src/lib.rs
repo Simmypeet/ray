@@ -17,6 +17,7 @@ pub struct Check {
     semantic_impl: Interned<[Interned<[Rendered<usize>]>]>,
     typed_ast_impl: Interned<[Interned<[Rendered<usize>]>]>,
     ir_impl: Interned<[Interned<[Rendered<usize>]>]>,
+    borrow_impl: Interned<[Interned<[Rendered<usize>]>]>,
 }
 
 impl Check {
@@ -27,6 +28,7 @@ impl Check {
             .chain(self.semantic_impl.iter().flat_map(|diags| diags.iter()))
             .chain(self.typed_ast_impl.iter().flat_map(|diags| diags.iter()))
             .chain(self.ir_impl.iter().flat_map(|diags| diags.iter()))
+            .chain(self.borrow_impl.iter().flat_map(|diags| diags.iter()))
     }
 }
 
@@ -45,7 +47,7 @@ pub struct Key {
 #[executor(config = Config)]
 async fn check_executor(&Key { target_id }: &Key, engine: &TrackedEngine) -> Check {
     // collects the diagnostics of every phase in parallel, one task per phase
-    let (sym_diags, semantic_diags, typed_ast_diags, ir_diags) = {
+    let (sym_diags, semantic_diags, typed_ast_diags, ir_diags, borrow_diags) = {
         // SAFETY: the diagnostics of every phase are always collected,
         // whatever the diagnostics of the other phases are
         let _group = unsafe { UnorderedCalleeGroup::start(engine) };
@@ -55,6 +57,7 @@ async fn check_executor(&Key { target_id }: &Key, engine: &TrackedEngine) -> Che
             engine.query_in_task(rayc_semantic_element_impl::diagnostic::RenderedKey { target_id }),
             engine.query_in_task(rayc_typed_ast_builder::query::RenderedKey { target_id }),
             engine.query_in_task(rayc_ir_builder::query::RenderedKey { target_id }),
+            engine.query_in_task(rayc_borrowck::query::RenderedKey { target_id }),
         )
     };
 
@@ -63,6 +66,7 @@ async fn check_executor(&Key { target_id }: &Key, engine: &TrackedEngine) -> Che
         semantic_impl: semantic_diags,
         typed_ast_impl: typed_ast_diags,
         ir_impl: ir_diags,
+        borrow_impl: borrow_diags,
     }
 }
 

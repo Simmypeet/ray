@@ -44,6 +44,9 @@ pub struct IRFunctionMap {
     capture_maps: Arena<CaptureMap>,
     root: FunctionID,
     closures: FxHashMap<ClosureID, FunctionID>,
+    /// Whether the definition reported no error up to and including the
+    /// building of this IR.
+    no_error: bool,
 }
 
 impl IRFunctionMap {
@@ -51,8 +54,28 @@ impl IRFunctionMap {
     pub fn new(def_id: GlobalSymbolID) -> Self {
         let mut functions = Arena::new();
         let root = functions.insert(IRFunction::new_def());
-        Self { def_id, functions, capture_maps: Arena::new(), root, closures: FxHashMap::default() }
+        Self {
+            def_id,
+            functions,
+            capture_maps: Arena::new(),
+            root,
+            closures: FxHashMap::default(),
+            no_error: false,
+        }
     }
+
+    /// Returns whether the definition reported no error up to and including
+    /// the building of this IR: none in its typed AST, in its lowering or in
+    /// its memory analysis.
+    ///
+    /// A later phase reads this to skip the checks that are only meaningful
+    /// on valid IR, without asking for the diagnostics.
+    #[must_use]
+    pub const fn no_error(&self) -> bool { self.no_error }
+
+    /// Records whether the definition reported no error up to and including
+    /// the building of this IR.
+    pub const fn set_no_error(&mut self, no_error: bool) { self.no_error = no_error; }
 
     /// Returns the effect row of a function.
     ///

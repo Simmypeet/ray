@@ -11,7 +11,6 @@ use crate::{builder::Builder, context::LoweringContext, diagnostic::Diagnostic};
 pub mod builder;
 mod context;
 pub mod diagnostic;
-mod erase;
 mod expression;
 pub mod query;
 mod statement;

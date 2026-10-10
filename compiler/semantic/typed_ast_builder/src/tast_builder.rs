@@ -457,6 +457,8 @@ impl TAstBuilder {
             );
         }
 
+        ast.set_no_error(self.diagnostics.is_empty());
+
         (ast, self.diagnostics)
     }
 }

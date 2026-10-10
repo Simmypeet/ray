@@ -2,7 +2,6 @@ use linkme::distributed_slice;
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
 };
-use rayc_borrowck::borrow_check;
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_ir::ir_function::IRFunctionMap;
 use rayc_memory::analyze;
@@ -15,8 +14,11 @@ use rayc_symbol::{
 use rayc_target::{TargetID, get_ir_verification};
 use rayc_typed_ast::get_typed_ast;
 
-use crate::{diagnostic::Diagnostic, erase::erase_lifetimes, lower_function};
+use crate::{diagnostic::Diagnostic, lower_function};
 
+/// Lowers a definition to IR and runs memory analysis on it.
+///
+/// The IR keeps its lifetimes, which the borrow checker reads.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
 )]
@@ -50,10 +52,9 @@ async fn build_ir_executor(
     // Resolving a dictionary for a type left erroneous or undetermined by
     // type checking would only repeat that error, so dictionary failures are
     // reported only for a well-typed definition.
-    let (_, typed_diagnostics) =
-        engine.query(&rayc_typed_ast_builder::query::BuildTAst { def_id }).await;
+    let well_typed = typed_function.no_error();
 
-    if !typed_diagnostics.is_empty() {
+    if !well_typed {
         diagnostics.retain(|diagnostic| !matches!(diagnostic, Diagnostic::Memory(_)));
     }
 
@@ -66,23 +67,14 @@ async fn build_ir_executor(
         .iter()
         .any(|diagnostic| matches!(diagnostic, Diagnostic::NotAllPathsReturnValue(_)));
 
-    if control_flow_valid && typed_diagnostics.is_empty() {
+    if control_flow_valid && well_typed {
         let memory_diagnostics = analyze(engine, def_id, &mut function).await;
         diagnostics.extend(memory_diagnostics.into_iter().map(Diagnostic::from));
-
-        // Borrow checking runs last, on IR whose drops are elaborated, and
-        // only when nothing else went wrong: an earlier error would leave it
-        // checking placeholder nodes, and reporting what it finds there would
-        // only cascade from that error.
-        if diagnostics.is_empty() {
-            let borrow_diagnostics = borrow_check(&mut function, engine).await;
-            diagnostics.extend(borrow_diagnostics.into_iter().map(Diagnostic::from));
-        }
     }
 
-    // Lifetimes are of no use past borrow checking, so they are erased
-    // whether or not it ran.
-    erase_lifetimes(&mut function, engine).await;
+    // Later phases, like borrow checking, run only when nothing went wrong up
+    // to here: an earlier error would leave them checking placeholder nodes.
+    function.set_no_error(well_typed && diagnostics.is_empty());
 
     if engine.get_ir_verification(def_id.target_id).await
         && let Err(error) = crate::verification::verify(&function).await

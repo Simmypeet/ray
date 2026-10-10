@@ -25,13 +25,25 @@ pub mod typed_variable;
 pub struct TypedAst {
     functions: TypedFunctionMap,
     captures: CapturePlan,
+    /// Whether building this typed AST reported no error.
+    no_error: bool,
 }
 
 impl TypedAst {
     #[must_use]
     pub const fn new(functions: TypedFunctionMap, captures: CapturePlan) -> Self {
-        Self { functions, captures }
+        Self { functions, captures, no_error: false }
     }
+
+    /// Returns whether building this typed AST reported no error.
+    ///
+    /// A later phase reads this to skip the checks that are only meaningful
+    /// on a well-typed definition, without asking for the diagnostics.
+    #[must_use]
+    pub const fn no_error(&self) -> bool { self.no_error }
+
+    /// Records whether building this typed AST reported no error.
+    pub const fn set_no_error(&mut self, no_error: bool) { self.no_error = no_error; }
 
     #[must_use]
     pub const fn functions(&self) -> &TypedFunctionMap { &self.functions }
