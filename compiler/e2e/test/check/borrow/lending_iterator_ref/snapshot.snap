@@ -1,0 +1,8 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+
+
+stdout:

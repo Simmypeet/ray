@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: lifetime may not live long enough
+   ╭▸ compiler/e2e/test/check/borrow/lending_iterator_mut/main.ray:33:16
+   │
+33 │         return self.*.hold.*.&mut
+   │                ━━━━━━━━━━━━━━━━━━ this requires `'x` to outlive `'a`
+   │
+   ╰ help: consider adding `'x: 'a` to the where clause
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

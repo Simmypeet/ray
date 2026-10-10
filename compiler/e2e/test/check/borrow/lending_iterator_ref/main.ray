@@ -1,0 +1,23 @@
+# Simulating a lending iterator with generic associated types.
+pub trait LendingIterator[t]:
+    pub type Item['x] where (t: 'x)
+    
+    pub def next(self: &'x mut t) -> this.Item['x] where (t: 'x)
+
+
+pub struct Holding['a]:
+    hold: &'a int32
+
+
+pub inst HoldingIteratorShort['a] for LendingIterator[Holding['a]]:
+    type Item['x] where ('a: 'x) = &'x int32
+    
+    def next(self: &'x mut Holding['a]) -> &'x int32 where ('a: 'x):
+        return self.*.hold.*.&
+
+
+pub inst HoldingIteratorLong['a] for LendingIterator[Holding['a]]:
+    type Item['x] where ('a: 'x) = &'a int32
+    
+    def next(self: &'x mut Holding['a]) -> &'a int32 where ('a: 'x):
+        return self.*.hold.*.&

@@ -1,0 +1,53 @@
+# Simulating a lending iterator with generic associated types.
+pub trait LendingIterator[t]:
+    pub type Item['x] where (t: 'x)
+    
+    pub def next(self: &'x mut t) -> this.Item['x] where (t: 'x)
+
+
+pub struct Holding['a]:
+    hold: &'a mut int32
+
+
+inst HoldingIteratorWrong['a] for LendingIterator[Holding['a]]:
+    type Item['x] where ('a: 'x) = &'a mut int32
+    
+    def next(self: &'x mut Holding['a]) -> &'a mut int32 where ('a: 'x):
+        # ERROR: 
+        # 
+        # suppose '?r is a region that holds the loan of entire `.&mut` expression.
+        # - dereferencing `self.*` creates a reborrow that generates `'x -> '?r`
+        # - dereferencing `self.*.hold.*` creates a reborrow that generates `'a -> '?r`
+        # - finally returning the expression `&'?r mut int32` creates a constraint `'?r -> 'a`
+        #
+        # Thus, generates this graph
+        # 'x -----> '?r ---+
+        #            ^     |
+        #            |     |
+        # 'a --------+     |
+        #  ^               |
+        #  |               |
+        #  +---------------+
+        #
+        # `'a: 'a` is trivially true, but `'x: 'a` is not satisfied.
+        return self.*.hold.*.&mut
+
+
+inst HoldingIteratorCorrect['a] for LendingIterator[Holding['a]]:
+    type Item['x] where ('a: 'x) = &'x mut int32
+    
+    def next(self: &'x mut Holding['a]) -> &'x mut int32 where ('a: 'x):
+        # This instead generates this graph
+        #
+        #  +----------+
+        #  |          |
+        #  V          |
+        # 'x ------> '?r
+        #             ^
+        #             |
+        # 'a ---------+
+        #
+        # Instead, 'a does flow to 'x, but it's covered by the where clause
+        return self.*.hold.*.&mut
+
+
