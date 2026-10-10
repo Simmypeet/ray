@@ -512,8 +512,16 @@ impl Builder {
             return;
         }
 
-        // if the function requires a return value (non-unit type)
-        if !self.building_function.return_ty.is_unit_type()
+        // The function requires a return value (non-unit type) but control can
+        // fall off its end. Unreachable unterminated blocks, like the merge
+        // block of an `if` whose arms all return, are not such a path.
+        let reaches_end = self
+            .ir_functions
+            .get_function(function_id)
+            .traverse()
+            .any(|(_, block)| block.terminator().is_none());
+        if reaches_end
+            && !self.building_function.return_ty.is_unit_type()
             && let Some(span) = self.building_function.diagnostic_span
         {
             self.diagnostics.push(NotAllPathsReturnValue::builder().span(span).build().into());

@@ -13,7 +13,7 @@ use crate::{
     address::{Address, Local},
     cfg::{
         BlockID, Cfg, ControlFlowEdge, Instruction, InstructionInsertion, Point, Reachables,
-        Terminator,
+        Terminator, Traverser,
     },
     dataflow::{DataflowProblem, DataflowSolution, solve},
     ir_expr::{IRExpr, IRExprID, IRExpressionMap},
@@ -1000,6 +1000,11 @@ impl IRFunction {
     pub fn unterminated_blocks(&self) -> impl Iterator<Item = BlockID> + '_ {
         self.cfg.unterminated_blocks()
     }
+
+    /// Iterates over the blocks reachable from the entry block; see
+    /// [`Cfg::traverse`].
+    #[must_use]
+    pub fn traverse(&self) -> Traverser<'_> { self.cfg.traverse() }
 
     #[must_use]
     pub fn reachables(&self) -> Reachables { self.cfg.reachables() }

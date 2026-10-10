@@ -1,0 +1,5 @@
+pub def choice(a: int32, b: int32, cond: bool) -> int32:
+    if cond:
+        return a
+    else:
+        return b
