@@ -438,10 +438,19 @@ impl DataflowProblem for StackStateProblem<'_> {
     async fn transfer_terminator(
         &mut self,
         _block_id: BlockID,
-        _terminator: &Terminator,
+        terminator: &Terminator,
         _state: &mut StackState,
     ) -> Result<(), Infallible> {
-        Ok(())
+        match terminator {
+            // No terminator moves a place. The arguments of the expression a
+            // suspension point evaluates are evaluated values: the loads
+            // which moved them out of their places are instructions of their
+            // own, before the terminator.
+            Terminator::Suspend(_)
+            | Terminator::Jump(_)
+            | Terminator::Conditional(_)
+            | Terminator::Return(_) => Ok(()),
+        }
     }
 
     async fn transfer_edge(

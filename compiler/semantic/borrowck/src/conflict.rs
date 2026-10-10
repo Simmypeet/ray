@@ -55,7 +55,8 @@ pub(crate) async fn check_conflicts(
     for block_id in reachables.blocks() {
         activity
             .visit_block(block_id, async |point, instruction, active| {
-                // A terminator accesses no place.
+                // A terminator accesses no place: the expression of a
+                // suspension point only takes evaluated values.
                 if let Some(instruction) = instruction {
                     checker.check_instruction(point, instruction, active).await;
                 }
@@ -138,12 +139,8 @@ impl<'a> ConflictChecker<'a> {
 
         let reachables = function.reachables();
         for block_id in reachables.blocks() {
-            for instruction in function.block_instructions(block_id) {
-                let Instruction::Expression(expression_id) = instruction else {
-                    continue;
-                };
-
-                let expression = function.get_expression(*expression_id);
+            for (_, expression_id) in function.block_evaluations(block_id) {
+                let expression = function.get_expression(expression_id);
                 for operand in expression.kind().capture_operands() {
                     capture_sites.insert(operand, expression.span());
 

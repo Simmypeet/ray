@@ -6,7 +6,7 @@ use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::Local,
-    cfg::{Instruction, Point},
+    cfg::{Instruction, Point, Terminator},
     ir_expr::IRExprID,
     ir_function::{FunctionID, IRFunction, IRFunctionMap},
     liveness::{LiveRanges, expr::ExprLiveness, local::LocalLiveness},
@@ -27,8 +27,8 @@ enum RegionOwner {
     /// Its regions are live from the entry of its block.
     Phi(IRExprID, Point),
 
-    /// The instruction at this point, whose operation uses a type that
-    /// mentions the region.
+    /// The instruction or terminator at this point, whose operation uses a
+    /// type that mentions the region.
     Instruction(Point),
 }
 
@@ -133,6 +133,14 @@ fn collect_owners(
         for (point, instruction) in function.block_instructions_with_points(block_id) {
             collector.record_instruction(function, point, instruction);
         }
+
+        // A suspension point evaluates its expression at its terminator.
+        if let Some(expression_id) =
+            function.block_terminator(block_id).and_then(Terminator::evaluated_expression)
+        {
+            let point = function.terminator_point(block_id);
+            collector.record_expression(function, point, expression_id);
+        }
     }
 
     collector.owners
@@ -157,19 +165,8 @@ impl OwnerCollector {
         instruction: &Instruction,
     ) {
         match instruction {
-            // The type of the value belongs to the expression, and every other
-            // type its operation uses to the instruction.
             Instruction::Expression(expression_id) => {
-                let expression = function.get_expression(*expression_id);
-                let owner = if expression.kind().as_phi().is_some() {
-                    RegionOwner::Phi(*expression_id, point)
-                } else {
-                    RegionOwner::Expression(*expression_id)
-                };
-                self.record(expression.ty(), owner);
-                expression.kind().visit_types(self.site, &mut |ty: &Interned<Ty>, _| {
-                    self.record(ty, RegionOwner::Instruction(point));
-                });
+                self.record_expression(function, point, *expression_id);
             }
 
             Instruction::ExprDiscard(discard) => {
@@ -182,6 +179,24 @@ impl OwnerCollector {
             // Neither introduces a type.
             Instruction::Store(_) | Instruction::ScopePush(_) | Instruction::ScopePop(_) => {}
         }
+    }
+
+    /// Records the owners of the regions that evaluating `expression_id` at
+    /// `point` introduces.
+    ///
+    /// The type of the value belongs to the expression, and every other type
+    /// its operation uses to the instruction or terminator at `point`.
+    fn record_expression(&mut self, function: &IRFunction, point: Point, expression_id: IRExprID) {
+        let expression = function.get_expression(expression_id);
+        let owner = if expression.kind().as_phi().is_some() {
+            RegionOwner::Phi(expression_id, point)
+        } else {
+            RegionOwner::Expression(expression_id)
+        };
+        self.record(expression.ty(), owner);
+        expression.kind().visit_types(self.site, &mut |ty: &Interned<Ty>, _| {
+            self.record(ty, RegionOwner::Instruction(point));
+        });
     }
 
     /// Records `owner` as the owner of every region in `ty`.

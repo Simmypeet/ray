@@ -375,6 +375,12 @@ impl ConstraintCollector<'_> {
                 self.collect_return(point, *value).await;
             }
 
+            // A suspension point evaluates its expression here.
+            Some(Terminator::Suspend(suspend)) => {
+                let point = self.function.terminator_point(block_id);
+                self.collect_expression(point, suspend.expression()).await;
+            }
+
             // Unit holds no region, and the values a jump passes are related by
             // the phis of its target.
             Some(Terminator::Return(None) | Terminator::Jump(_) | Terminator::Conditional(_))

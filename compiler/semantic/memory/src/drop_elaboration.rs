@@ -305,7 +305,7 @@ impl DropElaborator {
 }
 
 /// Returns the point where drops on `edge` run: the end of the source block
-/// when the edge is the source's only one, or a new block splitting the edge
+/// when the edge leaves through a jump, or a new block splitting the edge
 /// otherwise.
 fn edge_drop_point(
     functions: &mut IRFunctionMap,
@@ -314,13 +314,17 @@ fn edge_drop_point(
 ) -> Point {
     // A jump is the source's only edge, so the drops can end the source
     // block. A conditional edge is critical, since its target merges several
-    // edges, so it gets a block of its own.
+    // edges, so it gets a block of its own. So does an edge out of a
+    // suspension point: the end of the source block is before its expression
+    // is evaluated, not after.
     let terminator = functions.get_function(function_id).block_terminator(edge.source());
     let block_id = match terminator {
         Some(Terminator::Jump(_)) => edge.source(),
-        Some(Terminator::Conditional(_)) => functions.split_edge(function_id, edge),
+        Some(Terminator::Conditional(_) | Terminator::Suspend(_)) => {
+            functions.split_edge(function_id, edge)
+        }
         Some(Terminator::Return(_)) | None => {
-            unreachable!("a control-flow edge leaves through a jump or a conditional")
+            unreachable!("a control-flow edge does not leave through a return")
         }
     };
 

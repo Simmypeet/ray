@@ -44,7 +44,7 @@ impl Builder<'_> {
             let terminator = source
                 .block_terminator(source_block)
                 .expect("reachable semantic IR block should be terminated");
-            self.lower_terminator(source_block, terminator, &source);
+            self.lower_terminator(context, source_block, terminator, &source).await;
         }
     }
 

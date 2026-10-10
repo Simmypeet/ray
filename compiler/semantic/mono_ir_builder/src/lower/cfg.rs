@@ -12,7 +12,7 @@ use rayc_mono_ir::{
     rvalue::Rvalue,
 };
 
-use crate::builder::Builder;
+use crate::{builder::Builder, context::Context};
 
 impl Builder<'_> {
     pub(super) fn lower_address(&self, address: &Address) -> Place {
@@ -46,13 +46,20 @@ impl Builder<'_> {
         place
     }
 
-    pub(super) fn lower_terminator(
+    pub(super) async fn lower_terminator(
         &mut self,
+        context: &Context,
         source_block: IRBlockID,
         terminator: &IRTerminator,
         source: &IRFunction,
     ) {
         let terminator = match terminator {
+            // In direct form a suspension point evaluates its expression and
+            // continues with the value. Its abandon edge is never taken.
+            IRTerminator::Suspend(suspend) => {
+                self.lower_expression(context, suspend.expression(), source).await;
+                Terminator::Goto(self.lower_edge(source_block, suspend.resume_block(), source))
+            }
             IRTerminator::Jump(successor) => {
                 Terminator::Goto(self.lower_edge(source_block, *successor, source))
             }
