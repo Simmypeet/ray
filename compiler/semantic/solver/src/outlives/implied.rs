@@ -112,6 +112,9 @@ impl<'x> ImpliedOutlivesCollector<'x> {
             | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
+            | ApplicationView::Coroutine(_)
+            | ApplicationView::CoroutineInstance(_)
+            | ApplicationView::CoroutineDropInstance(_)
             | ApplicationView::NominalDropInstance(_)
             | ApplicationView::Error => {}
         }

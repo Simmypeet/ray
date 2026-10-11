@@ -144,10 +144,22 @@ impl Solver {
     }
 
     async fn prove_active_marker_goal(&mut self, goal: &MarkerPredicate) -> bool {
+        // REVIEW: Could we refactor all these three special marker cases into
+        // a dedicated function?
+
         // A linear value must be consumed exactly once, so copying it is never
         // allowed. Structs containing it are rejected structurally below.
         if let Some(struct_) = goal.implementor().as_struct_view()
             && self.engine().is_linear_struct(struct_.symbol_id()).await
+            && goal.marker_id() == self.engine().get_core_item(CoreItem::Copy).await
+        {
+            return false;
+        }
+
+        // A coroutine type is never `Copy`, even when a given says so: a copy
+        // of a suspended coroutine could be resumed twice, and would still
+        // point into the original where a saved local borrows another.
+        if goal.implementor().as_coroutine_view().is_some()
             && goal.marker_id() == self.engine().get_core_item(CoreItem::Copy).await
         {
             return false;
@@ -291,6 +303,9 @@ async fn structural_fields(
             | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
+            | ApplicationView::Coroutine(_)
+            | ApplicationView::CoroutineInstance(_)
+            | ApplicationView::CoroutineDropInstance(_)
             | ApplicationView::NominalDropInstance(_)
             | ApplicationView::Instance(_)
             | ApplicationView::InstanceAssociated(_)

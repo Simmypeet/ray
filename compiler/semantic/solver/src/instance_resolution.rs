@@ -5,7 +5,10 @@
 //! shared across every root resolved by one [`Solver`](crate::Solver).
 
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
-use rayc_semantic_element::drop_plan::{DropPlan, GeneratedDropPlan, get_drop_plan};
+use rayc_semantic_element::{
+    drop_plan::{DropPlan, GeneratedDropPlan, get_drop_plan},
+    parameter::get_parameter_map,
+};
 use rayc_symbol::{
     GlobalSymbolID,
     core_item::{CoreItem, get_core_item},
@@ -239,6 +242,27 @@ pub enum InstanceResolutionError {
     Limit { limit: InstanceResolutionLimit, recent_goals: Vec<InstanceResolutionFrame> },
 }
 
+impl InstanceResolutionError {
+    /// Returns the requirement the search failed on, when one requirement
+    /// can be blamed.
+    ///
+    /// A built-in dictionary that is assembled from other dictionaries, such
+    /// as the `Drop` dictionary of a tuple, fails on the first of them that
+    /// cannot be selected, so this may be a requirement nested inside the one
+    /// that was asked for.
+    #[must_use]
+    pub const fn failed_requirement(&self) -> Option<&TraitRef> {
+        match self {
+            Self::NotReady(required)
+            | Self::ContainsError(required)
+            | Self::AmbiguousLexical { required, .. }
+            | Self::NoInstance { required, .. }
+            | Self::AmbiguousGlobal { required, .. } => Some(required),
+            Self::Cycle(_) | Self::Limit { .. } => None,
+        }
+    }
+}
+
 impl Solver {
     /// Resolves a trait requirement to a lexical, built-in, or global
     /// dictionary term and the instantiated predicates required by its proof
@@ -267,6 +291,30 @@ impl Solver {
 
         Some(ResolvedInstance::new_unconditional(Ty::new_def_instance(
             closure.clone(),
+            self.engine(),
+        )))
+    }
+
+    /// Selects the built-in `Coroutine` dictionary of a coroutine type, or of
+    /// a `&mut` to one.
+    ///
+    /// The dictionary is told by the type constructor alone, so the arguments
+    /// of the coroutine type may still be uninferred.
+    pub(crate) async fn resolve_coroutine_instance(
+        &self,
+        required: &TraitRef,
+    ) -> Option<ResolvedInstance> {
+        if required.args().len() != 1 {
+            return None;
+        }
+        let coroutine = required.args().interned_iter().next()?;
+        coroutine.as_coroutine_behind_reference()?;
+        if required.trait_id() != self.engine().get_core_item(CoreItem::CoroutineTrait).await {
+            return None;
+        }
+
+        Some(ResolvedInstance::new_unconditional(Ty::new_coroutine_instance(
+            coroutine.clone(),
             self.engine(),
         )))
     }
@@ -381,6 +429,43 @@ impl Solver {
         Some(resolution.map(|resolved| {
             let term =
                 Ty::new_closure_drop_instance(closure.clone(), resolved.instances, self.engine());
+            ResolvedInstance::new(term, resolved.obligations, resolved.outlives)
+        }))
+    }
+
+    /// Builds the intrinsic `Drop` dictionary for a coroutine type by
+    /// resolving one dictionary for each upvar: the parameters of the
+    /// suspended function, which a coroutine that was never resumed still
+    /// holds.
+    ///
+    /// The saved locals of a suspended coroutine need no dictionary here.
+    /// They are dropped by the coroutine's own function.
+    pub(crate) async fn resolve_coroutine_drop_instance(
+        &mut self,
+        required: &TraitRef,
+    ) -> Option<InstanceResolutionResult> {
+        let drop_trait = self.engine().get_core_item(CoreItem::DropTrait).await;
+        if required.args().len() != 1 || required.trait_id() != drop_trait {
+            return None;
+        }
+
+        let coroutine = required.args().interned_iter().next()?;
+        let view = coroutine.as_coroutine_view()?;
+
+        // The upvars come from the signature of the suspended function,
+        // instantiated with the arguments of the coroutine type.
+        let engine = self.engine().clone();
+        let substitution = view.create_subst(&engine).await;
+        let parameters = engine.get_parameter_map(view.def_id()).await;
+        let upvars = parameters
+            .iter()
+            .map(|(_, parameter)| parameter.ty().apply_subst_or_clone(&substitution, &engine))
+            .collect::<Vec<_>>();
+
+        let resolution = self.resolve_element_drop_instances(&upvars, drop_trait).await;
+        Some(resolution.map(|resolved| {
+            let term =
+                Ty::new_coroutine_drop_instance(coroutine.clone(), resolved.instances, &engine);
             ResolvedInstance::new(term, resolved.obligations, resolved.outlives)
         }))
     }
@@ -510,6 +595,9 @@ impl Solver {
     }
 
     pub async fn search_active_goal(&mut self, required: &TraitRef) -> InstanceResolutionResult {
+        // REVIEW: Could we refactor all these five special instance resolution
+        // cases into a dedicated function? also specify that it waits until the
+        // type is fully inferred.
         // This wrapper's contract discards all Drop implementations, including
         // dictionaries that would otherwise be found lexically.
         if let Some(resolved) = self.resolve_core_no_drop_instance(required).await {
@@ -518,8 +606,9 @@ impl Solver {
 
         // Drop for a type with a known constructor is decided by the compiler:
         // `NoDrop` (above), primitives and pointers are no-ops, tuples and
-        // nominal types follow their structure or plan. Closures are resolved
-        // earlier, before the readiness check. These run before
+        // nominal types follow their structure or plan, and coroutines drop
+        // their upvars. Closures are resolved earlier, before the readiness
+        // check. These run before
         // lexical lookup so a `given Drop[int32]` cannot replace the built-in
         // behavior; lexical Drop evidence is only consulted for opaque types
         // such as type variables and unreduced associated types.
@@ -530,6 +619,9 @@ impl Solver {
             return resolution;
         }
         if let Some(resolution) = self.resolve_nominal_drop_instance(required).await {
+            return resolution;
+        }
+        if let Some(resolution) = self.resolve_coroutine_drop_instance(required).await {
             return resolution;
         }
 

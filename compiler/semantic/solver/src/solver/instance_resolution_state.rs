@@ -214,11 +214,19 @@ impl Solver {
         // Nominal closures determine their Def dictionary without searching or
         // waiting for the signature and captures to finish inference. Their
         // Drop dictionary likewise waits only on the captures.
+
+        // REVIEW: Could we also package these three special instance resolution
+        // cases into a separate function? also specify that it doesn't wait
+        // until the type is fully inferred.
         if let Some(resolved) = self.resolve_closure_instance(&required).await {
             return Ok(resolved);
         }
         if let Some(resolution) = self.resolve_closure_drop_instance(&required).await {
             return resolution;
+        }
+        // A coroutine type determines its `Coroutine` dictionary the same way.
+        if let Some(resolved) = self.resolve_coroutine_instance(&required).await {
+            return Ok(resolved);
         }
         // Lifetimes never decide which instance is selected.
         if required.contains_non_lifetime_inference() {
