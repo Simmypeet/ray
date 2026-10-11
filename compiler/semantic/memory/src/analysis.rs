@@ -151,6 +151,7 @@ async fn analyze_function(
                         | IRExprKind::Tuple(_)
                         | IRExprKind::RefToPointer(_)
                         | IRExprKind::Closure(_)
+                        | IRExprKind::Coroutine(_)
                         | IRExprKind::Handle(_)
                         | IRExprKind::StructInitialization(_) => {}
                     }

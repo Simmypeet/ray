@@ -317,6 +317,9 @@ impl<'a> StackStateProblem<'a> {
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
+                | ApplicationView::Coroutine(_)
+                | ApplicationView::CoroutineInstance(_)
+                | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Error,
                 Projection::Tuple(_) | Projection::Field(_),

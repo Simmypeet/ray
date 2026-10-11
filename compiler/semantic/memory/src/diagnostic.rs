@@ -120,16 +120,23 @@ async fn unresolved_scope_drop_report(
         InstanceResolutionError::Limit { .. } => "instance resolution limit exceeded",
     };
 
-    let name = engine.get_qualified_name(diagnostic.trait_ref.trait_id()).await;
+    // The `Drop` dictionary of a coroutine is assembled from one dictionary
+    // per argument, and the coroutine type cannot be written in source. The
+    // argument that cannot be dropped is what the programmer can act on.
+    let drops_coroutine = diagnostic.drops_coroutine();
+    let trait_ref = match diagnostic.error.failed_requirement() {
+        Some(failed) if drops_coroutine => failed,
+        Some(_) | None => &diagnostic.trait_ref,
+    };
+
+    let name = engine.get_qualified_name(trait_ref.trait_id()).await;
     let mut args = Vec::new();
-    for arg in diagnostic.trait_ref.args().iter() {
+    for arg in trait_ref.args().iter() {
         args.push(arg.display(engine).await.to_string());
     }
 
     let help = match &diagnostic.error {
-        InstanceResolutionError::NoInstance { .. } => {
-            linear_drop_help(engine, &diagnostic.trait_ref).await
-        }
+        InstanceResolutionError::NoInstance { .. } => linear_drop_help(engine, trait_ref).await,
         InstanceResolutionError::NotReady(_)
         | InstanceResolutionError::ContainsError(_)
         | InstanceResolutionError::AmbiguousLexical { .. }
@@ -143,7 +150,11 @@ async fn unresolved_scope_drop_report(
         .primary_highlight(
             Highlight::builder()
                 .span(engine.to_absolute_span(&diagnostic.binding_span).await)
-                .message("this value is dropped when it goes out of scope")
+                .message(if drops_coroutine {
+                    "the arguments of this coroutine are dropped if it is never resumed"
+                } else {
+                    "this value is dropped when it goes out of scope"
+                })
                 .build(),
         )
         .maybe_help_message(help)
@@ -234,6 +245,16 @@ impl UnresolvedScopeDrop {
         error: InstanceResolutionError,
     ) -> Self {
         Self { binding_span, trait_ref, error }
+    }
+
+    /// Returns whether the value that cannot be dropped is the coroutine a
+    /// `coro` stores, rather than a binding declared in source.
+    fn drops_coroutine(&self) -> bool {
+        self.trait_ref
+            .args()
+            .interned_iter()
+            .next()
+            .is_some_and(|dropped| dropped.as_coroutine_view().is_some())
     }
 }
 
