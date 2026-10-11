@@ -1,0 +1,30 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot return a value referencing data owned by the current function
+   ╭▸ compiler/e2e/test/check/coroutine/continuation_escapes/main.ray:16:22
+   │
+16 │     let make = () -> coro numbers()
+   │                      ┯━━━━━━━━━━━━━
+   │                      │
+   │                      this returns a value referencing data owned by the current function
+   ╰╴                     the data is borrowed here
+
+[error]: borrowed value does not live long enough
+   ╭▸ compiler/e2e/test/check/coroutine/continuation_escapes/main.ray:24:13
+   │
+24 │         k = coro numbers()
+   │             ┯━━━━━━━━━━━━━
+   │             │
+   │             borrowed value does not live long enough
+   │             this variable goes out of scope while it is still borrowed
+25 │     keep(k)
+   ╰╴         ─ borrow later used here
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

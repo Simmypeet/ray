@@ -1,0 +1,36 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+@linear
+struct Handle:
+    fd: int32
+
+
+def make() -> Handle:
+    return Handle { fd = 0 }
+
+
+def close(handle: Handle):
+    core.NoDrop { value = move handle }
+
+
+def useHandle(handle: Handle) -> () \ {Yield[int32]}:
+    close(handle)
+    Yield.yield(1)
+
+
+# OK: an ordinary call starts the callee at once, so the argument is never
+# dropped by the caller.
+def called() -> () \ {Yield[int32]}:
+    useHandle(make())
+
+
+# ERROR: a coroutine that is never resumed drops its arguments, and a linear
+# value has no `Drop` instance.
+def suspended():
+    let k = coro useHandle(make())
+
+
+def main() -> int32:
+    return 0

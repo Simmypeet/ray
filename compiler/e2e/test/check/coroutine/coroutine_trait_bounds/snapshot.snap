@@ -1,0 +1,40 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: where-clause obligation for `main.asker` is not satisfied
+   ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:46:5
+   │
+46 │     asker(coro numbers())
+   ╰╴    ━━━━━ `CoroutineInstance[&mut <coroutine of numbers>].Effect` must equal `{Ask}`
+
+[error]: where-clause obligation for `main.asker` is not satisfied
+   ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:46:5
+   │
+46 │     asker(coro numbers())
+   ╰╴    ━━━━━ `CoroutineInstance[&mut <coroutine of numbers>].Return` must equal `int32`
+
+[error]: where-clause obligation for `main.generator` is not satisfied
+   ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:51:5
+   │
+51 │     generator(coro addTwo())
+   ╰╴    ━━━━━━━━━ `CoroutineInstance[&mut <coroutine of addTwo>].Effect` must equal `{Yield[int32]}`
+
+[error]: where-clause obligation for `main.generator` is not satisfied
+   ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:51:5
+   │
+51 │     generator(coro addTwo())
+   ╰╴    ━━━━━━━━━ `CoroutineInstance[&mut <coroutine of addTwo>].Return` must equal `()`
+
+[error]: no implicit instance found: `core.Coroutine[int32]`
+   ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:60:5
+   │
+60 │     notCoroutine(1)
+   ╰╴    ━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

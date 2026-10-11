@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: no implicit instance found: `core.Drop[t]`
+   ╭▸ compiler/e2e/test/check/coroutine/coro_argument_missing_drop/main.ray:12:13
+   │
+12 │     let k = coro hold(value)
+   ╰╴            ━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

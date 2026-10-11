@@ -1,0 +1,32 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+def keep(k: core.Continuation[r, c]) given (_: core.Drop[c]):
+    let held = k
+
+
+# OK: the storage belongs to the body of the loop, so it is dropped at the end
+# of every iteration and created again by the next one.
+def everyIteration(mut count: int32):
+    while count != 0:
+        let k = coro numbers()
+        keep(k)
+        count = count - 1
+
+
+# OK: a continuation that is not passed on is dropped before its storage.
+def droppedInBody(mut count: int32):
+    while count != 0:
+        let k = coro numbers()
+        count = count - 1
+
+
+def main() -> int32:
+    everyIteration(2)
+    droppedInBody(2)
+    return 0

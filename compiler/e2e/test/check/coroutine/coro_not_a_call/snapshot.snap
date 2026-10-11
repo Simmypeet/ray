@@ -1,0 +1,58 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: `coro` expects a call
+   ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:18:10
+   │
+18 │     coro x
+   │          ━ this is not a call
+   │
+   ╰ help: write `coro f(arguments)` to suspend the call of `f` before it runs
+
+[error]: `coro` expects a call
+   ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:23:9
+   │
+23 │     coro (numbers())
+   │         ━━━━━━━━━━━━ this is not a call
+   │
+   ╰ help: write `coro f(arguments)` to suspend the call of `f` before it runs
+
+[error]: `coro` is not supported on this call yet
+   ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:28:10
+   │
+28 │     coro Yield.yield(1)
+   │          ━━━━━━━━━━━━━━ a coroutine cannot be created from this call
+   │
+   ╰ help: only a direct call of a `def` can be suspended for now
+
+[error]: `coro` is not supported on this call yet
+   ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:33:10
+   │
+33 │     coro abs(1)
+   │          ━━━━━━ a coroutine cannot be created from this call
+   │
+   ╰ help: only a direct call of a `def` can be suspended for now
+
+[error]: `coro` is not supported on this call yet
+   ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:38:10
+   │
+38 │     coro s.next(source)
+   │          ━━━━━━━━━━━━━━ a coroutine cannot be created from this call
+   │
+   ╰ help: only a direct call of a `def` can be suspended for now
+
+[error]: `coro` is not supported on this call yet
+   ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:43:10
+   │
+43 │     coro numbers()
+   │          ━━━━━━━━━ a coroutine cannot be created from this call
+   │
+   ╰ help: only a direct call of a `def` can be suspended for now
+
+[error]: Compilation aborted due to 6 error(s)
+
+
+
+stdout:

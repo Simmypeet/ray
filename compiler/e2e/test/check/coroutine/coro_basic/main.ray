@@ -1,0 +1,47 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+    Yield.yield(2)
+
+
+def countTo(limit: int32) -> int32 \ {Yield[int32]}:
+    Yield.yield(limit)
+    return limit
+
+
+def echo[t](value: t) given (_: core.Drop[t]) -> t \ {Yield[int32]}:
+    Yield.yield(1)
+    return value
+
+
+def pure(value: int32) -> int32:
+    return value
+
+
+def keep(k: core.Continuation[r, c]) given (_: core.Drop[c]):
+    let held = k
+
+
+# OK: `coro` runs none of the callee, so `main` performs no effect.
+def main() -> int32:
+    # A continuation can be kept in a local, moved and passed down.
+    let k = coro numbers()
+    let moved = k
+    keep(moved)
+
+    # The arguments are evaluated and stored in the coroutine.
+    let counting = coro countTo(pure(3))
+
+    # A polymorphic function has one coroutine type per instantiation.
+    let ints = coro echo(1)
+    let bools = coro echo(true)
+
+    # A function without an effect can be suspended too.
+    let plain = coro pure(1)
+
+    # A continuation that is never bound is dropped with its statement.
+    coro numbers()
+    return 0

@@ -1,0 +1,39 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+def keep(k: core.Continuation[r, c]) given (_: core.Drop[c]):
+    let held = k
+
+
+def requireCopy(value: a) given (_: core.Drop[a]) where (a: core.Copy):
+    pass
+
+
+def requireCopyCoroutine(k: core.Continuation[r, &'a mut c]) where (c: core.Copy, c: 'a):
+    pass
+
+
+# ERROR: a continuation is one-shot, so using it moves it.
+def usedTwice():
+    let k = coro numbers()
+    keep(k)
+    keep(k)
+
+
+# ERROR: a continuation is never `Copy`.
+def continuationIsNotCopy():
+    requireCopy(coro numbers())
+
+
+# ERROR: a coroutine type is never `Copy`.
+def coroutineIsNotCopy():
+    requireCopyCoroutine(coro numbers())
+
+
+def main() -> int32:
+    return 0

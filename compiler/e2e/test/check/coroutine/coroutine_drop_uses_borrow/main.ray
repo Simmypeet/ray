@@ -1,0 +1,39 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def read(p: &'a int32) -> () \ {Yield[int32]}:
+    Yield.yield(p.*)
+
+
+def ignore(p: &'a int32) -> int32:
+    return 0
+
+
+# ERROR: the coroutine is dropped at the end of `owner`, and that drop may use
+# the borrow of `x`: a saved local of `read` may read through `p` when it is
+# dropped.
+def owner():
+    let mut x = 1
+    let k = coro read(x.&)
+    x = 2
+
+
+# OK: the storage of the coroutine ends with the block, before the assignment.
+def ownerOfBlock():
+    let mut x = 1
+    if true:
+        let k = coro read(x.&)
+    x = 2
+
+
+# OK: a closure that borrows `x` and is not used again holds no loan, because
+# dropping a reference uses nothing.
+def closureOwner():
+    let mut x = 1
+    let k = () -> ignore(x.&)
+    x = 2
+
+
+def main() -> int32:
+    return 0

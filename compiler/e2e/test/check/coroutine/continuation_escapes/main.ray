@@ -1,0 +1,36 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+def keep(k: core.Continuation[r, c]) given (_: core.Drop[c]):
+    let held = k
+
+
+# ERROR: the coroutine is pinned to storage local to the lambda, and the
+# continuation that is returned refers to it.
+def returned():
+    let make = () -> coro numbers()
+
+
+# ERROR: the storage of the second coroutine ends with the block, while `k`
+# still refers to it afterwards.
+def outlivesBlock(condition: bool):
+    let mut k = coro numbers()
+    if condition:
+        k = coro numbers()
+    keep(k)
+
+
+# OK: the continuation never leaves the block that owns the storage.
+def staysInBlock(condition: bool):
+    if condition:
+        let k = coro numbers()
+        keep(k)
+
+
+def main() -> int32:
+    return 0

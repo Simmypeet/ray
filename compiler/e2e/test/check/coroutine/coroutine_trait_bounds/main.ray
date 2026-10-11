@@ -1,0 +1,64 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+def addTwo() -> int32 \ {Ask}:
+    return Ask.ask() + Ask.ask()
+
+
+def generator(k: core.Continuation[r, c]) given (co: core.Coroutine[c], _: core.Drop[c]) where (
+    co.Return = (),
+    co.Effect = {Yield[int32]},
+):
+    let held = k
+
+
+def asker(k: core.Continuation[r, c]) given (co: core.Coroutine[c], _: core.Drop[c]) where (
+    co.Return = int32,
+    co.Effect = {Ask},
+):
+    let held = k
+
+
+# The associated types of a coroutine type come from the signature of the
+# function it suspends.
+def resultOf(k: core.Continuation[r, c]) given (co: core.Coroutine[c], _: core.Drop[c]) -> co.Return:
+    return resultOf(k)
+
+
+# OK: the bounds match the signatures.
+def accepted():
+    generator(coro numbers())
+    asker(coro addTwo())
+    let sum: int32 = resultOf(coro addTwo())
+
+
+# ERROR: `numbers` returns `()`, not `int32`.
+def wrongReturn():
+    asker(coro numbers())
+
+
+# ERROR: `addTwo` performs `Ask`, not `Yield[int32]`.
+def wrongEffect():
+    generator(coro addTwo())
+
+
+# ERROR: only a coroutine type, or a `&mut` to one, has an instance.
+def notCoroutine(value: int32) given (co: core.Coroutine[int32]):
+    pass
+
+
+def useNotCoroutine():
+    notCoroutine(1)
+
+
+def main() -> int32:
+    return 0

@@ -1,0 +1,22 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def hold[t](value: t) -> t \ {Yield[int32]}:
+    return value
+
+
+# ERROR: a coroutine that is never resumed drops its arguments, and nothing
+# says how to drop a `t`.
+def missing[t](value: t):
+    let k = coro hold(value)
+
+
+# OK: the given tells how to drop the argument.
+def provided[t](value: t) given (_: core.Drop[t]):
+    let k = coro hold(value)
+
+
+def main() -> int32:
+    provided(1)
+    return 0

@@ -1,0 +1,30 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: use of moved value
+   ╭▸ compiler/e2e/test/check/coroutine/continuation_not_copy/main.ray:25:10
+   │
+24 │     keep(k)
+   │          ─ value moved here
+25 │     keep(k)
+   ╰╴         ━ value used here after it was moved
+
+[error]: where-clause obligation for `main.requireCopy` is not satisfied
+   ╭▸ compiler/e2e/test/check/coroutine/continuation_not_copy/main.ray:30:5
+   │
+30 │     requireCopy(coro numbers())
+   ╰╴    ━━━━━━━━━━━ `Continuation[(), &mut <coroutine of numbers>]` must satisfy marker `core.Copy`
+
+[error]: where-clause obligation for `main.requireCopyCoroutine` is not satisfied
+   ╭▸ compiler/e2e/test/check/coroutine/continuation_not_copy/main.ray:35:5
+   │
+35 │     requireCopyCoroutine(coro numbers())
+   ╰╴    ━━━━━━━━━━━━━━━━━━━━ `<coroutine of numbers>` must satisfy marker `core.Copy`
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:
