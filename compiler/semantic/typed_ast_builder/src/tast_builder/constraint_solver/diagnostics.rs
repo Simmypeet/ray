@@ -124,6 +124,17 @@ impl ConstraintSolver {
                                 trait_ref.clone(),
                             ))
                         });
+
+                    // A requirement on an erroneous type follows from an
+                    // error that was reported where the type came from.
+                    // REVIEW: What's this for?
+                    if matches!(
+                        error,
+                        ConstraintError::InstanceResolve(InstanceResolutionError::ContainsError(_))
+                    ) {
+                        continue;
+                    }
+
                     diags.push(
                         crate::diagnostic::InstanceResolution::builder()
                             .span(span)

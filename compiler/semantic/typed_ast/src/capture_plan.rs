@@ -377,6 +377,20 @@ impl<O: CopyOracle> Analyzer<'_, O> {
                 self.visit_nested_function(function_id, functions, lambda.function_id(), plan)
                     .await;
             }
+
+            // The coroutine takes its arguments as a call does.
+            TypedExprKind::Coro(coro) => {
+                for argument in coro.arguments() {
+                    self.visit_expression(
+                        function_id,
+                        functions,
+                        *argument,
+                        UseMode::new_value_implicit(),
+                        plan,
+                    )
+                    .await;
+                }
+            }
             TypedExprKind::Binary(binary) => {
                 self.visit_binary(function_id, functions, *binary, plan).await;
             }

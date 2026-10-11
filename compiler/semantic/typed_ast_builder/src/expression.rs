@@ -5,6 +5,7 @@ use crate::{bind::Bind, tast_builder::TAstBuilder};
 
 pub mod binary;
 pub mod call;
+pub mod coro;
 pub mod identifier;
 pub mod if_else;
 pub mod lambda;

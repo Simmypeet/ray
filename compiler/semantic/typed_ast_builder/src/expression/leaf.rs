@@ -7,6 +7,7 @@ impl Bind<Leaf> for TAstBuilder {
     async fn bind(&mut self, syn: Leaf) -> TypedExprID {
         match syn {
             Leaf::Move(move_expr) => self.bind(move_expr).await,
+            Leaf::Coro(coro) => self.bind(coro).await,
             Leaf::StructInitialization(initialization) => self.bind(initialization).await,
             Leaf::DirectCall(call) => self.bind(call).await,
             Leaf::Identifier(token) => self.bind(token).await,

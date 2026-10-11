@@ -60,6 +60,58 @@ impl Report for SymbolNotCallable {
     }
 }
 
+/// The operand of a `coro` is not a call, so there is nothing to suspend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct CoroOperandNotCall {
+    /// The operand of the `coro`.
+    span: RelativeSpan,
+}
+
+impl CoroOperandNotCall {
+    pub(crate) const fn new(span: RelativeSpan) -> Self { Self { span } }
+}
+
+impl Report for CoroOperandNotCall {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("`coro` expects a call")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("this is not a call")
+                    .build(),
+            )
+            .help_message("write `coro f(arguments)` to suspend the call of `f` before it runs")
+            .build()
+    }
+}
+
+/// The operand of a `coro` is a call whose callee cannot be suspended yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct UnsupportedCoroCallee {
+    /// The call the `coro` is applied to.
+    span: RelativeSpan,
+}
+
+impl UnsupportedCoroCallee {
+    pub(crate) const fn new(span: RelativeSpan) -> Self { Self { span } }
+}
+
+impl Report for UnsupportedCoroCallee {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("`coro` is not supported on this call yet")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("a coroutine cannot be created from this call")
+                    .build(),
+            )
+            .help_message("only a direct call of a `def` can be suspended for now")
+            .build()
+    }
+}
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
 )]
@@ -1007,6 +1059,8 @@ pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
     UnboundName(UnboundName),
     SymbolNotCallable(SymbolNotCallable),
+    CoroOperandNotCall(CoroOperandNotCall),
+    UnsupportedCoroCallee(UnsupportedCoroCallee),
     MismatchedArgumentCount(MismatchedArgumentCount),
     MismatchedIndirectArgumentCount(MismatchedIndirectArgumentCount),
     TypeMustBeKnownAtThisPoint(TypeMustBeKnownAtThisPoint),
@@ -1047,6 +1101,8 @@ impl Report for Diagnostic {
             Self::SymbolNotCallable(symbol_not_callable) => {
                 symbol_not_callable.report(engine).await
             }
+            Self::CoroOperandNotCall(diagnostic) => diagnostic.report(engine).await,
+            Self::UnsupportedCoroCallee(diagnostic) => diagnostic.report(engine).await,
             Self::MismatchedArgumentCount(mismatched_argument_count) => {
                 mismatched_argument_count.report(engine).await
             }

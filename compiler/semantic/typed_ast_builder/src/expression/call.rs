@@ -27,6 +27,17 @@ use crate::{
     tast_builder::TAstBuilder,
 };
 
+/// What the call of a path is built into.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Invocation {
+    /// An ordinary call, which runs the callee.
+    Call,
+
+    /// The operand of the `coro` at `span`, which suspends the callee before
+    /// it runs.
+    Coroutine { span: RelativeSpan },
+}
+
 enum ResolvedCallTarget<'a> {
     Direct {
         function_id: GlobalSymbolID,
@@ -53,6 +64,24 @@ impl ResolvedCallTarget<'_> {
             Self::Direct { function_id, .. } => *function_id,
             Self::UnresolvedInstanceAssociated { trait_def_id, .. } => *trait_def_id,
             Self::EffectOperation { operation_id, .. } => *operation_id,
+        }
+    }
+
+    /// Returns the called function when a `coro` can suspend it: a direct
+    /// call of a `def` that has a body.
+    ///
+    /// A call through an instance has no known callee yet, an operation is
+    /// run by whoever handles it, and an `extern def` has no body to suspend.
+    const fn suspendable_function_id(&self) -> Option<GlobalSymbolID> {
+        match self {
+            Self::Direct { function_id, symbol_kind } => {
+                if matches!(symbol_kind, SymbolKind::Def | SymbolKind::InstanceDef) {
+                    Some(*function_id)
+                } else {
+                    None
+                }
+            }
+            Self::UnresolvedInstanceAssociated { .. } | Self::EffectOperation { .. } => None,
         }
     }
 
@@ -147,28 +176,18 @@ impl TAstBuilder {
         arguments
     }
 
-    async fn build_path_direct_call(&mut self, syn: &DirectCallSyn) -> TypedExprID {
-        let Some(path) = syn.path() else {
-            return self.push_error_expression(syn.span()).await;
-        };
-        let Some(call) = syn.call() else {
-            return self.push_error_expression(syn.span()).await;
-        };
-
-        if let Some(identifier) = path.bare_identifier()
-            && self.lookup_name_binding(&identifier.kind.0).is_some()
-        {
-            let callee = self.bind(identifier).await;
-            return self.build_lambda_call(callee, &call).await;
-        }
-
-        let arguments = self.bind_call_arguments(&call).await;
-        let Ok(resolution) = self.resolve_path(&path).await else {
-            return self
-                .push_error_expression_with_expression_children(syn.span(), arguments)
-                .await;
-        };
-        let (target, call_subst) = match &resolution {
+    /// Returns what the call of the path resolved to `resolution` invokes,
+    /// with the substitution that instantiates the type parameters of the
+    /// called symbol alone.
+    ///
+    /// Returns `None` when the symbol cannot be called, which is reported at
+    /// `path_span`.
+    async fn resolve_call_target<'a>(
+        &mut self,
+        resolution: &'a PathResolution,
+        path_span: RelativeSpan,
+    ) -> Option<(ResolvedCallTarget<'a>, Subst)> {
+        let target = match resolution {
             PathResolution::Def(def) => (
                 ResolvedCallTarget::Direct {
                     function_id: def.symbol_id(),
@@ -195,7 +214,7 @@ impl TAstBuilder {
             {
                 let (instance, trait_ref) = match def.parent() {
                     TraitMemberParent::Named(trait_ref) => {
-                        (self.infer_trait_instance(trait_ref, path.span()).await, trait_ref.clone())
+                        (self.infer_trait_instance(trait_ref, path_span).await, trait_ref.clone())
                     }
                     TraitMemberParent::This(instance) => (
                         self.engine().intern(Ty::SelfInstance(*instance)),
@@ -240,15 +259,99 @@ impl TAstBuilder {
             }
             resolution => {
                 if let Some(symbol_id) = resolution.global_id() {
-                    self.push_symbol_not_callable(symbol_id, path.span());
+                    self.push_symbol_not_callable(symbol_id, path_span);
                 }
-                return self
-                    .push_error_expression_with_expression_children(syn.span(), arguments)
-                    .await;
+                return None;
             }
         };
 
-        self.build_resolved_direct_call(target, arguments, call_subst, syn.span(), None).await
+        Some(target)
+    }
+
+    /// Binds the call of a path as `invocation`: an ordinary call, or the
+    /// coroutine that a `coro` creates from it.
+    pub(super) async fn build_path_direct_call(
+        &mut self,
+        syn: &DirectCallSyn,
+        invocation: Invocation,
+    ) -> TypedExprID {
+        let Some(path) = syn.path() else {
+            return self.push_error_expression(syn.span()).await;
+        };
+        let Some(call) = syn.call() else {
+            return self.push_error_expression(syn.span()).await;
+        };
+
+        if let Some(identifier) = path.bare_identifier()
+            && self.lookup_name_binding(&identifier.kind.0).is_some()
+        {
+            return match invocation {
+                Invocation::Call => {
+                    let callee = self.bind(identifier).await;
+                    self.build_lambda_call(callee, &call).await
+                }
+
+                // TODO: A coroutine cannot be created from a callable value yet.
+                Invocation::Coroutine { span } => {
+                    self.reject_coro_operand(syn.span(), true, [], span).await
+                }
+            };
+        }
+
+        let arguments = self.bind_call_arguments(&call).await;
+        let Ok(resolution) = self.resolve_path(&path).await else {
+            return self
+                .push_error_expression_with_expression_children(syn.span(), arguments)
+                .await;
+        };
+        let Some((target, call_subst)) = self.resolve_call_target(&resolution, path.span()).await
+        else {
+            return self
+                .push_error_expression_with_expression_children(syn.span(), arguments)
+                .await;
+        };
+
+        match invocation {
+            Invocation::Call => {
+                self.build_resolved_direct_call(target, arguments, call_subst, syn.span(), None)
+                    .await
+            }
+            Invocation::Coroutine { span } => {
+                self.build_resolved_coro(target, arguments, call_subst, syn.span(), span).await
+            }
+        }
+    }
+
+    /// Builds the coroutine of `coro target(arguments)`, where `call_subst`
+    /// instantiates the type parameters of the called symbol alone.
+    ///
+    /// `call_span` is the call and `span` is the whole `coro`.
+    async fn build_resolved_coro(
+        &mut self,
+        target: ResolvedCallTarget<'_>,
+        mut arguments: Vec<TypedExprID>,
+        call_subst: Subst,
+        call_span: RelativeSpan,
+        span: RelativeSpan,
+    ) -> TypedExprID {
+        // Only a function with a body of its own can be suspended so far.
+        let Some(function_id) = target.suspendable_function_id() else {
+            return self.reject_coro_operand(call_span, true, arguments, span).await;
+        };
+
+        // The arguments are stored in the coroutine as a call would pass
+        // them, so they are checked against the parameters the same way.
+        let signature_subst = target.signature_subst(&call_subst, self.engine()).await;
+        self.check_resolved_call_arguments(
+            &target,
+            &mut arguments,
+            &signature_subst,
+            call_span,
+            None,
+        )
+        .await;
+
+        self.build_coro(function_id, arguments, &call_subst, span).await
     }
 
     /// Builds the call of `target` with `arguments`, where `call_subst`
@@ -443,6 +546,6 @@ impl TAstBuilder {
 
 impl Bind<DirectCallSyn> for TAstBuilder {
     async fn bind(&mut self, syn: DirectCallSyn) -> TypedExprID {
-        self.build_path_direct_call(&syn).await
+        self.build_path_direct_call(&syn, Invocation::Call).await
     }
 }
