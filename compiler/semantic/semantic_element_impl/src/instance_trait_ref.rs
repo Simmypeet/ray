@@ -347,6 +347,9 @@ fn classify_drop_head(ty: &Ty) -> DropHead {
             | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
+            | ApplicationView::Coroutine(_)
+            | ApplicationView::CoroutineInstance(_)
+            | ApplicationView::CoroutineDropInstance(_)
             | ApplicationView::NominalDropInstance(_) => {
                 DropHead::NonNominal(NonNominalDropHeadKind::Other)
             }
