@@ -1,9 +1,10 @@
-//! The constraints of invoking a signature: calls and `perform`s.
+//! The constraints of invoking a signature: calls and `perform`s, and the
+//! coroutines that suspend a call.
 
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     cfg::Point,
-    ir_expr::{IRExprID, call::Call, perform::Perform},
+    ir_expr::{IRExprID, call::Call, coroutine::Coroutine, perform::Perform},
 };
 use rayc_semantic_element::{
     effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
@@ -65,6 +66,31 @@ impl ConstraintCollector<'_> {
         self.collect_introduced_effect(point, &effect).await;
     }
 
+    /// Collects the constraints of `coroutine`, whose value has the coroutine
+    /// type `ty`: those of passing its arguments to the function it suspends,
+    /// whose signature the arguments of `ty` instantiate.
+    ///
+    /// Nothing of the function runs yet, so no value is returned and no
+    /// effect is performed here.
+    pub(super) async fn collect_coroutine(
+        &mut self,
+        point: Point,
+        coroutine: &Coroutine,
+        ty: &Interned<Ty>,
+    ) {
+        let view = ty.as_coroutine_view().expect("a `Coroutine` expression has a coroutine type");
+        let function_id = view.def_id();
+        let substitution = view.create_subst(self.solver.engine()).await;
+
+        self.collect_arguments(point, function_id, &substitution, coroutine.arguments()).await;
+
+        // The function assumes its where clause and the trait references of
+        // its instance parameters once it is resumed, so they must hold for
+        // the coroutine to exist.
+        self.collect_where_clause(point, function_id, &substitution).await;
+        self.collect_instance_arguments(point, function_id, &substitution).await;
+    }
+
     /// Collects the constraints of running, at `point`, something whose effect
     /// is `introduced`: `introduced <: effect of the function`, which ties the
     /// regions of its arguments to whoever handles that effect.
@@ -86,16 +112,15 @@ impl ConstraintCollector<'_> {
         }
     }
 
-    /// Collects the constraints of invoking the signature of `signature_id`,
-    /// instantiated with `substitution`: `typeof(argument) <: parameter type`
-    /// for each of `arguments`, and `return type <: ty`.
-    pub(super) async fn collect_invocation(
+    /// Collects the constraints of passing `arguments` to the parameters of
+    /// `signature_id`, instantiated with `substitution`: `typeof(argument) <:
+    /// parameter type` for each of them.
+    async fn collect_arguments(
         &mut self,
         point: Point,
         signature_id: GlobalSymbolID,
         substitution: &Subst,
         arguments: &[IRExprID],
-        ty: &Interned<Ty>,
     ) {
         // Each argument is passed to its parameter. A variadic call has more
         // arguments than parameters; the extra ones have no type to relate to.
@@ -107,6 +132,20 @@ impl ConstraintCollector<'_> {
 
             self.relate(point, argument_ty, &parameter_ty, Variance::Covariant).await;
         }
+    }
+
+    /// Collects the constraints of invoking the signature of `signature_id`,
+    /// instantiated with `substitution`: `typeof(argument) <: parameter type`
+    /// for each of `arguments`, and `return type <: ty`.
+    pub(super) async fn collect_invocation(
+        &mut self,
+        point: Point,
+        signature_id: GlobalSymbolID,
+        substitution: &Subst,
+        arguments: &[IRExprID],
+        ty: &Interned<Ty>,
+    ) {
+        self.collect_arguments(point, signature_id, substitution, arguments).await;
 
         // The returned value becomes the value of the call.
         let return_ty = self

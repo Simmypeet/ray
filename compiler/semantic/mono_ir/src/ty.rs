@@ -460,9 +460,14 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
             ApplicationView::InstanceAssociated(_) => {
                 panic!("unresolved associated type reached code generation")
             }
+            ApplicationView::Coroutine(_) => {
+                panic!("coroutine types are not lowered to MonoIR yet")
+            }
             ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
+            | ApplicationView::CoroutineInstance(_)
+            | ApplicationView::CoroutineDropInstance(_)
             | ApplicationView::NominalDropInstance(_)
             | ApplicationView::Instance(_)
             | ApplicationView::DefInstance(_) => {

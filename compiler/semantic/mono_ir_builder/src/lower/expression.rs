@@ -99,6 +99,11 @@ impl Builder<'_> {
             }
 
             IRExprKind::Closure(lambda) => self.lower_closure(context, lambda, expression_id),
+
+            // The coroutine form of a function is not lowered yet.
+            IRExprKind::Coroutine(_) => {
+                panic!("coroutine construction is not lowered to MonoIR yet")
+            }
         }
     }
 

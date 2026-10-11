@@ -406,6 +406,9 @@ impl ConstraintCollector<'_> {
             IRExprKind::Closure(closure) => {
                 self.collect_closure(point, closure, expression.ty()).await;
             }
+            IRExprKind::Coroutine(coroutine) => {
+                self.collect_coroutine(point, coroutine, expression.ty()).await;
+            }
 
             // The incoming values are related where they flow in, not here.
             IRExprKind::Phi(phi) => self.collect_phi(phi, expression.ty()).await,

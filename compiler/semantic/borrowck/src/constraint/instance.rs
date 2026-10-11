@@ -3,7 +3,10 @@
 
 use qbice::storage::intern::Interned;
 use rayc_ir::cfg::Point;
-use rayc_semantic_element::drop_plan::{DropPlan, get_drop_plan};
+use rayc_semantic_element::{
+    drop_plan::{DropPlan, get_drop_plan},
+    parameter::get_parameter_map,
+};
 use rayc_symbol::{
     GlobalSymbolID,
     core_item::{CoreItem, get_core_item},
@@ -173,8 +176,30 @@ impl ConstraintCollector<'_> {
                     }
                 }
 
+                // One `Drop` dictionary per upvar of the coroutine: the
+                // parameters of the function it suspends.
+                ApplicationView::CoroutineDropInstance(view) => {
+                    let coroutine = view
+                        .coroutine()
+                        .as_coroutine_view()
+                        .expect("a coroutine `Drop` instance is built for a coroutine type");
+                    let engine = self.solver.engine().clone();
+                    let substitution = coroutine.create_subst(&engine).await;
+                    let parameters = engine.get_parameter_map(coroutine.def_id()).await;
+
+                    let upvars = parameters.iter().map(|(_, parameter)| {
+                        parameter.ty().apply_subst_or_clone(&substitution, &engine)
+                    });
+
+                    for (upvar, dictionary) in upvars.zip(view.upvar_instances()) {
+                        self.collect_drop_dictionary(point, &upvar, dictionary).await;
+                    }
+                }
+
                 // Built from a type alone.
-                ApplicationView::DefInstance(_) | ApplicationView::NoOpDropInstance(_) => {}
+                ApplicationView::DefInstance(_)
+                | ApplicationView::NoOpDropInstance(_)
+                | ApplicationView::CoroutineInstance(_) => {}
 
                 // Not dictionaries.
                 ApplicationView::Primitive(_)
@@ -184,6 +209,7 @@ impl ConstraintCollector<'_> {
                 | ApplicationView::Struct(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
+                | ApplicationView::Coroutine(_)
                 | ApplicationView::Error => {}
             },
 

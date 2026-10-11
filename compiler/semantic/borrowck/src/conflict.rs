@@ -265,6 +265,7 @@ impl<'a> ConflictChecker<'a> {
             | IRExprKind::Handle(_)
             | IRExprKind::Tuple(_)
             | IRExprKind::Closure(_)
+            | IRExprKind::Coroutine(_)
             | IRExprKind::StructInitialization(_) => {}
         }
     }

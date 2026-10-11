@@ -117,6 +117,9 @@ impl Resolver {
                     MonoNominalDropInstance::new(&dictionary_ty, &self.solver).await,
                 )
             }
+            ApplicationView::CoroutineInstance(_) | ApplicationView::CoroutineDropInstance(_) => {
+                panic!("coroutine dictionaries are not lowered to MonoIR yet")
+            }
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Pointer(_)
@@ -124,6 +127,7 @@ impl Resolver {
             | ApplicationView::Struct(_)
             | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Closure(_)
+            | ApplicationView::Coroutine(_)
             | ApplicationView::Error => {
                 panic!("an instance call should resolve to a type of instance kind")
             }
