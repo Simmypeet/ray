@@ -71,10 +71,29 @@ async fn core_item_executor(key: &Key, engine: &TrackedEngine) -> GlobalSymbolID
                 | CoreItem::DropTrait
                 | CoreItem::DefTrait
                 | CoreItem::Copy
-                | CoreItem::NoDropStruct => {
+                | CoreItem::NoDropStruct
+                | CoreItem::CoroutineTrait
+                | CoreItem::CoroutineReturn
+                | CoreItem::CoroutineEffect
+                | CoreItem::ContinuationStruct => {
                     unreachable!()
                 }
             }
+        }
+
+        CoreItem::CoroutineTrait => {
+            find(engine, key.role, root, "Coroutine", SymbolKind::Trait).await
+        }
+        CoreItem::CoroutineReturn => {
+            let coroutine = find(engine, key.role, root, "Coroutine", SymbolKind::Trait).await;
+            find(engine, key.role, coroutine, "Return", SymbolKind::TraitType).await
+        }
+        CoreItem::CoroutineEffect => {
+            let coroutine = find(engine, key.role, root, "Coroutine", SymbolKind::Trait).await;
+            find(engine, key.role, coroutine, "Effect", SymbolKind::TraitType).await
+        }
+        CoreItem::ContinuationStruct => {
+            find(engine, key.role, root, "Continuation", SymbolKind::Strut).await
         }
         CoreItem::Copy => find(engine, key.role, root, "Copy", SymbolKind::Marker).await,
     }

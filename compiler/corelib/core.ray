@@ -19,3 +19,20 @@ pub trait Drop[t]:
 
 pub struct NoDrop[t]:
     pub value: t
+
+
+# The trait of every coroutine type: the anonymous type of a suspended
+# function. The compiler provides the instance, for a coroutine type `c` and
+# for `&mut c`.
+pub trait Coroutine[c]:
+    # The type the coroutine completes with.
+    pub type Return
+
+    # The effects the coroutine may perform while it runs.
+    pub type Effect: Effect
+
+
+# A suspended coroutine of type `c` that is waiting for a value of type `r`.
+# Only the compiler creates one.
+pub struct Continuation[r, c]:
+    coroutine: c

@@ -15,6 +15,10 @@ pub enum CoreItem {
     DropTrait,
     DropMethod,
     NoDropStruct,
+    CoroutineTrait,
+    CoroutineReturn,
+    CoroutineEffect,
+    ContinuationStruct,
 }
 
 /// Finds an actual, unambiguous core declaration without checking signatures.
