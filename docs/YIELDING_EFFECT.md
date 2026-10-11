@@ -476,7 +476,7 @@ fixed definition, not whatever the lowering happens to do:
 ```ray
 def f() -> () \ {Yield[int32]}:
     let guard = lock()      # not `Send`, and has a `Drop` instance
-    use(&guard)
+    use(guard.&)
     Yield.yield(1)
     # `guard` is not used again, but it is dropped here
 ```
@@ -641,12 +641,13 @@ def f(p: &'a int32) -> () \ {Yield[int32]}:
 
 def owner():
     let mut x = 1
-    let k = coro f(&x)
+    let k = coro f(x.&)
     x = 2       # ERROR: the coroutine is dropped at the end of `owner`,
                 # and that drop may use the borrow of `x`
 ```
 
-A closure that captured `&x` and is not used again would allow `x = 2`,
+A closure that captured `x` by reference and is not used again would allow
+`x = 2`,
 because dropping a reference uses no region. The coroutine might hold a
 saved local with a user-written `Drop` instance that reads through `p`, and
 the owner cannot see whether it does.
@@ -1248,7 +1249,9 @@ when the `run` returns, after the body and the handler have been abandoned.
   off the liveness at these terminators.
 - **Borrow checker.** Abandon edges are ordinary edges and the drops on them
   are ordinary uses. A `coro` is an ordinary borrow. A `Resume` moves the
-  continuation, and each clause is one of its successors.
+  continuation, and each clause is one of its successors. `'this` adds a
+  loan on the edge into a clause, and a check on the edges out of a
+  `perform`; see [yielding local borrows](#yielding-local-borrows).
 - **Verification.** Scopes have to balance on the abandon paths as well.
 - **Lowering to MonoIR.** In direct form a `Suspend` evaluates its
   expression and jumps to `resume`, and the abandon blocks are unreachable
@@ -1285,15 +1288,11 @@ needs a rule:
   when `r: 'a` and `c: 'a`. In the first prototype `c` is a `&mut` to the
   [pinned storage](#pinned-storage), and the lifetime of that reference is
   what keeps the continuation from escaping.
-- **Yielding borrows of the coroutine's own locals.** This cannot be written
-  today, in either form. An operation has no lifetime parameters of its own:
-  a lifetime in its signature is a parameter of the effect, as in
-  `eff Log['a]`, and the label `Log['a]` is part of the signature of the
-  function that performs it. So an operation argument can only carry an
-  external lifetime, or one from an upvar, never a borrow of a local. The
-  first prototype keeps this and needs no new rule. It is more restrictive
-  than necessary; see yielding local borrows under
-  [open questions](#open-questions).
+- **Yielding borrows of the coroutine's own locals.** An operation argument
+  may borrow a local of the function that performs it, through the built-in
+  lifetime `'this`. The handling site has to be kept from using the borrow
+  after the computation continues. See
+  [yielding local borrows](#yielding-local-borrows).
 - **Borrows held across a suspension.** A local that borrows another local of
   the same coroutine, and is still live at a `perform`, makes the coroutine
   self-referential. The first prototype can allow this, because the coroutine
@@ -1305,10 +1304,129 @@ needs a rule:
   yielded arguments and resume values, together with the variance of `r` in
   `Continuation[r, c]`.
 
-The clauses of a `handle` need no rule of their own. They are
-[branches](#clauses-are-branches) of the enclosing function and have no
-captures, so the rules for the handlers of `run ... with` do not apply to
-them.
+The clauses of a `handle` need no rule for captures. They are
+[branches](#clauses-are-branches) of the enclosing function and have none,
+so the rules for the handlers of `run ... with` do not apply to them. Their
+one rule of their own is for `'this`, below.
+
+## Yielding local borrows
+
+Status: proposal, still being researched. Nothing else in this document
+depends on it.
+
+The parameter types of an operation may use one built-in lifetime, `'this`:
+
+```ray
+eff Log:
+    def log(msg: &'this str) -> ()
+```
+
+`'this` is the lifetime of the suspension: it starts at the `perform` and
+ends when the computation continues. It is not declared and nobody chooses
+it. A lifetime parameter of the effect, as in `eff Log['a]`, is fixed by the
+signature of the function that performs; `'this` is new for every `perform`.
+So it can be a borrow of a local:
+
+```ray
+def worker() -> () \ {Log}:
+    let msg = makeMessage()
+    Log.log(msg.&)
+```
+
+It is the lifetime `'a` in the lending form of Rust's coroutine trait,
+`resume(self: Pin<&'a mut Self>) -> Yield<'a>`: what is yielded is borrowed
+from the coroutine until it is resumed again.
+
+`'this` may not appear in the return type of an operation. A result is used
+after the computation continues, and `'this` has ended by then.
+
+### Why not a lifetime parameter on the operation
+
+A declared parameter, as in `def log['a](msg: &'a str)`, is chosen by the
+`perform`, and it can last longer than the suspension. That is what lets an
+operation return a borrow of its argument, as in
+`def get['a](key: &'a k) -> &'a v`. But then whoever handles the operation
+does not know how long `'a` lasts, and needs a second set of rules for
+everything it gives back as `'a`. `'this` has one meaning and needs one
+rule on each side.
+
+What is lost is an operation that returns a borrow of its argument. A
+borrow that has to outlive the operation uses a lifetime parameter of the
+effect, as today.
+
+### At the `perform`
+
+A `perform` is checked like a call, with a fresh region for `'this`. One
+rule is added: **that region may not be live on any edge out of the
+`Suspend`**, neither the resume edge nor the abandon edge.
+
+The arguments themselves end at the `perform`, so this only bites when the
+region is tied to something that lives on. That happens through an
+invariant position, as in `slot: &'this mut &'this str`: the variable behind
+`slot` then has `'this` in its type, and using it after the `perform` is an
+error. This is what makes the handling side simple. Whatever a handler
+stores through an argument, the computation cannot read it afterwards.
+
+The region is live at the `Suspend`, so the loans in it are live for the
+whole suspension. A local that is borrowed this way is a
+[saved local](#compute-the-saved-locals-of-a-coroutine).
+
+### In a `run` handler
+
+The handler is a function, and `'this` is a universal region of it that
+nobody in the function chooses. The lifetime of the handler's environment
+is already such a region, and `'this` is checked the same way: a relation
+the body requires of it is an error, never a requirement of the function
+that creates the handler. The handler returns before the body continues, so
+nothing more is needed.
+
+### In a `handle` clause
+
+In a clause, `'this` is an ordinary fresh region, created on the edge into
+the clause. The arguments are treated as reborrowed through the
+continuation. In the first prototype `k` is a
+`Continuation[q, &'s mut C]`, where `'s` is the lifetime of the borrow of
+the [pinned storage](#pinned-storage). On the edge into the clause, two
+things are added, as for a reborrow `&'this mut *r` of a reference `r`:
+
+- **A loan** of the coroutine behind `k`, with the region `'this`. A move of
+  `k` conflicts with it, so `k` cannot be resumed or stored while something
+  that came from an argument is live.
+- **The constraint `'s: 'this`.** The loan of the storage flows into
+  `'this`, so the storage cannot be dropped or reused while an argument is
+  live.
+
+Both are needed. The constraint alone keeps the storage alive but does not
+stop `k` from being resumed: `k` is the `&'s mut` itself, and keeping `'s`
+alive does not forbid using it. The loan alone stops the resume but lets the
+storage die once `k` is gone.
+
+```ray
+def log(msg, k):
+    print(msg)
+    con = k         # OK: `msg` is not used again
+```
+
+```ray
+def log(msg, k):
+    con = k         # ERROR: `msg` is still in use
+    print(msg)
+```
+
+When `c` is opaque, as in a generic driver that takes a
+`Continuation[r, c]`, there is no `'s` to name. The loan is then of `k`
+itself, and there is no constraint. The storage belongs to a caller and
+outlives the function anyway. The cost is that an argument cannot outlive
+the binding `k` there, even when the continuation is dropped and never
+resumed.
+
+Nothing is needed for what the clause gives back. The type of `k` never
+mentions `'this`, because a return type cannot, so the resume value is
+ordinary. And what the clause stores through an argument cannot be read by
+the computation, by the rule at the `perform`.
+
+A `handle` without a clause for the operation forwards it. The arguments
+never appear in the handling function, so there is nothing to check.
 
 # Open Questions
 
@@ -1339,31 +1457,20 @@ them.
     a `def` clause inside `handle` later.
   - A clause gives the `handle` a value only in the `: expression` form,
     following `if`. That is a proposal, not a decision.
-- **Yielding local borrows.** `Log.log(&msg)` with a local `msg` is rejected
-  today (see [borrow checker impact](#borrow-checker-impact)), although
-  under a `run` it would be safe. Allowing it needs a lifetime that is
-  chosen by each `perform`. There are two spellings:
-  - *A lifetime parameter on the operation*: `def log['x](msg: &'x str)`.
-    Rows do not change.
-  - *A higher-ranked label*: `{for['x] Log['x]}`. This also works with the
-    generic effects that exist: `{for['x] Yield[&'x int32]}` makes
-    `Yield[t]` lend. An operation parameter cannot do that, because the
-    effect has to fix the shape of the borrow. The price is binders in rows,
-    and rules for when a higher-ranked label matches an instantiated one.
-
-  Both need the same thing at the handling site, so the operation parameter
-  is the natural first step:
-  - A `run` handler is a function that is generic over `'x`. It cannot keep
-    the borrow, and it returns before the body continues.
-  - In a `handle` clause, `'x` is a fresh lifetime that carries a loan of
-    `k`: the arguments are treated as borrowed from the continuation. Moving
-    `k` while a value with `'x` is live, by resuming it or by storing it as
-    in `con = k`, is then the ordinary "moved while borrowed" error, and an
-    argument cannot outlive `k`. The borrow checker needs no new concept.
-  - An operation that returns `'x`, as in
-    `def get['x](key: &'x k) -> &'x v`, does not fit yet: the value given to
-    `k` is used at the very point that moves `k`, which conflicts with the
-    loan.
+- **Lending through a generic effect.** [`'this`](#yielding-local-borrows)
+  is only available in the declaration of an operation, so the effect fixes
+  the shape of the borrow. `Yield[t]` cannot lend, because `t` is fixed by
+  the signature of the performer. Allowing `'this` in a row, as in
+  `{Yield[&'this int32]}`, would let a generic effect lend: the label then
+  stands for a new lifetime at every `perform`. The handling site needs
+  nothing new for it. The price is in rows: such a label is higher-ranked,
+  and needs rules for when it matches an instantiated one, and for which
+  parameters of an effect may take it, since an operation may not return
+  `'this`.
+- **Borrows returned by an operation.** With `'this`, an operation cannot
+  return a borrow of its argument. A declared lifetime parameter on the
+  operation would allow it, at the price described under
+  [yielding local borrows](#why-not-a-lifetime-parameter-on-the-operation).
 - **Syntax of `handle` and `coro`.** `handle expr1(expr2)` reads as `handle`
   applied to a call. That matches "invoke the continuation, and intercept
   some effects", but the grammar has to say how `expr1` is delimited when it
