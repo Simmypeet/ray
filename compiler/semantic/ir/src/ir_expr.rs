@@ -10,6 +10,7 @@ use crate::{
         binary::Binary,
         call::Call,
         closure::Closure,
+        coroutine::Coroutine,
         handle::{Handle, OperationHandler},
         literal::Literal,
         load::Load,
@@ -30,6 +31,7 @@ use crate::{
 pub mod binary;
 pub mod call;
 pub mod closure;
+pub mod coroutine;
 pub mod handle;
 pub mod literal;
 pub mod load;
@@ -57,6 +59,7 @@ pub enum IRExprKind {
     Handle(Handle),
     Tuple(Tuple),
     Closure(Closure),
+    Coroutine(Coroutine),
     StructInitialization(StructInitialization),
 }
 
@@ -77,6 +80,7 @@ impl IRExprKind {
             | Self::Handle(_)
             | Self::Tuple(_)
             | Self::Closure(_)
+            | Self::Coroutine(_)
             | Self::StructInitialization(_) => None,
         }
     }
@@ -97,6 +101,7 @@ impl IRExprKind {
             | Self::Handle(_)
             | Self::Tuple(_)
             | Self::Closure(_)
+            | Self::Coroutine(_)
             | Self::StructInitialization(_) => None,
         }
     }
@@ -130,6 +135,7 @@ impl IRExprKind {
             | Self::Binary(_)
             | Self::Tuple(_)
             | Self::Closure(_)
+            | Self::Coroutine(_)
             | Self::StructInitialization(_) => false,
         }
     }
@@ -151,6 +157,7 @@ impl IRExprKind {
             | Self::Call(_)
             | Self::Perform(_)
             | Self::Tuple(_)
+            | Self::Coroutine(_)
             | Self::StructInitialization(_) => (&[], &[]),
         };
 
@@ -173,6 +180,7 @@ impl IRExprKind {
             | Self::Call(_)
             | Self::Perform(_)
             | Self::Tuple(_)
+            | Self::Coroutine(_)
             | Self::StructInitialization(_) => (None, &[]),
         };
 
@@ -230,6 +238,7 @@ impl IRExprKind {
             Self::Tuple(tuple) => Iter::Slice(tuple.elements().iter().copied()),
             Self::RefToPointer(coercion) => Iter::Single(std::iter::once(coercion.reference())),
             Self::Closure(closure) => Iter::Slice(closure.captures().iter().copied()),
+            Self::Coroutine(coroutine) => Iter::Slice(coroutine.arguments().iter().copied()),
             Self::Handle(handle) => {
                 Iter::Slices(handle.captures().iter().chain(handle.handler_captures()).copied())
             }
@@ -319,6 +328,7 @@ impl VisitType for IRExprKind {
             | Self::Binary(_)
             | Self::Tuple(_)
             | Self::StructInitialization(_)
+            | Self::Coroutine(_)
             | Self::Closure(_) => {}
         }
     }
@@ -350,6 +360,7 @@ impl VisitTypeMut for IRExpr {
             | IRExprKind::Binary(_)
             | IRExprKind::Tuple(_)
             | IRExprKind::StructInitialization(_)
+            | IRExprKind::Coroutine(_)
             | IRExprKind::Closure(_) => {}
         }
     }
@@ -377,6 +388,7 @@ impl VisitTypeMutAsync for IRExpr {
             | IRExprKind::Binary(_)
             | IRExprKind::Tuple(_)
             | IRExprKind::StructInitialization(_)
+            | IRExprKind::Coroutine(_)
             | IRExprKind::Closure(_) => {}
         }
     }

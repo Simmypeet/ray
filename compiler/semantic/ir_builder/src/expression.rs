@@ -9,6 +9,7 @@ use crate::{builder::Builder, context::LoweringContext};
 mod binary;
 mod call;
 mod closure;
+mod coro;
 mod deref;
 mod errored;
 mod field;
@@ -86,6 +87,9 @@ impl Builder {
             }
             TypedExprKind::Closure(lambda) => {
                 self.lower(context, TypedExprWithID::new(lambda, expression_id)).await
+            }
+            TypedExprKind::Coro(coro) => {
+                self.lower(context, TypedExprWithID::new(coro, expression_id)).await
             }
             TypedExprKind::Binary(binary) => {
                 self.lower(context, TypedExprWithID::new(binary, expression_id)).await

@@ -44,11 +44,20 @@ impl Builder {
             self.enter_scope(ScopeKind::Temporary);
             match statement {
                 Statement::Let(let_statement) => {
+                    // The initializer is lowered before the variable is
+                    // declared. Whatever it declares in the enclosing block,
+                    // such as the storage of a `coro`, is then dropped after
+                    // the variable, which may refer to it.
+                    // QUESTION: Why is this needed? could you elaborate further?
+                    let value = match let_statement.expression() {
+                        Some(expr_id) => Some(self.lower_rvalue_by_id(context, expr_id).await),
+                        None => None,
+                    };
+
                     let typed_id = let_statement.variable_id();
                     let ir_id = self.register_source_variable(context, typed_id);
 
-                    if let Some(expr_id) = let_statement.expression() {
-                        let value = self.lower_rvalue_by_id(context, expr_id).await;
+                    if let Some(value) = value {
                         self.emit_store(self.variable_address(ir_id), value, let_statement.span());
                     }
                 }

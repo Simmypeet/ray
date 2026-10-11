@@ -602,6 +602,22 @@ impl Builder {
         self.ir_functions.create_temporary_in_scope(function_id, scope_id, ty, span)
     }
 
+    /// Declares the hidden variable that stores the coroutine of a `coro`,
+    /// whose type is `ty`.
+    ///
+    /// It belongs to the enclosing block scope, not to the temporary scope of
+    /// the statement. Otherwise the storage of `let k = coro f()` would end
+    /// with the statement, while `k` still refers to it.
+    pub fn create_coroutine_storage(
+        &mut self,
+        ty: Interned<Ty>,
+        span: RelativeSpan,
+    ) -> IRVariableID {
+        let function_id = self.building_function.ir_function_id;
+        let scope_id = self.building_function.scopes.current_lexical();
+        self.ir_functions.create_variable_in_scope(function_id, scope_id, ty, span)
+    }
+
     pub fn register_source_variable(
         &mut self,
         context: &LoweringContext<'_>,

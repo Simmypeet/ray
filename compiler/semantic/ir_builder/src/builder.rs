@@ -49,6 +49,8 @@ impl Builder {
         self.ir_functions.register_closure(closure_id, function_id);
     }
 
+    pub(crate) const fn engine(&self) -> &TrackedEngine { &self.engine }
+
     pub fn error_address(&self) -> Address { Address::new_error(&self.engine) }
 
     pub fn variable_address(&self, id: IRVariableID) -> Address {
