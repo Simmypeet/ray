@@ -9,13 +9,13 @@ use rayc_extend::extend;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::{
     parameter::get_parameter_map,
-    return_type::get_return_type,
     struct_body::{FieldID, get_struct_body},
 };
 use rayc_solver::Solver;
 use rayc_symbol::{GlobalSymbolID, member::get_members};
 use rayc_type::{
     poly_var::build_subst_from_args,
+    signature::get_return_type,
     subst::{MutSubstitutable, Subst, Substitutable},
     ty::{Integer, Mutability, Primitive, Ty, application::View as ApplicationView},
 };

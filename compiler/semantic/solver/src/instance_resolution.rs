@@ -594,34 +594,70 @@ impl Solver {
         }
     }
 
-    pub async fn search_active_goal(&mut self, required: &TraitRef) -> InstanceResolutionResult {
-        // REVIEW: Could we refactor all these five special instance resolution
-        // cases into a dedicated function? also specify that it waits until the
-        // type is fully inferred.
-        // This wrapper's contract discards all Drop implementations, including
-        // dictionaries that would otherwise be found lexically.
+    /// Resolves the `Drop` dictionary that the compiler decides for a type
+    /// with a known constructor: `NoDrop`, primitives and pointers are
+    /// no-ops, tuples and nominal types follow their structure or plan, and
+    /// coroutines drop their upvars.
+    ///
+    /// The requirement must be fully inferred: these run only once the
+    /// active goal passed the readiness check, unlike
+    /// [`Self::resolve_early_built_in_instance`]. They also run before
+    /// lexical lookup, so a `given Drop[int32]` cannot replace the built-in
+    /// behavior; lexical `Drop` evidence is only consulted for opaque types
+    /// such as type variables and unreduced associated types.
+    ///
+    /// Returns `None` when `required` is not such a requirement.
+    async fn resolve_built_in_drop_instance(
+        &mut self,
+        required: &TraitRef,
+    ) -> Option<InstanceResolutionResult> {
+        // The `NoDrop` wrapper's contract discards all Drop implementations,
+        // including dictionaries that would otherwise be found lexically.
         if let Some(resolved) = self.resolve_core_no_drop_instance(required).await {
-            return Ok(resolved);
+            return Some(Ok(resolved));
+        }
+        if let Some(resolved) = self.resolve_no_op_drop_instance(required).await {
+            return Some(Ok(resolved));
         }
 
-        // Drop for a type with a known constructor is decided by the compiler:
-        // `NoDrop` (above), primitives and pointers are no-ops, tuples and
-        // nominal types follow their structure or plan, and coroutines drop
-        // their upvars. Closures are resolved earlier, before the readiness
-        // check. These run before
-        // lexical lookup so a `given Drop[int32]` cannot replace the built-in
-        // behavior; lexical Drop evidence is only consulted for opaque types
-        // such as type variables and unreduced associated types.
-        if let Some(resolved) = self.resolve_no_op_drop_instance(required).await {
-            return Ok(resolved);
-        }
+        // The remaining dictionaries are built from those of their parts.
         if let Some(resolution) = self.resolve_tuple_drop_instance(required).await {
-            return resolution;
+            return Some(resolution);
         }
         if let Some(resolution) = self.resolve_nominal_drop_instance(required).await {
-            return resolution;
+            return Some(resolution);
         }
-        if let Some(resolution) = self.resolve_coroutine_drop_instance(required).await {
+        self.resolve_coroutine_drop_instance(required).await
+    }
+
+    /// Resolves a dictionary that its type alone determines, without
+    /// searching: `Def` and `Drop` of a nominal closure, and `Coroutine` of a
+    /// coroutine type.
+    ///
+    /// These do not wait until the requirement is fully inferred, and run
+    /// before the readiness check. A closure's `Def` dictionary is known
+    /// before its signature and captures finish inference, its `Drop`
+    /// dictionary waits only on the captures, and a coroutine type
+    /// determines its `Coroutine` dictionary the same way.
+    ///
+    /// Returns `None` when `required` is not such a requirement.
+    pub(crate) async fn resolve_early_built_in_instance(
+        &mut self,
+        required: &TraitRef,
+    ) -> Option<InstanceResolutionResult> {
+        if let Some(resolved) = self.resolve_closure_instance(required).await {
+            return Some(Ok(resolved));
+        }
+        if let Some(resolution) = self.resolve_closure_drop_instance(required).await {
+            return Some(resolution);
+        }
+        self.resolve_coroutine_instance(required).await.map(Ok)
+    }
+
+    pub async fn search_active_goal(&mut self, required: &TraitRef) -> InstanceResolutionResult {
+        // The compiler decides `Drop` for every type with a known
+        // constructor, before lexical lookup.
+        if let Some(resolution) = self.resolve_built_in_drop_instance(required).await {
             return resolution;
         }
 

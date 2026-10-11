@@ -51,7 +51,7 @@ async fn single_rendered_executor(
     }
 
     if kind.has_effect_row_annotation() {
-        let effect_row_key = rayc_semantic_element::effect_row::Key { symbol_id };
+        let effect_row_key = rayc_type::signature::EffectRowKey { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(effect_row_key)).await;
         let generated = engine.query(&ObligationKey::new(effect_row_key)).await;
 
@@ -73,7 +73,7 @@ async fn single_rendered_executor(
     }
 
     if kind.has_return_type() {
-        let return_type_key = rayc_semantic_element::return_type::Key { symbol_id };
+        let return_type_key = rayc_type::signature::ReturnTypeKey { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(return_type_key)).await;
         let generated = engine.query(&ObligationKey::new(return_type_key)).await;
 

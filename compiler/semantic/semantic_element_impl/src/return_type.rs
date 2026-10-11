@@ -6,7 +6,7 @@ use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::{lifetime::LifetimeElision, resolver::Resolver};
-use rayc_semantic_element::{parameter::get_parameter_map, return_type::Key};
+use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID,
@@ -15,6 +15,7 @@ use rayc_symbol::{
 };
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
+    signature::ReturnTypeKey,
     ty::{Ty, TyKind},
 };
 
@@ -104,7 +105,7 @@ async fn return_lifetime_elision(
     }
 }
 
-impl Build for Key {
+impl Build for ReturnTypeKey {
     type Diagnostic = Diagnostic;
 
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
@@ -148,4 +149,4 @@ impl Build for Key {
     }
 }
 
-register_build!(Key);
+register_build!(ReturnTypeKey);

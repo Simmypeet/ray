@@ -4,13 +4,13 @@ use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_handler::Storage;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::resolver::Resolver;
-use rayc_semantic_element::effect_row::Key;
 use rayc_symbol::{
     symbol_kind::{SymbolKind, get_symbol_kind},
     syntax::get_effect_row_syntax,
 };
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
+    signature::EffectRowKey,
     ty::{Ty, TyKind},
 };
 
@@ -45,7 +45,7 @@ impl Report for Diagnostic {
     }
 }
 
-impl Build for Key {
+impl Build for EffectRowKey {
     type Diagnostic = Diagnostic;
 
     async fn execute(engine: &TrackedEngine, &Self { symbol_id }: &Self) -> Output<Self> {
@@ -80,4 +80,4 @@ impl Build for Key {
     }
 }
 
-register_build!(Key);
+register_build!(EffectRowKey);

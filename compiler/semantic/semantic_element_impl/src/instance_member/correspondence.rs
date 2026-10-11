@@ -4,11 +4,7 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::{
-    effect_row::get_effect_row,
-    parameter::{ParameterMap, get_parameter_map},
-    return_type::get_return_type,
-};
+use rayc_semantic_element::parameter::{ParameterMap, get_parameter_map};
 use rayc_symbol::{
     GlobalSymbolID,
     parent::get_parent_global,
@@ -17,6 +13,7 @@ use rayc_symbol::{
 };
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarID, PolyVarMap, build_subst_from_args, get_poly_var_map},
+    signature::{get_effect_row, get_return_type},
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{Ty, args::Args, self_instance::SelfInstance},

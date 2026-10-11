@@ -18,8 +18,9 @@ use rayc_ir::{
     ir_function::FunctionID,
     ir_lambda::CaptureMapID,
 };
-use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
+use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_type::{
+    signature::get_return_type,
     subst::{Subst, Substitutable},
     ty::{Ty, application::ClosureView},
     variance::Variance,

@@ -7,9 +7,7 @@ use qbice::{
 };
 use rayc_handler::Storage;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_semantic_element::{
-    effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
-};
+use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_solver::Solver;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
@@ -23,6 +21,7 @@ use rayc_symbol::{
 use rayc_type::{
     instance_member::{InstanceMember, Key},
     poly_var::{GlobalPolyVarID, get_poly_var_map},
+    signature::{get_effect_row, get_return_type},
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{Ty, application::View as ApplicationView},

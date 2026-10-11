@@ -1,9 +1,9 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::effect_row::get_effect_row;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     poly_var::build_subst_from_args,
+    signature::get_effect_row,
     subst::{Subst, Substitutable},
     ty::{Ty, self_instance::SelfInstance},
 };

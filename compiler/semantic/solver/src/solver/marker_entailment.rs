@@ -143,34 +143,43 @@ impl Solver {
         }
     }
 
-    async fn prove_active_marker_goal(&mut self, goal: &MarkerPredicate) -> bool {
-        // REVIEW: Could we refactor all these three special marker cases into
-        // a dedicated function?
+    /// Decides a `Copy` goal whose answer is fixed by the compiler: linear
+    /// structs, coroutine types and references.
+    ///
+    /// Returns `None` when the goal is not one of them, which leaves it to
+    /// the givens, the explicit marker rules and structural inference.
+    async fn prove_built_in_copy_goal(&self, goal: &MarkerPredicate) -> Option<bool> {
+        if goal.marker_id() != self.engine().get_core_item(CoreItem::Copy).await {
+            return None;
+        }
 
         // A linear value must be consumed exactly once, so copying it is never
-        // allowed. Structs containing it are rejected structurally below.
+        // allowed. Structs containing it are rejected structurally.
         if let Some(struct_) = goal.implementor().as_struct_view()
             && self.engine().is_linear_struct(struct_.symbol_id()).await
-            && goal.marker_id() == self.engine().get_core_item(CoreItem::Copy).await
         {
-            return false;
+            return Some(false);
         }
 
         // A coroutine type is never `Copy`, even when a given says so: a copy
         // of a suspended coroutine could be resumed twice, and would still
         // point into the original where a saved local borrows another.
-        if goal.implementor().as_coroutine_view().is_some()
-            && goal.marker_id() == self.engine().get_core_item(CoreItem::Copy).await
-        {
-            return false;
+        if goal.implementor().as_coroutine_view().is_some() {
+            return Some(false);
         }
 
         // `Copy` for references is built in: a shared reference is always
         // `Copy`, and a unique one never is.
-        if let Some(reference) = goal.implementor().as_reference_view()
-            && goal.marker_id() == self.engine().get_core_item(CoreItem::Copy).await
-        {
-            return reference.mutability() == Mutability::Immutable;
+        goal.implementor()
+            .as_reference_view()
+            .map(|reference| reference.mutability() == Mutability::Immutable)
+    }
+
+    async fn prove_active_marker_goal(&mut self, goal: &MarkerPredicate) -> bool {
+        // The compiler decides these goals itself, before any given is
+        // consulted, so a given cannot override them.
+        if let Some(result) = self.prove_built_in_copy_goal(goal).await {
+            return result;
         }
 
         // A matching visible predicate is a leaf proof. Equality is checked

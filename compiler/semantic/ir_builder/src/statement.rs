@@ -45,10 +45,13 @@ impl Builder {
             match statement {
                 Statement::Let(let_statement) => {
                     // The initializer is lowered before the variable is
-                    // declared. Whatever it declares in the enclosing block,
-                    // such as the storage of a `coro`, is then dropped after
-                    // the variable, which may refer to it.
-                    // QUESTION: Why is this needed? could you elaborate further?
+                    // declared, because a scope drops its variables in the
+                    // reverse order of their declaration. An initializer may
+                    // declare storage in the enclosing block that the
+                    // variable then borrows: `let k = coro f()` declares the
+                    // hidden coroutine, and `k` holds a `&mut` to it. That
+                    // storage has to be declared first so that it is dropped
+                    // after `k`, whose own drop still uses the borrow.
                     let value = match let_statement.expression() {
                         Some(expr_id) => Some(self.lower_rvalue_by_id(context, expr_id).await),
                         None => None,

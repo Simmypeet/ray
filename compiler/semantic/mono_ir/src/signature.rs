@@ -12,14 +12,13 @@ use qbice::{
     storage::intern::Interned,
 };
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_semantic_element::{
-    effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
-};
+use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_solver::Solver;
 use rayc_symbol::{
     symbol_kind::{SymbolKind, get_symbol_kind},
     syntax::is_variadic_def,
 };
+use rayc_type::signature::{get_effect_row, get_return_type};
 
 use crate::{
     MonoDefInstance, MonoEffectInstance,

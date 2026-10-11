@@ -14,13 +14,10 @@ use rayc_mono_ir::{
     },
 };
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::{
-    parameter::{ParameterMap, get_parameter_map},
-    return_type::get_return_type,
-};
+use rayc_semantic_element::parameter::{ParameterMap, get_parameter_map};
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{subst::Subst, ty::Ty};
+use rayc_type::{signature::get_return_type, subst::Subst, ty::Ty};
 
 use crate::{
     builder::Builder,

@@ -3,7 +3,7 @@ use std::{collections::hash_map::Entry, ops::Not};
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
-use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
+use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID, SymbolID,
@@ -12,6 +12,7 @@ use rayc_symbol::{
 use rayc_syntax::expression::RunWith as RunWithSyntax;
 use rayc_target::TargetID;
 use rayc_type::{
+    signature::get_return_type,
     subst::Substitutable,
     ty::{Ty, effect_row::EffectLabel},
 };

@@ -84,16 +84,15 @@ impl TAstBuilder {
         span: RelativeSpan,
     ) -> TypedExprID {
         // The coroutine type is the function and its polymorphic arguments.
-        // A parameter that the call does not instantiate is one of an
-        // enclosing symbol that the current function shares.
+        // The substitution of a suspendable callee covers all of them: a
+        // `def` is enclosed by no polymorphic symbol, and the substitution
+        // of an instance's `def` includes the arguments of the instance.
         let poly_vars = self.engine().get_enclosing_poly_var_maps(function_id).await;
         let poly_args = poly_vars.all_poly_vars().map(|poly_var_id| {
             call_subst
                 .get(&poly_var_id)
                 .cloned()
-                // REVIEW: Is it possible to not have a substitution for a poly var?
-                // if not, let's make this a panic instead of silently creating a new poly var.
-                .unwrap_or_else(|| Ty::new_poly_var(poly_var_id, self.engine()))
+                .expect("the call should instantiate every parameter of the coroutine's function")
         });
         let coroutine_ty = Ty::new_coroutine(function_id, poly_args, self.engine());
 

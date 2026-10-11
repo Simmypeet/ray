@@ -2,7 +2,7 @@
 
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::{parameter::get_parameter_map, return_type::get_return_type};
+use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_symbol::{
     GlobalSymbolID, get_target_root_module_id,
     member::get_member_by_name,
@@ -11,6 +11,7 @@ use rayc_symbol::{
     symbol_kind::{SymbolKind, get_symbol_kind},
 };
 use rayc_target::TargetID;
+use rayc_type::signature::get_return_type;
 
 /// An error encountered while validating an executable entry point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

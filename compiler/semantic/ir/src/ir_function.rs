@@ -3,11 +3,12 @@ use rayc_arena::{Arena, ID};
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::{
-    effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
-};
+use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::ty::{Ty, application::ClosureID};
+use rayc_type::{
+    signature::{get_effect_row, get_return_type},
+    ty::{Ty, application::ClosureID},
+};
 
 use crate::{
     address::{Address, Local},

@@ -2,9 +2,7 @@ use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::path::{Effect, PathResolution, TraitMemberParent};
-use rayc_semantic_element::{
-    effect_row::get_effect_row, parameter::get_parameter_map, return_type::get_return_type,
-};
+use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID,
@@ -15,6 +13,7 @@ use rayc_symbol::{
 use rayc_syntax::expression::{Call as CallSyn, DirectCall as DirectCallSyn};
 use rayc_type::{
     poly_var::{build_subst_from_args, get_poly_var_map},
+    signature::{get_effect_row, get_return_type},
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
     ty::{Ty, args::Args, effect_row::EffectLabel, self_instance::SelfInstance},

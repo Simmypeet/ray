@@ -6,12 +6,12 @@ use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_ir::ir_function::IRFunctionMap;
 use rayc_memory::analyze;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine, unordered::query_all};
-use rayc_semantic_element::return_type::get_return_type;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     span::get_span, symbol_kind::get_all_def_with_body_ids, syntax::get_def_body_syntax,
 };
 use rayc_target::{TargetID, get_ir_verification};
+use rayc_type::signature::get_return_type;
 use rayc_typed_ast::get_typed_ast;
 
 use crate::{diagnostic::Diagnostic, lower_function};

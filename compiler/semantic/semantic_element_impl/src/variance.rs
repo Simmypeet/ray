@@ -24,9 +24,7 @@ use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_semantic_element::{
-    parameter::get_parameter_map, return_type::get_return_type, struct_body::get_struct_body,
-};
+use rayc_semantic_element::{parameter::get_parameter_map, struct_body::get_struct_body};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID, SymbolID,
@@ -40,6 +38,7 @@ use rayc_symbol::{
 use rayc_target::TargetID;
 use rayc_type::{
     poly_var::{PolyVarID, PolyVarMap, get_poly_var_map},
+    signature::get_return_type,
     ty::Ty,
     variance::{Variance, VarianceKey, VarianceMap, get_variance},
 };

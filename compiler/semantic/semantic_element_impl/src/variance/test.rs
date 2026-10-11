@@ -6,7 +6,6 @@ use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeS
 use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor, TrackedEngine};
 use rayc_semantic_element::{
     parameter::{Key as ParameterKey, Parameter, ParameterMap},
-    return_type::Key as ReturnTypeKey,
     struct_body::{Field, Key as StructBodyKey, StructBody},
 };
 use rayc_source_file::GlobalSourceID;
@@ -19,6 +18,7 @@ use rayc_symbol::{
 use rayc_target::TargetID;
 use rayc_type::{
     poly_var::{GlobalPolyVarID, Key as PolyVarKey, PolyVar, PolyVarMap},
+    signature::ReturnTypeKey,
     ty::{Integer, Mutability, Primitive, Ty, args::Args},
     variance::{Variance, VarianceMap, get_variance},
 };

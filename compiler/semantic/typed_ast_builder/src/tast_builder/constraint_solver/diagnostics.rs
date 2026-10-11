@@ -125,9 +125,13 @@ impl ConstraintSolver {
                             ))
                         });
 
-                    // A requirement on an erroneous type follows from an
-                    // error that was reported where the type came from.
-                    // REVIEW: What's this for?
+                    // A requirement on the error type cannot be resolved,
+                    // but the error type only exists because another
+                    // diagnostic was already reported where it came from.
+                    // For example, a rejected `coro` has the error type, and
+                    // the statement discarding it requires `Drop` of that
+                    // type. Reporting the requirement would only repeat the
+                    // first error.
                     if matches!(
                         error,
                         ConstraintError::InstanceResolve(InstanceResolutionError::ContainsError(_))
