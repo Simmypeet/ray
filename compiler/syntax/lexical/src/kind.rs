@@ -184,6 +184,8 @@ pub enum Keyword {
     Move,
     /// `elif` keyword.
     Elif,
+    /// `coro` keyword.
+    Coro,
 }
 
 /// A static map that maps a string representation of a keyword to its
@@ -233,6 +235,7 @@ impl Keyword {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Move => "move",
+            Self::Coro => "coro",
             Self::For => "for",
             Self::Def => "def",
             Self::As => "as",

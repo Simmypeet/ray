@@ -286,8 +286,31 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    /// Suspends the call in the operand before it runs, and gives back a
+    /// continuation for it. The operand has to be a call, which is checked
+    /// once it is bound.
+    pub struct Coro {
+        pub coro_keyword: Keyword = expect::Keyword::Coro,
+        pub operand: Postfix = ast::<Postfix>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
 pub enum Leaf {
         Move(Move = ast::<Move>()),
+        Coro(Coro = ast::<Coro>()),
         StructInitialization(StructInitialization = ast::<StructInitialization>()),
         DirectCall(DirectCall = ast::<DirectCall>()),
         Identifier(Identifier = expect::Identifier),
