@@ -5,7 +5,7 @@ use rayc_symbol::GlobalSymbolID;
 
 use super::{InferenceConstraint, Mutability, Primitive, Ty, TyKind, inference::Inference};
 use crate::{
-    poly_var::build_subst_from_args,
+    poly_var::{build_subst_from_args, get_enclosing_poly_var_maps},
     reduce::Reduce,
     rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::{Subst, Substitutable},
@@ -44,6 +44,23 @@ pub enum Constant {
     /// the instantiated nominal type followed by its external dictionaries in
     /// `GeneratedDropPlan::requirements` order.
     NominalDropInstance,
+    /// The anonymous type of a suspended function, identified by the function
+    /// `coro` was applied to. Its arguments are the arguments for the
+    /// polymorphic parameters of that function, followed by those of each
+    /// enclosing symbol, proceeding outwards.
+    ///
+    /// There is one coroutine type per function, not one per `coro`
+    /// expression. Everything else about it is derived by substituting the
+    /// arguments into the signature of the function.
+    Coroutine(GlobalSymbolID),
+    /// The built-in `Coroutine` dictionary whose sole argument is a coroutine
+    /// type, or a `&mut` to one.
+    CoroutineInstance,
+    /// The built-in `Drop` dictionary for a coroutine type. Its arguments are
+    /// the coroutine type followed by one `Drop` dictionary for each upvar,
+    /// which are the parameters of the suspended function in declaration
+    /// order.
+    CoroutineDropInstance,
     Error(TyKind),
 }
 
@@ -204,6 +221,48 @@ impl<'x> ClosureDropInstanceView<'x> {
     pub const fn capture_instances(&self) -> &'x [Interned<Ty>] { self.capture_instances }
 }
 
+/// The type of a suspended function; see [`Constant::Coroutine`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CoroutineView<'x> {
+    def_id: GlobalSymbolID,
+    poly_args: &'x [Interned<Ty>],
+}
+
+impl<'x> CoroutineView<'x> {
+    /// Returns the function the coroutine suspends.
+    #[must_use]
+    pub const fn def_id(&self) -> GlobalSymbolID { self.def_id }
+
+    /// Returns the arguments for the polymorphic parameters of the suspended
+    /// function, followed by those of each enclosing symbol.
+    #[must_use]
+    pub const fn poly_args(&self) -> &'x [Interned<Ty>] { self.poly_args }
+
+    /// Returns the substitution that instantiates the signature of the
+    /// suspended function with the arguments of this coroutine type.
+    #[must_use]
+    pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
+        let poly_vars = engine.get_enclosing_poly_var_maps(self.def_id).await;
+
+        poly_vars.all_poly_vars().zip(self.poly_args.iter().cloned()).collect()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CoroutineDropInstanceView<'x> {
+    coroutine: &'x Interned<Ty>,
+    upvar_instances: &'x [Interned<Ty>],
+}
+
+impl<'x> CoroutineDropInstanceView<'x> {
+    #[must_use]
+    pub const fn coroutine(&self) -> &'x Interned<Ty> { self.coroutine }
+
+    /// Returns the `Drop` dictionary of each upvar, in parameter order.
+    #[must_use]
+    pub const fn upvar_instances(&self) -> &'x [Interned<Ty>] { self.upvar_instances }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NominalDropInstanceView<'x> {
     nominal: &'x Interned<Ty>,
@@ -277,6 +336,9 @@ pub enum View<'x> {
     TupleDropInstance(TupleDropInstanceView<'x>),
     ClosureDropInstance(ClosureDropInstanceView<'x>),
     NominalDropInstance(NominalDropInstanceView<'x>),
+    Coroutine(CoroutineView<'x>),
+    CoroutineInstance(&'x Interned<Ty>),
+    CoroutineDropInstance(CoroutineDropInstanceView<'x>),
     Error,
 }
 
@@ -362,6 +424,18 @@ impl Application {
                     self.args.split_first().expect("nominal Drop instance has a nominal type");
                 View::NominalDropInstance(NominalDropInstanceView { nominal, external_instances })
             }
+            Constant::Coroutine(def_id) => {
+                View::Coroutine(CoroutineView { def_id, poly_args: &self.args })
+            }
+            Constant::CoroutineInstance => View::CoroutineInstance(&self.args[0]),
+            Constant::CoroutineDropInstance => {
+                let (coroutine, upvar_instances) =
+                    self.args.split_first().expect("coroutine Drop instance has a coroutine type");
+                View::CoroutineDropInstance(CoroutineDropInstanceView {
+                    coroutine,
+                    upvar_instances,
+                })
+            }
             Constant::Error(_) => View::Error,
         }
     }
@@ -388,6 +462,9 @@ impl Application {
             | Constant::TupleDropInstance
             | Constant::ClosureDropInstance
             | Constant::NominalDropInstance
+            | Constant::Coroutine(_)
+            | Constant::CoroutineInstance
+            | Constant::CoroutineDropInstance
             | Constant::Error(_) => None,
         }
     }
@@ -475,9 +552,9 @@ impl Application {
                 .expect("a struct application needs the variances of its struct")
                 .get_by_index(index),
 
-            // Closure types are invariant, as in rustc, and so are
-            // dictionaries and associated type projections. Primitives and
-            // errors have no arguments to relate.
+            // Closure and coroutine types are invariant, as in rustc, and so
+            // are dictionaries and associated type projections. Primitives
+            // and errors have no arguments to relate.
             Constant::Primitive(_)
             | Constant::Instance(_)
             | Constant::InstanceAssociated(_)
@@ -487,6 +564,9 @@ impl Application {
             | Constant::TupleDropInstance
             | Constant::ClosureDropInstance
             | Constant::NominalDropInstance
+            | Constant::Coroutine(_)
+            | Constant::CoroutineInstance
+            | Constant::CoroutineDropInstance
             | Constant::Error(_) => Variance::Invariant,
         }
     }
@@ -500,6 +580,7 @@ impl Application {
     pub(crate) async fn kind_of(&self, engine: &TrackedEngine) -> TyKind {
         match self.constant {
             Constant::Closure(_)
+            | Constant::Coroutine(_)
             | Constant::Primitive(_)
             | Constant::Tuple
             | Constant::Pointer(_)
@@ -515,6 +596,8 @@ impl Application {
             | Constant::TupleDropInstance
             | Constant::ClosureDropInstance
             | Constant::NominalDropInstance
+            | Constant::CoroutineInstance
+            | Constant::CoroutineDropInstance
             | Constant::Instance(_)
             | Constant::DefInstance => TyKind::Instance,
             Constant::Error(kind) => kind,
@@ -543,6 +626,9 @@ impl Application {
                 | View::TupleDropInstance(_)
                 | View::ClosureDropInstance(_)
                 | View::NominalDropInstance(_)
+                | View::Coroutine(_)
+                | View::CoroutineInstance(_)
+                | View::CoroutineDropInstance(_)
                 | View::InstanceAssociated(_) => false,
             },
             InferenceConstraint::EqualityComparable => match self.view() {
@@ -563,6 +649,9 @@ impl Application {
                 | View::TupleDropInstance(_)
                 | View::ClosureDropInstance(_)
                 | View::NominalDropInstance(_)
+                | View::Coroutine(_)
+                | View::CoroutineInstance(_)
+                | View::CoroutineDropInstance(_)
                 | View::Closure(_) => false,
             },
         }

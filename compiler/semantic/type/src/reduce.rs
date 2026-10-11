@@ -11,6 +11,7 @@ use crate::{
     constraint::outlives::OutlivesConstraints,
     instance_member::get_instance_member,
     poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
+    signature::{get_effect_row, get_return_type},
     subst::Substitutable,
     ty::{Ty, application::View},
     type_definition::get_type_definition,
@@ -94,6 +95,14 @@ pub(crate) async fn reduce_instance_associated(
         };
     }
 
+    // Coroutine dictionaries are told by the signature of the function that
+    // the coroutine suspends.
+    if let Ty::Application(application) = &**associated.instance()
+        && let View::CoroutineInstance(coroutine) = application.view()
+    {
+        return reduce_coroutine_associated(associated, coroutine, engine).await;
+    }
+
     let instance = associated.instance().as_instance_view()?;
 
     // The projection names a trait member, while the definition belongs to its
@@ -127,6 +136,34 @@ pub(crate) async fn reduce_instance_associated(
 
     let definition = engine.get_type_definition(member_id).await;
     Some(definition.apply_subst_or_clone(&substitution, engine))
+}
+
+/// Reduces `Return` or `Effect` of the built-in `Coroutine` dictionary of
+/// `coroutine`, which is a coroutine type or a `&mut` to one, by
+/// substituting the arguments of the coroutine type into the signature of the
+/// suspended function.
+async fn reduce_coroutine_associated(
+    associated: crate::ty::application::InstanceAssociatedView<'_>,
+    coroutine: &Interned<Ty>,
+    engine: &TrackedEngine,
+) -> Option<Interned<Ty>> {
+    if !associated.args().is_empty() {
+        return None;
+    }
+    let coroutine = coroutine.as_coroutine_behind_reference()?;
+
+    // Neither associated type depends on where the coroutine is suspended.
+    let member = associated.symbol_id();
+    let signature = if member == engine.get_core_item(CoreItem::CoroutineReturn).await {
+        engine.get_return_type(coroutine.def_id()).await
+    } else if member == engine.get_core_item(CoreItem::CoroutineEffect).await {
+        engine.get_effect_row(coroutine.def_id()).await
+    } else {
+        return None;
+    };
+
+    let substitution = coroutine.create_subst(engine).await;
+    Some(signature.apply_subst_or_clone(&substitution, engine))
 }
 
 #[cfg(test)]

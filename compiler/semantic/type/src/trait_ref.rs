@@ -121,7 +121,14 @@ impl Ty {
                 ApplicationView::NominalDropInstance(instance) => {
                     Ok(core_trait_ref(CoreItem::DropTrait, instance.nominal()).await)
                 }
-                ApplicationView::Primitive(_)
+                ApplicationView::CoroutineInstance(coroutine) => {
+                    Ok(core_trait_ref(CoreItem::CoroutineTrait, coroutine).await)
+                }
+                ApplicationView::CoroutineDropInstance(instance) => {
+                    Ok(core_trait_ref(CoreItem::DropTrait, instance.coroutine()).await)
+                }
+                ApplicationView::Coroutine(_)
+                | ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Reference(_)

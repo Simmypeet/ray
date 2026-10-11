@@ -11,6 +11,7 @@ pub mod ty;
 
 pub mod instance_member;
 pub mod outlives;
+pub mod signature;
 pub mod type_definition;
 pub mod variance;
 pub mod where_clause;

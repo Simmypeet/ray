@@ -198,6 +198,10 @@ impl Ty {
     ///
     /// Tuple and closure dictionaries are no-ops when all their element or
     /// capture dictionaries are recursively no-ops, including empty ones.
+    ///
+    /// A coroutine dictionary never is, whatever its upvar dictionaries are:
+    /// dropping a suspended coroutine drops its saved locals, which its type
+    /// does not show.
     #[must_use]
     pub fn is_no_op_drop_instance(&self) -> bool {
         match self {
@@ -220,6 +224,9 @@ impl Ty {
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
+                | ApplicationView::Coroutine(_)
+                | ApplicationView::CoroutineInstance(_)
+                | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Error => false,
             },
@@ -343,6 +350,9 @@ impl Ty {
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
+                | ApplicationView::Coroutine(_)
+                | ApplicationView::CoroutineInstance(_)
+                | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Instance(_) => false,
             },
@@ -823,6 +833,60 @@ impl Ty {
         )))
     }
 
+    /// Creates the type of a suspended `def_id`. `poly_args` are the arguments
+    /// for the polymorphic parameters of `def_id`, followed by those of each
+    /// enclosing symbol, proceeding outwards.
+    #[must_use]
+    pub fn new_coroutine(
+        def_id: GlobalSymbolID,
+        poly_args: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::Application(Application::new(
+            Constant::Coroutine(def_id),
+            engine.intern_unsized(poly_args.into_iter().collect::<Vec<_>>()),
+        )))
+    }
+
+    /// Creates the built-in `Coroutine` dictionary for a coroutine type, or
+    /// for a `&mut` to one.
+    #[must_use]
+    pub fn new_coroutine_instance(
+        coroutine: Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        assert!(
+            coroutine.as_coroutine_behind_reference().is_some(),
+            "Coroutine instance requires a coroutine type or a `&mut` to one"
+        );
+        engine.intern(Self::Application(Application::new(
+            Constant::CoroutineInstance,
+            engine.intern_unsized([coroutine]),
+        )))
+    }
+
+    /// Creates the built-in `Drop` dictionary for a coroutine type from the
+    /// selected dictionary for each upvar, in parameter order.
+    #[must_use]
+    pub fn new_coroutine_drop_instance(
+        coroutine: Interned<Self>,
+        upvar_instances: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        assert!(
+            coroutine.as_coroutine_view().is_some(),
+            "coroutine Drop instance requires a coroutine type"
+        );
+
+        // Keep the coroutine beside its selected upvar dictionaries so lexical
+        // dictionaries survive substitution and monomorphization.
+        let args = std::iter::once(coroutine).chain(upvar_instances);
+        engine.intern(Self::Application(Application::new(
+            Constant::CoroutineDropInstance,
+            engine.intern_unsized(args.collect::<Vec<_>>()),
+        )))
+    }
+
     #[must_use]
     pub fn new_instance(
         symbol_id: GlobalSymbolID,
@@ -912,6 +976,7 @@ impl Ty {
                         ApplicationView::InstanceAssociated(associated) => {
                             Some(associated.symbol_id())
                         }
+                        ApplicationView::Coroutine(coroutine) => Some(coroutine.def_id()),
                         ApplicationView::Primitive(_)
                         | ApplicationView::Tuple(_)
                         | ApplicationView::Pointer(_)
@@ -921,6 +986,8 @@ impl Ty {
                         | ApplicationView::NoOpDropInstance(_)
                         | ApplicationView::TupleDropInstance(_)
                         | ApplicationView::ClosureDropInstance(_)
+                        | ApplicationView::CoroutineInstance(_)
+                        | ApplicationView::CoroutineDropInstance(_)
                         | ApplicationView::NominalDropInstance(_)
                         | ApplicationView::Error => None,
                     };
@@ -1062,7 +1129,12 @@ impl TyDisplay<'_> {
             ApplicationView::NominalDropInstance(instance) => {
                 ("<nominal drop instance>", instance.nominal())
             }
-            ApplicationView::Primitive(_)
+            ApplicationView::CoroutineDropInstance(instance) => {
+                ("<coroutine drop instance>", instance.coroutine())
+            }
+            ApplicationView::Coroutine(_)
+            | ApplicationView::CoroutineInstance(_)
+            | ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Pointer(_)
             | ApplicationView::Reference(_)
@@ -1075,6 +1147,29 @@ impl TyDisplay<'_> {
         };
         f.write_str(description)?;
         self.fmt_ty(target, f)
+    }
+
+    /// Formats a coroutine type by the function it suspends, as in
+    /// `<coroutine of f[int32]>`. The arguments of the enclosing symbols are
+    /// left out.
+    fn fmt_coroutine(
+        &self,
+        coroutine: application::CoroutineView<'_>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let own_argument_count = self
+            .poly_var_maps
+            .get(&coroutine.def_id())
+            .expect("should've been collected earlier")
+            .len();
+
+        f.write_str("<coroutine of ")?;
+        self.fmt_symbol_application(
+            coroutine.def_id(),
+            coroutine.poly_args().iter().take(own_argument_count),
+            f,
+        )?;
+        f.write_char('>')
     }
 
     fn fmt_reference(
@@ -1103,7 +1198,15 @@ impl TyDisplay<'_> {
                 view @ (ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
+                | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)) => self.fmt_drop_instance(view, f),
+
+                ApplicationView::Coroutine(coroutine) => self.fmt_coroutine(coroutine, f),
+                ApplicationView::CoroutineInstance(coroutine) => {
+                    f.write_str("CoroutineInstance[")?;
+                    self.fmt_ty(coroutine, f)?;
+                    f.write_char(']')
+                }
 
                 ApplicationView::Closure(closure) => {
                     f.write_str("<closure>")?;
@@ -1390,6 +1493,9 @@ impl Ty {
             | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
+            | ApplicationView::Coroutine(_)
+            | ApplicationView::CoroutineInstance(_)
+            | ApplicationView::CoroutineDropInstance(_)
             | ApplicationView::NominalDropInstance(_)
             | ApplicationView::Error => None,
         }
@@ -1424,6 +1530,9 @@ impl Ty {
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
+                | ApplicationView::Coroutine(_)
+                | ApplicationView::CoroutineInstance(_)
+                | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Instance(_) => Some(false),
             },
@@ -1454,6 +1563,34 @@ impl Ty {
     }
 
     #[must_use]
+    pub fn as_coroutine_view(&self) -> Option<application::CoroutineView<'_>> {
+        let Self::Application(application) = self else {
+            return None;
+        };
+
+        let ApplicationView::Coroutine(coroutine_view) = application.view() else {
+            return None;
+        };
+
+        Some(coroutine_view)
+    }
+
+    /// Returns the coroutine type this type is, or is a `&mut` to.
+    ///
+    /// Both have a built-in `Coroutine` instance: a continuation of a
+    /// coroutine pinned to the stack only holds a `&mut` to it.
+    #[must_use]
+    pub fn as_coroutine_behind_reference(&self) -> Option<application::CoroutineView<'_>> {
+        match self.as_reference_view() {
+            Some(reference) if reference.mutability() == Mutability::Mutable => {
+                reference.pointee().as_coroutine_view()
+            }
+            Some(_) => None,
+            None => self.as_coroutine_view(),
+        }
+    }
+
+    #[must_use]
     pub fn is_c_abi_value_type(&self) -> bool {
         match self {
             Self::Application(application) => match application.view() {
@@ -1470,6 +1607,9 @@ impl Ty {
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
+                | ApplicationView::Coroutine(_)
+                | ApplicationView::CoroutineInstance(_)
+                | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Error => false,
             },
@@ -1519,6 +1659,9 @@ impl Ty {
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
+                | ApplicationView::Coroutine(_)
+                | ApplicationView::CoroutineInstance(_)
+                | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
                 | ApplicationView::Error => false,
             },
