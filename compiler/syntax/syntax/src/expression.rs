@@ -72,6 +72,83 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    /// Names the continuation of the rest of the coroutine in an operation
+    /// clause: `resume k`.
+    pub struct HandleResume {
+        pub resume_keyword: Keyword = expect::Keyword::Resume,
+        pub pattern: IrrefutablePattern = ast::<IrrefutablePattern>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    /// Runs when the coroutine performs the named operation:
+    /// `case Effect.operation(parameters) resume k: ...`.
+    ///
+    /// The operation is written as it is performed, and the parameters are
+    /// those of the operation. A clause without `resume` does not name the
+    /// continuation, which is then dropped with the clause.
+    pub struct HandleOperationClause {
+        pub case_keyword: Keyword = expect::Keyword::Case,
+        pub operation: Path = ast::<Path>(),
+        pub parameter_list: HandlerParameterList = ast::<HandlerParameterList>(),
+        pub resume: HandleResume = ast::<HandleResume>().optional(),
+        pub arm: Arm = ast::<Arm>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    /// Runs when the coroutine completes: `case return x: ...` binds the
+    /// value it returned, and `case return: ...` ignores it.
+    pub struct HandleReturnClause {
+        pub case_keyword: Keyword = expect::Keyword::Case,
+        pub return_keyword: Keyword = expect::Keyword::Return,
+        pub pattern: IrrefutablePattern = ast::<IrrefutablePattern>().optional(),
+        pub arm: Arm = ast::<Arm>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    /// A clause of a `handle`. The clauses are branches of the enclosing
+    /// function, like the arms of an `if`, and not functions.
+    pub enum HandleClause {
+        Return(HandleReturnClause = ast::<HandleReturnClause>()),
+        Operation(HandleOperationClause = ast::<HandleOperationClause>()),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    #{fragment = Fragment::Indentation}
+    pub struct HandleClauses {
+        pub clauses: #[multi] HandleClause = ast::<HandleClause>().line().repeat_all()
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    /// Resumes a coroutine and branches on how it stops:
+    ///
+    /// ```text
+    /// handle continuation(value):
+    ///     case Effect.operation(parameters) resume k: ...
+    ///     case return x: ...
+    /// ```
+    ///
+    /// The operand is the call that resumes the continuation, or a `coro`
+    /// expression, whose coroutine is started; this is checked once it is
+    /// bound.
+    pub struct Handle {
+        pub handle_keyword: Keyword = expect::Keyword::Handle,
+        pub operand: Postfix = ast::<Postfix>(),
+        pub clauses: HandleClauses = ast::<HandleClauses>().optional(),
+    }
+}
+
+abstract_tree::abstract_tree! {
     #[derive(
         Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode
     )]
@@ -488,7 +565,7 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
-    pub struct IfElseExpressionArm {
+    pub struct ExpressionArm {
         pub colon: Punctuation = ':',
         pub expression: Expression = ast::<Expression>(),
     }
@@ -507,9 +584,9 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
-    pub enum IfElseArm {
+    pub enum Arm {
         Block(Block = ast::<Block>()),
-        Expression(IfElseExpressionArm = ast::<IfElseExpressionArm>()),
+        Expression(ExpressionArm = ast::<ExpressionArm>()),
     }
 }
 
@@ -529,7 +606,7 @@ abstract_tree::abstract_tree! {
     pub struct IfElseElifArm {
         pub elif_keyword: Keyword = expect::Keyword::Elif.new_line_significant(false),
         pub condition: IfElseCondition = ast::<IfElseCondition>(),
-        pub arm: IfElseArm = ast::<IfElseArm>(),
+        pub arm: Arm = ast::<Arm>(),
     }
 }
 
@@ -548,7 +625,7 @@ abstract_tree::abstract_tree! {
     )]
     pub struct IfElseElseArm {
         pub else_keyword: Keyword = expect::Keyword::Else.new_line_significant(false),
-        pub arm: IfElseArm = ast::<IfElseArm>(),
+        pub arm: Arm = ast::<Arm>(),
     }
 }
 
@@ -568,7 +645,7 @@ abstract_tree::abstract_tree! {
     pub struct IfElse {
         pub if_keyword: Keyword = expect::Keyword::If,
         pub condition: IfElseCondition = ast::<IfElseCondition>(),
-        pub then_arm: IfElseArm = ast::<IfElseArm>(),
+        pub then_arm: Arm = ast::<Arm>(),
         pub elif_arms: #[multi] IfElseElifArm = ast::<IfElseElifArm>().repeat(),
         pub else_arm: IfElseElseArm = ast::<IfElseElseArm>().optional(),
     }
@@ -580,7 +657,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct Unsafe {
         pub unsafe_keyword: Keyword = expect::Keyword::Unsafe,
-        pub arm: IfElseArm = ast::<IfElseArm>(),
+        pub arm: Arm = ast::<Arm>(),
     }
 }
 
@@ -609,6 +686,7 @@ abstract_tree::abstract_tree! {
     #{label = rayc_parser::expect::Label::Expression}
     pub enum Expression {
         RunWith(RunWith = ast::<RunWith>()),
+        Handle(Handle = ast::<Handle>()),
         Closure(Closure = ast::<Closure>()),
         IfElse(IfElse = ast::<IfElse>()),
         While(While = ast::<While>()),
