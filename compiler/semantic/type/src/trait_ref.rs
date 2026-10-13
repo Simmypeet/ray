@@ -124,6 +124,9 @@ impl Ty {
                 ApplicationView::CoroutineInstance(coroutine) => {
                     Ok(core_trait_ref(CoreItem::CoroutineTrait, coroutine).await)
                 }
+                ApplicationView::ContinuationDefInstance(instance) => {
+                    Ok(core_trait_ref(CoreItem::DefTrait, instance.continuation()).await)
+                }
                 ApplicationView::CoroutineDropInstance(instance) => {
                     Ok(core_trait_ref(CoreItem::DropTrait, instance.coroutine()).await)
                 }

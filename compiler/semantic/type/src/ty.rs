@@ -225,6 +225,7 @@ impl Ty {
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::Coroutine(_)
+                | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
@@ -351,6 +352,7 @@ impl Ty {
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::Coroutine(_)
+                | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
@@ -865,6 +867,27 @@ impl Ty {
         )))
     }
 
+    /// Creates the built-in `Def` dictionary of the `core.Continuation[r, c]`
+    /// type `continuation`, from the `Coroutine` dictionary selected for `c`.
+    ///
+    /// The caller is responsible for `continuation` being an instantiation
+    /// of `core.Continuation`; only its shape is checked here.
+    #[must_use]
+    pub fn new_continuation_def_instance(
+        continuation: Interned<Self>,
+        coroutine_instance: Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        assert!(
+            continuation.as_struct_view().is_some_and(|view| view.args().len() == 2),
+            "continuation Def instance requires a `Continuation[r, c]` type"
+        );
+        engine.intern(Self::Application(Application::new(
+            Constant::ContinuationDefInstance,
+            engine.intern_unsized([continuation, coroutine_instance]),
+        )))
+    }
+
     /// Creates the built-in `Drop` dictionary for a coroutine type from the
     /// selected dictionary for each upvar, in parameter order.
     #[must_use]
@@ -986,6 +1009,7 @@ impl Ty {
                         | ApplicationView::NoOpDropInstance(_)
                         | ApplicationView::TupleDropInstance(_)
                         | ApplicationView::ClosureDropInstance(_)
+                        | ApplicationView::ContinuationDefInstance(_)
                         | ApplicationView::CoroutineInstance(_)
                         | ApplicationView::CoroutineDropInstance(_)
                         | ApplicationView::NominalDropInstance(_)
@@ -1133,6 +1157,7 @@ impl TyDisplay<'_> {
                 ("<coroutine drop instance>", instance.coroutine())
             }
             ApplicationView::Coroutine(_)
+            | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
@@ -1190,6 +1215,20 @@ impl TyDisplay<'_> {
         self.fmt_ty(reference.pointee(), f)
     }
 
+    /// Formats a built-in dictionary by the type it is the dictionary of, as
+    /// in `DefInstance[Continuation[(), c]]`.
+    fn fmt_built_in_instance(
+        &self,
+        name: &str,
+        implementor: &Ty,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        f.write_str(name)?;
+        f.write_char('[')?;
+        self.fmt_ty(implementor, f)?;
+        f.write_char(']')
+    }
+
     fn fmt_ty(&self, ty: &Ty, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match ty {
             Ty::Application(ty_application) => match ty_application.view() {
@@ -1203,9 +1242,10 @@ impl TyDisplay<'_> {
 
                 ApplicationView::Coroutine(coroutine) => self.fmt_coroutine(coroutine, f),
                 ApplicationView::CoroutineInstance(coroutine) => {
-                    f.write_str("CoroutineInstance[")?;
-                    self.fmt_ty(coroutine, f)?;
-                    f.write_char(']')
+                    self.fmt_built_in_instance("CoroutineInstance", coroutine, f)
+                }
+                ApplicationView::ContinuationDefInstance(instance) => {
+                    self.fmt_built_in_instance("DefInstance", instance.continuation(), f)
                 }
 
                 ApplicationView::Closure(closure) => {
@@ -1494,6 +1534,7 @@ impl Ty {
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
             | ApplicationView::Coroutine(_)
+            | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
             | ApplicationView::NominalDropInstance(_)
@@ -1531,6 +1572,7 @@ impl Ty {
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::Coroutine(_)
+                | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
@@ -1608,6 +1650,7 @@ impl Ty {
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::Coroutine(_)
+                | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
@@ -1660,6 +1703,7 @@ impl Ty {
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::Coroutine(_)
+                | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)

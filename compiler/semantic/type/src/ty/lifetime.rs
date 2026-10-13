@@ -17,7 +17,7 @@ pub struct Region;
 /// Identifies a region variable within the definition being borrow checked.
 pub type RegionID = ID<Region>;
 
-/// A lifetime in the interface of a nested IR function: a lambda, a thunk or
+/// A lifetime in the interface of a nested IR function: a closure, a thunk or
 /// an operation handler.
 #[derive(Debug, Clone, Copy)]
 pub struct ExternalRegion;

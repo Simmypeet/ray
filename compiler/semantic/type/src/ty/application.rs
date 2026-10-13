@@ -56,6 +56,11 @@ pub enum Constant {
     /// The built-in `Coroutine` dictionary whose sole argument is a coroutine
     /// type, or a `&mut` to one.
     CoroutineInstance,
+    /// The built-in `Def` dictionary of `core.Continuation[r, c]`, which makes
+    /// a continuation callable. Its arguments are the continuation type
+    /// followed by the `Coroutine` dictionary of `c`, which tells what
+    /// resuming the coroutine returns and performs.
+    ContinuationDefInstance,
     /// The built-in `Drop` dictionary for a coroutine type. Its arguments are
     /// the coroutine type followed by one `Drop` dictionary for each upvar,
     /// which are the parameters of the suspended function in declaration
@@ -64,22 +69,23 @@ pub enum Constant {
     Error(TyKind),
 }
 
-/// Represents an anonymous type created by the lambda expression. It represents
-/// the storage that holds all the captured variables required by the lambda.
-/// The type is created by the compiler and is not visible to the user.
+/// Represents an anonymous type created by the closure expression. It
+/// represents the storage that holds all the captured variables required by the
+/// closure. The type is created by the compiler and is not visible to the user.
 ///
 /// The arguments of the closure application type are
 /// - The owner's polymorphic arguments in declaration order, followed by those
 ///   of each enclosing symbol, proceeding outwards.
-/// - A list of parameter types, this can be empty if the lambda has no
+/// - A list of parameter types, this can be empty if the closure has no
 ///   parameters.
-/// - The return type of the lambda.
-/// - The effect row of the lambda.
-/// - The tuple type of all the captured variables of the lambda. This can be an
-///   empty tuple if the lambda has no captured variables.
+/// - The return type of the closure.
+/// - The effect row of the closure.
+/// - The tuple type of all the captured variables of the closure. This can be
+///   an empty tuple if the closure has no captured variables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Closure {
-    /// The source definition containing this closure, including nested lambdas.
+    /// The source definition containing this closure, including nested
+    /// closures.
     owner_id: GlobalSymbolID,
     local_closure_id: ClosureID,
     /// Separates owner arguments from parameters without querying the owner.
@@ -263,6 +269,36 @@ impl<'x> CoroutineDropInstanceView<'x> {
     pub const fn upvar_instances(&self) -> &'x [Interned<Ty>] { self.upvar_instances }
 }
 
+/// The `Def` dictionary of a continuation; see
+/// [`Constant::ContinuationDefInstance`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ContinuationDefInstanceView<'x> {
+    continuation: &'x Interned<Ty>,
+    coroutine_instance: &'x Interned<Ty>,
+}
+
+impl<'x> ContinuationDefInstanceView<'x> {
+    /// Returns the `core.Continuation[r, c]` type the dictionary is for.
+    #[must_use]
+    pub const fn continuation(&self) -> &'x Interned<Ty> { self.continuation }
+
+    /// Returns the `Coroutine` dictionary of the coroutine the continuation
+    /// resumes.
+    #[must_use]
+    pub const fn coroutine_instance(&self) -> &'x Interned<Ty> { self.coroutine_instance }
+
+    /// Returns the type the continuation waits for: the `r` of
+    /// `core.Continuation[r, c]`.
+    #[must_use]
+    pub fn resume_ty(&self) -> &'x Interned<Ty> {
+        &self
+            .continuation
+            .as_struct_view()
+            .expect("a continuation `Def` instance is built for a continuation type")
+            .args()[0]
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NominalDropInstanceView<'x> {
     nominal: &'x Interned<Ty>,
@@ -338,6 +374,7 @@ pub enum View<'x> {
     NominalDropInstance(NominalDropInstanceView<'x>),
     Coroutine(CoroutineView<'x>),
     CoroutineInstance(&'x Interned<Ty>),
+    ContinuationDefInstance(ContinuationDefInstanceView<'x>),
     CoroutineDropInstance(CoroutineDropInstanceView<'x>),
     Error,
 }
@@ -428,6 +465,12 @@ impl Application {
                 View::Coroutine(CoroutineView { def_id, poly_args: &self.args })
             }
             Constant::CoroutineInstance => View::CoroutineInstance(&self.args[0]),
+            Constant::ContinuationDefInstance => {
+                View::ContinuationDefInstance(ContinuationDefInstanceView {
+                    continuation: &self.args[0],
+                    coroutine_instance: &self.args[1],
+                })
+            }
             Constant::CoroutineDropInstance => {
                 let (coroutine, upvar_instances) =
                     self.args.split_first().expect("coroutine Drop instance has a coroutine type");
@@ -463,6 +506,7 @@ impl Application {
             | Constant::ClosureDropInstance
             | Constant::NominalDropInstance
             | Constant::Coroutine(_)
+            | Constant::ContinuationDefInstance
             | Constant::CoroutineInstance
             | Constant::CoroutineDropInstance
             | Constant::Error(_) => None,
@@ -565,6 +609,7 @@ impl Application {
             | Constant::ClosureDropInstance
             | Constant::NominalDropInstance
             | Constant::Coroutine(_)
+            | Constant::ContinuationDefInstance
             | Constant::CoroutineInstance
             | Constant::CoroutineDropInstance
             | Constant::Error(_) => Variance::Invariant,
@@ -596,6 +641,7 @@ impl Application {
             | Constant::TupleDropInstance
             | Constant::ClosureDropInstance
             | Constant::NominalDropInstance
+            | Constant::ContinuationDefInstance
             | Constant::CoroutineInstance
             | Constant::CoroutineDropInstance
             | Constant::Instance(_)
@@ -627,6 +673,7 @@ impl Application {
                 | View::ClosureDropInstance(_)
                 | View::NominalDropInstance(_)
                 | View::Coroutine(_)
+                | View::ContinuationDefInstance(_)
                 | View::CoroutineInstance(_)
                 | View::CoroutineDropInstance(_)
                 | View::InstanceAssociated(_) => false,
@@ -650,6 +697,7 @@ impl Application {
                 | View::ClosureDropInstance(_)
                 | View::NominalDropInstance(_)
                 | View::Coroutine(_)
+                | View::ContinuationDefInstance(_)
                 | View::CoroutineInstance(_)
                 | View::CoroutineDropInstance(_)
                 | View::Closure(_) => false,

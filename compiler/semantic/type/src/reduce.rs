@@ -103,6 +103,14 @@ pub(crate) async fn reduce_instance_associated(
         return reduce_coroutine_associated(associated, coroutine, engine).await;
     }
 
+    // The dictionary that makes a continuation callable is told by the
+    // continuation type and the dictionary of the coroutine it resumes.
+    if let Ty::Application(application) = &**associated.instance()
+        && let View::ContinuationDefInstance(continuation) = application.view()
+    {
+        return reduce_continuation_def_associated(associated, continuation, engine).await;
+    }
+
     let instance = associated.instance().as_instance_view()?;
 
     // The projection names a trait member, while the definition belongs to its
@@ -164,6 +172,46 @@ async fn reduce_coroutine_associated(
 
     let substitution = coroutine.create_subst(engine).await;
     Some(signature.apply_subst_or_clone(&substitution, engine))
+}
+
+/// Reduces `Args`, `Return` or `Effect` of the built-in `Def` dictionary of a
+/// continuation.
+///
+/// Calling `Continuation[r, c]` takes the one value the coroutine waits for,
+/// runs the coroutine to completion and forwards everything it performs, so
+/// `Args` is `(r,)`, and `Return` and `Effect` are those of the `Coroutine`
+/// dictionary of `c`.
+async fn reduce_continuation_def_associated(
+    associated: crate::ty::application::InstanceAssociatedView<'_>,
+    continuation: crate::ty::application::ContinuationDefInstanceView<'_>,
+    engine: &TrackedEngine,
+) -> Option<Interned<Ty>> {
+    if !associated.args().is_empty() {
+        return None;
+    }
+
+    // `Return` and `Effect` stay projections of the coroutine dictionary,
+    // which may be a given that only a where clause tells more about.
+    let member = associated.symbol_id();
+    let coroutine_member = if member == engine.get_core_item(CoreItem::DefArgs).await {
+        return Some(Ty::new_tuple(
+            engine.intern_unsized([continuation.resume_ty().clone()]),
+            engine,
+        ));
+    } else if member == engine.get_core_item(CoreItem::DefReturn).await {
+        engine.get_core_item(CoreItem::CoroutineReturn).await
+    } else if member == engine.get_core_item(CoreItem::DefEffect).await {
+        engine.get_core_item(CoreItem::CoroutineEffect).await
+    } else {
+        return None;
+    };
+
+    Some(Ty::new_instance_associated(
+        coroutine_member,
+        continuation.coroutine_instance().clone(),
+        [],
+        engine,
+    ))
 }
 
 #[cfg(test)]
