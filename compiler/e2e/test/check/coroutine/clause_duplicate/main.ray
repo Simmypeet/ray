@@ -1,0 +1,21 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+# ERROR: an operation has one clause, and so does the return.
+def main() -> int32:
+    handle coro numbers():
+        case Yield.yield(value):
+            pass
+        case Yield[int32].yield(other) resume k:
+            pass
+        case return:
+            pass
+        case return x:
+            pass
+
+    return 0

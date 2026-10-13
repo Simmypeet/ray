@@ -10,7 +10,7 @@ def keep(k: core.Continuation[r, c]) given (_: core.Drop[c]):
     let held = k
 
 
-# ERROR: the coroutine is pinned to storage local to the lambda, and the
+# ERROR: the coroutine is pinned to storage local to the closure, and the
 # continuation that is returned refers to it.
 def returned():
     let make = () -> coro numbers()

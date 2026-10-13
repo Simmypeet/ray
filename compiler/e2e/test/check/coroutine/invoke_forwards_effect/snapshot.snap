@@ -1,0 +1,27 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: function body effects do not match its signature: expected `{}`, but found `{Yield[int32]}`
+   ╭▸ compiler/e2e/test/check/coroutine/invoke_forwards_effect/main.ray:11:5
+   │
+11 │ def start() -> int32:
+   │     ━━━━━ the function body has effects outside its signature
+12 │     let k = coro numbers()
+13 │     k(())
+   ╰╴    ───── effect `{Yield[int32]}` introduced here
+
+[error]: function body effects do not match its signature: expected `{}`, but found `co.Effect`
+   ╭▸ compiler/e2e/test/check/coroutine/invoke_forwards_effect/main.ray:18:5
+   │
+18 │ def forward(k: core.Continuation[(), c]) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32):
+   │     ━━━━━━━ the function body has effects outside its signature
+19 │     return handle k()
+   ╰╴           ────────── effect `co.Effect` introduced here
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

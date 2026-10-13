@@ -1,0 +1,62 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> int32 \ {Yield[int32]}:
+    Yield.yield(1)
+    Yield.yield(2)
+    return 3
+
+
+# OK: `return` in a clause returns from `first`, not from the clause. A clause
+# that leaves this way fits any type, so the `handle` is an `int32`.
+def first() -> int32:
+    let value = handle coro numbers():
+        case Yield[int32].yield(value) resume k:
+            return value
+        case return x: x
+
+    return value + 1
+
+
+# OK: `break` and `continue` in a clause act on the enclosing loop.
+def sumUntil(limit: int32) -> int32:
+    let mut con = coro numbers()
+    let mut sum = 0
+
+    while true:
+        handle con():
+            case Yield[int32].yield(value) resume k:
+                if value == limit:
+                    break
+                sum = sum + value
+                con = k
+                continue
+            case return x:
+                return sum + x
+
+    return sum
+
+
+# ERROR: `break` in a clause still needs a loop.
+def noLoop():
+    handle coro numbers():
+        case Yield[int32].yield(value) resume k:
+            break
+        case return x:
+            pass
+
+
+# ERROR: the value returned from a clause is the one of the function.
+def wrongReturn() -> bool:
+    handle coro numbers():
+        case Yield[int32].yield(value) resume k:
+            return value
+        case return x:
+            return true
+
+    return false
+
+
+def main() -> int32:
+    return first() + sumUntil(2)

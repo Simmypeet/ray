@@ -1,0 +1,25 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+    Yield.yield(2)
+
+
+# OK: the clauses are branches of `main`. The `handle` moves `con`, the
+# `yield` clause initialises it again before the next iteration, and the
+# `return` clause never reaches the next iteration.
+def main() -> int32:
+    let mut con = coro numbers()
+    let mut sum = 0
+
+    while true:
+        handle con():
+            case Yield.yield(value) resume k:
+                sum = sum + value
+                con = k
+            case return:
+                break
+
+    return sum

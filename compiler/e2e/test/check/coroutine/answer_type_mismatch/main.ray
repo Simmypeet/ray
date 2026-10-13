@@ -1,0 +1,51 @@
+eff State[a]:
+    def get() -> a
+    def set(value: a) -> ()
+
+
+def counter() -> int32 \ {State[int32]}:
+    State.set(State.get() + 1)
+    return State.get()
+
+
+# ERROR: every clause has the type of the `handle`.
+def twoClauses() -> int32:
+    return handle coro counter():
+        case State[int32].get() resume k: 1
+        case State[int32].set(value) resume k: true
+
+
+# ERROR: a block has no value, so it is `()`.
+def blockClause() -> int32:
+    return handle coro counter():
+        case State[int32].get() resume k: 1
+        case State[int32].set(value) resume k:
+            pass
+
+
+# ERROR: without a return clause, the `handle` has the type the coroutine
+# returns.
+def implicitReturn() -> bool:
+    return handle coro counter():
+        case State[int32].get() resume k: true
+        case State[int32].set(value) resume k: false
+
+
+# ERROR: the return clause is a clause like the others.
+def returnClause() -> int32:
+    return handle coro counter():
+        case State[int32].get() resume k: 1
+        case State[int32].set(value) resume k: 2
+        case return x: true
+
+
+# OK: the return clause binds what the coroutine returned.
+def accepted() -> bool:
+    return handle coro counter():
+        case State[int32].get() resume k: true
+        case State[int32].set(value) resume k: false
+        case return x: x == 1
+
+
+def main() -> int32:
+    return 0

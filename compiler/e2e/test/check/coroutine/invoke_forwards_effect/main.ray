@@ -1,0 +1,23 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+# ERROR: invoking a continuation performs what the coroutine performs, and
+# `start` allows no effect.
+def start() -> int32:
+    let k = coro numbers()
+    k(())
+    return 0
+
+
+# ERROR: a `handle` performs what it does not handle.
+def forward(k: core.Continuation[(), c]) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32):
+    return handle k()
+
+
+def main() -> int32:
+    return 0

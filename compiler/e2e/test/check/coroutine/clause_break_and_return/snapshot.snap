@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: `break` can only be used inside a loop
+   ╭▸ compiler/e2e/test/check/coroutine/clause_break_and_return/main.ray:45:13
+   │
+45 │             break
+   ╰╴            ━━━━━
+
+[error]: mismatched types in return expression: expected `bool`, but found `int32`
+   ╭▸ compiler/e2e/test/check/coroutine/clause_break_and_return/main.ray:54:20
+   │
+54 │             return value
+   ╰╴                   ━━━━━
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

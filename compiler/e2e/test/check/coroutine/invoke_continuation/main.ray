@@ -1,0 +1,52 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+    Yield.yield(2)
+
+
+def addTwo() -> int32 \ {Ask}:
+    return Ask.ask() + Ask.ask()
+
+
+def pure(value: int32) -> int32:
+    return value
+
+
+# OK: invoking a continuation runs the coroutine to completion. It returns
+# what the coroutine returns and performs what the coroutine performs.
+def finish(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> co.Return \ co.Effect:
+    return k(value)
+
+
+# OK: every effect of the coroutine is forwarded to the caller.
+def forwardYield() -> () \ {Yield[int32]}:
+    let k = coro numbers()
+    k(())
+
+
+def forwardAsk() -> int32 \ {Ask}:
+    return finish(coro addTwo(), ())
+
+
+# OK: a coroutine that performs nothing can be run where no effect is allowed.
+def runPure() -> int32:
+    let k = coro pure(1)
+    return k(())
+
+
+# OK: a clause may invoke the continuation it binds, which forwards the rest
+# of what the coroutine performs.
+def answerFirst() -> int32 \ {Ask}:
+    return handle coro addTwo():
+        case Ask.ask() resume k: k(1)
+
+
+def main() -> int32:
+    return runPure()

@@ -1,0 +1,37 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+eff Ask:
+    def ask() -> int32
+
+
+# ERROR: `co.Effect` does not reduce here, so no label is visible in it.
+def opaqueAssociated(k: core.Continuation[(), c]) given (co: core.Coroutine[c], _: core.Drop[c]) -> () \ co.Effect where (co.Return = ()):
+    handle k():
+        case Yield[int32].yield(value) resume next:
+            pass
+
+
+# ERROR: `Ask` is handled, but `Yield[int32]` may only be in the row variable.
+def opaqueTail[c, rest: Effect](k: core.Continuation[(), c]) given (co: core.Coroutine[c], _: core.Drop[c]) -> () \ rest where (co.Return = (), co.Effect = {Ask | rest}):
+    handle k():
+        case Yield[int32].yield(value) resume next:
+            pass
+
+
+# OK: a visible label is handled, and the opaque rest is forwarded as a whole.
+def visibleHead[c, rest: Effect](k: core.Continuation[(), c]) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 \ rest where (co.Return = (), co.Effect = {Ask | rest}):
+    return handle k():
+        case Ask.ask() resume next: 1
+        case return x: 0
+
+
+# OK: without a clause, an opaque row is forwarded as a whole.
+def forwardAll(k: core.Continuation[(), c]) given (co: core.Coroutine[c]) -> int32 \ co.Effect where (co.Return = ()):
+    return handle k():
+        case return x: 0
+
+
+def main() -> int32:
+    return 0

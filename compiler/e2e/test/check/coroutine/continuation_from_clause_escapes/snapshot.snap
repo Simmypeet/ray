@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: borrowed value does not live long enough
+   ╭▸ compiler/e2e/test/check/coroutine/continuation_from_clause_escapes/main.ray:21:21
+   │
+21 │         let inner = coro numbers()
+   │                     ┯━━━━━━━━━━━━━
+   │                     │
+   │                     borrowed value does not live long enough
+   │                     this variable goes out of scope while it is still borrowed
+   ‡
+28 │     keep(held)
+   ╰╴         ──── borrow later used here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

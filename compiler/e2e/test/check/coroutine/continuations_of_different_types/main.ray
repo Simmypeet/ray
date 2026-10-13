@@ -1,0 +1,40 @@
+eff State[a]:
+    def get() -> a
+    def set(value: a) -> ()
+
+
+def counter() -> int32 \ {State[int32]}:
+    State.set(State.get() + 1)
+    return State.get()
+
+
+# Runs a stateful coroutine from `state`. Each clause gets a continuation
+# that waits for what its operation returns.
+#
+# OK: `get` is answered with an `int32` and `set` with `()`, so the driver
+# is generic over `r` and recurses.
+def drive(k: core.Continuation[r, c], value: r, state: int32) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {State[int32]}):
+    return handle k(value):
+        case State[int32].get() resume k1: drive(k1, state, state)
+        case State[int32].set(value) resume k2: drive(k2, (), value)
+
+
+# ERROR: `k1` waits for an `int32` and `k2` for `()`, so no single variable
+# can hold both.
+def store() -> int32:
+    let mut con = coro counter()
+
+    while true:
+        handle con():
+            case State[int32].get() resume k1:
+                con = k1
+            case State[int32].set(value) resume k2:
+                con = k2
+            case return x:
+                return x
+
+    return 0
+
+
+def main() -> int32:
+    return drive(coro counter(), (), 0)

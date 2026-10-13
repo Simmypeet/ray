@@ -1,0 +1,63 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def lend(first: &'a int32, second: &'a int32) -> &'a int32 \ {Yield[&'a int32]}:
+    Yield.yield(first)
+    return second
+
+
+def read(value: &int32) -> int32:
+    return value.*
+
+
+# ERROR: what a clause receives is what the coroutine yielded, so `value`
+# borrows `inner`, which ends with the `if`.
+def yieldedEscapes(condition: bool) -> int32:
+    let outer = 0
+    let mut kept = outer.&
+
+    if condition:
+        let inner = 1
+        handle coro lend(inner.&, inner.&):
+            case Yield[&int32].yield(value) resume k:
+                kept = value
+            case return x:
+                pass
+
+    return read(kept)
+
+
+# ERROR: so does the value the coroutine completes with.
+def returnedEscapes(condition: bool) -> int32:
+    let outer = 0
+    let mut kept = outer.&
+
+    if condition:
+        let inner = 1
+        handle coro lend(inner.&, inner.&):
+            case Yield[&int32].yield(value) resume k:
+                pass
+            case return x:
+                kept = x
+
+    return read(kept)
+
+
+# OK: the borrows are of a variable that lives as long as `kept`.
+def stays(condition: bool) -> int32:
+    let outer = 0
+    let mut kept = outer.&
+
+    if condition:
+        handle coro lend(outer.&, outer.&):
+            case Yield[&int32].yield(value) resume k:
+                kept = value
+            case return x:
+                kept = x
+
+    return read(kept)
+
+
+def main() -> int32:
+    return stays(true)

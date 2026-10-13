@@ -1,0 +1,27 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+def make() -> int32:
+    return 1
+
+
+# ERROR: a `handle` resumes a continuation, so its operand is a call.
+def notCall():
+    let con = coro numbers()
+    handle con:
+        case Yield[int32].yield(value) resume k:
+            pass
+
+
+# ERROR: `make` is a function, not a continuation.
+def callOfFunction():
+    handle make()
+
+
+def main() -> int32:
+    return 0

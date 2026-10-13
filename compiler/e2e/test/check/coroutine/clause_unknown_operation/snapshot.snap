@@ -1,0 +1,52 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: function body effects do not match its signature: expected `{}`, but found `{Yield[int32]}`
+   ╭▸ compiler/e2e/test/check/coroutine/clause_unknown_operation/main.ray:19:5
+   │
+19 │   def unknown() -> int32:
+   │       ━━━━━━━ the function body has effects outside its signature
+20 │ ┌     handle coro numbers():
+21 │ │         case Yield.next(value) resume k:
+22 │ │             pass
+   ╰╴└────────────────┘ effect `{Yield[int32]}` introduced here
+
+[error]: symbol `next` is not found
+   ╭▸ compiler/e2e/test/check/coroutine/clause_unknown_operation/main.ray:21:20
+   │
+21 │         case Yield.next(value) resume k:
+   ╰╴                   ━━━━ symbol `next` is not found
+
+[error]: function body effects do not match its signature: expected `{}`, but found `{Yield[int32]}`
+   ╭▸ compiler/e2e/test/check/coroutine/clause_unknown_operation/main.ray:28:5
+   │
+28 │   def notOperation() -> int32:
+   │       ━━━━━━━━━━━━ the function body has effects outside its signature
+29 │ ┌     handle coro numbers():
+30 │ │         case numbers() resume k:
+31 │ │             pass
+   ╰╴└────────────────┘ effect `{Yield[int32]}` introduced here
+
+[error]: a clause of a `handle` expects an effect operation
+   ╭▸ compiler/e2e/test/check/coroutine/clause_unknown_operation/main.ray:30:14
+   │
+30 │         case numbers() resume k:
+   │              ━━━━━━━ this is not an effect operation
+   │
+   ╰ help: write the operation as it is performed, as in `case Effect.operation(value) resume k:`
+
+[error]: missing clause for effect operation `main.Pair.second`
+   ╭▸ compiler/e2e/test/check/coroutine/clause_unknown_operation/main.ray:39:14
+   │
+39 │         case Pair.first(): 0
+   │              ━━━━━━━━━━ add a clause for `main.Pair.second`
+   │
+   ╰ help: a `handle` handles every operation of the effects it names
+
+[error]: Compilation aborted due to 5 error(s)
+
+
+
+stdout:

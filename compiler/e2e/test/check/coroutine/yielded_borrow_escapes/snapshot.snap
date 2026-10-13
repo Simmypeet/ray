@@ -1,0 +1,32 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: borrowed value does not live long enough
+   ╭▸ compiler/e2e/test/check/coroutine/yielded_borrow_escapes/main.ray:22:26
+   │
+21 │         let inner = 1
+   │             ───── this variable goes out of scope while it is still borrowed
+22 │         handle coro lend(inner.&, inner.&):
+   │                          ━━━━━━━ borrowed value does not live long enough
+   ‡
+28 │     return read(kept)
+   ╰╴                ──── borrow later used here
+
+[error]: borrowed value does not live long enough
+   ╭▸ compiler/e2e/test/check/coroutine/yielded_borrow_escapes/main.ray:38:26
+   │
+37 │         let inner = 1
+   │             ───── this variable goes out of scope while it is still borrowed
+38 │         handle coro lend(inner.&, inner.&):
+   │                          ━━━━━━━ borrowed value does not live long enough
+   ‡
+44 │     return read(kept)
+   ╰╴                ──── borrow later used here
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

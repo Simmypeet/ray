@@ -1,0 +1,34 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot handle `{Ask}`: it is not visible in `{Yield[int32]}`, the effect the coroutine has left to handle
+   ╭▸ compiler/e2e/test/check/coroutine/handle_unknown_label/main.ray:30:14
+   │
+30 │         case Ask.ask() resume k:
+   ╰╴             ━━━━━━━ the coroutine is not known to perform this effect
+
+[error]: cannot handle `{Yield[bool]}`: it is not visible in `{Yield[int32]}`, the effect the coroutine has left to handle
+   ╭▸ compiler/e2e/test/check/coroutine/handle_unknown_label/main.ray:37:14
+   │
+37 │         case Yield[bool].yield(value) resume k:
+   ╰╴             ━━━━━━━━━━━━━━━━━ the coroutine is not known to perform this effect
+
+[error]: cannot handle `{Ask}`: it is not visible in `{}`, the effect the coroutine has left to handle
+   ╭▸ compiler/e2e/test/check/coroutine/handle_unknown_label/main.ray:44:14
+   │
+44 │         case Ask.ask() resume k: 0
+   ╰╴             ━━━━━━━ the coroutine is not known to perform this effect
+
+[error]: cannot handle `{State[bool]}`: it is not visible in `{State[int32]}`, the effect the coroutine has left to handle
+   ╭▸ compiler/e2e/test/check/coroutine/handle_unknown_label/main.ray:51:14
+   │
+51 │         case State[bool].set(value): 0
+   ╰╴             ━━━━━━━━━━━━━━━ the coroutine is not known to perform this effect
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched types in variable assignment: expected `Continuation[(), &mut <coroutine of counter>]`, but found `Continuation[int32, &mut <coroutine of counter>]`
+   ╭▸ compiler/e2e/test/check/coroutine/continuations_of_different_types/main.ray:30:23
+   │
+30 │                 con = k1
+   ╰╴                      ━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

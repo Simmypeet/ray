@@ -1,0 +1,47 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+    Yield.yield(2)
+
+
+def keep(k: core.Continuation[r, c]) given (_: core.Drop[c]):
+    let held = k
+
+
+# ERROR: the continuation a clause binds resumes the same coroutine, so it
+# still borrows the storage that `inner` was pinned to, which ends with the
+# `if`.
+def escapes(condition: bool):
+    let mut held = coro numbers()
+
+    if condition:
+        let inner = coro numbers()
+        handle inner():
+            case Yield[int32].yield(value) resume k:
+                held = k
+            case return x:
+                pass
+
+    keep(held)
+
+
+# OK: the storage of `con` lives as long as `held` does.
+def stays(condition: bool):
+    let con = coro numbers()
+    let mut held = coro numbers()
+
+    if condition:
+        handle con():
+            case Yield[int32].yield(value) resume k:
+                held = k
+            case return x:
+                pass
+
+    keep(held)
+
+
+def main() -> int32:
+    return 0

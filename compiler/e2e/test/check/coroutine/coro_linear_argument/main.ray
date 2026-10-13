@@ -11,12 +11,12 @@ def make() -> Handle:
     return Handle { fd = 0 }
 
 
-def close(handle: Handle):
-    core.NoDrop { value = move handle }
+def close(opened: Handle):
+    core.NoDrop { value = move opened }
 
 
-def useHandle(handle: Handle) -> () \ {Yield[int32]}:
-    close(handle)
+def useHandle(opened: Handle) -> () \ {Yield[int32]}:
+    close(opened)
     Yield.yield(1)
 
 

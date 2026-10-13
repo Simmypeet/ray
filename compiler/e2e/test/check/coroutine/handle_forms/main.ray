@@ -1,0 +1,102 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+    Yield.yield(2)
+
+
+def askThenYield() -> int32 \ {Ask, Yield[int32]}:
+    let answer = Ask.ask()
+    Yield.yield(answer)
+    return answer
+
+
+# OK: a `coro` operand starts the coroutine it creates.
+def started():
+    handle coro numbers():
+        case Yield.yield(value) resume k:
+            pass
+
+
+# OK: the outermost call is the resume, whatever gives the continuation, and
+# a call without an argument resumes with `()`.
+def parenthesized():
+    handle (coro numbers())():
+        case Yield.yield(value) resume k:
+            pass
+
+
+# OK: so does a call with `()`.
+def explicitUnit():
+    let con = coro numbers()
+    handle con(()):
+        case Yield.yield(value) resume k:
+            pass
+
+
+# OK: a clause that does not name the continuation drops it with the clause,
+# which abandons the coroutine. A return clause may ignore the value.
+def abandon() -> int32:
+    let con = coro numbers()
+    return handle con():
+        case Yield.yield(value): value
+        case return: 0
+
+
+# OK: the type arguments of the effect may be written.
+def explicitArguments() -> int32:
+    return handle coro numbers():
+        case Yield[int32].yield(value): value
+        case return x: 0
+
+
+# OK: a `handle` is an expression, and its clauses use the enclosing
+# variables directly.
+def asValue() -> int32:
+    let base = 10
+    let first = handle coro numbers():
+        case Yield.yield(value): base + value
+        case return: base
+
+    return first
+
+
+# OK: several effects of one coroutine are handled by one `handle`, and the
+# return clause may be written anywhere among the others.
+def twoEffects() -> int32:
+    return handle coro askThenYield():
+        case Ask.ask(): 1
+        case return x: x
+        case Yield.yield(value): value
+
+
+# OK: an effect without a clause is forwarded, so it stays in the effect of
+# the function.
+def forwardYield() -> int32 \ {Yield[int32]}:
+    return handle coro askThenYield():
+        case Ask.ask(): 7
+
+
+# OK: a clause may handle the continuation it binds.
+def nested() -> int32:
+    return handle coro numbers():
+        case Yield.yield(first) resume k:
+            return handle k():
+                case Yield.yield(second): first + second
+                case return: first
+        case return: 0
+
+
+# OK: without clauses, a `handle` invokes the continuation.
+def noClause() -> () \ {Yield[int32]}:
+    handle coro numbers()
+
+
+def main() -> int32:
+    return abandon() + asValue() + twoEffects() + nested()

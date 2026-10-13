@@ -1,0 +1,40 @@
+eff State[a]:
+    def get() -> a
+    def set(value: a) -> ()
+
+
+def counter() -> int32 \ {State[int32]}:
+    State.set(State.get() + 1)
+    return State.get()
+
+
+# ERROR: a clause binds the parameters of its operation.
+def tooFew() -> int32:
+    return handle coro counter():
+        case State.get(): 0
+        case State.set() resume k: 0
+
+
+# ERROR: no more than that. The continuation is not one of them.
+def tooMany() -> int32:
+    return handle coro counter():
+        case State.get(k): 0
+        case State.set(value, k): 0
+
+
+# ERROR: a continuation is resumed with one value.
+def resumeArity() -> int32:
+    return handle (coro counter())(1, 2):
+        case State.get(): 0
+        case State.set(value): 0
+
+
+# ERROR: the names of one clause are distinct.
+def sameName() -> int32:
+    return handle coro counter():
+        case State.get(): 0
+        case State.set(k) resume k: 0
+
+
+def main() -> int32:
+    return 0

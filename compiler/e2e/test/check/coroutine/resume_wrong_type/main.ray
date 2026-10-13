@@ -1,0 +1,45 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+def addTwo() -> int32 \ {Ask}:
+    return Ask.ask() + Ask.ask()
+
+
+# ERROR: a new coroutine is always resumed with `()`.
+def wrongStart():
+    let con = coro numbers()
+    handle con(1):
+        case Yield[int32].yield(value) resume k:
+            pass
+
+
+# ERROR: `ask` returns an `int32`, so its continuation waits for one.
+def wrongAnswer() -> int32:
+    return handle coro addTwo():
+        case Ask.ask() resume k:
+            return handle k(true):
+                case Ask.ask() resume rest:
+                    return 0
+
+
+# ERROR: invoking a continuation takes the value it waits for.
+def wrongInvoke(k: core.Continuation[int32, c]) given (co: core.Coroutine[c]) -> co.Return \ co.Effect:
+    return k(true)
+
+
+# ERROR: only a continuation can be resumed.
+def notContinuation(value: int32):
+    handle value()
+
+
+def main() -> int32:
+    return 0

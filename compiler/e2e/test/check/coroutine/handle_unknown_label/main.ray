@@ -1,0 +1,55 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+def pure() -> int32:
+    return 1
+
+
+eff State[a]:
+    def get() -> a
+    def set(value: a) -> ()
+
+
+def counter() -> int32 \ {State[int32]}:
+    State.set(State.get() + 1)
+    return State.get()
+
+
+# ERROR: `numbers` performs `Yield[int32]`, not `Ask`.
+def otherEffect():
+    handle coro numbers():
+        case Ask.ask() resume k:
+            pass
+
+
+# ERROR: the label has to match with its arguments.
+def otherArgument():
+    handle coro numbers():
+        case Yield[bool].yield(value) resume k:
+            pass
+
+
+# ERROR: `pure` performs nothing.
+def noEffect() -> int32:
+    return handle coro pure():
+        case Ask.ask() resume k: 0
+
+
+# ERROR: every clause of an effect is written for the same label.
+def twoLabels() -> int32:
+    return handle coro counter():
+        case State[int32].get(): 0
+        case State[bool].set(value): 0
+
+
+def main() -> int32:
+    return 0

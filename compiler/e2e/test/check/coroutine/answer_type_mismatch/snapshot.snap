@@ -1,0 +1,39 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched types in `handle` clauses: expected `int32`, but found `bool`
+   ╭▸ compiler/e2e/test/check/coroutine/answer_type_mismatch/main.ray:15:46
+   │
+15 │         case State[int32].set(value) resume k: true
+   ╰╴                                             ━━━━━━
+
+[error]: mismatched types in `handle` clauses: expected `int32`, but found `()`
+   ╭▸ compiler/e2e/test/check/coroutine/answer_type_mismatch/main.ray:22:46
+   │
+22 │           case State[int32].set(value) resume k:
+   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+23 │ ┃             pass
+   ╰╴┗━━━━━━━━━━━━━━━━┛
+
+[error]: mismatched types in `handle` clauses: expected `bool`, but found `int32`
+   ╭▸ compiler/e2e/test/check/coroutine/answer_type_mismatch/main.ray:29:12
+   │
+29 │       return handle coro counter():
+   │ ┏━━━━━━━━━━━━┛
+30 │ ┃         case State[int32].get() resume k: true
+31 │ ┃         case State[int32].set(value) resume k: false
+   ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+[error]: mismatched types in `handle` clauses: expected `int32`, but found `bool`
+   ╭▸ compiler/e2e/test/check/coroutine/answer_type_mismatch/main.ray:39:22
+   │
+39 │         case return x: true
+   ╰╴                     ━━━━━━
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

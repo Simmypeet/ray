@@ -1,0 +1,43 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+eff Pair:
+    def first() -> int32
+    def second() -> int32
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+def both() -> int32 \ {Pair}:
+    return Pair.first() + Pair.second()
+
+
+# ERROR: `Yield` has no operation named `next`.
+def unknown() -> int32:
+    handle coro numbers():
+        case Yield.next(value) resume k:
+            pass
+
+    return 0
+
+
+# ERROR: a clause names an effect operation.
+def notOperation() -> int32:
+    handle coro numbers():
+        case numbers() resume k:
+            pass
+
+    return 0
+
+
+# ERROR: `Pair` has two operations, and only one has a clause.
+def missing() -> int32:
+    return handle coro both():
+        case Pair.first(): 0
+
+
+def main() -> int32:
+    return 0

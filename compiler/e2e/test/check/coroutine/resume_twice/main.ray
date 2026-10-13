@@ -1,0 +1,39 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+# ERROR: a `handle` consumes the continuation it resumes.
+def handleTwice():
+    let con = coro numbers()
+    handle con():
+        case Yield[int32].yield(value) resume k:
+            pass
+    handle con():
+        case Yield[int32].yield(value) resume k:
+            pass
+
+
+# ERROR: so does invoking it.
+def invokeTwice(k: core.Continuation[(), c]) given (co: core.Coroutine[c]) -> () \ co.Effect where (co.Return = ()):
+    k(())
+    k(())
+
+
+# ERROR: the loop resumes `con` again, but the clause never stores the next
+# continuation back into it.
+def loopWithoutStore():
+    let con = coro numbers()
+    while true:
+        handle con():
+            case Yield[int32].yield(value) resume k:
+                pass
+            case return x:
+                break
+
+
+def main() -> int32:
+    return 0

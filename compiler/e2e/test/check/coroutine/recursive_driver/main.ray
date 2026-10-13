@@ -1,0 +1,21 @@
+eff Ask:
+    def ask() -> int32
+
+
+def addTwo() -> int32 \ {Ask}:
+    return Ask.ask() + Ask.ask()
+
+
+# Answers the first `ask` with `n`, the next with `n + 1`, and so on.
+#
+# OK: the first continuation waits for `()` and every later one for an
+# `int32`, so the driver is generic over `r` and recurses instead of storing
+# the continuation. There is no return clause, so the value the coroutine
+# completes with is the value of the innermost `handle`.
+def supply(k: core.Continuation[r, c], value: r, n: int32) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask() resume next: supply(next, n, n + 1)
+
+
+def main() -> int32:
+    return supply(coro addTwo(), (), 1)

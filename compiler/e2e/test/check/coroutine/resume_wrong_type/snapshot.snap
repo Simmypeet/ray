@@ -1,0 +1,34 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched type of the value a coroutine is resumed with: expected `()`, but found `int32`
+   ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:20:16
+   │
+20 │     handle con(1):
+   ╰╴               ━
+
+[error]: mismatched type of the value a coroutine is resumed with: expected `int32`, but found `bool`
+   ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:29:29
+   │
+29 │             return handle k(true):
+   ╰╴                            ━━━━
+
+[error]: mismatched argument types in function call: expected `int32`, but found `bool`
+   ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:36:14
+   │
+36 │     return k(true)
+   ╰╴             ━━━━
+
+[error]: `handle` expects a continuation to resume, but found `int32`
+   ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:41:12
+   │
+41 │     handle value()
+   ╰╴           ━━━━━ this is not a `core.Continuation`
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

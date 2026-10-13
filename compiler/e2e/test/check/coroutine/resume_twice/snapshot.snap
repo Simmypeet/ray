@@ -1,0 +1,36 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: use of moved value
+   ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:15:12
+   │
+12 │     handle con():
+   │            ─── value moved here
+   ‡
+15 │     handle con():
+   ╰╴           ━━━ value used here after it was moved
+
+[error]: use of moved value
+   ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:23:5
+   │
+22 │     k(())
+   │     ─ value moved here
+23 │     k(())
+   ╰╴    ━ value used here after it was moved
+
+[error]: use of moved value
+   ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:31:16
+   │
+31 │         handle con():
+   │                ┯━━
+   │                │
+   │                value used here after it was moved
+   ╰╴               value moved here
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:
