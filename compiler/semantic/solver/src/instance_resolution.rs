@@ -319,6 +319,53 @@ impl Solver {
         )))
     }
 
+    /// Builds the built-in `Def` dictionary of `core.Continuation[r, c]`,
+    /// which makes a continuation callable, from the `Coroutine` dictionary
+    /// of `c`.
+    ///
+    /// Like the built-in `Drop` dictionaries, it is selected before lexical
+    /// lookup, so a given cannot change how a continuation is called.
+    ///
+    /// Returns `None` when `required` is not such a requirement.
+    pub(crate) async fn resolve_continuation_def_instance(
+        &mut self,
+        required: &TraitRef,
+    ) -> Option<InstanceResolutionResult> {
+        if required.args().len() != 1 {
+            return None;
+        }
+
+        // Match the core struct by declaration identity before asking for
+        // the trait, as most requirements are for neither.
+        let continuation = required.args().interned_iter().next()?;
+        let struct_ = continuation.as_struct_view()?;
+        if struct_.symbol_id() != self.engine().get_core_item(CoreItem::ContinuationStruct).await
+            || required.trait_id() != self.engine().get_core_item(CoreItem::DefTrait).await
+        {
+            return None;
+        }
+
+        // What the call returns and performs is told by the coroutine, so
+        // the dictionary is built from the one of the coroutine.
+        let [_, coroutine] = struct_.args() else {
+            return None;
+        };
+        let coroutine_trait = self.engine().get_core_item(CoreItem::CoroutineTrait).await;
+        let coroutine_requirement =
+            TraitRef::new(coroutine_trait, Args::new([coroutine.clone()], self.engine()));
+
+        let resolution = Box::pin(self.resolve_instance_from(coroutine_requirement, None)).await;
+        Some(resolution.map(|resolved| {
+            let (coroutine_instance, obligations, outlives) = resolved.into_parts();
+            let term = Ty::new_continuation_def_instance(
+                continuation.clone(),
+                coroutine_instance,
+                self.engine(),
+            );
+            ResolvedInstance::new(term, obligations, outlives)
+        }))
+    }
+
     pub(crate) async fn resolve_no_op_drop_instance(
         &self,
         required: &TraitRef,
@@ -410,16 +457,6 @@ impl Solver {
 
         let closure = required.args().interned_iter().next()?;
         let captured_tuple = closure.as_closure_view()?.captured_tuple();
-
-        // Only the captures determine the dictionary, so readiness is checked
-        // on them alone. The signature and effect row may stay uninferred,
-        // e.g. for a closure that is never called.
-        if captured_tuple.contains_non_lifetime_inference() {
-            return Some(Err(InstanceResolutionError::NotReady(required.clone())));
-        }
-        if captured_tuple.contains_error() {
-            return Some(Err(InstanceResolutionError::ContainsError(required.clone())));
-        }
 
         // Borrowed captures are pointers in the captured tuple, so their
         // dictionaries are no-ops and only by-value captures are dropped.
@@ -594,20 +631,24 @@ impl Solver {
         }
     }
 
-    /// Resolves the `Drop` dictionary that the compiler decides for a type
-    /// with a known constructor: `NoDrop`, primitives and pointers are
-    /// no-ops, tuples and nominal types follow their structure or plan, and
-    /// coroutines drop their upvars.
+    /// Resolves a dictionary that the compiler decides for a type with a
+    /// known constructor.
+    ///
+    /// For `Drop`: `NoDrop`, primitives and pointers are no-ops, tuples and
+    /// nominal types follow their structure or plan, closures drop their
+    /// captures, and coroutines drop their upvars. For `Def`: a
+    /// `core.Continuation` is called through the `Coroutine` dictionary of
+    /// its coroutine.
     ///
     /// The requirement must be fully inferred: these run only once the
     /// active goal passed the readiness check, unlike
     /// [`Self::resolve_early_built_in_instance`]. They also run before
     /// lexical lookup, so a `given Drop[int32]` cannot replace the built-in
-    /// behavior; lexical `Drop` evidence is only consulted for opaque types
-    /// such as type variables and unreduced associated types.
+    /// behavior; lexical evidence is only consulted for opaque types such as
+    /// type variables and unreduced associated types.
     ///
     /// Returns `None` when `required` is not such a requirement.
-    async fn resolve_built_in_drop_instance(
+    async fn resolve_built_in_instance(
         &mut self,
         required: &TraitRef,
     ) -> Option<InstanceResolutionResult> {
@@ -627,18 +668,25 @@ impl Solver {
         if let Some(resolution) = self.resolve_nominal_drop_instance(required).await {
             return Some(resolution);
         }
-        self.resolve_coroutine_drop_instance(required).await
+        if let Some(resolution) = self.resolve_closure_drop_instance(required).await {
+            return Some(resolution);
+        }
+        if let Some(resolution) = self.resolve_coroutine_drop_instance(required).await {
+            return Some(resolution);
+        }
+
+        // So does the compiler decide how a continuation is called.
+        self.resolve_continuation_def_instance(required).await
     }
 
     /// Resolves a dictionary that its type alone determines, without
-    /// searching: `Def` and `Drop` of a nominal closure, and `Coroutine` of a
-    /// coroutine type.
+    /// searching: `Def` of a nominal closure, and `Coroutine` of a coroutine
+    /// type.
     ///
     /// These do not wait until the requirement is fully inferred, and run
     /// before the readiness check. A closure's `Def` dictionary is known
-    /// before its signature and captures finish inference, its `Drop`
-    /// dictionary waits only on the captures, and a coroutine type
-    /// determines its `Coroutine` dictionary the same way.
+    /// before its signature and captures finish inference, and a coroutine
+    /// type determines its `Coroutine` dictionary the same way.
     ///
     /// Returns `None` when `required` is not such a requirement.
     pub(crate) async fn resolve_early_built_in_instance(
@@ -648,16 +696,13 @@ impl Solver {
         if let Some(resolved) = self.resolve_closure_instance(required).await {
             return Some(Ok(resolved));
         }
-        if let Some(resolution) = self.resolve_closure_drop_instance(required).await {
-            return Some(resolution);
-        }
         self.resolve_coroutine_instance(required).await.map(Ok)
     }
 
     pub async fn search_active_goal(&mut self, required: &TraitRef) -> InstanceResolutionResult {
-        // The compiler decides `Drop` for every type with a known
+        // The compiler decides the dictionary of some types with a known
         // constructor, before lexical lookup.
-        if let Some(resolution) = self.resolve_built_in_drop_instance(required).await {
+        if let Some(resolution) = self.resolve_built_in_instance(required).await {
             return resolution;
         }
 
