@@ -10,14 +10,14 @@ use rayc_type::{
 use crate::name_binding::NameBindingGroupID;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub struct TypedLambdaContext {
-    parameters: TypedLambdaParameterMap,
+pub struct TypedClosureContext {
+    parameters: TypedClosureParameterMap,
     parameter_name_binding_group_id: NameBindingGroupID,
 }
 
-impl TypedLambdaContext {
+impl TypedClosureContext {
     pub(crate) fn new(parameter_name_binding_group_id: NameBindingGroupID) -> Self {
-        Self { parameters: TypedLambdaParameterMap::new(), parameter_name_binding_group_id }
+        Self { parameters: TypedClosureParameterMap::new(), parameter_name_binding_group_id }
     }
 
     #[must_use]
@@ -28,24 +28,24 @@ impl TypedLambdaContext {
     #[must_use]
     pub fn parameters(
         &self,
-    ) -> impl ExactSizeIterator<Item = (LambdaParameterID, &TypedLambdaParameter)> {
+    ) -> impl ExactSizeIterator<Item = (ClosureParameterID, &TypedClosureParameter)> {
         self.parameters.iter()
     }
 
     #[must_use]
-    pub fn get_parameter(&self, id: LambdaParameterID) -> &TypedLambdaParameter {
+    pub fn get_parameter(&self, id: ClosureParameterID) -> &TypedClosureParameter {
         self.parameters.get_parameter(id)
     }
 
     pub(crate) fn insert_parameter(
         &mut self,
-        parameter: TypedLambdaParameter,
-    ) -> LambdaParameterID {
+        parameter: TypedClosureParameter,
+    ) -> ClosureParameterID {
         self.parameters.insert_parameter(parameter)
     }
 }
 
-impl MutSubstitutable for TypedLambdaContext {
+impl MutSubstitutable for TypedClosureContext {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.parameters.apply_mut_subst(subst, engine);
     }
@@ -54,12 +54,12 @@ impl MutSubstitutable for TypedLambdaContext {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable,
 )]
-pub struct TypedLambdaParameter {
+pub struct TypedClosureParameter {
     ty: Interned<Ty>,
     span: RelativeSpan,
 }
 
-impl TypedLambdaParameter {
+impl TypedClosureParameter {
     #[must_use]
     pub const fn new(ty: Interned<Ty>, span: RelativeSpan) -> Self { Self { ty, span } }
 
@@ -70,41 +70,41 @@ impl TypedLambdaParameter {
     pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
-impl MutSubstitutable for TypedLambdaParameter {
+impl MutSubstitutable for TypedClosureParameter {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.ty.apply_in_place(subst, engine);
     }
 }
 
-pub type LambdaParameterID = ID<TypedLambdaParameter>;
+pub type ClosureParameterID = ID<TypedClosureParameter>;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
-pub struct TypedLambdaParameterMap {
-    parameters: OrderedArena<TypedLambdaParameter>,
+pub struct TypedClosureParameterMap {
+    parameters: OrderedArena<TypedClosureParameter>,
 }
 
-impl TypedLambdaParameterMap {
+impl TypedClosureParameterMap {
     #[must_use]
     pub fn new() -> Self { Self::default() }
 
     #[must_use]
-    pub fn get_parameter(&self, id: LambdaParameterID) -> &TypedLambdaParameter {
-        self.parameters.get(id).expect("LambdaParameterID should be valid")
+    pub fn get_parameter(&self, id: ClosureParameterID) -> &TypedClosureParameter {
+        self.parameters.get(id).expect("ClosureParameterID should be valid")
     }
 
-    pub fn insert_parameter(&mut self, parameter: TypedLambdaParameter) -> LambdaParameterID {
+    pub fn insert_parameter(&mut self, parameter: TypedClosureParameter) -> ClosureParameterID {
         self.parameters.insert(parameter)
     }
 
     #[must_use]
     pub fn iter(
         &self,
-    ) -> impl ExactSizeIterator<Item = (LambdaParameterID, &TypedLambdaParameter)> {
+    ) -> impl ExactSizeIterator<Item = (ClosureParameterID, &TypedClosureParameter)> {
         self.parameters.iter()
     }
 }
 
-impl MutSubstitutable for TypedLambdaParameterMap {
+impl MutSubstitutable for TypedClosureParameterMap {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for (_, parameter) in self.parameters.iter_mut_unordered() {
             parameter.apply_mut_subst(subst, engine);

@@ -22,7 +22,20 @@ impl Arm {
         }
     }
 
-    fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
+    /// Returns whether control never leaves the arm through its end: its
+    /// block ends in a `break`, a `continue` or a `return`.
+    ///
+    /// This is syntactic. A block that diverges in any other way, such as
+    /// through an `if` whose arms all return, is not recognized.
+    #[must_use]
+    pub fn diverges(&self) -> bool {
+        match self {
+            Self::Expression(_) => false,
+            Self::Block(statements) => statements.last().is_some_and(Statement::diverges),
+        }
+    }
+
+    pub(crate) fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
         let expression = match self {
             Self::Expression(expression) => Some(*expression),
             Self::Block(_) => None,

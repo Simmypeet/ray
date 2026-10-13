@@ -16,6 +16,7 @@ use crate::{
         TypedExprID, TypedExprKind,
         binary::{Binary, BinaryOp},
         call::{Call, CallTarget},
+        handle::Handle,
         if_else::IfElse,
         run_with::RunWith,
         struct_initialization::StructInitialization,
@@ -373,8 +374,8 @@ impl<O: CopyOracle> Analyzer<'_, O> {
             TypedExprKind::Call(call) => {
                 self.visit_call(function_id, functions, call, plan).await;
             }
-            TypedExprKind::Closure(lambda) => {
-                self.visit_nested_function(function_id, functions, lambda.function_id(), plan)
+            TypedExprKind::Closure(closure) => {
+                self.visit_nested_function(function_id, functions, closure.function_id(), plan)
                     .await;
             }
 
@@ -451,6 +452,10 @@ impl<O: CopyOracle> Analyzer<'_, O> {
             }
             TypedExprKind::RunWith(run_with) => {
                 self.visit_run_with(function_id, functions, run_with, plan).await;
+            }
+
+            TypedExprKind::Handle(handle) => {
+                self.visit_handle(function_id, functions, handle, plan).await;
             }
             TypedExprKind::StructInitialization(initialization) => {
                 self.visit_struct_initialization(function_id, functions, initialization, plan)
@@ -550,6 +555,31 @@ impl<O: CopyOracle> Analyzer<'_, O> {
         }
         if let Some(else_arm) = if_else.else_arm() {
             self.visit_if_arm(function_id, functions, else_arm, plan).await;
+        }
+    }
+
+    /// Visits a `handle`. The continuation and the resume value are taken as
+    /// a call takes its arguments. The clauses are branches of this
+    /// function, so they capture nothing of their own.
+    async fn visit_handle(
+        &mut self,
+        function_id: TypedFunctionID,
+        functions: &TypedFunctionMap,
+        handle: &Handle,
+        plan: &mut FunctionCapturePlan,
+    ) {
+        for operand in [handle.continuation(), handle.value()] {
+            self.visit_expression(
+                function_id,
+                functions,
+                operand,
+                UseMode::new_value_implicit(),
+                plan,
+            )
+            .await;
+        }
+        for arm in handle.arms() {
+            self.visit_if_arm(function_id, functions, arm, plan).await;
         }
     }
 

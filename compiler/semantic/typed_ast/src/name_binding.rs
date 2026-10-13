@@ -13,8 +13,8 @@ use rayc_type::{
 };
 
 use crate::{
+    typed_closure::ClosureParameterID,
     typed_function::{TypedFunctionID, TypedFunctionLocalID},
-    typed_lambda::LambdaParameterID,
     typed_operation_handler::OperationHandlerParameterID,
     typed_variable::TypedVariableID,
 };
@@ -23,7 +23,7 @@ use crate::{
 pub enum Source {
     Variable(TypedFunctionLocalID<TypedVariableID>),
     Parameter(TypedFunctionLocalID<ParameterID>),
-    LambdaParameter(TypedFunctionLocalID<LambdaParameterID>),
+    ClosureParameter(TypedFunctionLocalID<ClosureParameterID>),
     OperationHandlerParameter(TypedFunctionLocalID<OperationHandlerParameterID>),
 }
 
@@ -33,7 +33,7 @@ impl Source {
         match self {
             Self::Variable(id) => id.function_id(),
             Self::Parameter(id) => id.function_id(),
-            Self::LambdaParameter(id) => id.function_id(),
+            Self::ClosureParameter(id) => id.function_id(),
             Self::OperationHandlerParameter(id) => id.function_id(),
         }
     }

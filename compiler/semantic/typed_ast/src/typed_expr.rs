@@ -12,10 +12,11 @@ use crate::{
     name_binding::NameBindingID,
     typed_expr::{
         binary::Binary, call::Call, closure::Closure, coro::Coro, deref::Deref, errored::Errored,
-        field_access::FieldAccess, identifier::Identifier, if_else::IfElse, literal::Literal,
-        r#move::Move, paren::Paren, ref_of::RefOf, ref_to_pointer::RefToPointer, run_with::RunWith,
-        statement_block::StatementBlock, struct_initialization::StructInitialization, tuple::Tuple,
-        tuple_index::TupleIndex, while_loop::While,
+        field_access::FieldAccess, handle::Handle, identifier::Identifier, if_else::IfElse,
+        literal::Literal, r#move::Move, paren::Paren, ref_of::RefOf, ref_to_pointer::RefToPointer,
+        run_with::RunWith, statement_block::StatementBlock,
+        struct_initialization::StructInitialization, tuple::Tuple, tuple_index::TupleIndex,
+        while_loop::While,
     },
 };
 
@@ -26,6 +27,7 @@ pub mod coro;
 pub mod deref;
 pub mod errored;
 pub mod field_access;
+pub mod handle;
 pub mod identifier;
 pub mod if_else;
 pub mod literal;
@@ -65,6 +67,7 @@ pub enum TypedExprKind {
     Move(Move),
     Paren(Paren),
     RunWith(RunWith),
+    Handle(Handle),
     StructInitialization(StructInitialization),
     StatementBlock(StatementBlock),
     Errored(Errored),
@@ -74,7 +77,7 @@ impl SubExprs for TypedExprKind {
     fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
         // There must be a better way to do this while doesn't require boxing the
         // iterator 😭
-        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T> {
+        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U> {
             A(A),
             B(B),
             C(C),
@@ -95,10 +98,11 @@ impl SubExprs for TypedExprKind {
             R(R),
             S(S),
             T(T),
+            U(U),
         }
 
-        impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T> Iterator
-            for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T>
+        impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U> Iterator
+            for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U>
         where
             A: Iterator<Item = TypedExprID>,
             B: Iterator<Item = TypedExprID>,
@@ -120,6 +124,7 @@ impl SubExprs for TypedExprKind {
             R: Iterator<Item = TypedExprID>,
             S: Iterator<Item = TypedExprID>,
             T: Iterator<Item = TypedExprID>,
+            U: Iterator<Item = TypedExprID>,
         {
             type Item = TypedExprID;
 
@@ -145,6 +150,7 @@ impl SubExprs for TypedExprKind {
                     Self::R(iter) => iter.next(),
                     Self::S(iter) => iter.next(),
                     Self::T(iter) => iter.next(),
+                    Self::U(iter) => iter.next(),
                 }
             }
         }
@@ -170,6 +176,7 @@ impl SubExprs for TypedExprKind {
             Self::StatementBlock(x) => Iter::R(x.sub_exprs()),
             Self::RefToPointer(x) => Iter::S(x.sub_exprs()),
             Self::Coro(x) => Iter::T(x.sub_exprs()),
+            Self::Handle(x) => Iter::U(x.sub_exprs()),
         }
     }
 }
@@ -243,6 +250,7 @@ impl MutSubstitutable for TypedExpr {
             TypedExprKind::Call(call) => call.apply_mut_subst(subst, engine),
             TypedExprKind::Coro(coro) => coro.apply_mut_subst(subst, engine),
             TypedExprKind::RunWith(run_with) => run_with.apply_mut_subst(subst, engine),
+            TypedExprKind::Handle(handle) => handle.apply_mut_subst(subst, engine),
             TypedExprKind::IfElse(if_else) => if_else.apply_mut_subst(subst, engine),
             TypedExprKind::While(while_loop) => while_loop.apply_mut_subst(subst, engine),
             TypedExprKind::StatementBlock(block) => block.apply_mut_subst(subst, engine),
@@ -327,6 +335,7 @@ impl TypedExprMap {
             | TypedExprKind::RefToPointer(_)
             | TypedExprKind::Move(_)
             | TypedExprKind::RunWith(_)
+            | TypedExprKind::Handle(_)
             | TypedExprKind::StructInitialization(_) => LvalueClassification::NotLvalue,
         }
     }

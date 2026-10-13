@@ -1,5 +1,5 @@
 use rayc_source_file::SourceElement;
-use rayc_syntax::expression::{IfElseArm as ArmSyntax, Unsafe as UnsafeSyntax};
+use rayc_syntax::expression::{Arm as ArmSyntax, Unsafe as UnsafeSyntax};
 use rayc_type::ty::Ty;
 use rayc_typed_ast::typed_expr::{TypedExprID, statement_block::StatementBlock};
 

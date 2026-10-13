@@ -107,6 +107,18 @@ pub enum Statement {
     Return(Return),
 }
 
+impl Statement {
+    /// Returns whether the statement always leaves the block it is in: a
+    /// `break`, a `continue` or a `return`.
+    #[must_use]
+    pub const fn diverges(&self) -> bool {
+        match self {
+            Self::Break(_) | Self::Continue(_) | Self::Return(_) => true,
+            Self::Let(_) | Self::Expression(_) => false,
+        }
+    }
+}
+
 impl MutSubstitutable for Statement {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         match self {

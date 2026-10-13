@@ -13,6 +13,7 @@ use super::{CapturePlan, CopyOracle};
 use crate::{
     name_binding::{NameBinding, Source},
     statement::{ExpressionStatement, Statement},
+    typed_closure::TypedClosureParameter,
     typed_expr::{
         TypedExpr, TypedExprID, TypedExprKind,
         binary::{Binary, BinaryOp},
@@ -27,7 +28,6 @@ use crate::{
         tuple_index::TupleIndex,
     },
     typed_function::{TypedFunctionID, TypedFunctionLocalID, TypedFunctionMap},
-    typed_lambda::TypedLambdaParameter,
     typed_variable::TypedVariable,
 };
 
@@ -79,12 +79,12 @@ impl TestMap {
         source
     }
 
-    fn lambda_parameter(&mut self, owner: TypedFunctionID, name: &'static str) -> Source {
+    fn closure_parameter(&mut self, owner: TypedFunctionID, name: &'static str) -> Source {
         let span = self.span();
         let parameter = self
             .functions
-            .insert_lambda_parameter(owner, TypedLambdaParameter::new(self.ty.clone(), span));
-        let source = Source::LambdaParameter(TypedFunctionLocalID::new(owner, parameter));
+            .insert_closure_parameter(owner, TypedClosureParameter::new(self.ty.clone(), span));
+        let source = Source::ClosureParameter(TypedFunctionLocalID::new(owner, parameter));
         self.insert_binding(source, name, span);
         source
     }
@@ -120,7 +120,7 @@ impl TestMap {
         )
     }
 
-    fn lambda(&mut self) -> TypedFunctionID { self.functions.insert_lambda(self.effect.clone()) }
+    fn closure(&mut self) -> TypedFunctionID { self.functions.insert_closure(self.effect.clone()) }
 
     fn statement(&mut self, function: TypedFunctionID, expression: TypedExprID) {
         // Capture analysis never inspects the discard's Drop dictionary.
@@ -132,7 +132,7 @@ impl TestMap {
         );
     }
 
-    fn lambda_expression(
+    fn closure_expression(
         &mut self,
         parent: TypedFunctionID,
         child: TypedFunctionID,
@@ -160,15 +160,15 @@ async fn bindings_owned_by_the_current_function_are_not_captured() {
     let engine = rayc_qbice::create_minimal_engine().await;
     let mut map = TestMap::new(&engine);
     let root = map.functions.root_id();
-    let child = map.lambda();
+    let child = map.closure();
     let local = map.variable(child, "local");
-    let parameter = map.lambda_parameter(child, "parameter");
+    let parameter = map.closure_parameter(child, "parameter");
     let local = map.identifier(child, local);
     let parameter = map.identifier(child, parameter);
     let tuple = map.expression(child, TypedExprKind::Tuple(Tuple::new(vec![local, parameter])));
     map.statement(child, tuple);
-    let lambda = map.lambda_expression(root, child);
-    map.statement(root, lambda);
+    let closure = map.closure_expression(root, child);
+    map.statement(root, closure);
 
     let analysis = CapturePlan::analyze(&map.functions, &mut AllCopy).await;
 
@@ -183,7 +183,7 @@ async fn repeated_uses_keep_first_encounter_order_and_upgrade_mutability_in_plac
     let root = map.functions.root_id();
     let first = map.variable(root, "first");
     let second = map.variable(root, "second");
-    let child = map.lambda();
+    let child = map.closure();
 
     let first_read = map.identifier(child, first);
     map.statement(child, first_read);
@@ -196,8 +196,8 @@ async fn repeated_uses_keep_first_encounter_order_and_upgrade_mutability_in_plac
         TypedExprKind::Binary(Binary::new(first_write, BinaryOp::Assign, value)),
     );
     map.statement(child, assignment);
-    let lambda = map.lambda_expression(root, child);
-    map.statement(root, lambda);
+    let closure = map.closure_expression(root, child);
+    map.statement(root, closure);
 
     let analysis = CapturePlan::analyze(&map.functions, &mut AllCopy).await;
     let captures: Vec<_> = analysis.plan(child).captures().collect();
@@ -219,7 +219,7 @@ async fn address_modes_follow_projections_references_and_dereferences() {
     let projected = map.variable(root, "projected");
     let referenced = map.variable(root, "referenced");
     let pointer = map.variable(root, "pointer");
-    let child = map.lambda();
+    let child = map.closure();
 
     let projected_id = map.identifier(child, projected);
     let parenthesized = map.expression(child, TypedExprKind::Paren(Paren::new(projected_id)));
@@ -244,8 +244,8 @@ async fn address_modes_follow_projections_references_and_dereferences() {
         TypedExprKind::Binary(Binary::new(dereference, BinaryOp::Assign, value)),
     );
     map.statement(child, dereference_assignment);
-    let lambda = map.lambda_expression(root, child);
-    map.statement(root, lambda);
+    let closure = map.closure_expression(root, child);
+    map.statement(root, closure);
 
     let analysis = CapturePlan::analyze(&map.functions, &mut AllCopy).await;
     let captures: Vec<_> = analysis
@@ -267,10 +267,10 @@ async fn nested_children_propagate_only_ancestor_captures_with_joined_mutability
     let mut map = TestMap::new(&engine);
     let root = map.functions.root_id();
     let ancestor = map.variable(root, "ancestor");
-    let outer = map.lambda();
+    let outer = map.closure();
     let parent_local = map.variable(outer, "parent_local");
-    let reader = map.lambda();
-    let writer = map.lambda();
+    let reader = map.closure();
+    let writer = map.closure();
 
     let ancestor_read = map.identifier(reader, ancestor);
     map.statement(reader, ancestor_read);
@@ -290,12 +290,12 @@ async fn nested_children_propagate_only_ancestor_captures_with_joined_mutability
     );
     map.statement(writer, assignment);
 
-    let reader_lambda = map.lambda_expression(outer, reader);
-    map.statement(outer, reader_lambda);
-    let writer_lambda = map.lambda_expression(outer, writer);
-    map.statement(outer, writer_lambda);
-    let outer_lambda = map.lambda_expression(root, outer);
-    map.statement(root, outer_lambda);
+    let reader_closure = map.closure_expression(outer, reader);
+    map.statement(outer, reader_closure);
+    let writer_closure = map.closure_expression(outer, writer);
+    map.statement(outer, writer_closure);
+    let outer_closure = map.closure_expression(root, outer);
+    map.statement(root, outer_closure);
 
     let analysis = CapturePlan::analyze(&map.functions, &mut AllCopy).await;
     let reader_captures: Vec<_> = analysis
@@ -332,7 +332,7 @@ async fn moving_a_value_wins_over_borrowing_it() {
     let mut map = TestMap::new(&engine);
     let root = map.functions.root_id();
     let owned = map.variable(root, "owned");
-    let child = map.lambda();
+    let child = map.closure();
 
     let read = map.identifier(child, owned);
     map.statement(child, read);
@@ -341,8 +341,8 @@ async fn moving_a_value_wins_over_borrowing_it() {
     let assignment =
         map.expression(child, TypedExprKind::Binary(Binary::new(write, BinaryOp::Assign, value)));
     map.statement(child, assignment);
-    let lambda = map.lambda_expression(root, child);
-    map.statement(root, lambda);
+    let closure = map.closure_expression(root, child);
+    map.statement(root, closure);
 
     let analysis = CapturePlan::analyze(&map.functions, &mut NoneCopy).await;
     let captures: Vec<_> = analysis
@@ -362,13 +362,13 @@ async fn explicit_move_captures_a_copy_value_by_value() {
     let mut map = TestMap::new(&engine);
     let root = map.functions.root_id();
     let copied = map.variable(root, "copied");
-    let child = map.lambda();
+    let child = map.closure();
 
     let operand = map.identifier(child, copied);
     let moved = map.expression(child, TypedExprKind::Move(Move::new(operand)));
     map.statement(child, moved);
-    let lambda = map.lambda_expression(root, child);
-    map.statement(root, lambda);
+    let closure = map.closure_expression(root, child);
+    map.statement(root, closure);
 
     let analysis = CapturePlan::analyze(&map.functions, &mut AllCopy).await;
     let captures: Vec<_> = analysis
