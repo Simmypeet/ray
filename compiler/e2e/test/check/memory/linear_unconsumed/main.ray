@@ -13,28 +13,28 @@ struct Wrapper[t]:
 def make() -> Handle:
     return Handle { fd = 0 }
 
-def close(handle: Handle):
-    core.NoDrop { value = move handle }
+def close(opened: Handle):
+    core.NoDrop { value = move opened }
 
 def dispose(value: a) given (drop: core.Drop[a]):
     drop.drop(value)
 
 # OK: every linear value is consumed exactly once.
 def consumed(pair: Pair):
-    let handle = make()
-    close(handle)
+    let opened = make()
+    close(opened)
     close(pair.first)
     close(pair.second)
 
 # Error: the value is dropped at the end of the scope.
 def leak():
-    let handle = make()
+    let opened = make()
 
 # Error: the value is dropped on the path that does not consume it.
 def leakOnBranch(condition: bool):
-    let handle = make()
+    let opened = make()
     if condition:
-        close(handle)
+        close(opened)
 
 # Error: a discarded linear value is dropped.
 def leakDiscard():
@@ -54,9 +54,9 @@ def leakWrapper():
     let wrapper = Wrapper { value = make() }
 
 # Error: a linear value is never `Copy`, even with only `Copy` fields.
-def useTwice(handle: Handle):
-    close(handle)
-    close(handle)
+def useTwice(opened: Handle):
+    close(opened)
+    close(opened)
 
 # Error: a linear type has no Drop dictionary to pass.
 def main() -> int32:

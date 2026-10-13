@@ -1,0 +1,17 @@
+# OK: both arms of the `if` leave the loop body, so nothing reaches the end
+# of the body. The analyses still have to accept the loop.
+def firstOrSkip(stop: bool) -> int32:
+    let mut count = 0
+
+    while true:
+        count = count + 1
+        if stop:
+            break
+        else:
+            continue
+
+    return count
+
+
+def main() -> int32:
+    return firstOrSkip(true)

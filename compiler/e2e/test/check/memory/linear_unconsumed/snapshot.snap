@@ -6,7 +6,7 @@ stderr:
 [error]: no implicit instance found: `core.Drop[Handle]`
    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:31:9
    │
-31 │     let handle = make()
+31 │     let opened = make()
    │         ━━━━━━ this value is dropped when it goes out of scope
    │
    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
@@ -14,7 +14,7 @@ stderr:
 [error]: no implicit instance found: `core.Drop[Handle]`
    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:35:9
    │
-35 │     let handle = make()
+35 │     let opened = make()
    │         ━━━━━━ this value is dropped when it goes out of scope
    │
    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
@@ -52,9 +52,9 @@ stderr:
 [error]: use of moved value
    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:59:11
    │
-58 │     close(handle)
+58 │     close(opened)
    │           ────── value moved here
-59 │     close(handle)
+59 │     close(opened)
    ╰╴          ━━━━━━ value used here after it was moved
 
 [error]: no implicit instance found: `core.Drop[Handle]`

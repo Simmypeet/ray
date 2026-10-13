@@ -4,7 +4,7 @@ expression: run
 ---
 stderr:
 [error]: unexpected `def` keyword, expected type
-  ╭▸ compiler/e2e/test/check/unsupported_lambda_transport/main.ray:1:49
+  ╭▸ compiler/e2e/test/check/unsupported_closure_transport/main.ray:1:49
   │
 1 │ def transport(callback: def(int32) -> int32) -> def(int32) -> int32:
   ╰╴                                                ━━━

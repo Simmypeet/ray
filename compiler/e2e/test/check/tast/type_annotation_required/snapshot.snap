@@ -9,7 +9,7 @@ stderr:
 11 │     let closure = (x) -> 1
    │                    ━ cannot infer the type of `x`
    │
-   ╰ help: the type of a lambda parameter is inferred from how the lambda is called
+   ╰ help: the type of a closure parameter is inferred from how the closure is called
 
 [error]: type annotation required
    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:16:26

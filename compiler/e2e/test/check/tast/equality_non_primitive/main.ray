@@ -7,7 +7,7 @@ def stringEquality() -> bool:
 def pointerEquality(value: *int32) -> bool:
     return value == value
 
-def lambdaEquality(callback: def() -> ()) -> bool:
+def closureEquality(callback: def() -> ()) -> bool:
     return callback != callback
 
 def mismatchedPrimitiveEquality() -> bool:

@@ -4,5 +4,5 @@ def value() -> ():
 def invalid() -> () \ {value}:
     return ()
 
-def invalidLambda(callback: def() -> () \ {value}) -> ():
+def invalidClosure(callback: def() -> () \ {value}) -> ():
     return ()

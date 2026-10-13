@@ -20,11 +20,11 @@ def requirePure(callback: def()):
 def requireState(callback: def() \ {State[int32]}):
     return ()
 
-def mismatchedLambda() -> ():
+def mismatchedClosure() -> ():
     requirePure(() -> withIntState())
     return ()
 
 
-def matchingLambda() -> ():
+def matchingClosure() -> ():
     requireState(() -> withIntState())
     return ()

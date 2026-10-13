@@ -71,11 +71,11 @@ struct Handler[e: Effect]:
     value: int32
 
 trait Rows[]:
-    def handle(handler: *Handler[{Read[a], Write[b]}], value: *b) -> *b
+    def opened(handler: *Handler[{Read[a], Write[b]}], value: *b) -> *b
 
 # OK: effect labels are unordered, so `a` is `y` and `b` is `x`.
 inst RowsReordered for Rows:
-    def handle(handler: *Handler[{Write[x], Read[y]}], value: *x) -> *x:
+    def opened(handler: *Handler[{Write[x], Read[y]}], value: *x) -> *x:
         return value
 
 # ERROR: the implementation has `int32` where the trait has `a`, so `a` has no

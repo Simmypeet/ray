@@ -9,9 +9,9 @@ def open(name: cstr) -> Handle:
     return Handle { name = name }
 
 # The destruction method consumes the value through `core.NoDrop`.
-def close(handle: Handle):
-    puts(handle.name)
-    core.NoDrop { value = move handle }
+def close(opened: Handle):
+    puts(opened.name)
+    core.NoDrop { value = move opened }
 
 struct Pair:
     first: Handle
@@ -28,8 +28,8 @@ def dispose(value: a) given (drop: core.Drop[a]):
     drop.drop(value)
 
 def main() -> int32:
-    let handle = open("closed")
-    close(handle)
+    let opened = open("closed")
+    close(opened)
 
     dispose(Pair { first = open("first"), second = open("second") })
 
