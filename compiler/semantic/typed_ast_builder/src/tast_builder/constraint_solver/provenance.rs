@@ -62,6 +62,16 @@ pub enum SubtypeSource {
     IfBranch,
     ReturnType,
     StructFieldInitialization,
+
+    /// The callee of the call that a `handle` resumes has to be a
+    /// continuation.
+    HandleContinuation,
+
+    /// The value a `handle` resumes a coroutine with.
+    HandleResumeValue,
+
+    /// Every clause of a `handle` has the type of the whole expression.
+    HandleClause,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Builder)]
@@ -82,8 +92,16 @@ pub struct EffectUnificationOrigin {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum EffectUnificationSource {
     EffectSharing,
-    EffectIntroduction { original_effect: Interned<Ty> },
+    EffectIntroduction {
+        original_effect: Interned<Ty>,
+    },
     FunctionBodyEffect,
+
+    /// The clauses of a `handle` handle `handled`, which therefore has to be
+    /// visible in the effect of the coroutine.
+    HandledEffect {
+        handled: Interned<Ty>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]
@@ -355,6 +373,13 @@ impl Provenance {
                         span: origin.span,
                     });
                 }
+                EffectUnificationSource::HandledEffect { handled } => {
+                    sites.push(ResolvedEffectUnificationSite {
+                        effect_row: self.latest_type(handled, solver).await,
+                        source: self.latest_effect_source(&origin.source, solver).await,
+                        span: origin.span,
+                    });
+                }
                 EffectUnificationSource::EffectSharing => {}
             }
         }
@@ -389,6 +414,11 @@ impl Provenance {
             EffectUnificationSource::EffectSharing => EffectUnificationSource::EffectSharing,
             EffectUnificationSource::FunctionBodyEffect => {
                 EffectUnificationSource::FunctionBodyEffect
+            }
+            EffectUnificationSource::HandledEffect { handled } => {
+                EffectUnificationSource::HandledEffect {
+                    handled: self.latest_type(handled, solver).await,
+                }
             }
         }
     }

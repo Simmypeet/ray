@@ -163,7 +163,7 @@ impl ResolvedCallTarget<'_> {
 }
 
 impl TAstBuilder {
-    async fn bind_call_arguments(&mut self, syn: &CallSyn) -> Vec<TypedExprID> {
+    pub(super) async fn bind_call_arguments(&mut self, syn: &CallSyn) -> Vec<TypedExprID> {
         let mut arguments = Vec::new();
 
         if let Some(argument_list) = syn.arguments() {
@@ -287,7 +287,7 @@ impl TAstBuilder {
             return match invocation {
                 Invocation::Call => {
                     let callee = self.bind(identifier).await;
-                    self.build_lambda_call(callee, &call).await
+                    self.build_closure_call(callee, &call).await
                 }
 
                 // TODO: A coroutine cannot be created from a callable value yet.
@@ -361,7 +361,7 @@ impl TAstBuilder {
         mut arguments: Vec<TypedExprID>,
         call_subst: Subst,
         span: RelativeSpan,
-        // Is `Some` when the call is a lambda call
+        // Is `Some` when the call is a closure call
         value_arguments: Option<&[TypedExprID]>,
     ) -> TypedExprID {
         let signature_subst = target.signature_subst(&call_subst, self.engine()).await;
@@ -504,7 +504,7 @@ impl TAstBuilder {
         ));
     }
 
-    pub async fn build_lambda_call(&mut self, callee: TypedExprID, syn: &CallSyn) -> TypedExprID {
+    pub async fn build_closure_call(&mut self, callee: TypedExprID, syn: &CallSyn) -> TypedExprID {
         // Bind once, preserving callee-before-arguments evaluation order.
         let arguments = self.bind_call_arguments(syn).await;
         let span = self.span_of_expression(callee).join(&syn.span());

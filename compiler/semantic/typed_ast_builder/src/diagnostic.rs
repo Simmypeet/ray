@@ -161,6 +161,268 @@ impl Report for MismatchedIndirectArgumentCount {
     }
 }
 
+/// The operand of a `handle` is not the call of a continuation, so there is
+/// nothing to resume.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct HandleOperandNotCall {
+    /// The operand of the `handle`.
+    span: RelativeSpan,
+}
+
+impl HandleOperandNotCall {
+    pub(crate) const fn new(span: RelativeSpan) -> Self { Self { span } }
+}
+
+impl Report for HandleOperandNotCall {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("`handle` expects the call of a continuation")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("this does not resume a continuation")
+                    .build(),
+            )
+            .help_message(
+                "write `handle continuation(value)` to resume a coroutine with `value`, or \
+                 `handle coro call()` to start one",
+            )
+            .build()
+    }
+}
+
+/// The callee of the call that a `handle` resumes is not a continuation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct HandleOperandNotContinuation {
+    ty: Interned<Ty>,
+
+    /// The callee of the call.
+    span: RelativeSpan,
+}
+
+impl HandleOperandNotContinuation {
+    pub(crate) const fn new(ty: Interned<Ty>, span: RelativeSpan) -> Self { Self { ty, span } }
+}
+
+impl Report for HandleOperandNotContinuation {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let ty = self.ty.display(engine).await;
+        Rendered::builder()
+            .message(format!("`handle` expects a continuation to resume, but found `{ty}`"))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("this is not a `core.Continuation`")
+                    .build(),
+            )
+            .build()
+    }
+}
+
+/// A `handle` resumes its continuation with more than one value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct MismatchedResumeValueCount {
+    found: usize,
+
+    /// The arguments of the call the `handle` resumes.
+    span: RelativeSpan,
+}
+
+impl MismatchedResumeValueCount {
+    pub(crate) const fn new(found: usize, span: RelativeSpan) -> Self { Self { found, span } }
+}
+
+impl Report for MismatchedResumeValueCount {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message(format!(
+                "a continuation is resumed with one value, but {} were provided",
+                self.found
+            ))
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .help_message("`handle continuation()` resumes with `()`")
+            .build()
+    }
+}
+
+/// The operations of an effect that a `handle` handles, but has no clause
+/// for.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct MissingHandleClause {
+    operations: Vec<GlobalSymbolID>,
+
+    /// The effect the clauses are written for.
+    span: RelativeSpan,
+}
+
+impl MissingHandleClause {
+    pub(crate) const fn new(operations: Vec<GlobalSymbolID>, span: RelativeSpan) -> Self {
+        Self { operations, span }
+    }
+}
+
+impl Report for MissingHandleClause {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let mut operations = Vec::with_capacity(self.operations.len());
+        for operation in &self.operations {
+            operations.push(format!("`{}`", engine.get_qualified_name(*operation).await));
+        }
+        let operations = operations.join(", ");
+        let (message, highlight) = if self.operations.len() == 1 {
+            (
+                format!("missing clause for effect operation {operations}"),
+                format!("add a clause for {operations}"),
+            )
+        } else {
+            (
+                format!("missing clauses for effect operations {operations}"),
+                format!("add clauses for {operations}"),
+            )
+        };
+
+        Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message(highlight)
+                    .build(),
+            )
+            .help_message("a `handle` handles every operation of the effects it names")
+            .build()
+    }
+}
+
+/// The clause of a `handle` that is written more than once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub enum DuplicatedHandleClause {
+    /// The clause of an effect operation.
+    Operation(GlobalSymbolID),
+
+    /// The `case return` clause.
+    Return,
+}
+
+/// A `handle` has more than one clause for the same operation, or more than
+/// one `case return`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct DuplicateHandleClause {
+    clause: DuplicatedHandleClause,
+    original_span: RelativeSpan,
+    duplicate_span: RelativeSpan,
+}
+
+impl DuplicateHandleClause {
+    pub(crate) const fn new(
+        clause: DuplicatedHandleClause,
+        original_span: RelativeSpan,
+        duplicate_span: RelativeSpan,
+    ) -> Self {
+        Self { clause, original_span, duplicate_span }
+    }
+}
+
+impl Report for DuplicateHandleClause {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let message = match self.clause {
+            DuplicatedHandleClause::Operation(operation) => format!(
+                "duplicate clause for effect operation `{}`",
+                engine.get_qualified_name(operation).await
+            ),
+            DuplicatedHandleClause::Return => "duplicate `case return` clause".to_owned(),
+        };
+
+        Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.duplicate_span).await)
+                    .message("duplicate clause")
+                    .build(),
+            )
+            .related(vec![
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.original_span).await)
+                    .message("the first clause is here")
+                    .build(),
+            ])
+            .build()
+    }
+}
+
+/// A `case` of a `handle` names something other than an effect operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct HandleClauseNotOperation {
+    /// The path the clause names.
+    span: RelativeSpan,
+}
+
+impl HandleClauseNotOperation {
+    pub(crate) const fn new(span: RelativeSpan) -> Self { Self { span } }
+}
+
+impl Report for HandleClauseNotOperation {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("a clause of a `handle` expects an effect operation")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("this is not an effect operation")
+                    .build(),
+            )
+            .help_message(
+                "write the operation as it is performed, as in `case Effect.operation(value) \
+                 resume k:`",
+            )
+            .build()
+    }
+}
+
+/// An operation clause of a `handle` does not bind the parameters of its
+/// operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct MismatchedHandleClauseParameterCount {
+    operation: GlobalSymbolID,
+
+    /// How many parameters the operation declares.
+    operation_parameters: usize,
+    found: usize,
+    span: RelativeSpan,
+}
+
+impl MismatchedHandleClauseParameterCount {
+    pub(crate) const fn new(
+        operation: GlobalSymbolID,
+        operation_parameters: usize,
+        found: usize,
+        span: RelativeSpan,
+    ) -> Self {
+        Self { operation, operation_parameters, found, span }
+    }
+}
+
+impl Report for MismatchedHandleClauseParameterCount {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let operation = engine.get_qualified_name(self.operation).await;
+        Rendered::builder()
+            .message(format!(
+                "clause for `{operation}` expects {} parameters, but {} were provided",
+                self.operation_parameters, self.found
+            ))
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .help_message(
+                "a clause binds the parameters of its operation; `resume k` after them names the \
+                 continuation of the rest of the coroutine",
+            )
+            .build()
+    }
+}
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
 )]
@@ -366,8 +628,8 @@ pub enum TypeAnnotationSubject {
     /// A name binding whose type can be annotated, such as a `let` variable.
     NameBinding(Interned<str>),
 
-    /// A lambda parameter, whose type cannot be annotated.
-    LambdaParameter(Interned<str>),
+    /// A closure parameter, whose type cannot be annotated.
+    ClosureParameter(Interned<str>),
 
     /// A type parameter that an instantiation site, such as a call or a struct
     /// initialization, leaves undetermined.
@@ -381,7 +643,7 @@ impl TypeAnnotationSubject {
     /// The noun phrase naming the subject in a rendered diagnostic.
     async fn description(&self, engine: &TrackedEngine) -> String {
         match self {
-            Self::NameBinding(name) | Self::LambdaParameter(name) => {
+            Self::NameBinding(name) | Self::ClosureParameter(name) => {
                 format!("the type of `{}`", &**name)
             }
             Self::TypeParameter(poly_var_id) => {
@@ -404,8 +666,8 @@ impl TypeAnnotationSubject {
     async fn advice(&self, engine: &TrackedEngine) -> String {
         match self {
             Self::NameBinding(name) => format!("consider giving `{}` an explicit type", &**name),
-            Self::LambdaParameter(_) => "the type of a lambda parameter is inferred from how the \
-                                         lambda is called"
+            Self::ClosureParameter(_) => "the type of a closure parameter is inferred from how \
+                                          the closure is called"
                 .to_owned(),
             Self::TypeParameter(poly_var_id) => {
                 let poly_var_map = engine.get_poly_var_map(poly_var_id.parent_id()).await;
@@ -444,7 +706,7 @@ impl TypeAnnotationSubject {
                         .build(),
                 )
             }
-            Self::NameBinding(_) | Self::LambdaParameter(_) | Self::Expression => None,
+            Self::NameBinding(_) | Self::ClosureParameter(_) | Self::Expression => None,
         }
     }
 }
@@ -949,6 +1211,11 @@ impl Report for ResidualSubtype {
             SubtypeSource::StructFieldInitialization => {
                 "mismatched type in struct field initializer"
             }
+            SubtypeSource::HandleContinuation => "`handle` expects a continuation to resume",
+            SubtypeSource::HandleResumeValue => {
+                "mismatched type of the value a coroutine is resumed with"
+            }
+            SubtypeSource::HandleClause => "mismatched types in `handle` clauses",
         };
 
         let found = self.subype.lesser();
@@ -1000,6 +1267,13 @@ impl Report for IncompatibleEffectRows {
                      found `{greater}`"
                 )
             }
+            EffectUnificationSource::HandledEffect { handled } => {
+                let handled = handled.display(engine).await;
+                format!(
+                    "cannot handle `{handled}`: it is not visible in `{lesser}`, the effect the \
+                     coroutine has left to handle"
+                )
+            }
         };
 
         let primary_message = match self.source {
@@ -1009,6 +1283,9 @@ impl Report for IncompatibleEffectRows {
             }
             EffectUnificationSource::FunctionBodyEffect => {
                 "the function body has effects outside its signature"
+            }
+            EffectUnificationSource::HandledEffect { .. } => {
+                "the coroutine is not known to perform this effect"
             }
         };
 
@@ -1027,6 +1304,10 @@ impl Report for IncompatibleEffectRows {
                 }
                 EffectUnificationSource::EffectSharing => {
                     format!("effect row `{effect_row}` is composed here")
+                }
+                EffectUnificationSource::HandledEffect { handled } => {
+                    let handled = handled.display(engine).await;
+                    format!("effect `{handled}` is handled here")
                 }
             };
 
@@ -1063,6 +1344,13 @@ pub enum Diagnostic {
     UnsupportedCoroCallee(UnsupportedCoroCallee),
     MismatchedArgumentCount(MismatchedArgumentCount),
     MismatchedIndirectArgumentCount(MismatchedIndirectArgumentCount),
+    HandleOperandNotCall(HandleOperandNotCall),
+    HandleClauseNotOperation(HandleClauseNotOperation),
+    HandleOperandNotContinuation(HandleOperandNotContinuation),
+    MismatchedResumeValueCount(MismatchedResumeValueCount),
+    MissingHandleClause(MissingHandleClause),
+    DuplicateHandleClause(DuplicateHandleClause),
+    MismatchedHandleClauseParameterCount(MismatchedHandleClauseParameterCount),
     TypeMustBeKnownAtThisPoint(TypeMustBeKnownAtThisPoint),
     TypeAnnotationRequired(TypeAnnotationRequired),
     ExpectedTupleType(ExpectedTupleType),
@@ -1102,6 +1390,15 @@ impl Report for Diagnostic {
                 symbol_not_callable.report(engine).await
             }
             Self::CoroOperandNotCall(diagnostic) => diagnostic.report(engine).await,
+            Self::HandleOperandNotCall(diagnostic) => diagnostic.report(engine).await,
+            Self::HandleClauseNotOperation(diagnostic) => diagnostic.report(engine).await,
+            Self::HandleOperandNotContinuation(diagnostic) => diagnostic.report(engine).await,
+            Self::MismatchedResumeValueCount(diagnostic) => diagnostic.report(engine).await,
+            Self::MissingHandleClause(diagnostic) => diagnostic.report(engine).await,
+            Self::DuplicateHandleClause(diagnostic) => diagnostic.report(engine).await,
+            Self::MismatchedHandleClauseParameterCount(diagnostic) => {
+                diagnostic.report(engine).await
+            }
             Self::UnsupportedCoroCallee(diagnostic) => diagnostic.report(engine).await,
             Self::MismatchedArgumentCount(mismatched_argument_count) => {
                 mismatched_argument_count.report(engine).await

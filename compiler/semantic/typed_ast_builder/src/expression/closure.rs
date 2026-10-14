@@ -11,9 +11,9 @@ use rayc_type::{
 use rayc_typed_ast::{
     name_binding::Source,
     statement::{Return, Statement},
+    typed_closure::TypedClosureParameter,
     typed_expr::{TypedExprID, TypedExprKind, closure::Closure as TypedClosure},
     typed_function::TypedFunctionLocalID,
-    typed_lambda::TypedLambdaParameter,
 };
 
 use crate::{bind::Bind, tast_builder::TAstBuilder};
@@ -22,24 +22,24 @@ impl Bind<ClosureSyntax> for TAstBuilder {
     async fn bind(&mut self, syn: ClosureSyntax) -> TypedExprID {
         let parameters =
             syn.parameter_list().map(|list| list.parameters().collect()).unwrap_or_default();
-        self.bind_lambda(parameters, syn.body(), syn.span()).await
+        self.bind_closure(parameters, syn.body(), syn.span()).await
     }
 }
 
 impl TAstBuilder {
-    async fn bind_lambda(
+    async fn bind_closure(
         &mut self,
         parameters: Vec<IrrefutablePattern>,
         body: Option<Expression>,
         span: RelativeSpan,
     ) -> TypedExprID {
-        let function_id = self.start_lambda();
+        let function_id = self.start_closure();
         let parameter_name_binding_group = self.parameter_name_binding_group();
         let mut parameter_types = Vec::new();
 
         for parameter_pattern in parameters {
             let ty = self.new_type_inference();
-            let parameter_id = self.insert_lambda_parameter(TypedLambdaParameter::new(
+            let parameter_id = self.insert_closure_parameter(TypedClosureParameter::new(
                 ty.clone(),
                 parameter_pattern.span(),
             ));
@@ -48,7 +48,7 @@ impl TAstBuilder {
                 parameter_name_binding_group,
                 &parameter_pattern,
                 &ty,
-                Source::LambdaParameter(TypedFunctionLocalID::new(function_id, parameter_id)),
+                Source::ClosureParameter(TypedFunctionLocalID::new(function_id, parameter_id)),
             );
             parameter_types.push(ty);
         }
@@ -61,7 +61,7 @@ impl TAstBuilder {
         let return_type = self.type_of_expression(body);
         self.push_statement(Statement::Return(Return::new_with_value(body))).await;
 
-        let effect_row = self.finish_lambda();
+        let effect_row = self.finish_closure();
         let (kind, ty) = {
             // The capture pass resolves this placeholder once all nested bodies exist.
             let captures = self.defer_closure_captures(function_id, span);

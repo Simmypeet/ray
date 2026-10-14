@@ -2,52 +2,7 @@ use qbice::{Decode, Encode, StableHash};
 use rayc_qbice::TrackedEngine;
 use rayc_type::subst::{MutSubstitutable, Subst};
 
-use crate::{
-    statement::Statement,
-    typed_expr::{SubExprs, TypedExprID},
-};
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub enum Arm {
-    Expression(TypedExprID),
-    Block(Vec<Statement>),
-}
-
-impl Arm {
-    #[must_use]
-    pub const fn expression(&self) -> Option<TypedExprID> {
-        match self {
-            Self::Expression(expression) => Some(*expression),
-            Self::Block(_) => None,
-        }
-    }
-
-    /// Returns whether control never leaves the arm through its end: its
-    /// block ends in a `break`, a `continue` or a `return`.
-    ///
-    /// This is syntactic. A block that diverges in any other way, such as
-    /// through an `if` whose arms all return, is not recognized.
-    #[must_use]
-    pub fn diverges(&self) -> bool {
-        match self {
-            Self::Expression(_) => false,
-            Self::Block(statements) => statements.last().is_some_and(Statement::diverges),
-        }
-    }
-
-    pub(crate) fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
-        let expression = match self {
-            Self::Expression(expression) => Some(*expression),
-            Self::Block(_) => None,
-        };
-        let statements = match self {
-            Self::Expression(_) => [].as_slice(),
-            Self::Block(statements) => statements.as_slice(),
-        };
-
-        expression.into_iter().chain(statements.iter().flat_map(SubExprs::sub_exprs))
-    }
-}
+use crate::typed_expr::{SubExprs, TypedExprID, arm::Arm};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct ConditionalArm {
@@ -87,19 +42,6 @@ impl IfElse {
 
     #[must_use]
     pub const fn else_arm(&self) -> Option<&Arm> { self.else_arm.as_ref() }
-}
-
-impl MutSubstitutable for Arm {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        match self {
-            Self::Expression(_) => {}
-            Self::Block(statements) => {
-                for statement in statements {
-                    statement.apply_mut_subst(subst, engine);
-                }
-            }
-        }
-    }
 }
 
 impl MutSubstitutable for IfElse {

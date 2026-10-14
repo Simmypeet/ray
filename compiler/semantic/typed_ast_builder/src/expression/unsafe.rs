@@ -3,7 +3,10 @@ use rayc_syntax::expression::{Arm as ArmSyntax, Unsafe as UnsafeSyntax};
 use rayc_type::ty::Ty;
 use rayc_typed_ast::typed_expr::{TypedExprID, statement_block::StatementBlock};
 
-use crate::{bind::Bind, tast_builder::TAstBuilder};
+use crate::{
+    bind::Bind,
+    tast_builder::{StatementBlockKind, TAstBuilder},
+};
 
 impl Bind<UnsafeSyntax> for TAstBuilder {
     async fn bind(&mut self, syn: UnsafeSyntax) -> TypedExprID {
@@ -24,11 +27,11 @@ impl Bind<UnsafeSyntax> for TAstBuilder {
                 }
             }
             ArmSyntax::Block(block) => {
-                self.enter_statement_block(false);
+                self.enter_statement_block(StatementBlockKind::Plain);
                 for statement in block.statements().filter_map(rayc_syntax::Passable::into_option) {
                     Box::pin(self.bind_statement(&statement)).await;
                 }
-                let statements = self.exit_statement_block(false);
+                let statements = self.exit_statement_block();
                 self.insert_expression(
                     StatementBlock::new(statements),
                     syn.span(),

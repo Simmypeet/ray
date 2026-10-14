@@ -3,7 +3,10 @@ use rayc_syntax::expression::While as WhileSyntax;
 use rayc_type::ty::{Primitive, Ty};
 use rayc_typed_ast::typed_expr::{TypedExprID, while_loop::While};
 
-use crate::{bind::Bind, tast_builder::TAstBuilder};
+use crate::{
+    bind::Bind,
+    tast_builder::{StatementBlockKind, TAstBuilder},
+};
 
 impl Bind<WhileSyntax> for TAstBuilder {
     async fn bind(&mut self, syn: WhileSyntax) -> TypedExprID {
@@ -17,13 +20,13 @@ impl Bind<WhileSyntax> for TAstBuilder {
 
         // A while body is a nested statement scope in which break and continue
         // are valid.
-        self.enter_statement_block(true);
+        self.enter_statement_block(StatementBlockKind::LoopBody);
         if let Some(block) = syn.block() {
             for statement in block.statements().filter_map(rayc_syntax::Passable::into_option) {
                 Box::pin(self.bind_statement(&statement)).await;
             }
         }
-        let body = self.exit_statement_block(true);
+        let body = self.exit_statement_block();
 
         self.insert_expression(While::new(condition, body), syn.span(), Ty::new_unit(self.engine()))
             .await

@@ -5,10 +5,11 @@ use crate::{bind::Bind, tast_builder::TAstBuilder};
 
 pub mod binary;
 pub mod call;
+pub mod closure;
 pub mod coro;
+pub mod handle;
 pub mod identifier;
 pub mod if_else;
-pub mod lambda;
 pub mod leaf;
 pub mod literal;
 pub mod r#move;
@@ -24,7 +25,8 @@ impl Bind<Expression> for TAstBuilder {
     async fn bind(&mut self, syn: Expression) -> TypedExprID {
         match syn {
             Expression::RunWith(run_with) => Box::pin(self.bind(run_with)).await,
-            Expression::Closure(lambda) => Box::pin(self.bind(lambda)).await,
+            Expression::Handle(handle) => Box::pin(self.bind(handle)).await,
+            Expression::Closure(closure) => Box::pin(self.bind(closure)).await,
             Expression::IfElse(if_else) => Box::pin(self.bind(if_else)).await,
             Expression::While(while_loop) => Box::pin(self.bind(while_loop)).await,
             Expression::Unsafe(unsafe_expression) => Box::pin(self.bind(unsafe_expression)).await,

@@ -17,9 +17,9 @@ use rayc_typed_ast::{
     capture_plan::CapturePlan,
     name_binding::{NameBindingGroupID, NameBindingID},
     statement::Statement,
+    typed_closure::{ClosureParameterID, TypedClosureParameter},
     typed_expr::{self, SubExprs, TypedExpr, TypedExprID, TypedExprKind},
     typed_function::{TypedContext, TypedFunctionID, TypedFunctionLocalID, TypedFunctionMap},
-    typed_lambda::{LambdaParameterID, TypedLambdaParameter},
     typed_operation_handler::{OperationHandlerParameterID, TypedOperationHandlerParameter},
     typed_variable::{TypedVariable, TypedVariableID},
 };
@@ -40,13 +40,33 @@ pub mod numeric_literal_ranges;
 pub mod resolution;
 mod type_annotation;
 
+/// What a statement block is the body of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatementBlockKind {
+    /// The body of a loop, which `break` and `continue` apply to.
+    LoopBody,
+
+    /// Any other block, such as an arm of an `if` or a clause of a `handle`.
+    Plain,
+}
+
+/// A statement block that is being bound, and the statements bound in it so
+/// far.
+#[derive(Debug)]
+struct StatementBlock {
+    /// The function the block belongs to.
+    owner: TypedFunctionID,
+    kind: StatementBlockKind,
+    statements: Vec<Statement>,
+}
+
 #[derive(Debug)]
 pub struct TAstBuilder {
     function_map: TypedFunctionMap,
     building_function: TypedFunctionID,
     suspended_functions: Vec<TypedFunctionID>,
 
-    statement_blocks: Vec<(TypedFunctionID, Vec<Statement>)>,
+    statement_blocks: Vec<StatementBlock>,
     loop_depth: usize,
     suspended_loop_depths: Vec<usize>,
 
@@ -141,9 +161,9 @@ impl TAstBuilder {
     }
 
     #[must_use]
-    pub fn start_lambda(&mut self) -> TypedFunctionID {
+    pub fn start_closure(&mut self) -> TypedFunctionID {
         let effect = self.new_effect_inference();
-        let function_id = self.function_map.insert_lambda(effect);
+        let function_id = self.function_map.insert_closure(effect);
         let parameter_name_binding_group_id =
             self.function_map.parameter_name_binding_group_id_of(function_id);
 
@@ -171,12 +191,14 @@ impl TAstBuilder {
     }
 
     #[must_use]
-    pub fn finish_lambda(&mut self) -> Interned<Ty> {
+    pub fn finish_closure(&mut self) -> Interned<Ty> {
         let effect = self.function_map.effect_of(self.building_function).clone();
         self.name_env.exit_function();
         self.loop_depth = self.suspended_loop_depths.pop().unwrap();
-        self.building_function =
-            self.suspended_functions.pop().expect("a lambda should suspend its enclosing function");
+        self.building_function = self
+            .suspended_functions
+            .pop()
+            .expect("a closure should suspend its enclosing function");
         effect
     }
 
@@ -233,11 +255,11 @@ impl TAstBuilder {
     }
 
     #[must_use]
-    pub fn insert_lambda_parameter(
+    pub fn insert_closure_parameter(
         &mut self,
-        parameter: TypedLambdaParameter,
-    ) -> LambdaParameterID {
-        self.function_map.insert_lambda_parameter(self.building_function, parameter)
+        parameter: TypedClosureParameter,
+    ) -> ClosureParameterID {
+        self.function_map.insert_closure_parameter(self.building_function, parameter)
     }
 
     #[must_use]
@@ -339,13 +361,13 @@ impl TAstBuilder {
         // expression. Only function-root statements compose directly into the
         // function effect.
         let is_nested =
-            self.statement_blocks.last().is_some_and(|(owner, _)| *owner == self.building_function);
+            self.statement_blocks.last().is_some_and(|block| block.owner == self.building_function);
 
         if is_nested {
             self.statement_blocks
                 .last_mut()
                 .expect("a nested statement block should be active")
-                .1
+                .statements
                 .push(statement);
             return;
         }
@@ -354,19 +376,24 @@ impl TAstBuilder {
         self.function_map.push_statement(self.building_function, statement);
     }
 
-    pub fn enter_statement_block(&mut self, is_loop_body: bool) {
-        self.loop_depth += usize::from(is_loop_body);
+    pub fn enter_statement_block(&mut self, kind: StatementBlockKind) {
+        self.loop_depth += usize::from(kind == StatementBlockKind::LoopBody);
         self.name_env.enter_scope();
-        self.statement_blocks.push((self.building_function, Vec::new()));
+        self.statement_blocks.push(StatementBlock {
+            owner: self.building_function,
+            kind,
+            statements: Vec::new(),
+        });
     }
 
+    /// Closes the innermost statement block and returns its statements.
     #[must_use]
-    pub fn exit_statement_block(&mut self, is_loop_body: bool) -> Vec<Statement> {
-        let (owner, statements) =
+    pub fn exit_statement_block(&mut self) -> Vec<Statement> {
+        let StatementBlock { owner, kind, statements } =
             self.statement_blocks.pop().expect("a statement block should be active");
         assert_eq!(owner, self.building_function);
         self.name_env.exit_scope();
-        self.loop_depth -= usize::from(is_loop_body);
+        self.loop_depth -= usize::from(kind == StatementBlockKind::LoopBody);
         statements
     }
 
@@ -384,8 +411,8 @@ impl TAstBuilder {
     pub async fn return_type_of_current_function(&self) -> Interned<Ty> {
         match self.function_map.get_function(self.building_function).context() {
             TypedContext::Def(_) => self.engine.get_return_type(self.current_def_id).await,
-            TypedContext::Lambda(_) => {
-                panic!("a lambda expression body should not bind return statements")
+            TypedContext::Closure(_) => {
+                panic!("a closure expression body should not bind return statements")
             }
             TypedContext::OperationHandler(context) => context.return_type().clone(),
             TypedContext::Thunk(context) => context.return_type().clone(),

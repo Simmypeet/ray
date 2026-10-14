@@ -30,15 +30,30 @@ use crate::{
 
 impl Bind<Postfix> for TAstBuilder {
     async fn bind(&mut self, syn: Postfix) -> TypedExprID {
+        self.bind_postfix_prefix(&syn, usize::MAX).await
+    }
+}
+
+impl TAstBuilder {
+    /// Binds the leaf of `syn` followed by at most its first `operator_count`
+    /// postfix operators, leaving the rest unbound.
+    ///
+    /// A `handle` uses this to bind the callee of the call it resumes
+    /// without binding the call itself.
+    pub(super) async fn bind_postfix_prefix(
+        &mut self,
+        syn: &Postfix,
+        operator_count: usize,
+    ) -> TypedExprID {
         let Some(leaf) = syn.leaf() else {
             // very malformed expressionc
             return self.push_error_expression(syn.span()).await;
         };
 
         let mut bound = self.bind(leaf).await;
-        for postfix in syn.postfixes() {
+        for postfix in syn.postfixes().take(operator_count) {
             let val = match postfix {
-                PostfixOperator::Call(call) => Some(self.build_lambda_call(bound, &call).await),
+                PostfixOperator::Call(call) => Some(self.build_closure_call(bound, &call).await),
                 PostfixOperator::RefOf(ref_of) => Some(self.build_ref_of(bound, &ref_of).await),
 
                 PostfixOperator::Deref(deref) => Some(self.build_deref(bound, &deref).await),
@@ -61,9 +76,7 @@ impl Bind<Postfix> for TAstBuilder {
 
         bound
     }
-}
 
-impl TAstBuilder {
     /// Reports the field of the struct `struct_id` named at `span` if it is
     /// not accessible from the definition being built.
     ///

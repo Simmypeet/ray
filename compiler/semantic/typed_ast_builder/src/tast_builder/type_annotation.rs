@@ -19,7 +19,7 @@ use crate::diagnostic::{Diagnostic, TypeAnnotationRequired, TypeAnnotationSubjec
 /// Each undetermined type is reported once, at the first site that mentions
 /// it. Instantiation sites are visited first, since they name the type
 /// parameter that is left undetermined, e.g. `a` in `def make[a]() -> int32`.
-/// Name bindings follow, such as a lambda parameter that no call determines,
+/// Name bindings follow, such as a closure parameter that no call determines,
 /// and the remaining expressions are visited last.
 pub(super) async fn type_annotation_required_diagnostics(
     function_map: &TypedFunctionMap,
@@ -119,6 +119,7 @@ async fn instantiation_of(expression: &TypedExpr, engine: &TrackedEngine) -> Opt
         | TypedExprKind::Move(_)
         | TypedExprKind::Paren(_)
         | TypedExprKind::RunWith(_)
+        | TypedExprKind::Handle(_)
         | TypedExprKind::StatementBlock(_)
         | TypedExprKind::RefToPointer(_)
         | TypedExprKind::Errored(_) => None,
@@ -149,7 +150,7 @@ impl TypeAnnotationSubject {
         let name = name_binding.name().clone();
 
         match name_binding.source() {
-            Source::LambdaParameter(_) => Self::LambdaParameter(name),
+            Source::ClosureParameter(_) => Self::ClosureParameter(name),
             Source::Variable(_) | Source::Parameter(_) | Source::OperationHandlerParameter(_) => {
                 Self::NameBinding(name)
             }

@@ -1,17 +1,18 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
-use rayc_syntax::expression::{
-    IfElse as IfElseSyntax, IfElseArm as IfElseArmSyntax, IfElseCondition,
-};
+use rayc_syntax::expression::{Arm as ArmSyntax, IfElse as IfElseSyntax, IfElseCondition};
 use rayc_type::ty::{Primitive, Ty};
 use rayc_typed_ast::typed_expr::{
     TypedExprID,
-    errored::ErroredChild,
-    if_else::{Arm, ConditionalArm, IfElse},
+    arm::Arm,
+    if_else::{ConditionalArm, IfElse},
 };
 
-use crate::{bind::Bind, tast_builder::TAstBuilder};
+use crate::{
+    bind::Bind,
+    tast_builder::{StatementBlockKind, TAstBuilder},
+};
 
 impl Bind<IfElseSyntax> for TAstBuilder {
     async fn bind(&mut self, syn: IfElseSyntax) -> TypedExprID {
@@ -49,10 +50,10 @@ impl Bind<IfElseSyntax> for TAstBuilder {
             let mut children = Vec::new();
             for conditional_arm in conditional_arms {
                 children.push(conditional_arm.condition().into());
-                append_errored_arm_children(conditional_arm.into_arm(), &mut children);
+                children.extend(conditional_arm.into_arm().into_errored_children());
             }
             if let Some((else_arm, _)) = else_arm {
-                append_errored_arm_children(else_arm, &mut children);
+                children.extend(else_arm.into_errored_children());
             }
 
             return self.push_error_expression_with_children(syn.span(), children).await;
@@ -81,15 +82,6 @@ impl Bind<IfElseSyntax> for TAstBuilder {
     }
 }
 
-fn append_errored_arm_children(arm: Arm, children: &mut Vec<ErroredChild>) {
-    match arm {
-        Arm::Expression(expression) => children.push(expression.into()),
-        Arm::Block(statements) => {
-            children.extend(statements.into_iter().map(ErroredChild::from));
-        }
-    }
-}
-
 impl TAstBuilder {
     async fn bind_if_condition(
         &mut self,
@@ -104,20 +96,20 @@ impl TAstBuilder {
         Some(expression)
     }
 
-    async fn bind_if_arm(&mut self, arm: Option<IfElseArmSyntax>) -> Option<(Arm, RelativeSpan)> {
+    async fn bind_if_arm(&mut self, arm: Option<ArmSyntax>) -> Option<(Arm, RelativeSpan)> {
         let arm = arm?;
         let span = arm.span();
         match arm {
-            IfElseArmSyntax::Expression(expression_arm) => {
+            ArmSyntax::Expression(expression_arm) => {
                 let expression = expression_arm.expression()?;
                 Some((Arm::Expression(Box::pin(self.bind(expression)).await), span))
             }
-            IfElseArmSyntax::Block(block) => {
-                self.enter_statement_block(false);
+            ArmSyntax::Block(block) => {
+                self.enter_statement_block(StatementBlockKind::Plain);
                 for statement in block.statements().filter_map(rayc_syntax::Passable::into_option) {
                     Box::pin(self.bind_statement(&statement)).await;
                 }
-                Some((Arm::Block(self.exit_statement_block(false)), span))
+                Some((Arm::Block(self.exit_statement_block()), span))
             }
         }
     }

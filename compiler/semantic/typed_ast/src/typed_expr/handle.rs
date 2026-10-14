@@ -1,4 +1,6 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use rayc_hash::FxHashMap;
+use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
@@ -7,7 +9,7 @@ use rayc_type::{
 };
 
 use crate::{
-    typed_expr::{SubExprs, TypedExprID, if_else::Arm},
+    typed_expr::{SubExprs, TypedExprID, arm::Arm},
     typed_variable::TypedVariableID,
 };
 
@@ -20,8 +22,18 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct OperationClause {
     operation: GlobalSymbolID,
+
+    /// Where the clause names its operation.
+    span: RelativeSpan,
     parameters: Vec<TypedVariableID>,
-    continuation: TypedVariableID,
+
+    /// The variable `resume k` binds, or `None` when the clause has no
+    /// `resume`.
+    continuation: Option<TypedVariableID>,
+
+    /// The type of the continuation the clause receives, whether or not it
+    /// binds it.
+    continuation_ty: Interned<Ty>,
     arm: Arm,
 }
 
@@ -29,16 +41,22 @@ impl OperationClause {
     #[must_use]
     pub const fn new(
         operation: GlobalSymbolID,
+        span: RelativeSpan,
         parameters: Vec<TypedVariableID>,
-        continuation: TypedVariableID,
+        continuation: Option<TypedVariableID>,
+        continuation_ty: Interned<Ty>,
         arm: Arm,
     ) -> Self {
-        Self { operation, parameters, continuation, arm }
+        Self { operation, span, parameters, continuation, continuation_ty, arm }
     }
 
     /// Returns the operation the clause runs for.
     #[must_use]
     pub const fn operation(&self) -> GlobalSymbolID { self.operation }
+
+    /// Returns where the clause names its operation.
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
 
     /// Returns the variables bound to the arguments of the operation, in
     /// parameter order.
@@ -47,61 +65,83 @@ impl OperationClause {
 
     /// Returns the variable bound to the continuation of the rest of the
     /// coroutine, which waits for the result of the operation.
+    ///
+    /// Returns `None` when the clause has no `resume`. It still receives the
+    /// continuation, and drops it.
     #[must_use]
-    pub const fn continuation(&self) -> TypedVariableID { self.continuation }
+    pub const fn continuation(&self) -> Option<TypedVariableID> { self.continuation }
+
+    /// Returns the type of the continuation the clause receives.
+    #[must_use]
+    pub const fn continuation_ty(&self) -> &Interned<Ty> { &self.continuation_ty }
 
     #[must_use]
     pub const fn arm(&self) -> &Arm { &self.arm }
+
+    #[must_use]
+    pub fn into_arm(self) -> Arm { self.arm }
 }
 
 /// The operation clauses that a `handle` has for one effect of the coroutine:
 /// every `case Effect[arguments].operation(...)` of that effect.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct HandledEffect {
-    effect: GlobalSymbolID,
     effect_substitution: Subst,
     clauses: Vec<OperationClause>,
 }
 
 impl HandledEffect {
     #[must_use]
-    pub const fn new(
-        effect: GlobalSymbolID,
-        effect_substitution: Subst,
-        clauses: Vec<OperationClause>,
-    ) -> Self {
-        Self { effect, effect_substitution, clauses }
+    pub const fn new(effect_substitution: Subst, clauses: Vec<OperationClause>) -> Self {
+        Self { effect_substitution, clauses }
     }
-
-    #[must_use]
-    pub const fn effect(&self) -> GlobalSymbolID { self.effect }
 
     /// Returns the substitution that instantiates the parameters of the
     /// effect with the arguments of the handled label.
     #[must_use]
     pub const fn effect_substitution(&self) -> &Subst { &self.effect_substitution }
 
+    /// Returns the clauses of the effect, in source order.
     #[must_use]
     pub fn clauses(&self) -> &[OperationClause] { &self.clauses }
+
+    #[must_use]
+    pub fn into_clauses(self) -> Vec<OperationClause> { self.clauses }
 }
 
 /// The clause of a `handle` that runs when the coroutine completes.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct ReturnClause {
-    variable: TypedVariableID,
+    /// The variable `case return x` binds, or `None` for `case return`.
+    variable: Option<TypedVariableID>,
+
+    /// Where the clause is written: its `return` keyword.
+    span: RelativeSpan,
     arm: Arm,
 }
 
 impl ReturnClause {
     #[must_use]
-    pub const fn new(variable: TypedVariableID, arm: Arm) -> Self { Self { variable, arm } }
+    pub const fn new(variable: Option<TypedVariableID>, span: RelativeSpan, arm: Arm) -> Self {
+        Self { variable, span, arm }
+    }
 
     /// Returns the variable bound to the value the coroutine returned.
+    ///
+    /// Returns `None` when the clause does not name the value. It still
+    /// receives the value, and drops it.
     #[must_use]
-    pub const fn variable(&self) -> TypedVariableID { self.variable }
+    pub const fn variable(&self) -> Option<TypedVariableID> { self.variable }
+
+    /// Returns where the clause is written: its `return` keyword.
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
 
     #[must_use]
     pub const fn arm(&self) -> &Arm { &self.arm }
+
+    #[must_use]
+    pub fn into_arm(self) -> Arm { self.arm }
 }
 
 /// Resumes a coroutine: `handle continuation(value): case ...`.
@@ -109,10 +149,7 @@ impl ReturnClause {
 /// The coroutine runs until it completes or performs an operation that has a
 /// clause, and exactly one clause then runs. Every other operation the
 /// coroutine performs is forwarded to the enclosing function.
-///
-/// The clauses are branches, like the arms of an `if`: the value of the one
-/// that runs is the value of the expression.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct Handle {
     continuation: TypedExprID,
     value: TypedExprID,
@@ -120,7 +157,12 @@ pub struct Handle {
     /// The `Coroutine` dictionary of the coroutine that is resumed, which
     /// tells what it returns and performs.
     coroutine_instance: Interned<Ty>,
-    handled_effects: Vec<HandledEffect>,
+
+    /// The type the coroutine completes with.
+    return_ty: Interned<Ty>,
+
+    /// The clauses of each handled effect. An effect is handled at most once.
+    handled_effects: FxHashMap<GlobalSymbolID, HandledEffect>,
     return_clause: Option<ReturnClause>,
 
     /// The effects of the coroutine that no clause handles.
@@ -133,7 +175,8 @@ impl Handle {
         continuation: TypedExprID,
         value: TypedExprID,
         coroutine_instance: Interned<Ty>,
-        handled_effects: Vec<HandledEffect>,
+        return_ty: Interned<Ty>,
+        handled_effects: FxHashMap<GlobalSymbolID, HandledEffect>,
         return_clause: Option<ReturnClause>,
         forwarded_effect: Interned<Ty>,
     ) -> Self {
@@ -141,6 +184,7 @@ impl Handle {
             continuation,
             value,
             coroutine_instance,
+            return_ty,
             handled_effects,
             return_clause,
             forwarded_effect,
@@ -158,8 +202,15 @@ impl Handle {
     #[must_use]
     pub const fn coroutine_instance(&self) -> &Interned<Ty> { &self.coroutine_instance }
 
+    /// Returns the type the coroutine completes with.
     #[must_use]
-    pub fn handled_effects(&self) -> &[HandledEffect] { &self.handled_effects }
+    pub const fn return_ty(&self) -> &Interned<Ty> { &self.return_ty }
+
+    /// Iterates over every handled effect with its clauses, in no particular
+    /// order.
+    pub fn handled_effects(&self) -> impl Iterator<Item = (GlobalSymbolID, &HandledEffect)> {
+        self.handled_effects.iter().map(|(effect, handled)| (*effect, handled))
+    }
 
     /// Returns the return clause. Without one, the value the coroutine
     /// returned is the value of the `handle`.
@@ -171,32 +222,30 @@ impl Handle {
     #[must_use]
     pub const fn forwarded_effect(&self) -> &Interned<Ty> { &self.forwarded_effect }
 
-    /// Iterates over the arm of every clause: the operation clauses in source
-    /// order, followed by the return clause.
+    /// Iterates over the arm of every clause: the operation clauses, followed
+    /// by the return clause.
     pub fn arms(&self) -> impl Iterator<Item = &Arm> {
         self.handled_effects
-            .iter()
+            .values()
             .flat_map(|effect| effect.clauses.iter().map(OperationClause::arm))
             .chain(self.return_clause.iter().map(ReturnClause::arm))
-    }
-
-    fn arms_mut(&mut self) -> impl Iterator<Item = &mut Arm> {
-        self.handled_effects
-            .iter_mut()
-            .flat_map(|effect| effect.clauses.iter_mut().map(|clause| &mut clause.arm))
-            .chain(self.return_clause.iter_mut().map(|clause| &mut clause.arm))
     }
 }
 
 impl MutSubstitutable for Handle {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.coroutine_instance.apply_in_place(subst, engine);
+        self.return_ty.apply_in_place(subst, engine);
         self.forwarded_effect.apply_in_place(subst, engine);
-        for effect in &mut self.handled_effects {
+        for effect in self.handled_effects.values_mut() {
             effect.effect_substitution.apply_mut_subst(subst, engine);
+            for clause in &mut effect.clauses {
+                clause.continuation_ty.apply_in_place(subst, engine);
+                clause.arm.apply_mut_subst(subst, engine);
+            }
         }
-        for arm in self.arms_mut() {
-            arm.apply_mut_subst(subst, engine);
+        if let Some(clause) = &mut self.return_clause {
+            clause.arm.apply_mut_subst(subst, engine);
         }
     }
 }

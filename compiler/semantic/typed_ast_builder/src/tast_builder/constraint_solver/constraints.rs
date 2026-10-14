@@ -284,6 +284,82 @@ impl TAstBuilder {
         .await;
     }
 
+    /// Requires `handled` to be visible in `coroutine_effect`, the effect of
+    /// the coroutine that the `handle` clauses at `span` are written for, and
+    /// returns the effects that are left: `coroutine_effect ~ {handled |
+    /// rest}`.
+    ///
+    /// The rows are unified exactly, so a row that does not show the label
+    /// cannot be handled: neither one without it, nor one that is opaque
+    /// here, such as a row variable or an associated type that does not
+    /// reduce.
+    pub(crate) async fn push_handled_effect_constraint(
+        &mut self,
+        coroutine_effect: Interned<Ty>,
+        handled: Interned<EffectLabel>,
+        span: RelativeSpan,
+    ) -> Interned<Ty> {
+        let rest = self.new_effect_inference();
+        let handled_row = Ty::new_effect_row([handled.clone()], Some(rest.clone()), self.engine());
+
+        // Blame the label alone, not the row it was put in.
+        let source = EffectUnificationSource::HandledEffect {
+            handled: Ty::new_effect_row([handled], None, self.engine()),
+        };
+        let cause_id = self.constraint_solver.provenance.insert_root_cause(
+            EffectUnificationOrigin::builder()
+                .lesser(coroutine_effect.clone())
+                .greater(handled_row.clone())
+                .source(source)
+                .span(span)
+                .build(),
+        );
+
+        self.push_constraint(
+            PendingConstraint::builder()
+                .constraint(Constraint::TyRelate(TyRelate::new_invariant(
+                    coroutine_effect,
+                    handled_row,
+                )))
+                .cause_id(cause_id)
+                .build(),
+        )
+        .await;
+
+        rest
+    }
+
+    /// Requires `handled`, the label that a clause of a `handle` names at
+    /// `span`, to be `first`, the label that the first clause of the same
+    /// effect names: `{first} ~ {handled}`.
+    pub(crate) async fn push_same_handled_effect_constraint(
+        &mut self,
+        first: Interned<EffectLabel>,
+        handled: Interned<EffectLabel>,
+        span: RelativeSpan,
+    ) {
+        let first_row = Ty::new_effect_row([first], None, self.engine());
+        let handled_row = Ty::new_effect_row([handled], None, self.engine());
+
+        let source = EffectUnificationSource::HandledEffect { handled: handled_row.clone() };
+        let cause_id = self.constraint_solver.provenance.insert_root_cause(
+            EffectUnificationOrigin::builder()
+                .lesser(first_row.clone())
+                .greater(handled_row.clone())
+                .source(source)
+                .span(span)
+                .build(),
+        );
+
+        self.push_constraint(
+            PendingConstraint::builder()
+                .constraint(Constraint::TyRelate(TyRelate::new_invariant(first_row, handled_row)))
+                .cause_id(cause_id)
+                .build(),
+        )
+        .await;
+    }
+
     fn effect_unification_constraint(
         &mut self,
         lesser: Interned<Ty>,
@@ -436,6 +512,43 @@ impl TAstBuilder {
             SubtypeSource::IfBranch,
         )
         .await;
+    }
+
+    pub async fn push_handle_continuation_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(
+            expression,
+            expected_ty,
+            SubtypeSource::HandleContinuation,
+        )
+        .await;
+    }
+
+    pub async fn push_handle_resume_value_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(
+            expression,
+            expected_ty,
+            SubtypeSource::HandleResumeValue,
+        )
+        .await;
+    }
+
+    /// Requires a value of type `actual_ty`, which a clause of a `handle`
+    /// gives at `span`, to fit the type `answer_ty` of the whole `handle`.
+    pub async fn push_handle_clause_constraint(
+        &mut self,
+        actual_ty: &Interned<Ty>,
+        answer_ty: &Interned<Ty>,
+        span: RelativeSpan,
+    ) {
+        self.push_subtype_constraint(actual_ty, answer_ty, span, SubtypeSource::HandleClause).await;
     }
 
     async fn push_subtype_constraint_with_expr(

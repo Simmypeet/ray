@@ -632,11 +632,11 @@ impl<O: CopyOracle> Analyzer<'_, O> {
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
-        arm: &crate::typed_expr::if_else::Arm,
+        arm: &crate::typed_expr::arm::Arm,
         plan: &mut FunctionCapturePlan,
     ) {
         match arm {
-            crate::typed_expr::if_else::Arm::Expression(expression) => {
+            crate::typed_expr::arm::Arm::Expression(expression) => {
                 self.visit_expression(
                     function_id,
                     functions,
@@ -646,7 +646,7 @@ impl<O: CopyOracle> Analyzer<'_, O> {
                 )
                 .await;
             }
-            crate::typed_expr::if_else::Arm::Block(statements) => {
+            crate::typed_expr::arm::Arm::Block(statements) => {
                 for statement in statements {
                     self.visit_statement(function_id, functions, statement, plan).await;
                 }
