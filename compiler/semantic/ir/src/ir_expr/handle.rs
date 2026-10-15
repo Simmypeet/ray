@@ -1,7 +1,7 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_hash::FxHashMap;
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::GlobalSymbolID;
+use rayc_symbol::{GlobalSymbolID, parent::get_parent_global};
 use rayc_type::{
     subst::Subst,
     ty::{Ty, effect_row::EffectLabel},
@@ -138,20 +138,14 @@ pub enum YieldedValue {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct Yielded {
     handle: IRExprID,
-    effect_id: GlobalSymbolID,
     operation_id: GlobalSymbolID,
     value: YieldedValue,
 }
 
 impl Yielded {
     #[must_use]
-    pub const fn new(
-        handle: IRExprID,
-        effect_id: GlobalSymbolID,
-        operation_id: GlobalSymbolID,
-        value: YieldedValue,
-    ) -> Self {
-        Self { handle, effect_id, operation_id, value }
+    pub const fn new(handle: IRExprID, operation_id: GlobalSymbolID, value: YieldedValue) -> Self {
+        Self { handle, operation_id, value }
     }
 
     /// Returns the [`Handle`] expression that suspended at the operation. It
@@ -159,14 +153,22 @@ impl Yielded {
     #[must_use]
     pub const fn handle(&self) -> IRExprID { self.handle }
 
-    /// Returns the handled effect of the [`Handle`] that the operation
-    /// belongs to.
-    #[must_use]
-    pub const fn effect_id(&self) -> GlobalSymbolID { self.effect_id }
-
     /// Returns the operation the coroutine performed.
     #[must_use]
     pub const fn operation_id(&self) -> GlobalSymbolID { self.operation_id }
+
+    /// Returns the effect the operation belongs to, which is one of the
+    /// handled effects of the [`Handle`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the operation has no parent effect.
+    pub async fn effect_id(&self, engine: &TrackedEngine) -> GlobalSymbolID {
+        engine
+            .get_parent_global(self.operation_id)
+            .await
+            .expect("an operation should belong to an effect")
+    }
 
     #[must_use]
     pub const fn value(&self) -> YieldedValue { self.value }
