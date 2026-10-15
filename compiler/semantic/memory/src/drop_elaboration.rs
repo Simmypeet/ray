@@ -316,11 +316,12 @@ fn edge_drop_point(
     // block. A conditional edge is critical, since its target merges several
     // edges, so it gets a block of its own. So does an edge out of a
     // suspension point: the end of the source block is before its expression
-    // is evaluated, not after.
+    // is evaluated, not after. The edges out of a `Handle` are both: it has
+    // several successors, and the coroutine runs before any of them.
     let terminator = functions.get_function(function_id).block_terminator(edge.source());
     let block_id = match terminator {
         Some(Terminator::Jump(_)) => edge.source(),
-        Some(Terminator::Conditional(_) | Terminator::Suspend(_)) => {
+        Some(Terminator::Conditional(_) | Terminator::Suspend(_) | Terminator::Handle(_)) => {
             functions.split_edge(function_id, edge)
         }
         Some(Terminator::Return(_)) | None => {

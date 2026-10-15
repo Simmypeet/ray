@@ -153,6 +153,8 @@ async fn analyze_function(
                         | IRExprKind::Closure(_)
                         | IRExprKind::Coroutine(_)
                         | IRExprKind::Handle(_)
+                        | IRExprKind::Yielded(_)
+                        | IRExprKind::RunWith(_)
                         | IRExprKind::StructInitialization(_) => {}
                     }
                 }

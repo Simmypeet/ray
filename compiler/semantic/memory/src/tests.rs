@@ -6,9 +6,9 @@ use rayc_ir::{
     address::{Address, Local, Projection},
     cfg::{Block, Instruction, Point},
     dataflow::{DataflowProblem, JoinLattice},
+    ir_closure::ClosureParameter,
     ir_expr::{IRExpr, load::Load},
     ir_function::{FunctionID, IRFunctionMap},
-    ir_lambda::LambdaParameter,
     ir_variable::IRVariableID,
 };
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
@@ -219,13 +219,13 @@ async fn root_scope_push_initializes_parameters_but_not_variables() {
     let ty = leaf_type(&engine);
     let mut functions = IRFunctionMap::new(GlobalSymbolID::default());
     let capture_map = functions.new_capture_map();
-    let function_id = functions.insert_lambda(ty.clone(), ty.clone(), capture_map);
+    let function_id = functions.insert_closure(ty.clone(), ty.clone(), capture_map);
     let parameter_id = functions
-        .insert_lambda_parameter(function_id, LambdaParameter::new(ty.clone(), test_span()));
+        .insert_closure_parameter(function_id, ClosureParameter::new(ty.clone(), test_span()));
     let root_scope = functions.root_scope_id(function_id);
     let variable_id = functions.create_variable_in_scope(function_id, root_scope, ty, test_span());
     let variable = Local::Variable(variable_id);
-    let parameter = Local::LambdaParameter(parameter_id);
+    let parameter = Local::ClosureParameter(parameter_id);
     let mut problem =
         stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
 
@@ -248,13 +248,13 @@ async fn scope_pop_removes_local_and_function_input_slots() {
     let ty = leaf_type(&engine);
     let mut functions = IRFunctionMap::new(GlobalSymbolID::default());
     let capture_map = functions.new_capture_map();
-    let function_id = functions.insert_lambda(ty.clone(), ty.clone(), capture_map);
+    let function_id = functions.insert_closure(ty.clone(), ty.clone(), capture_map);
     let parameter_id = functions
-        .insert_lambda_parameter(function_id, LambdaParameter::new(ty.clone(), test_span()));
+        .insert_closure_parameter(function_id, ClosureParameter::new(ty.clone(), test_span()));
     let root_scope = functions.root_scope_id(function_id);
     let variable_id = functions.create_variable_in_scope(function_id, root_scope, ty, test_span());
     let variable = Local::Variable(variable_id);
-    let parameter = Local::LambdaParameter(parameter_id);
+    let parameter = Local::ClosureParameter(parameter_id);
     let mut problem =
         stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
     let mut state = StackState::reachable();

@@ -5,12 +5,12 @@ use rayc_ir::{
     address::{Address, Local, Projection},
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
     dataflow::{DataflowProblem, Direction, JoinLattice},
+    ir_closure::CaptureMap,
     ir_expr::{
         IRExprKind,
         load::{Load, LoadEffect, LoadKind},
     },
     ir_function::IRFunction,
-    ir_lambda::CaptureMap,
     scope::ScopeID,
 };
 use rayc_lexical::tree::RelativeSpan;
@@ -56,10 +56,10 @@ impl<'a> StackStateProblem<'a> {
                     .ty()
                     .clone()
             }
-            Local::LambdaParameter(parameter_id) => self
+            Local::ClosureParameter(parameter_id) => self
                 .function
                 .context()
-                .assert_as_lambda_context()
+                .assert_as_closure_context()
                 .get_parameter(parameter_id)
                 .ty()
                 .clone(),
@@ -87,10 +87,10 @@ impl<'a> StackStateProblem<'a> {
                     .span()
                     .expect("parameters of a function with a body are declared in source")
             }
-            Local::LambdaParameter(parameter_id) => self
+            Local::ClosureParameter(parameter_id) => self
                 .function
                 .context()
-                .assert_as_lambda_context()
+                .assert_as_closure_context()
                 .get_parameter(parameter_id)
                 .span(),
             Local::OperationHandlerParameter(parameter_id) => self
@@ -318,6 +318,7 @@ impl<'a> StackStateProblem<'a> {
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::Coroutine(_)
+                | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)
@@ -448,8 +449,10 @@ impl DataflowProblem for StackStateProblem<'_> {
             // No terminator moves a place. The arguments of the expression a
             // suspension point evaluates are evaluated values: the loads
             // which moved them out of their places are instructions of their
-            // own, before the terminator.
+            // own, before the terminator. The same holds for the
+            // continuation a `Handle` consumes.
             Terminator::Suspend(_)
+            | Terminator::Handle(_)
             | Terminator::Jump(_)
             | Terminator::Conditional(_)
             | Terminator::Return(_) => Ok(()),
