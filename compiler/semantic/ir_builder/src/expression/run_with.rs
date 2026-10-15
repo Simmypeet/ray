@@ -1,6 +1,6 @@
 use rayc_ir::ir_expr::{
     IRExpr, IRExprKind,
-    handle::{Handle, HandledFunction, OperationHandler},
+    run_with::{HandledFunction, OperationHandler, RunWith as IRRunWith},
 };
 use rayc_typed_ast::typed_expr::run_with::RunWith;
 
@@ -69,7 +69,7 @@ impl<'a> Lower<TypedExprWithID<&'a RunWith>> for Builder {
             ));
         }
 
-        let handle = Handle::new(
+        let ir_run_with = IRRunWith::new(
             run_with.effect(),
             run_with.effect_substitution().clone(),
             body,
@@ -82,7 +82,7 @@ impl<'a> Lower<TypedExprWithID<&'a RunWith>> for Builder {
 
         LoweredExpression::RValue(
             self.emit_suspendable_expression(IRExpr::new(
-                IRExprKind::Handle(handle),
+                IRExprKind::RunWith(ir_run_with),
                 typed_expression.span(),
                 typed_expression.ty().clone(),
             ))

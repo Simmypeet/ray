@@ -1,8 +1,8 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     address::Address,
+    ir_closure::{CaptureID, ClosureParameterID},
     ir_function::IRFunctionMap,
-    ir_lambda::{CaptureID, LambdaParameterID},
     ir_operation_handler::OperationHandlerParameterID,
     ir_variable::IRVariableID,
 };
@@ -61,8 +61,8 @@ impl Builder {
         Address::new_parameter(id, &self.engine)
     }
 
-    pub fn lambda_parameter_address(&self, id: LambdaParameterID) -> Address {
-        Address::new_lambda_parameter(id, &self.engine)
+    pub fn closure_parameter_address(&self, id: ClosureParameterID) -> Address {
+        Address::new_closure_parameter(id, &self.engine)
     }
 
     pub fn operation_handler_parameter_address(&self, id: OperationHandlerParameterID) -> Address {

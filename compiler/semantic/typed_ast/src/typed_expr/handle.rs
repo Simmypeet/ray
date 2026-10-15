@@ -2,7 +2,10 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::GlobalSymbolID;
+use rayc_symbol::{
+    GlobalSymbolID,
+    core_item::{CoreItem, get_core_item},
+};
 use rayc_type::{
     subst::{MutSubstitutable, Subst, Substitutable},
     ty::Ty,
@@ -158,9 +161,6 @@ pub struct Handle {
     /// tells what it returns and performs.
     coroutine_instance: Interned<Ty>,
 
-    /// The type the coroutine completes with.
-    return_ty: Interned<Ty>,
-
     /// The clauses of each handled effect. An effect is handled at most once.
     handled_effects: FxHashMap<GlobalSymbolID, HandledEffect>,
     return_clause: Option<ReturnClause>,
@@ -175,7 +175,6 @@ impl Handle {
         continuation: TypedExprID,
         value: TypedExprID,
         coroutine_instance: Interned<Ty>,
-        return_ty: Interned<Ty>,
         handled_effects: FxHashMap<GlobalSymbolID, HandledEffect>,
         return_clause: Option<ReturnClause>,
         forwarded_effect: Interned<Ty>,
@@ -184,7 +183,6 @@ impl Handle {
             continuation,
             value,
             coroutine_instance,
-            return_ty,
             handled_effects,
             return_clause,
             forwarded_effect,
@@ -202,9 +200,12 @@ impl Handle {
     #[must_use]
     pub const fn coroutine_instance(&self) -> &Interned<Ty> { &self.coroutine_instance }
 
-    /// Returns the type the coroutine completes with.
-    #[must_use]
-    pub const fn return_ty(&self) -> &Interned<Ty> { &self.return_ty }
+    /// Returns the type the coroutine completes with: the associated type
+    /// `Return` of [`Self::coroutine_instance`].
+    pub async fn coro_return_ty(&self, engine: &TrackedEngine) -> Interned<Ty> {
+        let member = engine.get_core_item(CoreItem::CoroutineReturn).await;
+        Ty::new_instance_associated(member, self.coroutine_instance.clone(), [], engine)
+    }
 
     /// Iterates over every handled effect with its clauses, in no particular
     /// order.
@@ -235,7 +236,6 @@ impl Handle {
 impl MutSubstitutable for Handle {
     fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         self.coroutine_instance.apply_in_place(subst, engine);
-        self.return_ty.apply_in_place(subst, engine);
         self.forwarded_effect.apply_in_place(subst, engine);
         for effect in self.handled_effects.values_mut() {
             effect.effect_substitution.apply_mut_subst(subst, engine);

@@ -6,6 +6,7 @@ use rayc_typed_ast::typed_expr::{TypedExprID, TypedExprKind};
 
 use crate::{builder::Builder, context::LoweringContext};
 
+mod arm;
 mod binary;
 mod call;
 mod closure;
@@ -13,6 +14,7 @@ mod coro;
 mod deref;
 mod errored;
 mod field;
+mod handle;
 mod identifier;
 mod if_else;
 mod literal;
@@ -85,8 +87,8 @@ impl Builder {
             TypedExprKind::Call(call) => {
                 self.lower(context, TypedExprWithID::new(call, expression_id)).await
             }
-            TypedExprKind::Closure(lambda) => {
-                self.lower(context, TypedExprWithID::new(lambda, expression_id)).await
+            TypedExprKind::Closure(closure) => {
+                self.lower(context, TypedExprWithID::new(closure, expression_id)).await
             }
             TypedExprKind::Coro(coro) => {
                 self.lower(context, TypedExprWithID::new(coro, expression_id)).await
@@ -120,6 +122,9 @@ impl Builder {
             }
             TypedExprKind::RunWith(run_with) => {
                 self.lower(context, TypedExprWithID::new(run_with, expression_id)).await
+            }
+            TypedExprKind::Handle(handle) => {
+                self.lower(context, TypedExprWithID::new(handle, expression_id)).await
             }
             TypedExprKind::StructInitialization(st) => {
                 self.lower(context, TypedExprWithID::new(st, expression_id)).await

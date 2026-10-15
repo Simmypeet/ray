@@ -108,11 +108,14 @@ impl DataflowProblem for ScopeStackProblem {
     ) -> Result<(), ScopeStackError> {
         match terminator {
             // No terminator opens or closes a scope. A suspension point
-            // resumes in the scopes it was suspended in.
+            // resumes in the scopes it was suspended in, and every clause
+            // of a `Handle` starts in the scopes the coroutine was resumed
+            // in.
             Terminator::Jump(_)
             | Terminator::Conditional(_)
             | Terminator::Return(_)
-            | Terminator::Suspend(_) => Ok(()),
+            | Terminator::Suspend(_)
+            | Terminator::Handle(_) => Ok(()),
         }
     }
 

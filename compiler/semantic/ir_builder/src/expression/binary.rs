@@ -29,7 +29,7 @@ impl<'a> Lower<TypedExprWithID<&'a Binary>> for Builder {
         let ty = typed_expression.ty().clone();
         let binary = expression.node();
         match binary.operator() {
-            BinaryOp::Assign => lower_assignment(self, context, binary, span, ty).await,
+            BinaryOp::Assign => lower_assignment(self, context, binary, span).await,
             BinaryOp::Equal => {
                 lower_binary(self, context, binary, IrBinaryOp::Equal, span, ty).await
             }
@@ -59,12 +59,11 @@ async fn lower_assignment(
     context: &LoweringContext<'_>,
     binary: &Binary,
     span: RelativeSpan,
-    ty: Interned<Ty>,
 ) -> LoweredExpression {
     let address = builder.lower_lvalue_by_id(context, binary.left()).await;
     let value = builder.lower_rvalue_by_id(context, binary.right()).await;
     builder.emit_store(address, value, span);
-    LoweredExpression::RValue(builder.emit_unit(span, ty))
+    LoweredExpression::RValue(builder.emit_unit(span))
 }
 
 async fn lower_binary(

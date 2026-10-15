@@ -5,12 +5,12 @@ use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::Address,
     cfg::{BlockID, Suspend, Terminator},
+    ir_closure::{
+        Capture, CaptureID, CaptureMapID, CaptureMode as IrCaptureMode,
+        ClosureParameter as IrClosureParameter, ClosureParameterID,
+    },
     ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load, tuple::Tuple},
     ir_function::{FunctionID as IrFunctionID, IRFunctionMap},
-    ir_lambda::{
-        Capture, CaptureID, CaptureMapID, CaptureMode as IrCaptureMode,
-        LambdaParameter as IrLambdaParameter, LambdaParameterID,
-    },
     ir_operation_handler::{
         OperationHandlerParameter as IrOperationHandlerParameter,
         OperationHandlerParameterID as IrOperationHandlerParameterID,
@@ -26,8 +26,8 @@ use rayc_type::{
     ty::{Ty, lifetime::Lifetime},
 };
 use rayc_typed_ast::{
-    capture_plan::FunctionCapturePlan, name_binding::Source, typed_function::TypedFunctionID,
-    typed_lambda::LambdaParameterID as TypedLambdaParameterID,
+    capture_plan::FunctionCapturePlan, name_binding::Source,
+    typed_closure::ClosureParameterID as TypedClosureParameterID, typed_function::TypedFunctionID,
     typed_operation_handler::OperationHandlerParameterID as TypedOperationHandlerParameterID,
     typed_variable::TypedVariableID,
 };
@@ -52,7 +52,7 @@ pub(super) struct FunctionBuildState {
     diagnostic_span: Option<RelativeSpan>,
 
     variables: FxHashMap<TypedVariableID, IRVariableID>,
-    lambda_parameters: FxHashMap<TypedLambdaParameterID, LambdaParameterID>,
+    closure_parameters: FxHashMap<TypedClosureParameterID, ClosureParameterID>,
     operation_handler_parameters:
         FxHashMap<TypedOperationHandlerParameterID, IrOperationHandlerParameterID>,
 
@@ -91,14 +91,14 @@ impl FunctionBuildState {
             return_ty,
             diagnostic_span,
             variables: FxHashMap::default(),
-            lambda_parameters: FxHashMap::default(),
+            closure_parameters: FxHashMap::default(),
             operation_handler_parameters: FxHashMap::default(),
             captures: FxHashMap::default(),
             loop_targets: Vec::new(),
         }
     }
 
-    fn new_lambda(
+    fn new_closure(
         context: &LoweringContext<'_>,
         ir_functions: &mut IRFunctionMap,
         return_ty: Interned<Ty>,
@@ -107,25 +107,25 @@ impl FunctionBuildState {
     ) -> Self {
         let typed_function_id = context.typed_function_id();
         let capture_plan = context.capture_plan(typed_function_id);
-        let lambda_context = context.typed_function_context().assert_as_lambda_context();
+        let closure_context = context.typed_function_context().assert_as_closure_context();
         assert_ne!(
             typed_function_id,
             context.root_typed_function_id(),
-            "root TypedAST function should not be a lambda"
+            "root TypedAST function should not be a closure"
         );
-        let mut lambda_parameters = FxHashMap::default();
+        let mut closure_parameters = FxHashMap::default();
         let (capture_map, captures) = Self::insert_capture_map(capture_plan, ir_functions, engine);
-        let ir_function_id = ir_functions.insert_lambda(
+        let ir_function_id = ir_functions.insert_closure(
             return_ty.clone(),
             context.function_effect().clone(),
             capture_map,
         );
-        for (typed_id, parameter) in lambda_context.parameters() {
-            let ir_id = ir_functions.insert_lambda_parameter(
+        for (typed_id, parameter) in closure_context.parameters() {
+            let ir_id = ir_functions.insert_closure_parameter(
                 ir_function_id,
-                IrLambdaParameter::new(parameter.ty().clone(), parameter.span()),
+                IrClosureParameter::new(parameter.ty().clone(), parameter.span()),
             );
-            assert!(lambda_parameters.insert(typed_id, ir_id).is_none());
+            assert!(closure_parameters.insert(typed_id, ir_id).is_none());
         }
         let current_block = ir_functions.entry_block(ir_function_id);
         let scopes = Self::initialize_scopes(ir_functions, ir_function_id, current_block);
@@ -137,7 +137,7 @@ impl FunctionBuildState {
             return_ty,
             diagnostic_span: Some(diagnostic_span),
             variables: FxHashMap::default(),
-            lambda_parameters,
+            closure_parameters,
             operation_handler_parameters: FxHashMap::default(),
             captures,
             loop_targets: Vec::new(),
@@ -170,7 +170,7 @@ impl FunctionBuildState {
             return_ty,
             diagnostic_span: Some(diagnostic_span),
             variables: FxHashMap::default(),
-            lambda_parameters: FxHashMap::default(),
+            closure_parameters: FxHashMap::default(),
             operation_handler_parameters: FxHashMap::default(),
             captures,
             loop_targets: Vec::new(),
@@ -214,7 +214,7 @@ impl FunctionBuildState {
             return_ty,
             diagnostic_span: Some(diagnostic_span),
             variables: FxHashMap::default(),
-            lambda_parameters: FxHashMap::default(),
+            closure_parameters: FxHashMap::default(),
             operation_handler_parameters,
             captures,
             loop_targets: Vec::new(),
@@ -363,17 +363,17 @@ impl Builder {
         (self.ir_functions, self.diagnostics)
     }
 
-    pub async fn lower_lambda_function(
+    pub async fn lower_closure_function(
         &mut self,
         context: &LoweringContext<'_>,
         typed_function_id: TypedFunctionID,
         return_ty: Interned<Ty>,
         diagnostic_span: RelativeSpan,
     ) -> IrFunctionID {
-        let lambda_context = context.for_function(typed_function_id);
-        self.start_lambda(&lambda_context, return_ty, diagnostic_span);
-        self.lower_current_function(&lambda_context).await;
-        self.finish_lambda()
+        let closure_context = context.for_function(typed_function_id);
+        self.start_closure(&closure_context, return_ty, diagnostic_span);
+        self.lower_current_function(&closure_context).await;
+        self.finish_closure()
     }
 
     pub async fn lower_thunk_function(
@@ -419,20 +419,20 @@ impl Builder {
         self.finish_current_function();
     }
 
-    fn start_lambda(
+    fn start_closure(
         &mut self,
         context: &LoweringContext<'_>,
         return_ty: Interned<Ty>,
         diagnostic_span: RelativeSpan,
     ) {
-        let lambda = FunctionBuildState::new_lambda(
+        let closure = FunctionBuildState::new_closure(
             context,
             &mut self.ir_functions,
             return_ty,
             diagnostic_span,
             &self.engine,
         );
-        let enclosing = mem::replace(&mut self.building_function, lambda);
+        let enclosing = mem::replace(&mut self.building_function, closure);
         self.suspended_functions.push(enclosing);
     }
 
@@ -466,15 +466,15 @@ impl Builder {
         self.suspended_functions.push(enclosing);
     }
 
-    fn finish_lambda(&mut self) -> IrFunctionID { self.finish_nested_function() }
+    fn finish_closure(&mut self) -> IrFunctionID { self.finish_nested_function() }
 
     fn finish_nested_function(&mut self) -> IrFunctionID {
         let enclosing = self
             .suspended_functions
             .pop()
-            .expect("a lambda should suspend its enclosing IR function");
-        let lambda = mem::replace(&mut self.building_function, enclosing);
-        lambda.ir_function_id
+            .expect("a closure should suspend its enclosing IR function");
+        let closure = mem::replace(&mut self.building_function, enclosing);
+        closure.ir_function_id
     }
 
     pub fn lower_capture_operands(
@@ -549,7 +549,7 @@ impl Builder {
     }
 
     /// Emits an expression that may be a suspension point: a call, a
-    /// `perform` or a `handle`.
+    /// `perform` or a `run ... with`.
     ///
     /// One that suspends ends the current block with a
     /// [`Terminator::Suspend`], and lowering continues in the resume block,
@@ -572,9 +572,17 @@ impl Builder {
         expression_id
     }
 
-    /// Emits the unit value `()` of type `ty`.
-    pub(crate) fn emit_unit(&mut self, span: RelativeSpan, ty: Interned<Ty>) -> IRExprID {
-        self.emit_expression(IRExpr::new(IRExprKind::Tuple(Tuple::new(Vec::new())), span, ty))
+    /// Inserts an expression that no instruction evaluates: one that a
+    /// terminator evaluates instead, such as the `Handle` expression of a
+    /// resumed coroutine and what it gives its clauses.
+    pub fn insert_expression(&mut self, expression: IRExpr) -> IRExprID {
+        self.ir_functions.insert_expression(self.building_function.ir_function_id, expression)
+    }
+
+    /// Emits the unit value `()`.
+    pub(crate) fn emit_unit(&mut self, span: RelativeSpan) -> IRExprID {
+        let unit = Ty::new_unit(self.engine());
+        self.emit_expression(IRExpr::new(IRExprKind::Tuple(Tuple::new(Vec::new())), span, unit))
     }
 
     pub fn emit_expr_discard(&mut self, expression: IRExprID, drop_instance: Interned<Ty>) {
@@ -609,6 +617,18 @@ impl Builder {
     /// the statement. Otherwise the storage of `let k = coro f()` would end
     /// with the statement, while `k` still refers to it.
     pub fn create_coroutine_storage(
+        &mut self,
+        ty: Interned<Ty>,
+        span: RelativeSpan,
+    ) -> IRVariableID {
+        let function_id = self.building_function.ir_function_id;
+        let scope_id = self.building_function.scopes.current_lexical();
+        self.ir_functions.create_variable_in_scope(function_id, scope_id, ty, span)
+    }
+
+    /// Declares a variable of type `ty` that no name refers to, in the
+    /// current lexical scope, which drops what it holds when it ends.
+    pub fn create_unnamed_variable(
         &mut self,
         ty: Interned<Ty>,
         span: RelativeSpan,
@@ -682,14 +702,14 @@ impl Builder {
                     self.variable_address(variable_id)
                 }
                 Source::Parameter(id) => self.parameter_address(id.local_id()),
-                Source::LambdaParameter(id) => {
+                Source::ClosureParameter(id) => {
                     let parameter_id = self
                         .building_function
-                        .lambda_parameters
+                        .closure_parameters
                         .get(&id.local_id())
                         .copied()
-                        .expect("lambda parameter should be registered before use");
-                    self.lambda_parameter_address(parameter_id)
+                        .expect("closure parameter should be registered before use");
+                    self.closure_parameter_address(parameter_id)
                 }
                 Source::OperationHandlerParameter(id) => {
                     let parameter_id = self

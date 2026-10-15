@@ -1,8 +1,8 @@
 use rayc_ir::{
     cfg::{Conditional, Terminator},
-    ir_expr::{IRExpr, IRExprID, IRExprKind, phi::Phi},
+    ir_expr::{IRExpr, IRExprKind, phi::Phi},
 };
-use rayc_typed_ast::typed_expr::if_else::{Arm, IfElse};
+use rayc_typed_ast::typed_expr::if_else::IfElse;
 
 use crate::{
     builder::{Builder, function_build_state::scope_tracker::ScopeKind},
@@ -44,7 +44,7 @@ impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
                 arm_scopes.next().expect("a conditional arm scope should exist"),
                 ScopeKind::Lexical,
             );
-            let value = self.lower_arm(context, conditional_arm.arm(), span, &ty).await;
+            let value = self.lower_arm(context, conditional_arm.arm(), span).await;
             self.exit_scope();
             if let Some(value) = value {
                 incoming.push((self.jump_to(merge_block), value));
@@ -59,11 +59,11 @@ impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
                 arm_scopes.next().expect("an else arm scope should exist"),
                 ScopeKind::Lexical,
             );
-            let value = self.lower_arm(context, else_arm, span, &ty).await;
+            let value = self.lower_arm(context, else_arm, span).await;
             self.exit_scope();
             value
         } else {
-            Some(self.emit_unit(span, ty.clone()))
+            Some(self.emit_unit(span))
         };
         assert!(arm_scopes.next().is_none(), "all if arm scopes should be lowered");
         if let Some(value) = else_value {
@@ -72,33 +72,13 @@ impl<'a> Lower<TypedExprWithID<&'a IfElse>> for Builder {
 
         self.select_block(merge_block);
         if incoming.is_empty() {
-            LoweredExpression::RValue(self.emit_unit(span, ty))
+            LoweredExpression::RValue(self.emit_unit(span))
         } else {
             LoweredExpression::RValue(self.emit_expression(IRExpr::new(
                 IRExprKind::Phi(Phi::new(incoming.into_iter().collect())),
                 span,
                 ty,
             )))
-        }
-    }
-}
-
-impl Builder {
-    async fn lower_arm(
-        &mut self,
-        context: &LoweringContext<'_>,
-        arm: &Arm,
-        span: rayc_lexical::tree::RelativeSpan,
-        ty: &qbice::storage::intern::Interned<rayc_type::ty::Ty>,
-    ) -> Option<IRExprID> {
-        match arm {
-            Arm::Expression(expression) => {
-                Some(self.lower_rvalue_by_id(context, *expression).await)
-            }
-            Arm::Block(statements) => {
-                self.lower_statement_list(context, statements).await;
-                (!self.is_terminated()).then(|| self.emit_unit(span, ty.clone()))
-            }
         }
     }
 }

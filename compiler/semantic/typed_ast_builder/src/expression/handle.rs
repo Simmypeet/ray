@@ -197,7 +197,6 @@ impl Bind<HandleSyntax> for TAstBuilder {
             coroutine.continuation,
             coroutine.value,
             coroutine.instance,
-            coroutine.return_ty,
             handled_effects,
             return_clause,
             forwarded_effect,
