@@ -2,9 +2,9 @@ use qbice::storage::intern::Interned;
 use rayc_type::ty::Ty;
 
 use crate::{
+    ir_closure::CaptureMapID,
     ir_expr::{IRExpr, IRExprID},
     ir_function::FunctionID,
-    ir_lambda::CaptureMapID,
 };
 
 /// Receives expressions together with their function-local identity.

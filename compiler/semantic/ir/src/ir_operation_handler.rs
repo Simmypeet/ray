@@ -6,7 +6,7 @@ use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::{Ty, lifetime::Lifetime};
 
 use crate::{
-    ir_lambda::CaptureMapID,
+    ir_closure::CaptureMapID,
     visit::{
         TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
         VisitTypeMutAsync,
@@ -24,11 +24,12 @@ pub struct IROperationHandlerContext {
     /// The lifetime `'env` of the `&'env mut Env` that one run of the handler
     /// reaches its captures through.
     ///
-    /// The handlers of a `handle` share one environment, which each of them
-    /// may run on any number of times, as an `FnMut` closure does in Rust.
-    /// So a run only borrows the environment, for a lifetime it does not
-    /// choose and that outlives nothing it can name: what it borrows from a
-    /// capture may not escape it; see [`Self::environment_lifetime`].
+    /// The handlers of a `run ... with` share one environment, which each of
+    /// them may run on any number of times, as an `FnMut` closure does in
+    /// Rust. So a run only borrows the environment, for a lifetime it does
+    /// not choose and that outlives nothing it can name: what it borrows
+    /// from a capture may not escape it; see
+    /// [`Self::environment_lifetime`].
     environment_lifetime: Interned<Ty>,
 }
 

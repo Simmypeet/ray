@@ -3,7 +3,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{parameter::ParameterID, struct_body::FieldID};
 
 use crate::{
-    ir_lambda::{CaptureID, LambdaParameterID},
+    ir_closure::{CaptureID, ClosureParameterID},
     ir_operation_handler::OperationHandlerParameterID,
     ir_variable::IRVariableID,
 };
@@ -18,7 +18,7 @@ pub enum AddressRoot {
     Error,
     Variable(IRVariableID),
     Parameter(ParameterID),
-    LambdaParameter(LambdaParameterID),
+    ClosureParameter(ClosureParameterID),
     OperationHandlerParameter(OperationHandlerParameterID),
     Capture(CaptureID),
 }
@@ -31,7 +31,7 @@ pub enum AddressRoot {
 pub enum Local {
     Variable(IRVariableID),
     Parameter(ParameterID),
-    LambdaParameter(LambdaParameterID),
+    ClosureParameter(ClosureParameterID),
     OperationHandlerParameter(OperationHandlerParameterID),
     Capture(CaptureID),
 }
@@ -43,7 +43,7 @@ impl Local {
         match self {
             Self::Variable(variable) => Address::new_variable(variable, engine),
             Self::Parameter(parameter) => Address::new_parameter(parameter, engine),
-            Self::LambdaParameter(parameter) => Address::new_lambda_parameter(parameter, engine),
+            Self::ClosureParameter(parameter) => Address::new_closure_parameter(parameter, engine),
             Self::OperationHandlerParameter(parameter) => {
                 Address::new_operation_handler_parameter(parameter, engine)
             }
@@ -59,7 +59,7 @@ impl Local {
             Self::Capture(_) => true,
             Self::Variable(_)
             | Self::Parameter(_)
-            | Self::LambdaParameter(_)
+            | Self::ClosureParameter(_)
             | Self::OperationHandlerParameter(_) => false,
         }
     }
@@ -111,8 +111,8 @@ impl Address {
     }
 
     #[must_use]
-    pub fn new_lambda_parameter(parameter_id: LambdaParameterID, engine: &TrackedEngine) -> Self {
-        Self::new_root(AddressRoot::LambdaParameter(parameter_id), engine)
+    pub fn new_closure_parameter(parameter_id: ClosureParameterID, engine: &TrackedEngine) -> Self {
+        Self::new_root(AddressRoot::ClosureParameter(parameter_id), engine)
     }
 
     #[must_use]
@@ -173,7 +173,7 @@ impl Address {
         match self.root {
             AddressRoot::Variable(variable) => Some(Local::Variable(variable)),
             AddressRoot::Parameter(parameter) => Some(Local::Parameter(parameter)),
-            AddressRoot::LambdaParameter(parameter) => Some(Local::LambdaParameter(parameter)),
+            AddressRoot::ClosureParameter(parameter) => Some(Local::ClosureParameter(parameter)),
             AddressRoot::OperationHandlerParameter(parameter) => {
                 Some(Local::OperationHandlerParameter(parameter))
             }

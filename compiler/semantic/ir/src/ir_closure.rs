@@ -16,8 +16,8 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub struct IRLambdaContext {
-    parameters: LambdaParameterMap,
+pub struct IRClosureContext {
+    parameters: ClosureParameterMap,
     return_ty: Interned<Ty>,
     effect: Interned<Ty>,
     capture_map: CaptureMapID,
@@ -49,24 +49,24 @@ impl IRThunkContext {
     pub(crate) const fn capture_map(&self) -> CaptureMapID { self.capture_map }
 }
 
-impl IRLambdaContext {
+impl IRClosureContext {
     pub(crate) fn new(
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
     ) -> Self {
-        Self { parameters: LambdaParameterMap::default(), return_ty, effect, capture_map }
+        Self { parameters: ClosureParameterMap::default(), return_ty, effect, capture_map }
     }
 
     #[must_use]
     pub fn parameters(
         &self,
-    ) -> impl ExactSizeIterator<Item = (LambdaParameterID, &LambdaParameter)> {
+    ) -> impl ExactSizeIterator<Item = (ClosureParameterID, &ClosureParameter)> {
         self.parameters.iter()
     }
 
     #[must_use]
-    pub fn get_parameter(&self, id: LambdaParameterID) -> &LambdaParameter {
+    pub fn get_parameter(&self, id: ClosureParameterID) -> &ClosureParameter {
         self.parameters.get_parameter(id)
     }
 
@@ -77,7 +77,7 @@ impl IRLambdaContext {
     pub const fn effect(&self) -> &Interned<Ty> { &self.effect }
 
     #[must_use]
-    pub(crate) fn insert_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
+    pub(crate) fn insert_parameter(&mut self, parameter: ClosureParameter) -> ClosureParameterID {
         self.parameters.insert_parameter(parameter)
     }
 
@@ -88,12 +88,12 @@ impl IRLambdaContext {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable,
 )]
-pub struct LambdaParameter {
+pub struct ClosureParameter {
     ty: Interned<Ty>,
     span: RelativeSpan,
 }
 
-impl LambdaParameter {
+impl ClosureParameter {
     #[must_use]
     pub const fn new(ty: Interned<Ty>, span: RelativeSpan) -> Self { Self { ty, span } }
 
@@ -104,26 +104,26 @@ impl LambdaParameter {
     pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
-pub type LambdaParameterID = ID<LambdaParameter>;
+pub type ClosureParameterID = ID<ClosureParameter>;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
-pub struct LambdaParameterMap {
-    parameters: OrderedArena<LambdaParameter>,
+pub struct ClosureParameterMap {
+    parameters: OrderedArena<ClosureParameter>,
 }
 
-impl LambdaParameterMap {
+impl ClosureParameterMap {
     #[must_use]
-    pub fn get_parameter(&self, id: LambdaParameterID) -> &LambdaParameter {
-        self.parameters.get(id).expect("Lambda parameter should exist")
+    pub fn get_parameter(&self, id: ClosureParameterID) -> &ClosureParameter {
+        self.parameters.get(id).expect("Closure parameter should exist")
     }
 
     #[must_use]
-    pub(crate) fn insert_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
+    pub(crate) fn insert_parameter(&mut self, parameter: ClosureParameter) -> ClosureParameterID {
         self.parameters.insert(parameter)
     }
 
     #[must_use]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (LambdaParameterID, &LambdaParameter)> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (ClosureParameterID, &ClosureParameter)> {
         self.parameters.iter()
     }
 }
@@ -208,7 +208,7 @@ impl CaptureMap {
     }
 }
 
-impl VisitType for IRLambdaContext {
+impl VisitType for IRClosureContext {
     fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         for (_, parameter) in self.parameters() {
             parameter.visit_types(site, visitor);
@@ -218,7 +218,7 @@ impl VisitType for IRLambdaContext {
     }
 }
 
-impl VisitTypeMut for IRLambdaContext {
+impl VisitTypeMut for IRClosureContext {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         for (_, parameter) in self.parameters.parameters.iter_mut_unordered() {
             parameter.visit_types_mut(site, visitor);
@@ -228,7 +228,7 @@ impl VisitTypeMut for IRLambdaContext {
     }
 }
 
-impl VisitTypeMutAsync for IRLambdaContext {
+impl VisitTypeMutAsync for IRClosureContext {
     async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
         &mut self,
         site: TypeSite,
@@ -267,19 +267,19 @@ impl VisitTypeMutAsync for IRThunkContext {
     }
 }
 
-impl VisitType for LambdaParameter {
+impl VisitType for ClosureParameter {
     fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         visitor.visit_type(self.ty(), site);
     }
 }
 
-impl VisitTypeMut for LambdaParameter {
+impl VisitTypeMut for ClosureParameter {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         visitor.visit_type_mut(&mut self.ty, site);
     }
 }
 
-impl VisitTypeMutAsync for LambdaParameter {
+impl VisitTypeMutAsync for ClosureParameter {
     async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
         &mut self,
         site: TypeSite,

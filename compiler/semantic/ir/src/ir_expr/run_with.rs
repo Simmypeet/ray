@@ -7,9 +7,9 @@ use rayc_type::{
 };
 
 use crate::{
+    ir_closure::CaptureMapID,
     ir_expr::IRExprID,
     ir_function::FunctionID,
-    ir_lambda::CaptureMapID,
     visit::{
         TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
         VisitTypeMutAsync,
@@ -58,7 +58,7 @@ impl OperationHandler {
 
 /// Runs a thunk under a complete set of handlers for one instantiated effect.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
-pub struct Handle {
+pub struct RunWith {
     effect_id: GlobalSymbolID,
     substitution: Subst,
     body: HandledFunction,
@@ -74,7 +74,7 @@ pub struct Handle {
     residual_effect: Interned<Ty>,
 }
 
-impl Handle {
+impl RunWith {
     /// # Panics
     ///
     /// Panics if there is not exactly one `Drop` dictionary per handler
@@ -141,9 +141,10 @@ impl Handle {
     #[must_use]
     pub const fn residual_effect(&self) -> &Interned<Ty> { &self.residual_effect }
 
-    /// Returns the effect row of the handled body, as the `handle` gives it:
-    /// the label of the handled effect, instantiated with the substitution of
-    /// the `handle`, in front of the [residual effect](Self::residual_effect).
+    /// Returns the effect row of the handled body, as the `run ... with` gives
+    /// it: the label of the handled effect, instantiated with the
+    /// substitution of the `run ... with`, in front of the [residual
+    /// effect](Self::residual_effect).
     ///
     /// The handled label comes first, so it is the label of its effect that a
     /// `perform` of the body reaches: labels of one effect are scoped.
@@ -154,7 +155,7 @@ impl Handle {
     }
 }
 
-impl VisitType for Handle {
+impl VisitType for RunWith {
     fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         for ty in self.substitution.codomain() {
             visitor.visit_type(ty, site);
@@ -166,7 +167,7 @@ impl VisitType for Handle {
     }
 }
 
-impl VisitTypeMut for Handle {
+impl VisitTypeMut for RunWith {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         for ty in self.substitution.codomain_mut() {
             visitor.visit_type_mut(ty, site);
@@ -178,7 +179,7 @@ impl VisitTypeMut for Handle {
     }
 }
 
-impl VisitTypeMutAsync for Handle {
+impl VisitTypeMutAsync for RunWith {
     async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
         &mut self,
         site: TypeSite,

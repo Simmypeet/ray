@@ -11,13 +11,14 @@ use crate::{
         call::Call,
         closure::Closure,
         coroutine::Coroutine,
-        handle::{Handle, OperationHandler},
+        handle::{Handle, Yielded},
         literal::Literal,
         load::Load,
         perform::Perform,
         phi::Phi,
         ref_of::RefOf,
         ref_to_pointer::RefToPointer,
+        run_with::{OperationHandler, RunWith},
         struct_initialization::StructInitialization,
         tuple::Tuple,
     },
@@ -39,6 +40,7 @@ pub mod perform;
 pub mod phi;
 pub mod ref_of;
 pub mod ref_to_pointer;
+pub mod run_with;
 pub mod struct_initialization;
 pub mod tuple;
 
@@ -56,10 +58,12 @@ pub enum IRExprKind {
     Binary(Binary),
     Call(Call),
     Perform(Perform),
-    Handle(Handle),
+    RunWith(RunWith),
     Tuple(Tuple),
     Closure(Closure),
     Coroutine(Coroutine),
+    Handle(Handle),
+    Yielded(Yielded),
     StructInitialization(StructInitialization),
 }
 
@@ -77,10 +81,35 @@ impl IRExprKind {
             | Self::Binary(_)
             | Self::Call(_)
             | Self::Perform(_)
-            | Self::Handle(_)
+            | Self::RunWith(_)
             | Self::Tuple(_)
             | Self::Closure(_)
             | Self::Coroutine(_)
+            | Self::Yielded(_)
+            | Self::Handle(_)
+            | Self::StructInitialization(_) => None,
+        }
+    }
+
+    /// Returns the `Handle` this expression is, if it is one.
+    #[must_use]
+    pub const fn as_handle(&self) -> Option<&Handle> {
+        match self {
+            Self::Handle(handle) => Some(handle),
+            Self::Error
+            | Self::Literal(_)
+            | Self::RefOf(_)
+            | Self::RefToPointer(_)
+            | Self::Load(_)
+            | Self::Phi(_)
+            | Self::Binary(_)
+            | Self::Call(_)
+            | Self::Perform(_)
+            | Self::RunWith(_)
+            | Self::Tuple(_)
+            | Self::Closure(_)
+            | Self::Coroutine(_)
+            | Self::Yielded(_)
             | Self::StructInitialization(_) => None,
         }
     }
@@ -98,10 +127,12 @@ impl IRExprKind {
             | Self::Binary(_)
             | Self::Call(_)
             | Self::Perform(_)
-            | Self::Handle(_)
+            | Self::RunWith(_)
             | Self::Tuple(_)
             | Self::Closure(_)
             | Self::Coroutine(_)
+            | Self::Yielded(_)
+            | Self::Handle(_)
             | Self::StructInitialization(_) => None,
         }
     }
@@ -111,11 +142,11 @@ impl IRExprKind {
     /// evaluate it.
     ///
     /// That is every `perform`, every call whose callee has an effect, and
-    /// every `handle` that has an effect of its own. An effect row counts
+    /// every `run ... with` that has an effect of its own. An effect row counts
     /// unless it is syntactically empty, so a row variable does.
     ///
-    /// The effect of a `handle` is its residual effect, which is also the
-    /// effect of the function creating it. A `handle` whose body and
+    /// The effect of a `run ... with` is its residual effect, which is also the
+    /// effect of the function creating it. A `run ... with` whose body and
     /// handlers perform nothing, in a function that has an effect, is
     /// therefore still a suspension point.
     ///
@@ -124,7 +155,11 @@ impl IRExprKind {
         match self {
             Self::Perform(_) => true,
             Self::Call(call) => !call.callee_effect_row(engine).await.is_empty_effect_row(),
-            Self::Handle(handle) => !handle.residual_effect().is_empty_effect_row(),
+            Self::RunWith(run_with) => !run_with.residual_effect().is_empty_effect_row(),
+
+            // Resuming a coroutine suspends the function when it forwards an
+            // operation, which only happens when there is one to forward.
+            Self::Handle(handle) => !handle.forwarded_effect().is_empty_effect_row(),
 
             Self::Error
             | Self::Literal(_)
@@ -136,17 +171,18 @@ impl IRExprKind {
             | Self::Tuple(_)
             | Self::Closure(_)
             | Self::Coroutine(_)
+            | Self::Yielded(_)
             | Self::StructInitialization(_) => false,
         }
     }
 
     /// Returns the operands this expression stores in the capture layout of
     /// a nested function it creates: the captures of a closure, or those of
-    /// the handled body and of the operation handlers of a `handle`.
+    /// the handled body and of the operation handlers of a `run ... with`.
     pub fn capture_operands(&self) -> impl Iterator<Item = IRExprID> + '_ {
         let (captures, handler_captures): (&[IRExprID], &[IRExprID]) = match self {
             Self::Closure(closure) => (closure.captures(), &[]),
-            Self::Handle(handle) => (handle.captures(), handle.handler_captures()),
+            Self::RunWith(run_with) => (run_with.captures(), run_with.handler_captures()),
             Self::Error
             | Self::Literal(_)
             | Self::RefOf(_)
@@ -158,6 +194,8 @@ impl IRExprKind {
             | Self::Perform(_)
             | Self::Tuple(_)
             | Self::Coroutine(_)
+            | Self::Yielded(_)
+            | Self::Handle(_)
             | Self::StructInitialization(_) => (&[], &[]),
         };
 
@@ -165,11 +203,12 @@ impl IRExprKind {
     }
 
     /// Returns the nested functions this expression creates: the body of a
-    /// closure, or the handled body and the operation handlers of a `handle`.
+    /// closure, or the handled body and the operation handlers of a `run ...
+    /// with`.
     pub fn created_functions(&self) -> impl Iterator<Item = FunctionID> + '_ {
         let (function, handlers): (Option<FunctionID>, &[OperationHandler]) = match self {
             Self::Closure(closure) => (Some(closure.function_id()), &[]),
-            Self::Handle(handle) => (Some(handle.body().function_id()), handle.handlers()),
+            Self::RunWith(run_with) => (Some(run_with.body().function_id()), run_with.handlers()),
             Self::Error
             | Self::Literal(_)
             | Self::RefOf(_)
@@ -181,6 +220,8 @@ impl IRExprKind {
             | Self::Perform(_)
             | Self::Tuple(_)
             | Self::Coroutine(_)
+            | Self::Yielded(_)
+            | Self::Handle(_)
             | Self::StructInitialization(_) => (None, &[]),
         };
 
@@ -228,9 +269,10 @@ impl IRExprKind {
         }
 
         match self {
-            Self::Error | Self::Literal(_) | Self::RefOf(_) | Self::Load(_) => {
+            Self::Error | Self::Literal(_) | Self::RefOf(_) | Self::Load(_) | Self::Yielded(_) => {
                 Iter::None(std::iter::empty())
             }
+            Self::Handle(handle) => Iter::Pair([handle.continuation(), handle.value()].into_iter()),
             Self::Phi(phi) => Iter::Phi(phi.incoming().map(|(_, value)| value)),
             Self::Binary(binary) => Iter::Pair([binary.left(), binary.right()].into_iter()),
             Self::Call(call) => Iter::Slice(call.arguments().iter().copied()),
@@ -239,8 +281,8 @@ impl IRExprKind {
             Self::RefToPointer(coercion) => Iter::Single(std::iter::once(coercion.reference())),
             Self::Closure(closure) => Iter::Slice(closure.captures().iter().copied()),
             Self::Coroutine(coroutine) => Iter::Slice(coroutine.arguments().iter().copied()),
-            Self::Handle(handle) => {
-                Iter::Slices(handle.captures().iter().chain(handle.handler_captures()).copied())
+            Self::RunWith(run_with) => {
+                Iter::Slices(run_with.captures().iter().chain(run_with.handler_captures()).copied())
             }
             Self::StructInitialization(initialization) => {
                 Iter::Fields(initialization.initializers().values().copied())
@@ -317,6 +359,7 @@ impl VisitType for IRExprKind {
         match self {
             Self::Call(call) => call.visit_types(site, visitor),
             Self::Perform(perform) => perform.visit_types(site, visitor),
+            Self::RunWith(run_with) => run_with.visit_types(site, visitor),
             Self::Handle(handle) => handle.visit_types(site, visitor),
 
             Self::Error
@@ -329,6 +372,7 @@ impl VisitType for IRExprKind {
             | Self::Tuple(_)
             | Self::StructInitialization(_)
             | Self::Coroutine(_)
+            | Self::Yielded(_)
             | Self::Closure(_) => {}
         }
     }
@@ -349,6 +393,7 @@ impl VisitTypeMut for IRExpr {
         match &mut self.kind {
             IRExprKind::Call(call) => call.visit_types_mut(site, visitor),
             IRExprKind::Perform(perform) => perform.visit_types_mut(site, visitor),
+            IRExprKind::RunWith(run_with) => run_with.visit_types_mut(site, visitor),
             IRExprKind::Handle(handle) => handle.visit_types_mut(site, visitor),
 
             IRExprKind::Error
@@ -361,6 +406,7 @@ impl VisitTypeMut for IRExpr {
             | IRExprKind::Tuple(_)
             | IRExprKind::StructInitialization(_)
             | IRExprKind::Coroutine(_)
+            | IRExprKind::Yielded(_)
             | IRExprKind::Closure(_) => {}
         }
     }
@@ -377,6 +423,7 @@ impl VisitTypeMutAsync for IRExpr {
         match &mut self.kind {
             IRExprKind::Call(call) => call.visit_types_mut_async(site, visitor).await,
             IRExprKind::Perform(perform) => perform.visit_types_mut_async(site, visitor).await,
+            IRExprKind::RunWith(run_with) => run_with.visit_types_mut_async(site, visitor).await,
             IRExprKind::Handle(handle) => handle.visit_types_mut_async(site, visitor).await,
 
             IRExprKind::Error
@@ -389,6 +436,7 @@ impl VisitTypeMutAsync for IRExpr {
             | IRExprKind::Tuple(_)
             | IRExprKind::StructInitialization(_)
             | IRExprKind::Coroutine(_)
+            | IRExprKind::Yielded(_)
             | IRExprKind::Closure(_) => {}
         }
     }

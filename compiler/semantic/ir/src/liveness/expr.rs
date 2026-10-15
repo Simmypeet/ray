@@ -1,8 +1,8 @@
 //! Backward liveness of the expression values of an IR function.
 //!
 //! Every [`IRExprID`] is defined exactly once, by an
-//! [`Instruction::Expression`] or by the [`Terminator::Suspend`] evaluating
-//! it, and consumed at most once, by one of:
+//! [`Instruction::Expression`] or by the [`Terminator::Suspend`] or
+//! [`Terminator::Handle`] evaluating it, and consumed at most once, by one of:
 //!
 //! - an operand of another expression;
 //! - the value of a [`Instruction::Store`];
@@ -85,6 +85,17 @@ impl ExprLivenessProblem<'_> {
             // The value is defined on the resume edge, so it is dead at the
             // terminator and live from the entry of the resume block.
             Terminator::Suspend(suspend) => self.evaluate(suspend.expression(), state),
+
+            // The continuation and the resume value are consumed here. The
+            // returned value is defined on the return edge, and what a
+            // clause receives on the edge into it. Each is dead at the
+            // terminator, and stays dead on the edges that do not define
+            // it, where nothing uses it.
+            Terminator::Handle(_) => {
+                for expression_id in terminator.evaluated_expressions() {
+                    self.evaluate(expression_id, state);
+                }
+            }
 
             Terminator::Return(None) | Terminator::Jump(_) => {}
         }

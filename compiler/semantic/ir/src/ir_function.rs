@@ -17,11 +17,11 @@ use crate::{
         Terminator, Traverser,
     },
     dataflow::{DataflowProblem, DataflowSolution, solve},
-    ir_expr::{IRExpr, IRExprID, IRExpressionMap},
-    ir_lambda::{
-        Capture, CaptureID, CaptureMap, CaptureMapID, IRLambdaContext, IRThunkContext,
-        LambdaParameter, LambdaParameterID,
+    ir_closure::{
+        Capture, CaptureID, CaptureMap, CaptureMapID, ClosureParameter, ClosureParameterID,
+        IRClosureContext, IRThunkContext,
     },
+    ir_expr::{IRExpr, IRExprID, IRExpressionMap},
     ir_operation_handler::{
         IROperationHandlerContext, OperationHandlerParameter, OperationHandlerParameterID,
     },
@@ -116,7 +116,7 @@ impl IRFunctionMap {
 
     /// Associates a source closure identity with its lowered local function.
     pub fn register_closure(&mut self, closure_id: ClosureID, function_id: FunctionID) {
-        let _ = self.get_function(function_id).context().assert_as_lambda_context();
+        let _ = self.get_function(function_id).context().assert_as_closure_context();
         assert!(self.closures.insert(closure_id, function_id).is_none());
     }
 
@@ -167,7 +167,7 @@ impl IRFunctionMap {
     /// Returns every IR function of the source def, each after the nested
     /// functions it creates: a closure body comes before the function whose
     /// closure expression creates it, and a handled body and its operation
-    /// handlers come before the function of their `handle`.
+    /// handlers come before the function of their `run ... with`.
     ///
     /// Otherwise, the order is not stable.
     #[must_use]
@@ -204,13 +204,13 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn insert_lambda(
+    pub fn insert_closure(
         &mut self,
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
     ) -> FunctionID {
-        self.functions.insert(IRFunction::new_lambda(return_ty, effect, capture_map))
+        self.functions.insert(IRFunction::new_closure(return_ty, effect, capture_map))
     }
 
     #[must_use]
@@ -242,12 +242,12 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn insert_lambda_parameter(
+    pub fn insert_closure_parameter(
         &mut self,
         function_id: FunctionID,
-        parameter: LambdaParameter,
-    ) -> LambdaParameterID {
-        self.get_function_mut(function_id).insert_lambda_parameter(parameter)
+        parameter: ClosureParameter,
+    ) -> ClosureParameterID {
+        self.get_function_mut(function_id).insert_closure_parameter(parameter)
     }
 
     #[must_use]
@@ -298,7 +298,7 @@ impl IRFunctionMap {
         let function = self.get_function(function_id);
         match function.context() {
             IRContext::Def => None,
-            IRContext::Lambda(_) | IRContext::Thunk(_) | IRContext::OperationHandler(_) => {
+            IRContext::Closure(_) | IRContext::Thunk(_) | IRContext::OperationHandler(_) => {
                 Some(self.capture_map(function_id))
             }
         }
@@ -506,7 +506,7 @@ impl VisitExpr for IRFunctionMap {
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub enum IRContext {
     Def,
-    Lambda(IRLambdaContext),
+    Closure(IRClosureContext),
     Thunk(IRThunkContext),
     OperationHandler(IROperationHandlerContext),
 }
@@ -516,7 +516,7 @@ impl IRContext {
     pub fn assert_as_def_context(&self) {
         match self {
             Self::Def => {}
-            Self::Lambda(_) | Self::Thunk(_) | Self::OperationHandler(_) => {
+            Self::Closure(_) | Self::Thunk(_) | Self::OperationHandler(_) => {
                 panic!("expected a def context, found a nested function context")
             }
         }
@@ -524,22 +524,22 @@ impl IRContext {
 
     #[must_use]
     #[track_caller]
-    pub fn assert_as_lambda_context(&self) -> &IRLambdaContext {
+    pub fn assert_as_closure_context(&self) -> &IRClosureContext {
         match self {
             Self::Def | Self::Thunk(_) | Self::OperationHandler(_) => {
-                panic!("expected a lambda context, found a non-lambda context")
+                panic!("expected a closure context, found a non-closure context")
             }
-            Self::Lambda(context) => context,
+            Self::Closure(context) => context,
         }
     }
 
     #[track_caller]
-    fn assert_as_lambda_context_mut(&mut self) -> &mut IRLambdaContext {
+    fn assert_as_closure_context_mut(&mut self) -> &mut IRClosureContext {
         match self {
             Self::Def | Self::Thunk(_) | Self::OperationHandler(_) => {
-                panic!("expected a lambda context, found a non-lambda context")
+                panic!("expected a closure context, found a non-closure context")
             }
-            Self::Lambda(context) => context,
+            Self::Closure(context) => context,
         }
     }
 
@@ -548,7 +548,7 @@ impl IRContext {
     pub fn assert_as_thunk_context(&self) -> &IRThunkContext {
         match self {
             Self::Thunk(context) => context,
-            Self::Def | Self::Lambda(_) | Self::OperationHandler(_) => {
+            Self::Def | Self::Closure(_) | Self::OperationHandler(_) => {
                 panic!("expected a thunk context, found another function context")
             }
         }
@@ -559,7 +559,7 @@ impl IRContext {
     pub fn assert_as_operation_handler_context(&self) -> &IROperationHandlerContext {
         match self {
             Self::OperationHandler(context) => context,
-            Self::Def | Self::Lambda(_) | Self::Thunk(_) => {
+            Self::Def | Self::Closure(_) | Self::Thunk(_) => {
                 panic!("expected an operation handler context, found another function context")
             }
         }
@@ -574,7 +574,7 @@ impl IRContext {
     const fn nested_effect(&self) -> Option<&Interned<Ty>> {
         match self {
             Self::Def => None,
-            Self::Lambda(context) => Some(context.effect()),
+            Self::Closure(context) => Some(context.effect()),
             Self::Thunk(context) => Some(context.effect()),
             Self::OperationHandler(context) => Some(context.effect()),
         }
@@ -607,9 +607,9 @@ impl IRContext {
                 let parameters = engine.get_parameter_map(def_id).await;
                 parameters.iter().map(|(parameter_id, _)| Local::Parameter(parameter_id)).collect()
             }
-            Self::Lambda(context) => context
+            Self::Closure(context) => context
                 .parameters()
-                .map(|(parameter_id, _)| Local::LambdaParameter(parameter_id))
+                .map(|(parameter_id, _)| Local::ClosureParameter(parameter_id))
                 .collect(),
             Self::Thunk(_) => Vec::new(),
             Self::OperationHandler(context) => context
@@ -628,7 +628,7 @@ impl IRContext {
     pub const fn borrows_captures(&self) -> bool {
         match self {
             Self::OperationHandler(_) => true,
-            Self::Def | Self::Lambda(_) | Self::Thunk(_) => false,
+            Self::Def | Self::Closure(_) | Self::Thunk(_) => false,
         }
     }
 
@@ -640,7 +640,7 @@ impl IRContext {
     pub const fn environment_lifetime(&self) -> Option<&Interned<Ty>> {
         match self {
             Self::OperationHandler(context) => Some(context.environment_lifetime()),
-            Self::Def | Self::Lambda(_) | Self::Thunk(_) => None,
+            Self::Def | Self::Closure(_) | Self::Thunk(_) => None,
         }
     }
 
@@ -650,7 +650,7 @@ impl IRContext {
     const fn nested_return_ty(&self) -> Option<&Interned<Ty>> {
         match self {
             Self::Def => None,
-            Self::Lambda(context) => Some(context.return_ty()),
+            Self::Closure(context) => Some(context.return_ty()),
             Self::Thunk(context) => Some(context.return_ty()),
             Self::OperationHandler(context) => Some(context.return_ty()),
         }
@@ -661,7 +661,7 @@ impl IRContext {
     const fn nested_capture_map(&self) -> Option<CaptureMapID> {
         match self {
             Self::Def => None,
-            Self::Lambda(context) => Some(context.capture_map()),
+            Self::Closure(context) => Some(context.capture_map()),
             Self::Thunk(context) => Some(context.capture_map()),
             Self::OperationHandler(context) => Some(context.capture_map()),
         }
@@ -690,7 +690,7 @@ impl IRFunction {
     }
 
     #[must_use]
-    pub fn new_lambda(
+    pub fn new_closure(
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
@@ -700,7 +700,7 @@ impl IRFunction {
             scope_map: ScopeMap::new(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
-            context: IRContext::Lambda(IRLambdaContext::new(return_ty, effect, capture_map)),
+            context: IRContext::Closure(IRClosureContext::new(return_ty, effect, capture_map)),
         }
     }
 
@@ -781,8 +781,8 @@ impl IRFunction {
     }
 
     #[must_use]
-    pub fn insert_lambda_parameter(&mut self, parameter: LambdaParameter) -> LambdaParameterID {
-        self.context.assert_as_lambda_context_mut().insert_parameter(parameter)
+    pub fn insert_closure_parameter(&mut self, parameter: ClosureParameter) -> ClosureParameterID {
+        self.context.assert_as_closure_context_mut().insert_parameter(parameter)
     }
 
     #[must_use]
@@ -792,7 +792,7 @@ impl IRFunction {
     ) -> OperationHandlerParameterID {
         match &mut self.context {
             IRContext::OperationHandler(context) => context.insert_parameter(parameter),
-            IRContext::Def | IRContext::Lambda(_) | IRContext::Thunk(_) => {
+            IRContext::Def | IRContext::Closure(_) | IRContext::Thunk(_) => {
                 panic!("operation handler parameters require an operation handler context")
             }
         }
@@ -988,10 +988,12 @@ impl IRFunction {
                     | Instruction::Store(_) => None,
                 }
             });
+        let point = self.terminator_point(block_id);
         let terminator = self
             .block_terminator(block_id)
-            .and_then(Terminator::evaluated_expression)
-            .map(|expression_id| (self.terminator_point(block_id), expression_id));
+            .into_iter()
+            .flat_map(Terminator::evaluated_expressions)
+            .map(move |expression_id| (point, expression_id));
 
         instructions.chain(terminator)
     }
@@ -1009,7 +1011,7 @@ impl IRFunction {
             let terminator = self.block_terminator(point.block_id())?;
             return terminator
                 .used_value()
-                .or_else(|| terminator.evaluated_expression())
+                .or_else(|| terminator.evaluated_expressions().next())
                 .map(|value| self.get_expression(value).span());
         };
 
@@ -1094,7 +1096,7 @@ impl VisitTypeMut for IRContext {
     fn visit_types_mut<V: TypeVisitorMut>(&mut self, site: TypeSite, visitor: &mut V) {
         match self {
             Self::Def => {}
-            Self::Lambda(context) => context.visit_types_mut(site, visitor),
+            Self::Closure(context) => context.visit_types_mut(site, visitor),
             Self::Thunk(context) => context.visit_types_mut(site, visitor),
             Self::OperationHandler(context) => context.visit_types_mut(site, visitor),
         }
@@ -1109,7 +1111,7 @@ impl VisitTypeMutAsync for IRContext {
     ) {
         match self {
             Self::Def => {}
-            Self::Lambda(context) => context.visit_types_mut_async(site, visitor).await,
+            Self::Closure(context) => context.visit_types_mut_async(site, visitor).await,
             Self::Thunk(context) => context.visit_types_mut_async(site, visitor).await,
             Self::OperationHandler(context) => context.visit_types_mut_async(site, visitor).await,
         }
@@ -1120,7 +1122,7 @@ impl VisitType for IRContext {
     fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
         match self {
             Self::Def => {}
-            Self::Lambda(context) => context.visit_types(site, visitor),
+            Self::Closure(context) => context.visit_types(site, visitor),
             Self::Thunk(context) => context.visit_types(site, visitor),
             Self::OperationHandler(context) => context.visit_types(site, visitor),
         }

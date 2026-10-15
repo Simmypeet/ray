@@ -313,6 +313,15 @@ pub async fn solve<P: DataflowProblem>(
                 }
 
                 for edge in cfg.incoming_edges(block_id).unwrap() {
+                    // An unreachable block may still jump to a reachable
+                    // one, such as the merge block of an `if` whose arms all
+                    // leave the enclosing loop, which then falls through to
+                    // the loop condition. Nothing flows into a block that
+                    // never runs, and it has no facts to join.
+                    if !block_exits.contains_key(&edge.source()) {
+                        continue;
+                    }
+
                     if let Some(edge_states) = &mut edge_states {
                         let mut edge_state = candidate_state.clone();
                         problem.transfer_edge(&edge, &mut edge_state).await?;
