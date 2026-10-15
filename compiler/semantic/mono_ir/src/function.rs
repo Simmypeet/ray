@@ -14,7 +14,7 @@ pub type LocalID = ID<Local>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum MonoFunctionKind {
     Def,
-    Lambda,
+    Closure,
     Thunk,
     OperationHandler,
 }

@@ -155,7 +155,7 @@ impl MonoNominalDropInstance {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum MonoFragmentInstance {
-    /// A source definition together with its nested lambdas and handlers.
+    /// A source definition together with its nested closures and handlers.
     Definition(MonoDefInstance),
     /// A compiler-generated structural `Drop.drop` for a nominal type.
     NominalDrop(MonoNominalDropInstance),

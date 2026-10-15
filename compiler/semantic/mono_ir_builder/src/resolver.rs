@@ -117,7 +117,9 @@ impl Resolver {
                     MonoNominalDropInstance::new(&dictionary_ty, &self.solver).await,
                 )
             }
-            ApplicationView::CoroutineInstance(_) | ApplicationView::CoroutineDropInstance(_) => {
+            ApplicationView::CoroutineInstance(_)
+            | ApplicationView::ContinuationDefInstance(_)
+            | ApplicationView::CoroutineDropInstance(_) => {
                 panic!("coroutine dictionaries are not lowered to MonoIR yet")
             }
             ApplicationView::Primitive(_)

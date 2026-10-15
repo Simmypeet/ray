@@ -2,7 +2,7 @@
 //!
 //! A [`MonoIR`] is deliberately scoped to one concrete source-definition
 //! instance. It owns that definition's root function and all nested functions
-//! produced from its lambdas, thunks, and operation handlers. A fragment can
+//! produced from its closures, thunks, and operation handlers. A fragment can
 //! instead hold a compiler-generated nominal `Drop.drop` body. Calls to other
 //! fragments retain [`MonoFragmentInstance`] keys so a future incremental
 //! orchestrator can request and reuse their independently cached fragments.

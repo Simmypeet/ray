@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use rayc_ir::ir_expr::{IRExprID, handle::Handle, perform::Perform};
+use rayc_ir::ir_expr::{IRExprID, perform::Perform, run_with::RunWith};
 use rayc_mono_ir::{
     MonoEffectInstance,
     function::{Local, LocalID, LocalKind},
@@ -40,21 +40,22 @@ impl Builder<'_> {
         self.push_call_with_destination(destination, callee, arguments);
     }
 
-    pub(super) async fn lower_handle(
+    pub(super) async fn lower_run_with(
         &mut self,
         context: &Context,
-        handle: &Handle,
+        run_with: &RunWith,
         expression_id: IRExprID,
     ) {
-        let instance = context.instantiate_effect(handle.effect_id(), handle.substitution()).await;
+        let instance =
+            context.instantiate_effect(run_with.effect_id(), run_with.substitution()).await;
         let (handler_pointer, handler_environment) =
-            self.lower_effect_handler_pointer(context, handle, instance.clone());
+            self.lower_effect_handler_pointer(context, run_with, instance.clone());
 
-        let body_abi = context.function_abi(handle.body().function_id());
-        let body_environment = context.function_environment_abi(handle.body().function_id());
+        let body_abi = context.function_abi(run_with.body().function_id());
+        let body_environment = context.function_environment_abi(run_with.body().function_id());
         let mut arguments = vec![self.emit_opaque_environment_pointer(
             context,
-            handle.body().captures(),
+            run_with.body().captures(),
             body_environment,
         )];
 
@@ -68,14 +69,14 @@ impl Builder<'_> {
 
         let destination = self.expression_place(expression_id);
         let callee = Operand::Function(FunctionReference::Local(
-            context.target_function_id(handle.body().function_id()),
+            context.target_function_id(run_with.body().function_id()),
         ));
         self.push_call_with_destination(destination, callee, arguments);
 
         // The handlers only borrow their shared captures, so they are dropped
         // once the handled body has returned.
         if let Some(environment) = handler_environment {
-            self.drop_handler_captures(context, handle, environment).await;
+            self.drop_handler_captures(context, run_with, environment).await;
         }
     }
 
@@ -84,13 +85,13 @@ impl Builder<'_> {
     async fn drop_handler_captures(
         &mut self,
         context: &Context,
-        handle: &Handle,
+        run_with: &RunWith,
         environment: LocalID,
     ) {
-        let drops = handle.handler_capture_drops();
+        let drops = run_with.handler_capture_drops();
         assert_eq!(
             drops.len(),
-            handle.handler_captures().len(),
+            run_with.handler_captures().len(),
             "memory analysis selects a Drop dictionary for every handler capture"
         );
 
@@ -112,13 +113,13 @@ impl Builder<'_> {
     pub(super) fn lower_effect_handler_pointer(
         &mut self,
         context: &Context,
-        handle: &Handle,
+        run_with: &RunWith,
         instance: MonoEffectInstance,
     ) -> (LocalID, Option<LocalID>) {
         let handler_type = context.intern_effect_instance(instance.clone());
         let handler_local =
             self.insert_local(Local::new(handler_type.clone(), LocalKind::Temporary));
-        let (slots, environment) = self.lower_handler_slot(context, handle);
+        let (slots, environment) = self.lower_handler_slot(context, run_with);
 
         self.assign(Place::new(handler_local), Rvalue::new_effect_handler(instance, slots));
 
@@ -138,11 +139,11 @@ impl Builder<'_> {
     pub(super) fn lower_handler_slot(
         &mut self,
         context: &Context,
-        handle: &Handle,
+        run_with: &RunWith,
     ) -> (BTreeMap<GlobalSymbolID, OperationHandlerSlot>, Option<LocalID>) {
         let mut slots = BTreeMap::new();
-        let Some(capture_map_id) = handle.handler_capture_map() else {
-            assert!(handle.handlers().is_empty());
+        let Some(capture_map_id) = run_with.handler_capture_map() else {
+            assert!(run_with.handlers().is_empty());
             return (slots, None);
         };
 
@@ -150,9 +151,9 @@ impl Builder<'_> {
         // arena-owned ABI.
         let environment_abi = context.capture_environment_abi(capture_map_id);
         let (environment, shared_environment) =
-            self.emit_environment(context, handle.handler_captures(), environment_abi);
+            self.emit_environment(context, run_with.handler_captures(), environment_abi);
 
-        for handler in handle.handlers() {
+        for handler in run_with.handlers() {
             context.assert_function_uses_capture_environment(handler.function_id(), capture_map_id);
             let fn_ptr = Operand::Function(FunctionReference::Local(
                 context.target_function_id(handler.function_id()),

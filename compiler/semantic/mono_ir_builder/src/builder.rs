@@ -2,8 +2,8 @@ use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
 use rayc_ir::{
     cfg::BlockID as IRBlockID,
+    ir_closure::{CaptureID, ClosureParameterID},
     ir_expr::IRExprID,
-    ir_lambda::{CaptureID, LambdaParameterID},
     ir_operation_handler::OperationHandlerParameterID,
     ir_variable::IRVariableID,
 };
@@ -32,7 +32,7 @@ struct FunctionState {
     expressions: FxHashMap<IRExprID, LocalID>,
     variables: FxHashMap<IRVariableID, LocalID>,
     parameters: FxHashMap<ParameterID, LocalID>,
-    lambda_parameters: FxHashMap<LambdaParameterID, LocalID>,
+    closure_parameters: FxHashMap<ClosureParameterID, LocalID>,
     operation_parameters: FxHashMap<OperationHandlerParameterID, LocalID>,
     captures: FxHashMap<CaptureID, Place>,
     handlers: FxHashMap<MonoEffectInstance, Place>,
@@ -49,7 +49,7 @@ impl<'output> Builder<'output> {
                 expressions: FxHashMap::default(),
                 variables: FxHashMap::default(),
                 parameters: FxHashMap::default(),
-                lambda_parameters: FxHashMap::default(),
+                closure_parameters: FxHashMap::default(),
                 operation_parameters: FxHashMap::default(),
                 captures: FxHashMap::default(),
                 handlers: FxHashMap::default(),
@@ -145,17 +145,21 @@ impl<'output> Builder<'output> {
         )
     }
 
-    pub(crate) fn insert_lambda_parameter(&mut self, parameter: LambdaParameterID, local: LocalID) {
-        self.state.lambda_parameters.insert(parameter, local);
+    pub(crate) fn insert_closure_parameter(
+        &mut self,
+        parameter: ClosureParameterID,
+        local: LocalID,
+    ) {
+        self.state.closure_parameters.insert(parameter, local);
     }
 
-    pub(crate) fn lambda_parameter_place(&self, parameter: LambdaParameterID) -> Place {
+    pub(crate) fn closure_parameter_place(&self, parameter: ClosureParameterID) -> Place {
         Place::new(
             *self
                 .state
-                .lambda_parameters
+                .closure_parameters
                 .get(&parameter)
-                .expect("semantic lambda parameter should be mapped"),
+                .expect("semantic closure parameter should be mapped"),
         )
     }
 

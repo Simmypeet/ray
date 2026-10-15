@@ -2,8 +2,8 @@ use qbice::storage::intern::Interned;
 use rayc_arena::Arena;
 use rayc_hash::FxHashMap;
 use rayc_ir::{
+    ir_closure::{Capture, CaptureID, CaptureMapID},
     ir_function::{FunctionID as IRFunctionID, IRFunction, IRFunctionMap},
-    ir_lambda::{Capture, CaptureID, CaptureMapID},
 };
 use rayc_mono_ir::{
     MonoDefInstance, MonoEffectInstance, MonoIR,

@@ -87,8 +87,8 @@ impl Builder<'_> {
             IRExprKind::Perform(perform) => {
                 self.lower_perform(context, perform, expression_id).await;
             }
-            IRExprKind::Handle(handle) => {
-                self.lower_handle(context, handle, expression_id).await;
+            IRExprKind::RunWith(run_with) => {
+                self.lower_run_with(context, run_with, expression_id).await;
             }
             IRExprKind::Tuple(tuple) => {
                 self.lower_tuple(tuple, destination);
@@ -98,11 +98,14 @@ impl Builder<'_> {
                 self.lower_struct(st, destination);
             }
 
-            IRExprKind::Closure(lambda) => self.lower_closure(context, lambda, expression_id),
+            IRExprKind::Closure(closure) => self.lower_closure(context, closure, expression_id),
 
             // The coroutine form of a function is not lowered yet.
             IRExprKind::Coroutine(_) => {
                 panic!("coroutine construction is not lowered to MonoIR yet")
+            }
+            IRExprKind::Handle(_) | IRExprKind::Yielded(_) => {
+                panic!("resuming a coroutine is not lowered to MonoIR yet")
             }
         }
     }

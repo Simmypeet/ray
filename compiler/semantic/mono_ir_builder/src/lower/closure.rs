@@ -13,14 +13,14 @@ impl Builder<'_> {
     pub(super) fn lower_closure(
         &mut self,
         context: &Context,
-        lambda: &rayc_ir::ir_expr::closure::Closure,
+        closure: &rayc_ir::ir_expr::closure::Closure,
         expression_id: IRExprID,
     ) {
         // Captures have already been evaluated in semantic IR order.
-        let environment_abi = context.function_environment_abi(lambda.function_id());
+        let environment_abi = context.function_environment_abi(closure.function_id());
         let environment = environment_abi.environment_type();
         let fields =
-            lambda.captures().iter().map(|capture| self.expression_operand(*capture)).collect();
+            closure.captures().iter().map(|capture| self.expression_operand(*capture)).collect();
 
         // Effect handlers are passed as additional arguments to the function, not
         // embedded in the environment.

@@ -1,7 +1,7 @@
 use rayc_arena::ID;
 use rayc_ir::{
+    ir_closure::CaptureID,
     ir_function::{IRContext, IRFunction},
-    ir_lambda::CaptureID,
 };
 use rayc_mono_ir::{
     MonoEffectInstance,
@@ -118,7 +118,7 @@ impl Context {
                 (MonoFunctionKind::Def, self.lower_type(&self.get_root_return_type().await).await)
             }
 
-            IRContext::Lambda(context) => {
+            IRContext::Closure(context) => {
                 // Every closure body uses the nominal environment ABI below.
 
                 for (_, parameter) in context.parameters() {
@@ -130,7 +130,7 @@ impl Context {
                     environment_fields.push(self.lower_capture_storage_type(capture).await);
                 }
 
-                (MonoFunctionKind::Lambda, self.lower_type(context.return_ty()).await)
+                (MonoFunctionKind::Closure, self.lower_type(context.return_ty()).await)
             }
 
             IRContext::Thunk(context) => {

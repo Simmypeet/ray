@@ -66,12 +66,13 @@ impl Builder<'_> {
                     }
                     None
                 }
-                IRContext::Lambda(context) => {
-                    let environment = parameters.next().expect("lambda should have an environment");
+                IRContext::Closure(context) => {
+                    let environment =
+                        parameters.next().expect("closure should have an environment");
                     for ((parameter_id, _), target_id) in
                         context.parameters().zip(parameters.by_ref())
                     {
-                        self.insert_lambda_parameter(parameter_id, target_id);
+                        self.insert_closure_parameter(parameter_id, target_id);
                     }
                     Some(environment)
                 }

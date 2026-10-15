@@ -22,7 +22,7 @@ impl Builder<'_> {
             }
             AddressRoot::Variable(variable) => self.variable_place(variable),
             AddressRoot::Parameter(parameter) => self.parameter_place(parameter),
-            AddressRoot::LambdaParameter(parameter) => self.lambda_parameter_place(parameter),
+            AddressRoot::ClosureParameter(parameter) => self.closure_parameter_place(parameter),
             AddressRoot::OperationHandlerParameter(parameter) => {
                 self.operation_parameter_place(parameter)
             }
@@ -59,6 +59,11 @@ impl Builder<'_> {
             IRTerminator::Suspend(suspend) => {
                 self.lower_expression(context, suspend.expression(), source).await;
                 Terminator::Goto(self.lower_edge(source_block, suspend.resume_block(), source))
+            }
+            // The coroutine form of a function is not lowered yet, so there
+            // is no coroutine to resume.
+            IRTerminator::Handle(_) => {
+                panic!("resuming a coroutine is not lowered to MonoIR yet")
             }
             IRTerminator::Jump(successor) => {
                 Terminator::Goto(self.lower_edge(source_block, *successor, source))
