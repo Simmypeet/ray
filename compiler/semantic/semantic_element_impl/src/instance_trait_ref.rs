@@ -348,6 +348,7 @@ fn classify_drop_head(ty: &Ty) -> DropHead {
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
             | ApplicationView::Coroutine(_)
+            | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
             | ApplicationView::NominalDropInstance(_) => {
