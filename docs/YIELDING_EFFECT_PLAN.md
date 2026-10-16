@@ -86,7 +86,7 @@ differently yet. See
 
 - `rayc_ir` (`cfg.rs`): `Terminator::Suspend { expression, resume, abandon }`
   with `abandon: Option<BlockID>`, always `None` in this phase. The
-  expression stays an `IRExprKind::Call`, `Perform` or `Handle`.
+  expression stays an `IRExprKind::Call`, `Perform` or `RunWith`.
 - `rayc_ir_builder` (`expression/call.rs`, `expression/run_with.rs`): end
   the block with a `Suspend` for every `perform`, every call whose effect
   row is not empty, and every `run ... with` that has an effect of its own.
@@ -106,7 +106,7 @@ differently yet. See
 regression gate for the whole IR change: `run` fixtures prove that the
 direct form still executes.
 
-**Risk.** Any code that assumes a `Call`, `Perform` or `Handle` is evaluated
+**Risk.** Any code that assumes a `Call`, `Perform` or `RunWith` is evaluated
 by an `Instruction::Expression`.
 
 ## Phase 2: The coroutine type and `coro`
@@ -174,19 +174,19 @@ by an `Instruction::Expression`.
   `Effect = Coroutine[c].Effect`. `k(v)` is then an ordinary call that takes
   `k` by value, and an effectful one, so it is already a `Suspend`. No new
   expression is needed.
-- **Syntax.** The `handle` keyword, operation clauses and the `return x:`
-  clause.
+- **Syntax.** The `handle` keyword, the operation clauses
+  `case Label.op(p) resume k:` and the `case return x:` clause.
 - **Typed AST.** A `Handle` expression whose clauses are arms, like the arms
   of an `if`. The clause parameters and `k` are bindings of the enclosing
   function. `break`, `continue` and `return` resolve to the enclosing loop
   and function. The typing rules are those under
   [typing](YIELDING_EFFECT.md#typing).
-- **IR.** `Terminator::Resume { continuation, value, return, clauses,
+- **IR.** `Terminator::Handle { continuation, value, return, clauses,
   abandon }`, with `abandon: None` in this phase. Each successor starts with
   the values the terminator gives it.
 - **Analyses.** Memory analysis moves the continuation. Liveness and the
   borrow checker treat each clause as a successor.
-- **MonoIR.** Panic on `Resume` and on the built-in `Def` instance.
+- **MonoIR.** Panic on `Handle` and on the built-in `Def` instance.
 
 **Fixtures:**
 
@@ -212,7 +212,7 @@ are enforced.
 **Changes.**
 
 - `rayc_ir`: `Terminator::Abandon`. Every `Suspend` has an abandon block,
-  and so does a `Resume` that forwards effects.
+  and so does a `Handle` that forwards effects.
 - `rayc_ir_builder`: the abandon block is the path an early `return` takes
   at that point, ending in `Abandon`.
 - `rayc_memory`: the abandon edge is an ordinary edge, so the existing
@@ -267,7 +267,7 @@ See [saved locals](YIELDING_EFFECT.md#saved-locals),
 - A query for the typed saved locals of a body. Its key is declared in
   `rayc_semantic_element`, so that the solver can call it, and its executor
   sits with `BuildIR`. It reads the liveness at every `Suspend` and
-  forwarding `Resume`, adds the locals that may be borrowed while their
+  forwarding `Handle`, adds the locals that may be borrowed while their
   storage is live, and adds what each expression waits for. Lifetimes are
   erased.
 - `Constant::LocalCoroutine` for the body and the handlers of a
@@ -301,19 +301,19 @@ fixes them so the prototype can be built. Each is cheap to change later.
 
 1. **Borrow checking is its own query** (phase 0).
 2. **Invoking a continuation goes through a built-in `Def` instance.** The
-   design describes it as a `Resume` with no clauses. The meaning is the
-   same; the lowering can produce that `Resume` when MonoIR is written.
+   design describes it as a `Handle` with no clauses. The meaning is the
+   same; the lowering can produce that `Handle` when MonoIR is written.
 3. **Everything is invariant.** A coroutine type is invariant in its
    arguments. `Continuation[r, c]` is an ordinary struct, so its unused `r`
    is invariant. The label arguments at a `handle` are related invariantly.
    Deriving the variance of yielded arguments and resume values, which
    [borrow checker impact](YIELDING_EFFECT.md#borrow-checker-impact) asks
    for, is left for later.
-4. **Clauses are spelled with `def`**, as in the design's examples. The
-   clause syntax is an open question there, so the parser keeps it in one
-   place.
+4. **Clauses are spelled with `case`**, as in the design's examples, and
+   every operation of an effect that has a clause needs one.
 5. **`coro` takes a call**, and in `handle e1(e2)` the outermost call is the
-   resume.
+   resume. `handle e1()` resumes with `()`, and `handle coro f(x)` starts
+   the coroutine.
 6. **No bound syntax.** A marker goal on an `InstanceCoroutine` that does
    not reduce cannot be proved in the prototype.
 

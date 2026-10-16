@@ -41,20 +41,19 @@ def main() -> int32:
     let mut sum = 0
 
     loop:
-        handle con(())
-        with Yield[int32]:
-            def yield(value, k):
+        handle con():
+            case Yield.yield(value) resume k:
                 sum += value
                 con = k
-        return x:
-            break
+            case return:
+                break
 
     return sum
 ```
 
 `coro numbers()` suspends `numbers` before it runs and gives back a
 `Continuation[(), ...]`: a new coroutine is always resumed with the unit
-value. Each `handle con(())` resumes the coroutine, and ends in one of two
+value. Each `handle con()` resumes the coroutine with it, and ends in one of two
 ways:
 
 - The coroutine performs `Yield.yield`. It suspends, and the `yield` clause
@@ -66,7 +65,7 @@ ways:
 
 The clauses are branches of `main`, like the arms of an `if`. That is why
 `con = k` and `break` act on `main`'s own variable and loop, and why the move
-analysis accepts the loop: `handle con(())` moves `con`, the `yield` branch
+analysis accepts the loop: `handle con()` moves `con`, the `yield` branch
 initialises it again before the next iteration, and the `return` branch never
 reaches the next iteration.
 
@@ -188,22 +187,29 @@ This is the same as a `handle` with no clauses.
 ## Handling a coroutine: `handle`
 
 ```ray
-handle expr1(expr2)
-with Label:
-    def op(p1, ..., pn, k):
+handle expr1(expr2):
+    case Label.op(p1, ..., pn) resume k:
         ...
-return x:
-    ...
+    case return x:
+        ...
 ```
 
-A `handle` resumes a coroutine and has two kinds of clauses:
+A `handle` resumes the continuation `expr1` with the value `expr2`.
+`handle expr1()` resumes with `()`, and `handle coro f(x)` starts the
+coroutine that the `coro` creates. It has two kinds of clauses:
 
 - An **operation clause** runs when the coroutine performs that operation.
-  It binds the operation's arguments and `k`, the continuation of the rest of
-  the coroutine.
-- The **return clause** runs when the coroutine completes. It binds the value
-  the coroutine returned. It may be left out, which is the same as writing
-  `return x: x`.
+  The operation is written as it is performed, so the clause binds exactly
+  the operation's arguments. `resume k` names the continuation of the rest of
+  the coroutine; a clause that leaves it out drops the continuation, which
+  abandons the coroutine. The type arguments of the label may be written, as
+  in `case Yield[int32].yield(value)`, and are inferred otherwise.
+- The **return clause** runs when the coroutine completes. `case return x`
+  binds the value the coroutine returned and `case return` ignores it. It may
+  be left out, which is the same as writing `case return x: x`.
+
+The clauses of one effect do not have to be next to each other, but an effect
+that has a clause needs one for each of its operations.
 
 ### Clauses are branches
 
@@ -281,11 +287,10 @@ eff State[a]:
     def get() -> a
     def set(value: a) -> ()
 
-handle k(v)
-with State[int32]:
-    def get(k1):            # k1: Continuation[int32, c]
+handle k(v):
+    case State.get() resume k1:         # k1: Continuation[int32, c]
         ...
-    def set(value, k2):     # k2: Continuation[(), c]
+    case State.set(value) resume k2:    # k2: Continuation[(), c]
         ...
 ```
 
@@ -309,9 +314,8 @@ def addTwo() -> int32 \ {Ask}:
 # Answers the first `ask` with `n`, the next with `n + 1`, and so on.
 def supply(k: Continuation[r, c], value: r, n: int32) given (co: Coroutine[c]) -> int32
     where (co.Return = int32, co.Effect = {Ask}):
-    return handle k(value)
-    with Ask:
-        def ask(next): supply(next, n, n + 1)
+    return handle k(value):
+        case Ask.ask() resume next: supply(next, n, n + 1)
 ```
 
 `supply(coro addTwo(), (), 1)` is 3. The first continuation waits for `()`
@@ -959,7 +963,7 @@ untagged.
 
 ## Lowering `handle`
 
-`handle k(v) with Label: ...` is lowered in place, into the control-flow
+`handle k(v): case Label.op(...) ...` is lowered in place, into the control-flow
 graph of the enclosing function. It becomes a `resume` followed by a switch
 on the result:
 
@@ -1076,7 +1080,7 @@ locals. This section is about how to compute them, and the layout saved
 locals.
 
 - The typed saved locals are computed on the IR after memory analysis, from
-  the liveness at each `Suspend` and each forwarding `Resume` (see
+  the liveness at each `Suspend` and each forwarding `Handle` (see
   [IR update](#ir-update)). `rayc_ir::liveness` already computes what is
   needed: the locals and the expression values that are use-live or
   drop-live.
@@ -1124,7 +1128,7 @@ so a suspension point has to end its block. A new terminator does that:
 Suspend { expression, resume, abandon }
 ```
 
-- `expression` is the `Perform`, `Call` or `Handle` expression. It is
+- `expression` is the `Perform`, `Call` or `RunWith` expression. It is
   unchanged: it is still an expression and still defines the value. The
   terminator only says where it is evaluated, and that control may not come
   back from it.
@@ -1195,7 +1199,7 @@ A `handle` is a terminator too. Its clauses are
 [branches](#clauses-are-branches), so they are its successors:
 
 ```
-Resume { continuation, value, return, clauses, abandon }
+Handle { continuation, value, return, clauses, abandon }
 ```
 
 - `continuation` and `value` are the operands. The continuation is moved.
@@ -1208,16 +1212,16 @@ Resume { continuation, value, return, clauses, abandon }
 No clause is a nested function, and there are no captures.
 
 The forwarding loop of [lowering `handle`](#lowering-handle) is not written
-out in the IR. One `Resume` means: resume the coroutine until it completes or
+out in the IR. One `Handle` means: resume the coroutine until it completes or
 performs an operation that has a clause, and forward every other operation.
 A `handle` that forwards is a suspension point of the enclosing function,
 which is why it has an abandon edge.
 
-Invoking a continuation, `k(v)`, is a `Resume` with no operation clauses.
+Invoking a continuation, `k(v)`, is a `Handle` with no operation clauses.
 
 ### `run ... with` in the IR
 
-A `run ... with` keeps its shape. It is still a `Handle` expression, and its
+A `run ... with` keeps its shape. It is still a `RunWith` expression, and its
 body and handlers are still nested bodies with their own IR. Only two things
 change:
 
@@ -1248,7 +1252,7 @@ when the `run` returns, after the body and the handler have been abandoned.
   [typed saved locals](#compute-the-saved-locals-of-a-coroutine) are read
   off the liveness at these terminators.
 - **Borrow checker.** Abandon edges are ordinary edges and the drops on them
-  are ordinary uses. A `coro` is an ordinary borrow. A `Resume` moves the
+  are ordinary uses. A `coro` is an ordinary borrow. A `Handle` moves the
   continuation, and each clause is one of its successors. `'this` adds a
   loan on the edge into a clause, and a check on the edges out of a
   `perform`; see [yielding local borrows](#yielding-local-borrows).
@@ -1402,13 +1406,13 @@ alive does not forbid using it. The loan alone stops the resume but lets the
 storage die once `k` is gone.
 
 ```ray
-def log(msg, k):
+case Log.log(msg) resume k:
     print(msg)
     con = k         # OK: `msg` is not used again
 ```
 
 ```ray
-def log(msg, k):
+case Log.log(msg) resume k:
     con = k         # ERROR: `msg` is still in use
     print(msg)
 ```
@@ -1443,18 +1447,13 @@ never appear in the handling function, so there is nothing to check.
   - **In-place construction**: a value is built directly where it will live,
     so it never has to move there. Returning or boxing an immovable coroutine
     needs this under either of the other two.
-- **Syntax of the clauses.** The semantics are settled, the spelling is not:
-  - The return clause `return x:` sits at the indentation of the `handle`,
-    where a `return` statement could also start. Only the colon after the
-    name tells the two apart.
-  - Operation clauses are written with `def`, like the handlers of
-    `run ... with`, but they are branches and not functions. `return` inside
-    one returns from the enclosing function, while inside a `run` handler it
-    gives the result of the operation. A different spelling may be clearer.
-    Koka has the same split in one construct, as `fun` clauses, which answer
-    in place, and `ctl` clauses, which get the continuation. Keeping `def`
-    for the first kind and a new keyword for the second would leave room for
-    a `def` clause inside `handle` later.
+- **Syntax of the clauses.** The clauses are spelled `case`, like the arms
+  of a match, because they are branches and not functions: `return` inside
+  one returns from the enclosing function, while inside a handler of
+  `run ... with`, which is spelled `def`, it gives the result of the
+  operation. Koka has the same split in one construct, as `fun` clauses,
+  which answer in place, and `ctl` clauses, which get the continuation. That
+  leaves room for a `def` clause inside `handle` later. Still open:
   - A clause gives the `handle` a value only in the `: expression` form,
     following `if`. That is a proposal, not a decision.
 - **Lending through a generic effect.** [`'this`](#yielding-local-borrows)
@@ -1471,11 +1470,9 @@ never appear in the handling function, so there is nothing to check.
   return a borrow of its argument. A declared lifetime parameter on the
   operation would allow it, at the price described under
   [yielding local borrows](#why-not-a-lifetime-parameter-on-the-operation).
-- **Syntax of `handle` and `coro`.** `handle expr1(expr2)` reads as `handle`
-  applied to a call. That matches "invoke the continuation, and intercept
-  some effects", but the grammar has to say how `expr1` is delimited when it
-  is itself a call, as in `handle f(x)(y)`. Also undecided: whether `coro`
-  accepts only a call or any expression.
+- **Syntax of `coro`.** In `handle expr1(expr2)` the outermost call is the
+  resume, so `handle f(x)(y)` resumes the continuation `f(x)` with `y`.
+  Undecided: whether `coro` accepts only a call or any expression.
 - **Naming a coroutine type.** A bound on the coroutine of an unresolved
   call needs syntax. `coro d.m` in type position is the proposal; see
   [naming it in a bound](#naming-it-in-a-bound) for what is undecided.

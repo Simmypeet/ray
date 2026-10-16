@@ -854,13 +854,13 @@ A new crate, `rayc_borrowck`, runs per definition after `rayc_memory::analyze`.
      result type `&'r t` has `'r` containing `L` at `p`. If `place` goes
      through dereferences, add the **reborrow constraints** described in
      [Reborrow Constraints](#reborrow-constraints);
-   - `Closure` / `Handle` construction: relate each capture operand to the
+   - `Closure` / `RunWith` construction: relate each capture operand to the
      capture type, and apply the nested function's propagated requirements
      (see step 5);
    - `Perform`: instantiate the operation signature from a label with fresh
      regions, relate arguments and result to it, and relate that label `<:`
      the current function's effect row;
-   - `Handle`: relate the body thunk's effect row `<:` the handled label plus
+   - `RunWith`: relate the body thunk's effect row `<:` the handled label plus
      the current function's effect row, and relate each operation handler to
      the operation signature instantiated from the handled label;
    - well-formedness of every type that appears: `&'r t` requires `t: 'r`,
@@ -869,7 +869,7 @@ A new crate, `rayc_borrowck`, runs per definition after `rayc_memory::analyze`.
    constraints following Rust's outlives components. Obligations about type
    parameters and projections are discharged against the where clause and
    implied bounds, or reported.
-5. **Nested functions.** Lambdas, thunks and operation handlers are checked
+5. **Nested functions.** Closures, thunks and operation handlers are checked
    first, innermost first, and each passes requirements up to its parent.
    See [Nested Bodies](#nested-bodies).
 
@@ -917,7 +917,7 @@ result to `'s`, or take `self` by value (`def into(self: RefMut['a]) -> &'a mut 
 
 The same rule decides how nested bodies may use their captures (see
 [Nested Bodies](#nested-bodies)). An operation handler reaches its captures
-through `&'env mut Env`, like `getRefMut`. A lambda or thunk owns its
+through `&'env mut Env`, like `getRefMut`. A closure or thunk owns its
 environment, like `into`.
 
 ### Nested Bodies
@@ -925,11 +925,11 @@ environment, like `into`.
 The model is rustc's handling of closures, extended to `run` thunks and
 operation handlers.
 
-**Each body is checked on its own, innermost first.** Every lambda, thunk and
+**Each body is checked on its own, innermost first.** Every closure, thunk and
 operation handler has its own CFG, so each is borrow-checked separately. Its
 loans, liveness, and Polonius graph cover only that body. One borrow-check
 query per definition processes the whole `IRFunctionMap` bottom-up. It builds
-a nesting tree by scanning `Closure` and `Handle` expressions, recording each
+a nesting tree by scanning `Closure` and `RunWith` expressions, recording each
 nested function's parent and the point where the parent creates it.
 
 **The interface between parent and child is a set of external regions.** A
@@ -937,7 +937,7 @@ nested function's external regions are every region in its interface type:
 the owner arguments, parameter types, return type, effect row, and capture
 types.
 
-- For a lambda, these are exactly the arguments of its closure type.
+- For a closure, these are exactly the arguments of its closure type.
 - A thunk or an operation handler has no closure type, so the checker builds
   the same list itself. It contains the capture types, the effect row, and,
   for a handler, the operation's parameter and return types instantiated
@@ -957,7 +957,7 @@ A loan of one of the child's own locals that flows into an external region is
 a real error in the child, for example returning a reference to a local.
 
 **Capture loans belong to the parent.** A by-reference capture is a `RefOf`
-evaluated in the parent before the `Closure` or `Handle` expression, so the
+evaluated in the parent before the `Closure` or `RunWith` expression, so the
 parent creates the loan. The closure value's type contains the capture region,
 which stays live while the closure value is live. That is how
 `closure_borrow_read` is rejected: the closure is still live when
@@ -968,13 +968,13 @@ part that decides soundness:
 
 | Body              | How it is invoked                                  | Rust analogue        | Access to captures             |
 |-------------------|----------------------------------------------------|----------------------|--------------------------------|
-| lambda            | `Def.call(fn: f, ...)` takes `f` **by value**      | `FnOnce` (or `Copy`) | environment owned by the call  |
-| `run` thunk       | called exactly once by `Handle`                    | `FnOnce`             | environment owned by the call  |
+| closure           | `Def.call(fn: f, ...)` takes `f` **by value**      | `FnOnce` (or `Copy`) | environment owned by the call  |
+| `run` thunk       | called exactly once by `RunWith`                   | `FnOnce`             | environment owned by the call  |
 | operation handler | called any number of times, one shared environment | `FnMut`              | through `&'env mut Env`        |
 
-- **Lambdas and thunks.** A by-reference capture `x` is the place
+- **Closures and thunks.** A by-reference capture `x` is the place
   `Capture(x).*`, of type `&'h t`. Reborrows through it are constrained only
-  by `'h`, so a lambda may return a reborrow of a `&mut` capture with lifetime
+  by `'h`, so a closure may return a reborrow of a `&mut` capture with lifetime
   `'h`. That is sound: a closure holding a `&mut` capture is not `Copy`, so it
   can be called only once.
 - **Operation handlers.** Each handler body gets a fresh universal region
@@ -1017,7 +1017,7 @@ its operations is running. Ray guarantees this by construction:
   label (`compose_run_with_effect`). A handler that performs the effect it
   handles therefore reaches an **outer** handler for it, or fails to type.
 - **Runtime.** Ray passes handlers as evidence. The handler record is built
-  in the parent at the `Handle` point and is passed only to the body thunk
+  in the parent at the `RunWith` point and is passed only to the body thunk
   (`lower_handle`). The evidence a handler uses for its own effects comes from
   the parent, so it cannot point back to the handler record that is running.
   A closure called inside a handler receives the handler's evidence at the
@@ -1027,9 +1027,9 @@ Any future change that lets a handler reach its own record, for example
 first-class handler values or handlers that capture evidence, must revisit
 the `'env` rule.
 
-**The `Handle` point in the parent.** The capture operands for the body thunk
-and the handler environment are evaluated before the `Handle` expression, and
-the `Handle` uses all of them. So when the body captures `a` by `&` and a
+**The `RunWith` point in the parent.** The capture operands for the body thunk
+and the handler environment are evaluated before the `RunWith` expression, and
+the `RunWith` uses all of them. So when the body captures `a` by `&` and a
 handler captures it by `&mut`, the parent reports E0502. At the same point
 the parent adds the effect-row constraints from Phase 5, step 3 (the body's
 row `<:` the handled label plus the outer row), and the requirements passed
@@ -1037,7 +1037,7 @@ up from the body and the handlers.
 
 **Precision.** A requirement is a relation added at one point, the creation
 point in the parent, so it is not location-sensitive inside the parent.
-rustc accepts the same loss of precision. Lambda parameter and return regions
+rustc accepts the same loss of precision. Closure parameter and return regions
 are external, so every call to the closure uses the same regions. This is the
 missing higher-ranked support described in Phase 7.
 
@@ -1179,7 +1179,7 @@ execute. Key borrow-check fixtures:
   local (E0515).
 - Closures: by-reference capture followed by mutation (error), `move` capture
   (accepted), closure requirement propagation, including through two levels
-  of nesting, and a lambda returning a reborrow of its `&mut` capture
+  of nesting, and a closure returning a reborrow of its `&mut` capture
   (accepted).
 - Handler environments: a handler returning a reborrow of a `&mut`-captured
   variable (error, "captured variable cannot escape handler body"), and one

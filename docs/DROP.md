@@ -477,7 +477,7 @@ Discarded expression statements are the exception: they are lowered to an
 `ExprDiscard` instruction that carries the dictionary chosen during type
 checking.
 
-A `Handle` expression (a `run … with`) carries one `Drop` dictionary per
+A `RunWith` expression (a `run … with`) carries one `Drop` dictionary per
 handler capture (`Handle::handler_capture_drops`), in the same order as its
 handler captures. `Handle::new` requires the complete list. A dictionary
 depends only on the capture's type, not on the flow state, so the IR builder
@@ -530,7 +530,7 @@ place rooted in a capture is reported as `MoveOutOfHandlerCapture`. The
 dataflow does not mark such a capture as moved, so the error does not cascade
 into use-after-move errors.
 
-The stack state tracks roots (`StackRoot`: variables, parameters, lambda and
+The stack state tracks roots (`StackRoot`: variables, parameters, closure and
 operation-handler parameters, and captures) and, for each root, a `PlaceState`
 that is either uniform or tracked per field. `DropElaborator`
 (`memory/src/drop_elaboration.rs`) turns those states into drops and resolves
@@ -567,7 +567,7 @@ ordinary instance calls. `lower_call` handles every kind of `Drop` dictionary:
 `lower_handle` builds the handlers' shared environment once, in the enclosing
 function, and passes a pointer to it to every handler. After the call to the
 handled body, it drops the environment's capture fields in reverse order with
-`lower_drop`, using the dictionaries recorded on the `Handle`.
+`lower_drop`, using the dictionaries recorded on the `RunWith`.
 
 # Limitations
 
