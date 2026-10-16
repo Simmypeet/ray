@@ -1,0 +1,25 @@
+eff Ask:
+    def ask() -> int32
+    def tell(value: int32) -> ()
+
+
+def make() -> int32:
+    return 1
+
+
+# ERROR: `make` is a function, not a continuation.
+#
+# The clauses are still checked against what they bind, so the errors
+# within them are reported as well.
+def callOfFunction():
+    handle make():
+        # ERROR: `Ask.tell` has no clause.
+        case Ask.ask() resume k:
+            # ERROR: `value` is not a name in scope.
+            let x = value
+        case return x:
+            pass
+
+
+def main() -> int32:
+    return 0
