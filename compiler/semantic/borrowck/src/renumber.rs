@@ -6,8 +6,8 @@ use qbice::storage::intern::Interned;
 use rayc_arena::ID;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_ir::{
+    ir_closure::CaptureMapID,
     ir_function::{FunctionID, IRFunctionMap},
-    ir_lambda::CaptureMapID,
     visit::{TypeSite, TypeVisitorMutAsync},
 };
 use rayc_qbice::TrackedEngine;

@@ -134,11 +134,15 @@ fn collect_owners(
             collector.record_instruction(function, point, instruction);
         }
 
-        // A suspension point evaluates its expression at its terminator.
-        if let Some(expression_id) =
-            function.block_terminator(block_id).and_then(Terminator::evaluated_expression)
-        {
-            let point = function.terminator_point(block_id);
+        // A suspension point evaluates its expression at its terminator,
+        // and a resumed coroutine defines what it gives its successors
+        // there.
+        let point = function.terminator_point(block_id);
+        let evaluated = function
+            .block_terminator(block_id)
+            .into_iter()
+            .flat_map(Terminator::evaluated_expressions);
+        for expression_id in evaluated {
             collector.record_expression(function, point, expression_id);
         }
     }

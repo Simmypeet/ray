@@ -1,6 +1,6 @@
-//! The constraints of creating a nested function, a closure or a `handle`: its
-//! [requirements](crate::requirement), with each external region instantiated
-//! by the region of the creator it stands for.
+//! The constraints of creating a nested function, a closure or a `run ...
+//! with`: its [requirements](crate::requirement), with each external region
+//! instantiated by the region of the creator it stands for.
 //!
 //! The instantiation comes from matching each type in the interface of the
 //! nested function against the type its creator gives it, as an instance head
@@ -10,13 +10,13 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     cfg::Point,
+    ir_closure::CaptureMapID,
     ir_expr::{
         IRExprID,
         closure::Closure,
-        handle::{Handle, OperationHandler},
+        run_with::{OperationHandler, RunWith},
     },
     ir_function::FunctionID,
-    ir_lambda::CaptureMapID,
 };
 use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_type::{
@@ -81,7 +81,7 @@ impl ConstraintCollector<'_> {
         closure_ty: &ClosureView<'_>,
     ) -> Interface {
         let engine = self.solver.engine();
-        let context = self.ir.get_function(function_id).context().assert_as_lambda_context();
+        let context = self.ir.get_function(function_id).context().assert_as_closure_context();
         let captures = self
             .ir
             .captures_for_function(function_id)
@@ -112,55 +112,55 @@ impl ConstraintCollector<'_> {
         interface
     }
 
-    /// Collects the constraints of `handle`, whose value has type `ty`: the
-    /// where clause of the effect, the residual effect, the drops of the
-    /// handler captures, and what the body and the handlers require.
-    pub(super) async fn collect_handle(
+    /// Collects the constraints of `run ... with`, whose value has type `ty`:
+    /// the where clause of the effect, the residual effect, the drops of
+    /// the handler captures, and what the body and the handlers require.
+    pub(super) async fn collect_run_with(
         &mut self,
         point: Point,
-        handle: &Handle,
+        run_with: &RunWith,
         ty: &Interned<Ty>,
     ) {
         // Handling an effect requires its where clause, as performing it does.
-        self.collect_where_clause(point, handle.effect_id(), handle.substitution()).await;
-        self.collect_instance_arguments(point, handle.effect_id(), handle.substitution()).await;
+        self.collect_where_clause(point, run_with.effect_id(), run_with.substitution()).await;
+        self.collect_instance_arguments(point, run_with.effect_id(), run_with.substitution()).await;
 
         // The residual effect is performed in the effect of this function.
-        self.collect_introduced_effect(point, handle.residual_effect()).await;
+        self.collect_introduced_effect(point, run_with.residual_effect()).await;
 
         // The handlers only borrow their captures, so this function drops
         // them once the handled body returns.
         for (operand, drop_instance) in
-            handle.handler_captures().iter().zip(handle.handler_capture_drops())
+            run_with.handler_captures().iter().zip(run_with.handler_capture_drops())
         {
             let operand_ty = self.function.get_expression(*operand).ty();
             self.collect_drop(point, operand_ty, drop_instance).await;
         }
 
         // The body and the handlers are created with the types of the
-        // `handle`.
-        let interface = self.handle_interface(handle, ty).await;
+        // `run ... with`.
+        let interface = self.run_with_interface(run_with, ty).await;
         let instantiation = self.instantiate(point, interface).await;
 
-        let created = std::iter::once(handle.body().function_id())
-            .chain(handle.handlers().iter().map(OperationHandler::function_id));
+        let created = std::iter::once(run_with.body().function_id())
+            .chain(run_with.handlers().iter().map(OperationHandler::function_id));
         for function_id in created {
             self.collect_nested_requirements(point, function_id, &instantiation).await;
         }
     }
 
-    /// Pairs the interfaces of the body and the handlers of `handle`, whose
-    /// value has type `ty`, with its types.
-    async fn handle_interface(&self, handle: &Handle, ty: &Interned<Ty>) -> Interface {
+    /// Pairs the interfaces of the body and the handlers of `run ... with`,
+    /// whose value has type `ty`, with its types.
+    async fn run_with_interface(&self, run_with: &RunWith, ty: &Interned<Ty>) -> Interface {
         let engine = self.solver.engine();
         let mut interface = Interface::new();
 
-        // The body returns the value of the `handle`, and runs in the
+        // The body returns the value of the `run ... with`, and runs in the
         // handled effect on top of the residual effect.
-        let body = handle.body();
+        let body = run_with.body();
         let body_context =
             self.ir.get_function(body.function_id()).context().assert_as_thunk_context();
-        let body_effect = handle.body_effect_row(engine).await;
+        let body_effect = run_with.body_effect_row(engine).await;
 
         self.pair_captures(
             &mut interface,
@@ -171,8 +171,8 @@ impl ConstraintCollector<'_> {
         interface.pair(body_context.effect(), &body_effect);
 
         // Each handler has the signature of its operation, instantiated by the
-        // `handle`, and runs in the residual effect.
-        for handler in handle.handlers() {
+        // `run ... with`, and runs in the residual effect.
+        for handler in run_with.handlers() {
             let context = self
                 .ir
                 .get_function(handler.function_id())
@@ -181,26 +181,27 @@ impl ConstraintCollector<'_> {
 
             let declared = engine.get_parameter_map(handler.operation_id()).await;
             for ((_, parameter), (_, declared)) in context.parameters().zip(declared.iter()) {
-                let declared_ty = declared.ty().apply_subst_or_clone(handle.substitution(), engine);
+                let declared_ty =
+                    declared.ty().apply_subst_or_clone(run_with.substitution(), engine);
                 interface.pair(parameter.ty(), &declared_ty);
             }
 
             let return_ty = engine
                 .get_return_type(handler.operation_id())
                 .await
-                .apply_subst_or_clone(handle.substitution(), engine);
+                .apply_subst_or_clone(run_with.substitution(), engine);
             interface.pair(context.return_ty(), &return_ty);
-            interface.pair(context.effect(), handle.residual_effect());
+            interface.pair(context.effect(), run_with.residual_effect());
         }
 
         // The handlers share one capture layout, and so its external
         // regions.
         let handlers_shared_capture_map_id =
-            self.ir.capture_map_id(handle.handlers()[0].function_id());
+            self.ir.capture_map_id(run_with.handlers()[0].function_id());
         self.pair_captures(
             &mut interface,
             handlers_shared_capture_map_id,
-            handle.handler_captures(),
+            run_with.handler_captures(),
         );
 
         interface

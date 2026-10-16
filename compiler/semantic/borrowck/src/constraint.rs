@@ -8,9 +8,9 @@ use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::{Address, Local},
     cfg::{BlockID, Instruction, Point, Terminator},
+    ir_closure::CaptureMap,
     ir_expr::{IRExprID, IRExprKind},
     ir_function::{FunctionID, IRFunction, IRFunctionMap},
-    ir_lambda::CaptureMap,
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_solver::Solver;
@@ -23,6 +23,7 @@ use rayc_type::{
 
 use crate::requirement::NestedRequirements;
 
+mod handle;
 mod instance;
 mod invocation;
 mod nested;
@@ -381,6 +382,15 @@ impl ConstraintCollector<'_> {
                 self.collect_expression(point, suspend.expression()).await;
             }
 
+            // A resumed coroutine is given its continuation and value here,
+            // and gives what each clause receives.
+            Some(terminator @ Terminator::Handle(_)) => {
+                let point = self.function.terminator_point(block_id);
+                for expression_id in terminator.evaluated_expressions() {
+                    self.collect_expression(point, expression_id).await;
+                }
+            }
+
             // Unit holds no region, and the values a jump passes are related by
             // the phis of its target.
             Some(Terminator::Return(None) | Terminator::Jump(_) | Terminator::Conditional(_))
@@ -425,8 +435,14 @@ impl ConstraintCollector<'_> {
             // Primitives hold no region.
             IRExprKind::Binary(_) => {}
 
+            IRExprKind::RunWith(run_with) => {
+                self.collect_run_with(point, run_with, expression.ty()).await;
+            }
             IRExprKind::Handle(handle) => {
                 self.collect_handle(point, handle, expression.ty()).await;
+            }
+            IRExprKind::Yielded(yielded) => {
+                self.collect_yielded(point, yielded, expression.ty()).await;
             }
         }
     }

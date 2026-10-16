@@ -243,10 +243,10 @@ impl ConstraintCollector<'_> {
                     .ty()
                     .clone()
             }
-            Local::LambdaParameter(parameter_id) => self
+            Local::ClosureParameter(parameter_id) => self
                 .function
                 .context()
-                .assert_as_lambda_context()
+                .assert_as_closure_context()
                 .get_parameter(parameter_id)
                 .ty()
                 .clone(),

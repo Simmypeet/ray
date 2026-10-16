@@ -196,6 +196,22 @@ impl ConstraintCollector<'_> {
                     }
                 }
 
+                // The `Coroutine` dictionary of the coroutine that the
+                // continuation resumes.
+                ApplicationView::ContinuationDefInstance(view) => {
+                    let coroutine = view
+                        .continuation()
+                        .as_struct_view()
+                        .map(|continuation| continuation.args()[1].clone())
+                        .expect("a continuation `Def` instance is built for a continuation type");
+                    let expected = TraitRef::new(
+                        self.solver.engine().get_core_item(CoreItem::CoroutineTrait).await,
+                        Args::new([coroutine], self.solver.engine()),
+                    );
+
+                    self.collect_instance(point, view.coroutine_instance(), &expected).await;
+                }
+
                 // Built from a type alone.
                 ApplicationView::DefInstance(_)
                 | ApplicationView::NoOpDropInstance(_)

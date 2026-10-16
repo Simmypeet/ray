@@ -191,7 +191,7 @@ impl fmt::Display for FragmentName {
 pub(crate) enum FunctionName {
     /// The fragment's root function.
     Root(FragmentName),
-    /// A lambda, thunk, or operation handler nested in the fragment.
+    /// A closure, thunk, or operation handler nested in the fragment.
     Nested { fragment: FragmentName, category: &'static str, index: u64 },
     /// A source closure body, named independently of its owning fragment so
     /// other fragments can reference it.
@@ -234,7 +234,7 @@ fn nested_function_category(kind: MonoFunctionKind) -> &'static str {
         MonoFunctionKind::Def => {
             panic!("compiler-internal invariant violation: nested function has def kind")
         }
-        MonoFunctionKind::Lambda => "lambda",
+        MonoFunctionKind::Closure => "closure",
         MonoFunctionKind::Thunk => "thunk",
         MonoFunctionKind::OperationHandler => "handler",
     }

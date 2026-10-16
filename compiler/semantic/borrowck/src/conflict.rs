@@ -8,12 +8,12 @@ use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_ir::{
     address::{Address, Local},
     cfg::{AddressDrop, BlockID, Instruction, Point, Store, Terminator},
+    ir_closure::CaptureMap,
     ir_expr::{
         IRExprID, IRExprKind,
         load::{Load, LoadEffect},
     },
     ir_function::IRFunction,
-    ir_lambda::CaptureMap,
     scope::ScopeID,
 };
 use rayc_lexical::tree::RelativeSpan;
@@ -262,10 +262,12 @@ impl<'a> ConflictChecker<'a> {
             | IRExprKind::Binary(_)
             | IRExprKind::Call(_)
             | IRExprKind::Perform(_)
-            | IRExprKind::Handle(_)
+            | IRExprKind::RunWith(_)
             | IRExprKind::Tuple(_)
             | IRExprKind::Closure(_)
             | IRExprKind::Coroutine(_)
+            | IRExprKind::Handle(_)
+            | IRExprKind::Yielded(_)
             | IRExprKind::StructInitialization(_) => {}
         }
     }
@@ -438,7 +440,7 @@ impl<'a> ConflictChecker<'a> {
         match local {
             Local::Variable(variable_id) => self.function.get_variable(variable_id).is_temporary(),
             Local::Parameter(_)
-            | Local::LambdaParameter(_)
+            | Local::ClosureParameter(_)
             | Local::OperationHandlerParameter(_)
             | Local::Capture(_) => false,
         }
@@ -501,10 +503,10 @@ impl<'a> ConflictChecker<'a> {
                     .span()
                     .expect("parameters of a function with a body are declared in source")
             }
-            Local::LambdaParameter(parameter_id) => self
+            Local::ClosureParameter(parameter_id) => self
                 .function
                 .context()
-                .assert_as_lambda_context()
+                .assert_as_closure_context()
                 .get_parameter(parameter_id)
                 .span(),
             Local::OperationHandlerParameter(parameter_id) => self
