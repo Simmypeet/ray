@@ -7,3 +7,12 @@ RAYC_CARGO_WORKSPACE_DIR = { value = "", relative = true }
 # https://github.com/rust-lang/rust/pull/143545
 [target.'cfg(all())']
 rustflags = ["-Zhigher-ranked-assumptions"]
+
+# Resolve features once for the whole workspace, so `cargo test -p X`,
+# workspace builds, and rust-analyzer share the same dependency builds
+# instead of each producing its own copy in `target/`.
+[unstable]
+feature-unification = true
+
+[resolver]
+feature-unification = "workspace"

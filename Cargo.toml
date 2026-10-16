@@ -151,6 +151,14 @@ annotate-snippets = "0.12"
 ansi_term = "0.12.1"
 tokio-util = "0.7.1"
 
+[profile.dev]
+# Keep file:line in backtraces without full debug info. On macOS, full debug
+# info keeps every object file in `target/`, which makes it grow very large.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [workspace.package]
 version = "0.1.0-beta.2"
 authors = ["Simmypeet"]
