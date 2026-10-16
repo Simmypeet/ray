@@ -19,6 +19,8 @@
     { "include": "#given-parameters" },
     { "include": "#let-statement" },
     { "include": "#closure-parameters" },
+    { "include": "#handle-clause" },
+    { "include": "#resume-binding" },
     { "include": "#keywords" },
     { "include": "#constants" },
     { "include": "#primitive-types" },
@@ -526,6 +528,55 @@
         "3": { "name": "punctuation.definition.parameters.end.ray" }
       }
     },
+    "handle-clause": {
+      "comment": "The clauses of `handle k(v):`: `case Effect[T].operation(params) resume k:` and `case return x:`.",
+      "patterns": [
+        {
+          "comment": "`case return x:` binds the value the coroutine returned.",
+          "match": "\\b(case)\\s+(return)\\b(?:\\s+(?:(mut)\\s+)?([_\\p{L}][_\\p{L}\\p{N}]*))?",
+          "captures": {
+            "1": { "name": "keyword.control.ray" },
+            "2": { "name": "keyword.control.ray" },
+            "3": { "name": "storage.modifier.ray" },
+            "4": { "name": "variable.other.ray" }
+          }
+        },
+        {
+          "comment": "`case Effect[T].operation(params)`; the operation is written as it is performed.",
+          "name": "meta.handle-clause.ray",
+          "begin": "\\b(case)\\s+((?:[_\\p{L}][_\\p{L}\\p{N}]*\\s*(?:\\[[^\\[\\]]*(?:\\[[^\\[\\]]*\\][^\\[\\]]*)*\\]\\s*)?\\.\\s*)*)([_\\p{L}][_\\p{L}\\p{N}]*)\\s*(?=\\()",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.ray" },
+            "2": {
+              "patterns": [
+                { "include": "#type-arguments" },
+                { "include": "#type-names" },
+                {
+                  "name": "variable.language.ray",
+                  "match": "\\b(?:super|target|this)\\b"
+                },
+                {
+                  "name": "punctuation.accessor.ray",
+                  "match": "\\."
+                }
+              ]
+            },
+            "3": { "name": "entity.name.function.ray" }
+          },
+          "end": "(?<=\\))|$",
+          "patterns": [{ "include": "#parameter-list" }]
+        }
+      ]
+    },
+    "resume-binding": {
+      "comment": "`resume k` names the continuation in a `handle` clause.",
+      "match": "\\b(resume)\\s+(?:(mut)\\s+)?([_\\p{L}][_\\p{L}\\p{N}]*)",
+      "captures": {
+        "1": { "name": "keyword.control.ray" },
+        "2": { "name": "storage.modifier.ray" },
+        "3": { "name": "variable.parameter.ray" }
+      }
+    },
     "struct-initialization": {
       "comment": "`Path { field = expr, ... }`",
       "begin": "\\{",
@@ -576,7 +627,7 @@
       "patterns": [
         {
           "name": "keyword.control.ray",
-          "match": "\\b(?:match|if|elif|else|while|loop|for|break|continue|return|do|try|with|run|resume|panic|pass)\\b"
+          "match": "\\b(?:match|case|if|elif|else|while|loop|for|break|continue|return|do|try|with|run|handle|resume|panic|pass)\\b"
         },
         {
           "name": "keyword.operator.word.ray",
@@ -587,12 +638,17 @@
           "match": "\\bmove\\b"
         },
         {
+          "comment": "`coro call(...)` suspends the call and gives back its continuation.",
+          "name": "keyword.other.coro.ray",
+          "match": "\\bcoro\\b"
+        },
+        {
           "name": "storage.modifier.ray",
           "match": "\\b(?:pub|priv|internal|let|const|mut|static|unsafe|extern|phantom|final)\\b"
         },
         {
           "name": "keyword.declaration.ray",
-          "match": "\\b(?:def|eff|struct|impl|enum|module|type|trait|import|tuple|case|express|delete|scope|inst|marker)\\b"
+          "match": "\\b(?:def|eff|struct|impl|enum|module|type|trait|import|tuple|express|delete|scope|inst|marker)\\b"
         },
         {
           "name": "keyword.other.ray",
