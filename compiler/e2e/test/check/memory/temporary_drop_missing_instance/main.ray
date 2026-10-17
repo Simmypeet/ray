@@ -1,0 +1,97 @@
+@linear
+struct Handle:
+    fd: int32
+
+struct Wrapper[t]:
+    value: t
+
+def make() -> Handle:
+    return Handle { fd = 0 }
+
+def close(opened: Handle):
+    core.NoDrop { value = move opened }
+
+def consume(first: Handle, second: ()):
+    close(first)
+
+def consumeWrapper(first: Wrapper[Handle], second: ()):
+    core.NoDrop { value = move first }
+
+def forget(first: a, second: ()):
+    core.NoDrop { value = move first }
+
+def look(first: &a, second: ()):
+    ()
+
+# OK: the temporary is consumed on every path.
+def consumedOnEveryPath():
+    consume(make(), ())
+
+# Error: `return` leaves the call after `make()` is evaluated, so the
+# temporary is dropped, but a linear type has no Drop dictionary.
+def returnLeavesTemporary(condition: bool) -> int32:
+    consume(make(), if condition:
+        return 0
+    else:
+        ())
+    return 1
+
+# Error: `break` leaves the loop body, dropping the temporary.
+def breakLeavesTemporary(condition: bool):
+    while true:
+        consume(make(), if condition:
+            break
+        else:
+            ())
+
+# Error: every arm returns, so nothing ever consumes the temporary.
+def everyArmReturns(condition: bool) -> int32:
+    consume(make(), if condition:
+        return 0
+    else:
+        return 1)
+
+# Error, reported once: the temporary is dropped on two paths.
+def droppedOnTwoPaths(first: bool, second: bool) -> int32:
+    consume(make(), if first:
+        return 0
+    elif second:
+        return 1
+    else:
+        ())
+    return 2
+
+# Error: a struct holding a linear value has no generated Drop dictionary.
+def wrappedTemporary(condition: bool) -> int32:
+    consumeWrapper(Wrapper { value = make() }, if condition:
+        return 0
+    else:
+        ())
+    return 1
+
+# Error: `value` is moved into a temporary, which `return` leaves behind
+# without a Drop dictionary for `a`. The parameter itself was moved, so it
+# needs none.
+def genericTemporary(value: a, condition: bool) -> int32:
+    forget(value, if condition:
+        return 0
+    else:
+        ())
+    return 1
+
+# OK: a supplied dictionary lets the temporary be dropped.
+def genericTemporaryWithDrop(value: a, condition: bool) given (drop: core.Drop[a]) -> int32:
+    forget(value, if condition:
+        return 0
+    else:
+        ())
+    return 1
+
+# OK: a reference is dropped without a dictionary, even to a value of a type
+# without one.
+def borrowedTemporary(value: &a, condition: bool) -> int32:
+    look(value, if condition:
+        return 0
+    else:
+        ())
+    return 1

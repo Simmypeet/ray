@@ -1,0 +1,54 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: no implicit instance found: `core.Drop[Handle]`
+   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:33:13
+   │
+33 │     consume(make(), if condition:
+   │             ━━━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+
+[error]: no implicit instance found: `core.Drop[Handle]`
+   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:42:17
+   │
+42 │         consume(make(), if condition:
+   │                 ━━━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+
+[error]: no implicit instance found: `core.Drop[Handle]`
+   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:49:13
+   │
+49 │     consume(make(), if condition:
+   │             ━━━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+
+[error]: no implicit instance found: `core.Drop[Handle]`
+   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:56:13
+   │
+56 │     consume(make(), if first:
+   │             ━━━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+
+[error]: no implicit instance found: `core.Drop[Wrapper[Handle]]`
+   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:66:20
+   │
+66 │     consumeWrapper(Wrapper { value = make() }, if condition:
+   ╰╴                   ━━━━━━━━━━━━━━━━━━━━━━━━━━ this value is dropped when it goes out of scope
+
+[error]: no implicit instance found: `core.Drop[a]`
+   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:76:12
+   │
+76 │     forget(value, if condition:
+   ╰╴           ━━━━━ this value is dropped when it goes out of scope
+
+[error]: Compilation aborted due to 6 error(s)
+
+
+
+stdout:
