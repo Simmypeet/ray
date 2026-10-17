@@ -62,7 +62,7 @@ fn function_with_variable(ty: Interned<Ty>) -> (IRFunctionMap, FunctionID, Local
     (functions, function_id, Local::Variable(variable_id))
 }
 
-fn stack_state_problem(
+async fn stack_state_problem(
     solver: Solver,
     functions: &IRFunctionMap,
     function_id: FunctionID,
@@ -72,6 +72,7 @@ fn stack_state_problem(
         functions.get_function(function_id),
         functions.captures_for_function(function_id),
     )
+    .await
 }
 
 async fn engine_without_marker_implementations(
@@ -112,7 +113,7 @@ async fn projected_move_normalizes_the_type_before_inspecting_its_shape() {
         )])
         .await;
     let (functions, function_id, root) = function_with_variable(alias);
-    let problem = stack_state_problem(solver, &functions, function_id);
+    let problem = stack_state_problem(solver, &functions, function_id).await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -140,7 +141,8 @@ async fn projected_move_panics_when_the_projection_does_not_match_the_type() {
     let engine = create_minimal_engine().await;
     let (functions, function_id, root) = function_with_variable(leaf_type(&engine));
     let problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -201,7 +203,8 @@ async fn move_rejects_a_never_initialized_place() {
     let engine = create_minimal_engine().await;
     let (functions, function_id, root) = function_with_variable(leaf_type(&engine));
     let problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -227,7 +230,8 @@ async fn root_scope_push_initializes_parameters_but_not_variables() {
     let variable = Local::Variable(variable_id);
     let parameter = Local::ClosureParameter(parameter_id);
     let mut problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
 
     let mut boundary = problem.boundary_facts(ID::<Block>::new(0)).await.unwrap();
     problem
@@ -256,7 +260,8 @@ async fn scope_pop_removes_local_and_function_input_slots() {
     let variable = Local::Variable(variable_id);
     let parameter = Local::ClosureParameter(parameter_id);
     let mut problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
     let mut state = StackState::reachable();
     problem
         .transfer_instruction(point(0), &Instruction::ScopePush(root_scope), &mut state)
@@ -292,11 +297,13 @@ async fn load_moves_a_non_copy_place() {
         Solver::with_givens(engine.clone(), site, []).await,
         &functions,
         function_id,
-    );
+    )
+    .await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
     };
+    slots.push_scope(functions.root_scope_id(function_id));
     slots.set(root, PlaceState::initialized());
 
     problem
@@ -327,11 +334,13 @@ async fn load_preserves_a_copy_place() {
         Solver::with_givens(engine.clone(), site, []).await,
         &functions,
         function_id,
-    );
+    )
+    .await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
     };
+    slots.push_scope(functions.root_scope_id(function_id));
     slots.set(root, PlaceState::initialized());
 
     problem
@@ -363,7 +372,8 @@ async fn store_restores_a_place() {
     );
     let instruction = functions.get_function(function_id).block_instructions(block_id)[0].clone();
     let mut problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -383,7 +393,8 @@ async fn move_rejects_a_place_after_its_first_move() {
     let engine = create_minimal_engine().await;
     let (functions, function_id, root) = function_with_variable(leaf_type(&engine));
     let problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -408,7 +419,8 @@ async fn moving_one_component_partially_initializes_its_aggregate() {
     let engine = create_minimal_engine().await;
     let (functions, function_id, root) = function_with_variable(tuple_type(&engine));
     let problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -433,7 +445,8 @@ async fn moving_an_initialized_sibling_through_a_partial_parent_succeeds() {
     let engine = create_minimal_engine().await;
     let (functions, function_id, root) = function_with_variable(tuple_type(&engine));
     let problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -458,7 +471,8 @@ async fn restoring_a_nested_place_preserves_uninitialized_siblings() {
     let engine = create_minimal_engine().await;
     let (functions, function_id, root) = function_with_variable(nested_tuple_type(&engine));
     let problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -489,7 +503,8 @@ async fn restoring_the_last_moved_component_reinitializes_the_aggregate() {
     let engine = create_minimal_engine().await;
     let (functions, function_id, root) = function_with_variable(tuple_type(&engine));
     let problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -511,7 +526,7 @@ async fn projected_move_expands_recursive_structs_only_along_the_address() {
     let (engine, recursive_ty, field) = recursive_struct().await;
     let (functions, function_id, root) = function_with_variable(recursive_ty);
     let problem =
-        stack_state_problem(Solver::without_givens(engine).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine).await, &functions, function_id).await;
     let mut state = StackState::reachable();
     let StackState::Reachable(slots) = &mut state else {
         unreachable!();
@@ -537,7 +552,8 @@ async fn join_preserves_partial_initialization() {
     let engine = create_minimal_engine().await;
     let (functions, function_id, root) = function_with_variable(tuple_type(&engine));
     let problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
 
     let mut left_slots = super::StackSlots::new();
     left_slots.set(root, PlaceState::initialized());
@@ -564,7 +580,8 @@ async fn join_preserves_each_possible_last_move() {
     let engine = create_minimal_engine().await;
     let (functions, function_id, root) = function_with_variable(leaf_type(&engine));
     let problem =
-        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id);
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
 
     let mut left_slots = super::StackSlots::new();
     left_slots.set(root, PlaceState::moved_at(point(1)));

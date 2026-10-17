@@ -337,6 +337,27 @@ impl IRFunction {
             .build()
     }
 
+    /// Returns the values defined when control flows along `edge`: those the
+    /// terminator of its source defines on that edge only, such as the value
+    /// a suspension point resumes with.
+    pub fn edge_definitions(&self, edge: ControlFlowEdge) -> impl Iterator<Item = IRExprID> + '_ {
+        self.block_terminator(edge.source())
+            .into_iter()
+            .flat_map(move |terminator| terminator.expressions_defined_on(edge.kind()))
+    }
+
+    /// Returns the phi operands consumed when control flows along `edge`:
+    /// the values the phis of its target take from its source.
+    pub fn edge_phi_operands(&self, edge: ControlFlowEdge) -> impl Iterator<Item = IRExprID> + '_ {
+        let source = edge.source();
+        self.block_instructions(edge.target()).iter().filter_map(move |instruction| {
+            let Instruction::Expression(expression_id) = instruction else {
+                return None;
+            };
+            self.get_expression(*expression_id).kind().as_phi()?.value_from(source)
+        })
+    }
+
     /// Iterates over the expressions `block_id` evaluates, in order, each
     /// with the point it is evaluated at: its expression instructions, then
     /// the expression of a suspension point that ends it.

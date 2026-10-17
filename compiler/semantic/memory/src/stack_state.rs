@@ -1,15 +1,30 @@
+use std::collections::BTreeMap;
+
 use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::{Address, Local, Projection},
     cfg::Point,
+    ir_expr::IRExprID,
+    scope::ScopeID,
 };
 
 use crate::{PlaceState, StackStateProblem};
 
-/// Initialization state of the stack allocations in one function.
+/// Initialization state of the stack allocations in one function, and the
+/// evaluated values it still owns.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StackSlots {
     states: FxHashMap<Local, PlaceState>,
+
+    /// The active scopes, innermost last.
+    scopes: Vec<ScopeID>,
+
+    /// The values evaluated but not consumed yet, such as the earlier
+    /// arguments of a call whose later arguments are still being evaluated.
+    /// Each is owned by the scope that drops it if its consumer is never
+    /// reached: the innermost scope active when it was evaluated, or an
+    /// enclosing scope it flowed out to.
+    pending: BTreeMap<IRExprID, ScopeID>,
 }
 
 impl StackSlots {
@@ -31,16 +46,93 @@ impl StackSlots {
 
     pub(crate) fn remove(&mut self, root: Local) { self.states.remove(&root); }
 
+    /// Begins `scope_id` inside the innermost active scope.
+    pub(crate) fn push_scope(&mut self, scope_id: ScopeID) { self.scopes.push(scope_id); }
+
+    /// Ends `scope_id`, the innermost active scope.
+    ///
+    /// The values it owns which `is_used_later` are handed to the enclosing
+    /// scope, like the value of a block flowing out of the block. The others
+    /// are never consumed, so they are dropped as the scope ends and are no
+    /// longer owned.
+    pub(crate) fn pop_scope(
+        &mut self,
+        scope_id: ScopeID,
+        mut is_used_later: impl FnMut(IRExprID) -> bool,
+    ) {
+        let popped = self.scopes.pop();
+        assert_eq!(popped, Some(scope_id), "only the innermost active scope can end");
+
+        // Nothing encloses the root scope. The only value which outlives it
+        // is the returned one, which the return consumes right after, so it
+        // keeps the root as its owner.
+        let enclosing = self.scopes.last().copied().unwrap_or(scope_id);
+        self.pending.retain(|value, owner| {
+            if *owner != scope_id {
+                return true;
+            }
+
+            let used_later = is_used_later(*value);
+            if used_later {
+                *owner = enclosing;
+            }
+            used_later
+        });
+    }
+
+    /// Records that `value` was just evaluated, owned by the innermost active
+    /// scope.
+    pub(crate) fn define_value(&mut self, value: IRExprID) {
+        let owner = *self.scopes.last().expect("a value is evaluated inside a scope");
+        self.pending.insert(value, owner);
+    }
+
+    /// Records that `value` was consumed, so it is no longer owned here.
+    pub(crate) fn consume_value(&mut self, value: IRExprID) { self.pending.remove(&value); }
+
+    /// Returns whether `value` was evaluated and is not consumed yet.
+    #[must_use]
+    pub fn is_pending(&self, value: IRExprID) -> bool { self.pending.contains_key(&value) }
+
+    /// Iterates over the values evaluated and not consumed yet, newest first.
+    pub fn pending_values(&self) -> impl Iterator<Item = IRExprID> + '_ {
+        self.pending.keys().rev().copied()
+    }
+
+    /// Iterates over the values not consumed yet which `scope_id` owns,
+    /// newest first.
+    pub fn values_owned_by(&self, scope_id: ScopeID) -> impl Iterator<Item = IRExprID> + '_ {
+        self.pending
+            .iter()
+            .rev()
+            .filter(move |(_, owner)| **owner == scope_id)
+            .map(|(value, _)| *value)
+    }
+
     pub(crate) fn join_in_place(&mut self, incoming: &Self) -> bool {
         assert_eq!(
             self.states.len(),
             incoming.states.len(),
             "incoming stack states have different live allocation counts",
         );
+        assert_eq!(self.scopes, incoming.scopes, "incoming stack states have different scopes");
+
+        let pending_count = self.pending.len();
+        self.pending.retain(|value, owner| {
+            if let Some(other_owner) = incoming.pending.get(value) {
+                assert_eq!(
+                    owner, other_owner,
+                    "incoming stack states have different owners for the same value",
+                );
+                return true;
+            }
+
+            false
+        });
+        let mut changed = pending_count != self.pending.len();
 
         // Scope verification guarantees matching live roots and place shapes,
         // so update each state directly in place.
-        let mut changed = false;
         for (root, current) in &mut self.states {
             let incoming = incoming.state(*root).expect("incoming stack state is missing a root");
             changed |= current.join_in_place(incoming);

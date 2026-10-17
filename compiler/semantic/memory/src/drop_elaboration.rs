@@ -2,7 +2,11 @@ use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_ir::{
     address::{Address, Local},
-    cfg::{AddressDrop, ControlFlowEdge, Instruction, InstructionInsertion, Point, Terminator},
+    cfg::{
+        AddressDrop, ControlFlowEdge, ExprDiscard, Instruction, InstructionInsertion, Point,
+        Terminator,
+    },
+    ir_expr::IRExprID,
     ir_function::{FunctionID, IRFunctionMap},
     scope::ScopeID,
 };
@@ -24,17 +28,19 @@ enum DropSite {
     Edge(ControlFlowEdge),
 }
 
-/// Selects the drops that keep stack values from outliving their owners, and
-/// the `Drop` dictionaries they use.
+/// Selects the drops that keep stack values, and evaluated values that are
+/// never consumed, from outliving their owners, and the `Drop` dictionaries
+/// they use.
 ///
 /// Every drop of a function is collected against the analyzed layout and
 /// inserted at once by [`Self::insert_drops`] after the replay, so inserting
 /// them never invalidates the points of the replay.
 #[derive(Debug, Default)]
 pub(crate) struct DropElaborator {
-    /// The selected drops, in the order they run at each site. Each is
-    /// attributed to the declaration of the dropped binding.
-    drops: Vec<(DropSite, AddressDrop)>,
+    /// The selected drops, in the order they run at each site: an
+    /// [`Instruction::AddressDrop`] of a place, attributed to the declaration
+    /// of the dropped binding, or an [`Instruction::ExprDiscard`] of a value.
+    drops: Vec<(DropSite, Instruction)>,
 
     /// The selected `Drop` dictionary of each type, or why none is usable.
     instances: FxHashMap<Interned<Ty>, Result<Interned<Ty>, Vec<DropFailure>>>,
@@ -42,6 +48,10 @@ pub(crate) struct DropElaborator {
     /// Bindings already reported for a type, so a binding which is dropped
     /// on several paths is reported once.
     reported: FxHashSet<(Local, Interned<Ty>)>,
+
+    /// Values already reported, so a value which is dropped on several paths
+    /// is reported once.
+    reported_values: FxHashSet<IRExprID>,
 }
 
 impl DropElaborator {
@@ -53,6 +63,12 @@ impl DropElaborator {
     /// uninitialized on all paths reaching the scope end. Initialized values
     /// are dropped, and a partially moved aggregate drops each remaining
     /// initialized component instead.
+    ///
+    /// Before them, the values evaluated in the scope which are never
+    /// consumed are dropped, newest first. Such a value is left behind when
+    /// control leaves in the middle of an evaluation, like the earlier
+    /// arguments of a call whose later argument returns. The values are the
+    /// newest things the scope owns, and may hold borrows of its variables.
     pub(crate) async fn scope_drops(
         &mut self,
         point: Point,
@@ -66,6 +82,15 @@ impl DropElaborator {
         };
 
         let site = DropSite::Before(point);
+
+        // Values the scope owns, which are no longer used past its end.
+        for value in slots.values_owned_by(scope_id) {
+            if !problem.is_value_live(value, point) {
+                self.discard_value(site, value, problem, diagnostics).await;
+            }
+        }
+
+        // Then the variables declared in the scope.
         for root in problem.scope_roots_in_drop_order(scope_id).await {
             let place_state = slots.state(root).expect("a live scope root must have a state");
             let ty = problem.binding_type(root).await;
@@ -108,6 +133,10 @@ impl DropElaborator {
     /// dropped on this edge, so every path agrees on the state at the merge.
     /// Values are considered in `drop_order`, the order a scope exit drops
     /// them.
+    ///
+    /// Likewise, an evaluated value which this edge still owns but another
+    /// edge into the target does not is dropped on this edge, before any
+    /// place.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn merge_drops(
         &mut self,
@@ -123,6 +152,15 @@ impl DropElaborator {
         };
 
         let site = DropSite::Edge(edge);
+
+        // Values owned on this edge but not at the merge, newest first.
+        for value in exit.pending_values() {
+            if !entry.is_pending(value) {
+                self.discard_value(site, value, problem, diagnostics).await;
+            }
+        }
+
+        // Then the places, in drop order.
         for root in drop_order.iter().copied() {
             // Only roots live at the merge can need balancing.
             let Some(entry_state) = entry.state(root) else {
@@ -250,7 +288,8 @@ impl DropElaborator {
         match self.drop_instance(ty.clone(), problem).await {
             Ok(drop_instance) => {
                 let span = problem.binding_span(root).await;
-                self.drops.push((site, AddressDrop::new(address, drop_instance, span)));
+                let drop = AddressDrop::new(address, drop_instance, span);
+                self.drops.push((site, Instruction::AddressDrop(drop)));
             }
 
             // Each binding is a separate fix site, but a binding which leaves
@@ -265,8 +304,38 @@ impl DropElaborator {
         }
     }
 
-    /// Inserts every selected drop into `function_id` as an
-    /// [`Instruction::AddressDrop`].
+    /// Drops the evaluated `value` at `site` with an
+    /// [`Instruction::ExprDiscard`].
+    ///
+    /// A value whose drop does nothing, such as a `Copy` one, needs no
+    /// discard.
+    async fn discard_value(
+        &mut self,
+        site: DropSite,
+        value: IRExprID,
+        problem: &mut StackStateProblem<'_>,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) {
+        match self.drop_instance(problem.value_type(value), problem).await {
+            Ok(drop_instance) => {
+                if !drop_instance.is_no_op_drop_instance() {
+                    let discard = ExprDiscard::new(value, drop_instance);
+                    self.drops.push((site, Instruction::ExprDiscard(discard)));
+                }
+            }
+
+            // A value which is left behind on several paths is reported once.
+            Err(failures) => {
+                if self.reported_values.insert(value) {
+                    let span = problem.value_span(value);
+                    diagnostics
+                        .extend(failures.into_iter().map(|failure| failure.into_diagnostic(span)));
+                }
+            }
+        }
+    }
+
+    /// Inserts every selected drop into `function_id`.
     ///
     /// A drop on an edge runs where it runs only when control follows that
     /// edge: at the end of the source block when the edge is the source's
@@ -274,7 +343,7 @@ impl DropElaborator {
     pub(crate) fn insert_drops(self, functions: &mut IRFunctionMap, function_id: FunctionID) {
         let mut insertion = InstructionInsertion::new();
         let mut edge_points = FxHashMap::<ControlFlowEdge, Point>::default();
-        for (site, drop) in self.drops {
+        for (site, instruction) in self.drops {
             let point = match site {
                 DropSite::Before(point) => point,
                 DropSite::Edge(edge) => *edge_points
@@ -282,7 +351,7 @@ impl DropElaborator {
                     .or_insert_with(|| edge_drop_point(functions, function_id, edge)),
             };
 
-            insertion.insert_before(point, [Instruction::AddressDrop(drop)]);
+            insertion.insert_before(point, [instruction]);
         }
 
         functions.insert_instructions(function_id, insertion);

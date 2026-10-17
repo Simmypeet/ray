@@ -34,6 +34,11 @@ use crate::{
 /// - before each store, for the previous value of a place which is still
 ///   initialized when it is reassigned.
 ///
+/// Evaluated values which are never consumed, because control leaves in the
+/// middle of an evaluation, are discarded the same way: before the exit of
+/// the scope they were evaluated in, and on the edges into a merge which
+/// other edges reach without them.
+///
 /// Returns the diagnostics found.
 pub async fn analyze(
     engine: &TrackedEngine,
@@ -78,7 +83,7 @@ async fn analyze_function(
     let function = functions.get_function(function_id);
     let captures = functions.captures_for_function(function_id);
     let mut problem =
-        StackStateProblem::new(Solver::new(engine.clone(), def_id).await, function, captures);
+        StackStateProblem::new(Solver::new(engine.clone(), def_id).await, function, captures).await;
     let solution = function.solve_dataflow(&mut problem).await.unwrap();
 
     // Replay from stable block-entry facts. Reporting during fixpoint
@@ -200,12 +205,12 @@ async fn analyze_function(
         }
     }
 
-    // Balance the stack on each edge into a merge. The analysis is not
-    // edge-sensitive, so an edge carries its source's exit state unchanged.
+    // Balance the stack on each edge into a merge. The state an edge carries
+    // already has the values consumed or defined on that edge accounted for.
     let drop_order = problem.roots_in_drop_order().await;
     for edge in solution.edges() {
         let (Some(exit), Some(entry)) =
-            (solution.block_exit(edge.source()), solution.block_entry(edge.target()))
+            (solution.edge_state(edge), solution.block_entry(edge.target()))
         else {
             continue;
         };

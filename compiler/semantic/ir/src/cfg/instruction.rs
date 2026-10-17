@@ -83,6 +83,11 @@ pub struct ExprDiscard {
 
 impl ExprDiscard {
     #[must_use]
+    pub const fn new(expression: IRExprID, drop_instance: Interned<Ty>) -> Self {
+        Self { expression, drop_instance }
+    }
+
+    #[must_use]
     pub const fn expression(&self) -> IRExprID { self.expression }
 
     #[must_use]

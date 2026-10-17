@@ -7,10 +7,11 @@ use rayc_ir::{
     dataflow::{DataflowProblem, Direction, JoinLattice},
     ir_closure::CaptureMap,
     ir_expr::{
-        IRExprKind,
+        IRExprID, IRExprKind,
         load::{Load, LoadEffect, LoadKind},
     },
     ir_function::IRFunction,
+    liveness::{LiveRanges, expr::ExprLiveness},
     scope::ScopeID,
 };
 use rayc_lexical::tree::RelativeSpan;
@@ -23,7 +24,7 @@ use rayc_type::{
     where_clause::MarkerPredicate,
 };
 
-use crate::{PlaceState, PossibleStates, StackState};
+use crate::{PlaceState, PossibleStates, StackSlots, StackState};
 
 /// Dataflow context for stack initialization and move state.
 ///
@@ -36,16 +37,52 @@ pub struct StackStateProblem<'a> {
     solver: Solver,
     function: &'a IRFunction,
     captures: Option<&'a CaptureMap>,
+
+    /// Where each evaluated value may still be consumed, which decides
+    /// whether a scope that ends still owns a value of its own.
+    value_liveness: LiveRanges<IRExprID>,
 }
 
 impl<'a> StackStateProblem<'a> {
-    #[must_use]
-    pub const fn new(
+    pub async fn new(
         solver: Solver,
         function: &'a IRFunction,
         captures: Option<&'a CaptureMap>,
     ) -> Self {
-        Self { solver, function, captures }
+        let value_liveness = ExprLiveness::compute(function).await.live_ranges(function);
+        Self { solver, function, captures, value_liveness }
+    }
+
+    /// Returns whether `value` may still be consumed, or dropped by a
+    /// discard written in the IR, at or after `point`.
+    pub(crate) fn is_value_live(&self, value: IRExprID, point: Point) -> bool {
+        self.value_liveness.live_mode(value, point).is_some()
+    }
+
+    /// Returns the type of the evaluated `value`.
+    pub(crate) fn value_type(&self, value: IRExprID) -> Interned<Ty> {
+        self.function.get_expression(value).ty().clone()
+    }
+
+    /// Returns the source of the evaluated `value`.
+    pub(crate) fn value_span(&self, value: IRExprID) -> RelativeSpan {
+        self.function.get_expression(value).span()
+    }
+
+    /// Records the evaluation of `value` in `slots`: it consumes its
+    /// operands and is then owned by the innermost active scope.
+    ///
+    /// A phi consumes each incoming value on the edge from its predecessor
+    /// instead; see [`IRFunction::edge_phi_operands`].
+    fn evaluate(&self, slots: &mut StackSlots, value: IRExprID) {
+        let kind = self.function.get_expression(value).kind();
+        if kind.as_phi().is_none() {
+            for operand in kind.operands() {
+                slots.consume_value(operand);
+            }
+        }
+
+        slots.define_value(value);
     }
 
     pub(crate) async fn binding_type(&self, root: Local) -> Interned<Ty> {
@@ -360,7 +397,11 @@ impl DataflowProblem for StackStateProblem<'_> {
     type Error = Infallible;
 
     const DIRECTION: Direction = Direction::Forward;
-    const EDGE_SENSITIVE: bool = false;
+
+    // Some values are consumed or defined on one edge only: a phi takes its
+    // incoming value on the edge from its predecessor, and a suspension point
+    // defines its value on the resume edge.
+    const EDGE_SENSITIVE: bool = true;
 
     async fn bottom(&mut self, _block_id: BlockID) -> Result<StackState, Infallible> {
         Ok(StackState::Unreachable)
@@ -382,12 +423,15 @@ impl DataflowProblem for StackStateProblem<'_> {
 
         match instruction {
             Instruction::ScopePush(scope_id) => {
+                slots.push_scope(*scope_id);
+
                 // Local variables begin their lifetime uninitialized.
                 for variable_id in self.function.declared_variables(*scope_id) {
                     slots.set(Local::Variable(variable_id), PlaceState::uninitialized());
                 }
 
-                // Function inputs live for the root scope and arrive initialized.
+                // Function inputs live for the root scope and arrive
+                // initialized.
                 if self.function.root_scope_id() == *scope_id {
                     for root in self.input_roots().await {
                         slots.set(root, PlaceState::initialized());
@@ -395,7 +439,12 @@ impl DataflowProblem for StackStateProblem<'_> {
                 }
             }
             Instruction::ScopePop(scope_id) => {
-                // Drop local slots as soon as their scope ends to keep states small.
+                // A value of the scope which is never consumed is dropped
+                // just before the scope ends, by drop elaboration.
+                slots.pop_scope(*scope_id, |value| self.is_value_live(value, point));
+
+                // Drop local slots as soon as their scope ends to keep states
+                // small.
                 for variable_id in self.function.declared_variables(*scope_id) {
                     slots.remove(Local::Variable(variable_id));
                 }
@@ -409,6 +458,7 @@ impl DataflowProblem for StackStateProblem<'_> {
             }
             Instruction::Expression(expression_id) => {
                 let expression = self.function.get_expression(*expression_id);
+                self.evaluate(slots, *expression_id);
 
                 // Loads consume non-Copy places, and forced moves consume any
                 // place. Other expressions do not directly change stack
@@ -424,13 +474,15 @@ impl DataflowProblem for StackStateProblem<'_> {
                     let _ = state.move_out(load.address(), point, self).await;
                 }
             }
-            Instruction::ExprDiscard(_) => {}
+            Instruction::ExprDiscard(discard) => slots.consume_value(discard.expression()),
             // Drop elaboration only drops places the frame owns, and the drop
             // consumes the value even when it is `Copy`.
             Instruction::AddressDrop(drop) => {
                 let _ = state.move_out(drop.address(), point, self).await;
             }
             Instruction::Store(store) => {
+                slots.consume_value(store.expression());
+
                 let address = store.address().clone();
                 let _ = state.restore(&address, self).await;
             }
@@ -443,27 +495,52 @@ impl DataflowProblem for StackStateProblem<'_> {
         &mut self,
         _block_id: BlockID,
         terminator: &Terminator,
-        _state: &mut StackState,
+        state: &mut StackState,
     ) -> Result<(), Infallible> {
-        match terminator {
-            // No terminator moves a place. The arguments of the expression a
-            // suspension point evaluates are evaluated values: the loads
-            // which moved them out of their places are instructions of their
-            // own, before the terminator. The same holds for the
-            // continuation a `Handle` consumes.
-            Terminator::Suspend(_)
-            | Terminator::Handle(_)
-            | Terminator::Jump(_)
-            | Terminator::Conditional(_)
-            | Terminator::Return(_) => Ok(()),
+        let StackState::Reachable(slots) = state else {
+            return Ok(());
+        };
+
+        // No terminator moves a place. The arguments of the expression a
+        // suspension point evaluates are evaluated values: the loads which
+        // moved them out of their places are instructions of their own,
+        // before the terminator. The same holds for the continuation a
+        // `Handle` consumes.
+        //
+        // A terminator does consume values: the condition of a branch, the
+        // returned value, and the operands of the expressions it evaluates.
+        // Those expressions are defined on the edges, by `transfer_edge`.
+        if let Some(value) = terminator.used_value() {
+            slots.consume_value(value);
         }
+        for expression_id in terminator.evaluated_expressions() {
+            for operand in self.function.get_expression(expression_id).kind().operands() {
+                slots.consume_value(operand);
+            }
+        }
+
+        Ok(())
     }
 
     async fn transfer_edge(
         &mut self,
-        _edge: &ControlFlowEdge,
-        _state: &mut StackState,
+        edge: &ControlFlowEdge,
+        state: &mut StackState,
     ) -> Result<(), Infallible> {
+        let StackState::Reachable(slots) = state else {
+            return Ok(());
+        };
+
+        // The phis of the target consume their incoming values from the
+        // source, and the source's terminator defines some values on this
+        // edge only.
+        for operand in self.function.edge_phi_operands(*edge) {
+            slots.consume_value(operand);
+        }
+        for value in self.function.edge_definitions(*edge) {
+            slots.define_value(value);
+        }
+
         Ok(())
     }
 }

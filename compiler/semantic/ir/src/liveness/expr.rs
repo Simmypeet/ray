@@ -16,7 +16,9 @@
 //! non-no-op `Drop` instance. A no-op discard does not keep its value live.
 //! Where a path leaves a value unconsumed, such as an early `return` in the
 //! middle of an evaluation, the value is dead on that path, since it is never
-//! read again.
+//! read again. Drop elaboration discards such a value when the scope it was
+//! evaluated in ends, so once drops are elaborated it is drop-live up to that
+//! discard instead.
 
 use std::convert::Infallible;
 
@@ -63,7 +65,7 @@ impl ExprLivenessProblem<'_> {
         state.mark_defined(expression_id);
 
         // A phi's incoming values are consumed on the edges into its block
-        // instead; see `phi_operands`.
+        // instead; see `IRFunction::edge_phi_operands`.
         let kind = self.function.get_expression(expression_id).kind();
         if kind.as_phi().is_none() {
             for operand in kind.operands() {
@@ -99,18 +101,6 @@ impl ExprLivenessProblem<'_> {
 
             Terminator::Return(None) | Terminator::Jump(_) => {}
         }
-    }
-
-    /// Returns the phi operands consumed when control flows along `edge`:
-    /// the values the phis of its target take from its source.
-    fn phi_operands(&self, edge: &ControlFlowEdge) -> impl Iterator<Item = IRExprID> + '_ {
-        let source = edge.source();
-        self.function.block_instructions(edge.target()).iter().filter_map(move |instruction| {
-            let Instruction::Expression(expression_id) = instruction else {
-                return None;
-            };
-            self.function.get_expression(*expression_id).kind().as_phi()?.value_from(source)
-        })
     }
 }
 
@@ -157,7 +147,7 @@ impl DataflowProblem for ExprLivenessProblem<'_> {
         edge: &ControlFlowEdge,
         state: &mut LiveExprs,
     ) -> Result<(), Infallible> {
-        for operand in self.phi_operands(edge) {
+        for operand in self.function.edge_phi_operands(*edge) {
             state.mark_used(operand);
         }
         Ok(())

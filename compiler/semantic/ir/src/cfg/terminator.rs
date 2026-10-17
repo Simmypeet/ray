@@ -287,4 +287,41 @@ impl Terminator {
                 .flat_map(|clause| clause.yielded.iter().copied()),
         )
     }
+
+    /// Returns the [evaluated expressions](Self::evaluated_expressions) this
+    /// terminator defines on its outgoing edge of `kind`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `kind` is a clause edge and this is not a `Handle` with a
+    /// clause for that operation.
+    pub fn expressions_defined_on(
+        &self,
+        kind: ControlFlowEdgeKind,
+    ) -> impl Iterator<Item = IRExprID> + '_ {
+        let (expression, yielded) = match kind {
+            // The value of the expression the terminator is written for.
+            ControlFlowEdgeKind::SuspendResume | ControlFlowEdgeKind::HandleReturn => {
+                (self.evaluated_expressions().next(), [].as_slice())
+            }
+
+            // What the coroutine suspended with.
+            ControlFlowEdgeKind::HandleClause(operation_id) => {
+                let Self::Handle(handle) = self else {
+                    panic!("only a `Handle` has clause edges");
+                };
+                let clause =
+                    handle.clauses.get(&operation_id).expect("clause edge should have a clause");
+                (None, clause.yielded())
+            }
+
+            ControlFlowEdgeKind::Jump
+            | ControlFlowEdgeKind::ConditionalTrue
+            | ControlFlowEdgeKind::ConditionalFalse
+            | ControlFlowEdgeKind::SuspendAbandon
+            | ControlFlowEdgeKind::HandleAbandon => (None, [].as_slice()),
+        };
+
+        expression.into_iter().chain(yielded.iter().copied())
+    }
 }
