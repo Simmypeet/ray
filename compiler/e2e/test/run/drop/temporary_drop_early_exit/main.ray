@@ -1,0 +1,107 @@
+## Case
+## 0
+## Case
+## 1
+## Case
+## 2
+## Case
+## 3
+## Case
+## 4
+
+
+extern def printf(str: cstr, ...) -> c_int
+extern def scanf(str: cstr, ...) -> c_int
+
+
+pub struct Temporary:
+    pub value: int32
+
+
+pub inst TempDrop for core.Drop[Temporary]:
+    def drop(temp: Temporary):
+        printf("dropTemporary(%d)\n", temp.value)
+        core.NoDrop { value = move temp }
+
+
+pub def makeTemporary(a: int32) -> Temporary:
+    printf("makeTemporary(%d)\n", a)
+    return Temporary { value = a }
+
+
+pub def consume(first: Temporary, second: ()):
+    printf("consume(%d)\n", first.value)
+
+
+pub def exitCode(code: int32) -> int32:
+    printf("exitCode(%d)\n", code)
+    return code
+
+
+# The returned value is evaluated before the temporary is dropped.
+pub def returnAfterValue() -> int32:
+    consume(
+        makeTemporary(1),
+        if true:
+            return exitCode(1)
+        else:
+            ()
+    )
+    return 0
+
+
+# A local of the arm is dropped before the temporary of the enclosing
+# statement.
+pub def returnFromNestedBlock() -> int32:
+    consume(
+        makeTemporary(2),
+        if true:
+            let local = makeTemporary(20)
+            return 2
+        else:
+            ()
+    )
+    return 0
+
+
+# `break` leaves the statement, so its temporary is dropped on the way out.
+pub def breakOutOfLoop() -> int32:
+    while true:
+        consume(
+            makeTemporary(3),
+            if true:
+                break
+            else:
+                ()
+        )
+    return 3
+
+
+# Both arms return, so nothing ever consumes the temporary.
+pub def everyArmReturns() -> int32:
+    consume(
+        makeTemporary(4),
+        if true:
+            return 4
+        else:
+            return 40
+    )
+    return 0
+
+
+pub def main() -> int32:
+    let mut mode = 0
+    scanf("%d", mode.&mut)
+
+    if mode == 1:
+        return returnAfterValue()
+    elif mode == 2:
+        return returnFromNestedBlock()
+    elif mode == 3:
+        return breakOutOfLoop()
+    elif mode == 4:
+        return everyArmReturns()
+    else:
+        consume(makeTemporary(0), ())
+
+    return 0

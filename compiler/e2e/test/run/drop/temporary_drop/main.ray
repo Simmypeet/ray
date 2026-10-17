@@ -1,0 +1,42 @@
+## Case
+## 0
+## Case
+## 1
+
+
+extern def printf(str: cstr, ...) -> c_int
+extern def scanf(str: cstr, ...) -> c_int
+
+
+pub struct Temporary:
+    pub value: int32
+
+
+pub inst TempDrop for core.Drop[Temporary]:
+    def drop(temp: Temporary):
+        printf("dropTemporary(%d)\n", temp.value)
+        core.NoDrop { value = move temp }
+
+
+pub def makeTemporary(a: int32) -> Temporary:
+    printf("makeTemporary(%d)\n", a)
+    return Temporary { value = a }
+
+
+pub def printTemporary(temp: Temporary, value: ()):
+    printf("printTemporary(%d)\n", temp.value)
+
+
+pub def main() -> int32:
+    let mut cond = false
+    scanf("%d", cond.&mut)
+
+    printTemporary(
+        makeTemporary(1), 
+        if cond:
+            return 0
+        else:
+            ()
+    )
+
+    return 0

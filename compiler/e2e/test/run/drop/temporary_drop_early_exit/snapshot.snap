@@ -1,0 +1,66 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+makeTemporary(0)
+consume(0)
+dropTemporary(0)
+
+
+stderr:
+
+
+case 2:
+
+exit_code: 1
+
+stdout:
+makeTemporary(1)
+exitCode(1)
+dropTemporary(1)
+
+
+stderr:
+
+
+case 3:
+
+exit_code: 2
+
+stdout:
+makeTemporary(2)
+makeTemporary(20)
+dropTemporary(20)
+dropTemporary(2)
+
+
+stderr:
+
+
+case 4:
+
+exit_code: 3
+
+stdout:
+makeTemporary(3)
+dropTemporary(3)
+
+
+stderr:
+
+
+case 5:
+
+exit_code: 4
+
+stdout:
+makeTemporary(4)
+dropTemporary(4)
+
+
+stderr:

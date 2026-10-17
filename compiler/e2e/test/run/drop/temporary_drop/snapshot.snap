@@ -1,0 +1,27 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+makeTemporary(1)
+printTemporary(1)
+dropTemporary(1)
+
+
+stderr:
+
+
+case 2:
+
+exit_code: 0
+
+stdout:
+makeTemporary(1)
+dropTemporary(1)
+
+
+stderr:
