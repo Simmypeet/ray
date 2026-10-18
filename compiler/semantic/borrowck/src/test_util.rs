@@ -195,7 +195,8 @@ impl FunctionBuilder {
             &mut solver,
         )
         .await;
-        let liveness = RegionLiveness::compute(&self.functions, self.function_id).await;
+        let liveness =
+            RegionLiveness::compute(&self.functions, self.function_id, &self.engine).await;
         let live_loans = LiveLoans::compute(function, &constraints, &liveness, &variances);
 
         Analysis {

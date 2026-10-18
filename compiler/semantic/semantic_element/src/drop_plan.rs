@@ -8,7 +8,11 @@ use rayc_symbol::{
     core_item::{CoreItem, get_core_item},
 };
 use rayc_target::TargetID;
-use rayc_type::{trait_ref::TraitRef, ty::Ty};
+use rayc_type::{
+    subst::{Subst, Substitutable},
+    trait_ref::TraitRef,
+    ty::{Ty, args::Args},
+};
 
 use crate::struct_body::FieldID;
 
@@ -36,6 +40,52 @@ pub enum DictionaryExpr {
         nominal: Interned<Ty>,
         external: Vec<Self>,
     },
+}
+
+impl DictionaryExpr {
+    /// Turns this plan expression into a concrete dictionary type.
+    /// `substitution` maps the nominal declaration's polymorphic variables to
+    /// the nominal's type arguments, and `external_instances` are the
+    /// dictionaries chosen for the plan's requirements, in order.
+    #[must_use]
+    pub fn instantiate(
+        &self,
+        substitution: &Subst,
+        external_instances: &[Interned<Ty>],
+        engine: &TrackedEngine,
+    ) -> Interned<Ty> {
+        let ty = |ty: &Interned<Ty>| ty.apply_subst_or_clone(substitution, engine);
+        let instantiate =
+            |expression: &Self| expression.instantiate(substitution, external_instances, engine);
+
+        match self {
+            Self::External(index) => external_instances[*index].clone(),
+            Self::NoOp(no_op) => Ty::new_no_op_drop_instance(ty(no_op), engine),
+            Self::Tuple { tuple, elements } => {
+                Ty::new_tuple_drop_instance(ty(tuple), elements.iter().map(instantiate), engine)
+            }
+            Self::Closure { closure, captures } => {
+                Ty::new_closure_drop_instance(ty(closure), captures.iter().map(instantiate), engine)
+            }
+
+            // Explicit instance arguments are already in the instance's
+            // polymorphic-variable order, which is how instance applications
+            // store their arguments.
+            Self::Explicit { instance_id, arguments } => {
+                let arguments = arguments.iter().map(|argument| match argument {
+                    DictionaryArgument::Type(argument) => ty(argument),
+                    DictionaryArgument::Dictionary(dictionary) => instantiate(dictionary.as_ref()),
+                });
+                Ty::new_instance(*instance_id, Args::new(arguments, engine), engine)
+            }
+
+            // Recursive nominal references stay as dictionaries rather than
+            // expanding their recipes.
+            Self::Generated { nominal, external } => {
+                Ty::new_nominal_drop_instance(ty(nominal), external.iter().map(instantiate), engine)
+            }
+        }
+    }
 }
 
 /// An argument to a source-declared Drop instance, in parameter order.

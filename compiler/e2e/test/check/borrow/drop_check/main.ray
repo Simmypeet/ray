@@ -1,0 +1,85 @@
+# Drop check: a value that is only dropped later keeps alive just the borrows
+# its drop may use.
+
+# A struct with a declared `Drop` implementation, which may use the memory
+# behind the reference it holds.
+struct Guard['a]:
+    inner: &'a mut int32
+
+inst GuardDrop['a] for core.Drop[Guard['a]]:
+    def drop(self: Guard['a]):
+        self.inner.* = 0
+        core.NoDrop { value = move self }
+
+# Structs whose `Drop` is generated from their fields.
+struct Wrapper[t]:
+    value: t
+
+struct Holding['a]:
+    value: &'a int32
+
+# A generic struct with a declared `Drop` implementation, which only drops its
+# field.
+struct Tagged[t]:
+    value: t
+
+inst TaggedDrop[t] for core.Drop[Tagged[t]] given (inner: core.Drop[t]):
+    def drop(self: Tagged[t]):
+        inner.drop(self.value)
+
+struct Pair[t, u]:
+    first: t
+    second: u
+
+def genericWrapperOfReference():
+    let mut value = 1
+    let wrapper = Wrapper { value = value.& }
+    # OK: dropping `wrapper` only drops the reference, which does nothing.
+    value = 2
+
+def lifetimeStructOfReference():
+    let mut value = 1
+    let holding = Holding { value = value.& }
+    # OK: the generated `Drop` of `Holding` does not use its reference.
+    value = 2
+
+def referenceBesideGuard():
+    let mut value = 1
+    let mut other = 2
+    let wrapper = Wrapper { value = (Guard { inner = other.&mut }, value.&) }
+    # OK: only the guard's `Drop` runs, and it cannot reach `value`.
+    value = 3
+
+def guardDirectly():
+    let mut value = 1
+    let guard = Guard { inner = value.&mut }
+    # ERROR: `guard` is dropped at the end of the function, where its `Drop`
+    # implementation writes through the borrow.
+    value = 2
+
+def guardInGenericWrapper():
+    let mut value = 1
+    let wrapper = Wrapper { value = Guard { inner = value.&mut } }
+    # ERROR: dropping `wrapper` drops the guard in it.
+    value = 2
+
+def guardInTuple():
+    let mut value = 1
+    let mut other = 2
+    let wrapper = Wrapper { value = (Guard { inner = value.&mut }, other.&) }
+    # ERROR: dropping `wrapper` drops the guard holding the borrow of `value`.
+    value = 3
+
+def referenceInDeclaredGenericDrop():
+    let mut value = 1
+    let tagged = Tagged { value = value.& }
+    # ERROR: a declared `Drop` implementation is assumed to use anything the
+    # value reaches, even one that only drops its field.
+    value = 2
+
+def dropPair():
+    let mut value = 1
+    let mut second = 3
+    let pair = Pair { first = value.&, second = Tagged { value = second.& } }
+    # OK:
+    value = 2

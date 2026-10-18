@@ -7,7 +7,6 @@
 //! A recursive field produces a call to another (or the same) generated
 //! fragment rather than inlining its recipe.
 
-use qbice::storage::intern::Interned;
 use rayc_mono_ir::{
     MonoIR, MonoNominalDropInstance,
     cfg::Terminator,
@@ -17,14 +16,9 @@ use rayc_mono_ir::{
     ty::ReturnType,
 };
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::drop_plan::{
-    DictionaryArgument, DictionaryExpr, DropPlan, get_drop_plan,
-};
+use rayc_semantic_element::drop_plan::{DropPlan, get_drop_plan};
 use rayc_solver::Solver;
-use rayc_type::{
-    subst::{Subst, Substitutable},
-    ty::{Ty, args::Args},
-};
+use rayc_type::subst::Subst;
 
 use crate::{builder::Builder, resolver::Resolver};
 
@@ -34,7 +28,7 @@ pub(crate) async fn lower(engine: &TrackedEngine, instance: MonoNominalDropInsta
     let resolver = Resolver::new(Solver::without_givens(engine.clone()).await, Subst::new_empty());
     let view = instance.view();
     let nominal = view.nominal().clone();
-    let external_instances = view.external_instances().to_vec();
+    let external_instances = view.external_instances();
     let struct_ = nominal.as_struct_view().expect("a nominal Drop instance must name a struct");
 
     // The solver only builds a `NominalDropInstance` from a generated plan.
@@ -50,7 +44,6 @@ pub(crate) async fn lower(engine: &TrackedEngine, instance: MonoNominalDropInsta
 
     // Recipes are written in the nominal declaration's generic context.
     let substitution = struct_.create_subst(engine).await;
-    let instantiator = Instantiator { engine, substitution: &substitution, external_instances };
 
     // Build `drop(self: Nominal) -> unit` with a scratch local that receives
     // the unit result of every field drop call.
@@ -69,60 +62,11 @@ pub(crate) async fn lower(engine: &TrackedEngine, instance: MonoNominalDropInsta
     // Drop the owned fields in reverse declaration order, matching scope
     // teardown and the tuple Drop instance.
     for field in plan.fields().iter().rev() {
-        let dictionary = instantiator.instantiate(field.dictionary());
+        let dictionary = field.dictionary().instantiate(&substitution, external_instances, engine);
         let field_place = value.clone().project_struct_field(field.field_id());
         builder.lower_drop(&resolver, field_place, &dictionary, destination.clone()).await;
     }
 
     builder.set_terminator(Terminator::Return(Some(Operand::Constant(Constant::Unit))));
     output
-}
-
-/// Turns plan dictionary expressions into concrete dictionary types.
-struct Instantiator<'a> {
-    engine: &'a TrackedEngine,
-    substitution: &'a Subst,
-    external_instances: Vec<Interned<Ty>>,
-}
-
-impl Instantiator<'_> {
-    fn instantiate(&self, expression: &DictionaryExpr) -> Interned<Ty> {
-        match expression {
-            DictionaryExpr::External(index) => self.external_instances[*index].clone(),
-            DictionaryExpr::NoOp(ty) => Ty::new_no_op_drop_instance(self.ty(ty), self.engine),
-            DictionaryExpr::Tuple { tuple, elements } => Ty::new_tuple_drop_instance(
-                self.ty(tuple),
-                elements.iter().map(|element| self.instantiate(element)),
-                self.engine,
-            ),
-            DictionaryExpr::Closure { closure, captures } => Ty::new_closure_drop_instance(
-                self.ty(closure),
-                captures.iter().map(|capture| self.instantiate(capture)),
-                self.engine,
-            ),
-
-            // Explicit instance arguments are already in the instance's
-            // polymorphic-variable order, which is how instance applications
-            // store their arguments.
-            DictionaryExpr::Explicit { instance_id, arguments } => {
-                let arguments = arguments.iter().map(|argument| match argument {
-                    DictionaryArgument::Type(ty) => self.ty(ty),
-                    DictionaryArgument::Dictionary(dictionary) => self.instantiate(dictionary),
-                });
-                Ty::new_instance(*instance_id, Args::new(arguments, self.engine), self.engine)
-            }
-
-            // Recursive nominal references stay as dictionaries; their bodies
-            // are separate fragments discovered through the backend worklist.
-            DictionaryExpr::Generated { nominal, external } => Ty::new_nominal_drop_instance(
-                self.ty(nominal),
-                external.iter().map(|dictionary| self.instantiate(dictionary)),
-                self.engine,
-            ),
-        }
-    }
-
-    fn ty(&self, ty: &Interned<Ty>) -> Interned<Ty> {
-        ty.apply_subst_or_clone(self.substitution, self.engine)
-    }
 }

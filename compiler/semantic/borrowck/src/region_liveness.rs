@@ -1,6 +1,8 @@
 //! The liveness of the regions of an IR function. Renumbering gives each region
 //! of the body one owner, a variable, an expression or an instruction, and the
-//! region is live wherever its owner is.
+//! region is live wherever its owner is used later. Where its owner is only
+//! dropped later, the region is live only if the drop may use it; see
+//! [`DropRegions`].
 
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
@@ -9,10 +11,13 @@ use rayc_ir::{
     cfg::{Instruction, Point, Terminator},
     ir_expr::IRExprID,
     ir_function::{FunctionID, IRFunction, IRFunctionMap},
-    liveness::{LiveRanges, expr::ExprLiveness, local::LocalLiveness},
+    liveness::{LiveMode, LiveRanges, expr::ExprLiveness, local::LocalLiveness},
     visit::{TypeSite, VisitType},
 };
+use rayc_qbice::TrackedEngine;
 use rayc_type::ty::{Ty, lifetime::RegionID};
+
+use crate::drop_check::DropRegions;
 
 /// What keeps a region of a function body live.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +44,10 @@ pub struct RegionLiveness {
     /// are unreachable have no owner.
     owners: FxHashMap<RegionID, RegionOwner>,
 
+    /// The regions that some drop of their owner may use. An owner that is
+    /// only dropped later keeps just these live.
+    drop_regions: DropRegions,
+
     /// Where each local of the function is live.
     locals: LiveRanges<Local>,
 
@@ -48,13 +57,18 @@ pub struct RegionLiveness {
 
 impl RegionLiveness {
     /// Computes where each region of the function `function_id` is live.
-    pub async fn compute(ir: &IRFunctionMap, function_id: FunctionID) -> Self {
+    pub async fn compute(
+        ir: &IRFunctionMap,
+        function_id: FunctionID,
+        engine: &TrackedEngine,
+    ) -> Self {
         let function = ir.get_function(function_id);
         let owners = collect_owners(function, function_id);
+        let drop_regions = DropRegions::collect(engine, function).await;
         let locals = LocalLiveness::compute(function).await.live_ranges(function);
         let expressions = ExprLiveness::compute(function).await.live_ranges(function);
 
-        Self { owners, locals, expressions }
+        Self { owners, drop_regions, locals, expressions }
     }
 
     /// Returns whether `region` is live at `point`. A universal region is live
@@ -65,42 +79,50 @@ impl RegionLiveness {
             return true;
         }
 
-        region
-            .as_region()
-            .and_then(|region| self.owners.get(&region))
-            .is_some_and(|owner| self.is_owner_live(*owner, point))
+        let Some(region) = region.as_region() else {
+            return false;
+        };
+
+        self.owners
+            .get(&region)
+            .is_some_and(|owner| self.keeps_live(region, self.owner_live_mode(*owner, point)))
     }
 
-    /// Returns whether the instruction at `point` uses or drops the value that
-    /// owns `region`.
+    /// Returns whether the instruction at `point` uses the value that owns
+    /// `region`, or drops it in a way that may use `region`.
     pub(crate) fn is_used_at(
         &self,
         function: &IRFunction,
         region: &Interned<Ty>,
         point: Point,
     ) -> bool {
-        let Some(owner) = region.as_region().and_then(|region| self.owners.get(&region)) else {
+        let Some(region) = region.as_region() else {
+            return false;
+        };
+        let Some(owner) = self.owners.get(&region) else {
             return false;
         };
 
-        match *owner {
-            RegionOwner::Local(local) => LocalLiveness::use_at(function, point, local).is_some(),
+        let mode = match *owner {
+            RegionOwner::Local(local) => LocalLiveness::use_at(function, point, local),
             RegionOwner::Expression(expression_id) | RegionOwner::Phi(expression_id, _) => {
-                ExprLiveness::use_at(function, point, expression_id).is_some()
+                ExprLiveness::use_at(function, point, expression_id)
             }
-            RegionOwner::Instruction(instruction_point) => instruction_point == point,
-        }
+            RegionOwner::Instruction(instruction_point) => {
+                (instruction_point == point).then_some(LiveMode::Use)
+            }
+        };
+
+        self.keeps_live(region, mode)
     }
 
-    /// Returns whether `owner` keeps its regions live at `point`.
-    fn is_owner_live(&self, owner: RegionOwner, point: Point) -> bool {
-        // TODO: a value that is only dropped keeps every region of its type
-        // live, as if it were used. Drop check would keep only the regions
-        // its `Drop` implementation may use.
+    /// Returns how `owner` is live at `point`, if it is. An instruction is
+    /// only live at its own point, and uses every region it owns there.
+    fn owner_live_mode(&self, owner: RegionOwner, point: Point) -> Option<LiveMode> {
         match owner {
-            RegionOwner::Local(local) => self.locals.live_mode(local, point).is_some(),
+            RegionOwner::Local(local) => self.locals.live_mode(local, point),
             RegionOwner::Expression(expression_id) => {
-                self.expressions.live_mode(expression_id, point).is_some()
+                self.expressions.live_mode(expression_id, point)
             }
 
             // The incoming values are held from the terminators of the
@@ -109,9 +131,26 @@ impl RegionLiveness {
                 let is_pending = point.block_id() == phi_point.block_id()
                     && point.instruction_idx() <= phi_point.instruction_idx();
 
-                is_pending || self.expressions.live_mode(expression_id, point).is_some()
+                if is_pending {
+                    Some(LiveMode::Use)
+                } else {
+                    self.expressions.live_mode(expression_id, point)
+                }
             }
-            RegionOwner::Instruction(instruction_point) => instruction_point == point,
+            RegionOwner::Instruction(instruction_point) => {
+                (instruction_point == point).then_some(LiveMode::Use)
+            }
+        }
+    }
+
+    /// Returns whether an owner live in `mode` keeps `region` live: a later
+    /// use keeps every region of the owner live, and a later drop only those
+    /// it may use.
+    fn keeps_live(&self, region: RegionID, mode: Option<LiveMode>) -> bool {
+        match mode {
+            Some(LiveMode::Use) => true,
+            Some(LiveMode::Drop) => self.drop_regions.contains(region),
+            None => false,
         }
     }
 }

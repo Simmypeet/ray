@@ -1,0 +1,26 @@
+struct Vector[+t]:
+    pass
+
+
+impl[t] !core.Copy for Vector[t]
+
+
+def newVec[t]() -> Vector[t]:
+    return Vector{}
+
+
+def push[t](v: &mut Vector[t], x: t):
+    core.NoDrop{value=x}
+
+
+def consume(_: t) given (_: core.Drop[t]):
+    pass
+
+
+pub def main():
+    let mut a = 32
+    let mut v = newVec()
+
+    while true:
+        # ERROR: `a` is mutable borrowed multiple times in the loop.
+        push(v.&mut, a.&mut)

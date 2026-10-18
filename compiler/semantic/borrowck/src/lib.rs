@@ -23,6 +23,7 @@ pub mod active_loans;
 mod conflict;
 pub mod constraint;
 pub mod diagnostic;
+mod drop_check;
 pub mod live_loans;
 pub mod query;
 pub mod region_liveness;
@@ -72,7 +73,7 @@ pub async fn borrow_check(ir: &mut IRFunctionMap, engine: &TrackedEngine) -> Vec
         );
         nested.record(function_id, requirements);
 
-        let liveness = RegionLiveness::compute(ir, function_id).await;
+        let liveness = RegionLiveness::compute(ir, function_id, engine).await;
         let live_loans = LiveLoans::compute(function, &constraints, &liveness, &variances);
         let activity = LoanActivity::compute(function, &constraints, &live_loans).await;
 
