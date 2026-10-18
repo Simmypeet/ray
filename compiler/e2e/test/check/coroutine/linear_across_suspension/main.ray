@@ -1,0 +1,65 @@
+# A coroutine may be dropped while it is suspended, and that drops whatever
+# it holds there. A linear value has no `Drop` instance, so it cannot be held
+# across a suspension point.
+
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+@linear
+struct Handle:
+    fd: int32
+
+
+def make() -> Handle:
+    return Handle { fd = 0 }
+
+
+def close(opened: Handle):
+    core.NoDrop { value = move opened }
+
+
+def closeLater(opened: Handle, unit: ()):
+    close(opened)
+
+
+def effectful() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+# ERROR: `opened` is held across the `perform`, even though it is consumed
+# right after.
+def acrossPerform(opened: Handle) -> () \ {Yield[int32]}:
+    Yield.yield(1)
+    close(opened)
+
+
+# ERROR: a call of an effectful function is a suspension point too.
+def acrossCall() -> () \ {Yield[int32]}:
+    let opened = make()
+    effectful()
+    close(opened)
+
+
+# ERROR: an evaluated argument is held while a later argument suspends.
+def acrossArgument() -> () \ {Yield[int32]}:
+    closeLater(make(), Yield.yield(1))
+
+
+# ERROR: it is reported once, at the first suspension point it is held
+# across.
+def acrossSeveral(opened: Handle) -> () \ {Yield[int32]}:
+    Yield.yield(1)
+    Yield.yield(2)
+    close(opened)
+
+
+# OK: a call with no effect is not a suspension point.
+def acrossPureCall(opened: Handle) -> ():
+    let other = make()
+    close(other)
+    close(opened)
+
+
+def main() -> int32:
+    return 0

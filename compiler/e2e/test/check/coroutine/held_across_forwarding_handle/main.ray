@@ -1,0 +1,52 @@
+# A `handle` that forwards an operation suspends the enclosing function while
+# the operation is handled further out, so it is a suspension point.
+
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+eff Log:
+    def log(value: int32) -> ()
+
+
+@linear
+struct Handle:
+    fd: int32
+
+
+def close(opened: Handle):
+    core.NoDrop { value = move opened }
+
+
+def numbers() -> () \ {Yield[int32], Log}:
+    Log.log(0)
+    Yield.yield(1)
+
+
+# ERROR: the `handle` forwards `Log`, and `opened` is held across it.
+def forwarding(opened: Handle) -> () \ {Log}:
+    let k = coro numbers()
+    handle k():
+        case Yield.yield(value) resume next:
+            close(opened)
+            return
+        case return:
+            close(opened)
+
+
+def quiet() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+# OK: a `handle` that forwards nothing is not a suspension point.
+def notForwarding(opened: Handle):
+    let k = coro quiet()
+    handle k():
+        case Yield.yield(value) resume next:
+            close(opened)
+            return
+        case return:
+            close(opened)
+
+
+def main() -> int32:
+    return 0

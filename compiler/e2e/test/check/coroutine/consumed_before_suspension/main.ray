@@ -1,0 +1,44 @@
+# The start of a function is not a suspension point. A value consumed before
+# the first suspension point is never held across one.
+
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+@linear
+struct Handle:
+    fd: int32
+
+
+def close(opened: Handle):
+    core.NoDrop { value = move opened }
+
+
+def forget[t](x: t):
+    core.NoDrop { value = move x }
+
+
+# OK: `opened` is consumed before the first `perform`.
+def closeFirst(opened: Handle) -> () \ {Yield[int32]}:
+    close(opened)
+    Yield.yield(1)
+    Yield.yield(2)
+
+
+# OK: a `t` consumed before the `perform` needs no `Drop`.
+def forgetFirst[t](x: t) -> () \ {Yield[int32]}:
+    forget(x)
+    Yield.yield(1)
+
+
+# OK: a suspension point in a branch that does not hold the value.
+def closeInBranch(opened: Handle, early: bool) -> () \ {Yield[int32]}:
+    if early:
+        close(opened)
+        Yield.yield(1)
+    else:
+        close(opened)
+
+
+def main() -> int32:
+    return 0

@@ -1,0 +1,20 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: borrow may still be in use when the value is dropped
+   ╭▸ compiler/e2e/test/check/coroutine/drop_on_abandon_is_a_use/main.ray:43:29
+   │
+41 │     let mut guard: Guard['_]
+   │         ───────── borrow later used here
+42 │     let mut counter = Counter { value = 1 }
+   │         ─────────── the value of this binding is dropped while the borrow is still in use
+43 │     guard = Guard { inner = counter.&mut }
+   ╰╴                            ━━━━━━━━━━━━ what the dropped value may use is borrowed here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

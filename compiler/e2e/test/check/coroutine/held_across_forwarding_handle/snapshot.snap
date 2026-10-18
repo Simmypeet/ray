@@ -1,0 +1,26 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: no implicit instance found: `core.Drop[Handle]`
+   ╭▸ compiler/e2e/test/check/coroutine/held_across_forwarding_handle/main.ray:26:16
+   │
+26 │   def forwarding(opened: Handle) -> () \ {Log}:
+   │                  ━━━━━━━━━━━━━━ this value is held across a suspension point
+27 │       let k = coro numbers()
+28 │ ┌     handle k():
+29 │ │         case Yield.yield(value) resume next:
+30 │ │             close(opened)
+31 │ │             return
+32 │ │         case return:
+33 │ │             close(opened)
+   │ └─────────────────────────┘ it is dropped here if the coroutine is dropped while suspended
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

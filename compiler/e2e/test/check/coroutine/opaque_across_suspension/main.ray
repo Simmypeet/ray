@@ -1,0 +1,51 @@
+# A value held across a suspension point is dropped if the coroutine is
+# dropped there, so a value of an opaque type needs a `Drop` dictionary among
+# the givens, even when the function itself never drops it.
+
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+struct Wrapper[t]:
+    value: t
+
+
+# ERROR: `x` is live across the `perform`, and nothing says how to drop a `t`.
+def keep[t](x: t) -> t \ {Yield[int32]}:
+    Yield.yield(1)
+    return x
+
+
+# OK: the given tells how to drop it.
+def keepWithDrop[t](x: t) given (_: core.Drop[t]) -> t \ {Yield[int32]}:
+    Yield.yield(1)
+    return x
+
+
+# ERROR: the drop of a `Wrapper[t]` needs the drop of a `t`.
+def keepWrapped[t](x: Wrapper[t]) -> Wrapper[t] \ {Yield[int32]}:
+    Yield.yield(1)
+    return x
+
+
+# ERROR: the callback of an effect-polymorphic function may suspend, so a `t`
+# held across its call needs a `Drop` too.
+def aroundCallback(x: t, callback: def() -> () \ effects) -> t \ effects:
+    callback()
+    return x
+
+
+# OK: the same, with the given.
+def aroundCallbackWithDrop(x: t, callback: def() -> () \ effects) given (_: core.Drop[t]) -> t \ effects:
+    callback()
+    return x
+
+
+# ERROR: a `t` that is dropped on an ordinary path is reported as it is in a
+# function that never suspends.
+def dropped[t](x: t) -> () \ {Yield[int32]}:
+    Yield.yield(1)
+
+
+def main() -> int32:
+    return 0

@@ -1,0 +1,34 @@
+# An ordinary call of an effectful function starts the callee at once, so its
+# arguments are moved into it and the caller holds nothing across the call.
+
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+@linear
+struct Handle:
+    fd: int32
+
+
+def make() -> Handle:
+    return Handle { fd = 0 }
+
+
+def close(opened: Handle):
+    core.NoDrop { value = move opened }
+
+
+def useHandle(opened: Handle) -> () \ {Yield[int32]}:
+    close(opened)
+    Yield.yield(1)
+
+
+# OK: the linear argument is moved into the effectful call.
+def caller() -> () \ {Yield[int32]}:
+    let opened = make()
+    useHandle(opened)
+    useHandle(make())
+
+
+def main() -> int32:
+    return 0

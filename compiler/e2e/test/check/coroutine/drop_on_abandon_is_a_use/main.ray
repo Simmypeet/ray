@@ -1,0 +1,58 @@
+# The drops on an abandon path are ordinary uses for the borrow checker. A
+# value with a declared `Drop` that holds a borrow across a suspension point
+# keeps the loan live on that path.
+
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+struct Counter:
+    value: int32
+
+inst CounterDrop for core.Drop[Counter]:
+    def drop(self: Counter):
+        core.NoDrop { value = move self }
+
+
+struct Guard['a]:
+    inner: &'a mut Counter
+
+inst GuardDrop['a] for core.Drop[Guard['a]]:
+    def drop(self: Guard['a]):
+        self.inner.*.value = 0
+        core.NoDrop { value = move self }
+
+
+def release(guard: Guard['a]):
+    return
+
+
+# OK: `guard` is released while `counter` is still alive.
+def direct():
+    let mut guard: Guard['_]
+    let mut counter = Counter { value = 1 }
+    guard = Guard { inner = counter.&mut }
+    release(guard)
+
+
+# ERROR: if the coroutine is dropped at the `perform`, `counter` is dropped
+# before `guard`, whose drop writes through the borrow.
+def suspended() -> () \ {Yield[int32]}:
+    let mut guard: Guard['_]
+    let mut counter = Counter { value = 1 }
+    guard = Guard { inner = counter.&mut }
+    Yield.yield(1)
+    release(guard)
+
+
+# OK: released before the suspension point.
+def releasedFirst() -> () \ {Yield[int32]}:
+    let mut guard: Guard['_]
+    let mut counter = Counter { value = 1 }
+    guard = Guard { inner = counter.&mut }
+    release(guard)
+    Yield.yield(1)
+
+
+def main() -> int32:
+    return 0
