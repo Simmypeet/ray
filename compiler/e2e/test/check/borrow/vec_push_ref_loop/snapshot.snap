@@ -1,0 +1,20 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot borrow a place as mutable more than once at a time
+   ╭▸ compiler/e2e/test/check/borrow/vec_push_ref_loop/main.ray:26:22
+   │
+26 │         push(v.&mut, a.&mut)
+   │         ┬────────────┯━━━━━─
+   │         │            │
+   │         │            second mutable borrow occurs here
+   │         │            first mutable borrow occurs here
+   ╰╴        borrow later used here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

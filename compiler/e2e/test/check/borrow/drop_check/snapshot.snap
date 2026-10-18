@@ -4,43 +4,43 @@ expression: run
 ---
 stderr:
 [error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:54:5
+   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:58:5
    │
-51 │     let guard = Guard { inner = value.&mut }
+55 │     let guard = Guard { inner = value.&mut }
    │         ┬────                   ────────── mutable borrow occurs here
    │         │
    │         borrow later used here
    ‡
-54 │     value = 2
+58 │     value = 2
    ╰╴    ━━━━━━━━━ the borrowed place is assigned here
 
 [error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:60:5
+   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:64:5
    │
-58 │     let wrapper = Wrapper { value = Guard { inner = value.&mut } }
+62 │     let wrapper = Wrapper { value = Guard { inner = value.&mut } }
    │         ─────── borrow later used here              ────────── mutable borrow occurs here
-59 │     # ERROR: dropping `wrapper` drops the guard in it.
-60 │     value = 2
+63 │     # ERROR: dropping `wrapper` drops the guard in it.
+64 │     value = 2
    ╰╴    ━━━━━━━━━ the borrowed place is assigned here
 
 [error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:67:5
+   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:71:5
    │
-65 │     let wrapper = Wrapper { value = (Guard { inner = value.&mut }, other.&) }
+69 │     let wrapper = Wrapper { value = (Guard { inner = value.&mut }, other.&) }
    │         ─────── borrow later used here               ────────── mutable borrow occurs here
-66 │     # ERROR: dropping `wrapper` drops the guard holding the borrow of `value`.
-67 │     value = 3
+70 │     # ERROR: dropping `wrapper` drops the guard holding the borrow of `value`.
+71 │     value = 3
    ╰╴    ━━━━━━━━━ the borrowed place is assigned here
 
 [error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:74:5
+   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:78:5
    │
-71 │     let tagged = Tagged { value = value.& }
+75 │     let tagged = Tagged { value = value.& }
    │         ┬─────                    ─────── immutable borrow occurs here
    │         │
    │         borrow later used here
    ‡
-74 │     value = 2
+78 │     value = 2
    ╰╴    ━━━━━━━━━ the borrowed place is assigned here
 
 [error]: Compilation aborted due to 4 error(s)
