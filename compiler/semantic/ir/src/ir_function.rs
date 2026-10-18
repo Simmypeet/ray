@@ -429,6 +429,11 @@ impl IRFunction {
     #[must_use]
     pub fn reachables(&self) -> Reachables { self.cfg.reachables() }
 
+    /// Returns what is reachable in direct form, where no abandon edge is
+    /// taken; see [`Cfg::direct_reachables`].
+    #[must_use]
+    pub fn direct_reachables(&self) -> Reachables { self.cfg.direct_reachables() }
+
     /// Solves a dataflow problem over this function's control-flow graph.
     pub async fn solve_dataflow<P: DataflowProblem>(
         &self,

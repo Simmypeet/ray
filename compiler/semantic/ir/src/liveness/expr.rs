@@ -99,7 +99,7 @@ impl ExprLivenessProblem<'_> {
                 }
             }
 
-            Terminator::Return(None) | Terminator::Jump(_) => {}
+            Terminator::Return(None) | Terminator::Jump(_) | Terminator::Abandon => {}
         }
     }
 }

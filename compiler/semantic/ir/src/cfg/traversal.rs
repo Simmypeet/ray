@@ -217,7 +217,20 @@ impl Cfg {
     /// Calculates the blocks and expression instructions reachable from the
     /// entry block.
     #[must_use]
-    pub fn reachables(&self) -> Reachables {
+    pub fn reachables(&self) -> Reachables { self.reachables_through(Terminator::jump_targets) }
+
+    /// Calculates the blocks and expression instructions reachable from the
+    /// entry block in direct form, where the function is never suspended, so
+    /// no abandon edge is taken.
+    #[must_use]
+    pub fn direct_reachables(&self) -> Reachables {
+        self.reachables_through(Terminator::direct_jump_targets)
+    }
+
+    fn reachables_through<'a, I: Iterator<Item = BlockID> + 'a>(
+        &'a self,
+        successors: impl Fn(&'a Terminator) -> I,
+    ) -> Reachables {
         let mut pending = VecDeque::from([self.entry_block]);
         let mut visited_blocks = FxHashSet::default();
         let mut visited_expressions = FxHashSet::default();
@@ -259,7 +272,7 @@ impl Cfg {
                 }
             }
 
-            pending.extend(terminator.jump_targets());
+            pending.extend(successors(terminator));
         }
 
         Reachables { reachable_blocks, reachable_expressions }
@@ -271,7 +284,7 @@ impl Cfg {
         let block = self.blocks.get(block_id)?;
 
         let cursor = match block.terminator() {
-            None | Some(Terminator::Return(_)) => OutgoingEdgeCursor::Empty,
+            None | Some(Terminator::Return(_) | Terminator::Abandon) => OutgoingEdgeCursor::Empty,
 
             Some(Terminator::Jump(unconditional)) => {
                 OutgoingEdgeCursor::Unconditional(Some(ControlFlowEdge {
@@ -300,9 +313,9 @@ impl Cfg {
                     target: suspend.resume,
                     kind: ControlFlowEdgeKind::SuspendResume,
                 }),
-                abandon_edge: suspend.abandon.map(|abandon| ControlFlowEdge {
+                abandon_edge: Some(ControlFlowEdge {
                     source: block_id,
-                    target: abandon,
+                    target: suspend.abandon,
                     kind: ControlFlowEdgeKind::SuspendAbandon,
                 }),
             },

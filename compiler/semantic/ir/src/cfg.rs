@@ -300,7 +300,7 @@ impl Cfg {
                 &mut suspend.resume
             }
             (ControlFlowEdgeKind::SuspendAbandon, Terminator::Suspend(suspend)) => {
-                suspend.abandon.as_mut().expect("Abandon edge should have an abandon block")
+                &mut suspend.abandon
             }
             (ControlFlowEdgeKind::HandleReturn, Terminator::Handle(handle)) => {
                 &mut handle.return_block
@@ -325,7 +325,8 @@ impl Cfg {
                 | Terminator::Conditional(_)
                 | Terminator::Return(_)
                 | Terminator::Suspend(_)
-                | Terminator::Handle(_),
+                | Terminator::Handle(_)
+                | Terminator::Abandon,
             ) => panic!("Edge kind should match its terminator"),
         };
         assert_eq!(*target, edge.target, "Edge target should match its terminator");

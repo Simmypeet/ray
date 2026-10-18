@@ -39,12 +39,12 @@ impl Conditional {
 pub struct Suspend {
     expression: IRExprID,
     pub(super) resume: BlockID,
-    pub(super) abandon: Option<BlockID>,
+    pub(super) abandon: BlockID,
 }
 
 impl Suspend {
     #[must_use]
-    pub const fn new(expression: IRExprID, resume: BlockID, abandon: Option<BlockID>) -> Self {
+    pub const fn new(expression: IRExprID, resume: BlockID, abandon: BlockID) -> Self {
         Self { expression, resume, abandon }
     }
 
@@ -57,9 +57,9 @@ impl Suspend {
     pub const fn resume_block(&self) -> BlockID { self.resume }
 
     /// Returns the block taken when the function is dropped while it is
-    /// suspended here, if there is one.
+    /// suspended here.
     #[must_use]
-    pub const fn abandon_block(&self) -> Option<BlockID> { self.abandon }
+    pub const fn abandon_block(&self) -> BlockID { self.abandon }
 }
 
 /// One operation clause of a [`Handle`]: the block that runs when the
@@ -206,22 +206,34 @@ pub enum Terminator {
     Suspend(Suspend),
     /// Resumes a coroutine and branches on how it stops. See [`Handle`].
     Handle(Handle),
+    /// Leaves the function without a value, at the end of the abandon block
+    /// of a suspension point.
+    ///
+    /// It is taken when the function is dropped while it is suspended. The
+    /// abandon block pops the enclosing scopes first, as a `return` at the
+    /// same point would.
+    Abandon,
 }
 
 impl Terminator {
     pub fn jump_targets(&self) -> impl Iterator<Item = BlockID> + '_ {
-        // Only a `Handle` has more than two successors: its clauses, between
-        // the return block and the abandon block.
+        self.direct_jump_targets().chain(self.abandon_block())
+    }
+
+    /// Iterates over the successors control can reach in direct form, where
+    /// a function is never suspended: every jump target but the abandon
+    /// block.
+    pub fn direct_jump_targets(&self) -> impl Iterator<Item = BlockID> + '_ {
+        // Only a `Handle` has more than two successors: its clauses, after
+        // the return block.
         let (first, clauses, last) = match self {
             Self::Jump(block_id) => (Some(*block_id), None, None),
             Self::Conditional(conditional) => {
                 (Some(conditional.true_block), None, Some(conditional.false_block))
             }
-            Self::Return(_) => (None, None, None),
-            Self::Suspend(suspend) => (Some(suspend.resume), None, suspend.abandon),
-            Self::Handle(handle) => {
-                (Some(handle.return_block), Some(&handle.clauses), handle.abandon)
-            }
+            Self::Return(_) | Self::Abandon => (None, None, None),
+            Self::Suspend(suspend) => (Some(suspend.resume), None, None),
+            Self::Handle(handle) => (Some(handle.return_block), Some(&handle.clauses), None),
         };
 
         first
@@ -232,11 +244,27 @@ impl Terminator {
             .chain(last)
     }
 
-    /// Returns whether this terminator returns from the function.
+    /// Returns the block taken when the function is dropped while it is
+    /// suspended at this terminator, if there is one.
     #[must_use]
-    pub const fn is_return(&self) -> bool {
+    pub const fn abandon_block(&self) -> Option<BlockID> {
         match self {
-            Self::Return(_) => true,
+            Self::Suspend(suspend) => Some(suspend.abandon),
+            Self::Handle(handle) => handle.abandon,
+            Self::Jump(_) | Self::Conditional(_) | Self::Return(_) | Self::Abandon => None,
+        }
+    }
+
+    /// Returns whether this terminator ends an abandon block.
+    #[must_use]
+    pub const fn is_abandon(&self) -> bool { matches!(self, Self::Abandon) }
+
+    /// Returns whether this terminator leaves the function: a return, or the
+    /// end of an abandon block.
+    #[must_use]
+    pub const fn is_exit(&self) -> bool {
+        match self {
+            Self::Return(_) | Self::Abandon => true,
             Self::Jump(_) | Self::Conditional(_) | Self::Suspend(_) | Self::Handle(_) => false,
         }
     }
@@ -246,7 +274,11 @@ impl Terminator {
     pub const fn returned_value(&self) -> Option<IRExprID> {
         match self {
             Self::Return(value) => *value,
-            Self::Jump(_) | Self::Conditional(_) | Self::Suspend(_) | Self::Handle(_) => None,
+            Self::Jump(_)
+            | Self::Conditional(_)
+            | Self::Suspend(_)
+            | Self::Handle(_)
+            | Self::Abandon => None,
         }
     }
 
@@ -260,7 +292,7 @@ impl Terminator {
         match self {
             Self::Conditional(conditional) => Some(conditional.condition()),
             Self::Return(value) => *value,
-            Self::Jump(_) | Self::Suspend(_) | Self::Handle(_) => None,
+            Self::Jump(_) | Self::Suspend(_) | Self::Handle(_) | Self::Abandon => None,
         }
     }
 
@@ -277,7 +309,7 @@ impl Terminator {
         let (expression, clauses) = match self {
             Self::Suspend(suspend) => (Some(suspend.expression), None),
             Self::Handle(handle) => (Some(handle.expression), Some(&handle.clauses)),
-            Self::Jump(_) | Self::Conditional(_) | Self::Return(_) => (None, None),
+            Self::Jump(_) | Self::Conditional(_) | Self::Return(_) | Self::Abandon => (None, None),
         };
 
         expression.into_iter().chain(
