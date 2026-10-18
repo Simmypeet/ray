@@ -105,8 +105,11 @@ impl DropElaborator {
     /// before the store.
     ///
     /// Whatever part of the place is still initialized holds a previous value
-    /// which would otherwise be overwritten, so it is dropped. Stores through
-    /// a dereference are not tracked by the stack state and drop nothing.
+    /// which would otherwise be overwritten, so it is dropped.
+    ///
+    /// A place behind a reference is borrowed memory, which always holds an
+    /// initialized value, so its previous value is dropped as a whole. A
+    /// place behind a raw pointer is untracked memory and drops nothing.
     pub(crate) async fn reassignment_drops(
         &mut self,
         point: Point,
@@ -116,12 +119,22 @@ impl DropElaborator {
         problem: &mut StackStateProblem<'_>,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
+        let site = DropSite::Before(point);
+
+        if address.is_behind_deref() {
+            if let Some(root) = address.local()
+                && address.is_behind_reference()
+            {
+                self.push_drop(site, root, address.clone(), ty, problem, diagnostics).await;
+            }
+            return;
+        }
+
         let (Some(root), Some(place_state)) = (address.direct_local(), state.place_state(address))
         else {
             return;
         };
 
-        let site = DropSite::Before(point);
         self.drop_place(site, root, address.clone(), place_state, ty, problem, diagnostics).await;
     }
 
@@ -276,6 +289,12 @@ impl DropElaborator {
         }
     }
 
+    /// Drops the value held in `address` at `site` with an
+    /// [`Instruction::AddressDrop`].
+    ///
+    /// A place whose drop does nothing, such as a `Copy` one, needs no drop.
+    /// The stack state is solved before any drop is inserted, so leaving the
+    /// drop out does not change which places are initialized.
     async fn push_drop(
         &mut self,
         site: DropSite,
@@ -287,9 +306,11 @@ impl DropElaborator {
     ) {
         match self.drop_instance(ty.clone(), problem).await {
             Ok(drop_instance) => {
-                let span = problem.binding_span(root).await;
-                let drop = AddressDrop::new(address, drop_instance, span);
-                self.drops.push((site, Instruction::AddressDrop(drop)));
+                if !drop_instance.is_no_op_drop_instance() {
+                    let span = problem.binding_span(root).await;
+                    let drop = AddressDrop::new(address, drop_instance, span);
+                    self.drops.push((site, Instruction::AddressDrop(drop)));
+                }
             }
 
             // Each binding is a separate fix site, but a binding which leaves

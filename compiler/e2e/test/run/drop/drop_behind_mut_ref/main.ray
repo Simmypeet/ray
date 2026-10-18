@@ -1,0 +1,23 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Wrapper:
+    pub value: int32
+
+
+inst WrapperDrop for core.Drop[Wrapper]:
+    def drop(self: Wrapper):
+        printf("Dropping wrapper with value %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+pub def assign(ref_mut: &mut t, value: t) given (_: core.Drop[t]):
+    # should drop the old value before assigning the new one
+    ref_mut.* = value
+
+
+pub def main() -> int32:
+    let mut wrapper = Wrapper { value = 32 }
+    assign(wrapper.&mut, Wrapper { value = 64 })
+
+    return 0

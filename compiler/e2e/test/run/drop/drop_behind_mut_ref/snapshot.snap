@@ -1,0 +1,14 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+Dropping wrapper with value 32
+Dropping wrapper with value 64
+
+
+stderr:

@@ -177,7 +177,8 @@ async fn analyze_function(
                 // value which moved the old one out leaves nothing to drop.
                 //
                 // A store through a dereference writes memory the frame does
-                // not own. It drops nothing, and only reads the pointer.
+                // not own, and reads the pointer. Behind a reference, the
+                // memory still holds a value, which is dropped as a whole.
                 Instruction::Store(store) => {
                     if let Some(base) = store.address().deref_base(engine) {
                         check_read(store.span(), &base, &state, function, diagnostics);
