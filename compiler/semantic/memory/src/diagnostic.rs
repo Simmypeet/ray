@@ -31,12 +31,20 @@ pub struct UseBeforeInitialization {
 
 /// No `Drop` dictionary could be selected for a value dropped when its scope
 /// ends.
+///
+/// The scope may also end because the function is dropped while it is
+/// suspended. Every value held across a suspension point is dropped then,
+/// even one that the function consumes later on.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct UnresolvedScopeDrop {
     /// The declaration of the binding whose value is dropped.
     binding_span: RelativeSpan,
     trait_ref: TraitRef,
     error: InstanceResolutionError,
+
+    /// The suspension point the value is held across, when it is dropped
+    /// only because the function is abandoned there.
+    suspension_span: Option<RelativeSpan>,
 }
 
 /// An operation handler moves a value out of one of its captures.
@@ -135,7 +143,7 @@ async fn unresolved_scope_drop_report(
         args.push(arg.display(engine).await.to_string());
     }
 
-    let help = match &diagnostic.error {
+    let linear_help = match &diagnostic.error {
         InstanceResolutionError::NoInstance { .. } => linear_drop_help(engine, trait_ref).await,
         InstanceResolutionError::NotReady(_)
         | InstanceResolutionError::ContainsError(_)
@@ -145,18 +153,35 @@ async fn unresolved_scope_drop_report(
         | InstanceResolutionError::Limit { .. } => None,
     };
 
+    let mut related = Vec::new();
+    let (binding_message, help) = if let Some(suspension_span) = &diagnostic.suspension_span {
+        related.push(
+            Highlight::builder()
+                .span(engine.to_absolute_span(suspension_span).await)
+                .message("it is dropped here if the coroutine is dropped while suspended")
+                .build(),
+        );
+        let help = linear_help.unwrap_or_else(|| {
+            "a value held across a suspension point needs a Drop instance, even if it is consumed \
+             later"
+                .to_owned()
+        });
+        ("this value is held across a suspension point", Some(help))
+    } else if drops_coroutine {
+        ("the arguments of this coroutine are dropped if it is never resumed", linear_help)
+    } else {
+        ("this value is dropped when it goes out of scope", linear_help)
+    };
+
     Rendered::builder()
         .message(format!("{message}: `{name}[{}]`", args.join(", ")))
         .primary_highlight(
             Highlight::builder()
                 .span(engine.to_absolute_span(&diagnostic.binding_span).await)
-                .message(if drops_coroutine {
-                    "the arguments of this coroutine are dropped if it is never resumed"
-                } else {
-                    "this value is dropped when it goes out of scope"
-                })
+                .message(binding_message)
                 .build(),
         )
+        .related(related)
         .maybe_help_message(help)
         .build()
 }
@@ -243,8 +268,9 @@ impl UnresolvedScopeDrop {
         binding_span: RelativeSpan,
         trait_ref: TraitRef,
         error: InstanceResolutionError,
+        suspension_span: Option<RelativeSpan>,
     ) -> Self {
-        Self { binding_span, trait_ref, error }
+        Self { binding_span, trait_ref, error, suspension_span }
     }
 
     /// Returns whether the value that cannot be dropped is the coroutine a

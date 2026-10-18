@@ -91,13 +91,19 @@ impl<'a> Lower<TypedExprWithID<&'a Handle>> for Builder {
         let merge_block = self.create_block();
         let mut arm_scopes = self.create_scope_branch(clauses.len() + 1).into_iter();
 
-        // TODO: a `Handle` that forwards an effect gets an abandon block
-        // once the abandon edges are lowered.
+        // A `Handle` that forwards an operation suspends this function
+        // while the operation is handled further out, so it may be dropped
+        // there.
+        let abandon_block = if self.is_suspension_point(handle_expression).await {
+            Some(self.create_abandon_block())
+        } else {
+            None
+        };
         self.terminate(Terminator::Handle(HandleTerminator::new(
             handle_expression,
             return_block,
             clauses.iter().map(LoweredClause::to_handle_clause).collect(),
-            None,
+            abandon_block,
         )));
 
         // Lower every successor, collecting the value each gives the

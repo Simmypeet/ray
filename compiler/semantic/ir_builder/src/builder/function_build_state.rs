@@ -553,8 +553,9 @@ impl Builder {
     ///
     /// One that suspends ends the current block with a
     /// [`Terminator::Suspend`], and lowering continues in the resume block,
-    /// where its value is defined. Any other is an ordinary instruction; see
-    /// [`IRExprKind::suspends`].
+    /// where its value is defined. Its abandon block is created on the way;
+    /// see [`Self::create_abandon_block`]. Any other is an ordinary
+    /// instruction; see [`IRExprKind::suspends`].
     pub async fn emit_suspendable_expression(&mut self, expression: IRExpr) -> IRExprID {
         if !expression.kind().suspends(&self.engine).await {
             return self.emit_expression(expression);
@@ -563,13 +564,42 @@ impl Builder {
         let function_id = self.building_function.ir_function_id;
         let expression_id = self.ir_functions.insert_expression(function_id, expression);
 
-        // TODO: every suspension point gets an abandon block once the
-        // abandon edges are lowered.
         let resume_block = self.create_block();
-        self.terminate(Terminator::Suspend(Suspend::new(expression_id, resume_block, None)));
+        let abandon_block = self.create_abandon_block();
+        self.terminate(Terminator::Suspend(Suspend::new(
+            expression_id,
+            resume_block,
+            abandon_block,
+        )));
         self.select_block(resume_block);
 
         expression_id
+    }
+
+    /// Creates the block taken when the function is dropped while it is
+    /// suspended at the current position.
+    ///
+    /// It takes the path an early `return` takes from here: it pops every
+    /// active scope, innermost first, and ends in [`Terminator::Abandon`].
+    /// Memory analysis then drops what is still initialized on the way, like
+    /// on any other scope exit.
+    pub fn create_abandon_block(&mut self) -> BlockID {
+        let current_block = self.building_function.current_block;
+        let abandon_block = self.create_block();
+
+        self.select_block(abandon_block);
+        self.unwind_all_scopes();
+        self.terminate(Terminator::Abandon);
+        self.select_block(current_block);
+
+        abandon_block
+    }
+
+    /// Returns whether the inserted expression `expression_id` is a
+    /// suspension point; see [`IRExprKind::suspends`].
+    pub async fn is_suspension_point(&self, expression_id: IRExprID) -> bool {
+        let function = self.ir_functions.get_function(self.building_function.ir_function_id);
+        function.get_expression(expression_id).kind().suspends(&self.engine).await
     }
 
     /// Inserts an expression that no instruction evaluates: one that a

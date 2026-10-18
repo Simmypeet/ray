@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use rayc_ir::{
     address::Address,
-    cfg::{Instruction, Point},
+    cfg::{BlockID, Instruction, Point, Terminator},
     dataflow::DataflowProblem,
     ir_expr::IRExprKind,
     ir_function::{FunctionID, IRFunctionMap},
@@ -52,7 +52,7 @@ pub async fn analyze(
     let function_ids =
         functions.functions().map(|(function_id, _)| function_id).collect::<Vec<_>>();
     for function_id in function_ids {
-        let mut elaborator = DropElaborator::default();
+        let mut elaborator = DropElaborator::new(functions.get_function(function_id));
         analyze_function(engine, def_id, functions, function_id, &mut elaborator, &mut diagnostics)
             .await;
         elaborator.insert_drops(functions, function_id);
@@ -88,7 +88,17 @@ async fn analyze_function(
 
     // Replay from stable block-entry facts. Reporting during fixpoint
     // iteration could emit the same error repeatedly from provisional facts.
-    for block_id in solution.reachable_blocks() {
+    //
+    // Abandon blocks are replayed last. A value which cannot be dropped on
+    // an ordinary path either is then reported there, as it would be in a
+    // function that never suspends.
+    let is_abandon_block = |block_id: &BlockID| {
+        function.block_terminator(*block_id).is_some_and(Terminator::is_abandon)
+    };
+    let blocks = solution.reachable_blocks().filter(|block_id| !is_abandon_block(block_id));
+    let abandon_blocks = solution.reachable_blocks().filter(is_abandon_block);
+
+    for block_id in blocks.chain(abandon_blocks) {
         let mut state = solution.block_entry(block_id).unwrap().clone();
 
         for (instruction_idx, instruction) in

@@ -19,7 +19,7 @@ impl Builder<'_> {
         let abi = context.function_abi(source_id);
         self.initialize_function_state(context, source_id, &source, abi).await;
 
-        for source_block in source.reachables().blocks() {
+        for source_block in source.direct_reachables().blocks() {
             let target_block = self.block(source_block);
             self.select_block(target_block);
             for instruction in source.block_instructions(source_block) {
@@ -105,14 +105,14 @@ impl Builder<'_> {
             let local = self.insert_local(Local::new(ty, LocalKind::Variable));
             self.insert_variable(variable_id, local);
         }
-        for expression_id in source.reachables().expressions() {
+        for expression_id in source.direct_reachables().expressions() {
             let expression = source.get_expression(expression_id);
             let ty = context.lower_type(expression.ty()).await;
             let local = self.insert_local(Local::new(ty, LocalKind::Temporary));
             self.insert_expression(expression_id, local);
         }
 
-        for source_block in source.reachables().blocks() {
+        for source_block in source.direct_reachables().blocks() {
             let target_block = if source_block == source.entry_block() {
                 self.entry_block()
             } else {

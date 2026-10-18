@@ -107,15 +107,12 @@ impl DataflowProblem for ScopeStackProblem {
         _state: &mut ScopeStack,
     ) -> Result<(), ScopeStackError> {
         match terminator {
-            // No terminator opens or closes a scope. A suspension point
-            // resumes in the scopes it was suspended in, and every clause
-            // of a `Handle` starts in the scopes the coroutine was resumed
-            // in.
             Terminator::Jump(_)
             | Terminator::Conditional(_)
             | Terminator::Return(_)
             | Terminator::Suspend(_)
-            | Terminator::Handle(_) => Ok(()),
+            | Terminator::Handle(_)
+            | Terminator::Abandon => Ok(()),
         }
     }
 
@@ -160,7 +157,7 @@ impl fmt::Display for VerificationError {
                 "control-flow merge has different active scope stacks: {first:?} and {second:?}",
             ),
             VerificationErrorKind::UnclosedScopes { block_id, scopes } => {
-                write!(formatter, "return from block {block_id:?} leaves active scopes {scopes:?}",)
+                write!(formatter, "exit from block {block_id:?} leaves active scopes {scopes:?}",)
             }
         }
     }
@@ -183,10 +180,11 @@ pub async fn verify(functions: &IRFunctionMap) -> Result<(), VerificationError> 
                 },
             })?;
 
-        // Every path that leaves the function must close all scopes. Infinite
-        // paths have no return boundary and are checked by merges instead.
+        // Every path that leaves the function must close all scopes, abandon
+        // paths included. Infinite paths have no return boundary and are
+        // checked by merges instead.
         for block_id in solution.reachable_blocks() {
-            if !function.block_terminator(block_id).is_some_and(Terminator::is_return) {
+            if !function.block_terminator(block_id).is_some_and(Terminator::is_exit) {
                 continue;
             }
             if let Some(ScopeStack::Active(scopes)) = solution.block_exit(block_id)
@@ -230,7 +228,7 @@ mod test {
         )?;
 
         for block_id in solution.reachable_blocks() {
-            if matches!(cfg.terminator(block_id), Some(Terminator::Return(_)))
+            if cfg.terminator(block_id).is_some_and(Terminator::is_exit)
                 && let Some(super::ScopeStack::Active(scopes)) = solution.block_exit(block_id)
                 && !scopes.is_empty()
             {

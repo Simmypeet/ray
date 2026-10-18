@@ -73,6 +73,11 @@ impl Builder<'_> {
                 self.lower_edge(source_block, conditional.then_block(), source),
                 self.lower_edge(source_block, conditional.else_block(), source),
             )),
+            // Only an abandon edge reaches it, and direct form never takes
+            // one, so abandon blocks are not lowered.
+            IRTerminator::Abandon => {
+                unreachable!("an abandon block is not lowered in direct form")
+            }
             IRTerminator::Return(value) => Terminator::Return(Some(value.map_or_else(
                 || Operand::Constant(Constant::Unit),
                 |value| self.expression_operand(value),

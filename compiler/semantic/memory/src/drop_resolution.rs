@@ -66,9 +66,29 @@ impl DropFailure {
     /// Reports this failure against the value declared at `span`.
     #[must_use]
     pub fn into_diagnostic(self, span: RelativeSpan) -> Diagnostic {
+        self.into_diagnostic_at(span, None)
+    }
+
+    /// Reports this failure against the value declared at `span`, which is
+    /// held across the suspension point at `suspension_span` and dropped if
+    /// the function is abandoned there.
+    #[must_use]
+    pub fn into_suspension_diagnostic(
+        self,
+        span: RelativeSpan,
+        suspension_span: RelativeSpan,
+    ) -> Diagnostic {
+        self.into_diagnostic_at(span, Some(suspension_span))
+    }
+
+    fn into_diagnostic_at(
+        self,
+        span: RelativeSpan,
+        suspension_span: Option<RelativeSpan>,
+    ) -> Diagnostic {
         match self {
             Self::Unresolved(trait_ref, error) => {
-                UnresolvedScopeDrop::new(span, trait_ref, error).into()
+                UnresolvedScopeDrop::new(span, trait_ref, error, suspension_span).into()
             }
             Self::UnsatisfiedPredicate(instance_id, predicate) => {
                 Diagnostic::UnsatisfiedScopeDropPredicate(PredicateObligation::new(

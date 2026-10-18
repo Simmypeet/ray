@@ -42,6 +42,7 @@ impl Report for NotAllPathsReturnValue {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable, From,
 )]
+#[allow(clippy::large_enum_variant)]
 pub enum Diagnostic {
     NotAllPathsReturnValue(NotAllPathsReturnValue),
     Memory(rayc_memory::Diagnostic),

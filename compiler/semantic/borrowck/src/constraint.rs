@@ -392,8 +392,13 @@ impl ConstraintCollector<'_> {
             }
 
             // Unit holds no region, and the values a jump passes are related by
-            // the phis of its target.
-            Some(Terminator::Return(None) | Terminator::Jump(_) | Terminator::Conditional(_))
+            // the phis of its target. An abandoned function returns nothing.
+            Some(
+                Terminator::Return(None)
+                | Terminator::Jump(_)
+                | Terminator::Conditional(_)
+                | Terminator::Abandon,
+            )
             | None => {}
         }
     }

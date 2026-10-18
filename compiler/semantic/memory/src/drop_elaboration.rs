@@ -3,13 +3,14 @@ use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_ir::{
     address::{Address, Local},
     cfg::{
-        AddressDrop, ControlFlowEdge, ExprDiscard, Instruction, InstructionInsertion, Point,
-        Terminator,
+        AddressDrop, BlockID, ControlFlowEdge, ExprDiscard, Instruction, InstructionInsertion,
+        Point, Terminator,
     },
     ir_expr::IRExprID,
-    ir_function::{FunctionID, IRFunctionMap},
+    ir_function::{FunctionID, IRFunction, IRFunctionMap},
     scope::ScopeID,
 };
+use rayc_lexical::tree::RelativeSpan;
 use rayc_type::ty::Ty;
 
 use crate::{
@@ -52,9 +53,58 @@ pub(crate) struct DropElaborator {
     /// Values already reported, so a value which is dropped on several paths
     /// is reported once.
     reported_values: FxHashSet<IRExprID>,
+
+    /// The abandon block of each suspension point, with the source of that
+    /// suspension point. What such a block drops is held across it.
+    abandon_blocks: FxHashMap<BlockID, RelativeSpan>,
 }
 
 impl DropElaborator {
+    /// Creates an elaborator for the drops of `function`.
+    pub(crate) fn new(function: &IRFunction) -> Self {
+        let abandon_blocks = function
+            .reachables()
+            .blocks()
+            .filter_map(|block_id| {
+                let abandon_block = function.block_terminator(block_id)?.abandon_block()?;
+                let span = function
+                    .point_span(function.terminator_point(block_id))
+                    .expect("a suspension point evaluates an expression");
+                Some((abandon_block, span))
+            })
+            .collect();
+
+        Self { abandon_blocks, ..Self::default() }
+    }
+
+    /// Returns the source of the suspension point that a drop at `site` runs
+    /// after, when the function is dropped while it is suspended there.
+    fn suspension_span(&self, site: DropSite) -> Option<RelativeSpan> {
+        match site {
+            DropSite::Before(point) => self.abandon_blocks.get(&point.block_id()).copied(),
+
+            // An abandon block has only its suspension point as predecessor,
+            // so no edge into one is balanced.
+            DropSite::Edge(_) => None,
+        }
+    }
+
+    /// Reports the `failures` to drop the value declared or evaluated at
+    /// `span`, at `site`.
+    fn report_failures(
+        &self,
+        site: DropSite,
+        span: RelativeSpan,
+        failures: Vec<DropFailure>,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) {
+        let suspension_span = self.suspension_span(site);
+        diagnostics.extend(failures.into_iter().map(|failure| match suspension_span {
+            Some(suspension_span) => failure.into_suspension_diagnostic(span, suspension_span),
+            None => failure.into_diagnostic(span),
+        }));
+    }
+
     /// Selects the drops which run immediately before the
     /// `ScopePop(scope_id)` at `point`, given the stack `state` just before
     /// that instruction.
@@ -318,8 +368,7 @@ impl DropElaborator {
             Err(failures) => {
                 if self.reported.insert((root, ty)) {
                     let span = problem.binding_span(root).await;
-                    diagnostics
-                        .extend(failures.into_iter().map(|failure| failure.into_diagnostic(span)));
+                    self.report_failures(site, span, failures, diagnostics);
                 }
             }
         }
@@ -349,8 +398,7 @@ impl DropElaborator {
             Err(failures) => {
                 if self.reported_values.insert(value) {
                     let span = problem.value_span(value);
-                    diagnostics
-                        .extend(failures.into_iter().map(|failure| failure.into_diagnostic(span)));
+                    self.report_failures(site, span, failures, diagnostics);
                 }
             }
         }
@@ -414,7 +462,7 @@ fn edge_drop_point(
         Some(Terminator::Conditional(_) | Terminator::Suspend(_) | Terminator::Handle(_)) => {
             functions.split_edge(function_id, edge)
         }
-        Some(Terminator::Return(_)) | None => {
+        Some(Terminator::Return(_) | Terminator::Abandon) | None => {
             unreachable!("a control-flow edge does not leave through a return")
         }
     };

@@ -4,10 +4,10 @@ use qbice::storage::intern::Interned;
 use rayc_arena::ID;
 use rayc_ir::{
     address::{Address, Local, Projection},
-    cfg::{Block, Instruction, Point},
+    cfg::{Block, Instruction, Point, Suspend, Terminator},
     dataflow::{DataflowProblem, JoinLattice},
     ir_closure::ClosureParameter,
-    ir_expr::{IRExpr, load::Load},
+    ir_expr::{IRExpr, IRExprKind, load::Load, tuple::Tuple},
     ir_function::{FunctionID, IRFunctionMap},
     ir_variable::IRVariableID,
 };
@@ -601,4 +601,80 @@ async fn join_preserves_each_possible_last_move() {
     };
     assert_eq!(history.points().collect::<Vec<_>>(), vec![point(1), point(2)]);
     assert!(!history.may_be_uninitialized_without_move());
+}
+
+// input: `x = ()`, then `held` is evaluated and `argument` is given to a
+//        suspension point, whose abandon block pops the root scope
+// premise: an abandon edge is an ordinary edge, and the arguments of the
+//          suspended expression are moved into it on every edge
+// output: the abandon block starts with `x` initialized and `held` pending,
+//         so both are dropped there, while `argument` and the value of the
+//         suspended expression are not
+#[tokio::test]
+async fn abandon_block_owns_what_is_held_across_its_suspension_point() {
+    let engine = create_minimal_engine().await;
+    let ty = Ty::new_unit(&engine);
+    let mut functions = IRFunctionMap::new(GlobalSymbolID::default());
+    let capture_map = functions.new_capture_map();
+    let function_id = functions.insert_closure(ty.clone(), ty.clone(), capture_map);
+    let root_scope = functions.root_scope_id(function_id);
+    let variable_id =
+        functions.create_variable_in_scope(function_id, root_scope, ty.clone(), test_span());
+    let unit = || IRExpr::new(IRExprKind::Tuple(Tuple::new(Vec::new())), test_span(), ty.clone());
+
+    // The entry block stores `x`, evaluates `held` and suspends with
+    // `argument`.
+    let entry = functions.entry_block(function_id);
+    let resume = functions.create_block(function_id);
+    let abandon = functions.create_block(function_id);
+    let stored = functions.insert_expression(function_id, unit());
+    let held = functions.insert_expression(function_id, unit());
+    let argument = functions.insert_expression(function_id, unit());
+    let suspended = functions.insert_expression(
+        function_id,
+        IRExpr::new(IRExprKind::Tuple(Tuple::new(vec![argument])), test_span(), ty.clone()),
+    );
+    functions.push_scope_push_instruction(function_id, entry, root_scope);
+    functions.push_expression(function_id, entry, stored);
+    functions.push_store(
+        function_id,
+        entry,
+        Address::new_variable(variable_id, &engine),
+        stored,
+        test_span(),
+    );
+    functions.push_expression(function_id, entry, held);
+    functions.push_expression(function_id, entry, argument);
+    functions.set_terminator(
+        function_id,
+        entry,
+        Terminator::Suspend(Suspend::new(suspended, resume, abandon)),
+    );
+
+    // Both successors leave through the root scope.
+    for (block, terminator) in [(resume, Terminator::Return(None)), (abandon, Terminator::Abandon)]
+    {
+        functions.push_scope_pop_instruction(function_id, block, root_scope);
+        functions.set_terminator(function_id, block, terminator);
+    }
+
+    let mut problem =
+        stack_state_problem(Solver::without_givens(engine.clone()).await, &functions, function_id)
+            .await;
+    let solution = functions.get_function(function_id).solve_dataflow(&mut problem).await.unwrap();
+
+    let Some(StackState::Reachable(slots)) = solution.block_entry(abandon) else {
+        panic!("the abandon block should be reachable");
+    };
+    assert!(slots.state(Local::Variable(variable_id)).unwrap().is_initialized());
+    assert!(slots.is_pending(held));
+    assert!(!slots.is_pending(argument));
+    assert!(!slots.is_pending(suspended));
+
+    // The value of the suspended expression is defined on the resume edge
+    // only.
+    let Some(StackState::Reachable(slots)) = solution.block_entry(resume) else {
+        panic!("the resume block should be reachable");
+    };
+    assert!(slots.is_pending(suspended));
 }
