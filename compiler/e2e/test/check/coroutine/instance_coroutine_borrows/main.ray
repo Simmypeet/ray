@@ -1,0 +1,36 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+trait Reader[t]:
+    def read['a](self: t, value: &'a int32) -> int32 \ {Yield[int32]}
+
+
+# ERROR: the coroutine is dropped at the end of the function, and that drop
+# may use the borrow of `x`.
+def assignedWhileHeld[t](source: t) given (r: Reader[t], _: core.Drop[t]):
+    let mut x = 1
+    let k = coro r.read(source, x.&)
+    x = 2
+
+
+# OK: the storage of the coroutine ends with the block, before the assignment.
+def heldInBlock[t](source: t) given (r: Reader[t], _: core.Drop[t]):
+    let mut x = 1
+    if true:
+        let k = coro r.read(source, x.&)
+    x = 2
+
+
+trait Counter[]:
+    def count() -> int32 \ {Yield[int32]}
+
+
+# ERROR: the coroutine is pinned to storage local to the closure, and the
+# continuation that is returned refers to it.
+def returned() given (c: Counter[]):
+    let make = () -> coro c.count()
+
+
+def main() -> int32:
+    return 0

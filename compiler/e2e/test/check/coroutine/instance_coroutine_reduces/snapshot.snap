@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched types in variable assignment: expected `int32`, but found `Continuation[(), &mut <coroutine of map[bool; given <no-op drop instance>bool]>]`
+   ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_reduces/main.ray:38:20
+   │
+38 │     let k: int32 = coro Mapper[int32].map(1, true)
+   ╰╴                   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

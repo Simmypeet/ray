@@ -1,0 +1,42 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+trait Mapper[t]:
+    def map(self: t, value: u) given (_: core.Drop[u]) -> u \ {Yield[int32]}
+
+
+inst Doubler for Mapper[int32]:
+    def map(self: int32, value: v) given (_: core.Drop[v]) -> v \ {Yield[int32]}:
+        Yield.yield(self * 2)
+        return value
+
+
+def resultOf(k: core.Continuation[r, c]) given (co: core.Coroutine[c], _: core.Drop[c]) -> co.Return:
+    return resultOf(k)
+
+
+# OK: once the instance is known, the coroutine of the call through it is the
+# coroutine of the instance's method, so both have the same type.
+def sameType():
+    let mut k = coro Mapper[int32].map(1, true)
+    k = coro Doubler.map(2, false)
+    let result: bool = resultOf(k)
+
+
+# OK: a generic function, instantiated with a concrete instance.
+def generic[t, u](source: t, value: u) given (m: Mapper[t], dt: core.Drop[t], du: core.Drop[u]) -> u:
+    return resultOf(coro m.map(source, value))
+
+
+def instantiated():
+    let result: bool = generic(1, true)
+
+
+# ERROR: the type shows the method of the instance.
+def shown():
+    let k: int32 = coro Mapper[int32].map(1, true)
+
+
+def main() -> int32:
+    return 0

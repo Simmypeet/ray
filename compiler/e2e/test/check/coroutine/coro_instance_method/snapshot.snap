@@ -1,0 +1,30 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: where-clause obligation for `main.generator` is not satisfied
+   ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:49:5
+   │
+49 │     generator(coro s.put(source))
+   ╰╴    ━━━━━━━━━ `CoroutineInstance[&mut <coroutine of s.put>].Return` must equal `int32`
+
+[error]: use of moved value
+   ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:56:18
+   │
+55 │     let first = k
+   │                 ─ value moved here
+56 │     let second = k
+   ╰╴                 ━ value used here after it was moved
+
+[error]: no implicit instance found: `core.Drop[t]`
+   ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:62:13
+   │
+62 │     let k = coro s.next(source)
+   ╰╴            ━━━━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

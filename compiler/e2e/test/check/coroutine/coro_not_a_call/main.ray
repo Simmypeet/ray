@@ -5,10 +5,6 @@ eff Yield[t]:
 extern def abs(value: c_int) -> c_int
 
 
-trait Source[t]:
-    def next(self: t) -> int32
-
-
 def numbers() -> () \ {Yield[int32]}:
     Yield.yield(1)
 
@@ -31,11 +27,6 @@ def operation():
 # ERROR: an `extern def` has no body to suspend.
 def external():
     coro abs(1)
-
-
-# ERROR: the callee of a call through an instance is not known yet.
-def throughInstance[t](source: t) given (s: Source[t]):
-    coro s.next(source)
 
 
 # ERROR: a callable value is called through its `Def` instance.

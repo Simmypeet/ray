@@ -1,0 +1,30 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cannot assign to a place because it is borrowed
+   ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_borrows/main.ray:14:5
+   │
+13 │     let k = coro r.read(source, x.&)
+   │             ┬───────────────────┬───
+   │             │                   │
+   │             │                   immutable borrow occurs here
+   │             borrow later used here
+14 │     x = 2
+   ╰╴    ━━━━━ the borrowed place is assigned here
+
+[error]: cannot return a value referencing data owned by the current function
+   ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_borrows/main.ray:32:22
+   │
+32 │     let make = () -> coro c.count()
+   │                      ┯━━━━━━━━━━━━━
+   │                      │
+   │                      this returns a value referencing data owned by the current function
+   ╰╴                     the data is borrowed here
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

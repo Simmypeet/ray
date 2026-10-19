@@ -1,0 +1,66 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+trait Source[t]:
+    def next(self: t) -> int32 \ {Yield[int32]}
+
+
+trait Sink[t]:
+    def put(self: t) -> () \ {Yield[int32]}
+
+
+# The associated types of the coroutine of a call through an instance come
+# from the signature of the trait method.
+def generator(k: core.Continuation[r, c]) given (co: core.Coroutine[c], _: core.Drop[c]) where (
+    co.Return = int32,
+    co.Effect = {Yield[int32]},
+):
+    let held = k
+
+
+# OK: the instance is a given, so the callee is not known yet.
+def throughGiven[t](source: t) given (s: Source[t], _: core.Drop[t]):
+    generator(coro s.next(source))
+
+
+# OK: resuming the coroutine runs the method and forwards its effect.
+def resumed[t](source: t) given (s: Source[t], _: core.Drop[t]) -> int32 \ {Yield[int32]}:
+    let k = coro s.next(source)
+    return k(())
+
+
+# OK: the coroutine is driven by `handle`.
+def driven[t](source: t) given (s: Source[t], _: core.Drop[t]) -> int32:
+    let mut total = 0
+    let mut k = coro s.next(source)
+    while true:
+        handle k():
+            case Yield.yield(value) resume next:
+                total = total + value
+                k = next
+            case return result:
+                return total + result
+    return total
+
+
+# ERROR: `put` returns `()`, not `int32`.
+def wrongReturn[t](source: t) given (s: Sink[t], _: core.Drop[t]):
+    generator(coro s.put(source))
+
+
+# ERROR: the coroutine is not `Copy`, so the continuation is moved.
+def usedTwice[t](source: t) given (s: Source[t], _: core.Drop[t]):
+    let k = coro s.next(source)
+    let first = k
+    let second = k
+
+
+# ERROR: the coroutine holds its argument until it is resumed, and has to drop
+# it if it never is.
+def argumentMissingDrop[t](source: t) given (s: Source[t]):
+    let k = coro s.next(source)
+
+
+def main() -> int32:
+    return 0
