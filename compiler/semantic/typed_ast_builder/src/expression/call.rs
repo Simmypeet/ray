@@ -12,7 +12,9 @@ use rayc_symbol::{
 };
 use rayc_syntax::expression::{Call as CallSyn, DirectCall as DirectCallSyn};
 use rayc_type::{
-    poly_var::{build_subst_from_args, get_poly_var_map},
+    poly_var::{
+        GlobalPolyVarID, build_subst_from_args, get_enclosing_poly_var_maps, get_poly_var_map,
+    },
     signature::{get_effect_row, get_return_type},
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
@@ -66,21 +68,58 @@ impl ResolvedCallTarget<'_> {
         }
     }
 
-    /// Returns the called function when a `coro` can suspend it: a direct
-    /// call of a `def` that has a body.
+    /// Returns the type of the coroutine that a `coro` of this target
+    /// creates, where `call_subst` instantiates the type parameters of the
+    /// called symbol, or `None` when the target cannot be suspended.
     ///
-    /// A call through an instance has no known callee yet, an operation is
-    /// run by whoever handles it, and an `extern def` has no body to suspend.
-    const fn suspendable_function_id(&self) -> Option<GlobalSymbolID> {
+    /// A direct call of a `def` that has a body suspends that function. A
+    /// call through an instance suspends whichever implementation the
+    /// instance turns out to have. An operation is run by whoever handles it,
+    /// and an `extern def` has no body to suspend.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `call_subst` does not instantiate every parameter of the
+    /// suspended function and its enclosing symbols, or of the trait def of a
+    /// call through an instance.
+    async fn coroutine_ty(
+        &self,
+        call_subst: &Subst,
+        engine: &TrackedEngine,
+    ) -> Option<Interned<Ty>> {
         match self {
             Self::Direct { function_id, symbol_kind } => {
-                if matches!(symbol_kind, SymbolKind::Def | SymbolKind::InstanceDef) {
-                    Some(*function_id)
-                } else {
-                    None
+                if !matches!(symbol_kind, SymbolKind::Def | SymbolKind::InstanceDef) {
+                    return None;
                 }
+
+                // The substitution of a suspendable callee covers all of
+                // them: a `def` is enclosed by no polymorphic symbol, and the
+                // substitution of an instance's `def` includes the arguments
+                // of the instance.
+                let poly_vars = engine.get_enclosing_poly_var_maps(*function_id).await;
+                let poly_args = poly_vars.all_poly_vars().map(|poly_var_id| {
+                    call_subst.get(&poly_var_id).cloned().expect(
+                        "the call should instantiate every parameter of the coroutine's function",
+                    )
+                });
+                Some(Ty::new_def_coroutine(*function_id, poly_args, engine))
             }
-            Self::UnresolvedInstanceAssociated { .. } | Self::EffectOperation { .. } => None,
+
+            // The trait def's own parameters are the arguments; the instance
+            // tells those of its trait.
+            Self::UnresolvedInstanceAssociated { instance, trait_def_id, .. } => {
+                let poly_vars = engine.get_poly_var_map(*trait_def_id).await;
+                let args = poly_vars.iter().map(|(poly_var_id, _)| {
+                    call_subst
+                        .get(&GlobalPolyVarID::new(*trait_def_id, poly_var_id))
+                        .cloned()
+                        .expect("the call should instantiate every parameter of its trait def")
+                });
+                Some(Ty::new_trait_def_coroutine(*trait_def_id, instance.clone(), args, engine))
+            }
+
+            Self::EffectOperation { .. } => None,
         }
     }
 
@@ -333,8 +372,7 @@ impl TAstBuilder {
         call_span: RelativeSpan,
         span: RelativeSpan,
     ) -> TypedExprID {
-        // Only a function with a body of its own can be suspended so far.
-        let Some(function_id) = target.suspendable_function_id() else {
+        let Some(coroutine_ty) = target.coroutine_ty(&call_subst, self.engine()).await else {
             return self.reject_coro_operand(call_span, true, arguments, span).await;
         };
 
@@ -350,7 +388,7 @@ impl TAstBuilder {
         )
         .await;
 
-        self.build_coro(function_id, arguments, &call_subst, span).await
+        self.build_coro(coroutine_ty, arguments, span).await
     }
 
     /// Builds the call of `target` with `arguments`, where `call_subst`

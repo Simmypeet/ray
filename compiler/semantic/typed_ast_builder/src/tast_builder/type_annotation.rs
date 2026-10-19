@@ -103,7 +103,7 @@ async fn instantiation_of(expression: &TypedExpr, engine: &TrackedEngine) -> Opt
 
         // A `coro` carries the type arguments of the suspended function in
         // the coroutine type it creates.
-        TypedExprKind::Coro(coro) => Some(coro.coroutine().create_subst(engine).await),
+        TypedExprKind::Coro(coro) => Some(coro.coroutine().instantiation(engine).await),
 
         TypedExprKind::Identifier(_)
         | TypedExprKind::Literal(_)

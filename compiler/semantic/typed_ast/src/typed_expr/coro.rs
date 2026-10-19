@@ -14,8 +14,9 @@ use crate::typed_expr::{SubExprs, TypedExprID};
 /// the type of the expression is not the coroutine type itself.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Coro {
-    /// The type of the coroutine created, which names the suspended function
-    /// and instantiates its polymorphic parameters.
+    /// The type of the coroutine created, which names the suspended function,
+    /// or the trait method and the instance of a call through one, and
+    /// instantiates its polymorphic parameters.
     coroutine_ty: Interned<Ty>,
     arguments: Vec<TypedExprID>,
 }
@@ -34,8 +35,8 @@ impl Coro {
     #[must_use]
     pub const fn coroutine_ty(&self) -> &Interned<Ty> { &self.coroutine_ty }
 
-    /// Returns the coroutine type as the function it suspends and the
-    /// arguments it instantiates that function with.
+    /// Returns the coroutine type as what it suspends and the arguments it
+    /// instantiates that with.
     #[must_use]
     pub fn coroutine(&self) -> CoroutineView<'_> {
         self.coroutine_ty.as_coroutine_view().expect("`coro` creates a coroutine type")

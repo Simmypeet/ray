@@ -1,15 +1,9 @@
+use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_source_file::SourceElement;
-use rayc_symbol::{
-    GlobalSymbolID,
-    core_item::{CoreItem, get_core_item},
-};
+use rayc_symbol::core_item::{CoreItem, get_core_item};
 use rayc_syntax::expression::{Coro as CoroSyntax, Leaf, PostfixOperator};
-use rayc_type::{
-    poly_var::get_enclosing_poly_var_maps,
-    subst::Subst,
-    ty::{Mutability, Ty, TyKind, args::Args, lifetime::Lifetime},
-};
+use rayc_type::ty::{Mutability, Ty, TyKind, args::Args, lifetime::Lifetime};
 use rayc_typed_ast::typed_expr::{TypedExprID, coro::Coro, errored::Errored};
 
 use crate::{
@@ -69,33 +63,18 @@ impl TAstBuilder {
         self.insert_expression(Errored::new(children), span, ty).await
     }
 
-    /// Builds `coro function_id(arguments)`, where `call_subst` instantiates
-    /// the polymorphic parameters of `function_id` and of its enclosing
-    /// symbols, and the arguments were already checked against its
-    /// parameters.
+    /// Builds `coro f(arguments)`, where `coroutine_ty` is the type of the
+    /// coroutine of the call, and the arguments were already checked against
+    /// the parameters of its callee.
     ///
-    /// Evaluating it runs none of the function, so it introduces no effect:
-    /// the expression only performs what its arguments perform.
+    /// Evaluating it runs none of the callee, so it introduces no effect: the
+    /// expression only performs what its arguments perform.
     pub(super) async fn build_coro(
         &mut self,
-        function_id: GlobalSymbolID,
+        coroutine_ty: Interned<Ty>,
         arguments: Vec<TypedExprID>,
-        call_subst: &Subst,
         span: RelativeSpan,
     ) -> TypedExprID {
-        // The coroutine type is the function and its polymorphic arguments.
-        // The substitution of a suspendable callee covers all of them: a
-        // `def` is enclosed by no polymorphic symbol, and the substitution
-        // of an instance's `def` includes the arguments of the instance.
-        let poly_vars = self.engine().get_enclosing_poly_var_maps(function_id).await;
-        let poly_args = poly_vars.all_poly_vars().map(|poly_var_id| {
-            call_subst
-                .get(&poly_var_id)
-                .cloned()
-                .expect("the call should instantiate every parameter of the coroutine's function")
-        });
-        let coroutine_ty = Ty::new_coroutine(function_id, poly_args, self.engine());
-
         // The coroutine is pinned to hidden storage, and the continuation
         // only refers to it. Type inference ignores lifetimes, so the
         // lifetime of that borrow is left for the borrow checker.

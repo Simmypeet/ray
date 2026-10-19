@@ -107,7 +107,7 @@ impl Report for UnsupportedCoroCallee {
                     .message("a coroutine cannot be created from this call")
                     .build(),
             )
-            .help_message("only a direct call of a `def` can be suspended for now")
+            .help_message("only a call of a named `def` or trait method can be suspended for now")
             .build()
     }
 }
