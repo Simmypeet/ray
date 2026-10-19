@@ -493,7 +493,7 @@ impl Solver {
         // instantiated with the arguments of the coroutine type.
         let engine = self.engine().clone();
         let substitution = view.create_subst(&engine).await;
-        let parameters = engine.get_parameter_map(view.def_id()).await;
+        let parameters = engine.get_parameter_map(view.signature_id()).await;
         let upvars = parameters
             .iter()
             .map(|(_, parameter)| parameter.ty().apply_subst_or_clone(&substitution, &engine))
@@ -738,9 +738,9 @@ impl Solver {
 
         // has no viable candidates at all
         if viable.is_empty() {
-            // however, if any candidate failed due to a cycle, report that instead
-            // of the NoInstance error, since it is more informative than just saying
-            // "no instance found"
+            // however, if any candidate failed due to a cycle, report that
+            // instead of the NoInstance error, since it is more
+            // informative than just saying "no instance found"
             //
             // TODO: should we just return `NoInstance` with all the information
             // about failed candidates
@@ -805,8 +805,8 @@ impl Solver {
             arguments.push(argument);
         }
 
-        // Instantiate this candidate's predicates only after every ordinary and given
-        // parameter has a selected argument.
+        // Instantiate this candidate's predicates only after every ordinary and
+        // given parameter has a selected argument.
         let where_clause = self.engine().get_where_clause(instance_id).await;
         extend_unique_obligations(
             &mut obligations,

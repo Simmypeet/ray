@@ -243,7 +243,7 @@ impl Solver {
         let variance = relate.variance();
         let step = match (&**relate.lesser(), &**relate.greater()) {
             (Ty::Application(lesser), Ty::Application(greater)) => {
-                match (lesser.is_instance_associated(), greater.is_instance_associated()) {
+                match (lesser.is_projection(), greater.is_projection()) {
                     // Two irreducible projections are only known to be equal
                     // when they are equal modulo lifetimes. Their arguments
                     // are invariant, so each pair of lifetimes is related
@@ -326,9 +326,7 @@ impl Solver {
             }
 
             _ => {
-                if relate.lesser().is_instance_associated()
-                    || relate.greater().is_instance_associated()
-                {
+                if relate.lesser().is_projection() || relate.greater().is_projection() {
                     Ok(Step::NoProgress)
                 } else {
                     Err(Error::Conflicted)

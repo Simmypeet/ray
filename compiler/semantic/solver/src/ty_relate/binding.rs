@@ -27,11 +27,7 @@ impl Solver {
         relate_env: &TyRelatingEnvironment,
     ) -> Result<Step, Error> {
         if !can_bind(relate_env, relating_side, VariableKind::Poly) {
-            return if ty.is_instance_associated() {
-                Ok(Step::NoProgress)
-            } else {
-                Err(Error::Conflicted)
-            };
+            return if ty.is_projection() { Ok(Step::NoProgress) } else { Err(Error::Conflicted) };
         }
 
         if ty.has_poly_variable(&poly_var) {
@@ -82,11 +78,7 @@ impl Solver {
             // technically, the instance associated can be reduced into something that can
             // be equal to this inference variable and thus discharging the
             // constraint
-            return if ty.is_instance_associated() {
-                Ok(Step::NoProgress)
-            } else {
-                Err(Error::Conflicted)
-            };
+            return if ty.is_projection() { Ok(Step::NoProgress) } else { Err(Error::Conflicted) };
         }
 
         if var.kind() != ty.kind_of(self.engine()).await {
@@ -102,7 +94,7 @@ impl Solver {
                 {
                     // associated type could reduce to a type that satisfies the constraint in the
                     // future, don't make it a conflict yet
-                    return if ty_application.is_instance_associated() {
+                    return if ty_application.is_projection() {
                         Ok(Step::NoProgress)
                     } else {
                         Err(Error::Conflicted)

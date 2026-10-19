@@ -163,7 +163,7 @@ impl Solver {
 
         // A coroutine type is never `Copy`, even when a given says so: a copy
         // of a suspended coroutine could be resumed twice, and would still
-        // point into the original where a saved local borrows another.
+        // point into the original where a saved local borrows another. 
         if goal.implementor().as_coroutine_view().is_some() {
             return Some(false);
         }
@@ -312,7 +312,8 @@ async fn structural_fields(
             | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
-            | ApplicationView::Coroutine(_)
+            | ApplicationView::DefCoroutine(_)
+            | ApplicationView::TraitDefCoroutine(_)
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
