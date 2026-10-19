@@ -72,7 +72,7 @@ impl TAstBuilder {
                 TypedExprKind::Closure(TypedClosure::new(function_id)),
                 Ty::new_closure(
                     Closure::new(owner_id, closure_id, poly_vars.all_poly_var_len()),
-                    poly_vars.all_poly_vars().map(|id| self.engine().intern(Ty::PolyVar(id))),
+                    poly_vars.identity_args(self.engine()),
                     parameter_types,
                     return_type,
                     effect_row,

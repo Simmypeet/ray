@@ -28,8 +28,7 @@ use rayc_symbol::{
 use rayc_target::TargetID;
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
-    subst::Subst,
-    ty::{Ty, TyKind, lifetime::Lifetime},
+    ty::{Ty, lifetime::Lifetime},
 };
 
 use crate::generator::Generator;
@@ -136,22 +135,14 @@ async fn lifetime_erased_instance(
     solver: &Solver,
 ) -> Option<MonoDefInstance> {
     let poly_vars = engine.get_enclosing_poly_var_maps(def_id).await;
-    if !poly_vars.all_poly_vars_with_kind().all(|(_, kind)| is_erased_by_codegen(kind)) {
+    if !poly_vars.has_only_lifetimes() {
         return None;
     }
 
     let erased = Ty::new_lifetime(Lifetime::Erased, engine);
     let substitution =
-        poly_vars.all_poly_vars().map(|poly_var| (poly_var, erased.clone())).collect::<Subst>();
+        poly_vars.subst_from_args(std::iter::repeat_n(erased, poly_vars.all_poly_var_len()));
     Some(MonoDefInstance::new(def_id, substitution, solver).await)
-}
-
-/// Whether arguments of this kind are erased before code generation.
-const fn is_erased_by_codegen(kind: TyKind) -> bool {
-    match kind {
-        TyKind::Lifetime => true,
-        TyKind::Star | TyKind::EffectRow | TyKind::Instance => false,
-    }
 }
 
 /// Whether a symbol with a body is generated from that body, as opposed to

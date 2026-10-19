@@ -163,7 +163,7 @@ impl Solver {
 
         // A coroutine type is never `Copy`, even when a given says so: a copy
         // of a suspended coroutine could be resumed twice, and would still
-        // point into the original where a saved local borrows another. 
+        // point into the original where a saved local borrows another.
         if goal.implementor().as_coroutine_view().is_some() {
             return Some(false);
         }

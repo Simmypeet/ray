@@ -29,13 +29,10 @@ pub(super) async fn resolve(
 
     // Compare candidates through the solver so lexical matching observes the
     // same reductions and visible predicates as every other resolution step.
-    for candidate_id in lexical_scope.all_poly_vars() {
+    for (candidate_id, candidate) in lexical_scope.instances() {
         if matching_scope.is_some_and(|scope| scope != candidate_id.parent_id()) {
             break;
         }
-        let Some(candidate) = lexical_scope.trait_ref_of(candidate_id) else {
-            continue;
-        };
 
         if let Some(outlives) = solver.relate_trait_refs_without_unify(candidate, required).await {
             matching_scope = Some(candidate_id.parent_id());

@@ -3,7 +3,7 @@ use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     poly_var::get_enclosing_poly_var_maps,
-    subst::{Subst, Substitutable},
+    subst::Subst,
     ty::{
         Ty,
         application::{ClosureID, ClosureView, NominalDropInstanceView, View as ApplicationView},
@@ -39,15 +39,15 @@ impl MonoDefInstance {
         }
         let engine = solver.engine();
         let maps = engine.get_enclosing_poly_var_maps(def_id).await;
-        let mut substitution = Subst::new_empty();
-        for variable in maps.all_poly_vars() {
-            let value =
-                engine.intern(Ty::PolyVar(variable)).apply_subst_or_clone(&arguments, engine);
-            let value = solver.normalize(&value).await;
+        let mut substitution = maps
+            .restrict_subst(&arguments)
+            .expect("definition arguments must instantiate every polymorphic variable");
+        for value in substitution.codomain_mut() {
+            let normalized = solver.normalize(value).await;
 
             // Lifetimes never affect code generation, so `f['a]` and `f['b]`
             // share one instance.
-            let value = Ty::erase_lifetimes(&value, engine).await;
+            *value = Ty::erase_lifetimes(&normalized, engine).await;
             assert!(
                 value.recursive_iter().all(|ty| match ty {
                     Ty::Application(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => true,
@@ -55,7 +55,6 @@ impl MonoDefInstance {
                 }),
                 "definition arguments must be concrete: {value:?}"
             );
-            substitution.insert(variable, value);
         }
         Self { def_id, substitution }
     }
@@ -191,9 +190,7 @@ impl MonoClosureInstance {
         let engine = solver.engine();
         let maps = engine.get_enclosing_poly_var_maps(closure.owner_id()).await;
 
-        let variables = maps.all_poly_vars();
-        let substitution =
-            variables.zip(closure.owner_arguments().iter().cloned()).collect::<Subst>();
+        let substitution = maps.subst_from_args(closure.owner_arguments().iter().cloned());
 
         assert_eq!(
             substitution.len(),

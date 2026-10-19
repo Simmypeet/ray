@@ -98,11 +98,9 @@ impl ResolvedCallTarget<'_> {
                 // substitution of an instance's `def` includes the arguments
                 // of the instance.
                 let poly_vars = engine.get_enclosing_poly_var_maps(*function_id).await;
-                let poly_args = poly_vars.all_poly_vars().map(|poly_var_id| {
-                    call_subst.get(&poly_var_id).cloned().expect(
-                        "the call should instantiate every parameter of the coroutine's function",
-                    )
-                });
+                let poly_args = poly_vars.args_from_subst(call_subst).expect(
+                    "the call should instantiate every parameter of the coroutine's function",
+                );
                 Some(Ty::new_def_coroutine(*function_id, poly_args, engine))
             }
 

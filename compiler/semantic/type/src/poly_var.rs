@@ -345,7 +345,9 @@ impl PolyVarStack {
         })
     }
 
-    pub fn all_poly_vars(&self) -> impl Iterator<Item = GlobalPolyVarID> {
+    /// Returns every variable of the stack in argument order: those of the
+    /// innermost symbol first, each map in declaration order.
+    fn all_poly_vars(&self) -> impl Iterator<Item = GlobalPolyVarID> {
         self.poly_var_maps.iter().flat_map(|(symbol_id, poly_var_map)| {
             poly_var_map
                 .iter()
@@ -353,12 +355,49 @@ impl PolyVarStack {
         })
     }
 
-    pub fn all_poly_vars_with_kind(&self) -> impl Iterator<Item = (GlobalPolyVarID, TyKind)> + '_ {
-        self.poly_var_maps.iter().flat_map(|(symbol_id, poly_var_map)| {
-            poly_var_map.iter().map(move |(poly_var_id, poly_var)| {
-                (GlobalPolyVarID::new(*symbol_id, poly_var_id), poly_var.kind())
-            })
+    /// Whether every variable of the stack is a lifetime, which is also the
+    /// case when the stack has no variable at all.
+    #[must_use]
+    pub fn has_only_lifetimes(&self) -> bool {
+        self.poly_var_maps.iter().all(|(_, poly_var_map)| {
+            poly_var_map.iter().all(|(_, poly_var)| poly_var.kind() == TyKind::Lifetime)
         })
+    }
+
+    /// Returns the arguments that `subst` gives every variable of the stack,
+    /// or `None` if `subst` leaves any of them out.
+    ///
+    /// The arguments are in argument order: those of the innermost symbol
+    /// first, each in declaration order.
+    #[must_use]
+    pub fn args_from_subst(&self, subst: &Subst) -> Option<Vec<Interned<Ty>>> {
+        self.all_poly_vars().map(|poly_var_id| subst.get(&poly_var_id).cloned()).collect()
+    }
+
+    /// Returns the substitution that maps the variables of the stack to
+    /// `args`, which are in the argument order of [`Self::args_from_subst`].
+    ///
+    /// The inverse of [`Self::args_from_subst`]. When the lengths differ, the
+    /// surplus variables or arguments are left out.
+    #[must_use]
+    pub fn subst_from_args(&self, args: impl IntoIterator<Item = Interned<Ty>>) -> Subst {
+        self.all_poly_vars().zip(args).collect()
+    }
+
+    /// Returns the mappings of `subst` for the variables of the stack alone,
+    /// or `None` if `subst` leaves any of them out.
+    #[must_use]
+    pub fn restrict_subst(&self, subst: &Subst) -> Option<Subst> {
+        self.all_poly_vars()
+            .map(|poly_var_id| Some((poly_var_id, subst.get(&poly_var_id)?.clone())))
+            .collect()
+    }
+
+    /// Returns the variables of the stack as types, in the order of
+    /// [`Self::args_from_subst`]: the arguments that instantiate the stack
+    /// with itself.
+    pub fn identity_args(&self, engine: &TrackedEngine) -> impl Iterator<Item = Interned<Ty>> {
+        self.all_poly_vars().map(|poly_var_id| Ty::new_poly_var(poly_var_id, engine))
     }
 }
 

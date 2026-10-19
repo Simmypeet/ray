@@ -264,7 +264,7 @@ impl<'x> DefCoroutineView<'x> {
     pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
         let poly_vars = engine.get_enclosing_poly_var_maps(self.def_id).await;
 
-        poly_vars.all_poly_vars().zip(self.poly_args.iter().cloned()).collect()
+        poly_vars.subst_from_args(self.poly_args.iter().cloned())
     }
 }
 
