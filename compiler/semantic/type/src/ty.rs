@@ -224,7 +224,8 @@ impl Ty {
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
-                | ApplicationView::Coroutine(_)
+                | ApplicationView::DefCoroutine(_)
+                | ApplicationView::TraitDefCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
@@ -351,7 +352,8 @@ impl Ty {
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
-                | ApplicationView::Coroutine(_)
+                | ApplicationView::DefCoroutine(_)
+                | ApplicationView::TraitDefCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
@@ -603,6 +605,12 @@ async fn reduce_type(
                 {
                     return Some((reduced, OutlivesConstraints::new()));
                 }
+                if let ApplicationView::TraitDefCoroutine(coroutine) = application.view()
+                    && let Some(reduced) =
+                        crate::reduce::reduce_trait_def_coroutine(coroutine, engine).await
+                {
+                    return Some((reduced, OutlivesConstraints::new()));
+                }
                 application.reduce(engine, givens).await.map(|(application, outlives)| {
                     (engine.intern(Ty::Application(application)), outlives)
                 })
@@ -839,14 +847,31 @@ impl Ty {
     /// for the polymorphic parameters of `def_id`, followed by those of each
     /// enclosing symbol, proceeding outwards.
     #[must_use]
-    pub fn new_coroutine(
+    pub fn new_def_coroutine(
         def_id: GlobalSymbolID,
         poly_args: impl IntoIterator<Item = Interned<Self>>,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
         engine.intern(Self::Application(Application::new(
-            Constant::Coroutine(def_id),
+            Constant::DefCoroutine(def_id),
             engine.intern_unsized(poly_args.into_iter().collect::<Vec<_>>()),
+        )))
+    }
+
+    /// Creates the type of a suspended call of the trait method
+    /// `trait_def_id` through `instance`. `args` are the arguments for the
+    /// method's own polymorphic parameters, in declaration order.
+    #[must_use]
+    pub fn new_trait_def_coroutine(
+        trait_def_id: GlobalSymbolID,
+        instance: Interned<Self>,
+        args: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        let args = std::iter::once(instance).chain(args).collect::<Vec<_>>();
+        engine.intern(Self::Application(Application::new(
+            Constant::TraitDefCoroutine(trait_def_id),
+            engine.intern_unsized(args),
         )))
     }
 
@@ -999,7 +1024,10 @@ impl Ty {
                         ApplicationView::InstanceAssociated(associated) => {
                             Some(associated.symbol_id())
                         }
-                        ApplicationView::Coroutine(coroutine) => Some(coroutine.def_id()),
+                        ApplicationView::DefCoroutine(coroutine) => Some(coroutine.def_id()),
+                        ApplicationView::TraitDefCoroutine(coroutine) => {
+                            Some(coroutine.trait_def_id())
+                        }
                         ApplicationView::Primitive(_)
                         | ApplicationView::Tuple(_)
                         | ApplicationView::Pointer(_)
@@ -1156,7 +1184,8 @@ impl TyDisplay<'_> {
             ApplicationView::CoroutineDropInstance(instance) => {
                 ("<coroutine drop instance>", instance.coroutine())
             }
-            ApplicationView::Coroutine(_)
+            ApplicationView::DefCoroutine(_)
+            | ApplicationView::TraitDefCoroutine(_)
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::Primitive(_)
@@ -1177,9 +1206,9 @@ impl TyDisplay<'_> {
     /// Formats a coroutine type by the function it suspends, as in
     /// `<coroutine of f[int32]>`. The arguments of the enclosing symbols are
     /// left out.
-    fn fmt_coroutine(
+    fn fmt_def_coroutine(
         &self,
-        coroutine: application::CoroutineView<'_>,
+        coroutine: application::DefCoroutineView<'_>,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
         let own_argument_count = self
@@ -1194,6 +1223,20 @@ impl TyDisplay<'_> {
             coroutine.poly_args().iter().take(own_argument_count),
             f,
         )?;
+        f.write_char('>')
+    }
+
+    /// Formats the coroutine type of a call through an instance by the
+    /// method it calls, as in `<coroutine of d.m[int32]>`.
+    fn fmt_trait_def_coroutine(
+        &self,
+        coroutine: application::TraitDefCoroutineView<'_>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        f.write_str("<coroutine of ")?;
+        self.fmt_ty(coroutine.instance(), f)?;
+        f.write_char('.')?;
+        self.fmt_symbol_application(coroutine.trait_def_id(), coroutine.args(), f)?;
         f.write_char('>')
     }
 
@@ -1240,7 +1283,8 @@ impl TyDisplay<'_> {
                 | ApplicationView::CoroutineDropInstance(_)
                 | ApplicationView::NominalDropInstance(_)) => self.fmt_drop_instance(view, f),
 
-                ApplicationView::Coroutine(coroutine) => self.fmt_coroutine(coroutine, f),
+                ApplicationView::DefCoroutine(coroutine) => self.fmt_def_coroutine(coroutine, f),
+                ApplicationView::TraitDefCoroutine(view) => self.fmt_trait_def_coroutine(view, f),
                 ApplicationView::CoroutineInstance(coroutine) => {
                     self.fmt_built_in_instance("CoroutineInstance", coroutine, f)
                 }
@@ -1533,7 +1577,8 @@ impl Ty {
             | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
-            | ApplicationView::Coroutine(_)
+            | ApplicationView::DefCoroutine(_)
+            | ApplicationView::TraitDefCoroutine(_)
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
@@ -1571,7 +1616,8 @@ impl Ty {
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
-                | ApplicationView::Coroutine(_)
+                | ApplicationView::DefCoroutine(_)
+                | ApplicationView::TraitDefCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
@@ -1605,19 +1651,66 @@ impl Ty {
     }
 
     #[must_use]
-    pub fn as_coroutine_view(&self) -> Option<application::CoroutineView<'_>> {
+    pub fn as_def_coroutine_view(&self) -> Option<application::DefCoroutineView<'_>> {
         let Self::Application(application) = self else {
             return None;
         };
 
-        let ApplicationView::Coroutine(coroutine_view) = application.view() else {
+        let ApplicationView::DefCoroutine(coroutine_view) = application.view() else {
             return None;
         };
 
         Some(coroutine_view)
     }
 
-    /// Returns the coroutine type this type is, or is a `&mut` to.
+    /// Returns the coroutine type this type is, whether it suspends a known
+    /// function or a call through an instance.
+    #[must_use]
+    pub fn as_coroutine_view(&self) -> Option<application::CoroutineView<'_>> {
+        let Self::Application(application) = self else {
+            return None;
+        };
+
+        match application.view() {
+            ApplicationView::DefCoroutine(view) => Some(application::CoroutineView::Def(view)),
+            ApplicationView::TraitDefCoroutine(view) => {
+                Some(application::CoroutineView::TraitDef(view))
+            }
+            ApplicationView::Primitive(_)
+            | ApplicationView::Tuple(_)
+            | ApplicationView::Pointer(_)
+            | ApplicationView::Reference(_)
+            | ApplicationView::Struct(_)
+            | ApplicationView::Instance(_)
+            | ApplicationView::InstanceAssociated(_)
+            | ApplicationView::Closure(_)
+            | ApplicationView::DefInstance(_)
+            | ApplicationView::NoOpDropInstance(_)
+            | ApplicationView::TupleDropInstance(_)
+            | ApplicationView::ClosureDropInstance(_)
+            | ApplicationView::NominalDropInstance(_)
+            | ApplicationView::CoroutineInstance(_)
+            | ApplicationView::ContinuationDefInstance(_)
+            | ApplicationView::CoroutineDropInstance(_)
+            | ApplicationView::Error => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_trait_def_coroutine_view(&self) -> Option<application::TraitDefCoroutineView<'_>> {
+        let Self::Application(application) = self else {
+            return None;
+        };
+
+        let ApplicationView::TraitDefCoroutine(view) = application.view() else {
+            return None;
+        };
+
+        Some(view)
+    }
+
+    /// Returns the coroutine type of either kind this type is, or is a `&mut`
+    /// to.
     ///
     /// Both have a built-in `Coroutine` instance: a continuation of a
     /// coroutine pinned to the stack only holds a `&mut` to it.
@@ -1649,7 +1742,8 @@ impl Ty {
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
-                | ApplicationView::Coroutine(_)
+                | ApplicationView::DefCoroutine(_)
+                | ApplicationView::TraitDefCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
@@ -1686,6 +1780,13 @@ impl Ty {
         matches!(self, Self::Application(application) if matches!(application.view(), ApplicationView::Tuple(tuple) if tuple.args().is_empty()))
     }
 
+    /// Returns whether this is a projection through an instance; see
+    /// [`Application::is_projection`].
+    #[must_use]
+    pub const fn is_projection(&self) -> bool {
+        matches!(self, Self::Application(application) if application.is_projection())
+    }
+
     #[must_use]
     pub fn is_instance_associated(&self) -> bool {
         match self {
@@ -1702,7 +1803,8 @@ impl Ty {
                 | ApplicationView::NoOpDropInstance(_)
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
-                | ApplicationView::Coroutine(_)
+                | ApplicationView::DefCoroutine(_)
+                | ApplicationView::TraitDefCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)

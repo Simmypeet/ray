@@ -2,9 +2,10 @@
 //!
 //! Following Rust RFC 1214, `ty: 'a` holds exactly when every component of
 //! `ty` outlives `'a`. A component is a lifetime, a polymorphic variable of any
-//! other kind (a type, an effect row, or a dictionary), or a rigid
-//! associated-type projection. Every other type constructor is transparent: it
-//! outlives `'a` when its arguments do.
+//! other kind (a type, an effect row, or a dictionary), or a rigid projection:
+//! an associated type, or the coroutine of a call through an instance. Every
+//! other type constructor is transparent: it outlives `'a` when its arguments
+//! do.
 
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
@@ -46,8 +47,8 @@ pub enum OutlivesComponent {
 
     /// A type that cannot be decomposed any further: a polymorphic variable of
     /// kind `Star`, `EffectRow` or `Instance`, the rigid `this` dictionary, or
-    /// a rigid associated-type projection. Whether it outlives a lifetime can
-    /// only come from an assumption.
+    /// a rigid projection. Whether it outlives a lifetime can only come from
+    /// an assumption.
     Opaque(Interned<Ty>),
 }
 
@@ -129,7 +130,7 @@ impl Application {
     /// whole as an outlives component instead of being decomposed.
     fn is_outlives_projection(&self) -> bool {
         match self.view() {
-            ApplicationView::InstanceAssociated(_) => true,
+            ApplicationView::InstanceAssociated(_) | ApplicationView::TraitDefCoroutine(_) => true,
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Pointer(_)
@@ -141,7 +142,7 @@ impl Application {
             | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
-            | ApplicationView::Coroutine(_)
+            | ApplicationView::DefCoroutine(_)
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)

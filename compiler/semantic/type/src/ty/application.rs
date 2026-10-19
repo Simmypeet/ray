@@ -3,7 +3,10 @@ use rayc_arena::ID;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 
-use super::{InferenceConstraint, Mutability, Primitive, Ty, TyKind, inference::Inference};
+use super::{
+    InferenceConstraint, Mutability, Primitive, Ty, TyKind, inference::Inference,
+    self_instance::SelfInstance,
+};
 use crate::{
     poly_var::{build_subst_from_args, get_enclosing_poly_var_maps},
     reduce::Reduce,
@@ -52,7 +55,18 @@ pub enum Constant {
     /// There is one coroutine type per function, not one per `coro`
     /// expression. Everything else about it is derived by substituting the
     /// arguments into the signature of the function.
-    Coroutine(GlobalSymbolID),
+    DefCoroutine(GlobalSymbolID),
+    /// The anonymous type of a suspended call through an instance that is not
+    /// known yet, identified by the `SymbolKind::TraitDef` symbol of the
+    /// called method. Its arguments are the instance, followed by the
+    /// arguments for the method's own polymorphic parameters in declaration
+    /// order; those of the trait are told by the instance.
+    ///
+    /// It is a projection, like [`Self::InstanceAssociated`]: once the
+    /// instance is a declared one, it reduces to the [`Self::DefCoroutine`] of
+    /// that instance's implementation of the method, and until then it is
+    /// equal only to itself.
+    TraitDefCoroutine(GlobalSymbolID),
     /// The built-in `Coroutine` dictionary whose sole argument is a coroutine
     /// type, or a `&mut` to one.
     CoroutineInstance,
@@ -227,14 +241,14 @@ impl<'x> ClosureDropInstanceView<'x> {
     pub const fn capture_instances(&self) -> &'x [Interned<Ty>] { self.capture_instances }
 }
 
-/// The type of a suspended function; see [`Constant::Coroutine`].
+/// The type of a suspended function; see [`Constant::DefCoroutine`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CoroutineView<'x> {
+pub struct DefCoroutineView<'x> {
     def_id: GlobalSymbolID,
     poly_args: &'x [Interned<Ty>],
 }
 
-impl<'x> CoroutineView<'x> {
+impl<'x> DefCoroutineView<'x> {
     /// Returns the function the coroutine suspends.
     #[must_use]
     pub const fn def_id(&self) -> GlobalSymbolID { self.def_id }
@@ -251,6 +265,104 @@ impl<'x> CoroutineView<'x> {
         let poly_vars = engine.get_enclosing_poly_var_maps(self.def_id).await;
 
         poly_vars.all_poly_vars().zip(self.poly_args.iter().cloned()).collect()
+    }
+}
+
+/// The type of a suspended call through an instance; see
+/// [`Constant::TraitDefCoroutine`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TraitDefCoroutineView<'x> {
+    trait_def_id: GlobalSymbolID,
+    instance: &'x Interned<Ty>,
+    args: &'x [Interned<Ty>],
+}
+
+impl<'x> TraitDefCoroutineView<'x> {
+    /// Returns the trait method the suspended call dispatches to.
+    #[must_use]
+    pub const fn trait_def_id(&self) -> GlobalSymbolID { self.trait_def_id }
+
+    /// Returns the instance the suspended call dispatches through.
+    #[must_use]
+    pub const fn instance(&self) -> &'x Interned<Ty> { self.instance }
+
+    /// Returns the arguments for the method's own polymorphic parameters.
+    #[must_use]
+    pub const fn args(&self) -> &'x [Interned<Ty>] { self.args }
+
+    /// Returns the substitution that instantiates the method's own
+    /// polymorphic parameters with [`Self::args`].
+    pub async fn create_own_subst(&self, engine: &TrackedEngine) -> Subst {
+        engine.build_subst_from_args(self.trait_def_id, self.args.iter()).await
+    }
+
+    /// Returns the substitution that instantiates the signature of the trait
+    /// method: its own parameters with [`Self::args`], the parameters of its
+    /// trait with the arguments of the trait reference that the instance
+    /// implements, and the trait's `this` with the instance.
+    ///
+    /// The trait reference is unknown while the instance is an inference
+    /// variable, or after an invalid declaration; the parameters of the trait
+    /// are then left out.
+    pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
+        let mut subst = self.create_own_subst(engine).await;
+        let Ok(trait_ref) = self.instance.instance_trait_ref(engine).await else {
+            return subst;
+        };
+
+        let trait_id = trait_ref.trait_id();
+        let trait_subst =
+            engine.build_subst_from_args(trait_id, trait_ref.args().interned_iter()).await;
+        for (poly_var_id, argument) in trait_subst.poly_var_mappings() {
+            subst.insert(poly_var_id, argument.clone());
+        }
+        subst.insert(SelfInstance::new(trait_id), self.instance.clone());
+
+        subst
+    }
+}
+
+/// A coroutine type of either kind, for what does not depend on whether the
+/// suspended function is known: its signature and its upvars.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CoroutineView<'x> {
+    /// The suspended function is known; see [`Constant::DefCoroutine`].
+    Def(DefCoroutineView<'x>),
+
+    /// The suspended call dispatches through an instance; see
+    /// [`Constant::TraitDefCoroutine`].
+    TraitDef(TraitDefCoroutineView<'x>),
+}
+
+impl CoroutineView<'_> {
+    /// Returns the symbol whose signature the coroutine runs: the suspended
+    /// function, or the trait method of a call through an instance.
+    #[must_use]
+    pub const fn signature_id(&self) -> GlobalSymbolID {
+        match self {
+            Self::Def(coroutine) => coroutine.def_id(),
+            Self::TraitDef(coroutine) => coroutine.trait_def_id(),
+        }
+    }
+
+    /// Returns the substitution that instantiates the signature of
+    /// [`Self::signature_id`].
+    pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
+        match self {
+            Self::Def(coroutine) => coroutine.create_subst(engine).await,
+            Self::TraitDef(coroutine) => coroutine.create_subst(engine).await,
+        }
+    }
+
+    /// Returns the substitution that instantiates the type parameters that
+    /// the `coro` creating this coroutine chose, as a call of the same callee
+    /// would: those of the suspended function and its enclosing symbols, or
+    /// the trait method's own.
+    pub async fn instantiation(&self, engine: &TrackedEngine) -> Subst {
+        match self {
+            Self::Def(coroutine) => coroutine.create_subst(engine).await,
+            Self::TraitDef(coroutine) => coroutine.create_own_subst(engine).await,
+        }
     }
 }
 
@@ -372,7 +484,8 @@ pub enum View<'x> {
     TupleDropInstance(TupleDropInstanceView<'x>),
     ClosureDropInstance(ClosureDropInstanceView<'x>),
     NominalDropInstance(NominalDropInstanceView<'x>),
-    Coroutine(CoroutineView<'x>),
+    DefCoroutine(DefCoroutineView<'x>),
+    TraitDefCoroutine(TraitDefCoroutineView<'x>),
     CoroutineInstance(&'x Interned<Ty>),
     ContinuationDefInstance(ContinuationDefInstanceView<'x>),
     CoroutineDropInstance(CoroutineDropInstanceView<'x>),
@@ -461,8 +574,13 @@ impl Application {
                     self.args.split_first().expect("nominal Drop instance has a nominal type");
                 View::NominalDropInstance(NominalDropInstanceView { nominal, external_instances })
             }
-            Constant::Coroutine(def_id) => {
-                View::Coroutine(CoroutineView { def_id, poly_args: &self.args })
+            Constant::DefCoroutine(def_id) => {
+                View::DefCoroutine(DefCoroutineView { def_id, poly_args: &self.args })
+            }
+            Constant::TraitDefCoroutine(trait_def_id) => {
+                let (instance, args) =
+                    self.args.split_first().expect("a trait-def coroutine has an instance");
+                View::TraitDefCoroutine(TraitDefCoroutineView { trait_def_id, instance, args })
             }
             Constant::CoroutineInstance => View::CoroutineInstance(&self.args[0]),
             Constant::ContinuationDefInstance => {
@@ -505,7 +623,8 @@ impl Application {
             | Constant::TupleDropInstance
             | Constant::ClosureDropInstance
             | Constant::NominalDropInstance
-            | Constant::Coroutine(_)
+            | Constant::DefCoroutine(_)
+            | Constant::TraitDefCoroutine(_)
             | Constant::ContinuationDefInstance
             | Constant::CoroutineInstance
             | Constant::CoroutineDropInstance
@@ -608,7 +727,8 @@ impl Application {
             | Constant::TupleDropInstance
             | Constant::ClosureDropInstance
             | Constant::NominalDropInstance
-            | Constant::Coroutine(_)
+            | Constant::DefCoroutine(_)
+            | Constant::TraitDefCoroutine(_)
             | Constant::ContinuationDefInstance
             | Constant::CoroutineInstance
             | Constant::CoroutineDropInstance
@@ -621,11 +741,20 @@ impl Application {
         matches!(self.constant, Constant::InstanceAssociated(_))
     }
 
+    /// Returns whether this application is a projection through an instance,
+    /// which may still reduce once the instance is known: an associated type
+    /// or the coroutine of a call through an instance.
+    #[must_use]
+    pub const fn is_projection(&self) -> bool {
+        matches!(self.constant, Constant::InstanceAssociated(_) | Constant::TraitDefCoroutine(_))
+    }
+
     #[must_use]
     pub(crate) async fn kind_of(&self, engine: &TrackedEngine) -> TyKind {
         match self.constant {
             Constant::Closure(_)
-            | Constant::Coroutine(_)
+            | Constant::DefCoroutine(_)
+            | Constant::TraitDefCoroutine(_)
             | Constant::Primitive(_)
             | Constant::Tuple
             | Constant::Pointer(_)
@@ -672,7 +801,8 @@ impl Application {
                 | View::TupleDropInstance(_)
                 | View::ClosureDropInstance(_)
                 | View::NominalDropInstance(_)
-                | View::Coroutine(_)
+                | View::DefCoroutine(_)
+                | View::TraitDefCoroutine(_)
                 | View::ContinuationDefInstance(_)
                 | View::CoroutineInstance(_)
                 | View::CoroutineDropInstance(_)
@@ -696,7 +826,8 @@ impl Application {
                 | View::TupleDropInstance(_)
                 | View::ClosureDropInstance(_)
                 | View::NominalDropInstance(_)
-                | View::Coroutine(_)
+                | View::DefCoroutine(_)
+                | View::TraitDefCoroutine(_)
                 | View::ContinuationDefInstance(_)
                 | View::CoroutineInstance(_)
                 | View::CoroutineDropInstance(_)

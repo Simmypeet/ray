@@ -130,7 +130,8 @@ impl Ty {
                 ApplicationView::CoroutineDropInstance(instance) => {
                     Ok(core_trait_ref(CoreItem::DropTrait, instance.coroutine()).await)
                 }
-                ApplicationView::Coroutine(_)
+                ApplicationView::DefCoroutine(_)
+                | ApplicationView::TraitDefCoroutine(_)
                 | ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)

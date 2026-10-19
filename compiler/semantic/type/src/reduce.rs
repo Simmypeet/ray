@@ -10,7 +10,9 @@ use rayc_symbol::{
 use crate::{
     constraint::outlives::OutlivesConstraints,
     instance_member::get_instance_member,
-    poly_var::{GlobalPolyVarID, build_subst_from_args, get_poly_var_map},
+    poly_var::{
+        GlobalPolyVarID, build_subst_from_args, get_enclosing_poly_var_maps, get_poly_var_map,
+    },
     signature::{get_effect_row, get_return_type},
     subst::Substitutable,
     ty::{Ty, application::View},
@@ -146,6 +148,59 @@ pub(crate) async fn reduce_instance_associated(
     Some(definition.apply_subst_or_clone(&substitution, engine))
 }
 
+/// Reduces the coroutine of a call through an instance to the coroutine of
+/// the method that the instance implements, once the instance is a declared
+/// one.
+///
+/// Any other instance keeps the projection rigid: a dictionary variable or
+/// `this` is not known yet, and the built-in dictionaries implement no method
+/// with a body that `coro` can suspend so far.
+pub(crate) async fn reduce_trait_def_coroutine(
+    coroutine: crate::ty::application::TraitDefCoroutineView<'_>,
+    engine: &TrackedEngine,
+) -> Option<Interned<Ty>> {
+    let instance = coroutine.instance().as_instance_view()?;
+
+    // The trait method and its implementation correspond by name, as for an
+    // associated type.
+    let name = engine.get_name(coroutine.trait_def_id()).await;
+    let member_id = engine.get_member_by_name(instance.symbol_id(), &name).await?;
+    if engine.get_symbol_kind(member_id).await != SymbolKind::InstanceDef {
+        return None;
+    }
+    let member = engine.get_instance_member(member_id).await?;
+    if member.trait_member_id() != coroutine.trait_def_id() {
+        return None;
+    }
+
+    let trait_poly_vars = engine.get_poly_var_map(coroutine.trait_def_id()).await;
+    if trait_poly_vars.len() != coroutine.args().len() {
+        return None;
+    }
+
+    // The instance application supplies the parameters of the instance. The
+    // method's own arguments move to the corresponding parameters of its
+    // implementation.
+    let mut substitution =
+        engine.build_subst_from_args(instance.symbol_id(), instance.args()).await;
+    for ((id, _), argument) in trait_poly_vars.iter().zip(coroutine.args()) {
+        let trait_var = GlobalPolyVarID::new(coroutine.trait_def_id(), id);
+        let implementation_var = member.poly_var_substitution().get(&trait_var)?.as_poly_var()?;
+
+        substitution.insert(*implementation_var, argument.clone());
+    }
+
+    // A coroutine type lists the arguments of the implementation first, then
+    // those of its instance.
+    let poly_vars = engine.get_enclosing_poly_var_maps(member_id).await;
+    let poly_args = poly_vars
+        .all_poly_vars()
+        .map(|poly_var_id| substitution.get(&poly_var_id).cloned())
+        .collect::<Option<Vec<_>>>()?;
+
+    Some(Ty::new_def_coroutine(member_id, poly_args, engine))
+}
+
 /// Reduces `Return` or `Effect` of the built-in `Coroutine` dictionary of
 /// `coroutine`, which is a coroutine type or a `&mut` to one, by
 /// substituting the arguments of the coroutine type into the signature of the
@@ -160,12 +215,14 @@ async fn reduce_coroutine_associated(
     }
     let coroutine = coroutine.as_coroutine_behind_reference()?;
 
-    // Neither associated type depends on where the coroutine is suspended.
+    // Neither associated type depends on where the coroutine is suspended. A
+    // call through an instance that is not known yet is told by the
+    // signature of the trait method.
     let member = associated.symbol_id();
     let signature = if member == engine.get_core_item(CoreItem::CoroutineReturn).await {
-        engine.get_return_type(coroutine.def_id()).await
+        engine.get_return_type(coroutine.signature_id()).await
     } else if member == engine.get_core_item(CoreItem::CoroutineEffect).await {
-        engine.get_effect_row(coroutine.def_id()).await
+        engine.get_effect_row(coroutine.signature_id()).await
     } else {
         return None;
     };
