@@ -129,7 +129,8 @@ impl Resolver {
             | ApplicationView::Struct(_)
             | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Closure(_)
-            | ApplicationView::Coroutine(_)
+            | ApplicationView::DefCoroutine(_)
+            | ApplicationView::TraitDefCoroutine(_)
             | ApplicationView::Error => {
                 panic!("an instance call should resolve to a type of instance kind")
             }
