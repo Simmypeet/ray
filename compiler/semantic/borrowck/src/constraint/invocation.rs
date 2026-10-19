@@ -11,7 +11,7 @@ use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     signature::{get_effect_row, get_return_type},
     subst::{Subst, Substitutable},
-    ty::Ty,
+    ty::{Ty, application::CoroutineView},
     variance::Variance,
 };
 
@@ -78,7 +78,7 @@ impl ConstraintCollector<'_> {
         ty: &Interned<Ty>,
     ) {
         let view = ty.as_coroutine_view().expect("a `Coroutine` expression has a coroutine type");
-        let function_id = view.def_id();
+        let function_id = view.signature_id();
         let substitution = view.create_subst(self.solver.engine()).await;
 
         self.collect_arguments(point, function_id, &substitution, coroutine.arguments()).await;
@@ -88,6 +88,12 @@ impl ConstraintCollector<'_> {
         // the coroutine to exist.
         self.collect_where_clause(point, function_id, &substitution).await;
         self.collect_instance_arguments(point, function_id, &substitution).await;
+
+        // As for a call, the dictionary that a call through an instance
+        // dispatches through must hold what it was built from.
+        if let CoroutineView::TraitDef(view) = view {
+            self.collect_dictionary_requirements(point, view.instance()).await;
+        }
     }
 
     /// Collects the constraints of running, at `point`, something whose effect

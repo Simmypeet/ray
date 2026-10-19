@@ -185,7 +185,7 @@ impl ConstraintCollector<'_> {
                         .expect("a coroutine `Drop` instance is built for a coroutine type");
                     let engine = self.solver.engine().clone();
                     let substitution = coroutine.create_subst(&engine).await;
-                    let parameters = engine.get_parameter_map(coroutine.def_id()).await;
+                    let parameters = engine.get_parameter_map(coroutine.signature_id()).await;
 
                     let upvars = parameters.iter().map(|(_, parameter)| {
                         parameter.ty().apply_subst_or_clone(&substitution, &engine)
@@ -225,7 +225,8 @@ impl ConstraintCollector<'_> {
                 | ApplicationView::Struct(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
-                | ApplicationView::Coroutine(_)
+                | ApplicationView::DefCoroutine(_)
+                | ApplicationView::TraitDefCoroutine(_)
                 | ApplicationView::Error => {}
             },
 
