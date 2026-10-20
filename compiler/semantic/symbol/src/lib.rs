@@ -6,7 +6,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_extend::extend;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_target::{CORE_TARGET_SEED, Global, TargetID, get_invocation_arguments, get_target_seed};
+use rayc_target::{CORE_TARGET_SEED, Global, TargetID, get_target_name, get_target_seed};
 use siphasher::sip128::Hasher128;
 
 pub mod accessibility;
@@ -223,10 +223,9 @@ pub async fn get_target_root_module_id(self: &TrackedEngine, target_id: TargetID
     if target_id == TargetID::CORE {
         self.calculate_qualified_name_id(std::iter::once("core"), target_id, None, 0).await
     } else {
-        let invocation_arguments = self.get_invocation_arguments(target_id).await;
-        let target_name = invocation_arguments.target_name();
+        let target_name = self.get_target_name(target_id).await;
 
-        self.calculate_qualified_name_id(std::iter::once(target_name.as_str()), target_id, None, 0)
+        self.calculate_qualified_name_id(std::iter::once(target_name.as_ref()), target_id, None, 0)
             .await
     }
 }

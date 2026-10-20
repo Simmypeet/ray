@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use rayc_qbice::InputSession;
 use rayc_source_file::{LocalSourceID, SourceFile};
-use rayc_target::{Arguments, Input, TargetID};
+use rayc_target::TargetID;
 
 /// The single virtual source path, independent of the checkout and working
 /// directory.
@@ -20,10 +20,8 @@ pub const SOURCE_URI: &str = "ray-core:/core.ray";
 pub async fn initialize(session: &mut InputSession) {
     let target_id = TargetID::CORE;
     let path = session.intern_unsized::<Path, _>(PathBuf::from(SOURCE_PATH));
-    let arguments = Arguments::new_check(
-        Input::builder().file(PathBuf::from(SOURCE_PATH)).target_name("core".to_owned()).build(),
-    );
-    session.set_input(rayc_target::Key { target_id }, session.intern(arguments)).await;
+    session.set_input(rayc_target::RootFilePathKey { target_id }, path.clone()).await;
+    session.set_input(rayc_target::NameKey { target_id }, session.intern_unsized("core")).await;
     session
         .set_input(rayc_target::LinkKey { target_id }, session.intern(std::iter::empty().collect()))
         .await;

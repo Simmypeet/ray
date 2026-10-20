@@ -5,7 +5,7 @@ use std::sync::Arc;
 use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use rayc_qbice::{Engine, InMemoryFactory};
 use rayc_source_file::{LocalSourceID, SourceFile};
-use rayc_target::{Arguments, Input, TargetID};
+use rayc_target::{Input, TargetID};
 
 async fn reproduce() {
     let directory = tempfile::tempdir().unwrap();
@@ -23,8 +23,7 @@ async fn reproduce() {
     rayc_ir_builder::black_box();
     engine.register_program(rayc_qbice::RAY_PROGRAM);
 
-    let arguments = Arguments::new_check(Input::builder().file(path.clone()).build());
-    let name = arguments.target_name();
+    let name = Input::builder().file(path.clone()).build().target_name();
     let target_id = TargetID::from_target_name(&name);
     let engine = Arc::new(engine);
     let mut session = engine.input_session().await;
@@ -45,7 +44,7 @@ async fn reproduce() {
             rayc_target::MapKey,
             session.intern(
                 [
-                    (session.intern_unsized(name), target_id),
+                    (session.intern_unsized(name.clone()), target_id),
                     (session.intern_unsized("core".to_owned()), TargetID::CORE),
                 ]
                 .into_iter()
@@ -53,7 +52,10 @@ async fn reproduce() {
             ),
         )
         .await;
-    session.set_input(rayc_target::Key { target_id }, session.intern(arguments)).await;
+    session
+        .set_input(rayc_target::RootFilePathKey { target_id }, session.intern_unsized(path.clone()))
+        .await;
+    session.set_input(rayc_target::NameKey { target_id }, session.intern_unsized(name)).await;
     session.set_input(rayc_target::IRVerificationKey { target_id }, false).await;
 
     // Each document has its own engine and single root source. Assign its

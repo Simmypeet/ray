@@ -105,7 +105,7 @@ pub async fn run(
                 rayc_target::MapKey,
                 input_session.intern(
                     [
-                        (input_session.intern_unsized(target_name), local_target_id),
+                        (input_session.intern_unsized(target_name.clone()), local_target_id),
                         (input_session.intern_unsized("core".to_owned()), TargetID::CORE),
                     ]
                     .into_iter()
@@ -114,18 +114,27 @@ pub async fn run(
             )
             .await;
 
+        // extract the target information required by the queries from the
+        // command line arguments
+        input_session
+            .set_input(
+                rayc_target::RootFilePathKey { target_id: local_target_id },
+                input_session.intern_unsized(argument.file_path().to_path_buf()),
+            )
+            .await;
+
+        input_session
+            .set_input(
+                rayc_target::NameKey { target_id: local_target_id },
+                input_session.intern_unsized(target_name),
+            )
+            .await;
+
         if let Some(explicit_seed) = argument.target_seed() {
             input_session
                 .set_input(rayc_target::SeedKey { target_id: local_target_id }, explicit_seed)
                 .await;
         }
-
-        input_session
-            .set_input(
-                rayc_target::Key { target_id: local_target_id },
-                input_session.intern(argument.clone()),
-            )
-            .await;
 
         input_session
             .set_input(

@@ -32,7 +32,7 @@ use rayc_syntax::{
     r#type::Type,
     where_clause::WhereClause,
 };
-use rayc_target::{TargetID, get_invocation_arguments};
+use rayc_target::{TargetID, get_target_name, get_target_root_file_path};
 
 use crate::diagnostic::{Diagnostic, ItemRedefinition, SourceFileLoadFail};
 
@@ -653,8 +653,7 @@ impl TableKey {
     /// Like in Rust, the root module owns the directory containing the root
     /// file.
     pub(crate) async fn new_target_root(target_id: TargetID, engine: &TrackedEngine) -> Self {
-        let arg = engine.get_invocation_arguments(target_id).await;
-        let path: Interned<Path> = engine.intern_unsized(arg.file_path().to_path_buf());
+        let path = engine.get_target_root_file_path(target_id).await;
         let directory =
             engine.intern_unsized(path.parent().unwrap_or_else(|| Path::new("")).to_path_buf());
 
@@ -663,7 +662,7 @@ impl TableKey {
             path,
             directory,
             module_id: engine.get_target_root_module_id(target_id).await,
-            qualified_name: engine.intern_unsized(vec![engine.intern_unsized(arg.target_name())]),
+            qualified_name: engine.intern_unsized(vec![engine.get_target_name(target_id).await]),
             declaration: None,
         }
     }

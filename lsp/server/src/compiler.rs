@@ -6,7 +6,7 @@ use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use rayc_qbice::{Engine, InMemoryFactory};
 use rayc_source_file::{LocalSourceID, SourceFile};
 use rayc_symbol_impl::source_map::create_source_map;
-use rayc_target::{Arguments, Input, TargetID};
+use rayc_target::{Input, TargetID};
 use tower_lsp::lsp_types::{Diagnostic, Url};
 
 use crate::diagnostic::convert;
@@ -34,13 +34,9 @@ impl Compiler {
         rayc_ir_builder::black_box();
         engine.register_program(rayc_qbice::RAY_PROGRAM);
 
-        let arguments = Arguments::new_check(Input::builder().file(path.clone()).build());
-        let name = arguments.target_name();
+        let name = Input::builder().file(path.clone()).build().target_name();
         let reserved_name = name == "core";
         let name = if reserved_name { "__reserved_core_document".to_owned() } else { name };
-        let arguments = Arguments::new_check(
-            Input::builder().file(path.clone()).target_name(name.clone()).build(),
-        );
         let target_id = TargetID::from_target_name(&name);
         let engine = Arc::new(engine);
         let mut session = engine.input_session().await;
@@ -61,7 +57,7 @@ impl Compiler {
                 rayc_target::MapKey,
                 session.intern(
                     [
-                        (session.intern_unsized(name), target_id),
+                        (session.intern_unsized(name.clone()), target_id),
                         (session.intern_unsized("core".to_owned()), TargetID::CORE),
                     ]
                     .into_iter()
@@ -69,7 +65,13 @@ impl Compiler {
                 ),
             )
             .await;
-        session.set_input(rayc_target::Key { target_id }, session.intern(arguments)).await;
+        session
+            .set_input(
+                rayc_target::RootFilePathKey { target_id },
+                session.intern_unsized(path.clone()),
+            )
+            .await;
+        session.set_input(rayc_target::NameKey { target_id }, session.intern_unsized(name)).await;
         session.set_input(rayc_target::IRVerificationKey { target_id }, false).await;
 
         // Each document has its own engine and single root source. Assign its
@@ -98,8 +100,9 @@ impl Compiler {
                 ..Diagnostic::default()
             }];
         }
-        // Updating the source input invalidates dependent queries while retaining
-        // the same engine across edits. Editor contents never touch the disk.
+        // Updating the source input invalidates dependent queries while
+        // retaining the same engine across edits. Editor contents never
+        // touch the disk.
         let mut session = self.engine.input_session().await;
         let target_id = self.target_id;
         let path = session.intern_unsized::<std::path::Path, _>(self.path.clone());

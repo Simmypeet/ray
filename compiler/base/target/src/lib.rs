@@ -124,9 +124,7 @@ pub struct Global<ID> {
 }
 
 /// The input to the compiler.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args, Encode, Decode, StableHash, Builder,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args, Builder)]
 pub struct Input {
     /// The input file to compile.
     ///
@@ -199,7 +197,7 @@ impl Input {
 }
 
 /// The output of the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args, Encode, Decode, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
 pub struct Output {
     /// The output path of the program. If not specified, the program will be
     /// written to the current working directory with the same name as the
@@ -209,7 +207,7 @@ pub struct Output {
 }
 
 /// Represents the `run` subcommand of the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args, Encode, Decode, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
 pub struct Run {
     /// The input file to run the program on.
     #[clap(flatten)]
@@ -225,7 +223,7 @@ pub struct Run {
 }
 
 /// Represents the `check` subcommand of the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Args)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
 pub struct Check {
     /// The input file to run the program on.
     #[clap(flatten)]
@@ -233,7 +231,7 @@ pub struct Check {
 }
 
 /// Represents the `build` subcommand of the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Args)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
 pub struct Build {
     /// The input file to run the program on.
     #[clap(flatten)]
@@ -253,20 +251,7 @@ pub struct Build {
 }
 
 /// The subcomamnds of the compiler.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Subcommand,
-    EnumAsInner,
-    Encode,
-    Decode,
-    StableHash,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Subcommand, EnumAsInner)]
 pub enum Command {
     /// Compiles the program as an executable binary and runs it.
     #[clap(name = "run")]
@@ -304,20 +289,7 @@ impl Command {
 }
 
 /// Optimizations level for the compiler.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Encode,
-    Decode,
-    StableHash,
-    clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, clap::ValueEnum)]
 #[allow(missing_docs)]
 pub enum OptimizationLevel {
     #[clap(name = "0")]
@@ -334,20 +306,7 @@ pub enum OptimizationLevel {
 }
 
 /// The compilation format of the target.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Encode,
-    Decode,
-    StableHash,
-    clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, clap::ValueEnum)]
 pub enum TargetKind {
     /// Compiles as an executable with a main function.
     #[clap(name = "bin")]
@@ -373,20 +332,7 @@ pub enum TargetKind {
 }
 
 /// Represents a CLI arguments invoking the compilation process.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Encode,
-    Decode,
-    StableHash,
-    Identifiable,
-    clap::Parser,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, clap::Parser)]
 #[command(styles = get_styles(), about = "The Ray compiler")]
 pub struct Arguments {
     /// The subcommand to run.
@@ -523,7 +469,10 @@ fn default_output_path(target_name: &str, kind: TargetKind) -> Option<PathBuf> {
 
 const fn object_suffix() -> &'static str { ".o" }
 
-/// The key used for retrieving the [`Arguments`]
+/// A query input for the path to the root source file of a target.
+///
+/// The module tree of the target stems from this file, and the root module
+/// owns the directory containing it.
 #[derive(
     Debug,
     Clone,
@@ -538,10 +487,34 @@ const fn object_suffix() -> &'static str { ".o" }
     StableHash,
     qbice::Query,
 )]
-#[value(Interned<Arguments>)]
-#[extend(name = get_invocation_arguments, by_val)]
-pub struct Key {
-    /// The target ID of the compilation session.
+#[value(Interned<Path>)]
+#[extend(name = get_target_root_file_path, by_val)]
+pub struct RootFilePathKey {
+    /// The target ID to retrieve the root file path for.
+    pub target_id: TargetID,
+}
+
+/// A query input for the name of a target.
+///
+/// The name is also the name of the root module of the target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    qbice::Query,
+)]
+#[value(Interned<str>)]
+#[extend(name = get_target_name, by_val)]
+pub struct NameKey {
+    /// The target ID to retrieve the name for.
     pub target_id: TargetID,
 }
 
