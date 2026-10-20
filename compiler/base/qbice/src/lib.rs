@@ -374,6 +374,16 @@ pub enum WriteManager {
 impl qbice::storage::write_manager::WriteManager for WriteManager {
     type WriteBatch = WriteBatch;
 
+    type SingleMap<K: kv_database::WideColumn, V: kv_database::WideColumnValue<K>> =
+        SingleMap<K, V>;
+
+    type DynamicMap<K: kv_database::WideColumn> = DynamicMap<K>;
+
+    type KeyOfSetMap<
+        K: kv_database::KeyOfSetColumn,
+        C: storage::key_of_set_map::ConcurrentSet<Element = K::Element>,
+    > = KeyOfSetMap<K, C>;
+
     fn new_write_batch(&self) -> Self::WriteBatch {
         match self {
             Self::InMemory(manager) => WriteBatch::InMemory(manager.new_write_batch()),
@@ -389,6 +399,34 @@ impl qbice::storage::write_manager::WriteManager for WriteManager {
             Self::RocksDB(manager) => {
                 manager.submit_write_batch(write_batch.into_db_backed().unwrap());
             }
+        }
+    }
+
+    fn new_single_map<K: kv_database::WideColumn, V: kv_database::WideColumnValue<K>>(
+        &self,
+    ) -> Self::SingleMap<K, V> {
+        match self {
+            Self::InMemory(i) => SingleMap::InMemory(i.new_single_map()),
+            Self::RocksDB(i) => SingleMap::DbBacked(i.new_single_map()),
+        }
+    }
+
+    fn new_dynamic_map<K: kv_database::WideColumn>(&self) -> Self::DynamicMap<K> {
+        match self {
+            Self::InMemory(i) => DynamicMap::InMemory(i.new_dynamic_map()),
+            Self::RocksDB(i) => DynamicMap::RocksDB(i.new_dynamic_map()),
+        }
+    }
+
+    fn new_key_of_set_map<
+        K: kv_database::KeyOfSetColumn,
+        C: storage::key_of_set_map::ConcurrentSet<Element = K::Element>,
+    >(
+        &self,
+    ) -> Self::KeyOfSetMap<K, C> {
+        match self {
+            Self::InMemory(i) => KeyOfSetMap::InMemory(i.new_key_of_set_map()),
+            Self::RocksDB(i) => KeyOfSetMap::RocksDB(i.new_key_of_set_map()),
         }
     }
 }
@@ -415,48 +453,10 @@ impl storage_engine::StorageEngine for StorageEngine {
 
     type WriteManager = WriteManager;
 
-    type SingleMap<K: kv_database::WideColumn, V: kv_database::WideColumnValue<K>> =
-        SingleMap<K, V>;
-
-    type DynamicMap<K: kv_database::WideColumn> = DynamicMap<K>;
-
-    type KeyOfSetMap<
-        K: kv_database::KeyOfSetColumn,
-        C: storage::key_of_set_map::ConcurrentSet<Element = K::Element>,
-    > = KeyOfSetMap<K, C>;
-
     fn new_write_manager(&self) -> Self::WriteManager {
         match self {
             Self::InMemory(i) => WriteManager::InMemory(i.new_write_manager()),
             Self::DbBacked(i) => WriteManager::RocksDB(i.new_write_manager()),
-        }
-    }
-
-    fn new_single_map<K: kv_database::WideColumn, V: kv_database::WideColumnValue<K>>(
-        &self,
-    ) -> Self::SingleMap<K, V> {
-        match self {
-            Self::InMemory(i) => SingleMap::InMemory(i.new_single_map()),
-            Self::DbBacked(i) => SingleMap::DbBacked(i.new_single_map()),
-        }
-    }
-
-    fn new_dynamic_map<K: kv_database::WideColumn>(&self) -> Self::DynamicMap<K> {
-        match self {
-            Self::InMemory(i) => DynamicMap::InMemory(i.new_dynamic_map()),
-            Self::DbBacked(i) => DynamicMap::RocksDB(i.new_dynamic_map()),
-        }
-    }
-
-    fn new_key_of_set_map<
-        K: kv_database::KeyOfSetColumn,
-        C: storage::key_of_set_map::ConcurrentSet<Element = K::Element>,
-    >(
-        &self,
-    ) -> Self::KeyOfSetMap<K, C> {
-        match self {
-            Self::InMemory(i) => KeyOfSetMap::InMemory(i.new_key_of_set_map()),
-            Self::DbBacked(i) => KeyOfSetMap::RocksDB(i.new_key_of_set_map()),
         }
     }
 }
