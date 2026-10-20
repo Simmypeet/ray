@@ -121,7 +121,7 @@ by an `Instruction::Expression`.
 - `corelib/core.ray`, `symbol/src/core_item.rs`: `pub trait Coroutine[c]`
   with `Return` and `Effect`, and `pub struct Continuation[r, c]` with one
   private field of type `c`.
-- `rayc_type` (`ty/application.rs`, `ty.rs`): `Constant::Coroutine`, keyed
+- `rayc_type` (`ty/application.rs`, `ty.rs`): `Constant::DefCoroutine`, keyed
   by a `def_id`, applied to `poly_args`. Every exhaustive match on
   `Constant` and `View` gets an arm: invariant in all arguments, decomposed
   into its arguments for outlives.
@@ -243,9 +243,9 @@ This phase needs the audit under
 
 **Changes.**
 
-- `Constant::Coroutine` gets a second key, the identity of a closure, with
+- `Constant::DefCoroutine` gets a second key, the identity of a closure, with
   the closure type as its argument. `coro` accepts a call of a closure.
-- `Constant::InstanceCoroutine`, keyed by the trait method, applied to the
+- `Constant::TraitDefCoroutine`, keyed by the trait method, applied to the
   instance and the method's own arguments. It reduces in `reduce.rs` the
   way an associated type of an instance does. `coro` accepts a call through
   an instance, including a callable value.
@@ -314,7 +314,7 @@ fixes them so the prototype can be built. Each is cheap to change later.
 5. **`coro` takes a call**, and in `handle e1(e2)` the outermost call is the
    resume. `handle e1()` resumes with `()`, and `handle coro f(x)` starts
    the coroutine.
-6. **No bound syntax.** A marker goal on an `InstanceCoroutine` that does
+6. **No bound syntax.** A marker goal on a `TraitDefCoroutine` that does
    not reduce cannot be proved in the prototype.
 
 ## Impact on existing code

@@ -369,7 +369,7 @@ declared function, and the declaration already fixes all of it. So a
 coroutine type is only the function and its polymorphic arguments:
 
 ```
-Coroutine(def_id, poly_args)
+DefCoroutine(def_id, poly_args)
 ```
 
 - `def_id` is the function given to `coro`. It is part of the constant, like
@@ -760,7 +760,7 @@ have no abandon edges and would lift these restrictions. See
 
 ## Coroutines of unresolved calls
 
-`Coroutine(def_id, poly_args)` needs to know the callee. A call knows it
+`DefCoroutine(def_id, poly_args)` needs to know the callee. A call knows it
 when its target is a function (`CallTarget::Direct`). A call through an
 instance that is not known yet does not
 (`CallTarget::UnresolvedInstanceAssociated`): in
@@ -778,7 +778,7 @@ So there is a second constant, which mirrors the call target. Its name is a
 placeholder:
 
 ```
-InstanceCoroutine(trait_def_id, instance, poly_args)
+TraitDefCoroutine(trait_def_id, instance, poly_args)
 ```
 
 - `trait_def_id` is the trait method. Like `def_id` above, it is part of the
@@ -791,12 +791,12 @@ It is a projection, and behaves like an associated type of an instance
 (`Constant::InstanceAssociated`):
 
 - **It reduces.** Once `instance` normalises to a concrete instance, the
-  type reduces to the `Coroutine(...)` of that instance's implementation of
+  type reduces to the `DefCoroutine(...)` of that instance's implementation of
   the method. For the built-in `Def` instance of a closure, it reduces to
   the coroutine of the closure body: a `Coroutine` that is keyed by the
   closure instead of a `def_id`, and takes the closure type as its argument.
   After monomorphisation every instance is concrete, so every
-  `InstanceCoroutine` has reduced.
+  `TraitDefCoroutine` has reduced.
 - **Until then it is rigid.** It is equal only to itself.
   `Coroutine[c].Return` and `Coroutine[c].Effect` come from the signature of
   the trait method. For `Def.call` they are `d.Return` and `d.Effect`.
@@ -823,7 +823,7 @@ Two consequences for the lowering:
 
 ### Naming it in a bound
 
-While an `InstanceCoroutine` does not reduce, a marker goal on it needs a
+While a `TraitDefCoroutine` does not reduce, a marker goal on it needs a
 given, so the user needs a way to write one. This is the problem Rust has
 with `Send` bounds on the future returned by a trait method. It only comes
 up when the goal is asked while the instance is still abstract. At a
@@ -1172,8 +1172,8 @@ upvars.
 2. A new `Coroutine` expression, analogous to `Closure`, builds the
    coroutine from the call target and the arguments, and a `Store` puts it
    in the variable. The call target is the one a `Call` has, so the type is
-   a `Coroutine(...)` for a known function and an
-   [`InstanceCoroutine(...)`](#coroutines-of-unresolved-calls) for a call
+   a `DefCoroutine(...)` for a known function and a
+   [`TraitDefCoroutine(...)`](#coroutines-of-unresolved-calls) for a call
    through an instance.
 3. A `RefOf` borrows the variable mutably.
 4. The reference is wrapped in a `Continuation[(), &mut c]`.
