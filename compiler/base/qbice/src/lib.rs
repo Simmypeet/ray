@@ -190,7 +190,7 @@ impl qbice::storage::write_batch::WriteBatch for WriteBatch {}
 #[allow(missing_docs)]
 pub enum SingleMap<K: WideColumn, V: WideColumnValue<K>> {
     InMemory(InMemorySingleMap<K, V>),
-    DbBacked(CacheSingleMap<K, V, RocksDB>),
+    DbBacked(Box<CacheSingleMap<K, V, RocksDB>>),
 }
 
 impl<K: WideColumn, V: WideColumnValue<K>> storage::single_map::SingleMap<K, V>
@@ -241,7 +241,7 @@ impl<K: WideColumn, V: WideColumnValue<K>> storage::single_map::SingleMap<K, V>
 #[allow(missing_docs)]
 pub enum DynamicMap<K: WideColumn> {
     InMemory(InMemoryDynamicMap<K>),
-    RocksDB(CacheDynamicMap<K, RocksDB>),
+    RocksDB(Box<CacheDynamicMap<K, RocksDB>>),
 }
 
 impl<K: WideColumn> storage::dynamic_map::DynamicMap<K> for DynamicMap<K> {
@@ -293,7 +293,7 @@ pub enum KeyOfSetMap<
     C: storage::key_of_set_map::ConcurrentSet<Element = K::Element>,
 > {
     InMemory(InMemoryKeyOfSetMap<K, C>),
-    RocksDB(CacheKeyOfSetMap<K, C, RocksDB>),
+    RocksDB(Box<CacheKeyOfSetMap<K, C, RocksDB>>),
 }
 
 #[derive(Debug)]
@@ -407,14 +407,14 @@ impl qbice::storage::write_manager::WriteManager for WriteManager {
     ) -> Self::SingleMap<K, V> {
         match self {
             Self::InMemory(i) => SingleMap::InMemory(i.new_single_map()),
-            Self::RocksDB(i) => SingleMap::DbBacked(i.new_single_map()),
+            Self::RocksDB(i) => SingleMap::DbBacked(Box::new(i.new_single_map())),
         }
     }
 
     fn new_dynamic_map<K: kv_database::WideColumn>(&self) -> Self::DynamicMap<K> {
         match self {
             Self::InMemory(i) => DynamicMap::InMemory(i.new_dynamic_map()),
-            Self::RocksDB(i) => DynamicMap::RocksDB(i.new_dynamic_map()),
+            Self::RocksDB(i) => DynamicMap::RocksDB(Box::new(i.new_dynamic_map())),
         }
     }
 
@@ -426,7 +426,7 @@ impl qbice::storage::write_manager::WriteManager for WriteManager {
     ) -> Self::KeyOfSetMap<K, C> {
         match self {
             Self::InMemory(i) => KeyOfSetMap::InMemory(i.new_key_of_set_map()),
-            Self::RocksDB(i) => KeyOfSetMap::RocksDB(i.new_key_of_set_map()),
+            Self::RocksDB(i) => KeyOfSetMap::RocksDB(Box::new(i.new_key_of_set_map())),
         }
     }
 }

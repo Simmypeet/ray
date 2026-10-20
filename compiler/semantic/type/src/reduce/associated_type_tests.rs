@@ -110,7 +110,10 @@ async fn fixture(local_argument: bool) -> (TrackedEngine, Interned<Ty>, Interned
 #[tokio::test]
 async fn substitutes_enclosing_instance_arguments() {
     let (engine, projection, expected) = fixture(false).await;
-    assert_eq!(projection.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(expected));
+    assert_eq!(
+        Box::pin(projection.reduce(&engine, &[])).await.map(|(reduced, _)| reduced),
+        Some(expected)
+    );
 }
 
 // input: Test[int32].Inner[bool]
@@ -119,7 +122,10 @@ async fn substitutes_enclosing_instance_arguments() {
 #[tokio::test]
 async fn substitutes_checked_member_mapping_and_instance_arguments() {
     let (engine, projection, expected) = fixture(true).await;
-    assert_eq!(projection.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(expected));
+    assert_eq!(
+        Box::pin(projection.reduce(&engine, &[])).await.map(|(reduced, _)| reduced),
+        Some(expected)
+    );
 }
 
 // input: (Test[int32].Inner,)
@@ -130,7 +136,10 @@ async fn reduces_associated_types_in_descendants() {
     let (engine, projection, expected) = fixture(false).await;
     let tuple = Ty::new_tuple(engine.intern_unsized([projection]), &engine);
     let expected = Ty::new_tuple(engine.intern_unsized([expected]), &engine);
-    assert_eq!(tuple.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(expected));
+    assert_eq!(
+        Box::pin(tuple.reduce(&engine, &[])).await.map(|(reduced, _)| reduced),
+        Some(expected)
+    );
 }
 
 // input: ?instance.Inner[int32]
