@@ -5,7 +5,7 @@ use std::sync::Arc;
 use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use rayc_qbice::{Engine, InMemoryFactory};
 use rayc_source_file::{LocalSourceID, SourceFile};
-use rayc_target::{Input, TargetID};
+use rayc_target::TargetID;
 
 async fn reproduce() {
     let directory = tempfile::tempdir().unwrap();
@@ -23,7 +23,7 @@ async fn reproduce() {
     rayc_ir_builder::black_box();
     engine.register_program(rayc_qbice::RAY_PROGRAM);
 
-    let name = Input::builder().file(path.clone()).build().target_name();
+    let name = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
     let target_id = TargetID::from_target_name(&name);
     let engine = Arc::new(engine);
     let mut session = engine.input_session().await;

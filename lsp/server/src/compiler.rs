@@ -6,7 +6,7 @@ use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use rayc_qbice::{Engine, InMemoryFactory};
 use rayc_source_file::{LocalSourceID, SourceFile};
 use rayc_symbol_impl::source_map::create_source_map;
-use rayc_target::{Input, TargetID};
+use rayc_target::TargetID;
 use tower_lsp::lsp_types::{Diagnostic, Url};
 
 use crate::diagnostic::convert;
@@ -34,7 +34,7 @@ impl Compiler {
         rayc_ir_builder::black_box();
         engine.register_program(rayc_qbice::RAY_PROGRAM);
 
-        let name = Input::builder().file(path.clone()).build().target_name();
+        let name = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
         let reserved_name = name == "core";
         let name = if reserved_name { "__reserved_core_document".to_owned() } else { name };
         let target_id = TargetID::from_target_name(&name);

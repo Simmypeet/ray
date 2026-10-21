@@ -1,0 +1,4 @@
+[target]
+name = "shapes"
+kind = "lib"
+root = "lib/entry.ray"

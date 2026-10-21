@@ -1887,6 +1887,7 @@ dependencies = [
  "rayc_hash",
  "rayc_ir_builder",
  "rayc_lexical_impl",
+ "rayc_project",
  "rayc_qbice",
  "rayc_semantic_element",
  "rayc_semantic_element_impl",
@@ -2108,6 +2109,17 @@ dependencies = [
  "rayc_test_input",
  "rayon",
  "siphasher",
+]
+
+[[package]]
+name = "rayc_project"
+version = "0.1.0-beta.2"
+dependencies = [
+ "rayc_lexical",
+ "rayc_target",
+ "serde",
+ "thiserror",
+ "toml",
 ]
 
 [[package]]

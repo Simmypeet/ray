@@ -44,6 +44,7 @@ members = [
     "compiler/corelib",
     "compiler/driver",
     "compiler/main",
+    "compiler/project",
     "lsp/server",
 
     # tidy-alphabetical-end

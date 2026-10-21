@@ -1,0 +1,4 @@
+module shapes
+
+pub def area() -> int32:
+    return shapes.side() * shapes.side()

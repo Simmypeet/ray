@@ -10,6 +10,7 @@ rust-version.workspace = true
 
 [dependencies]
 rayc_corelib.path = "../corelib"
+rayc_project.path = "../project"
 rayc_source_file = { path = "../base/source_file" }
 rayc_diagnostic = { path = "../base/diagnostic" }
 rayc_handler = { path = "../base/handler" }

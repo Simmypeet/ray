@@ -68,7 +68,7 @@ async fn test(file_path: &Path) {
 
     let input = || {
         Input::builder()
-            .file(file_path.to_path_buf())
+            .path(file_path.to_path_buf())
             .target_seed(0)
             .verify_ir(true)
             .fancy(false)
