@@ -84,6 +84,15 @@ impl ReportTerm<'_> {
         let _ = writeln!(self.writer, "{output}\n");
     }
 
+    /// Reports a simple informational message without source code.
+    pub fn report_simple_info(&mut self, message: impl Into<String>) {
+        let message_str = message.into();
+        let groups =
+            vec![Group::with_title(Level::INFO.with_name("[info]").primary_title(&message_str))];
+        let output = self.renderer.render(&groups);
+        let _ = writeln!(self.writer, "{output}\n");
+    }
+
     /// Reports a simple note message without source code.
     pub fn report_simple_note(&mut self, message: impl Into<String>) {
         let message_str = message.into();

@@ -163,8 +163,7 @@ pub struct Input {
     #[clap(long = "target-seed")]
     target_seed: Option<u64>,
 
-    /// Displays the diagnostics in a fancy format with unicode characters and
-    /// colors.
+    /// Displays the diagnostics without colors.
     #[clap(long = "no-fancy", default_value = "true", action = clap::ArgAction::SetFalse)]
     #[builder(default = true)]
     fancy: bool,
@@ -271,6 +270,56 @@ impl Command {
     }
 }
 
+/// Represents the `new` subcommand of the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
+pub struct New {
+    /// The directory to create the project in; it must not exist yet.
+    path: PathBuf,
+
+    /// The name of the target; if not specified, the project is named after
+    /// its directory.
+    #[clap(long = "name")]
+    name: Option<String>,
+
+    /// Creates a library project instead of a binary one.
+    #[clap(long = "lib")]
+    library: bool,
+
+    /// Displays the messages without colors.
+    #[clap(long = "no-fancy", default_value = "true", action = clap::ArgAction::SetFalse)]
+    fancy: bool,
+}
+
+impl New {
+    /// Returns the directory to create the project in.
+    #[must_use]
+    pub fn path(&self) -> &Path { &self.path }
+
+    /// Returns the explicitly requested target name, if one was supplied.
+    #[must_use]
+    pub fn requested_name(&self) -> Option<&str> { self.name.as_deref() }
+
+    /// Returns whether the project is a library rather than a binary.
+    #[must_use]
+    pub const fn is_library(&self) -> bool { self.library }
+
+    #[must_use]
+    pub const fn fancy(&self) -> bool { self.fancy }
+}
+
+/// The command line of the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, clap::Parser)]
+#[command(styles = get_styles(), about = "The Ray compiler")]
+pub enum Cli {
+    /// A command compiling a program.
+    #[command(flatten)]
+    Compile(Command),
+
+    /// Creates a new project.
+    #[clap(name = "new")]
+    New(New),
+}
+
 /// Optimizations level for the compiler.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, clap::ValueEnum)]
 #[allow(missing_docs)]
@@ -337,6 +386,10 @@ pub struct Arguments {
     /// The subcommand to run.
     #[clap(subcommand, flatten = true)]
     command: Command,
+}
+
+impl From<Command> for Arguments {
+    fn from(command: Command) -> Self { Self { command } }
 }
 
 impl Arguments {

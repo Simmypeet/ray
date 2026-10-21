@@ -35,5 +35,9 @@ path = "test/run/mod.rs"
 name = "project_e2e"
 path = "test/project/mod.rs"
 
+[[test]]
+name = "new_e2e"
+path = "test/new/mod.rs"
+
 [lints]
 workspace = true

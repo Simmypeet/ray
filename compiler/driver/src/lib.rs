@@ -17,7 +17,10 @@ mod artifact;
 mod entry_point;
 mod invocation;
 mod native;
+mod new;
 pub mod term;
+
+pub use new::create_project;
 
 async fn create_engine(
     incremental_path: Option<&Path>,
