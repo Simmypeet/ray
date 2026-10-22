@@ -142,7 +142,7 @@ struct SymbolTableKey {
     symbol_id: GlobalSymbolID,
 }
 
-#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+#[executor(config = Config)]
 async fn symbol_table_executor(
     &SymbolTableKey { symbol_id }: &SymbolTableKey,
     engine: &TrackedEngine,
