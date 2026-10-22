@@ -3,8 +3,8 @@ use rayc_semantic_element::struct_body::{Field, get_struct_body};
 use rayc_source_file::SourceElement;
 use rayc_symbol::GlobalSymbolID;
 use rayc_syntax::expression::{
-    Deref as DerefSyntax, FieldAccess as FieldAccessSyntax, Postfix, PostfixOperator,
-    RefOf as RefOfSyntax, TupleIndex as TupleIndexSyntax,
+    Deref as DerefSyntax, DotMember, DotPostfix, FieldAccess as FieldAccessSyntax, Postfix,
+    PostfixOperator, RefOf as RefOfSyntax, TupleIndex as TupleIndexSyntax,
 };
 use rayc_type::{
     subst::Substitutable,
@@ -54,14 +54,7 @@ impl TAstBuilder {
         for postfix in syn.postfixes().take(operator_count) {
             let val = match postfix {
                 PostfixOperator::Call(call) => Some(self.build_closure_call(bound, &call).await),
-                PostfixOperator::RefOf(ref_of) => Some(self.build_ref_of(bound, &ref_of).await),
-
-                PostfixOperator::Deref(deref) => Some(self.build_deref(bound, &deref).await),
-
-                PostfixOperator::TupleIndex(index) => self.build_tuple_index(bound, &index).await,
-                PostfixOperator::FieldAccess(access) => {
-                    self.build_field_access(bound, &access).await
-                }
+                PostfixOperator::Dot(dot) => self.build_dot_postfix(bound, &dot).await,
             };
 
             bound = if let Some(val) = val {
@@ -100,6 +93,37 @@ impl TAstBuilder {
                 .accessibility(field.accessibility())
                 .build(),
         ));
+    }
+
+    /// Binds the operator `dot` applied to `bound`, or returns `None` if it
+    /// fails.
+    ///
+    /// A field, a tuple index or a member still missing is recorded as a
+    /// member access before it is checked, so that the member of a failed
+    /// access can still be completed.
+    async fn build_dot_postfix(
+        &mut self,
+        bound: TypedExprID,
+        dot: &DotPostfix,
+    ) -> Option<TypedExprID> {
+        let Some(member) = dot.member() else {
+            // a dangling `.`, whose member is still being typed
+            self.record_member_access(dot.span(), bound);
+            return None;
+        };
+
+        match member {
+            DotMember::RefOf(ref_of) => Some(self.build_ref_of(bound, &ref_of).await),
+            DotMember::Deref(deref) => Some(self.build_deref(bound, &deref).await),
+            DotMember::TupleIndex(index) => {
+                self.record_member_access(dot.span(), bound);
+                self.build_tuple_index(bound, &index).await
+            }
+            DotMember::FieldAccess(access) => {
+                self.record_member_access(dot.span(), bound);
+                self.build_field_access(bound, &access).await
+            }
+        }
     }
 
     async fn build_field_access(

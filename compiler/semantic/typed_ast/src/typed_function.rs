@@ -12,6 +12,7 @@ use rayc_type::{
 
 use crate::{
     block::Block,
+    member_access::MemberAccess,
     name_binding::{
         NameBinding, NameBindingGroup, NameBindingGroupID, NameBindingID, NameBindingMap,
     },
@@ -31,6 +32,9 @@ pub struct TypedFunctionMap {
     functions: Arena<TypedFunction>,
     root: TypedFunctionID,
     closures: FxHashMap<ClosureID, TypedFunctionID>,
+
+    /// The member accesses of every function, in the order they were bound.
+    member_accesses: Vec<MemberAccess>,
 }
 
 impl TypedFunctionMap {
@@ -48,7 +52,13 @@ impl TypedFunctionMap {
             root_effect,
         ));
 
-        Self { name_binding_map, functions, root, closures: FxHashMap::default() }
+        Self {
+            name_binding_map,
+            functions,
+            root,
+            closures: FxHashMap::default(),
+            member_accesses: Vec::new(),
+        }
     }
 
     /// Assigns an owner-local identity to a nominal closure's function.
@@ -300,6 +310,35 @@ impl TypedFunctionMap {
         offset: ByteIndex,
     ) -> impl Iterator<Item = (NameBindingID, &NameBinding)> {
         self.name_binding_map.visible_name_bindings(engine, offset).await
+    }
+
+    /// Records a member access of this def.
+    pub fn insert_member_access(&mut self, member_access: MemberAccess) {
+        self.member_accesses.push(member_access);
+    }
+
+    /// Returns the type of the receiver of the member access whose member the
+    /// cursor at `offset` is on, a byte index in the source file of the def.
+    ///
+    /// The accesses of a chain such as `p.inner.x` do not overlap, so at most
+    /// one access holds the cursor.
+    pub async fn receiver_type_at(
+        &self,
+        engine: &TrackedEngine,
+        offset: ByteIndex,
+    ) -> Option<&Interned<Ty>> {
+        for member_access in &self.member_accesses {
+            if !member_access.holds_cursor(engine, offset).await {
+                continue;
+            }
+
+            let receiver = member_access.receiver();
+            return Some(
+                self.get_function(receiver.function_id()).get_type_of_expr_id(receiver.local_id()),
+            );
+        }
+
+        None
     }
 }
 

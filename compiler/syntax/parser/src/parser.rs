@@ -34,6 +34,21 @@ pub trait ParserExt {
         Optional(self)
     }
 
+    /// Parses the given parser, or reports why it failed and continues with
+    /// what it parsed, so that the node being parsed is kept with this part
+    /// missing or incomplete.
+    ///
+    /// It must follow a token that already commits to the node, e.g. the
+    /// member after the `.` of a postfix operator, which is still missing
+    /// while the user types. A recoverable parser always succeeds, so
+    /// repeating one that consumes nothing never ends.
+    fn recoverable(self) -> Recoverable<Self>
+    where
+        Self: Sized,
+    {
+        Recoverable(self)
+    }
+
     /// Repeats the given parser until it fails, creating a list (zero or more)
     /// of the successful trees.
     ///
@@ -354,6 +369,31 @@ impl<I: Interner, T: Parser<I>> Parser<I> for Optional<T> {
 }
 
 impl<T: Output> Output for Optional<T> {
+    type Extract = One;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(&self, node: &'a crate::concrete_tree::Node) -> Option<Self::Output<'a>> {
+        T::output(&self.0, node)
+    }
+}
+
+/// See [`ParserExt::recoverable`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Recoverable<T>(pub T);
+
+impl<I: Interner, T: Parser<I>> Parser<I> for Recoverable<T> {
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
+        // keep what the failed parser consumed, since the node is committed
+        // to, and report why it failed
+        if self.0.parse(state) == Err(Unexpected) {
+            state.emit_error();
+        }
+
+        Ok(())
+    }
+}
+
+impl<T: Output> Output for Recoverable<T> {
     type Extract = One;
     type Output<'a> = T::Output<'a>;
 

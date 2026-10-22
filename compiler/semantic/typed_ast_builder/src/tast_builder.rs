@@ -17,6 +17,7 @@ use rayc_type::{
 use rayc_typed_ast::{
     TypedAst,
     capture_plan::CapturePlan,
+    member_access::MemberAccess,
     name_binding::{NameBindingGroupID, NameBindingID},
     statement::Statement,
     typed_closure::{ClosureParameterID, TypedClosureParameter},
@@ -371,6 +372,15 @@ impl TAstBuilder {
 
     pub fn span_of_local_expression(&self, id: TypedFunctionLocalID<TypedExprID>) -> RelativeSpan {
         self.function_map.get_expression(id.function_id(), id.local_id()).span()
+    }
+
+    /// Records the access of the member at `span`, the dot and the member
+    /// after it, of `receiver`, an expression of the function being built.
+    pub fn record_member_access(&mut self, span: RelativeSpan, receiver: TypedExprID) {
+        self.function_map.insert_member_access(MemberAccess::new(
+            span,
+            TypedFunctionLocalID::new(self.building_function, receiver),
+        ));
     }
 
     pub async fn push_statement(&mut self, statement: Statement) {
