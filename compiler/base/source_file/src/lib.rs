@@ -191,6 +191,30 @@ impl SourceFile {
         line.try_char_to_byte(location.column).ok().map(|byte_offset| line_start + byte_offset)
     }
 
+    /// Converts the given editor location, whose column counts UTF-16 code
+    /// units as in the Language Server Protocol, to a byte index in the source
+    /// file.
+    ///
+    /// As the protocol specifies, a column past the end of its line is clamped
+    /// to the end of the line, before its line break. A line past the end of
+    /// the file is clamped to the end of the file.
+    #[must_use]
+    pub fn get_byte_index_from_utf16_location(&self, location: &EditorLocation) -> ByteIndex {
+        if location.line >= self.line_coount() {
+            return self.len_bytes();
+        }
+
+        // the column cannot point into the line break
+        let line = self.rope.line(location.line);
+        let mut content_end = line.len_chars();
+        while content_end > 0 && matches!(line.char(content_end - 1), '\n' | '\r') {
+            content_end -= 1;
+        }
+        let column = location.column.min(line.char_to_utf16_cu(content_end));
+
+        self.rope.line_to_byte(location.line) + line.char_to_byte(line.utf16_cu_to_char(column))
+    }
+
     /// Converts the given byte index to an editor location (line and column),
     /// if the index is valid.
     #[must_use]
