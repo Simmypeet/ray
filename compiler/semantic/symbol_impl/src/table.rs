@@ -10,7 +10,7 @@ use rayc_extend::extend;
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_source_file::{LocalSourceID, SOURCE_FILE_EXTENSION, get_stable_path_id};
+use rayc_source_file::{LocalSourceID, SOURCE_FILE_EXTENSION, SourceElement, get_stable_path_id};
 use rayc_symbol::{
     GlobalSymbolID, SymbolID,
     accessibility::{Accessibility, DeclaredAccessibility},
@@ -43,6 +43,10 @@ type Map<V> = FxHashMap<SymbolID, V>;
 pub struct Infos {
     name: Interned<str>,
     span: Option<RelativeSpan>,
+
+    /// The span of the whole definition of the symbol.
+    definition_span: Option<RelativeSpan>,
+
     symbol_kind: SymbolKind,
     accessibility: DeclaredAccessibility,
     parameter_list: Option<Option<ParameterList>>,
@@ -96,6 +100,7 @@ pub struct Table {
     members: Map<Interned<Member>>,
     parents: Map<Option<SymbolID>>,
     spans: Map<Option<RelativeSpan>>,
+    definition_spans: Map<Option<RelativeSpan>>,
     names: Map<Interned<str>>,
     accessibilities: Map<DeclaredAccessibility>,
 
@@ -256,6 +261,11 @@ impl Table {
     #[must_use]
     pub fn get_span(&self, symbol_id: SymbolID) -> Option<RelativeSpan> {
         self.spans.get(&symbol_id).copied().unwrap()
+    }
+
+    #[must_use]
+    pub fn get_definition_span(&self, symbol_id: SymbolID) -> Option<RelativeSpan> {
+        self.definition_spans.get(&symbol_id).copied().unwrap()
     }
 
     #[must_use]
@@ -421,8 +431,15 @@ impl Table {
             .0
     }
 
-    /// Inserts the module whose members the file of `key` defines.
-    fn insert_module(&mut self, key: &TableKey, member: MemberBuilder, engine: &TrackedEngine) {
+    /// Inserts the module whose members the file of `key` defines, with the
+    /// span of the contents of the file as its definition, if it was loaded.
+    fn insert_module(
+        &mut self,
+        key: &TableKey,
+        member: MemberBuilder,
+        definition_span: Option<RelativeSpan>,
+        engine: &TrackedEngine,
+    ) {
         self.insert_info(
             key.module_id,
             key.declaration.map(|declaration| declaration.parent_id),
@@ -434,6 +451,7 @@ impl Table {
                 ))
                 .name(key.qualified_name.last().expect("a module has a name").clone())
                 .maybe_span(key.declaration.map(|declaration| declaration.span))
+                .maybe_definition_span(definition_span)
                 .member(member)
                 .build(),
             engine,
@@ -448,6 +466,7 @@ impl Table {
         engine: &TrackedEngine,
     ) {
         self.spans.insert(symbol_id, info.span);
+        self.definition_spans.insert(symbol_id, info.definition_span);
         self.names.insert(symbol_id, info.name);
         self.parents.insert(symbol_id, parent);
         self.symbol_kinds.insert(symbol_id, info.symbol_kind);
@@ -731,7 +750,8 @@ async fn table_executor(Key { table_key: key }: &Key, engine: &TrackedEngine) ->
         MemberBuilder::new(key.target_id.make_global(key.module_id), key.qualified_name.to_vec());
 
     // register the members the file defines for its module
-    if let Some(module_content) = table.load_source_file(key, engine).await {
+    let module_content = table.load_source_file(key, engine).await;
+    if let Some(module_content) = &module_content {
         table
             .register_module_members(&mut member, module_content.members(), &key.directory, engine)
             .await;
@@ -739,7 +759,8 @@ async fn table_executor(Key { table_key: key }: &Key, engine: &TrackedEngine) ->
 
     // a file module is declared in another file, but its information is
     // stored here, alongside its members
-    table.insert_module(key, member, engine);
+    let definition_span = module_content.as_ref().map(SourceElement::span);
+    table.insert_module(key, member, definition_span, engine);
 
     Arc::new(table)
 }

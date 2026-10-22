@@ -54,7 +54,9 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct PathContinuation {
         pub dot: Punctuation = '.',
-        pub segment: PathSegment = ast::<PathSegment>()
+        // a dangling `.` is kept without a segment, so that the segment after
+        // it can be completed
+        pub segment: PathSegment = ast::<PathSegment>().recoverable()
     }
 }
 
