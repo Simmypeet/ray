@@ -39,10 +39,15 @@ doesn't deduplicate anything. It's fine to use it in tests or benchmarks where w
 will fail if there are any warnings from Clippy, so it's better to run it locally
 before pushing code.
 
-# Always run `cargo +nightly fmt`
+# Always run `cargo fmt`
 
 **Rationale**: Make the code looks consistent. Again, the CI will fail if the
 code is not formatted properly.
+
+Run plain `cargo fmt`, never `cargo +nightly fmt`. Plain `cargo fmt` uses the
+nightly pinned in `rust-toolchain.toml`, the same one CI uses. `+nightly`
+overrides that pin with the newest nightly installed, whose rustfmt wraps
+comments differently and rewrites files that were not touched.
 
 # Adds comments in function body
 
