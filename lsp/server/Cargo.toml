@@ -9,10 +9,13 @@ description = "Language server for Ray"
 [dependencies]
 rayc_corelib.path = "../../compiler/corelib"
 tower-lsp.workspace = true
-tokio = { workspace = true, features = ["io-std", "io-util"] }
+tokio = { workspace = true, features = ["io-std", "io-util", "time"] }
 qbice.workspace = true
 rayc_qbice.path = "../../compiler/base/qbice"
 rayc_target.path = "../../compiler/base/target"
+rayc_project.path = "../../compiler/project"
+rayc_hash.path = "../../compiler/base/hash"
+rayc_arena.path = "../../compiler/base/arena"
 rayc_source_file.path = "../../compiler/base/source_file"
 rayc_source_file_impl.path = "../../compiler/base/source_file_impl"
 rayc_diagnostic.path = "../../compiler/base/diagnostic"

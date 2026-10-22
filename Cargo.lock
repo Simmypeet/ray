@@ -1748,11 +1748,14 @@ name = "ray_lsp"
 version = "0.1.0-beta.2"
 dependencies = [
  "qbice",
+ "rayc_arena",
  "rayc_check",
  "rayc_corelib",
  "rayc_diagnostic",
+ "rayc_hash",
  "rayc_ir_builder",
  "rayc_lexical_impl",
+ "rayc_project",
  "rayc_qbice",
  "rayc_semantic_element_impl",
  "rayc_source_file",

@@ -1,6 +1,6 @@
 //! Stdio entry point for the Ray language server.
 
-use tower_lsp::{LspService, Server};
+use tower_lsp::Server;
 
 fn main() {
     // Compiler futures need the same larger debug stack as the CLI.
@@ -13,7 +13,7 @@ fn main() {
             // `block_on` polls on the main thread, whose stack is only 1MB on
             // Windows; run the server on a worker with the stack size above.
             tokio::spawn(async {
-                let (service, socket) = LspService::new(ray_lsp::Backend::new);
+                let (service, socket) = ray_lsp::Backend::service();
                 Server::new(tokio::io::stdin(), tokio::io::stdout(), socket).serve(service).await;
             })
             .await

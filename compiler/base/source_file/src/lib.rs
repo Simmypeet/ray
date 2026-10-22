@@ -215,6 +215,22 @@ impl SourceFile {
         self.rope.line_to_byte(location.line) + line.char_to_byte(line.utf16_cu_to_char(column))
     }
 
+    /// Converts the given byte index to an editor location whose column counts
+    /// UTF-16 code units, as in the Language Server Protocol.
+    ///
+    /// An index past the end of the file is clamped to the end of the file,
+    /// and an index inside a character is rounded down to its start.
+    #[must_use]
+    pub fn get_utf16_location_from_byte_index(&self, byte_index: ByteIndex) -> EditorLocation {
+        let char_index = self.rope.byte_to_char(byte_index.min(self.len_bytes()));
+        let line = self.rope.char_to_line(char_index);
+        let line_start = self.rope.line_to_char(line);
+        let column =
+            self.rope.char_to_utf16_cu(char_index) - self.rope.char_to_utf16_cu(line_start);
+
+        EditorLocation { line, column }
+    }
+
     /// Converts the given byte index to an editor location (line and column),
     /// if the index is valid.
     #[must_use]
