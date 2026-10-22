@@ -23,6 +23,7 @@ pub use obligation::{
 pub mod inference;
 pub mod lifetime;
 pub mod path;
+pub mod prefix;
 pub use inference::GenInferWithSpan;
 pub mod resolver;
 pub mod ty;
