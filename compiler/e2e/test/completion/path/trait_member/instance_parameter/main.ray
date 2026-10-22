@@ -1,0 +1,7 @@
+# An instance parameter offers the members of its trait.
+trait Shape[t]:
+  def area(self: t) -> int32
+  type Unit
+
+def measure(value: t) given (shape: Shape[t]) -> int32:
+  return shape.ar<cursor>(value)
