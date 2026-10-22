@@ -92,7 +92,8 @@ impl TAstBuilder {
         &mut self,
         syn: &RunWithSyntax,
     ) -> (TypedFunctionID, Interned<Ty>) {
-        let (body_function, return_type) = self.start_thunk();
+        let (body_function, return_type) =
+            self.start_thunk(syn.block().map_or_else(|| syn.span(), |body| body.span()));
         let mut has_explicit_return = false;
 
         // TODO: determining return type like this is quite fragile, we should probably
@@ -212,7 +213,11 @@ impl TAstBuilder {
             .get_return_type(operation)
             .await
             .apply_subst_or_clone(substitution, self.engine());
-        let function_id = self.start_operation_handler(operation, return_type);
+        let function_id = self.start_operation_handler(
+            operation,
+            return_type,
+            handler.block().map_or_else(|| handler.span(), |body| body.span()),
+        );
         self.bind_operation_handler_parameters(
             function_id,
             parameters.iter().map(|(_, parameter)| parameter.ty()),

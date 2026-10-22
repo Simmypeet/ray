@@ -55,7 +55,9 @@ impl TAstBuilder {
                     self.push_variable_assignment_constraint(&var_ty, expr_id).await;
                 }
 
-                let name_binding_group_id = self.push_new_name_binding_group();
+                // the initializer is bound before the pattern, so the pattern
+                // is visible only after the statement
+                let name_binding_group_id = self.push_new_name_binding_group(l.span().end);
 
                 if let Some(pat) = pattern {
                     self.insert_name_binding_to_group_from_pattern(

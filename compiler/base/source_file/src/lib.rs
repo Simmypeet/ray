@@ -494,6 +494,19 @@ impl<L> Span<L> {
     }
 }
 
+impl Span<ByteIndex> {
+    /// Returns whether a cursor at `cursor`, a byte index between two
+    /// characters, is at this span: after its start, up to and including its
+    /// end.
+    ///
+    /// A cursor right after the last character of a span is still at it, as
+    /// when the span is being typed, while a cursor at its start is before it.
+    #[must_use]
+    pub const fn contains_cursor(&self, cursor: ByteIndex) -> bool {
+        self.start < cursor && cursor <= self.end
+    }
+}
+
 /// Represents an element that is located within a source file.
 pub trait SourceElement {
     /// The type of the span.

@@ -105,7 +105,7 @@ impl TAstBuilder {
                 Some((Arm::Expression(Box::pin(self.bind(expression)).await), span))
             }
             ArmSyntax::Block(block) => {
-                self.enter_statement_block(StatementBlockKind::Plain);
+                self.enter_statement_block(StatementBlockKind::Plain, block.span());
                 for statement in block.statements().filter_map(rayc_syntax::Passable::into_option) {
                     Box::pin(self.bind_statement(&statement)).await;
                 }

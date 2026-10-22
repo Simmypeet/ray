@@ -7,6 +7,8 @@ use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::ParameterID;
+use rayc_source_file::ByteIndex;
+use rayc_symbol::source_map::to_absolute_span;
 use rayc_type::{
     subst::{MutSubstitutable, Subst, Substitutable},
     ty::Ty,
@@ -87,9 +89,11 @@ impl NameBindingMap {
         self.name_bindings.insert(name_binding)
     }
 
+    /// Creates an empty name binding group whose bindings can be referred to
+    /// by name in `visibility`.
     #[must_use]
-    pub fn new_name_binding_group(&mut self) -> NameBindingGroupID {
-        self.name_binding_groups.insert(NameBindingGroup::new())
+    pub fn new_name_binding_group(&mut self, visibility: RelativeSpan) -> NameBindingGroupID {
+        self.name_binding_groups.insert(NameBindingGroup::new(visibility))
     }
 
     /// Inserts a name binding into a name binding group. Returns an error if
@@ -134,6 +138,48 @@ impl NameBindingMap {
         self.name_bindings.get(id).expect("NameBindingID should be valid")
     }
 
+    /// Iterates over the name bindings that can be referred to by name at
+    /// `offset`, a byte index in the source file declaring them.
+    ///
+    /// A binding is visible after its declaration ends, up to and including
+    /// the end of its scope. Of the visible bindings sharing a name, the one
+    /// declared last shadows the others. Scopes nest, so that binding is also
+    /// the one [`Self::lookup_name`] finds from the innermost scope.
+    ///
+    /// The iteration order is not stable.
+    pub async fn visible_name_bindings(
+        &self,
+        engine: &TrackedEngine,
+        offset: ByteIndex,
+    ) -> impl Iterator<Item = (NameBindingID, &NameBinding)> {
+        let mut visible = FxHashMap::<&str, (ByteIndex, NameBindingID)>::default();
+
+        for group in self.name_binding_groups.items() {
+            // the cursor at the end of a declaration is still inside it, while
+            // the cursor at the end of the scope is not past it yet
+            let span = engine.to_absolute_span(&group.visibility).await;
+            if !span.contains_cursor(offset) {
+                continue;
+            }
+
+            // keep the binding declared last of each name
+            for (name, name_binding_id) in &group.name_bindings {
+                visible
+                    .entry(&**name)
+                    .and_modify(|shadowed| {
+                        if span.start > shadowed.0 {
+                            *shadowed = (span.start, *name_binding_id);
+                        }
+                    })
+                    .or_insert((span.start, *name_binding_id));
+            }
+        }
+
+        visible
+            .into_values()
+            .map(|(_, name_binding_id)| (name_binding_id, self.get_name_binding(name_binding_id)))
+    }
+
     /// Iterates over all name bindings and their IDs.
     ///
     /// The iteration order is not stable.
@@ -154,11 +200,17 @@ impl MutSubstitutable for NameBindingMap {
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct NameBindingGroup {
     name_bindings: FxHashMap<Interned<str>, NameBindingID>,
+
+    /// Where the bindings of this group can be referred to by name: from the
+    /// end of their declaration to the end of the scope declaring them.
+    visibility: RelativeSpan,
 }
 
 impl NameBindingGroup {
     #[must_use]
-    fn new() -> Self { Self { name_bindings: FxHashMap::default() } }
+    fn new(visibility: RelativeSpan) -> Self {
+        Self { name_bindings: FxHashMap::default(), visibility }
+    }
 }
 
 pub type NameBindingGroupID = ID<NameBindingGroup>;

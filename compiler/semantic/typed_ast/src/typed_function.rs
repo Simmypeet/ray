@@ -1,7 +1,9 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
+use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_source_file::ByteIndex;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     subst::{MutSubstitutable, Subst},
@@ -32,10 +34,13 @@ pub struct TypedFunctionMap {
 }
 
 impl TypedFunctionMap {
+    /// Creates the map of a def whose parameters can be referred to by name
+    /// in `parameter_visibility`, its body.
     #[must_use]
-    pub fn new(root_effect: Interned<Ty>) -> Self {
+    pub fn new(root_effect: Interned<Ty>, parameter_visibility: RelativeSpan) -> Self {
         let mut name_binding_map = NameBindingMap::default();
-        let parameter_name_binding_group_id = name_binding_map.new_name_binding_group();
+        let parameter_name_binding_group_id =
+            name_binding_map.new_name_binding_group(parameter_visibility);
 
         let mut functions = Arena::default();
         let root = functions.insert(TypedFunction::new(
@@ -131,9 +136,16 @@ impl TypedFunctionMap {
         self.functions.iter()
     }
 
+    /// Inserts a closure whose parameters can be referred to by name in
+    /// `parameter_visibility`, its body.
     #[must_use]
-    pub fn insert_closure(&mut self, effect: Interned<Ty>) -> TypedFunctionID {
-        let parameter_name_binding_group_id = self.name_binding_map.new_name_binding_group();
+    pub fn insert_closure(
+        &mut self,
+        effect: Interned<Ty>,
+        parameter_visibility: RelativeSpan,
+    ) -> TypedFunctionID {
+        let parameter_name_binding_group_id =
+            self.name_binding_map.new_name_binding_group(parameter_visibility);
 
         self.functions.insert(TypedFunction::new(
             TypedContext::Closure(TypedClosureContext::new(parameter_name_binding_group_id)),
@@ -141,14 +153,18 @@ impl TypedFunctionMap {
         ))
     }
 
+    /// Inserts the handler of `operation`, whose parameters can be referred
+    /// to by name in `parameter_visibility`, its body.
     #[must_use]
     pub fn insert_operation_handler(
         &mut self,
         operation: GlobalSymbolID,
         return_type: Interned<Ty>,
         effect: Interned<Ty>,
+        parameter_visibility: RelativeSpan,
     ) -> TypedFunctionID {
-        let parameter_name_binding_group_id = self.name_binding_map.new_name_binding_group();
+        let parameter_name_binding_group_id =
+            self.name_binding_map.new_name_binding_group(parameter_visibility);
 
         self.functions.insert(TypedFunction::new(
             TypedContext::OperationHandler(TypedOperationHandlerContext::new(
@@ -268,8 +284,22 @@ impl TypedFunctionMap {
         self.name_binding_map.insert_name_binding_to_group(group_id, name_binding_id)
     }
 
-    pub fn new_name_binding_group(&mut self) -> NameBindingGroupID {
-        self.name_binding_map.new_name_binding_group()
+    /// Creates an empty name binding group whose bindings can be referred to
+    /// by name in `visibility`.
+    pub fn new_name_binding_group(&mut self, visibility: RelativeSpan) -> NameBindingGroupID {
+        self.name_binding_map.new_name_binding_group(visibility)
+    }
+
+    /// Iterates over the name bindings of this def that can be referred to by
+    /// name at `offset`, a byte index in the source file of the def.
+    ///
+    /// See [`NameBindingMap::visible_name_bindings`].
+    pub async fn visible_name_bindings(
+        &self,
+        engine: &TrackedEngine,
+        offset: ByteIndex,
+    ) -> impl Iterator<Item = (NameBindingID, &NameBinding)> {
+        self.name_binding_map.visible_name_bindings(engine, offset).await
     }
 }
 
