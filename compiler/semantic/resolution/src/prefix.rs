@@ -14,6 +14,7 @@ use rayc_symbol::{
     parent::{get_closest_module_id, get_parent_global},
     symbol_kind::{SymbolKind, get_symbol_kind},
 };
+use rayc_syntax::path::PathRoot;
 use rayc_target::get_linked_targets;
 use rayc_type::{
     accessibility::is_symbol_accessible_from,
@@ -52,6 +53,22 @@ impl PathPrefix {
     #[must_use]
     pub const fn new(root: PrefixRoot, segments: Vec<Interned<str>>) -> Self {
         Self { root, segments }
+    }
+
+    /// Creates the prefix made of the written root `root` and the segments
+    /// named `segments`.
+    ///
+    /// Returns `None` if the root is a segment whose name is missing.
+    #[must_use]
+    pub fn with_root_syntax(root: &PathRoot, segments: Vec<Interned<str>>) -> Option<Self> {
+        let root = match root {
+            PathRoot::This(_) => PrefixRoot::This,
+            PathRoot::Target(_) => PrefixRoot::Target,
+            PathRoot::Super(_) => PrefixRoot::Super,
+            PathRoot::Segment(segment) => PrefixRoot::Name(segment.identifier()?.kind.0),
+        };
+
+        Some(Self::new(root, segments))
     }
 
     /// Finds the symbol whose members can follow this prefix in a path

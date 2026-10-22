@@ -366,6 +366,14 @@ impl Tree {
         AbsoluteSpan { start, end, source_id: relative_span.source_id }
     }
 
+    /// Returns whether a cursor at `cursor`, a byte index between two
+    /// characters, is at the given relative span. See
+    /// [`Span::contains_cursor`].
+    #[must_use]
+    pub fn span_contains_cursor(&self, relative_span: &RelativeSpan, cursor: ByteIndex) -> bool {
+        self.absolute_span_of(relative_span).contains_cursor(cursor)
+    }
+
     /// Calculates the absolute location of the given relative location.
     #[must_use]
     pub fn absolute_location_of(&self, relative_location: &RelativeLocation) -> ByteIndex {

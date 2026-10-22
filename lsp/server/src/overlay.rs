@@ -15,7 +15,7 @@ use qbice::{
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
 use rayc_qbice::{Config, TrackedEngine};
-use rayc_source_file::{EditorLocation, SourceFile};
+use rayc_source_file::{ByteIndex, EditorLocation, SourceFile};
 use rayc_source_file_impl::LoadSourceFileExecutor;
 use tower_lsp::lsp_types::{Position, TextDocumentContentChangeEvent, Url};
 
@@ -164,6 +164,21 @@ impl Overlay {
 
         buffer.version = version;
         buffer.session
+    }
+
+    /// Returns the canonical path and the session of the document the editor
+    /// refers to by `uri`, and the byte index of `position` in it.
+    ///
+    /// Returns `None` if the document is not open or not in a project.
+    pub(crate) fn locate(
+        &self,
+        uri: &Url,
+        position: Position,
+    ) -> Option<(PathBuf, SessionID, ByteIndex)> {
+        let buffers = self.buffers.read().expect("poisoned");
+        let buffer = buffers.ids_by_uri.get(uri).and_then(|id| buffers.arena.get(*id))?;
+
+        Some((buffer.path.clone(), buffer.session?, Self::byte_index(&buffer.source, position)))
     }
 
     fn byte_index(source: &SourceFile, position: Position) -> usize {

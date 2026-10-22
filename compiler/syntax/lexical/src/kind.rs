@@ -462,3 +462,20 @@ pub enum Kind {
     Punctuation(Punctuation),
     Numeric(Numeric),
 }
+
+impl Kind {
+    /// Returns whether the token is a word, an identifier or a keyword. A
+    /// keyword is spelled like an identifier, so a word being typed may become
+    /// either.
+    #[must_use]
+    pub const fn is_word(&self) -> bool {
+        match self {
+            Self::Identifier(_) | Self::Keyword(_) => true,
+            Self::Punctuation(_)
+            | Self::NewLine(_)
+            | Self::Character(_)
+            | Self::String(_)
+            | Self::Numeric(_) => false,
+        }
+    }
+}

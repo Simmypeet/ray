@@ -26,6 +26,17 @@ incrementally: each edit updates the document's rope in place. Positions in
 edits and diagnostics use UTF-16.
 Checks are debounced, and an edit cancels the check in progress.
 
+Completion offers what the segment of a path at the cursor can name,
+wherever a path is written: in types, effect rows, where and given clauses,
+instance headers, and in the calls and struct initializations of a body. It
+keeps what fits the position, such as types in a type. Inside a `def` body it
+also offers the local variables visible at the cursor, with their types, and
+after a `.` the fields of a struct that the `def` can access, or the indices
+of a tuple. A `.` also triggers it. Completion reads the unsaved contents too:
+a completion request stops a pending check, re-reads the documents, and
+schedules the check again. Run `cargo test -p rayc_e2e --test completion_e2e`
+for the completion fixtures.
+
 The engine caches its compilation in `target/lsp` in the project directory,
 next to the compiler's `target/inc`, so a restarted server recomputes only what
 changed. The two caches are separate because a cache can be open in only one

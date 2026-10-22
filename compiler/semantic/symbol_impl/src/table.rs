@@ -728,6 +728,10 @@ impl TableKey {
     /// Returns the path of the source file.
     #[must_use]
     pub const fn path(&self) -> &Interned<Path> { &self.path }
+
+    /// Returns the module whose members the file defines.
+    #[must_use]
+    pub const fn module_id(&self) -> SymbolID { self.module_id }
 }
 
 /// A query for the [`Table`] of the source file identified by a [`TableKey`].

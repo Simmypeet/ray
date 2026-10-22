@@ -1,5 +1,5 @@
 use qbice::{Decode, Encode, StableHash};
-use rayc_lexical::tree::DelimiterKind;
+use rayc_lexical::tree::{DelimiterKind, RelativeSpan};
 use rayc_parser::{
     abstract_tree,
     expect::{self, Fragment},
@@ -50,6 +50,20 @@ abstract_tree::abstract_tree! {
     }
 }
 
+impl PathRoot {
+    /// Returns the span of the root without the arguments of its segment: its
+    /// keyword, or the name of its segment.
+    #[must_use]
+    pub fn span_without_arguments(&self) -> Option<RelativeSpan> {
+        match self {
+            Self::This(keyword) | Self::Target(keyword) | Self::Super(keyword) => {
+                Some(keyword.span)
+            }
+            Self::Segment(segment) => Some(segment.identifier()?.span),
+        }
+    }
+}
+
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct PathContinuation {
@@ -57,6 +71,17 @@ abstract_tree::abstract_tree! {
         // a dangling `.` is kept without a segment, so that the segment after
         // it can be completed
         pub segment: PathSegment = ast::<PathSegment>().recoverable()
+    }
+}
+
+impl PathContinuation {
+    /// Returns the span of the continuation without the arguments of its
+    /// segment: its `.` and the name after it, if any.
+    #[must_use]
+    pub fn span_without_arguments(&self) -> Option<RelativeSpan> {
+        let dot = self.dot()?.span;
+        let name = self.segment().and_then(|segment| segment.identifier());
+        Some(name.map_or(dot, |name| dot.join(&name.span)))
     }
 }
 

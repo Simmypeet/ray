@@ -33,6 +33,18 @@ abstract_tree::abstract_tree! {
     }
 }
 
+impl EffectRow {
+    /// Returns the path the effect row is written as, if it is written as
+    /// one.
+    #[must_use]
+    pub fn into_path(self) -> Option<Path> {
+        match self {
+            Self::Path(path) => Some(path),
+            Self::ConcreteEffectRow(_) => None,
+        }
+    }
+}
+
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct EffectRowAnnotation {

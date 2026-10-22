@@ -1,4 +1,6 @@
-//! Ray language server: live diagnostics for the projects of open documents.
+//! Ray language server: live diagnostics for the projects of open documents,
+//! and completion of the names in scope, of the fields after a `.`, and of
+//! paths.
 //!
 //! Every open document is checked as part of the project containing it, which
 //! is described by the nearest `ray.toml`. Each project has one engine that
@@ -20,12 +22,14 @@ use tower_lsp::{
     Client, ClientSocket, LanguageServer, LspService,
     jsonrpc::Result,
     lsp_types::{
-        DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams,
-        DidOpenTextDocumentParams, InitializeParams, InitializeResult, MessageType,
-        ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+        CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
+        DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+        InitializeParams, InitializeResult, MessageType, ServerCapabilities, ServerInfo,
+        TextDocumentSyncCapability, TextDocumentSyncKind,
     },
 };
 
+mod completion;
 mod diagnostic;
 mod overlay;
 mod session;
@@ -213,6 +217,11 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::INCREMENTAL,
                 )),
+                // a `.` starts the completion of the member after it
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec![".".to_owned()]),
+                    ..CompletionOptions::default()
+                }),
                 ..ServerCapabilities::default()
             },
             server_info: Some(ServerInfo {
@@ -278,6 +287,24 @@ impl LanguageServer for Backend {
         if let Some(session_id) = self.overlay.close_by_uri(&params.text_document.uri) {
             state.schedule_check(session_id, &self.client, &self.overlay);
         }
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        // the state is held so that no edit lands between reading the
+        // position and completing at it
+        let mut state = self.state.lock().await;
+        let position = params.text_document_position;
+        let Some((path, session_id, offset)) =
+            self.overlay.locate(&position.text_document.uri, position.position)
+        else {
+            return Ok(None);
+        };
+        let Some(session) = state.sessions.get_mut(session_id) else {
+            return Ok(None);
+        };
+
+        let items = session.complete(&path, offset, &self.client, &self.overlay).await;
+        Ok(Some(CompletionResponse::Array(items)))
     }
 
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {

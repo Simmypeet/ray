@@ -10,7 +10,7 @@ use qbice::{
 use rayc_extend::extend;
 use rayc_hash::FxHashMap;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_source_file::LocalSourceID;
+use rayc_source_file::{GlobalSourceID, LocalSourceID};
 use rayc_symbol::{GlobalSymbolID, SymbolID};
 use rayc_target::TargetID;
 use rayc_tokio::join_set::JoinSet;
@@ -27,8 +27,8 @@ pub struct TableIndex {
     /// The tables of the target, sorted by their keys.
     table_keys: Vec<Interned<TableKey>>,
 
-    /// The paths of the source files loaded into the target.
-    source_files: FxHashMap<LocalSourceID, Interned<Path>>,
+    /// The tables of the source files loaded into the target.
+    source_files: FxHashMap<LocalSourceID, Interned<TableKey>>,
 }
 
 impl TableIndex {
@@ -49,12 +49,19 @@ impl TableIndex {
     /// file belongs to the target.
     #[must_use]
     pub fn source_file_path(&self, source_id: LocalSourceID) -> Option<&Interned<Path>> {
-        self.source_files.get(&source_id)
+        self.source_files.get(&source_id).map(|table_key| table_key.path())
+    }
+
+    /// Returns the module whose members the loaded source file with the given
+    /// ID defines, if the file belongs to the target.
+    #[must_use]
+    pub fn source_file_module(&self, source_id: LocalSourceID) -> Option<SymbolID> {
+        self.source_files.get(&source_id).map(|table_key| table_key.module_id())
     }
 
     /// Returns the IDs and paths of every source file loaded into the target.
     pub fn source_files(&self) -> impl Iterator<Item = (LocalSourceID, &Interned<Path>)> {
-        self.source_files.iter().map(|(id, path)| (*id, path))
+        self.source_files.iter().map(|(id, table_key)| (*id, table_key.path()))
     }
 
     /// Records the symbols and the source file of the given table.
@@ -64,7 +71,7 @@ impl TableIndex {
         }
 
         if let Some(source_id) = table.source_id() {
-            self.source_files.insert(source_id, table_key.path().clone());
+            self.source_files.insert(source_id, table_key.clone());
         }
 
         self.table_keys.push(table_key);
@@ -163,6 +170,20 @@ pub async fn get_symbol_table(self: &TrackedEngine, symbol_id: GlobalSymbolID) -
         .unwrap_or_else(|| panic!("the symbol {symbol_id:?} is not in any table"));
 
     self.get_table(&table_key).await
+}
+
+/// Returns the module whose members the source file `source_id` defines, or
+/// `None` if the file is not loaded into its target.
+#[extend]
+pub async fn get_source_file_module(
+    self: &TrackedEngine,
+    source_id: GlobalSourceID,
+) -> Option<GlobalSymbolID> {
+    let index = self.get_table_index(source_id.target_id).await;
+
+    index
+        .source_file_module(source_id.id)
+        .map(|module_id| source_id.target_id.make_global(module_id))
 }
 
 /// Returns the tables of every source file of the given target.
