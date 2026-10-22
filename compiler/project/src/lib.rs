@@ -206,6 +206,22 @@ pub enum Error {
 }
 
 impl Error {
+    /// Returns whether the error reports that the starting path is not inside
+    /// any project.
+    #[must_use]
+    pub const fn is_manifest_not_found(&self) -> bool {
+        match self {
+            Self::ManifestNotFound { .. } => true,
+            Self::Io { .. }
+            | Self::Parse { .. }
+            | Self::InvalidName { .. }
+            | Self::InvalidProjectName { .. }
+            | Self::UnnamedDirectory { .. }
+            | Self::AlreadyExists { .. }
+            | Self::Write { .. } => false,
+        }
+    }
+
     /// Returns whether the error rejects the name of a new project, which
     /// naming the project explicitly can fix.
     #[must_use]
@@ -369,5 +385,16 @@ impl Project {
     #[must_use]
     pub fn default_incremental_path(&self) -> PathBuf {
         self.directory.join(OUTPUT_DIRECTORY_NAME).join("inc")
+    }
+
+    /// Returns the directory holding the incremental compilation data of the
+    /// language server.
+    ///
+    /// The language server keeps its own data because the database can be
+    /// opened by only one process at a time; sharing it with the compiler
+    /// would make `rayc` fail while an editor is open.
+    #[must_use]
+    pub fn language_server_incremental_path(&self) -> PathBuf {
+        self.directory.join(OUTPUT_DIRECTORY_NAME).join("lsp")
     }
 }
