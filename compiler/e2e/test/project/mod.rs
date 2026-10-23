@@ -15,8 +15,9 @@ use rayc_target::Arguments;
 #[test_generator::test_resources("compiler/e2e/test/project/**/ray.toml")]
 fn main(resource: &str) {
     stacker::maybe_grow(3 * 1024 * 1024, 8 * 1024 * 1024, || {
-        // diagnostics display paths relative to the current directory
-        let workspace = std::fs::canonicalize(env!("RAYC_CARGO_WORKSPACE_DIR")).unwrap();
+        // diagnostics display paths relative to the current directory, which
+        // is canonicalized like the project paths the compiler reports
+        let workspace = dunce::canonicalize(env!("RAYC_CARGO_WORKSPACE_DIR")).unwrap();
         std::env::set_current_dir(&workspace).unwrap();
 
         let project_directory = Path::new(resource).parent().unwrap().to_path_buf();

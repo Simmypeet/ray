@@ -1918,6 +1918,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "annotate-snippets",
  "ansi_term",
+ "dunce",
  "linkme",
  "qbice",
  "rayc_c2",
@@ -1949,6 +1950,7 @@ name = "rayc_e2e"
 version = "0.1.0-beta.2"
 dependencies = [
  "clap",
+ "dunce",
  "insta",
  "pretty_assertions",
  "rayc_driver",
@@ -2156,6 +2158,7 @@ dependencies = [
 name = "rayc_project"
 version = "0.1.0-beta.2"
 dependencies = [
+ "dunce",
  "rayc_lexical",
  "rayc_target",
  "serde",

@@ -324,7 +324,8 @@ fn render_group(
 /// compilation data does not depend on where the compiler is invoked from.
 fn display_path(path: &Path) -> String {
     std::env::current_dir()
-        .and_then(std::fs::canonicalize)
+        // canonicalized like project paths so that the prefix matches
+        .and_then(dunce::canonicalize)
         .ok()
         .and_then(|current_directory| path.strip_prefix(current_directory).ok())
         .unwrap_or(path)

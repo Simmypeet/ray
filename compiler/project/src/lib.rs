@@ -275,8 +275,10 @@ impl Project {
     /// first manifest it finds.
     pub fn discover(start: &Path) -> Result<Self, Error> {
         // resolve symbolic links and relative components first so that the
-        // project directory, and every path derived from it, is canonical
-        let start = std::fs::canonicalize(start)
+        // project directory, and every path derived from it, is canonical;
+        // `dunce` avoids Windows verbatim paths (`\\?\C:\...`), which tools
+        // such as the linker do not accept
+        let start = dunce::canonicalize(start)
             .map_err(|source| Error::Io { path: start.to_path_buf(), source })?;
 
         let directory = start
@@ -289,7 +291,7 @@ impl Project {
 
     /// Loads the project whose manifest is in `directory`.
     pub fn load(directory: &Path) -> Result<Self, Error> {
-        let directory = std::fs::canonicalize(directory)
+        let directory = dunce::canonicalize(directory)
             .map_err(|source| Error::Io { path: directory.to_path_buf(), source })?;
 
         Self::load_canonical(directory)

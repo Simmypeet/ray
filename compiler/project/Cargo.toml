@@ -9,6 +9,7 @@ description = "Discovers and loads Ray project manifests"
 [dependencies]
 rayc_lexical.path = "../syntax/lexical"
 rayc_target.path = "../base/target"
+dunce.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 toml.workspace = true
