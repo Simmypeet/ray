@@ -1,0 +1,24 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "detail": "module",
+    "kind": 9,
+    "label": "core",
+    "sortText": "1core"
+  },
+  {
+    "detail": "def",
+    "kind": 3,
+    "label": "main",
+    "sortText": "1main"
+  },
+  {
+    "detail": "bool",
+    "kind": 6,
+    "label": "value",
+    "sortText": "0value"
+  }
+]

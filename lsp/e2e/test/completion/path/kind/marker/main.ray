@@ -1,0 +1,8 @@
+# A marker predicate offers markers.
+marker Sendable
+
+struct Point:
+  x: int32
+
+def send(value: a) -> a where (a: Se<cursor>):
+  return value

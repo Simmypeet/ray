@@ -1,0 +1,8 @@
+# A dangling `.` in a path reports the missing segment, and the path is not
+# resolved.
+module geometry:
+  pub struct Point:
+    pub x: int32
+
+struct Holder:
+  point: geometry.

@@ -1,0 +1,10 @@
+# A trait is shown with the signatures of its members.
+pub trait Some[t]:
+    pub type Output
+    pub def test(a: t) -> this.Output
+
+inst SomeInt32 for So<cursor>me[int32]:
+    type Output = bool
+
+    def test(a: int32) -> bool:
+        return true

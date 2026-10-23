@@ -1,0 +1,3 @@
+# A parameter of a closure is shown without `let`.
+pub def main():
+  let add = (val<cursor>ue) -> value + 1

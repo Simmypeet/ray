@@ -1,0 +1,6 @@
+# The names declared in a block are not visible after it.
+pub def main():
+  let outer = 1
+  if true:
+    let inner = 2
+  let after = o<cursor>

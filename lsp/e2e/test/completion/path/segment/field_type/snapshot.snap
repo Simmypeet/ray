@@ -1,0 +1,16 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "detail": "struct",
+    "kind": 22,
+    "label": "Point"
+  },
+  {
+    "detail": "module",
+    "kind": 9,
+    "label": "shapes"
+  }
+]

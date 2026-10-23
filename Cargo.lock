@@ -1778,6 +1778,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "ray_lsp_e2e"
+version = "0.1.0-beta.2"
+dependencies = [
+ "insta",
+ "ray_lsp_fixture",
+ "serde_json",
+ "test-generator",
+]
+
+[[package]]
+name = "ray_lsp_fixture"
+version = "0.1.0-beta.2"
+dependencies = [
+ "insta",
+ "ray_lsp",
+ "serde_json",
+ "stacker",
+ "tempfile",
+ "tokio",
+ "tower-lsp",
+]
+
+[[package]]
 name = "rayc"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -1921,18 +1944,15 @@ dependencies = [
  "clap",
  "insta",
  "pretty_assertions",
- "ray_lsp",
  "rayc_driver",
  "rayc_target",
  "serde",
- "serde_json",
  "stacker",
  "tempfile",
  "termcolor",
  "test-generator",
  "tokio",
  "toml",
- "tower-lsp",
  "tracing-subscriber",
 ]
 

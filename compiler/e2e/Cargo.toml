@@ -22,9 +22,6 @@ serde = { workspace = true }
 toml = { workspace = true }
 tracing-subscriber = { workspace = true }
 stacker = { workspace = true }
-ray_lsp = { path = "../../lsp/server" }
-tower-lsp = { workspace = true }
-serde_json = { workspace = true }
 
 [[test]]
 name = "check_e2e"
@@ -41,10 +38,6 @@ path = "test/project/mod.rs"
 [[test]]
 name = "new_e2e"
 path = "test/new/mod.rs"
-
-[[test]]
-name = "completion_e2e"
-path = "test/completion/mod.rs"
 
 [lints]
 workspace = true

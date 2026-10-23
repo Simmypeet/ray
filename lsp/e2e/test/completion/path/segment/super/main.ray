@@ -1,0 +1,12 @@
+# `super` names the parent of the enclosing module, whose private members
+# its submodules can access.
+module geometry:
+  pub def side() -> int32:
+    return 1
+
+  def hidden() -> int32:
+    return 2
+
+  pub module shapes:
+    pub def peek() -> int32:
+      return super.<cursor>()

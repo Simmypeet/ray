@@ -1,0 +1,20 @@
+---
+source: lsp/e2e/test/hover/mod.rs
+expression: hover_result(&response)
+---
+{
+  "contents": {
+    "kind": "markdown",
+    "value": "```ray\npub inst SomeInt32 for Some[int32]:\n    def test(a: int32) -> int32\n\n    def other(a: int32) -> int32\n```"
+  },
+  "range": {
+    "end": {
+      "character": 20,
+      "line": 15
+    },
+    "start": {
+      "character": 11,
+      "line": 15
+    }
+  }
+}

@@ -1,0 +1,6 @@
+# A block sees the names declared before it and in it.
+pub def main():
+  let outer = 1
+  if true:
+    let inner = 2
+    let sum = in<cursor>

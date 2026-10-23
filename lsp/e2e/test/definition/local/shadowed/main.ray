@@ -1,0 +1,5 @@
+# An identifier goes to the variable of its name declared last.
+pub def main() -> bool:
+    let value = 1
+    let value = true
+    return val<cursor>ue

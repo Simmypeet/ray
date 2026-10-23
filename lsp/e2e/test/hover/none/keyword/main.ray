@@ -1,0 +1,4 @@
+# A keyword is not a variable.
+pub def main() -> int32:
+  let value = 42
+  ret<cursor>urn value

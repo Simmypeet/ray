@@ -1,0 +1,6 @@
+# A def is shown by its signature, without its body.
+pub def apply[t](value: t, times: int32) -> t:
+    return value
+
+pub def main() -> int32:
+    return ap<cursor>ply(1, 2)

@@ -45,6 +45,8 @@ members = [
     "compiler/driver",
     "compiler/main",
     "compiler/project",
+    "lsp/e2e",
+    "lsp/fixture",
     "lsp/server",
 
     # tidy-alphabetical-end

@@ -1,0 +1,11 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "detail": "int32",
+    "kind": 5,
+    "label": "value"
+  }
+]

@@ -1,0 +1,15 @@
+# The variable a `handle` clause binds is shown without `let`, with the type
+# of the parameter of the operation.
+eff State:
+  def get() -> int32
+  def set(value: int32) -> ()
+
+def counter() -> int32 \ {State}:
+  State.set(State.get() + 1)
+  return State.get()
+
+pub def main() -> int32:
+  return handle coro counter():
+    case State.get() resume k: 0
+    case State.set(val<cursor>ue) resume k: value
+    case return result: result

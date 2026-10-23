@@ -1,0 +1,29 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "detail": "struct",
+    "kind": 22,
+    "label": "Holder",
+    "sortText": "1Holder"
+  },
+  {
+    "detail": "module",
+    "kind": 9,
+    "label": "core",
+    "sortText": "1core"
+  },
+  {
+    "detail": "module",
+    "kind": 9,
+    "label": "geometry",
+    "sortText": "1geometry"
+  },
+  {
+    "kind": 14,
+    "label": "target",
+    "sortText": "2target"
+  }
+]

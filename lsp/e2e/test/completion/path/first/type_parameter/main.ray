@@ -1,0 +1,3 @@
+# A type parameter in scope is a first segment of a type.
+def first(value: elem) -> el<cursor>:
+  return value

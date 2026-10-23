@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: unexpected new line, expected identifier, numeric literal, `&` punctuation, `*` punctuation, `.` punctuation, or `( ... )` block
+  ╭▸ compiler/e2e/test/check/syntax/dangling_dot/main.ray:9:26
+  │
+9 │   let flag: bool = point.
+  ╰╴                         ━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

@@ -1,0 +1,20 @@
+---
+source: lsp/e2e/test/hover/mod.rs
+expression: hover_result(&response)
+---
+{
+  "contents": {
+    "kind": "markdown",
+    "value": "```ray\npub trait Container[c]:\n    pub type Item\n    pub def first(container: c) -> this.Item\n```"
+  },
+  "range": {
+    "end": {
+      "character": 39,
+      "line": 3
+    },
+    "start": {
+      "character": 35,
+      "line": 3
+    }
+  }
+}

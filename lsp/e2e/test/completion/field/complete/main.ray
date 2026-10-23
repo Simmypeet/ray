@@ -1,0 +1,8 @@
+# The name of an existing field still offers all the fields.
+struct Point:
+  x: int32
+  y: int32
+
+pub def main():
+  let point = Point { x = 1, y = 2 }
+  let x = point.x<cursor>

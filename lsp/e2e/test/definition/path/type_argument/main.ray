@@ -1,0 +1,9 @@
+# A path in the arguments of another goes to its own symbol.
+struct Wrapper[t]:
+    value: t
+
+struct Meters:
+    value: int32
+
+def wrap(value: Wrapper[Me<cursor>ters]) -> int32:
+    return value.value.value

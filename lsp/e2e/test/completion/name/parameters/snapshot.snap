@@ -1,0 +1,30 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "detail": "def",
+    "kind": 3,
+    "label": "add",
+    "sortText": "1add"
+  },
+  {
+    "detail": "module",
+    "kind": 9,
+    "label": "core",
+    "sortText": "1core"
+  },
+  {
+    "detail": "int32",
+    "kind": 6,
+    "label": "left",
+    "sortText": "0left"
+  },
+  {
+    "detail": "int32",
+    "kind": 6,
+    "label": "right",
+    "sortText": "0right"
+  }
+]

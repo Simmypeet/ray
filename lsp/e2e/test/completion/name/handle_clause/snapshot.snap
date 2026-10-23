@@ -1,0 +1,48 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "detail": "effect",
+    "kind": 8,
+    "label": "State",
+    "sortText": "1State"
+  },
+  {
+    "detail": "module",
+    "kind": 9,
+    "label": "core",
+    "sortText": "1core"
+  },
+  {
+    "detail": "def",
+    "kind": 3,
+    "label": "counter",
+    "sortText": "1counter"
+  },
+  {
+    "detail": "int32",
+    "kind": 6,
+    "label": "initial",
+    "sortText": "0initial"
+  },
+  {
+    "detail": "Continuation[(), &mut <coroutine of counter>]",
+    "kind": 6,
+    "label": "k",
+    "sortText": "0k"
+  },
+  {
+    "detail": "def",
+    "kind": 3,
+    "label": "main",
+    "sortText": "1main"
+  },
+  {
+    "detail": "int32",
+    "kind": 6,
+    "label": "value",
+    "sortText": "0value"
+  }
+]

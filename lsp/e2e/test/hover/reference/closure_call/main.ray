@@ -1,0 +1,8 @@
+# The callee of a call that names a local is the local, not a symbol of the
+# same name.
+def add(left: int32, right: int32) -> int32:
+    return left + right
+
+pub def main() -> int32:
+    let add = (value) -> value + 1
+    return ad<cursor>d(1)

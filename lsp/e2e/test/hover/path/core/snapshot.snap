@@ -1,0 +1,20 @@
+---
+source: lsp/e2e/test/hover/mod.rs
+expression: hover_result(&response)
+---
+{
+  "contents": {
+    "kind": "markdown",
+    "value": "```ray\npub trait Drop[t]:\n    pub def drop(self: t)\n```"
+  },
+  "range": {
+    "end": {
+      "character": 44,
+      "line": 1
+    },
+    "start": {
+      "character": 40,
+      "line": 1
+    }
+  }
+}

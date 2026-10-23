@@ -1,0 +1,8 @@
+# A module defined in its parent goes to its name.
+module geometry:
+    pub struct Point:
+        pub x: int32
+        pub y: int32
+
+pub def main():
+    let point = geo<cursor>metry.Point { x = 1, y = 2 }
