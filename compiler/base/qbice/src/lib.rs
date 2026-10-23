@@ -474,9 +474,11 @@ impl<P: AsRef<Path>> StorageEngineFactory for IncrementalStorageEngine<P> {
         self,
         serialization_plugin: qbice::serialize::Plugin,
     ) -> Result<Self::StorageEngine, Self::Error> {
+        // RocksDB joins its file names with `/`, which a Windows verbatim path
+        // (`\\?\C:\...`, as returned by `canonicalize`) does not accept
         DbBackedFactory::builder()
             .configuration(Configuration::builder().build())
-            .db_factory(RocksDB::factory(self.0))
+            .db_factory(RocksDB::factory(dunce::simplified(self.0.as_ref())))
             .build()
             .open(serialization_plugin)
             .map(StorageEngine::DbBacked)
