@@ -1,0 +1,5 @@
+# The keywords that start a module member, where no name is completed.
+pub def main():
+  pass
+
+d<cursor>

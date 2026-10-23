@@ -1,0 +1,76 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "kind": 14,
+    "label": "break",
+    "sortText": "2break"
+  },
+  {
+    "kind": 14,
+    "label": "continue",
+    "sortText": "2continue"
+  },
+  {
+    "kind": 14,
+    "label": "coro",
+    "sortText": "2coro"
+  },
+  {
+    "kind": 14,
+    "label": "false",
+    "sortText": "2false"
+  },
+  {
+    "kind": 14,
+    "label": "handle",
+    "sortText": "2handle"
+  },
+  {
+    "kind": 14,
+    "label": "if",
+    "sortText": "2if"
+  },
+  {
+    "kind": 14,
+    "label": "let",
+    "sortText": "2let"
+  },
+  {
+    "kind": 14,
+    "label": "move",
+    "sortText": "2move"
+  },
+  {
+    "kind": 14,
+    "label": "pass",
+    "sortText": "2pass"
+  },
+  {
+    "kind": 14,
+    "label": "return",
+    "sortText": "2return"
+  },
+  {
+    "kind": 14,
+    "label": "run",
+    "sortText": "2run"
+  },
+  {
+    "kind": 14,
+    "label": "true",
+    "sortText": "2true"
+  },
+  {
+    "kind": 14,
+    "label": "unsafe",
+    "sortText": "2unsafe"
+  },
+  {
+    "kind": 14,
+    "label": "while",
+    "sortText": "2while"
+  }
+]

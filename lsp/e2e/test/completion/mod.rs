@@ -1,5 +1,6 @@
 //! Completion fixtures, grouped by what is completed:
 //!
+//! - `keyword/`: the keywords the syntax allows at the cursor.
 //! - `name/`: the local variables at a name in a body.
 //! - `field/`: the fields and tuple indices after a `.` in a body.
 //! - `path/segment/`: the segment after a `.` in a path.

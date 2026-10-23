@@ -16,15 +16,60 @@ expression: canonical_completions(&response)
     "sortText": "1core"
   },
   {
+    "kind": 14,
+    "label": "coro",
+    "sortText": "2coro"
+  },
+  {
+    "kind": 14,
+    "label": "false",
+    "sortText": "2false"
+  },
+  {
+    "kind": 14,
+    "label": "handle",
+    "sortText": "2handle"
+  },
+  {
+    "kind": 14,
+    "label": "if",
+    "sortText": "2if"
+  },
+  {
     "detail": "int32",
     "kind": 6,
     "label": "left",
     "sortText": "0left"
   },
   {
+    "kind": 14,
+    "label": "move",
+    "sortText": "2move"
+  },
+  {
     "detail": "int32",
     "kind": 6,
     "label": "right",
     "sortText": "0right"
+  },
+  {
+    "kind": 14,
+    "label": "run",
+    "sortText": "2run"
+  },
+  {
+    "kind": 14,
+    "label": "true",
+    "sortText": "2true"
+  },
+  {
+    "kind": 14,
+    "label": "unsafe",
+    "sortText": "2unsafe"
+  },
+  {
+    "kind": 14,
+    "label": "while",
+    "sortText": "2while"
   }
 ]

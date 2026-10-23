@@ -1,0 +1,4 @@
+# On a blank line, the indentation puts the cursor in the body.
+pub def main():
+  let variable = 32
+  <cursor>

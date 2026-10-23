@@ -1,0 +1,26 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "kind": 14,
+    "label": "and",
+    "sortText": "2and"
+  },
+  {
+    "kind": 14,
+    "label": "isize",
+    "sortText": "2isize"
+  },
+  {
+    "kind": 14,
+    "label": "or",
+    "sortText": "2or"
+  },
+  {
+    "kind": 14,
+    "label": "usize",
+    "sortText": "2usize"
+  }
+]
