@@ -1753,6 +1753,7 @@ dependencies = [
 name = "ray_lsp"
 version = "0.1.0-beta.2"
 dependencies = [
+ "dunce",
  "qbice",
  "rayc_arena",
  "rayc_check",
@@ -1798,6 +1799,7 @@ dependencies = [
 name = "ray_lsp_fixture"
 version = "0.1.0-beta.2"
 dependencies = [
+ "dunce",
  "insta",
  "ray_lsp",
  "serde_json",

@@ -40,7 +40,7 @@ impl Fixture {
     /// Locates the fixture at `resource`, a path relative to the workspace.
     #[must_use]
     pub fn new(resource: &str) -> Self {
-        let workspace = std::fs::canonicalize(env!("RAYC_CARGO_WORKSPACE_DIR")).unwrap();
+        let workspace = dunce::canonicalize(env!("RAYC_CARGO_WORKSPACE_DIR")).unwrap();
         Self { path: workspace.join(resource) }
     }
 
@@ -81,7 +81,7 @@ async fn request(fixture: &Path, method: &str) -> Value {
     // the server works only in project mode, so the fixture is the root file
     // of a fresh project
     let project = tempfile::tempdir().unwrap();
-    let directory = std::fs::canonicalize(project.path()).unwrap();
+    let directory = dunce::canonicalize(project.path()).unwrap();
     std::fs::write(directory.join("ray.toml"), "[target]\nname = \"app\"\n").unwrap();
     std::fs::create_dir(directory.join("src")).unwrap();
     let root_file = directory.join("src").join("main.ray");

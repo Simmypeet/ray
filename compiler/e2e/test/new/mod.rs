@@ -30,7 +30,11 @@ fn binary_project_runs() {
         let output = Command::new(&executable_path).output().unwrap();
 
         assert!(output.status.success());
-        assert_eq!(String::from_utf8(output.stdout).unwrap(), "Hello, world!\n");
+        // the C runtime of Windows writes line endings as CRLF
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap().replace("\r\n", "\n"),
+            "Hello, world!\n"
+        );
     });
 }
 

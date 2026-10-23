@@ -425,7 +425,7 @@ fn files_of_the_project_are_checked_from_disk() {
     // a file that is not open is published under its canonical path, which
     // differs on systems whose temporary directory is a symbolic link
     let util =
-        Url::from_file_path(std::fs::canonicalize(directory.path()).unwrap().join("src/util.ray"))
+        Url::from_file_path(dunce::canonicalize(directory.path()).unwrap().join("src/util.ray"))
             .unwrap();
     let mut editor = Editor::start();
     editor.open(&main, 1, &std::fs::read_to_string(main.to_file_path().unwrap()).unwrap());

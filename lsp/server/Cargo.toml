@@ -11,6 +11,7 @@ rayc_corelib.path = "../../compiler/corelib"
 tower-lsp.workspace = true
 tokio = { workspace = true, features = ["io-std", "io-util", "time"] }
 qbice.workspace = true
+dunce.workspace = true
 rayc_qbice.path = "../../compiler/base/qbice"
 rayc_target.path = "../../compiler/base/target"
 rayc_project.path = "../../compiler/project"

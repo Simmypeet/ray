@@ -96,13 +96,13 @@ impl Overlay {
     /// A document that is not saved yet has no file to resolve, so only its
     /// directory is.
     pub(crate) fn canonical_path(path: &Path) -> PathBuf {
-        if let Ok(path) = std::fs::canonicalize(path) {
+        if let Ok(path) = dunce::canonicalize(path) {
             return path;
         }
 
         path.parent()
             .zip(path.file_name())
-            .and_then(|(parent, name)| Some(std::fs::canonicalize(parent).ok()?.join(name)))
+            .and_then(|(parent, name)| Some(dunce::canonicalize(parent).ok()?.join(name)))
             .unwrap_or_else(|| path.to_path_buf())
     }
 
