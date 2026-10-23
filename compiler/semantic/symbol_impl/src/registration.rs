@@ -699,6 +699,9 @@ impl Table {
                 ModuleMember::Struct(r#struct) => {
                     self.register_struct(member_builder, r#struct.clone(), engine).await;
                 }
+                // TODO: register enum symbols once the semantic layer
+                // supports enums.
+                ModuleMember::Enum(_) => {}
                 ModuleMember::Marker(marker) => {
                     self.register_marker(member_builder, marker.clone(), engine).await;
                 }

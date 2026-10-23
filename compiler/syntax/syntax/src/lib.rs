@@ -20,6 +20,7 @@ pub mod attribute;
 pub mod def;
 pub mod effect;
 pub mod effect_row;
+pub mod r#enum;
 pub mod expression;
 pub mod extern_def;
 pub mod given;
