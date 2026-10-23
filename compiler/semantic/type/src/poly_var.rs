@@ -345,6 +345,16 @@ impl PolyVarStack {
         })
     }
 
+    /// Iterates over every variable of the stack and its declaration, those
+    /// of the innermost symbol first, as [`Self::find_by_name`] searches them.
+    pub fn iter(&self) -> impl Iterator<Item = (GlobalPolyVarID, &PolyVar)> {
+        self.poly_var_maps.iter().flat_map(|(symbol_id, poly_var_map)| {
+            poly_var_map.iter().map(move |(poly_var_id, poly_var)| {
+                (GlobalPolyVarID::new(*symbol_id, poly_var_id), poly_var)
+            })
+        })
+    }
+
     /// Returns every variable of the stack in argument order: those of the
     /// innermost symbol first, each map in declaration order.
     fn all_poly_vars(&self) -> impl Iterator<Item = GlobalPolyVarID> {

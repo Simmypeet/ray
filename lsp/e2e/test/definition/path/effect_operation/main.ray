@@ -1,0 +1,8 @@
+# An operation goes to its name in its effect.
+eff State:
+    def get() -> int32
+    def set(value: int32) -> ()
+
+def counter() -> int32 \ {State}:
+    State.se<cursor>t(State.get() + 1)
+    return State.get()

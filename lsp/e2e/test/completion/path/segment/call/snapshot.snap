@@ -1,0 +1,16 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "detail": "module",
+    "kind": 9,
+    "label": "shapes"
+  },
+  {
+    "detail": "def",
+    "kind": 3,
+    "label": "side"
+  }
+]

@@ -1,0 +1,5 @@
+# A variable goes to the pattern declaring it.
+pub def main() -> int32:
+    let mut count = 0
+    count = count + 1
+    return cou<cursor>nt

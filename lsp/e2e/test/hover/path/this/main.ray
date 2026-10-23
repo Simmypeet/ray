@@ -1,0 +1,4 @@
+# `this` names the trait whose member the path is written in.
+pub trait Container[c]:
+    pub type Item
+    pub def first(container: c) -> th<cursor>is.Item

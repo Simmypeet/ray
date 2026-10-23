@@ -1,0 +1,80 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "detail": "module",
+    "kind": 9,
+    "label": "core",
+    "sortText": "1core"
+  },
+  {
+    "kind": 14,
+    "label": "coro",
+    "sortText": "2coro"
+  },
+  {
+    "kind": 14,
+    "label": "false",
+    "sortText": "2false"
+  },
+  {
+    "detail": "module",
+    "kind": 9,
+    "label": "geometry",
+    "sortText": "1geometry"
+  },
+  {
+    "kind": 14,
+    "label": "handle",
+    "sortText": "2handle"
+  },
+  {
+    "kind": 14,
+    "label": "if",
+    "sortText": "2if"
+  },
+  {
+    "detail": "int32",
+    "kind": 6,
+    "label": "local",
+    "sortText": "0local"
+  },
+  {
+    "detail": "def",
+    "kind": 3,
+    "label": "main",
+    "sortText": "1main"
+  },
+  {
+    "kind": 14,
+    "label": "move",
+    "sortText": "2move"
+  },
+  {
+    "kind": 14,
+    "label": "run",
+    "sortText": "2run"
+  },
+  {
+    "kind": 14,
+    "label": "target",
+    "sortText": "2target"
+  },
+  {
+    "kind": 14,
+    "label": "true",
+    "sortText": "2true"
+  },
+  {
+    "kind": 14,
+    "label": "unsafe",
+    "sortText": "2unsafe"
+  },
+  {
+    "kind": 14,
+    "label": "while",
+    "sortText": "2while"
+  }
+]

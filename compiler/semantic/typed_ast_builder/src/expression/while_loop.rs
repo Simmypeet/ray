@@ -20,8 +20,12 @@ impl Bind<WhileSyntax> for TAstBuilder {
 
         // A while body is a nested statement scope in which break and continue
         // are valid.
-        self.enter_statement_block(StatementBlockKind::LoopBody);
-        if let Some(block) = syn.block() {
+        let block = syn.block();
+        self.enter_statement_block(
+            StatementBlockKind::LoopBody,
+            block.as_ref().map_or_else(|| syn.span(), SourceElement::span),
+        );
+        if let Some(block) = block {
             for statement in block.statements().filter_map(rayc_syntax::Passable::into_option) {
                 Box::pin(self.bind_statement(&statement)).await;
             }

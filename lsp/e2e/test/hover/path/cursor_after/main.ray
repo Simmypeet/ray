@@ -1,0 +1,6 @@
+# A cursor right after the name of a segment is still on it.
+struct Meters:
+    value: int32
+
+def read(distance: Meters<cursor>) -> int32:
+    return distance.value

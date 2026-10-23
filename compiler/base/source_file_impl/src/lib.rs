@@ -9,7 +9,7 @@ use qbice::{
 };
 use rayc_qbice::{Config, InputSession, RAY_PROGRAM, TrackedEngine};
 use rayc_source_file::{Error, LocalSourceID, SourceFile};
-use rayc_target::{get_invocation_arguments, get_target_seed};
+use rayc_target::{get_target_root_file_path, get_target_seed};
 use siphasher::sip128::Hasher128;
 
 /// An implementation of an executor that loads a source file from the file
@@ -86,12 +86,8 @@ pub async fn stable_path_id_executor(
 
     let this_canonical_path = engine.query(&CanonicalizePathKey { path: key.path.clone() }).await?;
 
-    let target_args = engine.get_invocation_arguments(key.target_id).await;
-
     let target_root_file = engine
-        .query(&CanonicalizePathKey {
-            path: engine.intern_unsized(target_args.file_path().to_path_buf()),
-        })
+        .query(&CanonicalizePathKey { path: engine.get_target_root_file_path(key.target_id).await })
         .await?;
 
     let target_directory = target_root_file.parent().unwrap_or_else(|| std::path::Path::new(""));

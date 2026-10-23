@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/project/mod.rs
+expression: rendered
+---
+stderr:
+[error]: mismatched types in return expression: expected `int32`, but found `bool`
+  ╭▸ compiler/e2e/test/project/custom_root/lib/entry.ray:3:12
+  │
+3 │     return false
+  ╰╴           ━━━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

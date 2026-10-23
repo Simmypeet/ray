@@ -1,0 +1,3 @@
+# A path that names nothing goes nowhere.
+def read(distance: Mis<cursor>sing) -> int32:
+    return 0

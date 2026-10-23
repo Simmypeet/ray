@@ -1,0 +1,8 @@
+# A field name that does not exist yet still offers the fields.
+struct Point:
+  x: int32
+  y: int32
+
+pub def main():
+  let point = Point { x = 1, y = 2 }
+  let x = point.zz<cursor>

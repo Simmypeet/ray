@@ -16,6 +16,11 @@ use crate::output::{One, Output};
 pub trait Expect: Output + Into<Expected> {
     /// Determines if the given token passes the expectation.
     fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool;
+
+    /// Determines if the position of the given token passes the expectation,
+    /// whatever the token is: a token of the expected kind written in its
+    /// place would pass.
+    fn expect_position(&self, _terminal: &token::Kind<RelativeLocation>) -> bool { true }
 }
 
 /// Expecting the token to be an identifier;
@@ -285,6 +290,10 @@ impl<T: Expect> Expect for NoPriorInsignificant<T> {
         }
 
         self.0.expect(terminal)
+    }
+
+    fn expect_position(&self, terminal: &token::Kind<RelativeLocation>) -> bool {
+        terminal.prior_insignificant.is_none() && self.0.expect_position(terminal)
     }
 }
 

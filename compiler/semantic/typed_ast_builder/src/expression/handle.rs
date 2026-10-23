@@ -298,9 +298,10 @@ impl TAstBuilder {
         // that it composes with the other effects of the function.
         // TODO: This is a bit of a hack to make the composition work, it relies
         // on the fact that the concrete effect row must be known at this point.
-        // Most of the time, it would. But if it is not, it could left user with a
-        // confusing error why the effect composition is not working. Perhaps, a
-        // new better effect system and inference would solve this issue :-P
+        // Most of the time, it would. But if it is not, it could left user with
+        // a confusing error why the effect composition is not working.
+        // Perhaps, a new better effect system and inference would solve
+        // this issue :-P
         let forwarded_effect = self.latest_type(&forwarded_effect).await;
         self.push_effect_introduction(expression, &forwarded_effect).await;
 
@@ -371,7 +372,7 @@ impl TAstBuilder {
     /// the continuation, and the arguments without calling anything. A
     /// `coro` operand is the continuation itself, resumed with no argument.
     async fn bind_resumed_call(&mut self, operand: &Postfix) -> Option<ResumedCall> {
-        // REVIEW: This function is a bit of a hack. It heavily relies on
+        // NOTE: This function is a bit of a hack. It heavily relies on
         // inspecting the syntax structure of the operand to be in a certain
         // form. For instance,  `handle coro call(): ...` would work but
         // `handle (coro call()): ...` would not. Let's discuss about how we
@@ -553,8 +554,7 @@ impl TAstBuilder {
 
         // The bindings of the clause are variables of this function, in a
         // scope of their own.
-        self.enter_statement_block(StatementBlockKind::Plain);
-        let group = self.push_new_name_binding_group();
+        let group = self.enter_clause_scope(syn.arm(), syn.span());
 
         // The arguments of the operation, as it was performed.
         let mut parameter_variables = Vec::with_capacity(parameters.len());
@@ -609,8 +609,7 @@ impl TAstBuilder {
             return;
         }
 
-        self.enter_statement_block(StatementBlockKind::Plain);
-        let group = self.push_new_name_binding_group();
+        let group = self.enter_clause_scope(syn.arm(), syn.span());
 
         // A clause that does not name the returned value still receives it,
         // and drops it.
@@ -637,6 +636,18 @@ impl TAstBuilder {
             Source::Variable(TypedFunctionLocalID::new(self.current_typed_function_id(), variable)),
         );
         variable
+    }
+
+    /// Opens the scope of a clause whose arm is `arm`, and the group naming
+    /// the bindings of the clause, which are visible in the arm.
+    fn enter_clause_scope(
+        &mut self,
+        arm: Option<ArmSyntax>,
+        clause_span: RelativeSpan,
+    ) -> NameBindingGroupID {
+        let span = arm.map_or(clause_span, |arm| arm.span());
+        self.enter_statement_block(StatementBlockKind::Plain, span);
+        self.push_new_name_binding_group(span.start)
     }
 
     /// Binds the body of a clause and closes the statement block that the

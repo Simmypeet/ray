@@ -1,0 +1,7 @@
+# A struct is shown with its fields.
+pub struct MyPoint:
+    pub number: int32
+    hidden: bool
+
+pub def main():
+    let point = My<cursor>Point { number = 1, hidden = true }

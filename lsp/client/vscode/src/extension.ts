@@ -21,7 +21,8 @@ function createClient(): LanguageClient {
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ language: "ray", scheme: "file" }],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.ray"),
+      // source files changed on disk and project manifests
+      fileEvents: vscode.workspace.createFileSystemWatcher("**/{*.ray,ray.toml}"),
     },
   };
 
@@ -51,12 +52,28 @@ async function stopClient(): Promise<void> {
   }
 }
 
+// The bundled core library has no file; diagnostics refer to it by this
+// scheme, and its text comes from the server.
+const CORE_SCHEME = "ray-core";
+const CORE_SOURCE_REQUEST = "ray/coreSource";
+
+const coreSourceProvider: vscode.TextDocumentContentProvider = {
+  async provideTextDocumentContent(): Promise<string> {
+    if (client === undefined) {
+      throw new Error("the Ray language server is not running");
+    }
+
+    return client.sendRequest<string>(CORE_SOURCE_REQUEST);
+  },
+};
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push(
     vscode.commands.registerCommand("ray.restartLanguageServer", async () => {
       await stopClient();
       await startClient();
     }),
+    vscode.workspace.registerTextDocumentContentProvider(CORE_SCHEME, coreSourceProvider),
   );
 
   await startClient();

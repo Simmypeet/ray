@@ -413,26 +413,29 @@ impl Resolver<'_> {
 }
 
 /// Finds the symbol that `path` names, looking up each segment and ignoring
-/// its arguments. A path rooted at `this` names no symbol.
+/// its arguments. A path rooted at `this`, or with a `.` that no segment
+/// follows, names no symbol.
 pub(crate) async fn find_path_target(
     engine: &TrackedEngine,
     site: GlobalSymbolID,
     path: &Path,
 ) -> Option<GlobalSymbolID> {
     let root = path.root()?;
-    let mut target = match root {
-        PathRoot::Segment(_) => None,
+    let mut target = match &root {
+        PathRoot::Segment(segment) => {
+            find_path_symbol(engine, site, None, &segment.identifier()?.kind.0).await?
+        }
         PathRoot::Target(_) | PathRoot::Super(_) => {
-            Some(find_module_path_root(engine, site, &root).await?)
+            find_module_path_root(engine, site, &root).await?
         }
         PathRoot::This(_) => return None,
     };
 
-    for segment in path.segments() {
-        let name = segment.identifier()?.kind.0;
-        target = Some(find_path_symbol(engine, site, target, &name).await?);
+    for part in path.rest() {
+        let name = part.segment()?.identifier()?.kind.0;
+        target = find_path_symbol(engine, site, Some(target), &name).await?;
     }
-    target
+    Some(target)
 }
 
 /// Finds the module that a `target` or `super` path root names from `site`.
@@ -447,15 +450,28 @@ pub(crate) async fn find_module_path_root(
     root: &PathRoot,
 ) -> Option<GlobalSymbolID> {
     match root {
-        PathRoot::Target(_) => {
-            Some(site.target_id.make_global(engine.get_target_root_module_id(site.target_id).await))
-        }
-        PathRoot::Super(_) => {
-            let closest_module_id = engine.get_closest_module_id(site).await;
-            engine.get_parent_global(site.target_id.make_global(closest_module_id)).await
-        }
+        PathRoot::Target(_) => Some(find_target_root(engine, site).await),
+        PathRoot::Super(_) => find_super_module(engine, site).await,
         PathRoot::This(_) | PathRoot::Segment(_) => None,
     }
+}
+
+/// Finds the root module of the target of `site`, which `target` names.
+pub(crate) async fn find_target_root(
+    engine: &TrackedEngine,
+    site: GlobalSymbolID,
+) -> GlobalSymbolID {
+    site.target_id.make_global(engine.get_target_root_module_id(site.target_id).await)
+}
+
+/// Finds the parent of the module enclosing `site`, which `super` names, or
+/// `None` in the root module.
+pub(crate) async fn find_super_module(
+    engine: &TrackedEngine,
+    site: GlobalSymbolID,
+) -> Option<GlobalSymbolID> {
+    let closest_module_id = engine.get_closest_module_id(site).await;
+    engine.get_parent_global(site.target_id.make_global(closest_module_id)).await
 }
 
 /// Finds the symbol named `name` inside `previous`, or, for the first segment

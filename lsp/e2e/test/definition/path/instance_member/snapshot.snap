@@ -1,0 +1,17 @@
+---
+source: lsp/e2e/test/definition/mod.rs
+expression: definition_result(&response)
+---
+{
+  "range": {
+    "end": {
+      "character": 12,
+      "line": 5
+    },
+    "start": {
+      "character": 8,
+      "line": 5
+    }
+  },
+  "uri": "file:///project/src/main.ray"
+}

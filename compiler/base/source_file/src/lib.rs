@@ -191,6 +191,46 @@ impl SourceFile {
         line.try_char_to_byte(location.column).ok().map(|byte_offset| line_start + byte_offset)
     }
 
+    /// Converts the given editor location, whose column counts UTF-16 code
+    /// units as in the Language Server Protocol, to a byte index in the source
+    /// file.
+    ///
+    /// As the protocol specifies, a column past the end of its line is clamped
+    /// to the end of the line, before its line break. A line past the end of
+    /// the file is clamped to the end of the file.
+    #[must_use]
+    pub fn get_byte_index_from_utf16_location(&self, location: &EditorLocation) -> ByteIndex {
+        if location.line >= self.line_coount() {
+            return self.len_bytes();
+        }
+
+        // the column cannot point into the line break
+        let line = self.rope.line(location.line);
+        let mut content_end = line.len_chars();
+        while content_end > 0 && matches!(line.char(content_end - 1), '\n' | '\r') {
+            content_end -= 1;
+        }
+        let column = location.column.min(line.char_to_utf16_cu(content_end));
+
+        self.rope.line_to_byte(location.line) + line.char_to_byte(line.utf16_cu_to_char(column))
+    }
+
+    /// Converts the given byte index to an editor location whose column counts
+    /// UTF-16 code units, as in the Language Server Protocol.
+    ///
+    /// An index past the end of the file is clamped to the end of the file,
+    /// and an index inside a character is rounded down to its start.
+    #[must_use]
+    pub fn get_utf16_location_from_byte_index(&self, byte_index: ByteIndex) -> EditorLocation {
+        let char_index = self.rope.byte_to_char(byte_index.min(self.len_bytes()));
+        let line = self.rope.char_to_line(char_index);
+        let line_start = self.rope.line_to_char(line);
+        let column =
+            self.rope.char_to_utf16_cu(char_index) - self.rope.char_to_utf16_cu(line_start);
+
+        EditorLocation { line, column }
+    }
+
     /// Converts the given byte index to an editor location (line and column),
     /// if the index is valid.
     #[must_use]
@@ -451,6 +491,30 @@ impl<L> Span<L> {
         } else {
             self.start.clone()..self.end.clone()
         }
+    }
+}
+
+impl Span<ByteIndex> {
+    /// Returns whether a cursor at `cursor`, a byte index between two
+    /// characters, is at this span: after its start, up to and including its
+    /// end.
+    ///
+    /// A cursor right after the last character of a span is still at it, as
+    /// when the span is being typed, while a cursor at its start is before it.
+    #[must_use]
+    pub const fn contains_cursor(&self, cursor: ByteIndex) -> bool {
+        self.start < cursor && cursor <= self.end
+    }
+
+    /// Returns whether a cursor at `cursor`, a byte index between two
+    /// characters, touches this span: at its start, at its end, or anywhere
+    /// in between.
+    ///
+    /// Unlike [`Self::contains_cursor`], a cursor at the start of a span
+    /// touches it, as when an editor hovers the first character of the span.
+    #[must_use]
+    pub const fn touches_cursor(&self, cursor: ByteIndex) -> bool {
+        self.start <= cursor && cursor <= self.end
     }
 }
 

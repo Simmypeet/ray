@@ -1,0 +1,4 @@
+# An element of a tuple offers the indices of its own tuple type.
+pub def main():
+  let nested = ((1, true), 2)
+  let inner = nested.0.<cursor>

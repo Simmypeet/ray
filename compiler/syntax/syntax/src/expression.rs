@@ -409,8 +409,8 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
+    /// The `&` or `&mut` after a `.`, which borrows the operand.
     pub struct RefOf {
-        pub dot: Punctuation = '.',
         pub asterisk: Punctuation = '&',
         pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
     }
@@ -429,8 +429,8 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
+    /// The `*` after a `.`, which dereferences the operand.
     pub struct Deref {
-        pub dot: Punctuation = '.',
         pub asterisk: Punctuation = '*',
     }
 }
@@ -450,6 +450,47 @@ abstract_tree::abstract_tree! {
     )]
     pub enum PostfixOperator {
         Call(Call = ast::<Call>()),
+        Dot(DotPostfix = ast::<DotPostfix>())
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    /// A `.` and the member after it, such as `.x`, `.0`, `.&` or `.*`.
+    pub struct DotPostfix {
+        pub dot: Punctuation = '.',
+        // a dangling `.` is kept without a member, so that the member after it
+        // can be completed
+        pub member: DotMember = ast::<DotMember>().recoverable(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    /// What follows the `.` of a [`DotPostfix`].
+    pub enum DotMember {
         RefOf(RefOf = ast::<RefOf>()),
         Deref(Deref = ast::<Deref>()),
         TupleIndex(TupleIndex = ast::<TupleIndex>()),
@@ -470,8 +511,8 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
+    /// The index after a `.`, which accesses an element of a tuple.
     pub struct TupleIndex {
-        pub dot: Punctuation = '.',
         pub numeric: Numeric = expect::Numeric,
     }
 }
@@ -489,8 +530,8 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
+    /// The name after a `.`, which accesses a field of a struct.
     pub struct FieldAccess {
-        pub dot: Punctuation = '.',
         pub name: Identifier = expect::Identifier,
     }
 }

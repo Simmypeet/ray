@@ -1,0 +1,3 @@
+# Right after a number, its suffix and the binary operators follow.
+pub def main():
+  let size = 32<cursor>

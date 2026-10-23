@@ -1,0 +1,4 @@
+# `this` in a trait offers its members that fit the position.
+trait Source[]:
+  type Item
+  def get() -> this.<cursor>

@@ -1,0 +1,4 @@
+# A literal is not a variable.
+pub def main() -> int32:
+  let value = 4<cursor>2
+  return value

@@ -1,0 +1,4 @@
+# No keyword is completed in a comment.
+pub def main():
+  # r<cursor>
+  pass

@@ -1,0 +1,4 @@
+# The root module of a target has no name written anywhere, so it goes to the
+# top of its file.
+def consume[t](value: t) given (_: co<cursor>re.Drop[t]):
+    return

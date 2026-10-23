@@ -1,0 +1,6 @@
+# `target` names the root module of the target, the top of its root file.
+pub struct Meters:
+    value: int32
+
+def read(distance: tar<cursor>get.Meters) -> int32:
+    return distance.value

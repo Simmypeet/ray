@@ -1,0 +1,8 @@
+# An effect is shown with the signatures of its operations.
+eff State:
+    def get() -> int32
+    def set(value: int32) -> ()
+
+def counter() -> int32 \ {St<cursor>ate}:
+    State.set(State.get() + 1)
+    return State.get()

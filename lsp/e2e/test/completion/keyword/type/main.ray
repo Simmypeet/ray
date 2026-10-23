@@ -1,0 +1,3 @@
+# The keywords that name a type.
+pub def main(value: i<cursor>):
+  pass

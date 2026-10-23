@@ -531,7 +531,10 @@ impl Resolver<'_> {
             Some(PathRoot::This(_) | PathRoot::Target(_) | PathRoot::Super(_)) | None => true,
         };
         for part in path.rest() {
-            let Some(segment) = part.segment() else { continue };
+            // the parser reported the `.` without a segment
+            let Some(segment) = part.segment() else {
+                return Err(PathResolutionError::MissingIdentifier);
+            };
             resolution = self.resolve_path_segment(&segment, Some(resolution)).await?;
 
             if accessible {

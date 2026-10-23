@@ -1,0 +1,16 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "detail": "effect operation",
+    "kind": 3,
+    "label": "get"
+  },
+  {
+    "detail": "effect operation",
+    "kind": 3,
+    "label": "set"
+  }
+]

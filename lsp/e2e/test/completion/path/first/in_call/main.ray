@@ -1,0 +1,21 @@
+# The callee of a call in a body may also be a local closure.
+module geometry:
+  pub struct Point:
+    pub x: int32
+
+  pub def side() -> int32:
+    return 1
+
+  def hidden() -> int32:
+    return 2
+
+  pub module shapes:
+    pub struct Square:
+      pub size: int32
+
+    pub def peek() -> int32:
+      return 0
+
+pub def main():
+  let local = 1
+  let size = s<cursor>()

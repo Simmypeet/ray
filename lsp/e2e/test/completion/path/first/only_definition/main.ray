@@ -1,0 +1,6 @@
+def first(value: elem) -> el<cursor>:
+  # The file holds only this definition, with nothing before it and no new
+  # line after it, so the module is defined by exactly the same span. The
+  # definition, not the module, is the site of its paths, and that site sees
+  # its type parameters.
+  return value

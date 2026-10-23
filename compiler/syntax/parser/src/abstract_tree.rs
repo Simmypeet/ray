@@ -9,6 +9,7 @@ pub use qbice::stable_type_id as __stable_type_id;
 #[doc(hidden)]
 pub use qbice::storage::intern::Interned as __Interned;
 use qbice::{Decode, Encode};
+use rayc_hash::FxHashSet;
 #[doc(hidden)]
 pub use rayc_lexical::tree::RelativeLocation;
 #[doc(hidden)]
@@ -212,6 +213,32 @@ pub trait AbstractTree:
         let result = parser.parse(&mut state);
 
         state.finalize::<Self>(result.is_err())
+    }
+
+    /// Parses the given tree as [`Self::parse`] does, and returns every
+    /// expectation the parser tried at its hole token before recovering from
+    /// the error there: see [`rayc_lexical::kind::Hole`].
+    ///
+    /// These are the tokens that could be written in place of the hole, as
+    /// the diagnostic at it would list them, but without being replaced by a
+    /// label such as "expected expression". Returns an empty set if the tree
+    /// has no hole.
+    ///
+    /// This is generally used in completion, with the tree from
+    /// [`rayc_lexical::tree::Tree::from_source_with_hole`].
+    #[must_use]
+    fn expecteds_at_hole(
+        tree: &rayc_lexical::tree::Tree,
+        interner: &impl Interner,
+    ) -> FxHashSet<expect::Expected> {
+        let mut cache = cache::Cache::default();
+        let mut state = state::State::new(tree, &mut cache, interner);
+        state.collect_hole();
+
+        let parser = parser::ast::<Self>();
+        let _ = parser.parse(&mut state);
+
+        state.into_hole_expecteds()
     }
 }
 

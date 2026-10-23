@@ -1,0 +1,4 @@
+# A mutable parameter is shown with `mut`.
+pub def increment(mut cou<cursor>nt: int32) -> int32:
+  count = count + 1
+  return count

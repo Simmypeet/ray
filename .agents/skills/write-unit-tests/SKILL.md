@@ -23,7 +23,7 @@ unit test.
 4. Name the test after the observable behavior, not the implementation steps.
 5. Arrange only the state needed by the premise, invoke the behavior once, and
    assert the complete relevant result.
-6. Run the narrowest applicable test command, then `cargo +nightly fmt` and
+6. Run the narrowest applicable test command, then `cargo fmt` and
    `cargo clippy` as required by the project code-style skill.
 
 ## Test Contract Comments

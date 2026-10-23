@@ -1,0 +1,10 @@
+# Inside a module, its private members are offered too.
+module geometry:
+  pub def side() -> int32:
+    return 1
+
+  def hidden() -> int32:
+    return 2
+
+  pub def total() -> int32:
+    return target.geometry.<cursor>()

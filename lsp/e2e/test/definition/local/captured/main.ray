@@ -1,0 +1,5 @@
+# A variable captured by a closure goes to its declaration outside the
+# closure.
+pub def main():
+    let offset = 1
+    let add = (value) -> value + off<cursor>set

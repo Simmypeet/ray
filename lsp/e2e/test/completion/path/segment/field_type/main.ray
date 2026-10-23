@@ -1,0 +1,20 @@
+# A path in the type of a struct field offers what leads to a type.
+module geometry:
+  pub struct Point:
+    pub x: int32
+
+  pub def side() -> int32:
+    return 1
+
+  def hidden() -> int32:
+    return 2
+
+  pub module shapes:
+    pub struct Square:
+      pub size: int32
+
+    pub def peek() -> int32:
+      return 0
+
+struct Holder:
+  point: geometry.<cursor>

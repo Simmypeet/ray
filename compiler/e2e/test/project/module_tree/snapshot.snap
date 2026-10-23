@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/project/mod.rs
+expression: rendered
+---
+stderr:
+[error]: mismatched types in return expression: expected `int32`, but found `bool`
+  ╭▸ compiler/e2e/test/project/module_tree/src/geometry/shapes.ray:3:12
+  │
+3 │     return true
+  ╰╴           ━━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

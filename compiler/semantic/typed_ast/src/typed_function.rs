@@ -1,8 +1,10 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
+use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::GlobalSymbolID;
+use rayc_source_file::ByteIndex;
+use rayc_symbol::{GlobalSymbolID, source_map::to_absolute_span};
 use rayc_type::{
     subst::{MutSubstitutable, Subst},
     ty::{Ty, application::ClosureID},
@@ -10,12 +12,13 @@ use rayc_type::{
 
 use crate::{
     block::Block,
+    member_access::MemberAccess,
     name_binding::{
         NameBinding, NameBindingGroup, NameBindingGroupID, NameBindingID, NameBindingMap,
     },
     statement::Statement,
     typed_closure::{ClosureParameterID, TypedClosureContext, TypedClosureParameter},
-    typed_expr::{LvalueClassification, TypedExpr, TypedExprID, TypedExprMap},
+    typed_expr::{LvalueClassification, TypedExpr, TypedExprID, TypedExprKind, TypedExprMap},
     typed_operation_handler::{
         OperationHandlerParameterID, TypedOperationHandlerContext, TypedOperationHandlerParameter,
     },
@@ -29,13 +32,19 @@ pub struct TypedFunctionMap {
     functions: Arena<TypedFunction>,
     root: TypedFunctionID,
     closures: FxHashMap<ClosureID, TypedFunctionID>,
+
+    /// The member accesses of every function, in the order they were bound.
+    member_accesses: Vec<MemberAccess>,
 }
 
 impl TypedFunctionMap {
+    /// Creates the map of a def whose parameters can be referred to by name
+    /// in `parameter_visibility`, its body.
     #[must_use]
-    pub fn new(root_effect: Interned<Ty>) -> Self {
+    pub fn new(root_effect: Interned<Ty>, parameter_visibility: RelativeSpan) -> Self {
         let mut name_binding_map = NameBindingMap::default();
-        let parameter_name_binding_group_id = name_binding_map.new_name_binding_group();
+        let parameter_name_binding_group_id =
+            name_binding_map.new_name_binding_group(parameter_visibility);
 
         let mut functions = Arena::default();
         let root = functions.insert(TypedFunction::new(
@@ -43,7 +52,13 @@ impl TypedFunctionMap {
             root_effect,
         ));
 
-        Self { name_binding_map, functions, root, closures: FxHashMap::default() }
+        Self {
+            name_binding_map,
+            functions,
+            root,
+            closures: FxHashMap::default(),
+            member_accesses: Vec::new(),
+        }
     }
 
     /// Assigns an owner-local identity to a nominal closure's function.
@@ -131,9 +146,16 @@ impl TypedFunctionMap {
         self.functions.iter()
     }
 
+    /// Inserts a closure whose parameters can be referred to by name in
+    /// `parameter_visibility`, its body.
     #[must_use]
-    pub fn insert_closure(&mut self, effect: Interned<Ty>) -> TypedFunctionID {
-        let parameter_name_binding_group_id = self.name_binding_map.new_name_binding_group();
+    pub fn insert_closure(
+        &mut self,
+        effect: Interned<Ty>,
+        parameter_visibility: RelativeSpan,
+    ) -> TypedFunctionID {
+        let parameter_name_binding_group_id =
+            self.name_binding_map.new_name_binding_group(parameter_visibility);
 
         self.functions.insert(TypedFunction::new(
             TypedContext::Closure(TypedClosureContext::new(parameter_name_binding_group_id)),
@@ -141,14 +163,18 @@ impl TypedFunctionMap {
         ))
     }
 
+    /// Inserts the handler of `operation`, whose parameters can be referred
+    /// to by name in `parameter_visibility`, its body.
     #[must_use]
     pub fn insert_operation_handler(
         &mut self,
         operation: GlobalSymbolID,
         return_type: Interned<Ty>,
         effect: Interned<Ty>,
+        parameter_visibility: RelativeSpan,
     ) -> TypedFunctionID {
-        let parameter_name_binding_group_id = self.name_binding_map.new_name_binding_group();
+        let parameter_name_binding_group_id =
+            self.name_binding_map.new_name_binding_group(parameter_visibility);
 
         self.functions.insert(TypedFunction::new(
             TypedContext::OperationHandler(TypedOperationHandlerContext::new(
@@ -268,8 +294,86 @@ impl TypedFunctionMap {
         self.name_binding_map.insert_name_binding_to_group(group_id, name_binding_id)
     }
 
-    pub fn new_name_binding_group(&mut self) -> NameBindingGroupID {
-        self.name_binding_map.new_name_binding_group()
+    /// Creates an empty name binding group whose bindings can be referred to
+    /// by name in `visibility`.
+    pub fn new_name_binding_group(&mut self, visibility: RelativeSpan) -> NameBindingGroupID {
+        self.name_binding_map.new_name_binding_group(visibility)
+    }
+
+    /// Iterates over the name bindings of this def that can be referred to by
+    /// name at `offset`, a byte index in the source file of the def.
+    ///
+    /// See [`NameBindingMap::visible_name_bindings`].
+    pub async fn visible_name_bindings(
+        &self,
+        engine: &TrackedEngine,
+        offset: ByteIndex,
+    ) -> impl Iterator<Item = (NameBindingID, &NameBinding)> {
+        self.name_binding_map.visible_name_bindings(engine, offset).await
+    }
+
+    /// Records a member access of this def.
+    pub fn insert_member_access(&mut self, member_access: MemberAccess) {
+        self.member_accesses.push(member_access);
+    }
+
+    /// Returns the type of the receiver of the member access whose member the
+    /// cursor at `offset` is on, a byte index in the source file of the def.
+    ///
+    /// The accesses of a chain such as `p.inner.x` do not overlap, so at most
+    /// one access holds the cursor.
+    pub async fn receiver_type_at(
+        &self,
+        engine: &TrackedEngine,
+        offset: ByteIndex,
+    ) -> Option<&Interned<Ty>> {
+        for member_access in &self.member_accesses {
+            if !member_access.holds_cursor(engine, offset).await {
+                continue;
+            }
+
+            let receiver = member_access.receiver();
+            return Some(
+                self.get_function(receiver.function_id()).get_type_of_expr_id(receiver.local_id()),
+            );
+        }
+
+        None
+    }
+
+    /// Returns the name binding of this def that the cursor at `offset`, a
+    /// byte index in the source file of the def, touches, with the span the
+    /// cursor touches: the pattern declaring the binding, or an identifier
+    /// referring to it.
+    ///
+    /// Patterns and identifiers do not overlap, so at most one of them holds
+    /// the cursor, unless the cursor sits between two of them.
+    pub async fn name_binding_at(
+        &self,
+        engine: &TrackedEngine,
+        offset: ByteIndex,
+    ) -> Option<(&NameBinding, RelativeSpan)> {
+        // the patterns declaring the bindings
+        for (_, name_binding) in self.name_bindings() {
+            if engine.to_absolute_span(name_binding.span()).await.touches_cursor(offset) {
+                return Some((name_binding, *name_binding.span()));
+            }
+        }
+
+        // the identifiers referring to them, in every nested function
+        for function in self.functions.items() {
+            for (_, expression) in function.expressions() {
+                let TypedExprKind::Identifier(identifier) = expression.kind() else {
+                    continue;
+                };
+                if engine.to_absolute_span(&expression.span()).await.touches_cursor(offset) {
+                    let name_binding = self.get_name_binding(identifier.name_binding());
+                    return Some((name_binding, expression.span()));
+                }
+            }
+        }
+
+        None
     }
 }
 

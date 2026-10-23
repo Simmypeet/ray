@@ -1,0 +1,21 @@
+# The first segment of a type offers the types and modules in scope, and the
+# keywords a path starts with.
+module geometry:
+  pub struct Point:
+    pub x: int32
+
+  pub def side() -> int32:
+    return 1
+
+  def hidden() -> int32:
+    return 2
+
+  pub module shapes:
+    pub struct Square:
+      pub size: int32
+
+    pub def peek() -> int32:
+      return 0
+
+struct Holder:
+  point: geo<cursor>

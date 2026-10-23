@@ -1,0 +1,9 @@
+# A dangling `.` reports the missing member, and the expression is not
+# checked against the annotated type.
+struct Point:
+  x: int32
+  y: int32
+
+pub def main():
+  let point = Point { x = 1, y = 2 }
+  let flag: bool = point.

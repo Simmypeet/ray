@@ -1,6 +1,6 @@
 //! Contains the configuration for terminal display using annotate-snippets.
 
-use std::io::Write;
+use std::{io::Write, path::Path};
 
 use annotate_snippets::{AnnotationKind, Group, Level, Renderer, Snippet, renderer::DecorStyle};
 use rayc_diagnostic::{ByteIndex, Rendered, Severity};
@@ -80,6 +80,15 @@ impl ReportTerm<'_> {
         let groups = vec![Group::with_title(
             Level::WARNING.with_name("[warning]").primary_title(&message_str),
         )];
+        let output = self.renderer.render(&groups);
+        let _ = writeln!(self.writer, "{output}\n");
+    }
+
+    /// Reports a simple informational message without source code.
+    pub fn report_simple_info(&mut self, message: impl Into<String>) {
+        let message_str = message.into();
+        let groups =
+            vec![Group::with_title(Level::INFO.with_name("[info]").primary_title(&message_str))];
         let output = self.renderer.render(&groups);
         let _ = writeln!(self.writer, "{output}\n");
     }
@@ -250,7 +259,7 @@ fn render_group(
 
         // Materialize only the context portion
         let content = source_file.slice(context_start..context_end);
-        let path = source_file.path().display().to_string();
+        let path = display_path(source_file.path());
 
         // Adjust spans to be relative to context start
         let annotations: Vec<(std::ops::Range<usize>, String, bool)> = highlights
@@ -306,4 +315,20 @@ fn render_group(
     }
 
     renderer.render(&[group])
+}
+
+/// Returns how the path of a source file is displayed: relative to the current
+/// directory when the file is inside it, as given otherwise.
+///
+/// Project root files are canonical absolute paths, so that the incremental
+/// compilation data does not depend on where the compiler is invoked from.
+fn display_path(path: &Path) -> String {
+    std::env::current_dir()
+        // canonicalized like project paths so that the prefix matches
+        .and_then(dunce::canonicalize)
+        .ok()
+        .and_then(|current_directory| path.strip_prefix(current_directory).ok())
+        .unwrap_or(path)
+        .display()
+        .to_string()
 }

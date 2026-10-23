@@ -1,0 +1,4 @@
+# The keywords that start a statement or an expression, after the names.
+pub def main():
+  let variable = 32
+  r<cursor>

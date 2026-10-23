@@ -1,0 +1,4 @@
+# A variable is not visible in its own initializer.
+pub def main():
+  let variable = 32
+  let another = v<cursor>

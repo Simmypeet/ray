@@ -1,0 +1,4 @@
+# A name being declared is not completed.
+pub def main():
+  let value = 1
+  let va<cursor> = 2

@@ -1,6 +1,6 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{io::Write, process::ExitCode, sync::Arc};
+use std::{io::Write, path::Path, process::ExitCode, sync::Arc};
 
 use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use rayc_diagnostic::Report;
@@ -9,15 +9,34 @@ use rayc_symbol_impl::source_map::create_source_map;
 use rayc_target::{Arguments, TargetID};
 use tracing::instrument;
 
-use crate::{artifact::execute, entry_point::validate_entry_point, term::ReportTerm};
+use crate::{
+    artifact::execute, entry_point::validate_entry_point, invocation::Invocation, term::ReportTerm,
+};
 
 mod artifact;
 mod entry_point;
+mod invocation;
 mod native;
+mod new;
 pub mod term;
 
-async fn create_engine(argument: &Arguments, report_term: &mut ReportTerm<'_>) -> Option<Engine> {
-    if let Some(inc_path) = argument.incremental_path() {
+pub use new::create_project;
+
+async fn create_engine(
+    incremental_path: Option<&Path>,
+    report_term: &mut ReportTerm<'_>,
+) -> Option<Engine> {
+    if let Some(inc_path) = incremental_path {
+        // the database creates only its own directory, not its parents
+        if let Err(err) = std::fs::create_dir_all(inc_path) {
+            report_term.report_simple_error(format!(
+                "failed to create incremental directory '{}': {err}",
+                inc_path.display()
+            ));
+
+            return None;
+        }
+
         match Engine::new_with(
             Plugin::new(),
             IncrementalStorageEngine(inc_path),
@@ -55,13 +74,23 @@ pub async fn run(
 ) -> ExitCode {
     let mut report_term = ReportTerm::new(err_writer, argument.fancy());
 
-    if argument.target_name() == "core" {
+    // resolve what to compile from the arguments and the project manifest
+    let invocation = match Invocation::resolve(&argument) {
+        Ok(invocation) => invocation,
+        Err(error) => {
+            report_term.report_simple_error(error.to_string());
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if invocation.target_name() == "core" {
         report_term
             .report_simple_error("target name 'core' is reserved for the compiler core library");
         return ExitCode::FAILURE;
     }
 
-    let Some(mut engine) = create_engine(&argument, &mut report_term).await else {
+    let Some(mut engine) = create_engine(invocation.incremental_path(), &mut report_term).await
+    else {
         return ExitCode::FAILURE;
     };
 
@@ -77,8 +106,8 @@ pub async fn run(
 
     engine.register_program(rayc_qbice::RAY_PROGRAM);
 
-    // set the initial input, the invocation arguments
-    let target_name = argument.target_name();
+    // set the initial input, the resolved invocation
+    let target_name = invocation.target_name().to_owned();
     let local_target_id = TargetID::from_target_name(&target_name);
 
     let engine = Arc::new(engine);
@@ -105,7 +134,7 @@ pub async fn run(
                 rayc_target::MapKey,
                 input_session.intern(
                     [
-                        (input_session.intern_unsized(target_name), local_target_id),
+                        (input_session.intern_unsized(target_name.clone()), local_target_id),
                         (input_session.intern_unsized("core".to_owned()), TargetID::CORE),
                     ]
                     .into_iter()
@@ -114,18 +143,27 @@ pub async fn run(
             )
             .await;
 
+        // extract the target information required by the queries from the
+        // resolved invocation
+        input_session
+            .set_input(
+                rayc_target::RootFilePathKey { target_id: local_target_id },
+                input_session.intern_unsized(invocation.root_file().to_path_buf()),
+            )
+            .await;
+
+        input_session
+            .set_input(
+                rayc_target::NameKey { target_id: local_target_id },
+                input_session.intern_unsized(target_name),
+            )
+            .await;
+
         if let Some(explicit_seed) = argument.target_seed() {
             input_session
                 .set_input(rayc_target::SeedKey { target_id: local_target_id }, explicit_seed)
                 .await;
         }
-
-        input_session
-            .set_input(
-                rayc_target::Key { target_id: local_target_id },
-                input_session.intern(argument.clone()),
-            )
-            .await;
 
         input_session
             .set_input(
@@ -168,11 +206,11 @@ pub async fn run(
         return ExitCode::FAILURE;
     }
 
-    if argument.is_check_only() {
+    let Some(artifact) = invocation.artifact() else {
         return ExitCode::SUCCESS;
-    }
+    };
 
-    let entry_point = if argument.requires_entry_point() {
+    let entry_point = if artifact.requires_entry_point() {
         match validate_entry_point(&tracked_engine, local_target_id).await {
             Ok(entry_point) => Some(entry_point),
             Err(error) => {
@@ -185,7 +223,7 @@ pub async fn run(
         None
     };
 
-    match execute(&tracked_engine, local_target_id, &argument, entry_point).await {
+    match execute(&tracked_engine, local_target_id, artifact, entry_point).await {
         Ok(exit_code) => exit_code,
         Err(error) => {
             report_term.report_simple_error(error.to_string());

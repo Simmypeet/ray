@@ -1,0 +1,9 @@
+# An effect row offers effects.
+eff State:
+  def get() -> int32
+
+struct Point:
+  x: int32
+
+def count() -> int32 \ {St<cursor>}:
+  return 0

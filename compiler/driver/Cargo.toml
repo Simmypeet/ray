@@ -10,6 +10,7 @@ rust-version.workspace = true
 
 [dependencies]
 rayc_corelib.path = "../corelib"
+rayc_project.path = "../project"
 rayc_source_file = { path = "../base/source_file" }
 rayc_diagnostic = { path = "../base/diagnostic" }
 rayc_handler = { path = "../base/handler" }
@@ -27,6 +28,7 @@ rayc_syntax_impl.path = "../syntax/syntax_impl"
 rayc_semantic_element_impl.path = "../semantic/semantic_element_impl"
 rayc_ir_builder.path = "../semantic/ir_builder"
 rayc_c2.path = "../codegen/c2"
+dunce.workspace = true
 qbice.workspace = true
 linkme.workspace = true
 tracing = { workspace = true }

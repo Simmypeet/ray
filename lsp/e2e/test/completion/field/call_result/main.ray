@@ -1,0 +1,10 @@
+# The result of a call offers the fields of its type.
+struct Point:
+  x: int32
+  y: int32
+
+def make() -> Point:
+  return Point { x = 1, y = 2 }
+
+pub def main():
+  let x = make().<cursor>

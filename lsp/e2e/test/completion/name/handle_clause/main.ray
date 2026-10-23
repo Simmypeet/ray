@@ -1,0 +1,15 @@
+# A handle clause binds the arguments of the operation and the continuation.
+eff State:
+  def get() -> int32
+  def set(value: int32) -> ()
+
+def counter() -> int32 \ {State}:
+  State.set(State.get() + 1)
+  return State.get()
+
+pub def main() -> int32:
+  let initial = 0
+  return handle coro counter():
+    case State.get() resume k: 0
+    case State.set(value) resume k: v<cursor>
+    case return result: result
