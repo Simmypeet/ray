@@ -505,6 +505,17 @@ impl Span<ByteIndex> {
     pub const fn contains_cursor(&self, cursor: ByteIndex) -> bool {
         self.start < cursor && cursor <= self.end
     }
+
+    /// Returns whether a cursor at `cursor`, a byte index between two
+    /// characters, touches this span: at its start, at its end, or anywhere
+    /// in between.
+    ///
+    /// Unlike [`Self::contains_cursor`], a cursor at the start of a span
+    /// touches it, as when an editor hovers the first character of the span.
+    #[must_use]
+    pub const fn touches_cursor(&self, cursor: ByteIndex) -> bool {
+        self.start <= cursor && cursor <= self.end
+    }
 }
 
 /// Represents an element that is located within a source file.

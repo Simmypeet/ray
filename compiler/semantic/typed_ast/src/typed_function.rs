@@ -4,7 +4,7 @@ use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::ByteIndex;
-use rayc_symbol::GlobalSymbolID;
+use rayc_symbol::{GlobalSymbolID, source_map::to_absolute_span};
 use rayc_type::{
     subst::{MutSubstitutable, Subst},
     ty::{Ty, application::ClosureID},
@@ -18,7 +18,7 @@ use crate::{
     },
     statement::Statement,
     typed_closure::{ClosureParameterID, TypedClosureContext, TypedClosureParameter},
-    typed_expr::{LvalueClassification, TypedExpr, TypedExprID, TypedExprMap},
+    typed_expr::{LvalueClassification, TypedExpr, TypedExprID, TypedExprKind, TypedExprMap},
     typed_operation_handler::{
         OperationHandlerParameterID, TypedOperationHandlerContext, TypedOperationHandlerParameter,
     },
@@ -336,6 +336,41 @@ impl TypedFunctionMap {
             return Some(
                 self.get_function(receiver.function_id()).get_type_of_expr_id(receiver.local_id()),
             );
+        }
+
+        None
+    }
+
+    /// Returns the name binding of this def that the cursor at `offset`, a
+    /// byte index in the source file of the def, touches, with the span the
+    /// cursor touches: the pattern declaring the binding, or an identifier
+    /// referring to it.
+    ///
+    /// Patterns and identifiers do not overlap, so at most one of them holds
+    /// the cursor, unless the cursor sits between two of them.
+    pub async fn name_binding_at(
+        &self,
+        engine: &TrackedEngine,
+        offset: ByteIndex,
+    ) -> Option<(&NameBinding, RelativeSpan)> {
+        // the patterns declaring the bindings
+        for (_, name_binding) in self.name_bindings() {
+            if engine.to_absolute_span(name_binding.span()).await.touches_cursor(offset) {
+                return Some((name_binding, *name_binding.span()));
+            }
+        }
+
+        // the identifiers referring to them, in every nested function
+        for function in self.functions.items() {
+            for (_, expression) in function.expressions() {
+                let TypedExprKind::Identifier(identifier) = expression.kind() else {
+                    continue;
+                };
+                if engine.to_absolute_span(&expression.span()).await.touches_cursor(offset) {
+                    let name_binding = self.get_name_binding(identifier.name_binding());
+                    return Some((name_binding, expression.span()));
+                }
+            }
         }
 
         None

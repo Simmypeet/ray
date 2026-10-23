@@ -1,5 +1,6 @@
 //! Finds what the beginning of a path names, so that the segments that can
-//! follow it can be listed while the path is typed.
+//! follow it can be listed while the path is typed, and the symbol that a
+//! segment names can be shown.
 //!
 //! The lookups are the resolver's own, but they ignore the arguments of the
 //! segments and report nothing.
@@ -40,8 +41,8 @@ pub enum PrefixRoot {
     Name(Interned<str>),
 }
 
-/// The beginning of a path, up to the segment being completed: its root and
-/// the names of the segments after it.
+/// The beginning of a path, up to a segment such as the one being completed:
+/// its root and the names of the segments after it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathPrefix {
     root: PrefixRoot,
@@ -94,6 +95,27 @@ impl PathPrefix {
         }
 
         Some(parent)
+    }
+
+    /// Finds the symbol that this prefix names in a path written at `site`,
+    /// such as the struct of `geometry.Point`.
+    ///
+    /// Returns `None` if the prefix names nothing, or a type parameter: an
+    /// instance parameter leads to the members of its trait, but it is not
+    /// the trait.
+    pub async fn find_symbol(
+        &self,
+        engine: &TrackedEngine,
+        site: GlobalSymbolID,
+    ) -> Option<GlobalSymbolID> {
+        if let PrefixRoot::Name(name) = &self.root
+            && self.segments.is_empty()
+            && engine.get_enclosing_poly_var_maps(site).await.find_by_name(name).is_some()
+        {
+            return None;
+        }
+
+        self.find_parent(engine, site).await
     }
 }
 
