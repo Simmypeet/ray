@@ -15,11 +15,12 @@ use qbice::{
 use rayc_arena::{Arena, ID};
 use rayc_hash::FxHashMap;
 use rayc_qbice::{Config, TrackedEngine};
-use rayc_source_file::{ByteIndex, EditorLocation, SourceFile};
+use rayc_source_file::{ByteIndex, SourceFile};
 use rayc_source_file_impl::LoadSourceFileExecutor;
+use rayc_target::TargetID;
 use tower_lsp::lsp_types::{Position, TextDocumentContentChangeEvent, Url};
 
-use crate::session::SessionID;
+use crate::{position::byte_index_of, session::SessionID};
 
 /// Identifies an open document in the [`Overlay`].
 pub(crate) type BufferID = ID<Buffer>;
@@ -157,7 +158,7 @@ impl Overlay {
         let source = &mut buffer.source;
         for change in changes {
             let range = change.range.map_or(0..source.len_bytes(), |range| {
-                Self::byte_index(source, range.start)..Self::byte_index(source, range.end)
+                byte_index_of(source, range.start)..byte_index_of(source, range.end)
             });
             source.replace_range(range, &change.text);
         }
@@ -178,14 +179,7 @@ impl Overlay {
         let buffers = self.buffers.read().expect("poisoned");
         let buffer = buffers.ids_by_uri.get(uri).and_then(|id| buffers.arena.get(*id))?;
 
-        Some((buffer.path.clone(), buffer.session?, Self::byte_index(&buffer.source, position)))
-    }
-
-    fn byte_index(source: &SourceFile, position: Position) -> usize {
-        source.get_byte_index_from_utf16_location(&EditorLocation::new(
-            position.line as usize,
-            position.character as usize,
-        ))
+        Some((buffer.path.clone(), buffer.session?, byte_index_of(&buffer.source, position)))
     }
 
     /// Closes the document the editor refers to by `uri`, so that its file is
@@ -234,9 +228,29 @@ impl Overlay {
     ///
     /// The editor may refer to a file through a symbolic link, so its URI can
     /// differ from the one built from the canonical path.
-    pub(crate) fn document(&self, path: &Path) -> Option<(Url, i32)> {
+    fn document(&self, path: &Path) -> Option<(Url, i32)> {
         let buffers = self.buffers.read().expect("poisoned");
         buffers.by_path(path).map(|buffer| (buffer.uri.clone(), buffer.version))
+    }
+
+    /// Returns the URI of the document at `path`, preferring the one the
+    /// editor opened it with.
+    pub(crate) fn document_uri(&self, path: &Path) -> Option<Url> {
+        self.document(path).map(|(uri, _)| uri).or_else(|| Url::from_file_path(path).ok())
+    }
+
+    /// Returns the URI the editor refers to the source file at `path` of the
+    /// target `target_id` by.
+    ///
+    /// The bundled core library has no file, so the editor asks the server for
+    /// its text by [`rayc_corelib::SOURCE_URI`]. Any other source file is a
+    /// document, see [`Self::document_uri`].
+    pub(crate) fn source_uri(&self, target_id: TargetID, path: &Path) -> Option<Url> {
+        if target_id == TargetID::CORE {
+            return Some(Url::parse(rayc_corelib::SOURCE_URI).expect("valid core URI"));
+        }
+
+        self.document_uri(path)
     }
 
     /// Returns the URI and version of every open document, keyed by path.

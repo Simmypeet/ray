@@ -1,6 +1,7 @@
 //! Ray language server: live diagnostics for the projects of open documents,
-//! and completion of the names in scope, of the fields after a `.`, and of
-//! paths.
+//! completion of the names in scope, of the fields after a `.`, and of paths,
+//! and for local variables and parameters and the symbols that paths name,
+//! their types or signatures on hover and their definitions.
 //!
 //! Every open document is checked as part of the project containing it, which
 //! is described by the nearest `ray.toml`. Each project has one engine that
@@ -16,6 +17,9 @@ use std::{
 use overlay::Overlay;
 use rayc_arena::Arena;
 use rayc_project::{MANIFEST_FILE_NAME, Project};
+use rayc_qbice::TrackedEngine;
+use rayc_source_file::ByteIndex;
+use rayc_target::TargetID;
 use session::{Session, SessionID};
 use tokio::sync::Mutex;
 use tower_lsp::{
@@ -24,15 +28,23 @@ use tower_lsp::{
     lsp_types::{
         CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
         DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-        InitializeParams, InitializeResult, MessageType, ServerCapabilities, ServerInfo,
-        TextDocumentSyncCapability, TextDocumentSyncKind,
+        GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability,
+        InitializeParams, InitializeResult, MessageType, OneOf, ServerCapabilities, ServerInfo,
+        TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
     },
 };
 
 mod completion;
+mod definition;
 mod diagnostic;
+mod hover;
 mod overlay;
+mod position;
+mod referent;
+mod segment;
 mod session;
+mod signature;
+mod site;
 
 /// Messages to show to the user, each at most once.
 #[derive(Debug, Default)]
@@ -207,6 +219,31 @@ impl Backend {
             session.schedule_check(&self.client, &self.overlay);
         }
     }
+
+    /// Answers a request at `position` by running `request` in the session of
+    /// the document, with the canonical path of the document and the byte
+    /// index of the position in it.
+    ///
+    /// Returns `None` if the document is not open or not in a project.
+    async fn analyze_at<T>(
+        &self,
+        position: &TextDocumentPositionParams,
+        request: impl AsyncFnOnce(&TrackedEngine, TargetID, &Path, ByteIndex) -> T,
+    ) -> Option<T> {
+        // the state is held so that no edit lands between reading the
+        // position and answering at it
+        let mut state = self.state.lock().await;
+        let (path, session_id, offset) =
+            self.overlay.locate(&position.text_document.uri, position.position)?;
+        let session = state.sessions.get_mut(session_id)?;
+
+        let answer = session
+            .analyze(&self.client, &self.overlay, async |engine, target_id| {
+                request(engine, target_id, &path, offset).await
+            })
+            .await;
+        Some(answer)
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -222,6 +259,8 @@ impl LanguageServer for Backend {
                     trigger_characters: Some(vec![".".to_owned()]),
                     ..CompletionOptions::default()
                 }),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
+                definition_provider: Some(OneOf::Left(true)),
                 ..ServerCapabilities::default()
             },
             server_info: Some(ServerInfo {
@@ -290,21 +329,28 @@ impl LanguageServer for Backend {
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        // the state is held so that no edit lands between reading the
-        // position and completing at it
-        let mut state = self.state.lock().await;
-        let position = params.text_document_position;
-        let Some((path, session_id, offset)) =
-            self.overlay.locate(&position.text_document.uri, position.position)
-        else {
-            return Ok(None);
-        };
-        let Some(session) = state.sessions.get_mut(session_id) else {
-            return Ok(None);
-        };
+        let items = self.analyze_at(&params.text_document_position, completion::complete).await;
+        Ok(items.map(CompletionResponse::Array))
+    }
 
-        let items = session.complete(&path, offset, &self.client, &self.overlay).await;
-        Ok(Some(CompletionResponse::Array(items)))
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        Ok(self.analyze_at(&params.text_document_position_params, hover::hover).await.flatten())
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let location = self
+            .analyze_at(
+                &params.text_document_position_params,
+                async |engine, target_id, path, offset| {
+                    definition::definition(engine, &self.overlay, target_id, path, offset).await
+                },
+            )
+            .await
+            .flatten();
+        Ok(location.map(GotoDefinitionResponse::Scalar))
     }
 
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {

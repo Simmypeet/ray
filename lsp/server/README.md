@@ -37,6 +37,23 @@ a completion request stops a pending check, re-reads the documents, and
 schedules the check again. Run `cargo test -p rayc_e2e --test completion_e2e`
 for the completion fixtures.
 
+Hover shows the type of the local variable or parameter under the cursor in a
+`def`, where it is declared or referred to, by its name and type, such as
+`count: int32`. On any segment of a path, it shows the signature of the
+symbol the segments up to it name, looked up as the resolver does: the
+definition as written, without the bodies of its defs, so that a struct shows
+its fields and a trait the signatures of its members. A module shows its name
+only, and a type parameter nothing. Like completion, hover reads the unsaved
+contents. Run `cargo test -p rayc_e2e --test hover_e2e` for the hover
+fixtures.
+
+Go to definition works on the same things as hover. A local variable or
+parameter goes to the pattern declaring it, and a segment of a path to the
+name of the symbol it names, in the project or in the bundled core library. A
+module defined by its own file, such as the root module of a target, goes to
+the top of that file. Run `cargo test -p rayc_e2e --test definition_e2e` for
+the go to definition fixtures.
+
 The engine caches its compilation in `target/lsp` in the project directory,
 next to the compiler's `target/inc`, so a restarted server recomputes only what
 changed. The two caches are separate because a cache can be open in only one

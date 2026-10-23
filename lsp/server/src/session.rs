@@ -1,4 +1,5 @@
-//! Checks a project with the same diagnostic query as `rayc check`.
+//! Checks a project with the same diagnostic query as `rayc check`, and
+//! answers the requests about it.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -10,18 +11,16 @@ use std::{
 use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use rayc_arena::ID;
 use rayc_project::Project;
-use rayc_qbice::{Engine, InMemoryFactory, IncrementalStorageEngine, InputSession};
-use rayc_source_file::ByteIndex;
+use rayc_qbice::{Engine, InMemoryFactory, IncrementalStorageEngine, InputSession, TrackedEngine};
 use rayc_symbol_impl::source_map::create_source_map;
 use rayc_target::TargetID;
 use tokio::{sync::Mutex, task::JoinHandle};
 use tower_lsp::{
     Client,
-    lsp_types::{CompletionItem, Diagnostic, Url},
+    lsp_types::{Diagnostic, Url},
 };
 
 use crate::{
-    completion,
     diagnostic::Locator,
     overlay::{Overlay, SourceFileExecutor},
 };
@@ -304,33 +303,33 @@ impl Session {
         *published = current;
     }
 
-    /// Lists the completions at `offset`, a byte index in the source file at
-    /// `path`, from the contents the editor shows now.
-    pub(crate) async fn complete(
+    /// Answers a request about the project, such as a completion, by running
+    /// `request` with the engine and the target of the project, on the
+    /// contents the editor shows now.
+    pub(crate) async fn analyze<T>(
         &mut self,
-        path: &Path,
-        offset: ByteIndex,
         client: &Client,
         overlay: &Arc<Overlay>,
-    ) -> Vec<CompletionItem> {
+        request: impl AsyncFnOnce(&TrackedEngine, TargetID) -> T,
+    ) -> T {
         // updating the inputs would leave a running check stuck, so the check
         // is stopped first, and scheduled again if it had not finished
         let check_pending = self.check.as_ref().is_some_and(|check| !check.is_finished());
         self.cancel_check().await;
 
-        // the completion follows edits that no check has read yet
+        // the request follows edits that no check has read yet
         let mut input_session = self.engine.input_session().await;
         rayc_source_file_impl::refresh_source_file_executors(&mut input_session).await;
         input_session.commit().await;
 
         let tracked_engine = self.engine.clone().tracked().await;
-        let items = completion::complete(&tracked_engine, self.target_id, path, offset).await;
+        let answer = request(&tracked_engine, self.target_id).await;
 
         if check_pending {
             self.schedule_check(client, overlay);
         }
 
-        items
+        answer
     }
 
     async fn cancel_check(&mut self) {

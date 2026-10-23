@@ -22,19 +22,18 @@ use rayc_lexical::{kind, tree::Tree};
 use rayc_parser::concrete_tree::Node;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::struct_body::get_struct_body;
-use rayc_source_file::{ByteIndex, GlobalSourceID, SourceElement, get_stable_path_id};
-use rayc_symbol::{
-    GlobalSymbolID, member::try_get_members, span::get_definition_span,
-    symbol_kind::get_symbol_kind, syntax::get_def_body_syntax,
-};
-use rayc_symbol_impl::index::get_source_file_module;
-use rayc_syntax::{irrefutable_pattern::IrrefutablePattern, statement::Block};
+use rayc_source_file::ByteIndex;
+use rayc_symbol::GlobalSymbolID;
+use rayc_syntax::irrefutable_pattern::IrrefutablePattern;
 use rayc_target::TargetID;
 use rayc_type::{subst::Substitutable, ty::Ty};
 use rayc_typed_ast::{get_typed_ast, typed_function::TypedFunctionMap};
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
 
-use crate::completion::path::{PathCursor, Position, Rank, first_segments};
+use crate::{
+    completion::path::{PathCursor, Position, Rank, first_segments},
+    site::File,
+};
 
 /// Lists the completions at `offset`, a byte index in the source file at
 /// `path` of the target `target_id`.
@@ -53,12 +52,12 @@ pub(crate) async fn complete(
     };
 
     // a path, in a signature or a body
-    if let Some(cursor) = PathCursor::at(&file.token_tree, &file.syntax, offset) {
-        let mut items = cursor.complete(engine, site.symbol_id).await;
+    if let Some(cursor) = PathCursor::at(file.token_tree(), file.syntax(), offset) {
+        let mut items = cursor.complete(engine, site.symbol_id()).await;
 
         // in a body, a call may call a local closure by its name
-        if cursor.may_name_local() && site.body.is_some() {
-            let typed_ast = engine.get_typed_ast(site.symbol_id).await;
+        if cursor.may_name_local() && site.body().is_some() {
+            let typed_ast = engine.get_typed_ast(site.symbol_id()).await;
             items.extend(complete_names(engine, typed_ast.functions(), offset).await);
         }
 
@@ -66,29 +65,29 @@ pub(crate) async fn complete(
     }
 
     // the rest is only completed in a body
-    let Some(body) = &site.body else {
+    let Some(body) = site.body() else {
         return Vec::new();
     };
     let body = Node::Branch(body.inner_tree().clone());
-    let typed_ast = engine.get_typed_ast(site.symbol_id).await;
+    let typed_ast = engine.get_typed_ast(site.symbol_id()).await;
     let functions = typed_ast.functions();
 
     // a path being typed, before the `(` or `{` that makes it one
     if let Some(cursor) =
-        PathCursor::in_postfix(engine, &file.token_tree, &body, functions, offset).await
+        PathCursor::in_postfix(engine, file.token_tree(), &body, functions, offset).await
     {
-        return cursor.complete(engine, site.symbol_id).await;
+        return cursor.complete(engine, site.symbol_id()).await;
     }
 
     // the member of an access, whose receiver the binder recorded
     if let Some(receiver_ty) = functions.receiver_type_at(engine, offset).await {
-        return complete_members(engine, site.symbol_id, receiver_ty).await;
+        return complete_members(engine, site.symbol_id(), receiver_ty).await;
     }
 
-    match Context::at(&file.token_tree, &body, offset) {
+    match Context::at(file.token_tree(), &body, offset) {
         Context::Name => {
             let mut items = complete_names(engine, functions, offset).await;
-            items.extend(first_segments(engine, site.symbol_id, Position::Expression).await);
+            items.extend(first_segments(engine, site.symbol_id(), Position::Expression).await);
             items
         }
         Context::AfterDot | Context::Unsupported => Vec::new(),
@@ -149,100 +148,6 @@ impl Context {
             }
         }
     }
-}
-
-/// The source file the cursor is in, as the compiler reads it.
-struct File {
-    /// The ID the spans in the file refer to.
-    id: GlobalSourceID,
-
-    token_tree: Interned<Tree>,
-
-    /// The syntax tree of the whole file.
-    syntax: Node,
-}
-
-impl File {
-    /// Loads the source file at `path` of the target `target_id`, or returns
-    /// `None` if it cannot be loaded, such as when it lies outside of the
-    /// target directory.
-    async fn load(engine: &TrackedEngine, target_id: TargetID, path: &Path) -> Option<Self> {
-        let path: Interned<Path> = engine.intern_unsized(path.to_path_buf());
-        let id =
-            target_id.make_global(engine.get_stable_path_id(path.clone(), target_id).await.ok()?);
-
-        let (token_tree, _) =
-            engine.query(&rayc_lexical::Key { path: path.clone(), target_id }).await.ok()?;
-        let (content, _) = engine.query(&rayc_syntax::Key { path, target_id }).await.ok()?;
-
-        Some(Self { id, token_tree, syntax: Node::Branch(content?.inner_tree().clone()) })
-    }
-
-    /// Finds the innermost symbol whose definition holds `offset`, and its
-    /// body if the offset is in it.
-    ///
-    /// Returns `None` if the file is not loaded into its target.
-    async fn site_at(&self, engine: &TrackedEngine, offset: ByteIndex) -> Option<Site> {
-        // definitions nest like the symbols they define, so the innermost one
-        // holding the cursor is reached from the module the file defines,
-        // descending into the member whose definition holds the cursor
-        let mut symbol_id = engine.get_source_file_module(self.id).await?;
-        while let Some(member_id) = self.member_at(engine, symbol_id, offset).await {
-            symbol_id = member_id;
-        }
-
-        let body = self.body_at(engine, symbol_id, offset).await;
-        Some(Site { symbol_id, body })
-    }
-
-    /// Returns the member of `symbol_id` whose definition in this file holds
-    /// `offset`, if any.
-    async fn member_at(
-        &self,
-        engine: &TrackedEngine,
-        symbol_id: GlobalSymbolID,
-        offset: ByteIndex,
-    ) -> Option<GlobalSymbolID> {
-        let members = engine.try_get_members(symbol_id).await?;
-
-        // the definitions of the members do not overlap, and the ones of file
-        // modules are in their own files
-        for member_id in members.all_ids() {
-            let member_id = symbol_id.target_id.make_global(member_id);
-            let Some(span) = engine.get_definition_span(member_id).await else {
-                continue;
-            };
-            if span.source_id == self.id && self.token_tree.span_contains_cursor(&span, offset) {
-                return Some(member_id);
-            }
-        }
-
-        None
-    }
-
-    /// Returns the body of `symbol_id`, if it has one holding `offset`.
-    async fn body_at(
-        &self,
-        engine: &TrackedEngine,
-        symbol_id: GlobalSymbolID,
-        offset: ByteIndex,
-    ) -> Option<Block> {
-        if !engine.get_symbol_kind(symbol_id).await.has_def_body() {
-            return None;
-        }
-
-        let body = engine.get_def_body_syntax(symbol_id).await?;
-        self.token_tree.span_contains_cursor(&body.span(), offset).then_some(body)
-    }
-}
-
-/// The innermost symbol defined at the cursor, the site its paths are
-/// resolved from.
-struct Site {
-    symbol_id: GlobalSymbolID,
-
-    /// The body of the symbol, if the cursor is in it.
-    body: Option<Block>,
 }
 
 /// Lists the local variables in `functions` visible at `offset`, sorted by

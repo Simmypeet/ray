@@ -38,6 +38,8 @@ use rayc_type::{poly_var::get_poly_var_map, ty::TyKind};
 use rayc_typed_ast::typed_function::TypedFunctionMap;
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
 
+use crate::segment::SegmentAt;
+
 /// The segment of a path at the cursor, and where the path is written.
 pub(super) struct PathCursor {
     segment: Segment,
@@ -57,29 +59,20 @@ impl PathCursor {
     /// Finds the `Path` node at `offset` in `syntax`, whose spans are relative
     /// to `token_tree`.
     pub(super) fn at(token_tree: &Tree, syntax: &Node, offset: ByteIndex) -> Option<Self> {
+        // the cursor is on the root, or on a continuation right after its
+        // `.` or in its name
         let before = offset.checked_sub(1)?;
-        let path = syntax.get_deepest_ast::<Path>(token_tree, before)?;
+        let segment_at =
+            SegmentAt::find(token_tree, syntax, before, |span| span.contains_cursor(offset))?;
 
-        // the cursor is on the root, or on a continuation after the root and
-        // the continuations before it
-        let root = path.root()?;
-        let segment = if token_tree.span_contains_cursor(&root.span_without_arguments()?, offset) {
+        let position = Position::of(token_tree, syntax, segment_at.path(), before);
+        let segment = if segment_at.is_on_root() {
             Segment::First
         } else {
-            let mut names = Vec::new();
-            let mut parts = path.rest();
-            loop {
-                let part = parts.next()?;
-                if token_tree.span_contains_cursor(&part.span_without_arguments()?, offset) {
-                    break;
-                }
-                names.push(part.segment()?.identifier()?.kind.0);
-            }
-
-            Segment::After(PathPrefix::with_root_syntax(&root, names)?)
+            Segment::After(segment_at.into_prefix_before()?)
         };
 
-        Some(Self { segment, position: Position::of(token_tree, syntax, &path, before) })
+        Some(Self { segment, position })
     }
 
     /// Finds the path being typed at `offset` in `body`, before the `(` or

@@ -9,14 +9,13 @@
 use std::path::Path;
 
 use rayc_diagnostic::{Group, Highlight, Rendered, Severity};
-use rayc_source_file::SourceFile;
 use rayc_symbol_impl::source_map::SourceMap;
 use rayc_target::TargetID;
 use tower_lsp::lsp_types::{
-    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Position, Range, Url,
+    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Range, Url,
 };
 
-use crate::overlay::Overlay;
+use crate::{overlay::Overlay, position::range_of};
 
 /// Places compiler diagnostics in the documents of a project.
 pub(crate) struct Locator<'a> {
@@ -29,15 +28,8 @@ pub(crate) struct Locator<'a> {
 
 impl<'a> Locator<'a> {
     pub(crate) fn new(sources: &'a SourceMap, overlay: &'a Overlay, root_file: &Path) -> Self {
-        let root_file =
-            Self::document_uri(overlay, root_file).expect("the root file path is absolute");
+        let root_file = overlay.document_uri(root_file).expect("the root file path is absolute");
         Self { sources, overlay, root_file }
-    }
-
-    /// Returns the URI of the document at `path`, preferring the one the
-    /// editor opened it with.
-    fn document_uri(overlay: &Overlay, path: &Path) -> Option<Url> {
-        overlay.document(path).map(|(uri, _)| uri).or_else(|| Url::from_file_path(path).ok())
     }
 
     fn is_in_core(highlight: &Highlight<usize>) -> bool {
@@ -49,29 +41,9 @@ impl<'a> Locator<'a> {
     fn location(&self, highlight: &Highlight<usize>) -> Option<Location> {
         let id = highlight.span().source_id;
         let source = self.sources.0.get(&id)?;
+        let uri = self.overlay.source_uri(id.target_id, source.path())?;
 
-        // the bundled core library has no file; the editor asks the server
-        // for its text by this URI
-        let uri = if Self::is_in_core(highlight) {
-            Url::parse(rayc_corelib::SOURCE_URI).expect("valid core URI")
-        } else {
-            Self::document_uri(self.overlay, source.path())?
-        };
-
-        let range = Range::new(
-            Self::position(source, highlight.span().start),
-            Self::position(source, highlight.span().end),
-        );
-
-        Some(Location::new(uri, range))
-    }
-
-    fn position(source: &SourceFile, byte_index: usize) -> Position {
-        let location = source.get_utf16_location_from_byte_index(byte_index);
-        Position::new(
-            u32::try_from(location.line).unwrap_or(u32::MAX),
-            u32::try_from(location.column).unwrap_or(u32::MAX),
-        )
+        Some(Location::new(uri, range_of(source, highlight.span())))
     }
 
     /// Relates `highlight` to the diagnostic under its label, or under
