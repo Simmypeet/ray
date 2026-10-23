@@ -9,8 +9,10 @@
 use std::path::Path;
 
 use qbice::storage::intern::Interned;
+use rayc_handler::Dummy;
+use rayc_hash::FxHashSet;
 use rayc_lexical::tree::{RelativeSpan, Tree};
-use rayc_parser::concrete_tree::Node;
+use rayc_parser::{abstract_tree::AbstractTree, concrete_tree::Node, expect::Expected};
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::{ByteIndex, GlobalSourceID, SourceElement, SourceFile, get_stable_path_id};
 use rayc_symbol::{
@@ -18,7 +20,7 @@ use rayc_symbol::{
     symbol_kind::get_symbol_kind, syntax::get_def_body_syntax,
 };
 use rayc_symbol_impl::index::get_source_file_module;
-use rayc_syntax::statement::Block;
+use rayc_syntax::{module::ModuleContent, statement::Block};
 use rayc_target::TargetID;
 use rayc_typed_ast::{TypedAst, get_typed_ast};
 use tower_lsp::lsp_types::Range;
@@ -71,6 +73,21 @@ impl File {
     /// Returns the range the editor shows `span`, a span in this file, at.
     pub(crate) fn range_of(&self, span: &RelativeSpan) -> Range {
         range_of(&self.source, &self.token_tree.absolute_span_of(span))
+    }
+
+    /// Lists every token the parser expects in place of the word being typed
+    /// at `offset`, as the syntax error at that word would list them.
+    ///
+    /// The file is lexed again with the hole at the cursor: see
+    /// [`rayc_lexical::kind::Hole`]. Nothing is expected in a comment or a
+    /// literal, which have no hole.
+    pub(crate) fn expecteds_at(
+        &self,
+        engine: &TrackedEngine,
+        offset: ByteIndex,
+    ) -> FxHashSet<Expected> {
+        let token_tree = Tree::from_source_with_hole(&self.source, self.id, engine, &Dummy, offset);
+        ModuleContent::expecteds_at_hole(&token_tree, engine)
     }
 
     /// Finds the innermost symbol whose definition holds `offset`, and its

@@ -1752,6 +1752,7 @@ dependencies = [
  "rayc_check",
  "rayc_corelib",
  "rayc_diagnostic",
+ "rayc_handler",
  "rayc_hash",
  "rayc_ir_builder",
  "rayc_lexical",

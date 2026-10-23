@@ -246,6 +246,12 @@ macro_rules! expect_impl_parser {
         };
 
         if !$self.expect(leaf) {
+            // the hole matches nothing, but tells what could be written in
+            // its place
+            if leaf.kind.is_hole() && $self.expect_position(leaf) {
+                $state.add_hole_expected((*$self).into());
+            }
+
             $state.add_error(std::iter::once((*$self).into()), Cursor {
                 branch_id: $state.branch_id(),
                 node_index,
@@ -695,7 +701,8 @@ impl<I: Interner, T: Parser<I>, S: Parser<I>, E: Parser<I>> Parser<I>
         }
 
         loop {
-            // A terminator ends the repetition without becoming part of its output.
+            // A terminator ends the repetition without becoming part of its
+            // output.
             let after_item = state.checkpoint();
             if self.2.parse(state) == Ok(()) {
                 return Ok(());

@@ -12,7 +12,11 @@
 //!   ones that fail to bind, such as a dangling `p.`.
 //! - Elsewhere in a body, it offers the local variables visible at the cursor,
 //!   as the typed AST records them, then the first segments of a path.
+//!
+//! Anywhere in the file, it also offers the keywords the syntax allows at the
+//! cursor: see [`keyword`].
 
+mod keyword;
 mod path;
 
 use std::path::Path;
@@ -43,10 +47,23 @@ pub(crate) async fn complete(
     path: &Path,
     offset: ByteIndex,
 ) -> Vec<CompletionItem> {
-    // only the definition of a symbol is completed
     let Some(file) = File::load(engine, target_id, path).await else {
         return Vec::new();
     };
+
+    // the names and members, then the keywords that sort after them
+    let mut items = complete_in_definition(engine, &file, offset).await;
+    items.extend(keyword::complete(engine, &file, offset, &items));
+    items
+}
+
+/// Lists the names and members at `offset` in `file`, which are only
+/// completed in the definition of a symbol.
+async fn complete_in_definition(
+    engine: &TrackedEngine,
+    file: &File,
+    offset: ByteIndex,
+) -> Vec<CompletionItem> {
     let Some(site) = file.site_at(engine, offset).await else {
         return Vec::new();
     };
@@ -141,6 +158,7 @@ impl Context {
             kind::Kind::Punctuation(kind::Punctuation('.')) => Self::AfterDot,
             kind::Kind::Identifier(_)
             | kind::Kind::Keyword(_)
+            | kind::Kind::Hole(_)
             | kind::Kind::Punctuation(_)
             | kind::Kind::NewLine(_) => Self::Name,
             kind::Kind::Character(_) | kind::Kind::String(_) | kind::Kind::Numeric(_) => {

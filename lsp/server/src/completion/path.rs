@@ -235,8 +235,8 @@ pub(super) async fn first_segments(
     items
 }
 
-/// The groups of items that a first segment lists, in the order they are
-/// offered.
+/// The groups of items that a first segment lists, and the keywords that
+/// follow them, in the order they are offered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Rank {
     /// A local variable, which a bare identifier in a body names first.
@@ -245,7 +245,7 @@ pub(super) enum Rank {
     /// A type parameter or a symbol.
     Start,
 
-    /// A keyword a path starts with.
+    /// A keyword, such as one a path starts with.
     Keyword,
 }
 

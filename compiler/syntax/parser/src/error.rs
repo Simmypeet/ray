@@ -54,6 +54,7 @@ fn found_node_string(
                     format!("`{punctuation}` punctuation")
                 }
                 kind::Kind::Numeric(_) => "numeric literal".to_string(),
+                kind::Kind::Hole(_) => "completion hole".to_string(),
             };
 
             (string, token_tree.absolute_span_of(&token.span))

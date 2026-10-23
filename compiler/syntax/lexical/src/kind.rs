@@ -327,6 +327,17 @@ impl Display for Keyword {
 )]
 pub struct NewLine;
 
+/// A tag struct that represents the hole: the word being typed at a cursor,
+/// or an empty token at the cursor where no word is being typed.
+///
+/// The hole is only lexed when asked for, for completion: see
+/// [`crate::tree::Tree::from_source_with_hole`]. No token the grammar expects
+/// matches it, so the parser reports what it expected in its place.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Encode, Decode, StableHash,
+)]
+pub struct Hole;
+
 /// A tag struct that represents a character token: 'x'.
 #[derive(
     Debug,
@@ -461,16 +472,17 @@ pub enum Kind {
     Identifier(Identifier),
     Punctuation(Punctuation),
     Numeric(Numeric),
+    Hole(Hole),
 }
 
 impl Kind {
     /// Returns whether the token is a word, an identifier or a keyword. A
     /// keyword is spelled like an identifier, so a word being typed may become
-    /// either.
+    /// either. The hole stands for a word being typed.
     #[must_use]
     pub const fn is_word(&self) -> bool {
         match self {
-            Self::Identifier(_) | Self::Keyword(_) => true,
+            Self::Identifier(_) | Self::Keyword(_) | Self::Hole(_) => true,
             Self::Punctuation(_)
             | Self::NewLine(_)
             | Self::Character(_)
