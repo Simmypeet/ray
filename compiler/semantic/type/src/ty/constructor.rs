@@ -314,15 +314,9 @@ impl Ty {
         // The trait def's own parameters are the arguments; the instance
         // tells those of its trait.
         let poly_vars = engine.get_poly_var_map(trait_def_id).await;
-        // REVIEW: Let's create a similar method of
-        // PolyVarStack.args_from_substs but for PolyVarMap and use it
-        // here.
-        let args = poly_vars.iter().map(|(poly_var_id, _)| {
-            call_subst
-                .get(&GlobalPolyVarID::new(trait_def_id, poly_var_id))
-                .cloned()
-                .expect("the call should instantiate every parameter of its trait def")
-        });
+        let args = poly_vars
+            .args_from_subst(trait_def_id, call_subst)
+            .expect("the call should instantiate every parameter of its trait def");
 
         Self::new_trait_def_coroutine(trait_def_id, instance, args, engine)
     }
