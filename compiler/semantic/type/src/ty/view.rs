@@ -6,7 +6,7 @@ use crate::{
     poly_var::GlobalPolyVarID,
     ty::{
         Integer, Mutability, Primitive, Ty, application,
-        application::{EnumView, InstanceView, StructView, View as ApplicationView},
+        application::{AdtView, EnumView, InstanceView, StructView, View as ApplicationView},
         inference::{GenInfer, Inference},
         lifetime::{ExternalRegionID, Lifetime, RegionID},
     },
@@ -99,9 +99,16 @@ impl Ty {
     /// Returns the struct or enum this type instantiates, if it is one.
     #[must_use]
     pub fn as_adt_id(&self) -> Option<GlobalSymbolID> {
+        self.as_adt_view().map(|adt| adt.symbol_id())
+    }
+
+    /// Returns the view of the struct or enum this type instantiates, if it
+    /// is one.
+    #[must_use]
+    pub fn as_adt_view(&self) -> Option<AdtView<'_>> {
         self.as_struct_view()
-            .map(|struct_| struct_.symbol_id())
-            .or_else(|| self.as_enum_view().map(|enum_| enum_.symbol_id()))
+            .map(AdtView::Struct)
+            .or_else(|| self.as_enum_view().map(AdtView::Enum))
     }
 
     #[must_use]

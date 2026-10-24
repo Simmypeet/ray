@@ -234,7 +234,19 @@ pub struct AllInstanceIDs {
 )]
 #[value(Arc<[SymbolID]>)]
 #[extend(name = get_all_nominal_type_ids, by_val)]
+// REVIEW: Let's collapse AllNominalTypeIDs and AllStructIDs into one query,
+// AllAdtIDs, that returns all adt types (structs and enums) in a target.
 pub struct AllNominalTypeIDs {
+    pub target: TargetID,
+}
+
+/// Retrieves all enum symbol IDs in a given target.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Arc<[SymbolID]>)]
+#[extend(name = get_all_enum_ids, by_val)]
+pub struct AllEnumIDs {
     pub target: TargetID,
 }
 

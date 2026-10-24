@@ -337,6 +337,7 @@ impl VarianceOwner {
             SymbolKind::Effect => Some(Self::Effect),
             SymbolKind::Def
             | SymbolKind::EffectOperation
+            | SymbolKind::Enum
             | SymbolKind::ExternDef
             | SymbolKind::Instance
             | SymbolKind::InstanceDef
@@ -346,7 +347,8 @@ impl VarianceOwner {
             | SymbolKind::Module
             | SymbolKind::Trait
             | SymbolKind::TraitDef
-            | SymbolKind::TraitType => None,
+            | SymbolKind::TraitType
+            | SymbolKind::Variant => None,
         }
     }
 }

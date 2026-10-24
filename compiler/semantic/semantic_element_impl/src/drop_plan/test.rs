@@ -6,9 +6,11 @@ use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeS
 use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor};
 use rayc_semantic_element::{
     drop_plan::{
-        DictionaryArgument, DictionaryExpr, DropPlan, get_drop_plan, get_target_drop_plans,
+        DictionaryArgument, DictionaryExpr, DropPlan, FieldDrop, GeneratedDropBody, VariantDrop,
+        get_drop_plan, get_target_drop_plans,
     },
     struct_body::{Field, Key as StructBodyKey, StructBody},
+    variant_payload_ty::Key as VariantPayloadTyKey,
 };
 use rayc_solver::Solver;
 use rayc_source_file::GlobalSourceID;
@@ -18,8 +20,10 @@ use rayc_symbol::{
     core_item::{CoreItem, Key as CoreItemKey},
     member::{Key as MemberKey, Member},
     name::Key as NameKey,
-    symbol_kind::{AllInstanceIDs, AllNominalTypeIDs, Key as SymbolKindKey, SymbolKind},
-    syntax::LinearStructKey,
+    symbol_kind::{
+        AllEnumIDs, AllInstanceIDs, AllNominalTypeIDs, Key as SymbolKindKey, SymbolKind,
+    },
+    syntax::LinearTypeKey,
 };
 use rayc_target::TargetID;
 use rayc_type::{
@@ -43,7 +47,8 @@ fn span() -> RelativeSpan {
     RelativeSpan { start: location, end: location, source_id: GlobalSourceID::default() }
 }
 
-/// Declares the nominal types of each target, none of which is `@linear`.
+/// Declares the structs of each target, none of which is `@linear`. No target
+/// declares an enum.
 fn register_nominals(engine: &mut Engine, targets: &[(TargetID, &[GlobalSymbolID])]) {
     engine.register_executor(Arc::new(PrecomputedExecutor::new(
         targets
@@ -56,8 +61,21 @@ fn register_nominals(engine: &mut Engine, targets: &[(TargetID, &[GlobalSymbolID
     engine.register_executor(Arc::new(PrecomputedExecutor::new(
         targets
             .iter()
+            .map(|&(target, _)| (AllEnumIDs { target }, Arc::<[SymbolID]>::from([])))
+            .collect(),
+    )));
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(
+        targets
+            .iter()
             .flat_map(|(_, structs)| structs.iter())
-            .map(|&symbol_id| (LinearStructKey { symbol_id }, false))
+            .map(|&symbol_id| (SymbolKindKey { symbol_id }, SymbolKind::Strut))
+            .collect(),
+    )));
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(
+        targets
+            .iter()
+            .flat_map(|(_, structs)| structs.iter())
+            .map(|&symbol_id| (LinearTypeKey { symbol_id }, false))
             .collect(),
     )));
 }
@@ -65,6 +83,14 @@ fn register_nominals(engine: &mut Engine, targets: &[(TargetID, &[GlobalSymbolID
 fn generated(plan: &DropPlan) -> &rayc_semantic_element::drop_plan::GeneratedDropPlan {
     let DropPlan::Generated(plan) = plan else { panic!("expected a generated Drop plan") };
     plan
+}
+
+/// Returns the field recipes of a struct's generated Drop plan.
+fn fields(plan: &DropPlan) -> &[FieldDrop] {
+    let GeneratedDropBody::Struct(fields) = generated(plan).body() else {
+        panic!("expected the Drop plan of a struct")
+    };
+    fields
 }
 
 // input: mutually recursive A[t] and B[t], with B owning a value of t
@@ -164,14 +190,14 @@ async fn mutually_recursive_plans_share_external_requirement() {
     assert_eq!(generated(&b_plan).requirements(), &[
         tracked.intern(Ty::PolyVar(GlobalPolyVarID::new(b, b_param)))
     ]);
-    assert_eq!(generated(&a_plan).fields()[0].field_id(), a_next);
+    assert_eq!(fields(&a_plan)[0].field_id(), a_next);
     assert!(matches!(
-        generated(&a_plan).fields()[0].dictionary(),
+        fields(&a_plan)[0].dictionary(),
         DictionaryExpr::Generated { external, .. }
             if external == &[DictionaryExpr::External(0)]
     ));
-    assert_eq!(generated(&b_plan).fields()[0].field_id(), b_value);
-    assert_eq!(generated(&b_plan).fields()[0].dictionary(), &DictionaryExpr::External(0));
+    assert_eq!(fields(&b_plan)[0].field_id(), b_value);
+    assert_eq!(fields(&b_plan)[0].dictionary(), &DictionaryExpr::External(0));
 }
 
 // input: local Wrapper owns a nominal Leaf from another target
@@ -237,11 +263,11 @@ async fn foreign_field_uses_its_defining_targets_plan() {
     assert_eq!(plans.len(), 1);
     let wrapper_plan = tracked.get_drop_plan(wrapper).await;
     assert!(matches!(
-        generated(&wrapper_plan).fields()[0].dictionary(),
+        fields(&wrapper_plan)[0].dictionary(),
         DictionaryExpr::Generated { nominal, external }
             if nominal == &leaf_ty && external.is_empty()
     ));
-    assert!(generated(&*tracked.get_drop_plan(leaf).await).fields().is_empty());
+    assert!(fields(&*tracked.get_drop_plan(leaf).await).is_empty());
 }
 
 // input: Node[t] owns Option[Node[t]], and DropOption[a] requires Drop[a]
@@ -341,7 +367,7 @@ async fn recursive_field_applies_generated_dictionary_to_explicit_wrapper() {
     let node_plan = tracked.get_target_drop_plans(target).await.get(&node.id).unwrap().clone();
     assert_eq!(generated(&node_plan).requirements(), &[node_t]);
     assert!(matches!(
-        generated(&node_plan).fields()[0].dictionary(),
+        fields(&node_plan)[0].dictionary(),
         DictionaryExpr::Explicit { instance_id, arguments }
             if *instance_id == option_drop
                 && arguments == &[
@@ -499,4 +525,99 @@ async fn closure_field_resolves_one_dictionary_per_capture() {
         captures: vec![DictionaryExpr::External(0), DictionaryExpr::NoOp(borrowed)],
     });
     assert_eq!(evaluator.requirements, vec![t]);
+}
+
+// input: enum Option[t] with variants Some(t), Pair((t, int32)) and None
+// premise: Option has no explicit Drop instance
+// output: one Drop[t] requirement shared by both payloads; Some drops its
+//         payload with it, Pair with a tuple dictionary, and None drops nothing
+#[tokio::test]
+async fn enum_plan_drops_each_variant_payload() {
+    let engine = Engine::new_with(
+        qbice::serialize::Plugin::default(),
+        InMemoryFactory,
+        qbice::stable_hash::SeededStableHasherBuilder::new(0),
+    )
+    .await
+    .unwrap();
+    let target = TargetID::TEST;
+    let option = target.make_global(SymbolID::from_u128(1));
+    let drop_trait = target.make_global(SymbolID::from_u128(2));
+    let some = target.make_global(SymbolID::from_u128(3));
+    let pair = target.make_global(SymbolID::from_u128(4));
+    let none = target.make_global(SymbolID::from_u128(5));
+    let mut params = PolyVarMap::new();
+    let param = params.insert(PolyVar::new_type(engine.intern_unsized("t"), span())).unwrap();
+
+    let mut engine = Arc::new(engine);
+    let tracked = engine.clone().tracked().await;
+    let t = tracked.intern(Ty::PolyVar(GlobalPolyVarID::new(option, param)));
+    let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &tracked);
+    let pair_ty = Ty::new_tuple(tracked.intern_unsized([t.clone(), int_ty.clone()]), &tracked);
+    let mut members = Member::default();
+    let _ = members.insert(tracked.intern_unsized("Some"), some.id);
+    let _ = members.insert(tracked.intern_unsized("Pair"), pair.id);
+    let _ = members.insert(tracked.intern_unsized("None"), none.id);
+    let members = tracked.intern(members);
+    let params = tracked.intern(params);
+    drop(tracked);
+
+    let engine_mut = Arc::get_mut(&mut engine).unwrap();
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        CoreItemKey { role: CoreItem::DropTrait },
+        drop_trait,
+    )]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        AllNominalTypeIDs { target },
+        Arc::<[SymbolID]>::from([]),
+    )]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        AllEnumIDs { target },
+        Arc::<[SymbolID]>::from([option.id]),
+    )]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        SymbolKindKey { symbol_id: option },
+        SymbolKind::Enum,
+    )]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        LinearTypeKey { symbol_id: option },
+        false,
+    )]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        AllInstanceIDs { target },
+        Arc::<[SymbolID]>::from([]),
+    )]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        PolyVarKey { symbol_id: option },
+        params,
+    )]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        MemberKey { symbol_id: option },
+        members,
+    )]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
+        (VariantPayloadTyKey { symbol_id: some }, Some(t.clone())),
+        (VariantPayloadTyKey { symbol_id: pair }, Some(pair_ty.clone())),
+        (VariantPayloadTyKey { symbol_id: none }, None),
+    ]))));
+    engine_mut.register_executor(Arc::new(TargetDropPlansExecutor));
+    engine_mut.register_executor(Arc::new(NominalDropPlanExecutor));
+
+    let tracked = engine.tracked().await;
+    let plan = tracked.get_drop_plan(option).await;
+    assert_eq!(generated(&plan).requirements(), &[t]);
+    assert_eq!(
+        generated(&plan).body(),
+        &GeneratedDropBody::Enum(vec![
+            VariantDrop::new(some, Some(DictionaryExpr::External(0))),
+            VariantDrop::new(
+                pair,
+                Some(DictionaryExpr::Tuple {
+                    tuple: pair_ty,
+                    elements: vec![DictionaryExpr::External(0), DictionaryExpr::NoOp(int_ty)],
+                }),
+            ),
+            VariantDrop::new(none, None),
+        ])
+    );
 }

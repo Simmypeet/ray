@@ -236,6 +236,40 @@ impl<'x> EnumView<'x> {
     }
 }
 
+/// A struct or an enum, for what does not depend on which one it is: the
+/// declaration and its type arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AdtView<'x> {
+    Struct(StructView<'x>),
+    Enum(EnumView<'x>),
+}
+
+impl<'x> AdtView<'x> {
+    /// Returns the `SymbolKind::Strut` or `SymbolKind::Enum` symbol.
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID {
+        match self {
+            Self::Struct(struct_) => struct_.symbol_id(),
+            Self::Enum(enum_) => enum_.symbol_id(),
+        }
+    }
+
+    #[must_use]
+    pub const fn args(&self) -> &'x [Interned<Ty>] {
+        match self {
+            Self::Struct(struct_) => struct_.args(),
+            Self::Enum(enum_) => enum_.args(),
+        }
+    }
+
+    /// Returns the substitution that instantiates the declaration with the
+    /// type arguments.
+    #[must_use]
+    pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
+        engine.build_subst_from_args(self.symbol_id(), self.args()).await
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstanceView<'x> {
     symbol_id: GlobalSymbolID,

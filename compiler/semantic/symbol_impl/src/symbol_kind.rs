@@ -6,8 +6,8 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{
     SymbolID,
     symbol_kind::{
-        AllCallableDefIDs, AllDefWithBodyIDs, AllEffectIDs, AllInstanceIDs, AllNominalTypeIDs,
-        AllSymbolIDs, Key, SymbolKind,
+        AllCallableDefIDs, AllDefWithBodyIDs, AllEffectIDs, AllEnumIDs, AllInstanceIDs,
+        AllNominalTypeIDs, AllSymbolIDs, Key, SymbolKind,
     },
 };
 
@@ -72,6 +72,19 @@ pub async fn all_nominal_type_ids_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static ALL_NOMINAL_TYPE_IDS_EXECUTOR: Registration<Config> =
     Registration::new::<AllNominalTypeIDs, AllNominalTypeIdsExecutor>();
+
+#[executor(config = Config)]
+pub async fn all_enum_ids_executor(
+    &AllEnumIDs { target }: &AllEnumIDs,
+    engine: &TrackedEngine,
+) -> Arc<[SymbolID]> {
+    let tables = engine.get_target_tables(target).await;
+    tables.iter().flat_map(|table| table.symbol_ids_of_kind(SymbolKind::Enum)).collect()
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static ALL_ENUM_IDS_EXECUTOR: Registration<Config> =
+    Registration::new::<AllEnumIDs, AllEnumIdsExecutor>();
 
 #[executor(config = Config)]
 pub async fn all_effect_ids_executor(

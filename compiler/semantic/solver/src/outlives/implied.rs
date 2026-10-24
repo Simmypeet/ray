@@ -103,7 +103,10 @@ impl<'x> ImpliedOutlivesCollector<'x> {
                         .map(|predicate| predicate.apply_subst_or_clone(&subst, self.engine)),
                 );
             }
-            ApplicationView::Primitive(_)
+            // TODO: an enum should imply its inferred outlives like a struct
+            // once they are computed for enums.
+            ApplicationView::Enum(_)
+            | ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Pointer(_)
             | ApplicationView::Instance(_)
@@ -118,7 +121,7 @@ impl<'x> ImpliedOutlivesCollector<'x> {
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
-            | ApplicationView::NominalDropInstance(_)
+            | ApplicationView::GeneratedAdtDropInstance(_)
             | ApplicationView::Error => {}
         }
     }
@@ -152,8 +155,11 @@ pub async fn implied_bounds(
             collector.into_requirements()
         }
         SymbolKind::Strut => engine.get_inferred_outlives(symbol_id).await.to_vec(),
+        // TODO: an enum should imply its inferred outlives like a struct once
+        // they are computed for enums.
         SymbolKind::Effect
         | SymbolKind::EffectOperation
+        | SymbolKind::Enum
         | SymbolKind::ExternDef
         | SymbolKind::Instance
         | SymbolKind::InstanceDef
@@ -163,6 +169,7 @@ pub async fn implied_bounds(
         | SymbolKind::Module
         | SymbolKind::Trait
         | SymbolKind::TraitDef
-        | SymbolKind::TraitType => Vec::new(),
+        | SymbolKind::TraitType
+        | SymbolKind::Variant => Vec::new(),
     }
 }

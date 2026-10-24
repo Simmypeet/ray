@@ -450,6 +450,7 @@ impl Build for rayc_type::poly_var::Key {
                 }
             }
             SymbolKind::Effect
+            | SymbolKind::Enum
             | SymbolKind::Instance
             | SymbolKind::MarkerImplementation
             | SymbolKind::Strut
@@ -473,6 +474,7 @@ impl Build for rayc_type::poly_var::Key {
             }
             SymbolKind::Marker => panic!("a marker does not own a polymorphic-variable map"),
             SymbolKind::Module => panic!("a module does not own a polymorphic-variable map"),
+            SymbolKind::Variant => panic!("a variant does not own a polymorphic-variable map"),
         };
 
         // Symbols with an explicit type-parameter list order its variables by
