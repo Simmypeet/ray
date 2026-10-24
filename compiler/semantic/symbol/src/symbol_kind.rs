@@ -90,8 +90,11 @@ impl SymbolKind {
     #[must_use]
     pub const fn has_variance_map(&self) -> bool {
         match self {
-            Self::Effect | Self::Strut | Self::Enum => true,
-            Self::Def
+            Self::Effect | Self::Strut => true,
+            // TODO: an enum should have its variances computed from the
+            // payload types of its variants, like a struct from its fields.
+            Self::Enum
+            | Self::Def
             | Self::EffectOperation
             | Self::ExternDef
             | Self::Instance

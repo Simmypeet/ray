@@ -5,3 +5,4 @@ pub mod drop_plan;
 pub mod marker_implementation;
 pub mod parameter;
 pub mod struct_body;
+pub mod variant_payload_ty;
