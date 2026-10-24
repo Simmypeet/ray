@@ -493,7 +493,7 @@ impl Solver {
         // instantiated with the arguments of the coroutine type.
         let engine = self.engine().clone();
         let substitution = view.create_subst(&engine).await;
-        let parameters = engine.get_parameter_map(view.signature_id()).await;
+        let parameters = engine.get_parameter_map(view.signature_id(&engine).await).await;
         let upvars = parameters
             .iter()
             .map(|(_, parameter)| parameter.ty().apply_subst_or_clone(&substitution, &engine))
