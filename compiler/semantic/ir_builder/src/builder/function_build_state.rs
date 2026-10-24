@@ -9,7 +9,7 @@ use rayc_ir::{
         Capture, CaptureID, CaptureMapID, CaptureMode as IrCaptureMode,
         ClosureParameter as IrClosureParameter, ClosureParameterID,
     },
-    ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load, tuple::Tuple},
+    ir_expr::{IRExpr, IRExprID, IRExprKind, Suspension, load::Load, tuple::Tuple},
     ir_function::{FunctionID as IrFunctionID, IRFunctionMap},
     ir_operation_handler::{
         OperationHandlerParameter as IrOperationHandlerParameter,
@@ -555,9 +555,9 @@ impl Builder {
     /// [`Terminator::Suspend`], and lowering continues in the resume block,
     /// where its value is defined. Its abandon block is created on the way;
     /// see [`Self::create_abandon_block`]. Any other is an ordinary
-    /// instruction; see [`IRExprKind::suspends`].
+    /// instruction; see [`Self::suspends`].
     pub async fn emit_suspendable_expression(&mut self, expression: IRExpr) -> IRExprID {
-        if !expression.kind().suspends(&self.engine).await {
+        if !self.suspends(expression.kind()).await {
             return self.emit_expression(expression);
         }
 
@@ -596,10 +596,27 @@ impl Builder {
     }
 
     /// Returns whether the inserted expression `expression_id` is a
-    /// suspension point; see [`IRExprKind::suspends`].
+    /// suspension point; see [`IRExprKind::suspension`].
     pub async fn is_suspension_point(&self, expression_id: IRExprID) -> bool {
         let function = self.ir_functions.get_function(self.building_function.ir_function_id);
-        function.get_expression(expression_id).kind().suspends(&self.engine).await
+        self.suspends(function.get_expression(expression_id).kind()).await
+    }
+
+    /// Returns whether evaluating `kind` is a suspension point; see
+    /// [`IRExprKind::suspension`].
+    ///
+    /// The row is normalized under the givens of the function first. The
+    /// effect of a call through an instance is written as a projection, such
+    /// as `DefInstance(C).Effect` for a call of a closure, and is empty only
+    /// once it reduces.
+    async fn suspends(&self, kind: &IRExprKind) -> bool {
+        match kind.suspension(&self.engine).await {
+            Suspension::Never => false,
+            Suspension::Always => true,
+            Suspension::UnlessEmpty(effect) => {
+                !self.solver.normalize(&effect).await.is_empty_effect_row()
+            }
+        }
     }
 
     /// Inserts an expression that no instruction evaluates: one that a

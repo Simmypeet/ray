@@ -1,0 +1,20 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: no implicit instance found: `core.Drop[Handle]`
+   ╭▸ compiler/e2e/test/check/coroutine/pure_callable_not_suspension/main.ray:53:9
+   │
+53 │     let opened = make()
+   │         ━━━━━━ this value is held across a suspension point
+54 │     d.call(value, ())
+   │     ───────────────── it is dropped here if the coroutine is dropped while suspended
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

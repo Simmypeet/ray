@@ -47,6 +47,20 @@ pub mod tuple;
 /// Identifies an expression value stored in a function's expression arena.
 pub type IRExprID = ID<IRExpr>;
 
+/// Whether evaluating an expression may suspend the function; see
+/// [`IRExprKind::suspension`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Suspension {
+    /// The expression never suspends.
+    Never,
+
+    /// The expression always suspends: a `perform`.
+    Always,
+
+    /// The expression suspends unless this effect row is empty.
+    UnlessEmpty(Interned<Ty>),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, From)]
 pub enum IRExprKind {
     Error,
@@ -142,8 +156,10 @@ impl IRExprKind {
     /// evaluate it.
     ///
     /// That is every `perform`, every call whose callee has an effect, and
-    /// every `run ... with` that has an effect of its own. An effect row counts
-    /// unless it is syntactically empty, so a row variable does.
+    /// every `run ... with` that has an effect of its own. Whether a row is
+    /// empty is left to the caller: the row is returned as written, and may
+    /// only reduce to `{}` under the givens of the function, such as the
+    /// `Effect` of a closure's `Def` instance.
     ///
     /// The effect of a `run ... with` is its residual effect, which is also the
     /// effect of the function creating it. A `run ... with` whose body and
@@ -151,15 +167,15 @@ impl IRExprKind {
     /// therefore still a suspension point.
     ///
     /// [`Terminator::Suspend`]: crate::cfg::Terminator::Suspend
-    pub async fn suspends(&self, engine: &TrackedEngine) -> bool {
+    pub async fn suspension(&self, engine: &TrackedEngine) -> Suspension {
         match self {
-            Self::Perform(_) => true,
-            Self::Call(call) => !call.callee_effect_row(engine).await.is_empty_effect_row(),
-            Self::RunWith(run_with) => !run_with.residual_effect().is_empty_effect_row(),
+            Self::Perform(_) => Suspension::Always,
+            Self::Call(call) => Suspension::UnlessEmpty(call.callee_effect_row(engine).await),
+            Self::RunWith(run_with) => Suspension::UnlessEmpty(run_with.residual_effect().clone()),
 
             // Resuming a coroutine suspends the function when it forwards an
             // operation, which only happens when there is one to forward.
-            Self::Handle(handle) => !handle.forwarded_effect().is_empty_effect_row(),
+            Self::Handle(handle) => Suspension::UnlessEmpty(handle.forwarded_effect().clone()),
 
             Self::Error
             | Self::Literal(_)
@@ -172,7 +188,7 @@ impl IRExprKind {
             | Self::Closure(_)
             | Self::Coroutine(_)
             | Self::Yielded(_)
-            | Self::StructInitialization(_) => false,
+            | Self::StructInitialization(_) => Suspension::Never,
         }
     }
 
