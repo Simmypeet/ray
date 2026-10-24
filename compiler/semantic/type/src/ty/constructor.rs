@@ -261,6 +261,20 @@ impl Ty {
         )))
     }
 
+    /// Creates the type of a suspended call of `closure`; see
+    /// [`Constant::ClosureCoroutine`].
+    #[must_use]
+    pub fn new_closure_coroutine(
+        closure: Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        assert!(closure.as_closure_view().is_some(), "closure coroutine requires a closure type");
+        engine.intern(Self::Application(Application::new(
+            Constant::ClosureCoroutine,
+            engine.intern_unsized([closure]),
+        )))
+    }
+
     /// Returns the type of the coroutine that suspends a direct call of
     /// `function_id`, where `call_subst` instantiates the type parameters of
     /// the called symbol, or `None` when the callee cannot be suspended.

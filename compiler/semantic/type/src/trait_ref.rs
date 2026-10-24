@@ -132,6 +132,7 @@ impl Ty {
                 }
                 ApplicationView::DefCoroutine(_)
                 | ApplicationView::TraitDefCoroutine(_)
+                | ApplicationView::ClosureCoroutine(_)
                 | ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)

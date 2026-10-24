@@ -44,7 +44,8 @@ impl Ty {
                         ApplicationView::TraitDefCoroutine(coroutine) => {
                             Some(coroutine.trait_def_id())
                         }
-                        ApplicationView::Primitive(_)
+                        ApplicationView::ClosureCoroutine(_)
+                        | ApplicationView::Primitive(_)
                         | ApplicationView::Tuple(_)
                         | ApplicationView::Pointer(_)
                         | ApplicationView::Reference(_)
@@ -202,6 +203,7 @@ impl TyDisplay<'_> {
             }
             ApplicationView::DefCoroutine(_)
             | ApplicationView::TraitDefCoroutine(_)
+            | ApplicationView::ClosureCoroutine(_)
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::Primitive(_)
@@ -256,6 +258,18 @@ impl TyDisplay<'_> {
         f.write_char('>')
     }
 
+    /// Formats the coroutine type of a call of a closure by the closure, as
+    /// in `<coroutine of <closure>(int32) -> int32>`.
+    fn fmt_closure_coroutine(
+        &self,
+        coroutine: application::ClosureCoroutineView<'_>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        f.write_str("<coroutine of ")?;
+        self.fmt_ty(coroutine.closure(), f)?;
+        f.write_char('>')
+    }
+
     fn fmt_reference(
         &self,
         reference: application::ReferenceView<'_>,
@@ -301,6 +315,7 @@ impl TyDisplay<'_> {
 
                 ApplicationView::DefCoroutine(coroutine) => self.fmt_def_coroutine(coroutine, f),
                 ApplicationView::TraitDefCoroutine(view) => self.fmt_trait_def_coroutine(view, f),
+                ApplicationView::ClosureCoroutine(view) => self.fmt_closure_coroutine(view, f),
                 ApplicationView::CoroutineInstance(coroutine) => {
                     self.fmt_built_in_instance("CoroutineInstance", coroutine, f)
                 }

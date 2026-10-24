@@ -143,6 +143,7 @@ impl Application {
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
             | ApplicationView::DefCoroutine(_)
+            | ApplicationView::ClosureCoroutine(_)
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
