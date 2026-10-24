@@ -309,7 +309,7 @@ impl<'a> ConflictChecker<'a> {
             LoadEffect::MovesUnlessCopy => {
                 let marker_id = self.solver.engine().get_core_item(CoreItem::Copy).await;
                 let is_copy = MarkerPredicate::new(marker_id, ty.clone());
-                !self.solver.entails_marker_predicate(is_copy).await
+                !self.solver.entails_marker_predicate(is_copy).await.holds()
             }
         }
     }

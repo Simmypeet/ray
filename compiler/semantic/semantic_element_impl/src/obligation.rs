@@ -101,9 +101,11 @@ impl ExpandedObligation {
                 PredicateConstraint::TyRelate(relation) => {
                     solver.solve_without_unify(vec![relation]).await
                 }
-                PredicateConstraint::Marker(marker) => {
-                    solver.entails_marker_predicate(marker).await.then(OutlivesConstraints::new)
-                }
+                PredicateConstraint::Marker(marker) => solver
+                    .entails_marker_predicate(marker)
+                    .await
+                    .holds()
+                    .then(OutlivesConstraints::new),
                 PredicateConstraint::Outlives(predicate) => {
                     solver.entails_outlives(&predicate).await.then(OutlivesConstraints::new)
                 }

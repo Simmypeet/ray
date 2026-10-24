@@ -22,11 +22,43 @@ use rayc_type::{
 
 use crate::Solver;
 
+/// The answer to a marker goal.
+///
+/// The answers are ordered from the weakest to the strongest. A goal whose
+/// premises must all hold takes the weakest answer among them, so one premise
+/// that fails makes the goal fail even when another is deferred.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MarkerEntailment {
+    /// The goal does not follow.
+    Fails,
+
+    /// The goal could not be decided within the solver's depth limit.
+    Overflow,
+
+    /// The goal depends on what a coroutine holds, which is not visible to
+    /// this solver. It is proved later, by a solver that can see it.
+    Deferred,
+
+    /// The goal follows.
+    Holds,
+}
+
+impl MarkerEntailment {
+    /// Returns whether the goal follows.
+    #[must_use]
+    pub const fn holds(self) -> bool { matches!(self, Self::Holds) }
+
+    /// Returns the answer for a goal that follows exactly when `holds` is
+    /// true.
+    #[must_use]
+    pub const fn from_bool(holds: bool) -> Self { if holds { Self::Holds } else { Self::Fails } }
+}
+
 #[derive(Debug)]
 struct MarkerEntailmentFrame {
     goal: MarkerPredicate,
     memo: bool,
-    provisional_result: Option<bool>,
+    provisional_result: Option<MarkerEntailment>,
 }
 
 #[derive(Debug)]
@@ -37,8 +69,8 @@ struct ActiveMarkerGoal {
 
 #[derive(Debug)]
 enum EnteredMarkerGoal {
-    Memoized(bool),
-    Provisional(bool),
+    Memoized(MarkerEntailment),
+    Provisional(MarkerEntailment),
     Active(ActiveMarkerGoal),
 }
 
@@ -51,7 +83,7 @@ enum ExplicitMarkerRule {
 #[derive(Debug, Default)]
 pub(crate) struct MarkerEntailmentState {
     active_goals: Vec<MarkerEntailmentFrame>,
-    memo: FxHashMap<MarkerPredicate, bool>,
+    memo: FxHashMap<MarkerPredicate, MarkerEntailment>,
 }
 
 impl MarkerEntailmentState {
@@ -62,10 +94,13 @@ impl MarkerEntailmentState {
         }
 
         // A repeated active goal reads the cyclic root's provisional value,
-        // initially true for a coinductive proof. Descendants depend on that
+        // initially `Holds` for a coinductive proof. Each revision can only
+        // lower it, so the fixpoint loop ends. Descendants depend on that
         // provisional value and therefore cannot be memoized independently.
         if let Some(cycle_start) = self.active_goals.iter().position(|frame| frame.goal == goal) {
-            let result = *self.active_goals[cycle_start].provisional_result.get_or_insert(true);
+            let result = *self.active_goals[cycle_start]
+                .provisional_result
+                .get_or_insert(MarkerEntailment::Holds);
             for frame in &mut self.active_goals[cycle_start + 1..] {
                 frame.memo = false;
             }
@@ -83,7 +118,11 @@ impl MarkerEntailmentState {
 
     /// Updates a changed provisional value while keeping its frame active for
     /// another evaluation of the same goal.
-    fn update_provisional_result(&mut self, active: &ActiveMarkerGoal, result: bool) -> bool {
+    fn update_provisional_result(
+        &mut self,
+        active: &ActiveMarkerGoal,
+        result: MarkerEntailment,
+    ) -> bool {
         let ActiveMarkerGoal { depth, goal } = active;
         assert_eq!(depth + 1, self.active_goals.len(), "marker goals must leave in stack order");
         let frame = &mut self.active_goals[*depth];
@@ -99,7 +138,7 @@ impl MarkerEntailmentState {
         }
     }
 
-    fn complete_goal(&mut self, active: ActiveMarkerGoal, result: bool) {
+    fn complete_goal(&mut self, active: ActiveMarkerGoal, result: MarkerEntailment) {
         let ActiveMarkerGoal { depth, goal } = active;
         assert_eq!(depth + 1, self.active_goals.len(), "marker goals must leave in stack order");
         let frame = self.active_goals.pop().expect("an active marker goal must be present");
@@ -113,13 +152,16 @@ impl MarkerEntailmentState {
 impl Solver {
     /// Returns whether a marker predicate follows from visible givens,
     /// explicit marker rules, or structural auto-trait inference.
-    pub async fn entails_marker_predicate(&mut self, predicate: MarkerPredicate) -> bool {
+    pub async fn entails_marker_predicate(
+        &mut self,
+        predicate: MarkerPredicate,
+    ) -> MarkerEntailment {
         let implementor = self.normalize(predicate.implementor()).await;
         let goal = MarkerPredicate::new(predicate.marker_id(), implementor);
         self.evaluate_marker_goal(goal).await
     }
 
-    async fn evaluate_marker_goal(&mut self, goal: MarkerPredicate) -> bool {
+    async fn evaluate_marker_goal(&mut self, goal: MarkerPredicate) -> MarkerEntailment {
         let implementor = self.normalize(goal.implementor()).await;
         let goal = MarkerPredicate::new(goal.marker_id(), implementor);
         let active = match self.marker_entailment.enter_goal(goal.clone()) {
@@ -148,7 +190,7 @@ impl Solver {
     ///
     /// Returns `None` when the goal is not one of them, which leaves it to
     /// the givens, the explicit marker rules and structural inference.
-    async fn prove_built_in_copy_goal(&self, goal: &MarkerPredicate) -> Option<bool> {
+    async fn prove_built_in_copy_goal(&self, goal: &MarkerPredicate) -> Option<MarkerEntailment> {
         if goal.marker_id() != self.engine().get_core_item(CoreItem::Copy).await {
             return None;
         }
@@ -158,24 +200,24 @@ impl Solver {
         if let Some(struct_) = goal.implementor().as_struct_view()
             && self.engine().is_linear_struct(struct_.symbol_id()).await
         {
-            return Some(false);
+            return Some(MarkerEntailment::Fails);
         }
 
         // A coroutine type is never `Copy`, even when a given says so: a copy
         // of a suspended coroutine could be resumed twice, and would still
         // point into the original where a saved local borrows another.
         if goal.implementor().as_coroutine_view().is_some() {
-            return Some(false);
+            return Some(MarkerEntailment::Fails);
         }
 
         // `Copy` for references is built in: a shared reference is always
         // `Copy`, and a unique one never is.
-        goal.implementor()
-            .as_reference_view()
-            .map(|reference| reference.mutability() == Mutability::Immutable)
+        goal.implementor().as_reference_view().map(|reference| {
+            MarkerEntailment::from_bool(reference.mutability() == Mutability::Immutable)
+        })
     }
 
-    async fn prove_active_marker_goal(&mut self, goal: &MarkerPredicate) -> bool {
+    async fn prove_active_marker_goal(&mut self, goal: &MarkerPredicate) -> MarkerEntailment {
         // The compiler decides these goals itself, before any given is
         // consulted, so a given cannot override them.
         if let Some(result) = self.prove_built_in_copy_goal(goal).await {
@@ -201,7 +243,7 @@ impl Solver {
 
         for given in matching_givens {
             if self.eq_without_unify(&given, goal.implementor()).await {
-                return true;
+                return MarkerEntailment::Holds;
             }
         }
 
@@ -210,7 +252,7 @@ impl Solver {
         if let Some(rule) = self.explicit_marker_rule(goal).await {
             match rule {
                 ExplicitMarkerRule::Positive(predicates) => {
-                    let mut entailed = true;
+                    let mut entailed = MarkerEntailment::Holds;
                     for predicate in predicates {
                         let premise = match predicate {
                             PredicateKind::Marker(predicate) => {
@@ -225,29 +267,29 @@ impl Solver {
                             // Lifetimes never decide marker entailment, so
                             // an outlives premise, such as a bound implied by
                             // the implementor, is not checked here.
-                            PredicateKind::Outlives(_) => true,
+                            PredicateKind::Outlives(_) => MarkerEntailment::Holds,
 
                             // shouldn't happen because marker implementation predicates can only
                             // be marker predicates
-                            PredicateKind::AssociatedTypeEquality(_) => false,
+                            PredicateKind::AssociatedTypeEquality(_) => MarkerEntailment::Fails,
                         };
-                        entailed &= premise;
+                        entailed = entailed.min(premise);
                     }
                     return entailed;
                 }
-                ExplicitMarkerRule::Negative => return false,
+                ExplicitMarkerRule::Negative => return MarkerEntailment::Fails,
             }
         }
 
         // Without an explicit rule, synthesize the auto-trait rule from the
         // values stored by the type. Empty structural types prove immediately.
         let Some(fields) = structural_fields(goal.implementor(), self.engine()).await else {
-            return false;
+            return MarkerEntailment::Fails;
         };
-        let mut entailed = true;
+        let mut entailed = MarkerEntailment::Holds;
         for field in fields {
             let predicate = MarkerPredicate::new(goal.marker_id(), field);
-            entailed &= self.evaluate_marker_goal(predicate).await;
+            entailed = entailed.min(self.evaluate_marker_goal(predicate).await);
         }
         entailed
     }

@@ -1,9 +1,13 @@
 use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::GlobalSymbolID;
+use rayc_symbol::{
+    GlobalSymbolID,
+    symbol_kind::{SymbolKind, get_symbol_kind},
+};
 
 use crate::{
-    poly_var::{GlobalPolyVarID, get_poly_var_map},
+    poly_var::{GlobalPolyVarID, get_enclosing_poly_var_maps, get_poly_var_map},
+    subst::Subst,
     ty::{
         Mutability, Primitive, Ty, TyKind, application,
         application::{Application, Constant, View as ApplicationView},
@@ -255,6 +259,72 @@ impl Ty {
             Constant::TraitDefCoroutine(trait_def_id),
             engine.intern_unsized(args),
         )))
+    }
+
+    /// Returns the type of the coroutine that suspends a direct call of
+    /// `function_id`, where `call_subst` instantiates the type parameters of
+    /// the called symbol, or `None` when the callee cannot be suspended.
+    ///
+    /// Only a `def` or an instance `def` has a body to suspend; an
+    /// `extern def` has none.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `call_subst` does not instantiate every parameter of the
+    /// suspended function and its enclosing symbols.
+    pub async fn new_direct_call_coroutine(
+        function_id: GlobalSymbolID,
+        call_subst: &Subst,
+        engine: &TrackedEngine,
+    ) -> Option<Interned<Self>> {
+        if !matches!(
+            engine.get_symbol_kind(function_id).await,
+            SymbolKind::Def | SymbolKind::InstanceDef
+        ) {
+            return None;
+        }
+
+        // The substitution of a suspendable callee covers all of them: a
+        // `def` is enclosed by no polymorphic symbol, and the substitution of
+        // an instance's `def` includes the arguments of the instance.
+        let poly_vars = engine.get_enclosing_poly_var_maps(function_id).await;
+        let poly_args = poly_vars
+            .args_from_subst(call_subst)
+            .expect("the call should instantiate every parameter of the coroutine's function");
+
+        Some(Self::new_def_coroutine(function_id, poly_args, engine))
+    }
+
+    /// Returns the type of the coroutine that suspends a call of the trait
+    /// method `trait_def_id` through `instance`, where `call_subst`
+    /// instantiates the method's own type parameters.
+    ///
+    /// It suspends whichever implementation the instance turns out to have.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `call_subst` does not instantiate every parameter of the
+    /// trait def.
+    pub async fn new_instance_call_coroutine(
+        trait_def_id: GlobalSymbolID,
+        instance: Interned<Self>,
+        call_subst: &Subst,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        // The trait def's own parameters are the arguments; the instance
+        // tells those of its trait.
+        let poly_vars = engine.get_poly_var_map(trait_def_id).await;
+        // REVIEW: Let's create a similar method of
+        // PolyVarStack.args_from_substs but for PolyVarMap and use it
+        // here.
+        let args = poly_vars.iter().map(|(poly_var_id, _)| {
+            call_subst
+                .get(&GlobalPolyVarID::new(trait_def_id, poly_var_id))
+                .cloned()
+                .expect("the call should instantiate every parameter of its trait def")
+        });
+
+        Self::new_trait_def_coroutine(trait_def_id, instance, args, engine)
     }
 
     /// Creates the built-in `Coroutine` dictionary for a coroutine type, or

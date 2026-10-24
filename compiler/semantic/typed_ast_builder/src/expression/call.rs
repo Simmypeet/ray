@@ -12,9 +12,7 @@ use rayc_symbol::{
 };
 use rayc_syntax::expression::{Call as CallSyn, DirectCall as DirectCallSyn};
 use rayc_type::{
-    poly_var::{
-        GlobalPolyVarID, build_subst_from_args, get_enclosing_poly_var_maps, get_poly_var_map,
-    },
+    poly_var::{build_subst_from_args, get_poly_var_map},
     signature::{get_effect_row, get_return_type},
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
@@ -88,35 +86,18 @@ impl ResolvedCallTarget<'_> {
         engine: &TrackedEngine,
     ) -> Option<Interned<Ty>> {
         match self {
-            Self::Direct { function_id, symbol_kind } => {
-                if !matches!(symbol_kind, SymbolKind::Def | SymbolKind::InstanceDef) {
-                    return None;
-                }
-
-                // The substitution of a suspendable callee covers all of
-                // them: a `def` is enclosed by no polymorphic symbol, and the
-                // substitution of an instance's `def` includes the arguments
-                // of the instance.
-                let poly_vars = engine.get_enclosing_poly_var_maps(*function_id).await;
-                let poly_args = poly_vars.args_from_subst(call_subst).expect(
-                    "the call should instantiate every parameter of the coroutine's function",
-                );
-                Some(Ty::new_def_coroutine(*function_id, poly_args, engine))
+            Self::Direct { function_id, .. } => {
+                Ty::new_direct_call_coroutine(*function_id, call_subst, engine).await
             }
-
-            // The trait def's own parameters are the arguments; the instance
-            // tells those of its trait.
-            Self::UnresolvedInstanceAssociated { instance, trait_def_id, .. } => {
-                let poly_vars = engine.get_poly_var_map(*trait_def_id).await;
-                let args = poly_vars.iter().map(|(poly_var_id, _)| {
-                    call_subst
-                        .get(&GlobalPolyVarID::new(*trait_def_id, poly_var_id))
-                        .cloned()
-                        .expect("the call should instantiate every parameter of its trait def")
-                });
-                Some(Ty::new_trait_def_coroutine(*trait_def_id, instance.clone(), args, engine))
-            }
-
+            Self::UnresolvedInstanceAssociated { instance, trait_def_id, .. } => Some(
+                Ty::new_instance_call_coroutine(
+                    *trait_def_id,
+                    instance.clone(),
+                    call_subst,
+                    engine,
+                )
+                .await,
+            ),
             Self::EffectOperation { .. } => None,
         }
     }
