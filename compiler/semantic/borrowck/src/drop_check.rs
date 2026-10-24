@@ -214,6 +214,7 @@ impl DropRegionCollector<'_> {
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::DefCoroutine(_)
                 | ApplicationView::TraitDefCoroutine(_)
+                | ApplicationView::ClosureCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::Error => self.record_all(ty),

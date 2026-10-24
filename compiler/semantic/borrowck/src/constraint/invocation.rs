@@ -78,7 +78,7 @@ impl ConstraintCollector<'_> {
         ty: &Interned<Ty>,
     ) {
         let view = ty.as_coroutine_view().expect("a `Coroutine` expression has a coroutine type");
-        let function_id = view.signature_id();
+        let function_id = view.signature_id(self.solver.engine()).await;
         let substitution = view.create_subst(self.solver.engine()).await;
 
         self.collect_arguments(point, function_id, &substitution, coroutine.arguments()).await;
