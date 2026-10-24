@@ -29,6 +29,7 @@ pub enum SymbolKind {
     Def,
     Effect,
     EffectOperation,
+    Enum,
     ExternDef,
     Instance,
     InstanceDef,
@@ -40,6 +41,7 @@ pub enum SymbolKind {
     Trait,
     TraitDef,
     TraitType,
+    Variant,
 }
 
 /// The key type used with [`TrackedEngine`] to access the kind of a symbol.
@@ -57,7 +59,7 @@ impl SymbolKind {
     /// Checks if this kind of symbol has a [`Member`] component.
     #[must_use]
     pub const fn has_member(&self) -> bool {
-        matches!(self, Self::Effect | Self::Instance | Self::Module | Self::Trait)
+        matches!(self, Self::Effect | Self::Enum | Self::Instance | Self::Module | Self::Trait)
     }
 
     /// Checks if this kind of symbol has a definition body.
@@ -71,6 +73,7 @@ impl SymbolKind {
             self,
             Self::Def
                 | Self::Effect
+                | Self::Enum
                 | Self::Instance
                 | Self::InstanceDef
                 | Self::InstanceType
@@ -87,7 +90,7 @@ impl SymbolKind {
     #[must_use]
     pub const fn has_variance_map(&self) -> bool {
         match self {
-            Self::Effect | Self::Strut => true,
+            Self::Effect | Self::Strut | Self::Enum => true,
             Self::Def
             | Self::EffectOperation
             | Self::ExternDef
@@ -99,7 +102,8 @@ impl SymbolKind {
             | Self::Module
             | Self::Trait
             | Self::TraitDef
-            | Self::TraitType => false,
+            | Self::TraitType
+            | Self::Variant => false,
         }
     }
 
@@ -149,6 +153,7 @@ impl SymbolKind {
         match self {
             Self::Def
             | Self::Effect
+            | Self::Enum
             | Self::Instance
             | Self::InstanceDef
             | Self::InstanceType
@@ -157,7 +162,11 @@ impl SymbolKind {
             | Self::Trait
             | Self::TraitDef
             | Self::TraitType => true,
-            Self::EffectOperation | Self::ExternDef | Self::Marker | Self::Module => false,
+            Self::EffectOperation
+            | Self::ExternDef
+            | Self::Marker
+            | Self::Module
+            | Self::Variant => false,
         }
     }
 
@@ -168,6 +177,7 @@ impl SymbolKind {
             Self::Def => "def",
             Self::Effect => "effect",
             Self::EffectOperation => "effect operation",
+            Self::Enum => "enum",
             Self::ExternDef => "extern def",
             Self::Instance => "instance",
             Self::InstanceDef => "instance def",
@@ -179,6 +189,7 @@ impl SymbolKind {
             Self::Trait => "trait",
             Self::TraitDef => "trait def",
             Self::TraitType => "trait type",
+            Self::Variant => "variant",
         }
     }
 }

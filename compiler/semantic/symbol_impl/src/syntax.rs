@@ -3,10 +3,10 @@ use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
     DefBodySyntaxKey, EffectRowSyntaxKey, GivenParameterListSyntaxKey, InstanceTraitSyntaxKey,
-    KindAscriptionSyntaxKey, LinearStructKey, MarkerImplementationMarkerSyntaxKey,
+    KindAscriptionSyntaxKey, LinearTypeKey, MarkerImplementationMarkerSyntaxKey,
     MarkerImplementationTypeSyntaxKey, NegativeMarkerImplementationSyntaxKey,
     ParameterListSyntaxKey, ReturnTypeSyntaxKey, StructBodySyntaxKey, TypeDefinitionSyntaxKey,
-    TypeParameterListSyntaxKey, VariadicDefKey, WhereClauseSyntaxKey,
+    TypeParameterListSyntaxKey, VariadicDefKey, VariantPayloadSyntaxKey, WhereClauseSyntaxKey,
 };
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
@@ -92,16 +92,28 @@ static STRUCT_BODY_SYNTAX_EXECUTOR: Registration<Config> =
     Registration::new::<StructBodySyntaxKey, StructBodySyntaxExecutor>();
 
 #[executor(config = Config)]
-pub async fn linear_struct_executor(
-    &LinearStructKey { symbol_id }: &LinearStructKey,
+pub async fn linear_type_executor(
+    &LinearTypeKey { symbol_id }: &LinearTypeKey,
     engine: &TrackedEngine,
 ) -> bool {
-    engine.get_symbol_table(symbol_id).await.is_linear_struct(symbol_id.id)
+    engine.get_symbol_table(symbol_id).await.is_linear_type(symbol_id.id)
 }
 
 #[distributed_slice(RAY_PROGRAM)]
-static LINEAR_STRUCT_EXECUTOR: Registration<Config> =
-    Registration::new::<LinearStructKey, LinearStructExecutor>();
+static LINEAR_TYPE_EXECUTOR: Registration<Config> =
+    Registration::new::<LinearTypeKey, LinearTypeExecutor>();
+
+#[executor(config = Config)]
+pub async fn variant_payload_syntax_executor(
+    &VariantPayloadSyntaxKey { symbol_id }: &VariantPayloadSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<Type> {
+    engine.get_symbol_table(symbol_id).await.get_variant_payload_syntax(symbol_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static VARIANT_PAYLOAD_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<VariantPayloadSyntaxKey, VariantPayloadSyntaxExecutor>();
 
 #[executor(config = Config)]
 pub async fn variadic_def_executor(

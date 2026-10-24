@@ -63,15 +63,26 @@ pub struct StructBodySyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }
 
-/// Retrieves whether a struct symbol is declared with the `@linear`
-/// attribute. A linear struct never has a `Drop` instance, so its values must
+/// Retrieves whether a struct or enum symbol is declared with the `@linear`
+/// attribute. A linear type never has a `Drop` instance, so its values must
 /// be consumed explicitly.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
 #[value(bool)]
-#[extend(by_val, name = is_linear_struct)]
-pub struct LinearStructKey {
+#[extend(by_val, name = is_linear_type)]
+pub struct LinearTypeKey {
+    pub symbol_id: GlobalSymbolID,
+}
+
+/// Retrieves the payload type declared by a variant symbol, or `None` for a
+/// variant without a payload.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<Type>)]
+#[extend(by_val, name = get_variant_payload_syntax)]
+pub struct VariantPayloadSyntaxKey {
     pub symbol_id: GlobalSymbolID,
 }
 

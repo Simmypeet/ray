@@ -51,7 +51,7 @@ pub struct Infos {
     member: Option<MemberBuilder>,
     def_body: Option<Option<Block>>,
     struct_body: Option<Option<StructBody>>,
-    linear_struct: Option<bool>,
+    linear_type: Option<bool>,
     variadic: Option<bool>,
     type_parameters: Option<Option<TypeParameterList>>,
     given_parameter_list: Option<Option<GivenParameterList>>,
@@ -62,6 +62,7 @@ pub struct Infos {
     marker_implementation_type: Option<Option<Type>>,
     type_definition: Option<Option<Type>>,
     kind_ascription: Option<Option<KindAscription>>,
+    variant_payload: Option<Option<Type>>,
 }
 
 #[derive(Debug, Default, StableHash, Encode, Decode)]
@@ -71,7 +72,7 @@ struct SyntaxTable {
     effect_rows: Map<Option<EffectRowAnnotation>>,
     def_bodies: Map<Option<Block>>,
     struct_bodies: Map<Option<StructBody>>,
-    linear_structs: Map<bool>,
+    linear_types: Map<bool>,
     variadic_defs: Map<bool>,
     type_parameters: Map<Option<TypeParameterList>>,
     given_parameter_lists: Map<Option<GivenParameterList>>,
@@ -82,6 +83,7 @@ struct SyntaxTable {
     marker_implementation_types: Map<Option<Type>>,
     type_definitions: Map<Option<Type>>,
     kind_ascriptions: Map<Option<KindAscription>>,
+    variant_payloads: Map<Option<Type>>,
 }
 
 /// Stores the information of the symbols declared in a single source file. It
@@ -299,8 +301,8 @@ impl Table {
     }
 
     #[must_use]
-    pub fn is_linear_struct(&self, symbol_id: SymbolID) -> bool {
-        self.syntaxes.linear_structs.get(&symbol_id).copied().unwrap()
+    pub fn is_linear_type(&self, symbol_id: SymbolID) -> bool {
+        self.syntaxes.linear_types.get(&symbol_id).copied().unwrap()
     }
 
     #[must_use]
@@ -357,6 +359,11 @@ impl Table {
     #[must_use]
     pub fn get_kind_ascription_syntax(&self, symbol_id: SymbolID) -> Option<KindAscription> {
         self.syntaxes.kind_ascriptions.get(&symbol_id).cloned().unwrap()
+    }
+
+    #[must_use]
+    pub fn get_variant_payload_syntax(&self, symbol_id: SymbolID) -> Option<Type> {
+        self.syntaxes.variant_payloads.get(&symbol_id).cloned().unwrap()
     }
 
     /// Returns the ID of the source file of this table, or `None` if the file
@@ -473,8 +480,8 @@ impl Table {
             self.syntaxes.struct_bodies.insert(symbol_id, struct_body);
         }
 
-        if let Some(linear) = info.linear_struct {
-            self.syntaxes.linear_structs.insert(symbol_id, linear);
+        if let Some(linear) = info.linear_type {
+            self.syntaxes.linear_types.insert(symbol_id, linear);
         }
 
         if let Some(variadic) = info.variadic {
@@ -515,6 +522,10 @@ impl Table {
 
         if let Some(kind_ascription) = info.kind_ascription {
             self.syntaxes.kind_ascriptions.insert(symbol_id, kind_ascription);
+        }
+
+        if let Some(variant_payload) = info.variant_payload {
+            self.syntaxes.variant_payloads.insert(symbol_id, variant_payload);
         }
 
         if let Some(member) = info.member {
