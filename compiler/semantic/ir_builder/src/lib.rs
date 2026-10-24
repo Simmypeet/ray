@@ -13,6 +13,7 @@ mod context;
 pub mod diagnostic;
 mod expression;
 pub mod query;
+mod saved_local;
 mod statement;
 mod verification;
 

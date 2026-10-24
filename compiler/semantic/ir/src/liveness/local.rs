@@ -223,6 +223,13 @@ impl LocalLiveness {
         }))
     }
 
+    /// Returns the locals live at the exit of `block_id`, on some edge out of
+    /// it, or `None` when the block is unreachable.
+    #[must_use]
+    pub fn block_exit(&self, block_id: BlockID) -> Option<&LiveLocals> {
+        self.solution.block_exit(block_id)
+    }
+
     /// Returns the locals live on entry to `block_id`, or `None` when the
     /// block is unreachable.
     #[must_use]

@@ -1,4 +1,5 @@
 pub mod address;
+pub mod borrowed_locals;
 pub mod cfg;
 pub mod dataflow;
 pub mod ir_closure;
@@ -8,6 +9,7 @@ pub mod ir_operation_handler;
 pub mod ir_variable;
 pub mod liveness;
 pub mod scope;
+pub mod suspension_point;
 pub mod visit;
 
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
