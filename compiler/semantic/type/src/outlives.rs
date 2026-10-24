@@ -136,6 +136,7 @@ impl Application {
             | ApplicationView::Pointer(_)
             | ApplicationView::Reference(_)
             | ApplicationView::Struct(_)
+            | ApplicationView::Enum(_)
             | ApplicationView::Instance(_)
             | ApplicationView::Closure(_)
             | ApplicationView::DefInstance(_)
@@ -146,7 +147,7 @@ impl Application {
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
-            | ApplicationView::NominalDropInstance(_)
+            | ApplicationView::GeneratedAdtDropInstance(_)
             | ApplicationView::Error => false,
         }
     }

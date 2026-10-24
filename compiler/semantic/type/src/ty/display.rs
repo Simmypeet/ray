@@ -37,6 +37,7 @@ impl Ty {
                     let symbol_id = match application.view() {
                         ApplicationView::Instance(instance) => Some(instance.symbol_id()),
                         ApplicationView::Struct(struct_) => Some(struct_.symbol_id()),
+                        ApplicationView::Enum(enum_) => Some(enum_.symbol_id()),
                         ApplicationView::InstanceAssociated(associated) => {
                             Some(associated.symbol_id())
                         }
@@ -56,7 +57,7 @@ impl Ty {
                         | ApplicationView::ContinuationDefInstance(_)
                         | ApplicationView::CoroutineInstance(_)
                         | ApplicationView::CoroutineDropInstance(_)
-                        | ApplicationView::NominalDropInstance(_)
+                        | ApplicationView::GeneratedAdtDropInstance(_)
                         | ApplicationView::Error => None,
                     };
                     if let Some(symbol_id) = symbol_id {
@@ -194,7 +195,7 @@ impl TyDisplay<'_> {
             ApplicationView::ClosureDropInstance(instance) => {
                 ("<closure drop instance>", instance.closure())
             }
-            ApplicationView::NominalDropInstance(instance) => {
+            ApplicationView::GeneratedAdtDropInstance(instance) => {
                 ("<nominal drop instance>", instance.nominal())
             }
             ApplicationView::CoroutineDropInstance(instance) => {
@@ -209,6 +210,7 @@ impl TyDisplay<'_> {
             | ApplicationView::Pointer(_)
             | ApplicationView::Reference(_)
             | ApplicationView::Struct(_)
+            | ApplicationView::Enum(_)
             | ApplicationView::Instance(_)
             | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Closure(_)
@@ -256,6 +258,23 @@ impl TyDisplay<'_> {
         f.write_char('>')
     }
 
+    fn fmt_tuple(
+        &self,
+        tuple: application::TupleView<'_>,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        f.write_char('(')?;
+
+        for (i, arg) in tuple.args().iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            self.fmt_ty(arg, f)?;
+        }
+
+        f.write_char(')')
+    }
+
     fn fmt_reference(
         &self,
         reference: application::ReferenceView<'_>,
@@ -297,7 +316,7 @@ impl TyDisplay<'_> {
                 | ApplicationView::TupleDropInstance(_)
                 | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
-                | ApplicationView::NominalDropInstance(_)) => self.fmt_drop_instance(view, f),
+                | ApplicationView::GeneratedAdtDropInstance(_)) => self.fmt_drop_instance(view, f),
 
                 ApplicationView::DefCoroutine(coroutine) => self.fmt_def_coroutine(coroutine, f),
                 ApplicationView::TraitDefCoroutine(view) => self.fmt_trait_def_coroutine(view, f),
@@ -318,18 +337,7 @@ impl TyDisplay<'_> {
                     )
                 }
 
-                ApplicationView::Tuple(tuple) => {
-                    f.write_char('(')?;
-
-                    for (i, arg) in tuple.args().iter().enumerate() {
-                        if i > 0 {
-                            f.write_str(", ")?;
-                        }
-                        self.fmt_ty(arg, f)?;
-                    }
-
-                    f.write_char(')')
-                }
+                ApplicationView::Tuple(tuple) => self.fmt_tuple(tuple, f),
 
                 ApplicationView::Pointer(pointer) => {
                     f.write_char('*')?;
@@ -344,6 +352,9 @@ impl TyDisplay<'_> {
                 }
                 ApplicationView::Struct(struct_) => {
                     self.fmt_symbol_application(struct_.symbol_id(), struct_.args(), f)
+                }
+                ApplicationView::Enum(enum_) => {
+                    self.fmt_symbol_application(enum_.symbol_id(), enum_.args(), f)
                 }
                 ApplicationView::DefInstance(closure) => {
                     f.write_str("DefInstance[")?;

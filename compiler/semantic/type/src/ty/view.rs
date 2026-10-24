@@ -1,11 +1,12 @@
 use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::GlobalSymbolID;
 
 use crate::{
     poly_var::GlobalPolyVarID,
     ty::{
         Integer, Mutability, Primitive, Ty, application,
-        application::{InstanceView, StructView, View as ApplicationView},
+        application::{EnumView, InstanceView, StructView, View as ApplicationView},
         inference::{GenInfer, Inference},
         lifetime::{ExternalRegionID, Lifetime, RegionID},
     },
@@ -93,6 +94,27 @@ impl Ty {
         };
 
         Some(struct_view)
+    }
+
+    /// Returns the struct or enum this type instantiates, if it is one.
+    #[must_use]
+    pub fn as_adt_id(&self) -> Option<GlobalSymbolID> {
+        self.as_struct_view()
+            .map(|struct_| struct_.symbol_id())
+            .or_else(|| self.as_enum_view().map(|enum_| enum_.symbol_id()))
+    }
+
+    #[must_use]
+    pub fn as_enum_view(&self) -> Option<EnumView<'_>> {
+        let Self::Application(ty_application) = self else {
+            return None;
+        };
+
+        let ApplicationView::Enum(enum_view) = ty_application.view() else {
+            return None;
+        };
+
+        Some(enum_view)
     }
 
     #[must_use]
@@ -187,6 +209,7 @@ impl Ty {
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Struct(_)
+            | ApplicationView::Enum(_)
             | ApplicationView::Instance(_)
             | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Closure(_)
@@ -199,7 +222,7 @@ impl Ty {
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
-            | ApplicationView::NominalDropInstance(_)
+            | ApplicationView::GeneratedAdtDropInstance(_)
             | ApplicationView::Error => None,
         }
     }
@@ -228,6 +251,7 @@ impl Ty {
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Reference(_)
                 | ApplicationView::Struct(_)
+                | ApplicationView::Enum(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::NoOpDropInstance(_)
@@ -238,7 +262,7 @@ impl Ty {
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
-                | ApplicationView::NominalDropInstance(_)
+                | ApplicationView::GeneratedAdtDropInstance(_)
                 | ApplicationView::Instance(_) => Some(false),
             },
             Self::Inference(_)
@@ -298,6 +322,7 @@ impl Ty {
             | ApplicationView::Pointer(_)
             | ApplicationView::Reference(_)
             | ApplicationView::Struct(_)
+            | ApplicationView::Enum(_)
             | ApplicationView::Instance(_)
             | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Closure(_)
@@ -305,7 +330,7 @@ impl Ty {
             | ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
-            | ApplicationView::NominalDropInstance(_)
+            | ApplicationView::GeneratedAdtDropInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
@@ -352,6 +377,7 @@ impl Ty {
                 ApplicationView::Reference(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Struct(_)
+                | ApplicationView::Enum(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_)
@@ -364,7 +390,7 @@ impl Ty {
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
-                | ApplicationView::NominalDropInstance(_)
+                | ApplicationView::GeneratedAdtDropInstance(_)
                 | ApplicationView::Error => false,
             },
             Self::EffectRow(_)
@@ -414,6 +440,7 @@ impl Ty {
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Reference(_)
                 | ApplicationView::Struct(_)
+                | ApplicationView::Enum(_)
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::Instance(_)
                 | ApplicationView::Closure(_)
@@ -425,7 +452,7 @@ impl Ty {
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
-                | ApplicationView::NominalDropInstance(_)
+                | ApplicationView::GeneratedAdtDropInstance(_)
                 | ApplicationView::Error => false,
             },
             Self::Inference(_)
