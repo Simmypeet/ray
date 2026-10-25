@@ -60,23 +60,6 @@ impl InstanceCandidateFailure {
             },
         }
     }
-
-    #[must_use]
-    pub(crate) fn as_cycle_error(&self) -> Option<&InstanceResolutionCycle> {
-        match self {
-            Self::UndeterminedParameter(_) => None,
-            Self::UnsatisfiedGiven { error, .. } => match &**error {
-                InstanceResolutionError::Cycle(cycle) => Some(cycle),
-                InstanceResolutionError::NotReady(_)
-                | InstanceResolutionError::ContainsError(_)
-                | InstanceResolutionError::AmbiguousLexical { .. }
-                | InstanceResolutionError::NoInstance { .. }
-                | InstanceResolutionError::AmbiguousGlobal { .. }
-                | InstanceResolutionError::BuiltinComponent { .. }
-                | InstanceResolutionError::Limit { .. } => None,
-            },
-        }
-    }
 }
 
 /// A matching global candidate whose complete prerequisite tree was not viable.
@@ -214,6 +197,12 @@ impl InstanceResolutionCycle {
 
     #[must_use]
     pub fn path(&self) -> &[InstanceResolutionFrame] { &self.path }
+
+    /// Returns whether `goal` is the goal the cycle starts and ends at.
+    #[must_use]
+    pub(crate) fn starts_at(&self, goal: &TraitRef) -> bool {
+        self.path.first().is_some_and(|frame| frame.goal() == goal)
+    }
 }
 
 /// Why no instance head could provide a requirement.
@@ -715,9 +704,6 @@ impl Solver {
                 if let Some(err) = failure.as_limit_error() {
                     return Err(err.clone());
                 }
-                if let Some(cycle) = failure.as_cycle_error() {
-                    return Err(InstanceResolutionError::Cycle(cycle.clone()));
-                }
 
                 Err(InstanceResolutionError::NoInstance {
                     required: required.clone(),
@@ -835,20 +821,9 @@ impl Solver {
             }
         }
 
-        // has no viable candidates at all
+        // has no viable candidates at all; a candidate that failed due to a
+        // cycle is reported among the others
         if viable.is_empty() {
-            // however, if any candidate failed due to a cycle, report that
-            // instead of the NoInstance error, since it is more
-            // informative than just saying "no instance found"
-            //
-            // TODO: should we just return `NoInstance` with all the information
-            // about failed candidates
-            if let Some(cycle) =
-                failures.iter().find_map(|candidate| candidate.failure().as_cycle_error())
-            {
-                return Err(InstanceResolutionError::Cycle(cycle.clone()));
-            }
-
             return Err(InstanceResolutionError::NoInstance {
                 required: required.clone(),
                 reason: NoInstanceReason::Candidates(failures),

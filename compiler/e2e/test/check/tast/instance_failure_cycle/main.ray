@@ -23,3 +23,32 @@ def ping(value: a) given (d: Ping[a], drop: core.Drop[a]) -> int32:
 # ERROR: `Ping[Ball]` needs `Pong[Ball]`, which needs `Ping[Ball]` again.
 def test(ball: Ball) -> int32:
     return ping(ball)
+
+trait Tick[a]:
+    def tick() -> int32
+
+trait Tock[a]:
+    def tock() -> int32
+
+trait Never[a]:
+    def never() -> int32
+
+inst TickFromTock[a] for Tick[a] given (tock: Tock[a]):
+    def tick() -> int32:
+        return 0
+
+inst TockFromTick[a] for Tock[a] given (tick: Tick[a]):
+    def tock() -> int32:
+        return 0
+
+inst TickFromNever[a] for Tick[a] given (never: Never[a]):
+    def tick() -> int32:
+        return 0
+
+def tick(value: a) given (d: Tick[a], drop: core.Drop[a]) -> int32:
+    return 0
+
+# ERROR: one head of `Tick[Ball]` cycles through `Tock[Ball]`, and the other
+# needs `Never[Ball]`, which has no instance.
+def test_candidates(ball: Ball) -> int32:
+    return tick(ball)

@@ -66,6 +66,30 @@ pub enum Reason {
     Leaf(Leaf),
 }
 
+impl Reason {
+    /// Returns the cycle when the goal failed because proving it requires
+    /// proving it again.
+    #[must_use]
+    pub const fn cycle(&self) -> Option<&InstanceResolutionCycle> {
+        match self {
+            Self::Leaf(Leaf::Cycle(cycle)) => Some(cycle),
+
+            Self::Leaf(
+                Leaf::NoMatchingInstance
+                | Leaf::AmbiguousLexical(_)
+                | Leaf::AmbiguousGlobal(_)
+                | Leaf::UndeterminedParameter(_)
+                | Leaf::LinearType
+                | Leaf::DropPlan(_)
+                | Leaf::Limit { .. }
+                | Leaf::NotReady,
+            )
+            | Self::Requires { .. }
+            | Self::CandidatesFailed(_) => None,
+        }
+    }
+}
+
 /// One matching instance head that could not be completed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct CandidateFailure {

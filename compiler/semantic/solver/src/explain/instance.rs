@@ -24,16 +24,24 @@ impl ProofFailure {
     /// Explains the error of a sub-goal entered through `step`, as the
     /// reason its parent failed.
     fn requires(step: Step, error: &InstanceResolutionError) -> Option<Reason> {
-        // The search lifts a cycle or a limit out of a sub-goal to the root,
-        // so only an error about a requirement is the failure of a sub-goal.
+        // A cycle or a limit names no requirement: it is about the search
+        // path, which it carries with the step into each goal on it.
         let Some(required) = error.required() else {
             return Reason::from_instance_error(error);
         };
+        let failure = Self::from_instance_error(required.clone(), error)?;
 
-        Some(Reason::Requires {
-            step,
-            failure: Box::new(Self::from_instance_error(required.clone(), error)?),
-        })
+        // The path of a cycle already shows each goal on it and the step
+        // into it, so a goal inside the cycle fails with the cycle itself
+        // rather than through its step. The goal the cycle starts at keeps
+        // the step that led to it.
+        if let Some(cycle) = failure.reason().cycle()
+            && !cycle.starts_at(required)
+        {
+            return Some(Reason::Leaf(Leaf::Cycle(cycle.clone())));
+        }
+
+        Some(Reason::Requires { step, failure: Box::new(failure) })
     }
 }
 

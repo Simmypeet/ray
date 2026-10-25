@@ -20,7 +20,23 @@ stderr:
    ╰╴                                        ━━━━
 [note]: `main.Ping[Ball]` is required again while it is being resolved
 
-[error]: Compilation aborted due to 1 error(s)
+[error]: no implicit instance found: `main.Tick[Ball]`
+   ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:54:12
+   │
+54 │     return tick(ball)
+   ╰╴           ━━━━
+[note]: `main.TickFromNever` matches `main.Tick[Ball]`, but needs `main.Never[Ball]`, which has no instance
+   ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:44:6
+   │
+44 │ inst TickFromNever[a] for Tick[a] given (never: Never[a]):
+   ╰╴     ━━━━━━━━━━━━━
+[note]: `main.TickFromTock` matches `main.Tick[Ball]`, but it requires itself
+   ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:36:6
+   │
+36 │ inst TickFromTock[a] for Tick[a] given (tock: Tock[a]):
+   ╰╴     ━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 2 error(s)
 
 
 
