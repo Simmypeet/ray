@@ -16,7 +16,7 @@ use rayc_semantic_element::{
     parameter::get_parameter_map,
     saved_local::{CoroutineBody, SavedLocal, SavedLocalKind, SavedLocalOrigin, SavedLocals},
 };
-use rayc_symbol::{GlobalSymbolID, syntax::get_def_body_syntax};
+use rayc_symbol::{GlobalSymbolID, symbol_kind::get_symbol_kind};
 use rayc_type::ty::Ty;
 
 /// Collects the saved locals of a function and of the nested bodies of the
@@ -183,9 +183,7 @@ async fn saved_locals_executor(
     let CoroutineBody::Def(def_id) = body;
 
     // An `extern def` has no body, so nothing is ever suspended in it.
-    // REVIEW: Let's get the symbol kind of def_id and call
-    // SymbolKind.has_def_body
-    if engine.get_def_body_syntax(def_id).await.is_none() {
+    if !engine.get_symbol_kind(def_id).await.has_def_body() {
         return Some(engine.intern_unsized([]));
     }
 
