@@ -1,0 +1,42 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: `<closure>() -> Secret \ {}` does not satisfy marker `main.Send`
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:17:5
+   │
+17 │     requireSend(() -> move secret)
+   ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+[note]: the closure stores a capture of type `Secret`
+[note]: `Secret` is excluded by this negative implementation
+  ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:8:1
+  │
+8 │ impl !Send for Secret
+  ╰╴━━━━━━━━━━━━━━━━━━━━━
+
+[error]: `<closure>() -> int32 \ {}` does not satisfy marker `main.Send`
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:22:5
+   │
+22 │     requireSend(() -> secret.value + count)
+   ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+[note]: the closure stores a capture of type `&Secret`
+[note]: no implementation or given proves `&Secret: main.Send`
+
+[error]: `<closure>() -> int32 \ {}` does not satisfy marker `main.Send`
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:27:5
+   │
+27 │     requireSend(() -> first + second + third)
+   ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+[note]: the closure stores its captures, of type `(&int32, &int32, &int32)`
+[note]: `(&int32, &int32, &int32)` is excluded by this negative implementation
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:10:1
+   │
+10 │ impl[a, b, c] !Send for (a, b, c)
+   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

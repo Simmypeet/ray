@@ -146,6 +146,10 @@ impl PredicateObligation {
     #[must_use]
     pub const fn predicate(&self) -> &PredicateKind { &self.predicate }
 
+    /// Returns the symbol whose where clause has the predicate.
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+
     /// Returns the span of the use that requires the predicate.
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }

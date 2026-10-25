@@ -45,9 +45,10 @@ impl ConstraintSolver {
     ) -> FxHashSet<CauseID> {
         let mut connected = initial_root_ids.clone();
 
-        // A failed constraint whose provenance overlaps this component can introduce
-        // more roots that overlap another failed constraint. Close the component
-        // transitively so diagnostic coverage does not depend on iteration order.
+        // A failed constraint whose provenance overlaps this component can
+        // introduce more roots that overlap another failed constraint.
+        // Close the component transitively so diagnostic coverage does
+        // not depend on iteration order.
         loop {
             let previous_len = connected.len();
             for root_ids in failed_root_ids {
@@ -64,15 +65,13 @@ impl ConstraintSolver {
 
     async fn effect_unification_diagnostics(
         &self,
-        failed_constraints: &[&PendingConstraint],
+        failed_cause_ids: &[CauseID],
         failed_root_ids: &[FxHashSet<CauseID>],
         unreported_roots: &mut FxHashSet<CauseID>,
         diags: &mut Vec<Diagnostic>,
     ) {
-        for (pending_constraint, root_ids) in failed_constraints.iter().zip(failed_root_ids.iter())
-        {
-            let primary_root_id =
-                self.provenance.primary_root_cause_id(pending_constraint.cause_id());
+        for (cause_id, root_ids) in failed_cause_ids.iter().zip(failed_root_ids.iter()) {
+            let primary_root_id = self.provenance.primary_root_cause_id(*cause_id);
             if !unreported_roots.contains(&primary_root_id) {
                 continue;
             }
@@ -80,7 +79,7 @@ impl ConstraintSolver {
             let connected_root_ids = Self::connected_root_ids(root_ids, failed_root_ids);
             let ResolvedRootCause::EffectUnification(effect_unification) = self
                 .provenance
-                .resolved_root_cause(primary_root_id, connected_root_ids, &self.solver)
+                .resolved_root_cause(primary_root_id, &connected_root_ids, &self.solver)
                 .await
             else {
                 continue;
@@ -94,30 +93,41 @@ impl ConstraintSolver {
     }
 
     async fn fallback_diagnostics(
-        &self,
-        failed_constraints: &[&PendingConstraint],
+        &mut self,
+        failed_cause_ids: &[CauseID],
         failed_root_ids: &[FxHashSet<CauseID>],
         unreported_roots: &mut FxHashSet<CauseID>,
         diags: &mut Vec<Diagnostic>,
     ) {
-        for (pending_constraint, root_ids) in failed_constraints.iter().zip(failed_root_ids.iter())
-        {
-            let primary_root_id =
-                self.provenance.primary_root_cause_id(pending_constraint.cause_id());
+        for (cause_id, root_ids) in failed_cause_ids.iter().zip(failed_root_ids.iter()) {
+            let primary_root_id = self.provenance.primary_root_cause_id(*cause_id);
             if !unreported_roots.remove(&primary_root_id) {
                 continue;
             }
 
-            match self
-                .provenance
-                .resolved_root_cause(primary_root_id, root_ids.clone(), &self.solver)
-                .await
+            match self.provenance.resolved_root_cause(primary_root_id, root_ids, &self.solver).await
             {
                 ResolvedRootCause::TraitRefCheck(check) => {
                     diags.push(Diagnostic::from(rayc_resolution::Diagnostic::TraitRefCheck(check)));
                 }
                 ResolvedRootCause::PredicateObligation(predicate) => {
-                    diags.push(Diagnostic::from(rayc_resolution::Diagnostic::Predicate(predicate)));
+                    // A marker goal with the final substitution applied is
+                    // explained by the chain of premises that makes it fail;
+                    // other predicates keep their own report.
+                    match self.solver.explain_predicate(predicate.predicate()).await {
+                        Some(failure) => {
+                            let required_by =
+                                RequiredBy::WhereClause { symbol_id: predicate.symbol_id() };
+                            diags.push(Diagnostic::UnsatisfiedGoal(UnsatisfiedGoal::new(
+                                predicate.span(),
+                                required_by,
+                                failure,
+                            )));
+                        }
+                        None => diags.push(Diagnostic::from(
+                            rayc_resolution::Diagnostic::Predicate(predicate),
+                        )),
+                    }
                 }
                 ResolvedRootCause::InstanceResolve { trait_ref, span } => {
                     // A goal left over when inference ends still has
@@ -180,33 +190,35 @@ impl ConstraintSolver {
     }
 
     #[must_use]
-    pub async fn residual_into_diags(self) -> (Vec<Diagnostic>, Subst) {
-        let failed_constraints =
-            self.constraint_set.failed_pending_constraints().collect::<Vec<_>>();
-        let failed_root_ids = failed_constraints
-            .iter()
-            .map(|pending_constraint| self.provenance.root_cause_ids(pending_constraint.cause_id()))
+    pub async fn residual_into_diags(mut self) -> (Vec<Diagnostic>, Subst) {
+        let failed_cause_ids = self
+            .constraint_set
+            .failed_pending_constraints()
+            .map(PendingConstraint::cause_id)
             .collect::<Vec<_>>();
-        let mut unreported_roots = failed_constraints
+        let failed_root_ids = failed_cause_ids
             .iter()
-            .map(|pending_constraint| {
-                self.provenance.primary_root_cause_id(pending_constraint.cause_id())
-            })
+            .map(|cause_id| self.provenance.root_cause_ids(*cause_id))
+            .collect::<Vec<_>>();
+        let mut unreported_roots = failed_cause_ids
+            .iter()
+            .map(|cause_id| self.provenance.primary_root_cause_id(*cause_id))
             .collect::<FxHashSet<_>>();
         let mut diags = Vec::new();
 
-        // Specialized effect diagnostics claim every failed primary root in their
-        // connected provenance component. The fallback pass then reports each root
-        // that has not already been explained by one of those diagnostics.
+        // Specialized effect diagnostics claim every failed primary root in
+        // their connected provenance component. The fallback pass then
+        // reports each root that has not already been explained by one
+        // of those diagnostics.
         self.effect_unification_diagnostics(
-            &failed_constraints,
+            &failed_cause_ids,
             &failed_root_ids,
             &mut unreported_roots,
             &mut diags,
         )
         .await;
         self.fallback_diagnostics(
-            &failed_constraints,
+            &failed_cause_ids,
             &failed_root_ids,
             &mut unreported_roots,
             &mut diags,

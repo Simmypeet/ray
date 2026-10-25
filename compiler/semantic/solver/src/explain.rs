@@ -6,8 +6,11 @@
 //! that decides how such a failure is reported.
 
 mod failure;
-mod instance;
+mod predicate;
 mod render;
 
-pub use failure::{CandidateFailure, DropComponent, Goal, Leaf, ProofFailure, Reason, Step};
+pub use failure::{
+    BuiltInMarkerRule, CandidateFailure, DropComponent, Goal, Leaf, ProofFailure, Reason, Step,
+    StructuralComponent,
+};
 pub use render::{RequiredBy, UnsatisfiedGoal};

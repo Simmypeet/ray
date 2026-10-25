@@ -3,6 +3,7 @@
 //! Marker implementations act as constructor rules, while types without an
 //! explicit rule receive the same structural treatment as Rust auto traits.
 
+use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
@@ -10,6 +11,7 @@ use rayc_semantic_element::{
     marker_implementation::get_marker_implementation, struct_body::get_struct_body,
 };
 use rayc_symbol::{
+    GlobalSymbolID,
     core_item::{CoreItem, get_core_item},
     syntax::is_linear_struct,
 };
@@ -20,7 +22,12 @@ use rayc_type::{
     where_clause::{MarkerPredicate, PredicateKind, get_where_clause},
 };
 
-use crate::Solver;
+use crate::{
+    Solver,
+    explain::{BuiltInMarkerRule, StructuralComponent},
+};
+
+mod explain;
 
 /// The answer to a marker goal.
 ///
@@ -74,9 +81,30 @@ enum EnteredMarkerGoal {
     Active(ActiveMarkerGoal),
 }
 
-enum ExplicitMarkerRule {
-    Positive(Vec<PredicateKind>),
-    Negative,
+/// The rule that decides a marker goal, with its premises not yet
+/// evaluated.
+#[derive(Debug)]
+enum MarkerRule {
+    /// The goal holds without premises: a given provides it, or it is `Copy`
+    /// of a shared reference.
+    Holds,
+
+    /// The compiler rejects the goal, whatever the givens say.
+    BuiltIn(BuiltInMarkerRule),
+
+    /// An explicit marker implementation applies, and the goal holds when
+    /// its premises do.
+    Explicit { implementation_id: GlobalSymbolID, premises: Vec<PredicateKind> },
+
+    /// A negative marker implementation excludes the type.
+    Negative(GlobalSymbolID),
+
+    /// No explicit implementation applies, and the goal holds when every
+    /// value the type stores satisfies the marker.
+    Structural(Vec<(StructuralComponent, MarkerPredicate)>),
+
+    /// No rule applies to the type.
+    Opaque,
 }
 
 /// State shared by marker goals solved with the same givens.
@@ -87,6 +115,9 @@ pub(crate) struct MarkerEntailmentState {
 }
 
 impl MarkerEntailmentState {
+    /// Returns whether a marker goal is being proved.
+    const fn has_active_goal(&self) -> bool { !self.active_goals.is_empty() }
+
     fn enter_goal(&mut self, goal: MarkerPredicate) -> EnteredMarkerGoal {
         // Reuse only results that completed outside an unstable cyclic path.
         if let Some(result) = self.memo.get(&goal).copied() {
@@ -156,14 +187,19 @@ impl Solver {
         &mut self,
         predicate: MarkerPredicate,
     ) -> MarkerEntailment {
-        let implementor = self.normalize(predicate.implementor()).await;
-        let goal = MarkerPredicate::new(predicate.marker_id(), implementor);
+        let goal = self.normalize_marker_goal(predicate).await;
         self.evaluate_marker_goal(goal).await
     }
 
-    async fn evaluate_marker_goal(&mut self, goal: MarkerPredicate) -> MarkerEntailment {
+    /// Returns `goal` with its implementor normalized, which is the form the
+    /// goal is memoized and its rule selected in.
+    async fn normalize_marker_goal(&self, goal: MarkerPredicate) -> MarkerPredicate {
         let implementor = self.normalize(goal.implementor()).await;
-        let goal = MarkerPredicate::new(goal.marker_id(), implementor);
+        MarkerPredicate::new(goal.marker_id(), implementor)
+    }
+
+    async fn evaluate_marker_goal(&mut self, goal: MarkerPredicate) -> MarkerEntailment {
+        let goal = self.normalize_marker_goal(goal).await;
         let active = match self.marker_entailment.enter_goal(goal.clone()) {
             EnteredMarkerGoal::Memoized(result) | EnteredMarkerGoal::Provisional(result) => {
                 return result;
@@ -185,43 +221,16 @@ impl Solver {
         }
     }
 
-    /// Decides a `Copy` goal whose answer is fixed by the compiler: linear
-    /// structs, coroutine types and references.
+    /// Returns the rule that decides `goal`, with its premises not yet
+    /// evaluated.
     ///
-    /// Returns `None` when the goal is not one of them, which leaves it to
-    /// the givens, the explicit marker rules and structural inference.
-    async fn prove_built_in_copy_goal(&self, goal: &MarkerPredicate) -> Option<MarkerEntailment> {
-        if goal.marker_id() != self.engine().get_core_item(CoreItem::Copy).await {
-            return None;
-        }
-
-        // A linear value must be consumed exactly once, so copying it is never
-        // allowed. Structs containing it are rejected structurally.
-        if let Some(struct_) = goal.implementor().as_struct_view()
-            && self.engine().is_linear_struct(struct_.symbol_id()).await
-        {
-            return Some(MarkerEntailment::Fails);
-        }
-
-        // A coroutine type is never `Copy`, even when a given says so: a copy
-        // of a suspended coroutine could be resumed twice, and would still
-        // point into the original where a saved local borrows another.
-        if goal.implementor().as_coroutine_view().is_some() {
-            return Some(MarkerEntailment::Fails);
-        }
-
-        // `Copy` for references is built in: a shared reference is always
-        // `Copy`, and a unique one never is.
-        goal.implementor().as_reference_view().map(|reference| {
-            MarkerEntailment::from_bool(reference.mutability() == Mutability::Immutable)
-        })
-    }
-
-    async fn prove_active_marker_goal(&mut self, goal: &MarkerPredicate) -> MarkerEntailment {
+    /// Evaluation and the witness search both select the rule here, so they
+    /// cannot disagree about which rule applies.
+    async fn marker_rule(&mut self, goal: &MarkerPredicate) -> MarkerRule {
         // The compiler decides these goals itself, before any given is
         // consulted, so a given cannot override them.
-        if let Some(result) = self.prove_built_in_copy_goal(goal).await {
-            return result;
+        if let Some(rule) = self.built_in_copy_rule(goal).await {
+            return rule;
         }
 
         // A matching visible predicate is a leaf proof. Equality is checked
@@ -243,58 +252,114 @@ impl Solver {
 
         for given in matching_givens {
             if self.eq_without_unify(&given, goal.implementor()).await {
-                return MarkerEntailment::Holds;
+                return MarkerRule::Holds;
             }
         }
 
         // An explicit implementation replaces the synthesized structural rule
         // for its constructor and contributes its substituted marker premises.
         if let Some(rule) = self.explicit_marker_rule(goal).await {
-            match rule {
-                ExplicitMarkerRule::Positive(predicates) => {
-                    let mut entailed = MarkerEntailment::Holds;
-                    for predicate in predicates {
-                        let premise = match predicate {
-                            PredicateKind::Marker(predicate) => {
-                                self.evaluate_marker_goal(predicate).await
-                            }
-
-                            // TODO: we'll have to properly investigate this.
-                            // Sometimes, these predicates are specified because
-                            // it has to conform to a where-clause requirement
-                            // when naming the marker head.
-
-                            // Lifetimes never decide marker entailment, so
-                            // an outlives premise, such as a bound implied by
-                            // the implementor, is not checked here.
-                            PredicateKind::Outlives(_) => MarkerEntailment::Holds,
-
-                            // shouldn't happen because marker implementation predicates can only
-                            // be marker predicates
-                            PredicateKind::AssociatedTypeEquality(_) => MarkerEntailment::Fails,
-                        };
-                        entailed = entailed.min(premise);
-                    }
-                    return entailed;
-                }
-                ExplicitMarkerRule::Negative => return MarkerEntailment::Fails,
-            }
+            return rule;
         }
 
         // Without an explicit rule, synthesize the auto-trait rule from the
         // values stored by the type. Empty structural types prove immediately.
-        let Some(fields) = structural_fields(goal.implementor(), self.engine()).await else {
-            return MarkerEntailment::Fails;
-        };
-        let mut entailed = MarkerEntailment::Holds;
-        for field in fields {
-            let predicate = MarkerPredicate::new(goal.marker_id(), field);
-            entailed = entailed.min(self.evaluate_marker_goal(predicate).await);
-        }
-        entailed
+        structural_fields(goal.implementor(), self.engine()).await.map_or(
+            MarkerRule::Opaque,
+            |fields| {
+                MarkerRule::Structural(
+                    fields
+                        .into_iter()
+                        .map(|(component, ty)| {
+                            (component, MarkerPredicate::new(goal.marker_id(), ty))
+                        })
+                        .collect(),
+                )
+            },
+        )
     }
 
-    async fn explicit_marker_rule(&mut self, goal: &MarkerPredicate) -> Option<ExplicitMarkerRule> {
+    /// Returns the rule of a `Copy` goal whose answer is fixed by the
+    /// compiler: linear structs, coroutine types and references.
+    ///
+    /// Returns `None` when the goal is not one of them, which leaves it to
+    /// the givens, the explicit marker rules and structural inference.
+    async fn built_in_copy_rule(&self, goal: &MarkerPredicate) -> Option<MarkerRule> {
+        if goal.marker_id() != self.engine().get_core_item(CoreItem::Copy).await {
+            return None;
+        }
+
+        // A linear value must be consumed exactly once, so copying it is never
+        // allowed. Structs containing it are rejected structurally.
+        if let Some(struct_) = goal.implementor().as_struct_view()
+            && self.engine().is_linear_struct(struct_.symbol_id()).await
+        {
+            return Some(MarkerRule::BuiltIn(BuiltInMarkerRule::LinearStructNotCopy));
+        }
+
+        // A coroutine type is never `Copy`, even when a given says so: a copy
+        // of a suspended coroutine could be resumed twice, and would still
+        // point into the original where a saved local borrows another.
+        if goal.implementor().as_coroutine_view().is_some() {
+            return Some(MarkerRule::BuiltIn(BuiltInMarkerRule::CoroutineNotCopy));
+        }
+
+        // `Copy` for references is built in: a shared reference is always
+        // `Copy`, and a unique one never is.
+        goal.implementor().as_reference_view().map(|reference| match reference.mutability() {
+            Mutability::Immutable => MarkerRule::Holds,
+            Mutability::Mutable => MarkerRule::BuiltIn(BuiltInMarkerRule::UniqueReferenceNotCopy),
+        })
+    }
+
+    async fn prove_active_marker_goal(&mut self, goal: &MarkerPredicate) -> MarkerEntailment {
+        // The goal takes the weakest answer among the premises of its rule.
+        // Every premise is evaluated, even after one fails, as before the
+        // rule was selected separately.
+        match self.marker_rule(goal).await {
+            MarkerRule::Holds => MarkerEntailment::Holds,
+            MarkerRule::BuiltIn(_) | MarkerRule::Negative(_) | MarkerRule::Opaque => {
+                MarkerEntailment::Fails
+            }
+            MarkerRule::Explicit { premises, .. } => {
+                let mut entailed = MarkerEntailment::Holds;
+                for premise in premises {
+                    entailed = entailed.min(self.evaluate_marker_premise(premise).await);
+                }
+                entailed
+            }
+            MarkerRule::Structural(premises) => {
+                let mut entailed = MarkerEntailment::Holds;
+                for (_, premise) in premises {
+                    entailed = entailed.min(self.evaluate_marker_goal(premise).await);
+                }
+                entailed
+            }
+        }
+    }
+
+    /// Evaluates one premise of an explicit marker implementation.
+    async fn evaluate_marker_premise(&mut self, premise: PredicateKind) -> MarkerEntailment {
+        match premise {
+            PredicateKind::Marker(predicate) => self.evaluate_marker_goal(predicate).await,
+
+            // TODO: we'll have to properly investigate this.
+            // Sometimes, these predicates are specified because
+            // it has to conform to a where-clause requirement
+            // when naming the marker head.
+
+            // Lifetimes never decide marker entailment, so
+            // an outlives premise, such as a bound implied by
+            // the implementor, is not checked here.
+            PredicateKind::Outlives(_) => MarkerEntailment::Holds,
+
+            // shouldn't happen because marker implementation predicates can only
+            // be marker predicates
+            PredicateKind::AssociatedTypeEquality(_) => MarkerEntailment::Fails,
+        }
+    }
+
+    async fn explicit_marker_rule(&mut self, goal: &MarkerPredicate) -> Option<MarkerRule> {
         let engine = self.engine().clone();
         let target_id = self.site().target_id;
         let implementations =
@@ -311,41 +376,60 @@ impl Solver {
             };
 
             if implementation.is_negative() {
-                return Some(ExplicitMarkerRule::Negative);
+                return Some(MarkerRule::Negative(symbol_id));
             }
 
             let clause = engine.get_where_clause(symbol_id).await;
 
-            return Some(ExplicitMarkerRule::Positive(
-                clause
+            return Some(MarkerRule::Explicit {
+                implementation_id: symbol_id,
+                premises: clause
                     .predicates()
                     .map(|predicate| predicate.kind().apply_subst_or_clone(&subst, self.engine()))
                     .collect(),
-            ));
+            });
         }
 
         None
     }
 }
 
-/// Returns the values whose marker properties determine the enclosing type.
-/// `None` represents an opaque or ill-kinded type that cannot be inferred.
+/// Returns the values whose marker properties determine the enclosing type,
+/// each with where the type stores it. `None` represents an opaque or
+/// ill-kinded type that cannot be inferred.
+///
+/// A closure stores the tuple of its captures as one value, so that an
+/// explicit marker implementation of tuples applies to it too.
 async fn structural_fields(
     ty: &Ty,
     engine: &TrackedEngine,
-) -> Option<Vec<qbice::storage::intern::Interned<Ty>>> {
+) -> Option<Vec<(StructuralComponent, Interned<Ty>)>> {
     match ty {
         Ty::Application(application) => match application.view() {
             ApplicationView::Primitive(_) => Some(Vec::new()),
-            ApplicationView::Tuple(tuple) => Some(tuple.args().to_vec()),
-            ApplicationView::Closure(closure) => Some(vec![closure.captured_tuple().clone()]),
+            ApplicationView::Tuple(tuple) => Some(
+                tuple
+                    .args()
+                    .iter()
+                    .enumerate()
+                    .map(|(index, ty)| (StructuralComponent::TupleElement(index), ty.clone()))
+                    .collect(),
+            ),
+            ApplicationView::Closure(closure) => {
+                Some(vec![(StructuralComponent::ClosureCaptures, closure.captured_tuple().clone())])
+            }
             ApplicationView::Struct(struct_) => {
                 let body = engine.get_struct_body(struct_.symbol_id()).await;
                 let subst = engine.build_subst_from_args(struct_.symbol_id(), struct_.args()).await;
 
                 Some(
                     body.iter()
-                        .map(|(_, field)| field.ty().apply_subst_or_clone(&subst, engine))
+                        .map(|(field_id, field)| {
+                            (
+                                StructuralComponent::StructField(field_id),
+                                field.ty().apply_subst_or_clone(&subst, engine),
+                            )
+                        })
                         .collect(),
                 )
             }

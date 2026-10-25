@@ -241,9 +241,10 @@ impl Provenance {
 
     pub fn compose_subst(&mut self, subst: &Subst, binding_cause: CauseID, engine: &TrackedEngine) {
         for (existing_inference, existing_codo) in self.subst.inference_mappings() {
-            // if the codomain of the existing inference will be mapped by the new
-            // substitution, then the cause of the existing inference must be updated to
-            // reflect that it is now derived from both the existing cause and the new
+            // if the codomain of the existing inference will be mapped by the
+            // new substitution, then the cause of the existing
+            // inference must be updated to reflect that it is now
+            // derived from both the existing cause and the new
             // binding cause.
             if existing_codo
                 .recursive_iter()
@@ -264,8 +265,8 @@ impl Provenance {
             }
         }
 
-        // register new inferences in the substitution with the cause of the binding
-        // that created them
+        // register new inferences in the substitution with the cause of the
+        // binding that created them
         for (new_inference, _) in subst.inference_mappings() {
             self.subst_causes.entry(new_inference).or_insert(binding_cause);
         }
@@ -426,7 +427,7 @@ impl Provenance {
     pub(super) async fn resolved_root_cause(
         &self,
         primary_root_id: CauseID,
-        root_ids: FxHashSet<CauseID>,
+        root_ids: &FxHashSet<CauseID>,
         solver: &Solver,
     ) -> ResolvedRootCause {
         let engine = solver.engine();
@@ -469,9 +470,9 @@ impl Provenance {
                     source: self.latest_effect_source(&origin.source, solver).await,
                     span: origin.span,
                     related_sites: self
-                        .effect_unification_sites(&root_ids, primary_root_id, origin.span, solver)
+                        .effect_unification_sites(root_ids, primary_root_id, origin.span, solver)
                         .await,
-                    root_ids,
+                    root_ids: root_ids.clone(),
                 })
             }
         }
@@ -484,9 +485,10 @@ impl Provenance {
         solver: &Solver,
     ) {
         let engine = solver.engine();
-        // A constrained inference can be unified with another inference through a
-        // fresh variable. Follow those aliases so the unresolved representative
-        // receives the default rather than only considering the original variable.
+        // A constrained inference can be unified with another inference through
+        // a fresh variable. Follow those aliases so the unresolved
+        // representative receives the default rather than only
+        // considering the original variable.
         let mut defaults = Subst::default();
         for inference in inferences {
             // can we do this without interning?
@@ -542,10 +544,10 @@ impl Provenance {
             let latest = pending.constraint().apply_subst(&self.subst, engine);
             let constraint = latest.as_ref().unwrap_or_else(|| pending.constraint());
 
-            // if it's a pair of inference variables waiting to be unified but blocked
-            // because of lifetime generalization, we'll not inlude them in the exclusion
-            // set. This is because the empty effect row need no lifetime
-            // generalization.
+            // if it's a pair of inference variables waiting to be unified but
+            // blocked because of lifetime generalization, we'll not
+            // inlude them in the exclusion set. This is because the
+            // empty effect row need no lifetime generalization.
             if constraint.waiting_variable_pair().is_some() {
                 continue;
             }
@@ -557,8 +559,9 @@ impl Provenance {
     }
 
     fn insert_defaults(&mut self, defaults: &Subst, engine: &TrackedEngine) {
-        // Defaults are not attributable to a source constraint, but provenance still
-        // needs an entry for every substituted inference when retrying residuals.
+        // Defaults are not attributable to a source constraint, but provenance
+        // still needs an entry for every substituted inference when
+        // retrying residuals.
         if defaults.inference_mappings().next().is_some() {
             let default_cause = self.causes.insert(Cause::Default);
             for (inference, _) in defaults.inference_mappings() {

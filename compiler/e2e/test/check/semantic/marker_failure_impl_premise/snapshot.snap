@@ -1,0 +1,42 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: `Box[Secret]` does not satisfy marker `main.Send`
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:24:12
+   │
+24 │     return requireSend(value)
+   ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+[note]: `Box[Secret]: main.Send` holds only if `Secret: main.Send`, by this implementation
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:14:1
+   │
+14 │ impl[t] Send for Box[t] where (t: Send)
+   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[note]: `Secret` is excluded by this negative implementation
+  ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:9:1
+  │
+9 │ impl !Send for Secret
+  ╰╴━━━━━━━━━━━━━━━━━━━━━
+
+[error]: `Box[Secret]` does not satisfy marker `main.Send`
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:27:22
+   │
+27 │ def signature(value: Guarded[Box[Secret]]) -> int32:
+   ╰╴                     ━━━━━━━━━━━━━━━━━━━━ required by the where clause of `main.Guarded`
+[note]: `Box[Secret]: main.Send` holds only if `Secret: main.Send`, by this implementation
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:14:1
+   │
+14 │ impl[t] Send for Box[t] where (t: Send)
+   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[note]: `Secret` is excluded by this negative implementation
+  ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:9:1
+  │
+9 │ impl !Send for Secret
+  ╰╴━━━━━━━━━━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

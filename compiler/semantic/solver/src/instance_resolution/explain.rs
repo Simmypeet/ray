@@ -2,10 +2,10 @@
 
 use rayc_type::trait_ref::TraitRef;
 
-use super::{CandidateFailure, Goal, Leaf, ProofFailure, Reason, Step};
-use crate::instance_resolution::{
+use super::{
     FailedInstanceCandidate, InstanceCandidateFailure, InstanceResolutionError, NoInstanceReason,
 };
+use crate::explain::{CandidateFailure, Goal, Leaf, ProofFailure, Reason, Step};
 
 impl ProofFailure {
     /// Explains why resolving `required` failed with `error`.
@@ -69,7 +69,7 @@ impl Reason {
                 NoInstanceReason::DropPlan(error) => Leaf::DropPlan(error.clone()),
             },
             InstanceResolutionError::BuiltinComponent { part, .. } => {
-                return ProofFailure::requires(part.step(), part.error());
+                return ProofFailure::requires(part.step, &part.error);
             }
         };
 
@@ -97,7 +97,7 @@ impl Reason {
 
     /// Explains why one matching instance head could not be completed.
     fn from_candidate_failure(candidate: &FailedInstanceCandidate) -> Option<Self> {
-        match candidate.failure() {
+        match &candidate.failure {
             InstanceCandidateFailure::UndeterminedParameter(parameter) => {
                 Some(Self::Leaf(Leaf::UndeterminedParameter(*parameter)))
             }

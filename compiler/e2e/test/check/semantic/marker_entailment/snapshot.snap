@@ -3,17 +3,32 @@ source: compiler/e2e/test/check/mod.rs
 expression: run
 ---
 stderr:
-[error]: where-clause obligation for `main.requireSend` is not satisfied
+[error]: `(int32, a)` does not satisfy marker `main.Send`
    ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:17:12
    │
 17 │     return requireSend((0, value))
-   ╰╴           ━━━━━━━━━━━ `(int32, a)` must satisfy marker `main.Send`
+   │            ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   │
+   ╰ help: add `where (a: main.Copy)`
+[note]: `(int32, a): main.Send` holds only if `a: main.Copy`, by this implementation
+  ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:6:1
+  │
+6 │ ┏ impl[a, b] Send for (a, b) where (
+7 │ ┃     b: Copy,
+8 │ ┃ )
+  ╰╴┗━┛
+[note]: no implementation or given proves `a: main.Copy`
 
-[error]: where-clause obligation for `main.requireSend` is not satisfied
+[error]: `(int32, bool, int32)` does not satisfy marker `main.Send`
    ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:20:12
    │
 20 │     return requireSend((0, true, 0))
-   ╰╴           ━━━━━━━━━━━ `(int32, bool, int32)` must satisfy marker `main.Send`
+   ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+[note]: `(int32, bool, int32)` is excluded by this negative implementation
+  ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:4:1
+  │
+4 │ impl[a, b, c] !Send for (a, b, c)
+  ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 2 error(s)
 

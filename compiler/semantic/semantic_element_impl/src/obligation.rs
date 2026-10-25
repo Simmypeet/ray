@@ -12,7 +12,11 @@ use rayc_resolution::{
     Obligation, PredicateConstraint, PredicateObligation, ReferenceWf, RelationOrigin,
     TraitRefCheck, UnsatisfiedRelationOutlives,
 };
-use rayc_solver::{Solver, ty_relate::Step};
+use rayc_solver::{
+    Solver,
+    explain::{RequiredBy, UnsatisfiedGoal},
+    ty_relate::Step,
+};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{constraint::outlives::OutlivesConstraints, where_clause::OutlivesPredicate};
 
@@ -67,7 +71,7 @@ impl ExpandedObligation {
         let engine = solver.engine().clone();
 
         let Some(outlives) = self.solve(solver).await else {
-            diagnostics.push(self.report(&engine).await);
+            diagnostics.push(self.report(solver).await);
             return;
         };
 
@@ -127,11 +131,20 @@ impl ExpandedObligation {
     }
 
     /// Renders the failed obligation.
-    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+    async fn report(&self, solver: &mut Solver) -> Rendered<ByteIndex> {
+        let engine = solver.engine().clone();
         match self {
-            Self::TraitRefCheck(check) => check.report(engine).await,
-            Self::Predicate(predicate) => predicate.report(engine).await,
-            Self::ReferenceWf(check) => check.report(engine).await,
+            Self::TraitRefCheck(check) => check.report(&engine).await,
+            Self::Predicate(predicate) => {
+                // A marker goal is explained by the chain of premises that
+                // makes it fail; other predicates keep their own report.
+                let Some(failure) = solver.explain_predicate(predicate.predicate()).await else {
+                    return predicate.report(&engine).await;
+                };
+                let required_by = RequiredBy::WhereClause { symbol_id: predicate.symbol_id() };
+                UnsatisfiedGoal::new(predicate.span(), required_by, failure).report(&engine).await
+            }
+            Self::ReferenceWf(check) => check.report(&engine).await,
         }
     }
 }

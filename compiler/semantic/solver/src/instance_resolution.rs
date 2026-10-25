@@ -23,6 +23,7 @@ use rayc_type::{
 };
 
 mod candidates;
+mod explain;
 mod lexical;
 mod ranking;
 
@@ -80,9 +81,6 @@ impl FailedInstanceCandidate {
 
     #[must_use]
     pub const fn instance_id(&self) -> GlobalSymbolID { self.instance_id }
-
-    #[must_use]
-    pub const fn failure(&self) -> &InstanceCandidateFailure { &self.failure }
 }
 
 /// The hard limit that stopped a search.
@@ -200,7 +198,7 @@ impl InstanceResolutionCycle {
 
     /// Returns whether `goal` is the goal the cycle starts and ends at.
     #[must_use]
-    pub(crate) fn starts_at(&self, goal: &TraitRef) -> bool {
+    fn starts_at(&self, goal: &TraitRef) -> bool {
         self.path.first().is_some_and(|frame| frame.goal() == goal)
     }
 }
@@ -256,21 +254,11 @@ pub struct PartFailure {
     error: InstanceResolutionError,
 }
 
-impl PartFailure {
-    /// Returns which part of the dictionary failed.
-    #[must_use]
-    pub const fn step(&self) -> Step { self.step }
-
-    /// Returns why the part could not be resolved.
-    #[must_use]
-    pub const fn error(&self) -> &InstanceResolutionError { &self.error }
-}
-
 impl InstanceResolutionError {
     /// Returns the requirement the error is about, or `None` for a cycle or
     /// a limit, which are about the whole search.
     #[must_use]
-    pub(crate) const fn required(&self) -> Option<&TraitRef> {
+    const fn required(&self) -> Option<&TraitRef> {
         match self {
             Self::NotReady(required)
             | Self::ContainsError(required)

@@ -1,0 +1,32 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: `Outer` does not satisfy marker `main.Send`
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_field_chain/main.ray:23:12
+   │
+23 │     return requireSend(value)
+   ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+[note]: `Outer` stores field `inner` of type `Inner`
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_field_chain/main.ray:16:5
+   │
+16 │     inner: Inner
+   ╰╴    ━━━━━
+[note]: `Inner` stores field `pair` of type `(int32, Secret)`
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_field_chain/main.ray:12:5
+   │
+12 │     pair: (int32, Secret)
+   ╰╴    ━━━━
+[note]: `(int32, Secret)` stores element `1`, of type `Secret`
+[note]: `Secret` is excluded by this negative implementation
+  ╭▸ compiler/e2e/test/check/semantic/marker_failure_field_chain/main.ray:9:1
+  │
+9 │ impl !Send for Secret
+  ╰╴━━━━━━━━━━━━━━━━━━━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

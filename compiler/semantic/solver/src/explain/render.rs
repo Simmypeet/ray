@@ -4,17 +4,23 @@ use qbice::{Decode, Encode, StableHash};
 use rayc_diagnostic::{ByteIndex, Highlight, Note, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::{drop_plan::DropPlanError, parameter::get_parameter_map};
+use rayc_semantic_element::{
+    drop_plan::DropPlanError,
+    parameter::get_parameter_map,
+    struct_body::{FieldID, get_struct_body},
+};
 use rayc_symbol::{
     GlobalSymbolID, name::get_qualified_name, source_map::to_absolute_span, span::get_span,
 };
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
-    trait_ref::TraitRef,
     ty::Ty,
 };
 
-use super::{CandidateFailure, DropComponent, Goal, Leaf, ProofFailure, Reason, Step};
+use super::{
+    BuiltInMarkerRule, CandidateFailure, DropComponent, Goal, Leaf, ProofFailure, Reason, Step,
+    StructuralComponent,
+};
 use crate::instance_resolution::{
     InstanceResolutionCycle, InstanceResolutionFrame, InstanceResolutionLimit,
 };
@@ -52,6 +58,10 @@ pub enum RequiredBy {
     /// An implicit given of a call or a path.
     ImplicitInstance,
 
+    /// The where clause of a resolved symbol, or of an instance selected for
+    /// an implicit given.
+    WhereClause { symbol_id: GlobalSymbolID },
+
     /// A value dropped when its scope ends, or, with a suspension span,
     /// because its function may be dropped while suspended there. Every
     /// value held across a suspension point is dropped then, even one that
@@ -72,25 +82,32 @@ impl RequiredBy {
     fn headline_failure(self, failure: &ProofFailure) -> &ProofFailure {
         match self {
             Self::CoroutineArguments { .. } => failure.innermost_part(),
-            Self::ImplicitInstance | Self::ScopeDrop { .. } => failure,
+            Self::ImplicitInstance | Self::WhereClause { .. } | Self::ScopeDrop { .. } => failure,
         }
     }
 
     /// Returns the label of the primary span.
-    const fn label(self) -> Option<&'static str> {
-        match self {
-            Self::ImplicitInstance => None,
+    async fn label(self, engine: &TrackedEngine) -> Option<String> {
+        let label = match self {
+            Self::ImplicitInstance => return None,
+            Self::WhereClause { symbol_id } => {
+                return Some(format!(
+                    "required by the where clause of `{}`",
+                    engine.get_qualified_name(symbol_id).await
+                ));
+            }
             Self::ScopeDrop { suspension: Some(_) }
             | Self::CoroutineArguments { suspension: Some(_) } => {
-                Some("this value is held across a suspension point")
+                "this value is held across a suspension point"
             }
             Self::ScopeDrop { suspension: None } => {
-                Some("this value is dropped when it goes out of scope")
+                "this value is dropped when it goes out of scope"
             }
             Self::CoroutineArguments { suspension: None } => {
-                Some("the arguments of this coroutine are dropped if it is never resumed")
+                "the arguments of this coroutine are dropped if it is never resumed"
             }
-        }
+        };
+        Some(label.to_owned())
     }
 
     /// Returns the suspension point the value is held across, if it is
@@ -98,12 +115,13 @@ impl RequiredBy {
     const fn suspension(self) -> Option<RelativeSpan> {
         match self {
             Self::ScopeDrop { suspension } | Self::CoroutineArguments { suspension } => suspension,
-            Self::ImplicitInstance => None,
+            Self::ImplicitInstance | Self::WhereClause { .. } => None,
         }
     }
 }
 
-/// The kind of failure the headline states.
+/// The kind of failure the headline of an instance goal states. A marker
+/// goal always has the same headline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Headline {
     NoInstance,
@@ -150,10 +168,16 @@ impl Leaf {
     /// Returns the headline of a goal that failed for this leaf.
     const fn headline(&self) -> Headline {
         match self {
+            // An instance goal whose chain ends at a marker has no instance
+            // that applies either.
             Self::NoMatchingInstance
             | Self::UndeterminedParameter(_)
             | Self::LinearType
-            | Self::DropPlan(_) => Headline::NoInstance,
+            | Self::DropPlan(_)
+            | Self::NegativeImplementation(_)
+            | Self::BuiltIn(_)
+            | Self::Opaque
+            | Self::Unexplained => Headline::NoInstance,
             Self::AmbiguousLexical(_) => Headline::AmbiguousLexical,
             Self::AmbiguousGlobal(_) => Headline::AmbiguousGlobal,
             Self::Cycle(_) => Headline::Cycle,
@@ -173,17 +197,78 @@ impl Leaf {
             Self::Cycle(_) => "requires itself",
             Self::Limit { .. } => "is too deep to resolve",
             Self::NotReady => "is not inferred yet",
+            Self::NegativeImplementation(_) => "is excluded by a negative implementation",
+            Self::BuiltIn(_) => "is never satisfied",
+            Self::Opaque => "is not known to hold",
+            Self::Unexplained => "does not hold",
+        }
+    }
+}
+
+impl Goal {
+    /// Displays the goal, as in `main.Show[Secret]` or `Secret: main.Send`.
+    async fn display(&self, engine: &TrackedEngine) -> String {
+        match self {
+            Self::Instance(trait_ref) => trait_ref.display(engine).await.to_string(),
+            Self::Marker(predicate) => format!(
+                "{}: {}",
+                predicate.implementor().display(engine).await,
+                engine.get_qualified_name(predicate.marker_id()).await
+            ),
+        }
+    }
+
+    /// Returns the type the goal is about: the only argument of a trait
+    /// reference, such as the type a `Drop` requirement drops, or the type a
+    /// marker goal is about.
+    fn subject_ty(&self) -> Option<&Ty> {
+        match self {
+            Self::Instance(trait_ref) => {
+                let mut args = trait_ref.args().iter();
+                match (args.next(), args.next()) {
+                    (Some(ty), None) => Some(ty),
+                    (None | Some(_), _) => None,
+                }
+            }
+            Self::Marker(predicate) => Some(&**predicate.implementor()),
+        }
+    }
+
+    /// Describes the value the goal is about, or the whole goal when it is
+    /// about several.
+    async fn subject(&self, engine: &TrackedEngine) -> String {
+        match self.subject_ty() {
+            Some(ty) => ty.display(engine).await.to_string(),
+            None => self.display(engine).await,
+        }
+    }
+
+    /// Returns whether the goal mentions a type variable, so that the site
+    /// can require the goal of its own caller.
+    fn contains_poly_var(&self) -> bool {
+        match self {
+            Self::Instance(trait_ref) => trait_ref.contains_poly_var(),
+            Self::Marker(predicate) => predicate.implementor().contains_poly_var(),
+        }
+    }
+
+    /// States that the goal failed, given the kind of failure of an instance
+    /// goal.
+    async fn headline(&self, engine: &TrackedEngine, kind: Headline) -> String {
+        match self {
+            Self::Instance(trait_ref) => {
+                format!("{}: `{}`", kind.message(), trait_ref.display(engine).await)
+            }
+            Self::Marker(predicate) => format!(
+                "`{}` does not satisfy marker `{}`",
+                predicate.implementor().display(engine).await,
+                engine.get_qualified_name(predicate.marker_id()).await
+            ),
         }
     }
 }
 
 impl ProofFailure {
-    /// Returns the instance goal that failed.
-    const fn trait_ref(&self) -> &TraitRef {
-        let Goal::Instance(trait_ref) = self.goal();
-        trait_ref
-    }
-
     /// Returns the failure at the end of the chain of sub-goals.
     fn deepest(&self) -> &Self {
         match self.reason() {
@@ -216,7 +301,7 @@ impl Explanation {
         let end = loop {
             match current.reason() {
                 Reason::Requires { step, failure: child } => {
-                    steps.push((current.trait_ref(), *step, child.trait_ref()));
+                    steps.push((current.goal(), *step, child.goal()));
                     current = child;
                 }
                 Reason::CandidatesFailed(_) | Reason::Leaf(_) => break current,
@@ -244,19 +329,13 @@ impl Explanation {
         let at_root = steps.is_empty();
         match end.reason() {
             Reason::CandidatesFailed(candidates) => self.candidates(engine, end, candidates).await,
-            Reason::Leaf(leaf) => self.leaf(engine, end.trait_ref(), leaf, at_root).await,
+            Reason::Leaf(leaf) => self.leaf(engine, end.goal(), leaf, at_root).await,
             Reason::Requires { .. } => unreachable!("the chain ends at a failure of its own"),
         }
     }
 
     /// Explains why `parent` requires `child`.
-    async fn step(
-        &mut self,
-        engine: &TrackedEngine,
-        parent: &TraitRef,
-        step: Step,
-        child: &TraitRef,
-    ) {
+    async fn step(&mut self, engine: &TrackedEngine, parent: &Goal, step: Step, child: &Goal) {
         let child_display = child.display(engine).await;
         let (message, highlight) = match step {
             Step::NestedInstanceGiven { instance_id, parameter } => {
@@ -269,8 +348,8 @@ impl Explanation {
                 (message, Some(highlight(engine, span).await))
             }
             Step::DropComponent(component) => {
-                let owner = subject(engine, parent).await;
-                let value = subject(engine, child).await;
+                let owner = parent.subject(engine).await;
+                let value = child.subject(engine).await;
                 match component {
                     DropComponent::TupleElement(index) => (
                         format!(
@@ -298,10 +377,18 @@ impl Explanation {
             Step::ContinuationCoroutine => (
                 format!(
                     "calling `{}` resumes its coroutine, which needs `{child_display}`",
-                    subject(engine, parent).await
+                    parent.subject(engine).await
                 ),
                 None,
             ),
+            Step::MarkerImplementationPremise { implementation_id } => {
+                let message = format!(
+                    "`{}` holds only if `{child_display}`, by this implementation",
+                    parent.display(engine).await
+                );
+                (message, declaration(engine, implementation_id).await)
+            }
+            Step::Structural(component) => structural(engine, parent, component, child).await,
         };
 
         self.note(message, highlight);
@@ -311,7 +398,7 @@ impl Explanation {
     ///
     /// At the root, the headline already names the goal, so the leaf adds
     /// only what the headline does not say.
-    async fn leaf(&mut self, engine: &TrackedEngine, goal: &TraitRef, leaf: &Leaf, at_root: bool) {
+    async fn leaf(&mut self, engine: &TrackedEngine, goal: &Goal, leaf: &Leaf, at_root: bool) {
         match leaf {
             Leaf::NoMatchingInstance => {
                 if !at_root {
@@ -348,21 +435,45 @@ impl Explanation {
                 self.help = Some(format!(
                     "`{}` is a linear type: it has no Drop instance and must be consumed \
                      explicitly",
-                    subject(engine, goal).await
+                    goal.subject(engine).await
                 ));
             }
             Leaf::DropPlan(error) => self.drop_plan(engine, goal, error).await,
             Leaf::Cycle(cycle) => self.cycle(engine, cycle).await,
             Leaf::Limit { limit, recent_goals } => self.limit(engine, *limit, recent_goals).await,
-            Leaf::NotReady => {}
+            Leaf::NotReady | Leaf::Unexplained => {}
+            Leaf::NegativeImplementation(implementation_id) => self.note(
+                format!(
+                    "`{}` is excluded by this negative implementation",
+                    goal.subject(engine).await
+                ),
+                declaration(engine, *implementation_id).await,
+            ),
+            Leaf::BuiltIn(rule) => self.note(rule.explain(engine, goal).await, None),
+            Leaf::Opaque => self.opaque(engine, goal, at_root).await,
         }
+    }
+
+    /// Explains a marker goal on a type that no marker rule applies to.
+    async fn opaque(&mut self, engine: &TrackedEngine, goal: &Goal, at_root: bool) {
+        // A goal on a type variable can be required of the caller; one on a
+        // concrete type cannot.
+        let goal_display = goal.display(engine).await;
+        let help = goal.contains_poly_var().then(|| format!("add `where ({goal_display})`"));
+
+        // At the root, the headline already states the goal, and the help
+        // says what is missing.
+        if !at_root || help.is_none() {
+            self.note(format!("no implementation or given proves `{goal_display}`"), None);
+        }
+        self.help = help;
     }
 
     /// Points at each global instance that provides the goal.
     async fn ambiguous_global(
         &mut self,
         engine: &TrackedEngine,
-        goal: &TraitRef,
+        goal: &Goal,
         candidates: &[GlobalSymbolID],
         at_root: bool,
     ) {
@@ -380,7 +491,7 @@ impl Explanation {
     async fn ambiguous_lexical(
         &mut self,
         engine: &TrackedEngine,
-        goal: &TraitRef,
+        goal: &Goal,
         givens: &[GlobalPolyVarID],
         at_root: bool,
     ) {
@@ -431,7 +542,7 @@ impl Explanation {
     async fn ambiguity(
         &mut self,
         engine: &TrackedEngine,
-        goal: &TraitRef,
+        goal: &Goal,
         message: &str,
         highlights: Vec<Highlight<ByteIndex>>,
         at_root: bool,
@@ -449,8 +560,8 @@ impl Explanation {
     }
 
     /// Explains why the `Drop` plan of a struct cannot be generated.
-    async fn drop_plan(&mut self, engine: &TrackedEngine, goal: &TraitRef, error: &DropPlanError) {
-        let owner = subject(engine, goal).await;
+    async fn drop_plan(&mut self, engine: &TrackedEngine, goal: &Goal, error: &DropPlanError) {
+        let owner = goal.subject(engine).await;
         match error {
             DropPlanError::LinearField(field) => {
                 self.help = Some(format!(
@@ -510,7 +621,7 @@ impl Explanation {
         failure: &ProofFailure,
         candidates: &[CandidateFailure],
     ) {
-        let goal = failure.trait_ref().display(engine).await.to_string();
+        let goal = failure.goal().display(engine).await;
         for candidate in candidates.iter().take(MAX_CANDIDATES) {
             let instance_id = candidate.instance_id();
             let instance = engine.get_qualified_name(instance_id).await;
@@ -519,7 +630,7 @@ impl Explanation {
                     let deepest = failure.deepest();
                     format!(
                         "`{instance}` matches `{goal}`, but needs `{}`, which {}",
-                        deepest.trait_ref().display(engine).await,
+                        deepest.goal().display(engine).await,
                         deepest.reason().summary()
                     )
                 }
@@ -554,7 +665,11 @@ impl Explanation {
         for pair in frames.windows(2) {
             let [parent, child] = pair else { unreachable!("windows of two") };
             match child.introduced_by() {
-                Some(step) => self.step(engine, parent.goal(), step, child.goal()).await,
+                Some(step) => {
+                    let parent = Goal::Instance(parent.goal().clone());
+                    let child = Goal::Instance(child.goal().clone());
+                    self.step(engine, &parent, step, &child).await;
+                }
                 None => self.note(
                     format!(
                         "`{}` requires `{}`",
@@ -568,13 +683,75 @@ impl Explanation {
     }
 }
 
-/// Describes the value a trait reference is about: its only argument, such
-/// as the type a `Drop` requirement drops, or the whole reference.
-async fn subject(engine: &TrackedEngine, trait_ref: &TraitRef) -> String {
-    let mut args = trait_ref.args().iter();
-    match (args.next(), args.next()) {
-        (Some(ty), None) => ty.display(engine).await.to_string(),
-        (None | Some(_), _) => trait_ref.display(engine).await.to_string(),
+impl BuiltInMarkerRule {
+    /// Explains why the compiler rejects `goal`.
+    async fn explain(self, engine: &TrackedEngine, goal: &Goal) -> String {
+        match self {
+            Self::LinearStructNotCopy => {
+                format!("`{}` is linear, so it is never `Copy`", goal.subject(engine).await)
+            }
+            Self::CoroutineNotCopy => "a coroutine is never `Copy`".to_owned(),
+            Self::UniqueReferenceNotCopy => "a unique reference is never `Copy`".to_owned(),
+        }
+    }
+}
+
+/// Explains why a type that satisfies a marker structurally requires a value
+/// it stores to satisfy it.
+async fn structural(
+    engine: &TrackedEngine,
+    owner: &Goal,
+    component: StructuralComponent,
+    value: &Goal,
+) -> (String, Option<Highlight<ByteIndex>>) {
+    let owner_display = owner.subject(engine).await;
+    let value = value.subject(engine).await;
+    match component {
+        StructuralComponent::StructField(field_id) => {
+            struct_field(engine, owner, &owner_display, field_id, &value).await
+        }
+        StructuralComponent::TupleElement(index) => {
+            (format!("`{owner_display}` stores element `{index}`, of type `{value}`"), None)
+        }
+        StructuralComponent::ClosureCaptures => {
+            (format!("the closure stores its captures, of type `{value}`"), None)
+        }
+        StructuralComponent::ClosureCapture(_) => {
+            (format!("the closure stores a capture of type `{value}`"), None)
+        }
+    }
+}
+
+/// Explains a field of a struct that satisfies a marker structurally, at the
+/// field.
+async fn struct_field(
+    engine: &TrackedEngine,
+    owner: &Goal,
+    owner_display: &str,
+    field_id: FieldID,
+    value: &str,
+) -> (String, Option<Highlight<ByteIndex>>) {
+    let Some(struct_) = owner.subject_ty().and_then(Ty::as_struct_view) else {
+        return (format!("`{owner_display}` stores a field of type `{value}`"), None);
+    };
+
+    let body = engine.get_struct_body(struct_.symbol_id()).await;
+    let field = &body[field_id];
+    (
+        format!("`{owner_display}` stores field `{}` of type `{value}`", &**field.name()),
+        Some(highlight(engine, field.span()).await),
+    )
+}
+
+/// Returns a highlight of the declaration of `symbol_id`, if it has one in
+/// source.
+async fn declaration(
+    engine: &TrackedEngine,
+    symbol_id: GlobalSymbolID,
+) -> Option<Highlight<ByteIndex>> {
+    match engine.get_span(symbol_id).await {
+        Some(span) => Some(highlight(engine, span).await),
+        None => None,
     }
 }
 
@@ -589,11 +766,11 @@ async fn poly_var(engine: &TrackedEngine, parameter: GlobalPolyVarID) -> (String
 /// passed for.
 async fn coroutine_upvar(
     engine: &TrackedEngine,
-    coroutine: &TraitRef,
+    coroutine: &Goal,
     index: usize,
     value: &str,
 ) -> (String, Option<Highlight<ByteIndex>>) {
-    let Some(view) = coroutine.args().iter().next().and_then(Ty::as_coroutine_view) else {
+    let Some(view) = coroutine.subject_ty().and_then(Ty::as_coroutine_view) else {
         return (format!("dropping the coroutine drops its argument of type `{value}`"), None);
     };
 
@@ -629,13 +806,12 @@ impl Report for UnsatisfiedGoal {
         // a compiler-built dictionary, and names the goal the site asked for.
         let failure = self.required_by.headline_failure(&self.failure);
         let headline = self.failure.innermost_part().reason().headline();
-        let message =
-            format!("{}: `{}`", headline.message(), failure.trait_ref().display(engine).await);
+        let message = failure.goal().headline(engine, headline).await;
 
         // The primary span says why the site required the goal.
         let primary = Highlight::builder()
             .span(engine.to_absolute_span(&self.span).await)
-            .maybe_message(self.required_by.label())
+            .maybe_message(self.required_by.label(engine).await)
             .build();
 
         // A value held across a suspension point is dropped there if the

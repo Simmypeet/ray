@@ -1,0 +1,39 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: `a` does not satisfy marker `main.Send`
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_type_variable/main.ray:14:12
+   │
+14 │     return requireSend(value)
+   │            ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   │
+   ╰ help: add `where (a: main.Send)`
+
+[error]: `Holder[a]` does not satisfy marker `main.Send`
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_type_variable/main.ray:18:12
+   │
+18 │     return requireSend(value)
+   │            ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   │
+   ╰ help: add `where (a: main.Send)`
+[note]: `Holder[a]` stores field `value` of type `a`
+  ╭▸ compiler/e2e/test/check/semantic/marker_failure_type_variable/main.ray:7:5
+  │
+7 │     value: a
+  ╰╴    ━━━━━
+[note]: no implementation or given proves `a: main.Send`
+
+[error]: `&int32` does not satisfy marker `main.Send`
+   ╭▸ compiler/e2e/test/check/semantic/marker_failure_type_variable/main.ray:22:12
+   │
+22 │     return requireSend(value)
+   ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+[note]: no implementation or given proves `&int32: main.Send`
+
+[error]: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

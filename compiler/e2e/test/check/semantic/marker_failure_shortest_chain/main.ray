@@ -1,0 +1,36 @@
+# The explanation of a failed marker goal follows the shortest chain of
+# fields to the failure, whatever the order of the fields.
+
+marker Send
+
+struct Secret:
+    value: int32
+
+impl !Send for Secret
+
+struct Wrapper[a]:
+    value: a
+
+# The failing field comes after the recursive one.
+struct Node[a]:
+    next: Node[a]
+    value: a
+
+# Both fields fail, the first one more deeply.
+struct Both:
+    deep: Wrapper[Wrapper[Secret]]
+    shallow: Secret
+
+def requireSend(value: a) -> a where (a: Send):
+    return value
+
+# ERROR: the chain ends at the field `value`, not around the field `next`.
+def recursive(value: Node[Secret]) -> Node[Secret]:
+    return requireSend(value)
+
+# ERROR: the chain goes through the field `shallow`, which is shorter.
+def shortest(value: Both) -> Both:
+    return requireSend(value)
+
+def main() -> int32:
+    return 0

@@ -1,9 +1,9 @@
 //! The failure tree: why a goal could not be proved.
 
 use qbice::{Decode, Encode, StableHash};
-use rayc_semantic_element::drop_plan::DropPlanError;
+use rayc_semantic_element::{drop_plan::DropPlanError, struct_body::FieldID};
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{poly_var::GlobalPolyVarID, trait_ref::TraitRef};
+use rayc_type::{poly_var::GlobalPolyVarID, trait_ref::TraitRef, where_clause::MarkerPredicate};
 
 use crate::instance_resolution::{
     InstanceResolutionCycle, InstanceResolutionFrame, InstanceResolutionLimit,
@@ -14,6 +14,9 @@ use crate::instance_resolution::{
 pub enum Goal {
     /// A dictionary of the trait reference.
     Instance(TraitRef),
+
+    /// A type satisfies a marker.
+    Marker(MarkerPredicate),
 }
 
 /// Why a goal could not be proved: the reason it failed, which may be a
@@ -46,7 +49,13 @@ impl ProofFailure {
                 step: Step::DropComponent(_) | Step::ContinuationCoroutine,
                 failure,
             } => failure.innermost_part(),
-            Reason::Requires { step: Step::NestedInstanceGiven { .. }, .. }
+            Reason::Requires {
+                step:
+                    Step::NestedInstanceGiven { .. }
+                    | Step::MarkerImplementationPremise { .. }
+                    | Step::Structural(_),
+                ..
+            }
             | Reason::CandidatesFailed(_)
             | Reason::Leaf(_) => self,
         }
@@ -82,7 +91,11 @@ impl Reason {
                 | Leaf::LinearType
                 | Leaf::DropPlan(_)
                 | Leaf::Limit { .. }
-                | Leaf::NotReady,
+                | Leaf::NotReady
+                | Leaf::NegativeImplementation(_)
+                | Leaf::BuiltIn(_)
+                | Leaf::Opaque
+                | Leaf::Unexplained,
             )
             | Self::Requires { .. }
             | Self::CandidatesFailed(_) => None,
@@ -126,6 +139,14 @@ pub enum Step {
     /// The `Coroutine` dictionary that the `Def` dictionary of a
     /// `core.Continuation` is built from.
     ContinuationCoroutine,
+
+    /// A premise of the explicit marker implementation that applies to the
+    /// type.
+    MarkerImplementationPremise { implementation_id: GlobalSymbolID },
+
+    /// A value stored by a type without an explicit marker implementation,
+    /// which satisfies a marker only when everything it stores does.
+    Structural(StructuralComponent),
 }
 
 /// A value stored inside a type, which is dropped with it.
@@ -144,6 +165,37 @@ pub enum DropComponent {
     /// A type that the generated `Drop` plan of a struct requires, by index
     /// into the plan's requirements.
     DropPlanRequirement(usize),
+}
+
+/// A value stored by a type, which decides the markers the type satisfies
+/// when no explicit marker implementation applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub enum StructuralComponent {
+    /// A field of a struct.
+    StructField(FieldID),
+
+    /// An element of a tuple, by index.
+    TupleElement(usize),
+
+    /// The tuple of everything a closure captures, when the tuple has an
+    /// explicit marker implementation of its own.
+    ClosureCaptures,
+
+    /// One capture of a closure, by index into its captured tuple.
+    ClosureCapture(usize),
+}
+
+/// A marker goal that the compiler rejects whatever the givens say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub enum BuiltInMarkerRule {
+    /// A linear struct is never `Copy`.
+    LinearStructNotCopy,
+
+    /// A coroutine is never `Copy`.
+    CoroutineNotCopy,
+
+    /// A unique reference is never `Copy`.
+    UniqueReferenceNotCopy,
 }
 
 /// The reason a goal failed on its own, which the programmer acts on.
@@ -178,4 +230,20 @@ pub enum Leaf {
     /// The goal still has inference variables that decide which instance
     /// is selected.
     NotReady,
+
+    /// A negative marker implementation excludes the type.
+    NegativeImplementation(GlobalSymbolID),
+
+    /// The compiler rejects the marker goal itself.
+    BuiltIn(BuiltInMarkerRule),
+
+    /// No marker rule applies to the type, and no given provides the goal:
+    /// the type is a type variable, a reference or a pointer.
+    Opaque,
+
+    /// The marker goal fails, but its failing premise is not known: the
+    /// search for it stopped at its budget, or the explicit implementation
+    /// that applies has an equality premise, which is rejected where the
+    /// implementation is declared.
+    Unexplained,
 }

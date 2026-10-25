@@ -1,0 +1,25 @@
+# A marker goal on a type variable suggests requiring it of the caller; one
+# on a concrete type that no rule applies to does not.
+
+marker Send
+
+struct Holder[a]:
+    value: a
+
+def requireSend(value: a) -> a where (a: Send):
+    return value
+
+# ERROR: nothing is known about `a`.
+def generic(value: a) -> a:
+    return requireSend(value)
+
+# ERROR: the chain ends at `a`, stored in a struct.
+def nested(value: Holder[a]) -> Holder[a]:
+    return requireSend(value)
+
+# ERROR: a reference stores no fields, and no implementation applies to it.
+def reference(value: &int32) -> &int32:
+    return requireSend(value)
+
+def main() -> int32:
+    return 0
