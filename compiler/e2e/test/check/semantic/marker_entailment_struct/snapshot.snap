@@ -1,26 +1,46 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: `Wrapper[(int32, bool, int32)]` does not satisfy marker `main.Send`
-   ╭▸ compiler/e2e/test/check/semantic/marker_entailment_struct/main.ray:15:12
-   │
+ 1 │ marker Send
+ 2 │
+ 3 │ impl[a, b, c] !Send for (a, b, c)
+   ┆
+   ┆ [note]: `(int32, bool, int32)` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_entailment_struct/main.ray:3:1
+   ┆   │
+   ┆ 3 │ impl[a, b, c] !Send for (a, b, c)
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆
+ 4 │
+ 5 │ struct Wrapper[a]:
+ 6 │     value: a
+   ┆
+   ┆ [note]: `Wrapper[(int32, bool, int32)]` stores field `value` of type `(int32, bool, int32)`
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_entailment_struct/main.ray:6:5
+   ┆   │
+   ┆ 6 │     value: a
+   ┆   ╰╴    ━━━━━
+   ┆
+ 7 │
+ 8 │ def requireSend(value: a) -> a where (a: Send):
+ 9 │     return value
+10 │
+11 │ def accepted(value: Wrapper[(int32, bool)]) -> Wrapper[(int32, bool)]:
+12 │     return requireSend(value)
+13 │
+14 │ def rejected(value: Wrapper[(int32, bool, int32)]) -> Wrapper[(int32, bool, int32)]:
 15 │     return requireSend(value)
-   ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
-[note]: `Wrapper[(int32, bool, int32)]` stores field `value` of type `(int32, bool, int32)`
-  ╭▸ compiler/e2e/test/check/semantic/marker_entailment_struct/main.ray:6:5
-  │
-6 │     value: a
-  ╰╴    ━━━━━
-[note]: `(int32, bool, int32)` is excluded by this negative implementation
-  ╭▸ compiler/e2e/test/check/semantic/marker_entailment_struct/main.ray:3:1
-  │
-3 │ impl[a, b, c] !Send for (a, b, c)
-  ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆
+   ┆ [error]: `Wrapper[(int32, bool, int32)]` does not satisfy marker `main.Send`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_entailment_struct/main.ray:15:12
+   ┆    │
+   ┆ 15 │     return requireSend(value)
+   ┆    ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆
+16 │
+17 │ def main() -> int32:
+18 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

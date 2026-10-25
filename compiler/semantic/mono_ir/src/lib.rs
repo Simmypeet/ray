@@ -34,7 +34,7 @@ pub mod ty;
 
 pub use instance::{
     MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoFragmentInstance,
-    MonoNominalDropInstance, MonoStructInstance,
+    MonoGeneratedAdtDropInstance, MonoStructInstance,
 };
 
 /// The independently cacheable `MonoIR` fragment for one concrete definition

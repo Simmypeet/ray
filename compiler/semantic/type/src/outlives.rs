@@ -21,21 +21,21 @@ use crate::{
 };
 
 /// Retrieves the outlives requirements inferred for a struct from its field
-/// types, as in Rust RFC 2093.
+/// types, or for an enum from its variant payload types, as in Rust RFC 2093.
 ///
 /// For `struct Ref['a, t]: value: &'a t` this is `t: 'a`. Only references
-/// are a source: the declared outlives predicates of a field's struct are not
-/// inferred. The requirements are stated over the struct's own polymorphic
-/// variables and hold for every well-formed use of the struct, next to its
-/// declared where clause.
+/// are a source: the declared outlives predicates of a field's struct or enum
+/// are not inferred. The requirements are stated over the ADT's own
+/// polymorphic variables and hold for every well-formed use of the ADT, next
+/// to its declared where clause.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
 #[value(Interned<[OutlivesPredicate]>)]
 #[extend(by_val, name = get_inferred_outlives)]
 pub struct InferredOutlivesKey {
-    /// A `SymbolKind::Strut` symbol.
-    pub struct_id: GlobalSymbolID,
+    /// A `SymbolKind::Strut` or `SymbolKind::Enum` symbol.
+    pub adt_id: GlobalSymbolID,
 }
 
 /// A part of a type that an outlives requirement decomposes into.
@@ -136,6 +136,7 @@ impl Application {
             | ApplicationView::Pointer(_)
             | ApplicationView::Reference(_)
             | ApplicationView::Struct(_)
+            | ApplicationView::Enum(_)
             | ApplicationView::Instance(_)
             | ApplicationView::Closure(_)
             | ApplicationView::DefInstance(_)
@@ -147,7 +148,7 @@ impl Application {
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
-            | ApplicationView::NominalDropInstance(_)
+            | ApplicationView::GeneratedAdtDropInstance(_)
             | ApplicationView::Error => false,
         }
     }

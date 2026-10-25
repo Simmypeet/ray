@@ -3,8 +3,8 @@
 //! Variance is the four-point lattice with [`Variance::Bivariant`] at the
 //! bottom, [`Variance::Invariant`] at the top, and the covariant and
 //! contravariant points in between. The variances of built-in constructors are
-//! fixed. Those of struct and `eff` parameters are declared, as in `+t`, or
-//! computed from their declarations; see [`VarianceKey`].
+//! fixed. Those of struct, enum and `eff` parameters are declared, as in `+t`,
+//! or computed from their declarations; see [`VarianceKey`].
 
 use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_hash::FxHashMap;
@@ -211,12 +211,13 @@ impl VarianceMap {
     }
 }
 
-/// Retrieves the variance of every polymorphic variable of a struct or an
-/// `eff`, in the order of its poly var map, which is also the order of its
-/// arguments.
+/// Retrieves the variance of every polymorphic variable of a struct, an enum
+/// or an `eff`, in the order of its poly var map, which is also the order of
+/// its arguments.
 ///
 /// A parameter declared as `+t`, `-t` or `=t` has that variance. Otherwise, a
-/// struct parameter's variance is the join of its uses in the field types. A
+/// struct parameter's variance is the join of its uses in the field types,
+/// and an enum parameter's the join of its uses in the payload types. A
 /// `perform` calls the handler, so an `eff` parameter used in an operation's
 /// parameter types is covariant, one used in its return type is
 /// contravariant, and one used in both is invariant.

@@ -7,13 +7,14 @@ use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor, TrackedEngine};
 use rayc_semantic_element::{
     parameter::{Key as ParameterKey, Parameter, ParameterMap},
     struct_body::{Field, Key as StructBodyKey, StructBody},
+    variant_payload_ty::Key as VariantPayloadTyKey,
 };
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::{
     GlobalSymbolID, SymbolID,
     accessibility::Accessibility,
     member::{Key as MemberKey, Member},
-    symbol_kind::{AllEffectIDs, AllNominalTypeIDs},
+    symbol_kind::{AllAdtIDs, AllEffectIDs, Key as SymbolKindKey, SymbolKind},
 };
 use rayc_target::TargetID;
 use rayc_type::{
@@ -44,7 +45,9 @@ struct Declarations {
     members: HashMap<MemberKey, Interned<Member>>,
     parameters: HashMap<ParameterKey, Interned<ParameterMap>>,
     return_types: HashMap<ReturnTypeKey, Interned<Ty>>,
-    structs: Vec<SymbolID>,
+    payloads: HashMap<VariantPayloadTyKey, Option<Interned<Ty>>>,
+    symbol_kinds: HashMap<SymbolKindKey, SymbolKind>,
+    adts: Vec<SymbolID>,
     effects: Vec<SymbolID>,
 }
 
@@ -68,7 +71,9 @@ impl Declarations {
             members: HashMap::new(),
             parameters: HashMap::new(),
             return_types: HashMap::new(),
-            structs: Vec::new(),
+            payloads: HashMap::new(),
+            symbol_kinds: HashMap::new(),
+            adts: Vec::new(),
             effects: Vec::new(),
         }
     }
@@ -133,7 +138,27 @@ impl Declarations {
             .unwrap();
         }
         self.struct_bodies.insert(StructBodyKey { symbol_id }, self.tracked.intern(body));
-        self.structs.push(symbol_id.id);
+        self.symbol_kinds.insert(SymbolKindKey { symbol_id }, SymbolKind::Struct);
+        self.adts.push(symbol_id.id);
+    }
+
+    /// Defines an enum from the payload types of its variants, where `None`
+    /// is a variant without a payload.
+    fn define_enum(
+        &mut self,
+        symbol_id: GlobalSymbolID,
+        variants: impl IntoIterator<Item = Option<Interned<Ty>>>,
+    ) {
+        let mut members = Member::default();
+        for (index, payload) in variants.into_iter().enumerate() {
+            let variant_id = self.fresh_id();
+            let name = self.tracked.intern_unsized(format!("Variant{index}"));
+            let _ = members.insert(name, variant_id.id);
+            self.payloads.insert(VariantPayloadTyKey { symbol_id: variant_id }, payload);
+        }
+        self.members.insert(MemberKey { symbol_id }, self.tracked.intern(members));
+        self.symbol_kinds.insert(SymbolKindKey { symbol_id }, SymbolKind::Enum);
+        self.adts.push(symbol_id.id);
     }
 
     /// Defines an effect from its operations, each given as its parameter
@@ -158,6 +183,7 @@ impl Declarations {
             self.return_types.insert(ReturnTypeKey { symbol_id: operation_id }, return_type);
         }
         self.members.insert(MemberKey { symbol_id }, self.tracked.intern(members));
+        self.symbol_kinds.insert(SymbolKindKey { symbol_id }, SymbolKind::Effect);
         self.effects.push(symbol_id.id);
     }
 
@@ -196,7 +222,9 @@ impl Declarations {
             members,
             parameters,
             return_types,
-            structs,
+            payloads,
+            symbol_kinds,
+            adts,
             effects,
             ..
         } = self;
@@ -205,8 +233,8 @@ impl Declarations {
         let target = TargetID::TEST;
         let engine_mut = Arc::get_mut(&mut engine).unwrap();
         engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-            AllNominalTypeIDs { target },
-            structs.into(),
+            AllAdtIDs { target },
+            adts.into(),
         )]))));
         engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
             AllEffectIDs { target },
@@ -217,6 +245,8 @@ impl Declarations {
         engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(members)));
         engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(parameters)));
         engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(return_types)));
+        engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(payloads)));
+        engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(symbol_kinds)));
         engine_mut.register_executor(Arc::new(VariancesExecutor));
         engine_mut.register_executor(Arc::new(VarianceExecutor));
 
@@ -431,4 +461,32 @@ async fn effect_variance_composes_with_struct_variance() {
 
     let engine = declarations.finish().await;
     assert_eq!(variances(&*engine.get_variance(effect).await), [Contravariant, Invariant]);
+}
+
+// input: enum Choice['a, t, u]: Left(&'a t) | Right(&'a mut u) | Empty, and
+//        struct Holder['b, v, w]: Choice['b, v, w]
+// premise: {}
+// output: Choice is ['a Covariant, t Covariant, u Invariant], and Holder is
+//         ['b Covariant, v Covariant, w Invariant] through it
+#[tokio::test]
+async fn every_variant_payload_gives_enum_variances() {
+    let mut declarations = Declarations::new().await;
+    let (choice, [a, t, u]) = declarations.declare(["'a", "t", "u"]);
+    let (holder, [lifetime, first, second]) = declarations.declare(["'b", "v", "w"]);
+    let payloads = [
+        Some(declarations.reference(&a, &t, Mutability::Immutable)),
+        Some(declarations.reference(&a, &u, Mutability::Mutable)),
+        None,
+    ];
+    declarations.define_enum(choice, payloads);
+    let field = Ty::new_enum(
+        choice,
+        Args::new([lifetime, first, second], declarations.engine()),
+        declarations.engine(),
+    );
+    declarations.define_struct(holder, [field]);
+
+    let engine = declarations.finish().await;
+    assert_eq!(variances(&*engine.get_variance(choice).await), [Covariant, Covariant, Invariant]);
+    assert_eq!(variances(&*engine.get_variance(holder).await), [Covariant, Covariant, Invariant]);
 }

@@ -1,39 +1,68 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: mismatched argument types in function call: expected `(int32)`, but found `(bool)`
-  ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:8:32
-  │
-8 │     return invoke((x) -> x + 1, (true,))
-  ╰╴                               ━━━━━━━━
-
-[error]: mismatched types in return expression: expected `bool`, but found `int32`
-   ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:11:12
-   │
+ 1 │ eff Read[]:
+ 2 │     def read() -> int32
+ 3 │
+ 4 │ def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+ 5 │     return d.call(value, args)
+ 6 │
+ 7 │ def argsMismatch() -> int32:
+ 8 │     return invoke((x) -> x + 1, (true,))
+   ┆
+   ┆ [error]: mismatched argument types in function call: expected `(int32)`, but found `(bool)`
+   ┆   ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:8:32
+   ┆   │
+   ┆ 8 │     return invoke((x) -> x + 1, (true,))
+   ┆   ╰╴                               ━━━━━━━━
+   ┆
+ 9 │
+10 │ def returnMismatch() -> bool:
 11 │     return invoke(() -> 42, ())
-   ╰╴           ━━━━━━━━━━━━━━━━━━━━
-
-[error]: function body effects do not match its signature: expected `{}`, but found `{Read}`
-   ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:13:5
-   │
+   ┆
+   ┆ [error]: mismatched types in return expression: expected `bool`, but found `int32`
+   ┆    ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:11:12
+   ┆    │
+   ┆ 11 │     return invoke(() -> 42, ())
+   ┆    ╰╴           ━━━━━━━━━━━━━━━━━━━━
+   ┆
+12 │
 13 │ def effectMismatch() -> int32:
-   │     ━━━━━━━━━━━━━━ the function body has effects outside its signature
+   ┆
+   ┆ [error]: function body effects do not match its signature: expected `{}`, but found `{Read}`
+   ┆    ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:13:5
+   ┆    │
+   ┆ 13 │ def effectMismatch() -> int32:
+   ┆    │     ━━━━━━━━━━━━━━ the function body has effects outside its signature
+   ┆ 14 │     return invoke(() -> Read.read(), ())
+   ┆    │            ┬────────────┬───────────────
+   ┆    │            │            │
+   ┆    │            │            effect `{Read}` introduced here
+   ┆    ╰╴           effect `{Read}` introduced here
+   ┆
 14 │     return invoke(() -> Read.read(), ())
-   │            ┬────────────┬───────────────
-   │            │            │
-   │            │            effect `{Read}` introduced here
-   ╰╴           effect `{Read}` introduced here
-
-[error]: no implicit instance found: `main.Def[<closure>() -> bool \ {}]`
-   ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:25:12
-   │
+15 │
+16 │ trait Def[f]:
+17 │     type Return
+18 │
+19 │ def local(value: f) given (d: Def[f], drop: core.Drop[f]) -> ():
+20 │     return ()
+21 │
+22 │ def shadowed() -> ():
+23 │     let closure = () -> true
+24 │     let result: bool = invoke(closure, ())
 25 │     return local(closure)
-   ╰╴           ━━━━━
+   ┆
+   ┆ [error]: no implicit instance found: `main.Def[<closure>() -> bool \ {}]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/closure_def_instance_invalid/main.ray:25:12
+   ┆    │
+   ┆ 25 │     return local(closure)
+   ┆    ╰╴           ━━━━━
+   ┆
+26 │
+27 │ def requireDef(value: f) given (d: core.Def[f], drop: core.Drop[f]) -> ():
+28 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 4 error(s)
-
-
-
-stdout:

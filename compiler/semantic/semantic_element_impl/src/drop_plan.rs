@@ -1,9 +1,10 @@
 //! Computes Drop recipes before any concrete nominal dictionary is selected.
 //!
-//! The target query owns the calculation because two structs in one target can
-//! refer to each other. It first identifies explicit instances, then repeatedly
-//! derives the remaining plans until their external requirements stabilize.
-//! `Evaluator` turns each field type into a dictionary expression: for example,
+//! The target query owns the calculation because two structs or enums in one
+//! target can refer to each other. It first identifies explicit instances, then
+//! repeatedly derives the remaining plans until their external requirements
+//! stabilize. `Evaluator` turns each struct field type and enum payload type
+//! into a dictionary expression: for example,
 //! a `t` field uses `External(0)`, while `Option[Node[t]]` can pass a
 //! `Generated` application to an explicit `DropOption` instance. This does
 //! not recursively expand the field recipe for `Node[t]`.
@@ -14,23 +15,30 @@ use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::{
     drop_plan::{
-        DictionaryArgument, DictionaryExpr, DropPlan, DropPlanError, FieldDrop, GeneratedDropPlan,
-        NominalDropPlan, TargetDropPlans, get_drop_plan, get_target_drop_plans,
+        DictionaryArgument, DictionaryExpr, DropPlan, DropPlanError, FieldDrop, GeneratedDropBody,
+        GeneratedDropPlan, NominalDropPlan, TargetDropPlans, VariantDrop, get_drop_plan,
+        get_target_drop_plans,
     },
     struct_body::get_struct_body,
+    variant_payload_ty::get_variant_payload_ty,
 };
 use rayc_solver::Solver;
 use rayc_symbol::{
     GlobalSymbolID, SymbolID,
     core_item::{CoreItem, get_core_item},
-    symbol_kind::{get_all_instance_ids, get_all_nominal_type_ids},
-    syntax::is_linear_struct,
+    member::get_members,
+    symbol_kind::{SymbolKind, get_all_adt_ids, get_all_instance_ids, get_symbol_kind},
+    syntax::is_linear_type,
 };
+use rayc_target::TargetID;
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
     subst::{Subst, Substitutable},
     trait_ref::get_instance_trait_ref,
-    ty::{Ty, application::View as ApplicationView},
+    ty::{
+        Ty,
+        application::{AdtView, View as ApplicationView},
+    },
     where_clause::get_where_clause,
 };
 
@@ -61,44 +69,34 @@ async fn target_drop_plans_executor(
     &TargetDropPlans { target_id }: &TargetDropPlans,
     engine: &TrackedEngine,
 ) -> Interned<FxHashMap<SymbolID, Interned<DropPlan>>> {
-    let drop_trait = engine.get_core_item(CoreItem::DropTrait).await;
     let mut plans = FxHashMap::default();
-    let mut nominal_ids = Vec::new();
+    let mut adt_ids = Vec::new();
 
-    // Reserve a plan slot for every local nominal type before inspecting any
-    // fields. These empty generated plans are the starting approximation.
-    for id in engine.get_all_nominal_type_ids(target_id).await.iter().copied() {
-        nominal_ids.push(id);
+    // Reserve a plan slot for every local struct and enum before inspecting
+    // any fields or payloads. These empty generated plans are the starting
+    // approximation.
+    for &id in engine.get_all_adt_ids(target_id).await.iter() {
+        let body = match engine.get_symbol_kind(target_id.make_global(id)).await {
+            SymbolKind::Enum => GeneratedDropBody::Enum(Vec::new()),
+            SymbolKind::Struct => GeneratedDropBody::Struct(Vec::new()),
+            _ => unreachable!("should've been some adt"),
+        };
+
+        adt_ids.push(id);
         plans.insert(
             id,
-            engine.intern(DropPlan::Generated(GeneratedDropPlan::new(Vec::new(), Vec::new()))),
+            engine.intern(DropPlan::Generated(GeneratedDropPlan::new(Vec::new(), body))),
         );
     }
     // In-place updates expose earlier results to later constructors. Fix the
     // traversal order so requirement positions do not depend on hash iteration.
-    nominal_ids.sort_unstable();
+    adt_ids.sort_unstable();
 
-    // Group source-written Drop instances by the nominal constructor in their
-    // head. The same-target rule is checked when resolving the instance head.
-    let mut explicit: FxHashMap<SymbolID, Vec<GlobalSymbolID>> = FxHashMap::default();
-    for id in engine.get_all_instance_ids(target_id).await.iter().copied() {
-        let instance_id = target_id.make_global(id);
-        let Some(head) = engine.get_instance_trait_ref(instance_id).await else { continue };
-        if head.trait_id() != drop_trait || head.args().len() != 1 {
-            continue;
-        }
-
-        let Some(ty) = head.args().interned_iter().next() else { continue };
-        let Some(struct_) = ty.as_struct_view() else { continue };
-
-        if struct_.symbol_id().target_id == target_id {
-            explicit.entry(struct_.symbol_id().id).or_default().push(instance_id);
-        }
-    }
+    let explicit = explicit_drop_instances(engine, target_id).await;
 
     // An explicit implementation replaces generation. Multiple or unsupported
-    // implementations become plan errors, so field derivation cannot pick one by
-    // accident.
+    // implementations become plan errors, so field derivation cannot pick one
+    // by accident.
     for (&id, instances) in &explicit {
         if !plans.contains_key(&id) {
             continue;
@@ -120,11 +118,12 @@ async fn target_drop_plans_executor(
         plans.insert(id, engine.intern(plan));
     }
 
-    // A linear struct never gets a Drop plan, not even from an explicit
-    // instance (which is rejected where the instance is declared). Fields of
-    // a linear type then fail generation for their enclosing structs.
-    for &id in &nominal_ids {
-        if engine.is_linear_struct(target_id.make_global(id)).await {
+    // A linear struct or enum never gets a Drop plan, not even from an
+    // explicit instance (which is rejected where the instance is declared).
+    // Fields and payloads of a linear type then fail generation for their
+    // enclosing types.
+    for &id in &adt_ids {
+        if engine.is_linear_type(target_id.make_global(id)).await {
             plans.insert(id, engine.intern(DropPlan::Linear));
         }
     }
@@ -138,12 +137,12 @@ async fn target_drop_plans_executor(
     // A chain can need one pass per nominal constructor. Keep additional fuel
     // for requirements that propagate through several constructors per cycle.
     let pass_limit =
-        nominal_ids.len().saturating_mul(MAX_REQUIREMENT_PASSES).max(MAX_REQUIREMENT_PASSES);
+        adt_ids.len().saturating_mul(MAX_REQUIREMENT_PASSES).max(MAX_REQUIREMENT_PASSES);
 
     for _ in 0..pass_limit {
         let mut changed = false;
 
-        for &id in &nominal_ids {
+        for &id in &adt_ids {
             let old = plans.get(&id).unwrap();
             let DropPlan::Generated(old) = &**old else { continue };
 
@@ -164,7 +163,7 @@ async fn target_drop_plans_executor(
     // A growing requirement sequence may have no finite plan (for example,
     // recursive generic instantiations that keep changing the required type).
     // Return a plan error instead of leaving this query running indefinitely.
-    for id in nominal_ids {
+    for id in adt_ids {
         let plan = plans.get(&id).unwrap();
 
         if matches!(&**plan, DropPlan::Generated(_)) {
@@ -181,6 +180,34 @@ async fn target_drop_plans_executor(
 static TARGET_DROP_PLANS_EXECUTOR: Registration<Config> =
     Registration::new::<TargetDropPlans, TargetDropPlansExecutor>();
 
+/// Groups the source-written Drop instances of `target_id` by the struct or
+/// enum in their head. The same-target rule is checked when resolving the
+/// instance head.
+async fn explicit_drop_instances(
+    engine: &TrackedEngine,
+    target_id: TargetID,
+) -> FxHashMap<SymbolID, Vec<GlobalSymbolID>> {
+    let drop_trait = engine.get_core_item(CoreItem::DropTrait).await;
+    let mut explicit: FxHashMap<SymbolID, Vec<GlobalSymbolID>> = FxHashMap::default();
+
+    for id in engine.get_all_instance_ids(target_id).await.iter().copied() {
+        let instance_id = target_id.make_global(id);
+        let Some(head) = engine.get_instance_trait_ref(instance_id).await else { continue };
+        if head.trait_id() != drop_trait || head.args().len() != 1 {
+            continue;
+        }
+
+        let Some(ty) = head.args().interned_iter().next() else { continue };
+        let Some(adt_id) = ty.as_adt_id() else { continue };
+
+        if adt_id.target_id == target_id {
+            explicit.entry(adt_id.id).or_default().push(instance_id);
+        }
+    }
+
+    explicit
+}
+
 /// Restricts an explicit Drop declaration to the first milestone's simple
 /// form. This lets a generated outer plan instantiate its head by matching
 /// each nominal type argument to exactly one instance type variable.
@@ -190,23 +217,23 @@ async fn valid_explicit(
     nominal_id: GlobalSymbolID,
 ) -> bool {
     let Some(head) = engine.get_instance_trait_ref(instance_id).await else { return false };
-    let Some(struct_) = head.args().interned_iter().next().and_then(|x| x.as_struct_view()) else {
+    let Some(adt) = head.args().interned_iter().next().and_then(|x| x.as_adt_view()) else {
         return false;
     };
 
-    if struct_.symbol_id() != nominal_id {
+    if adt.symbol_id() != nominal_id {
         return false;
     }
 
     let instance_params = engine.get_poly_var_map(instance_id).await;
     let nominal_params = engine.get_poly_var_map(nominal_id).await;
-    if struct_.args().len() != nominal_params.len() {
+    if adt.args().len() != nominal_params.len() {
         return false;
     }
 
     let mut seen = FxHashSet::default();
     let mut rename = Subst::new_empty();
-    for (argument, (nominal_parameter, _)) in struct_.args().iter().zip(nominal_params.iter()) {
+    for (argument, (nominal_parameter, _)) in adt.args().iter().zip(nominal_params.iter()) {
         // should exactly be poly var
         let Ty::PolyVar(id) = &**argument else { return false };
 
@@ -274,16 +301,15 @@ async fn valid_explicit(
     })
 }
 
-/// Rechecks every field using the latest available plans. Retaining old
-/// requirements keeps their `External` indices stable across passes.
+/// Rechecks every field or payload using the latest available plans.
+/// Retaining old requirements keeps their `External` indices stable across
+/// passes.
 async fn build_generated(
     engine: &TrackedEngine,
     nominal_id: GlobalSymbolID,
     old: &GeneratedDropPlan,
     plans: &FxHashMap<SymbolID, Interned<DropPlan>>,
 ) -> DropPlan {
-    let body = engine.get_struct_body(nominal_id).await;
-
     let mut evaluator = Evaluator {
         engine,
         solver: Solver::with_givens(engine.clone(), nominal_id, []).await,
@@ -292,15 +318,16 @@ async fn build_generated(
         requirements: old.requirements().to_vec(),
     };
 
-    let mut fields = Vec::with_capacity(body.len());
-    for (field_id, field) in body.iter() {
-        match evaluator.resolve(field.ty().clone()).await {
-            Ok(dictionary) => fields.push(FieldDrop::new(field_id, dictionary)),
-            Err(error) => return DropPlan::CannotDerive(error),
-        }
-    }
+    let body = if engine.get_symbol_kind(nominal_id).await == SymbolKind::Enum {
+        evaluator.enum_body(nominal_id).await
+    } else {
+        evaluator.struct_body(nominal_id).await
+    };
 
-    DropPlan::Generated(GeneratedDropPlan::new(evaluator.requirements, fields))
+    match body {
+        Ok(body) => DropPlan::Generated(GeneratedDropPlan::new(evaluator.requirements, body)),
+        Err(error) => DropPlan::CannotDerive(error),
+    }
 }
 
 /// Resolves field Drop requirements in the generic context of one generated
@@ -315,6 +342,46 @@ struct Evaluator<'a> {
 }
 
 impl Evaluator<'_> {
+    /// Selects a dictionary for every field of the struct `struct_id`, in
+    /// declaration order.
+    async fn struct_body(
+        &mut self,
+        struct_id: GlobalSymbolID,
+    ) -> Result<GeneratedDropBody, DropPlanError> {
+        let body = self.engine.get_struct_body(struct_id).await;
+
+        let mut fields = Vec::with_capacity(body.len());
+        for (field_id, field) in body.iter() {
+            fields.push(FieldDrop::new(field_id, self.resolve(field.ty().clone()).await?));
+        }
+
+        Ok(GeneratedDropBody::Struct(fields))
+    }
+
+    /// Selects a dictionary for the payload of every variant of the enum
+    /// `enum_id`. Variants are visited by symbol ID so that requirement
+    /// indices do not depend on hash iteration.
+    async fn enum_body(
+        &mut self,
+        enum_id: GlobalSymbolID,
+    ) -> Result<GeneratedDropBody, DropPlanError> {
+        let mut variant_ids = self.engine.get_members(enum_id).await.all_ids().collect::<Vec<_>>();
+        variant_ids.sort_unstable();
+
+        let mut variants = Vec::with_capacity(variant_ids.len());
+        for variant_id in variant_ids {
+            let variant_id = enum_id.target_id.make_global(variant_id);
+            let payload = match self.engine.get_variant_payload_ty(variant_id).await {
+                Some(payload) => Some(self.resolve(payload).await?),
+                None => None,
+            };
+
+            variants.push(VariantDrop::new(variant_id, payload));
+        }
+
+        Ok(GeneratedDropBody::Enum(variants))
+    }
+
     /// Constructs a finite expression for the dictionary needed by `ty`.
     /// `Box::pin` permits recursive async calls for tuple elements and the
     /// premises of other nominal or explicit instances.
@@ -352,54 +419,9 @@ impl Evaluator<'_> {
                         }
                         Ok(DictionaryExpr::Closure { closure: ty, captures })
                     }
-                    ApplicationView::Struct(struct_) => {
-                        let symbol_id = struct_.symbol_id();
-
-                        // Same-target plans may still be changing in this sweep.
-                        // A foreign target cannot be in this local fixed point,
-                        // so its completed query result is safe to request.
-                        let same_target = symbol_id.target_id == self.current_nominal.target_id;
-                        let foreign_plan = if same_target {
-                            None
-                        } else {
-                            Some(self.engine.get_drop_plan(symbol_id).await)
-                        };
-
-                        let plan = if same_target {
-                            self.plans.get(&symbol_id.id).map(|x| &**x)
-                        } else {
-                            foreign_plan.as_deref()
-                        };
-
-                        match plan {
-                            Some(DropPlan::Generated(generated)) => {
-                                // Substitute the field's actual type arguments
-                                // while borrowing the nested plan. The resulting
-                                // types outlive that borrow, letting recursive
-                                // resolution use `&mut self` without cloning
-                                // the nested plan's field recipes.
-                                let subst = struct_.create_subst(self.engine).await;
-
-                                let mut external =
-                                    Vec::with_capacity(generated.requirements().len());
-
-                                for required in generated
-                                    .requirements()
-                                    .iter()
-                                    .map(|x| x.apply_subst_or_clone(&subst, self.engine))
-                                {
-                                    external.push(self.resolve(required).await?);
-                                }
-                                Ok(DictionaryExpr::Generated { nominal: ty, external })
-                            }
-                            Some(DropPlan::Explicit(instance_id)) => {
-                                self.explicit(*instance_id, struct_.args()).await
-                            }
-                            Some(DropPlan::Linear) => Err(DropPlanError::LinearField(ty)),
-                            Some(DropPlan::CannotDerive(_)) | None => {
-                                Err(DropPlanError::MissingFieldDictionary(ty))
-                            }
-                        }
+                    ApplicationView::Struct(_) | ApplicationView::Enum(_) => {
+                        let adt = ty.as_adt_view().expect("the type is a struct or an enum");
+                        self.adt(&ty, adt).await
                     }
                     ApplicationView::InstanceAssociated(_) => Ok(self.external(ty)),
                     ApplicationView::Instance(_)
@@ -413,7 +435,7 @@ impl Evaluator<'_> {
                     | ApplicationView::ContinuationDefInstance(_)
                     | ApplicationView::CoroutineInstance(_)
                     | ApplicationView::CoroutineDropInstance(_)
-                    | ApplicationView::NominalDropInstance(_)
+                    | ApplicationView::GeneratedAdtDropInstance(_)
                     | ApplicationView::Error => Err(DropPlanError::MissingFieldDictionary(ty)),
                 },
                 Ty::Inference(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {
@@ -422,6 +444,55 @@ impl Evaluator<'_> {
             }
         })
         .await
+    }
+
+    /// Selects the dictionary of `ty`, the struct or enum `adt`, from its
+    /// plan.
+    async fn adt(
+        &mut self,
+        ty: &Interned<Ty>,
+        adt: AdtView<'_>,
+    ) -> Result<DictionaryExpr, DropPlanError> {
+        let symbol_id = adt.symbol_id();
+
+        // Same-target plans may still be changing in this sweep. A foreign
+        // target cannot be in this local fixed point, so its completed query
+        // result is safe to request.
+        let same_target = symbol_id.target_id == self.current_nominal.target_id;
+        let foreign_plan =
+            if same_target { None } else { Some(self.engine.get_drop_plan(symbol_id).await) };
+
+        let plan = if same_target {
+            self.plans.get(&symbol_id.id).map(|x| &**x)
+        } else {
+            foreign_plan.as_deref()
+        };
+
+        match plan {
+            Some(DropPlan::Generated(generated)) => {
+                // Substitute the actual type arguments while borrowing the
+                // nested plan. The resulting types outlive that borrow, letting
+                // recursive resolution use `&mut self` without cloning the
+                // nested plan's recipes.
+                let subst = adt.create_subst(self.engine).await;
+
+                let mut external = Vec::with_capacity(generated.requirements().len());
+
+                for required in generated
+                    .requirements()
+                    .iter()
+                    .map(|x| x.apply_subst_or_clone(&subst, self.engine))
+                {
+                    external.push(self.resolve(required).await?);
+                }
+                Ok(DictionaryExpr::Generated { nominal: ty.clone(), external })
+            }
+            Some(DropPlan::Explicit(instance_id)) => self.explicit(*instance_id, adt.args()).await,
+            Some(DropPlan::Linear) => Err(DropPlanError::LinearField(ty.clone())),
+            Some(DropPlan::CannotDerive(_)) | None => {
+                Err(DropPlanError::MissingFieldDictionary(ty.clone()))
+            }
+        }
     }
 
     fn external(&mut self, ty: Interned<Ty>) -> DictionaryExpr {
@@ -450,15 +521,15 @@ impl Evaluator<'_> {
             .get_instance_trait_ref(instance_id)
             .await
             .expect("explicit plan has a head");
-        let struct_ = head
+        let adt = head
             .args()
             .interned_iter()
             .next()
-            .and_then(|x| x.as_struct_view())
+            .and_then(|x| x.as_adt_view())
             .expect("Drop has one argument");
 
         let mut subst = Subst::new_empty();
-        for (head_arg, actual) in struct_.args().iter().zip(actual_args) {
+        for (head_arg, actual) in adt.args().iter().zip(actual_args) {
             let Ty::PolyVar(id) = &**head_arg else { unreachable!() };
             subst.insert(*id, actual.clone());
         }

@@ -1,36 +1,40 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: function body effects do not match its signature: expected `{}`, but found `{any}.Effect`
-  ╭▸ compiler/e2e/test/check/tast/indirect_call_non_closure_shadow/main.ray:4:5
-  │
+1 │ def callback(value: int32) -> int32:
+2 │     return value
+3 │
 4 │ def invoke(callback: int32) -> int32:
-  │     ━━━━━━ the function body has effects outside its signature
+  ┆
+  ┆ [error]: function body effects do not match its signature: expected `{}`, but found `{any}.Effect`
+  ┆   ╭▸ compiler/e2e/test/check/tast/indirect_call_non_closure_shadow/main.ray:4:5
+  ┆   │
+  ┆ 4 │ def invoke(callback: int32) -> int32:
+  ┆   │     ━━━━━━ the function body has effects outside its signature
+  ┆ 5 │     return callback(1)
+  ┆   ╰╴           ─────────── effect `{any}.Effect` introduced here
+  ┆
 5 │     return callback(1)
-  ╰╴           ─────────── effect `{any}.Effect` introduced here
+  ┆
+  ┆ [error]: mismatched types in return expression: expected `int32`, but found `{any}.Return`
+  ┆   ╭▸ compiler/e2e/test/check/tast/indirect_call_non_closure_shadow/main.ray:5:12
+  ┆   │
+  ┆ 5 │     return callback(1)
+  ┆   ╰╴           ━━━━━━━━━━━
+  ┆
+  ┆ [error]: no implicit instance found: `core.Def[int32]`
+  ┆   ╭▸ compiler/e2e/test/check/tast/indirect_call_non_closure_shadow/main.ray:5:12
+  ┆   │
+  ┆ 5 │     return callback(1)
+  ┆   ╰╴           ━━━━━━━━━━━
+  ┆
+  ┆ [error]: mismatched argument types in function call: expected `{any}.Args`, but found `(int32)`
+  ┆   ╭▸ compiler/e2e/test/check/tast/indirect_call_non_closure_shadow/main.ray:5:20
+  ┆   │
+  ┆ 5 │     return callback(1)
+  ┆   ╰╴                   ━━━
+  ┆
 
-[error]: mismatched types in return expression: expected `int32`, but found `{any}.Return`
-  ╭▸ compiler/e2e/test/check/tast/indirect_call_non_closure_shadow/main.ray:5:12
-  │
-5 │     return callback(1)
-  ╰╴           ━━━━━━━━━━━
-
-[error]: no implicit instance found: `core.Def[int32]`
-  ╭▸ compiler/e2e/test/check/tast/indirect_call_non_closure_shadow/main.ray:5:12
-  │
-5 │     return callback(1)
-  ╰╴           ━━━━━━━━━━━
-
-[error]: mismatched argument types in function call: expected `{any}.Args`, but found `(int32)`
-  ╭▸ compiler/e2e/test/check/tast/indirect_call_non_closure_shadow/main.ray:5:20
-  │
-5 │     return callback(1)
-  ╰╴                   ━━━
-
+other diagnostics:
 [error]: Compilation aborted due to 4 error(s)
-
-
-
-stdout:

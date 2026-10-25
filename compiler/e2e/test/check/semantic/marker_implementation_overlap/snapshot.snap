@@ -1,18 +1,29 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: overlapping marker implementations
-  ╭▸ compiler/e2e/test/check/semantic/marker_implementation_overlap/main.ray:5:1
-  │
-4 │ impl[a, b] Send for (a, b)
-  │ ────────────────────────── the first overlapping implementation is here
-5 │ impl[b, c] Send for (b, c)
-  ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━ this marker is already implemented for the same type constructor
+ 1 │ marker Send
+ 2 │ marker Copy
+ 3 │
+ 4 │ impl[a, b] Send for (a, b)
+ 5 │ impl[b, c] Send for (b, c)
+   ┆
+   ┆ [error]: overlapping marker implementations
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_overlap/main.ray:5:1
+   ┆   │
+   ┆ 4 │ impl[a, b] Send for (a, b)
+   ┆   │ ────────────────────────── the first overlapping implementation is here
+   ┆ 5 │ impl[b, c] Send for (b, c)
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━ this marker is already implemented for the same type constructor
+   ┆
+ 6 │ impl[a, b, c] Send for (a, b, c)
+ 7 │
+ 8 │ impl[a, b] Copy for (a, b)
+ 9 │ impl Copy for int32
+10 │ impl Send for int32
+11 │
+12 │ def main() -> int32:
+13 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

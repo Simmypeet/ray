@@ -13,7 +13,8 @@ use qbice::{
     stable_hash::{Sip128Hasher, StableHasher},
 };
 use rayc_mono_ir::{
-    MonoClosureInstance, MonoDefInstance, MonoFragmentInstance, MonoIR, MonoNominalDropInstance,
+    MonoClosureInstance, MonoDefInstance, MonoFragmentInstance, MonoGeneratedAdtDropInstance,
+    MonoIR,
     cfg::BlockID,
     function::{LocalID, MonoFunctionID, MonoFunctionKind},
     place::Projection,
@@ -130,7 +131,7 @@ impl fmt::Display for DefinitionName {
 pub(crate) struct NominalDropName(StableID);
 
 impl NominalDropName {
-    pub(crate) fn of(instance: &MonoNominalDropInstance) -> Self {
+    pub(crate) fn of(instance: &MonoGeneratedAdtDropInstance) -> Self {
         Self(StableID::of("rayc_c2::NominalDrop:v1", instance))
     }
 }

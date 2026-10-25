@@ -1,22 +1,67 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: borrowed value does not live long enough
-   ╭▸ compiler/e2e/test/check/coroutine/continuation_from_clause_escapes/main.ray:21:21
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ def numbers() -> () \ {Yield[int32]}:
+ 6 │     Yield.yield(1)
+ 7 │     Yield.yield(2)
+ 8 │
+ 9 │
+10 │ def keep(k: core.Continuation[r, c]) given (_: core.Drop[c]):
+11 │     let held = k
+12 │
+13 │
+14 │ # ERROR: the continuation a clause binds resumes the same coroutine, so it
+15 │ # still borrows the storage that `inner` was pinned to, which ends with the
+16 │ # `if`.
+17 │ def escapes(condition: bool):
+18 │     let mut held = coro numbers()
+19 │
+20 │     if condition:
 21 │         let inner = coro numbers()
-   │                     ┯━━━━━━━━━━━━━
-   │                     │
-   │                     borrowed value does not live long enough
-   │                     this variable goes out of scope while it is still borrowed
-   ‡
+   ┆
+   ┆ [error]: borrowed value does not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/continuation_from_clause_escapes/main.ray:21:21
+   ┆    │
+   ┆ 21 │         let inner = coro numbers()
+   ┆    │                     ┯━━━━━━━━━━━━━
+   ┆    │                     │
+   ┆    │                     borrowed value does not live long enough
+   ┆    │                     this variable goes out of scope while it is still borrowed
+   ┆    ‡
+   ┆ 28 │     keep(held)
+   ┆    ╰╴         ──── borrow later used here
+   ┆
+22 │         handle inner():
+23 │             case Yield[int32].yield(value) resume k:
+24 │                 held = k
+25 │             case return x:
+26 │                 pass
+27 │
 28 │     keep(held)
-   ╰╴         ──── borrow later used here
+29 │
+30 │
+31 │ # OK: the storage of `con` lives as long as `held` does.
+32 │ def stays(condition: bool):
+33 │     let con = coro numbers()
+34 │     let mut held = coro numbers()
+35 │
+36 │     if condition:
+37 │         handle con():
+38 │             case Yield[int32].yield(value) resume k:
+39 │                 held = k
+40 │             case return x:
+41 │                 pass
+42 │
+43 │     keep(held)
+44 │
+45 │
+46 │ def main() -> int32:
+47 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

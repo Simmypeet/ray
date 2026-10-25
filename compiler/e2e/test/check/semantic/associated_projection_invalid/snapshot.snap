@@ -1,58 +1,95 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: expected a value type or an associated type projection
-  ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:4:24
-  │
-4 │     def invalid(value: this) -> this.Item
-  ╰╴                       ━━━━
-
-[error]: `this` is only valid within a trait body
-   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:13:20
-   │
+ 1 │ trait Container[]:
+ 2 │     type Item
+ 3 │     def identity(value: this.Item) -> this.Item
+ 4 │     def invalid(value: this) -> this.Item
+   ┆
+   ┆ [error]: expected a value type or an associated type projection
+   ┆   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:4:24
+   ┆   │
+   ┆ 4 │     def invalid(value: this) -> this.Item
+   ┆   ╰╴                       ━━━━
+   ┆
+ 5 │
+ 6 │ inst Concrete for Container:
+ 7 │     type Item = int32
+ 8 │     def identity(value: int32) -> int32:
+ 9 │         return value
+10 │     def invalid(value: int32) -> int32:
+11 │         return value
+12 │
 13 │ def outside(value: this.Item) -> int32:
-   ╰╴                   ━━━━
-
-[error]: an associated type requires an instance dictionary, not a named trait
-   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:16:18
-   │
+   ┆
+   ┆ [error]: `this` is only valid within a trait body
+   ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:13:20
+   ┆    │
+   ┆ 13 │ def outside(value: this.Item) -> int32:
+   ┆    ╰╴                   ━━━━
+   ┆
+14 │     return 0
+15 │
 16 │ def named(value: Container.Item) -> int32:
-   ╰╴                 ━━━━━━━━━━━━━━
-
-[error]: symbol `Missing` is not found
-   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:19:29
-   │
+   ┆
+   ┆ [error]: an associated type requires an instance dictionary, not a named trait
+   ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:16:18
+   ┆    │
+   ┆ 16 │ def named(value: Container.Item) -> int32:
+   ┆    ╰╴                 ━━━━━━━━━━━━━━
+   ┆
+17 │     return 0
+18 │
 19 │ def missing(value: Concrete.Missing) -> int32:
-   ╰╴                            ━━━━━━━ symbol `Missing` is not found
-
-[error]: expected a value type or an associated type projection
-   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:22:19
-   │
+   ┆
+   ┆ [error]: symbol `Missing` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:19:29
+   ┆    │
+   ┆ 19 │ def missing(value: Concrete.Missing) -> int32:
+   ┆    ╰╴                            ━━━━━━━ symbol `Missing` is not found
+   ┆
+20 │     return 0
+21 │
 22 │ def method(value: Concrete.identity) -> int32:
-   ╰╴                  ━━━━━━━━━━━━━━━━━
-
-[error]: expected a value type or an associated type projection
-   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:25:17
-   │
+   ┆
+   ┆ [error]: expected a value type or an associated type projection
+   ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:22:19
+   ┆    │
+   ┆ 22 │ def method(value: Concrete.identity) -> int32:
+   ┆    ╰╴                  ━━━━━━━━━━━━━━━━━
+   ┆
+23 │     return 0
+24 │
 25 │ def bare(value: Concrete) -> int32:
-   ╰╴                ━━━━━━━━
-
-[error]: type kind mismatch
-   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:28:23
-   │
+   ┆
+   ┆ [error]: expected a value type or an associated type projection
+   ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:25:17
+   ┆    │
+   ┆ 25 │ def bare(value: Concrete) -> int32:
+   ┆    ╰╴                ━━━━━━━━
+   ┆
+26 │     return 0
+27 │
 28 │ def dictionary(value: dict) given (dict: Container) -> int32:
-   ╰╴                      ━━━━ expected a value type, found an instance
-
-[error]: symbol `instance type main.Concrete.Item` is not callable
-   ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:32:12
-   │
+   ┆
+   ┆ [error]: type kind mismatch
+   ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:28:23
+   ┆    │
+   ┆ 28 │ def dictionary(value: dict) given (dict: Container) -> int32:
+   ┆    ╰╴                      ━━━━ expected a value type, found an instance
+   ┆
+29 │     return 0
+30 │
+31 │ def main() -> int32:
 32 │     return Concrete.Item()
-   ╰╴           ━━━━━━━━━━━━━
+   ┆
+   ┆ [error]: symbol `instance type main.Concrete.Item` is not callable
+   ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_invalid/main.ray:32:12
+   ┆    │
+   ┆ 32 │     return Concrete.Item()
+   ┆    ╰╴           ━━━━━━━━━━━━━
+   ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 8 error(s)
-
-
-
-stdout:

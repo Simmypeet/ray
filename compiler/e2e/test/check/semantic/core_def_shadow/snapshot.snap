@@ -1,8 +1,19 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ trait Def[a]:
+ 2 │     def ordinary(value: a) -> a
+ 3 │
+ 4 │ inst Local for Def[int32]:
+ 5 │     def ordinary(value: int32) -> int32:
+ 6 │         return value
+ 7 │
+ 8 │ trait core[a]:
+ 9 │     type Item
+10 │
+11 │ inst Shadow for core[int32]:
+12 │     type Item = int32
+13 │
+14 │ def main() -> int32:
+15 │     return Local.ordinary(6)

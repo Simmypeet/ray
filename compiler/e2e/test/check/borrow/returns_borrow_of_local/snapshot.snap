@@ -1,73 +1,137 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot return a value referencing data owned by the current function
-  ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:4:12
-  │
-4 │     return x.&
-  │            ┯━━
-  │            │
-  │            this returns a value referencing data owned by the current function
-  ╰╴           the data is borrowed here
-
-[error]: cannot return a value referencing data owned by the current function
-  ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:8:12
-  │
-8 │     return x.&
-  │            ┯━━
-  │            │
-  │            this returns a value referencing data owned by the current function
-  ╰╴           the data is borrowed here
-
-[error]: cannot return a value referencing data owned by the current function
-   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:12:12
-   │
+ 1 │ def returnsVariable['a]() -> &'a int32:
+ 2 │     let x = 1
+ 3 │     # ERROR: `x` is gone when the function returns.
+ 4 │     return x.&
+   ┆
+   ┆ [error]: cannot return a value referencing data owned by the current function
+   ┆   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:4:12
+   ┆   │
+   ┆ 4 │     return x.&
+   ┆   │            ┯━━
+   ┆   │            │
+   ┆   │            this returns a value referencing data owned by the current function
+   ┆   ╰╴           the data is borrowed here
+   ┆
+ 5 │
+ 6 │ def returnsParameter['a](x: int32) -> &'a int32:
+ 7 │     # ERROR: so is a parameter taken by value.
+ 8 │     return x.&
+   ┆
+   ┆ [error]: cannot return a value referencing data owned by the current function
+   ┆   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:8:12
+   ┆   │
+   ┆ 8 │     return x.&
+   ┆   │            ┯━━
+   ┆   │            │
+   ┆   │            this returns a value referencing data owned by the current function
+   ┆   ╰╴           the data is borrowed here
+   ┆
+ 9 │
+10 │ def returnsParameterBesideReference['a](a: &'a int32, param: int32) -> &'a int32:
+11 │     # ERROR: `param` is gone with the root scope, whatever `a` points to.
 12 │     return param.&
-   │            ┯━━━━━━
-   │            │
-   │            this returns a value referencing data owned by the current function
-   ╰╴           the data is borrowed here
-
-[error]: cannot return a value referencing data owned by the current function
-   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:16:12
-   │
+   ┆
+   ┆ [error]: cannot return a value referencing data owned by the current function
+   ┆    ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:12:12
+   ┆    │
+   ┆ 12 │     return param.&
+   ┆    │            ┯━━━━━━
+   ┆    │            │
+   ┆    │            this returns a value referencing data owned by the current function
+   ┆    ╰╴           the data is borrowed here
+   ┆
+13 │
+14 │ def returnsFieldOfParameter['a](pair: (int32, int32)) -> &'a int32:
+15 │     # ERROR: and a place within one.
 16 │     return pair.1.&
-   │            ┯━━━━━━━
-   │            │
-   │            this returns a value referencing data owned by the current function
-   ╰╴           the data is borrowed here
-
-[error]: cannot return a value referencing data owned by the current function
-   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:22:16
-   │
+   ┆
+   ┆ [error]: cannot return a value referencing data owned by the current function
+   ┆    ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:16:12
+   ┆    │
+   ┆ 16 │     return pair.1.&
+   ┆    │            ┯━━━━━━━
+   ┆    │            │
+   ┆    │            this returns a value referencing data owned by the current function
+   ┆    ╰╴           the data is borrowed here
+   ┆
+17 │
+18 │ def returnsOnOnePath['a](c: bool, x: &'a int32) -> &'a int32:
+19 │     let y = 2
+20 │     if c:
+21 │         # ERROR: only this path returns a borrow of a local.
 22 │         return y.&
-   │                ┯━━
-   │                │
-   │                this returns a value referencing data owned by the current function
-   ╰╴               the data is borrowed here
-
-[error]: cannot return a value referencing data owned by the current function
-   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:28:11
-   │
+   ┆
+   ┆ [error]: cannot return a value referencing data owned by the current function
+   ┆    ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:22:16
+   ┆    │
+   ┆ 22 │         return y.&
+   ┆    │                ┯━━
+   ┆    │                │
+   ┆    │                this returns a value referencing data owned by the current function
+   ┆    ╰╴               the data is borrowed here
+   ┆
+23 │     return x
+24 │
+25 │ def returnsInTuple['a](x: &'a int32) -> (&'a int32, &'a int32):
+26 │     let y = 2
+27 │     # ERROR: the returned tuple holds a borrow of `y`.
 28 │     return (x, y.&)
-   │           ┯━━━━┬──━
-   │           │    │
-   │           │    the data is borrowed here
-   ╰╴          this returns a value referencing data owned by the current function
-
-[error]: borrowed value does not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:32:13
-   │
+   ┆
+   ┆ [error]: cannot return a value referencing data owned by the current function
+   ┆    ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:28:11
+   ┆    │
+   ┆ 28 │     return (x, y.&)
+   ┆    │           ┯━━━━┬──━
+   ┆    │           │    │
+   ┆    │           │    the data is borrowed here
+   ┆    ╰╴          this returns a value referencing data owned by the current function
+   ┆
+29 │
 30 │ def storesParameter['a](out: &mut &'a int32, x: int32):
-   │                                              ──────── this variable goes out of scope while it is still borrowed
 31 │     # ERROR: the borrow outlives `x` without being returned.
 32 │     out.* = x.&
-   ╰╴            ━━━ borrowed value does not live long enough
+   ┆
+   ┆ [error]: borrowed value does not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/returns_borrow_of_local/main.ray:32:13
+   ┆    │
+   ┆ 30 │ def storesParameter['a](out: &mut &'a int32, x: int32):
+   ┆    │                                              ──────── this variable goes out of scope while it is still borrowed
+   ┆ 31 │     # ERROR: the borrow outlives `x` without being returned.
+   ┆ 32 │     out.* = x.&
+   ┆    ╰╴            ━━━ borrowed value does not live long enough
+   ┆
+33 │
+34 │ def returnsReborrow['a](x: &'a int32) -> &'a int32:
+35 │     # OK: the memory behind `x` outlives the function.
+36 │     return x.*.&
+37 │
+38 │ def returnsMutableReborrow['a](x: &'a mut (int32, int32)) -> &'a mut int32:
+39 │     # OK: so does the memory behind a mutable reference.
+40 │     return x.*.0.&mut
+41 │
+42 │ def returnsCopy(x: int32) -> int32:
+43 │     let r = x.&
+44 │     # OK: the value is copied out of the borrow.
+45 │     return r.*
+46 │
+47 │ def main():
+48 │     let value = 1
+49 │     let mut slot = value.&
+50 │     let mut pair = (1, 2)
+51 │     let _ = returnsVariable()
+52 │     let _ = returnsParameter(1)
+53 │     let _ = returnsParameterBesideReference(value.&, 1)
+54 │     let _ = returnsFieldOfParameter((1, 2))
+55 │     let _ = returnsOnOnePath(true, value.&)
+56 │     let _ = returnsInTuple(value.&)
+57 │     storesParameter(slot.&mut, 1)
+58 │     let _ = returnsReborrow(value.&)
+59 │     let _ = returnsMutableReborrow(pair.&mut)
+60 │     let _ = returnsCopy(1)
 
+other diagnostics:
 [error]: Compilation aborted due to 7 error(s)
-
-
-
-stdout:

@@ -28,6 +28,8 @@ pub enum Constant {
     Reference(Mutability),
     /// A nominal struct identified by its `SymbolKind::Strut` symbol.
     Struct(GlobalSymbolID),
+    /// A nominal enum identified by its `SymbolKind::Enum` symbol.
+    Enum(GlobalSymbolID),
     Instance(GlobalSymbolID),
     /// An associated type identified by its `SymbolKind::TraitType` symbol.
     /// Arguments are an instance-kind type followed by the trait type's
@@ -46,10 +48,10 @@ pub enum Constant {
     /// closure type followed by one `Drop` dictionary for each capture in
     /// environment order.
     ClosureDropInstance,
-    /// The generated `Drop` dictionary for a nominal type. Its arguments are
-    /// the instantiated nominal type followed by its external dictionaries in
-    /// `GeneratedDropPlan::requirements` order.
-    NominalDropInstance,
+    /// The generated `Drop` dictionary for a struct or an enum. Its arguments
+    /// are the instantiated nominal type followed by its external dictionaries
+    /// in `GeneratedDropPlan::requirements` order.
+    GeneratedAdtDropInstance,
     /// The anonymous type of a suspended function, identified by the function
     /// `coro` was applied to. Its arguments are the arguments for the
     /// polymorphic parameters of that function, followed by those of each
@@ -224,6 +226,59 @@ impl<'x> StructView<'x> {
     #[must_use]
     pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
         engine.build_subst_from_args(self.symbol_id, self.args).await
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EnumView<'x> {
+    symbol_id: GlobalSymbolID,
+    args: &'x [Interned<Ty>],
+}
+
+impl<'x> EnumView<'x> {
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+
+    #[must_use]
+    pub const fn args(&self) -> &'x [Interned<Ty>] { self.args }
+
+    #[must_use]
+    pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
+        engine.build_subst_from_args(self.symbol_id, self.args).await
+    }
+}
+
+/// A struct or an enum, for what does not depend on which one it is: the
+/// declaration and its type arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AdtView<'x> {
+    Struct(StructView<'x>),
+    Enum(EnumView<'x>),
+}
+
+impl<'x> AdtView<'x> {
+    /// Returns the `SymbolKind::Strut` or `SymbolKind::Enum` symbol.
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID {
+        match self {
+            Self::Struct(struct_) => struct_.symbol_id(),
+            Self::Enum(enum_) => enum_.symbol_id(),
+        }
+    }
+
+    #[must_use]
+    pub const fn args(&self) -> &'x [Interned<Ty>] {
+        match self {
+            Self::Struct(struct_) => struct_.args(),
+            Self::Enum(enum_) => enum_.args(),
+        }
+    }
+
+    /// Returns the substitution that instantiates the declaration with the
+    /// type arguments.
+    #[must_use]
+    pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
+        engine.build_subst_from_args(self.symbol_id(), self.args()).await
     }
 }
 
@@ -459,12 +514,12 @@ impl<'x> ContinuationDefInstanceView<'x> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NominalDropInstanceView<'x> {
+pub struct GeneratedAdtDropInstanceView<'x> {
     nominal: &'x Interned<Ty>,
     external_instances: &'x [Interned<Ty>],
 }
 
-impl<'x> NominalDropInstanceView<'x> {
+impl<'x> GeneratedAdtDropInstanceView<'x> {
     #[must_use]
     pub const fn nominal(&self) -> &'x Interned<Ty> { self.nominal }
 
@@ -523,6 +578,7 @@ pub enum View<'x> {
     Pointer(PointerView<'x>),
     Reference(ReferenceView<'x>),
     Struct(StructView<'x>),
+    Enum(EnumView<'x>),
     Instance(InstanceView<'x>),
     InstanceAssociated(InstanceAssociatedView<'x>),
     Closure(ClosureView<'x>),
@@ -530,7 +586,7 @@ pub enum View<'x> {
     NoOpDropInstance(&'x Interned<Ty>),
     TupleDropInstance(TupleDropInstanceView<'x>),
     ClosureDropInstance(ClosureDropInstanceView<'x>),
-    NominalDropInstance(NominalDropInstanceView<'x>),
+    GeneratedAdtDropInstance(GeneratedAdtDropInstanceView<'x>),
     DefCoroutine(DefCoroutineView<'x>),
     TraitDefCoroutine(TraitDefCoroutineView<'x>),
     ClosureCoroutine(ClosureCoroutineView<'x>),
@@ -577,6 +633,7 @@ impl Application {
                 mutability,
             }),
             Constant::Struct(symbol_id) => View::Struct(StructView { symbol_id, args: &self.args }),
+            Constant::Enum(symbol_id) => View::Enum(EnumView { symbol_id, args: &self.args }),
             Constant::Instance(symbol_id) => {
                 View::Instance(InstanceView { symbol_id, args: &self.args })
             }
@@ -617,10 +674,13 @@ impl Application {
                     self.args.split_first().expect("closure Drop instance has a closure type");
                 View::ClosureDropInstance(ClosureDropInstanceView { closure, capture_instances })
             }
-            Constant::NominalDropInstance => {
+            Constant::GeneratedAdtDropInstance => {
                 let (nominal, external_instances) =
                     self.args.split_first().expect("nominal Drop instance has a nominal type");
-                View::NominalDropInstance(NominalDropInstanceView { nominal, external_instances })
+                View::GeneratedAdtDropInstance(GeneratedAdtDropInstanceView {
+                    nominal,
+                    external_instances,
+                })
             }
             Constant::DefCoroutine(def_id) => {
                 View::DefCoroutine(DefCoroutineView { def_id, poly_args: &self.args })
@@ -657,11 +717,12 @@ impl Application {
         self.constant == other.constant && self.args.len() == other.args.len()
     }
 
-    /// Returns the struct this application instantiates, if it is one.
+    /// Returns the struct or enum this application instantiates, if it is
+    /// one.
     #[must_use]
-    pub const fn struct_id(&self) -> Option<GlobalSymbolID> {
+    pub const fn adt_id(&self) -> Option<GlobalSymbolID> {
         match self.constant {
-            Constant::Struct(symbol_id) => Some(symbol_id),
+            Constant::Struct(symbol_id) | Constant::Enum(symbol_id) => Some(symbol_id),
             Constant::Primitive(_)
             | Constant::Tuple
             | Constant::Pointer(_)
@@ -673,7 +734,7 @@ impl Application {
             | Constant::NoOpDropInstance
             | Constant::TupleDropInstance
             | Constant::ClosureDropInstance
-            | Constant::NominalDropInstance
+            | Constant::GeneratedAdtDropInstance
             | Constant::DefCoroutine(_)
             | Constant::TraitDefCoroutine(_)
             | Constant::ClosureCoroutine
@@ -686,38 +747,38 @@ impl Application {
 
     /// Returns each argument with the variance of its position.
     ///
-    /// `struct_variances` are the variances of the struct's parameters when
-    /// this application is a struct (see [`Self::struct_id`]), and are ignored
+    /// `adt_variances` are the variances of the struct's or enum's parameters
+    /// when this application is one (see [`Self::adt_id`]), and are ignored
     /// otherwise.
     ///
     /// # Panics
     ///
-    /// If this application is a struct and `struct_variances` is `None` or
-    /// has fewer variances than there are arguments.
+    /// If this application is a struct or an enum and `adt_variances` is
+    /// `None` or has fewer variances than there are arguments.
     pub fn arguments_with_variance<'a>(
         &'a self,
-        struct_variances: Option<&'a VarianceMap>,
+        adt_variances: Option<&'a VarianceMap>,
     ) -> impl Iterator<Item = (&'a Interned<Ty>, Variance)> {
         self.args
             .iter()
             .enumerate()
-            .map(move |(index, arg)| (arg, self.argument_variance(index, struct_variances)))
+            .map(move |(index, arg)| (arg, self.argument_variance(index, adt_variances)))
     }
 
     /// Returns each argument with the variance of its position, when this
     /// application itself is in a position of variance `ambient`.
     ///
     /// An invariant or bivariant position absorbs every variance inside it,
-    /// so the variances of a struct are only queried when `ambient` is
-    /// covariant or contravariant.
+    /// so the variances of a struct or an enum are only queried when `ambient`
+    /// is covariant or contravariant.
     pub async fn arguments_with_ambient_variance(
         &self,
         ambient: Variance,
         engine: &TrackedEngine,
     ) -> impl Iterator<Item = (&Interned<Ty>, Variance)> {
-        let struct_variances = match (ambient, self.struct_id()) {
-            (Variance::Covariant | Variance::Contravariant, Some(struct_id)) => {
-                Some(engine.get_variance(struct_id).await)
+        let adt_variances = match (ambient, self.adt_id()) {
+            (Variance::Covariant | Variance::Contravariant, Some(adt_id)) => {
+                Some(engine.get_variance(adt_id).await)
             }
             (Variance::Covariant | Variance::Contravariant, None)
             | (Variance::Invariant | Variance::Bivariant, _) => None,
@@ -727,7 +788,7 @@ impl Application {
             let variance = match ambient {
                 Variance::Invariant | Variance::Bivariant => ambient,
                 Variance::Covariant | Variance::Contravariant => {
-                    ambient.xform(self.argument_variance(index, struct_variances.as_deref()))
+                    ambient.xform(self.argument_variance(index, adt_variances.as_deref()))
                 }
             };
             (arg, variance)
@@ -747,7 +808,7 @@ impl Application {
 
     /// Returns the variance of the argument position `index`; see
     /// [`Self::arguments_with_variance`].
-    fn argument_variance(&self, index: usize, struct_variances: Option<&VarianceMap>) -> Variance {
+    fn argument_variance(&self, index: usize, adt_variances: Option<&VarianceMap>) -> Variance {
         match self.constant {
             Constant::Tuple => Variance::Covariant,
 
@@ -763,8 +824,8 @@ impl Application {
                 }
             }
 
-            Constant::Struct(_) => struct_variances
-                .expect("a struct application needs the variances of its struct")
+            Constant::Struct(_) | Constant::Enum(_) => adt_variances
+                .expect("a struct or enum application needs the variances of its declaration")
                 .get_by_index(index),
 
             // Closure and coroutine types are invariant, as in rustc, and so
@@ -778,7 +839,7 @@ impl Application {
             | Constant::NoOpDropInstance
             | Constant::TupleDropInstance
             | Constant::ClosureDropInstance
-            | Constant::NominalDropInstance
+            | Constant::GeneratedAdtDropInstance
             | Constant::DefCoroutine(_)
             | Constant::TraitDefCoroutine(_)
             | Constant::ClosureCoroutine
@@ -813,7 +874,8 @@ impl Application {
             | Constant::Tuple
             | Constant::Pointer(_)
             | Constant::Reference(_)
-            | Constant::Struct(_) => TyKind::Star,
+            | Constant::Struct(_)
+            | Constant::Enum(_) => TyKind::Star,
 
             Constant::InstanceAssociated(symbol_id) => {
                 use crate::associated_type_kind::get_associated_type_kind;
@@ -823,7 +885,7 @@ impl Application {
             Constant::NoOpDropInstance
             | Constant::TupleDropInstance
             | Constant::ClosureDropInstance
-            | Constant::NominalDropInstance
+            | Constant::GeneratedAdtDropInstance
             | Constant::ContinuationDefInstance
             | Constant::CoroutineInstance
             | Constant::CoroutineDropInstance
@@ -848,13 +910,14 @@ impl Application {
                 | View::Pointer(_)
                 | View::Reference(_)
                 | View::Struct(_)
+                | View::Enum(_)
                 | View::Instance(_)
                 | View::DefInstance(_)
                 | View::Closure(_)
                 | View::NoOpDropInstance(_)
                 | View::TupleDropInstance(_)
                 | View::ClosureDropInstance(_)
-                | View::NominalDropInstance(_)
+                | View::GeneratedAdtDropInstance(_)
                 | View::DefCoroutine(_)
                 | View::TraitDefCoroutine(_)
                 | View::ClosureCoroutine(_)
@@ -874,13 +937,14 @@ impl Application {
                 | View::Pointer(_)
                 | View::Reference(_)
                 | View::Struct(_)
+                | View::Enum(_)
                 | View::Instance(_)
                 | View::DefInstance(_)
                 | View::InstanceAssociated(_)
                 | View::NoOpDropInstance(_)
                 | View::TupleDropInstance(_)
                 | View::ClosureDropInstance(_)
-                | View::NominalDropInstance(_)
+                | View::GeneratedAdtDropInstance(_)
                 | View::DefCoroutine(_)
                 | View::TraitDefCoroutine(_)
                 | View::ClosureCoroutine(_)

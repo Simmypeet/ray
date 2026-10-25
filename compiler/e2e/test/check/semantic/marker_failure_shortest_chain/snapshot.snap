@@ -1,42 +1,84 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: `Node[Secret]` does not satisfy marker `main.Send`
-   ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:29:12
-   │
-29 │     return requireSend(value)
-   ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
-[note]: `Node[Secret]` stores field `value` of type `Secret`
-   ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:17:5
-   │
+ 1 │ # The explanation of a failed marker goal follows the shortest chain of
+ 2 │ # fields to the failure, whatever the order of the fields.
+ 3 │
+ 4 │ marker Send
+ 5 │
+ 6 │ struct Secret:
+ 7 │     value: int32
+ 8 │
+ 9 │ impl !Send for Secret
+   ┆
+   ┆ [note]: `Secret` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:9:1
+   ┆   │
+   ┆ 9 │ impl !Send for Secret
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
+   ┆
+   ┆ [note]: `Secret` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:9:1
+   ┆   │
+   ┆ 9 │ impl !Send for Secret
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
+   ┆
+10 │
+11 │ struct Wrapper[a]:
+12 │     value: a
+13 │
+14 │ # The failing field comes after the recursive one.
+15 │ struct Node[a]:
+16 │     next: Node[a]
 17 │     value: a
-   ╰╴    ━━━━━
-[note]: `Secret` is excluded by this negative implementation
-  ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:9:1
-  │
-9 │ impl !Send for Secret
-  ╰╴━━━━━━━━━━━━━━━━━━━━━
-
-[error]: `Both` does not satisfy marker `main.Send`
-   ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:33:12
-   │
-33 │     return requireSend(value)
-   ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
-[note]: `Both` stores field `shallow` of type `Secret`
-   ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:22:5
-   │
+   ┆
+   ┆ [note]: `Node[Secret]` stores field `value` of type `Secret`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:17:5
+   ┆    │
+   ┆ 17 │     value: a
+   ┆    ╰╴    ━━━━━
+   ┆
+18 │
+19 │ # Both fields fail, the first one more deeply.
+20 │ struct Both:
+21 │     deep: Wrapper[Wrapper[Secret]]
 22 │     shallow: Secret
-   ╰╴    ━━━━━━━
-[note]: `Secret` is excluded by this negative implementation
-  ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:9:1
-  │
-9 │ impl !Send for Secret
-  ╰╴━━━━━━━━━━━━━━━━━━━━━
+   ┆
+   ┆ [note]: `Both` stores field `shallow` of type `Secret`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:22:5
+   ┆    │
+   ┆ 22 │     shallow: Secret
+   ┆    ╰╴    ━━━━━━━
+   ┆
+23 │
+24 │ def requireSend(value: a) -> a where (a: Send):
+25 │     return value
+26 │
+27 │ # ERROR: the chain ends at the field `value`, not around the field `next`.
+28 │ def recursive(value: Node[Secret]) -> Node[Secret]:
+29 │     return requireSend(value)
+   ┆
+   ┆ [error]: `Node[Secret]` does not satisfy marker `main.Send`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:29:12
+   ┆    │
+   ┆ 29 │     return requireSend(value)
+   ┆    ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆
+30 │
+31 │ # ERROR: the chain goes through the field `shallow`, which is shorter.
+32 │ def shortest(value: Both) -> Both:
+33 │     return requireSend(value)
+   ┆
+   ┆ [error]: `Both` does not satisfy marker `main.Send`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:33:12
+   ┆    │
+   ┆ 33 │     return requireSend(value)
+   ┆    ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆
+34 │
+35 │ def main() -> int32:
+36 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

@@ -9,11 +9,13 @@ use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
     all_marker_implementations::get_all_marker_implementations,
     marker_implementation::get_marker_implementation, struct_body::get_struct_body,
+    variant_payload_ty::get_variant_payload_ty,
 };
 use rayc_symbol::{
     GlobalSymbolID,
     core_item::{CoreItem, get_core_item},
-    syntax::is_linear_struct,
+    member::get_members,
+    syntax::is_linear_type,
 };
 use rayc_type::{
     poly_var::build_subst_from_args,
@@ -280,7 +282,7 @@ impl Solver {
     }
 
     /// Returns the rule of a `Copy` goal whose answer is fixed by the
-    /// compiler: linear structs, coroutine types and references.
+    /// compiler: linear structs and enums, coroutine types and references.
     ///
     /// Returns `None` when the goal is not one of them, which leaves it to
     /// the givens, the explicit marker rules and structural inference.
@@ -290,11 +292,11 @@ impl Solver {
         }
 
         // A linear value must be consumed exactly once, so copying it is never
-        // allowed. Structs containing it are rejected structurally.
-        if let Some(struct_) = goal.implementor().as_struct_view()
-            && self.engine().is_linear_struct(struct_.symbol_id()).await
+        // allowed. Types containing it are rejected structurally.
+        if let Some(adt_id) = goal.implementor().as_adt_id()
+            && self.engine().is_linear_type(adt_id).await
         {
-            return Some(MarkerRule::BuiltIn(BuiltInMarkerRule::LinearStructNotCopy));
+            return Some(MarkerRule::BuiltIn(BuiltInMarkerRule::LinearTypeNotCopy));
         }
 
         // A coroutine type is never `Copy`, even when a given says so: a copy
@@ -433,6 +435,24 @@ async fn structural_fields(
                         .collect(),
                 )
             }
+            // An enum holds the payload of whichever variant it is, so each
+            // payload type is a field.
+            ApplicationView::Enum(enum_) => {
+                let subst = enum_.create_subst(engine).await;
+                let mut fields = Vec::new();
+
+                for variant_id in engine.get_members(enum_.symbol_id()).await.all_ids() {
+                    let variant_id = enum_.symbol_id().target_id.make_global(variant_id);
+                    if let Some(payload) = engine.get_variant_payload_ty(variant_id).await {
+                        fields.push((
+                            StructuralComponent::VariantPayload(variant_id),
+                            payload.apply_subst_or_clone(&subst, engine),
+                        ));
+                    }
+                }
+
+                Some(fields)
+            }
             ApplicationView::Pointer(_)
             | ApplicationView::Reference(_)
             | ApplicationView::NoOpDropInstance(_)
@@ -444,7 +464,7 @@ async fn structural_fields(
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
-            | ApplicationView::NominalDropInstance(_)
+            | ApplicationView::GeneratedAdtDropInstance(_)
             | ApplicationView::Instance(_)
             | ApplicationView::InstanceAssociated(_)
             | ApplicationView::DefInstance(_)

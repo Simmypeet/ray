@@ -29,6 +29,7 @@ pub enum SymbolKind {
     Def,
     Effect,
     EffectOperation,
+    Enum,
     ExternDef,
     Instance,
     InstanceDef,
@@ -36,10 +37,11 @@ pub enum SymbolKind {
     Marker,
     MarkerImplementation,
     Module,
-    Strut,
+    Struct,
     Trait,
     TraitDef,
     TraitType,
+    Variant,
 }
 
 /// The key type used with [`TrackedEngine`] to access the kind of a symbol.
@@ -57,8 +59,12 @@ impl SymbolKind {
     /// Checks if this kind of symbol has a [`Member`] component.
     #[must_use]
     pub const fn has_member(&self) -> bool {
-        matches!(self, Self::Effect | Self::Instance | Self::Module | Self::Trait)
+        matches!(self, Self::Effect | Self::Enum | Self::Instance | Self::Module | Self::Trait)
     }
+
+    /// Checks if this kind of symbol is an ADT: a struct or an enum.
+    #[must_use]
+    pub const fn is_adt(&self) -> bool { matches!(self, Self::Enum | Self::Struct) }
 
     /// Checks if this kind of symbol has a definition body.
     #[must_use]
@@ -71,11 +77,12 @@ impl SymbolKind {
             self,
             Self::Def
                 | Self::Effect
+                | Self::Enum
                 | Self::Instance
                 | Self::InstanceDef
                 | Self::InstanceType
                 | Self::MarkerImplementation
-                | Self::Strut
+                | Self::Struct
                 | Self::Trait
                 | Self::TraitDef
                 | Self::TraitType
@@ -83,11 +90,11 @@ impl SymbolKind {
     }
 
     /// Checks if this kind of symbol has the variances of its polymorphic
-    /// variables computed, which only structs and effects do.
+    /// variables computed, which only structs, enums and effects do.
     #[must_use]
     pub const fn has_variance_map(&self) -> bool {
         match self {
-            Self::Effect | Self::Strut => true,
+            Self::Effect | Self::Enum | Self::Struct => true,
             Self::Def
             | Self::EffectOperation
             | Self::ExternDef
@@ -99,7 +106,8 @@ impl SymbolKind {
             | Self::Module
             | Self::Trait
             | Self::TraitDef
-            | Self::TraitType => false,
+            | Self::TraitType
+            | Self::Variant => false,
         }
     }
 
@@ -149,15 +157,20 @@ impl SymbolKind {
         match self {
             Self::Def
             | Self::Effect
+            | Self::Enum
             | Self::Instance
             | Self::InstanceDef
             | Self::InstanceType
             | Self::MarkerImplementation
-            | Self::Strut
+            | Self::Struct
             | Self::Trait
             | Self::TraitDef
             | Self::TraitType => true,
-            Self::EffectOperation | Self::ExternDef | Self::Marker | Self::Module => false,
+            Self::EffectOperation
+            | Self::ExternDef
+            | Self::Marker
+            | Self::Module
+            | Self::Variant => false,
         }
     }
 
@@ -168,6 +181,7 @@ impl SymbolKind {
             Self::Def => "def",
             Self::Effect => "effect",
             Self::EffectOperation => "effect operation",
+            Self::Enum => "enum",
             Self::ExternDef => "extern def",
             Self::Instance => "instance",
             Self::InstanceDef => "instance def",
@@ -175,10 +189,11 @@ impl SymbolKind {
             Self::Marker => "marker",
             Self::MarkerImplementation => "marker implementation",
             Self::Module => "module",
-            Self::Strut => "struct",
+            Self::Struct => "struct",
             Self::Trait => "trait",
             Self::TraitDef => "trait def",
             Self::TraitType => "trait type",
+            Self::Variant => "variant",
         }
     }
 }
@@ -213,14 +228,13 @@ pub struct AllInstanceIDs {
     pub target: TargetID,
 }
 
-/// Retrieves all nominal type symbol IDs in a given target.
-/// Currently structs are the only nominal type kind.
+/// Retrieves all ADT (struct and enum) symbol IDs in a given target.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
 #[value(Arc<[SymbolID]>)]
-#[extend(name = get_all_nominal_type_ids, by_val)]
-pub struct AllNominalTypeIDs {
+#[extend(name = get_all_adt_ids, by_val)]
+pub struct AllAdtIDs {
     pub target: TargetID,
 }
 

@@ -174,6 +174,9 @@ pub enum StructuralComponent {
     /// A field of a struct.
     StructField(FieldID),
 
+    /// The payload of an enum variant, by its `SymbolKind::Variant` symbol.
+    VariantPayload(GlobalSymbolID),
+
     /// An element of a tuple, by index.
     TupleElement(usize),
 
@@ -188,8 +191,8 @@ pub enum StructuralComponent {
 /// A marker goal that the compiler rejects whatever the givens say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum BuiltInMarkerRule {
-    /// A linear struct is never `Copy`.
-    LinearStructNotCopy,
+    /// A linear struct or enum is never `Copy`.
+    LinearTypeNotCopy,
 
     /// A coroutine is never `Copy`.
     CoroutineNotCopy,

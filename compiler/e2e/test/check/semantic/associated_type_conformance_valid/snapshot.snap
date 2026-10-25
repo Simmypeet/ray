@@ -1,8 +1,15 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ trait Relation[a, b]:
+ 2 │     type Value
+ 3 │
+ 4 │ trait Container[a]:
+ 5 │     type Item[b] given (relation: Relation[a, b])
+ 6 │
+ 7 │ inst IntContainer for Container[int32]:
+ 8 │     type Item[c] given (renamed: Relation[int32, c]) = c
+ 9 │
+10 │ def main() -> int32:
+11 │     return 0

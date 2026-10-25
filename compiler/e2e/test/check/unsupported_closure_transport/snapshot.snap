@@ -1,16 +1,22 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: unexpected `def` keyword, expected type
-  ╭▸ compiler/e2e/test/check/unsupported_closure_transport/main.ray:1:49
-  │
 1 │ def transport(callback: def(int32) -> int32) -> def(int32) -> int32:
-  ╰╴                                                ━━━
+  ┆
+  ┆ [error]: unexpected `def` keyword, expected type
+  ┆   ╭▸ compiler/e2e/test/check/unsupported_closure_transport/main.ray:1:49
+  ┆   │
+  ┆ 1 │ def transport(callback: def(int32) -> int32) -> def(int32) -> int32:
+  ┆   ╰╴                                                ━━━
+  ┆
+2 │     return callback
+3 │
+4 │ def nestedTransport(callback: def(def(int32) -> bool) -> def() -> float32) -> def(def(int32) -> bool) -> def() -> float32:
+5 │     return callback
+6 │
+7 │ def main() -> int32:
+8 │     return 37
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

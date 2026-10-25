@@ -9,7 +9,7 @@
 
 use qbice::storage::intern::Interned;
 use rayc_mono_ir::{
-    MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoNominalDropInstance,
+    MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoGeneratedAdtDropInstance,
     signature::{DefSignature, get_def_signature},
     ty::{FunctionSignature, MonoType, lower_effects, lower_type, nominal_signature},
 };
@@ -38,7 +38,7 @@ pub(crate) enum InstanceCallable {
     Closure(MonoClosureInstance, FunctionSignature, Vec<MonoEffectInstance>),
     TupleDrop(Vec<Interned<Ty>>),
     ClosureDrop(Vec<Interned<Ty>>),
-    NominalDrop(MonoNominalDropInstance),
+    NominalDrop(MonoGeneratedAdtDropInstance),
     NoOp,
 }
 
@@ -108,13 +108,13 @@ impl Resolver {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
                 InstanceCallable::ClosureDrop(instance.capture_instances().to_vec())
             }
-            ApplicationView::NominalDropInstance(_) => {
+            ApplicationView::GeneratedAdtDropInstance(_) => {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
 
                 // The generated body is a separate fragment so recursive
                 // nominal types do not expand indefinitely at the call site.
                 InstanceCallable::NominalDrop(
-                    MonoNominalDropInstance::new(&dictionary_ty, &self.solver).await,
+                    MonoGeneratedAdtDropInstance::new(&dictionary_ty, &self.solver).await,
                 )
             }
             ApplicationView::CoroutineInstance(_)
@@ -127,6 +127,7 @@ impl Resolver {
             | ApplicationView::Pointer(_)
             | ApplicationView::Reference(_)
             | ApplicationView::Struct(_)
+            | ApplicationView::Enum(_)
             | ApplicationView::InstanceAssociated(_)
             | ApplicationView::Closure(_)
             | ApplicationView::DefCoroutine(_)

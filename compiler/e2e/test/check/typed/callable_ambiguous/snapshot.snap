@@ -1,43 +1,59 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: function body effects do not match its signature: expected `{}`, but found `{any}.Effect`
-   ╭▸ compiler/e2e/test/check/typed/callable_ambiguous/main.ray:15:5
-   │
+ 1 │ inst First for core.Def[int32]:
+ 2 │     type Args = ()
+ 3 │     type Return = int32
+ 4 │     type Effect = {}
+ 5 │     def call(fn: int32, args: ()) -> int32:
+ 6 │         return fn
+ 7 │
+ 8 │ inst Second for core.Def[int32]:
+ 9 │     type Args = ()
+10 │     type Return = int32
+11 │     type Effect = {}
+12 │     def call(fn: int32, args: ()) -> int32:
+13 │         return fn
+14 │
 15 │ def main() -> int32:
-   │     ━━━━ the function body has effects outside its signature
+   ┆
+   ┆ [error]: function body effects do not match its signature: expected `{}`, but found `{any}.Effect`
+   ┆    ╭▸ compiler/e2e/test/check/typed/callable_ambiguous/main.ray:15:5
+   ┆    │
+   ┆ 15 │ def main() -> int32:
+   ┆    │     ━━━━ the function body has effects outside its signature
+   ┆ 16 │     let value: int32 = 42
+   ┆ 17 │     return value()
+   ┆    ╰╴           ─────── effect `{any}.Effect` introduced here
+   ┆
 16 │     let value: int32 = 42
 17 │     return value()
-   ╰╴           ─────── effect `{any}.Effect` introduced here
+   ┆
+   ┆ [error]: ambiguous global instances: `core.Def[int32]`
+   ┆    ╭▸ compiler/e2e/test/check/typed/callable_ambiguous/main.ray:17:12
+   ┆    │
+   ┆  1 │ inst First for core.Def[int32]:
+   ┆    │      ───── candidate `main.First`
+   ┆    ‡
+   ┆  8 │ inst Second for core.Def[int32]:
+   ┆    │      ────── candidate `main.Second`
+   ┆    ‡
+   ┆ 17 │     return value()
+   ┆    ╰╴           ━━━━━━━
+   ┆
+   ┆ [error]: mismatched types in return expression: expected `int32`, but found `{any}.Return`
+   ┆    ╭▸ compiler/e2e/test/check/typed/callable_ambiguous/main.ray:17:12
+   ┆    │
+   ┆ 17 │     return value()
+   ┆    ╰╴           ━━━━━━━
+   ┆
+   ┆ [error]: mismatched argument types in function call: expected `{any}.Args`, but found `()`
+   ┆    ╭▸ compiler/e2e/test/check/typed/callable_ambiguous/main.ray:17:17
+   ┆    │
+   ┆ 17 │     return value()
+   ┆    ╰╴                ━━
+   ┆
 
-[error]: ambiguous global instances: `core.Def[int32]`
-   ╭▸ compiler/e2e/test/check/typed/callable_ambiguous/main.ray:17:12
-   │
- 1 │ inst First for core.Def[int32]:
-   │      ───── candidate `main.First`
-   ‡
- 8 │ inst Second for core.Def[int32]:
-   │      ────── candidate `main.Second`
-   ‡
-17 │     return value()
-   ╰╴           ━━━━━━━
-
-[error]: mismatched types in return expression: expected `int32`, but found `{any}.Return`
-   ╭▸ compiler/e2e/test/check/typed/callable_ambiguous/main.ray:17:12
-   │
-17 │     return value()
-   ╰╴           ━━━━━━━
-
-[error]: mismatched argument types in function call: expected `{any}.Args`, but found `()`
-   ╭▸ compiler/e2e/test/check/typed/callable_ambiguous/main.ray:17:17
-   │
-17 │     return value()
-   ╰╴                ━━
-
+other diagnostics:
 [error]: Compilation aborted due to 4 error(s)
-
-
-
-stdout:

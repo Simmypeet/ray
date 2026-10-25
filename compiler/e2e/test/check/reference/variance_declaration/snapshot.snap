@@ -1,73 +1,188 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: `t` is declared covariant but used invariantly
-   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:24:5
-   │
+ 1 │ # OK: a declared variance may equal the inferred one.
+ 2 │ struct Shared[+'a, +t]:
+ 3 │     value: &'a t
+ 4 │
+ 5 │ # OK: a declared variance may be more restrictive than the inferred one.
+ 6 │ struct Cell['a, =t]:
+ 7 │     value: &'a t
+ 8 │
+ 9 │ # OK: an unused parameter may declare any variance.
+10 │ struct Token[-'a, +t]:
+11 │     id: int32
+12 │
+13 │ # OK: a raw pointer's pointee is not a use, so any variance is allowed.
+14 │ struct Iter[+'a, +t]:
+15 │     ptr: *mut t
+16 │
+17 │ # OK: `Cell`'s declared variance is used where `Cell` is used, so `u` is
+18 │ # invariant.
+19 │ struct UsesCell['b, =u]:
+20 │     cell: Cell['b, u]
+21 │
+22 │ # ERROR: `t` is used invariantly through `&mut`.
 23 │ struct Exclusive['a, +t]:
-   │                       ─ `t` is declared covariant here
 24 │     value: &'a mut t
-   │     ━━━━━ field `value` uses `t` invariantly
-   │
-   ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
-
-[error]: `t` is declared covariant but used invariantly
-   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:29:5
-   │
+   ┆
+   ┆ [error]: `t` is declared covariant but used invariantly
+   ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:24:5
+   ┆    │
+   ┆ 23 │ struct Exclusive['a, +t]:
+   ┆    │                       ─ `t` is declared covariant here
+   ┆ 24 │     value: &'a mut t
+   ┆    │     ━━━━━ field `value` uses `t` invariantly
+   ┆    │
+   ┆    ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
+   ┆
+25 │
+26 │ # ERROR: only the field that uses `t` invariantly is reported.
 27 │ struct OneField['a, +t]:
-   │                      ─ `t` is declared covariant here
 28 │     first: &'a t
 29 │     second: &'a mut t
-   │     ━━━━━━ field `second` uses `t` invariantly
-   │
-   ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
-
-[error]: `t` is declared covariant but used invariantly
-   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:33:5
-   │
+   ┆
+   ┆ [error]: `t` is declared covariant but used invariantly
+   ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:29:5
+   ┆    │
+   ┆ 27 │ struct OneField['a, +t]:
+   ┆    │                      ─ `t` is declared covariant here
+   ┆ 28 │     first: &'a t
+   ┆ 29 │     second: &'a mut t
+   ┆    │     ━━━━━━ field `second` uses `t` invariantly
+   ┆    │
+   ┆    ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
+   ┆
+30 │
+31 │ # ERROR: `t` is invariant in `Cell`.
 32 │ struct ThroughCell['a, +t]:
-   │                         ─ `t` is declared covariant here
 33 │     cell: Cell['a, t]
-   │     ━━━━ field `cell` uses `t` invariantly
-   │
-   ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
-
-[error]: `'a` is declared contravariant but used covariantly
-   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:41:13
-   │
+   ┆
+   ┆ [error]: `t` is declared covariant but used invariantly
+   ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:33:5
+   ┆    │
+   ┆ 32 │ struct ThroughCell['a, +t]:
+   ┆    │                         ─ `t` is declared covariant here
+   ┆ 33 │     cell: Cell['a, t]
+   ┆    │     ━━━━ field `cell` uses `t` invariantly
+   ┆    │
+   ┆    ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
+   ┆
+34 │
+35 │ # OK: an operation parameter is covariant, and a return type contravariant.
+36 │ eff Log[+'a, -'b]:
+37 │     def log(message: &'a int32) -> &'b int32
+38 │
+39 │ # ERROR: the variances are reversed.
 40 │ eff Reversed[-'a, +'b]:
-   │               ── `'a` is declared contravariant here
 41 │     def log(message: &'a int32) -> &'b int32
-   │             ━━━━━━━━━━━━━━━━━━ a parameter of operation `log` uses `'a` covariantly
-   │
-   ╰ help: consider declaring it invariant as `='a`, or removing the marker to infer its variance
+   ┆
+   ┆ [error]: `'a` is declared contravariant but used covariantly
+   ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:41:13
+   ┆    │
+   ┆ 40 │ eff Reversed[-'a, +'b]:
+   ┆    │               ── `'a` is declared contravariant here
+   ┆ 41 │     def log(message: &'a int32) -> &'b int32
+   ┆    │             ━━━━━━━━━━━━━━━━━━ a parameter of operation `log` uses `'a` covariantly
+   ┆    │
+   ┆    ╰ help: consider declaring it invariant as `='a`, or removing the marker to infer its variance
+   ┆
+   ┆ [error]: `'b` is declared covariant but used contravariantly
+   ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:41:33
+   ┆    │
+   ┆ 40 │ eff Reversed[-'a, +'b]:
+   ┆    │                    ── `'b` is declared covariant here
+   ┆ 41 │     def log(message: &'a int32) -> &'b int32
+   ┆    │                                 ━━━━━━━━━━━━ the return type of operation `log` uses `'b` contravariantly
+   ┆    │
+   ┆    ╰ help: consider declaring it invariant as `='b`, or removing the marker to infer its variance
+   ┆
+42 │
+43 │ # OK: every payload uses `'a` and `t` covariantly, and a variant without a
+44 │ # payload uses nothing.
+45 │ enum Maybe[+'a, +t]:
+46 │     Borrowed(&'a int32)
+47 │     Owned((t, int32))
+48 │     Empty
+49 │
+50 │ struct Slot[=t]:
+51 │     value: t
+52 │
+53 │ # ERROR: `t` is used invariantly through `Slot`, but only by `Exclusive`.
+54 │ enum Access[+t]:
+55 │     Shared(t)
+56 │     Exclusive(Slot[t])
+   ┆
+   ┆ [error]: `t` is declared covariant but used invariantly
+   ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:56:15
+   ┆    │
+   ┆ 54 │ enum Access[+t]:
+   ┆    │              ─ `t` is declared covariant here
+   ┆ 55 │     Shared(t)
+   ┆ 56 │     Exclusive(Slot[t])
+   ┆    │               ━━━━━━━ the payload of variant `Exclusive` uses `t` invariantly
+   ┆    │
+   ┆    ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
+   ┆
+57 │
+58 │ # ERROR: `t` is invariant in `Slot`.
+59 │ enum ThroughEnum[-t]:
+60 │     Wrapped(Slot[t])
+   ┆
+   ┆ [error]: `t` is declared contravariant but used invariantly
+   ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:60:13
+   ┆    │
+   ┆ 59 │ enum ThroughEnum[-t]:
+   ┆    │                   ─ `t` is declared contravariant here
+   ┆ 60 │     Wrapped(Slot[t])
+   ┆    │             ━━━━━━━ the payload of variant `Wrapped` uses `t` invariantly
+   ┆    │
+   ┆    ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
+   ┆
+61 │
+62 │ # OK: `Maybe`'s declared variance is used where `Maybe` is used.
+63 │ struct UsesMaybe['b, +u]:
+64 │     maybe: Maybe['b, u]
+65 │
+66 │ # ERROR: `u` is used covariantly through `Maybe`.
+67 │ struct UsesMaybeContravariantly[-u]:
+68 │     maybe: Maybe['static, u]
+   ┆
+   ┆ [error]: `u` is declared contravariant but used covariantly
+   ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:68:5
+   ┆    │
+   ┆ 67 │ struct UsesMaybeContravariantly[-u]:
+   ┆    │                                  ─ `u` is declared contravariant here
+   ┆ 68 │     maybe: Maybe['static, u]
+   ┆    │     ━━━━━ field `maybe` uses `u` covariantly
+   ┆    │
+   ┆    ╰ help: consider declaring it invariant as `=u`, or removing the marker to infer its variance
+   ┆
+69 │
+70 │ # ERROR: only struct, enum and `eff` parameters have a variance.
+71 │ def identity[+t](value: t) -> t:
+   ┆
+   ┆ [error]: variance cannot be declared here
+   ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:71:14
+   ┆    │
+   ┆ 71 │ def identity[+t](value: t) -> t:
+   ┆    ╰╴             ━ only the parameters of a `struct`, an `enum` or an `eff` have a variance
+   ┆
+72 │     return value
+73 │
+74 │ trait Show[=t]:
+   ┆
+   ┆ [error]: variance cannot be declared here
+   ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:74:12
+   ┆    │
+   ┆ 74 │ trait Show[=t]:
+   ┆    ╰╴           ━ only the parameters of a `struct`, an `enum` or an `eff` have a variance
+   ┆
+75 │     def show(value: t) -> ()
+76 │
+77 │ def main() -> ():
+78 │     return ()
 
-[error]: `'b` is declared covariant but used contravariantly
-   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:41:33
-   │
-40 │ eff Reversed[-'a, +'b]:
-   │                    ── `'b` is declared covariant here
-41 │     def log(message: &'a int32) -> &'b int32
-   │                                 ━━━━━━━━━━━━ the return type of operation `log` uses `'b` contravariantly
-   │
-   ╰ help: consider declaring it invariant as `='b`, or removing the marker to infer its variance
-
-[error]: variance cannot be declared here
-   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:44:14
-   │
-44 │ def identity[+t](value: t) -> t:
-   ╰╴             ━ only the parameters of a `struct` or an `eff` have a variance
-
-[error]: variance cannot be declared here
-   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:47:12
-   │
-47 │ trait Show[=t]:
-   ╰╴           ━ only the parameters of a `struct` or an `eff` have a variance
-
-[error]: Compilation aborted due to 7 error(s)
-
-
-
-stdout:
+other diagnostics:
+[error]: Compilation aborted due to 10 error(s)

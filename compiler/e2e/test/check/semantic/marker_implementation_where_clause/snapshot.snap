@@ -1,28 +1,48 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: invalid marker implementation where-clause predicate
-   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_where_clause/main.ray:14:1
-   │
+ 1 │ marker Send
+ 2 │ marker Copy
+ 3 │
+ 4 │ trait NotMarker[]:
+ 5 │     type Item
+ 6 │
+ 7 │ # Both the implemented marker and another marker are valid requirements.
+ 8 │ impl[a, b] Send for (a, b) where (
+ 9 │     a: Send,
+10 │     b: Copy,
+11 │ )
+12 │
+13 │ impl[a, b, c] Copy for (a, b, c) where (
 14 │     (a, b, a): Send,
-   ╰╴━━━━━━━━━━━━━ a marker predicate in an implementation where clause must apply directly to a polymorphic type variable
-
-[error]: invalid marker implementation where-clause predicate
-   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_where_clause/main.ray:15:7
-   │
+   ┆
+   ┆ [error]: invalid marker implementation where-clause predicate
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_implementation_where_clause/main.ray:14:1
+   ┆    │
+   ┆ 14 │     (a, b, a): Send,
+   ┆    ╰╴━━━━━━━━━━━━━ a marker predicate in an implementation where clause must apply directly to a polymorphic type variable
+   ┆
 15 │     a = b,
-   ╰╴      ━ marker implementation where clauses may only contain marker predicates
-
-[error]: expected a marker, found trait
-   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_where_clause/main.ray:16:8
-   │
+   ┆
+   ┆ [error]: invalid marker implementation where-clause predicate
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_implementation_where_clause/main.ray:15:7
+   ┆    │
+   ┆ 15 │     a = b,
+   ┆    ╰╴      ━ marker implementation where clauses may only contain marker predicates
+   ┆
 16 │     a: NotMarker,
-   ╰╴       ━━━━━━━━━ expected a marker, found trait
+   ┆
+   ┆ [error]: expected a marker, found trait
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_implementation_where_clause/main.ray:16:8
+   ┆    │
+   ┆ 16 │     a: NotMarker,
+   ┆    ╰╴       ━━━━━━━━━ expected a marker, found trait
+   ┆
+17 │ )
+18 │
+19 │ def main() -> int32:
+20 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

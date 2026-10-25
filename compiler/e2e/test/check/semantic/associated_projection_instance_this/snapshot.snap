@@ -1,22 +1,32 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: `this` is only valid within a trait body
-  ╭▸ compiler/e2e/test/check/semantic/associated_projection_instance_this/main.ray:5:17
-  │
-5 │     type Item = this.Item
-  ╰╴                ━━━━
+ 1 │ trait Container[]:
+ 2 │     type Item
+ 3 │
+ 4 │ inst Wrong for Container:
+ 5 │     type Item = this.Item
+   ┆
+   ┆ [error]: `this` is only valid within a trait body
+   ┆   ╭▸ compiler/e2e/test/check/semantic/associated_projection_instance_this/main.ray:5:17
+   ┆   │
+   ┆ 5 │     type Item = this.Item
+   ┆   ╰╴                ━━━━
+   ┆
+ 6 │
+ 7 │ inst WrongHead for this:
+   ┆
+   ┆ [error]: `this` is only valid within a trait body
+   ┆   ╭▸ compiler/e2e/test/check/semantic/associated_projection_instance_this/main.ray:7:20
+   ┆   │
+   ┆ 7 │ inst WrongHead for this:
+   ┆   ╰╴                   ━━━━
+   ┆
+ 8 │     type Item = int32
+ 9 │
+10 │ def main() -> int32:
+11 │     return 0
 
-[error]: `this` is only valid within a trait body
-  ╭▸ compiler/e2e/test/check/semantic/associated_projection_instance_this/main.ray:7:20
-  │
-7 │ inst WrongHead for this:
-  ╰╴                   ━━━━
-
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

@@ -116,6 +116,18 @@ impl Ty {
         )))
     }
 
+    #[must_use]
+    pub fn new_enum(
+        symbol_id: GlobalSymbolID,
+        args: Args,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::Application(Application::new(
+            Constant::Enum(symbol_id),
+            args.into_interned(),
+        )))
+    }
+
     /// Creates the built-in `Def` dictionary for a nominal closure type.
     #[must_use]
     pub fn new_def_instance(closure: Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
@@ -212,19 +224,23 @@ impl Ty {
         )))
     }
 
-    /// Creates a generated nominal `Drop` dictionary. The selected external
-    /// dictionaries follow the plan's requirement order, not field order.
+    /// Creates a generated `Drop` dictionary for a struct or an enum. The
+    /// selected external dictionaries follow the plan's requirement order,
+    /// not field order.
     #[must_use]
-    pub fn new_nominal_drop_instance(
+    pub fn new_generated_adt_drop_instance(
         nominal: Interned<Self>,
         external_instances: impl IntoIterator<Item = Interned<Self>>,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
-        assert!(nominal.as_struct_view().is_some(), "nominal Drop instance requires a struct type");
+        assert!(
+            nominal.as_struct_view().is_some() || nominal.as_enum_view().is_some(),
+            "nominal Drop instance requires a struct or an enum type"
+        );
 
         let args = std::iter::once(nominal).chain(external_instances);
         engine.intern(Self::Application(Application::new(
-            Constant::NominalDropInstance,
+            Constant::GeneratedAdtDropInstance,
             engine.intern_unsized(args.collect::<Vec<_>>()),
         )))
     }

@@ -1,11 +1,11 @@
-//! Outlives requirements inferred for structs from their field types, as in
-//! Rust RFC 2093.
+//! Outlives requirements inferred for structs from their field types, and for
+//! enums from their variant payload types, as in Rust RFC 2093.
 //!
-//! `struct Ref['a, t]: value: &'a t` infers `t: 'a`, and a struct holding a
-//! `Ref['a, t]` infers the same requirement in turn. References are the only
-//! source: a declared outlives predicate is never inferred. Structs can be
-//! recursive and mutually recursive, so the requirements of every struct in a
-//! target are computed together as one fixed point.
+//! `struct Ref['a, t]: value: &'a t` infers `t: 'a`, and a struct or enum
+//! holding a `Ref['a, t]` infers the same requirement in turn. References are
+//! the only source: a declared outlives predicate is never inferred. ADTs can
+//! be recursive and mutually recursive, so the requirements of every struct
+//! and enum in a target are computed together as one fixed point.
 
 use std::collections::BTreeSet;
 
@@ -15,13 +15,20 @@ use qbice::{
 };
 use rayc_hash::FxHashMap;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_semantic_element::struct_body::get_struct_body;
+use rayc_semantic_element::{
+    struct_body::get_struct_body, variant_payload_ty::get_variant_payload_ty,
+};
 use rayc_solver::outlives::implied::ImpliedOutlivesCollector;
-use rayc_symbol::{GlobalSymbolID, SymbolID, symbol_kind::get_all_nominal_type_ids};
+use rayc_symbol::{
+    GlobalSymbolID, SymbolID,
+    member::get_members,
+    symbol_kind::{SymbolKind, get_all_adt_ids, get_symbol_kind},
+};
 use rayc_target::TargetID;
 use rayc_type::{outlives::InferredOutlivesKey, ty::Ty, where_clause::OutlivesPredicate};
 
-/// Retrieves the inferred outlives requirements of every struct in a target.
+/// Retrieves the inferred outlives requirements of every struct and enum in a
+/// target.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
@@ -35,34 +42,34 @@ async fn inferred_outlives_map_executor(
     &InferredOutlivesMapKey { target_id }: &InferredOutlivesMapKey,
     engine: &TrackedEngine,
 ) -> Interned<FxHashMap<SymbolID, Interned<[OutlivesPredicate]>>> {
-    // Start every struct in the target with no requirements.
-    let structs = engine
-        .get_all_nominal_type_ids(target_id)
+    // Start every struct and enum in the target with no requirements.
+    let adts = engine
+        .get_all_adt_ids(target_id)
         .await
         .iter()
         .map(|id| target_id.make_global(*id))
         .collect::<Vec<_>>();
-    let mut inferred = structs
+    let mut inferred = adts
         .iter()
         .map(|symbol_id| (*symbol_id, BTreeSet::new()))
         .collect::<FxHashMap<_, BTreeSet<OutlivesPredicate>>>();
 
-    // Grow the sets until no struct gains a requirement. The sets only grow,
-    // and each is bounded by the struct's own lifetimes and variables, so
-    // this terminates.
+    // Grow the sets until no ADT gains a requirement. The sets only grow, and
+    // each is bounded by the ADT's own lifetimes and variables, so this
+    // terminates.
     let mut changed = true;
     while changed {
         changed = false;
-        for struct_id in &structs {
-            changed |= grow_requirements(*struct_id, &mut inferred, engine).await;
+        for adt_id in &adts {
+            changed |= grow_requirements(*adt_id, &mut inferred, engine).await;
         }
     }
 
     engine.intern(
         inferred
             .into_iter()
-            .map(|(struct_id, predicates)| {
-                (struct_id.id, engine.intern_unsized(predicates.into_iter().collect::<Vec<_>>()))
+            .map(|(adt_id, predicates)| {
+                (adt_id.id, engine.intern_unsized(predicates.into_iter().collect::<Vec<_>>()))
             })
             .collect(),
     )
@@ -74,40 +81,57 @@ static INFERRED_OUTLIVES_MAP_EXECUTOR: Registration<Config> =
 
 #[executor(config = Config)]
 async fn inferred_outlives_executor(
-    &InferredOutlivesKey { struct_id }: &InferredOutlivesKey,
+    &InferredOutlivesKey { adt_id }: &InferredOutlivesKey,
     engine: &TrackedEngine,
 ) -> Interned<[OutlivesPredicate]> {
-    let map = engine.query(&InferredOutlivesMapKey { target_id: struct_id.target_id }).await;
-    map.get(&struct_id.id).cloned().expect("incorrect key")
+    let map = engine.query(&InferredOutlivesMapKey { target_id: adt_id.target_id }).await;
+    map.get(&adt_id.id).cloned().expect("incorrect key")
 }
 
 #[distributed_slice(RAY_PROGRAM)]
 static INFERRED_OUTLIVES_EXECUTOR: Registration<Config> =
     Registration::new::<InferredOutlivesKey, InferredOutlivesExecutor>();
 
-/// Adds to the set of `struct_id` in `inferred` the requirements that its
-/// field types place on its own lifetimes and variables, given the current
-/// sets. Returns whether the set gained a requirement.
+/// Adds to the set of `adt_id` in `inferred` the requirements that its field
+/// or payload types place on its own lifetimes and variables, given the
+/// current sets. Returns whether the set gained a requirement.
 async fn grow_requirements(
-    struct_id: GlobalSymbolID,
+    adt_id: GlobalSymbolID,
     inferred: &mut FxHashMap<GlobalSymbolID, BTreeSet<OutlivesPredicate>>,
     engine: &TrackedEngine,
 ) -> bool {
-    // Collect the bounds implied by every field type.
-    let body = engine.get_struct_body(struct_id).await;
+    // Collect the bounds implied by every field or payload type.
     let mut collector = ImpliedOutlivesCollector::with_in_progress(engine, inferred);
-    for (_, field) in body.iter() {
-        collector.collect(field.ty()).await;
+    let kind = engine.get_symbol_kind(adt_id).await;
+
+    match kind {
+        SymbolKind::Struct => {
+            for (_, field) in engine.get_struct_body(adt_id).await.iter() {
+                collector.collect(field.ty()).await;
+            }
+        }
+
+        SymbolKind::Enum => {
+            for variant_id in engine.get_members(adt_id).await.all_ids() {
+                let variant_id = adt_id.target_id.make_global(variant_id);
+                if let Some(payload) = engine.get_variant_payload_ty(variant_id).await {
+                    collector.collect(&payload).await;
+                }
+            }
+        }
+
+        _ => unreachable!("should've been somer adt"),
     }
+
     let requirements = collector.into_requirements();
 
-    // Keep the components that only mention the struct's own variables and
-    // that do not hold trivially.
-    let set = inferred.get_mut(&struct_id).expect("every struct has a set");
+    // Keep the components that only mention the ADT's own variables and that
+    // do not hold trivially.
+    let set = inferred.get_mut(&adt_id).expect("every ADT has a set");
     let mut changed = false;
     for requirement in requirements {
         for predicate in decompose(requirement, engine).await {
-            if is_inferable(&predicate, struct_id) {
+            if is_inferable(&predicate, adt_id) {
                 changed |= set.insert(predicate);
             }
         }
@@ -126,9 +150,9 @@ async fn decompose(
     })
 }
 
-/// Returns whether a decomposed requirement can be stated over the struct's
-/// own variables and does not hold trivially.
-fn is_inferable(predicate: &OutlivesPredicate, struct_id: GlobalSymbolID) -> bool {
+/// Returns whether a decomposed requirement can be stated over the ADT's own
+/// variables and does not hold trivially.
+fn is_inferable(predicate: &OutlivesPredicate, adt_id: GlobalSymbolID) -> bool {
     let subject = predicate.lesser();
     let bound = predicate.greater();
 
@@ -138,8 +162,8 @@ fn is_inferable(predicate: &OutlivesPredicate, struct_id: GlobalSymbolID) -> boo
         return false;
     }
 
-    // Every variable must be one of the struct's own.
+    // Every variable must be one of the ADT's own.
     [subject, bound].into_iter().all(|ty| {
-        ty.recursive_iter().all(|ty| ty.as_poly_var().is_none_or(|id| id.parent_id() == struct_id))
+        ty.recursive_iter().all(|ty| ty.as_poly_var().is_none_or(|id| id.parent_id() == adt_id))
     })
 }

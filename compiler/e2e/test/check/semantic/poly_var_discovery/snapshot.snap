@@ -1,40 +1,116 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: symbol `a` is not found
-   ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:55:33
-   │
+ 1 │ eff IO:
+ 2 │     def output()
+ 3 │
+ 4 │ eff State[t]:
+ 5 │     def get() -> t
+ 6 │
+ 7 │ struct Handler[e: Effect]:
+ 8 │     value: int32
+ 9 │
+10 │ struct Ref['a, t]:
+11 │     value: &'a t
+12 │
+13 │ trait Scoped[e: Effect]:
+14 │     type Row[r: Effect]: Effect
+15 │
+16 │     # OK: the effect-row tail reuses the trait's `e` rather than introducing
+17 │     # its own, so the instance definition conforms.
+18 │     def tail(handler: Handler[{IO | e}]) -> int32
+19 │
+20 │     # OK: `r` instantiates the effect-row parameter of `this.Row`.
+21 │     def project(handler: Handler[this.Row[r]]) -> int32
+22 │
+23 │ inst Concrete for Scoped[{}]:
+24 │     type Row[r: Effect] = {IO | r}
+25 │     def tail(handler: Handler[{IO}]) -> int32:
+26 │         return 0
+27 │     def project(handler: Handler[Concrete.Row[r]]) -> int32:
+28 │         return 0
+29 │
+30 │ # OK: `e` instantiates an effect-row parameter, so it is an effect variable.
+31 │ def effectArgument(handler: Handler[e], callback: def() -> int32 \ e) -> int32:
+32 │     return 0
+33 │
+34 │ # OK: a type argument of an effect label introduces a variable.
+35 │ def labelArgument(callback: def() -> int32 \ {State[t]}) -> int32:
+36 │     return 0
+37 │
+38 │ # OK: `'a` is a lifetime and `t` is a type.
+39 │ def lifetimeArgument(reference: Ref['a, t]) -> &'a t:
+40 │     return reference.value
+41 │
+42 │ trait Rows[t]:
+43 │     type Row[r: Effect]: Effect
+44 │
+45 │ # OK: `d` is this definition's own dictionary, so `r` instantiates the
+46 │ # effect-row parameter of `Rows.Row` and is an effect variable. `d`'s trait
+47 │ # reference mentions `a`, which is discovered from the first parameter.
+48 │ def ownGiven(value: *a, handler: Handler[d.Row[r]]) given (d: Rows[a]) -> int32:
+49 │     return 0
+50 │
+51 │ def ownGivenCallable(callback: def() -> int32 \ d.Row[r]) given (d: Rows[int32]) -> int32:
+52 │     return 0
+53 │
+54 │ # ERROR: a bare name in a lifetime position does not introduce a variable.
 55 │ def bareLifetime(reference: Ref[a, int32]) -> int32:
-   ╰╴                                ━ symbol `a` is not found
-
-[error]: expected a value type or an associated type projection
-   ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:59:43
-   │
+   ┆
+   ┆ [error]: symbol `a` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:55:33
+   ┆    │
+   ┆ 55 │ def bareLifetime(reference: Ref[a, int32]) -> int32:
+   ┆    ╰╴                                ━ symbol `a` is not found
+   ┆
+56 │     return 0
+57 │
+58 │ # ERROR: `IO` names an effect, not an effect-row variable.
 59 │ def effectName(callback: def() -> int32 \ IO) -> int32:
-   ╰╴                                          ━━
-
-[error]: symbol `myElem` is not found
-   ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:67:23
-   │
+   ┆
+   ┆ [error]: expected a value type or an associated type projection
+   ┆    ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:59:43
+   ┆    │
+   ┆ 59 │ def effectName(callback: def() -> int32 \ IO) -> int32:
+   ┆    ╰╴                                          ━━
+   ┆
+60 │     return 0
+61 │
+62 │ # OK: a lowercase name of any length introduces a variable.
+63 │ def longNames(value: *elem, other: *row_type, callback: def() -> int32 \ effects) -> int32:
+64 │     return 0
+65 │
+66 │ # ERROR: `myElem` is not a lowercase name, so it introduces no variable.
 67 │ def camelName(value: *myElem) -> int32:
-   ╰╴                      ━━━━━━ symbol `myElem` is not found
-
-[error]: type argument arity mismatch
-   ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:71:36
-   │
+   ┆
+   ┆ [error]: symbol `myElem` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:67:23
+   ┆    │
+   ┆ 67 │ def camelName(value: *myElem) -> int32:
+   ┆    ╰╴                      ━━━━━━ symbol `myElem` is not found
+   ┆
+68 │     return 0
+69 │
+70 │ # ERROR: an argument beyond the arity introduces no variable.
 71 │ def excessArgument(handler: Handler[{}, t]) -> int32:
-   ╰╴                                   ━━━━━━━ expected 1, found 2
+   ┆
+   ┆ [error]: type argument arity mismatch
+   ┆    ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:71:36
+   ┆    │
+   ┆ 71 │ def excessArgument(handler: Handler[{}, t]) -> int32:
+   ┆    ╰╴                                   ━━━━━━━ expected 1, found 2
+   ┆
+   ┆ [error]: symbol `t` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:71:41
+   ┆    │
+   ┆ 71 │ def excessArgument(handler: Handler[{}, t]) -> int32:
+   ┆    ╰╴                                        ━ symbol `t` is not found
+   ┆
+72 │     return 0
+73 │
+74 │ def main() -> int32:
+75 │     return 0
 
-[error]: symbol `t` is not found
-   ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:71:41
-   │
-71 │ def excessArgument(handler: Handler[{}, t]) -> int32:
-   ╰╴                                        ━ symbol `t` is not found
-
+other diagnostics:
 [error]: Compilation aborted due to 5 error(s)
-
-
-
-stdout:

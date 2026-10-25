@@ -1,16 +1,54 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: mismatched types in variable assignment: expected `Continuation[(), &mut <coroutine of counter>]`, but found `Continuation[int32, &mut <coroutine of counter>]`
-   ╭▸ compiler/e2e/test/check/coroutine/continuations_of_different_types/main.ray:30:23
-   │
+ 1 │ eff State[a]:
+ 2 │     def get() -> a
+ 3 │     def set(value: a) -> ()
+ 4 │
+ 5 │
+ 6 │ def counter() -> int32 \ {State[int32]}:
+ 7 │     State.set(State.get() + 1)
+ 8 │     return State.get()
+ 9 │
+10 │
+11 │ # Runs a stateful coroutine from `state`. Each clause gets a continuation
+12 │ # that waits for what its operation returns.
+13 │ #
+14 │ # OK: `get` is answered with an `int32` and `set` with `()`, so the driver
+15 │ # is generic over `r` and recurses.
+16 │ def drive(k: core.Continuation[r, c], value: r, state: int32) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {State[int32]}):
+17 │     return handle k(value):
+18 │         case State[int32].get() resume k1: drive(k1, state, state)
+19 │         case State[int32].set(value) resume k2: drive(k2, (), value)
+20 │
+21 │
+22 │ # ERROR: `k1` waits for an `int32` and `k2` for `()`, so no single variable
+23 │ # can hold both.
+24 │ def store() -> int32:
+25 │     let mut con = coro counter()
+26 │
+27 │     while true:
+28 │         handle con():
+29 │             case State[int32].get() resume k1:
 30 │                 con = k1
-   ╰╴                      ━━
+   ┆
+   ┆ [error]: mismatched types in variable assignment: expected `Continuation[(), &mut <coroutine of counter>]`, but found `Continuation[int32, &mut <coroutine of counter>]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/continuations_of_different_types/main.ray:30:23
+   ┆    │
+   ┆ 30 │                 con = k1
+   ┆    ╰╴                      ━━
+   ┆
+31 │             case State[int32].set(value) resume k2:
+32 │                 con = k2
+33 │             case return x:
+34 │                 return x
+35 │
+36 │     return 0
+37 │
+38 │
+39 │ def main() -> int32:
+40 │     return drive(coro counter(), (), 0)
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

@@ -1,42 +1,179 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: where-clause obligation for `main.Declared` is not satisfied
-   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:33:12
-   │
-33 │     inner: Declared['a, t]
-   ╰╴           ━━━━━━━━━━━━━━━ `t` must outlive `'a`
+  1 │ trait Project[t]:
+  2 │     type Out
+  3 │
+  4 │ # Infers `t: 'a`.
+  5 │ struct Ref['a, t]:
+  6 │     value: &'a t
+  7 │
+  8 │ # Infers `t: 'a` through `Ref`.
+  9 │ struct Holder['a, t]:
+ 10 │     inner: Ref['a, t]
+ 11 │
+ 12 │ # Infers `'b: 'a` and `t: 'b`, so `t: 'a` holds too.
+ 13 │ struct Nested['a, 'b, t]:
+ 14 │     value: &'a &'b t
+ 15 │
+ 16 │ # Mutually recursive structs infer `t: 'a` for both.
+ 17 │ struct Even['a, t]:
+ 18 │     value: &'a t
+ 19 │     next: *Odd['a, t]
+ 20 │
+ 21 │ struct Odd['a, t]:
+ 22 │     next: *Even['a, t]
+ 23 │
+ 24 │ # A declared bound is not inferred by the structs that use it: only references
+ 25 │ # are.
+ 26 │ struct Declared['a, t] where (t: 'a):
+ 27 │     value: *t
+ 28 │     # Uses `'a` without inferring `t: 'a`.
+ 29 │     lifetime: &'a int32
+ 30 │
+ 31 │ # ERROR: `Declared['a, t]` requires `t: 'a`, which is not inferred.
+ 32 │ struct UsesDeclared['a, t]:
+ 33 │     inner: Declared['a, t]
+    ┆
+    ┆ [error]: where-clause obligation for `main.Declared` is not satisfied
+    ┆    ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:33:12
+    ┆    │
+    ┆ 33 │     inner: Declared['a, t]
+    ┆    ╰╴           ━━━━━━━━━━━━━━━ `t` must outlive `'a`
+    ┆
+ 34 │
+ 35 │ # OK: the bound is written out, but it is still not inferred.
+ 36 │ struct UsesDeclaredBounded['a, t] where (t: 'a):
+ 37 │     inner: Declared['a, t]
+ 38 │
+ 39 │ # OK: infers `t: 'a` from its payloads, directly and through `Ref`, which the
+ 40 │ # payloads then satisfy.
+ 41 │ enum Borrowed['a, t]:
+ 42 │     Direct(&'a t)
+ 43 │     Wrapped(Ref['a, t])
+ 44 │     Nothing
+ 45 │
+ 46 │ # ERROR: as for a struct, `Declared['a, t]` requires `t: 'a`, which is not
+ 47 │ # inferred.
+ 48 │ enum PayloadUsesDeclared['a, t]:
+ 49 │     Inner(Declared['a, t])
+    ┆
+    ┆ [error]: where-clause obligation for `main.Declared` is not satisfied
+    ┆    ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:49:11
+    ┆    │
+    ┆ 49 │     Inner(Declared['a, t])
+    ┆    ╰╴          ━━━━━━━━━━━━━━━ `t` must outlive `'a`
+    ┆
+ 50 │
+ 51 │ # A struct and an enum that are mutually recursive infer `t: 'a` for both,
+ 52 │ # though only `Node` holds the reference.
+ 53 │ enum Chain['a, t]:
+ 54 │     Link(*Node['a, t])
+ 55 │     End
+ 56 │
+ 57 │ struct Node['a, t]:
+ 58 │     value: &'a t
+ 59 │     next: Chain['a, t]
+ 60 │
+ 61 │ # OK: the parameter `Holder['a, t]` implies `t: 'a` through inference.
+ 62 │ def holder['a, t](value: *Holder['a, t]) given (project: Project[t]) -> () where (
+ 63 │     project.Out = &'a t,
+ 64 │ ):
+ 65 │     return ()
+ 66 │
+ 67 │ # OK: `Odd` only reaches `&'a t` through `Even`, and still implies `t: 'a`.
+ 68 │ def odd['a, t](value: *Odd['a, t]) given (project: Project[t]) -> () where (
+ 69 │     project.Out = &'a t,
+ 70 │ ):
+ 71 │     return ()
+ 72 │
+ 73 │ # OK: `Nested['a, 'b, t]` implies `t: 'a` transitively.
+ 74 │ def nested['a, 'b, t](value: *Nested['a, 'b, t]) given (project: Project[t]) -> () where (
+ 75 │     project.Out = &'a t,
+ 76 │ ):
+ 77 │     return ()
+ 78 │
+ 79 │ # OK: `Borrowed['a, t]` implies `t: 'a` through inference.
+ 80 │ def borrowed['a, t](value: *Borrowed['a, t]) given (project: Project[t]) -> () where (
+ 81 │     project.Out = &'a t,
+ 82 │ ):
+ 83 │     return ()
+ 84 │
+ 85 │ # OK: `Chain` only reaches `&'a t` through `Node`, and still implies `t: 'a`.
+ 86 │ def chain['a, t](value: *Chain['a, t]) given (project: Project[t]) -> () where (
+ 87 │     project.Out = &'a t,
+ 88 │ ):
+ 89 │     return ()
+ 90 │
+ 91 │ # ERROR: the parameter does not imply the declared bound of
+ 92 │ # `UsesDeclaredBounded`, so both the parameter type and `&'a t` need `t: 'a`
+ 93 │ # written out.
+ 94 │ def usesDeclared['a, t](value: *UsesDeclaredBounded['a, t]) given (
+    ┆
+    ┆ [error]: where-clause obligation for `main.UsesDeclaredBounded` is not satisfied
+    ┆    ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:94:33
+    ┆    │
+    ┆ 94 │ def usesDeclared['a, t](value: *UsesDeclaredBounded['a, t]) given (
+    ┆    ╰╴                                ━━━━━━━━━━━━━━━━━━━━━━━━━━ `t` must outlive `'a`
+    ┆
+ 95 │     project: Project[t],
+ 96 │ ) -> () where (project.Out = &'a t):
+    ┆
+    ┆ [error]: the type `t` may not live long enough
+    ┆    ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:96:30
+    ┆    │
+    ┆ 96 │ ) -> () where (project.Out = &'a t):
+    ┆    │                              ━━━━━ the reference requires `t: 'a`
+    ┆    │
+    ┆    ╰ help: consider adding `where (t: 'a)`
+    ┆
+ 97 │     return ()
+ 98 │
+ 99 │ # ERROR: using `Holder['a, t]` requires `t: 'a`.
+100 │ def unbounded['a, t]() given (project: Project[Holder['a, t]]) -> ():
+    ┆
+    ┆ [error]: where-clause obligation for `main.Holder` is not satisfied
+    ┆     ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:100:48
+    ┆     │
+    ┆ 100 │ def unbounded['a, t]() given (project: Project[Holder['a, t]]) -> ():
+    ┆     ╰╴                                               ━━━━━━━━━━━━━ `t` must outlive `'a`
+    ┆
+101 │     return ()
+102 │
+103 │ # ERROR: using `Borrowed['a, t]` requires `t: 'a`.
+104 │ def unboundedEnum['a, t]() given (project: Project[Borrowed['a, t]]) -> ():
+    ┆
+    ┆ [error]: where-clause obligation for `main.Borrowed` is not satisfied
+    ┆     ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:104:52
+    ┆     │
+    ┆ 104 │ def unboundedEnum['a, t]() given (project: Project[Borrowed['a, t]]) -> ():
+    ┆     ╰╴                                                   ━━━━━━━━━━━━━━━ `t` must outlive `'a`
+    ┆
+105 │     return ()
+106 │
+107 │ # OK: the bound is declared.
+108 │ def bounded['a, t]() given (project: Project[Holder['a, t]]) -> () where (t: 'a):
+109 │     return ()
+110 │
+111 │ # ERROR: an instance head implies nothing, so using `Holder['a, t]` there
+112 │ # requires `t: 'a` written out.
+113 │ inst HolderOut['a, t] for Project[Holder['a, t]]:
+    ┆
+    ┆ [error]: where-clause obligation for `main.Holder` is not satisfied
+    ┆     ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:113:35
+    ┆     │
+    ┆ 113 │ inst HolderOut['a, t] for Project[Holder['a, t]]:
+    ┆     ╰╴                                  ━━━━━━━━━━━━━ `t` must outlive `'a`
+    ┆
+114 │     type Out = int32
+115 │
+116 │ # OK: the bound is written out.
+117 │ inst OddOut['a, t] for Project[Odd['a, t]] where (t: 'a):
+118 │     type Out = &'a t
+119 │
+120 │ def main() -> ():
+121 │     return ()
 
-[error]: where-clause obligation for `main.UsesDeclaredBounded` is not satisfied
-   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:60:33
-   │
-60 │ def usesDeclared['a, t](value: *UsesDeclaredBounded['a, t]) given (
-   ╰╴                                ━━━━━━━━━━━━━━━━━━━━━━━━━━ `t` must outlive `'a`
-
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:62:30
-   │
-62 │ ) -> () where (project.Out = &'a t):
-   │                              ━━━━━ the reference requires `t: 'a`
-   │
-   ╰ help: consider adding `where (t: 'a)`
-
-[error]: where-clause obligation for `main.Holder` is not satisfied
-   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:66:48
-   │
-66 │ def unbounded['a, t]() given (project: Project[Holder['a, t]]) -> ():
-   ╰╴                                               ━━━━━━━━━━━━━ `t` must outlive `'a`
-
-[error]: where-clause obligation for `main.Holder` is not satisfied
-   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:75:35
-   │
-75 │ inst HolderOut['a, t] for Project[Holder['a, t]]:
-   ╰╴                                  ━━━━━━━━━━━━━ `t` must outlive `'a`
-
-[error]: Compilation aborted due to 5 error(s)
-
-
-
-stdout:
+other diagnostics:
+[error]: Compilation aborted due to 7 error(s)

@@ -1,21 +1,43 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/temporary_pointer/main.ray:19:5
-   │
+ 1 │ def identity(x: &'a mut int32) -> &'a mut int32:
+ 2 │     return x
+ 3 │
+ 4 │ # A dereferenced call result is held in a temporary, which goes out of scope
+ 5 │ # at the end of the statement. Only the pointer is stored there: the memory it
+ 6 │ # points to is not part of the temporary.
+ 7 │
+ 8 │ def reborrowPastStatement():
+ 9 │     let mut x = 1
+10 │     # OK: `unique` borrows the memory behind the temporary pointer, which
+11 │     # outlives the statement.
+12 │     let unique = identity(x.&mut).*.&mut
+13 │     unique.* = 2
+14 │
+15 │ def reborrowKeepsOriginalBorrowed():
+16 │     let mut x = 1
 17 │     let unique = identity(x.&mut).*.&mut
-   │                           ────── mutable borrow occurs here
 18 │     # ERROR: `unique` still borrows `x`, through the temporary pointer.
 19 │     x = 3
-   │     ━━━━━ the borrowed place is assigned here
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/temporary_pointer/main.ray:19:5
+   ┆    │
+   ┆ 17 │     let unique = identity(x.&mut).*.&mut
+   ┆    │                           ────── mutable borrow occurs here
+   ┆ 18 │     # ERROR: `unique` still borrows `x`, through the temporary pointer.
+   ┆ 19 │     x = 3
+   ┆    │     ━━━━━ the borrowed place is assigned here
+   ┆ 20 │     unique.* = 2
+   ┆    ╰╴    ──────────── borrow later used here
+   ┆
 20 │     unique.* = 2
-   ╰╴    ──────────── borrow later used here
+21 │
+22 │ def main():
+23 │     reborrowPastStatement()
+24 │     reborrowKeepsOriginalBorrowed()
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

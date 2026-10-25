@@ -1,71 +1,160 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: lifetime may not live long enough
-  ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:8:12
-  │
-8 │     return x
-  │            ━ this requires `'a` to outlive `'b`
-  │
-  ╰ help: consider adding `'a: 'b` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:18:12
-   │
+ 1 │ def shorten['a, 'b](x: &'a int32) -> &'b int32 where ('a: 'b):
+ 2 │     # OK: the where clause states `'a: 'b`.
+ 3 │     return x
+ 4 │
+ 5 │
+ 6 │ def unrelated['a, 'b](x: &'a int32) -> &'b int32:
+ 7 │     # ERROR: nothing states `'a: 'b`.
+ 8 │     return x
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:8:12
+   ┆   │
+   ┆ 8 │     return x
+   ┆   │            ━ this requires `'a` to outlive `'b`
+   ┆   │
+   ┆   ╰ help: consider adding `'a: 'b` to the where clause
+   ┆
+ 9 │
+10 │
+11 │ def sameLifetime['a](x: &'a int32) -> &'a int32:
+12 │     # OK: the value keeps its lifetime.
+13 │     return x
+14 │
+15 │
+16 │ def toStatic['a](x: &'a int32) -> &'static int32:
+17 │     # ERROR: `'a` is not known to outlive `'static`.
 18 │     return x
-   ╰╴           ━ this requires `'a` to outlive `'static`
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:29:5
-   │
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:18:12
+   ┆    │
+   ┆ 18 │     return x
+   ┆    ╰╴           ━ this requires `'a` to outlive `'static`
+   ┆
+19 │
+20 │
+21 │ def fromStatic['a](x: &'static int32) -> &'a int32:
+22 │     # OK: `'static` outlives every lifetime.
+23 │     return x
+24 │
+25 │
+26 │ def storeThrough['a, 'b](x: &'a int32, out: &mut &'b int32):
+27 │     # ERROR: the value is stored where a `&'b int32` is expected.
 28 │     let y = x
-   │     ───────── the value of lifetime `'a` flows in here
 29 │     out.* = y
-   │     ━━━━━━━━━ this requires `'a` to outlive `'b`
-   │
-   ╰ help: consider adding `'a: 'b` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:44:12
-   │
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:29:5
+   ┆    │
+   ┆ 28 │     let y = x
+   ┆    │     ───────── the value of lifetime `'a` flows in here
+   ┆ 29 │     out.* = y
+   ┆    │     ━━━━━━━━━ this requires `'a` to outlive `'b`
+   ┆    │
+   ┆    ╰ help: consider adding `'a: 'b` to the where clause
+   ┆
+30 │
+31 │
+32 │ def storeThroughOutlived['a, 'b](x: &'a int32, out: &mut &'b int32) where ('a: 'b):
+33 │     # OK: the where clause states `'a: 'b`.
+34 │     let y = x
+35 │     out.* = y
+36 │
+37 │
+38 │ def eitherBranch['a, 'b, 'c](c: bool, x: &'a int32, y: &'b int32) -> &'c int32 where ('a: 'c):
+39 │     let mut r = x
+40 │     if c:
 41 │         r = y
-   │         ───── the value of lifetime `'b` flows in here
-   ‡
+42 │     # ERROR: `r` may hold `y`, and nothing states `'b: 'c`. That it may hold
+43 │     # `x` is fine.
 44 │     return r
-   │            ━ this requires `'b` to outlive `'c`
-   │
-   ╰ help: consider adding `'b: 'c` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:50:12
-   │
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:44:12
+   ┆    │
+   ┆ 41 │         r = y
+   ┆    │         ───── the value of lifetime `'b` flows in here
+   ┆    ‡
+   ┆ 44 │     return r
+   ┆    │            ━ this requires `'b` to outlive `'c`
+   ┆    │
+   ┆    ╰ help: consider adding `'b: 'c` to the where clause
+   ┆
+45 │
+46 │
+47 │ def throughCall['a, 'b](x: &'a int32) -> &'b int32:
+48 │     # ERROR: `shorten` gives back a reference that `'a` must outlive.
 49 │     let s = shorten(x)
-   │             ────────── the value of lifetime `'a` flows in here
 50 │     return s
-   │            ━ this requires `'a` to outlive `'b`
-   │
-   ╰ help: consider adding `'a: 'b` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:66:12
-   │
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:50:12
+   ┆    │
+   ┆ 49 │     let s = shorten(x)
+   ┆    │             ────────── the value of lifetime `'a` flows in here
+   ┆ 50 │     return s
+   ┆    │            ━ this requires `'a` to outlive `'b`
+   ┆    │
+   ┆    ╰ help: consider adding `'a: 'b` to the where clause
+   ┆
+51 │
+52 │
+53 │ def impliedBound['a, 'b](x: &'a &'b int32) -> &'a int32:
+54 │     # OK: `&'a &'b int32` being well-formed implies `'b: 'a`.
+55 │     return x.*
+56 │
+57 │
+58 │ def copiedOut['a, 'b](x: &'a &'b int32) -> &'b int32:
+59 │     # OK: the inner shared reference is copied out, whatever `'a` is.
+60 │     return x.*.*.&
+61 │
+62 │
+63 │ def reborrowedMut['a, 'b](x: &'a mut &'b mut int32) -> &'b mut int32:
+64 │     # ERROR: the data is only reachable through `x` for `'a`, and the implied
+65 │     # bound is `'b: 'a`, not `'a: 'b`.
 66 │     return x.*.*.&mut
-   │            ━━━━━━━━━━ this requires `'a` to outlive `'b`
-   │
-   ╰ help: consider adding `'a: 'b` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:74:5
-   │
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:66:12
+   ┆    │
+   ┆ 66 │     return x.*.*.&mut
+   ┆    │            ━━━━━━━━━━ this requires `'a` to outlive `'b`
+   ┆    │
+   ┆    ╰ help: consider adding `'a: 'b` to the where clause
+   ┆
+67 │
+68 │
+69 │ def chained['a, 'b, 'c](x: &'a int32, mid: &mut &'b int32, out: &mut &'c int32) where ('a: 'b):
+70 │     # OK: the where clause states `'a: 'b`.
+71 │     mid.* = x
+72 │     # ERROR: nothing states `'b: 'c`. This is reported once, and not again
+73 │     # as `'a: 'c`.
 74 │     out.* = mid.*
-   │     ━━━━━━━━━━━━━ this requires `'b` to outlive `'c`
-   │
-   ╰ help: consider adding `'b: 'c` to the where clause
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:74:5
+   ┆    │
+   ┆ 74 │     out.* = mid.*
+   ┆    │     ━━━━━━━━━━━━━ this requires `'b` to outlive `'c`
+   ┆    │
+   ┆    ╰ help: consider adding `'b: 'c` to the where clause
+   ┆
+75 │
+76 │
+77 │ def capturedByClosure['a, 'b](x: &'a int32, y: &'b int32) -> int32:
+78 │     # OK: the closure body only reads its captures, so it requires nothing of
+79 │     # the lifetimes in its interface.
+80 │     let read = () -> x.* + y.*
+81 │     return read()
+82 │
+83 │
+84 │ def main():
+85 │     pass
 
+other diagnostics:
 [error]: Compilation aborted due to 7 error(s)
-
-
-
-stdout:

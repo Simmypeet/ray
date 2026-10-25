@@ -1,9 +1,16 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-assertion_line: 112
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ eff Console:
+ 2 │     def write()
+ 3 │
+ 4 │ def test() -> ():
+ 5 │     let result: bool = run:
+ 6 │         Console.write()
+ 7 │         return true
+ 8 │     with Console:
+ 9 │         def write():
+10 │             return ()
+11 │
+12 │     return ()

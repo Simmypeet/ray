@@ -1,8 +1,19 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ def global(value: int32) -> int32:
+ 2 │     return value
+ 3 │
+ 4 │ def invoke(callback: def(int32) -> int32, value: int32) -> int32:
+ 5 │     let result = callback(value)
+ 6 │     return result
+ 7 │
+ 8 │ def invokeParenthesized(callback: def(int32) -> int32, value: int32) -> int32:
+ 9 │     return (callback)(value)
+10 │
+11 │ def invokeChained(callback: f) given (first: core.Def[f], second: core.Def[first.Return]) -> bool where (first.Args = (int32,), first.Effect = {}, second.Args = (int32,), second.Return = bool, second.Effect = {}):
+12 │     return callback(1)(2)
+13 │
+14 │ def invokeGlobal() -> int32:
+15 │     return global(3)

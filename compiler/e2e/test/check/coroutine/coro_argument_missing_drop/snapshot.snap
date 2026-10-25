@@ -1,18 +1,38 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `core.Drop[t]`
-   ╭▸ compiler/e2e/test/check/coroutine/coro_argument_missing_drop/main.ray:12:13
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ def hold[t](value: t) -> t \ {Yield[int32]}:
+ 6 │     return value
+ 7 │
+ 8 │
+ 9 │ # ERROR: a coroutine that is never resumed drops its arguments, and nothing
+10 │ # says how to drop a `t`.
+11 │ def missing[t](value: t):
 12 │     let k = coro hold(value)
-   │             ━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
-   │
-   ╰ help: add `given (_: core.Drop[t])`
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[t]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_argument_missing_drop/main.ray:12:13
+   ┆    │
+   ┆ 12 │     let k = coro hold(value)
+   ┆    │             ━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+   ┆    │
+   ┆    ╰ help: add `given (_: core.Drop[t])`
+   ┆
+13 │
+14 │
+15 │ # OK: the given tells how to drop the argument.
+16 │ def provided[t](value: t) given (_: core.Drop[t]):
+17 │     let k = coro hold(value)
+18 │
+19 │
+20 │ def main() -> int32:
+21 │     provided(1)
+22 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

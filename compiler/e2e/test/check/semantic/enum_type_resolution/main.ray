@@ -1,0 +1,56 @@
+enum Maybe[t]:
+    Some(t)
+    Nothing
+
+# An enum can name itself behind a pointer.
+enum List[t]:
+    Cons((t, *List[t]))
+    Nil
+
+# A declared where clause is required wherever the enum is used.
+enum Bounded['a, t] where (t: 'a):
+    Value(*t)
+    Borrowed(&'a int32)
+
+module shapes:
+    pub enum Shape:
+        Square(int32)
+        Circle(int32)
+
+    enum Hidden:
+        Secret(int32)
+
+# OK: enums as field, payload and nested argument types.
+struct Holder[t]:
+    maybe: Maybe[t]
+    list: List[t]
+
+enum Nested[t]:
+    Inner(Maybe[Maybe[t]])
+
+# OK: enums as parameter and return types, and through a module path.
+def identity(value: Maybe[int32], shape: shapes.Shape) -> Maybe[int32]:
+    return value
+
+# OK: the where clause of `Bounded` is written out.
+def bounded['a, t](value: *Bounded['a, t]) -> () where (t: 'a):
+    return ()
+
+# ERROR: `Bounded['a, t]` requires `t: 'a`.
+def unbounded['a, t](value: *Bounded['a, t]) -> ():
+    return ()
+
+# ERROR: `Maybe` takes one type argument.
+def tooMany(value: *Maybe[int32, bool]) -> ():
+    return ()
+
+# ERROR: a variant is not a type.
+def variant(value: *Maybe[int32].Some) -> ():
+    return ()
+
+# ERROR: `Hidden` is private to `shapes`.
+def hidden(value: *shapes.Hidden) -> ():
+    return ()
+
+def main() -> int32:
+    return 0

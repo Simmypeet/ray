@@ -1,16 +1,24 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `main.Show[<closure>() -> int32 \ {}]`
-   ╭▸ compiler/e2e/test/check/tast/effect_default_residual/main.ray:10:12
-   │
+ 1 │ trait Show[a]:
+ 2 │     def show(value: a) -> int32
+ 3 │
+ 4 │ def needShow(value: a) given (s: Show[a]) -> int32:
+ 5 │     return s.show(value)
+ 6 │
+ 7 │ # The closure's effect row is mentioned only by the unresolved `Show`
+ 8 │ # requirement, so it is not defaulted and the requirement stays uninferred.
+ 9 │ def main() -> int32:
 10 │     return needShow(() -> 1)
-   ╰╴           ━━━━━━━━
+   ┆
+   ┆ [error]: no implicit instance found: `main.Show[<closure>() -> int32 \ {}]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/effect_default_residual/main.ray:10:12
+   ┆    │
+   ┆ 10 │     return needShow(() -> 1)
+   ┆    ╰╴           ━━━━━━━━
+   ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

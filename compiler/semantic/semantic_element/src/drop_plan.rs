@@ -77,9 +77,11 @@ impl DictionaryExpr {
 
             // Recursive nominal references stay as dictionaries rather than
             // expanding their recipes.
-            Self::Generated { nominal, external } => {
-                Ty::new_nominal_drop_instance(ty(nominal), external.iter().map(instantiate), engine)
-            }
+            Self::Generated { nominal, external } => Ty::new_generated_adt_drop_instance(
+                ty(nominal),
+                external.iter().map(instantiate),
+                engine,
+            ),
         }
     }
 }
@@ -111,25 +113,58 @@ impl FieldDrop {
     pub const fn dictionary(&self) -> &DictionaryExpr { &self.dictionary }
 }
 
+/// One enum variant and the dictionary selected to drop its payload, or
+/// `None` for a variant without a payload, which owns nothing.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
+pub struct VariantDrop {
+    variant_id: GlobalSymbolID,
+    payload: Option<DictionaryExpr>,
+}
+
+impl VariantDrop {
+    #[must_use]
+    pub const fn new(variant_id: GlobalSymbolID, payload: Option<DictionaryExpr>) -> Self {
+        Self { variant_id, payload }
+    }
+
+    /// Returns the `SymbolKind::Variant` symbol.
+    #[must_use]
+    pub const fn variant_id(&self) -> GlobalSymbolID { self.variant_id }
+
+    #[must_use]
+    pub const fn payload(&self) -> Option<&DictionaryExpr> { self.payload.as_ref() }
+}
+
+/// What a generated `Drop` drops in a value of its nominal type.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
+pub enum GeneratedDropBody {
+    /// Every owned field of a struct, in declaration order.
+    Struct(Vec<FieldDrop>),
+
+    /// The payload of whichever variant an enum value is. Every variant has
+    /// an entry, ordered by symbol ID.
+    Enum(Vec<VariantDrop>),
+}
+
 /// A generic structural plan. Requirements are Drop implementor types in the
 /// nominal declaration's polymorphic context, in dictionary argument order.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct GeneratedDropPlan {
     requirements: Vec<Interned<Ty>>,
-    fields: Vec<FieldDrop>,
+    body: GeneratedDropBody,
 }
 
 impl GeneratedDropPlan {
     #[must_use]
-    pub const fn new(requirements: Vec<Interned<Ty>>, fields: Vec<FieldDrop>) -> Self {
-        Self { requirements, fields }
+    pub const fn new(requirements: Vec<Interned<Ty>>, body: GeneratedDropBody) -> Self {
+        Self { requirements, body }
     }
 
     #[must_use]
     pub fn requirements(&self) -> &[Interned<Ty>] { &self.requirements }
 
     #[must_use]
-    pub fn fields(&self) -> &[FieldDrop] { &self.fields }
+    pub const fn body(&self) -> &GeneratedDropBody { &self.body }
 }
 
 /// Why a nominal type cannot have a structural Drop plan.
@@ -138,7 +173,8 @@ pub enum DropPlanError {
     MultipleInstances(Vec<GlobalSymbolID>),
     InvalidExplicitInstance(GlobalSymbolID),
     MissingFieldDictionary(Interned<Ty>),
-    /// A field's type is a linear struct, which has no Drop instance.
+    /// A field or payload type is a linear struct or enum, which has no Drop
+    /// instance.
     LinearField(Interned<Ty>),
     NonConvergentRequirements,
 }
@@ -146,8 +182,8 @@ pub enum DropPlanError {
 /// The Drop behavior selected for one nominal constructor.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub enum DropPlan {
-    /// The struct is declared `@linear`: it has no Drop instance, so its
-    /// values must always be consumed explicitly.
+    /// The struct or enum is declared `@linear`: it has no Drop instance, so
+    /// its values must always be consumed explicitly.
     Linear,
     Explicit(GlobalSymbolID),
     Generated(GeneratedDropPlan),
@@ -155,9 +191,9 @@ pub enum DropPlan {
 }
 
 impl DropPlan {
-    /// Returns whether the struct is dropped by a `Drop` instance declared
-    /// for it in source, which may use anything a value of the struct can
-    /// reach, rather than by dropping its fields one by one.
+    /// Returns whether the type is dropped by a `Drop` instance declared for
+    /// it in source, which may use anything a value of the type can reach,
+    /// rather than by dropping what it owns one by one.
     #[must_use]
     pub const fn is_explicit(&self) -> bool {
         match self {

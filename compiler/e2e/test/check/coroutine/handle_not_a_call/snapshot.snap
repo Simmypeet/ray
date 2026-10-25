@@ -1,26 +1,52 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: `handle` expects the call of a continuation
-   ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call/main.ray:16:12
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ def numbers() -> () \ {Yield[int32]}:
+ 6 │     Yield.yield(1)
+ 7 │
+ 8 │
+ 9 │ def make() -> int32:
+10 │     return 1
+11 │
+12 │
+13 │ # ERROR: a `handle` resumes a continuation, so its operand is a call.
+14 │ def notCall():
+15 │     let con = coro numbers()
 16 │     handle con:
-   │            ━━━ this does not resume a continuation
-   │
-   ╰ help: write `handle continuation(value)` to resume a coroutine with `value`, or `handle coro call()` to start one
-
-[error]: `handle` expects the call of a continuation
-   ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call/main.ray:23:12
-   │
+   ┆
+   ┆ [error]: `handle` expects the call of a continuation
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call/main.ray:16:12
+   ┆    │
+   ┆ 16 │     handle con:
+   ┆    │            ━━━ this does not resume a continuation
+   ┆    │
+   ┆    ╰ help: write `handle continuation(value)` to resume a coroutine with `value`, or `handle coro call()` to start one
+   ┆
+17 │         case Yield[int32].yield(value) resume k:
+18 │             pass
+19 │
+20 │
+21 │ # ERROR: `make` is a function, not a continuation.
+22 │ def callOfFunction():
 23 │     handle make()
-   │            ━━━━━━ this does not resume a continuation
-   │
-   ╰ help: write `handle continuation(value)` to resume a coroutine with `value`, or `handle coro call()` to start one
+   ┆
+   ┆ [error]: `handle` expects the call of a continuation
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call/main.ray:23:12
+   ┆    │
+   ┆ 23 │     handle make()
+   ┆    │            ━━━━━━ this does not resume a continuation
+   ┆    │
+   ┆    ╰ help: write `handle continuation(value)` to resume a coroutine with `value`, or `handle coro call()` to start one
+   ┆
+24 │
+25 │
+26 │ def main() -> int32:
+27 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

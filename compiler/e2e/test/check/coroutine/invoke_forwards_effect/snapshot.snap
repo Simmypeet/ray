@@ -1,27 +1,49 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: function body effects do not match its signature: expected `{}`, but found `{Yield[int32]}`
-   ╭▸ compiler/e2e/test/check/coroutine/invoke_forwards_effect/main.ray:11:5
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ def numbers() -> () \ {Yield[int32]}:
+ 6 │     Yield.yield(1)
+ 7 │
+ 8 │
+ 9 │ # ERROR: invoking a continuation performs what the coroutine performs, and
+10 │ # `start` allows no effect.
 11 │ def start() -> int32:
-   │     ━━━━━ the function body has effects outside its signature
+   ┆
+   ┆ [error]: function body effects do not match its signature: expected `{}`, but found `{Yield[int32]}`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/invoke_forwards_effect/main.ray:11:5
+   ┆    │
+   ┆ 11 │ def start() -> int32:
+   ┆    │     ━━━━━ the function body has effects outside its signature
+   ┆ 12 │     let k = coro numbers()
+   ┆ 13 │     k(())
+   ┆    ╰╴    ───── effect `{Yield[int32]}` introduced here
+   ┆
 12 │     let k = coro numbers()
 13 │     k(())
-   ╰╴    ───── effect `{Yield[int32]}` introduced here
-
-[error]: function body effects do not match its signature: expected `{}`, but found `co.Effect`
-   ╭▸ compiler/e2e/test/check/coroutine/invoke_forwards_effect/main.ray:18:5
-   │
+14 │     return 0
+15 │
+16 │
+17 │ # ERROR: a `handle` performs what it does not handle.
 18 │ def forward(k: core.Continuation[(), c]) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32):
-   │     ━━━━━━━ the function body has effects outside its signature
+   ┆
+   ┆ [error]: function body effects do not match its signature: expected `{}`, but found `co.Effect`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/invoke_forwards_effect/main.ray:18:5
+   ┆    │
+   ┆ 18 │ def forward(k: core.Continuation[(), c]) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32):
+   ┆    │     ━━━━━━━ the function body has effects outside its signature
+   ┆ 19 │     return handle k()
+   ┆    ╰╴           ────────── effect `co.Effect` introduced here
+   ┆
 19 │     return handle k()
-   ╰╴           ────────── effect `co.Effect` introduced here
+20 │
+21 │
+22 │ def main() -> int32:
+23 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

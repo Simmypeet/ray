@@ -1,72 +1,103 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: unexpected `def` keyword, expected type
-  ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:5:18
-  │
-5 │     type Value = def(int32) -> int32
-  ╰╴                 ━━━
-
-[error]: callable syntax is only supported as a complete parameter type on ordinary definitions
-  ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:8:19
-  │
-8 │     def apply(fn: def(int32) -> int32) -> int32
-  ╰╴                  ━━━━━━━━━━━━━━━━━━━
-
-[error]: callable syntax is only supported as a complete parameter type on ordinary definitions
-   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:10:24
-   │
+ 1 │ trait Holder[a]:
+ 2 │     type Value
+ 3 │
+ 4 │ inst Invalid for Holder[int32]:
+ 5 │     type Value = def(int32) -> int32
+   ┆
+   ┆ [error]: unexpected `def` keyword, expected type
+   ┆   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:5:18
+   ┆   │
+   ┆ 5 │     type Value = def(int32) -> int32
+   ┆   ╰╴                 ━━━
+   ┆
+ 6 │
+ 7 │ eff InvalidOperation:
+ 8 │     def apply(fn: def(int32) -> int32) -> int32
+   ┆
+   ┆ [error]: callable syntax is only supported as a complete parameter type on ordinary definitions
+   ┆   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:8:19
+   ┆   │
+   ┆ 8 │     def apply(fn: def(int32) -> int32) -> int32
+   ┆   ╰╴                  ━━━━━━━━━━━━━━━━━━━
+   ┆
+ 9 │
 10 │ extern def foreign(fn: def(int32) -> int32) -> int32
-   ╰╴                       ━━━━━━━━━━━━━━━━━━━
-
-[error]: unexpected `def` keyword, expected type
-   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:12:17
-   │
+   ┆
+   ┆ [error]: callable syntax is only supported as a complete parameter type on ordinary definitions
+   ┆    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:10:24
+   ┆    │
+   ┆ 10 │ extern def foreign(fn: def(int32) -> int32) -> int32
+   ┆    ╰╴                       ━━━━━━━━━━━━━━━━━━━
+   ┆
+11 │
 12 │ def result() -> def(int32) -> int32:
-   ╰╴                ━━━
-
-[error]: unexpected `def` keyword, expected type
-   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:15:20
-   │
+   ┆
+   ┆ [error]: unexpected `def` keyword, expected type
+   ┆    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:12:17
+   ┆    │
+   ┆ 12 │ def result() -> def(int32) -> int32:
+   ┆    ╰╴                ━━━
+   ┆
+13 │     return (x) -> x
+14 │
 15 │ def nested(fn: def(def(int32) -> int32)):
-   ╰╴                   ━━━
-
-[error]: unexpected `def` keyword, expected type
-   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:18:23
-   │
+   ┆
+   ┆ [error]: unexpected `def` keyword, expected type
+   ┆    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:15:20
+   ┆    │
+   ┆ 15 │ def nested(fn: def(def(int32) -> int32)):
+   ┆    ╰╴                   ━━━
+   ┆
+16 │     return ()
+17 │
 18 │ def components(pair: (def(int32),), pointer: *def(int32)):
-   ╰╴                      ━━━
-
-[error]: unexpected `def` keyword, expected type or `mut` keyword
-   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:18:47
-   │
-18 │ def components(pair: (def(int32),), pointer: *def(int32)):
-   ╰╴                                              ━━━
-
-[error]: type inference is not allowed for `Holder` here
-   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:21:35
-   │
+   ┆
+   ┆ [error]: unexpected `def` keyword, expected type
+   ┆    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:18:23
+   ┆    │
+   ┆ 18 │ def components(pair: (def(int32),), pointer: *def(int32)):
+   ┆    ╰╴                      ━━━
+   ┆
+   ┆ [error]: unexpected `def` keyword, expected type or `mut` keyword
+   ┆    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:18:47
+   ┆    │
+   ┆ 18 │ def components(pair: (def(int32),), pointer: *def(int32)):
+   ┆    ╰╴                                              ━━━
+   ┆
+19 │     return ()
+20 │
 21 │ def arguments(value: a) given (d: Holder[def(int32)], drop: core.Drop[a]):
-   │                                   ━━━━━━ expected 1 type arguments
-   │
-   ╰ help: provide all type arguments explicitly
-
-[error]: unexpected `def` keyword, expected type, `]` punctuation, or `given` keyword
-   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:21:42
-   │
-21 │ def arguments(value: a) given (d: Holder[def(int32)], drop: core.Drop[a]):
-   ╰╴                                         ━━━
-
-[error]: unexpected `def` keyword, expected type
-   ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:25:16
-   │
+   ┆
+   ┆ [error]: type inference is not allowed for `Holder` here
+   ┆    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:21:35
+   ┆    │
+   ┆ 21 │ def arguments(value: a) given (d: Holder[def(int32)], drop: core.Drop[a]):
+   ┆    │                                   ━━━━━━ expected 1 type arguments
+   ┆    │
+   ┆    ╰ help: provide all type arguments explicitly
+   ┆
+   ┆ [error]: unexpected `def` keyword, expected type, `]` punctuation, or `given` keyword
+   ┆    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:21:42
+   ┆    │
+   ┆ 21 │ def arguments(value: a) given (d: Holder[def(int32)], drop: core.Drop[a]):
+   ┆    ╰╴                                         ━━━
+   ┆
+22 │     return ()
+23 │
+24 │ def main() -> int32:
 25 │     let local: def(int32) -> int32 = (x) -> x
-   ╰╴               ━━━
+   ┆
+   ┆ [error]: unexpected `def` keyword, expected type
+   ┆    ╭▸ compiler/e2e/test/check/semantic/callable_positions/main.ray:25:16
+   ┆    │
+   ┆ 25 │     let local: def(int32) -> int32 = (x) -> x
+   ┆    ╰╴               ━━━
+   ┆
+26 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 10 error(s)
-
-
-
-stdout:

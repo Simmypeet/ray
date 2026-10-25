@@ -1,8 +1,6 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+1 │ def createTuple(first: a, second: b, third: c) -> (a, b, c):
+2 │     return (first, second, third)

@@ -1,18 +1,21 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: symbol `Send` is already defined in the scope `main`
-  ╭▸ compiler/e2e/test/check/semantic/marker_registration/main.ray:2:8
-  │
 1 │ marker Send
-  │        ──── symbol `Send` is already defined here
 2 │ marker Send
-  ╰╴       ━━━━ redefinition here
+  ┆
+  ┆ [error]: symbol `Send` is already defined in the scope `main`
+  ┆   ╭▸ compiler/e2e/test/check/semantic/marker_registration/main.ray:2:8
+  ┆   │
+  ┆ 1 │ marker Send
+  ┆   │        ──── symbol `Send` is already defined here
+  ┆ 2 │ marker Send
+  ┆   ╰╴       ━━━━ redefinition here
+  ┆
+3 │
+4 │ def main() -> int32:
+5 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

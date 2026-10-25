@@ -6,7 +6,9 @@ use rayc_type::{
     subst::Subst,
     ty::{
         Ty,
-        application::{ClosureID, ClosureView, NominalDropInstanceView, View as ApplicationView},
+        application::{
+            ClosureID, ClosureView, GeneratedAdtDropInstanceView, View as ApplicationView,
+        },
     },
 };
 
@@ -101,7 +103,7 @@ pub enum FunctionReference {
     Global(MonoDefInstance),
     Closure(MonoClosureInstance),
     /// The root function of a compiler-generated nominal Drop fragment.
-    NominalDrop(MonoNominalDropInstance),
+    NominalDrop(MonoGeneratedAdtDropInstance),
 }
 
 /// Identifies the compiler-generated `Drop.drop` body selected by one concrete
@@ -113,14 +115,15 @@ pub enum FunctionReference {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
-pub struct MonoNominalDropInstance {
+pub struct MonoGeneratedAdtDropInstance {
     dictionary: Interned<Ty>,
 }
 
-impl MonoNominalDropInstance {
-    /// Wraps a concrete `NominalDropInstance` dictionary. The dictionary is
-    /// normalized, even when the caller already did so, and its lifetimes are
-    /// erased. `solver` is shared so callers can reuse its state.
+impl MonoGeneratedAdtDropInstance {
+    /// Wraps a concrete `GeneratedAdtDropInstance` dictionary. The dictionary
+    /// is normalized, even when the caller already did so, and its
+    /// lifetimes are erased. `solver` is shared so callers can reuse its
+    /// state.
     pub async fn new(dictionary: &Interned<Ty>, solver: &Solver) -> Self {
         let dictionary = solver.normalize(dictionary).await;
         let dictionary = Ty::erase_lifetimes(&dictionary, solver.engine()).await;
@@ -138,12 +141,12 @@ impl MonoNominalDropInstance {
     /// The nominal type and the external dictionaries in plan requirement
     /// order.
     #[must_use]
-    pub fn view(&self) -> NominalDropInstanceView<'_> {
+    pub fn view(&self) -> GeneratedAdtDropInstanceView<'_> {
         let Ty::Application(application) = &*self.dictionary else {
             panic!("a nominal Drop instance must be an application")
         };
-        let ApplicationView::NominalDropInstance(view) = application.view() else {
-            panic!("a nominal Drop instance must be a NominalDropInstance application")
+        let ApplicationView::GeneratedAdtDropInstance(view) = application.view() else {
+            panic!("a nominal Drop instance must be a GeneratedAdtDropInstance application")
         };
         view
     }
@@ -157,15 +160,15 @@ pub enum MonoFragmentInstance {
     /// A source definition together with its nested closures and handlers.
     Definition(MonoDefInstance),
     /// A compiler-generated structural `Drop.drop` for a nominal type.
-    NominalDrop(MonoNominalDropInstance),
+    NominalDrop(MonoGeneratedAdtDropInstance),
 }
 
 impl From<MonoDefInstance> for MonoFragmentInstance {
     fn from(instance: MonoDefInstance) -> Self { Self::Definition(instance) }
 }
 
-impl From<MonoNominalDropInstance> for MonoFragmentInstance {
-    fn from(instance: MonoNominalDropInstance) -> Self { Self::NominalDrop(instance) }
+impl From<MonoGeneratedAdtDropInstance> for MonoFragmentInstance {
+    fn from(instance: MonoGeneratedAdtDropInstance) -> Self { Self::NominalDrop(instance) }
 }
 
 /// A source closure in one concrete owner specialization.

@@ -243,6 +243,7 @@ fn head_arguments(ty: &Ty) -> Result<Vec<&Interned<Ty>>, InvalidHeadKind> {
             Ok(vec![reference.lifetime(), reference.pointee()])
         }
         ApplicationView::Struct(struct_) => Ok(struct_.args().iter().collect()),
+        ApplicationView::Enum(enum_) => Ok(enum_.args().iter().collect()),
         ApplicationView::InstanceAssociated(_) => Err(InvalidHeadKind::AssociatedType),
 
         ApplicationView::Closure(_)
@@ -257,7 +258,7 @@ fn head_arguments(ty: &Ty) -> Result<Vec<&Interned<Ty>>, InvalidHeadKind> {
         | ApplicationView::ContinuationDefInstance(_)
         | ApplicationView::CoroutineInstance(_)
         | ApplicationView::CoroutineDropInstance(_)
-        | ApplicationView::NominalDropInstance(_)
+        | ApplicationView::GeneratedAdtDropInstance(_)
         | ApplicationView::Error => Err(InvalidHeadKind::MissingTypeConstructor),
     }
 }

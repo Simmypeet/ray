@@ -1,16 +1,22 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: invalid marker implementation head
-  ╭▸ compiler/e2e/test/check/reference/marker_implementation_lifetime/main.ray:5:20
-  │
+1 │ struct Unique['a]:
+2 │     value: &'a mut int32
+3 │
+4 │ # ERROR: a marker implementation cannot depend on a lifetime.
 5 │ impl core.Copy for Unique['static]
-  ╰╴                   ━━━━━━━━━━━━━━━ type constructor arguments in a marker implementation must be type variables
+  ┆
+  ┆ [error]: invalid marker implementation head
+  ┆   ╭▸ compiler/e2e/test/check/reference/marker_implementation_lifetime/main.ray:5:20
+  ┆   │
+  ┆ 5 │ impl core.Copy for Unique['static]
+  ┆   ╰╴                   ━━━━━━━━━━━━━━━ type constructor arguments in a marker implementation must be type variables
+  ┆
+6 │
+7 │ def main() -> ():
+8 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

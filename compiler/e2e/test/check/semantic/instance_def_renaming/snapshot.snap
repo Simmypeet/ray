@@ -1,101 +1,223 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: instance member `pick`: parameter 1 type mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:13:20
-   │
- 2 │     def pick[a, b](first: *a, second: *b) -> *a
-   │                    ───────── the corresponding trait declaration is here
-   ‡
-13 │     def pick[x, y](first: *y, second: *x) -> *y:
-   ╰╴                   ━━━━━━━━━ expected `*x`, found `*y`
+  1 │ trait Choose[]:
+  2 │     def pick[a, b](first: *a, second: *b) -> *a
+  3 │
+  4 │ # OK: both declare their type parameters, so they correspond in order: `a` is
+  5 │ # `x` and `b` is `y`.
+  6 │ inst Renamed for Choose:
+  7 │     def pick[x, y](first: *x, second: *y) -> *x:
+  8 │         return first
+  9 │
+ 10 │ # ERROR: both declare their type parameters, so they correspond in order, and
+ 11 │ # the swapped signature does not match.
+ 12 │ inst Reordered for Choose:
+ 13 │     def pick[x, y](first: *y, second: *x) -> *y:
+    ┆
+    ┆ [error]: instance member `pick`: parameter 1 type mismatch
+    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:13:20
+    ┆    │
+    ┆  2 │     def pick[a, b](first: *a, second: *b) -> *a
+    ┆    │                    ───────── the corresponding trait declaration is here
+    ┆    ‡
+    ┆ 13 │     def pick[x, y](first: *y, second: *x) -> *y:
+    ┆    ╰╴                   ━━━━━━━━━ expected `*x`, found `*y`
+    ┆
+    ┆ [error]: instance member `pick`: parameter 2 type mismatch
+    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:13:31
+    ┆    │
+    ┆  2 │     def pick[a, b](first: *a, second: *b) -> *a
+    ┆    │                               ────────── the corresponding trait declaration is here
+    ┆    ‡
+    ┆ 13 │     def pick[x, y](first: *y, second: *x) -> *y:
+    ┆    ╰╴                              ━━━━━━━━━━ expected `*y`, found `*x`
+    ┆
+    ┆ [error]: instance member `pick`: return type mismatch
+    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:13:43
+    ┆    │
+    ┆  2 │     def pick[a, b](first: *a, second: *b) -> *a
+    ┆    │                                           ───── the corresponding trait declaration is here
+    ┆    ‡
+    ┆ 13 │     def pick[x, y](first: *y, second: *x) -> *y:
+    ┆    ╰╴                                          ━━━━━ expected `*x`, found `*y`
+    ┆
+ 14 │         return first
+ 15 │
+ 16 │ # OK: the trait's signature mentions all its variables, so an implementation
+ 17 │ # that discovers its variables pairs them by position: `a` is `q`, `b` is `p`.
+ 18 │ inst Discovered for Choose:
+ 19 │     def pick(first: *q, second: *p) -> *q:
+ 20 │         return first
+ 21 │
+ 22 │ # ERROR: the implementation has a type where the trait has its variable `b`,
+ 23 │ # so `b` has no counterpart.
+ 24 │ inst Instantiated for Choose:
+ 25 │     def pick(first: *x, second: *(y, int32)) -> *x:
+    ┆
+    ┆ [error]: instance member `pick`: polymorphic variable `b` has no counterpart
+    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:25:9
+    ┆    │
+    ┆  2 │     def pick[a, b](first: *a, second: *b) -> *a
+    ┆    │                 ─ the trait's variable occurs here
+    ┆    ‡
+    ┆ 25 │     def pick(first: *x, second: *(y, int32)) -> *x:
+    ┆    │         ━━━━ no variable of this implementation's signature occurs where `b` occurs in the trait's
+    ┆    │
+    ┆    ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
+    ┆
+ 26 │         return first
+ 27 │
+ 28 │ # ERROR: no variable of the implementation stands where the trait has `b`.
+ 29 │ inst Unpaired for Choose:
+ 30 │     def pick(first: *x, second: Handler[{Read[y]}]) -> *x:
+    ┆
+    ┆ [error]: instance member `pick`: polymorphic variable `b` has no counterpart
+    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:30:9
+    ┆    │
+    ┆  2 │     def pick[a, b](first: *a, second: *b) -> *a
+    ┆    │                 ─ the trait's variable occurs here
+    ┆    ‡
+    ┆ 30 │     def pick(first: *x, second: Handler[{Read[y]}]) -> *x:
+    ┆    │         ━━━━ no variable of this implementation's signature occurs where `b` occurs in the trait's
+    ┆    │
+    ┆    ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
+    ┆
+ 31 │         return first
+ 32 │
+ 33 │ trait Make[]:
+ 34 │     def make[a, b](value: *a) -> *a
+ 35 │
+ 36 │ # ERROR: the trait's `b` is not mentioned in its signature, so an
+ 37 │ # implementation that discovers its variables cannot pair it.
+ 38 │ inst MakeDiscovered for Make:
+ 39 │     def make(value: *x) -> *x:
+    ┆
+    ┆ [error]: instance member `make`: type parameters must be declared explicitly
+    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:39:9
+    ┆    │
+    ┆ 34 │     def make[a, b](value: *a) -> *a
+    ┆    │                 ─ the trait declares this variable, but its signature does not mention it
+    ┆    ‡
+    ┆ 39 │     def make(value: *x) -> *x:
+    ┆    │         ━━━━ the trait's `b` cannot be matched with a variable this implementation introduces from its parameter types
+    ┆    │
+    ┆    ╰ help: declare this implementation's type parameters, as in `def name[a, b](...)`, to match them with the trait's in order
+    ┆
+ 40 │         return value
+ 41 │
+ 42 │ # OK: declaring the type parameters pairs them in order.
+ 43 │ inst MakeExplicit for Make:
+ 44 │     def make[x, y](value: *x) -> *x:
+ 45 │         return value
+ 46 │
+ 47 │ trait Swap[]:
+ 48 │     def swap(first: *a, second: *b) -> *b
+ 49 │
+ 50 │ # OK: the trait discovers its variables, so they pair by position even though
+ 51 │ # the implementation declares its own in another order: `a` is `x`, `b` is `y`.
+ 52 │ inst SwapExplicit for Swap:
+ 53 │     def swap[y, x](first: *x, second: *y) -> *y:
+ 54 │         return second
+ 55 │
+ 56 │ trait Keep[]:
+ 57 │     def keep(value: *a) given (drop: core.Drop[a]) -> *a
+ 58 │
+ 59 │ # ERROR: the implementation has no counterpart for the given parameter.
+ 60 │ inst KeepNoGiven for Keep:
+ 61 │     def keep(value: *a) -> *a:
+    ┆
+    ┆ [error]: instance member `keep`: given parameter count mismatch
+    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:61:9
+    ┆    │
+    ┆ 57 │     def keep(value: *a) given (drop: core.Drop[a]) -> *a
+    ┆    │         ──── the corresponding trait declaration is here
+    ┆    ‡
+    ┆ 61 │     def keep(value: *a) -> *a:
+    ┆    ╰╴        ━━━━ expected 1 given parameters, found 0
+    ┆
+ 62 │         return value
+ 63 │
+ 64 │ eff Read[t]:
+ 65 │     def read() -> t
+ 66 │
+ 67 │ eff Write[t]:
+ 68 │     def write(value: t)
+ 69 │
+ 70 │ struct Handler[e: Effect]:
+ 71 │     value: int32
+ 72 │
+ 73 │ trait Rows[]:
+ 74 │     def opened(handler: *Handler[{Read[a], Write[b]}], value: *b) -> *b
+ 75 │
+ 76 │ # OK: effect labels are unordered, so `a` is `y` and `b` is `x`.
+ 77 │ inst RowsReordered for Rows:
+ 78 │     def opened(handler: *Handler[{Write[x], Read[y]}], value: *x) -> *x:
+ 79 │         return value
+ 80 │
+ 81 │ # ERROR: the implementation has `int32` where the trait has `a`, so `a` has no
+ 82 │ # counterpart.
+ 83 │ inst SwapInstantiated for Swap:
+ 84 │     def swap[x, y](first: *int32, second: *y) -> *y:
+    ┆
+    ┆ [error]: instance member `swap`: polymorphic variable `a` has no counterpart
+    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:84:9
+    ┆    │
+    ┆ 48 │     def swap(first: *a, second: *b) -> *b
+    ┆    │                      ─ the trait's variable occurs here
+    ┆    ‡
+    ┆ 84 │     def swap[x, y](first: *int32, second: *y) -> *y:
+    ┆    │         ━━━━ no variable of this implementation's signature occurs where `a` occurs in the trait's
+    ┆    │
+    ┆    ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
+    ┆
+ 85 │         return second
+ 86 │
+ 87 │ # ERROR: `x` already stands for the trait's `a`, so `b` has no counterpart.
+ 88 │ inst SwapMerged for Swap:
+ 89 │     def swap[x, y](first: *x, second: *x) -> *x:
+    ┆
+    ┆ [error]: instance member `swap`: polymorphic variable `b` has no counterpart
+    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:89:9
+    ┆    │
+    ┆ 48 │     def swap(first: *a, second: *b) -> *b
+    ┆    │                                  ─ the trait's variable occurs here
+    ┆    ‡
+    ┆ 89 │     def swap[x, y](first: *x, second: *x) -> *x:
+    ┆    │         ━━━━ no variable of this implementation's signature occurs where `b` occurs in the trait's
+    ┆    │
+    ┆    ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
+    ┆
+ 90 │         return second
+ 91 │
+ 92 │ trait Scoped[]:
+ 93 │     def both(handler: *Handler[{Read[a], Write[c], Read[b]}], value: *a) -> *a
+ 94 │
+ 95 │ # OK: labels of the same effect keep their order, so the first `Read` is
+ 96 │ # `Read[x]` and the second is `Read[y]`: `a` is `x`, `b` is `y` and `c` is `z`.
+ 97 │ inst ScopedLabels for Scoped:
+ 98 │     def both(handler: *Handler[{Write[z], Read[x], Read[y]}], value: *x) -> *x:
+ 99 │         return value
+100 │
+101 │ trait Container[]:
+102 │     type Item[t]
+103 │
+104 │ trait Project[]:
+105 │     def get(item: *d.Item[a]) given (d: Container) -> int32
+106 │
+107 │ # OK: `a` pairs with `x` through the projection's arguments.
+108 │ inst ProjectDiscovered for Project:
+109 │     def get(item: *d.Item[x]) given (d: Container) -> int32:
+110 │         return 0
+111 │
+112 │ # OK: the trait discovers its variables, so they pair by position here too.
+113 │ inst ProjectExplicit for Project:
+114 │     def get[x](item: *d.Item[x]) given (d: Container) -> int32:
+115 │         return 0
+116 │
+117 │ def main() -> int32:
+118 │     return 0
 
-[error]: instance member `pick`: parameter 2 type mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:13:31
-   │
- 2 │     def pick[a, b](first: *a, second: *b) -> *a
-   │                               ────────── the corresponding trait declaration is here
-   ‡
-13 │     def pick[x, y](first: *y, second: *x) -> *y:
-   ╰╴                              ━━━━━━━━━━ expected `*y`, found `*x`
-
-[error]: instance member `pick`: return type mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:13:43
-   │
- 2 │     def pick[a, b](first: *a, second: *b) -> *a
-   │                                           ───── the corresponding trait declaration is here
-   ‡
-13 │     def pick[x, y](first: *y, second: *x) -> *y:
-   ╰╴                                          ━━━━━ expected `*x`, found `*y`
-
-[error]: instance member `pick`: polymorphic variable `b` has no counterpart
-   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:25:9
-   │
- 2 │     def pick[a, b](first: *a, second: *b) -> *a
-   │                 ─ the trait's variable occurs here
-   ‡
-25 │     def pick(first: *x, second: *(y, int32)) -> *x:
-   │         ━━━━ no variable of this implementation's signature occurs where `b` occurs in the trait's
-   │
-   ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
-
-[error]: instance member `pick`: polymorphic variable `b` has no counterpart
-   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:30:9
-   │
- 2 │     def pick[a, b](first: *a, second: *b) -> *a
-   │                 ─ the trait's variable occurs here
-   ‡
-30 │     def pick(first: *x, second: Handler[{Read[y]}]) -> *x:
-   │         ━━━━ no variable of this implementation's signature occurs where `b` occurs in the trait's
-   │
-   ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
-
-[error]: instance member `make`: type parameters must be declared explicitly
-   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:39:9
-   │
-34 │     def make[a, b](value: *a) -> *a
-   │                 ─ the trait declares this variable, but its signature does not mention it
-   ‡
-39 │     def make(value: *x) -> *x:
-   │         ━━━━ the trait's `b` cannot be matched with a variable this implementation introduces from its parameter types
-   │
-   ╰ help: declare this implementation's type parameters, as in `def name[a, b](...)`, to match them with the trait's in order
-
-[error]: instance member `keep`: given parameter count mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:61:9
-   │
-57 │     def keep(value: *a) given (drop: core.Drop[a]) -> *a
-   │         ──── the corresponding trait declaration is here
-   ‡
-61 │     def keep(value: *a) -> *a:
-   ╰╴        ━━━━ expected 1 given parameters, found 0
-
-[error]: instance member `swap`: polymorphic variable `a` has no counterpart
-   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:84:9
-   │
-48 │     def swap(first: *a, second: *b) -> *b
-   │                      ─ the trait's variable occurs here
-   ‡
-84 │     def swap[x, y](first: *int32, second: *y) -> *y:
-   │         ━━━━ no variable of this implementation's signature occurs where `a` occurs in the trait's
-   │
-   ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
-
-[error]: instance member `swap`: polymorphic variable `b` has no counterpart
-   ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:89:9
-   │
-48 │     def swap(first: *a, second: *b) -> *b
-   │                                  ─ the trait's variable occurs here
-   ‡
-89 │     def swap[x, y](first: *x, second: *x) -> *x:
-   │         ━━━━ no variable of this implementation's signature occurs where `b` occurs in the trait's
-   │
-   ╰ help: the implementation's variables correspond to the trait's by where they occur in the signature
-
+other diagnostics:
 [error]: Compilation aborted due to 9 error(s)
-
-
-
-stdout:

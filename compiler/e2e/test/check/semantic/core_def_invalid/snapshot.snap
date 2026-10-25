@@ -1,14 +1,65 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: type kind mismatch
-  ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:4:19
-  │
-4 │     type Effect = int32
-  ╰╴                  ━━━━━ expected an effect row, found a value type
+ 1 │ inst Wrong for core.Def[int32]:
+ 2 │     type Args = int32
+ 3 │     type Return = int32
+ 4 │     type Effect = int32
+   ┆
+   ┆ [error]: type kind mismatch
+   ┆   ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:4:19
+   ┆   │
+   ┆ 4 │     type Effect = int32
+   ┆   ╰╴                  ━━━━━ expected an effect row, found a value type
+   ┆
+ 5 │     def call(value: bool, a: int32) -> bool:
+ 6 │         return value
+ 7 │
+ 8 │ inst Missing for core.Def[bool]:
+ 9 │     type Return = bool
+10 │
+11 │ def invalid(value: int32) -> int32:
+   ┆
+   ┆ [error]: function body effects do not match its signature: expected `{}`, but found `<error>`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:11:5
+   ┆    │
+   ┆ 11 │ def invalid(value: int32) -> int32:
+   ┆    │     ━━━━━━━ the function body has effects outside its signature
+   ┆ 12 │     return core.Def.call(value, value)
+   ┆    ╰╴           ─────────────────────────── effect `<error>` introduced here
+   ┆
+12 │     return core.Def.call(value, value)
+13 │
+14 │ inst Bare for Def[int32]:
+   ┆
+   ┆ [error]: symbol `Def` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:14:15
+   ┆    │
+   ┆ 14 │ inst Bare for Def[int32]:
+   ┆    ╰╴              ━━━ symbol `Def` is not found
+   ┆
+15 │     type Return = int32
+16 │
+17 │ def projection(value: core.Def.Return):
+   ┆
+   ┆ [error]: an associated type requires an instance dictionary, not a named trait
+   ┆    ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:17:23
+   ┆    │
+   ┆ 17 │ def projection(value: core.Def.Return):
+   ┆    ╰╴                      ━━━━━━━━━━━━━━━
+   ┆
+   ┆ [error]: type inference is not allowed for `Def` here
+   ┆    ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:17:28
+   ┆    │
+   ┆ 17 │ def projection(value: core.Def.Return):
+   ┆    │                            ━━━ expected 1 type arguments
+   ┆    │
+   ┆    ╰ help: provide all type arguments explicitly
+   ┆
+18 │     return
 
+other diagnostics:
 [error]: instance member `call`: parameter 1 type mismatch
   ╭▸ __ray_core__/core.ray:6:18
   │
@@ -64,36 +115,4 @@ stderr:
 8 │ inst Missing for core.Def[bool]:
   ╰╴     ━━━━━━━ implement `call` in this instance
 
-[error]: function body effects do not match its signature: expected `{}`, but found `<error>`
-   ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:11:5
-   │
-11 │ def invalid(value: int32) -> int32:
-   │     ━━━━━━━ the function body has effects outside its signature
-12 │     return core.Def.call(value, value)
-   ╰╴           ─────────────────────────── effect `<error>` introduced here
-
-[error]: symbol `Def` is not found
-   ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:14:15
-   │
-14 │ inst Bare for Def[int32]:
-   ╰╴              ━━━ symbol `Def` is not found
-
-[error]: an associated type requires an instance dictionary, not a named trait
-   ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:17:23
-   │
-17 │ def projection(value: core.Def.Return):
-   ╰╴                      ━━━━━━━━━━━━━━━
-
-[error]: type inference is not allowed for `Def` here
-   ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:17:28
-   │
-17 │ def projection(value: core.Def.Return):
-   │                            ━━━ expected 1 type arguments
-   │
-   ╰ help: provide all type arguments explicitly
-
 [error]: Compilation aborted due to 10 error(s)
-
-
-
-stdout:

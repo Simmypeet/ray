@@ -151,7 +151,9 @@ impl Report for MisplacedVarianceMarker {
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
-                    .message("only the parameters of a `struct` or an `eff` have a variance")
+                    .message(
+                        "only the parameters of a `struct`, an `enum` or an `eff` have a variance",
+                    )
                     .build(),
             )
             .build()
@@ -450,9 +452,10 @@ impl Build for rayc_type::poly_var::Key {
                 }
             }
             SymbolKind::Effect
+            | SymbolKind::Enum
             | SymbolKind::Instance
             | SymbolKind::MarkerImplementation
-            | SymbolKind::Strut
+            | SymbolKind::Struct
             | SymbolKind::Trait
             | SymbolKind::TraitType
             | SymbolKind::InstanceType => {
@@ -473,6 +476,7 @@ impl Build for rayc_type::poly_var::Key {
             }
             SymbolKind::Marker => panic!("a marker does not own a polymorphic-variable map"),
             SymbolKind::Module => panic!("a module does not own a polymorphic-variable map"),
+            SymbolKind::Variant => panic!("a variant does not own a polymorphic-variable map"),
         };
 
         // Symbols with an explicit type-parameter list order its variables by

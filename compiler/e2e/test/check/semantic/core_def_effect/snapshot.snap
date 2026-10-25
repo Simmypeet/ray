@@ -1,8 +1,19 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ eff Read[]:
+ 2 │     def read() -> int32
+ 3 │
+ 4 │ inst ReadValue for core.Def[int32]:
+ 5 │     type Args = ()
+ 6 │     type Return = int32
+ 7 │     type Effect = {Read}
+ 8 │     def call(value: int32, a: ()) -> int32 \ {Read}:
+ 9 │         return value + Read.read()
+10 │
+11 │ def invoke(value: f, a: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+12 │     return d.call(value, a)
+13 │
+14 │ def effectful() -> int32 \ {Read}:
+15 │     return invoke[given ReadValue](1, ())

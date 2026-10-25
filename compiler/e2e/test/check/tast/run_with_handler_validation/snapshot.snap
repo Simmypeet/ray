@@ -1,38 +1,58 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-assertion_line: 112
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: missing handlers for effect operations `main.Operations.another_missing`, `main.Operations.missing`
-   ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:10:10
-   │
+ 1 │ eff Operations:
+ 2 │     def another_missing()
+ 3 │     def missing()
+ 4 │     def wrong(value: int32)
+ 5 │     def duplicate()
+ 6 │
+ 7 │ def test() -> ():
+ 8 │     let handled = run:
+ 9 │         ()
 10 │     with Operations:
-   ╰╴         ━━━━━━━━━━ add handlers for `main.Operations.another_missing`, `main.Operations.missing`
-
-[error]: handler for `main.Operations.wrong` expects 1 parameters, but 0 were provided
-   ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:11:18
-   │
+   ┆
+   ┆ [error]: missing handlers for effect operations `main.Operations.another_missing`, `main.Operations.missing`
+   ┆    ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:10:10
+   ┆    │
+   ┆ 10 │     with Operations:
+   ┆    ╰╴         ━━━━━━━━━━ add handlers for `main.Operations.another_missing`, `main.Operations.missing`
+   ┆
 11 │         def wrong():
-   ╰╴                 ━━
-
-[error]: duplicate handler for effect operation `duplicate`
-   ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:15:13
-   │
+   ┆
+   ┆ [error]: handler for `main.Operations.wrong` expects 1 parameters, but 0 were provided
+   ┆    ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:11:18
+   ┆    │
+   ┆ 11 │         def wrong():
+   ┆    ╰╴                 ━━
+   ┆
+12 │             return ()
 13 │         def duplicate():
-   │             ───────── the first handler is here
 14 │             return ()
 15 │         def duplicate():
-   ╰╴            ━━━━━━━━━ duplicate handler
-
-[error]: effect `main.Operations` has no operation named `extra`
-   ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:17:13
-   │
+   ┆
+   ┆ [error]: duplicate handler for effect operation `duplicate`
+   ┆    ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:15:13
+   ┆    │
+   ┆ 13 │         def duplicate():
+   ┆    │             ───────── the first handler is here
+   ┆ 14 │             return ()
+   ┆ 15 │         def duplicate():
+   ┆    ╰╴            ━━━━━━━━━ duplicate handler
+   ┆
+16 │             return ()
 17 │         def extra():
-   ╰╴            ━━━━━
+   ┆
+   ┆ [error]: effect `main.Operations` has no operation named `extra`
+   ┆    ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:17:13
+   ┆    │
+   ┆ 17 │         def extra():
+   ┆    ╰╴            ━━━━━
+   ┆
+18 │             return ()
+19 │
+20 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 4 error(s)
-
-
-
-stdout:

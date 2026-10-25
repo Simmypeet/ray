@@ -6,7 +6,7 @@
 //! `(GlobalSymbolID, Subst)` inputs as its query key.
 
 use rayc_ir::get_ir;
-use rayc_mono_ir::{MonoDefInstance, MonoIR, MonoNominalDropInstance};
+use rayc_mono_ir::{MonoDefInstance, MonoGeneratedAdtDropInstance, MonoIR};
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
@@ -40,7 +40,7 @@ pub async fn lower_ir(
 #[must_use]
 pub async fn lower_nominal_drop(
     engine: &TrackedEngine,
-    instance: MonoNominalDropInstance,
+    instance: MonoGeneratedAdtDropInstance,
 ) -> MonoIR {
     nominal_drop::lower(engine, instance).await
 }

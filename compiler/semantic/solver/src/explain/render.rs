@@ -10,7 +10,10 @@ use rayc_semantic_element::{
     struct_body::{FieldID, get_struct_body},
 };
 use rayc_symbol::{
-    GlobalSymbolID, name::get_qualified_name, source_map::to_absolute_span, span::get_span,
+    GlobalSymbolID,
+    name::{get_name, get_qualified_name},
+    source_map::to_absolute_span,
+    span::get_span,
 };
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
@@ -687,7 +690,7 @@ impl BuiltInMarkerRule {
     /// Explains why the compiler rejects `goal`.
     async fn explain(self, engine: &TrackedEngine, goal: &Goal) -> String {
         match self {
-            Self::LinearStructNotCopy => {
+            Self::LinearTypeNotCopy => {
                 format!("`{}` is linear, so it is never `Copy`", goal.subject(engine).await)
             }
             Self::CoroutineNotCopy => "a coroutine is never `Copy`".to_owned(),
@@ -710,6 +713,13 @@ async fn structural(
         StructuralComponent::StructField(field_id) => {
             struct_field(engine, owner, &owner_display, field_id, &value).await
         }
+        StructuralComponent::VariantPayload(variant_id) => (
+            format!(
+                "`{owner_display}` stores the payload of variant `{}`, of type `{value}`",
+                &*engine.get_name(variant_id).await
+            ),
+            declaration(engine, variant_id).await,
+        ),
         StructuralComponent::TupleElement(index) => {
             (format!("`{owner_display}` stores element `{index}`, of type `{value}`"), None)
         }

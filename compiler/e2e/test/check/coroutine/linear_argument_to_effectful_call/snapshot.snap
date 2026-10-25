@@ -1,8 +1,38 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ # An ordinary call of an effectful function starts the callee at once, so its
+ 2 │ # arguments are moved into it and the caller holds nothing across the call.
+ 3 │
+ 4 │ eff Yield[t]:
+ 5 │     def yield(value: t) -> ()
+ 6 │
+ 7 │
+ 8 │ @linear
+ 9 │ struct Handle:
+10 │     fd: int32
+11 │
+12 │
+13 │ def make() -> Handle:
+14 │     return Handle { fd = 0 }
+15 │
+16 │
+17 │ def close(opened: Handle):
+18 │     core.NoDrop { value = move opened }
+19 │
+20 │
+21 │ def useHandle(opened: Handle) -> () \ {Yield[int32]}:
+22 │     close(opened)
+23 │     Yield.yield(1)
+24 │
+25 │
+26 │ # OK: the linear argument is moved into the effectful call.
+27 │ def caller() -> () \ {Yield[int32]}:
+28 │     let opened = make()
+29 │     useHandle(opened)
+30 │     useHandle(make())
+31 │
+32 │
+33 │ def main() -> int32:
+34 │     return 0

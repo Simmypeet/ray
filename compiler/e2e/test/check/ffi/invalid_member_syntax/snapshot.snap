@@ -1,29 +1,40 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-assertion_line: 112
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: unexpected `extern` keyword, expected trait member
-  ╭▸ compiler/e2e/test/check/ffi/invalid_member_syntax/main.ray:2:5
-  │
-2 │     extern def invoke() -> c_int
-  ╰╴    ━━━━━━
-
-[error]: unexpected `extern` keyword, expected instance member
-  ╭▸ compiler/e2e/test/check/ffi/invalid_member_syntax/main.ray:5:5
-  │
-5 │     extern def invoke() -> c_int:
-  ╰╴    ━━━━━━
-
-[error]: unexpected new line, expected `\` punctuation, `where` keyword, or indentation block
-   ╭▸ compiler/e2e/test/check/ffi/invalid_member_syntax/main.ray:12:26
-   │
+ 1 │ trait Service[]:
+ 2 │     extern def invoke() -> c_int
+   ┆
+   ┆ [error]: unexpected `extern` keyword, expected trait member
+   ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_member_syntax/main.ray:2:5
+   ┆   │
+   ┆ 2 │     extern def invoke() -> c_int
+   ┆   ╰╴    ━━━━━━
+   ┆
+ 3 │
+ 4 │ inst ServiceImpl for Service:
+ 5 │     extern def invoke() -> c_int:
+   ┆
+   ┆ [error]: unexpected `extern` keyword, expected instance member
+   ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_member_syntax/main.ray:5:5
+   ┆   │
+   ┆ 5 │     extern def invoke() -> c_int:
+   ┆   ╰╴    ━━━━━━
+   ┆
+ 6 │         return 0
+ 7 │
+ 8 │ trait MissingBody[]:
+ 9 │     def invoke() -> c_int
+10 │
+11 │ inst MissingBodyImpl for MissingBody:
 12 │     def invoke() -> c_int
-   ╰╴                         ━
+   ┆
+   ┆ [error]: unexpected new line, expected `\` punctuation, `where` keyword, or indentation block
+   ┆    ╭▸ compiler/e2e/test/check/ffi/invalid_member_syntax/main.ray:12:26
+   ┆    │
+   ┆ 12 │     def invoke() -> c_int
+   ┆    ╰╴                         ━
+   ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

@@ -1,8 +1,27 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ # Simulating a lending iterator with generic associated types.
+ 2 │ pub trait LendingIterator[t]:
+ 3 │     pub type Item['x] where (t: 'x)
+ 4 │
+ 5 │     pub def next(self: &'x mut t) -> this.Item['x] where (t: 'x)
+ 6 │
+ 7 │
+ 8 │ pub struct Holding['a]:
+ 9 │     hold: &'a int32
+10 │
+11 │
+12 │ pub inst HoldingIteratorShort['a] for LendingIterator[Holding['a]]:
+13 │     type Item['x] where ('a: 'x) = &'x int32
+14 │
+15 │     def next(self: &'x mut Holding['a]) -> &'x int32 where ('a: 'x):
+16 │         return self.*.hold.*.&
+17 │
+18 │
+19 │ pub inst HoldingIteratorLong['a] for LendingIterator[Holding['a]]:
+20 │     type Item['x] where ('a: 'x) = &'a int32
+21 │
+22 │     def next(self: &'x mut Holding['a]) -> &'a int32 where ('a: 'x):
+23 │         return self.*.hold.*.&

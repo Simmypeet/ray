@@ -1,27 +1,50 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `main.Describe[int32]`
-   ╭▸ compiler/e2e/test/check/access/private_instance/main.ray:22:15
-   │
-22 │     let int = Describe.describe(number)
-   ╰╴              ━━━━━━━━━━━━━━━━━
-
-[error]: instance `DescribeInt` is not accessible here
-   ╭▸ compiler/e2e/test/check/access/private_instance/main.ray:23:28
-   │
+ 1 │ pub trait Describe[t]:
+ 2 │     pub def describe(value: t) -> int32
+ 3 │
+ 4 │
+ 5 │ module numbers:
+ 6 │     # A private instance is resolved implicitly only within its module.
  7 │     inst DescribeInt for super.Describe[int32]:
-   │          ─────────── `DescribeInt` is declared here
-   ‡
+ 8 │         def describe(value: int32) -> int32:
+ 9 │             return value
+10 │
+11 │     pub inst DescribeBool for super.Describe[bool]:
+12 │         def describe(value: bool) -> int32:
+13 │             return if value: 1 else: 0
+14 │
+15 │     pub def describe_int(value: int32) -> int32:
+16 │         return super.Describe.describe(value)
+17 │
+18 │
+19 │ def main() -> int32:
+20 │     let number: int32 = 1
+21 │     let boolean = Describe.describe(true)
+22 │     let int = Describe.describe(number)
+   ┆
+   ┆ [error]: no implicit instance found: `main.Describe[int32]`
+   ┆    ╭▸ compiler/e2e/test/check/access/private_instance/main.ray:22:15
+   ┆    │
+   ┆ 22 │     let int = Describe.describe(number)
+   ┆    ╰╴              ━━━━━━━━━━━━━━━━━
+   ┆
 23 │     let explicit = numbers.DescribeInt.describe(number)
-   │                            ━━━━━━━━━━━ `DescribeInt` is not accessible here
-   │
-   ╰ help: `DescribeInt` is only accessible within `main.numbers`; declare it with `pub` to make it public
+   ┆
+   ┆ [error]: instance `DescribeInt` is not accessible here
+   ┆    ╭▸ compiler/e2e/test/check/access/private_instance/main.ray:23:28
+   ┆    │
+   ┆  7 │     inst DescribeInt for super.Describe[int32]:
+   ┆    │          ─────────── `DescribeInt` is declared here
+   ┆    ‡
+   ┆ 23 │     let explicit = numbers.DescribeInt.describe(number)
+   ┆    │                            ━━━━━━━━━━━ `DescribeInt` is not accessible here
+   ┆    │
+   ┆    ╰ help: `DescribeInt` is only accessible within `main.numbers`; declare it with `pub` to make it public
+   ┆
+24 │     return boolean + int + explicit + numbers.describe_int(number)
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

@@ -1,76 +1,131 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: type annotation required
-   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:11:20
-   │
-11 │     let closure = (x) -> 1
-   │                    ━ cannot infer the type of `x`
-   │
-   ╰ help: the type of a closure parameter is inferred from how the closure is called
-
-[error]: type annotation required
-   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:16:26
-   │
  1 │ def identity(value: a) -> a:
-   │                     ─ type parameter declared here
-   ‡
-16 │     let closure = (x) -> identity(x)
-   │                          ━━━━━━━━━━━ cannot infer the type parameter `a` of `main.identity`
-   │
-   ╰ help: consider providing the type arguments of `main.identity` explicitly
-
-[error]: type annotation required
-   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:19:9
-   │
-19 │     let value
-   │         ━━━━━ cannot infer the type of `value`
-   │
-   ╰ help: consider giving `value` an explicit type
-
-[error]: type annotation required
-   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:24:25
-   │
- 1 │ def identity(value: a) -> a:
-   │                     ─ type parameter declared here
-   ‡
-24 │     let copy = identity(identity(value))
-   │                         ━━━━━━━━━━━━━━━ cannot infer the type parameter `a` of `main.identity`
-   │
-   ╰ help: consider providing the type arguments of `main.identity` explicitly
-
-[error]: type annotation required
-   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:28:12
-   │
+ 2 │     return value
+ 3 │
  4 │ def make[a]() -> int32:
-   │          ─ type parameter declared here
-   ‡
-28 │     return make()
-   │            ━━━━━━ cannot infer the type parameter `a` of `main.make`
-   │
-   ╰ help: consider providing the type arguments of `main.make` explicitly
-
-[error]: type annotation required
-   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:32:19
-   │
+ 5 │     return 0
+ 6 │
  7 │ struct Phantom[a]:
-   │                ─ type parameter declared here
-   ‡
+ 8 │     x: int32
+ 9 │
+10 │ def unusedClosureParameter() -> ():
+11 │     let closure = (x) -> 1
+   ┆
+   ┆ [error]: type annotation required
+   ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:11:20
+   ┆    │
+   ┆ 11 │     let closure = (x) -> 1
+   ┆    │                    ━ cannot infer the type of `x`
+   ┆    │
+   ┆    ╰ help: the type of a closure parameter is inferred from how the closure is called
+   ┆
+12 │
+13 │ # A call site is reported before a binding, so the unknown parameter type is
+14 │ # reported as the type parameter of the call.
+15 │ def polymorphicClosureParameter() -> ():
+16 │     let closure = (x) -> identity(x)
+   ┆
+   ┆ [error]: type annotation required
+   ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:16:26
+   ┆    │
+   ┆  1 │ def identity(value: a) -> a:
+   ┆    │                     ─ type parameter declared here
+   ┆    ‡
+   ┆ 16 │     let closure = (x) -> identity(x)
+   ┆    │                          ━━━━━━━━━━━ cannot infer the type parameter `a` of `main.identity`
+   ┆    │
+   ┆    ╰ help: consider providing the type arguments of `main.identity` explicitly
+   ┆
+17 │
+18 │ def uninitializedVariable() -> ():
+19 │     let value
+   ┆
+   ┆ [error]: type annotation required
+   ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:19:9
+   ┆    │
+   ┆ 19 │     let value
+   ┆    │         ━━━━━ cannot infer the type of `value`
+   ┆    │
+   ┆    ╰ help: consider giving `value` an explicit type
+   ┆
+20 │
+21 │ # Only the first call site of an unknown type is reported.
+22 │ def uninitializedVariableThroughCalls() -> ():
+23 │     let value
+24 │     let copy = identity(identity(value))
+   ┆
+   ┆ [error]: type annotation required
+   ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:24:25
+   ┆    │
+   ┆  1 │ def identity(value: a) -> a:
+   ┆    │                     ─ type parameter declared here
+   ┆    ‡
+   ┆ 24 │     let copy = identity(identity(value))
+   ┆    │                         ━━━━━━━━━━━━━━━ cannot infer the type parameter `a` of `main.identity`
+   ┆    │
+   ┆    ╰ help: consider providing the type arguments of `main.identity` explicitly
+   ┆
+25 │
+26 │ # The type parameter flows into no value, so it is reported at the call.
+27 │ def unusedTypeParameter() -> int32:
+28 │     return make()
+   ┆
+   ┆ [error]: type annotation required
+   ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:28:12
+   ┆    │
+   ┆  4 │ def make[a]() -> int32:
+   ┆    │          ─ type parameter declared here
+   ┆    ‡
+   ┆ 28 │     return make()
+   ┆    │            ━━━━━━ cannot infer the type parameter `a` of `main.make`
+   ┆    │
+   ┆    ╰ help: consider providing the type arguments of `main.make` explicitly
+   ┆
+29 │
+30 │ # A struct initialization is an instantiation site, like a call.
+31 │ def unknownStructArgument() -> ():
 32 │     let wrapped = Phantom { x = 1 }
-   │                   ━━━━━━━━━━━━━━━━━ cannot infer the type parameter `a` of `main.Phantom`
-   │
-   ╰ help: consider providing the type arguments of `main.Phantom` explicitly
-
-[error]: unbound name `missing`
-   ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:51:17
-   │
+   ┆
+   ┆ [error]: type annotation required
+   ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:32:19
+   ┆    │
+   ┆  7 │ struct Phantom[a]:
+   ┆    │                ─ type parameter declared here
+   ┆    ‡
+   ┆ 32 │     let wrapped = Phantom { x = 1 }
+   ┆    │                   ━━━━━━━━━━━━━━━━━ cannot infer the type parameter `a` of `main.Phantom`
+   ┆    │
+   ┆    ╰ help: consider providing the type arguments of `main.Phantom` explicitly
+   ┆
+33 │
+34 │ # Explicit type arguments determine every type parameter.
+35 │ def explicitTypeArguments() -> int32:
+36 │     let wrapped = Phantom[bool] { x = 1 }
+37 │     return make[bool]()
+38 │
+39 │ # A closure parameter that the body constrains needs no annotation.
+40 │ def inferredClosureParameter() -> ():
+41 │     let closure = (x) -> x + 1
+42 │
+43 │ # A variable that a later assignment constrains needs no annotation.
+44 │ def assignedVariable() -> ():
+45 │     let mut value
+46 │     value = true
+47 │
+48 │ # The type of an errored expression is unknown because of the error, which
+49 │ # is reported alone.
+50 │ def unboundName() -> ():
 51 │     let value = missing
-   ╰╴                ━━━━━━━
+   ┆
+   ┆ [error]: unbound name `missing`
+   ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:51:17
+   ┆    │
+   ┆ 51 │     let value = missing
+   ┆    ╰╴                ━━━━━━━
+   ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 7 error(s)
-
-
-
-stdout:

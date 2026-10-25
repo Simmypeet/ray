@@ -597,7 +597,7 @@ impl Solver {
     }
 
     /// Selects only the dictionary prescribed by a nominal Drop plan.
-    pub(crate) async fn resolve_nominal_drop_instance(
+    pub(crate) async fn resolve_generated_adt_drop_instance(
         &mut self,
         required: &TraitRef,
     ) -> Option<InstanceResolutionResult> {
@@ -609,9 +609,9 @@ impl Solver {
         }
 
         let nominal = required.args().interned_iter().next()?.clone();
-        let struct_ = nominal.as_struct_view()?;
+        let adt_id = nominal.as_adt_id()?;
 
-        let plan = self.engine().get_drop_plan(struct_.symbol_id()).await;
+        let plan = self.engine().get_drop_plan(adt_id).await;
 
         match &*plan {
             DropPlan::Explicit(instance_id) => {
@@ -638,11 +638,11 @@ impl Solver {
         generated: &GeneratedDropPlan,
         drop_trait: GlobalSymbolID,
     ) -> InstanceResolutionResult {
-        let struct_ = nominal.as_struct_view().expect("a nominal type must be a struct");
+        let adt = nominal.as_adt_view().expect("a nominal type must be a struct or an enum");
 
         // Substitute the requested nominal arguments into the plan's generic
         // requirements before recursively resolving their Drop dictionaries.
-        let substitution = struct_.create_subst(self.engine()).await;
+        let substitution = adt.create_subst(self.engine()).await;
 
         // this is due to the borrow-checker error
         let engine = self.engine().clone();
@@ -666,7 +666,8 @@ impl Solver {
                 );
             }
 
-            let term = Ty::new_nominal_drop_instance(nominal, external.instances, self.engine());
+            let term =
+                Ty::new_generated_adt_drop_instance(nominal, external.instances, self.engine());
             Ok(ResolvedInstance::new(term, external.obligations, external.outlives))
         })
         .await
@@ -738,7 +739,7 @@ impl Solver {
         if let Some(resolution) = self.resolve_tuple_drop_instance(required).await {
             return Some(resolution);
         }
-        if let Some(resolution) = self.resolve_nominal_drop_instance(required).await {
+        if let Some(resolution) = self.resolve_generated_adt_drop_instance(required).await {
             return Some(resolution);
         }
         if let Some(resolution) = self.resolve_closure_drop_instance(required).await {

@@ -1,42 +1,80 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: `<closure>() -> Secret \ {}` does not satisfy marker `main.Send`
-   ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:17:5
-   │
+ 1 │ # A marker goal on a closure fails because of a value it captures.
+ 2 │
+ 3 │ marker Send
+ 4 │
+ 5 │ struct Secret:
+ 6 │     value: int32
+ 7 │
+ 8 │ impl !Send for Secret
+   ┆
+   ┆ [note]: `Secret` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:8:1
+   ┆   │
+   ┆ 8 │ impl !Send for Secret
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
+   ┆
+ 9 │
+10 │ impl[a, b, c] !Send for (a, b, c)
+   ┆
+   ┆ [note]: `(&int32, &int32, &int32)` is excluded by this negative implementation
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:10:1
+   ┆    │
+   ┆ 10 │ impl[a, b, c] !Send for (a, b, c)
+   ┆    ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆
+11 │
+12 │ def requireSend(value: a) -> a where (a: Send):
+13 │     return value
+14 │
+15 │ # ERROR: the closure captures `secret` by value.
+16 │ def captureByValue(secret: Secret):
 17 │     requireSend(() -> move secret)
-   ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
-[note]: the closure stores a capture of type `Secret`
-[note]: `Secret` is excluded by this negative implementation
-  ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:8:1
-  │
-8 │ impl !Send for Secret
-  ╰╴━━━━━━━━━━━━━━━━━━━━━
-
-[error]: `<closure>() -> int32 \ {}` does not satisfy marker `main.Send`
-   ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:22:5
-   │
+   ┆
+   ┆ [error]: `<closure>() -> Secret \ {}` does not satisfy marker `main.Send`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:17:5
+   ┆    │
+   ┆ 17 │     requireSend(() -> move secret)
+   ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆
+18 │
+19 │ # ERROR: the closure captures `secret` by reference, and a reference is not
+20 │ # known to be `Send`.
+21 │ def captureByReference(secret: Secret, count: int32):
 22 │     requireSend(() -> secret.value + count)
-   ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆
+   ┆ [error]: `<closure>() -> int32 \ {}` does not satisfy marker `main.Send`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:22:5
+   ┆    │
+   ┆ 22 │     requireSend(() -> secret.value + count)
+   ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆
+23 │
+24 │ # ERROR: the closure captures three values, and its captures are excluded
+25 │ # as a whole.
+26 │ def captureThree(first: int32, second: int32, third: int32):
+27 │     requireSend(() -> first + second + third)
+   ┆
+   ┆ [error]: `<closure>() -> int32 \ {}` does not satisfy marker `main.Send`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:27:5
+   ┆    │
+   ┆ 27 │     requireSend(() -> first + second + third)
+   ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆
+28 │
+29 │ def main() -> int32:
+30 │     return 0
+
+other diagnostics:
+[note]: the closure stores a capture of type `Secret`
+
 [note]: the closure stores a capture of type `&Secret`
+
 [note]: no implementation or given proves `&Secret: main.Send`
 
-[error]: `<closure>() -> int32 \ {}` does not satisfy marker `main.Send`
-   ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:27:5
-   │
-27 │     requireSend(() -> first + second + third)
-   ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
 [note]: the closure stores its captures, of type `(&int32, &int32, &int32)`
-[note]: `(&int32, &int32, &int32)` is excluded by this negative implementation
-   ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:10:1
-   │
-10 │ impl[a, b, c] !Send for (a, b, c)
-   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

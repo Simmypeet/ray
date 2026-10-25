@@ -1,28 +1,48 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: duplicate clause for effect operation `main.Yield.yield`
-   ╭▸ compiler/e2e/test/check/coroutine/clause_duplicate/main.ray:14:14
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ def numbers() -> () \ {Yield[int32]}:
+ 6 │     Yield.yield(1)
+ 7 │
+ 8 │
+ 9 │ # ERROR: an operation has one clause, and so does the return.
+10 │ def main() -> int32:
+11 │     handle coro numbers():
 12 │         case Yield.yield(value):
-   │              ─────────── the first clause is here
 13 │             pass
 14 │         case Yield[int32].yield(other) resume k:
-   ╰╴             ━━━━━━━━━━━━━━━━━━ duplicate clause
-
-[error]: duplicate `case return` clause
-   ╭▸ compiler/e2e/test/check/coroutine/clause_duplicate/main.ray:18:14
-   │
+   ┆
+   ┆ [error]: duplicate clause for effect operation `main.Yield.yield`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/clause_duplicate/main.ray:14:14
+   ┆    │
+   ┆ 12 │         case Yield.yield(value):
+   ┆    │              ─────────── the first clause is here
+   ┆ 13 │             pass
+   ┆ 14 │         case Yield[int32].yield(other) resume k:
+   ┆    ╰╴             ━━━━━━━━━━━━━━━━━━ duplicate clause
+   ┆
+15 │             pass
 16 │         case return:
-   │              ────── the first clause is here
 17 │             pass
 18 │         case return x:
-   ╰╴             ━━━━━━ duplicate clause
+   ┆
+   ┆ [error]: duplicate `case return` clause
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/clause_duplicate/main.ray:18:14
+   ┆    │
+   ┆ 16 │         case return:
+   ┆    │              ────── the first clause is here
+   ┆ 17 │             pass
+   ┆ 18 │         case return x:
+   ┆    ╰╴             ━━━━━━ duplicate clause
+   ┆
+19 │             pass
+20 │
+21 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

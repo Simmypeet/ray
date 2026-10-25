@@ -1,38 +1,49 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: missing initialization for field `second` of struct `main.Pair`
-   ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:6:16
-   │
- 3 │       second: bool
-   │       ────── field declared here
-   ‡
- 6 │       let pair = Pair {
-   │ ┏━━━━━━━━━━━━━━━━┛
- 7 │ ┃         first = 1,
- 8 │ ┃         first = 2,
- 9 │ ┃         mystery = true
-10 │ ┃     }
-   ╰╴┗━━━━━┛ this field must be initialized
+ 1 │ struct Pair:
+ 2 │     first: int32
+ 3 │     second: bool
+ 4 │
+ 5 │ def main() -> ():
+ 6 │     let pair = Pair {
+   ┆
+   ┆ [error]: missing initialization for field `second` of struct `main.Pair`
+   ┆    ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:6:16
+   ┆    │
+   ┆  3 │       second: bool
+   ┆    │       ────── field declared here
+   ┆    ‡
+   ┆  6 │       let pair = Pair {
+   ┆    │ ┏━━━━━━━━━━━━━━━━┛
+   ┆  7 │ ┃         first = 1,
+   ┆  8 │ ┃         first = 2,
+   ┆  9 │ ┃         mystery = true
+   ┆ 10 │ ┃     }
+   ┆    ╰╴┗━━━━━┛ this field must be initialized
+   ┆
+ 7 │         first = 1,
+ 8 │         first = 2,
+   ┆
+   ┆ [error]: duplicate initialization for struct field `first`
+   ┆   ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:8:9
+   ┆   │
+   ┆ 7 │         first = 1,
+   ┆   │         ───── the first initialization is here
+   ┆ 8 │         first = 2,
+   ┆   ╰╴        ━━━━━ this field is initialized more than once
+   ┆
+ 9 │         mystery = true
+   ┆
+   ┆ [error]: struct `main.Pair` has no field named `mystery`
+   ┆   ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:9:9
+   ┆   │
+   ┆ 9 │         mystery = true
+   ┆   ╰╴        ━━━━━━━ unknown struct field
+   ┆
+10 │     }
+11 │     return ()
 
-[error]: duplicate initialization for struct field `first`
-  ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:8:9
-  │
-7 │         first = 1,
-  │         ───── the first initialization is here
-8 │         first = 2,
-  ╰╴        ━━━━━ this field is initialized more than once
-
-[error]: struct `main.Pair` has no field named `mystery`
-  ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:9:9
-  │
-9 │         mystery = true
-  ╰╴        ━━━━━━━ unknown struct field
-
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

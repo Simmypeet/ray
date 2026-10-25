@@ -15,6 +15,11 @@ expression: canonical_completions(&response)
   },
   {
     "kind": 14,
+    "label": "enum",
+    "sortText": "2enum"
+  },
+  {
+    "kind": 14,
     "label": "extern",
     "sortText": "2extern"
   },

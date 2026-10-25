@@ -1,8 +1,18 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
+1 │ module inner:
+2 │     def helper() -> int32:
+3 │         return 1
+4 │
+5 │     # Loaded from `inner/broken.ray`.
+6 │     pub module broken
+7 │
+8 │ def main():
+9 │     let _ = inner.broken.value() + inner.broken.other()
+
+other diagnostics:
 [error]: symbol `helper` is not found
   ╭▸ compiler/e2e/test/check/module/module_file_errors/inner/broken.ray:3:12
   │
@@ -18,7 +28,3 @@ stderr:
   ╰╴┗━┛
 
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

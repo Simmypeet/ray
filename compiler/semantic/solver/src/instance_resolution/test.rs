@@ -4,7 +4,7 @@ use qbice::storage::intern::Interned;
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
 use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor, TrackedEngine};
 use rayc_semantic_element::drop_plan::{
-    DropPlan, DropPlanError, GeneratedDropPlan, NominalDropPlan,
+    DropPlan, DropPlanError, GeneratedDropBody, GeneratedDropPlan, NominalDropPlan,
 };
 use rayc_source_file::GlobalSourceID;
 use rayc_symbol::{
@@ -77,9 +77,10 @@ async fn nominal_drop_fixture(
     let scope = engine.intern(scope);
 
     let plan = match plan_kind {
-        FixturePlan::Generated => {
-            DropPlan::Generated(GeneratedDropPlan::new(vec![requirement], Vec::new()))
-        }
+        FixturePlan::Generated => DropPlan::Generated(GeneratedDropPlan::new(
+            vec![requirement],
+            GeneratedDropBody::Struct(Vec::new()),
+        )),
         FixturePlan::Explicit => DropPlan::Explicit(explicit),
         FixturePlan::CannotDerive => {
             DropPlan::CannotDerive(DropPlanError::NonConvergentRequirements)
@@ -142,7 +143,7 @@ async fn nominal_drop_fixture(
 
 // input: Drop[Wrapper[s]] for an opaque site variable `s`
 // premise: Wrapper[t] requires Drop[t], and sDrop is the lexical Drop[s]
-// output: NominalDropInstance[Wrapper[s], sDrop], with no obligations
+// output: GeneratedAdtDropInstance[Wrapper[s], sDrop], with no obligations
 #[tokio::test]
 async fn generated_nominal_drop_retains_selected_external_dictionary() {
     let (engine, site, wrapper, site_ty, given) =
@@ -154,7 +155,7 @@ async fn generated_nominal_drop_retains_selected_external_dictionary() {
 
     let (term, obligations, _) = solver.resolve_instance(required).await.unwrap().into_parts();
     let Ty::Application(application) = &*term else { panic!("expected an instance application") };
-    let View::NominalDropInstance(instance) = application.view() else {
+    let View::GeneratedAdtDropInstance(instance) = application.view() else {
         panic!("expected a generated nominal Drop dictionary")
     };
     assert_eq!(instance.nominal(), &nominal);

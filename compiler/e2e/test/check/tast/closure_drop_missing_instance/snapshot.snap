@@ -1,20 +1,24 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `core.Drop[<closure>() -> a \ {}]`
-  ╭▸ compiler/e2e/test/check/tast/closure_drop_missing_instance/main.ray:4:1
-  │
+1 │ # The closure captures `value` by value, but no Drop dictionary is available
+2 │ # for `a`, so the discarded closure cannot be dropped.
+3 │ def discardCapture(value: a):
 4 │     () -> value
-  │ ━━━━━━━━━━━━━━━
-  │
-  ╰ help: add `given (_: core.Drop[a])`
+  ┆
+  ┆ [error]: no implicit instance found: `core.Drop[<closure>() -> a \ {}]`
+  ┆   ╭▸ compiler/e2e/test/check/tast/closure_drop_missing_instance/main.ray:4:1
+  ┆   │
+  ┆ 4 │     () -> value
+  ┆   │ ━━━━━━━━━━━━━━━
+  ┆   │
+  ┆   ╰ help: add `given (_: core.Drop[a])`
+  ┆
+
+other diagnostics:
 [note]: dropping the closure drops a value it captures, of type `a`
+
 [note]: no instance of `core.Drop[a]` exists
 
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

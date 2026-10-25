@@ -1,18 +1,69 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/lending_iterator_mut/main.ray:33:16
-   │
+ 1 │ # Simulating a lending iterator with generic associated types.
+ 2 │ pub trait LendingIterator[t]:
+ 3 │     pub type Item['x] where (t: 'x)
+ 4 │
+ 5 │     pub def next(self: &'x mut t) -> this.Item['x] where (t: 'x)
+ 6 │
+ 7 │
+ 8 │ pub struct Holding['a]:
+ 9 │     hold: &'a mut int32
+10 │
+11 │
+12 │ inst HoldingIteratorWrong['a] for LendingIterator[Holding['a]]:
+13 │     type Item['x] where ('a: 'x) = &'a mut int32
+14 │
+15 │     def next(self: &'x mut Holding['a]) -> &'a mut int32 where ('a: 'x):
+16 │         # ERROR:
+17 │         #
+18 │         # suppose '?r is a region that holds the loan of entire `.&mut` expression.
+19 │         # - dereferencing `self.*` creates a reborrow that generates `'x -> '?r`
+20 │         # - dereferencing `self.*.hold.*` creates a reborrow that generates `'a -> '?r`
+21 │         # - finally returning the expression `&'?r mut int32` creates a constraint `'?r -> 'a`
+22 │         #
+23 │         # Thus, generates this graph
+24 │         # 'x -----> '?r ---+
+25 │         #            ^     |
+26 │         #            |     |
+27 │         # 'a --------+     |
+28 │         #  ^               |
+29 │         #  |               |
+30 │         #  +---------------+
+31 │         #
+32 │         # `'a: 'a` is trivially true, but `'x: 'a` is not satisfied.
 33 │         return self.*.hold.*.&mut
-   │                ━━━━━━━━━━━━━━━━━━ this requires `'x` to outlive `'a`
-   │
-   ╰ help: consider adding `'x: 'a` to the where clause
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/lending_iterator_mut/main.ray:33:16
+   ┆    │
+   ┆ 33 │         return self.*.hold.*.&mut
+   ┆    │                ━━━━━━━━━━━━━━━━━━ this requires `'x` to outlive `'a`
+   ┆    │
+   ┆    ╰ help: consider adding `'x: 'a` to the where clause
+   ┆
+34 │
+35 │
+36 │ inst HoldingIteratorCorrect['a] for LendingIterator[Holding['a]]:
+37 │     type Item['x] where ('a: 'x) = &'x mut int32
+38 │
+39 │     def next(self: &'x mut Holding['a]) -> &'x mut int32 where ('a: 'x):
+40 │         # This instead generates this graph
+41 │         #
+42 │         #  +----------+
+43 │         #  |          |
+44 │         #  V          |
+45 │         # 'x ------> '?r
+46 │         #             ^
+47 │         #             |
+48 │         # 'a ---------+
+49 │         #
+50 │         # Instead, 'a does flow to 'x, but it's covered by the where clause
+51 │         return self.*.hold.*.&mut
+52 │
+53 │
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

@@ -1,8 +1,27 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ eff State[s]:
+ 2 │     def get() -> s
+ 3 │     def put(value: s)
+ 4 │
+ 5 │
+ 6 │ def identity(value: a) -> a:
+ 7 │     return value
+ 8 │
+ 9 │
+10 │ def explicitEffectArguments() -> int32 \ {State[int32]}:
+11 │     State[int32].put(1)
+12 │     return State[int32].get()
+13 │
+14 │
+15 │ def inferredEffectArguments() -> int32 \ {State[int32]}:
+16 │     State.put(1)
+17 │     return State.get()
+18 │
+19 │
+20 │ def inferredDefArguments() -> ():
+21 │     let number = identity(1)
+22 │     let boolean = identity(true)
+23 │     return ()

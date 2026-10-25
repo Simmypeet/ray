@@ -14,7 +14,7 @@ use rayc_symbol::{
     name::{get_name, get_qualified_name},
     source_map::to_absolute_span,
     span::get_span,
-    syntax::{get_instance_trait_syntax, is_linear_struct},
+    syntax::{get_instance_trait_syntax, is_linear_type},
 };
 use rayc_type::{
     accessibility::get_accessibility,
@@ -341,7 +341,10 @@ fn classify_drop_head(ty: &Ty) -> DropHead {
             ApplicationView::InstanceAssociated(_) => {
                 DropHead::NonNominal(NonNominalDropHeadKind::AssociatedType)
             }
-            ApplicationView::Instance(_)
+            // TODO: accept an explicit `Drop` instance for an enum once drop
+            // plans are computed for enums.
+            ApplicationView::Enum(_)
+            | ApplicationView::Instance(_)
             | ApplicationView::Closure(_)
             | ApplicationView::DefInstance(_)
             | ApplicationView::NoOpDropInstance(_)
@@ -353,7 +356,7 @@ fn classify_drop_head(ty: &Ty) -> DropHead {
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
-            | ApplicationView::NominalDropInstance(_) => {
+            | ApplicationView::GeneratedAdtDropInstance(_) => {
                 DropHead::NonNominal(NonNominalDropHeadKind::Other)
             }
             ApplicationView::Error => DropHead::Error,
@@ -485,7 +488,7 @@ impl Build for InstanceTraitRefKey {
             // A linear struct has no Drop instance by definition; its values
             // must be consumed explicitly.
             if let Some(struct_) = implementor.as_struct_view()
-                && engine.is_linear_struct(struct_.symbol_id()).await
+                && engine.is_linear_type(struct_.symbol_id()).await
             {
                 diagnostics.receive(Diagnostic::LinearDropImplementation(
                     LinearDropImplementation {

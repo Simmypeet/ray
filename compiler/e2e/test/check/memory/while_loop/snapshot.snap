@@ -1,19 +1,31 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: use of moved value
-   ╭▸ compiler/e2e/test/check/memory/while_loop/main.ray:13:17
-   │
+ 1 │ struct Resource:
+ 2 │     value: int32
+ 3 │
+ 4 │ impl !core.Copy for Resource
+ 5 │
+ 6 │ def consume(value: Resource) -> ():
+ 7 │     return ()
+ 8 │
+ 9 │ def main(condition: bool) -> ():
+10 │     let value = Resource { value = 1 }
+11 │     while condition:
+12 │         # ERROR: a later iteration might reuse the outer value moved here.
 13 │         consume(value)
-   │                 ┯━━━━
-   │                 │
-   │                 value used here after it was moved
-   ╰╴                value moved here
+   ┆
+   ┆ [error]: use of moved value
+   ┆    ╭▸ compiler/e2e/test/check/memory/while_loop/main.ray:13:17
+   ┆    │
+   ┆ 13 │         consume(value)
+   ┆    │                 ┯━━━━
+   ┆    │                 │
+   ┆    │                 value used here after it was moved
+   ┆    ╰╴                value moved here
+   ┆
+14 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

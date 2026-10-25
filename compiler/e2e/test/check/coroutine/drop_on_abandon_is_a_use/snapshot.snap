@@ -1,20 +1,76 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: borrow may still be in use when the value is dropped
-   ╭▸ compiler/e2e/test/check/coroutine/drop_on_abandon_is_a_use/main.ray:43:29
-   │
+ 1 │ # The drops on an abandon path are ordinary uses for the borrow checker. A
+ 2 │ # value with a declared `Drop` that holds a borrow across a suspension point
+ 3 │ # keeps the loan live on that path.
+ 4 │
+ 5 │ eff Yield[t]:
+ 6 │     def yield(value: t) -> ()
+ 7 │
+ 8 │
+ 9 │ struct Counter:
+10 │     value: int32
+11 │
+12 │ inst CounterDrop for core.Drop[Counter]:
+13 │     def drop(self: Counter):
+14 │         core.NoDrop { value = move self }
+15 │
+16 │
+17 │ struct Guard['a]:
+18 │     inner: &'a mut Counter
+19 │
+20 │ inst GuardDrop['a] for core.Drop[Guard['a]]:
+21 │     def drop(self: Guard['a]):
+22 │         self.inner.*.value = 0
+23 │         core.NoDrop { value = move self }
+24 │
+25 │
+26 │ def release(guard: Guard['a]):
+27 │     return
+28 │
+29 │
+30 │ # OK: `guard` is released while `counter` is still alive.
+31 │ def direct():
+32 │     let mut guard: Guard['_]
+33 │     let mut counter = Counter { value = 1 }
+34 │     guard = Guard { inner = counter.&mut }
+35 │     release(guard)
+36 │
+37 │
+38 │ # ERROR: if the coroutine is dropped at the `perform`, `counter` is dropped
+39 │ # before `guard`, whose drop writes through the borrow.
+40 │ def suspended() -> () \ {Yield[int32]}:
 41 │     let mut guard: Guard['_]
-   │         ───────── borrow later used here
 42 │     let mut counter = Counter { value = 1 }
-   │         ─────────── the value of this binding is dropped while the borrow is still in use
 43 │     guard = Guard { inner = counter.&mut }
-   ╰╴                            ━━━━━━━━━━━━ what the dropped value may use is borrowed here
+   ┆
+   ┆ [error]: borrow may still be in use when the value is dropped
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/drop_on_abandon_is_a_use/main.ray:43:29
+   ┆    │
+   ┆ 41 │     let mut guard: Guard['_]
+   ┆    │         ───────── borrow later used here
+   ┆ 42 │     let mut counter = Counter { value = 1 }
+   ┆    │         ─────────── the value of this binding is dropped while the borrow is still in use
+   ┆ 43 │     guard = Guard { inner = counter.&mut }
+   ┆    ╰╴                            ━━━━━━━━━━━━ what the dropped value may use is borrowed here
+   ┆
+44 │     Yield.yield(1)
+45 │     release(guard)
+46 │
+47 │
+48 │ # OK: released before the suspension point.
+49 │ def releasedFirst() -> () \ {Yield[int32]}:
+50 │     let mut guard: Guard['_]
+51 │     let mut counter = Counter { value = 1 }
+52 │     guard = Guard { inner = counter.&mut }
+53 │     release(guard)
+54 │     Yield.yield(1)
+55 │
+56 │
+57 │ def main() -> int32:
+58 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

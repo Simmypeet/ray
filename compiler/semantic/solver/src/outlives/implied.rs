@@ -19,15 +19,19 @@ use rayc_type::{
     outlives::get_inferred_outlives,
     signature::get_return_type,
     subst::Substitutable,
-    ty::{Ty, application::View as ApplicationView},
+    ty::{
+        Ty,
+        application::{AdtView, View as ApplicationView},
+    },
     where_clause::OutlivesPredicate,
 };
 
 /// Collects the outlives bounds that the references in a type imply.
 ///
 /// - `&'a t` implies `t: 'a`;
-/// - a struct `S[args]` implies its inferred outlives predicates, instantiated
-///   with `args`, which come from the references among its fields.
+/// - a struct or enum `S[args]` implies its inferred outlives predicates,
+///   instantiated with `args`, which come from the references among its fields
+///   or variant payloads.
 ///
 /// Declared outlives predicates, such as those of a struct or an effect, are
 /// never collected. Every other constructor only implies the bounds of its
@@ -37,7 +41,7 @@ pub struct ImpliedOutlivesCollector<'x> {
     engine: &'x TrackedEngine,
 
     /// Inferred outlives predicates that are still being computed, used in
-    /// place of the query for the structs they contain.
+    /// place of the query for the ADTs they contain.
     in_progress: Option<&'x FxHashMap<GlobalSymbolID, BTreeSet<OutlivesPredicate>>>,
 
     requirements: Vec<OutlivesPredicate>,
@@ -51,7 +55,7 @@ impl<'x> ImpliedOutlivesCollector<'x> {
         Self { engine, in_progress: None, requirements: Vec::new() }
     }
 
-    /// Creates a collector for the inferred outlives fixed point. Structs in
+    /// Creates a collector for the inferred outlives fixed point. ADTs in
     /// `in_progress` use its current sets instead of the query.
     #[must_use]
     pub const fn with_in_progress(
@@ -91,18 +95,8 @@ impl<'x> ImpliedOutlivesCollector<'x> {
                     reference.lifetime().clone(),
                 ));
             }
-            ApplicationView::Struct(view) => {
-                let subst = view.create_subst(self.engine).await;
-                let inferred = match self.in_progress.and_then(|map| map.get(&view.symbol_id())) {
-                    Some(inferred) => inferred.iter().cloned().collect::<Vec<_>>(),
-                    None => self.engine.get_inferred_outlives(view.symbol_id()).await.to_vec(),
-                };
-                self.requirements.extend(
-                    inferred
-                        .iter()
-                        .map(|predicate| predicate.apply_subst_or_clone(&subst, self.engine)),
-                );
-            }
+            ApplicationView::Struct(view) => self.collect_adt(AdtView::Struct(view)).await,
+            ApplicationView::Enum(view) => self.collect_adt(AdtView::Enum(view)).await,
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
             | ApplicationView::Pointer(_)
@@ -119,9 +113,27 @@ impl<'x> ImpliedOutlivesCollector<'x> {
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
-            | ApplicationView::NominalDropInstance(_)
+            | ApplicationView::GeneratedAdtDropInstance(_)
             | ApplicationView::Error => {}
         }
+    }
+
+    /// Collects the inferred outlives predicates of a struct or enum,
+    /// instantiated with its type arguments.
+    async fn collect_adt(&mut self, view: AdtView<'_>) {
+        let subst = view.create_subst(self.engine).await;
+        let (inferred_in_progress, inferred_engine) = match self.in_progress {
+            Some(map) => (map.get(&view.symbol_id()).map(|x| x.iter().cloned()), None),
+            None => (None, Some(self.engine.get_inferred_outlives(view.symbol_id()).await)),
+        };
+
+        self.requirements.extend(
+            inferred_in_progress
+                .into_iter()
+                .flatten()
+                .chain(inferred_engine.as_ref().into_iter().flat_map(|x| x.iter().cloned()))
+                .map(|outlives| outlives.apply_subst_or_clone(&subst, self.engine)),
+        );
     }
 }
 
@@ -130,7 +142,7 @@ impl<'x> ImpliedOutlivesCollector<'x> {
 ///
 /// - a plain `def` assumes the bounds implied by the references in its
 ///   parameter and return types;
-/// - a struct assumes its inferred outlives predicates.
+/// - a struct or enum assumes its inferred outlives predicates.
 ///
 /// These become part of the symbol's
 /// [`WhereClause`](rayc_type::where_clause::WhereClause). A marker
@@ -152,7 +164,9 @@ pub async fn implied_bounds(
             collector.collect(&engine.get_return_type(symbol_id).await).await;
             collector.into_requirements()
         }
-        SymbolKind::Strut => engine.get_inferred_outlives(symbol_id).await.to_vec(),
+        SymbolKind::Enum | SymbolKind::Struct => {
+            engine.get_inferred_outlives(symbol_id).await.to_vec()
+        }
         SymbolKind::Effect
         | SymbolKind::EffectOperation
         | SymbolKind::ExternDef
@@ -164,6 +178,7 @@ pub async fn implied_bounds(
         | SymbolKind::Module
         | SymbolKind::Trait
         | SymbolKind::TraitDef
-        | SymbolKind::TraitType => Vec::new(),
+        | SymbolKind::TraitType
+        | SymbolKind::Variant => Vec::new(),
     }
 }

@@ -41,6 +41,7 @@ impl Ty {
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Reference(_)
                 | ApplicationView::Struct(_)
+                | ApplicationView::Enum(_)
                 | ApplicationView::Instance(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
@@ -51,7 +52,7 @@ impl Ty {
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
-                | ApplicationView::NominalDropInstance(_)
+                | ApplicationView::GeneratedAdtDropInstance(_)
                 | ApplicationView::Error => false,
             },
             Self::Inference(_)
@@ -168,6 +169,7 @@ impl Ty {
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Reference(_)
                 | ApplicationView::Struct(_)
+                | ApplicationView::Enum(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
@@ -180,7 +182,7 @@ impl Ty {
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
-                | ApplicationView::NominalDropInstance(_)
+                | ApplicationView::GeneratedAdtDropInstance(_)
                 | ApplicationView::Instance(_) => false,
             },
             Self::Inference(_)

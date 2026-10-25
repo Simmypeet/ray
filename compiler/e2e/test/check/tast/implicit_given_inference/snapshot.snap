@@ -1,8 +1,39 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ trait Eq[a]:
+ 2 │     def equals(lhs: a, rhs: a) -> bool
+ 3 │
+ 4 │
+ 5 │ inst EqInt for Eq[int32]:
+ 6 │     def equals(lhs: int32, rhs: int32) -> bool:
+ 7 │         return lhs == rhs
+ 8 │
+ 9 │
+10 │ def acceptsGiven(value: a) given (equality: Eq[a], drop: core.Drop[a]) -> bool:
+11 │     return true
+12 │
+13 │
+14 │ def acceptsFive(value: a) given (
+15 │     first: Eq[a],
+16 │     second: Eq[a],
+17 │     third: Eq[a],
+18 │     fourth: Eq[a],
+19 │     fifth: Eq[a],
+20 │     drop: core.Drop[a],
+21 │ ) -> bool:
+22 │     return true
+23 │
+24 │
+25 │ def test() -> bool:
+26 │     let implicit = acceptsGiven(1)
+27 │     return acceptsFive[given EqInt, EqInt, fifth = EqInt, third = EqInt](1)
+28 │
+29 │
+30 │ def lexical(value: a) given (equality: Eq[a], drop: core.Drop[a]) -> bool:
+31 │     return acceptsGiven(value)
+32 │
+33 │
+34 │ def deferred(value: int32) -> bool:
+35 │     return acceptsGiven(value)

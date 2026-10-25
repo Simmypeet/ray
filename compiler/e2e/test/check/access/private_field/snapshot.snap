@@ -1,32 +1,50 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: field `y` of struct `main.geometry.Point` is not accessible here
-   ╭▸ compiler/e2e/test/check/access/private_field/main.ray:17:19
-   │
+ 1 │ module geometry:
+ 2 │     pub struct Point:
+ 3 │         pub x: int32
  4 │         y: int32
-   │         ─ `y` is declared here
-   ‡
+ 5 │
+ 6 │     pub def new_point(x: int32, y: int32) -> Point:
+ 7 │         # A private field is accessible within the module of its struct.
+ 8 │         return Point { x = x, y = y }
+ 9 │
+10 │     pub def y_of(point: Point) -> int32:
+11 │         return point.y
+12 │
+13 │
+14 │ def main() -> int32:
+15 │     let point = geometry.new_point(1, 2)
+16 │     let x = point.x
 17 │     let y = point.y
-   │                   ━ `y` is not accessible here
-   │
-   ╰ help: `y` is only accessible within `main.geometry`; declare it with `pub` to make it public
-
-[error]: field `y` of struct `main.geometry.Point` is not accessible here
-   ╭▸ compiler/e2e/test/check/access/private_field/main.ray:18:41
-   │
- 4 │         y: int32
-   │         ─ `y` is declared here
-   ‡
+   ┆
+   ┆ [error]: field `y` of struct `main.geometry.Point` is not accessible here
+   ┆    ╭▸ compiler/e2e/test/check/access/private_field/main.ray:17:19
+   ┆    │
+   ┆  4 │         y: int32
+   ┆    │         ─ `y` is declared here
+   ┆    ‡
+   ┆ 17 │     let y = point.y
+   ┆    │                   ━ `y` is not accessible here
+   ┆    │
+   ┆    ╰ help: `y` is only accessible within `main.geometry`; declare it with `pub` to make it public
+   ┆
 18 │     let other = geometry.Point { x = 3, y = 4 }
-   │                                         ━ `y` is not accessible here
-   │
-   ╰ help: `y` is only accessible within `main.geometry`; declare it with `pub` to make it public
+   ┆
+   ┆ [error]: field `y` of struct `main.geometry.Point` is not accessible here
+   ┆    ╭▸ compiler/e2e/test/check/access/private_field/main.ray:18:41
+   ┆    │
+   ┆  4 │         y: int32
+   ┆    │         ─ `y` is declared here
+   ┆    ‡
+   ┆ 18 │     let other = geometry.Point { x = 3, y = 4 }
+   ┆    │                                         ━ `y` is not accessible here
+   ┆    │
+   ┆    ╰ help: `y` is only accessible within `main.geometry`; declare it with `pub` to make it public
+   ┆
+19 │     return x + y + geometry.y_of(other)
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

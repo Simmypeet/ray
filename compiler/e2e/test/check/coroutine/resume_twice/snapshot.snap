@@ -1,36 +1,75 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: use of moved value
-   ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:15:12
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ def numbers() -> () \ {Yield[int32]}:
+ 6 │     Yield.yield(1)
+ 7 │
+ 8 │
+ 9 │ # ERROR: a `handle` consumes the continuation it resumes.
+10 │ def handleTwice():
+11 │     let con = coro numbers()
 12 │     handle con():
-   │            ─── value moved here
-   ‡
+13 │         case Yield[int32].yield(value) resume k:
+14 │             pass
 15 │     handle con():
-   ╰╴           ━━━ value used here after it was moved
-
-[error]: use of moved value
-   ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:23:5
-   │
+   ┆
+   ┆ [error]: use of moved value
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:15:12
+   ┆    │
+   ┆ 12 │     handle con():
+   ┆    │            ─── value moved here
+   ┆    ‡
+   ┆ 15 │     handle con():
+   ┆    ╰╴           ━━━ value used here after it was moved
+   ┆
+16 │         case Yield[int32].yield(value) resume k:
+17 │             pass
+18 │
+19 │
+20 │ # ERROR: so does invoking it.
+21 │ def invokeTwice(k: core.Continuation[(), c]) given (co: core.Coroutine[c]) -> () \ co.Effect where (co.Return = ()):
 22 │     k(())
-   │     ─ value moved here
 23 │     k(())
-   ╰╴    ━ value used here after it was moved
-
-[error]: use of moved value
-   ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:31:16
-   │
+   ┆
+   ┆ [error]: use of moved value
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:23:5
+   ┆    │
+   ┆ 22 │     k(())
+   ┆    │     ─ value moved here
+   ┆ 23 │     k(())
+   ┆    ╰╴    ━ value used here after it was moved
+   ┆
+24 │
+25 │
+26 │ # ERROR: the loop resumes `con` again, but the clause never stores the next
+27 │ # continuation back into it.
+28 │ def loopWithoutStore():
+29 │     let con = coro numbers()
+30 │     while true:
 31 │         handle con():
-   │                ┯━━
-   │                │
-   │                value used here after it was moved
-   ╰╴               value moved here
+   ┆
+   ┆ [error]: use of moved value
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:31:16
+   ┆    │
+   ┆ 31 │         handle con():
+   ┆    │                ┯━━
+   ┆    │                │
+   ┆    │                value used here after it was moved
+   ┆    ╰╴               value moved here
+   ┆
+32 │             case Yield[int32].yield(value) resume k:
+33 │                 pass
+34 │             case return x:
+35 │                 break
+36 │
+37 │
+38 │ def main() -> int32:
+39 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

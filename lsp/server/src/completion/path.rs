@@ -376,10 +376,15 @@ impl Position {
         match kind {
             // a module can lead to anything
             SymbolKind::Module => true,
-            SymbolKind::Strut => matches!(
+            SymbolKind::Struct => matches!(
                 self,
                 Self::Type | Self::StructInitialization | Self::Expression | Self::Unknown
             ),
+            // an enum names a type and leads to its variants
+            SymbolKind::Enum => {
+                matches!(self, Self::Type | Self::Call | Self::Expression | Self::Unknown)
+            }
+            SymbolKind::Variant => matches!(self, Self::Call | Self::Expression | Self::Unknown),
             SymbolKind::Def
             | SymbolKind::ExternDef
             | SymbolKind::TraitDef
@@ -469,7 +474,9 @@ const fn item_kind(kind: SymbolKind) -> CompletionItemKind {
         | SymbolKind::EffectOperation
         | SymbolKind::TraitDef
         | SymbolKind::InstanceDef => CompletionItemKind::FUNCTION,
-        SymbolKind::Strut => CompletionItemKind::STRUCT,
+        SymbolKind::Struct => CompletionItemKind::STRUCT,
+        SymbolKind::Enum => CompletionItemKind::ENUM,
+        SymbolKind::Variant => CompletionItemKind::ENUM_MEMBER,
         SymbolKind::Effect | SymbolKind::Trait | SymbolKind::Marker => {
             CompletionItemKind::INTERFACE
         }

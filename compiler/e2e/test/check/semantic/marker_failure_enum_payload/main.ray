@@ -1,0 +1,22 @@
+# A marker goal that fails through the payload of an enum variant.
+
+marker Send
+
+struct Secret:
+    value: int32
+
+impl !Send for Secret
+
+enum Holder:
+    Empty
+    Full(Secret)
+
+def requireSend(value: a) -> a where (a: Send):
+    return value
+
+# ERROR: `Holder` may hold a `Secret` in its `Full` variant.
+def rejected(value: Holder) -> Holder:
+    return requireSend(value)
+
+def main() -> int32:
+    return 0

@@ -73,15 +73,17 @@ impl DefKind {
 
             SymbolKind::Effect
             | SymbolKind::EffectOperation
+            | SymbolKind::Enum
             | SymbolKind::Instance
             | SymbolKind::Marker
             | SymbolKind::MarkerImplementation
             | SymbolKind::Module
-            | SymbolKind::Strut
+            | SymbolKind::Struct
             | SymbolKind::Trait
             | SymbolKind::TraitType
             | SymbolKind::InstanceType
-            | SymbolKind::TraitDef => panic!("{kind:?} symbol has no calling signature"),
+            | SymbolKind::TraitDef
+            | SymbolKind::Variant => panic!("{kind:?} symbol has no calling signature"),
         }
     }
 

@@ -1,16 +1,28 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: use of value before initialization
-   ╭▸ compiler/e2e/test/check/memory/use_before_initialization/main.ray:13:13
-   │
+ 1 │ struct Resource:
+ 2 │     value: int32
+ 3 │
+ 4 │ impl !core.Copy for Resource
+ 5 │
+ 6 │ def consume(value: Resource) -> ():
+ 7 │     return ()
+ 8 │
+ 9 │ def main() -> ():
+10 │     let mut value: Resource
+11 │
+12 │     # ERROR: `value` has not been initialized on any path.
 13 │     consume(value)
-   ╰╴            ━━━━━ value may be uninitialized here
+   ┆
+   ┆ [error]: use of value before initialization
+   ┆    ╭▸ compiler/e2e/test/check/memory/use_before_initialization/main.ray:13:13
+   ┆    │
+   ┆ 13 │     consume(value)
+   ┆    ╰╴            ━━━━━ value may be uninitialized here
+   ┆
+14 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

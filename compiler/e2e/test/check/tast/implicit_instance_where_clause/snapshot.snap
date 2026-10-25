@@ -1,23 +1,50 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-assertion_line: 112
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: where-clause obligation for `main.LeafFromBox` is not satisfied
-   ╭▸ compiler/e2e/test/check/tast/implicit_instance_where_clause/main.ray:26:12
-   │
+ 1 │ trait Box[a]:
+ 2 │     type Item
+ 3 │
+ 4 │ inst BoolBox for Box[int32]:
+ 5 │     type Item = bool
+ 6 │
+ 7 │ trait Leaf[a]:
+ 8 │     type Value
+ 9 │
+10 │ inst LeafFromBox[a] for Leaf[a] given (box: Box[a]) where (box.Item = a):
+11 │     type Value = a
+12 │
+13 │ trait Root[a]:
+14 │     type Value
+15 │
+16 │ inst RootFromLeaf[a] for Root[a] given (leaf: Leaf[a]):
+17 │     type Value = a
+18 │
+19 │ def acceptsLeaf(value: a) given (leaf: Leaf[a]) -> a:
+20 │     return value
+21 │
+22 │ def acceptsRoot(value: a) given (root: Root[a]) -> a:
+23 │     return value
+24 │
+25 │ def direct() -> int32:
 26 │     return acceptsLeaf(0)
-   ╰╴           ━━━━━━━━━━━ `BoolBox.Item` must equal `int32`
-
-[error]: where-clause obligation for `main.LeafFromBox` is not satisfied
-   ╭▸ compiler/e2e/test/check/tast/implicit_instance_where_clause/main.ray:29:12
-   │
+   ┆
+   ┆ [error]: where-clause obligation for `main.LeafFromBox` is not satisfied
+   ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_where_clause/main.ray:26:12
+   ┆    │
+   ┆ 26 │     return acceptsLeaf(0)
+   ┆    ╰╴           ━━━━━━━━━━━ `BoolBox.Item` must equal `int32`
+   ┆
+27 │
+28 │ def nested() -> int32:
 29 │     return acceptsRoot(0)
-   ╰╴           ━━━━━━━━━━━ `BoolBox.Item` must equal `int32`
+   ┆
+   ┆ [error]: where-clause obligation for `main.LeafFromBox` is not satisfied
+   ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_where_clause/main.ray:29:12
+   ┆    │
+   ┆ 29 │     return acceptsRoot(0)
+   ┆    ╰╴           ━━━━━━━━━━━ `BoolBox.Item` must equal `int32`
+   ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

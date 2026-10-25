@@ -1,53 +1,126 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `main.Render[Item]`
-   ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:31:12
-   │
-31 │     return render(item)
-   ╰╴           ━━━━━━
-[note]: `main.ByRight` matches `main.Render[Item]`, but needs `main.Right[Item]`, which has no instance
-   ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:22:6
-   │
-22 │ inst ByRight[a] for Render[a] given (right: Right[a]):
-   ╰╴     ━━━━━━━
-[note]: `main.ByLeft` matches `main.Render[Item]`, but needs `main.Left[Item]`, which has no instance
-   ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:18:6
-   │
+ 1 │ # Several instance heads match a goal, and each fails for its own reason.
+ 2 │
+ 3 │ trait Render[a]:
+ 4 │     def render() -> int32
+ 5 │
+ 6 │ trait Left[a]:
+ 7 │     def left() -> int32
+ 8 │
+ 9 │ trait Right[a]:
+10 │     def right() -> int32
+11 │
+12 │ trait Fifth[a]:
+13 │     def fifth() -> int32
+14 │
+15 │ struct Item:
+16 │     value: int32
+17 │
 18 │ inst ByLeft[a] for Render[a] given (left: Left[a]):
-   ╰╴     ━━━━━━
-
-[error]: no implicit instance found: `main.Many[Item]`
-   ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:61:12
-   │
-61 │     return many(item)
-   ╰╴           ━━━━
-[note]: `main.ManyD` matches `main.Many[Item]`, but needs `main.Render[Item]`, which has no instance that applies
-   ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:48:6
-   │
-48 │ inst ManyD[a] for Many[a] given (x: Render[a]):
-   ╰╴     ━━━━━
-[note]: `main.ManyA` matches `main.Many[Item]`, but needs `main.Left[Item]`, which has no instance
-   ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:36:6
-   │
+   ┆
+   ┆ [note]: `main.ByLeft` matches `main.Render[Item]`, but needs `main.Left[Item]`, which has no instance
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:18:6
+   ┆    │
+   ┆ 18 │ inst ByLeft[a] for Render[a] given (left: Left[a]):
+   ┆    ╰╴     ━━━━━━
+   ┆
+19 │     def render() -> int32:
+20 │         return 0
+21 │
+22 │ inst ByRight[a] for Render[a] given (right: Right[a]):
+   ┆
+   ┆ [note]: `main.ByRight` matches `main.Render[Item]`, but needs `main.Right[Item]`, which has no instance
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:22:6
+   ┆    │
+   ┆ 22 │ inst ByRight[a] for Render[a] given (right: Right[a]):
+   ┆    ╰╴     ━━━━━━━
+   ┆
+23 │     def render() -> int32:
+24 │         return 0
+25 │
+26 │ def render(value: a) given (d: Render[a], drop: core.Drop[a]) -> int32:
+27 │     return 0
+28 │
+29 │ # ERROR: both heads match `Render[Item]`, and neither given has an instance.
+30 │ def test(item: Item) -> int32:
+31 │     return render(item)
+   ┆
+   ┆ [error]: no implicit instance found: `main.Render[Item]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:31:12
+   ┆    │
+   ┆ 31 │     return render(item)
+   ┆    ╰╴           ━━━━━━
+   ┆
+32 │
+33 │ trait Many[a]:
+34 │     def many() -> int32
+35 │
 36 │ inst ManyA[a] for Many[a] given (x: Left[a]):
-   ╰╴     ━━━━━
-[note]: `main.ManyC` matches `main.Many[Item]`, but needs `main.Fifth[Item]`, which has no instance
-   ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:44:6
-   │
+   ┆
+   ┆ [note]: `main.ManyA` matches `main.Many[Item]`, but needs `main.Left[Item]`, which has no instance
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:36:6
+   ┆    │
+   ┆ 36 │ inst ManyA[a] for Many[a] given (x: Left[a]):
+   ┆    ╰╴     ━━━━━
+   ┆
+37 │     def many() -> int32:
+38 │         return 0
+39 │
+40 │ inst ManyB[a] for Many[a] given (x: Right[a]):
+41 │     def many() -> int32:
+42 │         return 0
+43 │
 44 │ inst ManyC[a] for Many[a] given (x: Fifth[a]):
-   ╰╴     ━━━━━
-[note]: `main.ManyE` matches `main.Many[Item]`, but needs `main.Left[Item]`, which has no instance
-   ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:52:6
-   │
+   ┆
+   ┆ [note]: `main.ManyC` matches `main.Many[Item]`, but needs `main.Fifth[Item]`, which has no instance
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:44:6
+   ┆    │
+   ┆ 44 │ inst ManyC[a] for Many[a] given (x: Fifth[a]):
+   ┆    ╰╴     ━━━━━
+   ┆
+45 │     def many() -> int32:
+46 │         return 0
+47 │
+48 │ inst ManyD[a] for Many[a] given (x: Render[a]):
+   ┆
+   ┆ [note]: `main.ManyD` matches `main.Many[Item]`, but needs `main.Render[Item]`, which has no instance that applies
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:48:6
+   ┆    │
+   ┆ 48 │ inst ManyD[a] for Many[a] given (x: Render[a]):
+   ┆    ╰╴     ━━━━━
+   ┆
+49 │     def many() -> int32:
+50 │         return 0
+51 │
 52 │ inst ManyE[a] for Many[a] given (x: Left[a], y: Right[a]):
-   ╰╴     ━━━━━
+   ┆
+   ┆ [note]: `main.ManyE` matches `main.Many[Item]`, but needs `main.Left[Item]`, which has no instance
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:52:6
+   ┆    │
+   ┆ 52 │ inst ManyE[a] for Many[a] given (x: Left[a], y: Right[a]):
+   ┆    ╰╴     ━━━━━
+   ┆
+53 │     def many() -> int32:
+54 │         return 0
+55 │
+56 │ def many(value: a) given (d: Many[a], drop: core.Drop[a]) -> int32:
+57 │     return 0
+58 │
+59 │ # ERROR: five heads match, so only the first four are explained.
+60 │ def testMany(item: Item) -> int32:
+61 │     return many(item)
+   ┆
+   ┆ [error]: no implicit instance found: `main.Many[Item]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:61:12
+   ┆    │
+   ┆ 61 │     return many(item)
+   ┆    ╰╴           ━━━━
+   ┆
+
+other diagnostics:
 [note]: and 1 more candidate
 
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

@@ -1,50 +1,136 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:58:5
-   │
+ 1 │ # Drop check: a value that is only dropped later keeps alive just the borrows
+ 2 │ # its drop may use.
+ 3 │
+ 4 │ # A struct with a declared `Drop` implementation, which may use the memory
+ 5 │ # behind the reference it holds.
+ 6 │ struct Guard['a]:
+ 7 │     inner: &'a mut int32
+ 8 │
+ 9 │ inst GuardDrop['a] for core.Drop[Guard['a]]:
+10 │     def drop(self: Guard['a]):
+11 │         self.inner.* = 0
+12 │         core.NoDrop { value = move self }
+13 │
+14 │ # Structs whose `Drop` is generated from their fields.
+15 │ struct Wrapper[t]:
+16 │     value: t
+17 │
+18 │ struct Holding['a]:
+19 │     value: &'a int32
+20 │
+21 │ # A generic struct with a declared `Drop` implementation, which only drops its
+22 │ # field.
+23 │ struct Tagged[t]:
+24 │     value: t
+25 │
+26 │ inst TaggedDrop[t] for core.Drop[Tagged[t]] given (inner: core.Drop[t]):
+27 │     def drop(self: Tagged[t]):
+28 │         inner.drop(self.value)
+29 │
+30 │ struct Pair[t, u]:
+31 │     first: t
+32 │     second: u
+33 │
+34 │ def genericWrapperOfReference():
+35 │     let mut value = 1
+36 │     let wrapper = Wrapper { value = value.& }
+37 │     # OK: dropping `wrapper` only drops the reference, which does nothing.
+38 │     value = 2
+39 │
+40 │ def lifetimeStructOfReference():
+41 │     let mut value = 1
+42 │     let holding = Holding { value = value.& }
+43 │     # OK: the generated `Drop` of `Holding` does not use its reference.
+44 │     value = 2
+45 │
+46 │ def referenceBesideGuard():
+47 │     let mut value = 1
+48 │     let mut other = 2
+49 │     let wrapper = Wrapper { value = (Guard { inner = other.&mut }, value.&) }
+50 │     # OK: only the guard's `Drop` runs, and it cannot reach `value`.
+51 │     value = 3
+52 │
+53 │ def guardDirectly():
+54 │     let mut value = 1
 55 │     let guard = Guard { inner = value.&mut }
-   │         ┬────                   ────────── mutable borrow occurs here
-   │         │
-   │         borrow later used here
-   ‡
+56 │     # ERROR: `guard` is dropped at the end of the function, where its `Drop`
+57 │     # implementation writes through the borrow.
 58 │     value = 2
-   ╰╴    ━━━━━━━━━ the borrowed place is assigned here
-
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:64:5
-   │
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:58:5
+   ┆    │
+   ┆ 55 │     let guard = Guard { inner = value.&mut }
+   ┆    │         ┬────                   ────────── mutable borrow occurs here
+   ┆    │         │
+   ┆    │         borrow later used here
+   ┆    ‡
+   ┆ 58 │     value = 2
+   ┆    ╰╴    ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+59 │
+60 │ def guardInGenericWrapper():
+61 │     let mut value = 1
 62 │     let wrapper = Wrapper { value = Guard { inner = value.&mut } }
-   │         ─────── borrow later used here              ────────── mutable borrow occurs here
 63 │     # ERROR: dropping `wrapper` drops the guard in it.
 64 │     value = 2
-   ╰╴    ━━━━━━━━━ the borrowed place is assigned here
-
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:71:5
-   │
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:64:5
+   ┆    │
+   ┆ 62 │     let wrapper = Wrapper { value = Guard { inner = value.&mut } }
+   ┆    │         ─────── borrow later used here              ────────── mutable borrow occurs here
+   ┆ 63 │     # ERROR: dropping `wrapper` drops the guard in it.
+   ┆ 64 │     value = 2
+   ┆    ╰╴    ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+65 │
+66 │ def guardInTuple():
+67 │     let mut value = 1
+68 │     let mut other = 2
 69 │     let wrapper = Wrapper { value = (Guard { inner = value.&mut }, other.&) }
-   │         ─────── borrow later used here               ────────── mutable borrow occurs here
 70 │     # ERROR: dropping `wrapper` drops the guard holding the borrow of `value`.
 71 │     value = 3
-   ╰╴    ━━━━━━━━━ the borrowed place is assigned here
-
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:78:5
-   │
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:71:5
+   ┆    │
+   ┆ 69 │     let wrapper = Wrapper { value = (Guard { inner = value.&mut }, other.&) }
+   ┆    │         ─────── borrow later used here               ────────── mutable borrow occurs here
+   ┆ 70 │     # ERROR: dropping `wrapper` drops the guard holding the borrow of `value`.
+   ┆ 71 │     value = 3
+   ┆    ╰╴    ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+72 │
+73 │ def referenceInDeclaredGenericDrop():
+74 │     let mut value = 1
 75 │     let tagged = Tagged { value = value.& }
-   │         ┬─────                    ─────── immutable borrow occurs here
-   │         │
-   │         borrow later used here
-   ‡
+76 │     # ERROR: a declared `Drop` implementation is assumed to use anything the
+77 │     # value reaches, even one that only drops its field.
 78 │     value = 2
-   ╰╴    ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:78:5
+   ┆    │
+   ┆ 75 │     let tagged = Tagged { value = value.& }
+   ┆    │         ┬─────                    ─────── immutable borrow occurs here
+   ┆    │         │
+   ┆    │         borrow later used here
+   ┆    ‡
+   ┆ 78 │     value = 2
+   ┆    ╰╴    ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+79 │
+80 │ def dropPair():
+81 │     let mut value = 1
+82 │     let mut second = 3
+83 │     let pair = Pair { first = value.&, second = Tagged { value = second.& } }
+84 │     # OK:
+85 │     value = 2
 
+other diagnostics:
 [error]: Compilation aborted due to 4 error(s)
-
-
-
-stdout:
