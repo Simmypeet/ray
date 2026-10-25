@@ -20,9 +20,7 @@ use rayc_symbol::{
     core_item::{CoreItem, Key as CoreItemKey},
     member::{Key as MemberKey, Member},
     name::Key as NameKey,
-    symbol_kind::{
-        AllEnumIDs, AllInstanceIDs, AllNominalTypeIDs, Key as SymbolKindKey, SymbolKind,
-    },
+    symbol_kind::{AllAdtIDs, AllInstanceIDs, Key as SymbolKindKey, SymbolKind},
     syntax::LinearTypeKey,
 };
 use rayc_target::TargetID;
@@ -54,21 +52,15 @@ fn register_nominals(engine: &mut Engine, targets: &[(TargetID, &[GlobalSymbolID
         targets
             .iter()
             .map(|&(target, structs)| {
-                (AllNominalTypeIDs { target }, structs.iter().map(|x| x.id).collect::<Arc<[_]>>())
+                (AllAdtIDs { target }, structs.iter().map(|x| x.id).collect::<Arc<[_]>>())
             })
             .collect(),
     )));
     engine.register_executor(Arc::new(PrecomputedExecutor::new(
         targets
             .iter()
-            .map(|&(target, _)| (AllEnumIDs { target }, Arc::<[SymbolID]>::from([])))
-            .collect(),
-    )));
-    engine.register_executor(Arc::new(PrecomputedExecutor::new(
-        targets
-            .iter()
             .flat_map(|(_, structs)| structs.iter())
-            .map(|&symbol_id| (SymbolKindKey { symbol_id }, SymbolKind::Strut))
+            .map(|&symbol_id| (SymbolKindKey { symbol_id }, SymbolKind::Struct))
             .collect(),
     )));
     engine.register_executor(Arc::new(PrecomputedExecutor::new(
@@ -568,11 +560,7 @@ async fn enum_plan_drops_each_variant_payload() {
         drop_trait,
     )]))));
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-        AllNominalTypeIDs { target },
-        Arc::<[SymbolID]>::from([]),
-    )]))));
-    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-        AllEnumIDs { target },
+        AllAdtIDs { target },
         Arc::<[SymbolID]>::from([option.id]),
     )]))));
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(

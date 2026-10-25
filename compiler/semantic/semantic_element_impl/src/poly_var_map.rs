@@ -151,7 +151,9 @@ impl Report for MisplacedVarianceMarker {
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
-                    .message("only the parameters of a `struct` or an `eff` have a variance")
+                    .message(
+                        "only the parameters of a `struct`, an `enum` or an `eff` have a variance",
+                    )
                     .build(),
             )
             .build()
@@ -453,7 +455,7 @@ impl Build for rayc_type::poly_var::Key {
             | SymbolKind::Enum
             | SymbolKind::Instance
             | SymbolKind::MarkerImplementation
-            | SymbolKind::Strut
+            | SymbolKind::Struct
             | SymbolKind::Trait
             | SymbolKind::TraitType
             | SymbolKind::InstanceType => {

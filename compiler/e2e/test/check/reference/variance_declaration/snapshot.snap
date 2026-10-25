@@ -54,19 +54,50 @@ stderr:
    │
    ╰ help: consider declaring it invariant as `='b`, or removing the marker to infer its variance
 
-[error]: variance cannot be declared here
-   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:44:14
+[error]: `t` is declared covariant but used invariantly
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:56:15
    │
-44 │ def identity[+t](value: t) -> t:
-   ╰╴             ━ only the parameters of a `struct` or an `eff` have a variance
+54 │ enum Access[+t]:
+   │              ─ `t` is declared covariant here
+55 │     Shared(t)
+56 │     Exclusive(Slot[t])
+   │               ━━━━━━━ the payload of variant `Exclusive` uses `t` invariantly
+   │
+   ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
+
+[error]: `t` is declared contravariant but used invariantly
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:60:13
+   │
+59 │ enum ThroughEnum[-t]:
+   │                   ─ `t` is declared contravariant here
+60 │     Wrapped(Slot[t])
+   │             ━━━━━━━ the payload of variant `Wrapped` uses `t` invariantly
+   │
+   ╰ help: consider declaring it invariant as `=t`, or removing the marker to infer its variance
+
+[error]: `u` is declared contravariant but used covariantly
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:68:5
+   │
+67 │ struct UsesMaybeContravariantly[-u]:
+   │                                  ─ `u` is declared contravariant here
+68 │     maybe: Maybe['static, u]
+   │     ━━━━━ field `maybe` uses `u` covariantly
+   │
+   ╰ help: consider declaring it invariant as `=u`, or removing the marker to infer its variance
 
 [error]: variance cannot be declared here
-   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:47:12
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:71:14
    │
-47 │ trait Show[=t]:
-   ╰╴           ━ only the parameters of a `struct` or an `eff` have a variance
+71 │ def identity[+t](value: t) -> t:
+   ╰╴             ━ only the parameters of a `struct`, an `enum` or an `eff` have a variance
 
-[error]: Compilation aborted due to 7 error(s)
+[error]: variance cannot be declared here
+   ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:74:12
+   │
+74 │ trait Show[=t]:
+   ╰╴           ━ only the parameters of a `struct`, an `enum` or an `eff` have a variance
+
+[error]: Compilation aborted due to 10 error(s)
 
 
 

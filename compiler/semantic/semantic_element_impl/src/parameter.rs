@@ -72,7 +72,7 @@ const fn parameter_lifetime_elision(symbol_kind: SymbolKind) -> LifetimeElision 
         | SymbolKind::Enum
         | SymbolKind::Instance
         | SymbolKind::MarkerImplementation
-        | SymbolKind::Strut
+        | SymbolKind::Struct
         | SymbolKind::Trait
         | SymbolKind::TraitType
         | SymbolKind::InstanceType

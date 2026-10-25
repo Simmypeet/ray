@@ -20,8 +20,9 @@ use rayc_ir::{
 };
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
-    drop_plan::{DropPlan, get_drop_plan},
+    drop_plan::{DropPlan, GeneratedDropBody, get_drop_plan},
     struct_body::get_struct_body,
+    variant_payload_ty::get_variant_payload_ty,
 };
 use rayc_type::{
     subst::Substitutable,
@@ -192,7 +193,7 @@ impl DropRegionCollector<'_> {
 
                 // A generated `Drop` drops the fields as its plan says, which
                 // is exactly what the generated body does.
-                ApplicationView::NominalDropInstance(view) => {
+                ApplicationView::GeneratedAdtDropInstance(view) => {
                     self.record_generated_drop(ty, view.external_instances()).await;
                 }
 
@@ -209,6 +210,7 @@ impl DropRegionCollector<'_> {
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Reference(_)
                 | ApplicationView::Struct(_)
+                | ApplicationView::Enum(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefInstance(_)
@@ -222,35 +224,56 @@ impl DropRegionCollector<'_> {
         .await;
     }
 
-    /// Records the regions of the struct `ty` that its generated `Drop`, with
-    /// `external_instances` for the plan's requirements, may use.
+    /// Records the regions of the struct or enum `ty` that its generated
+    /// `Drop`, with `external_instances` for the plan's requirements, may use.
     async fn record_generated_drop(
         &mut self,
         ty: &Interned<Ty>,
         external_instances: &[Interned<Ty>],
     ) {
-        let Some(struct_) = ty.as_struct_view() else {
+        let Some(adt) = ty.as_adt_view() else {
             self.record_all(ty);
             return;
         };
-        let plan = self.engine.get_drop_plan(struct_.symbol_id()).await;
+        let plan = self.engine.get_drop_plan(adt.symbol_id()).await;
         let DropPlan::Generated(plan) = &*plan else {
             self.record_all(ty);
             return;
         };
 
-        // Substituting the dropped type's own arguments into the field types
-        // keeps its regions, so the fields' regions are the ones collected.
-        let substitution = struct_.create_subst(self.engine).await;
-        let body = self.engine.get_struct_body(struct_.symbol_id()).await;
+        // Substituting the dropped type's own arguments into the field and
+        // payload types keeps its regions, so their regions are the ones
+        // collected.
+        let substitution = adt.create_subst(self.engine).await;
+        let instantiate = |dictionary: &rayc_semantic_element::drop_plan::DictionaryExpr| {
+            dictionary.instantiate(&substitution, external_instances, self.engine)
+        };
 
-        for field in plan.fields() {
-            let field_ty =
-                body[field.field_id()].ty().apply_subst_or_clone(&substitution, self.engine);
-            let dictionary =
-                field.dictionary().instantiate(&substitution, external_instances, self.engine);
+        match plan.body() {
+            GeneratedDropBody::Struct(fields) => {
+                let body = self.engine.get_struct_body(adt.symbol_id()).await;
 
-            self.record_drop(&field_ty, &dictionary).await;
+                for field in fields {
+                    let field_ty = body[field.field_id()]
+                        .ty()
+                        .apply_subst_or_clone(&substitution, self.engine);
+                    self.record_drop(&field_ty, &instantiate(field.dictionary())).await;
+                }
+            }
+
+            // Any variant may be the one dropped, so every payload counts.
+            GeneratedDropBody::Enum(variants) => {
+                for variant in variants {
+                    let Some(dictionary) = variant.payload() else { continue };
+                    let payload = self
+                        .engine
+                        .get_variant_payload_ty(variant.variant_id())
+                        .await
+                        .expect("a variant with a payload dictionary has a payload type")
+                        .apply_subst_or_clone(&substitution, self.engine);
+                    self.record_drop(&payload, &instantiate(dictionary)).await;
+                }
+            }
         }
     }
 

@@ -7,7 +7,7 @@ use rayc_ir::{
     },
 };
 use rayc_mono_ir::{
-    MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoNominalDropInstance,
+    MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoGeneratedAdtDropInstance,
     function::{Local, LocalKind},
     instance::FunctionReference,
     instruction::{Call, Instruction},
@@ -124,7 +124,7 @@ impl Builder<'_> {
     /// discovered and lowered by the backend worklist.
     fn lower_nominal_drop_call(
         &mut self,
-        instance: MonoNominalDropInstance,
+        instance: MonoGeneratedAdtDropInstance,
         arguments: Vec<Operand>,
         destination: Place,
     ) {

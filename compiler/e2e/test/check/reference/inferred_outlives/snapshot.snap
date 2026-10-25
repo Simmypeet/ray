@@ -9,33 +9,45 @@ stderr:
 33 │     inner: Declared['a, t]
    ╰╴           ━━━━━━━━━━━━━━━ `t` must outlive `'a`
 
-[error]: where-clause obligation for `main.UsesDeclaredBounded` is not satisfied
-   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:60:33
+[error]: where-clause obligation for `main.Declared` is not satisfied
+   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:49:11
    │
-60 │ def usesDeclared['a, t](value: *UsesDeclaredBounded['a, t]) given (
+49 │     Inner(Declared['a, t])
+   ╰╴          ━━━━━━━━━━━━━━━ `t` must outlive `'a`
+
+[error]: where-clause obligation for `main.UsesDeclaredBounded` is not satisfied
+   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:94:33
+   │
+94 │ def usesDeclared['a, t](value: *UsesDeclaredBounded['a, t]) given (
    ╰╴                                ━━━━━━━━━━━━━━━━━━━━━━━━━━ `t` must outlive `'a`
 
 [error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:62:30
+   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:96:30
    │
-62 │ ) -> () where (project.Out = &'a t):
+96 │ ) -> () where (project.Out = &'a t):
    │                              ━━━━━ the reference requires `t: 'a`
    │
    ╰ help: consider adding `where (t: 'a)`
 
 [error]: where-clause obligation for `main.Holder` is not satisfied
-   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:66:48
-   │
-66 │ def unbounded['a, t]() given (project: Project[Holder['a, t]]) -> ():
-   ╰╴                                               ━━━━━━━━━━━━━ `t` must outlive `'a`
+    ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:100:48
+    │
+100 │ def unbounded['a, t]() given (project: Project[Holder['a, t]]) -> ():
+    ╰╴                                               ━━━━━━━━━━━━━ `t` must outlive `'a`
+
+[error]: where-clause obligation for `main.Borrowed` is not satisfied
+    ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:104:52
+    │
+104 │ def unboundedEnum['a, t]() given (project: Project[Borrowed['a, t]]) -> ():
+    ╰╴                                                   ━━━━━━━━━━━━━━━ `t` must outlive `'a`
 
 [error]: where-clause obligation for `main.Holder` is not satisfied
-   ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:75:35
-   │
-75 │ inst HolderOut['a, t] for Project[Holder['a, t]]:
-   ╰╴                                  ━━━━━━━━━━━━━ `t` must outlive `'a`
+    ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:113:35
+    │
+113 │ inst HolderOut['a, t] for Project[Holder['a, t]]:
+    ╰╴                                  ━━━━━━━━━━━━━ `t` must outlive `'a`
 
-[error]: Compilation aborted due to 5 error(s)
+[error]: Compilation aborted due to 7 error(s)
 
 
 

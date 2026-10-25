@@ -590,6 +590,10 @@ impl Table {
             .filter_map(move |(id, symbol_kind)| (*symbol_kind == kind).then_some(*id))
     }
 
+    pub fn all_adt_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
+        self.symbol_kinds.iter().filter_map(|(id, kind)| kind.is_adt().then_some(*id))
+    }
+
     pub fn all_def_with_body_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
         self.symbol_kinds.iter().filter_map(|(id, kind)| kind.has_def_body().then_some(*id))
     }

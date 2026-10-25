@@ -1,0 +1,39 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: where-clause obligation for `main.Bounded` is not satisfied
+   ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:40:30
+   │
+40 │ def unbounded['a, t](value: *Bounded['a, t]) -> ():
+   ╰╴                             ━━━━━━━━━━━━━━ `t` must outlive `'a`
+
+[error]: type argument arity mismatch
+   ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:44:26
+   │
+44 │ def tooMany(value: *Maybe[int32, bool]) -> ():
+   ╰╴                         ━━━━━━━━━━━━━ expected 1, found 2
+
+[error]: expected a value type or an associated type projection
+   ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:48:21
+   │
+48 │ def variant(value: *Maybe[int32].Some) -> ():
+   ╰╴                    ━━━━━━━━━━━━━━━━━
+
+[error]: enum `Hidden` is not accessible here
+   ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:52:27
+   │
+20 │     enum Hidden:
+   │          ────── `Hidden` is declared here
+   ‡
+52 │ def hidden(value: *shapes.Hidden) -> ():
+   │                           ━━━━━━ `Hidden` is not accessible here
+   │
+   ╰ help: `Hidden` is only accessible within `main.shapes`; declare it with `pub` to make it public
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:

@@ -97,7 +97,7 @@ async fn return_lifetime_elision(
         | SymbolKind::Enum
         | SymbolKind::Instance
         | SymbolKind::MarkerImplementation
-        | SymbolKind::Strut
+        | SymbolKind::Struct
         | SymbolKind::Trait
         | SymbolKind::TraitType
         | SymbolKind::InstanceType

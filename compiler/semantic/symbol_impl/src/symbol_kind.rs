@@ -6,8 +6,8 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{
     SymbolID,
     symbol_kind::{
-        AllCallableDefIDs, AllDefWithBodyIDs, AllEffectIDs, AllEnumIDs, AllInstanceIDs,
-        AllNominalTypeIDs, AllSymbolIDs, Key, SymbolKind,
+        AllAdtIDs, AllCallableDefIDs, AllDefWithBodyIDs, AllEffectIDs, AllInstanceIDs,
+        AllSymbolIDs, Key, SymbolKind,
     },
 };
 
@@ -61,30 +61,17 @@ static ALL_INSTANCE_IDS_EXECUTOR: Registration<Config> =
     Registration::new::<AllInstanceIDs, AllInstanceIdsExecutor>();
 
 #[executor(config = Config)]
-pub async fn all_nominal_type_ids_executor(
-    &AllNominalTypeIDs { target }: &AllNominalTypeIDs,
+pub async fn all_adt_ids_executor(
+    &AllAdtIDs { target }: &AllAdtIDs,
     engine: &TrackedEngine,
 ) -> Arc<[SymbolID]> {
     let tables = engine.get_target_tables(target).await;
-    tables.iter().flat_map(|table| table.symbol_ids_of_kind(SymbolKind::Strut)).collect()
+    tables.iter().flat_map(|table| table.all_adt_ids()).collect()
 }
 
 #[distributed_slice(RAY_PROGRAM)]
-static ALL_NOMINAL_TYPE_IDS_EXECUTOR: Registration<Config> =
-    Registration::new::<AllNominalTypeIDs, AllNominalTypeIdsExecutor>();
-
-#[executor(config = Config)]
-pub async fn all_enum_ids_executor(
-    &AllEnumIDs { target }: &AllEnumIDs,
-    engine: &TrackedEngine,
-) -> Arc<[SymbolID]> {
-    let tables = engine.get_target_tables(target).await;
-    tables.iter().flat_map(|table| table.symbol_ids_of_kind(SymbolKind::Enum)).collect()
-}
-
-#[distributed_slice(RAY_PROGRAM)]
-static ALL_ENUM_IDS_EXECUTOR: Registration<Config> =
-    Registration::new::<AllEnumIDs, AllEnumIdsExecutor>();
+static ALL_ADT_IDS_EXECUTOR: Registration<Config> =
+    Registration::new::<AllAdtIDs, AllAdtIdsExecutor>();
 
 #[executor(config = Config)]
 pub async fn all_effect_ids_executor(

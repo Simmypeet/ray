@@ -66,17 +66,19 @@ pub(super) async fn validate_entry_point(
         SymbolKind::Def => {}
         SymbolKind::Effect
         | SymbolKind::EffectOperation
+        | SymbolKind::Enum
         | SymbolKind::ExternDef
         | SymbolKind::Instance
         | SymbolKind::InstanceDef
         | SymbolKind::Marker
         | SymbolKind::MarkerImplementation
         | SymbolKind::Module
-        | SymbolKind::Strut
+        | SymbolKind::Struct
         | SymbolKind::Trait
         | SymbolKind::TraitType
         | SymbolKind::InstanceType
-        | SymbolKind::TraitDef => {
+        | SymbolKind::TraitDef
+        | SymbolKind::Variant => {
             return Err(EntryPointError::NotDefinition { symbol_id: entry_point_id });
         }
     }

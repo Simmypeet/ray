@@ -666,13 +666,13 @@ impl Application {
         self.constant == other.constant && self.args.len() == other.args.len()
     }
 
-    /// Returns the struct this application instantiates, if it is one.
+    /// Returns the struct or enum this application instantiates, if it is
+    /// one.
     #[must_use]
-    pub const fn struct_id(&self) -> Option<GlobalSymbolID> {
+    pub const fn adt_id(&self) -> Option<GlobalSymbolID> {
         match self.constant {
-            Constant::Struct(symbol_id) => Some(symbol_id),
+            Constant::Struct(symbol_id) | Constant::Enum(symbol_id) => Some(symbol_id),
             Constant::Primitive(_)
-            | Constant::Enum(_)
             | Constant::Tuple
             | Constant::Pointer(_)
             | Constant::Reference(_)
@@ -695,38 +695,38 @@ impl Application {
 
     /// Returns each argument with the variance of its position.
     ///
-    /// `struct_variances` are the variances of the struct's parameters when
-    /// this application is a struct (see [`Self::struct_id`]), and are ignored
+    /// `adt_variances` are the variances of the struct's or enum's parameters
+    /// when this application is one (see [`Self::adt_id`]), and are ignored
     /// otherwise.
     ///
     /// # Panics
     ///
-    /// If this application is a struct and `struct_variances` is `None` or
-    /// has fewer variances than there are arguments.
+    /// If this application is a struct or an enum and `adt_variances` is
+    /// `None` or has fewer variances than there are arguments.
     pub fn arguments_with_variance<'a>(
         &'a self,
-        struct_variances: Option<&'a VarianceMap>,
+        adt_variances: Option<&'a VarianceMap>,
     ) -> impl Iterator<Item = (&'a Interned<Ty>, Variance)> {
         self.args
             .iter()
             .enumerate()
-            .map(move |(index, arg)| (arg, self.argument_variance(index, struct_variances)))
+            .map(move |(index, arg)| (arg, self.argument_variance(index, adt_variances)))
     }
 
     /// Returns each argument with the variance of its position, when this
     /// application itself is in a position of variance `ambient`.
     ///
     /// An invariant or bivariant position absorbs every variance inside it,
-    /// so the variances of a struct are only queried when `ambient` is
-    /// covariant or contravariant.
+    /// so the variances of a struct or an enum are only queried when `ambient`
+    /// is covariant or contravariant.
     pub async fn arguments_with_ambient_variance(
         &self,
         ambient: Variance,
         engine: &TrackedEngine,
     ) -> impl Iterator<Item = (&Interned<Ty>, Variance)> {
-        let struct_variances = match (ambient, self.struct_id()) {
-            (Variance::Covariant | Variance::Contravariant, Some(struct_id)) => {
-                Some(engine.get_variance(struct_id).await)
+        let adt_variances = match (ambient, self.adt_id()) {
+            (Variance::Covariant | Variance::Contravariant, Some(adt_id)) => {
+                Some(engine.get_variance(adt_id).await)
             }
             (Variance::Covariant | Variance::Contravariant, None)
             | (Variance::Invariant | Variance::Bivariant, _) => None,
@@ -736,7 +736,7 @@ impl Application {
             let variance = match ambient {
                 Variance::Invariant | Variance::Bivariant => ambient,
                 Variance::Covariant | Variance::Contravariant => {
-                    ambient.xform(self.argument_variance(index, struct_variances.as_deref()))
+                    ambient.xform(self.argument_variance(index, adt_variances.as_deref()))
                 }
             };
             (arg, variance)
@@ -756,7 +756,7 @@ impl Application {
 
     /// Returns the variance of the argument position `index`; see
     /// [`Self::arguments_with_variance`].
-    fn argument_variance(&self, index: usize, struct_variances: Option<&VarianceMap>) -> Variance {
+    fn argument_variance(&self, index: usize, adt_variances: Option<&VarianceMap>) -> Variance {
         match self.constant {
             Constant::Tuple => Variance::Covariant,
 
@@ -772,18 +772,14 @@ impl Application {
                 }
             }
 
-            Constant::Struct(_) => struct_variances
-                .expect("a struct application needs the variances of its struct")
+            Constant::Struct(_) | Constant::Enum(_) => adt_variances
+                .expect("a struct or enum application needs the variances of its declaration")
                 .get_by_index(index),
 
             // Closure and coroutine types are invariant, as in rustc, and so
             // are dictionaries and associated type projections. Primitives
             // and errors have no arguments to relate.
-            //
-            // TODO: relate enum arguments by the variances of the enum once
-            // they are computed; until then they are conservatively invariant.
-            Constant::Enum(_)
-            | Constant::Primitive(_)
+            Constant::Primitive(_)
             | Constant::Instance(_)
             | Constant::InstanceAssociated(_)
             | Constant::Closure(_)

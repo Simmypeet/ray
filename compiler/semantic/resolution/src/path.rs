@@ -32,6 +32,10 @@ pub enum PathResolution {
     Marker(GlobalSymbolID),
     /// A nominal struct.
     Struct(Struct),
+    /// A nominal enum.
+    Enum(Enum),
+    /// A variant of an enum.
+    Variant(Variant),
     /// A trait instance.
     Instance(Instance),
     /// A polymorphic type or instance parameter.
@@ -72,6 +76,48 @@ impl Struct {
     #[must_use]
     pub fn into_struct_type(self, engine: &rayc_qbice::TrackedEngine) -> Interned<Ty> {
         Ty::new_struct(self.symbol_id, self.args, engine)
+    }
+}
+
+/// A resolved nominal enum and its type arguments.
+#[derive(Debug, Clone)]
+pub struct Enum {
+    symbol_id: GlobalSymbolID,
+    args: Args,
+}
+
+impl Enum {
+    const fn new(symbol_id: GlobalSymbolID, args: Args) -> Self { Self { symbol_id, args } }
+
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+
+    #[must_use]
+    pub const fn args(&self) -> &Args { &self.args }
+
+    pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
+        substitution(self.symbol_id, &self.args, engine).await
+    }
+}
+
+/// A variant selected through its enum, which carries the type arguments.
+#[derive(Debug, Clone)]
+pub struct Variant {
+    parent: Enum,
+    symbol_id: GlobalSymbolID,
+}
+
+impl Variant {
+    const fn new(parent: Enum, symbol_id: GlobalSymbolID) -> Self { Self { parent, symbol_id } }
+
+    #[must_use]
+    pub const fn parent(&self) -> &Enum { &self.parent }
+
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbol_id }
+
+    pub async fn substitution(&self, engine: &rayc_qbice::TrackedEngine) -> Subst {
+        self.parent.substitution(engine).await
     }
 }
 
@@ -364,6 +410,8 @@ impl PathResolution {
             }
             Self::Effect(effect) => effect.substitution(engine).await,
             Self::Struct(struct_) => struct_.substitution(engine).await,
+            Self::Enum(enum_) => enum_.substitution(engine).await,
+            Self::Variant(variant) => variant.substitution(engine).await,
             Self::Trait(trait_ref) => {
                 substitution(trait_ref.trait_id(), trait_ref.args(), engine).await
             }
@@ -395,7 +443,9 @@ impl PathResolution {
             Self::Effect(_) => Some(SymbolKind::Effect),
             Self::Trait(_) => Some(SymbolKind::Trait),
             Self::Marker(_) => Some(SymbolKind::Marker),
-            Self::Struct(_) => Some(SymbolKind::Strut),
+            Self::Struct(_) => Some(SymbolKind::Struct),
+            Self::Enum(_) => Some(SymbolKind::Enum),
+            Self::Variant(_) => Some(SymbolKind::Variant),
             Self::Instance(_) => Some(SymbolKind::Instance),
             Self::PolyVar(_) | Self::SelfInstance(_) => None,
             Self::TraitMember(member) => Some(member.kind),
@@ -416,6 +466,8 @@ impl PathResolution {
             Self::Trait(trait_ref) => Some(trait_ref.trait_id()),
             Self::Marker(marker_id) => Some(*marker_id),
             Self::Struct(struct_) => Some(struct_.symbol_id()),
+            Self::Enum(enum_) => Some(enum_.symbol_id()),
+            Self::Variant(variant) => Some(variant.symbol_id()),
             Self::Instance(instance) => Some(instance.symbol_id()),
             Self::PolyVar(_) | Self::SelfInstance(_) => None,
             Self::TraitMember(def) => Some(def.symbol_id()),
@@ -667,7 +719,14 @@ impl Resolver<'_> {
             SymbolKind::Trait => Ok(PathResolution::Trait(TraitRef::new(symbol_id, args))),
             SymbolKind::Instance => Ok(PathResolution::Instance(Instance::new(symbol_id, args))),
             SymbolKind::Marker => Ok(PathResolution::Marker(symbol_id)),
-            SymbolKind::Strut => Ok(PathResolution::Struct(Struct::new(symbol_id, args))),
+            SymbolKind::Struct => Ok(PathResolution::Struct(Struct::new(symbol_id, args))),
+            SymbolKind::Enum => Ok(PathResolution::Enum(Enum::new(symbol_id, args))),
+            SymbolKind::Variant => {
+                let Some(PathResolution::Enum(parent)) = previous else {
+                    unreachable!("a variant should be resolved through its parent enum")
+                };
+                Ok(PathResolution::Variant(Variant::new(parent, symbol_id)))
+            }
             SymbolKind::MarkerImplementation => Err(PathResolutionError::UnexpectedSymbolKind),
             SymbolKind::EffectOperation => {
                 let Some(PathResolution::Effect(effect)) = previous else {
@@ -724,6 +783,8 @@ impl Resolver<'_> {
                     | PathResolution::Instance(_)
                     | PathResolution::Marker(_)
                     | PathResolution::Struct(_)
+                    | PathResolution::Enum(_)
+                    | PathResolution::Variant(_)
                     | PathResolution::TraitMember(_)
                     | PathResolution::ResolvedInstanceMember(_)
                     | PathResolution::UnresolvedInstanceMember(_)

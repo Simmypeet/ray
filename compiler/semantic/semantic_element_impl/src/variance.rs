@@ -1,15 +1,18 @@
-//! The variance of struct and `eff` parameters.
+//! The variance of struct, enum and `eff` parameters.
 //!
 //! The variance of a struct parameter is the join of the variances of its
-//! occurrences in the struct's field types. The variance of an `eff` parameter
+//! occurrences in the struct's field types, and that of an enum parameter is
+//! the join of its occurrences in the variants' payload types. A value of an
+//! enum holds one payload at a time, but every variant counts, since any of
+//! them may be the one held. The variance of an `eff` parameter
 //! comes from its operation signatures: a `perform` calls the handler, so
 //! parameter types start covariant and the return type starts contravariant.
 //!
-//! Structs can be recursive and mutually recursive, and structs and effects
-//! can mention each other: an operation signature can name a struct, and a
-//! struct can name an effect row inside a closure type. So every struct and
-//! `eff` in a target is computed together as one fixed point that starts every
-//! parameter at bivariant.
+//! Structs and enums can be recursive and mutually recursive, and they and
+//! effects can mention each other: an operation signature can name a struct,
+//! and a struct can name an effect row inside a closure type. So every struct,
+//! enum and `eff` in a target is computed together as one fixed point that
+//! starts every parameter at bivariant.
 //!
 //! A parameter can instead declare its variance, as in `+t`, `-t` or `=t`.
 //! Its variance is then fixed to the declared one, and every use of it must
@@ -24,7 +27,10 @@ use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_semantic_element::{parameter::get_parameter_map, struct_body::get_struct_body};
+use rayc_semantic_element::{
+    parameter::get_parameter_map, struct_body::get_struct_body,
+    variant_payload_ty::get_variant_payload_ty,
+};
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID, SymbolID,
@@ -32,8 +38,8 @@ use rayc_symbol::{
     name::get_name,
     source_map::to_absolute_span,
     span::get_span,
-    symbol_kind::{SymbolKind, get_all_effect_ids, get_all_nominal_type_ids, get_symbol_kind},
-    syntax::get_return_type_syntax,
+    symbol_kind::{SymbolKind, get_all_adt_ids, get_all_effect_ids, get_symbol_kind},
+    syntax::{get_return_type_syntax, get_variant_payload_syntax},
 };
 use rayc_target::TargetID;
 use rayc_type::{
@@ -46,7 +52,7 @@ use rayc_type::{
 #[cfg(test)]
 mod test;
 
-/// Retrieves the variances of every struct and `eff` in a target.
+/// Retrieves the variances of every struct, enum and `eff` in a target.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
@@ -60,19 +66,17 @@ async fn variances_executor(
     &VariancesKey { target_id }: &VariancesKey,
     engine: &TrackedEngine,
 ) -> Interned<FxHashMap<SymbolID, Interned<VarianceMap>>> {
-    // Start every parameter of every struct and effect at its declared
+    // Start every parameter of every struct, enum and effect at its declared
     // variance, or at bivariant.
-    let struct_ids = engine.get_all_nominal_type_ids(target_id).await;
+    let adt_ids = engine.get_all_adt_ids(target_id).await;
     let effect_ids = engine.get_all_effect_ids(target_id).await;
-    let owner_ids = struct_ids
-        .iter()
-        .map(|id| (*id, VarianceOwner::Struct))
-        .chain(effect_ids.iter().map(|id| (*id, VarianceOwner::Effect)));
 
-    let mut owners = Vec::with_capacity(struct_ids.len() + effect_ids.len());
+    let mut owners = Vec::with_capacity(adt_ids.len() + effect_ids.len());
     let mut variances = FxHashMap::default();
-    for (owner_id, owner) in owner_ids {
+    for &owner_id in adt_ids.iter().chain(effect_ids.iter()) {
         let owner_id = target_id.make_global(owner_id);
+        let owner = VarianceOwner::of(engine.get_symbol_kind(owner_id).await)
+            .expect("only structs, enums and effects have computed variances");
         let poly_vars = engine.get_poly_var_map(owner_id).await;
         variances.insert(owner_id, VarianceMap::new(&poly_vars));
         owners.push((owner_id, owner, poly_vars));
@@ -136,7 +140,7 @@ struct VarianceInferrer<'a> {
     /// fixed, so its uses are not joined.
     poly_vars: &'a PolyVarMap,
 
-    /// The current variances of every struct and effect in the owner's
+    /// The current variances of every struct, enum and effect in the owner's
     /// target, the owner's own included.
     local: &'a mut FxHashMap<GlobalSymbolID, VarianceMap>,
     engine: &'a TrackedEngine,
@@ -168,6 +172,15 @@ impl<'a> VarianceInferrer<'a> {
             VarianceOwner::Struct => {
                 for (_, field) in self.engine.get_struct_body(self.owner_id).await.iter() {
                     self.infer(field.ty(), Variance::Covariant).await;
+                }
+            }
+
+            VarianceOwner::Enum => {
+                for variant_id in self.engine.get_members(self.owner_id).await.all_ids() {
+                    let variant_id = self.owner_id.target_id.make_global(variant_id);
+                    if let Some(payload) = self.engine.get_variant_payload_ty(variant_id).await {
+                        self.infer(&payload, Variance::Covariant).await;
+                    }
                 }
             }
 
@@ -249,17 +262,18 @@ impl<'a> UseCollector<'a> {
                 }
 
                 Ty::Application(application) => {
-                    // NOTE: `foreign` is needed because `declared` is a Option<&VarianceMap> and we
-                    // need to have a place to keep the foreign VarianceMap alive
+                    // NOTE: `foreign` is needed because `declared` is a
+                    // Option<&VarianceMap> and we
+                    // need to have a place to keep the foreign VarianceMap
+                    // alive
                     let foreign;
-                    let declared = match application.struct_id() {
-                        Some(struct_id) => {
-                            if let Some(variances) =
-                                self.local.and_then(|local| local.get(&struct_id))
+                    let declared = match application.adt_id() {
+                        Some(adt_id) => {
+                            if let Some(variances) = self.local.and_then(|local| local.get(&adt_id))
                             {
                                 Some(variances)
                             } else {
-                                foreign = self.engine.get_variance(struct_id).await;
+                                foreign = self.engine.get_variance(adt_id).await;
                                 Some(&*foreign)
                             }
                         }
@@ -279,7 +293,8 @@ impl<'a> UseCollector<'a> {
                     for label in row.labels() {
                         let effect_id = label.effect_symbol_id();
 
-                        // NOTE: `foreign` is needed because `declared` is a Option<&VarianceMap>
+                        // NOTE: `foreign` is needed because `declared` is a
+                        // Option<&VarianceMap>
                         // and we need to have a place to keep the foreign
                         // VarianceMap alive
                         let foreign;
@@ -324,6 +339,7 @@ impl<'a> UseCollector<'a> {
 )]
 pub enum VarianceOwner {
     Struct,
+    Enum,
     Effect,
 }
 
@@ -333,11 +349,11 @@ impl VarianceOwner {
     #[must_use]
     pub const fn of(kind: SymbolKind) -> Option<Self> {
         match kind {
-            SymbolKind::Strut => Some(Self::Struct),
+            SymbolKind::Struct => Some(Self::Struct),
+            SymbolKind::Enum => Some(Self::Enum),
             SymbolKind::Effect => Some(Self::Effect),
             SymbolKind::Def
             | SymbolKind::EffectOperation
-            | SymbolKind::Enum
             | SymbolKind::ExternDef
             | SymbolKind::Instance
             | SymbolKind::InstanceDef
@@ -359,6 +375,7 @@ impl VarianceOwner {
 )]
 pub enum UsePosition {
     Field { name: Interned<str> },
+    Payload { variant: Interned<str> },
     OperationParameter { operation: Interned<str> },
     OperationReturn { operation: Interned<str> },
 }
@@ -368,6 +385,7 @@ impl UsePosition {
     fn describe(&self) -> String {
         match self {
             Self::Field { name } => format!("field `{}`", &**name),
+            Self::Payload { variant } => format!("the payload of variant `{}`", &**variant),
             Self::OperationParameter { operation } => {
                 format!("a parameter of operation `{}`", &**operation)
             }
@@ -429,6 +447,7 @@ impl Report for VarianceMismatch {
 /// A position in an owner's declaration whose type is checked.
 enum UseSite<'a> {
     Field { name: &'a Interned<str>, span: RelativeSpan },
+    Payload { variant_id: GlobalSymbolID },
     OperationParameter { operation_id: GlobalSymbolID, span: Option<RelativeSpan> },
     OperationReturn { operation_id: GlobalSymbolID },
 }
@@ -439,6 +458,14 @@ impl UseSite<'_> {
         match self {
             Self::Field { name, span } => {
                 (UsePosition::Field { name: (*name).clone() }, Some(*span))
+            }
+            Self::Payload { variant_id } => {
+                let variant = engine.get_name(*variant_id).await;
+                let span = match engine.get_variant_payload_syntax(*variant_id).await {
+                    Some(payload) => Some(payload.span()),
+                    None => engine.get_span(*variant_id).await,
+                };
+                (UsePosition::Payload { variant }, span)
             }
             Self::OperationParameter { operation_id, span } => {
                 let operation = engine.get_name(*operation_id).await;
@@ -489,6 +516,16 @@ impl<'a> DeclaredVarianceChecker<'a> {
                 for (_, field) in self.engine.get_struct_body(self.owner_id).await.iter() {
                     let site = UseSite::Field { name: field.name(), span: field.span() };
                     self.check(field.ty(), Variance::Covariant, site).await;
+                }
+            }
+
+            VarianceOwner::Enum => {
+                for variant_id in self.engine.get_members(self.owner_id).await.all_ids() {
+                    let variant_id = self.owner_id.target_id.make_global(variant_id);
+                    if let Some(payload) = self.engine.get_variant_payload_ty(variant_id).await {
+                        self.check(&payload, Variance::Covariant, UseSite::Payload { variant_id })
+                            .await;
+                    }
                 }
             }
 
@@ -555,14 +592,15 @@ impl<'a> DeclaredVarianceChecker<'a> {
     }
 }
 
-/// Retrieves the uses of a struct's or `eff`'s declared parameters that are
-/// outside their declared variances.
+/// Retrieves the uses of a struct's, enum's or `eff`'s declared parameters
+/// that are outside their declared variances.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
 #[value(Interned<[VarianceMismatch]>)]
 pub struct VarianceMismatchKey {
-    /// A `SymbolKind::Strut` or `SymbolKind::Effect` symbol.
+    /// A `SymbolKind::Strut`, `SymbolKind::Enum` or `SymbolKind::Effect`
+    /// symbol.
     pub symbol_id: GlobalSymbolID,
 }
 
@@ -572,7 +610,7 @@ async fn variance_mismatch_executor(
     engine: &TrackedEngine,
 ) -> Interned<[VarianceMismatch]> {
     let owner = VarianceOwner::of(engine.get_symbol_kind(symbol_id).await)
-        .expect("only structs and effects have computed variances");
+        .expect("only structs, enums and effects have computed variances");
 
     // Only a declared parameter can be misused, so skip the walk without one.
     let poly_vars = engine.get_poly_var_map(symbol_id).await;

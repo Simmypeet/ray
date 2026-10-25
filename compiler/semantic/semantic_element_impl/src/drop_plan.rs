@@ -27,10 +27,7 @@ use rayc_symbol::{
     GlobalSymbolID, SymbolID,
     core_item::{CoreItem, get_core_item},
     member::get_members,
-    symbol_kind::{
-        SymbolKind, get_all_enum_ids, get_all_instance_ids, get_all_nominal_type_ids,
-        get_symbol_kind,
-    },
+    symbol_kind::{SymbolKind, get_all_adt_ids, get_all_instance_ids, get_symbol_kind},
     syntax::is_linear_type,
 };
 use rayc_target::TargetID;
@@ -78,13 +75,13 @@ async fn target_drop_plans_executor(
     // Reserve a plan slot for every local struct and enum before inspecting
     // any fields or payloads. These empty generated plans are the starting
     // approximation.
-    let struct_ids = engine.get_all_nominal_type_ids(target_id).await;
-    let enum_ids = engine.get_all_enum_ids(target_id).await;
-    for (id, body) in struct_ids
-        .iter()
-        .map(|&id| (id, GeneratedDropBody::Struct(Vec::new())))
-        .chain(enum_ids.iter().map(|&id| (id, GeneratedDropBody::Enum(Vec::new()))))
-    {
+    for &id in engine.get_all_adt_ids(target_id).await.iter() {
+        let body = match engine.get_symbol_kind(target_id.make_global(id)).await {
+            SymbolKind::Enum => GeneratedDropBody::Enum(Vec::new()),
+            SymbolKind::Struct => GeneratedDropBody::Struct(Vec::new()),
+            _ => unreachable!("should've been some adt"),
+        };
+
         adt_ids.push(id);
         plans.insert(
             id,

@@ -68,7 +68,7 @@ impl Table {
         self.insert_symbol(
             member_builder,
             Infos::builder()
-                .symbol_kind(SymbolKind::Strut)
+                .symbol_kind(SymbolKind::Struct)
                 .accessibility(
                     member_builder.declared_accessibility(r#struct.access_modifier().as_ref()),
                 )

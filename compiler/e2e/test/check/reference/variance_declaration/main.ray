@@ -40,7 +40,34 @@ eff Log[+'a, -'b]:
 eff Reversed[-'a, +'b]:
     def log(message: &'a int32) -> &'b int32
 
-# ERROR: only struct and `eff` parameters have a variance.
+# OK: every payload uses `'a` and `t` covariantly, and a variant without a
+# payload uses nothing.
+enum Maybe[+'a, +t]:
+    Borrowed(&'a int32)
+    Owned((t, int32))
+    Empty
+
+struct Slot[=t]:
+    value: t
+
+# ERROR: `t` is used invariantly through `Slot`, but only by `Exclusive`.
+enum Access[+t]:
+    Shared(t)
+    Exclusive(Slot[t])
+
+# ERROR: `t` is invariant in `Slot`.
+enum ThroughEnum[-t]:
+    Wrapped(Slot[t])
+
+# OK: `Maybe`'s declared variance is used where `Maybe` is used.
+struct UsesMaybe['b, +u]:
+    maybe: Maybe['b, u]
+
+# ERROR: `u` is used covariantly through `Maybe`.
+struct UsesMaybeContravariantly[-u]:
+    maybe: Maybe['static, u]
+
+# ERROR: only struct, enum and `eff` parameters have a variance.
 def identity[+t](value: t) -> t:
     return value
 

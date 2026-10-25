@@ -343,8 +343,10 @@ impl<'a> StackStateProblem<'a> {
                 });
                 (components, projected)
             }
+            // TODO: project into enum payloads once places can name a variant.
             (
                 ApplicationView::Primitive(_)
+                | ApplicationView::Enum(_)
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Reference(_)
                 | ApplicationView::Instance(_)
@@ -359,7 +361,7 @@ impl<'a> StackStateProblem<'a> {
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
-                | ApplicationView::NominalDropInstance(_)
+                | ApplicationView::GeneratedAdtDropInstance(_)
                 | ApplicationView::Error,
                 Projection::Tuple(_) | Projection::Field(_),
             )
