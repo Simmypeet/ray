@@ -108,6 +108,7 @@ impl Table {
                 member_builder,
                 Infos::builder()
                     .symbol_kind(SymbolKind::Enum)
+                    .definition_span(r#enum.span())
                     .accessibility(accessibility)
                     .name(name.clone())
                     .span(ident.span)
@@ -146,6 +147,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::Variant)
+                .definition_span(variant.span())
                 .accessibility(accessibility)
                 .name(ident.kind.0.clone())
                 .span(ident.span)
