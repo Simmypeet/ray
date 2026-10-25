@@ -333,6 +333,19 @@ impl Ty {
         Some(lifetimes)
     }
 
+    /// Returns whether the type mentions any polymorphic variable.
+    #[must_use]
+    pub fn contains_poly_var(&self) -> bool {
+        self.recursive_iter().any(|ty| match ty {
+            Self::PolyVar(_) => true,
+            Self::Application(_)
+            | Self::Inference(_)
+            | Self::EffectRow(_)
+            | Self::SelfInstance(_)
+            | Self::Lifetime(_) => false,
+        })
+    }
+
     #[must_use]
     pub fn has_poly_variable(&self, poly_var: &GlobalPolyVarID) -> bool {
         self.recursive_iter().any(|ty| match ty {

@@ -11,7 +11,7 @@ stderr:
 15 │     Yield.yield(1)
    │     ────────────── it is dropped here if the coroutine is dropped while suspended
    │
-   ╰ help: a value held across a suspension point needs a Drop instance, even if it is consumed later
+   ╰ help: add `given (_: core.Drop[t])`
 
 [error]: no implicit instance found: `core.Drop[Wrapper[t]]`
    ╭▸ compiler/e2e/test/check/coroutine/opaque_across_suspension/main.ray:26:20
@@ -21,7 +21,9 @@ stderr:
 27 │     Yield.yield(1)
    │     ────────────── it is dropped here if the coroutine is dropped while suspended
    │
-   ╰ help: a value held across a suspension point needs a Drop instance, even if it is consumed later
+   ╰ help: add `given (_: core.Drop[t])`
+[note]: the generated `Drop` of `Wrapper[t]` drops a value of type `t`
+[note]: no instance of `core.Drop[t]` exists
 
 [error]: no implicit instance found: `core.Drop[t]`
    ╭▸ compiler/e2e/test/check/coroutine/opaque_across_suspension/main.ray:33:20
@@ -31,13 +33,15 @@ stderr:
 34 │     callback()
    │     ────────── it is dropped here if the coroutine is dropped while suspended
    │
-   ╰ help: a value held across a suspension point needs a Drop instance, even if it is consumed later
+   ╰ help: add `given (_: core.Drop[t])`
 
 [error]: no implicit instance found: `core.Drop[t]`
    ╭▸ compiler/e2e/test/check/coroutine/opaque_across_suspension/main.ray:46:16
    │
 46 │ def dropped[t](x: t) -> () \ {Yield[int32]}:
-   ╰╴               ━━━━ this value is dropped when it goes out of scope
+   │                ━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: add `given (_: core.Drop[t])`
 
 [error]: Compilation aborted due to 4 error(s)
 

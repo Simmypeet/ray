@@ -1,3 +1,4 @@
+pub mod explain;
 pub mod givens;
 pub mod inference_generator;
 pub mod instance_resolution;

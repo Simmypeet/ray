@@ -118,15 +118,6 @@ async fn expected_found(
     )
 }
 
-async fn display_trait_ref(reference: &TraitRef, engine: &TrackedEngine) -> String {
-    let name = engine.get_qualified_name(reference.trait_id()).await;
-    let mut args = Vec::new();
-    for argument in reference.args().iter() {
-        args.push(argument.display(engine).await.to_string());
-    }
-    format!("{name}[{}]", args.join(", "))
-}
-
 async fn display_predicate(predicate: &PredicateKind, engine: &TrackedEngine) -> String {
     match predicate {
         PredicateKind::AssociatedTypeEquality(equality) => format!(
@@ -227,8 +218,8 @@ impl Mismatch {
                 ),
                 format!(
                     "expected `{}`, found `{}`",
-                    display_trait_ref(expected, engine).await,
-                    display_trait_ref(actual, engine).await
+                    expected.display(engine).await,
+                    actual.display(engine).await
                 ),
             ),
             Self::MissingWhereClausePredicate { expected } => (

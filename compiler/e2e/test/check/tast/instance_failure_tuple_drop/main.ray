@@ -1,0 +1,17 @@
+# The `Drop` of a tuple is built from the `Drop` of each element, so the
+# error names the element that cannot be dropped.
+
+@linear
+struct Handle:
+    fd: int32
+
+def make() -> Handle:
+    return Handle { fd = 0 }
+
+# ERROR: the second element of the tuple is linear.
+def leak():
+    let pair = (1, make())
+
+# ERROR: the element nested two tuples deep has no `Drop`.
+def nested(value: a):
+    let pair = (1, (true, value))

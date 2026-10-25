@@ -4,9 +4,10 @@ use rayc_type::trait_ref::TraitRef;
 
 use crate::{
     Solver,
+    explain::Step,
     instance_resolution::{
-        InstanceResolutionCycle, InstanceResolutionEdge, InstanceResolutionError,
-        InstanceResolutionFrame, InstanceResolutionLimit, InstanceResolutionResult,
+        InstanceResolutionCycle, InstanceResolutionError, InstanceResolutionFrame,
+        InstanceResolutionLimit, InstanceResolutionResult,
     },
 };
 
@@ -83,7 +84,7 @@ impl InstanceResolutionState {
     fn enter_goal(
         &mut self,
         goal: TraitRef,
-        introduced_by: Option<InstanceResolutionEdge>,
+        introduced_by: Option<Step>,
     ) -> Result<EnteredInstanceGoal, InstanceResolutionError> {
         // retrieve the existing cached result
         if let Some(resolution) = self.memo.get(&goal) {
@@ -195,7 +196,7 @@ impl Solver {
     pub(crate) async fn resolve_instance_from(
         &mut self,
         required: TraitRef,
-        introduced_by: Option<InstanceResolutionEdge>,
+        introduced_by: Option<Step>,
     ) -> InstanceResolutionResult {
         // Normalizing the requirement through a given equality that matches
         // it modulo lifetimes relates those lifetimes. The resolution relies
@@ -209,7 +210,7 @@ impl Solver {
     async fn resolve_normalized_instance(
         &mut self,
         required: TraitRef,
-        introduced_by: Option<InstanceResolutionEdge>,
+        introduced_by: Option<Step>,
     ) -> InstanceResolutionResult {
         // A dictionary that its type alone determines is resolved without
         // waiting for the rest of the requirement to be inferred.
@@ -238,7 +239,7 @@ impl Solver {
     fn enter_instance_goal(
         &mut self,
         goal: TraitRef,
-        introduced_by: Option<InstanceResolutionEdge>,
+        introduced_by: Option<Step>,
     ) -> Result<EnteredInstanceGoal, InstanceResolutionError> {
         self.instance_resolution.enter_goal(goal, introduced_by)
     }

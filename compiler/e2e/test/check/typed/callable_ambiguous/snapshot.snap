@@ -15,6 +15,12 @@ stderr:
 [error]: ambiguous global instances: `core.Def[int32]`
    ╭▸ compiler/e2e/test/check/typed/callable_ambiguous/main.ray:17:12
    │
+ 1 │ inst First for core.Def[int32]:
+   │      ───── candidate `main.First`
+   ‡
+ 8 │ inst Second for core.Def[int32]:
+   │      ────── candidate `main.Second`
+   ‡
 17 │     return value()
    ╰╴           ━━━━━━━
 

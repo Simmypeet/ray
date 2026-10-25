@@ -1,0 +1,34 @@
+# Each instance needs the next through a given, and the last goal has no
+# instance, so the error follows the chain down to it.
+
+trait Show[a]:
+    def show() -> int32
+
+struct List[a]:
+    head: a
+
+struct Pair[a]:
+    first: a
+
+struct Secret:
+    value: int32
+
+inst ShowList[a] for Show[List[a]] given (element: Show[a]):
+    def show() -> int32:
+        return 0
+
+inst ShowPair[a] for Show[Pair[a]] given (first: Show[a]):
+    def show() -> int32:
+        return 0
+
+def print(value: a) given (d: Show[a], drop: core.Drop[a]) -> int32:
+    return 0
+
+# ERROR: `Show[List[Pair[Secret]]]` needs `Show[Pair[Secret]]`, which needs
+# `Show[Secret]`, which has no instance.
+def test(xs: List[Pair[Secret]]) -> int32:
+    return print(xs)
+
+# ERROR: a type variable gets the help to add the missing given.
+def generic(xs: List[a]) given (_: core.Drop[a]) -> int32:
+    return print(xs)

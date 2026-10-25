@@ -7,7 +7,9 @@ stderr:
    ╭▸ compiler/e2e/test/check/coroutine/coro_argument_missing_drop/main.ray:12:13
    │
 12 │     let k = coro hold(value)
-   ╰╴            ━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+   │             ━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+   │
+   ╰ help: add `given (_: core.Drop[t])`
 
 [error]: Compilation aborted due to 1 error(s)
 

@@ -1,0 +1,27 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: cyclic instance resolution: `main.Ping[Ball]`
+   ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:25:12
+   │
+25 │     return ping(ball)
+   ╰╴           ━━━━
+[note]: `main.PingFromPong` matches `main.Ping[Ball]`, but its given `pong` needs `main.Pong[Ball]`
+   ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:12:41
+   │
+12 │ inst PingFromPong[a] for Ping[a] given (pong: Pong[a]):
+   ╰╴                                        ━━━━
+[note]: `main.PongFromPing` matches `main.Pong[Ball]`, but its given `ping` needs `main.Ping[Ball]`
+   ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:16:41
+   │
+16 │ inst PongFromPing[a] for Pong[a] given (ping: Ping[a]):
+   ╰╴                                        ━━━━
+[note]: `main.Ping[Ball]` is required again while it is being resolved
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

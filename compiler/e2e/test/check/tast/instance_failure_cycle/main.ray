@@ -1,0 +1,25 @@
+# Two instances whose givens require each other.
+
+trait Ping[a]:
+    def ping() -> int32
+
+trait Pong[a]:
+    def pong() -> int32
+
+struct Ball:
+    value: int32
+
+inst PingFromPong[a] for Ping[a] given (pong: Pong[a]):
+    def ping() -> int32:
+        return 0
+
+inst PongFromPing[a] for Pong[a] given (ping: Ping[a]):
+    def pong() -> int32:
+        return 0
+
+def ping(value: a) given (d: Ping[a], drop: core.Drop[a]) -> int32:
+    return 0
+
+# ERROR: `Ping[Ball]` needs `Pong[Ball]`, which needs `Ping[Ball]` again.
+def test(ball: Ball) -> int32:
+    return ping(ball)

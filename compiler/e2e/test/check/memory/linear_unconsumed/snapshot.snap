@@ -47,7 +47,10 @@ stderr:
    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:54:9
    │
 54 │     let wrapper = Wrapper { value = make() }
-   ╰╴        ━━━━━━━ this value is dropped when it goes out of scope
+   │         ━━━━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+[note]: the generated `Drop` of `Wrapper[Handle]` drops a value of type `Handle`
 
 [error]: use of moved value
    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:59:11

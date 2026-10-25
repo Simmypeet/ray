@@ -1,5 +1,8 @@
 use rayc_hash::FxHashSet;
-use rayc_solver::instance_resolution::InstanceResolutionError;
+use rayc_solver::{
+    explain::{ProofFailure, RequiredBy, UnsatisfiedGoal},
+    instance_resolution::InstanceResolutionError,
+};
 use rayc_type::subst::Subst;
 
 use super::{
@@ -8,7 +11,7 @@ use super::{
     solve::{ConstraintError, PendingConstraint},
 };
 use crate::diagnostic::{
-    Diagnostic, EffectUnificationSite, IncompatibleEffectRows, ResidualSubtype,
+    ConflictingInstance, Diagnostic, EffectUnificationSite, IncompatibleEffectRows, ResidualSubtype,
 };
 
 impl ConstraintSolver {
@@ -117,7 +120,8 @@ impl ConstraintSolver {
                     diags.push(Diagnostic::from(rayc_resolution::Diagnostic::Predicate(predicate)));
                 }
                 ResolvedRootCause::InstanceResolve { trait_ref, span } => {
-                    // Preserve the structured failure for rendering at the diagnostic boundary.
+                    // A goal left over when inference ends still has
+                    // inference variables, so it is not ready.
                     let error =
                         self.error_for_root_cause(primary_root_id).cloned().unwrap_or_else(|| {
                             ConstraintError::InstanceResolve(InstanceResolutionError::NotReady(
@@ -125,28 +129,39 @@ impl ConstraintSolver {
                             ))
                         });
 
-                    // A requirement on the error type cannot be resolved,
-                    // but the error type only exists because another
-                    // diagnostic was already reported where it came from.
-                    // For example, a rejected `coro` has the error type, and
-                    // the statement discarding it requires `Drop` of that
-                    // type. Reporting the requirement would only repeat the
-                    // first error.
-                    if matches!(
-                        error,
-                        ConstraintError::InstanceResolve(InstanceResolutionError::ContainsError(_))
-                    ) {
-                        continue;
-                    }
+                    match error {
+                        ConstraintError::InstanceResolve(error) => {
+                            // A requirement on the error type cannot be
+                            // resolved, but the error type only exists
+                            // because another diagnostic was already reported
+                            // where it came from. For example, a rejected
+                            // `coro` has the error type, and the statement
+                            // discarding it requires `Drop` of that type.
+                            // Reporting the requirement would only repeat the
+                            // first error.
+                            let Some(failure) =
+                                ProofFailure::from_instance_error(trait_ref, &error)
+                            else {
+                                continue;
+                            };
 
-                    diags.push(
-                        crate::diagnostic::InstanceResolution::builder()
-                            .span(span)
-                            .trait_ref(trait_ref)
-                            .error(error)
-                            .build()
-                            .into(),
-                    );
+                            diags.push(Diagnostic::UnsatisfiedGoal(UnsatisfiedGoal::new(
+                                span,
+                                RequiredBy::ImplicitInstance,
+                                failure,
+                            )));
+                        }
+                        ConstraintError::TyRelate(error) => {
+                            diags.push(
+                                ConflictingInstance::builder()
+                                    .span(span)
+                                    .trait_ref(trait_ref)
+                                    .error(error)
+                                    .build()
+                                    .into(),
+                            );
+                        }
+                    }
                 }
                 ResolvedRootCause::Subtype { source, span, subtype } => {
                     diags.push(Diagnostic::ResidualSubtype(

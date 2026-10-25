@@ -39,13 +39,18 @@ stderr:
    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:66:20
    │
 66 │     consumeWrapper(Wrapper { value = make() }, if condition:
-   ╰╴                   ━━━━━━━━━━━━━━━━━━━━━━━━━━ this value is dropped when it goes out of scope
+   │                    ━━━━━━━━━━━━━━━━━━━━━━━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+[note]: the generated `Drop` of `Wrapper[Handle]` drops a value of type `Handle`
 
 [error]: no implicit instance found: `core.Drop[a]`
    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:76:12
    │
 76 │     forget(value, if condition:
-   ╰╴           ━━━━━ this value is dropped when it goes out of scope
+   │            ━━━━━ this value is dropped when it goes out of scope
+   │
+   ╰ help: add `given (_: core.Drop[a])`
 
 [error]: Compilation aborted due to 6 error(s)
 

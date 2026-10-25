@@ -7,7 +7,11 @@ stderr:
   ╭▸ compiler/e2e/test/check/tast/closure_drop_missing_instance/main.ray:4:1
   │
 4 │     () -> value
-  ╰╴━━━━━━━━━━━━━━━
+  │ ━━━━━━━━━━━━━━━
+  │
+  ╰ help: add `given (_: core.Drop[a])`
+[note]: dropping the closure drops a value it captures, of type `a`
+[note]: no instance of `core.Drop[a]` exists
 
 [error]: Compilation aborted due to 1 error(s)
 

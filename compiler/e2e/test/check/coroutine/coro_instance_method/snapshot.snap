@@ -21,7 +21,9 @@ stderr:
    ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:62:13
    │
 62 │     let k = coro s.next(source)
-   ╰╴            ━━━━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+   │             ━━━━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+   │
+   ╰ help: add `given (_: core.Drop[t])`
 
 [error]: Compilation aborted due to 3 error(s)
 

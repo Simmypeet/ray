@@ -1,0 +1,41 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: run
+---
+stderr:
+[error]: no implicit instance found: `main.Show[List[Pair[Secret]]]`
+   ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:30:12
+   │
+30 │     return print(xs)
+   ╰╴           ━━━━━
+[note]: `main.ShowList` matches `main.Show[List[Pair[Secret]]]`, but its given `element` needs `main.Show[Pair[Secret]]`
+   ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:16:43
+   │
+16 │ inst ShowList[a] for Show[List[a]] given (element: Show[a]):
+   ╰╴                                          ━━━━━━━
+[note]: `main.ShowPair` matches `main.Show[Pair[Secret]]`, but its given `first` needs `main.Show[Secret]`
+   ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:20:43
+   │
+20 │ inst ShowPair[a] for Show[Pair[a]] given (first: Show[a]):
+   ╰╴                                          ━━━━━
+[note]: no instance of `main.Show[Secret]` exists
+
+[error]: no implicit instance found: `main.Show[List[a]]`
+   ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:34:12
+   │
+34 │     return print(xs)
+   │            ━━━━━
+   │
+   ╰ help: add `given (_: main.Show[a])`
+[note]: `main.ShowList` matches `main.Show[List[a]]`, but its given `element` needs `main.Show[a]`
+   ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:16:43
+   │
+16 │ inst ShowList[a] for Show[List[a]] given (element: Show[a]):
+   ╰╴                                          ━━━━━━━
+[note]: no instance of `main.Show[a]` exists
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

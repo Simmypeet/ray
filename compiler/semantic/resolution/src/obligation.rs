@@ -241,12 +241,6 @@ impl TraitRefCheck {
     /// Describes the given argument and the trait reference it must
     /// implement, as in `main.EqInt` and `main.Eq[int32]`.
     async fn describe(&self, engine: &TrackedEngine) -> (String, String) {
-        let expected = self.constraint.expected();
-        let name = engine.get_qualified_name(expected.trait_id()).await;
-        let mut args = Vec::new();
-        for arg in expected.args().iter() {
-            args.push(arg.display(engine).await.to_string());
-        }
         let instance = if let rayc_type::ty::Ty::Application(application) =
             &**self.constraint.instance()
             && let rayc_type::ty::application::View::Instance(instance) = application.view()
@@ -255,7 +249,7 @@ impl TraitRefCheck {
         } else {
             self.constraint.instance().display(engine).await.to_string()
         };
-        (instance, format!("{name}[{}]", args.join(", ")))
+        (instance, self.constraint.expected().display(engine).await.to_string())
     }
 }
 
