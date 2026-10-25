@@ -1,0 +1,4 @@
+pub enum Option[param]:
+    # should show `param` type parameter
+    Some(p<cursor>)
+    None
