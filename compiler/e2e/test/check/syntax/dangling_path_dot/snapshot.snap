@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+1 │ # A dangling `.` in a path reports the missing segment, and the path is not
+2 │ # resolved.
+3 │ module geometry:
+4 │   pub struct Point:
+5 │     pub x: int32
+6 │
+7 │ struct Holder:
+8 │   point: geometry.
+  ┆
+  ┆ [error]: unexpected new line, expected identifier
+  ┆   ╭▸ compiler/e2e/test/check/syntax/dangling_path_dot/main.ray:8:19
+  ┆   │
+  ┆ 8 │   point: geometry.
+  ┆   ╰╴                  ━
+  ┆
+
+other diagnostics:
+[error]: Compilation aborted due to 1 error(s)

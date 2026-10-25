@@ -1,0 +1,4 @@
+# An associated type is shown by its declaration.
+pub trait Container[c]:
+    pub type Item
+    pub def first(container: c) -> this.It<cursor>em

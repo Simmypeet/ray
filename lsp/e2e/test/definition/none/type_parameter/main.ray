@@ -1,0 +1,3 @@
+# A type parameter is not a symbol.
+def identity[t](value: t<cursor>) -> t:
+    return value

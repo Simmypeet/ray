@@ -1,0 +1,9 @@
+# The trait of a given parameter offers traits.
+trait Shape[t]:
+  def area(self: t) -> int32
+
+struct Point:
+  x: int32
+
+def measure(value: t) given (shape: Sh<cursor>[t]) -> int32:
+  return 0

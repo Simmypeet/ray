@@ -1,0 +1,6 @@
+# The root file of the project, found through `ray.toml` in the parent
+# directory of `src`.
+module geometry
+
+def main() -> int32:
+    return geometry.area()

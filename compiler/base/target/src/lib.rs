@@ -124,18 +124,17 @@ pub struct Global<ID> {
 }
 
 /// The input to the compiler.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args, Encode, Decode, StableHash, Builder,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args, Builder)]
 pub struct Input {
-    /// The input file to compile.
+    /// The source file or project to compile.
     ///
-    /// This file is the root source file of the compilation; the module will
-    /// stem from this file.
-    file: PathBuf,
+    /// A source file is compiled on its own as the root of the module tree.
+    /// A directory, or the current directory when omitted, is compiled as the
+    /// project whose `ray.toml` manifest is in it or its nearest parent.
+    path: Option<PathBuf>,
 
     /// The name of the target; if not specified, the target name will be
-    /// inferred from the file name.
+    /// taken from the project manifest, or inferred from the file name.
     #[clap(short = 't', long = "target")]
     target_name: Option<String>,
 
@@ -144,7 +143,8 @@ pub struct Input {
     #[builder(default = Vec::new())]
     library_paths: Vec<PathBuf>,
 
-    /// The path to the incremental compilation data.
+    /// The path to the incremental compilation data; projects default to
+    /// `target/inc` in the project directory.
     #[clap(long = "inc")]
     incremental_path: Option<PathBuf>,
 
@@ -163,8 +163,7 @@ pub struct Input {
     #[clap(long = "target-seed")]
     target_seed: Option<u64>,
 
-    /// Displays the diagnostics in a fancy format with unicode characters and
-    /// colors.
+    /// Displays the diagnostics without colors.
     #[clap(long = "no-fancy", default_value = "true", action = clap::ArgAction::SetFalse)]
     #[builder(default = true)]
     fancy: bool,
@@ -178,38 +177,18 @@ pub struct Input {
     verify_ir: bool,
 }
 
-impl Input {
-    /// Canonicalizes the file path of the input file.
-    pub fn canonicalize_file_path(&mut self) -> std::io::Result<()> {
-        self.file = std::fs::canonicalize(&self.file)?;
-        Ok(())
-    }
-
-    /// Returns the file path of the input file.
-    #[must_use]
-    pub fn file_path(&self) -> &Path { &self.file }
-
-    /// Returns the target name of the input file.
-    #[must_use]
-    pub fn target_name(&self) -> String {
-        self.target_name.clone().unwrap_or_else(|| {
-            self.file.file_stem().unwrap_or_default().to_string_lossy().into_owned()
-        })
-    }
-}
-
 /// The output of the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args, Encode, Decode, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
 pub struct Output {
     /// The output path of the program. If not specified, the program will be
-    /// written to the current working directory with the same name as the
-    /// target.
+    /// named after the target and written to the `target` directory of the
+    /// project, or to the current working directory for a source file.
     #[clap(short = 'o', long = "output")]
     output: Option<PathBuf>,
 }
 
 /// Represents the `run` subcommand of the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args, Encode, Decode, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
 pub struct Run {
     /// The input file to run the program on.
     #[clap(flatten)]
@@ -225,7 +204,7 @@ pub struct Run {
 }
 
 /// Represents the `check` subcommand of the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Args)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
 pub struct Check {
     /// The input file to run the program on.
     #[clap(flatten)]
@@ -233,7 +212,7 @@ pub struct Check {
 }
 
 /// Represents the `build` subcommand of the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Args)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
 pub struct Build {
     /// The input file to run the program on.
     #[clap(flatten)]
@@ -247,26 +226,14 @@ pub struct Build {
     #[clap(long = "opt", default_value = "0")]
     pub opt_level: OptimizationLevel,
 
-    /// Specifies the compilation format of the target.
-    #[clap(long = "emit", default_value = "bin")]
-    pub kind: TargetKind,
+    /// Specifies the compilation format of the target; defaults to the kind
+    /// in the project manifest, or `bin`.
+    #[clap(long = "emit")]
+    pub kind: Option<TargetKind>,
 }
 
 /// The subcomamnds of the compiler.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Subcommand,
-    EnumAsInner,
-    Encode,
-    Decode,
-    StableHash,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Subcommand, EnumAsInner)]
 pub enum Command {
     /// Compiles the program as an executable binary and runs it.
     #[clap(name = "run")]
@@ -303,21 +270,58 @@ impl Command {
     }
 }
 
+/// Represents the `new` subcommand of the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
+pub struct New {
+    /// The directory to create the project in; it must not exist yet.
+    path: PathBuf,
+
+    /// The name of the target; if not specified, the project is named after
+    /// its directory.
+    #[clap(long = "name")]
+    name: Option<String>,
+
+    /// Creates a library project instead of a binary one.
+    #[clap(long = "lib")]
+    library: bool,
+
+    /// Displays the messages without colors.
+    #[clap(long = "no-fancy", default_value = "true", action = clap::ArgAction::SetFalse)]
+    fancy: bool,
+}
+
+impl New {
+    /// Returns the directory to create the project in.
+    #[must_use]
+    pub fn path(&self) -> &Path { &self.path }
+
+    /// Returns the explicitly requested target name, if one was supplied.
+    #[must_use]
+    pub fn requested_name(&self) -> Option<&str> { self.name.as_deref() }
+
+    /// Returns whether the project is a library rather than a binary.
+    #[must_use]
+    pub const fn is_library(&self) -> bool { self.library }
+
+    #[must_use]
+    pub const fn fancy(&self) -> bool { self.fancy }
+}
+
+/// The command line of the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, clap::Parser)]
+#[command(styles = get_styles(), about = "The Ray compiler")]
+pub enum Cli {
+    /// A command compiling a program.
+    #[command(flatten)]
+    Compile(Command),
+
+    /// Creates a new project.
+    #[clap(name = "new")]
+    New(New),
+}
+
 /// Optimizations level for the compiler.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Encode,
-    Decode,
-    StableHash,
-    clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, clap::ValueEnum)]
 #[allow(missing_docs)]
 pub enum OptimizationLevel {
     #[clap(name = "0")]
@@ -334,20 +338,7 @@ pub enum OptimizationLevel {
 }
 
 /// The compilation format of the target.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Encode,
-    Decode,
-    StableHash,
-    clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, clap::ValueEnum)]
 pub enum TargetKind {
     /// Compiles as an executable with a main function.
     #[clap(name = "bin")]
@@ -372,26 +363,33 @@ pub enum TargetKind {
     C,
 }
 
+impl TargetKind {
+    /// Returns the default file name of this kind of artifact built for the
+    /// target named `target_name`.
+    ///
+    /// Unsupported legacy artifact kinds have no default file name.
+    #[must_use]
+    pub fn default_file_name(self, target_name: &str) -> Option<String> {
+        match self {
+            Self::Executable => Some(format!("{target_name}{}", std::env::consts::EXE_SUFFIX)),
+            Self::Library | Self::LLvmIR => None,
+            Self::Object => Some(format!("{target_name}.o")),
+            Self::C => Some(format!("{target_name}.c")),
+        }
+    }
+}
+
 /// Represents a CLI arguments invoking the compilation process.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Encode,
-    Decode,
-    StableHash,
-    Identifiable,
-    clap::Parser,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, clap::Parser)]
 #[command(styles = get_styles(), about = "The Ray compiler")]
 pub struct Arguments {
     /// The subcommand to run.
     #[clap(subcommand, flatten = true)]
     command: Command,
+}
+
+impl From<Command> for Arguments {
+    fn from(command: Command) -> Self { Self { command } }
 }
 
 impl Arguments {
@@ -402,8 +400,16 @@ impl Arguments {
 }
 
 impl Arguments {
+    /// Returns the source file or project directory to compile, if one was
+    /// supplied.
     #[must_use]
-    pub fn file_path(&self) -> &Path { self.command.input().file_path() }
+    pub fn path(&self) -> Option<&Path> { self.command.input().path.as_deref() }
+
+    /// Returns the explicitly requested target name, if one was supplied.
+    #[must_use]
+    pub fn requested_target_name(&self) -> Option<&str> {
+        self.command.input().target_name.as_deref()
+    }
 
     /// Returns whether this invocation only checks the input program.
     #[must_use]
@@ -414,27 +420,15 @@ impl Arguments {
         }
     }
 
-    /// Returns the artifact requested by this invocation.
+    /// Returns the artifact explicitly requested by this invocation.
     ///
-    /// Check-only invocations do not produce an artifact.
+    /// Check-only invocations and builds without `--emit` do not request one.
     #[must_use]
-    pub const fn artifact_kind(&self) -> Option<TargetKind> {
+    pub const fn requested_artifact_kind(&self) -> Option<TargetKind> {
         match &self.command {
             Command::Run(_) => Some(TargetKind::Executable),
             Command::Check(_) => None,
-            Command::Build(build) => Some(build.kind),
-        }
-    }
-
-    /// Returns whether this invocation requires an executable entry point.
-    #[must_use]
-    pub const fn requires_entry_point(&self) -> bool {
-        match self.artifact_kind() {
-            Some(TargetKind::Executable) => true,
-            None
-            | Some(TargetKind::Library | TargetKind::LLvmIR | TargetKind::Object | TargetKind::C) => {
-                false
-            }
+            Command::Build(build) => build.kind,
         }
     }
 
@@ -469,23 +463,6 @@ impl Arguments {
         }
     }
 
-    /// Resolves the effective output path without creating it.
-    ///
-    /// Unsupported legacy artifact kinds have no default output path, but an
-    /// explicitly requested path is still preserved for downstream reporting.
-    #[must_use]
-    pub fn resolve_output_path(&self) -> Option<PathBuf> {
-        if self.is_check_only() {
-            return None;
-        }
-
-        if let Some(output_path) = self.requested_output_path() {
-            return Some(output_path.to_owned());
-        }
-
-        default_output_path(&self.target_name(), self.artifact_kind()?)
-    }
-
     #[must_use]
     pub fn incremental_path(&self) -> Option<&Path> {
         self.command.input().incremental_path.as_deref()
@@ -493,9 +470,6 @@ impl Arguments {
 
     #[must_use]
     pub const fn fancy(&self) -> bool { self.command.input().fancy }
-
-    #[must_use]
-    pub fn target_name(&self) -> String { self.command.input().target_name() }
 
     #[must_use]
     pub const fn verify_ir(&self) -> bool { self.command.input().verify_ir }
@@ -510,20 +484,10 @@ impl Arguments {
     pub const fn target_seed(&self) -> Option<u64> { self.command.input().target_seed }
 }
 
-fn default_output_path(target_name: &str, kind: TargetKind) -> Option<PathBuf> {
-    match kind {
-        TargetKind::Executable => {
-            Some(PathBuf::from(format!("{target_name}{}", std::env::consts::EXE_SUFFIX)))
-        }
-        TargetKind::Library | TargetKind::LLvmIR => None,
-        TargetKind::Object => Some(PathBuf::from(format!("{target_name}{}", object_suffix()))),
-        TargetKind::C => Some(PathBuf::from(format!("{target_name}.c"))),
-    }
-}
-
-const fn object_suffix() -> &'static str { ".o" }
-
-/// The key used for retrieving the [`Arguments`]
+/// A query input for the path to the root source file of a target.
+///
+/// The module tree of the target stems from this file, and the root module
+/// owns the directory containing it.
 #[derive(
     Debug,
     Clone,
@@ -538,10 +502,34 @@ const fn object_suffix() -> &'static str { ".o" }
     StableHash,
     qbice::Query,
 )]
-#[value(Interned<Arguments>)]
-#[extend(name = get_invocation_arguments, by_val)]
-pub struct Key {
-    /// The target ID of the compilation session.
+#[value(Interned<Path>)]
+#[extend(name = get_target_root_file_path, by_val)]
+pub struct RootFilePathKey {
+    /// The target ID to retrieve the root file path for.
+    pub target_id: TargetID,
+}
+
+/// A query input for the name of a target.
+///
+/// The name is also the name of the root module of the target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    qbice::Query,
+)]
+#[value(Interned<str>)]
+#[extend(name = get_target_name, by_val)]
+pub struct NameKey {
+    /// The target ID to retrieve the name for.
     pub target_id: TargetID,
 }
 

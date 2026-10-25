@@ -11,6 +11,7 @@ use crate::{capture_plan::CapturePlan, typed_function::TypedFunctionMap};
 pub mod block;
 pub mod capture_plan;
 pub mod irrefutable_pattern;
+pub mod member_access;
 pub mod name_binding;
 pub mod statement;
 pub mod typed_closure;

@@ -1,0 +1,3 @@
+# A symbol of the core library is shown from the core library.
+def consume[t](value: t) given (_: core.Dr<cursor>op[t]):
+    return

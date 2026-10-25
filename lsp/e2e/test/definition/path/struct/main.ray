@@ -1,0 +1,6 @@
+# A segment goes to the name of the symbol it names.
+pub struct MyPoint:
+    pub number: int32
+
+pub def main():
+    let point = My<cursor>Point { number = 1 }

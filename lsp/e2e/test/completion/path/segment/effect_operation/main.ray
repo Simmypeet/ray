@@ -1,0 +1,7 @@
+# An effect offers its operations.
+eff State:
+  def get() -> int32
+  def set(value: int32) -> ()
+
+def counter() -> int32 \ {State}:
+  return State.g<cursor>()

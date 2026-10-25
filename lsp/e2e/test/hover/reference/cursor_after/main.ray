@@ -1,0 +1,4 @@
+# A cursor right after an identifier is still on it.
+pub def main() -> int32:
+  let total = 1
+  return total<cursor>

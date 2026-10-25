@@ -1,0 +1,17 @@
+---
+source: lsp/e2e/test/definition/mod.rs
+expression: definition_result(&response)
+---
+{
+  "range": {
+    "end": {
+      "character": 14,
+      "line": 15
+    },
+    "start": {
+      "character": 10,
+      "line": 15
+    }
+  },
+  "uri": "ray-core:/core.ray"
+}

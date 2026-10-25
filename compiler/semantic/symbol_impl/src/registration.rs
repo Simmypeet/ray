@@ -69,6 +69,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::Struct)
+                .definition_span(r#struct.span())
                 .accessibility(
                     member_builder.declared_accessibility(r#struct.access_modifier().as_ref()),
                 )
@@ -200,6 +201,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::Marker)
+                .definition_span(marker.span())
                 .accessibility(
                     member_builder.declared_accessibility(marker.access_modifier().as_ref()),
                 )
@@ -228,6 +230,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::MarkerImplementation)
+                .definition_span(implementation.span())
                 .accessibility(DeclaredAccessibility::Declared(Accessibility::Public))
                 .name(engine.intern_unsized("[marker implementation]"))
                 .span(implementation.span())
@@ -275,6 +278,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::Def)
+                .definition_span(def.span())
                 .accessibility(
                     member_builder.declared_accessibility(signature.access_modifier().as_ref()),
                 )
@@ -327,6 +331,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::ExternDef)
+                .definition_span(def.span())
                 .accessibility(
                     member_builder.declared_accessibility(def.access_modifier().as_ref()),
                 )
@@ -369,6 +374,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::EffectOperation)
+                .definition_span(operation.span())
                 .accessibility(accessibility)
                 .name(ident.kind.0.clone())
                 .span(ident.span)
@@ -397,6 +403,7 @@ impl Table {
                 member_builder,
                 Infos::builder()
                     .symbol_kind(SymbolKind::Effect)
+                    .definition_span(effect.span())
                     .accessibility(accessibility)
                     .name(name.clone())
                     .span(ident.span)
@@ -452,6 +459,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::TraitDef)
+                .definition_span(signature.span())
                 .accessibility(
                     member_builder.declared_accessibility(signature.access_modifier().as_ref()),
                 )
@@ -484,6 +492,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::InstanceType)
+                .definition_span(ty.span())
                 .accessibility(DeclaredAccessibility::InheritedFromTraitMember)
                 .name(ident.kind.0.clone())
                 .span(ident.span)
@@ -512,6 +521,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::TraitType)
+                .definition_span(ty.span())
                 .accessibility(member_builder.declared_accessibility(ty.access_modifier().as_ref()))
                 .name(ident.kind.0.clone())
                 .span(ident.span)
@@ -540,6 +550,7 @@ impl Table {
                 member_builder,
                 Infos::builder()
                     .symbol_kind(SymbolKind::Trait)
+                    .definition_span(r#trait.span())
                     .accessibility(
                         member_builder.declared_accessibility(r#trait.access_modifier().as_ref()),
                     )
@@ -586,6 +597,7 @@ impl Table {
                 member_builder,
                 Infos::builder()
                     .symbol_kind(SymbolKind::Instance)
+                    .definition_span(instance.span())
                     .accessibility(
                         member_builder.declared_accessibility(instance.access_modifier().as_ref()),
                     )
@@ -654,6 +666,7 @@ impl Table {
             member_builder,
             Infos::builder()
                 .symbol_kind(SymbolKind::InstanceDef)
+                .definition_span(def.span())
                 .accessibility(DeclaredAccessibility::InheritedFromTraitMember)
                 .name(ident.kind.0.clone())
                 .span(ident.span)
@@ -716,6 +729,7 @@ impl Table {
                 member_builder,
                 Infos::builder()
                     .symbol_kind(SymbolKind::Module)
+                    .definition_span(module.span())
                     .accessibility(DeclaredAccessibility::Declared(accessibility))
                     .name(name.clone())
                     .span(ident.span)

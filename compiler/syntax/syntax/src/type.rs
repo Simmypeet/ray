@@ -190,3 +190,19 @@ abstract_tree::abstract_tree! {
         Path(Path = ast::<Path>())
     }
 }
+
+impl Type {
+    /// Returns the path the type is written as, if it is written as one.
+    #[must_use]
+    pub fn into_path(self) -> Option<Path> {
+        match self {
+            Self::Path(path) => Some(path),
+            Self::Primitive(_)
+            | Self::Pointer(_)
+            | Self::Reference(_)
+            | Self::Lifetime(_)
+            | Self::Tuple(_)
+            | Self::EffectRow(_) => None,
+        }
+    }
+}

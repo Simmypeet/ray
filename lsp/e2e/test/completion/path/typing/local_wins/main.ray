@@ -1,0 +1,25 @@
+# A local named like a module is a local: its fields are offered.
+module geometry:
+  pub struct Point:
+    pub x: int32
+
+  pub def side() -> int32:
+    return 1
+
+  def hidden() -> int32:
+    return 2
+
+  pub module shapes:
+    pub struct Square:
+      pub size: int32
+
+    pub def peek() -> int32:
+      return 0
+
+struct Pair:
+  first: int32
+  second: int32
+
+pub def main():
+  let geometry = Pair { first = 1, second = 2 }
+  let value = geometry.<cursor>

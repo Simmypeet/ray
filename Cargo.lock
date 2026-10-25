@@ -576,6 +576,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dunce"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1522,9 +1528,9 @@ dependencies = [
 
 [[package]]
 name = "qbice"
-version = "0.6.8"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78ab37f10cdf01eda293c8111f813e699fb01e3abab85b8304add24adf7d9613"
+checksum = "87174fe232e4be96d21ed2688484e475e56c66afb76c649a96161af1ff272b01"
 dependencies = [
  "bon",
  "crossbeam",
@@ -1549,9 +1555,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_derive"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e1e3daf0bd273faa38b6c8f5dabb2276557a36aa2b9f09c9cf64ba64ea6bea9"
+checksum = "73be077f3579aeb0e6006f6381a21e2928e15ffe39e667ef1df6cbcdcc20a1d3"
 dependencies = [
  "proc-macro2 1.0.106",
  "qbice_identifiable_derive_lib",
@@ -1561,9 +1567,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_identifiable_derive"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27a5793b19be44d14392c4cb0ec6f2cc24d1f9ed5197bebc25d731effb803eab"
+checksum = "34c311ca350af8d7e7d1fdb57ad8fec3e9201a3240d05e31f859cff4e90f25f3"
 dependencies = [
  "qbice_identifiable_derive_lib",
  "syn 2.0.114",
@@ -1571,9 +1577,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_identifiable_derive_lib"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4092c73989fc0edc81d67509c8c1677b6500502da7fbf1a25ff665ab47d4f1cc"
+checksum = "d071ccb8faf8f99caaacceca8f14859d453ac21f7e70a2a2be2e46ab070ddd02"
 dependencies = [
  "proc-macro2 1.0.106",
  "quote 1.0.44",
@@ -1582,9 +1588,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_serialize"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34e174127c37f75439308fb5f74fb1b7896dbe22ef6d3f9e5155f5941026d5dc"
+checksum = "284edaad99bcf058141af72a3a8a5a9d62d0584afe116a0ae9812812130dd068"
 dependencies = [
  "dashmap 6.1.0",
  "qbice_serialize_derive",
@@ -1603,9 +1609,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_stable_hash"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2c185032bc28a75a023681930f85397abb9a4b9e597627119f40f04dd57ca7c"
+checksum = "a80e0526f32767f19a4043e65f164410e54662289c1a7b2866f49cb1cce61876"
 dependencies = [
  "dashmap 6.1.0",
  "flexstr",
@@ -1628,9 +1634,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_stable_type_id"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6f9bba58f547cf17d3ad34007a612d0f684152f90bc5af80be561536ca1eb6f"
+checksum = "a5e23ef121621d5be6ded9e675475a9ee3ed7b5ed56e6d9d2f03b05a2a1ee9fa"
 dependencies = [
  "qbice_identifiable_derive",
  "qbice_serialize",
@@ -1639,9 +1645,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_storage"
-version = "0.6.3"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8850d5857c9181cac052a829f7e01a6dbabd45d64b5a4dfe13e14cef2da3578b"
+checksum = "29553f7dd4f356b20c37239084f626f2224b5d31b527eca263d15049354ae4f2"
 dependencies = [
  "bon",
  "crossbeam",
@@ -1657,7 +1663,6 @@ dependencies = [
  "qbice_stable_type_id",
  "rust-rocksdb",
  "scc",
- "thread_local",
  "tokio",
 ]
 
@@ -1748,20 +1753,57 @@ dependencies = [
 name = "ray_lsp"
 version = "0.1.0-beta.2"
 dependencies = [
+ "dunce",
  "qbice",
+ "rayc_arena",
  "rayc_check",
  "rayc_corelib",
  "rayc_diagnostic",
+ "rayc_handler",
+ "rayc_hash",
  "rayc_ir_builder",
+ "rayc_lexical",
  "rayc_lexical_impl",
+ "rayc_parser",
+ "rayc_project",
  "rayc_qbice",
+ "rayc_resolution",
+ "rayc_semantic_element",
  "rayc_semantic_element_impl",
  "rayc_source_file",
  "rayc_source_file_impl",
+ "rayc_symbol",
  "rayc_symbol_impl",
+ "rayc_syntax",
  "rayc_syntax_impl",
  "rayc_target",
+ "rayc_type",
+ "rayc_typed_ast",
  "serde_json",
+ "tempfile",
+ "tokio",
+ "tower-lsp",
+]
+
+[[package]]
+name = "ray_lsp_e2e"
+version = "0.1.0-beta.2"
+dependencies = [
+ "insta",
+ "ray_lsp_fixture",
+ "serde_json",
+ "test-generator",
+]
+
+[[package]]
+name = "ray_lsp_fixture"
+version = "0.1.0-beta.2"
+dependencies = [
+ "dunce",
+ "insta",
+ "ray_lsp",
+ "serde_json",
+ "stacker",
  "tempfile",
  "tokio",
  "tower-lsp",
@@ -1878,6 +1920,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "annotate-snippets",
  "ansi_term",
+ "dunce",
  "linkme",
  "qbice",
  "rayc_c2",
@@ -1888,6 +1931,7 @@ dependencies = [
  "rayc_hash",
  "rayc_ir_builder",
  "rayc_lexical_impl",
+ "rayc_project",
  "rayc_qbice",
  "rayc_semantic_element",
  "rayc_semantic_element_impl",
@@ -1908,6 +1952,7 @@ name = "rayc_e2e"
 version = "0.1.0-beta.2"
 dependencies = [
  "clap",
+ "dunce",
  "insta",
  "pretty_assertions",
  "rayc_driver",
@@ -2112,9 +2157,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayc_project"
+version = "0.1.0-beta.2"
+dependencies = [
+ "dunce",
+ "rayc_lexical",
+ "rayc_target",
+ "serde",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "rayc_qbice"
 version = "0.1.0-beta.2"
 dependencies = [
+ "dunce",
  "enum-as-inner",
  "fxhash",
  "linkme",
@@ -2576,15 +2634,15 @@ dependencies = [
 
 [[package]]
 name = "saa"
-version = "5.4.9"
+version = "5.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da0ba8adb63e0deebd0744d8fc5bea394c08029159deaf680513fec1a3949144"
+checksum = "bd85992a680de788217d9c70b74aa7685b108cf1aba02f728fb27f1b27199ad1"
 
 [[package]]
 name = "scc"
-version = "3.5.6"
+version = "3.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4bd9d1727de391b6982925d830baad51692fa2aa6e337733c03d95121ca2793"
+checksum = "5d5f8ca67c4f6208caf824037a6a9df0211b4e0937fccc4f543441f294d04511"
 dependencies = [
  "saa",
  "sdd",
@@ -2598,9 +2656,12 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sdd"
-version = "4.6.2"
+version = "4.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c25da4ae64b24edfcb0b0d30b96b2b0dbc64ec63aefeb6ec35bfc5ef167e5c9e"
+checksum = "a31877eee03686b905845993b5d9809a220c9dd5a10e9d6021d7ca67384c9070"
+dependencies = [
+ "saa",
+]
 
 [[package]]
 name = "semver"

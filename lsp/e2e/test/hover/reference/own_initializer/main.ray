@@ -1,0 +1,5 @@
+# A variable is not visible in its own initializer, so an identifier there
+# refers to the variable it shadows.
+pub def main():
+  let value: int64 = 1
+  let value = (val<cursor>ue, true)

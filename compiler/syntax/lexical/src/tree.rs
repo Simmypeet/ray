@@ -264,8 +264,32 @@ impl Tree {
         interner: &I,
         handler: &dyn Handler<error::Error>,
     ) -> Self {
+        Self::from_tokenizer(Tokenizer::new(source, source_id, interner, handler))
+    }
+
+    /// Creates a new [`Tree`] as [`Self::from_source`] does, with the hole
+    /// lexed at the cursor `hole`: see [`kind::Hole`].
+    ///
+    /// The hole is placed in the tree as a word typed at the cursor would be,
+    /// such as in the indentation block of the line it is on.
+    ///
+    /// This is generally used in completion.
+    pub fn from_source_with_hole<I: Interner>(
+        source: &SourceFile,
+        source_id: GlobalSourceID,
+        interner: &I,
+        handler: &dyn Handler<error::Error>,
+        hole: ByteIndex,
+    ) -> Self {
+        Self::from_tokenizer(Tokenizer::new(source, source_id, interner, handler).with_hole(hole))
+    }
+
+    /// Creates a new [`Tree`] from the tokens of `tokenizer`.
+    fn from_tokenizer<I: Interner>(tokenizer: Tokenizer<'_, I>) -> Self {
+        let source_id = tokenizer.source_id();
+        let handler = tokenizer.handler();
         let mut converter = Converter {
-            tokenizer: Tokenizer::new(source, source_id, interner, handler),
+            tokenizer,
             delimiter_stack: Vec::new(),
             indentation_stack: Vec::new(),
             current_nodes: Vec::new(),
@@ -364,6 +388,14 @@ impl Tree {
         let end = self.absolute_location_of(&relative_span.end);
 
         AbsoluteSpan { start, end, source_id: relative_span.source_id }
+    }
+
+    /// Returns whether a cursor at `cursor`, a byte index between two
+    /// characters, is at the given relative span. See
+    /// [`Span::contains_cursor`].
+    #[must_use]
+    pub fn span_contains_cursor(&self, relative_span: &RelativeSpan, cursor: ByteIndex) -> bool {
+        self.absolute_span_of(relative_span).contains_cursor(cursor)
     }
 
     /// Calculates the absolute location of the given relative location.

@@ -1,0 +1,93 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "kind": 14,
+    "label": "bool",
+    "sortText": "2bool"
+  },
+  {
+    "kind": 14,
+    "label": "c_int",
+    "sortText": "2c_int"
+  },
+  {
+    "detail": "module",
+    "kind": 9,
+    "label": "core",
+    "sortText": "1core"
+  },
+  {
+    "kind": 14,
+    "label": "cstr",
+    "sortText": "2cstr"
+  },
+  {
+    "detail": "type parameter",
+    "kind": 25,
+    "label": "elem",
+    "sortText": "1elem"
+  },
+  {
+    "kind": 14,
+    "label": "float32",
+    "sortText": "2float32"
+  },
+  {
+    "kind": 14,
+    "label": "int16",
+    "sortText": "2int16"
+  },
+  {
+    "kind": 14,
+    "label": "int32",
+    "sortText": "2int32"
+  },
+  {
+    "kind": 14,
+    "label": "int64",
+    "sortText": "2int64"
+  },
+  {
+    "kind": 14,
+    "label": "int8",
+    "sortText": "2int8"
+  },
+  {
+    "kind": 14,
+    "label": "isize",
+    "sortText": "2isize"
+  },
+  {
+    "kind": 14,
+    "label": "target",
+    "sortText": "2target"
+  },
+  {
+    "kind": 14,
+    "label": "uint16",
+    "sortText": "2uint16"
+  },
+  {
+    "kind": 14,
+    "label": "uint32",
+    "sortText": "2uint32"
+  },
+  {
+    "kind": 14,
+    "label": "uint64",
+    "sortText": "2uint64"
+  },
+  {
+    "kind": 14,
+    "label": "uint8",
+    "sortText": "2uint8"
+  },
+  {
+    "kind": 14,
+    "label": "usize",
+    "sortText": "2usize"
+  }
+]

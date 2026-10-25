@@ -1,0 +1,4 @@
+# An identifier in a closure refers to the variable the closure captures.
+pub def main():
+  let offset = 1
+  let add = (value) -> value + off<cursor>set

@@ -1,0 +1,3 @@
+# A parameter goes to the pattern declaring it in the signature.
+pub def add(left: int32, right: int32) -> int32:
+    return left + ri<cursor>ght

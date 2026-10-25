@@ -1,0 +1,8 @@
+# An identifier shows the type of the variable it refers to.
+struct Pair[a, b]:
+  first: a
+  second: b
+
+pub def main() -> int32:
+  let pair = Pair { first = 1, second = true }
+  return pa<cursor>ir.first

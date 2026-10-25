@@ -2,8 +2,10 @@ use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::{ParameterMap, get_parameter_map};
+use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID,
+    span::get_span,
     syntax::{get_def_body_syntax, get_parameter_list_syntax},
 };
 use rayc_syntax::def::ParameterList;
@@ -15,6 +17,7 @@ use rayc_type::{
 use rayc_typed_ast::{
     TypedAst,
     capture_plan::CapturePlan,
+    member_access::MemberAccess,
     name_binding::{NameBindingGroupID, NameBindingID},
     statement::Statement,
     typed_closure::{ClosureParameterID, TypedClosureParameter},
@@ -95,9 +98,19 @@ impl TAstBuilder {
         let root_effect = engine.intern(Ty::Inference(
             constraint_solver.gen_infer(TyKind::EffectRow, InferenceConstraint::Any),
         ));
-        let function_map = TypedFunctionMap::new(root_effect);
+
+        // the parameters and the names declared at the top of the body are
+        // visible in the body; the name of a def whose body is missing stands
+        // in for it
+        let body_span = match engine.get_def_body_syntax(current_def_id).await {
+            Some(body) => body.span(),
+            None => engine.get_span(current_def_id).await.expect("a def is declared with a name"),
+        };
+
+        let function_map = TypedFunctionMap::new(root_effect, body_span);
         let building_function = function_map.root_id();
-        let name_env = NameEnv::new(function_map.parameter_name_binding_group_id_of_root());
+        let name_env =
+            NameEnv::new(function_map.parameter_name_binding_group_id_of_root(), body_span);
 
         Self {
             function_map,
@@ -160,10 +173,11 @@ impl TAstBuilder {
             .expect("the current function should have a parameter name-binding group")
     }
 
+    /// Starts building a closure whose body covers `body_span`.
     #[must_use]
-    pub fn start_closure(&mut self) -> TypedFunctionID {
+    pub fn start_closure(&mut self, body_span: RelativeSpan) -> TypedFunctionID {
         let effect = self.new_effect_inference();
-        let function_id = self.function_map.insert_closure(effect);
+        let function_id = self.function_map.insert_closure(effect, body_span);
         let parameter_name_binding_group_id =
             self.function_map.parameter_name_binding_group_id_of(function_id);
 
@@ -171,7 +185,7 @@ impl TAstBuilder {
         self.suspended_loop_depths.push(self.loop_depth);
         self.building_function = function_id;
         self.loop_depth = 0;
-        self.name_env.enter_function(parameter_name_binding_group_id);
+        self.name_env.enter_scope(body_span, parameter_name_binding_group_id);
 
         function_id
     }
@@ -193,7 +207,7 @@ impl TAstBuilder {
     #[must_use]
     pub fn finish_closure(&mut self) -> Interned<Ty> {
         let effect = self.function_map.effect_of(self.building_function).clone();
-        self.name_env.exit_function();
+        self.name_env.exit_scope();
         self.loop_depth = self.suspended_loop_depths.pop().unwrap();
         self.building_function = self
             .suspended_functions
@@ -202,15 +216,18 @@ impl TAstBuilder {
         effect
     }
 
+    /// Starts building the handler of `operation` whose body covers
+    /// `body_span`.
     #[must_use]
     pub fn start_operation_handler(
         &mut self,
         operation: GlobalSymbolID,
         return_type: Interned<Ty>,
+        body_span: RelativeSpan,
     ) -> TypedFunctionID {
         let effect = self.new_effect_inference();
         let function_id =
-            self.function_map.insert_operation_handler(operation, return_type, effect);
+            self.function_map.insert_operation_handler(operation, return_type, effect, body_span);
         let parameter_name_binding_group_id =
             self.function_map.parameter_name_binding_group_id_of(function_id);
 
@@ -218,13 +235,13 @@ impl TAstBuilder {
         self.suspended_loop_depths.push(self.loop_depth);
         self.building_function = function_id;
         self.loop_depth = 0;
-        self.name_env.enter_function(parameter_name_binding_group_id);
+        self.name_env.enter_scope(body_span, parameter_name_binding_group_id);
 
         function_id
     }
 
     pub fn finish_operation_handler(&mut self) {
-        self.name_env.exit_function();
+        self.name_env.exit_scope();
         self.loop_depth = self.suspended_loop_depths.pop().unwrap();
         self.building_function = self
             .suspended_functions
@@ -232,8 +249,9 @@ impl TAstBuilder {
             .expect("an operation handler should suspend its enclosing function");
     }
 
+    /// Starts building a thunk whose body covers `body_span`.
     #[must_use]
-    pub fn start_thunk(&mut self) -> (TypedFunctionID, Interned<Ty>) {
+    pub fn start_thunk(&mut self, body_span: RelativeSpan) -> (TypedFunctionID, Interned<Ty>) {
         let return_type = self.new_type_inference();
         let effect = self.new_effect_inference();
         let function_id = self.function_map.insert_thunk(return_type.clone(), effect);
@@ -242,13 +260,13 @@ impl TAstBuilder {
         self.suspended_loop_depths.push(self.loop_depth);
         self.building_function = function_id;
         self.loop_depth = 0;
-        self.name_env.enter_function(None);
+        self.name_env.enter_scope(body_span, None);
 
         (function_id, return_type)
     }
 
     pub fn finish_thunk(&mut self) {
-        self.name_env.exit_function();
+        self.name_env.exit_scope();
         self.loop_depth = self.suspended_loop_depths.pop().unwrap();
         self.building_function =
             self.suspended_functions.pop().expect("a thunk should suspend its enclosing function");
@@ -356,6 +374,15 @@ impl TAstBuilder {
         self.function_map.get_expression(id.function_id(), id.local_id()).span()
     }
 
+    /// Records the access of the member at `span`, the dot and the member
+    /// after it, of `receiver`, an expression of the function being built.
+    pub fn record_member_access(&mut self, span: RelativeSpan, receiver: TypedExprID) {
+        self.function_map.insert_member_access(MemberAccess::new(
+            span,
+            TypedFunctionLocalID::new(self.building_function, receiver),
+        ));
+    }
+
     pub async fn push_statement(&mut self, statement: Statement) {
         // Nested statements contribute through their owning control-flow
         // expression. Only function-root statements compose directly into the
@@ -376,9 +403,11 @@ impl TAstBuilder {
         self.function_map.push_statement(self.building_function, statement);
     }
 
-    pub fn enter_statement_block(&mut self, kind: StatementBlockKind) {
+    /// Opens a statement block covering `span`, the scope of the names
+    /// declared in it.
+    pub fn enter_statement_block(&mut self, kind: StatementBlockKind, span: RelativeSpan) {
         self.loop_depth += usize::from(kind == StatementBlockKind::LoopBody);
-        self.name_env.enter_scope();
+        self.name_env.enter_scope(span, None);
         self.statement_blocks.push(StatementBlock {
             owner: self.building_function,
             kind,

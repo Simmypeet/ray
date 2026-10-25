@@ -1,0 +1,10 @@
+---
+source: compiler/e2e/test/project/mod.rs
+expression: rendered
+---
+stderr:
+[error]: invalid target name `my-app` in '[WORKSPACE]/compiler/e2e/test/project/invalid_name/ray.toml': it must be an identifier that is not a keyword
+
+
+
+stdout:

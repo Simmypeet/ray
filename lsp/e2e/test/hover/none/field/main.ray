@@ -1,0 +1,8 @@
+# The name of a field is not a variable, even when a variable has its name.
+struct Point:
+  x: int32
+  y: int32
+
+pub def main() -> int32:
+  let x = Point { x = 1, y = 2 }
+  return x.<cursor>x

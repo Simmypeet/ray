@@ -1,0 +1,3 @@
+# No keyword is completed in a string literal.
+pub def main():
+  let text = "r<cursor>"

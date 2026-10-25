@@ -1,0 +1,20 @@
+---
+source: lsp/e2e/test/hover/mod.rs
+expression: hover_result(&response)
+---
+{
+  "contents": {
+    "kind": "markdown",
+    "value": "```ray\nmodule geometry\n```"
+  },
+  "range": {
+    "end": {
+      "character": 24,
+      "line": 7
+    },
+    "start": {
+      "character": 16,
+      "line": 7
+    }
+  }
+}

@@ -1,0 +1,4 @@
+# A closure body sees its parameters and the names around it.
+pub def main():
+  let offset = 1
+  let add = (value) -> val<cursor>

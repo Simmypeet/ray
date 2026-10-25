@@ -43,10 +43,11 @@ impl TestMap {
     fn new(engine: &TrackedEngine) -> Self {
         let effect = Ty::new_effect_row([], None, engine);
         Self {
-            functions: TypedFunctionMap::new(effect.clone()),
+            // the first span is the body of the def
+            functions: TypedFunctionMap::new(effect.clone(), Self::span_at(0)),
             ty: Interned::new_duplicating(Ty::Inference(Inference::new(TyKind::Star, 0))),
             effect,
-            next_span: 0,
+            next_span: 1,
             bindings: FxHashMap::default(),
         }
     }
@@ -54,6 +55,10 @@ impl TestMap {
     fn span(&mut self) -> RelativeSpan {
         let offset = self.next_span;
         self.next_span += 1;
+        Self::span_at(offset)
+    }
+
+    fn span_at(offset: usize) -> RelativeSpan {
         let source_id: GlobalSourceID = TargetID::TEST.make_global(LocalSourceID::new(0, 0));
         RelativeSpan {
             start: RelativeLocation {
@@ -120,7 +125,10 @@ impl TestMap {
         )
     }
 
-    fn closure(&mut self) -> TypedFunctionID { self.functions.insert_closure(self.effect.clone()) }
+    fn closure(&mut self) -> TypedFunctionID {
+        let body = self.span();
+        self.functions.insert_closure(self.effect.clone(), body)
+    }
 
     fn statement(&mut self, function: TypedFunctionID, expression: TypedExprID) {
         // Capture analysis never inspects the discard's Drop dictionary.

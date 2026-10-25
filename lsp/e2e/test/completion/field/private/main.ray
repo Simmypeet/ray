@@ -1,0 +1,12 @@
+# Outside the module of a struct, only its public fields are offered.
+module geometry:
+  pub struct Point:
+    pub x: int32
+    y: int32
+
+  pub def origin() -> Point:
+    return Point { x = 0, y = 0 }
+
+pub def main():
+  let point = geometry.origin()
+  let x = point.<cursor>

@@ -1,0 +1,4 @@
+# The initializer of a shadowing declaration sees the declaration it shadows.
+pub def main():
+  let count = 1
+  let count = count<cursor> == 1

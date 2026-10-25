@@ -1,0 +1,8 @@
+# A dangling `.` offers the fields of the struct before it.
+struct Point:
+  x: int32
+  y: int32
+
+pub def main():
+  let point = Point { x = 1, y = 2 }
+  let x = point.<cursor>

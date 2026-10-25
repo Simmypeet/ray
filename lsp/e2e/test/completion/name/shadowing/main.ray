@@ -1,0 +1,5 @@
+# A later declaration shadows an earlier one of the same name.
+pub def main():
+  let value = 32
+  let value = true
+  let result = val<cursor>

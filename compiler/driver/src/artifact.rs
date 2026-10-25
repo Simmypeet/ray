@@ -10,10 +10,13 @@ use std::{
 use rayc_c2::CTranslationUnitOptions;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
-use rayc_target::{Arguments, OptimizationLevel, TargetID, TargetKind};
+use rayc_target::{OptimizationLevel, TargetID, TargetKind};
 use tempfile::{Builder, NamedTempFile, TempPath};
 
-use crate::native::{NativeError, compile_c, launch_executable, link_executable};
+use crate::{
+    invocation::Artifact,
+    native::{NativeError, compile_c, launch_executable, link_executable},
+};
 
 /// A temporary compiler-owned artifact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,8 +46,8 @@ impl TemporaryArtifact {
 pub(super) enum ArtifactError {
     UnsupportedArtifact { kind: TargetKind },
     MissingOutputPath { kind: TargetKind },
-    MissingOptimizationLevel { kind: TargetKind },
     MissingEntryPoint,
+    CreateOutputDirectory { path: PathBuf, source: io::Error },
     CreateOutputStaging { path: PathBuf, source: io::Error },
     CreateTemporaryArtifact { artifact: TemporaryArtifact, output_path: PathBuf, source: io::Error },
     GenerateC { output_path: PathBuf, source: io::Error },
@@ -66,14 +69,14 @@ impl fmt::Display for ArtifactError {
                 "could not resolve an output path for artifact kind `{}`",
                 artifact_name(*kind)
             ),
-            Self::MissingOptimizationLevel { kind } => write!(
-                formatter,
-                "could not resolve an optimization level for artifact kind `{}`",
-                artifact_name(*kind)
-            ),
             Self::MissingEntryPoint => {
                 formatter.write_str("executable artifact is missing its validated entry point")
             }
+            Self::CreateOutputDirectory { path, source } => write!(
+                formatter,
+                "failed to create the output directory '{}': {source}",
+                path.display()
+            ),
             Self::CreateOutputStaging { path, source } => write!(
                 formatter,
                 "failed to create a temporary output beside '{}': {source}",
@@ -111,12 +114,10 @@ impl From<NativeError> for ArtifactError {
 pub(super) async fn execute(
     engine: &TrackedEngine,
     target_id: TargetID,
-    arguments: &Arguments,
+    artifact: &Artifact,
     entry_point: Option<GlobalSymbolID>,
 ) -> Result<ExitCode, ArtifactError> {
-    let Some(kind) = arguments.artifact_kind() else {
-        return Ok(ExitCode::SUCCESS);
-    };
+    let kind = artifact.kind();
 
     match kind {
         TargetKind::Library | TargetKind::LLvmIR => {
@@ -125,33 +126,32 @@ pub(super) async fn execute(
         TargetKind::Executable | TargetKind::Object | TargetKind::C => {}
     }
 
-    let output_path =
-        arguments.resolve_output_path().ok_or(ArtifactError::MissingOutputPath { kind })?;
+    let output_path = artifact.output_path().ok_or(ArtifactError::MissingOutputPath { kind })?;
 
     match kind {
         TargetKind::Executable => {
             let entry_point = entry_point.ok_or(ArtifactError::MissingEntryPoint)?;
-            let optimization_level = arguments
-                .optimization_level()
-                .ok_or(ArtifactError::MissingOptimizationLevel { kind })?;
-            build_executable(engine, target_id, entry_point, optimization_level, &output_path)
-                .await?;
+            build_executable(
+                engine,
+                target_id,
+                entry_point,
+                artifact.optimization_level(),
+                output_path,
+            )
+            .await?;
 
-            if arguments.should_run() {
-                launch_executable(&output_path).map_err(ArtifactError::from)
+            if artifact.should_run() {
+                launch_executable(output_path).map_err(ArtifactError::from)
             } else {
                 Ok(ExitCode::SUCCESS)
             }
         }
         TargetKind::Object => {
-            let optimization_level = arguments
-                .optimization_level()
-                .ok_or(ArtifactError::MissingOptimizationLevel { kind })?;
-            build_object(engine, target_id, optimization_level, &output_path).await?;
+            build_object(engine, target_id, artifact.optimization_level(), output_path).await?;
             Ok(ExitCode::SUCCESS)
         }
         TargetKind::C => {
-            emit_final_c(engine, target_id, &output_path).await?;
+            emit_final_c(engine, target_id, output_path).await?;
             Ok(ExitCode::SUCCESS)
         }
         TargetKind::Library | TargetKind::LLvmIR => {
@@ -247,6 +247,13 @@ async fn write_c(
 }
 
 fn temporary_output_file(output_path: &Path) -> Result<NamedTempFile, ArtifactError> {
+    // the output is staged beside its final path, so its directory must exist
+    let parent = output_parent(output_path);
+    std::fs::create_dir_all(parent).map_err(|source| ArtifactError::CreateOutputDirectory {
+        path: parent.to_owned(),
+        source,
+    })?;
+
     Builder::new().prefix(".rayc-").tempfile_in(output_parent(output_path)).map_err(|source| {
         ArtifactError::CreateOutputStaging { path: output_path.to_owned(), source }
     })

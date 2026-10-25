@@ -1,0 +1,20 @@
+---
+source: lsp/e2e/test/hover/mod.rs
+expression: hover_result(&response)
+---
+{
+  "contents": {
+    "kind": "markdown",
+    "value": "```ray\noffset: int32\n```"
+  },
+  "range": {
+    "end": {
+      "character": 37,
+      "line": 3
+    },
+    "start": {
+      "character": 31,
+      "line": 3
+    }
+  }
+}

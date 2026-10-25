@@ -1,0 +1,7 @@
+# The pattern of a `let` shows the inferred type of its variable.
+struct Pair[a, b]:
+  first: a
+  second: b
+
+pub def main():
+  let pa<cursor>ir = Pair { first = 1, second = true }

@@ -16,7 +16,7 @@ pub struct ProjectionKey {
     pub symbol_id: Global<rayc_symbol::SymbolID>,
 }
 
-#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+#[executor(config = Config)]
 async fn projection_executor(
     key: &ProjectionKey,
     engine: &TrackedEngine,

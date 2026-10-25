@@ -5,7 +5,7 @@ use std::{fmt::Write, fs::File, io::Write as _, mem, path::PathBuf, process::Exi
 use backtrace::Backtrace;
 use clap::Parser;
 use rayc_driver::term::ReportTerm;
-use rayc_target::Arguments;
+use rayc_target::{Arguments, Cli};
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 use tracing_chrome::{ChromeLayerBuilder, FlushGuard};
@@ -32,14 +32,19 @@ async fn main_async() -> ExitCode {
     // nicely print the error message and exit.
     #[cfg(not(debug_assertions))]
     setup_panic();
-    let argument = Arguments::parse();
-
-    let _guard = init_tracing(argument.chrome_tracing());
-
     let mut stderr = std::io::stderr();
     let mut stdout = std::io::stdout();
 
-    rayc_driver::run(argument, &mut stderr, &mut stdout).await
+    match Cli::parse() {
+        Cli::Compile(command) => {
+            let argument = Arguments::from(command);
+
+            let _guard = init_tracing(argument.chrome_tracing());
+
+            rayc_driver::run(argument, &mut stderr, &mut stdout).await
+        }
+        Cli::New(arguments) => rayc_driver::create_project(&arguments, &mut stderr),
+    }
 }
 
 fn main() -> ExitCode {

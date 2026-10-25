@@ -1,0 +1,16 @@
+# An instance is shown with the signatures of its members, without their
+# bodies.
+pub trait Some[t]:
+    pub def test(a: t) -> t
+    pub def other(a: t) -> t
+
+pub inst SomeInt32 for Some[int32]:
+    def test(a: int32) -> int32:
+        let doubled = a + a
+        return doubled
+
+    def other(a: int32) -> int32:
+        return a
+
+pub def main() -> int32:
+    return Some<cursor>Int32.test(1)

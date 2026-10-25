@@ -129,6 +129,10 @@ pub struct Tokenizer<'a, I> {
     handler: &'a dyn Handler<error::Error>,
     interner: &'a I,
     source_id: GlobalSourceID,
+
+    /// The cursor where the hole is lexed, until it is: see
+    /// [`Self::with_hole`].
+    hole: Option<ByteIndex>,
 }
 
 impl<I> std::fmt::Debug for Tokenizer<'_, I> {
@@ -156,12 +160,37 @@ impl<'a, I> Tokenizer<'a, I> {
         interner: &'a I,
         handler: &'a dyn Handler<error::Error>,
     ) -> Self {
-        Self { source, iter: source.char_indices().peekable(), handler, interner, source_id }
+        Self {
+            source,
+            iter: source.char_indices().peekable(),
+            handler,
+            interner,
+            source_id,
+            hole: None,
+        }
+    }
+
+    /// Lexes the hole at the cursor `hole`, as a word being typed there is
+    /// lexed: see [`kind::Hole`].
+    ///
+    /// A word holding the cursor, from its first character to right after its
+    /// last, is the hole. Elsewhere, the hole is an empty token at the cursor.
+    /// A comment holding the cursor, up to right after its end, or a literal
+    /// with the cursor inside it has no hole, since nothing is being typed in
+    /// the syntax there.
+    #[must_use]
+    pub const fn with_hole(mut self, hole: ByteIndex) -> Self {
+        self.hole = Some(hole);
+        self
     }
 
     /// Returns the source file being tokenized.
     #[must_use]
     pub const fn source_file(&self) -> &'a SourceFile { self.source }
+
+    /// Returns the ID of the source code being tokenized.
+    #[must_use]
+    pub const fn source_id(&self) -> GlobalSourceID { self.source_id }
 
     /// Returns the handler used for reporting errors.
     #[must_use]
@@ -202,11 +231,24 @@ impl<I: Interner> Tokenizer<'_, I> {
     fn handle_insignificant(&mut self) -> Option<AbsoluteSpan> {
         let (start, _) = self.iter.peek().copied()?;
 
-        while let Some((_, character)) = self.iter.peek().copied() {
+        while let Some((index, character)) = self.iter.peek().copied() {
+            // the whitespaces before the hole are its insignificant part, and
+            // the ones after it are the next token's
+            if self.hole == Some(index) {
+                break;
+            }
+
             if is_whitespace(character) {
-                walk_iter(&mut self.iter, is_whitespace);
+                self.iter.next();
             } else if character == '#' {
                 walk_iter(&mut self.iter, |x| x != '\n' && x != '\r');
+
+                // a comment holding the cursor, up to right after its end,
+                // has no hole
+                let end = self.iter.peek().map_or(self.source.len_bytes(), |(end, _)| *end);
+                if self.hole.is_some_and(|hole| index < hole && hole <= end) {
+                    self.hole = None;
+                }
             } else {
                 break;
             }
@@ -221,6 +263,43 @@ impl<I: Interner> Tokenizer<'_, I> {
         } else {
             Some(Span::new(start, self.source.len_bytes(), self.source_id))
         }
+    }
+
+    /// Returns the span of the hole if it is an empty token at the current
+    /// location: the cursor is reached outside of a word.
+    fn handle_empty_hole(&mut self) -> Option<AbsoluteSpan> {
+        let hole = self.hole?;
+        let location = self.iter.peek().map_or(self.source.len_bytes(), |(index, _)| *index);
+
+        // a word starting at the cursor is the hole instead
+        let word_starts = self.iter.peek().is_some_and(|(_, character)| {
+            kind::Identifier::is_first_identifier_character(*character)
+        });
+        if hole != location || word_starts {
+            return None;
+        }
+
+        self.hole = None;
+        Some(Span::new(hole, hole, self.source_id))
+    }
+
+    /// Returns the kind of the token of `kind` at `span`, which is the hole if
+    /// the token is a word holding the cursor.
+    fn handle_hole_in(&mut self, kind: kind::Kind, span: AbsoluteSpan) -> kind::Kind {
+        let Some(hole) = self.hole else {
+            return kind;
+        };
+
+        // the hole is after the token; right after a word, the word is the
+        // hole, while right after another token, it is an empty token
+        if hole > span.end || (hole == span.end && !kind.is_word()) {
+            return kind;
+        }
+
+        // a token holding the cursor other than a word, such as a literal,
+        // is being typed outside of the syntax and leaves no hole
+        self.hole = None;
+        if kind.is_word() { kind::Kind::Hole(kind::Hole) } else { kind }
     }
 
     fn handle_new_line(&mut self, character: char, start: ByteIndex) -> AbsoluteSpan {
@@ -390,6 +469,11 @@ impl<I: Interner> Iterator for Tokenizer<'_, I> {
         // Found white spaces
         let prior_insignificant = self.handle_insignificant();
 
+        // Found the hole outside of a word
+        if let Some(span) = self.handle_empty_hole() {
+            return Some(Token { kind: kind::Kind::Hole(kind::Hole), span, prior_insignificant });
+        }
+
         // Gets the first character
         let (start, character) = self.iter.next()?;
 
@@ -427,6 +511,8 @@ impl<I: Interner> Iterator for Tokenizer<'_, I> {
         } else {
             unreachable!("should've been handled by earlier cases")
         };
+
+        let kind = self.handle_hole_in(kind, span);
 
         Some(Token { kind, span, prior_insignificant })
     }

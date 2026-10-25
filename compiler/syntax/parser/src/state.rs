@@ -6,6 +6,7 @@ use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
 use qbice::{Decode, Encode, StableHash};
 use rayc_arena::ID;
+use rayc_hash::FxHashSet;
 use rayc_lexical::{kind::Kind, token::Token, tree::ROOT_BRANCH_ID};
 use rayc_qbice::Interner;
 
@@ -57,6 +58,25 @@ pub struct State<'a, 'cache, I> {
 
     /// The interner used by the parser.
     interner: &'a I,
+
+    /// What the parser tried at the hole, if it is collected; see
+    /// [`Self::collect_hole`].
+    hole: Option<Hole>,
+}
+
+/// Every expectation the parser tried at the hole token, which matches none:
+/// see [`rayc_lexical::kind::Hole`].
+#[derive(Debug, Default)]
+struct Hole {
+    /// Every expectation tried at the hole, kept across backtracking and not
+    /// replaced by labels.
+    expecteds: FxHashSet<Expected>,
+
+    /// Whether the error at the token has been emitted. The parser then
+    /// recovers as if the token were missing, so the expectations it tries
+    /// at the token afterwards, such as a binary operator after a dangling
+    /// `.`, are not collected.
+    emitted: bool,
 }
 
 /// Represents a snapshot of the parser state at a certain point in time. This
@@ -133,7 +153,41 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
             },
             cache,
             interner,
+            hole: None,
         }
+    }
+
+    /// Collects every expectation the parser tries at the hole token until it
+    /// recovers from the error there.
+    ///
+    /// No expectation matches the hole, so the expectations are the ones the
+    /// diagnostic at the hole would list, before labels replace them. They
+    /// are taken with [`Self::into_hole_expecteds`].
+    pub(crate) fn collect_hole(&mut self) { self.hole = Some(Hole::default()); }
+
+    /// Returns the expectations collected at the hole, or an empty set if
+    /// they are not collected.
+    pub(crate) fn into_hole_expecteds(self) -> FxHashSet<Expected> {
+        self.hole.map(|hole| hole.expecteds).unwrap_or_default()
+    }
+
+    /// Collects `expected`, an expectation tried at the hole, unless the
+    /// parser has recovered from the error there.
+    pub fn add_hole_expected(&mut self, expected: Expected) {
+        if let Some(hole) = &mut self.hole
+            && !hole.emitted
+        {
+            hole.expecteds.insert(expected);
+        }
+    }
+
+    /// Returns whether `at` points to the hole token.
+    fn is_hole_at(&self, at: Cursor) -> bool {
+        self.tree[at.branch_id]
+            .nodes
+            .get(at.node_index)
+            .and_then(rayc_lexical::tree::Node::as_leaf)
+            .is_some_and(|token| token.kind.is_hole())
     }
 
     #[must_use]
@@ -469,6 +523,7 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
                 current_error: std::mem::take(&mut self.current_error),
                 cache: self.cache,
                 interner: self.interner,
+                hole: self.hole.take(),
             };
 
             // operate on the inner fragment state
@@ -485,6 +540,7 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
 
             self.events.push(Event::Inline(state.events));
             self.current_error = state.current_error;
+            self.hole = state.hole;
             self.emitted_erorrs.append(&mut state.emitted_erorrs);
             self.cursor.node_index += 1; // step past the fragment
 
@@ -651,6 +707,14 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
     /// Takes any current error and move it to the emitted errors list.
     pub(crate) fn emit_error(&mut self) {
         let error = self.try_take_error().expect("should have an error");
+
+        // the parser recovers from the error at the hole, so it no longer
+        // tries what could be written in place of the hole
+        if self.is_hole_at(error.at)
+            && let Some(hole) = &mut self.hole
+        {
+            hole.emitted = true;
+        }
 
         self.emitted_erorrs.push(error);
     }

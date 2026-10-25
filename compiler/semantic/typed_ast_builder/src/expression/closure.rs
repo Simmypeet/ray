@@ -33,7 +33,8 @@ impl TAstBuilder {
         body: Option<Expression>,
         span: RelativeSpan,
     ) -> TypedExprID {
-        let function_id = self.start_closure();
+        // the parameters are visible in the body
+        let function_id = self.start_closure(body.as_ref().map_or(span, SourceElement::span));
         let parameter_name_binding_group = self.parameter_name_binding_group();
         let mut parameter_types = Vec::new();
 

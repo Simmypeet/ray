@@ -44,6 +44,9 @@ members = [
     "compiler/corelib",
     "compiler/driver",
     "compiler/main",
+    "compiler/project",
+    "lsp/e2e",
+    "lsp/fixture",
     "lsp/server",
 
     # tidy-alphabetical-end
@@ -140,7 +143,8 @@ stacker = "0.1.21"
 serde_json = { version = "1.0.96" }
 fuzzy-matcher = { version = "0.3.7" }
 console-subscriber = "0.5.0"
-qbice = { version = "0.6.8", features = ["rocksdb"] }
+qbice = { version = "0.7.0", features = ["rocksdb"] }
+dunce = "1.0.5"
 linkme = { version = "0.3.35" }
 tikv-jemallocator = { version = "0.6.1", features = [
     "override_allocator_on_supported_platforms",

@@ -36,12 +36,6 @@ expression: snapshot
  9 │
 10 │ def incompletePath(value: core.) -> int32:
    ┆
-   ┆ [error]: expected a value type or an associated type projection
-   ┆    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:10:27
-   ┆    │
-   ┆ 10 │ def incompletePath(value: core.) -> int32:
-   ┆    ╰╴                          ━━━━
-   ┆
    ┆ [error]: unexpected `)` punctuation, expected identifier
    ┆    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:10:32
    ┆    │
@@ -123,4 +117,4 @@ expression: snapshot
 34 │     return 0
 
 other diagnostics:
-[error]: Compilation aborted due to 12 error(s)
+[error]: Compilation aborted due to 11 error(s)

@@ -1,0 +1,6 @@
+# Only the definition of a def has variables.
+struct Wrapper[t]:
+  val<cursor>ue: t
+
+pub def main():
+  let value = Wrapper { value = 1 }

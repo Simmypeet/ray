@@ -1,0 +1,9 @@
+# A segment after the first one is looked up in what the segments before it
+# name.
+module geometry:
+    pub struct Point:
+        pub x: int32
+        pub y: int32
+
+pub def main():
+    let point = geometry.Po<cursor>int { x = 1, y = 2 }

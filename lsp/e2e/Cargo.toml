@@ -1,0 +1,29 @@
+[package]
+name = "ray_lsp_e2e"
+description = "end-to-end tests for the Ray language server"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dev-dependencies]
+ray_lsp_fixture = { path = "../fixture" }
+insta = { workspace = true }
+serde_json = { workspace = true }
+test-generator = { workspace = true }
+
+[[test]]
+name = "completion_e2e"
+path = "test/completion/mod.rs"
+
+[[test]]
+name = "hover_e2e"
+path = "test/hover/mod.rs"
+
+[[test]]
+name = "definition_e2e"
+path = "test/definition/mod.rs"
+
+[lints]
+workspace = true

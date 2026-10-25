@@ -1,0 +1,4 @@
+# A cursor at the start of the pattern is on it, and an annotated variable
+# shows the annotated type.
+pub def main():
+  let <cursor>wide: int64 = 1

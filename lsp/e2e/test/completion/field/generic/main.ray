@@ -1,0 +1,10 @@
+# The fields of a generic struct are typed with its arguments.
+struct Wrapper[t]:
+  value: t
+
+def wrap(value: int32) -> Wrapper[int32]:
+  return Wrapper { value = value }
+
+pub def main():
+  let wrapper = wrap(1)
+  let value = wrapper.<cursor>

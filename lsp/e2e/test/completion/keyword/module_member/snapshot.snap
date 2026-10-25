@@ -1,0 +1,66 @@
+---
+source: lsp/e2e/test/completion/mod.rs
+expression: canonical_completions(&response)
+---
+[
+  {
+    "kind": 14,
+    "label": "def",
+    "sortText": "2def"
+  },
+  {
+    "kind": 14,
+    "label": "eff",
+    "sortText": "2eff"
+  },
+  {
+    "kind": 14,
+    "label": "enum",
+    "sortText": "2enum"
+  },
+  {
+    "kind": 14,
+    "label": "extern",
+    "sortText": "2extern"
+  },
+  {
+    "kind": 14,
+    "label": "impl",
+    "sortText": "2impl"
+  },
+  {
+    "kind": 14,
+    "label": "inst",
+    "sortText": "2inst"
+  },
+  {
+    "kind": 14,
+    "label": "marker",
+    "sortText": "2marker"
+  },
+  {
+    "kind": 14,
+    "label": "module",
+    "sortText": "2module"
+  },
+  {
+    "kind": 14,
+    "label": "pass",
+    "sortText": "2pass"
+  },
+  {
+    "kind": 14,
+    "label": "pub",
+    "sortText": "2pub"
+  },
+  {
+    "kind": 14,
+    "label": "struct",
+    "sortText": "2struct"
+  },
+  {
+    "kind": 14,
+    "label": "trait",
+    "sortText": "2trait"
+  }
+]

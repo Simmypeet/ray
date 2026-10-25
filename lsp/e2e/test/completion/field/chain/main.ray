@@ -1,0 +1,12 @@
+# A field of a field offers the fields of its own type.
+struct Point:
+  x: int32
+  y: int32
+
+struct Line:
+  start: Point
+  end: Point
+
+pub def main():
+  let line = Line { start = Point { x = 1, y = 2 }, end = Point { x = 3, y = 4 } }
+  let x = line.start.<cursor>
