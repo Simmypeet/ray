@@ -1,72 +1,141 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:31:9
-   │
+ 1 │ @linear
+ 2 │ struct Handle:
+ 3 │     fd: int32
+ 4 │
+ 5 │ # Structs containing a linear field get no generated Drop instance.
+ 6 │ struct Pair:
+ 7 │     first: Handle
+ 8 │     second: Handle
+ 9 │
+10 │ struct Wrapper[t]:
+11 │     value: t
+12 │
+13 │ def make() -> Handle:
+14 │     return Handle { fd = 0 }
+15 │
+16 │ def close(opened: Handle):
+17 │     core.NoDrop { value = move opened }
+18 │
+19 │ def dispose(value: a) given (drop: core.Drop[a]):
+20 │     drop.drop(value)
+21 │
+22 │ # OK: every linear value is consumed exactly once.
+23 │ def consumed(pair: Pair):
+24 │     let opened = make()
+25 │     close(opened)
+26 │     close(pair.first)
+27 │     close(pair.second)
+28 │
+29 │ # Error: the value is dropped at the end of the scope.
+30 │ def leak():
 31 │     let opened = make()
-   │         ━━━━━━ this value is dropped when it goes out of scope
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
-
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:35:9
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:31:9
+   ┆    │
+   ┆ 31 │     let opened = make()
+   ┆    │         ━━━━━━ this value is dropped when it goes out of scope
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+32 │
+33 │ # Error: the value is dropped on the path that does not consume it.
+34 │ def leakOnBranch(condition: bool):
 35 │     let opened = make()
-   │         ━━━━━━ this value is dropped when it goes out of scope
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
-
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:41:5
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:35:9
+   ┆    │
+   ┆ 35 │     let opened = make()
+   ┆    │         ━━━━━━ this value is dropped when it goes out of scope
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+36 │     if condition:
+37 │         close(opened)
+38 │
+39 │ # Error: a discarded linear value is dropped.
+40 │ def leakDiscard():
 41 │     make()
-   │     ━━━━━━
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
-
-[error]: no implicit instance found: `core.Drop[Pair]`
-   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:45:9
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:41:5
+   ┆    │
+   ┆ 41 │     make()
+   ┆    │     ━━━━━━
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+42 │
+43 │ # Error: a struct containing a linear field cannot be dropped.
+44 │ def leakPair():
 45 │     let pair = Pair { first = make(), second = make() }
-   │         ━━━━ this value is dropped when it goes out of scope
-   │
-   ╰ help: `Pair` has no generated Drop instance because it contains the linear type `Handle`; consume it explicitly or implement Drop for it by hand
-
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:49:9
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Pair]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:45:9
+   ┆    │
+   ┆ 45 │     let pair = Pair { first = make(), second = make() }
+   ┆    │         ━━━━ this value is dropped when it goes out of scope
+   ┆    │
+   ┆    ╰ help: `Pair` has no generated Drop instance because it contains the linear type `Handle`; consume it explicitly or implement Drop for it by hand
+   ┆
+46 │
+47 │ # Error: the remaining field of a partially moved struct is dropped.
+48 │ def leakPartial():
 49 │     let pair = Pair { first = make(), second = make() }
-   │         ━━━━ this value is dropped when it goes out of scope
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
-
-[error]: no implicit instance found: `core.Drop[Wrapper[Handle]]`
-   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:54:9
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:49:9
+   ┆    │
+   ┆ 49 │     let pair = Pair { first = make(), second = make() }
+   ┆    │         ━━━━ this value is dropped when it goes out of scope
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+50 │     close(pair.first)
+51 │
+52 │ # Error: a generic struct instantiated with a linear type cannot be dropped.
+53 │ def leakWrapper():
 54 │     let wrapper = Wrapper { value = make() }
-   ╰╴        ━━━━━━━ this value is dropped when it goes out of scope
-
-[error]: use of moved value
-   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:59:11
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Wrapper[Handle]]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:54:9
+   ┆    │
+   ┆ 54 │     let wrapper = Wrapper { value = make() }
+   ┆    ╰╴        ━━━━━━━ this value is dropped when it goes out of scope
+   ┆
+55 │
+56 │ # Error: a linear value is never `Copy`, even with only `Copy` fields.
+57 │ def useTwice(opened: Handle):
 58 │     close(opened)
-   │           ────── value moved here
 59 │     close(opened)
-   ╰╴          ━━━━━━ value used here after it was moved
-
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:63:5
-   │
+   ┆
+   ┆ [error]: use of moved value
+   ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:59:11
+   ┆    │
+   ┆ 58 │     close(opened)
+   ┆    │           ────── value moved here
+   ┆ 59 │     close(opened)
+   ┆    ╰╴          ━━━━━━ value used here after it was moved
+   ┆
+60 │
+61 │ # Error: a linear type has no Drop dictionary to pass.
+62 │ def main() -> int32:
 63 │     dispose(make())
-   │     ━━━━━━━
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:63:5
+   ┆    │
+   ┆ 63 │     dispose(make())
+   ┆    │     ━━━━━━━
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+64 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 8 error(s)
-
-
-
-stdout:

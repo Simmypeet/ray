@@ -1,16 +1,56 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: mismatched types in variable assignment: expected `int32`, but found `Continuation[(), &mut <coroutine of map[bool; given <no-op drop instance>bool]>]`
-   ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_reduces/main.ray:38:20
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ trait Mapper[t]:
+ 6 │     def map(self: t, value: u) given (_: core.Drop[u]) -> u \ {Yield[int32]}
+ 7 │
+ 8 │
+ 9 │ inst Doubler for Mapper[int32]:
+10 │     def map(self: int32, value: v) given (_: core.Drop[v]) -> v \ {Yield[int32]}:
+11 │         Yield.yield(self * 2)
+12 │         return value
+13 │
+14 │
+15 │ def resultOf(k: core.Continuation[r, c]) given (co: core.Coroutine[c], _: core.Drop[c]) -> co.Return:
+16 │     return resultOf(k)
+17 │
+18 │
+19 │ # OK: once the instance is known, the coroutine of the call through it is the
+20 │ # coroutine of the instance's method, so both have the same type.
+21 │ def sameType():
+22 │     let mut k = coro Mapper[int32].map(1, true)
+23 │     k = coro Doubler.map(2, false)
+24 │     let result: bool = resultOf(k)
+25 │
+26 │
+27 │ # OK: a generic function, instantiated with a concrete instance.
+28 │ def generic[t, u](source: t, value: u) given (m: Mapper[t], dt: core.Drop[t], du: core.Drop[u]) -> u:
+29 │     return resultOf(coro m.map(source, value))
+30 │
+31 │
+32 │ def instantiated():
+33 │     let result: bool = generic(1, true)
+34 │
+35 │
+36 │ # ERROR: the type shows the method of the instance.
+37 │ def shown():
 38 │     let k: int32 = coro Mapper[int32].map(1, true)
-   ╰╴                   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆
+   ┆ [error]: mismatched types in variable assignment: expected `int32`, but found `Continuation[(), &mut <coroutine of map[bool; given <no-op drop instance>bool]>]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_reduces/main.ray:38:20
+   ┆    │
+   ┆ 38 │     let k: int32 = coro Mapper[int32].map(1, true)
+   ┆    ╰╴                   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆
+39 │
+40 │
+41 │ def main() -> int32:
+42 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

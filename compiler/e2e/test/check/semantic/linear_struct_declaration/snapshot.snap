@@ -1,31 +1,53 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot implement Drop for the linear struct `Handle`
-  ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:6:21
-  │
-2 │ struct Handle:
-  │        ────── `Handle` is declared `@linear` here
-  ‡
-6 │ inst HandleDrop for core.Drop[Handle]:
-  ╰╴                    ━━━━━━━━━━━━━━━━━ a linear value must be consumed explicitly instead of dropped
-
-[error]: attribute `@linear` is specified more than once
-   ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:12:1
-   │
+ 1 │ @linear
+ 2 │ struct Handle:
+ 3 │     fd: int32
+ 4 │
+ 5 │ # Error: a linear struct cannot have a Drop instance.
+ 6 │ inst HandleDrop for core.Drop[Handle]:
+   ┆
+   ┆ [error]: cannot implement Drop for the linear struct `Handle`
+   ┆   ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:6:21
+   ┆   │
+   ┆ 2 │ struct Handle:
+   ┆   │        ────── `Handle` is declared `@linear` here
+   ┆   ‡
+   ┆ 6 │ inst HandleDrop for core.Drop[Handle]:
+   ┆   ╰╴                    ━━━━━━━━━━━━━━━━━ a linear value must be consumed explicitly instead of dropped
+   ┆
+ 7 │     def drop(self: Handle):
+ 8 │         core.NoDrop { value = move self }
+ 9 │
+10 │ # Error: the attribute is repeated.
+11 │ @linear
 12 │ @linear
-   ╰╴━━━━━━━
-
-[error]: unknown attribute `@inline`
-   ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:17:1
-   │
+   ┆
+   ┆ [error]: attribute `@linear` is specified more than once
+   ┆    ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:12:1
+   ┆    │
+   ┆ 12 │ @linear
+   ┆    ╰╴━━━━━━━
+   ┆
+13 │ struct Twice:
+14 │     fd: int32
+15 │
+16 │ # Error: the attribute is not known.
 17 │ @inline
-   ╰╴━━━━━━━
+   ┆
+   ┆ [error]: unknown attribute `@inline`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:17:1
+   ┆    │
+   ┆ 17 │ @inline
+   ┆    ╰╴━━━━━━━
+   ┆
+18 │ struct Unknown:
+19 │     fd: int32
+20 │
+21 │ def main() -> int32:
+22 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

@@ -1,28 +1,60 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/call_dispatch/main.ray:25:5
-   │
+ 1 │ trait Hold[t]:
+ 2 │     def hold(value: t) -> t
+ 3 │
+ 4 │
+ 5 │ inst HoldReference['a] for Hold[&'a int32]:
+ 6 │     def hold(value: &'a int32) -> &'a int32:
+ 7 │         return value
+ 8 │
+ 9 │
+10 │ trait Keep[t]:
+11 │     def keep(value: t) -> t
+12 │
+13 │
+14 │ inst KeepStatic for Keep[&'static int32]:
+15 │     def keep(value: &'static int32) -> &'static int32:
+16 │         return value
+17 │
+18 │
+19 │ def main() -> int32:
+20 │     let mut x = 0
+21 │
+22 │     # The member is called through the dictionary found for `Hold[&int32]`,
+23 │     # whose lifetime argument must be the lifetime of the reference passed in.
 24 │     let p = Hold[&int32].hold(x.&)
-   │                               ─── immutable borrow occurs here
 25 │     x = x + 1           # <-- Expect an error here: `p` came from `x.&`.
-   │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/call_dispatch/main.ray:25:5
+   ┆    │
+   ┆ 24 │     let p = Hold[&int32].hold(x.&)
+   ┆    │                               ─── immutable borrow occurs here
+   ┆ 25 │     x = x + 1           # <-- Expect an error here: `p` came from `x.&`.
+   ┆    │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆ 26 │     let held = p.*
+   ┆    ╰╴               ─── borrow later used here
+   ┆
 26 │     let held = p.*
-   ╰╴               ─── borrow later used here
-
-[error]: borrowed value does not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/call_dispatch/main.ray:32:31
-   │
+27 │     x = x + 1           # <-- Expect NO error here: `p` is not used again.
+28 │
+29 │     # The only dictionary for `Keep[&int32]` implements `Keep[&'static int32]`,
+30 │     # so the reference passed in must live for `'static`.
 31 │     let y = 0
-   │         ─ this variable goes out of scope while it is still borrowed
 32 │     let q = Keep[&int32].keep(y.&)      # <-- Expect an error here.
-   ╰╴                              ━━━ borrowed value does not live long enough
+   ┆
+   ┆ [error]: borrowed value does not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/call_dispatch/main.ray:32:31
+   ┆    │
+   ┆ 31 │     let y = 0
+   ┆    │         ─ this variable goes out of scope while it is still borrowed
+   ┆ 32 │     let q = Keep[&int32].keep(y.&)      # <-- Expect an error here.
+   ┆    ╰╴                              ━━━ borrowed value does not live long enough
+   ┆
+33 │     return held + q.*
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

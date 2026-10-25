@@ -1,30 +1,65 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot return a value referencing data owned by the current function
-   ╭▸ compiler/e2e/test/check/coroutine/continuation_escapes/main.ray:16:22
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ def numbers() -> () \ {Yield[int32]}:
+ 6 │     Yield.yield(1)
+ 7 │
+ 8 │
+ 9 │ def keep(k: core.Continuation[r, c]) given (_: core.Drop[c]):
+10 │     let held = k
+11 │
+12 │
+13 │ # ERROR: the coroutine is pinned to storage local to the closure, and the
+14 │ # continuation that is returned refers to it.
+15 │ def returned():
 16 │     let make = () -> coro numbers()
-   │                      ┯━━━━━━━━━━━━━
-   │                      │
-   │                      this returns a value referencing data owned by the current function
-   ╰╴                     the data is borrowed here
-
-[error]: borrowed value does not live long enough
-   ╭▸ compiler/e2e/test/check/coroutine/continuation_escapes/main.ray:24:13
-   │
+   ┆
+   ┆ [error]: cannot return a value referencing data owned by the current function
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/continuation_escapes/main.ray:16:22
+   ┆    │
+   ┆ 16 │     let make = () -> coro numbers()
+   ┆    │                      ┯━━━━━━━━━━━━━
+   ┆    │                      │
+   ┆    │                      this returns a value referencing data owned by the current function
+   ┆    ╰╴                     the data is borrowed here
+   ┆
+17 │
+18 │
+19 │ # ERROR: the storage of the second coroutine ends with the block, while `k`
+20 │ # still refers to it afterwards.
+21 │ def outlivesBlock(condition: bool):
+22 │     let mut k = coro numbers()
+23 │     if condition:
 24 │         k = coro numbers()
-   │             ┯━━━━━━━━━━━━━
-   │             │
-   │             borrowed value does not live long enough
-   │             this variable goes out of scope while it is still borrowed
+   ┆
+   ┆ [error]: borrowed value does not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/continuation_escapes/main.ray:24:13
+   ┆    │
+   ┆ 24 │         k = coro numbers()
+   ┆    │             ┯━━━━━━━━━━━━━
+   ┆    │             │
+   ┆    │             borrowed value does not live long enough
+   ┆    │             this variable goes out of scope while it is still borrowed
+   ┆ 25 │     keep(k)
+   ┆    ╰╴         ─ borrow later used here
+   ┆
 25 │     keep(k)
-   ╰╴         ─ borrow later used here
+26 │
+27 │
+28 │ # OK: the continuation never leaves the block that owns the storage.
+29 │ def staysInBlock(condition: bool):
+30 │     if condition:
+31 │         let k = coro numbers()
+32 │         keep(k)
+33 │
+34 │
+35 │ def main() -> int32:
+36 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

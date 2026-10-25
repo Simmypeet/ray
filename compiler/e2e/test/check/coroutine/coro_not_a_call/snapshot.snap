@@ -1,50 +1,90 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: `coro` expects a call
-   ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:14:10
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ extern def abs(value: c_int) -> c_int
+ 6 │
+ 7 │
+ 8 │ def numbers() -> () \ {Yield[int32]}:
+ 9 │     Yield.yield(1)
+10 │
+11 │
+12 │ # ERROR: a value is not a call.
+13 │ def value(x: int32):
 14 │     coro x
-   │          ━ this is not a call
-   │
-   ╰ help: write `coro f(arguments)` to suspend the call of `f` before it runs
-
-[error]: `coro` expects a call
-   ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:19:9
-   │
+   ┆
+   ┆ [error]: `coro` expects a call
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:14:10
+   ┆    │
+   ┆ 14 │     coro x
+   ┆    │          ━ this is not a call
+   ┆    │
+   ┆    ╰ help: write `coro f(arguments)` to suspend the call of `f` before it runs
+   ┆
+15 │
+16 │
+17 │ # ERROR: a parenthesized call is not a call.
+18 │ def parenthesized():
 19 │     coro (numbers())
-   │         ━━━━━━━━━━━━ this is not a call
-   │
-   ╰ help: write `coro f(arguments)` to suspend the call of `f` before it runs
-
-[error]: `coro` is not supported on this call yet
-   ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:24:10
-   │
+   ┆
+   ┆ [error]: `coro` expects a call
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:19:9
+   ┆    │
+   ┆ 19 │     coro (numbers())
+   ┆    │         ━━━━━━━━━━━━ this is not a call
+   ┆    │
+   ┆    ╰ help: write `coro f(arguments)` to suspend the call of `f` before it runs
+   ┆
+20 │
+21 │
+22 │ # ERROR: an operation is run by whoever handles it.
+23 │ def operation():
 24 │     coro Yield.yield(1)
-   │          ━━━━━━━━━━━━━━ a coroutine cannot be created from this call
-   │
-   ╰ help: only a call of a named `def` or trait method can be suspended for now
-
-[error]: `coro` is not supported on this call yet
-   ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:29:10
-   │
+   ┆
+   ┆ [error]: `coro` is not supported on this call yet
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:24:10
+   ┆    │
+   ┆ 24 │     coro Yield.yield(1)
+   ┆    │          ━━━━━━━━━━━━━━ a coroutine cannot be created from this call
+   ┆    │
+   ┆    ╰ help: only a call of a named `def` or trait method can be suspended for now
+   ┆
+25 │
+26 │
+27 │ # ERROR: an `extern def` has no body to suspend.
+28 │ def external():
 29 │     coro abs(1)
-   │          ━━━━━━ a coroutine cannot be created from this call
-   │
-   ╰ help: only a call of a named `def` or trait method can be suspended for now
-
-[error]: `coro` is not supported on this call yet
-   ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:34:10
-   │
+   ┆
+   ┆ [error]: `coro` is not supported on this call yet
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:29:10
+   ┆    │
+   ┆ 29 │     coro abs(1)
+   ┆    │          ━━━━━━ a coroutine cannot be created from this call
+   ┆    │
+   ┆    ╰ help: only a call of a named `def` or trait method can be suspended for now
+   ┆
+30 │
+31 │
+32 │ # ERROR: a callable value is called through its `Def` instance.
+33 │ def callable(numbers: def() -> int32):
 34 │     coro numbers()
-   │          ━━━━━━━━━ a coroutine cannot be created from this call
-   │
-   ╰ help: only a call of a named `def` or trait method can be suspended for now
+   ┆
+   ┆ [error]: `coro` is not supported on this call yet
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:34:10
+   ┆    │
+   ┆ 34 │     coro numbers()
+   ┆    │          ━━━━━━━━━ a coroutine cannot be created from this call
+   ┆    │
+   ┆    ╰ help: only a call of a named `def` or trait method can be suspended for now
+   ┆
+35 │
+36 │
+37 │ def main() -> int32:
+38 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 5 error(s)
-
-
-
-stdout:

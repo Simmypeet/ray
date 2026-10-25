@@ -1,18 +1,29 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: use of moved value
-   ╭▸ compiler/e2e/test/check/memory/forced_move/main.ray:13:20
-   │
+ 1 │ def consume(value: int32) -> int32:
+ 2 │     return value
+ 3 │
+ 4 │ def main() -> int32:
+ 5 │     # OK: a plain use copies a `Copy` value.
+ 6 │     let copied = 1
+ 7 │     consume(copied)
+ 8 │     consume(copied)
+ 9 │
+10 │     # Error: `move` consumes even a `Copy` value.
+11 │     let moved = 2
 12 │     consume(move moved)
-   │             ────────── value moved here
 13 │     return consume(moved)
-   ╰╴                   ━━━━━ value used here after it was moved
+   ┆
+   ┆ [error]: use of moved value
+   ┆    ╭▸ compiler/e2e/test/check/memory/forced_move/main.ray:13:20
+   ┆    │
+   ┆ 12 │     consume(move moved)
+   ┆    │             ────────── value moved here
+   ┆ 13 │     return consume(moved)
+   ┆    ╰╴                   ━━━━━ value used here after it was moved
+   ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

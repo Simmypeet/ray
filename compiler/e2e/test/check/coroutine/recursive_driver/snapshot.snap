@@ -1,8 +1,25 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ eff Ask:
+ 2 │     def ask() -> int32
+ 3 │
+ 4 │
+ 5 │ def addTwo() -> int32 \ {Ask}:
+ 6 │     return Ask.ask() + Ask.ask()
+ 7 │
+ 8 │
+ 9 │ # Answers the first `ask` with `n`, the next with `n + 1`, and so on.
+10 │ #
+11 │ # OK: the first continuation waits for `()` and every later one for an
+12 │ # `int32`, so the driver is generic over `r` and recurses instead of storing
+13 │ # the continuation. There is no return clause, so the value the coroutine
+14 │ # completes with is the value of the innermost `handle`.
+15 │ def supply(k: core.Continuation[r, c], value: r, n: int32) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+16 │     return handle k(value):
+17 │         case Ask.ask() resume next: supply(next, n, n + 1)
+18 │
+19 │
+20 │ def main() -> int32:
+21 │     return supply(coro addTwo(), (), 1)

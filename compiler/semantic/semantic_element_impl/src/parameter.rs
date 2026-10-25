@@ -69,14 +69,16 @@ const fn parameter_lifetime_elision(symbol_kind: SymbolKind) -> LifetimeElision 
         | SymbolKind::ExternDef
         | SymbolKind::EffectOperation
         | SymbolKind::Effect
+        | SymbolKind::Enum
         | SymbolKind::Instance
         | SymbolKind::MarkerImplementation
-        | SymbolKind::Strut
+        | SymbolKind::Struct
         | SymbolKind::Trait
         | SymbolKind::TraitType
         | SymbolKind::InstanceType
         | SymbolKind::Marker
-        | SymbolKind::Module => LifetimeElision::Forbidden,
+        | SymbolKind::Module
+        | SymbolKind::Variant => LifetimeElision::Forbidden,
     }
 }
 

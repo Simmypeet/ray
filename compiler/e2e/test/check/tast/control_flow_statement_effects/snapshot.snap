@@ -1,28 +1,41 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: function body effects do not match its signature: expected `{}`, but found `{State}`
-  ╭▸ compiler/e2e/test/check/tast/control_flow_statement_effects/main.ray:5:5
-  │
-5 │ def effectInIf(condition: bool) -> ():
-  │     ━━━━━━━━━━ the function body has effects outside its signature
-6 │     if condition:
-7 │         State.perform()
-  ╰╴        ─────────────── effect `{State}` introduced here
-
-[error]: function body effects do not match its signature: expected `{}`, but found `{State}`
-   ╭▸ compiler/e2e/test/check/tast/control_flow_statement_effects/main.ray:11:5
-   │
+ 1 │ eff State:
+ 2 │     def perform()
+ 3 │
+ 4 │
+ 5 │ def effectInIf(condition: bool) -> ():
+   ┆
+   ┆ [error]: function body effects do not match its signature: expected `{}`, but found `{State}`
+   ┆   ╭▸ compiler/e2e/test/check/tast/control_flow_statement_effects/main.ray:5:5
+   ┆   │
+   ┆ 5 │ def effectInIf(condition: bool) -> ():
+   ┆   │     ━━━━━━━━━━ the function body has effects outside its signature
+   ┆ 6 │     if condition:
+   ┆ 7 │         State.perform()
+   ┆   ╰╴        ─────────────── effect `{State}` introduced here
+   ┆
+ 6 │     if condition:
+ 7 │         State.perform()
+ 8 │     return ()
+ 9 │
+10 │
 11 │ def effectInWhile() -> ():
-   │     ━━━━━━━━━━━━━ the function body has effects outside its signature
+   ┆
+   ┆ [error]: function body effects do not match its signature: expected `{}`, but found `{State}`
+   ┆    ╭▸ compiler/e2e/test/check/tast/control_flow_statement_effects/main.ray:11:5
+   ┆    │
+   ┆ 11 │ def effectInWhile() -> ():
+   ┆    │     ━━━━━━━━━━━━━ the function body has effects outside its signature
+   ┆ 12 │     while false:
+   ┆ 13 │         State.perform()
+   ┆    ╰╴        ─────────────── effect `{State}` introduced here
+   ┆
 12 │     while false:
 13 │         State.perform()
-   ╰╴        ─────────────── effect `{State}` introduced here
+14 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

@@ -1,52 +1,57 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: unit is not allowed in an extern parameter
-  ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:1:32
-  │
 1 │ extern def unitParameter(value: ()) -> c_int
-  ╰╴                               ━━━
-
-[error]: this type is not supported in an extern parameter
-  ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:2:33
-  │
+  ┆
+  ┆ [error]: unit is not allowed in an extern parameter
+  ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:1:32
+  ┆   │
+  ┆ 1 │ extern def unitParameter(value: ()) -> c_int
+  ┆   ╰╴                               ━━━
+  ┆
 2 │ extern def tupleParameter(value: (c_int, c_int)) -> c_int
-  ╰╴                                ━━━━━━━━━━━━━━━
-
-[error]: unexpected `def` keyword, expected type
-  ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:3:31
-  │
+  ┆
+  ┆ [error]: this type is not supported in an extern parameter
+  ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:2:33
+  ┆   │
+  ┆ 2 │ extern def tupleParameter(value: (c_int, c_int)) -> c_int
+  ┆   ╰╴                                ━━━━━━━━━━━━━━━
+  ┆
 3 │ extern def closureReturn() -> def(c_int) -> c_int
-  ╰╴                              ━━━
-
-[error]: an extern definition cannot be polymorphic
-  ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:12
-  │
+  ┆
+  ┆ [error]: unexpected `def` keyword, expected type
+  ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:3:31
+  ┆   │
+  ┆ 3 │ extern def closureReturn() -> def(c_int) -> c_int
+  ┆   ╰╴                              ━━━
+  ┆
 4 │ extern def polymorphic(value: a) -> a
-  ╰╴           ━━━━━━━━━━━
+  ┆
+  ┆ [error]: an extern definition cannot be polymorphic
+  ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:12
+  ┆   │
+  ┆ 4 │ extern def polymorphic(value: a) -> a
+  ┆   ╰╴           ━━━━━━━━━━━
+  ┆
+  ┆ [error]: symbol `a` is not found
+  ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:31
+  ┆   │
+  ┆ 4 │ extern def polymorphic(value: a) -> a
+  ┆   ╰╴                              ━ symbol `a` is not found
+  ┆
+  ┆ [error]: this type is not supported as an extern return type
+  ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:37
+  ┆   │
+  ┆ 4 │ extern def polymorphic(value: a) -> a
+  ┆   ╰╴                                    ━
+  ┆
+  ┆ [error]: symbol `a` is not found
+  ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:37
+  ┆   │
+  ┆ 4 │ extern def polymorphic(value: a) -> a
+  ┆   ╰╴                                    ━ symbol `a` is not found
+  ┆
 
-[error]: symbol `a` is not found
-  ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:31
-  │
-4 │ extern def polymorphic(value: a) -> a
-  ╰╴                              ━ symbol `a` is not found
-
-[error]: this type is not supported as an extern return type
-  ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:37
-  │
-4 │ extern def polymorphic(value: a) -> a
-  ╰╴                                    ━
-
-[error]: symbol `a` is not found
-  ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:37
-  │
-4 │ extern def polymorphic(value: a) -> a
-  ╰╴                                    ━ symbol `a` is not found
-
+other diagnostics:
 [error]: Compilation aborted due to 7 error(s)
-
-
-
-stdout:

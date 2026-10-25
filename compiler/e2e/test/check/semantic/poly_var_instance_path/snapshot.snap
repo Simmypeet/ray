@@ -1,18 +1,34 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: use of moved value
-  ╭▸ compiler/e2e/test/check/semantic/poly_var_instance_path/main.ray:9:35
-  │
-9 │     return equality.equals(value, value)
-  │                            ┬────  ━━━━━ value used here after it was moved
-  │                            │
-  ╰╴                           value moved here
+ 1 │ trait Eq[a]:
+ 2 │     def equals(lhs: a, rhs: a) -> bool
+ 3 │
+ 4 │ inst EqInt for Eq[int32]:
+ 5 │     def equals(lhs: int32, rhs: int32) -> bool:
+ 6 │         return lhs == rhs
+ 7 │
+ 8 │ def equalsSelf(value: a) given (equality: Eq[a]) -> bool:
+ 9 │     return equality.equals(value, value)
+   ┆
+   ┆ [error]: use of moved value
+   ┆   ╭▸ compiler/e2e/test/check/semantic/poly_var_instance_path/main.ray:9:35
+   ┆   │
+   ┆ 9 │     return equality.equals(value, value)
+   ┆   │                            ┬────  ━━━━━ value used here after it was moved
+   ┆   │                            │
+   ┆   ╰╴                           value moved here
+   ┆
+10 │
+11 │ def concreteEquals(lhs: int32, rhs: int32) -> bool:
+12 │     return EqInt.equals(lhs, rhs)
+13 │
+14 │ def traitEquals(lhs: int32, rhs: int32) -> bool:
+15 │     return Eq[int32].equals(lhs, rhs)
+16 │
+17 │ def main() -> int32:
+18 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

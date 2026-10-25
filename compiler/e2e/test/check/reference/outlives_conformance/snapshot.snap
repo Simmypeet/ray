@@ -1,36 +1,56 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: instance member `plain`: extraneous where-clause predicate
-  ╭▸ compiler/e2e/test/check/reference/outlives_conformance/main.ray:8:39
-  │
-2 │     def plain(value: *t) -> ()
-  │         ───── the corresponding trait member declares no equivalent requirement
-  ‡
-8 │     def plain(value: *t) -> () where (t: 'a):
-  ╰╴                                      ━━━━━ extra requirement: `t` must outlive `'a`
-
-[error]: instance member `reference`: missing where-clause predicate
-   ╭▸ compiler/e2e/test/check/reference/outlives_conformance/main.ray:13:9
-   │
+ 1 │ trait Use['a, t]:
+ 2 │     def plain(value: *t) -> ()
  3 │     def reference(value: &'a t) -> () where (t: 'a)
-   │                                              ───── the required trait predicate is declared here
-   ‡
+ 4 │     def bounded(value: *t) -> () where (t: 'a)
+ 5 │
+ 6 │ inst Uses['a, t] for Use['a, t]:
+ 7 │     # ERROR: the trait member does not promise `t: 'a`.
+ 8 │     def plain(value: *t) -> () where (t: 'a):
+   ┆
+   ┆ [error]: instance member `plain`: extraneous where-clause predicate
+   ┆   ╭▸ compiler/e2e/test/check/reference/outlives_conformance/main.ray:8:39
+   ┆   │
+   ┆ 2 │     def plain(value: *t) -> ()
+   ┆   │         ───── the corresponding trait member declares no equivalent requirement
+   ┆   ‡
+   ┆ 8 │     def plain(value: *t) -> () where (t: 'a):
+   ┆   ╰╴                                      ━━━━━ extra requirement: `t` must outlive `'a`
+   ┆
+ 9 │         return ()
+10 │
+11 │     # ERROR: the trait member promises `t: 'a`, but this member does not write
+12 │     # it, and a trait or instance def has no implied bounds.
 13 │     def reference(value: &'a t) -> ():
-   ╰╴        ━━━━━━━━━ missing requirement: `t` must outlive `'a`
+   ┆
+   ┆ [error]: instance member `reference`: missing where-clause predicate
+   ┆    ╭▸ compiler/e2e/test/check/reference/outlives_conformance/main.ray:13:9
+   ┆    │
+   ┆  3 │     def reference(value: &'a t) -> () where (t: 'a)
+   ┆    │                                              ───── the required trait predicate is declared here
+   ┆    ‡
+   ┆ 13 │     def reference(value: &'a t) -> ():
+   ┆    ╰╴        ━━━━━━━━━ missing requirement: `t` must outlive `'a`
+   ┆
+   ┆ [error]: the type `t` may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/reference/outlives_conformance/main.ray:13:26
+   ┆    │
+   ┆ 13 │     def reference(value: &'a t) -> ():
+   ┆    │                          ━━━━━ the reference requires `t: 'a`
+   ┆    │
+   ┆    ╰ help: consider adding `where (t: 'a)`
+   ┆
+14 │         return ()
+15 │
+16 │     # OK: the same predicate as the trait member.
+17 │     def bounded(value: *t) -> () where (t: 'a):
+18 │         return ()
+19 │
+20 │ def main() -> ():
+21 │     return ()
 
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/reference/outlives_conformance/main.ray:13:26
-   │
-13 │     def reference(value: &'a t) -> ():
-   │                          ━━━━━ the reference requires `t: 'a`
-   │
-   ╰ help: consider adding `where (t: 'a)`
-
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

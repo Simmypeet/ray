@@ -1,8 +1,48 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ # The start of a function is not a suspension point. A value consumed before
+ 2 │ # the first suspension point is never held across one.
+ 3 │
+ 4 │ eff Yield[t]:
+ 5 │     def yield(value: t) -> ()
+ 6 │
+ 7 │
+ 8 │ @linear
+ 9 │ struct Handle:
+10 │     fd: int32
+11 │
+12 │
+13 │ def close(opened: Handle):
+14 │     core.NoDrop { value = move opened }
+15 │
+16 │
+17 │ def forget[t](x: t):
+18 │     core.NoDrop { value = move x }
+19 │
+20 │
+21 │ # OK: `opened` is consumed before the first `perform`.
+22 │ def closeFirst(opened: Handle) -> () \ {Yield[int32]}:
+23 │     close(opened)
+24 │     Yield.yield(1)
+25 │     Yield.yield(2)
+26 │
+27 │
+28 │ # OK: a `t` consumed before the `perform` needs no `Drop`.
+29 │ def forgetFirst[t](x: t) -> () \ {Yield[int32]}:
+30 │     forget(x)
+31 │     Yield.yield(1)
+32 │
+33 │
+34 │ # OK: a suspension point in a branch that does not hold the value.
+35 │ def closeInBranch(opened: Handle, early: bool) -> () \ {Yield[int32]}:
+36 │     if early:
+37 │         close(opened)
+38 │         Yield.yield(1)
+39 │     else:
+40 │         close(opened)
+41 │
+42 │
+43 │ def main() -> int32:
+44 │     return 0

@@ -22,4 +22,5 @@ mod callable_parameter;
 mod drop_plan;
 mod type_definition;
 mod variance;
+mod variant_payload_ty;
 mod where_clause;

@@ -1,22 +1,40 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `main.Missing[bool]`
-  ╭▸ compiler/e2e/test/check/tast/trait_method_inference_failures/main.ray:5:12
-  │
-5 │     return Missing[bool].get(true)
-  ╰╴           ━━━━━━━━━━━━━━━━━
-
-[error]: ambiguous global instances: `main.Choice[bool]`
-   ╭▸ compiler/e2e/test/check/tast/trait_method_inference_failures/main.ray:19:12
-   │
+ 1 │ trait Missing[a]:
+ 2 │     def get(value: a) -> a
+ 3 │
+ 4 │ def missing() -> bool:
+ 5 │     return Missing[bool].get(true)
+   ┆
+   ┆ [error]: no implicit instance found: `main.Missing[bool]`
+   ┆   ╭▸ compiler/e2e/test/check/tast/trait_method_inference_failures/main.ray:5:12
+   ┆   │
+   ┆ 5 │     return Missing[bool].get(true)
+   ┆   ╰╴           ━━━━━━━━━━━━━━━━━
+   ┆
+ 6 │
+ 7 │ trait Choice[a]:
+ 8 │     def get(value: a) -> a
+ 9 │
+10 │ inst First for Choice[bool]:
+11 │     def get(value: bool) -> bool:
+12 │         return value
+13 │
+14 │ inst Second for Choice[bool]:
+15 │     def get(value: bool) -> bool:
+16 │         return value
+17 │
+18 │ def ambiguous() -> bool:
 19 │     return Choice[bool].get(true)
-   ╰╴           ━━━━━━━━━━━━━━━━
+   ┆
+   ┆ [error]: ambiguous global instances: `main.Choice[bool]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/trait_method_inference_failures/main.ray:19:12
+   ┆    │
+   ┆ 19 │     return Choice[bool].get(true)
+   ┆    ╰╴           ━━━━━━━━━━━━━━━━
+   ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

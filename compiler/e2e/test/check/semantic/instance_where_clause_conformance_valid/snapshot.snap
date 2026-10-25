@@ -1,8 +1,35 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ trait Box[a]:
+ 2 │     type Item
+ 3 │
+ 4 │ trait Contract[a] given (outer: Box[a]) where (outer.Item = a):
+ 5 │     type Assoc
+ 6 │     type Related[b] given (box: Box[b]) where (box.Item = b)
+ 7 │     def equivalent(value: b) given (first: Box[b], second: Box[b]) -> b where (
+ 8 │         first.Item = b,
+ 9 │         second.Item = first.Item,
+10 │         first.Item = b,
+11 │     )
+12 │     def inherited(value: a) -> a where (outer.Item = a)
+13 │     def concrete(value: a) -> a where (this.Assoc = a)
+14 │
+15 │ inst GenericContract[a] for Contract[a; given outer] given (outer: Box[a]) where (
+16 │     outer.Item = a,
+17 │ ):
+18 │     type Assoc = a
+19 │     type Related[c] given (renamed: Box[c]) where (renamed.Item = c) = c
+20 │     def equivalent(value: c) given (alpha: Box[c], beta: Box[c]) -> c where (
+21 │         alpha.Item = beta.Item,
+22 │         beta.Item = c,
+23 │     ):
+24 │         return value
+25 │     def inherited(value: a) -> a:
+26 │         return value
+27 │     def concrete(value: a) -> a:
+28 │         return value
+29 │
+30 │ def main() -> int32:
+31 │     return 0

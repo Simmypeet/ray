@@ -1,8 +1,35 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ eff Read[a]:
+ 2 │     def read() -> a
+ 3 │
+ 4 │ trait Equal[a]:
+ 5 │     type Item
+ 6 │
+ 7 │ trait Container[]:
+ 8 │     type Item
+ 9 │     type Identity[a]
+10 │     def consume(value: this.Item) given (eq: Equal[this.Item]) -> this.Item \{Read[this.Item]}
+11 │
+12 │ inst Concrete for Container:
+13 │     type Item = Concrete.Identity[int32]
+14 │     type Identity[a] = a
+15 │     def consume(value: Concrete.Identity[Concrete.Identity[int32]]) given (eq: Equal[int32]) -> int32 \{Read[Concrete.Item]}:
+16 │         return value
+17 │
+18 │ trait Element[]:
+19 │     type Value
+20 │
+21 │ inst ListElement for Element:
+22 │     type Value = int32
+23 │
+24 │ inst SetElement for Element:
+25 │     type Value = int32
+26 │
+27 │ def relateDistinctProjections(value: ListElement.Value) -> SetElement.Value:
+28 │     return value
+29 │
+30 │ def main() -> int32:
+31 │     return 0

@@ -1,16 +1,23 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: unexpected new line, expected identifier, numeric literal, `&` punctuation, `*` punctuation, `.` punctuation, or `( ... )` block
-  ╭▸ compiler/e2e/test/check/syntax/dangling_dot/main.ray:9:26
-  │
+1 │ # A dangling `.` reports the missing member, and the expression is not
+2 │ # checked against the annotated type.
+3 │ struct Point:
+4 │   x: int32
+5 │   y: int32
+6 │
+7 │ pub def main():
+8 │   let point = Point { x = 1, y = 2 }
 9 │   let flag: bool = point.
-  ╰╴                         ━
+  ┆
+  ┆ [error]: unexpected new line, expected identifier, numeric literal, `&` punctuation, `*` punctuation, `.` punctuation, or `( ... )` block
+  ┆   ╭▸ compiler/e2e/test/check/syntax/dangling_dot/main.ray:9:26
+  ┆   │
+  ┆ 9 │   let flag: bool = point.
+  ┆   ╰╴                         ━
+  ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

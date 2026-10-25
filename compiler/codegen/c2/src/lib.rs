@@ -154,15 +154,17 @@ fn is_lowered_from_body(kind: SymbolKind) -> bool {
 
         SymbolKind::Effect
         | SymbolKind::EffectOperation
+        | SymbolKind::Enum
         | SymbolKind::Instance
         | SymbolKind::Marker
         | SymbolKind::MarkerImplementation
         | SymbolKind::Module
-        | SymbolKind::Strut
+        | SymbolKind::Struct
         | SymbolKind::Trait
         | SymbolKind::TraitType
         | SymbolKind::InstanceType
-        | SymbolKind::TraitDef => {
+        | SymbolKind::TraitDef
+        | SymbolKind::Variant => {
             panic!("non-definition symbol returned by the definition inventory")
         }
     }

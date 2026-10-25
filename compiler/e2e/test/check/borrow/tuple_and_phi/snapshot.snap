@@ -1,32 +1,52 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/tuple_and_phi/main.ray:13:5
-   │
+ 1 │ def consume(_: t) given (_: core.Drop[t]):
+ 2 │     pass
+ 3 │
+ 4 │
+ 5 │ def main():
+ 6 │     let mut x = 0
+ 7 │     let mut y = 0
+ 8 │
+ 9 │     # A tuple holds the loans of its elements.
 10 │     let pair = (x.&, y.&)
-   │                      ─── immutable borrow occurs here
-   ‡
+11 │     let p = pair.1
+12 │     x = x + 1           # <-- Expect NO error here: `p` only borrows `y`.
 13 │     y = y + 1           # <-- Expect an error here: `p` came from `y.&`.
-   │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/tuple_and_phi/main.ray:13:5
+   ┆    │
+   ┆ 10 │     let pair = (x.&, y.&)
+   ┆    │                      ─── immutable borrow occurs here
+   ┆    ‡
+   ┆ 13 │     y = y + 1           # <-- Expect an error here: `p` came from `y.&`.
+   ┆    │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆ 14 │     consume(p.*)
+   ┆    ╰╴            ─── borrow later used here
+   ┆
 14 │     consume(p.*)
-   ╰╴            ─── borrow later used here
-
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/tuple_and_phi/main.ray:20:5
-   │
+15 │
+16 │     # The value of an `if` holds the loans of both of its branches.
+17 │     let mut z = 0
 18 │     let q = if true: y.& else: z.&
-   │                                ─── immutable borrow occurs here
 19 │     x = x + 1           # <-- Expect NO error here: neither branch borrows `x`.
 20 │     z = z + 1           # <-- Expect an error here: `q` may borrow `z`.
-   │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/tuple_and_phi/main.ray:20:5
+   ┆    │
+   ┆ 18 │     let q = if true: y.& else: z.&
+   ┆    │                                ─── immutable borrow occurs here
+   ┆ 19 │     x = x + 1           # <-- Expect NO error here: neither branch borrows `x`.
+   ┆ 20 │     z = z + 1           # <-- Expect an error here: `q` may borrow `z`.
+   ┆    │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆ 21 │     consume(q.*)
+   ┆    ╰╴            ─── borrow later used here
+   ┆
 21 │     consume(q.*)
-   ╰╴            ─── borrow later used here
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

@@ -1,34 +1,53 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: an instance member cannot have an access modifier
-  ╭▸ compiler/e2e/test/check/access/invalid_access_modifier/main.ray:7:5
-  │
-7 │     pub type Output = int32
-  │     ━━━
-  │
-  ╰ help: an instance member has the accessibility of the trait member it implements
-
-[error]: an instance member cannot have an access modifier
-  ╭▸ compiler/e2e/test/check/access/invalid_access_modifier/main.ray:8:5
-  │
-8 │     pub def show(value: int32) -> int32:
-  │     ━━━
-  │
-  ╰ help: an instance member has the accessibility of the trait member it implements
-
-[error]: a marker implementation cannot have an access modifier
-   ╭▸ compiler/e2e/test/check/access/invalid_access_modifier/main.ray:15:1
-   │
+ 1 │ pub trait Show[t]:
+ 2 │     pub type Output
+ 3 │     pub def show(value: t) -> int32
+ 4 │
+ 5 │
+ 6 │ pub inst ShowInt for Show[int32]:
+ 7 │     pub type Output = int32
+   ┆
+   ┆ [error]: an instance member cannot have an access modifier
+   ┆   ╭▸ compiler/e2e/test/check/access/invalid_access_modifier/main.ray:7:5
+   ┆   │
+   ┆ 7 │     pub type Output = int32
+   ┆   │     ━━━
+   ┆   │
+   ┆   ╰ help: an instance member has the accessibility of the trait member it implements
+   ┆
+ 8 │     pub def show(value: int32) -> int32:
+   ┆
+   ┆ [error]: an instance member cannot have an access modifier
+   ┆   ╭▸ compiler/e2e/test/check/access/invalid_access_modifier/main.ray:8:5
+   ┆   │
+   ┆ 8 │     pub def show(value: int32) -> int32:
+   ┆   │     ━━━
+   ┆   │
+   ┆   ╰ help: an instance member has the accessibility of the trait member it implements
+   ┆
+ 9 │         return value
+10 │
+11 │
+12 │ pub marker Plain
+13 │
+14 │
 15 │ pub impl Plain for int32
-   │ ━━━
-   │
-   ╰ help: a marker implementation applies wherever its marker is accessible
+   ┆
+   ┆ [error]: a marker implementation cannot have an access modifier
+   ┆    ╭▸ compiler/e2e/test/check/access/invalid_access_modifier/main.ray:15:1
+   ┆    │
+   ┆ 15 │ pub impl Plain for int32
+   ┆    │ ━━━
+   ┆    │
+   ┆    ╰ help: a marker implementation applies wherever its marker is accessible
+   ┆
+16 │
+17 │
+18 │ def main() -> int32:
+19 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

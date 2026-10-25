@@ -49,7 +49,7 @@ async fn core_item_executor(key: &Key, engine: &TrackedEngine) -> GlobalSymbolID
             let def = find(engine, key.role, root, "Drop", SymbolKind::Trait).await;
             find(engine, key.role, def, "drop", SymbolKind::TraitDef).await
         }
-        CoreItem::NoDropStruct => find(engine, key.role, root, "NoDrop", SymbolKind::Strut).await,
+        CoreItem::NoDropStruct => find(engine, key.role, root, "NoDrop", SymbolKind::Struct).await,
 
         CoreItem::DefCall | CoreItem::DefArgs | CoreItem::DefReturn | CoreItem::DefEffect => {
             let def = find(engine, key.role, root, "Def", SymbolKind::Trait).await;
@@ -93,7 +93,7 @@ async fn core_item_executor(key: &Key, engine: &TrackedEngine) -> GlobalSymbolID
             find(engine, key.role, coroutine, "Effect", SymbolKind::TraitType).await
         }
         CoreItem::ContinuationStruct => {
-            find(engine, key.role, root, "Continuation", SymbolKind::Strut).await
+            find(engine, key.role, root, "Continuation", SymbolKind::Struct).await
         }
         CoreItem::Copy => find(engine, key.role, root, "Copy", SymbolKind::Marker).await,
     }

@@ -9,8 +9,10 @@ use rayc_symbol::{
 use rayc_syntax::{
     Passable,
     access_modifier::AccessModifier,
+    attribute::Attribute,
     def::{Def, DefSignature, ParameterEntry},
     effect::{Effect, OperationSignature},
+    r#enum::{Enum, Variant},
     extern_def::ExternDef,
     instance::{Instance, InstanceAssociatedType, InstanceMember},
     marker::{Marker, MarkerImplementation},
@@ -61,12 +63,12 @@ impl Table {
             return;
         };
 
-        let linear = self.register_struct_attributes(&r#struct);
+        let linear = self.register_linear_attributes(r#struct.attributes());
 
         self.insert_symbol(
             member_builder,
             Infos::builder()
-                .symbol_kind(SymbolKind::Strut)
+                .symbol_kind(SymbolKind::Struct)
                 .definition_span(r#struct.span())
                 .accessibility(
                     member_builder.declared_accessibility(r#struct.access_modifier().as_ref()),
@@ -77,20 +79,90 @@ impl Table {
                 .given_parameter_list(r#struct.given_parameter_list())
                 .where_clause(r#struct.where_clause())
                 .struct_body(r#struct.body())
-                .linear_struct(linear)
+                .linear_type(linear)
                 .build(),
             engine,
         )
         .await;
     }
 
-    /// Interprets the attributes written above a struct and returns whether
-    /// the struct is declared `@linear`. Unknown and repeated attributes are
-    /// reported and otherwise ignored.
-    fn register_struct_attributes(&mut self, r#struct: &Struct) -> bool {
+    async fn register_enum(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        r#enum: Enum,
+        engine: &TrackedEngine,
+    ) {
+        let Some(signature) = r#enum.signature() else {
+            return;
+        };
+        let Some(ident) = signature.name() else {
+            return;
+        };
+
+        let linear = self.register_linear_attributes(r#enum.attributes());
+        let name = ident.kind.0.clone();
+        let accessibility =
+            member_builder.declared_accessibility(r#enum.access_modifier().as_ref());
+        let enum_id = self
+            .insert_symbol(
+                member_builder,
+                Infos::builder()
+                    .symbol_kind(SymbolKind::Enum)
+                    .accessibility(accessibility)
+                    .name(name.clone())
+                    .span(ident.span)
+                    .type_parameters(signature.type_parameters())
+                    .given_parameter_list(signature.given_parameter_list())
+                    .where_clause(signature.where_clause())
+                    .linear_type(linear)
+                    .build(),
+                engine,
+            )
+            .await;
+
+        // a variant is accessible wherever its enum is
+        let mut variants = member_builder.child(enum_id, name);
+        if let Some(body) = r#enum.body() {
+            for variant in body.variants().filter_map(Passable::into_option) {
+                self.register_variant(&mut variants, variant, accessibility, engine).await;
+            }
+        }
+
+        self.insert_symbol_members(enum_id.id, variants, engine);
+    }
+
+    async fn register_variant(
+        &mut self,
+        member_builder: &mut MemberBuilder,
+        variant: Variant,
+        accessibility: DeclaredAccessibility,
+        engine: &TrackedEngine,
+    ) {
+        let Some(ident) = variant.name() else {
+            return;
+        };
+
+        self.insert_symbol(
+            member_builder,
+            Infos::builder()
+                .symbol_kind(SymbolKind::Variant)
+                .accessibility(accessibility)
+                .name(ident.kind.0.clone())
+                .span(ident.span)
+                .variant_payload(variant.payload().and_then(|payload| payload.r#type()))
+                .build(),
+            engine,
+        )
+        .await;
+    }
+
+    /// Interprets the attributes written above a struct or an enum and
+    /// returns whether the type is declared `@linear`. Unknown and repeated
+    /// attributes are reported and otherwise ignored.
+    fn register_linear_attributes(&mut self, attributes: impl Iterator<Item = Attribute>) -> bool {
         let mut linear = false;
 
-        for attribute in r#struct.attributes() {
+        for attribute in attributes {
             let Some(name) = attribute.name() else { continue };
 
             match name.kind.0.as_ref() {
@@ -712,6 +784,9 @@ impl Table {
                 }
                 ModuleMember::Struct(r#struct) => {
                     self.register_struct(member_builder, r#struct.clone(), engine).await;
+                }
+                ModuleMember::Enum(r#enum) => {
+                    self.register_enum(member_builder, r#enum.clone(), engine).await;
                 }
                 ModuleMember::Marker(marker) => {
                     self.register_marker(member_builder, marker.clone(), engine).await;

@@ -105,8 +105,19 @@ async fn single_rendered_executor(
         }
     }
 
-    if kind == rayc_symbol::symbol_kind::SymbolKind::Strut {
+    if kind == rayc_symbol::symbol_kind::SymbolKind::Struct {
         let key = rayc_semantic_element::struct_body::Key { symbol_id };
+        let diagnostics = engine.query(&DiagnosticKey::new(key)).await;
+        let generated = engine.query(&ObligationKey::new(key)).await;
+
+        obligations.extend(generated.iter().cloned());
+        for diagnostic in diagnostics.iter() {
+            rendered.push(diagnostic.report(engine).await);
+        }
+    }
+
+    if kind == rayc_symbol::symbol_kind::SymbolKind::Variant {
+        let key = rayc_semantic_element::variant_payload_ty::Key { symbol_id };
         let diagnostics = engine.query(&DiagnosticKey::new(key)).await;
         let generated = engine.query(&ObligationKey::new(key)).await;
 

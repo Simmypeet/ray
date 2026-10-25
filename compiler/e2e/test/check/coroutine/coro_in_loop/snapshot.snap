@@ -1,8 +1,36 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ def numbers() -> () \ {Yield[int32]}:
+ 6 │     Yield.yield(1)
+ 7 │
+ 8 │
+ 9 │ def keep(k: core.Continuation[r, c]) given (_: core.Drop[c]):
+10 │     let held = k
+11 │
+12 │
+13 │ # OK: the storage belongs to the body of the loop, so it is dropped at the end
+14 │ # of every iteration and created again by the next one.
+15 │ def everyIteration(mut count: int32):
+16 │     while count != 0:
+17 │         let k = coro numbers()
+18 │         keep(k)
+19 │         count = count - 1
+20 │
+21 │
+22 │ # OK: a continuation that is not passed on is dropped before its storage.
+23 │ def droppedInBody(mut count: int32):
+24 │     while count != 0:
+25 │         let k = coro numbers()
+26 │         count = count - 1
+27 │
+28 │
+29 │ def main() -> int32:
+30 │     everyIteration(2)
+31 │     droppedInBody(2)
+32 │     return 0

@@ -22,7 +22,7 @@ async fn no_op_drop_instance_recurses_through_tuple_and_closure_dictionaries() {
     let no_op = Ty::new_no_op_drop_instance(int_ty.clone(), &engine);
     let nominal = Ty::new_struct(owner, Args::new([], &engine), &engine);
     let custom = Ty::new_instance(instance_id, Args::new([], &engine), &engine);
-    let generated = Ty::new_nominal_drop_instance(nominal.clone(), [], &engine);
+    let generated = Ty::new_generated_adt_drop_instance(nominal.clone(), [], &engine);
     let unresolved = engine.intern(Ty::Inference(Inference::new(TyKind::Instance, 0)));
 
     for (leaf_ty, leaf_drop, expected) in [

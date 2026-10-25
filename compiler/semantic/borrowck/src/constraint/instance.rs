@@ -155,11 +155,11 @@ impl ConstraintCollector<'_> {
 
                 // One `Drop` dictionary per requirement of the generated drop
                 // plan.
-                ApplicationView::NominalDropInstance(view) => {
+                ApplicationView::GeneratedAdtDropInstance(view) => {
                     let nominal = view
                         .nominal()
-                        .as_struct_view()
-                        .expect("a nominal `Drop` instance is built for a struct type");
+                        .as_adt_view()
+                        .expect("a nominal `Drop` instance is built for a struct or an enum");
                     let plan = self.solver.engine().get_drop_plan(nominal.symbol_id()).await;
 
                     if let DropPlan::Generated(plan) = &*plan {
@@ -223,6 +223,7 @@ impl ConstraintCollector<'_> {
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Reference(_)
                 | ApplicationView::Struct(_)
+                | ApplicationView::Enum(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefCoroutine(_)

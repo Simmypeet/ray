@@ -1,34 +1,72 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `main.Missing[bool]`
-   ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:23:12
-   │
+ 1 │ trait Missing[a]:
+ 2 │     def value() -> a
+ 3 │
+ 4 │ trait Choice[a]:
+ 5 │     def value() -> a
+ 6 │
+ 7 │ inst First for Choice[bool]:
+ 8 │     def value() -> bool:
+ 9 │         return true
+10 │
+11 │ inst Second for Choice[bool]:
+12 │     def value() -> bool:
+13 │         return false
+14 │
+15 │ def missing(value: a) given (dictionary: Missing[a]) -> bool:
+16 │     core.NoDrop { value = move value }
+17 │     return true
+18 │
+19 │ def ambiguous(value: a) given (dictionary: Choice[a], drop: core.Drop[a]) -> bool:
+20 │     return true
+21 │
+22 │ def testMissing() -> bool:
 23 │     return missing(true)
-   ╰╴           ━━━━━━━
-
-[error]: ambiguous global instances: `main.Choice[bool]`
-   ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:26:12
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `main.Missing[bool]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:23:12
+   ┆    │
+   ┆ 23 │     return missing(true)
+   ┆    ╰╴           ━━━━━━━
+   ┆
+24 │
+25 │ def testAmbiguous() -> bool:
 26 │     return ambiguous(true)
-   ╰╴           ━━━━━━━━━
-
-[error]: cannot infer instance requirement: `main.Missing[{any}]`
-   ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:29:31
-   │
+   ┆
+   ┆ [error]: ambiguous global instances: `main.Choice[bool]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:26:12
+   ┆    │
+   ┆ 26 │     return ambiguous(true)
+   ┆    ╰╴           ━━━━━━━━━
+   ┆
+27 │
+28 │ def testUnknown() -> bool:
 29 │     let callback = (value) -> missing(value)
-   ╰╴                              ━━━━━━━
-
-[error]: no implicit instance found: `main.Missing[bool]`
-   ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:37:28
-   │
+   ┆
+   ┆ [error]: cannot infer instance requirement: `main.Missing[{any}]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:29:31
+   ┆    │
+   ┆ 29 │     let callback = (value) -> missing(value)
+   ┆    ╰╴                              ━━━━━━━
+   ┆
+30 │     return true
+31 │
+32 │ inst Nested for Choice[int32] given (dictionary: Missing[bool]):
+33 │     def value() -> int32:
+34 │         return 0
+35 │
+36 │ def testNested() -> bool:
 37 │     return ambiguous[given Nested](1)
-   ╰╴                           ━━━━━━
+   ┆
+   ┆ [error]: no implicit instance found: `main.Missing[bool]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:37:28
+   ┆    │
+   ┆ 37 │     return ambiguous[given Nested](1)
+   ┆    ╰╴                           ━━━━━━
+   ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 4 error(s)
-
-
-
-stdout:

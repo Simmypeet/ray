@@ -1,8 +1,10 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+1 │ extern def scanf(format: cstr, ...) -> c_int
+2 │
+3 │ def main() -> int32:
+4 │     let mut value: c_int = 0
+5 │     scanf("%d", value.&mut)
+6 │     return 0

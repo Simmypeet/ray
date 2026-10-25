@@ -1,19 +1,27 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: symbol `shapes` is already defined in the scope `main`
-  ╭▸ compiler/e2e/test/check/module/module_redefinition/main.ray:6:8
-  │
-1 │ module shapes:
-  │        ────── symbol `shapes` is already defined here
-  ‡
-6 │ struct shapes:
-  ╰╴       ━━━━━━ redefinition here
+ 1 │ module shapes:
+ 2 │     pub def area() -> int32:
+ 3 │         return 1
+ 4 │
+ 5 │ # A module shares its namespace with the other items of its parent.
+ 6 │ struct shapes:
+   ┆
+   ┆ [error]: symbol `shapes` is already defined in the scope `main`
+   ┆   ╭▸ compiler/e2e/test/check/module/module_redefinition/main.ray:6:8
+   ┆   │
+   ┆ 1 │ module shapes:
+   ┆   │        ────── symbol `shapes` is already defined here
+   ┆   ‡
+   ┆ 6 │ struct shapes:
+   ┆   ╰╴       ━━━━━━ redefinition here
+   ┆
+ 7 │     width: int32
+ 8 │
+ 9 │ def main() -> int32:
+10 │     return shapes.area()
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

@@ -118,7 +118,7 @@ impl Ty {
                 ApplicationView::ClosureDropInstance(instance) => {
                     Ok(core_trait_ref(CoreItem::DropTrait, instance.closure()).await)
                 }
-                ApplicationView::NominalDropInstance(instance) => {
+                ApplicationView::GeneratedAdtDropInstance(instance) => {
                     Ok(core_trait_ref(CoreItem::DropTrait, instance.nominal()).await)
                 }
                 ApplicationView::CoroutineInstance(coroutine) => {
@@ -137,6 +137,7 @@ impl Ty {
                 | ApplicationView::Pointer(_)
                 | ApplicationView::Reference(_)
                 | ApplicationView::Struct(_)
+                | ApplicationView::Enum(_)
                 | ApplicationView::InstanceAssociated(_)
                 | ApplicationView::Closure(_)
                 | ApplicationView::Error => Err(InstanceTraitRefError::NotInstance),

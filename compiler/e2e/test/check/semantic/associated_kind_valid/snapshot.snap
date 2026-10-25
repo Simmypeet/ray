@@ -1,8 +1,40 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ eff IO:
+ 2 │     def output()
+ 3 │
+ 4 │ trait Contract[e: Effect]:
+ 5 │     type Value
+ 6 │     type Effects: Effect
+ 7 │     type Extend[r: Effect]: Effect
+ 8 │     def use(callback: f) given (d: core.Def[f], drop: core.Drop[f]) -> int32 where (d.Args = (), d.Return = int32, d.Effect = this.Effects)
+ 9 │
+10 │ inst Concrete for Contract[{IO}]:
+11 │     type Value = int32
+12 │     type Effects = {IO}
+13 │     type Extend[r: Effect] = {IO | r}
+14 │     def use(callback: f) given (d: core.Def[f], drop: core.Drop[f]) -> int32 where (d.Args = (), d.Return = int32, d.Effect = Concrete.Effects):
+15 │         return 0
+16 │
+17 │ trait Forward[e: Effect]:
+18 │     type Effects: Effect
+19 │
+20 │ inst Forwarded for Forward[Concrete.Effects]:
+21 │     type Effects: Effect = Concrete.Extend[{}]
+22 │
+23 │ def opaque(callback: def() -> int32 \ i.Effects) given (i: Contract[{}]) -> int32:
+24 │     return 0
+25 │
+26 │ def tail(callback: def() -> int32 \ {IO | i.Effects}) given (i: Contract[{}]) -> int32:
+27 │     return 0
+28 │
+29 │ def concrete(callback: def() -> int32 \ Forwarded.Effects) -> int32:
+30 │     return 0
+31 │
+32 │ def constrained(callback: def() -> int32 \ i.Effects) given (i: Contract[{}]) -> int32 where (i.Effects = {}):
+33 │     return 0
+34 │
+35 │ def main() -> int32:
+36 │     return 0

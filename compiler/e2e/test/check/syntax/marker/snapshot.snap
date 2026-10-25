@@ -1,8 +1,19 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ marker Send
+ 2 │
+ 3 │ impl Send for int32
+ 4 │
+ 5 │ impl[a] Send for *a where (
+ 6 │     a: Send,
+ 7 │ )
+ 8 │
+ 9 │ def verify(value: a) -> a where (
+10 │     a: Send,
+11 │ ):
+12 │     return value
+13 │
+14 │ def main() -> int32:
+15 │     return verify(42)

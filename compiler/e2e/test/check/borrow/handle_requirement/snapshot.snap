@@ -1,117 +1,298 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:17:12
-   │
-17 │       return run:
-   │ ┏━━━━━━━━━━━━┛
-18 │ ┃         Counter.tick()
-19 │ ┃         return x
-   │ ┃                ─ the value of lifetime `'a` flows in here
-20 │ ┃     with Counter:
-21 │ ┃         def tick():
-22 │ ┃             return 0
-   │ ┗━━━━━━━━━━━━━━━━━━━━┛ this requires `'a` to outlive `'b`
-   │
-   ╰ help: consider adding `'a: 'b` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:43:20
-   │
-43 │             return x
-   │                    ━ this requires `'a` to outlive `'b`
-   │
-   ╰ help: consider adding `'a: 'b` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:62:13
-   │
-62 │             out.* = value
-   │             ━━━━━━━━━━━━━ this requires `'a` to outlive `'b`
-   │
-   ╰ help: consider adding `'a: 'b` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:90:12
-   │
-90 │        return run:
-   │ ┏━━━━━━━━━━━━━┛
-91 │ ┃          return run:
-   │ ┃┌────────────────┘
-92 │ ┃│             return Source.get()
-93 │ ┃│         with Source['b]:
-94 │ ┃│             def get():
-95 │ ┃│                 return y
-   │ ┃└────────────────────────┘ the value of lifetime `'b` flows in here
-96 │ ┃      with Source['a]:
-97 │ ┃          def get():
-98 │ ┃              return x
-   │ ┗━━━━━━━━━━━━━━━━━━━━━┛ this requires `'b` to outlive `'a`
-   │
-   ╰ help: consider adding `'b: 'a` to the where clause
-
-[error]: lifetime may not live long enough
-    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:104:5
-    │
-104 │ ┏     run:
-105 │ ┃         Counter.tick()
-106 │ ┃     with Counter:
-107 │ ┃         def tick():
-108 │ ┃             Sink.put(x)
-    │ ┃             ─────────── the value of lifetime `'a` flows in here
-109 │ ┃             return 0
-    │ ┗━━━━━━━━━━━━━━━━━━━━┛ this requires `'a` to outlive `'b`
-    │
-    ╰ help: consider adding `'a: 'b` to the where clause
-
-[error]: the type `t` may not live long enough
-    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:115:12
-    │
-115 │       return run:
-    │ ┏━━━━━━━━━━━━┛
-116 │ ┃         return Anchor.anchor(witness).*
-117 │ ┃     with Anchor['a, 'w, t]:
-118 │ ┃         def anchor(witness):
-119 │ ┃             return x
-    │ ┗━━━━━━━━━━━━━━━━━━━━┛ this requires `t` to outlive `'a`
-    │
-    ╰ help: consider adding `t: 'a` to the where clause
-
-[error]: cannot assign to a place because it is borrowed
-    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:140:5
-    │
-135 │       let p = run:
-    │ ┌─────────────┘
-136 │ │         return Source.get()
-137 │ │     with Source:
-138 │ │         def get():
-139 │ │             return value.&
-    │ └──────────────────────────┘ immutable borrow occurs here, by a capture
-140 │       value = 42          # <-- Expect an error here: `p` borrows `value`.
-    │       ━━━━━━━━━━ the borrowed place is assigned here
-141 │       let read = p.*
-    ╰╴                 ─── borrow later used here
-
-[error]: borrowed value does not live long enough
-    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:170:9
-    │
-169 │           let b = 2
-    │               ─ this variable goes out of scope while it is still borrowed
-170 │ ┏         run:            # <-- Expect an error here: `kept` is used after `b`.
-171 │ ┃             Sink.put(b.&)
-172 │ ┃         with Sink:
-173 │ ┃             def put(value):
-174 │ ┃                 kept = value
-    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ borrowed value does not live long enough, by a capture
+  1 │ eff Sink['a]:
+  2 │     def put(value: &'a int32)
+  3 │
+  4 │ eff Source['a]:
+  5 │     def get() -> &'a int32
+  6 │
+  7 │ eff Counter:
+  8 │     def tick() -> int32
+  9 │
+ 10 │ eff Anchor['a, 'w, t] where (t: 'a, t: 'w):
+ 11 │     def anchor(witness: &'w t) -> &'a int32
+ 12 │
+ 13 │
+ 14 │ def bodyReturns['a, 'b](x: &'a int32) -> &'b int32:
+ 15 │     # ERROR: the handled body gives back `x`, which is the value of the
+ 16 │     # `run`, and nothing states `'a: 'b`.
+ 17 │     return run:
+    ┆
+    ┆ [error]: lifetime may not live long enough
+    ┆    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:17:12
+    ┆    │
+    ┆ 17 │       return run:
+    ┆    │ ┏━━━━━━━━━━━━┛
+    ┆ 18 │ ┃         Counter.tick()
+    ┆ 19 │ ┃         return x
+    ┆    │ ┃                ─ the value of lifetime `'a` flows in here
+    ┆ 20 │ ┃     with Counter:
+    ┆ 21 │ ┃         def tick():
+    ┆ 22 │ ┃             return 0
+    ┆    │ ┗━━━━━━━━━━━━━━━━━━━━┛ this requires `'a` to outlive `'b`
+    ┆    │
+    ┆    ╰ help: consider adding `'a: 'b` to the where clause
+    ┆
+ 18 │         Counter.tick()
+ 19 │         return x
+ 20 │     with Counter:
+ 21 │         def tick():
+ 22 │             return 0
+ 23 │
+ 24 │
+ 25 │ def bodyReturnsOutlived['a, 'b](x: &'a int32) -> &'b int32 where ('a: 'b):
+ 26 │     # OK: the where clause states `'a: 'b`.
+ 27 │     return run:
+ 28 │         Counter.tick()
+ 29 │         return x
+ 30 │     with Counter:
+ 31 │         def tick():
+ 32 │             return 0
+ 33 │
+ 34 │
+ 35 │ def handlerGives['a, 'b](x: &'a int32) -> &'b int32:
+ 36 │     # ERROR: the handler of `Source['b]` gives back `x` where a `&'b int32`
+ 37 │     # is expected, and nothing states `'a: 'b`. The error points at the
+ 38 │     # `return`, within the handler.
+ 39 │     return run:
+ 40 │         return Source.get()
+ 41 │     with Source['b]:
+ 42 │         def get():
+ 43 │             return x
+    ┆
+    ┆ [error]: lifetime may not live long enough
+    ┆    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:43:20
+    ┆    │
+    ┆ 43 │             return x
+    ┆    │                    ━ this requires `'a` to outlive `'b`
+    ┆    │
+    ┆    ╰ help: consider adding `'a: 'b` to the where clause
+    ┆
+ 44 │
+ 45 │
+ 46 │ def handlerGivesOutlived['a, 'b](x: &'a int32) -> &'b int32 where ('a: 'b):
+ 47 │     # OK: the where clause states `'a: 'b`.
+ 48 │     return run:
+ 49 │         return Source.get()
+ 50 │     with Source['b]:
+ 51 │         def get():
+ 52 │             return x
+ 53 │
+ 54 │
+ 55 │ def handlerStores['a, 'b](x: &'a int32, out: &mut &'b int32):
+ 56 │     # ERROR: the handler of `Sink['a]` stores its argument where a
+ 57 │     # `&'b int32` is expected, and nothing states `'a: 'b`.
+ 58 │     run:
+ 59 │         Sink.put(x)
+ 60 │     with Sink['a]:
+ 61 │         def put(value):
+ 62 │             out.* = value
+    ┆
+    ┆ [error]: lifetime may not live long enough
+    ┆    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:62:13
+    ┆    │
+    ┆ 62 │             out.* = value
+    ┆    │             ━━━━━━━━━━━━━ this requires `'a` to outlive `'b`
+    ┆    │
+    ┆    ╰ help: consider adding `'a: 'b` to the where clause
+    ┆
+ 63 │
+ 64 │
+ 65 │ def handlerStoresOutlived['a, 'b](x: &'a int32, out: &mut &'b int32) where ('a: 'b):
+ 66 │     # OK: the where clause states `'a: 'b`.
+ 67 │     run:
+ 68 │         Sink.put(x)
+ 69 │     with Sink['a]:
+ 70 │         def put(value):
+ 71 │             out.* = value
+ 72 │
+ 73 │
+ 74 │ def nearest['a, 'b](x: &'a int32, y: &'b int32) -> &'a int32:
+ 75 │     # OK: the body performs the nearest `Source`, which gives back `x`.
+ 76 │     return run:
+ 77 │         return run:
+ 78 │             return Source.get()
+ 79 │         with Source['a]:
+ 80 │             def get():
+ 81 │                 return x
+ 82 │     with Source['b]:
+ 83 │         def get():
+ 84 │             return y
+ 85 │
+ 86 │
+ 87 │ def notNearest['a, 'b](x: &'a int32, y: &'b int32) -> &'a int32:
+ 88 │     # ERROR: the body performs the nearest `Source`, which gives back `y`,
+ 89 │     # and nothing states `'b: 'a`.
+ 90 │     return run:
+    ┆
+    ┆ [error]: lifetime may not live long enough
+    ┆    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:90:12
+    ┆    │
+    ┆ 90 │        return run:
+    ┆    │ ┏━━━━━━━━━━━━━┛
+    ┆ 91 │ ┃          return run:
+    ┆    │ ┃┌────────────────┘
+    ┆ 92 │ ┃│             return Source.get()
+    ┆ 93 │ ┃│         with Source['b]:
+    ┆ 94 │ ┃│             def get():
+    ┆ 95 │ ┃│                 return y
+    ┆    │ ┃└────────────────────────┘ the value of lifetime `'b` flows in here
+    ┆ 96 │ ┃      with Source['a]:
+    ┆ 97 │ ┃          def get():
+    ┆ 98 │ ┃              return x
+    ┆    │ ┗━━━━━━━━━━━━━━━━━━━━━┛ this requires `'b` to outlive `'a`
+    ┆    │
+    ┆    ╰ help: consider adding `'b: 'a` to the where clause
+    ┆
+ 91 │         return run:
+ 92 │             return Source.get()
+ 93 │         with Source['b]:
+ 94 │             def get():
+ 95 │                 return y
+ 96 │     with Source['a]:
+ 97 │         def get():
+ 98 │             return x
+ 99 │
+100 │
+101 │ def residual['a, 'b](x: &'a int32) -> () \ {Sink['b]}:
+102 │     # ERROR: the handler performs `Sink['b]` with `x`, in the effect of this
+103 │     # function, and nothing states `'a: 'b`.
+104 │     run:
+    ┆
+    ┆ [error]: lifetime may not live long enough
+    ┆     ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:104:5
+    ┆     │
+    ┆ 104 │ ┏     run:
+    ┆ 105 │ ┃         Counter.tick()
+    ┆ 106 │ ┃     with Counter:
+    ┆ 107 │ ┃         def tick():
+    ┆ 108 │ ┃             Sink.put(x)
+    ┆     │ ┃             ─────────── the value of lifetime `'a` flows in here
+    ┆ 109 │ ┃             return 0
+    ┆     │ ┗━━━━━━━━━━━━━━━━━━━━┛ this requires `'a` to outlive `'b`
+    ┆     │
+    ┆     ╰ help: consider adding `'a: 'b` to the where clause
+    ┆
+105 │         Counter.tick()
+106 │     with Counter:
+107 │         def tick():
+108 │             Sink.put(x)
+109 │             return 0
+110 │
+111 │
+112 │ def whereClause['a, 'w, t](x: &'a int32, witness: &'w t) -> int32:
+113 │     # ERROR: handling `Anchor['a, 'w, t]` requires its where clause, and
+114 │     # nothing states `t: 'a`.
+115 │     return run:
+    ┆
+    ┆ [error]: the type `t` may not live long enough
+    ┆     ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:115:12
+    ┆     │
+    ┆ 115 │       return run:
+    ┆     │ ┏━━━━━━━━━━━━┛
+    ┆ 116 │ ┃         return Anchor.anchor(witness).*
+    ┆ 117 │ ┃     with Anchor['a, 'w, t]:
+    ┆ 118 │ ┃         def anchor(witness):
+    ┆ 119 │ ┃             return x
+    ┆     │ ┗━━━━━━━━━━━━━━━━━━━━┛ this requires `t` to outlive `'a`
+    ┆     │
+    ┆     ╰ help: consider adding `t: 'a` to the where clause
+    ┆
+116 │         return Anchor.anchor(witness).*
+117 │     with Anchor['a, 'w, t]:
+118 │         def anchor(witness):
+119 │             return x
+120 │
+121 │
+122 │ def whereClauseDeclared['a, 'w, t](x: &'a int32, witness: &'w t) -> int32 where (t: 'a):
+123 │     # OK: the where clause states `t: 'a`.
+124 │     return run:
+125 │         return Anchor.anchor(witness).*
+126 │     with Anchor['a, 'w, t]:
+127 │         def anchor(witness):
+128 │             return x
+129 │
+130 │
+131 │ def main() -> int32:
+132 │     # The handler gives back a borrow of `value`, which the body returns, so
+133 │     # the value of the `run` keeps the borrow.
+134 │     let mut value = 32
+135 │     let p = run:
+136 │         return Source.get()
+137 │     with Source:
+138 │         def get():
+139 │             return value.&
+140 │     value = 42          # <-- Expect an error here: `p` borrows `value`.
+    ┆
+    ┆ [error]: cannot assign to a place because it is borrowed
+    ┆     ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:140:5
+    ┆     │
+    ┆ 135 │       let p = run:
+    ┆     │ ┌─────────────┘
+    ┆ 136 │ │         return Source.get()
+    ┆ 137 │ │     with Source:
+    ┆ 138 │ │         def get():
+    ┆ 139 │ │             return value.&
+    ┆     │ └──────────────────────────┘ immutable borrow occurs here, by a capture
+    ┆ 140 │       value = 42          # <-- Expect an error here: `p` borrows `value`.
+    ┆     │       ━━━━━━━━━━ the borrowed place is assigned here
+    ┆ 141 │       let read = p.*
+    ┆     ╰╴                 ─── borrow later used here
+    ┆
+141 │     let read = p.*
+142 │
+143 │     # The body only reads what the handler gives back, so the borrow ends
+144 │     # with the `run`.
+145 │     let mut other = 1
+146 │     let copied = run:
+147 │         return Source.get().*
+148 │     with Source:
+149 │         def get():
+150 │             return other.&
+151 │     other = 2           # <-- Expect NO error here.
+152 │
+153 │     # The handlers borrow `count` mutably for the `run` alone.
+154 │     let mut count = 0
+155 │     run:
+156 │         Counter.tick()
+157 │         Counter.tick()
+158 │     with Counter:
+159 │         def tick():
+160 │             count = count + 1
+161 │             return count
+162 │     count = count + 1   # <-- Expect NO error here.
+163 │
+164 │     # The handler stores its argument in `kept`, which is used after `b` is
+165 │     # gone.
+166 │     let a = 1
+167 │     let mut kept = a.&
+168 │     if true:
+169 │         let b = 2
+170 │         run:            # <-- Expect an error here: `kept` is used after `b`.
+    ┆
+    ┆ [error]: borrowed value does not live long enough
+    ┆     ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:170:9
+    ┆     │
+    ┆ 169 │           let b = 2
+    ┆     │               ─ this variable goes out of scope while it is still borrowed
+    ┆ 170 │ ┏         run:            # <-- Expect an error here: `kept` is used after `b`.
+    ┆ 171 │ ┃             Sink.put(b.&)
+    ┆ 172 │ ┃         with Sink:
+    ┆ 173 │ ┃             def put(value):
+    ┆ 174 │ ┃                 kept = value
+    ┆     │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ borrowed value does not live long enough, by a capture
+    ┆ 175 │
+    ┆ 176 │       return read + copied + count + kept.*
+    ┆     ╰╴                                     ────── borrow later used here
+    ┆
+171 │             Sink.put(b.&)
+172 │         with Sink:
+173 │             def put(value):
+174 │                 kept = value
 175 │
-176 │       return read + copied + count + kept.*
-    ╰╴                                     ────── borrow later used here
+176 │     return read + copied + count + kept.*
 
+other diagnostics:
 [error]: Compilation aborted due to 8 error(s)
-
-
-
-stdout:

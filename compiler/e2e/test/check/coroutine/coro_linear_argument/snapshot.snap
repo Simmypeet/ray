@@ -1,18 +1,52 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/coroutine/coro_linear_argument/main.ray:32:13
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ @linear
+ 6 │ struct Handle:
+ 7 │     fd: int32
+ 8 │
+ 9 │
+10 │ def make() -> Handle:
+11 │     return Handle { fd = 0 }
+12 │
+13 │
+14 │ def close(opened: Handle):
+15 │     core.NoDrop { value = move opened }
+16 │
+17 │
+18 │ def useHandle(opened: Handle) -> () \ {Yield[int32]}:
+19 │     close(opened)
+20 │     Yield.yield(1)
+21 │
+22 │
+23 │ # OK: an ordinary call starts the callee at once, so the argument is never
+24 │ # dropped by the caller.
+25 │ def called() -> () \ {Yield[int32]}:
+26 │     useHandle(make())
+27 │
+28 │
+29 │ # ERROR: a coroutine that is never resumed drops its arguments, and a linear
+30 │ # value has no `Drop` instance.
+31 │ def suspended():
 32 │     let k = coro useHandle(make())
-   │             ━━━━━━━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_linear_argument/main.ray:32:13
+   ┆    │
+   ┆ 32 │     let k = coro useHandle(make())
+   ┆    │             ━━━━━━━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+33 │
+34 │
+35 │ def main() -> int32:
+36 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

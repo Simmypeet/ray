@@ -1,0 +1,96 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ enum Maybe[t]:
+ 2 │     Some(t)
+ 3 │     Nothing
+ 4 │
+ 5 │ # An enum can name itself behind a pointer.
+ 6 │ enum List[t]:
+ 7 │     Cons((t, *List[t]))
+ 8 │     Nil
+ 9 │
+10 │ # A declared where clause is required wherever the enum is used.
+11 │ enum Bounded['a, t] where (t: 'a):
+12 │     Value(*t)
+13 │     Borrowed(&'a int32)
+14 │
+15 │ module shapes:
+16 │     pub enum Shape:
+17 │         Square(int32)
+18 │         Circle(int32)
+19 │
+20 │     enum Hidden:
+21 │         Secret(int32)
+22 │
+23 │ # OK: enums as field, payload and nested argument types.
+24 │ struct Holder[t]:
+25 │     maybe: Maybe[t]
+26 │     list: List[t]
+27 │
+28 │ enum Nested[t]:
+29 │     Inner(Maybe[Maybe[t]])
+30 │
+31 │ # OK: enums as parameter and return types, and through a module path.
+32 │ def identity(value: Maybe[int32], shape: shapes.Shape) -> Maybe[int32]:
+33 │     return value
+34 │
+35 │ # OK: the where clause of `Bounded` is written out.
+36 │ def bounded['a, t](value: *Bounded['a, t]) -> () where (t: 'a):
+37 │     return ()
+38 │
+39 │ # ERROR: `Bounded['a, t]` requires `t: 'a`.
+40 │ def unbounded['a, t](value: *Bounded['a, t]) -> ():
+   ┆
+   ┆ [error]: where-clause obligation for `main.Bounded` is not satisfied
+   ┆    ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:40:30
+   ┆    │
+   ┆ 40 │ def unbounded['a, t](value: *Bounded['a, t]) -> ():
+   ┆    ╰╴                             ━━━━━━━━━━━━━━ `t` must outlive `'a`
+   ┆
+41 │     return ()
+42 │
+43 │ # ERROR: `Maybe` takes one type argument.
+44 │ def tooMany(value: *Maybe[int32, bool]) -> ():
+   ┆
+   ┆ [error]: type argument arity mismatch
+   ┆    ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:44:26
+   ┆    │
+   ┆ 44 │ def tooMany(value: *Maybe[int32, bool]) -> ():
+   ┆    ╰╴                         ━━━━━━━━━━━━━ expected 1, found 2
+   ┆
+45 │     return ()
+46 │
+47 │ # ERROR: a variant is not a type.
+48 │ def variant(value: *Maybe[int32].Some) -> ():
+   ┆
+   ┆ [error]: expected a value type or an associated type projection
+   ┆    ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:48:21
+   ┆    │
+   ┆ 48 │ def variant(value: *Maybe[int32].Some) -> ():
+   ┆    ╰╴                    ━━━━━━━━━━━━━━━━━
+   ┆
+49 │     return ()
+50 │
+51 │ # ERROR: `Hidden` is private to `shapes`.
+52 │ def hidden(value: *shapes.Hidden) -> ():
+   ┆
+   ┆ [error]: enum `Hidden` is not accessible here
+   ┆    ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:52:27
+   ┆    │
+   ┆ 20 │     enum Hidden:
+   ┆    │          ────── `Hidden` is declared here
+   ┆    ‡
+   ┆ 52 │ def hidden(value: *shapes.Hidden) -> ():
+   ┆    │                           ━━━━━━ `Hidden` is not accessible here
+   ┆    │
+   ┆    ╰ help: `Hidden` is only accessible within `main.shapes`; declare it with `pub` to make it public
+   ┆
+53 │     return ()
+54 │
+55 │ def main() -> int32:
+56 │     return 0
+
+other diagnostics:
+[error]: Compilation aborted due to 4 error(s)

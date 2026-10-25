@@ -1,28 +1,40 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: assignment requires an lvalue
-  ╭▸ compiler/e2e/test/check/tast/non_lvalue/main.ray:2:5
-  │
-2 │     32 = 64
-  ╰╴    ━━ this expression is not addressable
-
-[error]: assignment requires an lvalue
-  ╭▸ compiler/e2e/test/check/tast/non_lvalue/main.ray:7:1
-  │
-7 │     (1, 2).0 = 3
-  ╰╴━━━━━━━━━━ this expression is not addressable
-
-[error]: reference-of operation requires an lvalue
-   ╭▸ compiler/e2e/test/check/tast/non_lvalue/main.ray:12:13
-   │
+ 1 │ def firstCase() -> ():
+ 2 │     32 = 64
+   ┆
+   ┆ [error]: assignment requires an lvalue
+   ┆   ╭▸ compiler/e2e/test/check/tast/non_lvalue/main.ray:2:5
+   ┆   │
+   ┆ 2 │     32 = 64
+   ┆   ╰╴    ━━ this expression is not addressable
+   ┆
+ 3 │     return ()
+ 4 │
+ 5 │
+ 6 │ def secondCase() -> ():
+ 7 │     (1, 2).0 = 3
+   ┆
+   ┆ [error]: assignment requires an lvalue
+   ┆   ╭▸ compiler/e2e/test/check/tast/non_lvalue/main.ray:7:1
+   ┆   │
+   ┆ 7 │     (1, 2).0 = 3
+   ┆   ╰╴━━━━━━━━━━ this expression is not addressable
+   ┆
+ 8 │     return ()
+ 9 │
+10 │
+11 │ def thirdCase() -> ():
 12 │     let a = 1.&
-   ╰╴            ━ this expression is not addressable
+   ┆
+   ┆ [error]: reference-of operation requires an lvalue
+   ┆    ╭▸ compiler/e2e/test/check/tast/non_lvalue/main.ray:12:13
+   ┆    │
+   ┆ 12 │     let a = 1.&
+   ┆    ╰╴            ━ this expression is not addressable
+   ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

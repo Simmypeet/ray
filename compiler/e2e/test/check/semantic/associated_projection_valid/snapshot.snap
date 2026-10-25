@@ -1,8 +1,24 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ trait Convert[a]:
+ 2 │     type Item
+ 3 │     def convert(value: this.Item) -> this.Item
+ 4 │
+ 5 │ inst IntConvert for Convert[int32]:
+ 6 │     type Item = int32
+ 7 │     def convert(value: int32) -> int32:
+ 8 │         return value
+ 9 │
+10 │ inst BoolConvert for Convert[int32]:
+11 │     type Item = bool
+12 │     def convert(value: bool) -> bool:
+13 │         return value
+14 │
+15 │ def generic(value: i.Item) given (i: Convert[int32]) -> i.Item:
+16 │     return i.convert(value)
+17 │
+18 │ def main() -> int32:
+19 │     let value: IntConvert.Item = 42
+20 │     return generic[given IntConvert](IntConvert.convert(value))

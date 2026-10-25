@@ -1,34 +1,47 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: instance member `convert`: parameter 1 type mismatch
-  ╭▸ compiler/e2e/test/check/semantic/associated_projection_mismatch/main.ray:7:17
-  │
-3 │     def convert(value: this.Item) -> this.Item
-  │                 ──────────────── the corresponding trait declaration is here
-  ‡
-7 │     def convert(value: bool) -> bool:
-  ╰╴                ━━━━━━━━━━━ expected `int32`, found `bool`
-
-[error]: instance member `convert`: return type mismatch
-  ╭▸ compiler/e2e/test/check/semantic/associated_projection_mismatch/main.ray:7:30
-  │
-3 │     def convert(value: this.Item) -> this.Item
-  │                                   ──────────── the corresponding trait declaration is here
-  ‡
-7 │     def convert(value: bool) -> bool:
-  ╰╴                             ━━━━━━━ expected `int32`, found `bool`
-
-[error]: mismatched types in return expression: expected `j.Item`, but found `i.Item`
-   ╭▸ compiler/e2e/test/check/semantic/associated_projection_mismatch/main.ray:11:12
-   │
+ 1 │ trait Convert[]:
+ 2 │     type Item
+ 3 │     def convert(value: this.Item) -> this.Item
+ 4 │
+ 5 │ inst Wrong for Convert:
+ 6 │     type Item = int32
+ 7 │     def convert(value: bool) -> bool:
+   ┆
+   ┆ [error]: instance member `convert`: parameter 1 type mismatch
+   ┆   ╭▸ compiler/e2e/test/check/semantic/associated_projection_mismatch/main.ray:7:17
+   ┆   │
+   ┆ 3 │     def convert(value: this.Item) -> this.Item
+   ┆   │                 ──────────────── the corresponding trait declaration is here
+   ┆   ‡
+   ┆ 7 │     def convert(value: bool) -> bool:
+   ┆   ╰╴                ━━━━━━━━━━━ expected `int32`, found `bool`
+   ┆
+   ┆ [error]: instance member `convert`: return type mismatch
+   ┆   ╭▸ compiler/e2e/test/check/semantic/associated_projection_mismatch/main.ray:7:30
+   ┆   │
+   ┆ 3 │     def convert(value: this.Item) -> this.Item
+   ┆   │                                   ──────────── the corresponding trait declaration is here
+   ┆   ‡
+   ┆ 7 │     def convert(value: bool) -> bool:
+   ┆   ╰╴                             ━━━━━━━ expected `int32`, found `bool`
+   ┆
+ 8 │         return value
+ 9 │
+10 │ def distinct(value: i.Item) given (i: Convert, j: Convert) -> j.Item:
 11 │     return value
-   ╰╴           ━━━━━
+   ┆
+   ┆ [error]: mismatched types in return expression: expected `j.Item`, but found `i.Item`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_mismatch/main.ray:11:12
+   ┆    │
+   ┆ 11 │     return value
+   ┆    ╰╴           ━━━━━
+   ┆
+12 │
+13 │ def main() -> int32:
+14 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

@@ -10,6 +10,7 @@ use crate::{
     access_modifier::AccessModifier,
     def::Def,
     effect::Effect,
+    r#enum::Enum,
     extern_def::ExternDef,
     instance::Instance,
     marker::{Marker, MarkerImplementation},
@@ -27,6 +28,7 @@ abstract_tree::abstract_tree! {
         Trait(Trait = ast::<Trait>()),
         Instance(Instance = ast::<Instance>()),
         Struct(Struct = ast::<Struct>()),
+        Enum(Enum = ast::<Enum>()),
         Marker(Marker = ast::<Marker>()),
         MarkerImplementation(MarkerImplementation = ast::<MarkerImplementation>()),
         Module(Module = ast::<Module>())

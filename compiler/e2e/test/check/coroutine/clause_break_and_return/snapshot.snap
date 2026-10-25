@@ -1,22 +1,83 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: `break` can only be used inside a loop
-   ╭▸ compiler/e2e/test/check/coroutine/clause_break_and_return/main.ray:45:13
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ def numbers() -> int32 \ {Yield[int32]}:
+ 6 │     Yield.yield(1)
+ 7 │     Yield.yield(2)
+ 8 │     return 3
+ 9 │
+10 │
+11 │ # OK: `return` in a clause returns from `first`, not from the clause. A clause
+12 │ # that leaves this way fits any type, so the `handle` is an `int32`.
+13 │ def first() -> int32:
+14 │     let value = handle coro numbers():
+15 │         case Yield[int32].yield(value) resume k:
+16 │             return value
+17 │         case return x: x
+18 │
+19 │     return value + 1
+20 │
+21 │
+22 │ # OK: `break` and `continue` in a clause act on the enclosing loop.
+23 │ def sumUntil(limit: int32) -> int32:
+24 │     let mut con = coro numbers()
+25 │     let mut sum = 0
+26 │
+27 │     while true:
+28 │         handle con():
+29 │             case Yield[int32].yield(value) resume k:
+30 │                 if value == limit:
+31 │                     break
+32 │                 sum = sum + value
+33 │                 con = k
+34 │                 continue
+35 │             case return x:
+36 │                 return sum + x
+37 │
+38 │     return sum
+39 │
+40 │
+41 │ # ERROR: `break` in a clause still needs a loop.
+42 │ def noLoop():
+43 │     handle coro numbers():
+44 │         case Yield[int32].yield(value) resume k:
 45 │             break
-   ╰╴            ━━━━━
-
-[error]: mismatched types in return expression: expected `bool`, but found `int32`
-   ╭▸ compiler/e2e/test/check/coroutine/clause_break_and_return/main.ray:54:20
-   │
+   ┆
+   ┆ [error]: `break` can only be used inside a loop
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/clause_break_and_return/main.ray:45:13
+   ┆    │
+   ┆ 45 │             break
+   ┆    ╰╴            ━━━━━
+   ┆
+46 │         case return x:
+47 │             pass
+48 │
+49 │
+50 │ # ERROR: the value returned from a clause is the one of the function.
+51 │ def wrongReturn() -> bool:
+52 │     handle coro numbers():
+53 │         case Yield[int32].yield(value) resume k:
 54 │             return value
-   ╰╴                   ━━━━━
+   ┆
+   ┆ [error]: mismatched types in return expression: expected `bool`, but found `int32`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/clause_break_and_return/main.ray:54:20
+   ┆    │
+   ┆ 54 │             return value
+   ┆    ╰╴                   ━━━━━
+   ┆
+55 │         case return x:
+56 │             return true
+57 │
+58 │     return false
+59 │
+60 │
+61 │ def main() -> int32:
+62 │     return first() + sumUntil(2)
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

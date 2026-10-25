@@ -1,32 +1,88 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/instance_trait_ref/main.ray:44:5
-   │
+ 1 │ def consume(_: t) given (_: core.Drop[t]):
+ 2 │     pass
+ 3 │
+ 4 │
+ 5 │ trait Wrap[t]:
+ 6 │     type Out
+ 7 │
+ 8 │     def wrap(value: t) -> this.Out
+ 9 │
+10 │
+11 │ inst WrapReference['a] for Wrap[&'a int32]:
+12 │     type Out = &'a int32
+13 │
+14 │     def wrap(value: &'a int32) -> &'a int32:
+15 │         return value
+16 │
+17 │
+18 │ inst WrapValue['a] for Wrap[&'a int32]:
+19 │     type Out = int32
+20 │
+21 │     def wrap(value: &'a int32) -> int32:
+22 │         return value.*
+23 │
+24 │
+25 │ inst WrapNested[t] for Wrap[(t,)] given (inner: Wrap[t]):
+26 │     type Out = inner.Out
+27 │
+28 │     def wrap(value: (t,)) -> inner.Out:
+29 │         return inner.wrap(value.0)
+30 │
+31 │
+32 │ def wrap(value: t) given (w: Wrap[t]) -> w.Out:
+33 │     return w.wrap(value)
+34 │
+35 │
+36 │ def main():
+37 │     let mut x = 0
+38 │     let mut y = 0
+39 │
+40 │     # The result type is projected from the dictionary, whose lifetime
+41 │     # argument must be the lifetime of the reference passed in.
 42 │     let p = wrap[given WrapReference](x.&)
-   │                                       ─── immutable borrow occurs here
 43 │     y = y + 1           # <-- Expect NO error here: nothing borrows `y`.
 44 │     x = x + 1           # <-- Expect an error here: `p` came from `x.&`.
-   │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/instance_trait_ref/main.ray:44:5
+   ┆    │
+   ┆ 42 │     let p = wrap[given WrapReference](x.&)
+   ┆    │                                       ─── immutable borrow occurs here
+   ┆ 43 │     y = y + 1           # <-- Expect NO error here: nothing borrows `y`.
+   ┆ 44 │     x = x + 1           # <-- Expect an error here: `p` came from `x.&`.
+   ┆    │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆ 45 │     consume(p.*)
+   ┆    ╰╴            ─── borrow later used here
+   ┆
 45 │     consume(p.*)
-   ╰╴            ─── borrow later used here
-
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/instance_trait_ref/main.ray:56:5
-   │
+46 │
+47 │     let n = wrap[given WrapValue](x.&)
+48 │     x = x + 1           # <-- Expect NO error here: `n` is a plain `int32`.
+49 │     consume(n)
+50 │
+51 │     # The dictionary is built from another one, which is checked the same
+52 │     # way: its lifetime argument is tied through the outer dictionary.
+53 │     let mut z = 0
 54 │     let q = wrap[given WrapNested[given WrapReference]]((z.&,))
-   │                                                          ─── immutable borrow occurs here
 55 │     x = x + 1           # <-- Expect NO error here: `q` only borrows `z`.
 56 │     z = z + 1           # <-- Expect an error here: `q` came from `z.&`.
-   │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/instance_trait_ref/main.ray:56:5
+   ┆    │
+   ┆ 54 │     let q = wrap[given WrapNested[given WrapReference]]((z.&,))
+   ┆    │                                                          ─── immutable borrow occurs here
+   ┆ 55 │     x = x + 1           # <-- Expect NO error here: `q` only borrows `z`.
+   ┆ 56 │     z = z + 1           # <-- Expect an error here: `q` came from `z.&`.
+   ┆    │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆ 57 │     consume(q.*)
+   ┆    ╰╴            ─── borrow later used here
+   ┆
 57 │     consume(q.*)
-   ╰╴            ─── borrow later used here
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

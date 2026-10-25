@@ -1,50 +1,95 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: the type `t` may not live long enough
-  ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:6:16
-  │
-6 │     type Out = &'a t
-  │                ━━━━━ the reference requires `t: 'a`
-  │
-  ╰ help: consider adding `where (t: 'a)`
-
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:14:33
-   │
+ 1 │ trait Project[t]:
+ 2 │     type Out
+ 3 │
+ 4 │ # ERROR: nothing says `t` outlives `'a`.
+ 5 │ inst Unbounded['a, t] for Project[t]:
+ 6 │     type Out = &'a t
+   ┆
+   ┆ [error]: the type `t` may not live long enough
+   ┆   ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:6:16
+   ┆   │
+   ┆ 6 │     type Out = &'a t
+   ┆   │                ━━━━━ the reference requires `t: 'a`
+   ┆   │
+   ┆   ╰ help: consider adding `where (t: 'a)`
+   ┆
+ 7 │
+ 8 │ # OK: the where clause says `t` outlives `'a`.
+ 9 │ inst Bounded['a, t] for Project[t] where (t: 'a):
+10 │     type Out = &'a t
+11 │
+12 │ # ERROR: an instance head implies nothing, so `&'a t` in the head and in the
+13 │ # associated type both need `t: 'a` written out.
 14 │ inst Implied['a, t] for Project[&'a t]:
-   │                                 ━━━━━ the reference requires `t: 'a`
-   │
-   ╰ help: consider adding `where (t: 'a)`
-
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:15:16
-   │
+   ┆
+   ┆ [error]: the type `t` may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:14:33
+   ┆    │
+   ┆ 14 │ inst Implied['a, t] for Project[&'a t]:
+   ┆    │                                 ━━━━━ the reference requires `t: 'a`
+   ┆    │
+   ┆    ╰ help: consider adding `where (t: 'a)`
+   ┆
 15 │     type Out = &'a t
-   │                ━━━━━ the reference requires `t: 'a`
-   │
-   ╰ help: consider adding `where (t: 'a)`
-
-[error]: the type `&'b int32` may not live long enough
-   ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:19:19
-   │
+   ┆
+   ┆ [error]: the type `t` may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:15:16
+   ┆    │
+   ┆ 15 │     type Out = &'a t
+   ┆    │                ━━━━━ the reference requires `t: 'a`
+   ┆    │
+   ┆    ╰ help: consider adding `where (t: 'a)`
+   ┆
+16 │
+17 │ # ERROR: a type in a where clause must be well-formed.
+18 │ def whereUnbounded['a, 'b, t]() given (project: Project[t]) -> () where (
 19 │     project.Out = &'a &'b int32,
-   │                   ━━━━━━━━━━━━━ the reference requires `&'b int32: 'a`
-   │
-   ╰ help: consider adding `where (&'b int32: 'a)`
-
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:31:53
-   │
+   ┆
+   ┆ [error]: the type `&'b int32` may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:19:19
+   ┆    │
+   ┆ 19 │     project.Out = &'a &'b int32,
+   ┆    │                   ━━━━━━━━━━━━━ the reference requires `&'b int32: 'a`
+   ┆    │
+   ┆    ╰ help: consider adding `where (&'b int32: 'a)`
+   ┆
+20 │ ):
+21 │     return ()
+22 │
+23 │ # OK: `'b: 'a` makes `&'a &'b int32` well-formed.
+24 │ def whereBounded['a, 'b, t]() given (project: Project[t]) -> () where (
+25 │     'b: 'a,
+26 │     project.Out = &'a &'b int32,
+27 │ ):
+28 │     return ()
+29 │
+30 │ # ERROR: a given's trait arguments must be well-formed.
 31 │ def givenUnbounded['a, t]() given (project: Project[&'a t]) -> ():
-   │                                                     ━━━━━ the reference requires `t: 'a`
-   │
-   ╰ help: consider adding `where (t: 'a)`
+   ┆
+   ┆ [error]: the type `t` may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/reference/reference_wf/main.ray:31:53
+   ┆    │
+   ┆ 31 │ def givenUnbounded['a, t]() given (project: Project[&'a t]) -> ():
+   ┆    │                                                     ━━━━━ the reference requires `t: 'a`
+   ┆    │
+   ┆    ╰ help: consider adding `where (t: 'a)`
+   ┆
+32 │     return ()
+33 │
+34 │ # OK: `'static` outlives every lifetime.
+35 │ def staticBound['a]() given (project: Project[&'a &'static int32]) -> ():
+36 │     return ()
+37 │
+38 │ # OK: an outlives chain `t: 'b`, `'b: 'a` gives `t: 'a`.
+39 │ def chained['a, 'b, t]() given (project: Project[&'a t]) -> () where ('b: 'a, t: 'b):
+40 │     return ()
+41 │
+42 │ def main() -> ():
+43 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 5 error(s)
-
-
-
-stdout:

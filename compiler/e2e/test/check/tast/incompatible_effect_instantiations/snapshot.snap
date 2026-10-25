@@ -1,22 +1,42 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: incompatible effect rows `{State[int32]}` and `{State[bool]}`
-   ╭▸ compiler/e2e/test/check/tast/incompatible_effect_instantiations/main.ray:20:22
-   │
+ 1 │ eff State[s]:
+ 2 │     def get() -> s
+ 3 │
+ 4 │
+ 5 │ def withIntState() -> () \ {State[int32]}:
+ 6 │     return ()
+ 7 │
+ 8 │
+ 9 │ def withBoolState() -> () \ {State[bool]}:
+10 │     return ()
+11 │
+12 │
+13 │ def withPolyState(arg: s) given (drop: core.Drop[s]) -> () \ {State[s]}:
+14 │     return ()
+15 │
+16 │
 17 │ def main() -> ():
-   │     ──── function body effect `{State[bool]}` is checked against its signature here
-   ‡
+18 │     let varBool = true
+19 │     let varInt = 42
 20 │     let conflict = (((withPolyState(varInt), ()), (withPolyState(varBool), ())))
-   │                      ┯┬────────────────────━━━━━   ────────────────────── effect `{State[bool]}` introduced here
-   │                      ││
-   │                      │effect `{State[int32]}` introduced here
-   ╰╴                     these effect rows cannot be composed
+   ┆
+   ┆ [error]: incompatible effect rows `{State[int32]}` and `{State[bool]}`
+   ┆    ╭▸ compiler/e2e/test/check/tast/incompatible_effect_instantiations/main.ray:20:22
+   ┆    │
+   ┆ 17 │ def main() -> ():
+   ┆    │     ──── function body effect `{State[bool]}` is checked against its signature here
+   ┆    ‡
+   ┆ 20 │     let conflict = (((withPolyState(varInt), ()), (withPolyState(varBool), ())))
+   ┆    │                      ┯┬────────────────────━━━━━   ────────────────────── effect `{State[bool]}` introduced here
+   ┆    │                      ││
+   ┆    │                      │effect `{State[int32]}` introduced here
+   ┆    ╰╴                     these effect rows cannot be composed
+   ┆
+21 │
+22 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

@@ -463,13 +463,14 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
             ApplicationView::DefCoroutine(_) | ApplicationView::TraitDefCoroutine(_) => {
                 panic!("coroutine types are not lowered to MonoIR yet")
             }
+            ApplicationView::Enum(_) => panic!("enum types are not lowered to MonoIR yet"),
             ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
-            | ApplicationView::NominalDropInstance(_)
+            | ApplicationView::GeneratedAdtDropInstance(_)
             | ApplicationView::Instance(_)
             | ApplicationView::DefInstance(_) => {
                 panic!("compiler-internal invariant violation: instance used as a value type")

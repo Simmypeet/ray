@@ -1,28 +1,76 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: lifetime `'a` does not outlive `'static`
-   ╭▸ compiler/e2e/test/check/reference/relation_outlives/main.ray:17:66
-   │
+ 1 │ trait Eq[a]:
+ 2 │     def equals(lhs: a, rhs: a) -> bool
+ 3 │
+ 4 │ inst EqStatic for Eq[&'static int32]:
+ 5 │     def equals(lhs: &'static int32, rhs: &'static int32) -> bool:
+ 6 │         return true
+ 7 │
+ 8 │ eff Reader[a] given (equality: Eq[a]):
+ 9 │     def read() -> a
+10 │
+11 │ # OK: the given argument implements `Eq[&'static int32]` exactly.
+12 │ def exact(callback: def() -> () \ {Reader[&'static int32; given EqStatic]}) -> ():
+13 │     return ()
+14 │
+15 │ # ERROR: `EqStatic` implements `Eq[&'static int32]`. Trait arguments are
+16 │ # invariant, so passing it as `Eq[&'a int32]` requires `'a: 'static`.
 17 │ def shorter['a](callback: def() -> () \ {Reader[&'a int32; given EqStatic]}) -> ():
-   │                                                                  ━━━━━━━━ requires `'a: 'static`
-   │
-   ╰ help: consider adding `where ('a: 'static)`
+   ┆
+   ┆ [error]: lifetime `'a` does not outlive `'static`
+   ┆    ╭▸ compiler/e2e/test/check/reference/relation_outlives/main.ray:17:66
+   ┆    │
+   ┆ 17 │ def shorter['a](callback: def() -> () \ {Reader[&'a int32; given EqStatic]}) -> ():
+   ┆    │                                                                  ━━━━━━━━ requires `'a: 'static`
+   ┆    │
+   ┆    ╰ help: consider adding `where ('a: 'static)`
+   ┆
+18 │     return ()
+19 │
+20 │ # OK: the where clause says `'a` outlives `'static`.
+21 │ def bounded['a](callback: def() -> () \ {Reader[&'a int32; given EqStatic]}) -> () where (
+22 │     'a: 'static,
+23 │ ):
+24 │     return ()
+25 │
+26 │ trait Box[a]:
+27 │     type Item
+28 │
+29 │ inst StaticBox for Box[int32]:
+30 │     type Item = &'static int32
+31 │
+32 │ trait HasValue['a]:
+33 │     type Value given (box: Box[int32]) where (box.Item = &'a int32)
+34 │
+35 │ # OK: the where clause of `Value` requires `&'static int32 = &'static int32`.
+36 │ def equalityExact(value: has.Value[given StaticBox]) given (has: HasValue['static]) -> ():
+37 │     core.NoDrop { value = move value }
+38 │     return ()
+39 │
+40 │ # ERROR: the where clause of `Value` requires `&'static int32 = &'a int32`,
+41 │ # that is, `'a: 'static`.
+42 │ def equalityShorter['a](value: has.Value[given StaticBox]) given (has: HasValue['a]) -> ():
+   ┆
+   ┆ [error]: lifetime `'a` does not outlive `'static`
+   ┆    ╭▸ compiler/e2e/test/check/reference/relation_outlives/main.ray:42:36
+   ┆    │
+   ┆ 42 │ def equalityShorter['a](value: has.Value[given StaticBox]) given (has: HasValue['a]) -> ():
+   ┆    │                                    ━━━━━━━━━━━━━━━━━━━━━━ requires `'a: 'static`
+   ┆    │
+   ┆    ╰ help: consider adding `where ('a: 'static)`
+   ┆
+43 │     core.NoDrop { value = move value }
+44 │     return ()
+45 │
+46 │ def main() -> ():
+47 │     return ()
+
+other diagnostics:
 [note]: this is required when checking that `main.EqStatic` implements `main.Eq[&'a int32]`
 
-[error]: lifetime `'a` does not outlive `'static`
-   ╭▸ compiler/e2e/test/check/reference/relation_outlives/main.ray:42:36
-   │
-42 │ def equalityShorter['a](value: has.Value[given StaticBox]) given (has: HasValue['a]) -> ():
-   │                                    ━━━━━━━━━━━━━━━━━━━━━━ requires `'a: 'static`
-   │
-   ╰ help: consider adding `where ('a: 'static)`
 [note]: this is required by the where clause of `main.HasValue.Value`: `StaticBox.Item` must equal `&'a int32`
 
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

@@ -36,6 +36,28 @@ struct UsesDeclared['a, t]:
 struct UsesDeclaredBounded['a, t] where (t: 'a):
     inner: Declared['a, t]
 
+# OK: infers `t: 'a` from its payloads, directly and through `Ref`, which the
+# payloads then satisfy.
+enum Borrowed['a, t]:
+    Direct(&'a t)
+    Wrapped(Ref['a, t])
+    Nothing
+
+# ERROR: as for a struct, `Declared['a, t]` requires `t: 'a`, which is not
+# inferred.
+enum PayloadUsesDeclared['a, t]:
+    Inner(Declared['a, t])
+
+# A struct and an enum that are mutually recursive infer `t: 'a` for both,
+# though only `Node` holds the reference.
+enum Chain['a, t]:
+    Link(*Node['a, t])
+    End
+
+struct Node['a, t]:
+    value: &'a t
+    next: Chain['a, t]
+
 # OK: the parameter `Holder['a, t]` implies `t: 'a` through inference.
 def holder['a, t](value: *Holder['a, t]) given (project: Project[t]) -> () where (
     project.Out = &'a t,
@@ -54,6 +76,18 @@ def nested['a, 'b, t](value: *Nested['a, 'b, t]) given (project: Project[t]) -> 
 ):
     return ()
 
+# OK: `Borrowed['a, t]` implies `t: 'a` through inference.
+def borrowed['a, t](value: *Borrowed['a, t]) given (project: Project[t]) -> () where (
+    project.Out = &'a t,
+):
+    return ()
+
+# OK: `Chain` only reaches `&'a t` through `Node`, and still implies `t: 'a`.
+def chain['a, t](value: *Chain['a, t]) given (project: Project[t]) -> () where (
+    project.Out = &'a t,
+):
+    return ()
+
 # ERROR: the parameter does not imply the declared bound of
 # `UsesDeclaredBounded`, so both the parameter type and `&'a t` need `t: 'a`
 # written out.
@@ -64,6 +98,10 @@ def usesDeclared['a, t](value: *UsesDeclaredBounded['a, t]) given (
 
 # ERROR: using `Holder['a, t]` requires `t: 'a`.
 def unbounded['a, t]() given (project: Project[Holder['a, t]]) -> ():
+    return ()
+
+# ERROR: using `Borrowed['a, t]` requires `t: 'a`.
+def unboundedEnum['a, t]() given (project: Project[Borrowed['a, t]]) -> ():
     return ()
 
 # OK: the bound is declared.

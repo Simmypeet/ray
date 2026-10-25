@@ -1,19 +1,57 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: use of partially moved value
-   ╭▸ compiler/e2e/test/check/memory/restoration/main.ray:34:17
-   │
+ 1 │ struct Resource:
+ 2 │     value: int32
+ 3 │
+ 4 │ impl !core.Copy for Resource
+ 5 │
+ 6 │ struct Pair:
+ 7 │     first: Resource
+ 8 │     second: Resource
+ 9 │
+10 │ def consumeResource(value: Resource) -> ():
+11 │     return ()
+12 │
+13 │ def consumePair(value: Pair) -> ():
+14 │     return ()
+15 │
+16 │ def restoreWholeValue() -> ():
+17 │     let mut value = Resource { value = 1 }
+18 │     consumeResource(value)
+19 │     value = Resource { value = 2 }
+20 │
+21 │     # OK: assigning the whole value restored it after the move.
+22 │     consumeResource(value)
+23 │     return ()
+24 │
+25 │ def restoreFieldByField() -> ():
+26 │     let mut pair = Pair {
+27 │         first = Resource { value = 1 },
+28 │         second = Resource { value = 2 },
+29 │     }
 30 │     consumePair(pair)
-   │                 ──── a component was moved here
-   ‡
+31 │     pair.first = Resource { value = 3 }
+32 │
+33 │     # ERROR: only `pair.first` is restored; `pair.second` remains moved.
 34 │     consumePair(pair)
-   ╰╴                ━━━━ value used here after one of its components was moved
+   ┆
+   ┆ [error]: use of partially moved value
+   ┆    ╭▸ compiler/e2e/test/check/memory/restoration/main.ray:34:17
+   ┆    │
+   ┆ 30 │     consumePair(pair)
+   ┆    │                 ──── a component was moved here
+   ┆    ‡
+   ┆ 34 │     consumePair(pair)
+   ┆    ╰╴                ━━━━ value used here after one of its components was moved
+   ┆
+35 │
+36 │     pair.second = Resource { value = 4 }
+37 │
+38 │     # OK: restoring the final field made the complete pair usable again.
+39 │     consumePair(pair)
+40 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

@@ -1,19 +1,33 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: use of moved value
-   ╭▸ compiler/e2e/test/check/memory/control_flow_merge/main.ray:15:13
-   │
+ 1 │ struct Resource:
+ 2 │     value: int32
+ 3 │
+ 4 │ impl !core.Copy for Resource
+ 5 │
+ 6 │ def consume(value: Resource) -> ():
+ 7 │     return ()
+ 8 │
+ 9 │ def main(condition: bool) -> ():
+10 │     let value = Resource { value = 1 }
+11 │     if condition:
 12 │         consume(value)
-   │                 ───── value moved here
-   ‡
+13 │
+14 │     # ERROR: the true branch moved `value`, so it might be moved at this join.
 15 │     consume(value)
-   ╰╴            ━━━━━ value used here after it was moved
+   ┆
+   ┆ [error]: use of moved value
+   ┆    ╭▸ compiler/e2e/test/check/memory/control_flow_merge/main.ray:15:13
+   ┆    │
+   ┆ 12 │         consume(value)
+   ┆    │                 ───── value moved here
+   ┆    ‡
+   ┆ 15 │     consume(value)
+   ┆    ╰╴            ━━━━━ value used here after it was moved
+   ┆
+16 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

@@ -1,32 +1,94 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: borrowed value does not live long enough
-   ╭▸ compiler/e2e/test/check/coroutine/yielded_borrow_escapes/main.ray:22:26
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ def lend(first: &'a int32, second: &'a int32) -> &'a int32 \ {Yield[&'a int32]}:
+ 6 │     Yield.yield(first)
+ 7 │     return second
+ 8 │
+ 9 │
+10 │ def read(value: &int32) -> int32:
+11 │     return value.*
+12 │
+13 │
+14 │ # ERROR: what a clause receives is what the coroutine yielded, so `value`
+15 │ # borrows `inner`, which ends with the `if`.
+16 │ def yieldedEscapes(condition: bool) -> int32:
+17 │     let outer = 0
+18 │     let mut kept = outer.&
+19 │
+20 │     if condition:
 21 │         let inner = 1
-   │             ───── this variable goes out of scope while it is still borrowed
 22 │         handle coro lend(inner.&, inner.&):
-   │                          ━━━━━━━ borrowed value does not live long enough
-   ‡
+   ┆
+   ┆ [error]: borrowed value does not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/yielded_borrow_escapes/main.ray:22:26
+   ┆    │
+   ┆ 21 │         let inner = 1
+   ┆    │             ───── this variable goes out of scope while it is still borrowed
+   ┆ 22 │         handle coro lend(inner.&, inner.&):
+   ┆    │                          ━━━━━━━ borrowed value does not live long enough
+   ┆    ‡
+   ┆ 28 │     return read(kept)
+   ┆    ╰╴                ──── borrow later used here
+   ┆
+23 │             case Yield[&int32].yield(value) resume k:
+24 │                 kept = value
+25 │             case return x:
+26 │                 pass
+27 │
 28 │     return read(kept)
-   ╰╴                ──── borrow later used here
-
-[error]: borrowed value does not live long enough
-   ╭▸ compiler/e2e/test/check/coroutine/yielded_borrow_escapes/main.ray:38:26
-   │
+29 │
+30 │
+31 │ # ERROR: so does the value the coroutine completes with.
+32 │ def returnedEscapes(condition: bool) -> int32:
+33 │     let outer = 0
+34 │     let mut kept = outer.&
+35 │
+36 │     if condition:
 37 │         let inner = 1
-   │             ───── this variable goes out of scope while it is still borrowed
 38 │         handle coro lend(inner.&, inner.&):
-   │                          ━━━━━━━ borrowed value does not live long enough
-   ‡
+   ┆
+   ┆ [error]: borrowed value does not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/yielded_borrow_escapes/main.ray:38:26
+   ┆    │
+   ┆ 37 │         let inner = 1
+   ┆    │             ───── this variable goes out of scope while it is still borrowed
+   ┆ 38 │         handle coro lend(inner.&, inner.&):
+   ┆    │                          ━━━━━━━ borrowed value does not live long enough
+   ┆    ‡
+   ┆ 44 │     return read(kept)
+   ┆    ╰╴                ──── borrow later used here
+   ┆
+39 │             case Yield[&int32].yield(value) resume k:
+40 │                 pass
+41 │             case return x:
+42 │                 kept = x
+43 │
 44 │     return read(kept)
-   ╰╴                ──── borrow later used here
+45 │
+46 │
+47 │ # OK: the borrows are of a variable that lives as long as `kept`.
+48 │ def stays(condition: bool) -> int32:
+49 │     let outer = 0
+50 │     let mut kept = outer.&
+51 │
+52 │     if condition:
+53 │         handle coro lend(outer.&, outer.&):
+54 │             case Yield[&int32].yield(value) resume k:
+55 │                 kept = value
+56 │             case return x:
+57 │                 kept = x
+58 │
+59 │     return read(kept)
+60 │
+61 │
+62 │ def main() -> int32:
+63 │     return stays(true)
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

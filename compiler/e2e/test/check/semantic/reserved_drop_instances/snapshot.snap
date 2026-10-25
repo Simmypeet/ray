@@ -1,28 +1,40 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: reserved Drop implementation
-  ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:1:18
-  │
-1 │ inst IntDrop for core.Drop[int32]:
-  ╰╴                 ━━━━━━━━━━━━━━━━ Drop for primitive types is provided by the compiler
+ 1 │ inst IntDrop for core.Drop[int32]:
+   ┆
+   ┆ [error]: reserved Drop implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:1:18
+   ┆   │
+   ┆ 1 │ inst IntDrop for core.Drop[int32]:
+   ┆   ╰╴                 ━━━━━━━━━━━━━━━━ Drop for primitive types is provided by the compiler
+   ┆
+ 2 │     def drop(self: int32):
+ 3 │         return
+ 4 │
+ 5 │ inst PointerDrop[a] for core.Drop[*a]:
+   ┆
+   ┆ [error]: reserved Drop implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:5:25
+   ┆   │
+   ┆ 5 │ inst PointerDrop[a] for core.Drop[*a]:
+   ┆   ╰╴                        ━━━━━━━━━━━━━ Drop for pointer types is provided by the compiler
+   ┆
+ 6 │     def drop(self: *a):
+ 7 │         return
+ 8 │
+ 9 │ inst TupleDrop[a, b] for core.Drop[(a, b)]:
+   ┆
+   ┆ [error]: reserved Drop implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:9:26
+   ┆   │
+   ┆ 9 │ inst TupleDrop[a, b] for core.Drop[(a, b)]:
+   ┆   ╰╴                         ━━━━━━━━━━━━━━━━━ Drop for tuple types is provided by the compiler
+   ┆
+10 │     def drop(self: (a, b)):
+11 │         core.NoDrop { value = move self }
+12 │         return
 
-[error]: reserved Drop implementation
-  ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:5:25
-  │
-5 │ inst PointerDrop[a] for core.Drop[*a]:
-  ╰╴                        ━━━━━━━━━━━━━ Drop for pointer types is provided by the compiler
-
-[error]: reserved Drop implementation
-  ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:9:26
-  │
-9 │ inst TupleDrop[a, b] for core.Drop[(a, b)]:
-  ╰╴                         ━━━━━━━━━━━━━━━━━ Drop for tuple types is provided by the compiler
-
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:
