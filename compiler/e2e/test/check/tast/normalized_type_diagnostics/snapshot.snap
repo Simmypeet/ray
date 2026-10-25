@@ -55,6 +55,3 @@ expression: snapshot
    ┆ 25 │     return requires(value)
    ┆    ╰╴           ━━━━━━━━
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

@@ -35,6 +35,3 @@ expression: snapshot
 10 │     def drop(self: (a, b)):
 11 │         core.NoDrop { value = move self }
 12 │         return
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

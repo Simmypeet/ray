@@ -24,6 +24,3 @@ expression: snapshot
   ┆   ╰╴                                            ━━━━━ expected an effect, found def
   ┆
 8 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

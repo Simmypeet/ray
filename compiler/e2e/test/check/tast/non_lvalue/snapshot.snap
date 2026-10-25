@@ -35,6 +35,3 @@ expression: snapshot
    ┆ 12 │     let a = 1.&
    ┆    ╰╴            ━ this expression is not addressable
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

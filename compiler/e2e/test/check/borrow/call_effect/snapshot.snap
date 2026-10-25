@@ -234,6 +234,3 @@ expression: snapshot
 127 │
 128 │ def main():
 129 │     pass
-
-other diagnostics:
-[error]: Compilation aborted due to 11 error(s)

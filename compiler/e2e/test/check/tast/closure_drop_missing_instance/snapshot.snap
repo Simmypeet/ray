@@ -14,11 +14,6 @@ expression: snapshot
   ┆   │ ━━━━━━━━━━━━━━━
   ┆   │
   ┆   ╰ help: add `given (_: core.Drop[a])`
+  ┆ [note]: dropping the closure drops a value it captures, of type `a`
+  ┆ [note]: no instance of `core.Drop[a]` exists
   ┆
-
-other diagnostics:
-[note]: dropping the closure drops a value it captures, of type `a`
-
-[note]: no instance of `core.Drop[a]` exists
-
-[error]: Compilation aborted due to 1 error(s)

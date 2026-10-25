@@ -32,6 +32,3 @@ expression: snapshot
    ┆    ╰╴            ─── borrow later used here
    ┆
 18 │     consume(p.*)      # use `p` again here
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

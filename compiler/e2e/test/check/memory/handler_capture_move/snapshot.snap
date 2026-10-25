@@ -89,6 +89,3 @@ expression: snapshot
    ┆    ╰╴                         ━━━━━━━━━━━━ value moved out here
    ┆
 47 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

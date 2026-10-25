@@ -119,6 +119,3 @@ expression: snapshot
 43 │     # OK: a body elides lifetimes freely.
 44 │     let reference: &int32 = value.&
 45 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 8 error(s)

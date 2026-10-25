@@ -92,6 +92,3 @@ expression: snapshot
 28 │
 29 │ def main() -> int32:
 30 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 6 error(s)

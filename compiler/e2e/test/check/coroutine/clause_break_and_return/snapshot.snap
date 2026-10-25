@@ -78,6 +78,3 @@ expression: snapshot
 60 │
 61 │ def main() -> int32:
 62 │     return first() + sumUntil(2)
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

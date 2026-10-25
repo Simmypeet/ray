@@ -42,6 +42,3 @@ expression: snapshot
 12 │
 13 │ def main() -> int32:
 14 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

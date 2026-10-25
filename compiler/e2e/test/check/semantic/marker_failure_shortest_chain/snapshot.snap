@@ -11,19 +11,6 @@ expression: snapshot
  7 │     value: int32
  8 │
  9 │ impl !Send for Secret
-   ┆
-   ┆ [note]: `Secret` is excluded by this negative implementation
-   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:9:1
-   ┆   │
-   ┆ 9 │ impl !Send for Secret
-   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
-   ┆
-   ┆ [note]: `Secret` is excluded by this negative implementation
-   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:9:1
-   ┆   │
-   ┆ 9 │ impl !Send for Secret
-   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
-   ┆
 10 │
 11 │ struct Wrapper[a]:
 12 │     value: a
@@ -32,25 +19,11 @@ expression: snapshot
 15 │ struct Node[a]:
 16 │     next: Node[a]
 17 │     value: a
-   ┆
-   ┆ [note]: `Node[Secret]` stores field `value` of type `Secret`
-   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:17:5
-   ┆    │
-   ┆ 17 │     value: a
-   ┆    ╰╴    ━━━━━
-   ┆
 18 │
 19 │ # Both fields fail, the first one more deeply.
 20 │ struct Both:
 21 │     deep: Wrapper[Wrapper[Secret]]
 22 │     shallow: Secret
-   ┆
-   ┆ [note]: `Both` stores field `shallow` of type `Secret`
-   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:22:5
-   ┆    │
-   ┆ 22 │     shallow: Secret
-   ┆    ╰╴    ━━━━━━━
-   ┆
 23 │
 24 │ def requireSend(value: a) -> a where (a: Send):
 25 │     return value
@@ -64,6 +37,16 @@ expression: snapshot
    ┆    │
    ┆ 29 │     return requireSend(value)
    ┆    ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆ [note]: `Node[Secret]` stores field `value` of type `Secret`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:17:5
+   ┆    │
+   ┆ 17 │     value: a
+   ┆    ╰╴    ━━━━━
+   ┆ [note]: `Secret` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:9:1
+   ┆   │
+   ┆ 9 │ impl !Send for Secret
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
    ┆
 30 │
 31 │ # ERROR: the chain goes through the field `shallow`, which is shorter.
@@ -75,10 +58,17 @@ expression: snapshot
    ┆    │
    ┆ 33 │     return requireSend(value)
    ┆    ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆ [note]: `Both` stores field `shallow` of type `Secret`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:22:5
+   ┆    │
+   ┆ 22 │     shallow: Secret
+   ┆    ╰╴    ━━━━━━━
+   ┆ [note]: `Secret` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:9:1
+   ┆   │
+   ┆ 9 │ impl !Send for Secret
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
    ┆
 34 │
 35 │ def main() -> int32:
 36 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

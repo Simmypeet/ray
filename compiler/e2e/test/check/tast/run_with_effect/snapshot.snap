@@ -44,6 +44,3 @@ expression: snapshot
 22 │             SecondHandlerResidual.perform()
 23 │
 24 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

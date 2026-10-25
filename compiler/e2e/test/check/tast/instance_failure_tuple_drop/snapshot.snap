@@ -23,6 +23,7 @@ expression: snapshot
    ┆    │         ━━━━ this value is dropped when it goes out of scope
    ┆    │
    ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆ [note]: dropping `(int32, Handle)` drops its element `1`, of type `Handle`
    ┆
 14 │
 15 │ # ERROR: the element nested two tuples deep has no `Drop`.
@@ -36,15 +37,7 @@ expression: snapshot
    ┆    │         ━━━━ this value is dropped when it goes out of scope
    ┆    │
    ┆    ╰ help: add `given (_: core.Drop[a])`
+   ┆ [note]: dropping `(int32, (bool, a))` drops its element `1`, of type `(bool, a)`
+   ┆ [note]: dropping `(bool, a)` drops its element `1`, of type `a`
+   ┆ [note]: no instance of `core.Drop[a]` exists
    ┆
-
-other diagnostics:
-[note]: dropping `(int32, Handle)` drops its element `1`, of type `Handle`
-
-[note]: dropping `(int32, (bool, a))` drops its element `1`, of type `(bool, a)`
-
-[note]: dropping `(bool, a)` drops its element `1`, of type `a`
-
-[note]: no instance of `core.Drop[a]` exists
-
-[error]: Compilation aborted due to 2 error(s)

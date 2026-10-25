@@ -37,6 +37,3 @@ expression: snapshot
    ┆    ╰╴                ━━━━ value used here after one of its components was moved
    ┆
 25 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

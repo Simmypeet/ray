@@ -98,6 +98,3 @@ expression: snapshot
    ┆    ╰╴               ━━━
    ┆
 26 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 10 error(s)

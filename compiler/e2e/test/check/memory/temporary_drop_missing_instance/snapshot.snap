@@ -112,6 +112,7 @@ expression: snapshot
    ┆    │                    ━━━━━━━━━━━━━━━━━━━━━━━━━━ this value is dropped when it goes out of scope
    ┆    │
    ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆ [note]: the generated `Drop` of `Wrapper[Handle]` drops a value of type `Handle`
    ┆
 67 │         return 0
 68 │     else:
@@ -153,8 +154,3 @@ expression: snapshot
 95 │     else:
 96 │         ())
 97 │     return 1
-
-other diagnostics:
-[note]: the generated `Drop` of `Wrapper[Handle]` drops a value of type `Handle`
-
-[error]: Compilation aborted due to 6 error(s)

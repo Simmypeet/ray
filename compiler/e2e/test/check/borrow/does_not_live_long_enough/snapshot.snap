@@ -40,6 +40,3 @@ expression: snapshot
 24 │ def main():
 25 │     storedPastScope()
 26 │     usedWithinScope()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

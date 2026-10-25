@@ -64,6 +64,3 @@ expression: snapshot
 51 │         return self.*.hold.*.&mut
 52 │
 53 │
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

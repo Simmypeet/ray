@@ -26,6 +26,3 @@ expression: snapshot
    ┆    ╰╴    ━━━━━━━━━━━ `callable dictionary.Effect` must equal `{Reader[bool; given GenericEq[bool]]}`
    ┆
 17 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

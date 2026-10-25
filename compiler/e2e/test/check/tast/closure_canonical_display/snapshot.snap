@@ -11,6 +11,3 @@ expression: snapshot
   ┆ 2 │     return callback(true)
   ┆   ╰╴                    ━━━━
   ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

@@ -39,6 +39,3 @@ expression: snapshot
    ┆    │         │            first mutable borrow occurs here
    ┆    ╰╴        borrow later used here
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

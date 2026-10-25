@@ -25,6 +25,3 @@ expression: snapshot
  9 │             return ()
 10 │
 11 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

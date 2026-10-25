@@ -218,6 +218,3 @@ expression: snapshot
 116 │
 117 │ def main() -> int32:
 118 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 9 error(s)

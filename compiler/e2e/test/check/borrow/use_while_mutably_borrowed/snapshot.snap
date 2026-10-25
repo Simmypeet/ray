@@ -115,6 +115,3 @@ expression: snapshot
 63 │     readWhileShared()
 64 │     readSiblingOfMutablyBorrowedField()
 65 │     readAfterLastUse()
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

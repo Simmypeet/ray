@@ -18,6 +18,3 @@ expression: snapshot
   ┆ 9 │   let flag: bool = point.
   ┆   ╰╴                         ━
   ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

@@ -71,6 +71,3 @@ expression: snapshot
 56 │
 57 │ def main() -> int32:
 58 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

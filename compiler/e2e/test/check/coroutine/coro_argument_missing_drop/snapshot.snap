@@ -33,6 +33,3 @@ expression: snapshot
 20 │ def main() -> int32:
 21 │     provided(1)
 22 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

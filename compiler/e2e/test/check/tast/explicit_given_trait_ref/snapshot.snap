@@ -139,6 +139,3 @@ expression: snapshot
 79 │
 80 │ def inferredGeneric(value: int32) -> bool:
 81 │     return accepts[given GenericEq](value)
-
-other diagnostics:
-[error]: Compilation aborted due to 8 error(s)

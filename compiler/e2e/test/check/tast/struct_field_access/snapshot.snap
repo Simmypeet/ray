@@ -24,6 +24,3 @@ expression: snapshot
   ┆ 8 │     return value.field
   ┆   ╰╴           ━━━━━
   ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

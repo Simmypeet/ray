@@ -75,6 +75,3 @@ expression: snapshot
    ┆ 14 │     return true == 1
    ┆    ╰╴                   ━
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 9 error(s)

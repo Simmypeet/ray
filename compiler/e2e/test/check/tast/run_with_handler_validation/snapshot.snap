@@ -53,6 +53,3 @@ expression: snapshot
 18 │             return ()
 19 │
 20 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

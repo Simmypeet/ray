@@ -42,6 +42,3 @@ expression: snapshot
   ┆ 5 │     return makeIncrement()(45)
   ┆   ╰╴                          ━━━━
   ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 5 error(s)

@@ -18,6 +18,3 @@ expression: snapshot
   ┆ 2 │     return b
   ┆   ╰╴           ━
   ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

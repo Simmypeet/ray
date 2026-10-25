@@ -17,6 +17,3 @@ expression: snapshot
   ┆   │
   ┆   ╰ help: add `given (_: core.Drop[a])`
   ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

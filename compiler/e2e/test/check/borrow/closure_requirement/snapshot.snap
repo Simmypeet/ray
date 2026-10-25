@@ -210,6 +210,3 @@ expression: snapshot
 106 │     let local = item
 107 │     let same = (value) -> value
 108 │     return same(local)
-
-other diagnostics:
-[error]: Compilation aborted due to 9 error(s)

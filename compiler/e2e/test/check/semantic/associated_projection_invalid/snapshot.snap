@@ -90,6 +90,3 @@ expression: snapshot
    ┆ 32 │     return Concrete.Item()
    ┆    ╰╴           ━━━━━━━━━━━━━
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 8 error(s)

@@ -54,6 +54,3 @@ expression: snapshot
    ┆ 17 │     return value()
    ┆    ╰╴                ━━
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

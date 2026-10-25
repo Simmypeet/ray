@@ -24,6 +24,3 @@ expression: snapshot
    ┆ 13 │     return consume(moved)
    ┆    ╰╴                   ━━━━━ value used here after it was moved
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

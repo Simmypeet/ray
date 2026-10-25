@@ -55,6 +55,3 @@ expression: snapshot
    ┆    ╰╴                              ━━━ borrowed value does not live long enough
    ┆
 33 │     return held + q.*
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

@@ -113,6 +113,3 @@ expression: snapshot
 60 │     useWhileCapturedMutably()
 61 │     captureSharedTwice()
 62 │     captureAfterLastUse()
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

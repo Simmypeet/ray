@@ -45,6 +45,3 @@ expression: snapshot
    ┆    ╰ help: `DescribeInt` is only accessible within `main.numbers`; declare it with `pub` to make it public
    ┆
 24 │     return boolean + int + explicit + numbers.describe_int(number)
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

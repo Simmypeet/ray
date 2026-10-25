@@ -26,6 +26,3 @@ expression: snapshot
 10 │
 11 │     value = 42          # <-- Expect NO error here: `address` is not used again.
 12 │     return read + other
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

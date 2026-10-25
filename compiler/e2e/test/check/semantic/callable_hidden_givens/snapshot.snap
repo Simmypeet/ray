@@ -21,6 +21,3 @@ expression: snapshot
    ┆ 12 │     return invoke[given Integer](42)
    ┆    ╰╴                        ━━━━━━━
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

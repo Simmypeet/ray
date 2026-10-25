@@ -44,6 +44,3 @@ expression: snapshot
    ┆
 10 │     }
 11 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

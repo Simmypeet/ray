@@ -69,6 +69,3 @@ expression: snapshot
    ┆    ╰ help: `detail` is only accessible within `main.shapes`; declare it with `pub` to make it public
    ┆
 31 │     return area + thrice + square + twice
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

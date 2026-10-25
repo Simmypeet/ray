@@ -10,22 +10,8 @@ expression: snapshot
  6 │     value: int32
  7 │
  8 │ impl !Send for Secret
-   ┆
-   ┆ [note]: `Secret` is excluded by this negative implementation
-   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:8:1
-   ┆   │
-   ┆ 8 │ impl !Send for Secret
-   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
-   ┆
  9 │
 10 │ impl[a, b, c] !Send for (a, b, c)
-   ┆
-   ┆ [note]: `(&int32, &int32, &int32)` is excluded by this negative implementation
-   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:10:1
-   ┆    │
-   ┆ 10 │ impl[a, b, c] !Send for (a, b, c)
-   ┆    ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ┆
 11 │
 12 │ def requireSend(value: a) -> a where (a: Send):
 13 │     return value
@@ -39,6 +25,12 @@ expression: snapshot
    ┆    │
    ┆ 17 │     requireSend(() -> move secret)
    ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆ [note]: the closure stores a capture of type `Secret`
+   ┆ [note]: `Secret` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:8:1
+   ┆   │
+   ┆ 8 │ impl !Send for Secret
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
    ┆
 18 │
 19 │ # ERROR: the closure captures `secret` by reference, and a reference is not
@@ -51,6 +43,8 @@ expression: snapshot
    ┆    │
    ┆ 22 │     requireSend(() -> secret.value + count)
    ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆ [note]: the closure stores a capture of type `&Secret`
+   ┆ [note]: no implementation or given proves `&Secret: main.Send`
    ┆
 23 │
 24 │ # ERROR: the closure captures three values, and its captures are excluded
@@ -63,18 +57,13 @@ expression: snapshot
    ┆    │
    ┆ 27 │     requireSend(() -> first + second + third)
    ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆ [note]: the closure stores its captures, of type `(&int32, &int32, &int32)`
+   ┆ [note]: `(&int32, &int32, &int32)` is excluded by this negative implementation
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:10:1
+   ┆    │
+   ┆ 10 │ impl[a, b, c] !Send for (a, b, c)
+   ┆    ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ┆
 28 │
 29 │ def main() -> int32:
 30 │     return 0
-
-other diagnostics:
-[note]: the closure stores a capture of type `Secret`
-
-[note]: the closure stores a capture of type `&Secret`
-
-[note]: no implementation or given proves `&Secret: main.Send`
-
-[note]: the closure stores its captures, of type `(&int32, &int32, &int32)`
-
-[error]: Compilation aborted due to 3 error(s)

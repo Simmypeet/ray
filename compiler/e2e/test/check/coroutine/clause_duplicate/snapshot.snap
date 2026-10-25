@@ -43,6 +43,3 @@ expression: snapshot
 19 │             pass
 20 │
 21 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

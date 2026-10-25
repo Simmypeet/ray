@@ -14,24 +14,10 @@ expression: snapshot
 10 │     value: int32
 11 │
 12 │ inst PingFromPong[a] for Ping[a] given (pong: Pong[a]):
-   ┆
-   ┆ [note]: `main.PingFromPong` matches `main.Ping[Ball]`, but its given `pong` needs `main.Pong[Ball]`
-   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:12:41
-   ┆    │
-   ┆ 12 │ inst PingFromPong[a] for Ping[a] given (pong: Pong[a]):
-   ┆    ╰╴                                        ━━━━
-   ┆
 13 │     def ping() -> int32:
 14 │         return 0
 15 │
 16 │ inst PongFromPing[a] for Pong[a] given (ping: Ping[a]):
-   ┆
-   ┆ [note]: `main.PongFromPing` matches `main.Pong[Ball]`, but its given `ping` needs `main.Ping[Ball]`
-   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:16:41
-   ┆    │
-   ┆ 16 │ inst PongFromPing[a] for Pong[a] given (ping: Ping[a]):
-   ┆    ╰╴                                        ━━━━
-   ┆
 17 │     def pong() -> int32:
 18 │         return 0
 19 │
@@ -47,6 +33,17 @@ expression: snapshot
    ┆    │
    ┆ 25 │     return ping(ball)
    ┆    ╰╴           ━━━━
+   ┆ [note]: `main.PingFromPong` matches `main.Ping[Ball]`, but its given `pong` needs `main.Pong[Ball]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:12:41
+   ┆    │
+   ┆ 12 │ inst PingFromPong[a] for Ping[a] given (pong: Pong[a]):
+   ┆    ╰╴                                        ━━━━
+   ┆ [note]: `main.PongFromPing` matches `main.Pong[Ball]`, but its given `ping` needs `main.Ping[Ball]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:16:41
+   ┆    │
+   ┆ 16 │ inst PongFromPing[a] for Pong[a] given (ping: Ping[a]):
+   ┆    ╰╴                                        ━━━━
+   ┆ [note]: `main.Ping[Ball]` is required again while it is being resolved
    ┆
 26 │
 27 │ trait Tick[a]:
@@ -59,13 +56,6 @@ expression: snapshot
 34 │     def never() -> int32
 35 │
 36 │ inst TickFromTock[a] for Tick[a] given (tock: Tock[a]):
-   ┆
-   ┆ [note]: `main.TickFromTock` matches `main.Tick[Ball]`, but it requires itself
-   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:36:6
-   ┆    │
-   ┆ 36 │ inst TickFromTock[a] for Tick[a] given (tock: Tock[a]):
-   ┆    ╰╴     ━━━━━━━━━━━━
-   ┆
 37 │     def tick() -> int32:
 38 │         return 0
 39 │
@@ -74,13 +64,6 @@ expression: snapshot
 42 │         return 0
 43 │
 44 │ inst TickFromNever[a] for Tick[a] given (never: Never[a]):
-   ┆
-   ┆ [note]: `main.TickFromNever` matches `main.Tick[Ball]`, but needs `main.Never[Ball]`, which has no instance
-   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:44:6
-   ┆    │
-   ┆ 44 │ inst TickFromNever[a] for Tick[a] given (never: Never[a]):
-   ┆    ╰╴     ━━━━━━━━━━━━━
-   ┆
 45 │     def tick() -> int32:
 46 │         return 0
 47 │
@@ -97,9 +80,14 @@ expression: snapshot
    ┆    │
    ┆ 54 │     return tick(ball)
    ┆    ╰╴           ━━━━
+   ┆ [note]: `main.TickFromNever` matches `main.Tick[Ball]`, but needs `main.Never[Ball]`, which has no instance
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:44:6
+   ┆    │
+   ┆ 44 │ inst TickFromNever[a] for Tick[a] given (never: Never[a]):
+   ┆    ╰╴     ━━━━━━━━━━━━━
+   ┆ [note]: `main.TickFromTock` matches `main.Tick[Ball]`, but it requires itself
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:36:6
+   ┆    │
+   ┆ 36 │ inst TickFromTock[a] for Tick[a] given (tock: Tock[a]):
+   ┆    ╰╴     ━━━━━━━━━━━━
    ┆
-
-other diagnostics:
-[note]: `main.Ping[Ball]` is required again while it is being resolved
-
-[error]: Compilation aborted due to 2 error(s)

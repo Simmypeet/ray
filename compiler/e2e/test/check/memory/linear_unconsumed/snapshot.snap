@@ -109,6 +109,7 @@ expression: snapshot
    ┆    │         ━━━━━━━ this value is dropped when it goes out of scope
    ┆    │
    ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆ [note]: the generated `Drop` of `Wrapper[Handle]` drops a value of type `Handle`
    ┆
 55 │
 56 │ # Error: a linear value is never `Copy`, even with only `Copy` fields.
@@ -138,8 +139,3 @@ expression: snapshot
    ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
    ┆
 64 │     return 0
-
-other diagnostics:
-[note]: the generated `Drop` of `Wrapper[Handle]` drops a value of type `Handle`
-
-[error]: Compilation aborted due to 8 error(s)

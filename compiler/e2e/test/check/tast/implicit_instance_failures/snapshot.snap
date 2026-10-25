@@ -73,6 +73,3 @@ expression: snapshot
    ┆ 37 │     return ambiguous[given Nested](1)
    ┆    ╰╴                           ━━━━━━
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

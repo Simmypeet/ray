@@ -49,6 +49,3 @@ expression: snapshot
 38 │
 39 │ def main() -> int32:
 40 │     return drive(coro counter(), (), 0)
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

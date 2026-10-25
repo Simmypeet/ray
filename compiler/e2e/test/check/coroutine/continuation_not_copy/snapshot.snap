@@ -47,6 +47,12 @@ expression: snapshot
    ┆    │
    ┆ 30 │     requireCopy(coro numbers())
    ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireCopy`
+   ┆ [note]: `Continuation[(), &mut <coroutine of numbers>]` stores field `coroutine` of type `&mut <coroutine of numbers>`
+   ┆    ╭▸ __ray_core__/core.ray:38:5
+   ┆    │
+   ┆ 38 │     coroutine: c
+   ┆    ╰╴    ━━━━━━━━━
+   ┆ [note]: a unique reference is never `Copy`
    ┆
 31 │
 32 │
@@ -59,21 +65,9 @@ expression: snapshot
    ┆    │
    ┆ 35 │     requireCopyCoroutine(coro numbers())
    ┆    ╰╴    ━━━━━━━━━━━━━━━━━━━━ required by the where clause of `main.requireCopyCoroutine`
+   ┆ [note]: a coroutine is never `Copy`
    ┆
 36 │
 37 │
 38 │ def main() -> int32:
 39 │     return 0
-
-other diagnostics:
-[note]: `Continuation[(), &mut <coroutine of numbers>]` stores field `coroutine` of type `&mut <coroutine of numbers>`
-   ╭▸ __ray_core__/core.ray:38:5
-   │
-38 │     coroutine: c
-   ╰╴    ━━━━━━━━━
-
-[note]: a unique reference is never `Copy`
-
-[note]: a coroutine is never `Copy`
-
-[error]: Compilation aborted due to 3 error(s)

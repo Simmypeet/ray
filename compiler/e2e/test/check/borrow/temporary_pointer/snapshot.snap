@@ -38,6 +38,3 @@ expression: snapshot
 22 │ def main():
 23 │     reborrowPastStatement()
 24 │     reborrowKeepsOriginalBorrowed()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

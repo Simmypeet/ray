@@ -38,6 +38,3 @@ expression: snapshot
 20 │     let shared: &int32 = value.&mut
 21 │     let raw: *int32 = value.&mut
 22 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

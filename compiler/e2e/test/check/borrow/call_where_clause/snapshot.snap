@@ -36,6 +36,3 @@ expression: snapshot
    ┆    ╰╴            ─── borrow later used here
    ┆
 23 │     consume(q.*)
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

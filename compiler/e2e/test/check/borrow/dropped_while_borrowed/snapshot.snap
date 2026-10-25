@@ -98,6 +98,3 @@ expression: snapshot
 62 │     declaredDropOfSibling(slot.&mut, e.&mut, f.&mut)
 63 │     declaredDropOnReassign(slot.&mut, g.&mut, h.&mut)
 64 │     declaredDropAfterLastUse(slot)
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

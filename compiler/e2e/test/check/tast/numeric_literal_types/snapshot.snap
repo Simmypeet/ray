@@ -86,6 +86,3 @@ expression: snapshot
    ┆ 28 │     return 340282366920938463463374607431768211456
    ┆    ╰╴           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 8 error(s)

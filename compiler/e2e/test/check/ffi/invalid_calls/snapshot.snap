@@ -31,6 +31,3 @@ expression: snapshot
   ┆   ╰╴                       ━━━━━
   ┆
 8 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

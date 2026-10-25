@@ -120,6 +120,3 @@ expression: snapshot
 59 │
 60 │ def validDependent() -> () \ {Both[int32; given nested = NestedInt, equality = EqInt]}:
 61 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 8 error(s)

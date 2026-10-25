@@ -119,6 +119,13 @@ impl ReportTerm<'_> {
     }
 }
 
+/// Renders a rayc diagnostic without colors, the way a terminal that is not
+/// fancy shows it.
+#[must_use]
+pub fn render_plain(diagnostic: &Rendered<ByteIndex>, source_map: &SourceMap) -> String {
+    render_diagnostic(diagnostic, source_map, &Renderer::plain().decor_style(DecorStyle::Unicode))
+}
+
 /// Information about a single source context (a file's content with
 /// annotations).
 struct SourceContext {

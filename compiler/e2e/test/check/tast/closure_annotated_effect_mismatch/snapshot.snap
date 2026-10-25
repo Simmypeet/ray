@@ -26,6 +26,3 @@ expression: snapshot
    ┆
 16 │
 17 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

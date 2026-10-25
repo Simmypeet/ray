@@ -132,6 +132,3 @@ expression: snapshot
 58 │     let _ = returnsReborrow(value.&)
 59 │     let _ = returnsMutableReborrow(pair.&mut)
 60 │     let _ = returnsCopy(1)
-
-other diagnostics:
-[error]: Compilation aborted due to 7 error(s)

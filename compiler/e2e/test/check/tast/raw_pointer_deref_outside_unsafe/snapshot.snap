@@ -51,6 +51,3 @@ expression: snapshot
 29 │
 30 │ def main() -> ():
 31 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

@@ -28,6 +28,3 @@ expression: snapshot
    ┆    ╰╴            ━━━━━ value used here after it was moved
    ┆
 16 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

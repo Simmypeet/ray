@@ -122,6 +122,3 @@ expression: snapshot
 42 │
 43 │ def main() -> int32:
 44 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 10 error(s)

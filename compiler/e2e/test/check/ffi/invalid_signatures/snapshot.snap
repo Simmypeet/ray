@@ -52,6 +52,3 @@ expression: snapshot
   ┆ 4 │ extern def polymorphic(value: a) -> a
   ┆   ╰╴                                    ━ symbol `a` is not found
   ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 7 error(s)

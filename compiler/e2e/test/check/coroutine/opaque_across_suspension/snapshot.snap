@@ -49,6 +49,8 @@ expression: snapshot
    ┆    │     ────────────── it is dropped here if the coroutine is dropped while suspended
    ┆    │
    ┆    ╰ help: add `given (_: core.Drop[t])`
+   ┆ [note]: the generated `Drop` of `Wrapper[t]` drops a value of type `t`
+   ┆ [note]: no instance of `core.Drop[t]` exists
    ┆
 27 │     Yield.yield(1)
 28 │     return x
@@ -95,10 +97,3 @@ expression: snapshot
 49 │
 50 │ def main() -> int32:
 51 │     return 0
-
-other diagnostics:
-[note]: the generated `Drop` of `Wrapper[t]` drops a value of type `t`
-
-[note]: no instance of `core.Drop[t]` exists
-
-[error]: Compilation aborted due to 4 error(s)

@@ -112,6 +112,3 @@ expression: snapshot
 57 │
 58 │ def main():
 59 │     pass
-
-other diagnostics:
-[error]: Compilation aborted due to 6 error(s)

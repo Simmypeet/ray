@@ -45,6 +45,3 @@ expression: snapshot
    ┆ 29 │     return acceptsRoot(0)
    ┆    ╰╴           ━━━━━━━━━━━ `BoolBox.Item` must equal `int32`
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

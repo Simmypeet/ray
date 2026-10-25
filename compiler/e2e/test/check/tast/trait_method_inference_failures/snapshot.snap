@@ -41,6 +41,3 @@ expression: snapshot
    ┆ 19 │     return Choice[bool].get(true)
    ┆    ╰╴           ━━━━━━━━━━━━━━━━
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

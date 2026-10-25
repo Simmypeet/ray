@@ -73,6 +73,3 @@ expression: snapshot
    ┆    │
    ┆    ╰ help: `corners` is only accessible within `main.sealed`; declare it with `pub` to make it public
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

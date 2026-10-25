@@ -23,6 +23,3 @@ expression: snapshot
 10 │ # A moved parameter is not dropped, so it needs no dictionary.
 11 │ def identity(value: a) -> a:
 12 │     return value
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

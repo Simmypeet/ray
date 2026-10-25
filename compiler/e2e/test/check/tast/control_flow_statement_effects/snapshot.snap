@@ -36,6 +36,3 @@ expression: snapshot
 12 │     while false:
 13 │         State.perform()
 14 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

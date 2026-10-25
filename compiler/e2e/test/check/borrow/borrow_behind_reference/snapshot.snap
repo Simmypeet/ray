@@ -61,6 +61,3 @@ expression: snapshot
 45 │     repointSharedWhileReborrowed(c.&, d.&)
 46 │     moveHolderWhileReborrowed(c.&)
 47 │     assignThroughWhileReborrowed(a.&mut)
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

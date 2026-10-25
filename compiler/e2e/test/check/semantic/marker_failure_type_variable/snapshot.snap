@@ -9,13 +9,6 @@ expression: snapshot
  5 │
  6 │ struct Holder[a]:
  7 │     value: a
-   ┆
-   ┆ [note]: `Holder[a]` stores field `value` of type `a`
-   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_type_variable/main.ray:7:5
-   ┆   │
-   ┆ 7 │     value: a
-   ┆   ╰╴    ━━━━━
-   ┆
  8 │
  9 │ def requireSend(value: a) -> a where (a: Send):
 10 │     return value
@@ -44,6 +37,12 @@ expression: snapshot
    ┆    │            ━━━━━━━━━━━ required by the where clause of `main.requireSend`
    ┆    │
    ┆    ╰ help: add `where (a: main.Send)`
+   ┆ [note]: `Holder[a]` stores field `value` of type `a`
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_type_variable/main.ray:7:5
+   ┆   │
+   ┆ 7 │     value: a
+   ┆   ╰╴    ━━━━━
+   ┆ [note]: no implementation or given proves `a: main.Send`
    ┆
 19 │
 20 │ # ERROR: a reference stores no fields, and no implementation applies to it.
@@ -55,14 +54,8 @@ expression: snapshot
    ┆    │
    ┆ 22 │     return requireSend(value)
    ┆    ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆ [note]: no implementation or given proves `&int32: main.Send`
    ┆
 23 │
 24 │ def main() -> int32:
 25 │     return 0
-
-other diagnostics:
-[note]: no implementation or given proves `a: main.Send`
-
-[note]: no implementation or given proves `&int32: main.Send`
-
-[error]: Compilation aborted due to 3 error(s)

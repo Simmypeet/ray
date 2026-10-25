@@ -17,6 +17,3 @@ expression: snapshot
   ┆ 8 │   point: geometry.
   ┆   ╰╴                  ━
   ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

@@ -293,6 +293,3 @@ expression: snapshot
 174 │                 kept = value
 175 │
 176 │     return read + copied + count + kept.*
-
-other diagnostics:
-[error]: Compilation aborted due to 8 error(s)

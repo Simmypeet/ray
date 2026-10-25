@@ -155,6 +155,3 @@ expression: snapshot
 83 │
 84 │ def main():
 85 │     pass
-
-other diagnostics:
-[error]: Compilation aborted due to 7 error(s)

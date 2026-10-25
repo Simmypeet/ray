@@ -27,6 +27,3 @@ expression: snapshot
    ┆
 14 │     invoke(copy, ())
 15 │     return value
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

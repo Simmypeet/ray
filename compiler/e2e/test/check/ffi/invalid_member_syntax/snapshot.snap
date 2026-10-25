@@ -35,6 +35,3 @@ expression: snapshot
    ┆ 12 │     def invoke() -> c_int
    ┆    ╰╴                         ━
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

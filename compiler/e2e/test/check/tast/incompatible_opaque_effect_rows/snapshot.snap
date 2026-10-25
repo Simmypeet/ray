@@ -17,6 +17,3 @@ expression: snapshot
   ┆   ╰╴                  these effect rows cannot be composed
   ┆
 6 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

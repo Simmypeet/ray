@@ -95,6 +95,3 @@ expression: snapshot
    ┆
 38 │
 39 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 7 error(s)

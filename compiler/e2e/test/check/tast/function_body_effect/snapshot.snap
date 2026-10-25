@@ -48,6 +48,3 @@ expression: snapshot
 28 │ def matchingClosure() -> ():
 29 │     requireState(() -> withIntState())
 30 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

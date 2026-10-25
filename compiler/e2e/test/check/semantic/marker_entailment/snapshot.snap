@@ -6,24 +6,8 @@ expression: snapshot
  2 │ marker Copy
  3 │
  4 │ impl[a, b, c] !Send for (a, b, c)
-   ┆
-   ┆ [note]: `(int32, bool, int32)` is excluded by this negative implementation
-   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:4:1
-   ┆   │
-   ┆ 4 │ impl[a, b, c] !Send for (a, b, c)
-   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ┆
  5 │
  6 │ impl[a, b] Send for (a, b) where (
-   ┆
-   ┆ [note]: `(int32, a): main.Send` holds only if `a: main.Copy`, by this implementation
-   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:6:1
-   ┆   │
-   ┆ 6 │ ┏ impl[a, b] Send for (a, b) where (
-   ┆ 7 │ ┃     b: Copy,
-   ┆ 8 │ ┃ )
-   ┆   ╰╴┗━┛
-   ┆
  7 │     b: Copy,
  8 │ )
  9 │
@@ -43,6 +27,14 @@ expression: snapshot
    ┆    │            ━━━━━━━━━━━ required by the where clause of `main.requireSend`
    ┆    │
    ┆    ╰ help: add `where (a: main.Copy)`
+   ┆ [note]: `(int32, a): main.Send` holds only if `a: main.Copy`, by this implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:6:1
+   ┆   │
+   ┆ 6 │ ┏ impl[a, b] Send for (a, b) where (
+   ┆ 7 │ ┃     b: Copy,
+   ┆ 8 │ ┃ )
+   ┆   ╰╴┗━┛
+   ┆ [note]: no implementation or given proves `a: main.Copy`
    ┆
 18 │
 19 │ def rejectedNegative() -> (int32, bool, int32):
@@ -53,12 +45,12 @@ expression: snapshot
    ┆    │
    ┆ 20 │     return requireSend((0, true, 0))
    ┆    ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆ [note]: `(int32, bool, int32)` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:4:1
+   ┆   │
+   ┆ 4 │ impl[a, b, c] !Send for (a, b, c)
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ┆
 21 │
 22 │ def main() -> int32:
 23 │     return 0
-
-other diagnostics:
-[note]: no implementation or given proves `a: main.Copy`
-
-[error]: Compilation aborted due to 2 error(s)

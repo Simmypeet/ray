@@ -93,6 +93,3 @@ expression: snapshot
 64 │
 65 │ def main() -> int32:
 66 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

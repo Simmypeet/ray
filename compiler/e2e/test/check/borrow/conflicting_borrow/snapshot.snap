@@ -89,6 +89,3 @@ expression: snapshot
 46 │     mutableTwice()
 47 │     sharedTwice()
 48 │     mutableAfterLastUse()
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)
