@@ -1,18 +1,21 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: failed to load submodule file `compiler/e2e/test/check/module/module_file_missing/missing.ray`: general IO error (os error 2)
-  ╭▸ compiler/e2e/test/check/module/module_file_missing/main.ray:2:8
-  │
+1 │ # The file `missing.ray` does not exist.
 2 │ module missing
-  │        ━━━━━━━ submodule declaration here
-  │
-  ╰ help: check if the file exists and is accessible
+  ┆
+  ┆ [error]: failed to load submodule file `compiler/e2e/test/check/module/module_file_missing/missing.ray`: general IO error (os error 2)
+  ┆   ╭▸ compiler/e2e/test/check/module/module_file_missing/main.ray:2:8
+  ┆   │
+  ┆ 2 │ module missing
+  ┆   │        ━━━━━━━ submodule declaration here
+  ┆   │
+  ┆   ╰ help: check if the file exists and is accessible
+  ┆
+3 │
+4 │ def main() -> int32:
+5 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

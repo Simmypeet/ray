@@ -1,46 +1,94 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot move out of a value captured by an operation handler
-   ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:36:25
-   │
+ 1 │ struct Resource:
+ 2 │     value: int32
+ 3 │
+ 4 │ impl !core.Copy for Resource
+ 5 │
+ 6 │ struct Pair:
+ 7 │     first: Resource
+ 8 │     second: int32
+ 9 │
+10 │ impl !core.Copy for Pair
+11 │
+12 │ eff Use:
+13 │     def use()
+14 │
+15 │ def consume(resource: Resource) -> int32:
+16 │     return resource.value
+17 │
+18 │ def main() -> int32:
 19 │     let mut restored = Resource { value = 1 }
-   │         ──────────── every call to the handler shares this captured value
-   ‡
-36 │             let taken = restored
-   ╰╴                        ━━━━━━━━ value moved out here
-
-[error]: cannot move out of a value captured by an operation handler
-   ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:40:21
-   │
 20 │     let moved = Resource { value = 2 }
-   │         ───── every call to the handler shares this captured value
-   ‡
-40 │             consume(moved)
-   ╰╴                    ━━━━━ value moved out here
-
-[error]: cannot move out of a value captured by an operation handler
-   ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:43:21
-   │
 21 │     let pair = Pair { first = Resource { value = 3 }, second = 4 }
-   │         ──── every call to the handler shares this captured value
-   ‡
-43 │             consume(pair.first)
-   ╰╴                    ━━━━━━━━━━ value moved out here
-
-[error]: cannot move out of a value captured by an operation handler
-   ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:46:26
-   │
 22 │     let mut counter = 0
-   │         ─────────── every call to the handler shares this captured value
-   ‡
+23 │     let copied = 5
+24 │     run:
+25 │         Use.use()
+26 │     with Use:
+27 │         def use():
+28 │             # OK: reading a Copy value, a Copy field, or assigning only
+29 │             # borrows the capture.
+30 │             let read = copied
+31 │             let field = pair.second
+32 │             counter = counter + read + field
+33 │
+34 │             # Error: moving out is rejected even if a value is put back
+35 │             # before the handler returns.
+36 │             let taken = restored
+   ┆
+   ┆ [error]: cannot move out of a value captured by an operation handler
+   ┆    ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:36:25
+   ┆    │
+   ┆ 19 │     let mut restored = Resource { value = 1 }
+   ┆    │         ──────────── every call to the handler shares this captured value
+   ┆    ‡
+   ┆ 36 │             let taken = restored
+   ┆    ╰╴                        ━━━━━━━━ value moved out here
+   ┆
+37 │             restored = taken
+38 │
+39 │             # Error: the capture is moved out and never restored.
+40 │             consume(moved)
+   ┆
+   ┆ [error]: cannot move out of a value captured by an operation handler
+   ┆    ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:40:21
+   ┆    │
+   ┆ 20 │     let moved = Resource { value = 2 }
+   ┆    │         ───── every call to the handler shares this captured value
+   ┆    ‡
+   ┆ 40 │             consume(moved)
+   ┆    ╰╴                    ━━━━━ value moved out here
+   ┆
+41 │
+42 │             # Error: moving out a single field is a move out of the capture.
+43 │             consume(pair.first)
+   ┆
+   ┆ [error]: cannot move out of a value captured by an operation handler
+   ┆    ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:43:21
+   ┆    │
+   ┆ 21 │     let pair = Pair { first = Resource { value = 3 }, second = 4 }
+   ┆    │         ──── every call to the handler shares this captured value
+   ┆    ‡
+   ┆ 43 │             consume(pair.first)
+   ┆    ╰╴                    ━━━━━━━━━━ value moved out here
+   ┆
+44 │
+45 │             # Error: a forced move of a Copy value still moves it.
 46 │             let forced = move counter
-   ╰╴                         ━━━━━━━━━━━━ value moved out here
+   ┆
+   ┆ [error]: cannot move out of a value captured by an operation handler
+   ┆    ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:46:26
+   ┆    │
+   ┆ 22 │     let mut counter = 0
+   ┆    │         ─────────── every call to the handler shares this captured value
+   ┆    ‡
+   ┆ 46 │             let forced = move counter
+   ┆    ╰╴                         ━━━━━━━━━━━━ value moved out here
+   ┆
+47 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 4 error(s)
-
-
-
-stdout:

@@ -1,16 +1,26 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: only 0 explicit given arguments are accepted
-   ╭▸ compiler/e2e/test/check/semantic/callable_hidden_givens/main.ray:12:25
-   │
+ 1 │ inst Integer for core.Def[int32]:
+ 2 │     type Args = ()
+ 3 │     type Return = int32
+ 4 │     type Effect = {}
+ 5 │     def call(fn: int32, args: ()) -> int32:
+ 6 │         return fn
+ 7 │
+ 8 │ def invoke(fn: def() -> int32) -> int32:
+ 9 │     return fn()
+10 │
+11 │ def main() -> int32:
 12 │     return invoke[given Integer](42)
-   ╰╴                        ━━━━━━━
+   ┆
+   ┆ [error]: only 0 explicit given arguments are accepted
+   ┆    ╭▸ compiler/e2e/test/check/semantic/callable_hidden_givens/main.ray:12:25
+   ┆    │
+   ┆ 12 │     return invoke[given Integer](42)
+   ┆    ╰╴                        ━━━━━━━
+   ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

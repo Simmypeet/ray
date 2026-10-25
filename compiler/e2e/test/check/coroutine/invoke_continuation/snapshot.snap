@@ -1,8 +1,56 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ eff Ask:
+ 6 │     def ask() -> int32
+ 7 │
+ 8 │
+ 9 │ def numbers() -> () \ {Yield[int32]}:
+10 │     Yield.yield(1)
+11 │     Yield.yield(2)
+12 │
+13 │
+14 │ def addTwo() -> int32 \ {Ask}:
+15 │     return Ask.ask() + Ask.ask()
+16 │
+17 │
+18 │ def pure(value: int32) -> int32:
+19 │     return value
+20 │
+21 │
+22 │ # OK: invoking a continuation runs the coroutine to completion. It returns
+23 │ # what the coroutine returns and performs what the coroutine performs.
+24 │ def finish(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> co.Return \ co.Effect:
+25 │     return k(value)
+26 │
+27 │
+28 │ # OK: every effect of the coroutine is forwarded to the caller.
+29 │ def forwardYield() -> () \ {Yield[int32]}:
+30 │     let k = coro numbers()
+31 │     k(())
+32 │
+33 │
+34 │ def forwardAsk() -> int32 \ {Ask}:
+35 │     return finish(coro addTwo(), ())
+36 │
+37 │
+38 │ # OK: a coroutine that performs nothing can be run where no effect is allowed.
+39 │ def runPure() -> int32:
+40 │     let k = coro pure(1)
+41 │     return k(())
+42 │
+43 │
+44 │ # OK: a clause may invoke the continuation it binds, which forwards the rest
+45 │ # of what the coroutine performs.
+46 │ def answerFirst() -> int32 \ {Ask}:
+47 │     return handle coro addTwo():
+48 │         case Ask.ask() resume k: k(1)
+49 │
+50 │
+51 │ def main() -> int32:
+52 │     return runPure()

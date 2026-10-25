@@ -1,16 +1,31 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: where-clause obligation for `main.requireBool` is not satisfied
-   ╭▸ compiler/e2e/test/check/tast/generic_instance_display/main.ray:16:5
-   │
+ 1 │ trait Eq[a]:
+ 2 │     def equals(lhs: a, rhs: a) -> bool
+ 3 │
+ 4 │ inst GenericEq[a] for Eq[a]:
+ 5 │     def equals(lhs: a, rhs: a) -> bool:
+ 6 │         core.NoDrop { value = (move lhs, move rhs) }
+ 7 │         return true
+ 8 │
+ 9 │ eff Reader[a] given (equality: Eq[a]):
+10 │     def read() -> a
+11 │
+12 │ def requireBool(callback: def() -> () \ {Reader[bool; given GenericEq[bool]]}):
+13 │     return ()
+14 │
+15 │ def mismatch(callback: def() -> () \ {Reader[int32; given GenericEq[int32]]}) -> ():
 16 │     requireBool(callback)
-   ╰╴    ━━━━━━━━━━━ `callable dictionary.Effect` must equal `{Reader[bool; given GenericEq[bool]]}`
+   ┆
+   ┆ [error]: where-clause obligation for `main.requireBool` is not satisfied
+   ┆    ╭▸ compiler/e2e/test/check/tast/generic_instance_display/main.ray:16:5
+   ┆    │
+   ┆ 16 │     requireBool(callback)
+   ┆    ╰╴    ━━━━━━━━━━━ `callable dictionary.Effect` must equal `{Reader[bool; given GenericEq[bool]]}`
+   ┆
+17 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

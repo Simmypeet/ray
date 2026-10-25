@@ -1,8 +1,20 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ trait Eq[a]:
+ 2 │     def equals(lhs: a, rhs: a) -> bool
+ 3 │
+ 4 │ inst EqInt for Eq[int32]:
+ 5 │     def equals(lhs: int32, rhs: int32) -> bool:
+ 6 │         return lhs == rhs
+ 7 │
+ 8 │ trait Mapper[a]:
+ 9 │     def map(value: b, fallback: a) given (equality: Eq[b]) -> b
+10 │
+11 │ inst IntMapper for Mapper[int32]:
+12 │     def map(value: c, fallback: int32) given (comparison: Eq[c]) -> c:
+13 │         return value
+14 │
+15 │ def main() -> int32:
+16 │     return 0

@@ -1,21 +1,37 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/polonius_example_one/main.ray:17:5
-   │
+ 1 │ def consume(x: t) given(_: core.Drop[t]):
+ 2 │     let _ = x
+ 3 │
+ 4 │ # only (D) is an error
+ 5 │ def main():
+ 6 │     let mut x = 22
+ 7 │     let mut y = 44
+ 8 │     let mut p = x.&  # Loan L0, borrowing `x`
+ 9 │     y = y + 1        # (A) Mutate `y` -- is this ok?
 10 │     let mut q = y.&  # Loan L1, borrowing `y`
-   │                 ─── immutable borrow occurs here
-   ‡
+11 │     if true:
+12 │         p = q        # `p` now points at `y`
+13 │         x = x + 1    # (B) Mutate `x` -- is this ok?
+14 │     else:
+15 │         y = y + 1    # (C) Mutate `y` -- is this ok?
+16 │
 17 │     y = y + 1        # (D) Mutate `y` -- is this ok?
-   │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/polonius_example_one/main.ray:17:5
+   ┆    │
+   ┆ 10 │     let mut q = y.&  # Loan L1, borrowing `y`
+   ┆    │                 ─── immutable borrow occurs here
+   ┆    ‡
+   ┆ 17 │     y = y + 1        # (D) Mutate `y` -- is this ok?
+   ┆    │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆ 18 │     consume(p.*)      # use `p` again here
+   ┆    ╰╴            ─── borrow later used here
+   ┆
 18 │     consume(p.*)      # use `p` again here
-   ╰╴            ─── borrow later used here
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

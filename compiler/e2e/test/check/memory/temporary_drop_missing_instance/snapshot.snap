@@ -1,54 +1,154 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:33:13
-   │
+ 1 │ @linear
+ 2 │ struct Handle:
+ 3 │     fd: int32
+ 4 │
+ 5 │ struct Wrapper[t]:
+ 6 │     value: t
+ 7 │
+ 8 │ def make() -> Handle:
+ 9 │     return Handle { fd = 0 }
+10 │
+11 │ def close(opened: Handle):
+12 │     core.NoDrop { value = move opened }
+13 │
+14 │ def consume(first: Handle, second: ()):
+15 │     close(first)
+16 │
+17 │ def consumeWrapper(first: Wrapper[Handle], second: ()):
+18 │     core.NoDrop { value = move first }
+19 │
+20 │ def forget(first: a, second: ()):
+21 │     core.NoDrop { value = move first }
+22 │
+23 │ def look(first: &a, second: ()):
+24 │     ()
+25 │
+26 │ # OK: the temporary is consumed on every path.
+27 │ def consumedOnEveryPath():
+28 │     consume(make(), ())
+29 │
+30 │ # Error: `return` leaves the call after `make()` is evaluated, so the
+31 │ # temporary is dropped, but a linear type has no Drop dictionary.
+32 │ def returnLeavesTemporary(condition: bool) -> int32:
 33 │     consume(make(), if condition:
-   │             ━━━━━━ this value is dropped when it goes out of scope
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
-
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:42:17
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:33:13
+   ┆    │
+   ┆ 33 │     consume(make(), if condition:
+   ┆    │             ━━━━━━ this value is dropped when it goes out of scope
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+34 │         return 0
+35 │     else:
+36 │         ())
+37 │     return 1
+38 │
+39 │ # Error: `break` leaves the loop body, dropping the temporary.
+40 │ def breakLeavesTemporary(condition: bool):
+41 │     while true:
 42 │         consume(make(), if condition:
-   │                 ━━━━━━ this value is dropped when it goes out of scope
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
-
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:49:13
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:42:17
+   ┆    │
+   ┆ 42 │         consume(make(), if condition:
+   ┆    │                 ━━━━━━ this value is dropped when it goes out of scope
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+43 │             break
+44 │         else:
+45 │             ())
+46 │
+47 │ # Error: every arm returns, so nothing ever consumes the temporary.
+48 │ def everyArmReturns(condition: bool) -> int32:
 49 │     consume(make(), if condition:
-   │             ━━━━━━ this value is dropped when it goes out of scope
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
-
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:56:13
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:49:13
+   ┆    │
+   ┆ 49 │     consume(make(), if condition:
+   ┆    │             ━━━━━━ this value is dropped when it goes out of scope
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+50 │         return 0
+51 │     else:
+52 │         return 1)
+53 │
+54 │ # Error, reported once: the temporary is dropped on two paths.
+55 │ def droppedOnTwoPaths(first: bool, second: bool) -> int32:
 56 │     consume(make(), if first:
-   │             ━━━━━━ this value is dropped when it goes out of scope
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
-
-[error]: no implicit instance found: `core.Drop[Wrapper[Handle]]`
-   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:66:20
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:56:13
+   ┆    │
+   ┆ 56 │     consume(make(), if first:
+   ┆    │             ━━━━━━ this value is dropped when it goes out of scope
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+57 │         return 0
+58 │     elif second:
+59 │         return 1
+60 │     else:
+61 │         ())
+62 │     return 2
+63 │
+64 │ # Error: a struct holding a linear value has no generated Drop dictionary.
+65 │ def wrappedTemporary(condition: bool) -> int32:
 66 │     consumeWrapper(Wrapper { value = make() }, if condition:
-   ╰╴                   ━━━━━━━━━━━━━━━━━━━━━━━━━━ this value is dropped when it goes out of scope
-
-[error]: no implicit instance found: `core.Drop[a]`
-   ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:76:12
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Wrapper[Handle]]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:66:20
+   ┆    │
+   ┆ 66 │     consumeWrapper(Wrapper { value = make() }, if condition:
+   ┆    ╰╴                   ━━━━━━━━━━━━━━━━━━━━━━━━━━ this value is dropped when it goes out of scope
+   ┆
+67 │         return 0
+68 │     else:
+69 │         ())
+70 │     return 1
+71 │
+72 │ # Error: `value` is moved into a temporary, which `return` leaves behind
+73 │ # without a Drop dictionary for `a`. The parameter itself was moved, so it
+74 │ # needs none.
+75 │ def genericTemporary(value: a, condition: bool) -> int32:
 76 │     forget(value, if condition:
-   ╰╴           ━━━━━ this value is dropped when it goes out of scope
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[a]`
+   ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:76:12
+   ┆    │
+   ┆ 76 │     forget(value, if condition:
+   ┆    ╰╴           ━━━━━ this value is dropped when it goes out of scope
+   ┆
+77 │         return 0
+78 │     else:
+79 │         ())
+80 │     return 1
+81 │
+82 │ # OK: a supplied dictionary lets the temporary be dropped.
+83 │ def genericTemporaryWithDrop(value: a, condition: bool) given (drop: core.Drop[a]) -> int32:
+84 │     forget(value, if condition:
+85 │         return 0
+86 │     else:
+87 │         ())
+88 │     return 1
+89 │
+90 │ # OK: a reference is dropped without a dictionary, even to a value of a type
+91 │ # without one.
+92 │ def borrowedTemporary(value: &a, condition: bool) -> int32:
+93 │     look(value, if condition:
+94 │         return 0
+95 │     else:
+96 │         ())
+97 │     return 1
 
+other diagnostics:
 [error]: Compilation aborted due to 6 error(s)
-
-
-
-stdout:

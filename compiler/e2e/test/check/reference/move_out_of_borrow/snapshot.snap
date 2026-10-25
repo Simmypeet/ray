@@ -1,34 +1,71 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot move out of a borrow
-   ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:15:13
-   │
+ 1 │ struct Resource:
+ 2 │     value: int32
+ 3 │
+ 4 │ impl !core.Copy for Resource
+ 5 │
+ 6 │ struct Holder:
+ 7 │     resource: Resource
+ 8 │     count: int32
+ 9 │
+10 │ def consume(resource: Resource) -> ():
+11 │     return ()
+12 │
+13 │ def moveOut(holder: &Holder) -> ():
+14 │     # ERROR: `holder.*.resource` is only borrowed.
 15 │     consume(holder.*.resource)
-   │             ━━━━━━━━━━━━━━━━━ value moved out of a reference here
-   │
-   ╰ help: the value is only borrowed; borrow it instead of moving it
-
-[error]: cannot move out of a borrow
-   ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:20:20
-   │
+   ┆
+   ┆ [error]: cannot move out of a borrow
+   ┆    ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:15:13
+   ┆    │
+   ┆ 15 │     consume(holder.*.resource)
+   ┆    │             ━━━━━━━━━━━━━━━━━ value moved out of a reference here
+   ┆    │
+   ┆    ╰ help: the value is only borrowed; borrow it instead of moving it
+   ┆
+16 │     return ()
+17 │
+18 │ def moveOutOfMutable(holder: &mut Holder) -> ():
+19 │     # ERROR: a unique borrow is still a borrow.
 20 │     let resource = holder.*.resource
-   │                    ━━━━━━━━━━━━━━━━━ value moved out of a reference here
-   │
-   ╰ help: the value is only borrowed; borrow it instead of moving it
-
-[error]: cannot move out of a borrow
-   ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:25:12
-   │
+   ┆
+   ┆ [error]: cannot move out of a borrow
+   ┆    ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:20:20
+   ┆    │
+   ┆ 20 │     let resource = holder.*.resource
+   ┆    │                    ━━━━━━━━━━━━━━━━━ value moved out of a reference here
+   ┆    │
+   ┆    ╰ help: the value is only borrowed; borrow it instead of moving it
+   ┆
+21 │     return ()
+22 │
+23 │ def forcedMove(value: &int32) -> int32:
+24 │     # ERROR: `move` moves even a `Copy` value.
 25 │     return move value.*
-   │            ━━━━━━━━━━━━ value moved out of a reference here
-   │
-   ╰ help: the value is only borrowed; borrow it instead of moving it
+   ┆
+   ┆ [error]: cannot move out of a borrow
+   ┆    ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:25:12
+   ┆    │
+   ┆ 25 │     return move value.*
+   ┆    │            ━━━━━━━━━━━━ value moved out of a reference here
+   ┆    │
+   ┆    ╰ help: the value is only borrowed; borrow it instead of moving it
+   ┆
+26 │
+27 │ def copyOut(holder: &Holder) -> int32:
+28 │     # OK: a `Copy` value is copied out of the borrow.
+29 │     return holder.*.count
+30 │
+31 │ def rawPointer(holder: *Holder) -> ():
+32 │     # OK: a load through a raw pointer is a bitwise copy.
+33 │     consume(unsafe: holder.*.resource)
+34 │     return ()
+35 │
+36 │ def main() -> ():
+37 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

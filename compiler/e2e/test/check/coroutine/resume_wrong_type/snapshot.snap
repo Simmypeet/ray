@@ -1,34 +1,80 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: mismatched type of the value a coroutine is resumed with: expected `()`, but found `int32`
-   ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:20:16
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ eff Ask:
+ 6 │     def ask() -> int32
+ 7 │
+ 8 │
+ 9 │ def numbers() -> () \ {Yield[int32]}:
+10 │     Yield.yield(1)
+11 │
+12 │
+13 │ def addTwo() -> int32 \ {Ask}:
+14 │     return Ask.ask() + Ask.ask()
+15 │
+16 │
+17 │ # ERROR: a new coroutine is always resumed with `()`.
+18 │ def wrongStart():
+19 │     let con = coro numbers()
 20 │     handle con(1):
-   ╰╴               ━
-
-[error]: mismatched type of the value a coroutine is resumed with: expected `int32`, but found `bool`
-   ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:29:29
-   │
+   ┆
+   ┆ [error]: mismatched type of the value a coroutine is resumed with: expected `()`, but found `int32`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:20:16
+   ┆    │
+   ┆ 20 │     handle con(1):
+   ┆    ╰╴               ━
+   ┆
+21 │         case Yield[int32].yield(value) resume k:
+22 │             pass
+23 │
+24 │
+25 │ # ERROR: `ask` returns an `int32`, so its continuation waits for one.
+26 │ def wrongAnswer() -> int32:
+27 │     return handle coro addTwo():
+28 │         case Ask.ask() resume k:
 29 │             return handle k(true):
-   ╰╴                            ━━━━
-
-[error]: mismatched argument types in function call: expected `int32`, but found `bool`
-   ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:36:14
-   │
+   ┆
+   ┆ [error]: mismatched type of the value a coroutine is resumed with: expected `int32`, but found `bool`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:29:29
+   ┆    │
+   ┆ 29 │             return handle k(true):
+   ┆    ╰╴                            ━━━━
+   ┆
+30 │                 case Ask.ask() resume rest:
+31 │                     return 0
+32 │
+33 │
+34 │ # ERROR: invoking a continuation takes the value it waits for.
+35 │ def wrongInvoke(k: core.Continuation[int32, c]) given (co: core.Coroutine[c]) -> co.Return \ co.Effect:
 36 │     return k(true)
-   ╰╴             ━━━━
-
-[error]: `handle` expects a continuation to resume, but found `int32`
-   ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:41:12
-   │
+   ┆
+   ┆ [error]: mismatched argument types in function call: expected `int32`, but found `bool`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:36:14
+   ┆    │
+   ┆ 36 │     return k(true)
+   ┆    ╰╴             ━━━━
+   ┆
+37 │
+38 │
+39 │ # ERROR: only a continuation can be resumed.
+40 │ def notContinuation(value: int32):
 41 │     handle value()
-   ╰╴           ━━━━━ this is not a `core.Continuation`
+   ┆
+   ┆ [error]: `handle` expects a continuation to resume, but found `int32`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:41:12
+   ┆    │
+   ┆ 41 │     handle value()
+   ┆    ╰╴           ━━━━━ this is not a `core.Continuation`
+   ┆
+42 │
+43 │
+44 │ def main() -> int32:
+45 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 4 error(s)
-
-
-
-stdout:

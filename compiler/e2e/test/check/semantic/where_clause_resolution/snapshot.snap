@@ -1,34 +1,51 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: symbol `Missing` is not found
-  ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:6:7
-  │
-6 │     c.Missing = Unknown,
-  ╰╴      ━━━━━━━ symbol `Missing` is not found
-
-[error]: symbol `Unknown` is not found
-  ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:6:17
-  │
-6 │     c.Missing = Unknown,
-  ╰╴                ━━━━━━━ symbol `Unknown` is not found
-
-[error]: symbol `MissingType` is not found
-  ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:7:14
-  │
-7 │     c.Item = MissingType,
-  ╰╴             ━━━━━━━━━━━ symbol `MissingType` is not found
-
-[error]: symbol `Missing` is not found
-   ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:14:50
-   │
+ 1 │ trait Container[]:
+ 2 │     type Item
+ 3 │
+ 4 │ # Both operands are resolved, including unknown associated members and types.
+ 5 │ def missing(value: int32) given (c: Container) -> int32 where (
+ 6 │     c.Missing = Unknown,
+   ┆
+   ┆ [error]: symbol `Missing` is not found
+   ┆   ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:6:7
+   ┆   │
+   ┆ 6 │     c.Missing = Unknown,
+   ┆   ╰╴      ━━━━━━━ symbol `Missing` is not found
+   ┆
+   ┆ [error]: symbol `Unknown` is not found
+   ┆   ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:6:17
+   ┆   │
+   ┆ 6 │     c.Missing = Unknown,
+   ┆   ╰╴                ━━━━━━━ symbol `Unknown` is not found
+   ┆
+ 7 │     c.Item = MissingType,
+   ┆
+   ┆ [error]: symbol `MissingType` is not found
+   ┆   ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:7:14
+   ┆   │
+   ┆ 7 │     c.Item = MissingType,
+   ┆   ╰╴             ━━━━━━━━━━━ symbol `MissingType` is not found
+   ┆
+ 8 │ ):
+ 9 │     return value
+10 │
+11 │ # A clause uses the enclosing trait's self dictionary.
+12 │ trait Checked[]:
+13 │     type Item
 14 │     def check(value: int32) -> int32 where (this.Missing = this.Item)
-   ╰╴                                                 ━━━━━━━ symbol `Missing` is not found
+   ┆
+   ┆ [error]: symbol `Missing` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/where_clause_resolution/main.ray:14:50
+   ┆    │
+   ┆ 14 │     def check(value: int32) -> int32 where (this.Missing = this.Item)
+   ┆    ╰╴                                                 ━━━━━━━ symbol `Missing` is not found
+   ┆
+15 │
+16 │ def main() -> int32:
+17 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 4 error(s)
-
-
-
-stdout:

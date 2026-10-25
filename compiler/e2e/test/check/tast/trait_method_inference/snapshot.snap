@@ -1,8 +1,31 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ trait Identity[a]:
+ 2 │     def identity(value: a) -> a
+ 3 │
+ 4 │ inst IntIdentity for Identity[int32]:
+ 5 │     def identity(value: int32) -> int32:
+ 6 │         return value
+ 7 │
+ 8 │ def global() -> int32:
+ 9 │     return Identity[int32].identity(1)
+10 │
+11 │ def inferred(value: int32) -> int32:
+12 │     return Identity.identity(value)
+13 │
+14 │ def lexical(value: a) given (dictionary: Identity[a]) -> a:
+15 │     return Identity[a].identity(value)
+16 │
+17 │ trait Source[a]:
+18 │     type Item
+19 │     def get(value: a) -> this.Item
+20 │
+21 │ inst IntSource for Source[int32]:
+22 │     type Item = bool
+23 │     def get(value: int32) -> bool:
+24 │         return true
+25 │
+26 │ def associated() -> bool:
+27 │     return Source[int32].get(1)

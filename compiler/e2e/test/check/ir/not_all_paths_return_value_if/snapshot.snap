@@ -1,8 +1,9 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+1 │ pub def choice(a: int32, b: int32, cond: bool) -> int32:
+2 │     if cond:
+3 │         return a
+4 │     else:
+5 │         return b

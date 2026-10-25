@@ -1,62 +1,178 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: the type `t` may not live long enough
-  ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:9:12
-  │
-9 │     return pick(anchor, value)
-  │            ━━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'a`
-  │
-  ╰ help: consider adding `t: 'a` to the where clause
-
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:37:18
-   │
-37 │     let picked = pick(anchor, value)
-   │                  ━━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'a`
-38 │     return picked
-   │            ────── the value is required to be valid for `'a` here
-   │
-   ╰ help: consider adding `t: 'a` to the where clause
-
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:47:5
-   │
-47 │     needsStatic(value)
-   │     ━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'static`
-   │
-   ╰ help: consider adding `t: 'static` to the where clause
-
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:62:18
-   │
-62 │     let tagged = Tagged{anchor=anchor, value=value}
-   │                  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'a`
-63 │     return tagged.anchor
-   │            ───────────── the value is required to be valid for `'a` here
-   │
-   ╰ help: consider adding `t: 'a` to the where clause
-
-[error]: the type `s.Item['x]` may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:87:12
-   │
-87 │     return pickItem(anchor, item)
-   │            ━━━━━━━━━━━━━━━━━━━━━━ this requires `s.Item['x]` to outlive `'a`
-   │
-   ╰ help: consider adding `s.Item['x]: 'a` to the where clause
-
-[error]: the type `s.Item['x]` may not live long enough
-    ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:102:12
-    │
+  1 │ # Gives back `anchor`, and requires `t: 'a` of its callers.
+  2 │ def pick['a, t](anchor: &'a int32, value: &t) -> &'a int32 where (t: 'a):
+  3 │     return anchor
+  4 │
+  5 │
+  6 │ def undeclared['a, t](anchor: &'a int32, value: &t) -> &'a int32:
+  7 │     # ERROR: the result is returned as a `&'a int32`, and nothing states
+  8 │     # `t: 'a`.
+  9 │     return pick(anchor, value)
+    ┆
+    ┆ [error]: the type `t` may not live long enough
+    ┆   ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:9:12
+    ┆   │
+    ┆ 9 │     return pick(anchor, value)
+    ┆   │            ━━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'a`
+    ┆   │
+    ┆   ╰ help: consider adding `t: 'a` to the where clause
+    ┆
+ 10 │
+ 11 │
+ 12 │ def declared['a, t](anchor: &'a int32, value: &t) -> &'a int32 where (t: 'a):
+ 13 │     # OK: the where clause states `t: 'a`.
+ 14 │     return pick(anchor, value)
+ 15 │
+ 16 │
+ 17 │ def implied['a, t](anchor: &'a int32, value: &'a t) -> &'a int32:
+ 18 │     # OK: `&'a t` being well-formed implies `t: 'a`.
+ 19 │     return pick(anchor, value)
+ 20 │
+ 21 │
+ 22 │ def throughLonger['a, 'b, t](anchor: &'b int32, value: &t) -> &'b int32 where (t: 'a, 'a: 'b):
+ 23 │     # OK: `t: 'a` and `'a: 'b` give `t: 'b`.
+ 24 │     return pick(anchor, value)
+ 25 │
+ 26 │
+ 27 │ def notReturned['a, t](anchor: &'a int32, value: &t) -> int32:
+ 28 │     # OK: the lifetime `pick` is called with need not outlive `'a`, and any
+ 29 │     # type is valid for a lifetime within the body.
+ 30 │     let picked = pick(anchor, value)
+ 31 │     return picked.*
+ 32 │
+ 33 │
+ 34 │ def returnedLater['a, t](anchor: &'a int32, value: &t) -> &'a int32:
+ 35 │     # ERROR: the call requires `t` to outlive the lifetime of `picked`, which
+ 36 │     # the `return` requires to outlive `'a`.
+ 37 │     let picked = pick(anchor, value)
+    ┆
+    ┆ [error]: the type `t` may not live long enough
+    ┆    ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:37:18
+    ┆    │
+    ┆ 37 │     let picked = pick(anchor, value)
+    ┆    │                  ━━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'a`
+    ┆ 38 │     return picked
+    ┆    │            ────── the value is required to be valid for `'a` here
+    ┆    │
+    ┆    ╰ help: consider adding `t: 'a` to the where clause
+    ┆
+ 38 │     return picked
+ 39 │
+ 40 │
+ 41 │ def needsStatic[t](value: &t) where (t: 'static):
+ 42 │     pass
+ 43 │
+ 44 │
+ 45 │ def notStatic[t](value: &t):
+ 46 │     # ERROR: nothing states `t: 'static`.
+ 47 │     needsStatic(value)
+    ┆
+    ┆ [error]: the type `t` may not live long enough
+    ┆    ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:47:5
+    ┆    │
+    ┆ 47 │     needsStatic(value)
+    ┆    │     ━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'static`
+    ┆    │
+    ┆    ╰ help: consider adding `t: 'static` to the where clause
+    ┆
+ 48 │
+ 49 │
+ 50 │ def isStatic[t](value: &t) where (t: 'static):
+ 51 │     # OK: the where clause states `t: 'static`.
+ 52 │     needsStatic(value)
+ 53 │
+ 54 │
+ 55 │ struct Tagged['a, 'b, t] where (t: 'a):
+ 56 │     anchor: &'a int32
+ 57 │     value: &'b t
+ 58 │
+ 59 │
+ 60 │ def initialized['a, 'b, t](anchor: &'a int32, value: &'b t) -> &'a int32:
+ 61 │     # ERROR: the where clause of `Tagged` requires `t: 'a`.
+ 62 │     let tagged = Tagged{anchor=anchor, value=value}
+    ┆
+    ┆ [error]: the type `t` may not live long enough
+    ┆    ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:62:18
+    ┆    │
+    ┆ 62 │     let tagged = Tagged{anchor=anchor, value=value}
+    ┆    │                  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ this requires `t` to outlive `'a`
+    ┆ 63 │     return tagged.anchor
+    ┆    │            ───────────── the value is required to be valid for `'a` here
+    ┆    │
+    ┆    ╰ help: consider adding `t: 'a` to the where clause
+    ┆
+ 63 │     return tagged.anchor
+ 64 │
+ 65 │
+ 66 │ def initializedBounded['a, 'b, t](anchor: &'a int32, value: &'b t) -> &'a int32 where (t: 'a):
+ 67 │     # OK: the where clause states `t: 'a`.
+ 68 │     let tagged = Tagged{anchor=anchor, value=value}
+ 69 │     return tagged.anchor
+ 70 │
+ 71 │
+ 72 │ trait Source[t]:
+ 73 │     type Item['x]
+ 74 │
+ 75 │
+ 76 │ # Gives back `anchor`, and requires `s.Item['x]: 'a` of its callers.
+ 77 │ def pickItem['a, 'x](anchor: &'a int32, item: &s.Item['x]) given (s: Source[int32]) -> &'a int32 where (
+ 78 │     s.Item['x]: 'a,
+ 79 │ ):
+ 80 │     return anchor
+ 81 │
+ 82 │
+ 83 │ def projectionUndeclared['a, 'x](anchor: &'a int32, item: &s.Item['x]) given (
+ 84 │     s: Source[int32],
+ 85 │ ) -> &'a int32:
+ 86 │     # ERROR: nothing states `s.Item['x]: 'a`.
+ 87 │     return pickItem(anchor, item)
+    ┆
+    ┆ [error]: the type `s.Item['x]` may not live long enough
+    ┆    ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:87:12
+    ┆    │
+    ┆ 87 │     return pickItem(anchor, item)
+    ┆    │            ━━━━━━━━━━━━━━━━━━━━━━ this requires `s.Item['x]` to outlive `'a`
+    ┆    │
+    ┆    ╰ help: consider adding `s.Item['x]: 'a` to the where clause
+    ┆
+ 88 │
+ 89 │
+ 90 │ def projectionDeclared['a, 'x](anchor: &'a int32, item: &s.Item['x]) given (
+ 91 │     s: Source[int32],
+ 92 │ ) -> &'a int32 where (s.Item['x]: 'a):
+ 93 │     # OK: passing `item` makes the lifetime argument of the projection `'x`,
+ 94 │     # which the where clause is about.
+ 95 │     return pickItem(anchor, item)
+ 96 │
+ 97 │
+ 98 │ def projectionOtherLifetime['a, 'x, 'y](anchor: &'a int32, item: &s.Item['x]) given (
+ 99 │     s: Source[int32],
+100 │ ) -> &'a int32 where (s.Item['y]: 'a):
+101 │     # ERROR: the where clause is about `s.Item['y]`, which is another type.
 102 │     return pickItem(anchor, item)
-    │            ━━━━━━━━━━━━━━━━━━━━━━ this requires `s.Item['x]` to outlive `'a`
-    │
-    ╰ help: consider adding `s.Item['x]: 'a` to the where clause
+    ┆
+    ┆ [error]: the type `s.Item['x]` may not live long enough
+    ┆     ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:102:12
+    ┆     │
+    ┆ 102 │     return pickItem(anchor, item)
+    ┆     │            ━━━━━━━━━━━━━━━━━━━━━━ this requires `s.Item['x]` to outlive `'a`
+    ┆     │
+    ┆     ╰ help: consider adding `s.Item['x]: 'a` to the where clause
+    ┆
+103 │
+104 │
+105 │ def projectionEqualLifetimes['a, 'x, 'y](anchor: &'a int32, item: &s.Item['x]) given (
+106 │     s: Source[int32],
+107 │ ) -> &'a int32 where (s.Item['y]: 'a, 'x: 'y, 'y: 'x):
+108 │     # OK: `'x` and `'y` outlive each other, so they are the same lifetime.
+109 │     return pickItem(anchor, item)
+110 │
+111 │
+112 │ def main():
+113 │     pass
 
+other diagnostics:
 [error]: Compilation aborted due to 6 error(s)
-
-
-
-stdout:

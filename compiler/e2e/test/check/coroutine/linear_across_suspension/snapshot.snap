@@ -1,50 +1,116 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:32:19
-   │
+ 1 │ # A coroutine may be dropped while it is suspended, and that drops whatever
+ 2 │ # it holds there. A linear value has no `Drop` instance, so it cannot be held
+ 3 │ # across a suspension point.
+ 4 │
+ 5 │ eff Yield[t]:
+ 6 │     def yield(value: t) -> ()
+ 7 │
+ 8 │
+ 9 │ @linear
+10 │ struct Handle:
+11 │     fd: int32
+12 │
+13 │
+14 │ def make() -> Handle:
+15 │     return Handle { fd = 0 }
+16 │
+17 │
+18 │ def close(opened: Handle):
+19 │     core.NoDrop { value = move opened }
+20 │
+21 │
+22 │ def closeLater(opened: Handle, unit: ()):
+23 │     close(opened)
+24 │
+25 │
+26 │ def effectful() -> () \ {Yield[int32]}:
+27 │     Yield.yield(1)
+28 │
+29 │
+30 │ # ERROR: `opened` is held across the `perform`, even though it is consumed
+31 │ # right after.
 32 │ def acrossPerform(opened: Handle) -> () \ {Yield[int32]}:
-   │                   ━━━━━━━━━━━━━━ this value is held across a suspension point
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:32:19
+   ┆    │
+   ┆ 32 │ def acrossPerform(opened: Handle) -> () \ {Yield[int32]}:
+   ┆    │                   ━━━━━━━━━━━━━━ this value is held across a suspension point
+   ┆ 33 │     Yield.yield(1)
+   ┆    │     ────────────── it is dropped here if the coroutine is dropped while suspended
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
 33 │     Yield.yield(1)
-   │     ────────────── it is dropped here if the coroutine is dropped while suspended
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
-
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:39:9
-   │
+34 │     close(opened)
+35 │
+36 │
+37 │ # ERROR: a call of an effectful function is a suspension point too.
+38 │ def acrossCall() -> () \ {Yield[int32]}:
 39 │     let opened = make()
-   │         ━━━━━━ this value is held across a suspension point
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:39:9
+   ┆    │
+   ┆ 39 │     let opened = make()
+   ┆    │         ━━━━━━ this value is held across a suspension point
+   ┆ 40 │     effectful()
+   ┆    │     ─────────── it is dropped here if the coroutine is dropped while suspended
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
 40 │     effectful()
-   │     ─────────── it is dropped here if the coroutine is dropped while suspended
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
-
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:46:16
-   │
+41 │     close(opened)
+42 │
+43 │
+44 │ # ERROR: an evaluated argument is held while a later argument suspends.
+45 │ def acrossArgument() -> () \ {Yield[int32]}:
 46 │     closeLater(make(), Yield.yield(1))
-   │                ┯━━━━━  ────────────── it is dropped here if the coroutine is dropped while suspended
-   │                │
-   │                this value is held across a suspension point
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
-
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:51:19
-   │
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:46:16
+   ┆    │
+   ┆ 46 │     closeLater(make(), Yield.yield(1))
+   ┆    │                ┯━━━━━  ────────────── it is dropped here if the coroutine is dropped while suspended
+   ┆    │                │
+   ┆    │                this value is held across a suspension point
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+47 │
+48 │
+49 │ # ERROR: it is reported once, at the first suspension point it is held
+50 │ # across.
 51 │ def acrossSeveral(opened: Handle) -> () \ {Yield[int32]}:
-   │                   ━━━━━━━━━━━━━━ this value is held across a suspension point
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:51:19
+   ┆    │
+   ┆ 51 │ def acrossSeveral(opened: Handle) -> () \ {Yield[int32]}:
+   ┆    │                   ━━━━━━━━━━━━━━ this value is held across a suspension point
+   ┆ 52 │     Yield.yield(1)
+   ┆    │     ────────────── it is dropped here if the coroutine is dropped while suspended
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
 52 │     Yield.yield(1)
-   │     ────────────── it is dropped here if the coroutine is dropped while suspended
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+53 │     Yield.yield(2)
+54 │     close(opened)
+55 │
+56 │
+57 │ # OK: a call with no effect is not a suspension point.
+58 │ def acrossPureCall(opened: Handle) -> ():
+59 │     let other = make()
+60 │     close(other)
+61 │     close(opened)
+62 │
+63 │
+64 │ def main() -> int32:
+65 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 4 error(s)
-
-
-
-stdout:

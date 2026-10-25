@@ -1,21 +1,52 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/struct_where_clause/main.ray:32:5
-   │
+ 1 │ def consume(_: t) given (_: core.Drop[t]):
+ 2 │     pass
+ 3 │
+ 4 │
+ 5 │ struct Pair['a, 'b]:
+ 6 │     first: &'a int32
+ 7 │     second: &'b int32
+ 8 │
+ 9 │
+10 │ struct Tied['a, 'b] where ('a: 'b):
+11 │     first: &'a int32
+12 │     second: &'b int32
+13 │
+14 │
+15 │ def main():
+16 │     let mut x = 0
+17 │     let mut y = 0
+18 │
+19 │     # The structs live in a nested scope, so that only what flows out of
+20 │     # their `second` field is still live at the assignments to `x`.
+21 │     let mut p = y.&
+22 │     if true:
+23 │         let pair = Pair{first=x.&, second=y.&}
+24 │         p = pair.second
+25 │     x = x + 1           # <-- Expect NO error here: `p` only borrows `y`.
+26 │     consume(p.*)
+27 │
+28 │     let mut q = y.&
+29 │     if true:
 30 │         let tied = Tied{first=x.&, second=y.&}
-   │                               ─── immutable borrow occurs here
 31 │         q = tied.second
 32 │     x = x + 1           # <-- Expect an error here: `'a: 'b` keeps `x` borrowed.
-   │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/struct_where_clause/main.ray:32:5
+   ┆    │
+   ┆ 30 │         let tied = Tied{first=x.&, second=y.&}
+   ┆    │                               ─── immutable borrow occurs here
+   ┆ 31 │         q = tied.second
+   ┆ 32 │     x = x + 1           # <-- Expect an error here: `'a: 'b` keeps `x` borrowed.
+   ┆    │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆ 33 │     consume(q.*)
+   ┆    ╰╴            ─── borrow later used here
+   ┆
 33 │     consume(q.*)
-   ╰╴            ─── borrow later used here
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

@@ -1,8 +1,29 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ def numbers() -> () \ {Yield[int32]}:
+ 6 │     Yield.yield(1)
+ 7 │     Yield.yield(2)
+ 8 │
+ 9 │
+10 │ # OK: the clauses are branches of `main`. The `handle` moves `con`, the
+11 │ # `yield` clause initialises it again before the next iteration, and the
+12 │ # `return` clause never reaches the next iteration.
+13 │ def main() -> int32:
+14 │     let mut con = coro numbers()
+15 │     let mut sum = 0
+16 │
+17 │     while true:
+18 │         handle con():
+19 │             case Yield.yield(value) resume k:
+20 │                 sum = sum + value
+21 │                 con = k
+22 │             case return:
+23 │                 break
+24 │
+25 │     return sum

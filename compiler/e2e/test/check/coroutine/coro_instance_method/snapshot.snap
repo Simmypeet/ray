@@ -1,30 +1,96 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: where-clause obligation for `main.generator` is not satisfied
-   ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:49:5
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ trait Source[t]:
+ 6 │     def next(self: t) -> int32 \ {Yield[int32]}
+ 7 │
+ 8 │
+ 9 │ trait Sink[t]:
+10 │     def put(self: t) -> () \ {Yield[int32]}
+11 │
+12 │
+13 │ # The associated types of the coroutine of a call through an instance come
+14 │ # from the signature of the trait method.
+15 │ def generator(k: core.Continuation[r, c]) given (co: core.Coroutine[c], _: core.Drop[c]) where (
+16 │     co.Return = int32,
+17 │     co.Effect = {Yield[int32]},
+18 │ ):
+19 │     let held = k
+20 │
+21 │
+22 │ # OK: the instance is a given, so the callee is not known yet.
+23 │ def throughGiven[t](source: t) given (s: Source[t], _: core.Drop[t]):
+24 │     generator(coro s.next(source))
+25 │
+26 │
+27 │ # OK: resuming the coroutine runs the method and forwards its effect.
+28 │ def resumed[t](source: t) given (s: Source[t], _: core.Drop[t]) -> int32 \ {Yield[int32]}:
+29 │     let k = coro s.next(source)
+30 │     return k(())
+31 │
+32 │
+33 │ # OK: the coroutine is driven by `handle`.
+34 │ def driven[t](source: t) given (s: Source[t], _: core.Drop[t]) -> int32:
+35 │     let mut total = 0
+36 │     let mut k = coro s.next(source)
+37 │     while true:
+38 │         handle k():
+39 │             case Yield.yield(value) resume next:
+40 │                 total = total + value
+41 │                 k = next
+42 │             case return result:
+43 │                 return total + result
+44 │     return total
+45 │
+46 │
+47 │ # ERROR: `put` returns `()`, not `int32`.
+48 │ def wrongReturn[t](source: t) given (s: Sink[t], _: core.Drop[t]):
 49 │     generator(coro s.put(source))
-   ╰╴    ━━━━━━━━━ `CoroutineInstance[&mut <coroutine of s.put>].Return` must equal `int32`
-
-[error]: use of moved value
-   ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:56:18
-   │
+   ┆
+   ┆ [error]: where-clause obligation for `main.generator` is not satisfied
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:49:5
+   ┆    │
+   ┆ 49 │     generator(coro s.put(source))
+   ┆    ╰╴    ━━━━━━━━━ `CoroutineInstance[&mut <coroutine of s.put>].Return` must equal `int32`
+   ┆
+50 │
+51 │
+52 │ # ERROR: the coroutine is not `Copy`, so the continuation is moved.
+53 │ def usedTwice[t](source: t) given (s: Source[t], _: core.Drop[t]):
+54 │     let k = coro s.next(source)
 55 │     let first = k
-   │                 ─ value moved here
 56 │     let second = k
-   ╰╴                 ━ value used here after it was moved
-
-[error]: no implicit instance found: `core.Drop[t]`
-   ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:62:13
-   │
+   ┆
+   ┆ [error]: use of moved value
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:56:18
+   ┆    │
+   ┆ 55 │     let first = k
+   ┆    │                 ─ value moved here
+   ┆ 56 │     let second = k
+   ┆    ╰╴                 ━ value used here after it was moved
+   ┆
+57 │
+58 │
+59 │ # ERROR: the coroutine holds its argument until it is resumed, and has to drop
+60 │ # it if it never is.
+61 │ def argumentMissingDrop[t](source: t) given (s: Source[t]):
 62 │     let k = coro s.next(source)
-   ╰╴            ━━━━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[t]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:62:13
+   ┆    │
+   ┆ 62 │     let k = coro s.next(source)
+   ┆    ╰╴            ━━━━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+   ┆
+63 │
+64 │
+65 │ def main() -> int32:
+66 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

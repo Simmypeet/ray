@@ -1,28 +1,51 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: explicit type arguments are not allowed for a definition
-   ╭▸ compiler/e2e/test/check/semantic/implicit_trait_instance_def_type_arguments/main.ray:11:32
-   │
+ 1 │ trait Transform[a]:
+ 2 │     def transform(value: b) -> b
+ 3 │
+ 4 │
+ 5 │ inst TransformInt for Transform[int32]:
+ 6 │     def transform(value: c) -> c:
+ 7 │         return value
+ 8 │
+ 9 │
+10 │ def throughGiven(value: a) given (dictionary: Transform[int32]) -> a:
 11 │     return dictionary.transform[bool](value)
-   ╰╴                               ━━━━━━ these type parameters are implicit
-
-[error]: explicit type arguments are not allowed for a definition
-   ╭▸ compiler/e2e/test/check/semantic/implicit_trait_instance_def_type_arguments/main.ray:15:34
-   │
+   ┆
+   ┆ [error]: explicit type arguments are not allowed for a definition
+   ┆    ╭▸ compiler/e2e/test/check/semantic/implicit_trait_instance_def_type_arguments/main.ray:11:32
+   ┆    │
+   ┆ 11 │     return dictionary.transform[bool](value)
+   ┆    ╰╴                               ━━━━━━ these type parameters are implicit
+   ┆
+12 │
+13 │
+14 │ def throughInstance(value: int32) -> int32:
 15 │     return TransformInt.transform[bool](value)
-   ╰╴                                 ━━━━━━ these type parameters are implicit
-
-[error]: explicit type arguments are not allowed for a definition
-   ╭▸ compiler/e2e/test/check/semantic/implicit_trait_instance_def_type_arguments/main.ray:19:38
-   │
+   ┆
+   ┆ [error]: explicit type arguments are not allowed for a definition
+   ┆    ╭▸ compiler/e2e/test/check/semantic/implicit_trait_instance_def_type_arguments/main.ray:15:34
+   ┆    │
+   ┆ 15 │     return TransformInt.transform[bool](value)
+   ┆    ╰╴                                 ━━━━━━ these type parameters are implicit
+   ┆
+16 │
+17 │
+18 │ def throughTrait(value: int32) -> int32:
 19 │     return Transform[int32].transform[bool](value)
-   ╰╴                                     ━━━━━━ these type parameters are implicit
+   ┆
+   ┆ [error]: explicit type arguments are not allowed for a definition
+   ┆    ╭▸ compiler/e2e/test/check/semantic/implicit_trait_instance_def_type_arguments/main.ray:19:38
+   ┆    │
+   ┆ 19 │     return Transform[int32].transform[bool](value)
+   ┆    ╰╴                                     ━━━━━━ these type parameters are implicit
+   ┆
+20 │
+21 │
+22 │ def main() -> int32:
+23 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

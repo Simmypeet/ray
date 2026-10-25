@@ -1,8 +1,43 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ eff Read[]:
+ 2 │     def read() -> int32
+ 3 │
+ 4 │ inst Fallback[f] for core.Def[f] given (drop: core.Drop[f]):
+ 5 │     type Args = bool
+ 6 │     type Return = bool
+ 7 │     type Effect = {}
+ 8 │
+ 9 │     def call(value: f, args: bool) -> bool:
+10 │         return args
+11 │
+12 │ def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+13 │     return d.call(value, args)
+14 │
+15 │ def inferred() -> int32:
+16 │     return invoke((x) -> x, (42,))
+17 │
+18 │ def multiple(captured: int32) -> int32:
+19 │     return invoke((x, y) -> x + y + captured, (1, 2))
+20 │
+21 │ def zero(value: a) -> a:
+22 │     return invoke(() -> value, ())
+23 │
+24 │ def effectful() -> int32 \ {Read}:
+25 │     return invoke(() -> Read.read(), ())
+26 │
+27 │ trait Callable[f]:
+28 │     type Result
+29 │
+30 │ inst FromDef[f] for Callable[f] given (d: core.Def[f]) where (d.Args = ()):
+31 │     type Result = d.Return
+32 │
+33 │ def nested(value: f, result: c.Result) given (c: Callable[f], drop: core.Drop[f]) -> c.Result:
+34 │     return result
+35 │
+36 │ def recursive() -> bool:
+37 │     let closure = () -> true
+38 │     let value: bool = invoke(closure, ())
+39 │     return nested(closure, value)

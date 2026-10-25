@@ -1,30 +1,65 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_borrows/main.ray:14:5
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ trait Reader[t]:
+ 6 │     def read['a](self: t, value: &'a int32) -> int32 \ {Yield[int32]}
+ 7 │
+ 8 │
+ 9 │ # ERROR: the coroutine is dropped at the end of the function, and that drop
+10 │ # may use the borrow of `x`.
+11 │ def assignedWhileHeld[t](source: t) given (r: Reader[t], _: core.Drop[t]):
+12 │     let mut x = 1
 13 │     let k = coro r.read(source, x.&)
-   │             ┬───────────────────┬───
-   │             │                   │
-   │             │                   immutable borrow occurs here
-   │             borrow later used here
 14 │     x = 2
-   ╰╴    ━━━━━ the borrowed place is assigned here
-
-[error]: cannot return a value referencing data owned by the current function
-   ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_borrows/main.ray:32:22
-   │
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_borrows/main.ray:14:5
+   ┆    │
+   ┆ 13 │     let k = coro r.read(source, x.&)
+   ┆    │             ┬───────────────────┬───
+   ┆    │             │                   │
+   ┆    │             │                   immutable borrow occurs here
+   ┆    │             borrow later used here
+   ┆ 14 │     x = 2
+   ┆    ╰╴    ━━━━━ the borrowed place is assigned here
+   ┆
+15 │
+16 │
+17 │ # OK: the storage of the coroutine ends with the block, before the assignment.
+18 │ def heldInBlock[t](source: t) given (r: Reader[t], _: core.Drop[t]):
+19 │     let mut x = 1
+20 │     if true:
+21 │         let k = coro r.read(source, x.&)
+22 │     x = 2
+23 │
+24 │
+25 │ trait Counter[]:
+26 │     def count() -> int32 \ {Yield[int32]}
+27 │
+28 │
+29 │ # ERROR: the coroutine is pinned to storage local to the closure, and the
+30 │ # continuation that is returned refers to it.
+31 │ def returned() given (c: Counter[]):
 32 │     let make = () -> coro c.count()
-   │                      ┯━━━━━━━━━━━━━
-   │                      │
-   │                      this returns a value referencing data owned by the current function
-   ╰╴                     the data is borrowed here
+   ┆
+   ┆ [error]: cannot return a value referencing data owned by the current function
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_borrows/main.ray:32:22
+   ┆    │
+   ┆ 32 │     let make = () -> coro c.count()
+   ┆    │                      ┯━━━━━━━━━━━━━
+   ┆    │                      │
+   ┆    │                      this returns a value referencing data owned by the current function
+   ┆    ╰╴                     the data is borrowed here
+   ┆
+33 │
+34 │
+35 │ def main() -> int32:
+36 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

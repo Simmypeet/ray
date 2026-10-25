@@ -1,32 +1,57 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: `handle` expects the call of a continuation
-   ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call_clauses/main.ray:15:12
-   │
+ 1 │ eff Ask:
+ 2 │     def ask() -> int32
+ 3 │     def tell(value: int32) -> ()
+ 4 │
+ 5 │
+ 6 │ def make() -> int32:
+ 7 │     return 1
+ 8 │
+ 9 │
+10 │ # ERROR: `make` is a function, not a continuation.
+11 │ #
+12 │ # The clauses are still checked against what they bind, so the errors
+13 │ # within them are reported as well.
+14 │ def callOfFunction():
 15 │     handle make():
-   │            ━━━━━━ this does not resume a continuation
-   │
-   ╰ help: write `handle continuation(value)` to resume a coroutine with `value`, or `handle coro call()` to start one
-
-[error]: missing clause for effect operation `main.Ask.tell`
-   ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call_clauses/main.ray:17:14
-   │
+   ┆
+   ┆ [error]: `handle` expects the call of a continuation
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call_clauses/main.ray:15:12
+   ┆    │
+   ┆ 15 │     handle make():
+   ┆    │            ━━━━━━ this does not resume a continuation
+   ┆    │
+   ┆    ╰ help: write `handle continuation(value)` to resume a coroutine with `value`, or `handle coro call()` to start one
+   ┆
+16 │         # ERROR: `Ask.tell` has no clause.
 17 │         case Ask.ask() resume k:
-   │              ━━━━━━━ add a clause for `main.Ask.tell`
-   │
-   ╰ help: a `handle` handles every operation of the effects it names
-
-[error]: unbound name `value`
-   ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call_clauses/main.ray:19:21
-   │
+   ┆
+   ┆ [error]: missing clause for effect operation `main.Ask.tell`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call_clauses/main.ray:17:14
+   ┆    │
+   ┆ 17 │         case Ask.ask() resume k:
+   ┆    │              ━━━━━━━ add a clause for `main.Ask.tell`
+   ┆    │
+   ┆    ╰ help: a `handle` handles every operation of the effects it names
+   ┆
+18 │             # ERROR: `value` is not a name in scope.
 19 │             let x = value
-   ╰╴                    ━━━━━
+   ┆
+   ┆ [error]: unbound name `value`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call_clauses/main.ray:19:21
+   ┆    │
+   ┆ 19 │             let x = value
+   ┆    ╰╴                    ━━━━━
+   ┆
+20 │         case return x:
+21 │             pass
+22 │
+23 │
+24 │ def main() -> int32:
+25 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

@@ -1,21 +1,31 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot assign to a place because it is borrowed
-  ╭▸ compiler/e2e/test/check/borrow/closure_capture/main.ray:8:5
-  │
-6 │     let address = () -> value.&
-  │                  ────────────── immutable borrow occurs here, by a capture
-7 │     other = 1           # <-- Expect NO error here: `other` is not captured.
-8 │     value = 42          # <-- Expect an error here: `address` borrows `value`.
-  │     ━━━━━━━━━━ the borrowed place is assigned here
-9 │     let read = address().*
-  ╰╴               ─────── borrow later used here
+ 1 │ def main() -> int32:
+ 2 │     let mut value = 32
+ 3 │     let mut other = 0
+ 4 │
+ 5 │     # The closure holds the borrow of its capture for as long as it is live.
+ 6 │     let address = () -> value.&
+ 7 │     other = 1           # <-- Expect NO error here: `other` is not captured.
+ 8 │     value = 42          # <-- Expect an error here: `address` borrows `value`.
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆   ╭▸ compiler/e2e/test/check/borrow/closure_capture/main.ray:8:5
+   ┆   │
+   ┆ 6 │     let address = () -> value.&
+   ┆   │                  ────────────── immutable borrow occurs here, by a capture
+   ┆ 7 │     other = 1           # <-- Expect NO error here: `other` is not captured.
+   ┆ 8 │     value = 42          # <-- Expect an error here: `address` borrows `value`.
+   ┆   │     ━━━━━━━━━━ the borrowed place is assigned here
+   ┆ 9 │     let read = address().*
+   ┆   ╰╴               ─────── borrow later used here
+   ┆
+ 9 │     let read = address().*
+10 │
+11 │     value = 42          # <-- Expect NO error here: `address` is not used again.
+12 │     return read + other
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

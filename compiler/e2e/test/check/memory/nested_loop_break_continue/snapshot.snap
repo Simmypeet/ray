@@ -1,19 +1,38 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: use of moved value
-   ╭▸ compiler/e2e/test/check/memory/nested_loop_break_continue/main.ray:19:17
-   │
+ 1 │ struct Resource:
+ 2 │     value: int32
+ 3 │
+ 4 │ impl !core.Copy for Resource
+ 5 │
+ 6 │ def consume(value: Resource) -> ():
+ 7 │     return ()
+ 8 │
+ 9 │ def main(outer: bool, inner: bool, take: bool) -> ():
+10 │     let value = Resource { value = 1 }
+11 │     while outer:
+12 │         while inner:
+13 │             if take:
 14 │                 consume(value)
-   │                         ───── value moved here
-   ‡
+15 │                 break
+16 │             continue
+17 │
+18 │         # ERROR: breaking from the inner loop may carry its moved state here.
 19 │         consume(value)
-   ╰╴                ━━━━━ value used here after it was moved
+   ┆
+   ┆ [error]: use of moved value
+   ┆    ╭▸ compiler/e2e/test/check/memory/nested_loop_break_continue/main.ray:19:17
+   ┆    │
+   ┆ 14 │                 consume(value)
+   ┆    │                         ───── value moved here
+   ┆    ‡
+   ┆ 19 │         consume(value)
+   ┆    ╰╴                ━━━━━ value used here after it was moved
+   ┆
+20 │         break
+21 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

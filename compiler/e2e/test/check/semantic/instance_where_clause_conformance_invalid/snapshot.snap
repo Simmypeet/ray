@@ -1,104 +1,155 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: symbol `Missing` is not found
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:17:13
-   │
-17 │         box.Missing = Unknown,
-   ╰╴            ━━━━━━━ symbol `Missing` is not found
-
-[error]: symbol `Unknown` is not found
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:17:23
-   │
-17 │         box.Missing = Unknown,
-   ╰╴                      ━━━━━━━ symbol `Unknown` is not found
-
-[error]: instance member `MissingType`: missing where-clause predicate
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:22:10
-   │
+ 1 │ trait Box[a]:
+ 2 │     type Item
+ 3 │
+ 4 │ trait Contract[]:
  5 │     type MissingType[a] given (box: Box[a]) where (box.Item = a)
-   │                                                    ──────────── the required trait predicate is declared here
-   ‡
-22 │     type MissingType[b] given (box: Box[b]) = b
-   ╰╴         ━━━━━━━━━━━ missing requirement: `box.Item` must equal `b`
-
-[error]: instance member `missingAll`: missing where-clause predicate
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:23:9
-   │
  6 │     def missingAll(value: a) given (box: Box[a]) -> a where (box.Item = a)
-   │                                                              ──────────── the required trait predicate is declared here
-   ‡
-23 │     def missingAll(value: b) given (box: Box[b]) -> b:
-   ╰╴        ━━━━━━━━━━ missing requirement: `box.Item` must equal `b`
-
-[error]: instance member `missingPartial`: missing where-clause predicate
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:25:75
-   │
- 8 │           left.Item = a,
-   │ ┌───────────────────────┘
- 9 │ │         right.Item = a,
-   │ └──────────────────────┘ the required trait predicate is declared here
-   ‡
-25 │       def missingPartial(value: b) given (left: Box[b], right: Box[b]) -> b where (
-   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-26 │ ┃         left.Item = b,
-27 │ ┃     ):
-   ╰╴┗━━━━━┛ missing requirement: `right.Item` must equal `b`
-
-[error]: instance member `extraAll`: extraneous where-clause predicate
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:29:60
-   │
+ 7 │     def missingPartial(value: a) given (left: Box[a], right: Box[a]) -> a where (
+ 8 │         left.Item = a,
+ 9 │         right.Item = a,
+10 │     )
 11 │     def extraAll(value: a) given (box: Box[a]) -> a
-   │         ──────── the corresponding trait member declares no equivalent requirement
-   ‡
+12 │     def extraPartial(value: a) given (left: Box[a], right: Box[a]) -> a where (
+13 │         left.Item = a,
+14 │     )
+15 │     def replaced(value: a) given (box: Box[a], drop: core.Drop[a]) -> a where (box.Item = a)
+16 │     def brokenTrait(value: a) given (box: Box[a]) -> a where (
+17 │         box.Missing = Unknown,
+   ┆
+   ┆ [error]: symbol `Missing` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:17:13
+   ┆    │
+   ┆ 17 │         box.Missing = Unknown,
+   ┆    ╰╴            ━━━━━━━ symbol `Missing` is not found
+   ┆
+   ┆ [error]: symbol `Unknown` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:17:23
+   ┆    │
+   ┆ 17 │         box.Missing = Unknown,
+   ┆    ╰╴                      ━━━━━━━ symbol `Unknown` is not found
+   ┆
+18 │     )
+19 │     def brokenInstance(value: a) given (box: Box[a]) -> a
+20 │
+21 │ inst BadContract for Contract:
+22 │     type MissingType[b] given (box: Box[b]) = b
+   ┆
+   ┆ [error]: instance member `MissingType`: missing where-clause predicate
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:22:10
+   ┆    │
+   ┆  5 │     type MissingType[a] given (box: Box[a]) where (box.Item = a)
+   ┆    │                                                    ──────────── the required trait predicate is declared here
+   ┆    ‡
+   ┆ 22 │     type MissingType[b] given (box: Box[b]) = b
+   ┆    ╰╴         ━━━━━━━━━━━ missing requirement: `box.Item` must equal `b`
+   ┆
+23 │     def missingAll(value: b) given (box: Box[b]) -> b:
+   ┆
+   ┆ [error]: instance member `missingAll`: missing where-clause predicate
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:23:9
+   ┆    │
+   ┆  6 │     def missingAll(value: a) given (box: Box[a]) -> a where (box.Item = a)
+   ┆    │                                                              ──────────── the required trait predicate is declared here
+   ┆    ‡
+   ┆ 23 │     def missingAll(value: b) given (box: Box[b]) -> b:
+   ┆    ╰╴        ━━━━━━━━━━ missing requirement: `box.Item` must equal `b`
+   ┆
+24 │         return value
+25 │     def missingPartial(value: b) given (left: Box[b], right: Box[b]) -> b where (
+   ┆
+   ┆ [error]: instance member `missingPartial`: missing where-clause predicate
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:25:75
+   ┆    │
+   ┆  8 │           left.Item = a,
+   ┆    │ ┌───────────────────────┘
+   ┆  9 │ │         right.Item = a,
+   ┆    │ └──────────────────────┘ the required trait predicate is declared here
+   ┆    ‡
+   ┆ 25 │       def missingPartial(value: b) given (left: Box[b], right: Box[b]) -> b where (
+   ┆    │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+   ┆ 26 │ ┃         left.Item = b,
+   ┆ 27 │ ┃     ):
+   ┆    ╰╴┗━━━━━┛ missing requirement: `right.Item` must equal `b`
+   ┆
+26 │         left.Item = b,
+27 │     ):
+28 │         return value
 29 │     def extraAll(value: b) given (box: Box[b]) -> b where (box.Item = b):
-   ╰╴                                                           ━━━━━━━━━━━━ extra requirement: `box.Item` must equal `b`
-
-[error]: instance member `extraPartial`: extraneous where-clause predicate
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:32:23
-   │
-12 │       def extraPartial(value: a) given (left: Box[a], right: Box[a]) -> a where (
-   │           ──────────── the corresponding trait member declares no equivalent requirement
-   ‡
-32 │           left.Item = b,
-   │ ┏━━━━━━━━━━━━━━━━━━━━━━━┛
-33 │ ┃         right.Item = b,
-   ╰╴┗━━━━━━━━━━━━━━━━━━━━━━┛ extra requirement: `right.Item` must equal `b`
-
-[error]: instance member `replaced`: missing where-clause predicate
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:36:76
-   │
-15 │     def replaced(value: a) given (box: Box[a], drop: core.Drop[a]) -> a where (box.Item = a)
-   │                                                                                ──────────── the required trait predicate is declared here
-   ‡
+   ┆
+   ┆ [error]: instance member `extraAll`: extraneous where-clause predicate
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:29:60
+   ┆    │
+   ┆ 11 │     def extraAll(value: a) given (box: Box[a]) -> a
+   ┆    │         ──────── the corresponding trait member declares no equivalent requirement
+   ┆    ‡
+   ┆ 29 │     def extraAll(value: b) given (box: Box[b]) -> b where (box.Item = b):
+   ┆    ╰╴                                                           ━━━━━━━━━━━━ extra requirement: `box.Item` must equal `b`
+   ┆
+30 │         return value
+31 │     def extraPartial(value: b) given (left: Box[b], right: Box[b]) -> b where (
+32 │         left.Item = b,
+   ┆
+   ┆ [error]: instance member `extraPartial`: extraneous where-clause predicate
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:32:23
+   ┆    │
+   ┆ 12 │       def extraPartial(value: a) given (left: Box[a], right: Box[a]) -> a where (
+   ┆    │           ──────────── the corresponding trait member declares no equivalent requirement
+   ┆    ‡
+   ┆ 32 │           left.Item = b,
+   ┆    │ ┏━━━━━━━━━━━━━━━━━━━━━━━┛
+   ┆ 33 │ ┃         right.Item = b,
+   ┆    ╰╴┗━━━━━━━━━━━━━━━━━━━━━━┛ extra requirement: `right.Item` must equal `b`
+   ┆
+33 │         right.Item = b,
+34 │     ):
+35 │         return value
 36 │     def replaced(value: b) given (box: Box[b], drop: core.Drop[b]) -> bool where (box.Item = bool):
-   ╰╴                                                                           ━━━━━━━━━━━━━━━━━━━━━━━ missing requirement: `box.Item` must equal `b`
-
-[error]: instance member `replaced`: extraneous where-clause predicate
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:36:83
-   │
-15 │     def replaced(value: a) given (box: Box[a], drop: core.Drop[a]) -> a where (box.Item = a)
-   │         ──────── the corresponding trait member declares no equivalent requirement
-   ‡
-36 │     def replaced(value: b) given (box: Box[b], drop: core.Drop[b]) -> bool where (box.Item = bool):
-   ╰╴                                                                                  ━━━━━━━━━━━━━━━ extra requirement: `box.Item` must equal `bool`
-
-[error]: symbol `Missing` is not found
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:41:13
-   │
+   ┆
+   ┆ [error]: instance member `replaced`: missing where-clause predicate
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:36:76
+   ┆    │
+   ┆ 15 │     def replaced(value: a) given (box: Box[a], drop: core.Drop[a]) -> a where (box.Item = a)
+   ┆    │                                                                                ──────────── the required trait predicate is declared here
+   ┆    ‡
+   ┆ 36 │     def replaced(value: b) given (box: Box[b], drop: core.Drop[b]) -> bool where (box.Item = bool):
+   ┆    ╰╴                                                                           ━━━━━━━━━━━━━━━━━━━━━━━ missing requirement: `box.Item` must equal `b`
+   ┆
+   ┆ [error]: instance member `replaced`: extraneous where-clause predicate
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:36:83
+   ┆    │
+   ┆ 15 │     def replaced(value: a) given (box: Box[a], drop: core.Drop[a]) -> a where (box.Item = a)
+   ┆    │         ──────── the corresponding trait member declares no equivalent requirement
+   ┆    ‡
+   ┆ 36 │     def replaced(value: b) given (box: Box[b], drop: core.Drop[b]) -> bool where (box.Item = bool):
+   ┆    ╰╴                                                                                  ━━━━━━━━━━━━━━━ extra requirement: `box.Item` must equal `bool`
+   ┆
+37 │         return true
+38 │     def brokenTrait(value: b) given (box: Box[b]) -> b:
+39 │         return value
+40 │     def brokenInstance(value: b) given (box: Box[b]) -> b where (
 41 │         box.Missing = Unknown,
-   ╰╴            ━━━━━━━ symbol `Missing` is not found
+   ┆
+   ┆ [error]: symbol `Missing` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:41:13
+   ┆    │
+   ┆ 41 │         box.Missing = Unknown,
+   ┆    ╰╴            ━━━━━━━ symbol `Missing` is not found
+   ┆
+   ┆ [error]: symbol `Unknown` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:41:23
+   ┆    │
+   ┆ 41 │         box.Missing = Unknown,
+   ┆    ╰╴                      ━━━━━━━ symbol `Unknown` is not found
+   ┆
+42 │     ):
+43 │         return value
+44 │
+45 │ def main() -> int32:
+46 │     return 0
 
-[error]: symbol `Unknown` is not found
-   ╭▸ compiler/e2e/test/check/semantic/instance_where_clause_conformance_invalid/main.ray:41:23
-   │
-41 │         box.Missing = Unknown,
-   ╰╴                      ━━━━━━━ symbol `Unknown` is not found
-
+other diagnostics:
 [error]: Compilation aborted due to 11 error(s)
-
-
-
-stdout:

@@ -1,16 +1,16 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: mismatched argument types in function call: expected `int32`, but found `bool`
-  ╭▸ compiler/e2e/test/check/tast/indirect_call_argument_type/main.ray:2:21
-  │
+1 │ def invoke(callback: def(int32) -> int32) -> int32:
 2 │     return callback(true)
-  ╰╴                    ━━━━
+  ┆
+  ┆ [error]: mismatched argument types in function call: expected `int32`, but found `bool`
+  ┆   ╭▸ compiler/e2e/test/check/tast/indirect_call_argument_type/main.ray:2:21
+  ┆   │
+  ┆ 2 │     return callback(true)
+  ┆   ╰╴                    ━━━━
+  ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

@@ -1,8 +1,38 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ # Unused lifetime parameters are allowed: they are bivariant, so their
+ 2 │ # arguments are never related.
+ 3 │
+ 4 │ # OK: `'b` is unused, even though `'a` is used.
+ 5 │ struct Extra['a, 'b]:
+ 6 │     value: &'a int32
+ 7 │
+ 8 │ # OK: a lifetime used only in the where clause is unused.
+ 9 │ struct WhereOnly['a, t] where (t: 'a):
+10 │     value: &'static int32
+11 │
+12 │ # OK: a recursive struct that mentions `'a` only in its own recursion does not
+13 │ # use it.
+14 │ struct List['a, 'n]:
+15 │     next: &'n List['a, 'n]
+16 │
+17 │ # OK: mutually recursive structs that only pass `'a` to each other do not use
+18 │ # it.
+19 │ struct Even['a, 'n]:
+20 │     next: &'n Odd['a, 'n]
+21 │
+22 │ struct Odd['a, 'n]:
+23 │     next: &'n Even['a, 'n]
+24 │
+25 │ # OK: a raw pointer's pointee is not a use.
+26 │ struct Raw['a]:
+27 │     value: *&'a int32
+28 │
+29 │ # OK: `'a` is not used by any operation.
+30 │ eff Unused['a]:
+31 │     def get() -> int32
+32 │
+33 │ def main() -> ():
+34 │     return ()

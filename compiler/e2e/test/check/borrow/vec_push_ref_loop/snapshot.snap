@@ -1,20 +1,44 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot borrow a place as mutable more than once at a time
-   ╭▸ compiler/e2e/test/check/borrow/vec_push_ref_loop/main.ray:26:22
-   │
+ 1 │ struct Vector[+t]:
+ 2 │     pass
+ 3 │
+ 4 │
+ 5 │ impl[t] !core.Copy for Vector[t]
+ 6 │
+ 7 │
+ 8 │ def newVec[t]() -> Vector[t]:
+ 9 │     return Vector{}
+10 │
+11 │
+12 │ def push[t](v: &mut Vector[t], x: t):
+13 │     core.NoDrop{value=x}
+14 │
+15 │
+16 │ def consume(_: t) given (_: core.Drop[t]):
+17 │     pass
+18 │
+19 │
+20 │ pub def main():
+21 │     let mut a = 32
+22 │     let mut v = newVec()
+23 │
+24 │     while true:
+25 │         # ERROR: `a` is mutable borrowed multiple times in the loop.
 26 │         push(v.&mut, a.&mut)
-   │         ┬────────────┯━━━━━─
-   │         │            │
-   │         │            second mutable borrow occurs here
-   │         │            first mutable borrow occurs here
-   ╰╴        borrow later used here
+   ┆
+   ┆ [error]: cannot borrow a place as mutable more than once at a time
+   ┆    ╭▸ compiler/e2e/test/check/borrow/vec_push_ref_loop/main.ray:26:22
+   ┆    │
+   ┆ 26 │         push(v.&mut, a.&mut)
+   ┆    │         ┬────────────┯━━━━━─
+   ┆    │         │            │
+   ┆    │         │            second mutable borrow occurs here
+   ┆    │         │            first mutable borrow occurs here
+   ┆    ╰╴        borrow later used here
+   ┆
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

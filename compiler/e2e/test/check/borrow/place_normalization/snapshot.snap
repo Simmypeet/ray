@@ -1,58 +1,117 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:11:12
-   │
+ 1 │ trait Source[t]:
+ 2 │     type Item['x]
+ 3 │
+ 4 │
+ 5 │ def reborrowed['a, 'b](item: s.Item['a]) given (s: Source[int32]) -> &'b int32 where (
+ 6 │     s.Item['b] = &'b int32,
+ 7 │ ):
+ 8 │     # ERROR: `item` is only known to be a reference through the equality of
+ 9 │     # `s.Item['b]`, which applies to `s.Item['a]` when `'a` and `'b` are the
+10 │     # same lifetime.
 11 │     return item.*.&
-   │            ━━━━━━━━ this requires `'a` to outlive `'b`
-   │
-   ╰ help: consider adding `'a: 'b` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:11:12
-   │
-11 │     return item.*.&
-   │            ━━━━━━━━ this requires `'b` to outlive `'a`
-   │
-   ╰ help: consider adding `'b: 'a` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:34:12
-   │
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:11:12
+   ┆    │
+   ┆ 11 │     return item.*.&
+   ┆    │            ━━━━━━━━ this requires `'a` to outlive `'b`
+   ┆    │
+   ┆    ╰ help: consider adding `'a: 'b` to the where clause
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:11:12
+   ┆    │
+   ┆ 11 │     return item.*.&
+   ┆    │            ━━━━━━━━ this requires `'b` to outlive `'a`
+   ┆    │
+   ┆    ╰ help: consider adding `'b: 'a` to the where clause
+   ┆
+12 │
+13 │
+14 │ def reborrowedEqualLifetimes['a, 'b](item: s.Item['a]) given (s: Source[int32]) -> &'b int32 where (
+15 │     s.Item['b] = &'b int32,
+16 │     'a: 'b,
+17 │     'b: 'a,
+18 │ ):
+19 │     # OK: `'a` and `'b` outlive each other, so they are the same lifetime.
+20 │     return item.*.&
+21 │
+22 │
+23 │ def reborrowedSameLifetime['b](item: s.Item['b]) given (s: Source[int32]) -> &'b int32 where (
+24 │     s.Item['b] = &'b int32,
+25 │ ):
+26 │     # OK: the equality is about the type of `item` itself.
+27 │     return item.*.&
+28 │
+29 │
+30 │ def loaded['a, 'b](item: s.Item['a]) given (s: Source[int32]) -> &'b int32 where (
+31 │     s.Item['b] = &'b &'b int32,
+32 │ ):
+33 │     # ERROR: the inner reference is read out of `item` as a `&'b &'b int32`.
 34 │     return item.*
-   │            ━━━━━━ this requires `'a` to outlive `'b`
-   │
-   ╰ help: consider adding `'a: 'b` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:34:12
-   │
-34 │     return item.*
-   │            ━━━━━━ this requires `'b` to outlive `'a`
-   │
-   ╰ help: consider adding `'b: 'a` to the where clause
-
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:48:5
-   │
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:34:12
+   ┆    │
+   ┆ 34 │     return item.*
+   ┆    │            ━━━━━━ this requires `'a` to outlive `'b`
+   ┆    │
+   ┆    ╰ help: consider adding `'a: 'b` to the where clause
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:34:12
+   ┆    │
+   ┆ 34 │     return item.*
+   ┆    │            ━━━━━━ this requires `'b` to outlive `'a`
+   ┆    │
+   ┆    ╰ help: consider adding `'b: 'a` to the where clause
+   ┆
+35 │
+36 │
+37 │ def loadedSameLifetime['b](item: s.Item['b]) given (s: Source[int32]) -> &'b int32 where (
+38 │     s.Item['b] = &'b &'b int32,
+39 │ ):
+40 │     # OK: the equality is about the type of `item` itself.
+41 │     return item.*
+42 │
+43 │
+44 │ def stored['a, 'b](item: s.Item['a], value: &'b int32) given (s: Source[int32]) where (
+45 │     s.Item['b] = &'b mut &'b int32,
+46 │ ):
+47 │     # ERROR: the value is written through `item` as a `&'b mut &'b int32`.
 48 │     item.* = value
-   │     ━━━━━━━━━━━━━━ this requires `'a` to outlive `'b`
-   │
-   ╰ help: consider adding `'a: 'b` to the where clause
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:48:5
+   ┆    │
+   ┆ 48 │     item.* = value
+   ┆    │     ━━━━━━━━━━━━━━ this requires `'a` to outlive `'b`
+   ┆    │
+   ┆    ╰ help: consider adding `'a: 'b` to the where clause
+   ┆
+   ┆ [error]: lifetime may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:48:5
+   ┆    │
+   ┆ 48 │     item.* = value
+   ┆    │     ━━━━━━━━━━━━━━ this requires `'b` to outlive `'a`
+   ┆    │
+   ┆    ╰ help: consider adding `'b: 'a` to the where clause
+   ┆
+49 │
+50 │
+51 │ def storedSameLifetime['b](item: s.Item['b], value: &'b int32) given (s: Source[int32]) where (
+52 │     s.Item['b] = &'b mut &'b int32,
+53 │ ):
+54 │     # OK: the equality is about the type of `item` itself.
+55 │     item.* = value
+56 │
+57 │
+58 │ def main():
+59 │     pass
 
-[error]: lifetime may not live long enough
-   ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:48:5
-   │
-48 │     item.* = value
-   │     ━━━━━━━━━━━━━━ this requires `'b` to outlive `'a`
-   │
-   ╰ help: consider adding `'b: 'a` to the where clause
-
+other diagnostics:
 [error]: Compilation aborted due to 6 error(s)
-
-
-
-stdout:

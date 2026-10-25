@@ -1,8 +1,12 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+1 │ def identity(value: a) -> a:
+2 │     return value
+3 │
+4 │
+5 │ def test() -> ():
+6 │     let number = identity(1)
+7 │     let boolean = identity(true)
+8 │     return ()

@@ -1,20 +1,45 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot assign to a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/vec_push_ref/main.ray:26:5
-   │
+ 1 │ struct Vector[+t]:
+ 2 │     pass
+ 3 │
+ 4 │
+ 5 │ impl[t] !core.Copy for Vector[t]
+ 6 │
+ 7 │
+ 8 │ def newVec[t]() -> Vector[t]:
+ 9 │     return Vector{}
+10 │
+11 │
+12 │ def push[t](v: &mut Vector[t], x: t):
+13 │     core.NoDrop{value=x}
+14 │
+15 │
+16 │ def consume(_: t) given (_: core.Drop[t]):
+17 │     pass
+18 │
+19 │
+20 │ def main():
+21 │     let mut x = 0
+22 │     let mut v = newVec()
+23 │     let p = v.&mut      # Loan L0
+24 │     x = x + 1           # <-- Expect NO error here.
 25 │     push(p, x.&)        # Loan 1
-   │             ─── immutable borrow occurs here
 26 │     x = x + 1           # <-- 💥 Expect an error here!
-   │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/vec_push_ref/main.ray:26:5
+   ┆    │
+   ┆ 25 │     push(p, x.&)        # Loan 1
+   ┆    │             ─── immutable borrow occurs here
+   ┆ 26 │     x = x + 1           # <-- 💥 Expect an error here!
+   ┆    │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆ 27 │     consume(v)
+   ┆    ╰╴            ─ borrow later used here
+   ┆
 27 │     consume(v)
-   ╰╴            ─ borrow later used here
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

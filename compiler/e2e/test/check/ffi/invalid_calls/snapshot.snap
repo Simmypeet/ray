@@ -1,28 +1,36 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: function `main.printf` expects 1 arguments, but 0 were provided
-  ╭▸ compiler/e2e/test/check/ffi/invalid_calls/main.ray:4:5
-  │
+1 │ extern def printf(format: cstr, ...) -> c_int
+2 │
+3 │ def main() -> int32:
 4 │     printf()
-  ╰╴    ━━━━━━━━
-
-[error]: a C string literal must not contain an embedded NUL byte
-  ╭▸ compiler/e2e/test/check/ffi/invalid_calls/main.ray:6:12
-  │
+  ┆
+  ┆ [error]: function `main.printf` expects 1 arguments, but 0 were provided
+  ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_calls/main.ray:4:5
+  ┆   │
+  ┆ 4 │     printf()
+  ┆   ╰╴    ━━━━━━━━
+  ┆
+5 │     printf("tuple = %d/n", (1, 2))
 6 │     printf("embedded/0nul")
-  ╰╴           ━━━━━━━━━━━━━━━
-
-[error]: mismatched types in variable assignment: expected `c_int`, but found `bool`
-  ╭▸ compiler/e2e/test/check/ffi/invalid_calls/main.ray:7:24
-  │
+  ┆
+  ┆ [error]: a C string literal must not contain an embedded NUL byte
+  ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_calls/main.ray:6:12
+  ┆   │
+  ┆ 6 │     printf("embedded/0nul")
+  ┆   ╰╴           ━━━━━━━━━━━━━━━
+  ┆
 7 │     let value: c_int = false
-  ╰╴                       ━━━━━
+  ┆
+  ┆ [error]: mismatched types in variable assignment: expected `c_int`, but found `bool`
+  ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_calls/main.ray:7:24
+  ┆   │
+  ┆ 7 │     let value: c_int = false
+  ┆   ╰╴                       ━━━━━
+  ┆
+8 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

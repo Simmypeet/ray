@@ -1,27 +1,51 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: overlapping marker implementations
-  ╭▸ compiler/e2e/test/check/semantic/marker_implementation_negative/main.ray:4:1
-  │
-3 │ impl !Send for bool
-  │ ─────────────────── the first overlapping implementation is here
-4 │ impl Send for bool
-  ╰╴━━━━━━━━━━━━━━━━━━ this marker is already implemented for the same type constructor
+ 1 │ marker Send
+ 2 │
+ 3 │ impl !Send for bool
+ 4 │ impl Send for bool
+   ┆
+   ┆ [error]: overlapping marker implementations
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_negative/main.ray:4:1
+   ┆   │
+   ┆ 3 │ impl !Send for bool
+   ┆   │ ─────────────────── the first overlapping implementation is here
+   ┆ 4 │ impl Send for bool
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━ this marker is already implemented for the same type constructor
+   ┆
+ 5 │
+ 6 │ impl[a] !Send for *a where (
+   ┆
+   ┆ [error]: negative marker implementations cannot have where clauses
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_negative/main.ray:6:22
+   ┆   │
+   ┆ 6 │   impl[a] !Send for *a where (
+   ┆   │ ┏━━━━━━━━━━━━━━━━━━━━━━┛
+   ┆ 7 │ ┃     a: Send,
+   ┆ 8 │ ┃ )
+   ┆   ╰╴┗━┛ remove this conditional requirement
+   ┆
+ 7 │     a: Send,
+ 8 │ )
+ 9 │
+10 │ marker Sync
+11 │
+12 │ # OK: a negative implementation cannot have a where clause, but it assumes the
+13 │ # requirements of its head, so `&'a t` implies `t: 'a`.
+14 │ impl['a, t] !Sync for &'a t
+15 │
+16 │ struct Bounded['a, t] where (t: 'a):
+17 │     value: *t
+18 │     # Uses `'a` without inferring `t: 'a`.
+19 │     lifetime: &'a int32
+20 │
+21 │ # OK: the head also implies the declared where clause of its struct.
+22 │ impl['a, t] !Sync for Bounded['a, t]
+23 │
+24 │ def main() -> int32:
+25 │     return 0
 
-[error]: negative marker implementations cannot have where clauses
-  ╭▸ compiler/e2e/test/check/semantic/marker_implementation_negative/main.ray:6:22
-  │
-6 │   impl[a] !Send for *a where (
-  │ ┏━━━━━━━━━━━━━━━━━━━━━━┛
-7 │ ┃     a: Send,
-8 │ ┃ )
-  ╰╴┗━┛ remove this conditional requirement
-
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

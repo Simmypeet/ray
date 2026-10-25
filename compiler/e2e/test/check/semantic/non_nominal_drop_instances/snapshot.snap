@@ -1,22 +1,33 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: Drop instance must be declared for a struct type
-  ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:4:21
-  │
-4 │ inst AnyDrop[a] for core.Drop[a]:
-  ╰╴                    ━━━━━━━━━━━━ expected `Drop[SomeStruct[...]]`, found a type variable
+ 1 │ trait Convert[a]:
+ 2 │     type Item
+ 3 │
+ 4 │ inst AnyDrop[a] for core.Drop[a]:
+   ┆
+   ┆ [error]: Drop instance must be declared for a struct type
+   ┆   ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:4:21
+   ┆   │
+   ┆ 4 │ inst AnyDrop[a] for core.Drop[a]:
+   ┆   ╰╴                    ━━━━━━━━━━━━ expected `Drop[SomeStruct[...]]`, found a type variable
+   ┆
+ 5 │     def drop(self: a):
+ 6 │         core.NoDrop { value = move self }
+ 7 │         return
+ 8 │
+ 9 │ inst ItemDrop for core.Drop[c.Item] given (c: Convert[int32]):
+   ┆
+   ┆ [error]: Drop instance must be declared for a struct type
+   ┆   ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:9:19
+   ┆   │
+   ┆ 9 │ inst ItemDrop for core.Drop[c.Item] given (c: Convert[int32]):
+   ┆   ╰╴                  ━━━━━━━━━━━━━━━━━ expected `Drop[SomeStruct[...]]`, found an associated type
+   ┆
+10 │     def drop(self: c.Item):
+11 │         core.NoDrop { value = move self }
+12 │         return
 
-[error]: Drop instance must be declared for a struct type
-  ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:9:19
-  │
-9 │ inst ItemDrop for core.Drop[c.Item] given (c: Convert[int32]):
-  ╰╴                  ━━━━━━━━━━━━━━━━━ expected `Drop[SomeStruct[...]]`, found an associated type
-
+other diagnostics:
 [error]: Compilation aborted due to 2 error(s)
-
-
-
-stdout:

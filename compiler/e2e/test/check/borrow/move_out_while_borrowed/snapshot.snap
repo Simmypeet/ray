@@ -1,65 +1,137 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: cannot move out of a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:16:13
-   │
+ 1 │ struct Token:
+ 2 │     value: int32
+ 3 │
+ 4 │ impl !core.Copy for Token
+ 5 │
+ 6 │ def consume(x: t) given(_: core.Drop[t]):
+ 7 │     let _ = x
+ 8 │
+ 9 │ def read(token: &Token) -> int32:
+10 │     return token.*.value
+11 │
+12 │ def moveWhileShared():
+13 │     let token = Token{value=1}
 14 │     let shared = token.&
-   │                  ─────── immutable borrow occurs here
 15 │     # ERROR: `token` is moved while `shared` is used afterwards.
 16 │     consume(token)
-   │             ━━━━━ the borrowed place is moved out of here
+   ┆
+   ┆ [error]: cannot move out of a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:16:13
+   ┆    │
+   ┆ 14 │     let shared = token.&
+   ┆    │                  ─────── immutable borrow occurs here
+   ┆ 15 │     # ERROR: `token` is moved while `shared` is used afterwards.
+   ┆ 16 │     consume(token)
+   ┆    │             ━━━━━ the borrowed place is moved out of here
+   ┆ 17 │     consume(read(shared))
+   ┆    ╰╴                 ────── borrow later used here
+   ┆
 17 │     consume(read(shared))
-   ╰╴                 ────── borrow later used here
-
-[error]: cannot move out of a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:23:17
-   │
+18 │
+19 │ def moveWhileMutablyBorrowed():
+20 │     let mut token = Token{value=1}
 21 │     let unique = token.&mut
-   │                  ────────── mutable borrow occurs here
 22 │     # ERROR: `token` is moved while `unique` is used afterwards.
 23 │     let moved = token
-   │                 ━━━━━ the borrowed place is moved out of here
+   ┆
+   ┆ [error]: cannot move out of a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:23:17
+   ┆    │
+   ┆ 21 │     let unique = token.&mut
+   ┆    │                  ────────── mutable borrow occurs here
+   ┆ 22 │     # ERROR: `token` is moved while `unique` is used afterwards.
+   ┆ 23 │     let moved = token
+   ┆    │                 ━━━━━ the borrowed place is moved out of here
+   ┆ 24 │     unique.*.value = 2
+   ┆    ╰╴    ────────────────── borrow later used here
+   ┆
 24 │     unique.*.value = 2
-   ╰╴    ────────────────── borrow later used here
-
-[error]: cannot move out of a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:31:13
-   │
+25 │     consume(moved)
+26 │
+27 │ def moveFieldOfBorrowed():
+28 │     let pair = (Token{value=1}, Token{value=2})
 29 │     let shared = pair.&
-   │                  ────── immutable borrow occurs here
 30 │     # ERROR: `pair.0` lies within the borrowed `pair`.
 31 │     consume(pair.0)
-   │             ━━━━ the borrowed place is moved out of here
+   ┆
+   ┆ [error]: cannot move out of a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:31:13
+   ┆    │
+   ┆ 29 │     let shared = pair.&
+   ┆    │                  ────── immutable borrow occurs here
+   ┆ 30 │     # ERROR: `pair.0` lies within the borrowed `pair`.
+   ┆ 31 │     consume(pair.0)
+   ┆    │             ━━━━ the borrowed place is moved out of here
+   ┆ 32 │     consume(read(shared.*.1.&))
+   ┆    ╰╴                 ──────────── borrow later used here
+   ┆
 32 │     consume(read(shared.*.1.&))
-   ╰╴                 ──────────── borrow later used here
-
-[error]: cannot move out of a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:38:13
-   │
+33 │
+34 │ def forcedMoveOfCopyWhileShared():
+35 │     let x = 1
 36 │     let shared = x.&
-   │                  ─── immutable borrow occurs here
 37 │     # ERROR: `move` moves the value out even though `int32` is `Copy`.
 38 │     consume(move x)
-   │             ━━━━━━ the borrowed place is moved out of here
+   ┆
+   ┆ [error]: cannot move out of a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:38:13
+   ┆    │
+   ┆ 36 │     let shared = x.&
+   ┆    │                  ─── immutable borrow occurs here
+   ┆ 37 │     # ERROR: `move` moves the value out even though `int32` is `Copy`.
+   ┆ 38 │     consume(move x)
+   ┆    │             ━━━━━━ the borrowed place is moved out of here
+   ┆ 39 │     consume(shared.*)
+   ┆    ╰╴            ──────── borrow later used here
+   ┆
 39 │     consume(shared.*)
-   ╰╴            ──────── borrow later used here
-
-[error]: cannot move out of a place because it is borrowed
-   ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:44:13
-   │
+40 │
+41 │ def moveReferenceWhileReborrowed(p: &mut Token):
 42 │     let unique = p.*.&mut
-   │                  ──────── mutable borrow occurs here
 43 │     # ERROR: `p` is moved while the memory behind it is reborrowed.
 44 │     let q = p
-   │             ━ the borrowed place is moved out of here
+   ┆
+   ┆ [error]: cannot move out of a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/move_out_while_borrowed/main.ray:44:13
+   ┆    │
+   ┆ 42 │     let unique = p.*.&mut
+   ┆    │                  ──────── mutable borrow occurs here
+   ┆ 43 │     # ERROR: `p` is moved while the memory behind it is reborrowed.
+   ┆ 44 │     let q = p
+   ┆    │             ━ the borrowed place is moved out of here
+   ┆ 45 │     unique.*.value = 2
+   ┆    ╰╴    ────────────────── borrow later used here
+   ┆
 45 │     unique.*.value = 2
-   ╰╴    ────────────────── borrow later used here
+46 │     q.*.value = 3
+47 │
+48 │ def moveAfterLastUse():
+49 │     let token = Token{value=1}
+50 │     let shared = token.&
+51 │     consume(read(shared))
+52 │     # OK: `shared` is not used after this point.
+53 │     consume(token)
+54 │
+55 │ def moveSiblingOfBorrowedField():
+56 │     let pair = (Token{value=1}, Token{value=2})
+57 │     let shared = pair.0.&
+58 │     # OK: `pair.1` does not overlap `pair.0`.
+59 │     consume(pair.1)
+60 │     consume(read(shared))
+61 │
+62 │ def main():
+63 │     let mut token = Token{value=0}
+64 │     moveWhileShared()
+65 │     moveWhileMutablyBorrowed()
+66 │     moveFieldOfBorrowed()
+67 │     forcedMoveOfCopyWhileShared()
+68 │     moveReferenceWhileReborrowed(token.&mut)
+69 │     moveAfterLastUse()
+70 │     moveSiblingOfBorrowedField()
 
+other diagnostics:
 [error]: Compilation aborted due to 5 error(s)
-
-
-
-stdout:

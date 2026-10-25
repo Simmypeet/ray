@@ -1,19 +1,32 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: use of moved value
-   ╭▸ compiler/e2e/test/check/memory/mutable_reference_capture_not_copy/main.ray:13:12
-   │
+ 1 │ def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+ 2 │     return d.call(value, args)
+ 3 │
+ 4 │ def main() -> int32:
+ 5 │     let mut value = 1
+ 6 │     let update = () -> value = value + 10
+ 7 │
+ 8 │     # A closure that captures `value` by `&mut` holds a `&mut int32`, which is
+ 9 │     # not `Copy`, so the closure is not `Copy` either.
 10 │     let copy = update
-   │                ────── value moved here
-   ‡
+11 │
+12 │     # ERROR: `update` was moved into `copy`.
 13 │     invoke(update, ())
-   ╰╴           ━━━━━━ value used here after it was moved
+   ┆
+   ┆ [error]: use of moved value
+   ┆    ╭▸ compiler/e2e/test/check/memory/mutable_reference_capture_not_copy/main.ray:13:12
+   ┆    │
+   ┆ 10 │     let copy = update
+   ┆    │                ────── value moved here
+   ┆    ‡
+   ┆ 13 │     invoke(update, ())
+   ┆    ╰╴           ━━━━━━ value used here after it was moved
+   ┆
+14 │     invoke(copy, ())
+15 │     return value
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

@@ -1,46 +1,66 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: instance is missing trait method `decode`
-   ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:10:6
-   │
+ 1 │ eff Logging:
+ 2 │     def write()
+ 3 │
+ 4 │ trait Codec[a]:
  5 │     def decode(value: int32) -> a
-   │         ────── the trait method is declared here
-   ‡
-10 │ inst BadCodec for Codec[int32]:
-   ╰╴     ━━━━━━━━ implement `decode` in this instance
-
-[error]: instance member `encode`: parameter 1 type mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:11:16
-   │
  6 │     def encode(value: a) -> int32
-   │                ──────── the corresponding trait declaration is here
-   ‡
-11 │     def encode(value: bool) -> int32:
-   ╰╴               ━━━━━━━━━━━ expected `int32`, found `bool`
-
-[error]: instance member `convert`: return type mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:13:54
-   │
  7 │     def convert(value: b) given (drop: core.Drop[b]) -> b
-   │                                                      ──── the corresponding trait declaration is here
-   ‡
-13 │     def convert(value: c) given (drop: core.Drop[c]) -> bool:
-   ╰╴                                                     ━━━━━━━ expected `c`, found `bool`
-
-[error]: instance member `useEffect`: effect row mismatch
-   ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:15:9
-   │
  8 │     def useEffect() -> () \ {Logging}
-   │                           ─────────── the corresponding trait declaration is here
-   ‡
+ 9 │
+10 │ inst BadCodec for Codec[int32]:
+   ┆
+   ┆ [error]: instance is missing trait method `decode`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:10:6
+   ┆    │
+   ┆  5 │     def decode(value: int32) -> a
+   ┆    │         ────── the trait method is declared here
+   ┆    ‡
+   ┆ 10 │ inst BadCodec for Codec[int32]:
+   ┆    ╰╴     ━━━━━━━━ implement `decode` in this instance
+   ┆
+11 │     def encode(value: bool) -> int32:
+   ┆
+   ┆ [error]: instance member `encode`: parameter 1 type mismatch
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:11:16
+   ┆    │
+   ┆  6 │     def encode(value: a) -> int32
+   ┆    │                ──────── the corresponding trait declaration is here
+   ┆    ‡
+   ┆ 11 │     def encode(value: bool) -> int32:
+   ┆    ╰╴               ━━━━━━━━━━━ expected `int32`, found `bool`
+   ┆
+12 │         return 0
+13 │     def convert(value: c) given (drop: core.Drop[c]) -> bool:
+   ┆
+   ┆ [error]: instance member `convert`: return type mismatch
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:13:54
+   ┆    │
+   ┆  7 │     def convert(value: b) given (drop: core.Drop[b]) -> b
+   ┆    │                                                      ──── the corresponding trait declaration is here
+   ┆    ‡
+   ┆ 13 │     def convert(value: c) given (drop: core.Drop[c]) -> bool:
+   ┆    ╰╴                                                     ━━━━━━━ expected `c`, found `bool`
+   ┆
+14 │         return true
 15 │     def useEffect() -> ():
-   ╰╴        ━━━━━━━━━ expected `{Logging}`, found `{}`
+   ┆
+   ┆ [error]: instance member `useEffect`: effect row mismatch
+   ┆    ╭▸ compiler/e2e/test/check/semantic/instance_conformance_invalid/main.ray:15:9
+   ┆    │
+   ┆  8 │     def useEffect() -> () \ {Logging}
+   ┆    │                           ─────────── the corresponding trait declaration is here
+   ┆    ‡
+   ┆ 15 │     def useEffect() -> ():
+   ┆    ╰╴        ━━━━━━━━━ expected `{Logging}`, found `{}`
+   ┆
+16 │         return ()
+17 │
+18 │ def main() -> int32:
+19 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 4 error(s)
-
-
-
-stdout:

@@ -1,8 +1,17 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ inst AddValue for core.Def[int32]:
+ 2 │     type Args = (int32, int32)
+ 3 │     type Return = int32
+ 4 │     type Effect = {}
+ 5 │
+ 6 │     def call(fn: int32, a: (int32, int32)) -> int32 \ {}:
+ 7 │         return fn + a.0 + a.1
+ 8 │
+ 9 │ def invoke(value: f, a: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+10 │     return d.call(value, a)
+11 │
+12 │ def main() -> int32:
+13 │     return invoke[given AddValue](1, (2, 3))

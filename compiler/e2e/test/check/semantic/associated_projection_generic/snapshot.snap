@@ -1,8 +1,35 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-
-
-stdout:
+ 1 │ trait Relation[a, b]:
+ 2 │     type Value
+ 3 │
+ 4 │ inst RelationImpl[a, b] for Relation[a, b]:
+ 5 │     type Value = (a, b)
+ 6 │
+ 7 │ trait Container[a]:
+ 8 │     type Item[b] given (relation: Relation[a, b])
+ 9 │     type Copy given (same: Container[a])
+10 │     def identity(value: this.Item[a; given RelationImpl[a, a]]) -> this.Item[a; given RelationImpl[a, a]]
+11 │     def copy(value: this.Copy[given this]) -> this.Copy[given this]
+12 │
+13 │ inst Concrete[a] for Container[a]:
+14 │     type Item[b] given (relation: Relation[a, b]) = (a, b)
+15 │     type Copy given (same: Container[a]) = a
+16 │     def identity(value: (a, a)) -> (a, a):
+17 │         return value
+18 │     def copy(value: a) -> a:
+19 │         return value
+20 │
+21 │ def nested(value: Concrete[int32].Item[(b, b); given RelationImpl[int32, (b, b)]]) -> (int32, (b, b)):
+22 │     return value
+23 │
+24 │ def abstract(value: i.Item[int32; given RelationImpl[int32, int32]]) given (i: Container[int32]) -> i.Item[int32; given RelationImpl[int32, int32]]:
+25 │     return i.identity(value)
+26 │
+27 │ def dependent(value: i.Item[int32; given RelationImpl[int32, int32]]) given (i: Container[int32], relation: Relation[i.Item[int32; given RelationImpl[int32, int32]], int32]) -> i.Item[int32; given RelationImpl[int32, int32]]:
+28 │     return value
+29 │
+30 │ def main() -> int32:
+31 │     return Concrete[int32].copy(42)

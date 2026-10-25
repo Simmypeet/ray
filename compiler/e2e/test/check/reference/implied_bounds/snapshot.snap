@@ -1,48 +1,88 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:17:20
-   │
+ 1 │ trait Project[t]:
+ 2 │     type Out
+ 3 │
+ 4 │ # OK: the parameter type `&'a &'b int32` implies `'b: 'a`.
+ 5 │ def parameter(value: &'a &'b int32) given (project: Project[int32]) -> () where (
+ 6 │     project.Out = &'a &'b int32,
+ 7 │ ):
+ 8 │     return ()
+ 9 │
+10 │ # OK: the return type `&'a t` implies `t: 'a`.
+11 │ def returnType(anchor: &'a int32, value: t) given (project: Project[&'a t]) -> &'a t:
+12 │     return returnType(anchor, value)
+13 │
+14 │ # ERROR: only plain `def`s and structs have implied bounds, so a trait def's
+15 │ # parameter type `&'a t` needs `t: 'a` written out.
+16 │ trait Get['a, t]:
 17 │     def get(value: &'a t) -> ()
-   │                    ━━━━━ the reference requires `t: 'a`
-   │
-   ╰ help: consider adding `where (t: 'a)`
-
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:24:38
-   │
+   ┆
+   ┆ [error]: the type `t` may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:17:20
+   ┆    │
+   ┆ 17 │     def get(value: &'a t) -> ()
+   ┆    │                    ━━━━━ the reference requires `t: 'a`
+   ┆    │
+   ┆    ╰ help: consider adding `where (t: 'a)`
+   ┆
+18 │
+19 │ # OK: the bound is written out.
+20 │ trait GetBounded['a, t]:
+21 │     def get(value: &'a t) -> () where (t: 'a)
+22 │
+23 │ # ERROR: an instance head implies nothing either.
 24 │ inst GetReference['a, t] for Project[&'a t]:
-   │                                      ━━━━━ the reference requires `t: 'a`
-   │
-   ╰ help: consider adding `where (t: 'a)`
-
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:25:16
-   │
+   ┆
+   ┆ [error]: the type `t` may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:24:38
+   ┆    │
+   ┆ 24 │ inst GetReference['a, t] for Project[&'a t]:
+   ┆    │                                      ━━━━━ the reference requires `t: 'a`
+   ┆    │
+   ┆    ╰ help: consider adding `where (t: 'a)`
+   ┆
 25 │     type Out = &'a t
-   │                ━━━━━ the reference requires `t: 'a`
-   │
-   ╰ help: consider adding `where (t: 'a)`
-
-[error]: the type `t` may not live long enough
-   ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:35:46
-   │
+   ┆
+   ┆ [error]: the type `t` may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:25:16
+   ┆    │
+   ┆ 25 │     type Out = &'a t
+   ┆    │                ━━━━━ the reference requires `t: 'a`
+   ┆    │
+   ┆    ╰ help: consider adding `where (t: 'a)`
+   ┆
+26 │
+27 │ # OK: the bound is written out.
+28 │ inst GetReferenceBounded['a, t] for Project[(&'a t, int32)] where (t: 'a):
+29 │     type Out = &'a t
+30 │
+31 │ # ERROR: an effect row implies nothing, so `t: 'a` is unknown here.
+32 │ eff Reader['a, t] where (t: 'a):
+33 │     def ask() -> &'a t
+34 │
 35 │ def rowOnly['a, t]() given (project: Project[&'a t]) -> () \{Reader['a, t]}:
-   │                                              ━━━━━ the reference requires `t: 'a`
-   │
-   ╰ help: consider adding `where (t: 'a)`
+   ┆
+   ┆ [error]: the type `t` may not live long enough
+   ┆    ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:35:46
+   ┆    │
+   ┆ 35 │ def rowOnly['a, t]() given (project: Project[&'a t]) -> () \{Reader['a, t]}:
+   ┆    │                                              ━━━━━ the reference requires `t: 'a`
+   ┆    │
+   ┆    ╰ help: consider adding `where (t: 'a)`
+   ┆
+   ┆ [error]: where-clause obligation for `main.Reader` is not satisfied
+   ┆    ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:35:62
+   ┆    │
+   ┆ 35 │ def rowOnly['a, t]() given (project: Project[&'a t]) -> () \{Reader['a, t]}:
+   ┆    ╰╴                                                             ━━━━━━━━━━━━━ `t` must outlive `'a`
+   ┆
+36 │     return ()
+37 │
+38 │ def main() -> ():
+39 │     return ()
 
-[error]: where-clause obligation for `main.Reader` is not satisfied
-   ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:35:62
-   │
-35 │ def rowOnly['a, t]() given (project: Project[&'a t]) -> () \{Reader['a, t]}:
-   ╰╴                                                             ━━━━━━━━━━━━━ `t` must outlive `'a`
-
+other diagnostics:
 [error]: Compilation aborted due to 5 error(s)
-
-
-
-stdout:

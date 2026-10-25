@@ -1,9 +1,6 @@
 #![allow(missing_docs)]
 
-use std::{
-    io::BufRead,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use insta::assert_snapshot;
@@ -50,21 +47,114 @@ fn main(resource: &str) {
     });
 }
 
-async fn run(arguments: Arguments) -> String {
+/// Runs the compiler and returns its stderr and stdout.
+async fn run(arguments: Arguments) -> (String, String) {
     let mut err_writer = Vec::new();
     let mut out_writer = Vec::new();
 
     let _ = rayc_driver::run(arguments, &mut err_writer, &mut out_writer).await;
 
-    let stderr_string = String::from_utf8(err_writer).unwrap();
-    let stout_string = String::from_utf8(out_writer).unwrap();
+    (String::from_utf8(err_writer).unwrap(), String::from_utf8(out_writer).unwrap())
+}
 
-    format!("stderr:\n{stderr_string}\n\nstdout:\n{stout_string}")
+/// A rendered diagnostic, anchored to the fixture line its primary span
+/// starts on, or `None` when it points at another file or nowhere.
+struct Diagnostic<'a> {
+    line: Option<usize>,
+    text: Vec<&'a str>,
+}
+
+/// Splits the rendered stderr into diagnostics, each starting at a
+/// `[severity]: message` header.
+fn parse_diagnostics<'a>(
+    stderr: &'a str,
+    file_path: &Path,
+    line_count: usize,
+) -> Vec<Diagnostic<'a>> {
+    let is_header = |line: &str| {
+        line.strip_prefix('[')
+            .and_then(|rest| rest.split_once("]: "))
+            .is_some_and(|(severity, _)| severity.chars().all(char::is_alphabetic))
+    };
+    let fixture_path = file_path.to_string_lossy().replace('\\', "/");
+
+    let mut diagnostics: Vec<Diagnostic<'a>> = Vec::new();
+    for line in stderr.lines() {
+        match diagnostics.last_mut() {
+            Some(diagnostic) if !is_header(line) => diagnostic.text.push(line),
+            _ => diagnostics.push(Diagnostic { line: None, text: vec![line] }),
+        }
+    }
+
+    for diagnostic in &mut diagnostics {
+        while diagnostic.text.last().is_some_and(|line| line.trim().is_empty()) {
+            diagnostic.text.pop();
+        }
+
+        // the primary location is the first `╭▸ path:line:column`
+        let location =
+            diagnostic.text.iter().find_map(|line| line.trim_start().strip_prefix("╭▸ "));
+        diagnostic.line = location.and_then(|location| {
+            let mut parts = location.rsplitn(3, ':');
+            let (_, line, path) = (parts.next()?, parts.next()?, parts.next()?);
+            (path.replace('\\', "/") == fixture_path)
+                .then(|| line.parse::<usize>().ok())
+                .flatten()
+                .filter(|line| *line > 0)
+                .map(|line| line.min(line_count))
+        });
+    }
+
+    diagnostics
+}
+
+/// Renders the fixture source with every diagnostic placed right below the
+/// line it points at, so the snapshot reads without the `main.ray` beside it.
+/// Diagnostics pointing at other files or nowhere follow the source.
+fn render(source: &str, stderr: &str, stdout: &str, file_path: &Path) -> String {
+    use std::fmt::Write;
+
+    let source_lines = source.lines().collect::<Vec<_>>();
+    let diagnostics = parse_diagnostics(stderr, file_path, source_lines.len());
+    let width = source_lines.len().to_string().len();
+
+    let mut rendered = String::new();
+    for (index, source_line) in source_lines.iter().enumerate() {
+        let number = index + 1;
+        writeln!(rendered, "{}", format!("{number:>width$} │ {source_line}").trim_end()).unwrap();
+
+        // pad the diagnostics with an empty gutter line above, between, and
+        // below them
+        let mut anchored =
+            diagnostics.iter().filter(|diagnostic| diagnostic.line == Some(number)).peekable();
+        if anchored.peek().is_some() {
+            writeln!(rendered, "{:width$} ┆", "").unwrap();
+        }
+        for diagnostic in anchored {
+            for line in &diagnostic.text {
+                writeln!(rendered, "{}", format!("{:width$} ┆ {line}", "").trim_end()).unwrap();
+            }
+            writeln!(rendered, "{:width$} ┆", "").unwrap();
+        }
+    }
+
+    let others = diagnostics.iter().filter(|diagnostic| diagnostic.line.is_none());
+    for (index, diagnostic) in others.enumerate() {
+        rendered.push_str(if index == 0 { "\nother diagnostics:\n" } else { "\n" });
+        for line in &diagnostic.text {
+            writeln!(rendered, "{line}").unwrap();
+        }
+    }
+
+    if !stdout.is_empty() {
+        write!(rendered, "\nstdout:\n{stdout}").unwrap();
+    }
+
+    rendered
 }
 
 async fn test(file_path: &Path) {
-    let file = std::fs::File::open(file_path).unwrap();
-    let buf_reader = std::io::BufReader::new(file);
+    let source = std::fs::read_to_string(file_path).unwrap();
 
     let input = || {
         Input::builder()
@@ -76,7 +166,7 @@ async fn test(file_path: &Path) {
     };
 
     // read for the custom cli interface starting with `##` comment
-    let mut arguments = buf_reader.lines().next().map(|x| x.unwrap()).map_or_else(
+    let mut arguments = source.lines().next().map(str::to_owned).map_or_else(
         || Arguments::new_check(input()),
         |mut first_line| {
             if first_line.starts_with("##") {
@@ -93,7 +183,8 @@ async fn test(file_path: &Path) {
     );
     arguments.enable_ir_verification();
 
-    let run = run(arguments).await;
+    let (stderr, stdout) = run(arguments).await;
+    let snapshot = render(&source, &stderr, &stdout, file_path);
 
     let mut settings = insta::Settings::clone_current();
 
@@ -110,5 +201,5 @@ async fn test(file_path: &Path) {
     settings.remove_snapshot_suffix();
     let _guard = settings.bind_to_scope();
 
-    assert_snapshot!("snapshot", run);
+    assert_snapshot!("snapshot", snapshot);
 }

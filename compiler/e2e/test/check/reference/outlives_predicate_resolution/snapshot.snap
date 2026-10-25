@@ -1,16 +1,51 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: invalid marker implementation where-clause predicate
-   ╭▸ compiler/e2e/test/check/reference/outlives_predicate_resolution/main.ray:26:35
-   │
+ 1 │ marker Send
+ 2 │
+ 3 │ trait Project[t]:
+ 4 │     type Out
+ 5 │
+ 6 │ # OK: lifetime, type, and effect-row subjects.
+ 7 │ def forms['a, 'b, t, e: Effect]() -> () where ('a: 'b, t: 'a, e: 'a, int32: 'a):
+ 8 │     return ()
+ 9 │
+10 │ # OK: a dictionary can be bounded by a lifetime.
+11 │ def dictionary['a, t]() given (project: Project[t]) -> () where (project: 'a):
+12 │     return ()
+13 │
+14 │ # OK: a projection can be bounded by a lifetime.
+15 │ def projection['a, t]() given (project: Project[t]) -> () where (project.Out: 'a):
+16 │     return ()
+17 │
+18 │ # OK: a marker implementation assumes the requirements of its head, so the
+19 │ # implementor `&'a t` implies `t: 'a`.
+20 │ impl['a, t] Send for &'a t
+21 │
+22 │ marker Sync
+23 │
+24 │ # ERROR: marker implementations reject outlives predicates; the head's are
+25 │ # implied, and marker entailment ignores lifetimes.
 26 │ impl['a, t] Sync for &'a t where (t: 'a)
-   ╰╴                                  ━━━━━ marker implementation where clauses may only contain marker predicates
+   ┆
+   ┆ [error]: invalid marker implementation where-clause predicate
+   ┆    ╭▸ compiler/e2e/test/check/reference/outlives_predicate_resolution/main.ray:26:35
+   ┆    │
+   ┆ 26 │ impl['a, t] Sync for &'a t where (t: 'a)
+   ┆    ╰╴                                  ━━━━━ marker implementation where clauses may only contain marker predicates
+   ┆
+27 │
+28 │ struct Bounded['a, t] where (t: 'a):
+29 │     value: *t
+30 │     # Uses `'a` without inferring `t: 'a`.
+31 │     lifetime: &'a int32
+32 │
+33 │ # OK: the head implies the declared where clause of its struct.
+34 │ impl['a, t] Sync for Bounded['a, t]
+35 │
+36 │ def main() -> ():
+37 │     return ()
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:

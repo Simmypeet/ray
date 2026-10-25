@@ -1,39 +1,103 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: borrow may still be in use when the value is dropped
-   ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:20:13
-   │
+ 1 │ # A struct with a declared `Drop` implementation, which may use the memory
+ 2 │ # behind the reference it holds.
+ 3 │ struct Guard['a]:
+ 4 │     inner: &'a mut int32
+ 5 │
+ 6 │ inst GuardDrop['a] for core.Drop[Guard['a]]:
+ 7 │     def drop(self: Guard['a]):
+ 8 │         self.inner.* = 0
+ 9 │         core.NoDrop { value = move self }
+10 │
+11 │ # A struct without one: dropping it does not go through its reference.
+12 │ struct Plain['a]:
+13 │     inner: &'a mut int32
+14 │
+15 │ def declaredDropUsesBorrowed['a](out: &mut &'a mut int32, x: &'a mut int32):
 16 │     let guard = Guard{inner=x}
-   │         ───── the value of this binding is dropped while the borrow is still in use
-   ‡
+17 │     # ERROR: `guard` is dropped at the end of the function, where its `Drop`
+18 │     # implementation may write through `guard.inner` while `out` still holds
+19 │     # this borrow.
 20 │     out.* = guard.inner.*.&mut
-   ╰╴            ━━━━━━━━━━━━━━━━━━ what the dropped value may use is borrowed here
-
-[error]: borrow may still be in use when the value is dropped
-   ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:30:13
-   │
+   ┆
+   ┆ [error]: borrow may still be in use when the value is dropped
+   ┆    ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:20:13
+   ┆    │
+   ┆ 16 │     let guard = Guard{inner=x}
+   ┆    │         ───── the value of this binding is dropped while the borrow is still in use
+   ┆    ‡
+   ┆ 20 │     out.* = guard.inner.*.&mut
+   ┆    ╰╴            ━━━━━━━━━━━━━━━━━━ what the dropped value may use is borrowed here
+   ┆
+21 │
+22 │ def structuralDropSkipsBorrowed['a](out: &mut &'a mut int32, x: &'a mut int32):
+23 │     let plain = Plain{inner=x}
+24 │     # OK: nothing runs when `plain` goes out of scope.
+25 │     out.* = plain.inner.*.&mut
+26 │
+27 │ def declaredDropWithinTuple['a](out: &mut &'a mut int32, x: &'a mut int32):
 28 │     let pair = (Guard{inner=x}, 1)
-   │         ──── the value of this binding is dropped while the borrow is still in use
 29 │     # ERROR: dropping `pair` drops the guard in it.
 30 │     out.* = pair.0.inner.*.&mut
-   ╰╴            ━━━━━━━━━━━━━━━━━━━ what the dropped value may use is borrowed here
-
-[error]: borrow may still be in use when the value is dropped
-   ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:40:13
-   │
+   ┆
+   ┆ [error]: borrow may still be in use when the value is dropped
+   ┆    ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:30:13
+   ┆    │
+   ┆ 28 │     let pair = (Guard{inner=x}, 1)
+   ┆    │         ──── the value of this binding is dropped while the borrow is still in use
+   ┆ 29 │     # ERROR: dropping `pair` drops the guard in it.
+   ┆ 30 │     out.* = pair.0.inner.*.&mut
+   ┆    ╰╴            ━━━━━━━━━━━━━━━━━━━ what the dropped value may use is borrowed here
+   ┆
+31 │
+32 │ def declaredDropOfSibling['a](out: &mut &'a mut int32, x: &'a mut int32, y: &'a mut int32):
+33 │     let pair = (Guard{inner=x}, y)
+34 │     # OK: the `Drop` implementation of `pair.0` cannot reach `pair.1`.
+35 │     out.* = pair.1.*.&mut
+36 │
+37 │ def declaredDropOnReassign['a](out: &mut &'a mut int32, x: &'a mut int32, y: &'a mut int32):
 38 │     let mut guard = Guard{inner=x}
-   │         ───────── the value of this binding is dropped while the borrow is still in use
 39 │     # ERROR: the assignment below drops the guard holding `x`.
 40 │     out.* = guard.inner.*.&mut
-   │             ━━━━━━━━━━━━━━━━━━ what the dropped value may use is borrowed here
+   ┆
+   ┆ [error]: borrow may still be in use when the value is dropped
+   ┆    ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:40:13
+   ┆    │
+   ┆ 38 │     let mut guard = Guard{inner=x}
+   ┆    │         ───────── the value of this binding is dropped while the borrow is still in use
+   ┆ 39 │     # ERROR: the assignment below drops the guard holding `x`.
+   ┆ 40 │     out.* = guard.inner.*.&mut
+   ┆    │             ━━━━━━━━━━━━━━━━━━ what the dropped value may use is borrowed here
+   ┆ 41 │     guard = Guard{inner=y}
+   ┆    ╰╴    ────────────────────── borrow later used here
+   ┆
 41 │     guard = Guard{inner=y}
-   ╰╴    ────────────────────── borrow later used here
+42 │
+43 │ def declaredDropAfterLastUse(x: &mut int32):
+44 │     let guard = Guard{inner=x}
+45 │     let unique = guard.inner.*.&mut
+46 │     # OK: `unique` is not used after this point.
+47 │     unique.* = 1
+48 │
+49 │ def main():
+50 │     let mut a = 1
+51 │     let mut b = 2
+52 │     let mut c = 3
+53 │     let mut d = 4
+54 │     let mut e = 5
+55 │     let mut f = 6
+56 │     let mut g = 7
+57 │     let mut h = 8
+58 │     let mut slot = a.&mut
+59 │     declaredDropUsesBorrowed(slot.&mut, b.&mut)
+60 │     structuralDropSkipsBorrowed(slot.&mut, c.&mut)
+61 │     declaredDropWithinTuple(slot.&mut, d.&mut)
+62 │     declaredDropOfSibling(slot.&mut, e.&mut, f.&mut)
+63 │     declaredDropOnReassign(slot.&mut, g.&mut, h.&mut)
+64 │     declaredDropAfterLastUse(slot)
 
+other diagnostics:
 [error]: Compilation aborted due to 3 error(s)
-
-
-
-stdout:

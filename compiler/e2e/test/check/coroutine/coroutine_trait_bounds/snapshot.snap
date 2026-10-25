@@ -1,40 +1,104 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: where-clause obligation for `main.asker` is not satisfied
-   ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:46:5
-   │
+ 1 │ eff Yield[t]:
+ 2 │     def yield(value: t) -> ()
+ 3 │
+ 4 │
+ 5 │ eff Ask:
+ 6 │     def ask() -> int32
+ 7 │
+ 8 │
+ 9 │ def numbers() -> () \ {Yield[int32]}:
+10 │     Yield.yield(1)
+11 │
+12 │
+13 │ def addTwo() -> int32 \ {Ask}:
+14 │     return Ask.ask() + Ask.ask()
+15 │
+16 │
+17 │ def generator(k: core.Continuation[r, c]) given (co: core.Coroutine[c], _: core.Drop[c]) where (
+18 │     co.Return = (),
+19 │     co.Effect = {Yield[int32]},
+20 │ ):
+21 │     let held = k
+22 │
+23 │
+24 │ def asker(k: core.Continuation[r, c]) given (co: core.Coroutine[c], _: core.Drop[c]) where (
+25 │     co.Return = int32,
+26 │     co.Effect = {Ask},
+27 │ ):
+28 │     let held = k
+29 │
+30 │
+31 │ # The associated types of a coroutine type come from the signature of the
+32 │ # function it suspends.
+33 │ def resultOf(k: core.Continuation[r, c]) given (co: core.Coroutine[c], _: core.Drop[c]) -> co.Return:
+34 │     return resultOf(k)
+35 │
+36 │
+37 │ # OK: the bounds match the signatures.
+38 │ def accepted():
+39 │     generator(coro numbers())
+40 │     asker(coro addTwo())
+41 │     let sum: int32 = resultOf(coro addTwo())
+42 │
+43 │
+44 │ # ERROR: `numbers` returns `()`, not `int32`.
+45 │ def wrongReturn():
 46 │     asker(coro numbers())
-   ╰╴    ━━━━━ `CoroutineInstance[&mut <coroutine of numbers>].Effect` must equal `{Ask}`
-
-[error]: where-clause obligation for `main.asker` is not satisfied
-   ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:46:5
-   │
-46 │     asker(coro numbers())
-   ╰╴    ━━━━━ `CoroutineInstance[&mut <coroutine of numbers>].Return` must equal `int32`
-
-[error]: where-clause obligation for `main.generator` is not satisfied
-   ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:51:5
-   │
+   ┆
+   ┆ [error]: where-clause obligation for `main.asker` is not satisfied
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:46:5
+   ┆    │
+   ┆ 46 │     asker(coro numbers())
+   ┆    ╰╴    ━━━━━ `CoroutineInstance[&mut <coroutine of numbers>].Effect` must equal `{Ask}`
+   ┆
+   ┆ [error]: where-clause obligation for `main.asker` is not satisfied
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:46:5
+   ┆    │
+   ┆ 46 │     asker(coro numbers())
+   ┆    ╰╴    ━━━━━ `CoroutineInstance[&mut <coroutine of numbers>].Return` must equal `int32`
+   ┆
+47 │
+48 │
+49 │ # ERROR: `addTwo` performs `Ask`, not `Yield[int32]`.
+50 │ def wrongEffect():
 51 │     generator(coro addTwo())
-   ╰╴    ━━━━━━━━━ `CoroutineInstance[&mut <coroutine of addTwo>].Effect` must equal `{Yield[int32]}`
-
-[error]: where-clause obligation for `main.generator` is not satisfied
-   ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:51:5
-   │
-51 │     generator(coro addTwo())
-   ╰╴    ━━━━━━━━━ `CoroutineInstance[&mut <coroutine of addTwo>].Return` must equal `()`
-
-[error]: no implicit instance found: `core.Coroutine[int32]`
-   ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:60:5
-   │
+   ┆
+   ┆ [error]: where-clause obligation for `main.generator` is not satisfied
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:51:5
+   ┆    │
+   ┆ 51 │     generator(coro addTwo())
+   ┆    ╰╴    ━━━━━━━━━ `CoroutineInstance[&mut <coroutine of addTwo>].Effect` must equal `{Yield[int32]}`
+   ┆
+   ┆ [error]: where-clause obligation for `main.generator` is not satisfied
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:51:5
+   ┆    │
+   ┆ 51 │     generator(coro addTwo())
+   ┆    ╰╴    ━━━━━━━━━ `CoroutineInstance[&mut <coroutine of addTwo>].Return` must equal `()`
+   ┆
+52 │
+53 │
+54 │ # ERROR: only a coroutine type, or a `&mut` to one, has an instance.
+55 │ def notCoroutine(value: int32) given (co: core.Coroutine[int32]):
+56 │     pass
+57 │
+58 │
+59 │ def useNotCoroutine():
 60 │     notCoroutine(1)
-   ╰╴    ━━━━━━━━━━━━
+   ┆
+   ┆ [error]: no implicit instance found: `core.Coroutine[int32]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/coroutine_trait_bounds/main.ray:60:5
+   ┆    │
+   ┆ 60 │     notCoroutine(1)
+   ┆    ╰╴    ━━━━━━━━━━━━
+   ┆
+61 │
+62 │
+63 │ def main() -> int32:
+64 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 5 error(s)
-
-
-
-stdout:

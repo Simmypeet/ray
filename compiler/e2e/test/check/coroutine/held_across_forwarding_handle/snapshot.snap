@@ -1,26 +1,76 @@
 ---
 source: compiler/e2e/test/check/mod.rs
-expression: run
+expression: snapshot
 ---
-stderr:
-[error]: no implicit instance found: `core.Drop[Handle]`
-   ╭▸ compiler/e2e/test/check/coroutine/held_across_forwarding_handle/main.ray:26:16
-   │
-26 │   def forwarding(opened: Handle) -> () \ {Log}:
-   │                  ━━━━━━━━━━━━━━ this value is held across a suspension point
-27 │       let k = coro numbers()
-28 │ ┌     handle k():
-29 │ │         case Yield.yield(value) resume next:
-30 │ │             close(opened)
-31 │ │             return
-32 │ │         case return:
-33 │ │             close(opened)
-   │ └─────────────────────────┘ it is dropped here if the coroutine is dropped while suspended
-   │
-   ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+ 1 │ # A `handle` that forwards an operation suspends the enclosing function while
+ 2 │ # the operation is handled further out, so it is a suspension point.
+ 3 │
+ 4 │ eff Yield[t]:
+ 5 │     def yield(value: t) -> ()
+ 6 │
+ 7 │ eff Log:
+ 8 │     def log(value: int32) -> ()
+ 9 │
+10 │
+11 │ @linear
+12 │ struct Handle:
+13 │     fd: int32
+14 │
+15 │
+16 │ def close(opened: Handle):
+17 │     core.NoDrop { value = move opened }
+18 │
+19 │
+20 │ def numbers() -> () \ {Yield[int32], Log}:
+21 │     Log.log(0)
+22 │     Yield.yield(1)
+23 │
+24 │
+25 │ # ERROR: the `handle` forwards `Log`, and `opened` is held across it.
+26 │ def forwarding(opened: Handle) -> () \ {Log}:
+   ┆
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/held_across_forwarding_handle/main.ray:26:16
+   ┆    │
+   ┆ 26 │   def forwarding(opened: Handle) -> () \ {Log}:
+   ┆    │                  ━━━━━━━━━━━━━━ this value is held across a suspension point
+   ┆ 27 │       let k = coro numbers()
+   ┆ 28 │ ┌     handle k():
+   ┆ 29 │ │         case Yield.yield(value) resume next:
+   ┆ 30 │ │             close(opened)
+   ┆ 31 │ │             return
+   ┆ 32 │ │         case return:
+   ┆ 33 │ │             close(opened)
+   ┆    │ └─────────────────────────┘ it is dropped here if the coroutine is dropped while suspended
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+27 │     let k = coro numbers()
+28 │     handle k():
+29 │         case Yield.yield(value) resume next:
+30 │             close(opened)
+31 │             return
+32 │         case return:
+33 │             close(opened)
+34 │
+35 │
+36 │ def quiet() -> () \ {Yield[int32]}:
+37 │     Yield.yield(1)
+38 │
+39 │
+40 │ # OK: a `handle` that forwards nothing is not a suspension point.
+41 │ def notForwarding(opened: Handle):
+42 │     let k = coro quiet()
+43 │     handle k():
+44 │         case Yield.yield(value) resume next:
+45 │             close(opened)
+46 │             return
+47 │         case return:
+48 │             close(opened)
+49 │
+50 │
+51 │ def main() -> int32:
+52 │     return 0
 
+other diagnostics:
 [error]: Compilation aborted due to 1 error(s)
-
-
-
-stdout:
