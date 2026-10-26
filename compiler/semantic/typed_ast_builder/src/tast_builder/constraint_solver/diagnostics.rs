@@ -1,4 +1,5 @@
 use rayc_hash::FxHashSet;
+use rayc_semantic_element::deferred_marker::DeferredMarker;
 use rayc_solver::{
     explain::{ProofFailure, RequiredBy, UnsatisfiedGoal},
     instance_resolution::InstanceResolutionError,
@@ -190,7 +191,9 @@ impl ConstraintSolver {
     }
 
     #[must_use]
-    pub async fn residual_into_diags(mut self) -> (Vec<Diagnostic>, Subst) {
+    pub async fn finish_constraint_solver(
+        mut self,
+    ) -> (Vec<Diagnostic>, Vec<DeferredMarker>, Subst) {
         let failed_cause_ids = self
             .constraint_set
             .failed_pending_constraints()
@@ -226,6 +229,6 @@ impl ConstraintSolver {
         .await;
         debug_assert!(unreported_roots.is_empty());
 
-        (diags, self.provenance.into_subst())
+        (diags, self.constraint_set.into_deferred_markers(), self.provenance.into_subst())
     }
 }

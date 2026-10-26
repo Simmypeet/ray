@@ -306,7 +306,8 @@ impl TAstBuilder {
         let expr = TypedExpr::new(kind.into(), span, ty, effect);
         let id = self.function_map.insert_expression(self.building_function, expr);
 
-        // automatically compose the effect of the expression from its sub-expressions
+        // automatically compose the effect of the expression from its
+        // sub-expressions
         self.compose_effect_from_sub_exprs(id).await;
 
         id
@@ -479,8 +480,9 @@ impl TAstBuilder {
             "all suspended functions should be restored before finishing the typed AST"
         );
 
-        // Capture layouts are structural, so their binding types may still contain
-        // inference variables. Each binding wakes constraints waiting on a closure.
+        // Capture layouts are structural, so their binding types may still
+        // contain inference variables. Each binding wakes constraints
+        // waiting on a closure.
         let captures = CapturePlan::analyze(&self.function_map, &mut self.constraint_solver).await;
         for (function_id, inference, span) in std::mem::take(&mut self.closure_captures) {
             let tuple = captures.plan(function_id).captured_tuple(&self.engine);
@@ -491,10 +493,11 @@ impl TAstBuilder {
         self.finish_constraints().await;
         self.validate_numeric_literal_ranges().await;
 
-        let (constr_diags, subst) = self.constraint_solver.residual_into_diags().await;
+        let (constr_diags, deferred_markers, subst) =
+            self.constraint_solver.finish_constraint_solver().await;
 
         self.diagnostics.extend(constr_diags);
-        let mut ast = TypedAst::new(self.function_map, captures);
+        let mut ast = TypedAst::builder().functions(self.function_map).captures(captures).build();
         ast.apply_mut_subst(&subst, &self.engine);
 
         // An undetermined type is often a consequence of another error, e.g. an
@@ -511,6 +514,7 @@ impl TAstBuilder {
         }
 
         ast.set_no_error(self.diagnostics.is_empty());
+        ast.extend_deferred_markers(deferred_markers);
 
         (ast, self.diagnostics)
     }
