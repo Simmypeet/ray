@@ -730,7 +730,7 @@ async fn structural(
             (format!("the closure stores a capture of type `{value}`"), None)
         }
         StructuralComponent::CoroutineUpvar(span) => (
-            format!("the coroutine `{owner_display}` stores a value of type `{value}`"),
+            format!("the coroutine `{owner_display}` captures an argument of type `{value}`"),
             if let Some(span) = span { Some(highlight(engine, span).await) } else { None },
         ),
     }
