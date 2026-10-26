@@ -4,7 +4,7 @@ expression: snapshot
 ---
 1 │ def invoke(callback: def(int32) -> int32) -> int32:
 2 │     return callback(true)
-  ┆
+  │                     ^^^^
   ┆ [error]: mismatched argument types in function call: expected `int32`, but found `bool`
   ┆   ╭▸ compiler/e2e/test/check/tast/indirect_call_argument_type/main.ray:2:21
   ┆   │

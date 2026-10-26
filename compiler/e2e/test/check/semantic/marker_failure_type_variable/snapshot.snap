@@ -16,7 +16,7 @@ expression: snapshot
 12 │ # ERROR: nothing is known about `a`.
 13 │ def generic(value: a) -> a:
 14 │     return requireSend(value)
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: `a` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_type_variable/main.ray:14:12
    ┆    │
@@ -29,7 +29,7 @@ expression: snapshot
 16 │ # ERROR: the chain ends at `a`, stored in a struct.
 17 │ def nested(value: Holder[a]) -> Holder[a]:
 18 │     return requireSend(value)
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: `Holder[a]` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_type_variable/main.ray:18:12
    ┆    │
@@ -48,7 +48,7 @@ expression: snapshot
 20 │ # ERROR: a reference stores no fields, and no implementation applies to it.
 21 │ def reference(value: &int32) -> &int32:
 22 │     return requireSend(value)
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: `&int32` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_type_variable/main.ray:22:12
    ┆    │

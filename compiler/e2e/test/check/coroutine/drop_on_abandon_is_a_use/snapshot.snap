@@ -45,7 +45,7 @@ expression: snapshot
 41 │     let mut guard: Guard['_]
 42 │     let mut counter = Counter { value = 1 }
 43 │     guard = Guard { inner = counter.&mut }
-   ┆
+   │                             ^^^^^^^^^^^^
    ┆ [error]: borrow may still be in use when the value is dropped
    ┆    ╭▸ compiler/e2e/test/check/coroutine/drop_on_abandon_is_a_use/main.ray:43:29
    ┆    │

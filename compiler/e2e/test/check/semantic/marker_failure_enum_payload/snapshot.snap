@@ -21,7 +21,7 @@ expression: snapshot
 17 │ # ERROR: `Holder` may hold a `Secret` in its `Full` variant.
 18 │ def rejected(value: Holder) -> Holder:
 19 │     return requireSend(value)
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: `Holder` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_enum_payload/main.ray:19:12
    ┆    │

@@ -35,7 +35,7 @@ expression: snapshot
 31 │ # temporary is dropped, but a linear type has no Drop dictionary.
 32 │ def returnLeavesTemporary(condition: bool) -> int32:
 33 │     consume(make(), if condition:
-   ┆
+   │             ^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:33:13
    ┆    │
@@ -53,7 +53,7 @@ expression: snapshot
 40 │ def breakLeavesTemporary(condition: bool):
 41 │     while true:
 42 │         consume(make(), if condition:
-   ┆
+   │                 ^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:42:17
    ┆    │
@@ -69,7 +69,7 @@ expression: snapshot
 47 │ # Error: every arm returns, so nothing ever consumes the temporary.
 48 │ def everyArmReturns(condition: bool) -> int32:
 49 │     consume(make(), if condition:
-   ┆
+   │             ^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:49:13
    ┆    │
@@ -85,7 +85,7 @@ expression: snapshot
 54 │ # Error, reported once: the temporary is dropped on two paths.
 55 │ def droppedOnTwoPaths(first: bool, second: bool) -> int32:
 56 │     consume(make(), if first:
-   ┆
+   │             ^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:56:13
    ┆    │
@@ -104,7 +104,7 @@ expression: snapshot
 64 │ # Error: a struct holding a linear value has no generated Drop dictionary.
 65 │ def wrappedTemporary(condition: bool) -> int32:
 66 │     consumeWrapper(Wrapper { value = make() }, if condition:
-   ┆
+   │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Wrapper[Handle]]`
    ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:66:20
    ┆    │
@@ -124,7 +124,7 @@ expression: snapshot
 74 │ # needs none.
 75 │ def genericTemporary(value: a, condition: bool) -> int32:
 76 │     forget(value, if condition:
-   ┆
+   │            ^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[a]`
    ┆    ╭▸ compiler/e2e/test/check/memory/temporary_drop_missing_instance/main.ray:76:12
    ┆    │

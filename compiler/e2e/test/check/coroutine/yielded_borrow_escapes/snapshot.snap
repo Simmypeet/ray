@@ -24,7 +24,7 @@ expression: snapshot
 20 │     if condition:
 21 │         let inner = 1
 22 │         handle coro lend(inner.&, inner.&):
-   ┆
+   │                          ^^^^^^^
    ┆ [error]: borrowed value does not live long enough
    ┆    ╭▸ compiler/e2e/test/check/coroutine/yielded_borrow_escapes/main.ray:22:26
    ┆    │
@@ -52,7 +52,7 @@ expression: snapshot
 36 │     if condition:
 37 │         let inner = 1
 38 │         handle coro lend(inner.&, inner.&):
-   ┆
+   │                          ^^^^^^^
    ┆ [error]: borrowed value does not live long enough
    ┆    ╭▸ compiler/e2e/test/check/coroutine/yielded_borrow_escapes/main.ray:38:26
    ┆    │

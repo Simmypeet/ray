@@ -28,7 +28,7 @@ expression: snapshot
 24 │
 25 │ def direct() -> int32:
 26 │     return acceptsLeaf(0)
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: where-clause obligation for `main.LeafFromBox` is not satisfied
    ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_where_clause/main.ray:26:12
    ┆    │
@@ -38,7 +38,7 @@ expression: snapshot
 27 │
 28 │ def nested() -> int32:
 29 │     return acceptsRoot(0)
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: where-clause obligation for `main.LeafFromBox` is not satisfied
    ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_where_clause/main.ray:29:12
    ┆    │

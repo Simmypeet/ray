@@ -46,7 +46,7 @@ expression: snapshot
 42 │     let p = wrap[given WrapReference](x.&)
 43 │     y = y + 1           # <-- Expect NO error here: nothing borrows `y`.
 44 │     x = x + 1           # <-- Expect an error here: `p` came from `x.&`.
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/instance_trait_ref/main.ray:44:5
    ┆    │
@@ -70,7 +70,7 @@ expression: snapshot
 54 │     let q = wrap[given WrapNested[given WrapReference]]((z.&,))
 55 │     x = x + 1           # <-- Expect NO error here: `q` only borrows `z`.
 56 │     z = z + 1           # <-- Expect an error here: `q` came from `z.&`.
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/instance_trait_ref/main.ray:56:5
    ┆    │

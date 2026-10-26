@@ -18,7 +18,7 @@ expression: snapshot
 14 │ # continuation that is returned refers to it.
 15 │ def returned():
 16 │     let make = () -> coro numbers()
-   ┆
+   │                      ^^^^^^^^^^^^^^
    ┆ [error]: cannot return a value referencing data owned by the current function
    ┆    ╭▸ compiler/e2e/test/check/coroutine/continuation_escapes/main.ray:16:22
    ┆    │
@@ -36,7 +36,7 @@ expression: snapshot
 22 │     let mut k = coro numbers()
 23 │     if condition:
 24 │         k = coro numbers()
-   ┆
+   │             ^^^^^^^^^^^^^^
    ┆ [error]: borrowed value does not live long enough
    ┆    ╭▸ compiler/e2e/test/check/coroutine/continuation_escapes/main.ray:24:13
    ┆    │

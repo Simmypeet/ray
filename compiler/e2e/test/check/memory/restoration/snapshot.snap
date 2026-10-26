@@ -36,7 +36,7 @@ expression: snapshot
 32 │
 33 │     # ERROR: only `pair.first` is restored; `pair.second` remains moved.
 34 │     consumePair(pair)
-   ┆
+   │                 ^^^^
    ┆ [error]: use of partially moved value
    ┆    ╭▸ compiler/e2e/test/check/memory/restoration/main.ray:34:17
    ┆    │

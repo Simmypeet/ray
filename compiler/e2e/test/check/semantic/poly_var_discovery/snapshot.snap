@@ -57,7 +57,7 @@ expression: snapshot
 53 │
 54 │ # ERROR: a bare name in a lifetime position does not introduce a variable.
 55 │ def bareLifetime(reference: Ref[a, int32]) -> int32:
-   ┆
+   │                                 ^
    ┆ [error]: symbol `a` is not found
    ┆    ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:55:33
    ┆    │
@@ -68,7 +68,7 @@ expression: snapshot
 57 │
 58 │ # ERROR: `IO` names an effect, not an effect-row variable.
 59 │ def effectName(callback: def() -> int32 \ IO) -> int32:
-   ┆
+   │                                           ^^
    ┆ [error]: expected a value type or an associated type projection
    ┆    ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:59:43
    ┆    │
@@ -83,7 +83,7 @@ expression: snapshot
 65 │
 66 │ # ERROR: `myElem` is not a lowercase name, so it introduces no variable.
 67 │ def camelName(value: *myElem) -> int32:
-   ┆
+   │                       ^^^^^^
    ┆ [error]: symbol `myElem` is not found
    ┆    ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:67:23
    ┆    │
@@ -94,7 +94,8 @@ expression: snapshot
 69 │
 70 │ # ERROR: an argument beyond the arity introduces no variable.
 71 │ def excessArgument(handler: Handler[{}, t]) -> int32:
-   ┆
+   │                                    ^^^^^^^
+   │                                         ^
    ┆ [error]: type argument arity mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/poly_var_discovery/main.ray:71:36
    ┆    │

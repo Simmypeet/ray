@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: snapshot
 ---
 1 │ def test(b: int32, c: int32) -> a:
-  ┆
+  │                                 ^
   ┆ [error]: symbol `a` is not found
   ┆   ╭▸ compiler/e2e/test/check/tast/polymorphic_return_only/main.ray:1:33
   ┆   │
@@ -11,7 +11,7 @@ expression: snapshot
   ┆   ╰╴                                ━ symbol `a` is not found
   ┆
 2 │     return b
-  ┆
+  │            ^
   ┆ [error]: mismatched types in return expression: expected `<error>`, but found `int32`
   ┆   ╭▸ compiler/e2e/test/check/tast/polymorphic_return_only/main.ray:2:12
   ┆   │

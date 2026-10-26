@@ -18,7 +18,7 @@ expression: snapshot
 14 │
 15 │ def mismatch(callback: def() -> () \ {Reader[int32; given GenericEq[int32]]}) -> ():
 16 │     requireBool(callback)
-   ┆
+   │     ^^^^^^^^^^^
    ┆ [error]: where-clause obligation for `main.requireBool` is not satisfied
    ┆    ╭▸ compiler/e2e/test/check/tast/generic_instance_display/main.ray:16:5
    ┆    │

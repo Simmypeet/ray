@@ -18,7 +18,7 @@ expression: snapshot
 14 │     type Item[a] given (eq: Equal[a]) = a
 15 │
 16 │ def missing(value: Concrete.Item[int32]) -> int32:
-   ┆
+   │                             ^^^^^^^^^^^
    ┆ [error]: missing required given argument `eq`
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:16:29
    ┆    │
@@ -28,7 +28,7 @@ expression: snapshot
 17 │     return 0
 18 │
 19 │ def wrong(value: Concrete.Item[int32; given BoolEqual]) -> int32:
-   ┆
+   │                                             ^^^^^^^^^
    ┆ [error]: given argument `main.BoolEqual` does not implement `main.Equal[int32]`
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:19:45
    ┆    │
@@ -38,7 +38,8 @@ expression: snapshot
 20 │     return 0
 21 │
 22 │ def named(value: Concrete.Item[int32; given absent = IntEqual]) -> int32:
-   ┆
+   │                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   │                                             ^^^^^^
    ┆ [error]: missing required given argument `eq`
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:22:27
    ┆    │
@@ -55,7 +56,7 @@ expression: snapshot
 24 │
 25 │ def kind(
 26 │     value: i.Item[int32; given BoolEqual]
-   ┆
+   │                                ^^^^^^^^^
    ┆ [error]: given argument `main.BoolEqual` does not implement `main.Equal[int32]`
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:26:32
    ┆    │
@@ -65,7 +66,7 @@ expression: snapshot
 27 │ ) given (
 28 │     i: Container,
 29 │     d: core.Drop[i.Item[int32; given BoolEqual]]
-   ┆
+   │                                      ^^^^^^^^^
    ┆ [error]: given argument `main.BoolEqual` does not implement `main.Equal[int32]`
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_given_errors/main.ray:29:38
    ┆    │

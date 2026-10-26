@@ -4,7 +4,7 @@ expression: snapshot
 ---
 1 │ def invoke(callback: def(int32, bool) -> int32) -> int32:
 2 │     return callback(1)
-  ┆
+  │            ^^^^^^^^^^^
   ┆ [error]: callable expects 2 arguments, but 1 were provided
   ┆   ╭▸ compiler/e2e/test/check/tast/indirect_call_argument_count/main.ray:2:12
   ┆   │

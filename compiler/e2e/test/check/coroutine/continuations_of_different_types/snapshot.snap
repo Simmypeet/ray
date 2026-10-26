@@ -32,7 +32,7 @@ expression: snapshot
 28 │         handle con():
 29 │             case State[int32].get() resume k1:
 30 │                 con = k1
-   ┆
+   │                       ^^
    ┆ [error]: mismatched types in variable assignment: expected `Continuation[(), &mut <coroutine of counter>]`, but found `Continuation[int32, &mut <coroutine of counter>]`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/continuations_of_different_types/main.ray:30:23
    ┆    │

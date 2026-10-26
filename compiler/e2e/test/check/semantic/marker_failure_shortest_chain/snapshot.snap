@@ -31,7 +31,7 @@ expression: snapshot
 27 │ # ERROR: the chain ends at the field `value`, not around the field `next`.
 28 │ def recursive(value: Node[Secret]) -> Node[Secret]:
 29 │     return requireSend(value)
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: `Node[Secret]` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:29:12
    ┆    │
@@ -52,7 +52,7 @@ expression: snapshot
 31 │ # ERROR: the chain goes through the field `shallow`, which is shorter.
 32 │ def shortest(value: Both) -> Both:
 33 │     return requireSend(value)
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: `Both` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_shortest_chain/main.ray:33:12
    ┆    │

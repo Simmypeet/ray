@@ -7,7 +7,7 @@ expression: snapshot
  3 │
  4 │ def wrongBody(fn: def(int32) -> int32) -> int32:
  5 │     return fn(true)
-   ┆
+   │               ^^^^
    ┆ [error]: mismatched argument types in function call: expected `int32`, but found `bool`
    ┆   ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:5:15
    ┆   │
@@ -17,7 +17,7 @@ expression: snapshot
  6 │
  7 │ def wrongArity(fn: def(int32) -> int32) -> int32:
  8 │     return fn(1, 2)
-   ┆
+   │            ^^^^^^^^
    ┆ [error]: callable expects 1 arguments, but 2 were provided
    ┆   ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:8:12
    ┆   │
@@ -27,7 +27,7 @@ expression: snapshot
  9 │
 10 │ def recursive(fn: def(int32) -> bool, depth: int32) -> int32:
 11 │     return recursive((x) -> x + 1, depth - 1)
-   ┆
+   │            ^^^^^^^^^
    ┆ [error]: where-clause obligation for `main.recursive` is not satisfied
    ┆    ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:11:12
    ┆    │
@@ -36,7 +36,7 @@ expression: snapshot
    ┆
 12 │
 13 │ def main() -> int32:
-   ┆
+   │     ^^^^
    ┆ [error]: function body effects do not match its signature: expected `{}`, but found `{any}.Effect`
    ┆    ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:13:5
    ┆    │
@@ -47,7 +47,7 @@ expression: snapshot
    ┆    ╰╴           ─────── effect `{any}.Effect` introduced here
    ┆
 14 │     let ignored = unused((x) -> x + 1)
-   ┆
+   │                   ^^^^^^
    ┆ [error]: where-clause obligation for `main.unused` is not satisfied
    ┆    ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:14:19
    ┆    │
@@ -56,7 +56,8 @@ expression: snapshot
    ┆
 15 │     let value = 1
 16 │     return value()
-   ┆
+   │            ^^^^^^^
+   │                 ^^
    ┆ [error]: mismatched types in return expression: expected `int32`, but found `{any}.Return`
    ┆    ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:16:12
    ┆    │

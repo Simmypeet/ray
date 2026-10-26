@@ -8,7 +8,7 @@ expression: snapshot
  4 │
  5 │ # Error: a linear struct cannot have a Drop instance.
  6 │ inst HandleDrop for core.Drop[Handle]:
-   ┆
+   │                     ^^^^^^^^^^^^^^^^^
    ┆ [error]: cannot implement Drop for the linear struct `Handle`
    ┆   ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:6:21
    ┆   │
@@ -24,7 +24,7 @@ expression: snapshot
 10 │ # Error: the attribute is repeated.
 11 │ @linear
 12 │ @linear
-   ┆
+   │ ^^^^^^^
    ┆ [error]: attribute `@linear` is specified more than once
    ┆    ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:12:1
    ┆    │
@@ -36,7 +36,7 @@ expression: snapshot
 15 │
 16 │ # Error: the attribute is not known.
 17 │ @inline
-   ┆
+   │ ^^^^^^^
    ┆ [error]: unknown attribute `@inline`
    ┆    ╭▸ compiler/e2e/test/check/semantic/linear_struct_declaration/main.ray:17:1
    ┆    │

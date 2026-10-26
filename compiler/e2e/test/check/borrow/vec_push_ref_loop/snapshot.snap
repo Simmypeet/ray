@@ -28,7 +28,7 @@ expression: snapshot
 24 │     while true:
 25 │         # ERROR: `a` is mutable borrowed multiple times in the loop.
 26 │         push(v.&mut, a.&mut)
-   ┆
+   │                      ^^^^^^
    ┆ [error]: cannot borrow a place as mutable more than once at a time
    ┆    ╭▸ compiler/e2e/test/check/borrow/vec_push_ref_loop/main.ray:26:22
    ┆    │

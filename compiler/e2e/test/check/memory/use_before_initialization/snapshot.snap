@@ -15,7 +15,7 @@ expression: snapshot
 11 │
 12 │     # ERROR: `value` has not been initialized on any path.
 13 │     consume(value)
-   ┆
+   │             ^^^^^
    ┆ [error]: use of value before initialization
    ┆    ╭▸ compiler/e2e/test/check/memory/use_before_initialization/main.ray:13:13
    ┆    │

@@ -7,7 +7,7 @@ expression: snapshot
 3 │     right: def() -> () \ b,
 4 │ ) -> () \ b:
 5 │     let result = (left(), right())
-  ┆
+  │                   ^^^^^^
   ┆ [error]: incompatible effect rows `a` and `b`
   ┆   ╭▸ compiler/e2e/test/check/tast/incompatible_opaque_effect_rows/main.ray:5:19
   ┆   │

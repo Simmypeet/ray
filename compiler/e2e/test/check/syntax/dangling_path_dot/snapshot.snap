@@ -10,7 +10,7 @@ expression: snapshot
 6 │
 7 │ struct Holder:
 8 │   point: geometry.
-  ┆
+  │                   ^
   ┆ [error]: unexpected new line, expected identifier
   ┆   ╭▸ compiler/e2e/test/check/syntax/dangling_path_dot/main.ray:8:19
   ┆   │

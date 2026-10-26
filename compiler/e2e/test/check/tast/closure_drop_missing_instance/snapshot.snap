@@ -6,7 +6,7 @@ expression: snapshot
 2 │ # for `a`, so the discarded closure cannot be dropped.
 3 │ def discardCapture(value: a):
 4 │     () -> value
-  ┆
+  │ ^^^^^^^^^^^^^^^
   ┆ [error]: no implicit instance found: `core.Drop[<closure>() -> a \ {}]`
   ┆   ╭▸ compiler/e2e/test/check/tast/closure_drop_missing_instance/main.ray:4:1
   ┆   │

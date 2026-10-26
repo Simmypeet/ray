@@ -5,7 +5,7 @@ expression: snapshot
  1 │ def read(pointer: *int32) -> int32:
  2 │     # ERROR: a raw pointer may be dangling.
  3 │     return pointer.*
-   ┆
+   │            ^^^^^^^^^
    ┆ [error]: dereference of raw pointer is unsafe and requires `unsafe`
    ┆   ╭▸ compiler/e2e/test/check/tast/raw_pointer_deref_outside_unsafe/main.ray:3:12
    ┆   │
@@ -19,7 +19,7 @@ expression: snapshot
  6 │ def write(pointer: *mut int32) -> ():
  7 │     # ERROR: writing through a raw pointer is a dereference too.
  8 │     pointer.* = 1
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: dereference of raw pointer is unsafe and requires `unsafe`
    ┆   ╭▸ compiler/e2e/test/check/tast/raw_pointer_deref_outside_unsafe/main.ray:8:5
    ┆   │

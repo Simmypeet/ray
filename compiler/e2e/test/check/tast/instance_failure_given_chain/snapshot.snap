@@ -32,7 +32,7 @@ expression: snapshot
 28 │ # `Show[Secret]`, which has no instance.
 29 │ def test(xs: List[Pair[Secret]]) -> int32:
 30 │     return print(xs)
-   ┆
+   │            ^^^^^
    ┆ [error]: no implicit instance found: `main.Show[List[Pair[Secret]]]`
    ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:30:12
    ┆    │
@@ -54,7 +54,7 @@ expression: snapshot
 32 │ # ERROR: a type variable gets the help to add the missing given.
 33 │ def generic(xs: List[a]) given (_: core.Drop[a]) -> int32:
 34 │     return print(xs)
-   ┆
+   │            ^^^^^
    ┆ [error]: no implicit instance found: `main.Show[List[a]]`
    ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:34:12
    ┆    │

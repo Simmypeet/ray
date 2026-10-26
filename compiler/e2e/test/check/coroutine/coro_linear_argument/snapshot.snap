@@ -34,7 +34,7 @@ expression: snapshot
 30 │ # value has no `Drop` instance.
 31 │ def suspended():
 32 │     let k = coro useHandle(make())
-   ┆
+   │             ^^^^^^^^^^^^^^^^^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_linear_argument/main.ray:32:13
    ┆    │

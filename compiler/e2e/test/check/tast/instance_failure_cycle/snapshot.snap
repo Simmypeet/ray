@@ -27,7 +27,7 @@ expression: snapshot
 23 │ # ERROR: `Ping[Ball]` needs `Pong[Ball]`, which needs `Ping[Ball]` again.
 24 │ def test(ball: Ball) -> int32:
 25 │     return ping(ball)
-   ┆
+   │            ^^^^
    ┆ [error]: cyclic instance resolution: `main.Ping[Ball]`
    ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:25:12
    ┆    │
@@ -74,7 +74,7 @@ expression: snapshot
 52 │ # needs `Never[Ball]`, which has no instance.
 53 │ def test_candidates(ball: Ball) -> int32:
 54 │     return tick(ball)
-   ┆
+   │            ^^^^
    ┆ [error]: no implicit instance found: `main.Tick[Ball]`
    ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_cycle/main.ray:54:12
    ┆    │

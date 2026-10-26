@@ -26,7 +26,7 @@ expression: snapshot
 22 │ # ERROR: `t` is used invariantly through `&mut`.
 23 │ struct Exclusive['a, +t]:
 24 │     value: &'a mut t
-   ┆
+   │     ^^^^^
    ┆ [error]: `t` is declared covariant but used invariantly
    ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:24:5
    ┆    │
@@ -42,7 +42,7 @@ expression: snapshot
 27 │ struct OneField['a, +t]:
 28 │     first: &'a t
 29 │     second: &'a mut t
-   ┆
+   │     ^^^^^^
    ┆ [error]: `t` is declared covariant but used invariantly
    ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:29:5
    ┆    │
@@ -58,7 +58,7 @@ expression: snapshot
 31 │ # ERROR: `t` is invariant in `Cell`.
 32 │ struct ThroughCell['a, +t]:
 33 │     cell: Cell['a, t]
-   ┆
+   │     ^^^^
    ┆ [error]: `t` is declared covariant but used invariantly
    ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:33:5
    ┆    │
@@ -77,7 +77,8 @@ expression: snapshot
 39 │ # ERROR: the variances are reversed.
 40 │ eff Reversed[-'a, +'b]:
 41 │     def log(message: &'a int32) -> &'b int32
-   ┆
+   │             ^^^^^^^^^^^^^^^^^^
+   │                                 ^^^^^^^^^^^^
    ┆ [error]: `'a` is declared contravariant but used covariantly
    ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:41:13
    ┆    │
@@ -113,7 +114,7 @@ expression: snapshot
 54 │ enum Access[+t]:
 55 │     Shared(t)
 56 │     Exclusive(Slot[t])
-   ┆
+   │               ^^^^^^^
    ┆ [error]: `t` is declared covariant but used invariantly
    ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:56:15
    ┆    │
@@ -129,7 +130,7 @@ expression: snapshot
 58 │ # ERROR: `t` is invariant in `Slot`.
 59 │ enum ThroughEnum[-t]:
 60 │     Wrapped(Slot[t])
-   ┆
+   │             ^^^^^^^
    ┆ [error]: `t` is declared contravariant but used invariantly
    ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:60:13
    ┆    │
@@ -148,7 +149,7 @@ expression: snapshot
 66 │ # ERROR: `u` is used covariantly through `Maybe`.
 67 │ struct UsesMaybeContravariantly[-u]:
 68 │     maybe: Maybe['static, u]
-   ┆
+   │     ^^^^^
    ┆ [error]: `u` is declared contravariant but used covariantly
    ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:68:5
    ┆    │
@@ -162,7 +163,7 @@ expression: snapshot
 69 │
 70 │ # ERROR: only struct, enum and `eff` parameters have a variance.
 71 │ def identity[+t](value: t) -> t:
-   ┆
+   │              ^
    ┆ [error]: variance cannot be declared here
    ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:71:14
    ┆    │
@@ -172,7 +173,7 @@ expression: snapshot
 72 │     return value
 73 │
 74 │ trait Show[=t]:
-   ┆
+   │            ^
    ┆ [error]: variance cannot be declared here
    ┆    ╭▸ compiler/e2e/test/check/reference/variance_declaration/main.ray:74:12
    ┆    │

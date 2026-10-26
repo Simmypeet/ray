@@ -15,7 +15,7 @@ expression: snapshot
 11 │ # ERROR: the second element of the tuple is linear.
 12 │ def leak():
 13 │     let pair = (1, make())
-   ┆
+   │         ^^^^
    ┆ [error]: no implicit instance found: `core.Drop[(int32, Handle)]`
    ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_tuple_drop/main.ray:13:9
    ┆    │
@@ -29,7 +29,7 @@ expression: snapshot
 15 │ # ERROR: the element nested two tuples deep has no `Drop`.
 16 │ def nested(value: a):
 17 │     let pair = (1, (true, value))
-   ┆
+   │         ^^^^
    ┆ [error]: no implicit instance found: `core.Drop[(int32, (bool, a))]`
    ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_tuple_drop/main.ray:17:9
    ┆    │

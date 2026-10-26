@@ -13,7 +13,7 @@ expression: snapshot
   9 │     # `'a: 'b`.
  10 │     let same = (value) -> value
  11 │     return same(x)
-    ┆
+    │            ^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:11:12
     ┆    │
@@ -34,7 +34,7 @@ expression: snapshot
  21 │     # ERROR: the closure stores its argument where a `&'b int32` is expected.
  22 │     # The error points at the store, within the closure.
  23 │     let store = (value) -> out.* = value
-    ┆
+    │                            ^^^^^^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:23:28
     ┆    │
@@ -59,7 +59,7 @@ expression: snapshot
  35 │     # is required of the outer closure, and then of this function.
  36 │     let outer = (value) -> ((inner) -> inner)(value)
  37 │     return outer(x)
-    ┆
+    │            ^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:37:12
     ┆    │
@@ -75,7 +75,7 @@ expression: snapshot
  42 │     # of `other`, which is `'a` where the closure is called, and nothing
  43 │     # states `t: 'a`.
  44 │     let picker = (other) -> pick(other, value)
-    ┆
+    │                             ^^^^^^^^^^^^^^^^^^
     ┆ [error]: the type `t` may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:44:29
     ┆    │
@@ -110,7 +110,7 @@ expression: snapshot
  66 │     let address = () -> value.&
  67 │     let p = address()
  68 │     value = 42          # <-- Expect an error here: `p` borrows `value`.
-    ┆
+    │     ^^^^^^^^^^
     ┆ [error]: cannot assign to a place because it is borrowed
     ┆    ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:68:5
     ┆    │
@@ -131,7 +131,7 @@ expression: snapshot
  75 │     let q = first(x.&, y.&)
  76 │     y = 3               # <-- Expect NO error here: `q` did not come from `y.&`.
  77 │     x = 3               # <-- Expect an error here: `q` came from `x.&`.
-    ┆
+    │     ^^^^^
     ┆ [error]: cannot assign to a place because it is borrowed
     ┆    ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:77:5
     ┆    │
@@ -152,7 +152,7 @@ expression: snapshot
  84 │     if true:
  85 │         let b = 2
  86 │         assign(b.&)     # <-- Expect an error here: `r` is used after `b`.
-    ┆
+    │                ^^^
     ┆ [error]: borrowed value does not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:86:16
     ┆    │
@@ -177,7 +177,7 @@ expression: snapshot
  97 │     # that nothing reduces. The lifetimes of the projection are those of the
  98 │     # closure type, and the arguments of a projection are invariant.
  99 │     let local = item
-    ┆
+    │     ^^^^^^^^^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆     ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:99:5
     ┆     │
@@ -191,7 +191,7 @@ expression: snapshot
     ┆
 100 │     let same = (value) -> value
 101 │     return same(local)
-    ┆
+    │            ^^^^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆     ╭▸ compiler/e2e/test/check/borrow/closure_requirement/main.ray:101:12
     ┆     │

@@ -19,7 +19,7 @@ expression: snapshot
 15 │ # ERROR: the closure captures `secret` by value.
 16 │ def captureByValue(secret: Secret):
 17 │     requireSend(() -> move secret)
-   ┆
+   │     ^^^^^^^^^^^
    ┆ [error]: `<closure>() -> Secret \ {}` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:17:5
    ┆    │
@@ -37,7 +37,7 @@ expression: snapshot
 20 │ # known to be `Send`.
 21 │ def captureByReference(secret: Secret, count: int32):
 22 │     requireSend(() -> secret.value + count)
-   ┆
+   │     ^^^^^^^^^^^
    ┆ [error]: `<closure>() -> int32 \ {}` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:22:5
    ┆    │
@@ -51,7 +51,7 @@ expression: snapshot
 25 │ # as a whole.
 26 │ def captureThree(first: int32, second: int32, third: int32):
 27 │     requireSend(() -> first + second + third)
-   ┆
+   │     ^^^^^^^^^^^
    ┆ [error]: `<closure>() -> int32 \ {}` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_closure_capture/main.ray:27:5
    ┆    │

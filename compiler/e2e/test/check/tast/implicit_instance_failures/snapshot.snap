@@ -25,7 +25,7 @@ expression: snapshot
 21 │
 22 │ def testMissing() -> bool:
 23 │     return missing(true)
-   ┆
+   │            ^^^^^^^
    ┆ [error]: no implicit instance found: `main.Missing[bool]`
    ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:23:12
    ┆    │
@@ -35,7 +35,7 @@ expression: snapshot
 24 │
 25 │ def testAmbiguous() -> bool:
 26 │     return ambiguous(true)
-   ┆
+   │            ^^^^^^^^^
    ┆ [error]: ambiguous global instances: `main.Choice[bool]`
    ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:26:12
    ┆    │
@@ -51,7 +51,7 @@ expression: snapshot
 27 │
 28 │ def testUnknown() -> bool:
 29 │     let callback = (value) -> missing(value)
-   ┆
+   │                               ^^^^^^^
    ┆ [error]: cannot infer instance requirement: `main.Missing[{any}]`
    ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:29:31
    ┆    │
@@ -66,7 +66,7 @@ expression: snapshot
 35 │
 36 │ def testNested() -> bool:
 37 │     return ambiguous[given Nested](1)
-   ┆
+   │                            ^^^^^^
    ┆ [error]: no implicit instance found: `main.Missing[bool]`
    ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_failures/main.ray:37:28
    ┆    │

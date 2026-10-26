@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: snapshot
 ---
  1 │ def missingParameterType(value: ) -> int32:
-   ┆
+   │                                 ^
    ┆ [error]: unexpected `)` punctuation, expected type or `def` keyword
    ┆   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:1:33
    ┆   │
@@ -13,7 +13,7 @@ expression: snapshot
  2 │     return 0
  3 │
  4 │ def missingReturnType() -> :
-   ┆
+   │                           ^^
    ┆ [error]: unexpected indentation block, expected type
    ┆   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:4:27
    ┆   │
@@ -25,7 +25,7 @@ expression: snapshot
  5 │     return 0
  6 │
  7 │ def missingReferent(value: &) -> int32:
-   ┆
+   │                             ^
    ┆ [error]: unexpected `)` punctuation, expected type, `'` punctuation, or `mut` keyword
    ┆   ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:7:29
    ┆   │
@@ -35,7 +35,7 @@ expression: snapshot
  8 │     return 0
  9 │
 10 │ def incompletePath(value: core.) -> int32:
-   ┆
+   │                                ^
    ┆ [error]: unexpected `)` punctuation, expected identifier
    ┆    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:10:32
    ┆    │
@@ -46,7 +46,7 @@ expression: snapshot
 12 │
 13 │ def missingInitializer() -> int32:
 14 │     let value = ,
-   ┆
+   │                 ^
    ┆ [error]: unexpected `,` punctuation, expected expression
    ┆    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:14:17
    ┆    │
@@ -54,7 +54,7 @@ expression: snapshot
    ┆    ╰╴                ━
    ┆
 15 │     return value
-   ┆
+   │            ^^^^^
    ┆ [error]: mismatched types in return expression: expected `int32`, but found `<error>`
    ┆    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:15:12
    ┆    │
@@ -64,7 +64,7 @@ expression: snapshot
 16 │
 17 │ def missingStatement() -> int32:
 18 │     ,
-   ┆
+   │     ^
    ┆ [error]: unexpected `,` punctuation, expected statement or `pass` keyword
    ┆    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:18:5
    ┆    │
@@ -75,7 +75,7 @@ expression: snapshot
 20 │
 21 │ def missingPattern() -> int32:
 22 │     let = 0
-   ┆
+   │         ^
    ┆ [error]: unexpected `=` punctuation, expected pattern
    ┆    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:22:9
    ┆    │
@@ -86,7 +86,7 @@ expression: snapshot
 24 │
 25 │ trait Shape[a]:
 26 │     = int32
-   ┆
+   │     ^
    ┆ [error]: unexpected `=` punctuation, expected trait member
    ┆    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:26:5
    ┆    │
@@ -96,7 +96,7 @@ expression: snapshot
 27 │
 28 │ inst ShapeInt32 for Shape[int32]:
 29 │     = int32
-   ┆
+   │     ^
    ┆ [error]: unexpected `=` punctuation, expected instance member
    ┆    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:29:5
    ┆    │
@@ -105,7 +105,7 @@ expression: snapshot
    ┆
 30 │
 31 │ ,
-   ┆
+   │ ^
    ┆ [error]: unexpected `,` punctuation, expected module member or `pass` keyword
    ┆    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:31:1
    ┆    │

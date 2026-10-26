@@ -16,7 +16,7 @@ expression: snapshot
 12 │         case Yield.yield(value):
 13 │             pass
 14 │         case Yield[int32].yield(other) resume k:
-   ┆
+   │              ^^^^^^^^^^^^^^^^^^
    ┆ [error]: duplicate clause for effect operation `main.Yield.yield`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/clause_duplicate/main.ray:14:14
    ┆    │
@@ -30,7 +30,7 @@ expression: snapshot
 16 │         case return:
 17 │             pass
 18 │         case return x:
-   ┆
+   │              ^^^^^^
    ┆ [error]: duplicate `case return` clause
    ┆    ╭▸ compiler/e2e/test/check/coroutine/clause_duplicate/main.ray:18:14
    ┆    │

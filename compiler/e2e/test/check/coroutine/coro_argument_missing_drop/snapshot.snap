@@ -14,7 +14,7 @@ expression: snapshot
 10 │ # says how to drop a `t`.
 11 │ def missing[t](value: t):
 12 │     let k = coro hold(value)
-   ┆
+   │             ^^^^^^^^^^^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[t]`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_argument_missing_drop/main.ray:12:13
    ┆    │

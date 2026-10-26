@@ -12,7 +12,7 @@ expression: snapshot
  8 │
  9 │ def nested(value: (Concrete.Item, bool)) -> (bool, Concrete.Item):
 10 │     return value
-   ┆
+   │            ^^^^^
    ┆ [error]: mismatched types in return expression: expected `(bool, int32)`, but found `(int32, bool)`
    ┆    ╭▸ compiler/e2e/test/check/tast/normalized_type_diagnostics/main.ray:10:12
    ┆    │
@@ -22,7 +22,7 @@ expression: snapshot
 11 │
 12 │ def contextual(value: d.Item) given (d: Source) -> bool where (d.Item = Concrete.Identity[int32]):
 13 │     return value
-   ┆
+   │            ^^^^^
    ┆ [error]: mismatched types in return expression: expected `bool`, but found `int32`
    ┆    ╭▸ compiler/e2e/test/check/tast/normalized_type_diagnostics/main.ray:13:12
    ┆    │
@@ -32,7 +32,7 @@ expression: snapshot
 14 │
 15 │ def opaque(value: d.Item) given (d: Source) -> bool:
 16 │     return value
-   ┆
+   │            ^^^^^
    ┆ [error]: mismatched types in return expression: expected `bool`, but found `d.Item`
    ┆    ╭▸ compiler/e2e/test/check/tast/normalized_type_diagnostics/main.ray:16:12
    ┆    │
@@ -48,7 +48,7 @@ expression: snapshot
 23 │
 24 │ def missing(value: Concrete.Item) -> bool:
 25 │     return requires(value)
-   ┆
+   │            ^^^^^^^^
    ┆ [error]: no implicit instance found: `main.Missing[int32]`
    ┆    ╭▸ compiler/e2e/test/check/tast/normalized_type_diagnostics/main.ray:25:12
    ┆    │

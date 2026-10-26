@@ -7,7 +7,7 @@ expression: snapshot
  3 │
  4 │ impl[a, b] Send for (a, b)
  5 │ impl[b, c] Send for (b, c)
-   ┆
+   │ ^^^^^^^^^^^^^^^^^^^^^^^^^^
    ┆ [error]: overlapping marker implementations
    ┆   ╭▸ compiler/e2e/test/check/semantic/marker_implementation_overlap/main.ray:5:1
    ┆   │

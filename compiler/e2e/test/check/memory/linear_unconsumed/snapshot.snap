@@ -33,7 +33,7 @@ expression: snapshot
 29 │ # Error: the value is dropped at the end of the scope.
 30 │ def leak():
 31 │     let opened = make()
-   ┆
+   │         ^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:31:9
    ┆    │
@@ -46,7 +46,7 @@ expression: snapshot
 33 │ # Error: the value is dropped on the path that does not consume it.
 34 │ def leakOnBranch(condition: bool):
 35 │     let opened = make()
-   ┆
+   │         ^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:35:9
    ┆    │
@@ -61,7 +61,7 @@ expression: snapshot
 39 │ # Error: a discarded linear value is dropped.
 40 │ def leakDiscard():
 41 │     make()
-   ┆
+   │     ^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:41:5
    ┆    │
@@ -74,7 +74,7 @@ expression: snapshot
 43 │ # Error: a struct containing a linear field cannot be dropped.
 44 │ def leakPair():
 45 │     let pair = Pair { first = make(), second = make() }
-   ┆
+   │         ^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Pair]`
    ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:45:9
    ┆    │
@@ -87,7 +87,7 @@ expression: snapshot
 47 │ # Error: the remaining field of a partially moved struct is dropped.
 48 │ def leakPartial():
 49 │     let pair = Pair { first = make(), second = make() }
-   ┆
+   │         ^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:49:9
    ┆    │
@@ -101,7 +101,7 @@ expression: snapshot
 52 │ # Error: a generic struct instantiated with a linear type cannot be dropped.
 53 │ def leakWrapper():
 54 │     let wrapper = Wrapper { value = make() }
-   ┆
+   │         ^^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Wrapper[Handle]]`
    ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:54:9
    ┆    │
@@ -116,7 +116,7 @@ expression: snapshot
 57 │ def useTwice(opened: Handle):
 58 │     close(opened)
 59 │     close(opened)
-   ┆
+   │           ^^^^^^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:59:11
    ┆    │
@@ -129,7 +129,7 @@ expression: snapshot
 61 │ # Error: a linear type has no Drop dictionary to pass.
 62 │ def main() -> int32:
 63 │     dispose(make())
-   ┆
+   │     ^^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/memory/linear_unconsumed/main.ray:63:5
    ┆    │

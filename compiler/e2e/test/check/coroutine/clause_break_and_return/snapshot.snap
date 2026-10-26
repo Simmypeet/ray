@@ -47,7 +47,7 @@ expression: snapshot
 43 │     handle coro numbers():
 44 │         case Yield[int32].yield(value) resume k:
 45 │             break
-   ┆
+   │             ^^^^^
    ┆ [error]: `break` can only be used inside a loop
    ┆    ╭▸ compiler/e2e/test/check/coroutine/clause_break_and_return/main.ray:45:13
    ┆    │
@@ -63,7 +63,7 @@ expression: snapshot
 52 │     handle coro numbers():
 53 │         case Yield[int32].yield(value) resume k:
 54 │             return value
-   ┆
+   │                    ^^^^^
    ┆ [error]: mismatched types in return expression: expected `bool`, but found `int32`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/clause_break_and_return/main.ray:54:20
    ┆    │

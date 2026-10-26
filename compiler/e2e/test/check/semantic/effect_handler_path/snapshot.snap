@@ -9,7 +9,7 @@ expression: snapshot
  5 │     run:
  6 │         return ()
  7 │     with Missing:
-   ┆
+   │          ^^^^^^^
    ┆ [error]: symbol `Missing` is not found
    ┆   ╭▸ compiler/e2e/test/check/semantic/effect_handler_path/main.ray:7:10
    ┆   │
@@ -25,7 +25,7 @@ expression: snapshot
 14 │     run:
 15 │         return ()
 16 │     with notAnEffect:
-   ┆
+   │          ^^^^^^^^^^^
    ┆ [error]: expected an effect, found def
    ┆    ╭▸ compiler/e2e/test/check/semantic/effect_handler_path/main.ray:16:10
    ┆    │

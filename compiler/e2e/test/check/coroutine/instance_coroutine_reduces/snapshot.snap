@@ -40,7 +40,7 @@ expression: snapshot
 36 │ # ERROR: the type shows the method of the instance.
 37 │ def shown():
 38 │     let k: int32 = coro Mapper[int32].map(1, true)
-   ┆
+   │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    ┆ [error]: mismatched types in variable assignment: expected `int32`, but found `Continuation[(), &mut <coroutine of map[bool; given <no-op drop instance>bool]>]`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_reduces/main.ray:38:20
    ┆    │

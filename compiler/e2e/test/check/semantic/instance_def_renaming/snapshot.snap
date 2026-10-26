@@ -15,7 +15,9 @@ expression: snapshot
  11 │ # the swapped signature does not match.
  12 │ inst Reordered for Choose:
  13 │     def pick[x, y](first: *y, second: *x) -> *y:
-    ┆
+    │                    ^^^^^^^^^
+    │                               ^^^^^^^^^^
+    │                                           ^^^^^
     ┆ [error]: instance member `pick`: parameter 1 type mismatch
     ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:13:20
     ┆    │
@@ -55,7 +57,7 @@ expression: snapshot
  23 │ # so `b` has no counterpart.
  24 │ inst Instantiated for Choose:
  25 │     def pick(first: *x, second: *(y, int32)) -> *x:
-    ┆
+    │         ^^^^
     ┆ [error]: instance member `pick`: polymorphic variable `b` has no counterpart
     ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:25:9
     ┆    │
@@ -72,7 +74,7 @@ expression: snapshot
  28 │ # ERROR: no variable of the implementation stands where the trait has `b`.
  29 │ inst Unpaired for Choose:
  30 │     def pick(first: *x, second: Handler[{Read[y]}]) -> *x:
-    ┆
+    │         ^^^^
     ┆ [error]: instance member `pick`: polymorphic variable `b` has no counterpart
     ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:30:9
     ┆    │
@@ -93,7 +95,7 @@ expression: snapshot
  37 │ # implementation that discovers its variables cannot pair it.
  38 │ inst MakeDiscovered for Make:
  39 │     def make(value: *x) -> *x:
-    ┆
+    │         ^^^^
     ┆ [error]: instance member `make`: type parameters must be declared explicitly
     ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:39:9
     ┆    │
@@ -127,7 +129,7 @@ expression: snapshot
  59 │ # ERROR: the implementation has no counterpart for the given parameter.
  60 │ inst KeepNoGiven for Keep:
  61 │     def keep(value: *a) -> *a:
-    ┆
+    │         ^^^^
     ┆ [error]: instance member `keep`: given parameter count mismatch
     ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:61:9
     ┆    │
@@ -160,7 +162,7 @@ expression: snapshot
  82 │ # counterpart.
  83 │ inst SwapInstantiated for Swap:
  84 │     def swap[x, y](first: *int32, second: *y) -> *y:
-    ┆
+    │         ^^^^
     ┆ [error]: instance member `swap`: polymorphic variable `a` has no counterpart
     ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:84:9
     ┆    │
@@ -177,7 +179,7 @@ expression: snapshot
  87 │ # ERROR: `x` already stands for the trait's `a`, so `b` has no counterpart.
  88 │ inst SwapMerged for Swap:
  89 │     def swap[x, y](first: *x, second: *x) -> *x:
-    ┆
+    │         ^^^^
     ┆ [error]: instance member `swap`: polymorphic variable `b` has no counterpart
     ┆    ╭▸ compiler/e2e/test/check/semantic/instance_def_renaming/main.ray:89:9
     ┆    │

@@ -19,7 +19,7 @@ expression: snapshot
 15 │     let point = geometry.new_point(1, 2)
 16 │     let x = point.x
 17 │     let y = point.y
-   ┆
+   │                   ^
    ┆ [error]: field `y` of struct `main.geometry.Point` is not accessible here
    ┆    ╭▸ compiler/e2e/test/check/access/private_field/main.ray:17:19
    ┆    │
@@ -32,7 +32,7 @@ expression: snapshot
    ┆    ╰ help: `y` is only accessible within `main.geometry`; declare it with `pub` to make it public
    ┆
 18 │     let other = geometry.Point { x = 3, y = 4 }
-   ┆
+   │                                         ^
    ┆ [error]: field `y` of struct `main.geometry.Point` is not accessible here
    ┆    ╭▸ compiler/e2e/test/check/access/private_field/main.ray:18:41
    ┆    │

@@ -21,7 +21,7 @@ expression: snapshot
 17 │     let unique = identity(x.&mut).*.&mut
 18 │     # ERROR: `unique` still borrows `x`, through the temporary pointer.
 19 │     x = 3
-   ┆
+   │     ^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/temporary_pointer/main.ray:19:5
    ┆    │

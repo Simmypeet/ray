@@ -16,7 +16,7 @@ expression: snapshot
 12 │     def perform()
 13 │
 14 │ def test() -> ():
-   ┆
+   │     ^^^^
    ┆ [error]: function body effects do not match its signature: expected `{}`, but found `{FirstHandlerResidual, SecondHandlerResidual, BodyResidual}`
    ┆    ╭▸ compiler/e2e/test/check/tast/run_with_effect/main.ray:14:5
    ┆    │

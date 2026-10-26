@@ -8,7 +8,7 @@ expression: snapshot
  4 │
  5 │ def main() -> ():
  6 │     let pair = Pair {
-   ┆
+   │                ^^^^^^
    ┆ [error]: missing initialization for field `second` of struct `main.Pair`
    ┆    ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:6:16
    ┆    │
@@ -25,7 +25,7 @@ expression: snapshot
    ┆
  7 │         first = 1,
  8 │         first = 2,
-   ┆
+   │         ^^^^^
    ┆ [error]: duplicate initialization for struct field `first`
    ┆   ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:8:9
    ┆   │
@@ -35,7 +35,7 @@ expression: snapshot
    ┆   ╰╴        ━━━━━ this field is initialized more than once
    ┆
  9 │         mystery = true
-   ┆
+   │         ^^^^^^^
    ┆ [error]: struct `main.Pair` has no field named `mystery`
    ┆   ╭▸ compiler/e2e/test/check/tast/struct_initialization_fields/main.ray:9:9
    ┆   │

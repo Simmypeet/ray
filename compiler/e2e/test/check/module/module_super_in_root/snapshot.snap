@@ -8,7 +8,7 @@ expression: snapshot
 4 │ def main() -> int32:
 5 │     # The root module has no parent module.
 6 │     return super.helper()
-  ┆
+  │            ^^^^^
   ┆ [error]: `super` cannot be used in the root module, which has no parent module
   ┆   ╭▸ compiler/e2e/test/check/module/module_super_in_root/main.ray:6:12
   ┆   │

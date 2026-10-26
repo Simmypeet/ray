@@ -5,7 +5,7 @@ expression: snapshot
  1 │ # ERROR: struct fields cannot elide lifetimes.
  2 │ struct Elided:
  3 │     value: &int32
-   ┆
+   │            ^^^^^^
    ┆ [error]: missing lifetime specifier
    ┆   ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:3:12
    ┆   │
@@ -25,7 +25,7 @@ expression: snapshot
 12 │
 13 │ # ERROR: two parameter lifetimes leave the result's lifetime ambiguous.
 14 │ def ambiguous(first: &int32, second: &int32) -> &int32:
-   ┆
+   │                                                 ^^^^^^
    ┆ [error]: missing lifetime specifier
    ┆    ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:14:49
    ┆    │
@@ -38,7 +38,7 @@ expression: snapshot
 16 │
 17 │ # ERROR: no parameter lifetime can stand for the result's lifetime.
 18 │ def none() -> &int32:
-   ┆
+   │               ^^^^^^
    ┆ [error]: missing lifetime specifier
    ┆    ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:18:15
    ┆    │
@@ -52,7 +52,7 @@ expression: snapshot
 21 │ # ERROR: an elided lifetime in a callable type would need a higher-ranked
 22 │ # lifetime.
 23 │ def callable(fn: def(&int32) -> int32) -> ():
-   ┆
+   │                      ^^^^^^
    ┆ [error]: missing lifetime specifier
    ┆    ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:23:22
    ┆    │
@@ -66,7 +66,7 @@ expression: snapshot
 26 │ # ERROR: trait and instance defs cannot elide lifetimes in parameter types.
 27 │ trait Read[]:
 28 │     def read(value: &int32) -> int32
-   ┆
+   │                     ^^^^^^
    ┆ [error]: missing lifetime specifier
    ┆    ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:28:21
    ┆    │
@@ -78,7 +78,7 @@ expression: snapshot
 29 │
 30 │     # ERROR: nor in return types.
 31 │     def first(value: &'a int32) -> &int32
-   ┆
+   │                                    ^^^^^^
    ┆ [error]: missing lifetime specifier
    ┆    ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:31:36
    ┆    │
@@ -90,7 +90,7 @@ expression: snapshot
 32 │
 33 │ inst Reader for Read[]:
 34 │     def read(value: &int32) -> int32:
-   ┆
+   │                     ^^^^^^
    ┆ [error]: missing lifetime specifier
    ┆    ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:34:21
    ┆    │
@@ -102,7 +102,7 @@ expression: snapshot
 35 │         return value.*
 36 │
 37 │     def first(value: &'a int32) -> &int32:
-   ┆
+   │                                    ^^^^^^
    ┆ [error]: missing lifetime specifier
    ┆    ╭▸ compiler/e2e/test/check/reference/lifetime_elision/main.ray:37:36
    ┆    │

@@ -27,7 +27,7 @@ expression: snapshot
 23 │     let k = coro numbers()
 24 │     keep(k)
 25 │     keep(k)
-   ┆
+   │          ^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/coroutine/continuation_not_copy/main.ray:25:10
    ┆    │
@@ -41,7 +41,7 @@ expression: snapshot
 28 │ # ERROR: a continuation is never `Copy`.
 29 │ def continuationIsNotCopy():
 30 │     requireCopy(coro numbers())
-   ┆
+   │     ^^^^^^^^^^^
    ┆ [error]: `Continuation[(), &mut <coroutine of numbers>]` does not satisfy marker `core.Copy`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/continuation_not_copy/main.ray:30:5
    ┆    │
@@ -59,7 +59,7 @@ expression: snapshot
 33 │ # ERROR: a coroutine type is never `Copy`.
 34 │ def coroutineIsNotCopy():
 35 │     requireCopyCoroutine(coro numbers())
-   ┆
+   │     ^^^^^^^^^^^^^^^^^^^^
    ┆ [error]: `<coroutine of numbers>` does not satisfy marker `core.Copy`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/continuation_not_copy/main.ray:35:5
    ┆    │

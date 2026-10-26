@@ -18,7 +18,7 @@ expression: snapshot
 14 │ def notCall():
 15 │     let con = coro numbers()
 16 │     handle con:
-   ┆
+   │            ^^^
    ┆ [error]: `handle` expects the call of a continuation
    ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call/main.ray:16:12
    ┆    │
@@ -34,7 +34,7 @@ expression: snapshot
 21 │ # ERROR: `make` is a function, not a continuation.
 22 │ def callOfFunction():
 23 │     handle make()
-   ┆
+   │            ^^^^^^
    ┆ [error]: `handle` expects the call of a continuation
    ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_not_a_call/main.ray:23:12
    ┆    │

@@ -55,7 +55,7 @@ expression: snapshot
 51 │ # hold an effect.
 52 │ def acrossAbstractCall(value: f) given (d: core.Def[f], _: core.Drop[f]) -> () \ d.Effect where (d.Args = (), d.Return = ()):
 53 │     let opened = make()
-   ┆
+   │         ^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/pure_callable_not_suspension/main.ray:53:9
    ┆    │

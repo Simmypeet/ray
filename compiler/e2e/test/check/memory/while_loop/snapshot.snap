@@ -15,7 +15,7 @@ expression: snapshot
 11 │     while condition:
 12 │         # ERROR: a later iteration might reuse the outer value moved here.
 13 │         consume(value)
-   ┆
+   │                 ^^^^^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/memory/while_loop/main.ray:13:17
    ┆    │

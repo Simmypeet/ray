@@ -42,7 +42,7 @@ expression: snapshot
 38 │
 39 │ # ERROR: `Bounded['a, t]` requires `t: 'a`.
 40 │ def unbounded['a, t](value: *Bounded['a, t]) -> ():
-   ┆
+   │                              ^^^^^^^^^^^^^^
    ┆ [error]: where-clause obligation for `main.Bounded` is not satisfied
    ┆    ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:40:30
    ┆    │
@@ -53,7 +53,7 @@ expression: snapshot
 42 │
 43 │ # ERROR: `Maybe` takes one type argument.
 44 │ def tooMany(value: *Maybe[int32, bool]) -> ():
-   ┆
+   │                          ^^^^^^^^^^^^^
    ┆ [error]: type argument arity mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:44:26
    ┆    │
@@ -64,7 +64,7 @@ expression: snapshot
 46 │
 47 │ # ERROR: a variant is not a type.
 48 │ def variant(value: *Maybe[int32].Some) -> ():
-   ┆
+   │                     ^^^^^^^^^^^^^^^^^
    ┆ [error]: expected a value type or an associated type projection
    ┆    ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:48:21
    ┆    │
@@ -75,7 +75,7 @@ expression: snapshot
 50 │
 51 │ # ERROR: `Hidden` is private to `shapes`.
 52 │ def hidden(value: *shapes.Hidden) -> ():
-   ┆
+   │                           ^^^^^^
    ┆ [error]: enum `Hidden` is not accessible here
    ┆    ╭▸ compiler/e2e/test/check/semantic/enum_type_resolution/main.ray:52:27
    ┆    │

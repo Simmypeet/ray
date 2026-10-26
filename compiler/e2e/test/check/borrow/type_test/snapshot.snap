@@ -11,7 +11,7 @@ expression: snapshot
   7 │     # ERROR: the result is returned as a `&'a int32`, and nothing states
   8 │     # `t: 'a`.
   9 │     return pick(anchor, value)
-    ┆
+    │            ^^^^^^^^^^^^^^^^^^^
     ┆ [error]: the type `t` may not live long enough
     ┆   ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:9:12
     ┆   │
@@ -48,7 +48,7 @@ expression: snapshot
  35 │     # ERROR: the call requires `t` to outlive the lifetime of `picked`, which
  36 │     # the `return` requires to outlive `'a`.
  37 │     let picked = pick(anchor, value)
-    ┆
+    │                  ^^^^^^^^^^^^^^^^^^^
     ┆ [error]: the type `t` may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:37:18
     ┆    │
@@ -69,7 +69,7 @@ expression: snapshot
  45 │ def notStatic[t](value: &t):
  46 │     # ERROR: nothing states `t: 'static`.
  47 │     needsStatic(value)
-    ┆
+    │     ^^^^^^^^^^^^^^^^^^
     ┆ [error]: the type `t` may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:47:5
     ┆    │
@@ -93,7 +93,7 @@ expression: snapshot
  60 │ def initialized['a, 'b, t](anchor: &'a int32, value: &'b t) -> &'a int32:
  61 │     # ERROR: the where clause of `Tagged` requires `t: 'a`.
  62 │     let tagged = Tagged{anchor=anchor, value=value}
-    ┆
+    │                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     ┆ [error]: the type `t` may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:62:18
     ┆    │
@@ -129,7 +129,7 @@ expression: snapshot
  85 │ ) -> &'a int32:
  86 │     # ERROR: nothing states `s.Item['x]: 'a`.
  87 │     return pickItem(anchor, item)
-    ┆
+    │            ^^^^^^^^^^^^^^^^^^^^^^
     ┆ [error]: the type `s.Item['x]` may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:87:12
     ┆    │
@@ -153,7 +153,7 @@ expression: snapshot
 100 │ ) -> &'a int32 where (s.Item['y]: 'a):
 101 │     # ERROR: the where clause is about `s.Item['y]`, which is another type.
 102 │     return pickItem(anchor, item)
-    ┆
+    │            ^^^^^^^^^^^^^^^^^^^^^^
     ┆ [error]: the type `s.Item['x]` may not live long enough
     ┆     ╭▸ compiler/e2e/test/check/borrow/type_test/main.ray:102:12
     ┆     │

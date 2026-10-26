@@ -25,7 +25,7 @@ expression: snapshot
 21 │ # ERROR: `Outer` stores `Inner`, which stores a tuple holding `Secret`.
 22 │ def rejected(value: Outer) -> Outer:
 23 │     return requireSend(value)
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: `Outer` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_field_chain/main.ray:23:12
    ┆    │

@@ -26,7 +26,7 @@ expression: snapshot
 22 │ # ERROR: `Box[Secret]` is `Send` only if `Secret` is.
 23 │ def rejected(value: Box[Secret]) -> Box[Secret]:
 24 │     return requireSend(value)
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: `Box[Secret]` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:24:12
    ┆    │
@@ -46,7 +46,7 @@ expression: snapshot
 25 │
 26 │ # ERROR: the signature names `Guarded[Box[Secret]]`, whose where clause fails.
 27 │ def signature(value: Guarded[Box[Secret]]) -> int32:
-   ┆
+   │                      ^^^^^^^^^^^^^^^^^^^^
    ┆ [error]: `Box[Secret]` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:27:22
    ┆    │

@@ -19,7 +19,7 @@ expression: snapshot
 15 │ # parameter type `&'a t` needs `t: 'a` written out.
 16 │ trait Get['a, t]:
 17 │     def get(value: &'a t) -> ()
-   ┆
+   │                    ^^^^^
    ┆ [error]: the type `t` may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:17:20
    ┆    │
@@ -35,7 +35,7 @@ expression: snapshot
 22 │
 23 │ # ERROR: an instance head implies nothing either.
 24 │ inst GetReference['a, t] for Project[&'a t]:
-   ┆
+   │                                      ^^^^^
    ┆ [error]: the type `t` may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:24:38
    ┆    │
@@ -45,7 +45,7 @@ expression: snapshot
    ┆    ╰ help: consider adding `where (t: 'a)`
    ┆
 25 │     type Out = &'a t
-   ┆
+   │                ^^^^^
    ┆ [error]: the type `t` may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:25:16
    ┆    │
@@ -64,7 +64,8 @@ expression: snapshot
 33 │     def ask() -> &'a t
 34 │
 35 │ def rowOnly['a, t]() given (project: Project[&'a t]) -> () \{Reader['a, t]}:
-   ┆
+   │                                              ^^^^^
+   │                                                              ^^^^^^^^^^^^^
    ┆ [error]: the type `t` may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/reference/implied_bounds/main.ray:35:46
    ┆    │

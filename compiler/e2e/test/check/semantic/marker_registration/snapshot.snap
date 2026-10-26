@@ -4,7 +4,7 @@ expression: snapshot
 ---
 1 │ marker Send
 2 │ marker Send
-  ┆
+  │        ^^^^
   ┆ [error]: symbol `Send` is already defined in the scope `main`
   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_registration/main.ray:2:8
   ┆   │

@@ -9,7 +9,7 @@ expression: snapshot
  5 │     type Item[b] = (a, b)
  6 │
  7 │ def wrong(value: Concrete[int32].Item[int32, bool]) -> int32:
-   ┆
+   │                                      ^^^^^^^^^^^^^
    ┆ [error]: type argument arity mismatch
    ┆   ╭▸ compiler/e2e/test/check/semantic/associated_projection_arguments/main.ray:7:38
    ┆   │
@@ -19,7 +19,7 @@ expression: snapshot
  8 │     return 0
  9 │
 10 │ def omitted(value: Concrete[int32].Item) -> int32:
-   ┆
+   │                                    ^^^^
    ┆ [error]: type inference is not allowed for `Item` here
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_arguments/main.ray:10:36
    ┆    │
@@ -31,7 +31,7 @@ expression: snapshot
 11 │     return 0
 12 │
 13 │ def root(value: Concrete[int32, bool].Item[int32]) -> int32:
-   ┆
+   │                         ^^^^^^^^^^^^^
    ┆ [error]: type argument arity mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_arguments/main.ray:13:25
    ┆    │
@@ -41,7 +41,7 @@ expression: snapshot
 14 │     return 0
 15 │
 16 │ def wrongKind(value: Concrete[int32].Item[Concrete[int32]]) -> int32:
-   ┆
+   │                                           ^^^^^^^^^^^^^^^
    ┆ [error]: expected a value type or an associated type projection
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_projection_arguments/main.ray:16:43
    ┆    │

@@ -19,7 +19,7 @@ expression: snapshot
 15 │ # ERROR: `EqStatic` implements `Eq[&'static int32]`. Trait arguments are
 16 │ # invariant, so passing it as `Eq[&'a int32]` requires `'a: 'static`.
 17 │ def shorter['a](callback: def() -> () \ {Reader[&'a int32; given EqStatic]}) -> ():
-   ┆
+   │                                                                  ^^^^^^^^
    ┆ [error]: lifetime `'a` does not outlive `'static`
    ┆    ╭▸ compiler/e2e/test/check/reference/relation_outlives/main.ray:17:66
    ┆    │
@@ -54,7 +54,7 @@ expression: snapshot
 40 │ # ERROR: the where clause of `Value` requires `&'static int32 = &'a int32`,
 41 │ # that is, `'a: 'static`.
 42 │ def equalityShorter['a](value: has.Value[given StaticBox]) given (has: HasValue['a]) -> ():
-   ┆
+   │                                    ^^^^^^^^^^^^^^^^^^^^^^
    ┆ [error]: lifetime `'a` does not outlive `'static`
    ┆    ╭▸ compiler/e2e/test/check/reference/relation_outlives/main.ray:42:36
    ┆    │

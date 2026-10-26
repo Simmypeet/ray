@@ -11,7 +11,7 @@ expression: snapshot
  7 │ trait Recursive[]:
  8 │     type Value[a] given (box: Box[a]) where (
  9 │         box.Item = this.Value[bool; given BadBoolBox],
-   ┆
+   │                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    ┆ [error]: where-clause obligation for `main.Recursive.Value` is not satisfied
    ┆   ╭▸ compiler/e2e/test/check/semantic/self_where_clause_obligation/main.ray:9:25
    ┆   │

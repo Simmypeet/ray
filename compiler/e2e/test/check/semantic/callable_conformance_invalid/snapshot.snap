@@ -4,7 +4,7 @@ expression: snapshot
 ---
  1 │ trait InvalidContract[t]:
  2 │     def invoke(fn: def(int32) -> int32) -> int32
-   ┆
+   │                    ^^^^^^^^^^^^^^^^^^^
    ┆ [error]: callable syntax is only supported as a complete parameter type on ordinary definitions
    ┆   ╭▸ compiler/e2e/test/check/semantic/callable_conformance_invalid/main.ray:2:20
    ┆   │
@@ -17,7 +17,7 @@ expression: snapshot
  6 │
  7 │ inst InvalidImplementation for Contract[int32]:
  8 │     def invoke(fn: def(int32) -> int32) -> int32:
-   ┆
+   │                    ^^^^^^^^^^^^^^^^^^^
    ┆ [error]: callable syntax is only supported as a complete parameter type on ordinary definitions
    ┆   ╭▸ compiler/e2e/test/check/semantic/callable_conformance_invalid/main.ray:8:20
    ┆   │

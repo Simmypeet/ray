@@ -1,6 +1,9 @@
 #![allow(missing_docs)]
 
-use std::path::{Path, PathBuf};
+use std::{
+    ops::Range,
+    path::{Path, PathBuf},
+};
 
 use insta::assert_snapshot;
 use rayc_driver::{
@@ -50,10 +53,10 @@ fn main(resource: &str) {
     });
 }
 
-/// A rendered diagnostic, anchored to the fixture line its primary highlight
-/// starts on, or `None` when it points at another file or nowhere.
+/// A rendered diagnostic with the byte range of its primary highlight in the
+/// fixture, or `None` when it points at another file or nowhere.
 struct Diagnostic {
-    line: Option<usize>,
+    span: Option<Range<usize>>,
     text: String,
 }
 
@@ -77,47 +80,96 @@ async fn check(file_path: &Path) -> Vec<Diagnostic> {
         .await
         .iter()
         .map(|diagnostic| {
-            let line = diagnostic.primary_highlight().and_then(|highlight| {
+            let span = diagnostic.primary_highlight().and_then(|highlight| {
                 let span = highlight.span();
                 let source_file = source_map.0.get(&span.source_id)?;
 
                 (dunce::canonicalize(source_file.path()).ok()? == fixture_path)
-                    .then(|| source_file.byte_to_line(span.start) + 1)
+                    .then_some(span.start..span.end)
             });
 
-            Diagnostic { line, text: render_plain(diagnostic, &source_map).trim_end().to_owned() }
+            Diagnostic { span, text: render_plain(diagnostic, &source_map).trim_end().to_owned() }
         })
         .collect()
 }
 
 /// Renders the fixture source with every diagnostic placed right below the
 /// line it points at, so the snapshot reads without the `main.ray` beside it.
-/// Diagnostics pointing at other files or nowhere follow the source.
+/// The line is underlined with `^` where the primary highlight points at, up to
+/// the end of the line when the highlight spans further. Diagnostics pointing
+/// at other files or nowhere follow the source.
 fn render(source: &str, diagnostics: &[Diagnostic]) -> String {
     use std::fmt::Write;
 
-    let source_lines = source.lines().collect::<Vec<_>>();
+    // the byte offset each line starts at, with the line without its break
+    let source_lines = source
+        .split_inclusive('\n')
+        .scan(0, |start, line| {
+            let line_start = *start;
+            *start += line.len();
+            Some((line_start, line.trim_end_matches(['\n', '\r'])))
+        })
+        .collect::<Vec<_>>();
     let width = source_lines.len().to_string().len();
 
-    // diagnostics past the end of the fixture, such as at its end of file,
-    // are anchored to its last line
+    // the 0-indexed line a diagnostic is anchored to and the character columns
+    // it underlines there; diagnostics past the end of the fixture, such as at
+    // its end of file, are anchored past the end of its last line
     let anchor = |diagnostic: &Diagnostic| {
-        diagnostic.line.map(|line| line.min(source_lines.len())).filter(|line| *line > 0)
+        let span = diagnostic.span.as_ref()?;
+        let index =
+            source_lines.partition_point(|(start, _)| *start <= span.start).checked_sub(1)?;
+        let (line_start, line) = source_lines[index];
+
+        let column = |byte: usize| {
+            line.get(..byte - line_start)
+                .map_or(line.chars().count(), |prefix| prefix.chars().count())
+        };
+        let start = column(span.start);
+        let end = column(span.end.max(span.start)).max(start + 1);
+
+        Some((index, start..end))
     };
+    let anchors = diagnostics.iter().map(anchor).collect::<Vec<_>>();
 
     let mut rendered = String::new();
-    for (index, source_line) in source_lines.iter().enumerate() {
+    for (index, (_, source_line)) in source_lines.iter().enumerate() {
         let number = index + 1;
         writeln!(rendered, "{}", format!("{number:>width$} │ {source_line}").trim_end()).unwrap();
 
-        // pad the diagnostics with an empty gutter line above, between, and
-        // below them
-        let mut anchored =
-            diagnostics.iter().filter(|diagnostic| anchor(diagnostic) == Some(number)).peekable();
-        if anchored.peek().is_some() {
-            writeln!(rendered, "{:width$} ┆", "").unwrap();
+        let anchored = diagnostics
+            .iter()
+            .zip(&anchors)
+            .filter_map(|(diagnostic, anchor)| {
+                anchor
+                    .clone()
+                    .filter(|(line, _)| *line == index)
+                    .map(|(_, columns)| (diagnostic, columns))
+            })
+            .collect::<Vec<_>>();
+
+        // underline each distinct highlight once, in the order of the
+        // diagnostics
+        let mut underlines = Vec::<Range<usize>>::new();
+        for (_, columns) in &anchored {
+            if !underlines.contains(columns) {
+                underlines.push(columns.clone());
+            }
         }
-        for diagnostic in anchored {
+        for columns in underlines {
+            writeln!(
+                rendered,
+                "{:width$} │ {}{}",
+                "",
+                " ".repeat(columns.start),
+                "^".repeat(columns.len())
+            )
+            .unwrap();
+        }
+
+        // the diagnostics follow the underlines directly, padded with an
+        // empty gutter line between and below them
+        for (diagnostic, _) in anchored {
             for line in diagnostic.text.lines() {
                 writeln!(rendered, "{}", format!("{:width$} ┆ {line}", "").trim_end()).unwrap();
             }
@@ -125,7 +177,11 @@ fn render(source: &str, diagnostics: &[Diagnostic]) -> String {
         }
     }
 
-    let others = diagnostics.iter().filter(|diagnostic| anchor(diagnostic).is_none());
+    let others = diagnostics
+        .iter()
+        .zip(&anchors)
+        .filter(|(_, anchor)| anchor.is_none())
+        .map(|(diagnostic, _)| diagnostic);
     for (index, diagnostic) in others.enumerate() {
         rendered.push_str(if index == 0 { "\nother diagnostics:\n" } else { "\n" });
         writeln!(rendered, "{}", diagnostic.text).unwrap();

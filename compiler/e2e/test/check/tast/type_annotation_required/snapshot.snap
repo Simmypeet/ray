@@ -13,7 +13,7 @@ expression: snapshot
  9 │
 10 │ def unusedClosureParameter() -> ():
 11 │     let closure = (x) -> 1
-   ┆
+   │                    ^
    ┆ [error]: type annotation required
    ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:11:20
    ┆    │
@@ -27,7 +27,7 @@ expression: snapshot
 14 │ # reported as the type parameter of the call.
 15 │ def polymorphicClosureParameter() -> ():
 16 │     let closure = (x) -> identity(x)
-   ┆
+   │                          ^^^^^^^^^^^
    ┆ [error]: type annotation required
    ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:16:26
    ┆    │
@@ -42,7 +42,7 @@ expression: snapshot
 17 │
 18 │ def uninitializedVariable() -> ():
 19 │     let value
-   ┆
+   │         ^^^^^
    ┆ [error]: type annotation required
    ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:19:9
    ┆    │
@@ -56,7 +56,7 @@ expression: snapshot
 22 │ def uninitializedVariableThroughCalls() -> ():
 23 │     let value
 24 │     let copy = identity(identity(value))
-   ┆
+   │                         ^^^^^^^^^^^^^^^
    ┆ [error]: type annotation required
    ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:24:25
    ┆    │
@@ -72,7 +72,7 @@ expression: snapshot
 26 │ # The type parameter flows into no value, so it is reported at the call.
 27 │ def unusedTypeParameter() -> int32:
 28 │     return make()
-   ┆
+   │            ^^^^^^
    ┆ [error]: type annotation required
    ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:28:12
    ┆    │
@@ -88,7 +88,7 @@ expression: snapshot
 30 │ # A struct initialization is an instantiation site, like a call.
 31 │ def unknownStructArgument() -> ():
 32 │     let wrapped = Phantom { x = 1 }
-   ┆
+   │                   ^^^^^^^^^^^^^^^^^
    ┆ [error]: type annotation required
    ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:32:19
    ┆    │
@@ -119,7 +119,7 @@ expression: snapshot
 49 │ # is reported alone.
 50 │ def unboundName() -> ():
 51 │     let value = missing
-   ┆
+   │                 ^^^^^^^
    ┆ [error]: unbound name `missing`
    ┆    ╭▸ compiler/e2e/test/check/tast/type_annotation_required/main.ray:51:17
    ┆    │

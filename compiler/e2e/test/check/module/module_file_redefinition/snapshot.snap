@@ -7,7 +7,7 @@ expression: snapshot
  3 │
  4 │ # A file module shares its namespace with the other items of its parent.
  5 │ struct shapes:
-   ┆
+   │        ^^^^^^
    ┆ [error]: symbol `shapes` is already defined in the scope `main`
    ┆   ╭▸ compiler/e2e/test/check/module/module_file_redefinition/main.ray:5:8
    ┆   │
@@ -21,7 +21,7 @@ expression: snapshot
  7 │
  8 │ # A redefined file module does not load `shapes.ray` again.
  9 │ module shapes
-   ┆
+   │        ^^^^^^
    ┆ [error]: symbol `shapes` is already defined in the scope `main`
    ┆   ╭▸ compiler/e2e/test/check/module/module_file_redefinition/main.ray:9:8
    ┆   │

@@ -33,7 +33,7 @@ expression: snapshot
 29 │ # ERROR: both heads match `Render[Item]`, and neither given has an instance.
 30 │ def test(item: Item) -> int32:
 31 │     return render(item)
-   ┆
+   │            ^^^^^^
    ┆ [error]: no implicit instance found: `main.Render[Item]`
    ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:31:12
    ┆    │
@@ -80,7 +80,7 @@ expression: snapshot
 59 │ # ERROR: five heads match, so only the first four are explained.
 60 │ def testMany(item: Item) -> int32:
 61 │     return many(item)
-   ┆
+   │            ^^^^
    ┆ [error]: no implicit instance found: `main.Many[Item]`
    ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_candidates/main.ray:61:12
    ┆    │

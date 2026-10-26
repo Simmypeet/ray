@@ -8,7 +8,7 @@ expression: snapshot
 4 │ # No Drop dictionary is available for the discarded `a`.
 5 │ def discardPoly(value: a):
 6 │     identity(value)
-  ┆
+  │     ^^^^^^^^^^^^^^^
   ┆ [error]: no implicit instance found: `core.Drop[a]`
   ┆   ╭▸ compiler/e2e/test/check/tast/expression_discard_missing_drop/main.ray:6:5
   ┆   │

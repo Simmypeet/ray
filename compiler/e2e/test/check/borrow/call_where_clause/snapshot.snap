@@ -24,7 +24,7 @@ expression: snapshot
 20 │
 21 │     let q = shorten(x.&)
 22 │     x = x + 1           # <-- Expect an error here: `'a: 'b` keeps `x` borrowed.
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/call_where_clause/main.ray:22:5
    ┆    │

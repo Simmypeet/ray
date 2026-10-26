@@ -28,7 +28,7 @@ expression: snapshot
 24 │     x = x + 1           # <-- Expect NO error here.
 25 │     push(p, x.&)        # Loan 1
 26 │     x = x + 1           # <-- 💥 Expect an error here!
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/vec_push_ref/main.ray:26:5
    ┆    │

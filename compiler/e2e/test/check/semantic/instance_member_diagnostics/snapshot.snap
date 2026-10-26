@@ -19,7 +19,7 @@ expression: snapshot
 15 │
 16 │ inst BadContract for Contract[int32]:
 17 │     def count(first: int32) -> ():
-   ┆
+   │         ^^^^^
    ┆ [error]: instance member `count`: parameter count mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:17:9
    ┆    │
@@ -31,7 +31,10 @@ expression: snapshot
    ┆
 18 │         return ()
 19 │     def signature(first: bool, second: int32) -> bool:
-   ┆
+   │         ^^^^^^^^^
+   │                   ^^^^^^^^^^^
+   │                                ^^^^^^^^^^^^^
+   │                                               ^^^^^^^
    ┆ [error]: instance member `signature`: effect row mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:19:9
    ┆    │
@@ -70,7 +73,7 @@ expression: snapshot
    ┆
 20 │         return true
 21 │     def generics(value: int32) -> ():
-   ┆
+   │         ^^^^^^^^
    ┆ [error]: instance member `generics`: polymorphic variable count mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:21:9
    ┆    │
@@ -82,7 +85,7 @@ expression: snapshot
    ┆
 22 │         return ()
 23 │     def kinds() given (first: Relation[int32, bool], second: Relation[int32, int32]) -> ():
-   ┆
+   │         ^^^^^
    ┆ [error]: instance member `kinds`: polymorphic variable count mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:23:9
    ┆    │
@@ -94,7 +97,8 @@ expression: snapshot
    ┆
 24 │         return ()
 25 │     def constraints() given (first: Relation[bool, int32], second: Relation[bool, bool]) -> ():
-   ┆
+   │                              ^^^^^
+   │                                                            ^^^^^^
    ┆ [error]: instance member `constraints`: instance parameter at polymorphic position 1 trait reference mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:25:30
    ┆    │
@@ -115,7 +119,7 @@ expression: snapshot
    ┆
 26 │         return ()
 27 │     type Kinds given (first: Relation[int32, bool], second: Relation[int32, int32]) = int32
-   ┆
+   │          ^^^^^
    ┆ [error]: instance member `Kinds`: polymorphic variable count mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:27:10
    ┆    │
@@ -126,7 +130,8 @@ expression: snapshot
    ┆    ╰╴         ━━━━━ expected 2 polymorphic variables, found 0
    ┆
 28 │     type Constraints given (first: Relation[bool, int32], second: Relation[bool, bool]) = int32
-   ┆
+   │                             ^^^^^
+   │                                                           ^^^^^^
    ┆ [error]: instance member `Constraints`: instance parameter at polymorphic position 1 trait reference mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/instance_member_diagnostics/main.ray:28:29
    ┆    │

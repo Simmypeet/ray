@@ -17,7 +17,7 @@ expression: snapshot
 13 │ def moveOut(holder: &Holder) -> ():
 14 │     # ERROR: `holder.*.resource` is only borrowed.
 15 │     consume(holder.*.resource)
-   ┆
+   │             ^^^^^^^^^^^^^^^^^
    ┆ [error]: cannot move out of a borrow
    ┆    ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:15:13
    ┆    │
@@ -31,7 +31,7 @@ expression: snapshot
 18 │ def moveOutOfMutable(holder: &mut Holder) -> ():
 19 │     # ERROR: a unique borrow is still a borrow.
 20 │     let resource = holder.*.resource
-   ┆
+   │                    ^^^^^^^^^^^^^^^^^
    ┆ [error]: cannot move out of a borrow
    ┆    ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:20:20
    ┆    │
@@ -45,7 +45,7 @@ expression: snapshot
 23 │ def forcedMove(value: &int32) -> int32:
 24 │     # ERROR: `move` moves even a `Copy` value.
 25 │     return move value.*
-   ┆
+   │            ^^^^^^^^^^^^
    ┆ [error]: cannot move out of a borrow
    ┆    ╭▸ compiler/e2e/test/check/reference/move_out_of_borrow/main.ray:25:12
    ┆    │

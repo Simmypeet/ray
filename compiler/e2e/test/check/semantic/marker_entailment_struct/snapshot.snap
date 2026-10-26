@@ -17,7 +17,7 @@ expression: snapshot
 13 │
 14 │ def rejected(value: Wrapper[(int32, bool, int32)]) -> Wrapper[(int32, bool, int32)]:
 15 │     return requireSend(value)
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: `Wrapper[(int32, bool, int32)]` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_entailment_struct/main.ray:15:12
    ┆    │

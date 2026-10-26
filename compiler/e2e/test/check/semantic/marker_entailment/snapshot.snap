@@ -19,7 +19,7 @@ expression: snapshot
 15 │
 16 │ def rejected(value: a) -> (int32, a) where (a: Send):
 17 │     return requireSend((0, value))
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: `(int32, a)` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:17:12
    ┆    │
@@ -39,7 +39,7 @@ expression: snapshot
 18 │
 19 │ def rejectedNegative() -> (int32, bool, int32):
 20 │     return requireSend((0, true, 0))
-   ┆
+   │            ^^^^^^^^^^^
    ┆ [error]: `(int32, bool, int32)` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_entailment/main.ray:20:12
    ┆    │

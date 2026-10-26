@@ -23,7 +23,8 @@ expression: snapshot
 19 │ # Concrete projections are not opaque.
 20 │ def invalid(value: a) given (c: Container, drop: core.Drop[a]) -> int32 where (
 21 │     int32 = c.Item,
-   ┆
+   │     ^^^^^
+   │                    ^
    ┆ [error]: the left-hand side of a where equality must be an opaque instance associated type
    ┆    ╭▸ compiler/e2e/test/check/semantic/where_clause_opaque/main.ray:21:5
    ┆    │
@@ -40,7 +41,8 @@ expression: snapshot
    ┆
 22 │     a = c.Item,
 23 │     (c.Item, bool) = (int32, bool),
-   ┆
+   │ ^^^^^^^^^^^^^^^^^^
+   │                                    ^
    ┆ [error]: the left-hand side of a where equality must be an opaque instance associated type
    ┆    ╭▸ compiler/e2e/test/check/semantic/where_clause_opaque/main.ray:23:1
    ┆    │

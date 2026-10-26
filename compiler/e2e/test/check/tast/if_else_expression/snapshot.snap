@@ -4,7 +4,7 @@ expression: snapshot
 ---
 1 │ def invalidCondition() -> int32:
 2 │     return if 1: 2 else: 3
-  ┆
+  │               ^
   ┆ [error]: if expression condition must be `bool`: expected `bool`, but found `int32`
   ┆   ╭▸ compiler/e2e/test/check/tast/if_else_expression/main.ray:2:15
   ┆   │
@@ -15,7 +15,7 @@ expression: snapshot
 4 │
 5 │ def invalidBranches() -> int32:
 6 │     return if true: 1 else: false
-  ┆
+  │                             ^^^^^
   ┆ [error]: mismatched types in if expression branches: expected `int32`, but found `bool`
   ┆   ╭▸ compiler/e2e/test/check/tast/if_else_expression/main.ray:6:29
   ┆   │

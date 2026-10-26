@@ -4,7 +4,7 @@ expression: snapshot
 ---
 1 │ # The file `missing.ray` does not exist.
 2 │ module missing
-  ┆
+  │        ^^^^^^^
   ┆ [error]: failed to load submodule file `compiler/e2e/test/check/module/module_file_missing/missing.ray`: general IO error (os error 2)
   ┆   ╭▸ compiler/e2e/test/check/module/module_file_missing/main.ray:2:8
   ┆   │

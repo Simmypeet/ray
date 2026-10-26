@@ -15,7 +15,7 @@ expression: snapshot
 11 │
 12 │     # ERROR: `update` was moved into `copy`.
 13 │     invoke(update, ())
-   ┆
+   │            ^^^^^^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/memory/mutable_reference_capture_not_copy/main.ray:13:12
    ┆    │

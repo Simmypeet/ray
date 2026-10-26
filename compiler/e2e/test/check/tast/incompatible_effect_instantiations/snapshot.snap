@@ -22,7 +22,7 @@ expression: snapshot
 18 │     let varBool = true
 19 │     let varInt = 42
 20 │     let conflict = (((withPolyState(varInt), ()), (withPolyState(varBool), ())))
-   ┆
+   │                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
    ┆ [error]: incompatible effect rows `{State[int32]}` and `{State[bool]}`
    ┆    ╭▸ compiler/e2e/test/check/tast/incompatible_effect_instantiations/main.ray:20:22
    ┆    │

@@ -19,7 +19,7 @@ expression: snapshot
 15 │         y = y + 1    # (C) Mutate `y` -- is this ok?
 16 │
 17 │     y = y + 1        # (D) Mutate `y` -- is this ok?
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/polonius_example_one/main.ray:17:5
    ┆    │
