@@ -10,7 +10,7 @@ expression: snapshot
  6 │     let shared = x.&
  7 │     # ERROR: `shared` is used after `x` is borrowed mutably.
  8 │     let unique = x.&mut
-   ┆
+   │                  ^^^^^^
    ┆ [error]: cannot borrow a place as mutable because it is also borrowed as immutable
    ┆    ╭▸ compiler/e2e/test/check/borrow/conflicting_borrow/main.ray:8:18
    ┆    │
@@ -31,7 +31,7 @@ expression: snapshot
 14 │     let unique = x.&mut
 15 │     # ERROR: `unique` is used after `x` is borrowed again.
 16 │     let shared = x.&
-   ┆
+   │                  ^^^
    ┆ [error]: cannot borrow a place as immutable because it is also borrowed as mutable
    ┆    ╭▸ compiler/e2e/test/check/borrow/conflicting_borrow/main.ray:16:18
    ┆    │
@@ -52,7 +52,7 @@ expression: snapshot
 22 │     let first = x.&mut
 23 │     # ERROR: `first` is used after `x` is borrowed mutably again.
 24 │     let second = x.&mut
-   ┆
+   │                  ^^^^^^
    ┆ [error]: cannot borrow a place as mutable more than once at a time
    ┆    ╭▸ compiler/e2e/test/check/borrow/conflicting_borrow/main.ray:24:18
    ┆    │
@@ -89,6 +89,3 @@ expression: snapshot
 46 │     mutableTwice()
 47 │     sharedTwice()
 48 │     mutableAfterLastUse()
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

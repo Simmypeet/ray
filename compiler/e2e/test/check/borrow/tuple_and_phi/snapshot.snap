@@ -15,7 +15,7 @@ expression: snapshot
 11 │     let p = pair.1
 12 │     x = x + 1           # <-- Expect NO error here: `p` only borrows `y`.
 13 │     y = y + 1           # <-- Expect an error here: `p` came from `y.&`.
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/tuple_and_phi/main.ray:13:5
    ┆    │
@@ -34,7 +34,7 @@ expression: snapshot
 18 │     let q = if true: y.& else: z.&
 19 │     x = x + 1           # <-- Expect NO error here: neither branch borrows `x`.
 20 │     z = z + 1           # <-- Expect an error here: `q` may borrow `z`.
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/tuple_and_phi/main.ray:20:5
    ┆    │
@@ -47,6 +47,3 @@ expression: snapshot
    ┆    ╰╴            ─── borrow later used here
    ┆
 21 │     consume(q.*)
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

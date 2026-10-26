@@ -13,7 +13,7 @@ expression: snapshot
  9 │
 10 │ def throughGiven(value: a) given (dictionary: Transform[int32]) -> a:
 11 │     return dictionary.transform[bool](value)
-   ┆
+   │                                ^^^^^^
    ┆ [error]: explicit type arguments are not allowed for a definition
    ┆    ╭▸ compiler/e2e/test/check/semantic/implicit_trait_instance_def_type_arguments/main.ray:11:32
    ┆    │
@@ -24,7 +24,7 @@ expression: snapshot
 13 │
 14 │ def throughInstance(value: int32) -> int32:
 15 │     return TransformInt.transform[bool](value)
-   ┆
+   │                                  ^^^^^^
    ┆ [error]: explicit type arguments are not allowed for a definition
    ┆    ╭▸ compiler/e2e/test/check/semantic/implicit_trait_instance_def_type_arguments/main.ray:15:34
    ┆    │
@@ -35,7 +35,7 @@ expression: snapshot
 17 │
 18 │ def throughTrait(value: int32) -> int32:
 19 │     return Transform[int32].transform[bool](value)
-   ┆
+   │                                      ^^^^^^
    ┆ [error]: explicit type arguments are not allowed for a definition
    ┆    ╭▸ compiler/e2e/test/check/semantic/implicit_trait_instance_def_type_arguments/main.ray:19:38
    ┆    │
@@ -46,6 +46,3 @@ expression: snapshot
 21 │
 22 │ def main() -> int32:
 23 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

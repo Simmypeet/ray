@@ -52,7 +52,7 @@ impl CopyOracle for ConstraintSolver {
         }
 
         let copy = self.solver.engine().get_core_item(CoreItem::Copy).await;
-        self.solver.entails_marker_predicate(MarkerPredicate::new(copy, ty)).await
+        self.solver.entails_marker_predicate(MarkerPredicate::new(copy, ty)).await.holds()
     }
 }
 

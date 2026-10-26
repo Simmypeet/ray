@@ -17,16 +17,23 @@ expression: snapshot
 13 │
 14 │ def rejected(value: Wrapper[(int32, bool, int32)]) -> Wrapper[(int32, bool, int32)]:
 15 │     return requireSend(value)
-   ┆
-   ┆ [error]: where-clause obligation for `main.requireSend` is not satisfied
+   │            ^^^^^^^^^^^
+   ┆ [error]: `Wrapper[(int32, bool, int32)]` does not satisfy marker `main.Send`
    ┆    ╭▸ compiler/e2e/test/check/semantic/marker_entailment_struct/main.ray:15:12
    ┆    │
    ┆ 15 │     return requireSend(value)
-   ┆    ╰╴           ━━━━━━━━━━━ `Wrapper[(int32, bool, int32)]` must satisfy marker `main.Send`
+   ┆    ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆ [note]: `Wrapper[(int32, bool, int32)]` stores field `value` of type `(int32, bool, int32)`
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_entailment_struct/main.ray:6:5
+   ┆   │
+   ┆ 6 │     value: a
+   ┆   ╰╴    ━━━━━
+   ┆ [note]: `(int32, bool, int32)` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_entailment_struct/main.ray:3:1
+   ┆   │
+   ┆ 3 │ impl[a, b, c] !Send for (a, b, c)
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ┆
 16 │
 17 │ def main() -> int32:
 18 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

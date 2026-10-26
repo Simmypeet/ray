@@ -35,7 +35,7 @@ expression: snapshot
 31 │         #
 32 │         # `'a: 'a` is trivially true, but `'x: 'a` is not satisfied.
 33 │         return self.*.hold.*.&mut
-   ┆
+   │                ^^^^^^^^^^^^^^^^^^
    ┆ [error]: lifetime may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/borrow/lending_iterator_mut/main.ray:33:16
    ┆    │
@@ -64,6 +64,3 @@ expression: snapshot
 51 │         return self.*.hold.*.&mut
 52 │
 53 │
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

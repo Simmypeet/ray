@@ -27,7 +27,7 @@ expression: snapshot
 23 │     let k = coro numbers()
 24 │     keep(k)
 25 │     keep(k)
-   ┆
+   │          ^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/coroutine/continuation_not_copy/main.ray:25:10
    ┆    │
@@ -41,29 +41,33 @@ expression: snapshot
 28 │ # ERROR: a continuation is never `Copy`.
 29 │ def continuationIsNotCopy():
 30 │     requireCopy(coro numbers())
-   ┆
-   ┆ [error]: where-clause obligation for `main.requireCopy` is not satisfied
+   │     ^^^^^^^^^^^
+   ┆ [error]: `Continuation[(), &mut <coroutine of numbers>]` does not satisfy marker `core.Copy`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/continuation_not_copy/main.ray:30:5
    ┆    │
    ┆ 30 │     requireCopy(coro numbers())
-   ┆    ╰╴    ━━━━━━━━━━━ `Continuation[(), &mut <coroutine of numbers>]` must satisfy marker `core.Copy`
+   ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireCopy`
+   ┆ [note]: `Continuation[(), &mut <coroutine of numbers>]` stores field `coroutine` of type `&mut <coroutine of numbers>`
+   ┆    ╭▸ __ray_core__/core.ray:38:5
+   ┆    │
+   ┆ 38 │     coroutine: c
+   ┆    ╰╴    ━━━━━━━━━
+   ┆ [note]: a unique reference is never `Copy`
    ┆
 31 │
 32 │
 33 │ # ERROR: a coroutine type is never `Copy`.
 34 │ def coroutineIsNotCopy():
 35 │     requireCopyCoroutine(coro numbers())
-   ┆
-   ┆ [error]: where-clause obligation for `main.requireCopyCoroutine` is not satisfied
+   │     ^^^^^^^^^^^^^^^^^^^^
+   ┆ [error]: `<coroutine of numbers>` does not satisfy marker `core.Copy`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/continuation_not_copy/main.ray:35:5
    ┆    │
    ┆ 35 │     requireCopyCoroutine(coro numbers())
-   ┆    ╰╴    ━━━━━━━━━━━━━━━━━━━━ `<coroutine of numbers>` must satisfy marker `core.Copy`
+   ┆    ╰╴    ━━━━━━━━━━━━━━━━━━━━ required by the where clause of `main.requireCopyCoroutine`
+   ┆ [note]: a coroutine is never `Copy`
    ┆
 36 │
 37 │
 38 │ def main() -> int32:
 39 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

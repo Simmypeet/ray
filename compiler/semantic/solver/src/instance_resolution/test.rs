@@ -21,7 +21,7 @@ use rayc_type::{
     where_clause::{Key as WhereClauseKey, WhereClause},
 };
 
-use super::{InstanceResolutionError, Solver};
+use super::{InstanceResolutionError, NoInstanceReason, Solver};
 
 fn span() -> RelativeSpan {
     let location =
@@ -176,7 +176,10 @@ async fn invalid_nominal_drop_plan_cannot_resolve() {
 
     assert_eq!(
         solver.resolve_instance(required.clone()).await,
-        Err(InstanceResolutionError::NoInstance { required, failed_candidates: Vec::new() })
+        Err(InstanceResolutionError::NoInstance {
+            required,
+            reason: NoInstanceReason::DropPlan(DropPlanError::NonConvergentRequirements),
+        })
     );
 }
 

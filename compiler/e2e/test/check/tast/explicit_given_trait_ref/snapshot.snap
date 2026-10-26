@@ -25,7 +25,7 @@ expression: snapshot
 21 │
 22 │ def wrongTrait(value: int32) -> bool:
 23 │     return accepts[given OrdBool](value)
-   ┆
+   │                          ^^^^^^^
    ┆ [error]: given argument `main.OrdBool` does not implement `main.Eq[int32]`
    ┆    ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:23:26
    ┆    │
@@ -35,7 +35,7 @@ expression: snapshot
 24 │
 25 │ def wrongType(value: int32) -> bool:
 26 │     return accepts[given equality = EqBool](value)
-   ┆
+   │                                             ^^^^^
    ┆ [error]: mismatched argument types in function call: expected `bool`, but found `int32`
    ┆    ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:26:45
    ┆    │
@@ -45,7 +45,7 @@ expression: snapshot
 27 │
 28 │ def wrongPolyVar(value: a) given (ordering: Ord[a], drop: core.Drop[a]) -> bool:
 29 │     return accepts[given ordering](value)
-   ┆
+   │                          ^^^^^^^^
    ┆ [error]: given argument `ordering` does not implement `main.Eq[a]`
    ┆    ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:29:26
    ┆    │
@@ -69,7 +69,7 @@ expression: snapshot
 44 │
 45 │ def genericMismatch(value: int32) -> bool:
 46 │     return accepts[given GenericEq[bool]](value)
-   ┆
+   │                                           ^^^^^
    ┆ [error]: mismatched argument types in function call: expected `bool`, but found `int32`
    ┆    ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:46:43
    ┆    │
@@ -89,7 +89,7 @@ expression: snapshot
 57 │
 58 │ def invalidInstanceMember() -> bool:
 59 │     return IntMember.check[given EqBool]()
-   ┆
+   │                                  ^^^^^^
    ┆ [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
    ┆    ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:59:34
    ┆    │
@@ -102,7 +102,7 @@ expression: snapshot
 63 │
 64 │ def invalidPolyVarMember() given (member: Member[int32]) -> bool:
 65 │     return member.check[given EqBool]()
-   ┆
+   │                               ^^^^^^
    ┆ [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
    ┆    ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:65:31
    ┆    │
@@ -114,7 +114,7 @@ expression: snapshot
 68 │     def read() -> a
 69 │
 70 │ def requireBool(callback: def() -> () \ {Reader[int32; given EqBool]}):
-   ┆
+   │                                                              ^^^^^^
    ┆ [error]: given argument `main.EqBool` does not implement `main.Eq[int32]`
    ┆    ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:70:62
    ┆    │
@@ -125,7 +125,7 @@ expression: snapshot
 72 │
 73 │ def badLocal(callback: def() -> () \ {Reader[int32; given EqInt]}) -> ():
 74 │     requireBool(callback)
-   ┆
+   │     ^^^^^^^^^^^
    ┆ [error]: where-clause obligation for `main.requireBool` is not satisfied
    ┆    ╭▸ compiler/e2e/test/check/tast/explicit_given_trait_ref/main.ray:74:5
    ┆    │
@@ -139,6 +139,3 @@ expression: snapshot
 79 │
 80 │ def inferredGeneric(value: int32) -> bool:
 81 │     return accepts[given GenericEq](value)
-
-other diagnostics:
-[error]: Compilation aborted due to 8 error(s)

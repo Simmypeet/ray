@@ -1,0 +1,61 @@
+# Several instance heads match a goal, and each fails for its own reason.
+
+trait Render[a]:
+    def render() -> int32
+
+trait Left[a]:
+    def left() -> int32
+
+trait Right[a]:
+    def right() -> int32
+
+trait Fifth[a]:
+    def fifth() -> int32
+
+struct Item:
+    value: int32
+
+inst ByLeft[a] for Render[a] given (left: Left[a]):
+    def render() -> int32:
+        return 0
+
+inst ByRight[a] for Render[a] given (right: Right[a]):
+    def render() -> int32:
+        return 0
+
+def render(value: a) given (d: Render[a], drop: core.Drop[a]) -> int32:
+    return 0
+
+# ERROR: both heads match `Render[Item]`, and neither given has an instance.
+def test(item: Item) -> int32:
+    return render(item)
+
+trait Many[a]:
+    def many() -> int32
+
+inst ManyA[a] for Many[a] given (x: Left[a]):
+    def many() -> int32:
+        return 0
+
+inst ManyB[a] for Many[a] given (x: Right[a]):
+    def many() -> int32:
+        return 0
+
+inst ManyC[a] for Many[a] given (x: Fifth[a]):
+    def many() -> int32:
+        return 0
+
+inst ManyD[a] for Many[a] given (x: Render[a]):
+    def many() -> int32:
+        return 0
+
+inst ManyE[a] for Many[a] given (x: Left[a], y: Right[a]):
+    def many() -> int32:
+        return 0
+
+def many(value: a) given (d: Many[a], drop: core.Drop[a]) -> int32:
+    return 0
+
+# ERROR: five heads match, so only the first four are explained.
+def testMany(item: Item) -> int32:
+    return many(item)

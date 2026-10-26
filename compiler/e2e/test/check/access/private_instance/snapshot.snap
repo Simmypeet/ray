@@ -24,7 +24,7 @@ expression: snapshot
 20 │     let number: int32 = 1
 21 │     let boolean = Describe.describe(true)
 22 │     let int = Describe.describe(number)
-   ┆
+   │               ^^^^^^^^^^^^^^^^^
    ┆ [error]: no implicit instance found: `main.Describe[int32]`
    ┆    ╭▸ compiler/e2e/test/check/access/private_instance/main.ray:22:15
    ┆    │
@@ -32,7 +32,7 @@ expression: snapshot
    ┆    ╰╴              ━━━━━━━━━━━━━━━━━
    ┆
 23 │     let explicit = numbers.DescribeInt.describe(number)
-   ┆
+   │                            ^^^^^^^^^^^
    ┆ [error]: instance `DescribeInt` is not accessible here
    ┆    ╭▸ compiler/e2e/test/check/access/private_instance/main.ray:23:28
    ┆    │
@@ -45,6 +45,3 @@ expression: snapshot
    ┆    ╰ help: `DescribeInt` is only accessible within `main.numbers`; declare it with `pub` to make it public
    ┆
 24 │     return boolean + int + explicit + numbers.describe_int(number)
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

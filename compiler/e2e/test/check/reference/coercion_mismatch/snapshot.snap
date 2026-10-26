@@ -16,7 +16,7 @@ expression: snapshot
 12 │
 13 │     # ERROR: a shared reference does not coerce to a unique one.
 14 │     write(value.&)
-   ┆
+   │           ^^^^^^^
    ┆ [error]: mismatched argument types in function call: expected `&mut int32`, but found `&int32`
    ┆    ╭▸ compiler/e2e/test/check/reference/coercion_mismatch/main.ray:14:11
    ┆    │
@@ -26,7 +26,7 @@ expression: snapshot
 15 │
 16 │     # ERROR: nor to a mutable raw pointer.
 17 │     writeRaw(value.&)
-   ┆
+   │              ^^^^^^^
    ┆ [error]: mismatched argument types in function call: expected `*mut int32`, but found `&int32`
    ┆    ╭▸ compiler/e2e/test/check/reference/coercion_mismatch/main.ray:17:14
    ┆    │
@@ -38,6 +38,3 @@ expression: snapshot
 20 │     let shared: &int32 = value.&mut
 21 │     let raw: *int32 = value.&mut
 22 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

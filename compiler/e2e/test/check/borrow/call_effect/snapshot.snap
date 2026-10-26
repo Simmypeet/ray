@@ -23,7 +23,7 @@ expression: snapshot
  19 │     # ERROR: the handler may keep the reference for `'a`, and `x` is gone
  20 │     # when the function returns.
  21 │     Sink.put(x.&)
-    ┆
+    │              ^^^
     ┆ [error]: borrowed value does not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:21:14
     ┆    │
@@ -38,7 +38,7 @@ expression: snapshot
  24 │ def putsUnrelated['a, 'b](x: &'a int32) -> () \ {Sink['b]}:
  25 │     # ERROR: the handler takes a `&'b int32`, and nothing states `'a: 'b`.
  26 │     Sink.put(x)
-    ┆
+    │     ^^^^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:26:5
     ┆    │
@@ -63,7 +63,7 @@ expression: snapshot
  40 │     # ERROR: the handler gives back a `&'a int32`, and nothing states
  41 │     # `'a: 'b`.
  42 │     return Source.get()
-    ┆
+    │            ^^^^^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:42:12
     ┆    │
@@ -88,7 +88,7 @@ expression: snapshot
  56 │     let x = 1
  57 │     # ERROR: the saved reference outlives `x`.
  58 │     State.save(x.&)
-    ┆
+    │                ^^^
     ┆ [error]: borrowed value does not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:58:16
     ┆    │
@@ -103,7 +103,7 @@ expression: snapshot
  61 │ def loadsUnrelated['a, 'b]() -> &'b int32 \ {State[&'a int32]}:
  62 │     # ERROR: the state is a `&'a int32`, and nothing states `'a: 'b`.
  63 │     return State.load()
-    ┆
+    │            ^^^^^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:63:12
     ┆    │
@@ -124,7 +124,7 @@ expression: snapshot
  73 │     let x = 1
  74 │     # ERROR: the callee passes the reference on to the handler of `Sink['a]`.
  75 │     putsParameter(x.&)
-    ┆
+    │                   ^^^
     ┆ [error]: borrowed value does not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:75:19
     ┆    │
@@ -140,7 +140,7 @@ expression: snapshot
  79 │     # ERROR: the callee performs `Sink` with the lifetime of its argument,
  80 │     # and nothing states `'a: 'b`.
  81 │     putsParameter(x)
-    ┆
+    │     ^^^^^^^^^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:81:5
     ┆    │
@@ -165,7 +165,7 @@ expression: snapshot
  95 │ def callsAmongOthersUnrelated['a, 'b](x: &'a int32) -> &'a int32 \ {Source['b], Sink['b]}:
  96 │     # ERROR: `Sink['b]` takes a `&'b int32`, and nothing states `'a: 'b`.
  97 │     putsParameter(x)
-    ┆
+    │     ^^^^^^^^^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:97:5
     ┆    │
@@ -177,7 +177,7 @@ expression: snapshot
  98 │     # ERROR: `Source['b]` gives back a `&'b int32`, and nothing states
  99 │     # `'b: 'a`.
 100 │     return getsReference()
-    ┆
+    │            ^^^^^^^^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆     ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:100:12
     ┆     │
@@ -196,7 +196,7 @@ expression: snapshot
 108 │ def callsCallbackUnrelated['a, 'b](callback: def(&'a int32) \ {Sink['a]}, x: &'a int32) -> () \ {Sink['b]}:
 109 │     # ERROR: the callback performs `Sink['a]`, and nothing states `'a: 'b`.
 110 │     callback(x)
-    ┆
+    │     ^^^^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆     ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:110:5
     ┆     │
@@ -216,7 +216,7 @@ expression: snapshot
 119 │         # ERROR: the handler may keep the reference past the handled body,
 120 │         # where `inner` is gone.
 121 │         Sink.put(inner.&)
-    ┆
+    │                  ^^^^^^^
     ┆ [error]: borrowed value does not live long enough
     ┆     ╭▸ compiler/e2e/test/check/borrow/call_effect/main.ray:121:18
     ┆     │
@@ -234,6 +234,3 @@ expression: snapshot
 127 │
 128 │ def main():
 129 │     pass
-
-other diagnostics:
-[error]: Compilation aborted due to 11 error(s)

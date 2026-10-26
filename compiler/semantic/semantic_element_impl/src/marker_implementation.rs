@@ -254,6 +254,7 @@ fn head_arguments(ty: &Ty) -> Result<Vec<&Interned<Ty>>, InvalidHeadKind> {
         | ApplicationView::ClosureDropInstance(_)
         | ApplicationView::DefCoroutine(_)
         | ApplicationView::TraitDefCoroutine(_)
+        | ApplicationView::ClosureCoroutine(_)
         | ApplicationView::ContinuationDefInstance(_)
         | ApplicationView::CoroutineInstance(_)
         | ApplicationView::CoroutineDropInstance(_)

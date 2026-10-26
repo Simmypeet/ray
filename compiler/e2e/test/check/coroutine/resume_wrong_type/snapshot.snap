@@ -22,7 +22,7 @@ expression: snapshot
 18 │ def wrongStart():
 19 │     let con = coro numbers()
 20 │     handle con(1):
-   ┆
+   │                ^
    ┆ [error]: mismatched type of the value a coroutine is resumed with: expected `()`, but found `int32`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:20:16
    ┆    │
@@ -38,7 +38,7 @@ expression: snapshot
 27 │     return handle coro addTwo():
 28 │         case Ask.ask() resume k:
 29 │             return handle k(true):
-   ┆
+   │                             ^^^^
    ┆ [error]: mismatched type of the value a coroutine is resumed with: expected `int32`, but found `bool`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:29:29
    ┆    │
@@ -52,7 +52,7 @@ expression: snapshot
 34 │ # ERROR: invoking a continuation takes the value it waits for.
 35 │ def wrongInvoke(k: core.Continuation[int32, c]) given (co: core.Coroutine[c]) -> co.Return \ co.Effect:
 36 │     return k(true)
-   ┆
+   │              ^^^^
    ┆ [error]: mismatched argument types in function call: expected `int32`, but found `bool`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:36:14
    ┆    │
@@ -64,7 +64,7 @@ expression: snapshot
 39 │ # ERROR: only a continuation can be resumed.
 40 │ def notContinuation(value: int32):
 41 │     handle value()
-   ┆
+   │            ^^^^^
    ┆ [error]: `handle` expects a continuation to resume, but found `int32`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_wrong_type/main.ray:41:12
    ┆    │
@@ -75,6 +75,3 @@ expression: snapshot
 43 │
 44 │ def main() -> int32:
 45 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

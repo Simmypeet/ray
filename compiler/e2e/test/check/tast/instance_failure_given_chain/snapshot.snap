@@ -1,0 +1,71 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ # Each instance needs the next through a given, and the last goal has no
+ 2 │ # instance, so the error follows the chain down to it.
+ 3 │
+ 4 │ trait Show[a]:
+ 5 │     def show() -> int32
+ 6 │
+ 7 │ struct List[a]:
+ 8 │     head: a
+ 9 │
+10 │ struct Pair[a]:
+11 │     first: a
+12 │
+13 │ struct Secret:
+14 │     value: int32
+15 │
+16 │ inst ShowList[a] for Show[List[a]] given (element: Show[a]):
+17 │     def show() -> int32:
+18 │         return 0
+19 │
+20 │ inst ShowPair[a] for Show[Pair[a]] given (first: Show[a]):
+21 │     def show() -> int32:
+22 │         return 0
+23 │
+24 │ def print(value: a) given (d: Show[a], drop: core.Drop[a]) -> int32:
+25 │     return 0
+26 │
+27 │ # ERROR: `Show[List[Pair[Secret]]]` needs `Show[Pair[Secret]]`, which needs
+28 │ # `Show[Secret]`, which has no instance.
+29 │ def test(xs: List[Pair[Secret]]) -> int32:
+30 │     return print(xs)
+   │            ^^^^^
+   ┆ [error]: no implicit instance found: `main.Show[List[Pair[Secret]]]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:30:12
+   ┆    │
+   ┆ 30 │     return print(xs)
+   ┆    ╰╴           ━━━━━
+   ┆ [note]: `main.ShowList` matches `main.Show[List[Pair[Secret]]]`, but its given `element` needs `main.Show[Pair[Secret]]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:16:43
+   ┆    │
+   ┆ 16 │ inst ShowList[a] for Show[List[a]] given (element: Show[a]):
+   ┆    ╰╴                                          ━━━━━━━
+   ┆ [note]: `main.ShowPair` matches `main.Show[Pair[Secret]]`, but its given `first` needs `main.Show[Secret]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:20:43
+   ┆    │
+   ┆ 20 │ inst ShowPair[a] for Show[Pair[a]] given (first: Show[a]):
+   ┆    ╰╴                                          ━━━━━
+   ┆ [note]: no instance of `main.Show[Secret]` exists
+   ┆
+31 │
+32 │ # ERROR: a type variable gets the help to add the missing given.
+33 │ def generic(xs: List[a]) given (_: core.Drop[a]) -> int32:
+34 │     return print(xs)
+   │            ^^^^^
+   ┆ [error]: no implicit instance found: `main.Show[List[a]]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:34:12
+   ┆    │
+   ┆ 34 │     return print(xs)
+   ┆    │            ━━━━━
+   ┆    │
+   ┆    ╰ help: add `given (_: main.Show[a])`
+   ┆ [note]: `main.ShowList` matches `main.Show[List[a]]`, but its given `element` needs `main.Show[a]`
+   ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:16:43
+   ┆    │
+   ┆ 16 │ inst ShowList[a] for Show[List[a]] given (element: Show[a]):
+   ┆    ╰╴                                          ━━━━━━━
+   ┆ [note]: no instance of `main.Show[a]` exists
+   ┆

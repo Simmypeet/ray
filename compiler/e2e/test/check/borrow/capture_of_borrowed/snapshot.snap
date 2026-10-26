@@ -15,7 +15,7 @@ expression: snapshot
 11 │     let shared = value.&
 12 │     # ERROR: the closure captures `value` by mutable reference.
 13 │     let write = () -> value = 2
-   ┆
+   │                ^^^^^^^^^^^^^^^^
    ┆ [error]: cannot borrow a place as mutable because it is also borrowed as immutable
    ┆    ╭▸ compiler/e2e/test/check/borrow/capture_of_borrowed/main.ray:13:16
    ┆    │
@@ -36,7 +36,7 @@ expression: snapshot
 19 │     let unique = value.&mut
 20 │     # ERROR: the closure captures `value` by shared reference.
 21 │     let read = () -> value
-   ┆
+   │               ^^^^^^^^^^^^
    ┆ [error]: cannot borrow a place as immutable because it is also borrowed as mutable
    ┆    ╭▸ compiler/e2e/test/check/borrow/capture_of_borrowed/main.ray:21:15
    ┆    │
@@ -56,7 +56,7 @@ expression: snapshot
 27 │     let shared = token.&
 28 │     # ERROR: the closure moves `token` into its environment.
 29 │     let take = () -> move token
-   ┆
+   │               ^^^^^^^^^^^^^^^^^
    ┆ [error]: cannot move out of a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/capture_of_borrowed/main.ray:29:15
    ┆    │
@@ -76,7 +76,7 @@ expression: snapshot
 35 │     let write = () -> value = 2
 36 │     # ERROR: `value` is read while `write` holds a mutable borrow of it.
 37 │     let copy = value
-   ┆
+   │                ^^^^^
    ┆ [error]: cannot use a place because it is mutably borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/capture_of_borrowed/main.ray:37:16
    ┆    │
@@ -113,6 +113,3 @@ expression: snapshot
 60 │     useWhileCapturedMutably()
 61 │     captureSharedTwice()
 62 │     captureAfterLastUse()
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

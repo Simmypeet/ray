@@ -6,7 +6,7 @@ expression: snapshot
  2 │     type Item
  3 │
  4 │ inst AnyDrop[a] for core.Drop[a]:
-   ┆
+   │                     ^^^^^^^^^^^^
    ┆ [error]: Drop instance must be declared for a struct type
    ┆   ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:4:21
    ┆   │
@@ -18,7 +18,7 @@ expression: snapshot
  7 │         return
  8 │
  9 │ inst ItemDrop for core.Drop[c.Item] given (c: Convert[int32]):
-   ┆
+   │                   ^^^^^^^^^^^^^^^^^
    ┆ [error]: Drop instance must be declared for a struct type
    ┆   ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:9:19
    ┆   │
@@ -28,6 +28,3 @@ expression: snapshot
 10 │     def drop(self: c.Item):
 11 │         core.NoDrop { value = move self }
 12 │         return
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

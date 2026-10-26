@@ -77,7 +77,8 @@ pub(crate) async fn reduce_instance_associated(
     associated: crate::ty::application::InstanceAssociatedView<'_>,
     engine: &TrackedEngine,
 ) -> Option<Interned<crate::ty::Ty>> {
-    // Closure dictionaries carry their signature directly, even during inference.
+    // Closure dictionaries carry their signature directly, even during
+    // inference.
     if let Ty::Application(application) = &**associated.instance()
         && let View::DefInstance(closure) = application.view()
     {
@@ -150,15 +151,31 @@ pub(crate) async fn reduce_instance_associated(
 
 /// Reduces the coroutine of a call through an instance to the coroutine of
 /// the method that the instance implements, once the instance is a declared
-/// one.
+/// one, or to the coroutine of the closure that a closure's built-in `Def`
+/// dictionary calls.
 ///
 /// Any other instance keeps the projection rigid: a dictionary variable or
-/// `this` is not known yet, and the built-in dictionaries implement no method
-/// with a body that `coro` can suspend so far.
+/// `this` is not known yet, and the other built-in dictionaries implement no
+/// method with a body to suspend.
 pub(crate) async fn reduce_trait_def_coroutine(
     coroutine: crate::ty::application::TraitDefCoroutineView<'_>,
     engine: &TrackedEngine,
 ) -> Option<Interned<Ty>> {
+    // `Def.call` through `DefInstance(C)` runs the body of the closure `C`.
+    // Both coroutine types have the signature of `Def.call` under the same
+    // substitution, so nothing read from the coroutine changes.
+    if let Ty::Application(application) = &**coroutine.instance()
+        && let View::DefInstance(closure_def_instance) = application.view()
+    {
+        if coroutine.trait_def_id() != engine.get_core_item(CoreItem::DefCall).await
+            || !coroutine.args().is_empty()
+        {
+            return None;
+        }
+
+        return Some(Ty::new_closure_coroutine(closure_def_instance.clone(), engine));
+    }
+
     let instance = coroutine.instance().as_instance_view()?;
 
     // The trait method and its implementation correspond by name, as for an
@@ -216,10 +233,11 @@ async fn reduce_coroutine_associated(
     // call through an instance that is not known yet is told by the
     // signature of the trait method.
     let member = associated.symbol_id();
+    let signature_id = coroutine.signature_id(engine).await;
     let signature = if member == engine.get_core_item(CoreItem::CoroutineReturn).await {
-        engine.get_return_type(coroutine.signature_id()).await
+        engine.get_return_type(signature_id).await
     } else if member == engine.get_core_item(CoreItem::CoroutineEffect).await {
-        engine.get_effect_row(coroutine.signature_id()).await
+        engine.get_effect_row(signature_id).await
     } else {
         return None;
     };
@@ -470,3 +488,6 @@ mod tests {
 
 #[cfg(test)]
 mod associated_type_tests;
+
+#[cfg(test)]
+mod closure_coroutine_tests;

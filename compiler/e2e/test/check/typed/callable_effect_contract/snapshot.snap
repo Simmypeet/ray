@@ -13,7 +13,7 @@ expression: snapshot
  9 │
 10 │ def main() -> int32:
 11 │     let a = pure(() -> E.value())
-   ┆
+   │             ^^^^
    ┆ [error]: where-clause obligation for `main.pure` is not satisfied
    ┆    ╭▸ compiler/e2e/test/check/typed/callable_effect_contract/main.ray:11:13
    ┆    │
@@ -23,7 +23,7 @@ expression: snapshot
 12 │     let closure = () -> 42
 13 │     let checked = pure(closure)
 14 │     let b = effectful(closure)
-   ┆
+   │             ^^^^^^^^^
    ┆ [error]: where-clause obligation for `main.effectful` is not satisfied
    ┆    ╭▸ compiler/e2e/test/check/typed/callable_effect_contract/main.ray:14:13
    ┆    │
@@ -31,6 +31,3 @@ expression: snapshot
    ┆    ╰╴            ━━━━━━━━━ `DefInstance[<closure>() -> int32 \ {}].Effect` must equal `{E}`
    ┆
 15 │     return a + b
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

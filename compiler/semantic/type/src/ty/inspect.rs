@@ -48,6 +48,7 @@ impl Ty {
                 | ApplicationView::DefInstance(_)
                 | ApplicationView::DefCoroutine(_)
                 | ApplicationView::TraitDefCoroutine(_)
+                | ApplicationView::ClosureCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
@@ -177,6 +178,7 @@ impl Ty {
                 | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::DefCoroutine(_)
                 | ApplicationView::TraitDefCoroutine(_)
+                | ApplicationView::ClosureCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
@@ -331,6 +333,19 @@ impl Ty {
         }
 
         Some(lifetimes)
+    }
+
+    /// Returns whether the type mentions any polymorphic variable.
+    #[must_use]
+    pub fn contains_poly_var(&self) -> bool {
+        self.recursive_iter().any(|ty| match ty {
+            Self::PolyVar(_) => true,
+            Self::Application(_)
+            | Self::Inference(_)
+            | Self::EffectRow(_)
+            | Self::SelfInstance(_)
+            | Self::Lifetime(_) => false,
+        })
     }
 
     #[must_use]

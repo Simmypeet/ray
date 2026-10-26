@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: snapshot
 ---
 1 │ def transport(callback: def(int32) -> int32) -> def(int32) -> int32:
-  ┆
+  │                                                 ^^^
   ┆ [error]: unexpected `def` keyword, expected type
   ┆   ╭▸ compiler/e2e/test/check/unsupported_closure_transport/main.ray:1:49
   ┆   │
@@ -17,6 +17,3 @@ expression: snapshot
 6 │
 7 │ def main() -> int32:
 8 │     return 37
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

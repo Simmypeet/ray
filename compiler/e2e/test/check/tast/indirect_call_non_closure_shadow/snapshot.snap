@@ -6,7 +6,7 @@ expression: snapshot
 2 │     return value
 3 │
 4 │ def invoke(callback: int32) -> int32:
-  ┆
+  │     ^^^^^^
   ┆ [error]: function body effects do not match its signature: expected `{}`, but found `{any}.Effect`
   ┆   ╭▸ compiler/e2e/test/check/tast/indirect_call_non_closure_shadow/main.ray:4:5
   ┆   │
@@ -16,7 +16,8 @@ expression: snapshot
   ┆   ╰╴           ─────────── effect `{any}.Effect` introduced here
   ┆
 5 │     return callback(1)
-  ┆
+  │            ^^^^^^^^^^^
+  │                    ^^^
   ┆ [error]: mismatched types in return expression: expected `int32`, but found `{any}.Return`
   ┆   ╭▸ compiler/e2e/test/check/tast/indirect_call_non_closure_shadow/main.ray:5:12
   ┆   │
@@ -35,6 +36,3 @@ expression: snapshot
   ┆ 5 │     return callback(1)
   ┆   ╰╴                   ━━━
   ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

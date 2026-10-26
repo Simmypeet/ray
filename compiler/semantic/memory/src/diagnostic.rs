@@ -5,10 +5,8 @@ use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::obligation::PredicateObligation;
-use rayc_semantic_element::drop_plan::linear_drop_help;
-use rayc_solver::instance_resolution::InstanceResolutionError;
-use rayc_symbol::{name::get_qualified_name, source_map::to_absolute_span};
-use rayc_type::trait_ref::TraitRef;
+use rayc_solver::explain::UnsatisfiedGoal;
+use rayc_symbol::source_map::to_absolute_span;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct UseAfterMove {
@@ -27,24 +25,6 @@ pub struct UseAfterPartialMove {
 )]
 pub struct UseBeforeInitialization {
     use_span: RelativeSpan,
-}
-
-/// No `Drop` dictionary could be selected for a value dropped when its scope
-/// ends.
-///
-/// The scope may also end because the function is dropped while it is
-/// suspended. Every value held across a suspension point is dropped then,
-/// even one that the function consumes later on.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
-pub struct UnresolvedScopeDrop {
-    /// The declaration of the binding whose value is dropped.
-    binding_span: RelativeSpan,
-    trait_ref: TraitRef,
-    error: InstanceResolutionError,
-
-    /// The suspension point the value is held across, when it is dropped
-    /// only because the function is abandoned there.
-    suspension_span: Option<RelativeSpan>,
 }
 
 /// An operation handler moves a value out of one of its captures.
@@ -73,7 +53,9 @@ pub enum Diagnostic {
     UseAfterMove(UseAfterMove),
     UseAfterPartialMove(UseAfterPartialMove),
     UseBeforeInitialization(UseBeforeInitialization),
-    UnresolvedScopeDrop(UnresolvedScopeDrop),
+    /// No `Drop` dictionary could be selected for a value dropped when its
+    /// scope ends.
+    UnresolvedScopeDrop(Box<UnsatisfiedGoal>),
     MoveOutOfHandlerCapture(MoveOutOfHandlerCapture),
     MoveOutOfBorrow(MoveOutOfBorrow),
 
@@ -109,80 +91,6 @@ async fn moved_value_report(
                 .build(),
         )
         .related(related)
-        .build()
-}
-
-async fn unresolved_scope_drop_report(
-    engine: &TrackedEngine,
-    diagnostic: &UnresolvedScopeDrop,
-) -> Rendered<ByteIndex> {
-    // Match the wording used for implicit instances selected during type
-    // checking, so the same failure reads the same at every site.
-    let message = match &diagnostic.error {
-        InstanceResolutionError::NotReady(_) => "cannot infer instance requirement",
-        InstanceResolutionError::ContainsError(_) => "instance requirement contains an error",
-        InstanceResolutionError::NoInstance { .. } => "no implicit instance found",
-        InstanceResolutionError::AmbiguousLexical { .. } => "ambiguous lexical instances",
-        InstanceResolutionError::AmbiguousGlobal { .. } => "ambiguous global instances",
-        InstanceResolutionError::Cycle(_) => "cyclic instance resolution",
-        InstanceResolutionError::Limit { .. } => "instance resolution limit exceeded",
-    };
-
-    // The `Drop` dictionary of a coroutine is assembled from one dictionary
-    // per argument, and the coroutine type cannot be written in source. The
-    // argument that cannot be dropped is what the programmer can act on.
-    let drops_coroutine = diagnostic.drops_coroutine();
-    let trait_ref = match diagnostic.error.failed_requirement() {
-        Some(failed) if drops_coroutine => failed,
-        Some(_) | None => &diagnostic.trait_ref,
-    };
-
-    let name = engine.get_qualified_name(trait_ref.trait_id()).await;
-    let mut args = Vec::new();
-    for arg in trait_ref.args().iter() {
-        args.push(arg.display(engine).await.to_string());
-    }
-
-    let linear_help = match &diagnostic.error {
-        InstanceResolutionError::NoInstance { .. } => linear_drop_help(engine, trait_ref).await,
-        InstanceResolutionError::NotReady(_)
-        | InstanceResolutionError::ContainsError(_)
-        | InstanceResolutionError::AmbiguousLexical { .. }
-        | InstanceResolutionError::AmbiguousGlobal { .. }
-        | InstanceResolutionError::Cycle(_)
-        | InstanceResolutionError::Limit { .. } => None,
-    };
-
-    let mut related = Vec::new();
-    let (binding_message, help) = if let Some(suspension_span) = &diagnostic.suspension_span {
-        related.push(
-            Highlight::builder()
-                .span(engine.to_absolute_span(suspension_span).await)
-                .message("it is dropped here if the coroutine is dropped while suspended")
-                .build(),
-        );
-        let help = linear_help.unwrap_or_else(|| {
-            "a value held across a suspension point needs a Drop instance, even if it is consumed \
-             later"
-                .to_owned()
-        });
-        ("this value is held across a suspension point", Some(help))
-    } else if drops_coroutine {
-        ("the arguments of this coroutine are dropped if it is never resumed", linear_help)
-    } else {
-        ("this value is dropped when it goes out of scope", linear_help)
-    };
-
-    Rendered::builder()
-        .message(format!("{message}: `{name}[{}]`", args.join(", ")))
-        .primary_highlight(
-            Highlight::builder()
-                .span(engine.to_absolute_span(&diagnostic.binding_span).await)
-                .message(binding_message)
-                .build(),
-        )
-        .related(related)
-        .maybe_help_message(help)
         .build()
 }
 
@@ -226,9 +134,7 @@ impl Report for Diagnostic {
                         .build(),
                 )
                 .build(),
-            Self::UnresolvedScopeDrop(diagnostic) => {
-                unresolved_scope_drop_report(engine, diagnostic).await
-            }
+            Self::UnresolvedScopeDrop(diagnostic) => diagnostic.report(engine).await,
             Self::UnsatisfiedScopeDropPredicate(diagnostic) => diagnostic.report(engine).await,
             Self::MoveOutOfHandlerCapture(diagnostic) => {
                 move_out_of_handler_capture_report(engine, diagnostic).await
@@ -261,27 +167,6 @@ impl UseAfterPartialMove {
 
 impl UseBeforeInitialization {
     pub(crate) const fn new(use_span: RelativeSpan) -> Self { Self { use_span } }
-}
-
-impl UnresolvedScopeDrop {
-    pub(crate) const fn new(
-        binding_span: RelativeSpan,
-        trait_ref: TraitRef,
-        error: InstanceResolutionError,
-        suspension_span: Option<RelativeSpan>,
-    ) -> Self {
-        Self { binding_span, trait_ref, error, suspension_span }
-    }
-
-    /// Returns whether the value that cannot be dropped is the coroutine a
-    /// `coro` stores, rather than a binding declared in source.
-    fn drops_coroutine(&self) -> bool {
-        self.trait_ref
-            .args()
-            .interned_iter()
-            .next()
-            .is_some_and(|dropped| dropped.as_coroutine_view().is_some())
-    }
 }
 
 impl MoveOutOfHandlerCapture {

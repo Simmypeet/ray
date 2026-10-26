@@ -22,7 +22,7 @@ expression: snapshot
 18 │     # implementation may write through `guard.inner` while `out` still holds
 19 │     # this borrow.
 20 │     out.* = guard.inner.*.&mut
-   ┆
+   │             ^^^^^^^^^^^^^^^^^^
    ┆ [error]: borrow may still be in use when the value is dropped
    ┆    ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:20:13
    ┆    │
@@ -42,7 +42,7 @@ expression: snapshot
 28 │     let pair = (Guard{inner=x}, 1)
 29 │     # ERROR: dropping `pair` drops the guard in it.
 30 │     out.* = pair.0.inner.*.&mut
-   ┆
+   │             ^^^^^^^^^^^^^^^^^^^
    ┆ [error]: borrow may still be in use when the value is dropped
    ┆    ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:30:13
    ┆    │
@@ -62,7 +62,7 @@ expression: snapshot
 38 │     let mut guard = Guard{inner=x}
 39 │     # ERROR: the assignment below drops the guard holding `x`.
 40 │     out.* = guard.inner.*.&mut
-   ┆
+   │             ^^^^^^^^^^^^^^^^^^
    ┆ [error]: borrow may still be in use when the value is dropped
    ┆    ╭▸ compiler/e2e/test/check/borrow/dropped_while_borrowed/main.ray:40:13
    ┆    │
@@ -98,6 +98,3 @@ expression: snapshot
 62 │     declaredDropOfSibling(slot.&mut, e.&mut, f.&mut)
 63 │     declaredDropOnReassign(slot.&mut, g.&mut, h.&mut)
 64 │     declaredDropAfterLastUse(slot)
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

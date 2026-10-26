@@ -10,7 +10,7 @@ expression: snapshot
  6 │     let address = () -> value.&
  7 │     other = 1           # <-- Expect NO error here: `other` is not captured.
  8 │     value = 42          # <-- Expect an error here: `address` borrows `value`.
-   ┆
+   │     ^^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆   ╭▸ compiler/e2e/test/check/borrow/closure_capture/main.ray:8:5
    ┆   │
@@ -26,6 +26,3 @@ expression: snapshot
 10 │
 11 │     value = 42          # <-- Expect NO error here: `address` is not used again.
 12 │     return read + other
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

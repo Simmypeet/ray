@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: snapshot
 ---
 1 │ def missingReturn() -> int32:
-  ┆
+  │     ^^^^^^^^^^^^^
   ┆ [error]: not all paths return a value
   ┆   ╭▸ compiler/e2e/test/check/ir/not_all_paths_return_value/main.ray:1:5
   ┆   │
@@ -14,6 +14,3 @@ expression: snapshot
 3 │
 4 │ def unitReturnIsImplicit() -> ():
 5 │     let value = 42
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

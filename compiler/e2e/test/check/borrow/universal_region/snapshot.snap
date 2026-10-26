@@ -10,7 +10,7 @@ expression: snapshot
  6 │ def unrelated['a, 'b](x: &'a int32) -> &'b int32:
  7 │     # ERROR: nothing states `'a: 'b`.
  8 │     return x
-   ┆
+   │            ^
    ┆ [error]: lifetime may not live long enough
    ┆   ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:8:12
    ┆   │
@@ -29,7 +29,7 @@ expression: snapshot
 16 │ def toStatic['a](x: &'a int32) -> &'static int32:
 17 │     # ERROR: `'a` is not known to outlive `'static`.
 18 │     return x
-   ┆
+   │            ^
    ┆ [error]: lifetime may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:18:12
    ┆    │
@@ -47,7 +47,7 @@ expression: snapshot
 27 │     # ERROR: the value is stored where a `&'b int32` is expected.
 28 │     let y = x
 29 │     out.* = y
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: lifetime may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:29:5
    ┆    │
@@ -73,7 +73,7 @@ expression: snapshot
 42 │     # ERROR: `r` may hold `y`, and nothing states `'b: 'c`. That it may hold
 43 │     # `x` is fine.
 44 │     return r
-   ┆
+   │            ^
    ┆ [error]: lifetime may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:44:12
    ┆    │
@@ -91,7 +91,7 @@ expression: snapshot
 48 │     # ERROR: `shorten` gives back a reference that `'a` must outlive.
 49 │     let s = shorten(x)
 50 │     return s
-   ┆
+   │            ^
    ┆ [error]: lifetime may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:50:12
    ┆    │
@@ -118,7 +118,7 @@ expression: snapshot
 64 │     # ERROR: the data is only reachable through `x` for `'a`, and the implied
 65 │     # bound is `'b: 'a`, not `'a: 'b`.
 66 │     return x.*.*.&mut
-   ┆
+   │            ^^^^^^^^^^
    ┆ [error]: lifetime may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:66:12
    ┆    │
@@ -135,7 +135,7 @@ expression: snapshot
 72 │     # ERROR: nothing states `'b: 'c`. This is reported once, and not again
 73 │     # as `'a: 'c`.
 74 │     out.* = mid.*
-   ┆
+   │     ^^^^^^^^^^^^^
    ┆ [error]: lifetime may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/borrow/universal_region/main.ray:74:5
    ┆    │
@@ -155,6 +155,3 @@ expression: snapshot
 83 │
 84 │ def main():
 85 │     pass
-
-other diagnostics:
-[error]: Compilation aborted due to 7 error(s)

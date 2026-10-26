@@ -29,7 +29,7 @@ expression: snapshot
  25 │     with Values:
  26 │         def get():
  27 │             return a.&      # <-- Expect an error here.
-    ┆
+    │                    ^^^
     ┆ [error]: captured variable cannot escape the operation handler
     ┆    ╭▸ compiler/e2e/test/check/borrow/handler_capture_escape/main.ray:27:20
     ┆    │
@@ -64,7 +64,7 @@ expression: snapshot
  51 │     with Values:
  52 │         def get():
  53 │             return x.*.&
-    ┆
+    │                    ^^^^^
     ┆ [error]: captured variable cannot escape the operation handler
     ┆    ╭▸ compiler/e2e/test/check/borrow/handler_capture_escape/main.ray:53:20
     ┆    │
@@ -88,7 +88,7 @@ expression: snapshot
  66 │         def tick():
  67 │             a = a + 1
  68 │             slot = a.&      # <-- Expect an error here: `slot` outlives a run.
-    ┆
+    │             ^^^^^^^^^^
     ┆ [error]: captured variable cannot escape the operation handler
     ┆    ╭▸ compiler/e2e/test/check/borrow/handler_capture_escape/main.ray:68:13
     ┆    │
@@ -109,7 +109,7 @@ expression: snapshot
  75 │     # ERROR: the handler of `Sink['a]` may keep the borrow of `a` that `tick`
  76 │     # passes it, past this function, where `a` is gone.
  77 │     run:
-    ┆
+    │     ^^^^
     ┆ [error]: borrowed value does not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/handler_capture_escape/main.ray:77:5
     ┆    │
@@ -132,7 +132,7 @@ expression: snapshot
  82 │             # ERROR: the handler of `Sink['a]` may also keep the borrow past
  83 │             # this run of `tick`.
  84 │             Sink.put(a.&)
-    ┆
+    │             ^^^^^^^^^^^^^
     ┆ [error]: captured variable cannot escape the operation handler
     ┆    ╭▸ compiler/e2e/test/check/borrow/handler_capture_escape/main.ray:84:13
     ┆    │
@@ -163,6 +163,3 @@ expression: snapshot
 101 │
 102 │ def main() -> int32:
 103 │     return returned() + returnedShared() + stored() + usedWithin()
-
-other diagnostics:
-[error]: Compilation aborted due to 5 error(s)

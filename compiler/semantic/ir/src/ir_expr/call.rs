@@ -72,6 +72,28 @@ impl CallTarget {
         }
     }
 
+    /// Returns the type of the coroutine that a `coro` of this call would
+    /// create, which is what the call waits for while it suspends, or `None`
+    /// for a call of an `extern def`, which has no body.
+    ///
+    /// It is the type the type checker gives `coro` of the same call.
+    pub async fn coroutine_ty(&self, engine: &TrackedEngine) -> Option<Interned<Ty>> {
+        match self {
+            Self::Direct { function_id, subst } => {
+                Ty::new_direct_call_coroutine(*function_id, subst, engine).await
+            }
+            Self::UnresolvedInstanceAssociated { instance, trait_def_id, trait_def_subst } => Some(
+                Ty::new_instance_call_coroutine(
+                    *trait_def_id,
+                    instance.clone(),
+                    trait_def_subst,
+                    engine,
+                )
+                .await,
+            ),
+        }
+    }
+
     /// Returns the substitution that instantiates the signature of
     /// [`Self::signature_id`] at the call.
     ///

@@ -10,7 +10,7 @@ expression: snapshot
  6 │
  7 │     # ERROR: reading through `pointer` reads `pointer` itself.
  8 │     return unsafe: pointer.*
-   ┆
+   │                    ^^^^^^^^^
    ┆ [error]: use of value before initialization
    ┆   ╭▸ compiler/e2e/test/check/memory/deref_before_initialization/main.ray:8:20
    ┆   │
@@ -25,7 +25,7 @@ expression: snapshot
 14 │     # initialize it.
 15 │     unsafe:
 16 │         pointer.* = 1
-   ┆
+   │         ^^^^^^^^^^^^^
    ┆ [error]: use of value before initialization
    ┆    ╭▸ compiler/e2e/test/check/memory/deref_before_initialization/main.ray:16:9
    ┆    │
@@ -33,7 +33,7 @@ expression: snapshot
    ┆    ╰╴        ━━━━━━━━━━━━━ value may be uninitialized here
    ┆
 17 │         pointer.* = 2
-   ┆
+   │         ^^^^^^^^^^^^^
    ┆ [error]: use of value before initialization
    ┆    ╭▸ compiler/e2e/test/check/memory/deref_before_initialization/main.ray:17:9
    ┆    │
@@ -47,7 +47,7 @@ expression: snapshot
 22 │
 23 │     # ERROR: borrowing through `pointer` reads `pointer`.
 24 │     let inner = unsafe: pointer.*.&mut
-   ┆
+   │                         ^^^^^^^^^^^^^^
    ┆ [error]: use of value before initialization
    ┆    ╭▸ compiler/e2e/test/check/memory/deref_before_initialization/main.ray:24:25
    ┆    │
@@ -62,7 +62,7 @@ expression: snapshot
 30 │
 31 │     # ERROR: `pointer` was moved out.
 32 │     return unsafe: pointer.*
-   ┆
+   │                    ^^^^^^^^^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/memory/deref_before_initialization/main.ray:32:20
    ┆    │
@@ -75,6 +75,3 @@ expression: snapshot
 33 │
 34 │ def main() -> ():
 35 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 5 error(s)

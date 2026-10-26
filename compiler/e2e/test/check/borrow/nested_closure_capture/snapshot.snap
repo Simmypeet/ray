@@ -8,7 +8,7 @@ expression: snapshot
 4 │     # Both inner closures borrow `value` and live in the same tuple, so the
 5 │     # mutable borrow of the writer conflicts with the borrow of the reader.
 6 │     let outer = () -> (() -> value, () -> value = 42)
-  ┆
+  │                                    ^^^^^^^^^^^^^^^^^
   ┆ [error]: cannot borrow a place as mutable because it is also borrowed as immutable
   ┆   ╭▸ compiler/e2e/test/check/borrow/nested_closure_capture/main.ray:6:36
   ┆   │
@@ -22,6 +22,3 @@ expression: snapshot
 7 │     let callbacks = outer()
 8 │     callbacks.1()
 9 │     return callbacks.0()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

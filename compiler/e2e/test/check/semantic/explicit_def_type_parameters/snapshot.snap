@@ -17,7 +17,7 @@ expression: snapshot
 13 │ # ERROR: with an explicit list, parameter types introduce nothing, so `b` is
 14 │ # not declared.
 15 │ def undeclared[a](value: a, other: *b) -> a:
-   ┆
+   │                                     ^
    ┆ [error]: symbol `b` is not found
    ┆    ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:15:37
    ┆    │
@@ -28,7 +28,8 @@ expression: snapshot
 17 │
 18 │ # ERROR: with an explicit list, `'l` must be declared too.
 19 │ def undeclaredLifetime[a](value: &'l a) -> &'l a:
-   ┆
+   │                                   ^^
+   │                                             ^^
    ┆ [error]: use of undeclared lifetime `'l`
    ┆    ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:19:35
    ┆    │
@@ -53,7 +54,7 @@ expression: snapshot
 25 │ trait Scope[a]:
 26 │     # ERROR: an explicit parameter cannot shadow the trait's `a`.
 27 │     def shadow[a](value: *a) -> int32
-   ┆
+   │                ^
    ┆ [error]: duplicate polymorphic variable `a`
    ┆    ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:27:16
    ┆    │
@@ -70,7 +71,7 @@ expression: snapshot
 32 │
 33 │     # ERROR: `implicit` declares no explicit type parameters.
 34 │     let noList = implicit[int32](1)
-   ┆
+   │                          ^^^^^^^
    ┆ [error]: explicit type arguments are not allowed for a definition
    ┆    ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:34:26
    ┆    │
@@ -80,7 +81,8 @@ expression: snapshot
 35 │
 36 │     # ERROR: `swap` declares two type parameters.
 37 │     let arity = swap[int32](pair)
-   ┆
+   │                     ^^^^^^^
+   │                             ^^^^
    ┆ [error]: type argument arity mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/explicit_def_type_parameters/main.ray:37:21
    ┆    │
@@ -95,6 +97,3 @@ expression: snapshot
    ┆
 38 │
 39 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 7 error(s)

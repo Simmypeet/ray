@@ -21,7 +21,7 @@ expression: snapshot
 17 │     let mut x = 1
 18 │     let k = coro read(x.&)
 19 │     x = 2
-   ┆
+   │     ^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coroutine_drop_uses_borrow/main.ray:19:5
    ┆    │
@@ -53,6 +53,3 @@ expression: snapshot
 37 │
 38 │ def main() -> int32:
 39 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

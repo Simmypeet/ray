@@ -24,7 +24,7 @@ expression: snapshot
 20 │
 21 │
 22 │ def unwrap(hidden: shapes.Hidden) -> int32:
-   ┆
+   │                           ^^^^^^
    ┆ [error]: struct `Hidden` is not accessible here
    ┆    ╭▸ compiler/e2e/test/check/access/private_symbol/main.ray:22:27
    ┆    │
@@ -43,7 +43,7 @@ expression: snapshot
 27 │     let area = shapes.area(2)
 28 │     let thrice = shapes.exposed.thrice(2)
 29 │     let square = shapes.square(2)
-   ┆
+   │                         ^^^^^^
    ┆ [error]: def `square` is not accessible here
    ┆    ╭▸ compiler/e2e/test/check/access/private_symbol/main.ray:29:25
    ┆    │
@@ -56,7 +56,7 @@ expression: snapshot
    ┆    ╰ help: `square` is only accessible within `main.shapes`; declare it with `pub` to make it public
    ┆
 30 │     let twice = shapes.detail.twice(2)
-   ┆
+   │                        ^^^^^^
    ┆ [error]: module `detail` is not accessible here
    ┆    ╭▸ compiler/e2e/test/check/access/private_symbol/main.ray:30:24
    ┆    │
@@ -69,6 +69,3 @@ expression: snapshot
    ┆    ╰ help: `detail` is only accessible within `main.shapes`; declare it with `pub` to make it public
    ┆
 31 │     return area + thrice + square + twice
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

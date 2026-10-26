@@ -17,7 +17,7 @@ expression: snapshot
 13 │         case Yield[int32].yield(value) resume k:
 14 │             pass
 15 │     handle con():
-   ┆
+   │            ^^^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:15:12
    ┆    │
@@ -35,7 +35,7 @@ expression: snapshot
 21 │ def invokeTwice(k: core.Continuation[(), c]) given (co: core.Coroutine[c]) -> () \ co.Effect where (co.Return = ()):
 22 │     k(())
 23 │     k(())
-   ┆
+   │     ^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:23:5
    ┆    │
@@ -52,7 +52,7 @@ expression: snapshot
 29 │     let con = coro numbers()
 30 │     while true:
 31 │         handle con():
-   ┆
+   │                ^^^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/coroutine/resume_twice/main.ray:31:16
    ┆    │
@@ -70,6 +70,3 @@ expression: snapshot
 37 │
 38 │ def main() -> int32:
 39 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

@@ -16,7 +16,7 @@ expression: snapshot
 12 │ # ERROR: a value is not a call.
 13 │ def value(x: int32):
 14 │     coro x
-   ┆
+   │          ^
    ┆ [error]: `coro` expects a call
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:14:10
    ┆    │
@@ -30,7 +30,7 @@ expression: snapshot
 17 │ # ERROR: a parenthesized call is not a call.
 18 │ def parenthesized():
 19 │     coro (numbers())
-   ┆
+   │         ^^^^^^^^^^^^
    ┆ [error]: `coro` expects a call
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:19:9
    ┆    │
@@ -44,7 +44,7 @@ expression: snapshot
 22 │ # ERROR: an operation is run by whoever handles it.
 23 │ def operation():
 24 │     coro Yield.yield(1)
-   ┆
+   │          ^^^^^^^^^^^^^^
    ┆ [error]: `coro` is not supported on this call yet
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:24:10
    ┆    │
@@ -58,7 +58,7 @@ expression: snapshot
 27 │ # ERROR: an `extern def` has no body to suspend.
 28 │ def external():
 29 │     coro abs(1)
-   ┆
+   │          ^^^^^^
    ┆ [error]: `coro` is not supported on this call yet
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:29:10
    ┆    │
@@ -72,7 +72,7 @@ expression: snapshot
 32 │ # ERROR: a callable value is called through its `Def` instance.
 33 │ def callable(numbers: def() -> int32):
 34 │     coro numbers()
-   ┆
+   │          ^^^^^^^^^
    ┆ [error]: `coro` is not supported on this call yet
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_not_a_call/main.ray:34:10
    ┆    │
@@ -85,6 +85,3 @@ expression: snapshot
 36 │
 37 │ def main() -> int32:
 38 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 5 error(s)

@@ -247,7 +247,7 @@ impl<'a> StackStateProblem<'a> {
 
     async fn type_is_copy(&mut self, ty: Interned<Ty>) -> bool {
         let marker_id = self.solver.engine().get_core_item(CoreItem::Copy).await;
-        self.solver.entails_marker_predicate(MarkerPredicate::new(marker_id, ty)).await
+        self.solver.entails_marker_predicate(MarkerPredicate::new(marker_id, ty)).await.holds()
     }
 
     /// Returns every function input: its parameters in declaration order,
@@ -358,6 +358,7 @@ impl<'a> StackStateProblem<'a> {
                 | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::DefCoroutine(_)
                 | ApplicationView::TraitDefCoroutine(_)
+                | ApplicationView::ClosureCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)

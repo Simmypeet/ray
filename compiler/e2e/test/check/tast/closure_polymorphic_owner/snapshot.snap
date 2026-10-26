@@ -14,7 +14,7 @@ expression: snapshot
 10 │ def ordinary(value: a) given (drop: core.Drop[a]) -> a:
 11 │     let closure = () -> value
 12 │     return value
-   ┆
+   │            ^^^^^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/tast/closure_polymorphic_owner/main.ray:12:12
    ┆    │
@@ -24,6 +24,3 @@ expression: snapshot
    ┆ 12 │     return value
    ┆    ╰╴           ━━━━━ value used here after it was moved
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

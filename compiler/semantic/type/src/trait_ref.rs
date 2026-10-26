@@ -1,15 +1,18 @@
+use std::fmt::{self, Display};
+
 use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::{
     GlobalSymbolID,
     core_item::{CoreItem, get_core_item},
+    name::get_qualified_name,
 };
 
 use crate::{
     poly_var::{build_subst_from_args, get_poly_var_map},
     reduce::Reduce,
     subst::{Subst, Substitutable},
-    ty::{Ty, application::View as ApplicationView, args::Args},
+    ty::{Ty, TyDisplay, application::View as ApplicationView, args::Args},
 };
 
 /// A reference to a trait together with its type arguments.
@@ -42,9 +45,45 @@ impl TraitRef {
         self.args.iter().any(Ty::contains_non_lifetime_inference)
     }
 
+    /// Whether any argument mentions a polymorphic variable.
+    #[must_use]
+    pub fn contains_poly_var(&self) -> bool { self.args.iter().any(Ty::contains_poly_var) }
+
     /// Whether any argument recursively contains an error type.
     #[must_use]
     pub fn contains_error(&self) -> bool { self.args.contains_error() }
+
+    /// Renders the trait reference as written in source, with the qualified
+    /// name of the trait, such as `main.Show[List[int32]]`.
+    pub async fn display<'x>(&'x self, engine: &TrackedEngine) -> TraitRefDisplay<'x> {
+        let name = engine.get_qualified_name(self.trait_id).await;
+        let mut args = Vec::with_capacity(self.args.len());
+        for arg in self.args.iter() {
+            args.push(arg.display(engine).await);
+        }
+
+        TraitRefDisplay { name, args }
+    }
+}
+
+/// A trait reference with the names it mentions, ready to be formatted.
+#[derive(Debug)]
+pub struct TraitRefDisplay<'x> {
+    name: String,
+    args: Vec<TyDisplay<'x>>,
+}
+
+impl Display for TraitRefDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}[", self.name)?;
+        for (index, arg) in self.args.iter().enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{arg}")?;
+        }
+        f.write_str("]")
+    }
 }
 
 /// Retrieves the trait reference represented by an instance symbol. The value
@@ -132,6 +171,7 @@ impl Ty {
                 }
                 ApplicationView::DefCoroutine(_)
                 | ApplicationView::TraitDefCoroutine(_)
+                | ApplicationView::ClosureCoroutine(_)
                 | ApplicationView::Primitive(_)
                 | ApplicationView::Tuple(_)
                 | ApplicationView::Pointer(_)

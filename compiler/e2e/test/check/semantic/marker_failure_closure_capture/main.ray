@@ -1,0 +1,30 @@
+# A marker goal on a closure fails because of a value it captures.
+
+marker Send
+
+struct Secret:
+    value: int32
+
+impl !Send for Secret
+
+impl[a, b, c] !Send for (a, b, c)
+
+def requireSend(value: a) -> a where (a: Send):
+    return value
+
+# ERROR: the closure captures `secret` by value.
+def captureByValue(secret: Secret):
+    requireSend(() -> move secret)
+
+# ERROR: the closure captures `secret` by reference, and a reference is not
+# known to be `Send`.
+def captureByReference(secret: Secret, count: int32):
+    requireSend(() -> secret.value + count)
+
+# ERROR: the closure captures three values, and its captures are excluded
+# as a whole.
+def captureThree(first: int32, second: int32, third: int32):
+    requireSend(() -> first + second + third)
+
+def main() -> int32:
+    return 0

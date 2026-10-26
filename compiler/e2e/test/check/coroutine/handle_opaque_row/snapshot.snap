@@ -14,7 +14,7 @@ expression: snapshot
 10 │ def opaqueAssociated(k: core.Continuation[(), c]) given (co: core.Coroutine[c], _: core.Drop[c]) -> () \ co.Effect where (co.Return = ()):
 11 │     handle k():
 12 │         case Yield[int32].yield(value) resume next:
-   ┆
+   │              ^^^^^^^^^^^^^^^^^^
    ┆ [error]: cannot handle `{Yield[int32]}`: it is not visible in `co.Effect`, the effect the coroutine has left to handle
    ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_opaque_row/main.ray:12:14
    ┆    │
@@ -31,7 +31,7 @@ expression: snapshot
 15 │
 16 │ # ERROR: `Ask` is handled, but `Yield[int32]` may only be in the row variable.
 17 │ def opaqueTail[c, rest: Effect](k: core.Continuation[(), c]) given (co: core.Coroutine[c], _: core.Drop[c]) -> () \ rest where (co.Return = (), co.Effect = {Ask | rest}):
-   ┆
+   │     ^^^^^^^^^^
    ┆ [error]: function body effects do not match its signature: expected `rest`, but found `{Ask}`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_opaque_row/main.ray:17:5
    ┆    │
@@ -44,7 +44,7 @@ expression: snapshot
    ┆
 18 │     handle k():
 19 │         case Yield[int32].yield(value) resume next:
-   ┆
+   │              ^^^^^^^^^^^^^^^^^^
    ┆ [error]: cannot handle `{Yield[int32]}`: it is not visible in `{Ask | rest}`, the effect the coroutine has left to handle
    ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_opaque_row/main.ray:19:14
    ┆    │
@@ -69,6 +69,3 @@ expression: snapshot
 35 │
 36 │ def main() -> int32:
 37 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

@@ -14,7 +14,7 @@ expression: snapshot
 10 │
 11 │ inst BadContainer for Container[int32]:
 12 │     type Arity = int32
-   ┆
+   │          ^^^^^
    ┆ [error]: instance member `Arity`: polymorphic variable count mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:12:10
    ┆    │
@@ -25,7 +25,7 @@ expression: snapshot
    ┆    ╰╴         ━━━━━ expected 1 polymorphic variables, found 0
    ┆
 13 │     type Constraint[c] given (relation: Relation[c, int32]) = c
-   ┆
+   │                               ^^^^^^^^
    ┆ [error]: instance member `Constraint`: instance parameter at polymorphic position 2 trait reference mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:13:31
    ┆    │
@@ -36,7 +36,7 @@ expression: snapshot
    ┆    ╰╴                              ━━━━━━━━ expected `main.Relation[int32, c]`, found `main.Relation[c, int32]`
    ┆
 14 │     type Kind given (relation: Relation[int32, int32]) = int32
-   ┆
+   │          ^^^^
    ┆ [error]: instance member `Kind`: polymorphic variable count mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:14:10
    ┆    │
@@ -47,7 +47,7 @@ expression: snapshot
    ┆    ╰╴         ━━━━ expected 1 polymorphic variables, found 0
    ┆
 15 │     def AsMethod() -> ():
-   ┆
+   │         ^^^^^^^^
    ┆ [error]: instance member `AsMethod`: member kind mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:15:9
    ┆    │
@@ -59,7 +59,7 @@ expression: snapshot
    ┆
 16 │         return ()
 17 │     type asType = int32
-   ┆
+   │          ^^^^^^
    ┆ [error]: instance member `asType`: member kind mismatch
    ┆    ╭▸ compiler/e2e/test/check/semantic/associated_type_conformance_invalid/main.ray:17:10
    ┆    │
@@ -72,6 +72,3 @@ expression: snapshot
 18 │
 19 │ def main() -> int32:
 20 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 5 error(s)

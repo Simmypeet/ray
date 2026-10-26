@@ -1,0 +1,74 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ # A call through an instance suspends only when the effect of the callee is
+ 2 │ # not empty once it is normalized. Its row is written as a projection, such as
+ 3 │ # the `Effect` of a closure's `Def` instance, which is empty only after it
+ 4 │ # reduces.
+ 5 │
+ 6 │ @linear
+ 7 │ struct Handle:
+ 8 │     fd: int32
+ 9 │
+10 │
+11 │ def make() -> Handle:
+12 │     return Handle { fd = 0 }
+13 │
+14 │
+15 │ def close(opened: Handle):
+16 │     core.NoDrop { value = move opened }
+17 │
+18 │
+19 │ # OK: the effect of a pure closure reduces to `{}`.
+20 │ def acrossPureClosureCall() -> ():
+21 │     let step = () -> 1
+22 │     let opened = make()
+23 │     step()
+24 │     close(opened)
+25 │
+26 │
+27 │ inst Pure for core.Def[int32]:
+28 │     type Args = ()
+29 │     type Return = int32
+30 │     type Effect = {}
+31 │     def call(fn: int32, args: ()) -> int32:
+32 │         return fn
+33 │
+34 │
+35 │ # OK: the effect of a pure declared instance reduces to `{}`.
+36 │ def acrossPureInstanceCall() -> ():
+37 │     let opened = make()
+38 │     let n = 1
+39 │     n()
+40 │     close(opened)
+41 │
+42 │
+43 │ # OK: a given equality reduces the effect of an abstract instance to `{}`.
+44 │ def acrossPureGivenCall(value: f) given (d: core.Def[f], _: core.Drop[f]) -> () where (d.Args = (), d.Return = (), d.Effect = {}):
+45 │     let opened = make()
+46 │     d.call(value, ())
+47 │     close(opened)
+48 │
+49 │
+50 │ # ERROR: the effect of an abstract instance stays a projection, which may
+51 │ # hold an effect.
+52 │ def acrossAbstractCall(value: f) given (d: core.Def[f], _: core.Drop[f]) -> () \ d.Effect where (d.Args = (), d.Return = ()):
+53 │     let opened = make()
+   │         ^^^^^^
+   ┆ [error]: no implicit instance found: `core.Drop[Handle]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/pure_callable_not_suspension/main.ray:53:9
+   ┆    │
+   ┆ 53 │     let opened = make()
+   ┆    │         ━━━━━━ this value is held across a suspension point
+   ┆ 54 │     d.call(value, ())
+   ┆    │     ───────────────── it is dropped here if the coroutine is dropped while suspended
+   ┆    │
+   ┆    ╰ help: `Handle` is a linear type: it has no Drop instance and must be consumed explicitly
+   ┆
+54 │     d.call(value, ())
+55 │     close(opened)
+56 │
+57 │
+58 │ def main() -> int32:
+59 │     return 0

@@ -28,7 +28,7 @@ expression: snapshot
 24 │
 25 │ # ERROR: the `handle` forwards `Log`, and `opened` is held across it.
 26 │ def forwarding(opened: Handle) -> () \ {Log}:
-   ┆
+   │                ^^^^^^^^^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/held_across_forwarding_handle/main.ray:26:16
    ┆    │
@@ -71,6 +71,3 @@ expression: snapshot
 50 │
 51 │ def main() -> int32:
 52 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

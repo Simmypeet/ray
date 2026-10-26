@@ -132,6 +132,7 @@ impl Resolver {
             | ApplicationView::Closure(_)
             | ApplicationView::DefCoroutine(_)
             | ApplicationView::TraitDefCoroutine(_)
+            | ApplicationView::ClosureCoroutine(_)
             | ApplicationView::Error => {
                 panic!("an instance call should resolve to a type of instance kind")
             }

@@ -1,0 +1,69 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ # A marker goal that fails because a premise of an explicit implementation
+ 2 │ # fails, reported at a call and in a signature.
+ 3 │
+ 4 │ marker Send
+ 5 │
+ 6 │ struct Secret:
+ 7 │     value: int32
+ 8 │
+ 9 │ impl !Send for Secret
+10 │
+11 │ struct Box[t]:
+12 │     value: *t
+13 │
+14 │ impl[t] Send for Box[t] where (t: Send)
+15 │
+16 │ struct Guarded[t] where (t: Send):
+17 │     value: t
+18 │
+19 │ def requireSend(value: a) -> a where (a: Send):
+20 │     return value
+21 │
+22 │ # ERROR: `Box[Secret]` is `Send` only if `Secret` is.
+23 │ def rejected(value: Box[Secret]) -> Box[Secret]:
+24 │     return requireSend(value)
+   │            ^^^^^^^^^^^
+   ┆ [error]: `Box[Secret]` does not satisfy marker `main.Send`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:24:12
+   ┆    │
+   ┆ 24 │     return requireSend(value)
+   ┆    ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆ [note]: `Box[Secret]: main.Send` holds only if `Secret: main.Send`, by this implementation
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:14:1
+   ┆    │
+   ┆ 14 │ impl[t] Send for Box[t] where (t: Send)
+   ┆    ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆ [note]: `Secret` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:9:1
+   ┆   │
+   ┆ 9 │ impl !Send for Secret
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
+   ┆
+25 │
+26 │ # ERROR: the signature names `Guarded[Box[Secret]]`, whose where clause fails.
+27 │ def signature(value: Guarded[Box[Secret]]) -> int32:
+   │                      ^^^^^^^^^^^^^^^^^^^^
+   ┆ [error]: `Box[Secret]` does not satisfy marker `main.Send`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:27:22
+   ┆    │
+   ┆ 27 │ def signature(value: Guarded[Box[Secret]]) -> int32:
+   ┆    ╰╴                     ━━━━━━━━━━━━━━━━━━━━ required by the where clause of `main.Guarded`
+   ┆ [note]: `Box[Secret]: main.Send` holds only if `Secret: main.Send`, by this implementation
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:14:1
+   ┆    │
+   ┆ 14 │ impl[t] Send for Box[t] where (t: Send)
+   ┆    ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆ [note]: `Secret` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_impl_premise/main.ray:9:1
+   ┆   │
+   ┆ 9 │ impl !Send for Secret
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
+   ┆
+28 │     return 0
+29 │
+30 │ def main() -> int32:
+31 │     return 0

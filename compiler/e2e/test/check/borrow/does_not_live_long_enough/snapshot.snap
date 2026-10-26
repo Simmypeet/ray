@@ -12,7 +12,7 @@ expression: snapshot
  8 │         let inner = 2
  9 │         # ERROR: `p` still holds this borrow when `inner` goes out of scope.
 10 │         p = inner.&
-   ┆
+   │             ^^^^^^^
    ┆ [error]: borrowed value does not live long enough
    ┆    ╭▸ compiler/e2e/test/check/borrow/does_not_live_long_enough/main.ray:10:13
    ┆    │
@@ -40,6 +40,3 @@ expression: snapshot
 24 │ def main():
 25 │     storedPastScope()
 26 │     usedWithinScope()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

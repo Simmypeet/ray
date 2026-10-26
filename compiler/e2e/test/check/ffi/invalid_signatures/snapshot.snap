@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: snapshot
 ---
 1 │ extern def unitParameter(value: ()) -> c_int
-  ┆
+  │                                ^^^
   ┆ [error]: unit is not allowed in an extern parameter
   ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:1:32
   ┆   │
@@ -11,7 +11,7 @@ expression: snapshot
   ┆   ╰╴                               ━━━
   ┆
 2 │ extern def tupleParameter(value: (c_int, c_int)) -> c_int
-  ┆
+  │                                 ^^^^^^^^^^^^^^^
   ┆ [error]: this type is not supported in an extern parameter
   ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:2:33
   ┆   │
@@ -19,7 +19,7 @@ expression: snapshot
   ┆   ╰╴                                ━━━━━━━━━━━━━━━
   ┆
 3 │ extern def closureReturn() -> def(c_int) -> c_int
-  ┆
+  │                               ^^^
   ┆ [error]: unexpected `def` keyword, expected type
   ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:3:31
   ┆   │
@@ -27,7 +27,9 @@ expression: snapshot
   ┆   ╰╴                              ━━━
   ┆
 4 │ extern def polymorphic(value: a) -> a
-  ┆
+  │            ^^^^^^^^^^^
+  │                               ^
+  │                                     ^
   ┆ [error]: an extern definition cannot be polymorphic
   ┆   ╭▸ compiler/e2e/test/check/ffi/invalid_signatures/main.ray:4:12
   ┆   │
@@ -52,6 +54,3 @@ expression: snapshot
   ┆ 4 │ extern def polymorphic(value: a) -> a
   ┆   ╰╴                                    ━ symbol `a` is not found
   ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 7 error(s)

@@ -34,7 +34,7 @@ expression: snapshot
 30 │ # ERROR: `opened` is held across the `perform`, even though it is consumed
 31 │ # right after.
 32 │ def acrossPerform(opened: Handle) -> () \ {Yield[int32]}:
-   ┆
+   │                   ^^^^^^^^^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:32:19
    ┆    │
@@ -52,7 +52,7 @@ expression: snapshot
 37 │ # ERROR: a call of an effectful function is a suspension point too.
 38 │ def acrossCall() -> () \ {Yield[int32]}:
 39 │     let opened = make()
-   ┆
+   │         ^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:39:9
    ┆    │
@@ -70,7 +70,7 @@ expression: snapshot
 44 │ # ERROR: an evaluated argument is held while a later argument suspends.
 45 │ def acrossArgument() -> () \ {Yield[int32]}:
 46 │     closeLater(make(), Yield.yield(1))
-   ┆
+   │                ^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:46:16
    ┆    │
@@ -86,7 +86,7 @@ expression: snapshot
 49 │ # ERROR: it is reported once, at the first suspension point it is held
 50 │ # across.
 51 │ def acrossSeveral(opened: Handle) -> () \ {Yield[int32]}:
-   ┆
+   │                   ^^^^^^^^^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[Handle]`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/linear_across_suspension/main.ray:51:19
    ┆    │
@@ -111,6 +111,3 @@ expression: snapshot
 63 │
 64 │ def main() -> int32:
 65 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

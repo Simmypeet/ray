@@ -12,13 +12,10 @@ expression: snapshot
  8 │
  9 │ def mismatchedUnitReturn() -> int32:
 10 │     return
-   ┆
+   │     ^^^^^^
    ┆ [error]: mismatched types in return expression: expected `int32`, but found `()`
    ┆    ╭▸ compiler/e2e/test/check/tast/return_statement/main.ray:10:5
    ┆    │
    ┆ 10 │     return
    ┆    ╰╴    ━━━━━━
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

@@ -17,7 +17,7 @@ expression: snapshot
 13 │     let mut var
 14 │     requireBool(() -> withPolyState(var))
 15 │     var = 32
-   ┆
+   │           ^^
    ┆ [error]: mismatched types in variable assignment: expected `bool`, but found `int32`
    ┆    ╭▸ compiler/e2e/test/check/tast/closure_annotated_effect_mismatch/main.ray:15:11
    ┆    │
@@ -26,6 +26,3 @@ expression: snapshot
    ┆
 16 │
 17 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

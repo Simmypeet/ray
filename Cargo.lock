@@ -2246,6 +2246,7 @@ dependencies = [
  "linkme",
  "qbice",
  "rayc_arena",
+ "rayc_diagnostic",
  "rayc_hash",
  "rayc_lexical",
  "rayc_qbice",

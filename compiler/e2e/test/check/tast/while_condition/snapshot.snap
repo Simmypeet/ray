@@ -4,7 +4,7 @@ expression: snapshot
 ---
 1 │ def main() -> int32:
 2 │     while 1:
-  ┆
+  │           ^
   ┆ [error]: while loop condition must be `bool`: expected `bool`, but found `int32`
   ┆   ╭▸ compiler/e2e/test/check/tast/while_condition/main.ray:2:11
   ┆   │
@@ -13,6 +13,3 @@ expression: snapshot
   ┆
 3 │         break
 4 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

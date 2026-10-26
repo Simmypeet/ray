@@ -8,7 +8,7 @@ expression: snapshot
  4 │ # ERROR: structs must declare their lifetimes.
  5 │ struct Undeclared:
  6 │     value: &'a int32
-   ┆
+   │             ^^
    ┆ [error]: use of undeclared lifetime `'a`
    ┆   ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:6:13
    ┆   │
@@ -20,7 +20,8 @@ expression: snapshot
  7 │
  8 │ # ERROR: `'static` and `'_` are not lifetime parameter names.
  9 │ struct Reserved['static, '_]:
-   ┆
+   │                 ^^^^^^^
+   │                          ^^
    ┆ [error]: invalid lifetime parameter name
    ┆   ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:9:17
    ┆   │
@@ -37,7 +38,7 @@ expression: snapshot
 11 │
 12 │ # ERROR: a lifetime is expected, not a type.
 13 │ def kindMismatch(reference: Ref[int32, int32]) -> ():
-   ┆
+   │                                 ^^^^^
    ┆ [error]: type kind mismatch
    ┆    ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:13:33
    ┆    │
@@ -48,7 +49,7 @@ expression: snapshot
 15 │
 16 │ # ERROR: a `def` introduces only the lifetimes its parameter types mention.
 17 │ def returnOnly() -> &'b int32:
-   ┆
+   │                      ^^
    ┆ [error]: use of undeclared lifetime `'b`
    ┆    ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:17:22
    ┆    │
@@ -69,7 +70,7 @@ expression: snapshot
 27 │
 28 │ # ERROR: `'c` is not declared.
 29 │ def undeclaredOutlives(first: &'a int32) -> () where ('a: 'c):
-   ┆
+   │                                                           ^^
    ┆ [error]: use of undeclared lifetime `'c`
    ┆    ╭▸ compiler/e2e/test/check/reference/lifetime_resolution/main.ray:29:59
    ┆    │
@@ -82,6 +83,3 @@ expression: snapshot
 31 │
 32 │ def main() -> ():
 33 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 6 error(s)

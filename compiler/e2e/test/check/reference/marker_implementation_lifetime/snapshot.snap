@@ -7,7 +7,7 @@ expression: snapshot
 3 │
 4 │ # ERROR: a marker implementation cannot depend on a lifetime.
 5 │ impl core.Copy for Unique['static]
-  ┆
+  │                    ^^^^^^^^^^^^^^^
   ┆ [error]: invalid marker implementation head
   ┆   ╭▸ compiler/e2e/test/check/reference/marker_implementation_lifetime/main.ray:5:20
   ┆   │
@@ -17,6 +17,3 @@ expression: snapshot
 6 │
 7 │ def main() -> ():
 8 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

@@ -35,7 +35,7 @@ expression: snapshot
  31 │ # ERROR: `Declared['a, t]` requires `t: 'a`, which is not inferred.
  32 │ struct UsesDeclared['a, t]:
  33 │     inner: Declared['a, t]
-    ┆
+    │            ^^^^^^^^^^^^^^^
     ┆ [error]: where-clause obligation for `main.Declared` is not satisfied
     ┆    ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:33:12
     ┆    │
@@ -58,7 +58,7 @@ expression: snapshot
  47 │ # inferred.
  48 │ enum PayloadUsesDeclared['a, t]:
  49 │     Inner(Declared['a, t])
-    ┆
+    │           ^^^^^^^^^^^^^^^
     ┆ [error]: where-clause obligation for `main.Declared` is not satisfied
     ┆    ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:49:11
     ┆    │
@@ -110,7 +110,7 @@ expression: snapshot
  92 │ # `UsesDeclaredBounded`, so both the parameter type and `&'a t` need `t: 'a`
  93 │ # written out.
  94 │ def usesDeclared['a, t](value: *UsesDeclaredBounded['a, t]) given (
-    ┆
+    │                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
     ┆ [error]: where-clause obligation for `main.UsesDeclaredBounded` is not satisfied
     ┆    ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:94:33
     ┆    │
@@ -119,7 +119,7 @@ expression: snapshot
     ┆
  95 │     project: Project[t],
  96 │ ) -> () where (project.Out = &'a t):
-    ┆
+    │                              ^^^^^
     ┆ [error]: the type `t` may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:96:30
     ┆    │
@@ -132,7 +132,7 @@ expression: snapshot
  98 │
  99 │ # ERROR: using `Holder['a, t]` requires `t: 'a`.
 100 │ def unbounded['a, t]() given (project: Project[Holder['a, t]]) -> ():
-    ┆
+    │                                                ^^^^^^^^^^^^^
     ┆ [error]: where-clause obligation for `main.Holder` is not satisfied
     ┆     ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:100:48
     ┆     │
@@ -143,7 +143,7 @@ expression: snapshot
 102 │
 103 │ # ERROR: using `Borrowed['a, t]` requires `t: 'a`.
 104 │ def unboundedEnum['a, t]() given (project: Project[Borrowed['a, t]]) -> ():
-    ┆
+    │                                                    ^^^^^^^^^^^^^^^
     ┆ [error]: where-clause obligation for `main.Borrowed` is not satisfied
     ┆     ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:104:52
     ┆     │
@@ -159,7 +159,7 @@ expression: snapshot
 111 │ # ERROR: an instance head implies nothing, so using `Holder['a, t]` there
 112 │ # requires `t: 'a` written out.
 113 │ inst HolderOut['a, t] for Project[Holder['a, t]]:
-    ┆
+    │                                   ^^^^^^^^^^^^^
     ┆ [error]: where-clause obligation for `main.Holder` is not satisfied
     ┆     ╭▸ compiler/e2e/test/check/reference/inferred_outlives/main.ray:113:35
     ┆     │
@@ -174,6 +174,3 @@ expression: snapshot
 119 │
 120 │ def main() -> ():
 121 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 7 error(s)

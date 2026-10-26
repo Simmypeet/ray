@@ -51,7 +51,7 @@ expression: snapshot
 47 │ # ERROR: `put` returns `()`, not `int32`.
 48 │ def wrongReturn[t](source: t) given (s: Sink[t], _: core.Drop[t]):
 49 │     generator(coro s.put(source))
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: where-clause obligation for `main.generator` is not satisfied
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:49:5
    ┆    │
@@ -65,7 +65,7 @@ expression: snapshot
 54 │     let k = coro s.next(source)
 55 │     let first = k
 56 │     let second = k
-   ┆
+   │                  ^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:56:18
    ┆    │
@@ -80,17 +80,16 @@ expression: snapshot
 60 │ # it if it never is.
 61 │ def argumentMissingDrop[t](source: t) given (s: Source[t]):
 62 │     let k = coro s.next(source)
-   ┆
+   │             ^^^^^^^^^^^^^^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[t]`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:62:13
    ┆    │
    ┆ 62 │     let k = coro s.next(source)
-   ┆    ╰╴            ━━━━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+   ┆    │             ━━━━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
+   ┆    │
+   ┆    ╰ help: add `given (_: core.Drop[t])`
    ┆
 63 │
 64 │
 65 │ def main() -> int32:
 66 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

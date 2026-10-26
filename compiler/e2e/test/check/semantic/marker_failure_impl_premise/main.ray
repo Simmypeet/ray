@@ -1,0 +1,31 @@
+# A marker goal that fails because a premise of an explicit implementation
+# fails, reported at a call and in a signature.
+
+marker Send
+
+struct Secret:
+    value: int32
+
+impl !Send for Secret
+
+struct Box[t]:
+    value: *t
+
+impl[t] Send for Box[t] where (t: Send)
+
+struct Guarded[t] where (t: Send):
+    value: t
+
+def requireSend(value: a) -> a where (a: Send):
+    return value
+
+# ERROR: `Box[Secret]` is `Send` only if `Secret` is.
+def rejected(value: Box[Secret]) -> Box[Secret]:
+    return requireSend(value)
+
+# ERROR: the signature names `Guarded[Box[Secret]]`, whose where clause fails.
+def signature(value: Guarded[Box[Secret]]) -> int32:
+    return 0
+
+def main() -> int32:
+    return 0

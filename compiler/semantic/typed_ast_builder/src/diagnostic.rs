@@ -6,7 +6,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_semantic_element::drop_plan::linear_drop_help;
+use rayc_solver::explain::UnsatisfiedGoal;
 use rayc_symbol::{
     GlobalSymbolID, accessibility::Accessibility, name::get_qualified_name,
     source_map::to_absolute_span, symbol_kind::get_symbol_kind,
@@ -17,9 +17,7 @@ use rayc_type::{
     ty::{Primitive, Ty},
 };
 
-use crate::tast_builder::constraint_solver::{
-    ConstraintError, EffectUnificationSource, SubtypeSource,
-};
+use crate::tast_builder::constraint_solver::{EffectUnificationSource, SubtypeSource};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
 pub struct UnboundName {
@@ -1145,54 +1143,29 @@ impl Report for ContinueOutsideLoop {
     }
 }
 
+/// A dictionary was selected for an implicit given, but it does not fit the
+/// type the use site inferred for the given.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
-pub struct InstanceResolution {
+pub struct ConflictingInstance {
     span: RelativeSpan,
     trait_ref: rayc_type::trait_ref::TraitRef,
-    error: ConstraintError,
+    error: rayc_solver::ty_relate::Error,
 }
 
-impl Report for InstanceResolution {
+impl Report for ConflictingInstance {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        use rayc_solver::{instance_resolution::InstanceResolutionError, ty_relate::Error};
+        use rayc_solver::ty_relate::Error;
 
-        // Interpret the stored failure only when rendering the diagnostic.
         let message = match &self.error {
-            ConstraintError::TyRelate(Error::Conflicted) => "conflicting implicit instance",
-            ConstraintError::TyRelate(Error::OccursCheckFailed) => {
-                "implicit instance fails the occurs check"
-            }
-            ConstraintError::InstanceResolve(error) => match error {
-                InstanceResolutionError::NotReady(_) => "cannot infer instance requirement",
-                InstanceResolutionError::ContainsError(_) => {
-                    "instance requirement contains an error"
-                }
-                InstanceResolutionError::NoInstance { .. } => "no implicit instance found",
-                InstanceResolutionError::AmbiguousLexical { .. } => "ambiguous lexical instances",
-                InstanceResolutionError::AmbiguousGlobal { .. } => "ambiguous global instances",
-                InstanceResolutionError::Cycle(_) => "cyclic instance resolution",
-                InstanceResolutionError::Limit { .. } => "instance resolution limit exceeded",
-            },
+            Error::Conflicted => "conflicting implicit instance",
+            Error::OccursCheckFailed => "implicit instance fails the occurs check",
         };
 
-        let help = match &self.error {
-            ConstraintError::InstanceResolve(InstanceResolutionError::NoInstance { .. }) => {
-                linear_drop_help(engine, &self.trait_ref).await
-            }
-            ConstraintError::InstanceResolve(_) | ConstraintError::TyRelate(_) => None,
-        };
-
-        let name = engine.get_qualified_name(self.trait_ref.trait_id()).await;
-        let mut args = Vec::new();
-        for arg in self.trait_ref.args().iter() {
-            args.push(arg.display(engine).await.to_string());
-        }
         Rendered::builder()
-            .message(format!("{message}: `{name}[{}]`", args.join(", ")))
+            .message(format!("{message}: `{}`", self.trait_ref.display(engine).await))
             .primary_highlight(
                 Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
             )
-            .maybe_help_message(help)
             .build()
     }
 }
@@ -1336,7 +1309,8 @@ impl Report for IncompatibleEffectRows {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable, From,
 )]
 pub enum Diagnostic {
-    InstanceResolution(InstanceResolution),
+    UnsatisfiedGoal(UnsatisfiedGoal),
+    ConflictingInstance(ConflictingInstance),
     Resolution(rayc_resolution::Diagnostic),
     UnboundName(UnboundName),
     SymbolNotCallable(SymbolNotCallable),
@@ -1383,7 +1357,8 @@ impl Report for Diagnostic {
     #[allow(clippy::cognitive_complexity)]
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
-            Self::InstanceResolution(diagnostic) => diagnostic.report(engine).await,
+            Self::UnsatisfiedGoal(diagnostic) => diagnostic.report(engine).await,
+            Self::ConflictingInstance(diagnostic) => diagnostic.report(engine).await,
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::UnboundName(unbound_name) => unbound_name.report(engine).await,
             Self::SymbolNotCallable(symbol_not_callable) => {

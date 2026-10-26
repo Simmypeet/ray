@@ -14,13 +14,10 @@ expression: snapshot
 10 │
 11 │ def main() -> int32:
 12 │     return invoke[given Integer](42)
-   ┆
+   │                         ^^^^^^^
    ┆ [error]: only 0 explicit given arguments are accepted
    ┆    ╭▸ compiler/e2e/test/check/semantic/callable_hidden_givens/main.ray:12:25
    ┆    │
    ┆ 12 │     return invoke[given Integer](42)
    ┆    ╰╴                        ━━━━━━━
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

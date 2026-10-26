@@ -1,0 +1,43 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ # A marker goal that fails through the payload of an enum variant.
+ 2 │
+ 3 │ marker Send
+ 4 │
+ 5 │ struct Secret:
+ 6 │     value: int32
+ 7 │
+ 8 │ impl !Send for Secret
+ 9 │
+10 │ enum Holder:
+11 │     Empty
+12 │     Full(Secret)
+13 │
+14 │ def requireSend(value: a) -> a where (a: Send):
+15 │     return value
+16 │
+17 │ # ERROR: `Holder` may hold a `Secret` in its `Full` variant.
+18 │ def rejected(value: Holder) -> Holder:
+19 │     return requireSend(value)
+   │            ^^^^^^^^^^^
+   ┆ [error]: `Holder` does not satisfy marker `main.Send`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_enum_payload/main.ray:19:12
+   ┆    │
+   ┆ 19 │     return requireSend(value)
+   ┆    ╰╴           ━━━━━━━━━━━ required by the where clause of `main.requireSend`
+   ┆ [note]: `Holder` stores the payload of variant `Full`, of type `Secret`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/marker_failure_enum_payload/main.ray:12:5
+   ┆    │
+   ┆ 12 │     Full(Secret)
+   ┆    ╰╴    ━━━━
+   ┆ [note]: `Secret` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/semantic/marker_failure_enum_payload/main.ray:8:1
+   ┆   │
+   ┆ 8 │ impl !Send for Secret
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━
+   ┆
+20 │
+21 │ def main() -> int32:
+22 │     return 0

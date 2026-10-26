@@ -12,7 +12,7 @@ expression: snapshot
  8 │     let handled = run:
  9 │         ()
 10 │     with Operations:
-   ┆
+   │          ^^^^^^^^^^
    ┆ [error]: missing handlers for effect operations `main.Operations.another_missing`, `main.Operations.missing`
    ┆    ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:10:10
    ┆    │
@@ -20,7 +20,7 @@ expression: snapshot
    ┆    ╰╴         ━━━━━━━━━━ add handlers for `main.Operations.another_missing`, `main.Operations.missing`
    ┆
 11 │         def wrong():
-   ┆
+   │                  ^^
    ┆ [error]: handler for `main.Operations.wrong` expects 1 parameters, but 0 were provided
    ┆    ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:11:18
    ┆    │
@@ -31,7 +31,7 @@ expression: snapshot
 13 │         def duplicate():
 14 │             return ()
 15 │         def duplicate():
-   ┆
+   │             ^^^^^^^^^
    ┆ [error]: duplicate handler for effect operation `duplicate`
    ┆    ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:15:13
    ┆    │
@@ -43,7 +43,7 @@ expression: snapshot
    ┆
 16 │             return ()
 17 │         def extra():
-   ┆
+   │             ^^^^^
    ┆ [error]: effect `main.Operations` has no operation named `extra`
    ┆    ╭▸ compiler/e2e/test/check/tast/run_with_handler_validation/main.ray:17:13
    ┆    │
@@ -53,6 +53,3 @@ expression: snapshot
 18 │             return ()
 19 │
 20 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

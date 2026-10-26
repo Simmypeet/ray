@@ -3,7 +3,10 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_resolution::obligation::PredicateObligation;
-use rayc_solver::{Solver, instance_resolution::InstanceResolutionError};
+use rayc_solver::{
+    Solver,
+    explain::{ProofFailure, RequiredBy, UnsatisfiedGoal},
+};
 use rayc_symbol::{
     GlobalSymbolID,
     core_item::{CoreItem, get_core_item},
@@ -14,7 +17,7 @@ use rayc_type::{
     where_clause::PredicateKind,
 };
 
-use crate::{Diagnostic, diagnostic::UnresolvedScopeDrop};
+use crate::Diagnostic;
 
 /// Resolves the `Drop` dictionary for `ty` in the solver's environment and
 /// verifies the predicates required by the selected instances.
@@ -27,7 +30,7 @@ pub async fn resolve_drop_instance(
 ) -> Result<Interned<Ty>, Vec<DropFailure>> {
     let engine = solver.engine();
     let drop_trait = engine.get_core_item(CoreItem::DropTrait).await;
-    let trait_ref = TraitRef::new(drop_trait, Args::new([ty], engine));
+    let trait_ref = TraitRef::new(drop_trait, Args::new([ty.clone()], engine));
 
     // The requirement is ground after type checking, so any failure is final
     // and the drop cannot be emitted.
@@ -35,8 +38,14 @@ pub async fn resolve_drop_instance(
     // constraints of the selection are not needed here.
     let (instance, obligations, _) = match solver.resolve_instance(trait_ref.clone()).await {
         Ok(resolved) => resolved.into_parts(),
-        Err(InstanceResolutionError::ContainsError(_)) => return Err(Vec::new()),
-        Err(error) => return Err(vec![DropFailure::Unresolved(trait_ref, error)]),
+        Err(error) => {
+            // A failure that involves the error type has no explanation,
+            // since the error was already reported.
+            return Err(ProofFailure::from_instance_error(trait_ref, &error)
+                .map(|failure| DropFailure::Unresolved { dropped: ty, failure })
+                .into_iter()
+                .collect());
+        }
     };
 
     // Instance search returns the where-clause predicates of the selected
@@ -55,8 +64,8 @@ pub async fn resolve_drop_instance(
 /// Why no usable `Drop` dictionary exists for a type.
 #[derive(Debug, Clone)]
 pub enum DropFailure {
-    /// No instance of `Drop` was found.
-    Unresolved(TraitRef, InstanceResolutionError),
+    /// No `Drop` dictionary of `dropped` could be selected.
+    Unresolved { dropped: Interned<Ty>, failure: ProofFailure },
 
     /// A where-clause predicate of the selected instance does not hold.
     UnsatisfiedPredicate(GlobalSymbolID, PredicateKind),
@@ -87,8 +96,20 @@ impl DropFailure {
         suspension_span: Option<RelativeSpan>,
     ) -> Diagnostic {
         match self {
-            Self::Unresolved(trait_ref, error) => {
-                UnresolvedScopeDrop::new(span, trait_ref, error, suspension_span).into()
+            Self::Unresolved { dropped, failure } => {
+                // The `Drop` dictionary of a coroutine is assembled from one
+                // dictionary per argument, which the programmer acts on.
+                let required_by = if dropped.as_coroutine_view().is_some() {
+                    RequiredBy::CoroutineArguments { suspension: suspension_span }
+                } else {
+                    RequiredBy::ScopeDrop { suspension: suspension_span }
+                };
+
+                Diagnostic::UnresolvedScopeDrop(Box::new(UnsatisfiedGoal::new(
+                    span,
+                    required_by,
+                    failure,
+                )))
             }
             Self::UnsatisfiedPredicate(instance_id, predicate) => {
                 Diagnostic::UnsatisfiedScopeDropPredicate(PredicateObligation::new(

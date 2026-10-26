@@ -60,7 +60,7 @@ expression: snapshot
 56 │     # ERROR: `guard` is dropped at the end of the function, where its `Drop`
 57 │     # implementation writes through the borrow.
 58 │     value = 2
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:58:5
    ┆    │
@@ -78,7 +78,7 @@ expression: snapshot
 62 │     let wrapper = Wrapper { value = Guard { inner = value.&mut } }
 63 │     # ERROR: dropping `wrapper` drops the guard in it.
 64 │     value = 2
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:64:5
    ┆    │
@@ -95,7 +95,7 @@ expression: snapshot
 69 │     let wrapper = Wrapper { value = (Guard { inner = value.&mut }, other.&) }
 70 │     # ERROR: dropping `wrapper` drops the guard holding the borrow of `value`.
 71 │     value = 3
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:71:5
    ┆    │
@@ -112,7 +112,7 @@ expression: snapshot
 76 │     # ERROR: a declared `Drop` implementation is assumed to use anything the
 77 │     # value reaches, even one that only drops its field.
 78 │     value = 2
-   ┆
+   │     ^^^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/drop_check/main.ray:78:5
    ┆    │
@@ -131,6 +131,3 @@ expression: snapshot
 83 │     let pair = Pair { first = value.&, second = Tagged { value = second.& } }
 84 │     # OK:
 85 │     value = 2
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

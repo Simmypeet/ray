@@ -10,7 +10,7 @@ expression: snapshot
  6 │ inst Uses['a, t] for Use['a, t]:
  7 │     # ERROR: the trait member does not promise `t: 'a`.
  8 │     def plain(value: *t) -> () where (t: 'a):
-   ┆
+   │                                       ^^^^^
    ┆ [error]: instance member `plain`: extraneous where-clause predicate
    ┆   ╭▸ compiler/e2e/test/check/reference/outlives_conformance/main.ray:8:39
    ┆   │
@@ -25,7 +25,8 @@ expression: snapshot
 11 │     # ERROR: the trait member promises `t: 'a`, but this member does not write
 12 │     # it, and a trait or instance def has no implied bounds.
 13 │     def reference(value: &'a t) -> ():
-   ┆
+   │         ^^^^^^^^^
+   │                          ^^^^^
    ┆ [error]: instance member `reference`: missing where-clause predicate
    ┆    ╭▸ compiler/e2e/test/check/reference/outlives_conformance/main.ray:13:9
    ┆    │
@@ -51,6 +52,3 @@ expression: snapshot
 19 │
 20 │ def main() -> ():
 21 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

@@ -21,7 +21,7 @@ expression: snapshot
 17 │
 18 │         # ERROR: breaking from the inner loop may carry its moved state here.
 19 │         consume(value)
-   ┆
+   │                 ^^^^^
    ┆ [error]: use of moved value
    ┆    ╭▸ compiler/e2e/test/check/memory/nested_loop_break_continue/main.ray:19:17
    ┆    │
@@ -33,6 +33,3 @@ expression: snapshot
    ┆
 20 │         break
 21 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

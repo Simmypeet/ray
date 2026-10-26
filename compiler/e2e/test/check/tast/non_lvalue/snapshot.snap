@@ -4,7 +4,7 @@ expression: snapshot
 ---
  1 │ def firstCase() -> ():
  2 │     32 = 64
-   ┆
+   │     ^^
    ┆ [error]: assignment requires an lvalue
    ┆   ╭▸ compiler/e2e/test/check/tast/non_lvalue/main.ray:2:5
    ┆   │
@@ -16,7 +16,7 @@ expression: snapshot
  5 │
  6 │ def secondCase() -> ():
  7 │     (1, 2).0 = 3
-   ┆
+   │ ^^^^^^^^^^
    ┆ [error]: assignment requires an lvalue
    ┆   ╭▸ compiler/e2e/test/check/tast/non_lvalue/main.ray:7:1
    ┆   │
@@ -28,13 +28,10 @@ expression: snapshot
 10 │
 11 │ def thirdCase() -> ():
 12 │     let a = 1.&
-   ┆
+   │             ^
    ┆ [error]: reference-of operation requires an lvalue
    ┆    ╭▸ compiler/e2e/test/check/tast/non_lvalue/main.ray:12:13
    ┆    │
    ┆ 12 │     let a = 1.&
    ┆    ╰╴            ━ this expression is not addressable
    ┆
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

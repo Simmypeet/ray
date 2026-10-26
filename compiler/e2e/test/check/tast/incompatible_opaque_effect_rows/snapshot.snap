@@ -7,7 +7,7 @@ expression: snapshot
 3 │     right: def() -> () \ b,
 4 │ ) -> () \ b:
 5 │     let result = (left(), right())
-  ┆
+  │                   ^^^^^^
   ┆ [error]: incompatible effect rows `a` and `b`
   ┆   ╭▸ compiler/e2e/test/check/tast/incompatible_opaque_effect_rows/main.ray:5:19
   ┆   │
@@ -17,6 +17,3 @@ expression: snapshot
   ┆   ╰╴                  these effect rows cannot be composed
   ┆
 6 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

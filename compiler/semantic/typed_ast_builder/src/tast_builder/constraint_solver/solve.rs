@@ -127,7 +127,7 @@ impl TAstBuilder {
         predicate: rayc_type::where_clause::MarkerPredicate,
         cause_id: CauseID,
     ) {
-        if self.constraint_solver.solver.entails_marker_predicate(predicate.clone()).await {
+        if self.constraint_solver.solver.entails_marker_predicate(predicate.clone()).await.holds() {
             return;
         }
 

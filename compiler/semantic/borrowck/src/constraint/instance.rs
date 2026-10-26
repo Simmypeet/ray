@@ -15,7 +15,11 @@ use rayc_type::{
     poly_var::{build_subst_from_args, get_enclosing_poly_var_maps},
     subst::{Subst, Substitutable},
     trait_ref::TraitRef,
-    ty::{Ty, application::View as ApplicationView, args::Args},
+    ty::{
+        Ty,
+        application::{CoroutineDropInstanceView, View as ApplicationView},
+        args::Args,
+    },
     variance::Variance,
 };
 
@@ -179,21 +183,7 @@ impl ConstraintCollector<'_> {
                 // One `Drop` dictionary per upvar of the coroutine: the
                 // parameters of the function it suspends.
                 ApplicationView::CoroutineDropInstance(view) => {
-                    let coroutine = view
-                        .coroutine()
-                        .as_coroutine_view()
-                        .expect("a coroutine `Drop` instance is built for a coroutine type");
-                    let engine = self.solver.engine().clone();
-                    let substitution = coroutine.create_subst(&engine).await;
-                    let parameters = engine.get_parameter_map(coroutine.signature_id()).await;
-
-                    let upvars = parameters.iter().map(|(_, parameter)| {
-                        parameter.ty().apply_subst_or_clone(&substitution, &engine)
-                    });
-
-                    for (upvar, dictionary) in upvars.zip(view.upvar_instances()) {
-                        self.collect_drop_dictionary(point, &upvar, dictionary).await;
-                    }
+                    self.collect_coroutine_drop_requirements(point, view).await;
                 }
 
                 // The `Coroutine` dictionary of the coroutine that the
@@ -228,6 +218,7 @@ impl ConstraintCollector<'_> {
                 | ApplicationView::Closure(_)
                 | ApplicationView::DefCoroutine(_)
                 | ApplicationView::TraitDefCoroutine(_)
+                | ApplicationView::ClosureCoroutine(_)
                 | ApplicationView::Error => {}
             },
 
@@ -237,6 +228,31 @@ impl ConstraintCollector<'_> {
 
             // Not dictionaries.
             Ty::Inference(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {}
+        }
+    }
+
+    /// Requires, at `point`, the `Drop` dictionary of each upvar of a
+    /// coroutine's `Drop` dictionary: the parameters of the function it
+    /// suspends.
+    async fn collect_coroutine_drop_requirements(
+        &mut self,
+        point: Point,
+        view: CoroutineDropInstanceView<'_>,
+    ) {
+        let coroutine = view
+            .coroutine()
+            .as_coroutine_view()
+            .expect("a coroutine `Drop` instance is built for a coroutine type");
+        let engine = self.solver.engine().clone();
+        let substitution = coroutine.create_subst(&engine).await;
+        let parameters = engine.get_parameter_map(coroutine.signature_id(&engine).await).await;
+
+        let upvars = parameters
+            .iter()
+            .map(|(_, parameter)| parameter.ty().apply_subst_or_clone(&substitution, &engine));
+
+        for (upvar, dictionary) in upvars.zip(view.upvar_instances()) {
+            self.collect_drop_dictionary(point, &upvar, dictionary).await;
         }
     }
 

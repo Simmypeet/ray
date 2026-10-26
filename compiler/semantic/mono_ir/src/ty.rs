@@ -460,7 +460,9 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
             ApplicationView::InstanceAssociated(_) => {
                 panic!("unresolved associated type reached code generation")
             }
-            ApplicationView::DefCoroutine(_) | ApplicationView::TraitDefCoroutine(_) => {
+            ApplicationView::DefCoroutine(_)
+            | ApplicationView::TraitDefCoroutine(_)
+            | ApplicationView::ClosureCoroutine(_) => {
                 panic!("coroutine types are not lowered to MonoIR yet")
             }
             ApplicationView::Enum(_) => panic!("enum types are not lowered to MonoIR yet"),

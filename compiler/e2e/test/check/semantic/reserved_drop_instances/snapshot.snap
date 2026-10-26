@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: snapshot
 ---
  1 │ inst IntDrop for core.Drop[int32]:
-   ┆
+   │                  ^^^^^^^^^^^^^^^^
    ┆ [error]: reserved Drop implementation
    ┆   ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:1:18
    ┆   │
@@ -14,7 +14,7 @@ expression: snapshot
  3 │         return
  4 │
  5 │ inst PointerDrop[a] for core.Drop[*a]:
-   ┆
+   │                         ^^^^^^^^^^^^^
    ┆ [error]: reserved Drop implementation
    ┆   ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:5:25
    ┆   │
@@ -25,7 +25,7 @@ expression: snapshot
  7 │         return
  8 │
  9 │ inst TupleDrop[a, b] for core.Drop[(a, b)]:
-   ┆
+   │                          ^^^^^^^^^^^^^^^^^
    ┆ [error]: reserved Drop implementation
    ┆   ╭▸ compiler/e2e/test/check/semantic/reserved_drop_instances/main.ray:9:26
    ┆   │
@@ -35,6 +35,3 @@ expression: snapshot
 10 │     def drop(self: (a, b)):
 11 │         core.NoDrop { value = move self }
 12 │         return
-
-other diagnostics:
-[error]: Compilation aborted due to 3 error(s)

@@ -24,6 +24,8 @@ use crate::{
 mod instance_resolution_state;
 mod marker_entailment;
 
+pub use marker_entailment::MarkerEntailment;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TyRelatingEnvironment {
     /// Normal type relation, where inference variables on either side may be
@@ -174,7 +176,7 @@ impl Solver {
                 self.eq_without_unify(equality.left(), equality.right()).await
             }
             PredicateKind::Marker(predicate) => {
-                self.entails_marker_predicate(predicate.clone()).await
+                self.entails_marker_predicate(predicate.clone()).await.holds()
             }
             PredicateKind::Outlives(predicate) => self.entails_outlives(predicate).await,
         }

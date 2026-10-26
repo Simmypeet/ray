@@ -10,7 +10,7 @@ expression: snapshot
  6 │     let unique = x.&mut
  7 │     # ERROR: `x` is read while `unique` is used afterwards.
  8 │     let y = x
-   ┆
+   │             ^
    ┆ [error]: cannot use a place because it is mutably borrowed
    ┆   ╭▸ compiler/e2e/test/check/borrow/use_while_mutably_borrowed/main.ray:8:13
    ┆   │
@@ -30,7 +30,7 @@ expression: snapshot
 14 │     let unique = pair.&mut
 15 │     # ERROR: `pair.0` lies within the mutably borrowed `pair`.
 16 │     let first = pair.0
-   ┆
+   │                 ^^^^
    ┆ [error]: cannot use a place because it is mutably borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/use_while_mutably_borrowed/main.ray:16:17
    ┆    │
@@ -50,7 +50,7 @@ expression: snapshot
 22 │     let unique = pair.0.&mut
 23 │     # ERROR: `pair` contains the mutably borrowed `pair.0`.
 24 │     let copy = pair
-   ┆
+   │                ^^^^
    ┆ [error]: cannot use a place because it is mutably borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/use_while_mutably_borrowed/main.ray:24:16
    ┆    │
@@ -69,7 +69,7 @@ expression: snapshot
 29 │     let unique = p.*.&mut
 30 │     # ERROR: `p.*` is read while it is mutably reborrowed.
 31 │     let y = p.*
-   ┆
+   │             ^^^
    ┆ [error]: cannot use a place because it is mutably borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/use_while_mutably_borrowed/main.ray:31:13
    ┆    │
@@ -115,6 +115,3 @@ expression: snapshot
 63 │     readWhileShared()
 64 │     readSiblingOfMutablyBorrowedField()
 65 │     readAfterLastUse()
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

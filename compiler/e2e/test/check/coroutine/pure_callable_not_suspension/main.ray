@@ -1,0 +1,59 @@
+# A call through an instance suspends only when the effect of the callee is
+# not empty once it is normalized. Its row is written as a projection, such as
+# the `Effect` of a closure's `Def` instance, which is empty only after it
+# reduces.
+
+@linear
+struct Handle:
+    fd: int32
+
+
+def make() -> Handle:
+    return Handle { fd = 0 }
+
+
+def close(opened: Handle):
+    core.NoDrop { value = move opened }
+
+
+# OK: the effect of a pure closure reduces to `{}`.
+def acrossPureClosureCall() -> ():
+    let step = () -> 1
+    let opened = make()
+    step()
+    close(opened)
+
+
+inst Pure for core.Def[int32]:
+    type Args = ()
+    type Return = int32
+    type Effect = {}
+    def call(fn: int32, args: ()) -> int32:
+        return fn
+
+
+# OK: the effect of a pure declared instance reduces to `{}`.
+def acrossPureInstanceCall() -> ():
+    let opened = make()
+    let n = 1
+    n()
+    close(opened)
+
+
+# OK: a given equality reduces the effect of an abstract instance to `{}`.
+def acrossPureGivenCall(value: f) given (d: core.Def[f], _: core.Drop[f]) -> () where (d.Args = (), d.Return = (), d.Effect = {}):
+    let opened = make()
+    d.call(value, ())
+    close(opened)
+
+
+# ERROR: the effect of an abstract instance stays a projection, which may
+# hold an effect.
+def acrossAbstractCall(value: f) given (d: core.Def[f], _: core.Drop[f]) -> () \ d.Effect where (d.Args = (), d.Return = ()):
+    let opened = make()
+    d.call(value, ())
+    close(opened)
+
+
+def main() -> int32:
+    return 0

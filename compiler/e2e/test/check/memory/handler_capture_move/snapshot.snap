@@ -38,7 +38,7 @@ expression: snapshot
 34 │             # Error: moving out is rejected even if a value is put back
 35 │             # before the handler returns.
 36 │             let taken = restored
-   ┆
+   │                         ^^^^^^^^
    ┆ [error]: cannot move out of a value captured by an operation handler
    ┆    ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:36:25
    ┆    │
@@ -52,7 +52,7 @@ expression: snapshot
 38 │
 39 │             # Error: the capture is moved out and never restored.
 40 │             consume(moved)
-   ┆
+   │                     ^^^^^
    ┆ [error]: cannot move out of a value captured by an operation handler
    ┆    ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:40:21
    ┆    │
@@ -65,7 +65,7 @@ expression: snapshot
 41 │
 42 │             # Error: moving out a single field is a move out of the capture.
 43 │             consume(pair.first)
-   ┆
+   │                     ^^^^^^^^^^
    ┆ [error]: cannot move out of a value captured by an operation handler
    ┆    ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:43:21
    ┆    │
@@ -78,7 +78,7 @@ expression: snapshot
 44 │
 45 │             # Error: a forced move of a Copy value still moves it.
 46 │             let forced = move counter
-   ┆
+   │                          ^^^^^^^^^^^^
    ┆ [error]: cannot move out of a value captured by an operation handler
    ┆    ╭▸ compiler/e2e/test/check/memory/handler_capture_move/main.ray:46:26
    ┆    │
@@ -89,6 +89,3 @@ expression: snapshot
    ┆    ╰╴                         ━━━━━━━━━━━━ value moved out here
    ┆
 47 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)

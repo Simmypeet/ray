@@ -4,7 +4,7 @@ expression: snapshot
 ---
  1 │ def firstCase(a: int32) -> ():
  2 │     a = 32
-   ┆
+   │     ^
    ┆ [error]: assignment requires a mutable lvalue
    ┆   ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:2:5
    ┆   │
@@ -16,7 +16,7 @@ expression: snapshot
  5 │
  6 │ def secondCase(a: (int32, int32)) -> ():
  7 │     a.0 = 32
-   ┆
+   │     ^
    ┆ [error]: assignment requires a mutable lvalue
    ┆   ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:7:5
    ┆   │
@@ -29,7 +29,7 @@ expression: snapshot
 11 │ def thirdCase(a: *int32) -> ():
 12 │     unsafe:
 13 │         a.* = 32
-   ┆
+   │         ^^^
    ┆ [error]: assignment requires a mutable lvalue
    ┆    ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:13:9
    ┆    │
@@ -41,7 +41,7 @@ expression: snapshot
 16 │
 17 │ def fourthCase(a: *int32) -> ():
 18 │     let b = unsafe: a.*.&mut
-   ┆
+   │                     ^^^
    ┆ [error]: mutable reference-of operation requires a mutable lvalue
    ┆    ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:18:21
    ┆    │
@@ -53,7 +53,7 @@ expression: snapshot
 21 │
 22 │ def fifthCase(a: &int32) -> ():
 23 │     a.* = 32
-   ┆
+   │     ^^^
    ┆ [error]: assignment requires a mutable lvalue
    ┆    ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:23:5
    ┆    │
@@ -65,7 +65,7 @@ expression: snapshot
 26 │
 27 │ def sixthCase(a: &int32) -> ():
 28 │     let b = a.*.&mut
-   ┆
+   │             ^^^
    ┆ [error]: mutable reference-of operation requires a mutable lvalue
    ┆    ╭▸ compiler/e2e/test/check/tast/non_mutable/main.ray:28:13
    ┆    │
@@ -87,6 +87,3 @@ expression: snapshot
 41 │         c.* = 32
 42 │     d.* = 32
 43 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 6 error(s)

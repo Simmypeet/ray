@@ -19,7 +19,7 @@ expression: snapshot
  15 │     # ERROR: the handled body gives back `x`, which is the value of the
  16 │     # `run`, and nothing states `'a: 'b`.
  17 │     return run:
-    ┆
+    │            ^^^^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:17:12
     ┆    │
@@ -61,7 +61,7 @@ expression: snapshot
  41 │     with Source['b]:
  42 │         def get():
  43 │             return x
-    ┆
+    │                    ^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:43:20
     ┆    │
@@ -89,7 +89,7 @@ expression: snapshot
  60 │     with Sink['a]:
  61 │         def put(value):
  62 │             out.* = value
-    ┆
+    │             ^^^^^^^^^^^^^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:62:13
     ┆    │
@@ -126,7 +126,7 @@ expression: snapshot
  88 │     # ERROR: the body performs the nearest `Source`, which gives back `y`,
  89 │     # and nothing states `'b: 'a`.
  90 │     return run:
-    ┆
+    │            ^^^^
     ┆ [error]: lifetime may not live long enough
     ┆    ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:90:12
     ┆    │
@@ -160,7 +160,7 @@ expression: snapshot
 102 │     # ERROR: the handler performs `Sink['b]` with `x`, in the effect of this
 103 │     # function, and nothing states `'a: 'b`.
 104 │     run:
-    ┆
+    │     ^^^^
     ┆ [error]: lifetime may not live long enough
     ┆     ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:104:5
     ┆     │
@@ -186,7 +186,7 @@ expression: snapshot
 113 │     # ERROR: handling `Anchor['a, 'w, t]` requires its where clause, and
 114 │     # nothing states `t: 'a`.
 115 │     return run:
-    ┆
+    │            ^^^^
     ┆ [error]: the type `t` may not live long enough
     ┆     ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:115:12
     ┆     │
@@ -225,7 +225,7 @@ expression: snapshot
 138 │         def get():
 139 │             return value.&
 140 │     value = 42          # <-- Expect an error here: `p` borrows `value`.
-    ┆
+    │     ^^^^^^^^^^
     ┆ [error]: cannot assign to a place because it is borrowed
     ┆     ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:140:5
     ┆     │
@@ -271,7 +271,7 @@ expression: snapshot
 168 │     if true:
 169 │         let b = 2
 170 │         run:            # <-- Expect an error here: `kept` is used after `b`.
-    ┆
+    │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     ┆ [error]: borrowed value does not live long enough
     ┆     ╭▸ compiler/e2e/test/check/borrow/handle_requirement/main.ray:170:9
     ┆     │
@@ -293,6 +293,3 @@ expression: snapshot
 174 │                 kept = value
 175 │
 176 │     return read + copied + count + kept.*
-
-other diagnostics:
-[error]: Compilation aborted due to 8 error(s)

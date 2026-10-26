@@ -226,6 +226,7 @@ impl Ty {
             | ApplicationView::ClosureDropInstance(_)
             | ApplicationView::DefCoroutine(_)
             | ApplicationView::TraitDefCoroutine(_)
+            | ApplicationView::ClosureCoroutine(_)
             | ApplicationView::ContinuationDefInstance(_)
             | ApplicationView::CoroutineInstance(_)
             | ApplicationView::CoroutineDropInstance(_)
@@ -266,6 +267,7 @@ impl Ty {
                 | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::DefCoroutine(_)
                 | ApplicationView::TraitDefCoroutine(_)
+                | ApplicationView::ClosureCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
@@ -323,6 +325,9 @@ impl Ty {
             ApplicationView::DefCoroutine(view) => Some(application::CoroutineView::Def(view)),
             ApplicationView::TraitDefCoroutine(view) => {
                 Some(application::CoroutineView::TraitDef(view))
+            }
+            ApplicationView::ClosureCoroutine(view) => {
+                Some(application::CoroutineView::Closure(view))
             }
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
@@ -394,6 +399,7 @@ impl Ty {
                 | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::DefCoroutine(_)
                 | ApplicationView::TraitDefCoroutine(_)
+                | ApplicationView::ClosureCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)
@@ -456,6 +462,7 @@ impl Ty {
                 | ApplicationView::ClosureDropInstance(_)
                 | ApplicationView::DefCoroutine(_)
                 | ApplicationView::TraitDefCoroutine(_)
+                | ApplicationView::ClosureCoroutine(_)
                 | ApplicationView::ContinuationDefInstance(_)
                 | ApplicationView::CoroutineInstance(_)
                 | ApplicationView::CoroutineDropInstance(_)

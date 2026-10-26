@@ -38,7 +38,7 @@ expression: snapshot
 34 │     let unique = p.*.&mut
 35 │     # ERROR: the memory behind `p` is written while it is reborrowed.
 36 │     p.* = 1
-   ┆
+   │     ^^^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/borrow/borrow_behind_reference/main.ray:36:5
    ┆    │
@@ -61,6 +61,3 @@ expression: snapshot
 45 │     repointSharedWhileReborrowed(c.&, d.&)
 46 │     moveHolderWhileReborrowed(c.&)
 47 │     assignThroughWhileReborrowed(a.&mut)
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

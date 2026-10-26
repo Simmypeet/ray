@@ -215,6 +215,25 @@ impl PolyVarMap {
         self.poly_vars.get(id).and_then(PolyVar::trait_ref)
     }
 
+    /// Returns the arguments that `subst` gives every variable of this map,
+    /// whose variables belong to `symbol_id`, or `None` if `subst` leaves any
+    /// of them out.
+    ///
+    /// The arguments are in declaration order; see
+    /// [`PolyVarStack::args_from_subst`] for a symbol and its enclosing ones.
+    #[must_use]
+    pub fn args_from_subst(
+        &self,
+        symbol_id: GlobalSymbolID,
+        subst: &Subst,
+    ) -> Option<Vec<Interned<Ty>>> {
+        self.iter()
+            .map(|(poly_var_id, _)| {
+                subst.get(&GlobalPolyVarID::new(symbol_id, poly_var_id)).cloned()
+            })
+            .collect()
+    }
+
     /// Returns the type, effect and lifetime variables, which type arguments
     /// instantiate, in order. They precede the dictionaries.
     pub fn type_parameters(&self) -> impl Iterator<Item = (PolyVarID, &PolyVar)> {

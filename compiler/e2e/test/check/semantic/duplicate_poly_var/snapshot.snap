@@ -3,7 +3,7 @@ source: compiler/e2e/test/check/mod.rs
 expression: snapshot
 ---
 1 │ eff State[s, s]:
-  ┆
+  │              ^
   ┆ [error]: duplicate polymorphic variable `s`
   ┆   ╭▸ compiler/e2e/test/check/semantic/duplicate_poly_var/main.ray:1:14
   ┆   │
@@ -16,6 +16,3 @@ expression: snapshot
 3 │
 4 │ def main() -> int32:
 5 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

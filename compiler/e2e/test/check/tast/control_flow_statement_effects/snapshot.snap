@@ -7,7 +7,7 @@ expression: snapshot
  3 │
  4 │
  5 │ def effectInIf(condition: bool) -> ():
-   ┆
+   │     ^^^^^^^^^^
    ┆ [error]: function body effects do not match its signature: expected `{}`, but found `{State}`
    ┆   ╭▸ compiler/e2e/test/check/tast/control_flow_statement_effects/main.ray:5:5
    ┆   │
@@ -23,7 +23,7 @@ expression: snapshot
  9 │
 10 │
 11 │ def effectInWhile() -> ():
-   ┆
+   │     ^^^^^^^^^^^^^
    ┆ [error]: function body effects do not match its signature: expected `{}`, but found `{State}`
    ┆    ╭▸ compiler/e2e/test/check/tast/control_flow_statement_effects/main.ray:11:5
    ┆    │
@@ -36,6 +36,3 @@ expression: snapshot
 12 │     while false:
 13 │         State.perform()
 14 │     return ()
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

@@ -71,6 +71,10 @@ impl<T: Ord + Copy> LiveSet<T> {
     pub fn drop_live(&self) -> impl Iterator<Item = T> + '_ {
         self.live.iter().filter_map(|(&value, &mode)| (mode == LiveMode::Drop).then_some(value))
     }
+
+    /// Returns every live value, use-live or drop-live, in order.
+    #[must_use]
+    pub fn live(&self) -> impl ExactSizeIterator<Item = T> + '_ { self.live.keys().copied() }
 }
 
 /// Receives the effects of an instruction on liveness, while the state moves

@@ -13,7 +13,7 @@ expression: snapshot
  9 │     # `s.Item['b]`, which applies to `s.Item['a]` when `'a` and `'b` are the
 10 │     # same lifetime.
 11 │     return item.*.&
-   ┆
+   │            ^^^^^^^^
    ┆ [error]: lifetime may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:11:12
    ┆    │
@@ -53,7 +53,7 @@ expression: snapshot
 32 │ ):
 33 │     # ERROR: the inner reference is read out of `item` as a `&'b &'b int32`.
 34 │     return item.*
-   ┆
+   │            ^^^^^^
    ┆ [error]: lifetime may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:34:12
    ┆    │
@@ -84,7 +84,7 @@ expression: snapshot
 46 │ ):
 47 │     # ERROR: the value is written through `item` as a `&'b mut &'b int32`.
 48 │     item.* = value
-   ┆
+   │     ^^^^^^^^^^^^^^
    ┆ [error]: lifetime may not live long enough
    ┆    ╭▸ compiler/e2e/test/check/borrow/place_normalization/main.ray:48:5
    ┆    │
@@ -112,6 +112,3 @@ expression: snapshot
 57 │
 58 │ def main():
 59 │     pass
-
-other diagnostics:
-[error]: Compilation aborted due to 6 error(s)

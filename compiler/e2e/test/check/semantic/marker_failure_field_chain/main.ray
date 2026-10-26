@@ -1,0 +1,26 @@
+# A marker goal that fails through a struct, in a tuple, in a struct, and
+# ends at a negative implementation.
+
+marker Send
+
+struct Secret:
+    value: int32
+
+impl !Send for Secret
+
+struct Inner:
+    pair: (int32, Secret)
+
+struct Outer:
+    count: int32
+    inner: Inner
+
+def requireSend(value: a) -> a where (a: Send):
+    return value
+
+# ERROR: `Outer` stores `Inner`, which stores a tuple holding `Secret`.
+def rejected(value: Outer) -> Outer:
+    return requireSend(value)
+
+def main() -> int32:
+    return 0

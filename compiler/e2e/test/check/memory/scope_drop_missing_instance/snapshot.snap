@@ -5,12 +5,14 @@ expression: snapshot
  1 │ # `value` is never consumed, so it is dropped when the function returns, but
  2 │ # no Drop dictionary is available for `a`.
  3 │ def ignore(value: a) -> int32:
-   ┆
+   │            ^^^^^^^^
    ┆ [error]: no implicit instance found: `core.Drop[a]`
    ┆   ╭▸ compiler/e2e/test/check/memory/scope_drop_missing_instance/main.ray:3:12
    ┆   │
    ┆ 3 │ def ignore(value: a) -> int32:
-   ┆   ╰╴           ━━━━━━━━ this value is dropped when it goes out of scope
+   ┆   │            ━━━━━━━━ this value is dropped when it goes out of scope
+   ┆   │
+   ┆   ╰ help: add `given (_: core.Drop[a])`
    ┆
  4 │     return 0
  5 │
@@ -21,6 +23,3 @@ expression: snapshot
 10 │ # A moved parameter is not dropped, so it needs no dictionary.
 11 │ def identity(value: a) -> a:
 12 │     return value
-
-other diagnostics:
-[error]: Compilation aborted due to 1 error(s)

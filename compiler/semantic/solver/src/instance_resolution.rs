@@ -6,7 +6,7 @@
 
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_semantic_element::{
-    drop_plan::{DropPlan, GeneratedDropPlan, get_drop_plan},
+    drop_plan::{DropPlan, DropPlanError, GeneratedDropPlan, get_drop_plan},
     parameter::get_parameter_map,
 };
 use rayc_symbol::{
@@ -23,6 +23,7 @@ use rayc_type::{
 };
 
 mod candidates;
+mod explain;
 mod lexical;
 mod ranking;
 
@@ -30,7 +31,10 @@ use candidates::InstanceCandidate;
 use lexical::LexicalResolution;
 use ranking::ViableInstance;
 
-use crate::Solver;
+use crate::{
+    Solver,
+    explain::{DropComponent, Step},
+};
 
 /// Why one matching global candidate could not construct a dictionary.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
@@ -52,23 +56,8 @@ impl InstanceCandidateFailure {
                 | InstanceResolutionError::ContainsError(_)
                 | InstanceResolutionError::AmbiguousLexical { .. }
                 | InstanceResolutionError::NoInstance { .. }
-                | InstanceResolutionError::AmbiguousGlobal { .. } => None,
-            },
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn as_cycle_error(&self) -> Option<&InstanceResolutionCycle> {
-        match self {
-            Self::UndeterminedParameter(_) => None,
-            Self::UnsatisfiedGiven { error, .. } => match &**error {
-                InstanceResolutionError::Cycle(cycle) => Some(cycle),
-                InstanceResolutionError::NotReady(_)
-                | InstanceResolutionError::ContainsError(_)
-                | InstanceResolutionError::AmbiguousLexical { .. }
-                | InstanceResolutionError::NoInstance { .. }
                 | InstanceResolutionError::AmbiguousGlobal { .. }
-                | InstanceResolutionError::Limit { .. } => None,
+                | InstanceResolutionError::BuiltinComponent { .. } => None,
             },
         }
     }
@@ -92,29 +81,6 @@ impl FailedInstanceCandidate {
 
     #[must_use]
     pub const fn instance_id(&self) -> GlobalSymbolID { self.instance_id }
-
-    #[must_use]
-    pub const fn failure(&self) -> &InstanceCandidateFailure { &self.failure }
-}
-
-/// The candidate premise that caused a recursive goal to be entered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
-pub struct InstanceResolutionEdge {
-    instance_id: GlobalSymbolID,
-    given_parameter: GlobalPolyVarID,
-}
-
-impl InstanceResolutionEdge {
-    #[must_use]
-    pub const fn new(instance_id: GlobalSymbolID, given_parameter: GlobalPolyVarID) -> Self {
-        Self { instance_id, given_parameter }
-    }
-
-    #[must_use]
-    pub const fn instance_id(&self) -> GlobalSymbolID { self.instance_id }
-
-    #[must_use]
-    pub const fn given_parameter(&self) -> GlobalPolyVarID { self.given_parameter }
 }
 
 /// The hard limit that stopped a search.
@@ -200,20 +166,21 @@ pub type InstanceResolutionResult = Result<ResolvedInstance, InstanceResolutionE
 )]
 pub struct InstanceResolutionFrame {
     goal: TraitRef,
-    introduced_by: Option<InstanceResolutionEdge>,
+    introduced_by: Option<Step>,
 }
 
 impl InstanceResolutionFrame {
     #[must_use]
-    pub const fn new(goal: TraitRef, introduced_by: Option<InstanceResolutionEdge>) -> Self {
+    pub const fn new(goal: TraitRef, introduced_by: Option<Step>) -> Self {
         Self { goal, introduced_by }
     }
 
     #[must_use]
     pub const fn goal(&self) -> &TraitRef { &self.goal }
 
+    /// Returns why the goal was entered, or `None` for the root goal.
     #[must_use]
-    pub const fn introduced_by(&self) -> Option<InstanceResolutionEdge> { self.introduced_by }
+    pub const fn introduced_by(&self) -> Option<Step> { self.introduced_by }
 }
 
 /// An exact cycle, including the repeated goal as the final frame.
@@ -228,6 +195,25 @@ impl InstanceResolutionCycle {
 
     #[must_use]
     pub fn path(&self) -> &[InstanceResolutionFrame] { &self.path }
+
+    /// Returns whether `goal` is the goal the cycle starts and ends at.
+    #[must_use]
+    fn starts_at(&self, goal: &TraitRef) -> bool {
+        self.path.first().is_some_and(|frame| frame.goal() == goal)
+    }
+}
+
+/// Why no instance head could provide a requirement.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub enum NoInstanceReason {
+    /// No accessible instance head matches, or every match failed.
+    Candidates(Vec<FailedInstanceCandidate>),
+
+    /// The type is `@linear`, so it has no `Drop` dictionary.
+    Linear,
+
+    /// The nominal type's `Drop` plan cannot be generated.
+    DropPlan(DropPlanError),
 }
 
 /// A structured failure from implicit-instance resolution.
@@ -235,30 +221,75 @@ impl InstanceResolutionCycle {
 pub enum InstanceResolutionError {
     NotReady(TraitRef),
     ContainsError(TraitRef),
-    AmbiguousLexical { required: TraitRef, candidates: Vec<GlobalPolyVarID> },
-    NoInstance { required: TraitRef, failed_candidates: Vec<FailedInstanceCandidate> },
-    AmbiguousGlobal { required: TraitRef, candidates: Vec<GlobalSymbolID> },
+    AmbiguousLexical {
+        required: TraitRef,
+        candidates: Vec<GlobalPolyVarID>,
+    },
+    NoInstance {
+        required: TraitRef,
+        reason: NoInstanceReason,
+    },
+    AmbiguousGlobal {
+        required: TraitRef,
+        candidates: Vec<GlobalSymbolID>,
+    },
     Cycle(InstanceResolutionCycle),
-    Limit { limit: InstanceResolutionLimit, recent_goals: Vec<InstanceResolutionFrame> },
+    Limit {
+        limit: InstanceResolutionLimit,
+        recent_goals: Vec<InstanceResolutionFrame>,
+    },
+
+    /// A compiler-built dictionary could not be built, because one of its
+    /// parts could not be resolved.
+    BuiltinComponent {
+        required: TraitRef,
+        part: Box<PartFailure>,
+    },
+}
+
+/// The failure of one part of a compiler-built dictionary.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct PartFailure {
+    step: Step,
+    error: InstanceResolutionError,
 }
 
 impl InstanceResolutionError {
-    /// Returns the requirement the search failed on, when one requirement
-    /// can be blamed.
-    ///
-    /// A built-in dictionary that is assembled from other dictionaries, such
-    /// as the `Drop` dictionary of a tuple, fails on the first of them that
-    /// cannot be selected, so this may be a requirement nested inside the one
-    /// that was asked for.
+    /// Returns the requirement the error is about, or `None` for a cycle or
+    /// a limit, which are about the whole search.
     #[must_use]
-    pub const fn failed_requirement(&self) -> Option<&TraitRef> {
+    const fn required(&self) -> Option<&TraitRef> {
         match self {
             Self::NotReady(required)
             | Self::ContainsError(required)
             | Self::AmbiguousLexical { required, .. }
             | Self::NoInstance { required, .. }
-            | Self::AmbiguousGlobal { required, .. } => Some(required),
+            | Self::AmbiguousGlobal { required, .. }
+            | Self::BuiltinComponent { required, .. } => Some(required),
             Self::Cycle(_) | Self::Limit { .. } => None,
+        }
+    }
+
+    /// Makes the failure of a part, entered through `step`, the failure of
+    /// the compiler-built dictionary for `required`.
+    ///
+    /// Only a failure that can be explained is wrapped. The others pass
+    /// through unchanged, because callers act on them: a goal that is not
+    /// ready is retried, one that contains the error type is not reported,
+    /// and a cycle or a limit stops the whole search.
+    #[must_use]
+    fn into_component_of(self, required: &TraitRef, step: Step) -> Self {
+        match self {
+            Self::AmbiguousLexical { .. }
+            | Self::NoInstance { .. }
+            | Self::AmbiguousGlobal { .. }
+            | Self::BuiltinComponent { .. } => {
+                let part = Box::new(PartFailure { step, error: self });
+                Self::BuiltinComponent { required: required.clone(), part }
+            }
+            Self::NotReady(_) | Self::ContainsError(_) | Self::Cycle(_) | Self::Limit { .. } => {
+                self
+            }
         }
     }
 }
@@ -354,7 +385,10 @@ impl Solver {
         let coroutine_requirement =
             TraitRef::new(coroutine_trait, Args::new([coroutine.clone()], self.engine()));
 
-        let resolution = Box::pin(self.resolve_instance_from(coroutine_requirement, None)).await;
+        let step = Step::ContinuationCoroutine;
+        let resolution = Box::pin(self.resolve_instance_from(coroutine_requirement, Some(step)))
+            .await
+            .map_err(|error| error.into_component_of(required, step));
         Some(resolution.map(|resolved| {
             let (coroutine_instance, obligations, outlives) = resolved.into_parts();
             let term = Ty::new_continuation_def_instance(
@@ -436,7 +470,14 @@ impl Solver {
         let tuple = required.args().interned_iter().next()?;
         let elements = tuple.as_tuple_view()?.args();
 
-        let resolution = self.resolve_element_drop_instances(elements, drop_trait).await;
+        let resolution = self
+            .resolve_element_drop_instances(
+                required,
+                elements,
+                drop_trait,
+                DropComponent::TupleElement,
+            )
+            .await;
         Some(resolution.map(|resolved| {
             let term =
                 Ty::new_tuple_drop_instance(tuple.clone(), resolved.instances, self.engine());
@@ -462,7 +503,14 @@ impl Solver {
         // dictionaries are no-ops and only by-value captures are dropped.
         let captures = captured_tuple.as_tuple_view()?.args();
 
-        let resolution = self.resolve_element_drop_instances(captures, drop_trait).await;
+        let resolution = self
+            .resolve_element_drop_instances(
+                required,
+                captures,
+                drop_trait,
+                DropComponent::ClosureCapture,
+            )
+            .await;
         Some(resolution.map(|resolved| {
             let term =
                 Ty::new_closure_drop_instance(closure.clone(), resolved.instances, self.engine());
@@ -493,13 +541,20 @@ impl Solver {
         // instantiated with the arguments of the coroutine type.
         let engine = self.engine().clone();
         let substitution = view.create_subst(&engine).await;
-        let parameters = engine.get_parameter_map(view.signature_id()).await;
+        let parameters = engine.get_parameter_map(view.signature_id(&engine).await).await;
         let upvars = parameters
             .iter()
             .map(|(_, parameter)| parameter.ty().apply_subst_or_clone(&substitution, &engine))
             .collect::<Vec<_>>();
 
-        let resolution = self.resolve_element_drop_instances(&upvars, drop_trait).await;
+        let resolution = self
+            .resolve_element_drop_instances(
+                required,
+                &upvars,
+                drop_trait,
+                DropComponent::CoroutineUpvar,
+            )
+            .await;
         Some(resolution.map(|resolved| {
             let term =
                 Ty::new_coroutine_drop_instance(coroutine.clone(), resolved.instances, &engine);
@@ -510,20 +565,29 @@ impl Solver {
     /// Resolves one `Drop` dictionary per element, in element order, and
     /// collects the obligations and outlives constraints of every selected
     /// proof tree.
+    ///
+    /// `component` names the element at an index, so that a failure tells
+    /// which part of the dictionary for `required` could not be resolved.
     async fn resolve_element_drop_instances(
         &mut self,
+        required: &TraitRef,
         elements: &[Interned<Ty>],
         drop_trait: GlobalSymbolID,
+        component: fn(usize) -> DropComponent,
     ) -> Result<ResolvedElementInstances, InstanceResolutionError> {
         let mut resolved = ResolvedElementInstances::with_capacity(elements.len());
 
         // Retain the selected element dictionaries, including lexical givens,
         // and propagate every obligation from their proof trees.
         Box::pin(async move {
-            for element in elements {
+            for (index, element) in elements.iter().enumerate() {
                 let element_requirement =
                     TraitRef::new(drop_trait, Args::new([element.clone()], self.engine()));
-                let element = self.resolve_instance_from(element_requirement, None).await?;
+                let step = Step::DropComponent(component(index));
+                let element = self
+                    .resolve_instance_from(element_requirement, Some(step))
+                    .await
+                    .map_err(|error| error.into_component_of(required, step))?;
                 resolved.push(element);
             }
 
@@ -553,20 +617,23 @@ impl Solver {
             DropPlan::Explicit(instance_id) => {
                 Some(self.resolve_planned_explicit_drop(required, *instance_id).await)
             }
-            DropPlan::Linear | DropPlan::CannotDerive(_) => {
-                Some(Err(InstanceResolutionError::NoInstance {
-                    required: required.clone(),
-                    failed_candidates: Vec::new(),
-                }))
-            }
-            DropPlan::Generated(generated) => {
-                Some(self.resolve_planned_generated_drop(nominal, generated, drop_trait).await)
-            }
+            DropPlan::Linear => Some(Err(InstanceResolutionError::NoInstance {
+                required: required.clone(),
+                reason: NoInstanceReason::Linear,
+            })),
+            DropPlan::CannotDerive(error) => Some(Err(InstanceResolutionError::NoInstance {
+                required: required.clone(),
+                reason: NoInstanceReason::DropPlan(error.clone()),
+            })),
+            DropPlan::Generated(generated) => Some(
+                self.resolve_planned_generated_drop(required, nominal, generated, drop_trait).await,
+            ),
         }
     }
 
     async fn resolve_planned_generated_drop(
         &mut self,
+        required: &TraitRef,
         nominal: Interned<Ty>,
         generated: &GeneratedDropPlan,
         drop_trait: GlobalSymbolID,
@@ -584,13 +651,19 @@ impl Solver {
             let mut external =
                 ResolvedElementInstances::with_capacity(generated.requirements().len());
 
-            for ty in generated
+            for (index, ty) in generated
                 .requirements()
                 .iter()
                 .map(|ty| ty.apply_subst_or_clone(&substitution, &engine))
+                .enumerate()
             {
                 let requirement = TraitRef::new(drop_trait, Args::new([ty], &engine));
-                external.push(self.resolve_instance_from(requirement, None).await?);
+                let step = Step::DropComponent(DropComponent::DropPlanRequirement(index));
+                external.push(
+                    self.resolve_instance_from(requirement, Some(step))
+                        .await
+                        .map_err(|error| error.into_component_of(required, step))?,
+                );
             }
 
             let term =
@@ -608,7 +681,7 @@ impl Solver {
         let Some(candidate) = candidates::selected(self, required, instance_id).await else {
             return Err(InstanceResolutionError::NoInstance {
                 required: required.clone(),
-                failed_candidates: Vec::new(),
+                reason: NoInstanceReason::Candidates(Vec::new()),
             });
         };
 
@@ -620,13 +693,13 @@ impl Solver {
                 if let Some(err) = failure.as_limit_error() {
                     return Err(err.clone());
                 }
-                if let Some(cycle) = failure.as_cycle_error() {
-                    return Err(InstanceResolutionError::Cycle(cycle.clone()));
-                }
 
                 Err(InstanceResolutionError::NoInstance {
                     required: required.clone(),
-                    failed_candidates: vec![FailedInstanceCandidate::new(instance_id, failure)],
+                    reason: NoInstanceReason::Candidates(vec![FailedInstanceCandidate::new(
+                        instance_id,
+                        failure,
+                    )]),
                 })
             }
         }
@@ -737,23 +810,12 @@ impl Solver {
             }
         }
 
-        // has no viable candidates at all
+        // has no viable candidates at all; a candidate that failed due to a
+        // cycle is reported among the others
         if viable.is_empty() {
-            // however, if any candidate failed due to a cycle, report that
-            // instead of the NoInstance error, since it is more
-            // informative than just saying "no instance found"
-            //
-            // TODO: should we just return `NoInstance` with all the information
-            // about failed candidates
-            if let Some(cycle) =
-                failures.iter().find_map(|candidate| candidate.failure().as_cycle_error())
-            {
-                return Err(InstanceResolutionError::Cycle(cycle.clone()));
-            }
-
             return Err(InstanceResolutionError::NoInstance {
                 required: required.clone(),
-                failed_candidates: failures,
+                reason: NoInstanceReason::Candidates(failures),
             });
         }
 
@@ -777,10 +839,11 @@ impl Solver {
                     .expect("a pending given parameter must have an instance requirement")
                     .apply_subst_or_clone(&subst, self.engine());
 
-                let edge = InstanceResolutionEdge::new(instance_id, global_parameter_id);
+                let step =
+                    Step::NestedInstanceGiven { instance_id, parameter: global_parameter_id };
 
                 let resolved =
-                    self.resolve_instance_from(required, Some(edge)).await.map_err(|error| {
+                    self.resolve_instance_from(required, Some(step)).await.map_err(|error| {
                         InstanceCandidateFailure::UnsatisfiedGiven {
                             parameter: global_parameter_id,
                             error: Box::new(error),

@@ -7,7 +7,7 @@ expression: snapshot
  3 │
  4 │ inst Wrong for Container:
  5 │     type Item = this.Item
-   ┆
+   │                 ^^^^
    ┆ [error]: `this` is only valid within a trait body
    ┆   ╭▸ compiler/e2e/test/check/semantic/associated_projection_instance_this/main.ray:5:17
    ┆   │
@@ -16,7 +16,7 @@ expression: snapshot
    ┆
  6 │
  7 │ inst WrongHead for this:
-   ┆
+   │                    ^^^^
    ┆ [error]: `this` is only valid within a trait body
    ┆   ╭▸ compiler/e2e/test/check/semantic/associated_projection_instance_this/main.ray:7:20
    ┆   │
@@ -27,6 +27,3 @@ expression: snapshot
  9 │
 10 │ def main() -> int32:
 11 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

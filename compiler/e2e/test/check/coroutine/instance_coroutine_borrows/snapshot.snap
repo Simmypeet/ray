@@ -16,7 +16,7 @@ expression: snapshot
 12 │     let mut x = 1
 13 │     let k = coro r.read(source, x.&)
 14 │     x = 2
-   ┆
+   │     ^^^^^
    ┆ [error]: cannot assign to a place because it is borrowed
    ┆    ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_borrows/main.ray:14:5
    ┆    │
@@ -46,7 +46,7 @@ expression: snapshot
 30 │ # continuation that is returned refers to it.
 31 │ def returned() given (c: Counter[]):
 32 │     let make = () -> coro c.count()
-   ┆
+   │                      ^^^^^^^^^^^^^^
    ┆ [error]: cannot return a value referencing data owned by the current function
    ┆    ╭▸ compiler/e2e/test/check/coroutine/instance_coroutine_borrows/main.ray:32:22
    ┆    │
@@ -60,6 +60,3 @@ expression: snapshot
 34 │
 35 │ def main() -> int32:
 36 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 2 error(s)

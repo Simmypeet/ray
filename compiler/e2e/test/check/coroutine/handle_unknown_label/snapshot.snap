@@ -32,7 +32,7 @@ expression: snapshot
 28 │ def otherEffect():
 29 │     handle coro numbers():
 30 │         case Ask.ask() resume k:
-   ┆
+   │              ^^^^^^^
    ┆ [error]: cannot handle `{Ask}`: it is not visible in `{Yield[int32]}`, the effect the coroutine has left to handle
    ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_unknown_label/main.ray:30:14
    ┆    │
@@ -46,7 +46,7 @@ expression: snapshot
 35 │ def otherArgument():
 36 │     handle coro numbers():
 37 │         case Yield[bool].yield(value) resume k:
-   ┆
+   │              ^^^^^^^^^^^^^^^^^
    ┆ [error]: cannot handle `{Yield[bool]}`: it is not visible in `{Yield[int32]}`, the effect the coroutine has left to handle
    ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_unknown_label/main.ray:37:14
    ┆    │
@@ -60,7 +60,7 @@ expression: snapshot
 42 │ def noEffect() -> int32:
 43 │     return handle coro pure():
 44 │         case Ask.ask() resume k: 0
-   ┆
+   │              ^^^^^^^
    ┆ [error]: cannot handle `{Ask}`: it is not visible in `{}`, the effect the coroutine has left to handle
    ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_unknown_label/main.ray:44:14
    ┆    │
@@ -74,7 +74,7 @@ expression: snapshot
 49 │     return handle coro counter():
 50 │         case State[int32].get(): 0
 51 │         case State[bool].set(value): 0
-   ┆
+   │              ^^^^^^^^^^^^^^^
    ┆ [error]: cannot handle `{State[bool]}`: it is not visible in `{State[int32]}`, the effect the coroutine has left to handle
    ┆    ╭▸ compiler/e2e/test/check/coroutine/handle_unknown_label/main.ray:51:14
    ┆    │
@@ -85,6 +85,3 @@ expression: snapshot
 53 │
 54 │ def main() -> int32:
 55 │     return 0
-
-other diagnostics:
-[error]: Compilation aborted due to 4 error(s)
