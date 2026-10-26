@@ -161,7 +161,10 @@ impl<'x> ClosureView<'x> {
     pub const fn local_closure_id(&self) -> ClosureID { self.closure.local_closure_id }
 
     #[must_use]
-    pub const fn owner_arguments(&self) -> &'x [Interned<Ty>] { self.owner_arguments }
+    pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
+        let poly_vars = engine.get_enclosing_poly_var_maps(self.closure.owner_id).await;
+        poly_vars.create_subst_from_args(self.owner_arguments.iter().cloned())
+    }
 
     #[must_use]
     pub const fn params(&self) -> &'x [Interned<Ty>] { self.params }
@@ -331,7 +334,7 @@ impl<'x> DefCoroutineView<'x> {
     pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
         let poly_vars = engine.get_enclosing_poly_var_maps(self.def_id).await;
 
-        poly_vars.subst_from_args(self.poly_args.iter().cloned())
+        poly_vars.create_subst_from_args(self.poly_args.iter().cloned())
     }
 }
 
@@ -393,13 +396,18 @@ impl<'x> TraitDefCoroutineView<'x> {
 /// [`Constant::ClosureCoroutine`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClosureCoroutineView<'x> {
-    closure: &'x Interned<Ty>,
+    closure_ty: &'x Interned<Ty>,
+    closure_view: ClosureView<'x>,
 }
 
 impl<'x> ClosureCoroutineView<'x> {
     /// Returns the type of the suspended closure.
     #[must_use]
-    pub const fn closure(&self) -> &'x Interned<Ty> { self.closure }
+    pub const fn closure(&self) -> &'x Interned<Ty> { self.closure_ty }
+
+    /// Returns the view of the suspended closure type.
+    #[must_use]
+    pub const fn closure_view(&self) -> ClosureView<'x> { self.closure_view }
 
     /// Returns the substitution that instantiates the signature of
     /// `core.Def.call`: the trait's `f` with the closure type, and `this`
@@ -407,10 +415,10 @@ impl<'x> ClosureCoroutineView<'x> {
     /// parameters of its own.
     pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
         let def_trait = engine.get_core_item(CoreItem::DefTrait).await;
-        let mut subst = engine.build_subst_from_args(def_trait, [self.closure]).await;
+        let mut subst = engine.build_subst_from_args(def_trait, [self.closure_ty]).await;
         subst.insert(
             SelfInstance::new(def_trait),
-            Ty::new_def_instance(self.closure.clone(), engine),
+            Ty::new_def_instance(self.closure_ty.clone(), engine),
         );
 
         subst
@@ -690,9 +698,12 @@ impl Application {
                     self.args.split_first().expect("a trait-def coroutine has an instance");
                 View::TraitDefCoroutine(TraitDefCoroutineView { trait_def_id, instance, args })
             }
-            Constant::ClosureCoroutine => {
-                View::ClosureCoroutine(ClosureCoroutineView { closure: &self.args[0] })
-            }
+            Constant::ClosureCoroutine => View::ClosureCoroutine(ClosureCoroutineView {
+                closure_ty: &self.args[0],
+                closure_view: self.args[0]
+                    .as_closure_view()
+                    .expect("a closure coroutine has a closure type"),
+            }),
             Constant::CoroutineInstance => View::CoroutineInstance(&self.args[0]),
             Constant::ContinuationDefInstance => {
                 View::ContinuationDefInstance(ContinuationDefInstanceView {

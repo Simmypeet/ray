@@ -1,7 +1,5 @@
 //! Computes the saved locals of a coroutine body from its IR.
 
-use std::{future::Future, pin::Pin};
-
 use linkme::distributed_slice;
 use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_ir::{
@@ -38,10 +36,7 @@ impl Collector<'_> {
     ///
     /// The future is boxed, since a `run ... with` recurses into its nested
     /// bodies.
-    fn collect(
-        &mut self,
-        function_id: FunctionID,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+    async fn collect(&mut self, function_id: FunctionID) {
         Box::pin(async move {
             let function = self.functions.get_function(function_id);
 
@@ -69,6 +64,7 @@ impl Collector<'_> {
                 self.collect_waited(function, suspension_point.waited(), suspension_span).await;
             }
         })
+        .await;
     }
 
     /// Collects what the expression of a suspension point at
@@ -202,9 +198,8 @@ async fn saved_locals_executor(
         saved_locals: Vec::new(),
     };
 
-    let function_id = body.closure_id().map_or(functions.root_id(), |x| {
-        functions.closure_function(x).expect("should be a valid ID")
-    });
+    let function_id =
+        body.closure_id().map_or(functions.root_id(), |x| functions.get_function_id_of_closure(x));
 
     collector.collect(function_id).await;
 

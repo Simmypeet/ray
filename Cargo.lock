@@ -2248,6 +2248,7 @@ dependencies = [
  "rayc_arena",
  "rayc_diagnostic",
  "rayc_hash",
+ "rayc_ir",
  "rayc_lexical",
  "rayc_qbice",
  "rayc_semantic_element",

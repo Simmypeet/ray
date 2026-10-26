@@ -399,17 +399,18 @@ impl PolyVarStack {
     /// The arguments are in argument order: those of the innermost symbol
     /// first, each in declaration order.
     #[must_use]
-    pub fn args_from_subst(&self, subst: &Subst) -> Option<Vec<Interned<Ty>>> {
+    pub fn create_args_from_subst(&self, subst: &Subst) -> Option<Vec<Interned<Ty>>> {
         self.all_poly_vars().map(|poly_var_id| subst.get(&poly_var_id).cloned()).collect()
     }
 
     /// Returns the substitution that maps the variables of the stack to
-    /// `args`, which are in the argument order of [`Self::args_from_subst`].
+    /// `args`, which are in the argument order of
+    /// [`Self::create_args_from_subst`].
     ///
-    /// The inverse of [`Self::args_from_subst`]. When the lengths differ, the
-    /// surplus variables or arguments are left out.
+    /// The inverse of [`Self::create_args_from_subst`]. When the lengths
+    /// differ, the surplus variables or arguments are left out.
     #[must_use]
-    pub fn subst_from_args(&self, args: impl IntoIterator<Item = Interned<Ty>>) -> Subst {
+    pub fn create_subst_from_args(&self, args: impl IntoIterator<Item = Interned<Ty>>) -> Subst {
         self.all_poly_vars().zip(args).collect()
     }
 

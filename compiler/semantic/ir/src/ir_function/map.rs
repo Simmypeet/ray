@@ -112,8 +112,14 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn closure_function(&self, closure_id: ClosureID) -> Option<FunctionID> {
-        self.closures.get(&closure_id).copied()
+    pub fn get_function_id_of_closure(&self, closure_id: ClosureID) -> FunctionID {
+        self.closures.get(&closure_id).copied().expect("should be a valid ID")
+    }
+
+    #[must_use]
+    pub fn get_function_of_closure(&self, closure_id: ClosureID) -> &IRFunction {
+        let function_id = self.get_function_id_of_closure(closure_id);
+        self.get_function(function_id)
     }
 
     /// Iterates over nominal closure identities and their lowered functions.

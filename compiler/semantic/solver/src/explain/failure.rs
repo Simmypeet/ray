@@ -1,6 +1,7 @@
 //! The failure tree: why a goal could not be proved.
 
 use qbice::{Decode, Encode, StableHash};
+use rayc_lexical::tree::RelativeSpan;
 use rayc_semantic_element::{drop_plan::DropPlanError, struct_body::FieldID};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{poly_var::GlobalPolyVarID, trait_ref::TraitRef, where_clause::MarkerPredicate};
@@ -186,6 +187,9 @@ pub enum StructuralComponent {
 
     /// One capture of a closure, by index into its captured tuple.
     ClosureCapture(usize),
+
+    /// The parameters of a suspended function being held by its coroutine
+    CoroutineUpvar(Option<RelativeSpan>),
 }
 
 /// A marker goal that the compiler rejects whatever the givens say.

@@ -20,7 +20,7 @@ impl CoroutineBody {
     pub const fn def_id(&self) -> GlobalSymbolID {
         match self {
             Self::Def(def_id) => *def_id,
-            Self::Closure(closure_body_id) => closure_body_id.owner_def_id(),
+            Self::Closure(closure_body_id) => closure_body_id.owner_id(),
         }
     }
 
@@ -28,7 +28,7 @@ impl CoroutineBody {
     pub const fn closure_id(&self) -> Option<ClosureID> {
         match self {
             Self::Def(_) => None,
-            Self::Closure(closure_body_id) => Some(closure_body_id.inner_closure_id()),
+            Self::Closure(closure_body_id) => Some(closure_body_id.local_closure_id()),
         }
     }
 }
@@ -36,21 +36,21 @@ impl CoroutineBody {
 /// Identifies a particular closure body in an owning definition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct ClosureCoroutineBodyID {
-    owner_def_id: GlobalSymbolID,
-    inner_closure_id: ClosureID,
+    owner_id: GlobalSymbolID,
+    local_closure_id: ClosureID,
 }
 
 impl ClosureCoroutineBodyID {
     #[must_use]
-    pub const fn new(owner_def_id: GlobalSymbolID, inner_closure_id: ClosureID) -> Self {
-        Self { owner_def_id, inner_closure_id }
+    pub const fn new(owner_id: GlobalSymbolID, local_closure_id: ClosureID) -> Self {
+        Self { owner_id, local_closure_id }
     }
 
     #[must_use]
-    pub const fn owner_def_id(&self) -> GlobalSymbolID { self.owner_def_id }
+    pub const fn owner_id(&self) -> GlobalSymbolID { self.owner_id }
 
     #[must_use]
-    pub const fn inner_closure_id(&self) -> ClosureID { self.inner_closure_id }
+    pub const fn local_closure_id(&self) -> ClosureID { self.local_closure_id }
 }
 
 /// What a saved local is.
