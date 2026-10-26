@@ -14,7 +14,7 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::{
     parameter::get_parameter_map,
-    saved_local::{CoroutineBody, SavedLocal, SavedLocalKind, SavedLocalOrigin, SavedLocals},
+    saved_local::{SavedLocal, SavedLocalKind, SavedLocalOrigin, SavedLocals},
 };
 use rayc_symbol::{GlobalSymbolID, symbol_kind::get_symbol_kind};
 use rayc_type::ty::Ty;
@@ -180,7 +180,7 @@ async fn saved_locals_executor(
     &SavedLocals { body }: &SavedLocals,
     engine: &TrackedEngine,
 ) -> Option<Interned<[SavedLocal]>> {
-    let CoroutineBody::Def(def_id) = body;
+    let def_id = body.def_id();
 
     // An `extern def` has no body, so nothing is ever suspended in it.
     if !engine.get_symbol_kind(def_id).await.has_def_body() {
@@ -201,7 +201,12 @@ async fn saved_locals_executor(
         runs: Vec::new(),
         saved_locals: Vec::new(),
     };
-    collector.collect(functions.root_id()).await;
+
+    let function_id = body.closure_id().map_or(functions.root_id(), |x| {
+        functions.closure_function(x).expect("should be a valid ID")
+    });
+
+    collector.collect(function_id).await;
 
     Some(engine.intern_unsized(collector.saved_locals))
 }
