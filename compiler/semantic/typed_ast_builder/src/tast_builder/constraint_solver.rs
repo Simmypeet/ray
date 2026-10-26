@@ -1,6 +1,6 @@
 use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
-use rayc_solver::Solver;
+use rayc_solver::{Solver, solver::CoroutineSavedLocalsVisibility};
 use rayc_symbol::{
     GlobalSymbolID,
     core_item::{CoreItem, get_core_item},
@@ -61,9 +61,13 @@ impl ConstraintSolver {
         Self {
             provenance: Provenance::new(),
             constraint_set: ConstraintSet::new(),
-            solver: Solver::new(engine, site)
-                .await
-                .with_inference_generator(Box::new(RecordingInferenceGenerator::default())),
+            solver: Solver::builder()
+                .engine(engine)
+                .site(site)
+                .inference_generator(Box::new(RecordingInferenceGenerator::default()))
+                .coroutine_visiblity(CoroutineSavedLocalsVisibility::Deferred)
+                .build()
+                .await,
         }
     }
 

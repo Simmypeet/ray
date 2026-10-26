@@ -1,3 +1,4 @@
+use bon::bon;
 use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
@@ -13,7 +14,7 @@ use rayc_type::{
 use crate::{
     givens::get_givens,
     inference_generator::{CountingInferenceGenerator, InferenceGenerator},
-    outlives::{OutlivesEnvironment, get_outlives_environment, outlives_givens},
+    outlives::{OutlivesEnvironment, get_outlives_environment},
     solver::{
         instance_resolution_state::{InstanceResolutionLimits, InstanceResolutionState},
         marker_entailment::MarkerEntailmentState,
@@ -24,7 +25,7 @@ use crate::{
 mod instance_resolution_state;
 mod marker_entailment;
 
-pub use marker_entailment::MarkerEntailment;
+pub use marker_entailment::{CoroutineSavedLocalsVisibility, MarkerEntailment};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TyRelatingEnvironment {
@@ -336,17 +337,7 @@ impl Solver {
         givens: impl IntoIterator<Item = PredicateKind>,
     ) -> Self {
         let givens = engine.intern_unsized(givens.into_iter().collect::<Vec<_>>());
-        let outlives_environment = engine
-            .intern(OutlivesEnvironment::new(outlives_givens(&givens).cloned(), &engine).await);
-        Self {
-            inference_generator: Box::new(CountingInferenceGenerator::default()),
-            engine,
-            site,
-            instance_resolution: InstanceResolutionState::new(InstanceResolutionLimits::default()),
-            marker_entailment: MarkerEntailmentState::default(),
-            givens,
-            outlives_environment,
-        }
+        Self::builder().engine(engine).site(site).givens(givens).build().await
     }
 
     /// Creates a solver with every predicate visible at `site`.
@@ -359,18 +350,7 @@ impl Solver {
         site: GlobalSymbolID,
         limits: InstanceResolutionLimits,
     ) -> Self {
-        let givens = engine.get_givens(site).await;
-        let outlives_environment = engine.get_outlives_environment(site).await;
-
-        Self {
-            inference_generator: Box::new(CountingInferenceGenerator::default()),
-            givens,
-            engine,
-            site,
-            instance_resolution: InstanceResolutionState::new(limits),
-            marker_entailment: MarkerEntailmentState::default(),
-            outlives_environment,
-        }
+        Self::builder().engine(engine).site(site).limits(limits).build().await
     }
 
     /// Predicates visible at this solver's declaration site, nearest scope
@@ -455,6 +435,37 @@ impl Solver {
         constraint: InferenceConstraint,
     ) -> Inference {
         self.inference_generator.generate(kind, constraint)
+    }
+}
+
+#[bon]
+impl Solver {
+    /// Creates a solver through a builder interface
+    #[builder]
+    pub async fn builder(
+        engine: TrackedEngine,
+        site: GlobalSymbolID,
+        #[builder(default = InstanceResolutionLimits::default())] limits: InstanceResolutionLimits,
+        #[builder(default = Box::new(CountingInferenceGenerator::default()))]
+        inference_generator: Box<dyn InferenceGenerator>,
+        givens: Option<Interned<[PredicateKind]>>,
+        #[builder(default = CoroutineSavedLocalsVisibility::Visible)]
+        coroutine_visiblity: CoroutineSavedLocalsVisibility,
+    ) -> Self {
+        let givens = match givens {
+            Some(givens) => givens,
+            None => engine.get_givens(site).await,
+        };
+
+        Self {
+            inference_generator,
+            site,
+            instance_resolution: InstanceResolutionState::new(limits),
+            marker_entailment: MarkerEntailmentState::new(coroutine_visiblity),
+            givens,
+            outlives_environment: engine.get_outlives_environment(site).await,
+            engine,
+        }
     }
 }
 

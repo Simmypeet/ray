@@ -137,6 +137,11 @@ pub(crate) struct MarkerEntailmentState {
 }
 
 impl MarkerEntailmentState {
+    #[must_use]
+    pub const fn new(visibility: CoroutineSavedLocalsVisibility) -> Self {
+        Self { active_goals: Vec::new(), memo: FxHashMap::default(), visibility }
+    }
+
     /// Returns whether a marker goal is being proved.
     const fn has_active_goal(&self) -> bool { !self.active_goals.is_empty() }
 
