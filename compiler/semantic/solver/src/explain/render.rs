@@ -18,6 +18,7 @@ use rayc_symbol::{
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
     ty::Ty,
+    where_clause::PredicateKind,
 };
 
 use super::{
@@ -42,16 +43,59 @@ const MAX_LIMIT_GOALS: usize = 5;
 
 /// A goal that could not be proved, reported where it was required.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
-pub struct UnsatisfiedGoal {
+pub struct ExplainedGoal {
     span: RelativeSpan,
     required_by: RequiredBy,
     failure: ProofFailure,
 }
 
-impl UnsatisfiedGoal {
+impl ExplainedGoal {
     #[must_use]
     pub const fn new(span: RelativeSpan, required_by: RequiredBy, failure: ProofFailure) -> Self {
         Self { span, required_by, failure }
+    }
+}
+
+/// A where-clause predicate that does not hold, and whose failure the solver
+/// cannot explain, such as an associated type equality.
+///
+/// It names only the predicate and the symbol whose where clause has it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct UnexplainedPredicate {
+    span: RelativeSpan,
+    symbol_id: GlobalSymbolID,
+    predicate: PredicateKind,
+}
+
+impl UnexplainedPredicate {
+    #[must_use]
+    pub const fn new(
+        span: RelativeSpan,
+        symbol_id: GlobalSymbolID,
+        predicate: PredicateKind,
+    ) -> Self {
+        Self { span, symbol_id, predicate }
+    }
+}
+
+/// A where-clause predicate that does not hold, explained by its proof
+/// failure when the solver has one.
+///
+/// [`crate::Solver::explain_unsatisfied_predicate`] decides which.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub enum UnsatisfiedPredicate {
+    Explained(Box<ExplainedGoal>),
+    Unexplained(UnexplainedPredicate),
+}
+
+impl UnsatisfiedPredicate {
+    #[must_use]
+    pub fn new_explained(
+        span: RelativeSpan,
+        required_by: RequiredBy,
+        failure: ProofFailure,
+    ) -> Self {
+        Self::Explained(Box::new(ExplainedGoal::new(span, required_by, failure)))
     }
 }
 
@@ -814,7 +858,7 @@ async fn labeled(
     Highlight::builder().span(engine.to_absolute_span(&span).await).message(message).build()
 }
 
-impl Report for UnsatisfiedGoal {
+impl Report for ExplainedGoal {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         // The headline states what failed, taken from the innermost part of
         // a compiler-built dictionary, and names the goal the site asked for.
@@ -859,5 +903,26 @@ impl Report for UnsatisfiedGoal {
             .notes(explanation.notes)
             .maybe_help_message(explanation.help)
             .build()
+    }
+}
+
+impl Report for UnexplainedPredicate {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let name = engine.get_qualified_name(self.symbol_id).await;
+        let requirement = self.predicate.describe_requirement(engine).await;
+
+        Rendered::builder()
+            .message(format!("where-clause obligation for `{name}` is not satisfied"))
+            .primary_highlight(labeled(engine, self.span, requirement).await)
+            .build()
+    }
+}
+
+impl Report for UnsatisfiedPredicate {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        match self {
+            Self::Explained(diagnostic) => diagnostic.report(engine).await,
+            Self::Unexplained(diagnostic) => diagnostic.report(engine).await,
+        }
     }
 }

@@ -3,11 +3,10 @@
 use qbice::storage::intern::Interned;
 use rayc_handler::Handler2;
 use rayc_lexical::tree::RelativeSpan;
-use rayc_resolution::obligation::PredicateObligation;
 use rayc_semantic_element::deferred_marker::DeferredMarker;
 use rayc_solver::{
     Solver,
-    explain::{ProofFailure, RequiredBy, UnsatisfiedGoal},
+    explain::{ProofFailure, RequiredBy, UnsatisfiedPredicate},
     solver::MarkerEntailment,
 };
 use rayc_symbol::{
@@ -103,11 +102,9 @@ pub async fn resolve_drop_instance(
                     RequiredBy::ScopeDrop { suspension: dropped.suspension }
                 };
 
-                diagnostics.receive(Diagnostic::UnsatisfiedGoal(Box::new(UnsatisfiedGoal::new(
-                    dropped.span,
-                    required_by,
-                    failure,
-                ))));
+                diagnostics.receive(Diagnostic::UnsatisfiedDropPredicate(
+                    UnsatisfiedPredicate::new_explained(dropped.span, required_by, failure),
+                ));
             }
 
             return None;
@@ -140,25 +137,10 @@ pub async fn resolve_drop_instance(
             continue;
         }
 
-        // A predicate that no proof explains keeps its plain report.
         holds_all = false;
-        let diagnostic = solver.explain_predicate(&predicate).await.map_or_else(
-            || {
-                Diagnostic::UnsatisfiedDropPredicate(PredicateObligation::new(
-                    predicate,
-                    instance_id,
-                    dropped.span,
-                ))
-            },
-            |failure| {
-                Diagnostic::UnsatisfiedGoal(Box::new(UnsatisfiedGoal::new(
-                    dropped.span,
-                    RequiredBy::WhereClause { symbol_id: instance_id },
-                    failure,
-                )))
-            },
-        );
-        diagnostics.receive(diagnostic);
+        let unsatisfied =
+            solver.explain_unsatisfied_predicate(predicate, instance_id, dropped.span).await;
+        diagnostics.receive(Diagnostic::UnsatisfiedDropPredicate(unsatisfied));
     }
 
     holds_all.then_some(DropInstance { instance, deferred })

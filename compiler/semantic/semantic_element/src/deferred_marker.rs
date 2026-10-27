@@ -24,4 +24,16 @@ impl DeferredMarker {
     ) -> Self {
         Self { marker_predicate, span, from_symbol_id }
     }
+
+    /// Returns the deferred marker predicate.
+    #[must_use]
+    pub const fn marker_predicate(&self) -> &MarkerPredicate { &self.marker_predicate }
+
+    /// Returns the span where the marker predicate is incurred.
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
+
+    /// Returns the symbol whose where clause incurred the marker predicate.
+    #[must_use]
+    pub const fn from_symbol_id(&self) -> GlobalSymbolID { self.from_symbol_id }
 }

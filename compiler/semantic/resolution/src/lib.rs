@@ -48,8 +48,6 @@ pub enum Diagnostic {
     TooManyGivenArguments(TooManyGivenArguments),
     /// An explicit instance does not satisfy its given parameter.
     TraitRefCheck(TraitRefCheck),
-    /// A resolved symbol's where-clause predicate is not satisfied.
-    Predicate(PredicateObligation),
     /// A path segment could not be found in its containing symbol.
     PathSegmentNotFound(PathSegmentNotFound),
     /// A path segment names a symbol that is not accessible from the site.
@@ -100,7 +98,6 @@ impl Report for Diagnostic {
             Self::UnsupportedCallableType(diagnostic) => diagnostic.report(engine).await,
             Self::TooManyGivenArguments(diagnostic) => diagnostic.report(engine).await,
             Self::TraitRefCheck(diagnostic) => diagnostic.report(engine).await,
-            Self::Predicate(diagnostic) => diagnostic.report(engine).await,
             Self::PathSegmentNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::InaccessibleSymbol(diagnostic) => diagnostic.report(engine).await,
             Self::TypeInferenceNotAllowed(diagnostic) => diagnostic.report(engine).await,

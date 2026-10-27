@@ -6,7 +6,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_solver::explain::UnsatisfiedGoal;
+use rayc_solver::explain::{ExplainedGoal, UnsatisfiedPredicate};
 use rayc_symbol::{
     GlobalSymbolID, accessibility::Accessibility, name::get_qualified_name,
     source_map::to_absolute_span, symbol_kind::get_symbol_kind,
@@ -1309,7 +1309,8 @@ impl Report for IncompatibleEffectRows {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Identifiable, From,
 )]
 pub enum Diagnostic {
-    UnsatisfiedGoal(UnsatisfiedGoal),
+    UnsatisfiedGoal(ExplainedGoal),
+    UnsatisfiedPredicate(UnsatisfiedPredicate),
     ConflictingInstance(ConflictingInstance),
     Resolution(rayc_resolution::Diagnostic),
     UnboundName(UnboundName),
@@ -1358,6 +1359,7 @@ impl Report for Diagnostic {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
             Self::UnsatisfiedGoal(diagnostic) => diagnostic.report(engine).await,
+            Self::UnsatisfiedPredicate(diagnostic) => diagnostic.report(engine).await,
             Self::ConflictingInstance(diagnostic) => diagnostic.report(engine).await,
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::UnboundName(unbound_name) => unbound_name.report(engine).await,

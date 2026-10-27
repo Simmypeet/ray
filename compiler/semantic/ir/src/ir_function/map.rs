@@ -63,6 +63,11 @@ impl IRFunctionMap {
         self.deferred_markers.extend(markers);
     }
 
+    /// Returns the marker predicates whose proof was deferred until the saved
+    /// locals of the coroutines in this definition are known.
+    #[must_use]
+    pub fn deferred_markers(&self) -> &[DeferredMarker] { &self.deferred_markers }
+
     /// Returns whether the definition reported no error up to and including
     /// the building of this IR: none in its typed AST, in its lowering or in
     /// its memory analysis.
