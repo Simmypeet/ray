@@ -15,7 +15,8 @@ use rayc_type::ty::Ty;
 
 use crate::{
     Diagnostic, PlaceState, PossibleStates, StackState, StackStateProblem,
-    drop_resolution::{DropFailure, resolve_drop_instance},
+    analyze_result::AnalyzeResult,
+    drop_resolution::{DropFailure, DropInstance, resolve_drop_instance},
 };
 
 /// Where a selected drop runs.
@@ -36,15 +37,15 @@ enum DropSite {
 /// Every drop of a function is collected against the analyzed layout and
 /// inserted at once by [`Self::insert_drops`] after the replay, so inserting
 /// them never invalidates the points of the replay.
-#[derive(Debug, Default)]
-pub(crate) struct DropElaborator {
+#[derive(Debug)]
+pub(crate) struct DropElaborator<'x> {
     /// The selected drops, in the order they run at each site: an
     /// [`Instruction::AddressDrop`] of a place, attributed to the declaration
     /// of the dropped binding, or an [`Instruction::ExprDiscard`] of a value.
     drops: Vec<(DropSite, Instruction)>,
 
     /// The selected `Drop` dictionary of each type, or why none is usable.
-    instances: FxHashMap<Interned<Ty>, Result<Interned<Ty>, Vec<DropFailure>>>,
+    instances: FxHashMap<Interned<Ty>, Result<DropInstance, Vec<DropFailure>>>,
 
     /// Bindings already reported for a type, so a binding which is dropped
     /// on several paths is reported once.
@@ -57,11 +58,13 @@ pub(crate) struct DropElaborator {
     /// The abandon block of each suspension point, with the source of that
     /// suspension point. What such a block drops is held across it.
     abandon_blocks: FxHashMap<BlockID, RelativeSpan>,
+
+    analyze_result: &'x mut AnalyzeResult,
 }
 
-impl DropElaborator {
+impl<'x> DropElaborator<'x> {
     /// Creates an elaborator for the drops of `function`.
-    pub(crate) fn new(function: &IRFunction) -> Self {
+    pub(crate) fn new(function: &IRFunction, analyze_result: &'x mut AnalyzeResult) -> Self {
         let abandon_blocks = function
             .reachables()
             .blocks()
@@ -74,7 +77,14 @@ impl DropElaborator {
             })
             .collect();
 
-        Self { abandon_blocks, ..Self::default() }
+        Self {
+            abandon_blocks,
+            drops: Vec::new(),
+            instances: FxHashMap::default(),
+            reported: FxHashSet::default(),
+            reported_values: FxHashSet::default(),
+            analyze_result,
+        }
     }
 
     /// Returns the source of the suspension point that a drop at `site` runs
@@ -91,18 +101,18 @@ impl DropElaborator {
 
     /// Reports the `failures` to drop the value declared or evaluated at
     /// `span`, at `site`.
-    fn report_failures(
-        &self,
-        site: DropSite,
-        span: RelativeSpan,
-        failures: Vec<DropFailure>,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) {
+    fn report_failures(&mut self, site: DropSite, span: RelativeSpan, failures: Vec<DropFailure>) {
         let suspension_span = self.suspension_span(site);
-        diagnostics.extend(failures.into_iter().map(|failure| match suspension_span {
-            Some(suspension_span) => failure.into_suspension_diagnostic(span, suspension_span),
-            None => failure.into_diagnostic(span),
+        self.analyze_result.extend_diagnostics(failures.into_iter().map(|failure| {
+            match suspension_span {
+                Some(suspension_span) => failure.into_suspension_diagnostic(span, suspension_span),
+                None => failure.into_diagnostic(span),
+            }
         }));
+    }
+
+    pub(crate) fn push_diagnostic(&mut self, diagnostic: Diagnostic) {
+        self.analyze_result.extend_diagnostics(std::iter::once(diagnostic));
     }
 
     /// Selects the drops which run immediately before the
@@ -125,7 +135,6 @@ impl DropElaborator {
         scope_id: ScopeID,
         state: &StackState,
         problem: &mut StackStateProblem<'_>,
-        diagnostics: &mut Vec<Diagnostic>,
     ) {
         let StackState::Reachable(slots) = state else {
             return;
@@ -136,7 +145,7 @@ impl DropElaborator {
         // Values the scope owns, which are no longer used past its end.
         for value in slots.values_owned_by(scope_id) {
             if !problem.is_value_live(value, point) {
-                self.discard_value(site, value, problem, diagnostics).await;
+                self.discard_value(site, value, problem).await;
             }
         }
 
@@ -146,7 +155,7 @@ impl DropElaborator {
             let ty = problem.binding_type(root).await;
             let address = root.to_address(problem.engine());
 
-            self.drop_place(site, root, address, place_state, ty, problem, diagnostics).await;
+            self.drop_place(site, root, address, place_state, ty, problem).await;
         }
     }
 
@@ -167,7 +176,6 @@ impl DropElaborator {
         ty: Interned<Ty>,
         state: &StackState,
         problem: &mut StackStateProblem<'_>,
-        diagnostics: &mut Vec<Diagnostic>,
     ) {
         let site = DropSite::Before(point);
 
@@ -175,7 +183,7 @@ impl DropElaborator {
             if let Some(root) = address.local()
                 && address.is_behind_reference()
             {
-                self.push_drop(site, root, address.clone(), ty, problem, diagnostics).await;
+                self.push_drop(site, root, address.clone(), ty, problem).await;
             }
             return;
         }
@@ -185,7 +193,7 @@ impl DropElaborator {
             return;
         };
 
-        self.drop_place(site, root, address.clone(), place_state, ty, problem, diagnostics).await;
+        self.drop_place(site, root, address.clone(), place_state, ty, problem).await;
     }
 
     /// Selects the drops which balance the stack on a control-flow edge.
@@ -208,7 +216,6 @@ impl DropElaborator {
         entry: &StackState,
         drop_order: &[Local],
         problem: &mut StackStateProblem<'_>,
-        diagnostics: &mut Vec<Diagnostic>,
     ) {
         let (StackState::Reachable(exit), StackState::Reachable(entry)) = (exit, entry) else {
             return;
@@ -219,7 +226,7 @@ impl DropElaborator {
         // Values owned on this edge but not at the merge, newest first.
         for value in exit.pending_values() {
             if !entry.is_pending(value) {
-                self.discard_value(site, value, problem, diagnostics).await;
+                self.discard_value(site, value, problem).await;
             }
         }
 
@@ -233,17 +240,7 @@ impl DropElaborator {
             let ty = problem.binding_type(root).await;
             let address = root.to_address(problem.engine());
 
-            self.balance_place(
-                site,
-                root,
-                address,
-                entry_state,
-                exit_state,
-                ty,
-                problem,
-                diagnostics,
-            )
-            .await;
+            self.balance_place(site, root, address, entry_state, exit_state, ty, problem).await;
         }
     }
 
@@ -259,7 +256,6 @@ impl DropElaborator {
         exit: &PlaceState,
         ty: Interned<Ty>,
         problem: &mut StackStateProblem<'_>,
-        diagnostics: &mut Vec<Diagnostic>,
     ) {
         match entry {
             // Every incoming edge, this one included, holds the value.
@@ -269,7 +265,7 @@ impl DropElaborator {
             // Some incoming edge lacks the value, so this edge drops
             // whatever part of it this edge still holds.
             PlaceState::Uniform(PossibleStates::Uninitialized(_)) => {
-                self.drop_place(site, root, address, exit, ty, problem, diagnostics).await;
+                self.drop_place(site, root, address, exit, ty, problem).await;
             }
 
             // Balance each component in reverse order, matching the order of
@@ -286,7 +282,6 @@ impl DropElaborator {
                         exit.component(*projection),
                         component_ty,
                         problem,
-                        diagnostics,
                     ))
                     .await;
                 }
@@ -303,16 +298,15 @@ impl DropElaborator {
         state: &PlaceState,
         ty: Interned<Ty>,
         problem: &mut StackStateProblem<'_>,
-        diagnostics: &mut Vec<Diagnostic>,
     ) {
         match state {
             // A fully initialized place drops as a whole, so its type's own
             // `Drop` instance decides how the components are dropped.
             PlaceState::Uniform(PossibleStates::Initialized) => {
-                self.push_drop(site, root, address, ty, problem, diagnostics).await;
+                self.push_drop(site, root, address, ty, problem).await;
             }
             PlaceState::Partial(_) if state.is_initialized() => {
-                self.push_drop(site, root, address, ty, problem, diagnostics).await;
+                self.push_drop(site, root, address, ty, problem).await;
             }
 
             // The value has been moved or was never assigned.
@@ -331,7 +325,6 @@ impl DropElaborator {
                         component,
                         component_ty,
                         problem,
-                        diagnostics,
                     ))
                     .await;
                 }
@@ -352,13 +345,15 @@ impl DropElaborator {
         address: Address,
         ty: Interned<Ty>,
         problem: &mut StackStateProblem<'_>,
-        diagnostics: &mut Vec<Diagnostic>,
     ) {
         match self.drop_instance(ty.clone(), problem).await {
             Ok(drop_instance) => {
+                let span = problem.binding_span(root).await;
+                self.analyze_result.extend_deferred_markers(drop_instance.deferred_markers(span));
+
+                let drop_instance = drop_instance.instance();
                 if !drop_instance.is_no_op_drop_instance() {
-                    let span = problem.binding_span(root).await;
-                    let drop = AddressDrop::new(address, drop_instance, span);
+                    let drop = AddressDrop::new(address, drop_instance.clone(), span);
                     self.drops.push((site, Instruction::AddressDrop(drop)));
                 }
             }
@@ -368,7 +363,7 @@ impl DropElaborator {
             Err(failures) => {
                 if self.reported.insert((root, ty)) {
                     let span = problem.binding_span(root).await;
-                    self.report_failures(site, span, failures, diagnostics);
+                    self.report_failures(site, span, failures);
                 }
             }
         }
@@ -384,12 +379,15 @@ impl DropElaborator {
         site: DropSite,
         value: IRExprID,
         problem: &mut StackStateProblem<'_>,
-        diagnostics: &mut Vec<Diagnostic>,
     ) {
         match self.drop_instance(problem.value_type(value), problem).await {
             Ok(drop_instance) => {
+                let span = problem.value_span(value);
+                self.analyze_result.extend_deferred_markers(drop_instance.deferred_markers(span));
+
+                let drop_instance = drop_instance.instance();
                 if !drop_instance.is_no_op_drop_instance() {
-                    let discard = ExprDiscard::new(value, drop_instance);
+                    let discard = ExprDiscard::new(value, drop_instance.clone());
                     self.drops.push((site, Instruction::ExprDiscard(discard)));
                 }
             }
@@ -398,7 +396,7 @@ impl DropElaborator {
             Err(failures) => {
                 if self.reported_values.insert(value) {
                     let span = problem.value_span(value);
-                    self.report_failures(site, span, failures, diagnostics);
+                    self.report_failures(site, span, failures);
                 }
             }
         }
@@ -431,7 +429,7 @@ impl DropElaborator {
         &mut self,
         ty: Interned<Ty>,
         problem: &mut StackStateProblem<'_>,
-    ) -> Result<Interned<Ty>, Vec<DropFailure>> {
+    ) -> Result<DropInstance, Vec<DropFailure>> {
         if let Some(resolution) = self.instances.get(&ty) {
             return resolution.clone();
         }

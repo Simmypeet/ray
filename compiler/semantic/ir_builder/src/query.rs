@@ -68,8 +68,11 @@ async fn build_ir_executor(
         .any(|diagnostic| matches!(diagnostic, Diagnostic::NotAllPathsReturnValue(_)));
 
     if control_flow_valid && well_typed {
-        let memory_diagnostics = analyze(engine, def_id, &mut function).await;
+        let (memory_diagnostics, deferred_markers) =
+            analyze(engine, def_id, &mut function).await.into_parts();
+
         diagnostics.extend(memory_diagnostics.into_iter().map(Diagnostic::from));
+        function.extend_deferred_markers(deferred_markers);
     }
 
     // Later phases, like borrow checking, run only when nothing went wrong up

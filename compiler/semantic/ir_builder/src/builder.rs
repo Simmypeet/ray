@@ -104,7 +104,12 @@ impl Builder {
         for (_, requirement) in context.capture_plan(handler).captures() {
             let ty = requirement.storage_ty(&self.engine);
             let drop_instance = match resolve_drop_instance(&mut self.solver, ty).await {
-                Ok(drop_instance) => drop_instance,
+                Ok(drop_instance) => {
+                    self.ir_functions.extend_deferred_markers(
+                        drop_instance.deferred_markers(requirement.span()),
+                    );
+                    drop_instance.instance().clone()
+                }
                 Err(failures) => {
                     self.diagnostics.extend(
                         failures

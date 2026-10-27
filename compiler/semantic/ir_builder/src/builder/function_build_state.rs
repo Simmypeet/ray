@@ -19,7 +19,7 @@ use rayc_ir::{
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_solver::Solver;
+use rayc_solver::{Solver, solver::CoroutineSavedLocalsVisibility};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     capture::CaptureMode,
@@ -337,7 +337,12 @@ impl Builder {
             FunctionBuildState::new_def(context, &mut ir_functions, return_ty, diagnostic_span);
 
         Self {
-            solver: Solver::new(engine.clone(), def_id).await,
+            solver: Solver::builder()
+                .engine(engine.clone())
+                .site(def_id)
+                .coroutine_visiblity(CoroutineSavedLocalsVisibility::Deferred)
+                .build()
+                .await,
             engine,
             ir_functions,
             building_function,
@@ -507,7 +512,8 @@ impl Builder {
     fn finish_current_function(&mut self) {
         let function_id = self.building_function.ir_function_id;
 
-        // Functions with only explicit returns have already unwound their root scope.
+        // Functions with only explicit returns have already unwound their root
+        // scope.
         if self.ir_functions.get_function(function_id).unterminated_blocks().next().is_none() {
             return;
         }
@@ -520,6 +526,7 @@ impl Builder {
             .get_function(function_id)
             .traverse()
             .any(|(_, block)| block.terminator().is_none());
+
         if reaches_end
             && !self.building_function.return_ty.is_unit_type()
             && let Some(span) = self.building_function.diagnostic_span

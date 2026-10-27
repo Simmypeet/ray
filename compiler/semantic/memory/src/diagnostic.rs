@@ -60,7 +60,12 @@ pub enum Diagnostic {
     MoveOutOfBorrow(MoveOutOfBorrow),
 
     /// A selected `Drop` instance requires a where-clause predicate that does
-    /// not hold at the dropping site.
+    /// not hold at the dropping site, and the solver explains why.
+    #[from(skip)]
+    UnsatisfiedGoal(Box<UnsatisfiedGoal>),
+
+    /// A selected `Drop` instance requires a where-clause predicate that does
+    /// not hold at the dropping site, and no proof explains it.
     UnsatisfiedScopeDropPredicate(PredicateObligation),
 }
 
@@ -134,7 +139,9 @@ impl Report for Diagnostic {
                         .build(),
                 )
                 .build(),
-            Self::UnresolvedScopeDrop(diagnostic) => diagnostic.report(engine).await,
+            Self::UnresolvedScopeDrop(diagnostic) | Self::UnsatisfiedGoal(diagnostic) => {
+                diagnostic.report(engine).await
+            }
             Self::UnsatisfiedScopeDropPredicate(diagnostic) => diagnostic.report(engine).await,
             Self::MoveOutOfHandlerCapture(diagnostic) => {
                 move_out_of_handler_capture_report(engine, diagnostic).await

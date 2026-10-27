@@ -1,0 +1,26 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ # The `Drop` instance of a struct repeats the struct's marker predicate. A
+ 2 │ # coroutine of the function being checked holds saved locals that are not
+ 3 │ # known yet, so the predicate is deferred instead of failing the drop.
+ 4 │
+ 5 │ marker Send
+ 6 │
+ 7 │ impl['a, t] Send for &'a mut t where (t: Send)
+ 8 │ impl['a, t] Send for &'a t     where (t: Send)
+ 9 │
+10 │ struct Guard[t] where (t: Send):
+11 │     value: t
+12 │
+13 │ inst GuardDrop[t] for core.Drop[Guard[t]] given (inner: core.Drop[t]) where (t: Send):
+14 │     def drop(self: Guard[t]):
+15 │         inner.drop(self.value)
+16 │
+17 │ def spin(value: int32):
+18 │     # OK: the guard is dropped at the end of the scope.
+19 │     let guard = Guard { value = coro spin(value) }
+20 │
+21 │ def main():
+22 │     spin(0)

@@ -1,6 +1,7 @@
 //! State tracked by stack-memory dataflow analyses.
 
 mod analysis;
+pub mod analyze_result;
 pub mod diagnostic;
 mod drop_elaboration;
 pub mod drop_resolution;

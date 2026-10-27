@@ -3,6 +3,7 @@ use rayc_arena::Arena;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_semantic_element::deferred_marker::DeferredMarker;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     signature::get_effect_row,
@@ -39,6 +40,7 @@ pub struct IRFunctionMap {
     /// Whether the definition reported no error up to and including the
     /// building of this IR.
     no_error: bool,
+    deferred_markers: Vec<DeferredMarker>,
 }
 
 impl IRFunctionMap {
@@ -53,7 +55,12 @@ impl IRFunctionMap {
             root,
             closures: FxHashMap::default(),
             no_error: false,
+            deferred_markers: Vec::new(),
         }
+    }
+
+    pub fn extend_deferred_markers(&mut self, markers: impl IntoIterator<Item = DeferredMarker>) {
+        self.deferred_markers.extend(markers);
     }
 
     /// Returns whether the definition reported no error up to and including

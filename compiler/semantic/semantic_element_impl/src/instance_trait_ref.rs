@@ -237,7 +237,7 @@ impl Report for NonNominalDropImplementation {
         };
 
         Rendered::builder()
-            .message("Drop instance must be declared for a struct type")
+            .message("Drop instance must be declared for a struct or enum type")
             .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.span).await,
                 Some(format!("expected `Drop[SomeStruct[...]]`, {found}")),
