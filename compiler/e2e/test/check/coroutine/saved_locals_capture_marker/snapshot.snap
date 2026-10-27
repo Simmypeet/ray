@@ -60,26 +60,25 @@ expression: snapshot
 56 │     # this will error since `int32` is saved and `int32` does not implement `Fizz`
 57 │     requireFizz(coro savedYield[int32, bool]())
    │     ^^^^^^^^^^^
-   ┆ [error]: `Continuation[(), &mut <coroutine of savedYield[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>]` does not satisfy marker `main.Fizz`
+   ┆ [error]: `Continuation[(), &mut <coroutine of savedYield[int32, bool]>]` does not satisfy marker `main.Fizz`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_locals_capture_marker/main.ray:57:5
    ┆    │
    ┆ 57 │     requireFizz(coro savedYield[int32, bool]())
    ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
-   ┆ [note]: `Continuation[(), &mut <coroutine of savedYield[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>]` stores field `coroutine` of type `&mut <coroutine of savedYield[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>`
-   ┆    ╭▸ __ray_core__/core.ray:38:5
-   ┆    │
-   ┆ 38 │     coroutine: c
-   ┆    ╰╴    ━━━━━━━━━
-   ┆ [note]: `&mut <coroutine of savedYield[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>: main.Fizz` holds only if `<coroutine of savedYield[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>: main.Fizz`, by this implementation
+   ┆ [note]: the continuation stores the coroutine it resumes, of type `&mut <coroutine of savedYield[int32, bool]>`
+   ┆ [note]: `&mut <coroutine of savedYield[int32, bool]>: main.Fizz` holds only if `<coroutine of savedYield[int32, bool]>: main.Fizz`, by this implementation
    ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_locals_capture_marker/main.ray:5:1
    ┆   │
    ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
    ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ┆ [note]: the coroutine `<coroutine of savedYield[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>` saves a local of type `int32`
+   ┆ [note]: the coroutine of `main.savedYield` holds a variable of type `int32` across a suspension point
    ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_locals_capture_marker/main.ray:37:9
    ┆    │
    ┆ 37 │     let fst = defA.default()
-   ┆    ╰╴        ━━━
+   ┆    │         ━━━ this variable
+   ┆    ‡
+   ┆ 40 │     Yield.yield()
+   ┆    ╰╴    ───────────── suspended here
    ┆ [note]: `int32` is excluded by this negative implementation
    ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_locals_capture_marker/main.ray:4:1
    ┆   │

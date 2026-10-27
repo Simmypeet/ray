@@ -29,7 +29,7 @@ use rayc_type::{
 
 use crate::{
     Solver,
-    explain::{BuiltInMarkerRule, StructuralComponent},
+    explain::{BuiltInMarkerRule, CoroutineSavedLocal, StructuralComponent},
 };
 
 mod explain;
@@ -491,7 +491,7 @@ impl Solver {
 
                 components.extend(capture_map.iter().map(|(_, capture)| {
                     (
-                        StructuralComponent::CoroutineClosureCapture(*closure_context.span()),
+                        StructuralComponent::CoroutineClosureCapture(capture.span()),
                         capture
                             .storage_ty(self.engine())
                             .apply_subst_or_clone(&subst, self.engine()),
@@ -500,12 +500,21 @@ impl Solver {
             }
         }
 
-        // push saved locals components
+        // The values the body holds across its suspension points.
         let saved_locals = self.engine().get_saved_locals(closure_body_id).await;
         for saved_local in saved_locals.as_ref().into_iter().flat_map(|x| x.iter()) {
+            let origin = saved_local.origin();
             components.push((
-                StructuralComponent::CoroutineSavedLocals(saved_local.span()),
-                saved_local.ty().apply_subst_or_clone(&subst, self.engine()),
+                StructuralComponent::CoroutineSavedLocal(CoroutineSavedLocal::new(
+                    origin.kind(),
+                    origin.span(),
+                    origin.suspension_span(),
+                )),
+                Ty::erase_lifetimes(
+                    &saved_local.ty().apply_subst_or_clone(&subst, self.engine()),
+                    self.engine(),
+                )
+                .await,
             ));
         }
 

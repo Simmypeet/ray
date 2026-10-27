@@ -12,7 +12,7 @@ mod predicate;
 mod render;
 
 pub use failure::{
-    BuiltInMarkerRule, CandidateFailure, DropComponent, Goal, Leaf, ProofFailure, Reason, Step,
-    StructuralComponent,
+    BuiltInMarkerRule, CandidateFailure, CoroutineSavedLocal, DropComponent, Goal, Leaf,
+    ProofFailure, Reason, Step, StructuralComponent,
 };
 pub use render::{ExplainedGoal, RequiredBy, UnexplainedPredicate, UnsatisfiedPredicate};

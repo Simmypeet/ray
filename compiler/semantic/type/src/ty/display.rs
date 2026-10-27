@@ -224,8 +224,9 @@ impl TyDisplay<'_> {
     }
 
     /// Formats a coroutine type by the function it suspends, as in
-    /// `<coroutine of f[int32]>`. The arguments of the enclosing symbols are
-    /// left out.
+    /// `<coroutine of f[int32]>`. The arguments of the enclosing symbols and
+    /// the given dictionaries are left out: the type arguments decide the
+    /// dictionaries, which only lengthen the name.
     fn fmt_def_coroutine(
         &self,
         coroutine: application::DefCoroutineView<'_>,
@@ -235,7 +236,9 @@ impl TyDisplay<'_> {
             .poly_var_maps
             .get(&coroutine.def_id())
             .expect("should've been collected earlier")
-            .len();
+            .iter()
+            .take_while(|(_, poly_var)| poly_var.kind() != TyKind::Instance)
+            .count();
 
         f.write_str("<coroutine of ")?;
         self.fmt_symbol_application(

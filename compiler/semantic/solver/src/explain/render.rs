@@ -7,23 +7,25 @@ use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{
     drop_plan::DropPlanError,
     parameter::get_parameter_map,
+    saved_local::SavedLocalKind,
     struct_body::{FieldID, get_struct_body},
 };
 use rayc_symbol::{
     GlobalSymbolID,
+    core_item::{CoreItem, get_core_item},
     name::{get_name, get_qualified_name},
     source_map::to_absolute_span,
     span::get_span,
 };
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_poly_var_map},
-    ty::Ty,
+    ty::{Ty, application::CoroutineView},
     where_clause::PredicateKind,
 };
 
 use super::{
-    BuiltInMarkerRule, CandidateFailure, DropComponent, Goal, Leaf, ProofFailure, Reason, Step,
-    StructuralComponent,
+    BuiltInMarkerRule, CandidateFailure, CoroutineSavedLocal, DropComponent, Goal, Leaf,
+    ProofFailure, Reason, Step, StructuralComponent,
 };
 use crate::instance_resolution::{
     InstanceResolutionCycle, InstanceResolutionFrame, InstanceResolutionLimit,
@@ -435,6 +437,10 @@ impl Explanation {
                 );
                 (message, declaration(engine, implementation_id).await)
             }
+            Step::Structural(StructuralComponent::CoroutineSavedLocal(saved_local)) => {
+                self.notes.push(coroutine_saved_local(engine, parent, saved_local, child).await);
+                return;
+            }
             Step::Structural(component) => structural(engine, parent, component, child).await,
         };
 
@@ -774,20 +780,95 @@ async fn structural(
             (format!("the closure stores a capture of type `{value}`"), None)
         }
         StructuralComponent::CoroutineUpvar(span) => (
-            format!("the coroutine `{owner_display}` captures an argument of type `{value}`"),
+            format!(
+                "{} stores an argument of type `{value}`",
+                coroutine_name(engine, owner, &owner_display).await
+            ),
             if let Some(span) = span { Some(highlight(engine, span).await) } else { None },
-        ),
-        StructuralComponent::CoroutineSavedLocals(span) => (
-            format!("the coroutine `{owner_display}` saves a local of type `{value}`"),
-            Some(highlight(engine, span).await),
         ),
         StructuralComponent::CoroutineClosureCapture(span) => (
             format!(
-                "the coroutine of closure `{owner_display}` captures a value of type `{value}`"
+                "{} stores a value of type `{value}`, which the closure captures",
+                coroutine_name(engine, owner, &owner_display).await
             ),
             Some(highlight(engine, span).await),
         ),
+        StructuralComponent::CoroutineSavedLocal(_) => {
+            unreachable!("a saved local is explained by `coroutine_saved_local`")
+        }
     }
+}
+
+/// Names a coroutine by the function it suspends, as in "the coroutine of
+/// `main.f`", since its type spells out every argument and given.
+async fn coroutine_name(engine: &TrackedEngine, owner: &Goal, owner_display: &str) -> String {
+    match owner.subject_ty().and_then(Ty::as_coroutine_view) {
+        Some(CoroutineView::Def(coroutine)) => {
+            format!("the coroutine of `{}`", engine.get_qualified_name(coroutine.def_id()).await)
+        }
+        Some(CoroutineView::TraitDef(coroutine)) => format!(
+            "the coroutine of `{}`",
+            engine.get_qualified_name(coroutine.trait_def_id()).await
+        ),
+        Some(CoroutineView::Closure(_)) => "the coroutine of the closure".to_owned(),
+        None => format!("the coroutine `{owner_display}`"),
+    }
+}
+
+/// Explains a value that a coroutine holds across a suspension point, at
+/// where it comes from and at the suspension point.
+async fn coroutine_saved_local(
+    engine: &TrackedEngine,
+    owner: &Goal,
+    saved_local: CoroutineSavedLocal,
+    value: &Goal,
+) -> Note<ByteIndex> {
+    let coroutine = coroutine_name(engine, owner, &owner.subject(engine).await).await;
+    let value = value.subject(engine).await;
+
+    // A callee is held by the suspension point itself, so it is the only
+    // span to show.
+    let (message, label) = match saved_local.kind() {
+        SavedLocalKind::Variable => (
+            format!("{coroutine} holds a variable of type `{value}` across a suspension point"),
+            "this variable",
+        ),
+        SavedLocalKind::Parameter => (
+            format!("{coroutine} holds a parameter of type `{value}` across a suspension point"),
+            "this parameter",
+        ),
+        SavedLocalKind::Temporary | SavedLocalKind::Value => (
+            format!("{coroutine} holds a value of type `{value}` across a suspension point"),
+            "this value",
+        ),
+        SavedLocalKind::Continuation => (
+            format!("{coroutine} holds a continuation of type `{value}` across a suspension point"),
+            "this continuation",
+        ),
+        SavedLocalKind::Callee => (
+            format!(
+                "{coroutine} is suspended inside this call, so it holds the callee's coroutine of \
+                 type `{value}`"
+            ),
+            "suspended here",
+        ),
+        SavedLocalKind::RunCapture => (
+            format!(
+                "{coroutine} is suspended inside a `run ... with`, which captures a value of type \
+                 `{value}`"
+            ),
+            "captured by the `run ... with`",
+        ),
+    };
+
+    let primary = labeled(engine, saved_local.span(), label.to_owned()).await;
+    let related = if saved_local.span() == saved_local.suspension_span() {
+        Vec::new()
+    } else {
+        vec![labeled(engine, saved_local.suspension_span(), "suspended here".to_owned()).await]
+    };
+
+    Note::builder().message(message).primary_highlight(primary).related(related).build()
 }
 
 /// Explains a field of a struct that satisfies a marker structurally, at the
@@ -802,6 +883,15 @@ async fn struct_field(
     let Some(struct_) = owner.subject_ty().and_then(Ty::as_struct_view) else {
         return (format!("`{owner_display}` stores a field of type `{value}`"), None);
     };
+
+    // Only the compiler creates a continuation, so its field is not
+    // something to point at in source.
+    if struct_.symbol_id() == engine.get_core_item(CoreItem::ContinuationStruct).await {
+        return (
+            format!("the continuation stores the coroutine it resumes, of type `{value}`"),
+            None,
+        );
+    }
 
     let body = engine.get_struct_body(struct_.symbol_id()).await;
     let field = &body[field_id];

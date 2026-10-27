@@ -30,21 +30,19 @@ expression: snapshot
    ┆    │
    ┆ 22 │     requireFizz(coro checkItself())
    ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
-   ┆ [note]: `Continuation[(), &'_ mut <coroutine of checkItself>]` stores field `coroutine` of type `&'_ mut <coroutine of checkItself>`
-   ┆    ╭▸ __ray_core__/core.ray:38:5
-   ┆    │
-   ┆ 38 │     coroutine: c
-   ┆    ╰╴    ━━━━━━━━━
+   ┆ [note]: the continuation stores the coroutine it resumes, of type `&'_ mut <coroutine of checkItself>`
    ┆ [note]: `&'_ mut <coroutine of checkItself>: main.Fizz` holds only if `<coroutine of checkItself>: main.Fizz`, by this implementation
    ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_local_deferred_cpature_marker/main.ray:5:1
    ┆   │
    ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
    ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ┆ [note]: the coroutine `<coroutine of checkItself>` saves a local of type `int32`
+   ┆ [note]: the coroutine of `main.checkItself` holds a variable of type `int32` across a suspension point
    ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_local_deferred_cpature_marker/main.ray:18:9
    ┆    │
    ┆ 18 │     let number = 32
-   ┆    ╰╴        ━━━━━━
+   ┆    │         ━━━━━━ this variable
+   ┆ 19 │     Yield.yield()
+   ┆    ╰╴    ───────────── suspended here
    ┆ [note]: `int32` is excluded by this negative implementation
    ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_local_deferred_cpature_marker/main.ray:4:1
    ┆   │

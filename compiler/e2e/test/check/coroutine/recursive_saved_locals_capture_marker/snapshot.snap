@@ -49,26 +49,25 @@ expression: snapshot
 45 │     # this will error since `int32` is saved and `int32` does not implement `Fizz`
 46 │     requireFizz(coro savedYield[int32]())
    │     ^^^^^^^^^^^
-   ┆ [error]: `Continuation[(), &mut <coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>]` does not satisfy marker `main.Fizz`
+   ┆ [error]: `Continuation[(), &mut <coroutine of savedYield[int32]>]` does not satisfy marker `main.Fizz`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/recursive_saved_locals_capture_marker/main.ray:46:5
    ┆    │
    ┆ 46 │     requireFizz(coro savedYield[int32]())
    ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
-   ┆ [note]: `Continuation[(), &mut <coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>]` stores field `coroutine` of type `&mut <coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>`
-   ┆    ╭▸ __ray_core__/core.ray:38:5
-   ┆    │
-   ┆ 38 │     coroutine: c
-   ┆    ╰╴    ━━━━━━━━━
-   ┆ [note]: `&mut <coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>: main.Fizz` holds only if `<coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>: main.Fizz`, by this implementation
+   ┆ [note]: the continuation stores the coroutine it resumes, of type `&mut <coroutine of savedYield[int32]>`
+   ┆ [note]: `&mut <coroutine of savedYield[int32]>: main.Fizz` holds only if `<coroutine of savedYield[int32]>: main.Fizz`, by this implementation
    ┆   ╭▸ compiler/e2e/test/check/coroutine/recursive_saved_locals_capture_marker/main.ray:5:1
    ┆   │
    ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
    ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ┆ [note]: the coroutine `<coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>` saves a local of type `int32`
+   ┆ [note]: the coroutine of `main.savedYield` holds a variable of type `int32` across a suspension point
    ┆    ╭▸ compiler/e2e/test/check/coroutine/recursive_saved_locals_capture_marker/main.ray:35:9
    ┆    │
    ┆ 35 │     let fst = defA.default()
-   ┆    ╰╴        ━━━
+   ┆    │         ━━━ this variable
+   ┆ 36 │
+   ┆ 37 │     Yield.yield()
+   ┆    ╰╴    ───────────── suspended here
    ┆ [note]: `int32` is excluded by this negative implementation
    ┆   ╭▸ compiler/e2e/test/check/coroutine/recursive_saved_locals_capture_marker/main.ray:4:1
    ┆   │

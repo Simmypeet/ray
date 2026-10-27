@@ -92,9 +92,14 @@ impl Collector<'_> {
             // hold their own saved locals.
             Waited::RunWith(run_with) => {
                 for &capture in run_with.captures().iter().chain(run_with.handler_captures()) {
-                    let ty = function.get_expression(capture).ty().clone();
-                    self.push(ty, SavedLocalKind::RunCapture, suspension_span, suspension_span)
-                        .await;
+                    let expression = function.get_expression(capture);
+                    self.push(
+                        expression.ty().clone(),
+                        SavedLocalKind::RunCapture,
+                        expression.span(),
+                        suspension_span,
+                    )
+                    .await;
                 }
 
                 self.runs.push(suspension_span);

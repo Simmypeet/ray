@@ -30,17 +30,13 @@ expression: snapshot
    ┆    │
    ┆ 22 │     requireFizz(coro identity(42))
    ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
-   ┆ [note]: `Continuation[(), &mut <coroutine of identity[int32]>]` stores field `coroutine` of type `&mut <coroutine of identity[int32]>`
-   ┆    ╭▸ __ray_core__/core.ray:38:5
-   ┆    │
-   ┆ 38 │     coroutine: c
-   ┆    ╰╴    ━━━━━━━━━
+   ┆ [note]: the continuation stores the coroutine it resumes, of type `&mut <coroutine of identity[int32]>`
    ┆ [note]: `&mut <coroutine of identity[int32]>: main.Fizz` holds only if `<coroutine of identity[int32]>: main.Fizz`, by this implementation
    ┆   ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:5:1
    ┆   │
    ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
    ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ┆ [note]: the coroutine `<coroutine of identity[int32]>` captures an argument of type `int32`
+   ┆ [note]: the coroutine of `main.identity` stores an argument of type `int32`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:13:18
    ┆    │
    ┆ 13 │ pub def identity(value: a) -> a:
@@ -63,17 +59,13 @@ expression: snapshot
    ┆    │
    ┆ 18 │     value: a
    ┆    ╰╴    ━━━━━
-   ┆ [note]: `Continuation[(), &mut <coroutine of identity[int32]>]` stores field `coroutine` of type `&mut <coroutine of identity[int32]>`
-   ┆    ╭▸ __ray_core__/core.ray:38:5
-   ┆    │
-   ┆ 38 │     coroutine: c
-   ┆    ╰╴    ━━━━━━━━━
+   ┆ [note]: the continuation stores the coroutine it resumes, of type `&mut <coroutine of identity[int32]>`
    ┆ [note]: `&mut <coroutine of identity[int32]>: main.Fizz` holds only if `<coroutine of identity[int32]>: main.Fizz`, by this implementation
    ┆   ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:5:1
    ┆   │
    ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
    ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ┆ [note]: the coroutine `<coroutine of identity[int32]>` captures an argument of type `int32`
+   ┆ [note]: the coroutine of `main.identity` stores an argument of type `int32`
    ┆    ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:13:18
    ┆    │
    ┆ 13 │ pub def identity(value: a) -> a:

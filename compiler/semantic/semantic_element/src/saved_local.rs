@@ -54,7 +54,7 @@ impl ClosureCoroutineBodyID {
 }
 
 /// What a saved local is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum SavedLocalKind {
     /// A variable declared in source.
     Variable,
@@ -105,7 +105,7 @@ impl SavedLocalOrigin {
 
     /// Returns the span of what is saved: the declaration of a variable or a
     /// parameter, or the expression of anything else, such as the call of a
-    /// callee or the `run ... with` of a capture.
+    /// callee or the captured value of a `run ... with`.
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
 
