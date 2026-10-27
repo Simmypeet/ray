@@ -83,7 +83,7 @@ impl IROperationHandlerContext {
     pub const fn effect(&self) -> &Interned<Ty> { &self.effect }
 
     #[must_use]
-    pub(crate) const fn capture_map(&self) -> CaptureMapID { self.capture_map }
+    pub(crate) const fn capture_map_id(&self) -> CaptureMapID { self.capture_map }
 
     /// Returns the lifetime `'env` that one run of the handler borrows its
     /// environment for.

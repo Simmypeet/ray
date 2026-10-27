@@ -76,8 +76,8 @@ impl IRContext {
         }
     }
 
-    pub(super) const fn capture_map(&self) -> CaptureMapID {
-        self.nested_capture_map().expect("a def context does not have captures")
+    pub(super) const fn assert_capture_map_id(&self) -> CaptureMapID {
+        self.capture_map_id().expect("a def context does not have captures")
     }
 
     /// Returns the effect row stored by a nested function context, or `None`
@@ -169,12 +169,13 @@ impl IRContext {
 
     /// Returns the capture layout of a nested function context, or `None`
     /// for a def context.
-    pub(super) const fn nested_capture_map(&self) -> Option<CaptureMapID> {
+    #[must_use]
+    pub const fn capture_map_id(&self) -> Option<CaptureMapID> {
         match self {
             Self::Def => None,
-            Self::Closure(context) => Some(context.capture_map()),
-            Self::Thunk(context) => Some(context.capture_map()),
-            Self::OperationHandler(context) => Some(context.capture_map()),
+            Self::Closure(context) => Some(context.capture_map_id()),
+            Self::Thunk(context) => Some(context.capture_map_id()),
+            Self::OperationHandler(context) => Some(context.capture_map_id()),
         }
     }
 }

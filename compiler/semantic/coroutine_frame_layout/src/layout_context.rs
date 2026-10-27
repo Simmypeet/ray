@@ -3,7 +3,7 @@ use rayc_ir::{
     address::Local,
     borrowed_locals::MaybeBorrowedLocals,
     cfg::BlockID,
-    ir_function::IRFunction,
+    ir_function::{IRFunction, IRFunctionID, IRFunctionMap},
     liveness::{expr::ExprLiveness, local::LocalLiveness},
 };
 use rayc_qbice::TrackedEngine;
@@ -29,6 +29,7 @@ pub struct LayoutContext<'a> {
     maybe_borrowed_locals: MaybeBorrowedLocals,
 
     ir_function: &'a IRFunction,
+    ir_function_map: &'a IRFunctionMap,
 }
 
 impl<'a> LayoutContext<'a> {
@@ -37,8 +38,11 @@ impl<'a> LayoutContext<'a> {
         subst: Subst,
         engine: TrackedEngine,
         def_id: GlobalSymbolID,
-        ir_function: &'a IRFunction,
+        local_ir_function_id: IRFunctionID,
+        ir_function_map: &'a IRFunctionMap,
     ) -> Self {
+        let ir_function = ir_function_map.get_function(local_ir_function_id);
+
         let local_liveness = LocalLiveness::compute(ir_function).await;
         let expr_liveness = ExprLiveness::compute(ir_function).await;
         let maybe_borrowed_locals = MaybeBorrowedLocals::compute(ir_function).await;
@@ -51,6 +55,7 @@ impl<'a> LayoutContext<'a> {
             expr_liveness,
             maybe_borrowed_locals,
             ir_function,
+            ir_function_map,
         }
     }
 
@@ -66,6 +71,19 @@ impl<'a> LayoutContext<'a> {
     #[must_use]
     pub(crate) async fn parameter_locals(&self) -> Vec<Local> {
         self.ir_function.parameter_locals(self.def_id, &self.engine).await
+    }
+
+    pub(crate) fn capture_savables(&self) -> Option<impl Iterator<Item = Savable> + 'a> {
+        self.ir_function.context().capture_map_id().map(|capture_map_id| {
+            self.ir_function_map
+                .get_capture_map(capture_map_id)
+                .iter()
+                .map(|(id, _)| Savable::Local(Local::Capture(id)))
+        })
+    }
+
+    pub(crate) const fn borrows_captures(&self) -> bool {
+        self.ir_function.context().borrows_captures()
     }
 
     pub(crate) const fn ir_function(&self) -> &'a IRFunction { self.ir_function }

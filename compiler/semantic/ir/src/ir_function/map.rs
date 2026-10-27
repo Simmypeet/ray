@@ -10,7 +10,7 @@ use rayc_type::{
     ty::{Ty, application::ClosureID},
 };
 
-use super::{IRFunctionID, IRContext, IRFunction};
+use super::{IRContext, IRFunction, IRFunctionID};
 use crate::{
     address::Address,
     cfg::{BlockID, ControlFlowEdge, InstructionInsertion, Terminator},
@@ -85,7 +85,11 @@ impl IRFunctionMap {
     ///
     /// The definition function takes the effect row declared in the
     /// definition's signature, while a nested function stores its own.
-    pub async fn effect_of(&self, function_id: IRFunctionID, engine: &TrackedEngine) -> Interned<Ty> {
+    pub async fn effect_of(
+        &self,
+        function_id: IRFunctionID,
+        engine: &TrackedEngine,
+    ) -> Interned<Ty> {
         match self.get_function(function_id).context().nested_effect() {
             Some(effect) => effect.clone(),
             None => engine.get_effect_row(self.def_id).await,
@@ -316,14 +320,14 @@ impl IRFunctionMap {
     /// Returns the arena-owned capture layout referenced by a nested function.
     #[must_use]
     pub fn capture_map_id(&self, function_id: IRFunctionID) -> CaptureMapID {
-        self.get_function(function_id).context().capture_map()
+        self.get_function(function_id).context().assert_capture_map_id()
     }
 
     /// Returns the capture layout of a nested function, or `None` for the
     /// definition function, which does not capture values.
     #[must_use]
     pub fn nested_capture_map_id(&self, function_id: IRFunctionID) -> Option<CaptureMapID> {
-        self.get_function(function_id).context().nested_capture_map()
+        self.get_function(function_id).context().capture_map_id()
     }
 
     /// Visits every type stored in this map, together with where it is

@@ -54,9 +54,10 @@ impl FrameLayout {
         subst: Subst,
     ) -> Self {
         let ir_function_map = engine.get_ir(def_id).await;
-        let ir_function = ir_function_map.get_function(local_ir_function_id);
-        let layout_context = LayoutContext::new(subst, engine, def_id, ir_function).await;
+        let layout_context =
+            LayoutContext::new(subst, engine, def_id, local_ir_function_id, &ir_function_map).await;
 
+        // TODO: Has to do conflict resolution and upgrade the placement
         layout_context.compute_initial_frame_layout(solver).await
     }
 }
@@ -77,6 +78,20 @@ impl LayoutContext<'_> {
                 Savable::Local(parameter),
                 Placement::SuspensionLocal(SuspensionLocalPlacement::Start),
             );
+        }
+
+        // initialize captures
+        for captures in self.capture_savables().into_iter().flatten() {
+            // if the captures are borrowed, this means that the function will
+            // be invoked multiple times and captures should be survived across
+            // multiple invocations.
+            let placement = if self.borrows_captures() {
+                Placement::Prefix
+            } else {
+                Placement::SuspensionLocal(SuspensionLocalPlacement::Start)
+            };
+
+            layout.placements.insert(captures, placement);
         }
 
         for (&suspension_point_id, &waitee_expr_id) in &points {
