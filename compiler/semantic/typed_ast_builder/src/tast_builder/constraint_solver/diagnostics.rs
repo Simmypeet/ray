@@ -1,6 +1,7 @@
 use rayc_hash::FxHashSet;
+use rayc_semantic_element::deferred_marker::DeferredMarker;
 use rayc_solver::{
-    explain::{ProofFailure, RequiredBy, UnsatisfiedGoal},
+    explain::{ExplainedGoal, ProofFailure, RequiredBy},
     instance_resolution::InstanceResolutionError,
 };
 use rayc_type::subst::Subst;
@@ -111,23 +112,12 @@ impl ConstraintSolver {
                     diags.push(Diagnostic::from(rayc_resolution::Diagnostic::TraitRefCheck(check)));
                 }
                 ResolvedRootCause::PredicateObligation(predicate) => {
-                    // A marker goal with the final substitution applied is
-                    // explained by the chain of premises that makes it fail;
-                    // other predicates keep their own report.
-                    match self.solver.explain_predicate(predicate.predicate()).await {
-                        Some(failure) => {
-                            let required_by =
-                                RequiredBy::WhereClause { symbol_id: predicate.symbol_id() };
-                            diags.push(Diagnostic::UnsatisfiedGoal(UnsatisfiedGoal::new(
-                                predicate.span(),
-                                required_by,
-                                failure,
-                            )));
-                        }
-                        None => diags.push(Diagnostic::from(
-                            rayc_resolution::Diagnostic::Predicate(predicate),
-                        )),
-                    }
+                    // The final substitution is applied, so a marker goal is
+                    // explained by the chain of premises that makes it fail.
+                    let (predicate, symbol_id, span) = predicate.into_parts();
+                    let unsatisfied =
+                        self.solver.explain_unsatisfied_predicate(predicate, symbol_id, span).await;
+                    diags.push(Diagnostic::UnsatisfiedPredicate(unsatisfied));
                 }
                 ResolvedRootCause::InstanceResolve { trait_ref, span } => {
                     // A goal left over when inference ends still has
@@ -155,7 +145,7 @@ impl ConstraintSolver {
                                 continue;
                             };
 
-                            diags.push(Diagnostic::UnsatisfiedGoal(UnsatisfiedGoal::new(
+                            diags.push(Diagnostic::UnsatisfiedGoal(ExplainedGoal::new(
                                 span,
                                 RequiredBy::ImplicitInstance,
                                 failure,
@@ -190,7 +180,9 @@ impl ConstraintSolver {
     }
 
     #[must_use]
-    pub async fn residual_into_diags(mut self) -> (Vec<Diagnostic>, Subst) {
+    pub async fn finish_constraint_solver(
+        mut self,
+    ) -> (Vec<Diagnostic>, Vec<DeferredMarker>, Subst) {
         let failed_cause_ids = self
             .constraint_set
             .failed_pending_constraints()
@@ -226,6 +218,6 @@ impl ConstraintSolver {
         .await;
         debug_assert!(unreported_roots.is_empty());
 
-        (diags, self.provenance.into_subst())
+        (diags, self.constraint_set.into_deferred_markers(), self.provenance.into_subst())
     }
 }

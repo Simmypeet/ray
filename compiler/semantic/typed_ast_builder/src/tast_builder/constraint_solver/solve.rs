@@ -1,8 +1,10 @@
 use bon::Builder;
 use qbice::storage::intern::Interned;
 use rayc_resolution::{PredicateConstraint, PredicateObligation};
+use rayc_semantic_element::deferred_marker::DeferredMarker;
 use rayc_solver::{
     instance_resolution::{InstanceResolutionError, InstanceResolutionObligation},
+    solver::MarkerEntailment,
     ty_relate::{self, DerivedConstraint, Step},
 };
 use rayc_type::{
@@ -14,6 +16,7 @@ use rayc_type::{
         inference::{GenInfer, Inference},
         lifetime::Lifetime,
     },
+    where_clause::MarkerPredicate,
 };
 
 use super::{CauseID, ConstraintSolver};
@@ -23,11 +26,16 @@ use crate::tast_builder::{TAstBuilder, constraint_solver::constraints::Constrain
 pub struct ConstraintSet {
     residual_constraints: Vec<PendingConstraint>,
     errored_constraints: Vec<(ConstraintError, PendingConstraint)>,
+    deferred_markers: Vec<DeferredMarker>,
 }
 
 impl ConstraintSet {
     pub const fn new() -> Self {
-        Self { residual_constraints: Vec::new(), errored_constraints: Vec::new() }
+        Self {
+            residual_constraints: Vec::new(),
+            errored_constraints: Vec::new(),
+            deferred_markers: Vec::new(),
+        }
     }
 
     pub(super) fn failed_pending_constraints(&self) -> impl Iterator<Item = &PendingConstraint> {
@@ -87,8 +95,8 @@ impl TAstBuilder {
         &mut self,
         mut queued: Vec<PendingConstraint>,
     ) {
-        // make sure the new constraints are updated with the latest substitution before
-        // we start processing them
+        // make sure the new constraints are updated with the latest
+        // substitution before we start processing them
         for queued in &mut queued {
             if let Some(new) =
                 self.constraint_solver.provenance.apply_subst_with_causes(queued, &self.engine)
@@ -122,21 +130,34 @@ impl TAstBuilder {
         }
     }
 
-    async fn entail_marker_predicate(
-        &mut self,
-        predicate: rayc_type::where_clause::MarkerPredicate,
-        cause_id: CauseID,
-    ) {
-        if self.constraint_solver.solver.entails_marker_predicate(predicate.clone()).await.holds() {
-            return;
-        }
+    async fn entail_marker_predicate(&mut self, predicate: MarkerPredicate, cause_id: CauseID) {
+        match self.constraint_solver.solver.entails_marker_predicate(predicate.clone()).await {
+            MarkerEntailment::Overflow | MarkerEntailment::Fails => {
+                // A later type substitution may make an unresolved marker goal
+                // provable, so retain it in the common residual worklist.
+                self.constraint_solver.constraint_set.residual_constraints.push(
+                    PendingConstraint {
+                        constraint: Constraint::MarkerPredicate(predicate),
+                        cause_id,
+                    },
+                );
+            }
 
-        // A later type substitution may make an unresolved marker goal
-        // provable, so retain it in the common residual worklist.
-        self.constraint_solver.constraint_set.residual_constraints.push(PendingConstraint {
-            constraint: Constraint::MarkerPredicate(predicate),
-            cause_id,
-        });
+            MarkerEntailment::Deferred => {
+                let predicate_obligation = self
+                    .constraint_solver
+                    .provenance
+                    .get_predicate_obligation_from_cause_id(cause_id);
+
+                self.constraint_solver.constraint_set.deferred_markers.push(DeferredMarker::new(
+                    predicate.clone(),
+                    predicate_obligation.span(),
+                    predicate_obligation.symbol_id(),
+                ));
+            }
+
+            MarkerEntailment::Holds => {}
+        }
     }
 
     async fn entail_instance_trait_ref(
@@ -175,21 +196,23 @@ impl TAstBuilder {
     ) {
         match self.constraint_solver.solver.resolve_instance(trait_ref.clone()).await {
             Ok(resolved) => {
-                let cause_id =
+                let derived_cause_id =
                     self.constraint_solver.provenance.insert_instance_resolution_cause(cause_id);
+
                 // Type inference ignores lifetimes, so the outlives
                 // constraints of the selection are dropped.
                 let (result, obligations, _) = resolved.into_parts();
 
-                // Instance search returns the predicates contributed by the selected proof
-                // tree.
-                self.enqueue_instance_resolution_obligations(obligations, cause_id, queued);
+                // Instance search returns the predicates contributed by the
+                // selected proof tree.
+                self.enqueue_instance_resolution_obligations(obligations, derived_cause_id, queued);
 
-                // Relate the requested dictionary after its predicates have been queued. The
-                // worklist is LIFO, so this relation is solved before those predicates.
+                // Relate the requested dictionary after its predicates have
+                // been queued. The worklist is LIFO, so this
+                // relation is solved before those predicates.
                 queued.push(PendingConstraint {
                     constraint: Constraint::TyRelate(TyRelate::new_invariant(instance, result)),
-                    cause_id,
+                    cause_id: derived_cause_id,
                 });
             }
             Err(InstanceResolutionError::NotReady(_)) => {
@@ -220,8 +243,8 @@ impl TAstBuilder {
     ) {
         let span = self.constraint_solver.provenance.instance_resolution_span(cause_id);
 
-        // Give each returned predicate its own diagnostic root at the implicit-use
-        // site.
+        // Give each returned predicate its own diagnostic root at the
+        // implicit-use site.
         for obligation in obligations {
             let (instance_id, predicate) = obligation.into_parts();
             let obligation = PredicateObligation::new(predicate, instance_id, span);
@@ -491,5 +514,13 @@ impl TAstBuilder {
     pub fn new_equality_comparable_type_inference(&mut self) -> Interned<Ty> {
         let inference = self.gen_infer(TyKind::Star, InferenceConstraint::EqualityComparable);
         self.engine.intern(Ty::Inference(inference))
+    }
+}
+
+impl ConstraintSet {
+    pub(in crate::tast_builder::constraint_solver) fn into_deferred_markers(
+        self,
+    ) -> Vec<DeferredMarker> {
+        self.deferred_markers
     }
 }

@@ -4,6 +4,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_solver::explain::UnsatisfiedPredicate;
 use rayc_symbol::source_map::to_absolute_span;
 
 #[derive(
@@ -46,6 +47,10 @@ impl Report for NotAllPathsReturnValue {
 pub enum Diagnostic {
     NotAllPathsReturnValue(NotAllPathsReturnValue),
     Memory(rayc_memory::Diagnostic),
+
+    /// A deferred marker predicate does not hold once the saved locals of the
+    /// coroutines are known.
+    UnsatisfiedDeferredMarker(UnsatisfiedPredicate),
 }
 
 impl Report for Diagnostic {
@@ -53,6 +58,7 @@ impl Report for Diagnostic {
         match self {
             Self::NotAllPathsReturnValue(diagnostic) => diagnostic.report(engine).await,
             Self::Memory(diagnostic) => diagnostic.report(engine).await,
+            Self::UnsatisfiedDeferredMarker(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }

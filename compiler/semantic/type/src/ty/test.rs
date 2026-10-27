@@ -172,11 +172,23 @@ async fn closure_substitution_preserves_unused_owner_arguments_separately_from_s
     };
     assert_eq!(view.owner_id(), owner);
     assert_eq!(view.local_closure_id(), closure_id);
-    assert_eq!(view.owner_arguments(), [bool_ty, float_ty]);
     assert_eq!(view.params(), std::slice::from_ref(&int_ty));
     assert_eq!(view.return_type(), &int_ty);
     assert_eq!(view.effect_row(), &effect);
     assert_eq!(view.captured_tuple(), &captures);
+
+    // The owner arguments are private to the view, so they are compared
+    // through the whole closure type.
+    let expected = Ty::new_closure(
+        Closure::new(owner, closure_id, 2),
+        [bool_ty, float_ty],
+        [int_ty.clone()],
+        int_ty,
+        effect,
+        captures,
+        &engine,
+    );
+    assert_eq!(instantiated, expected);
 }
 
 // input: three captureless closures with identical signatures

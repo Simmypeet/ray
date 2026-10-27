@@ -8,11 +8,12 @@ use rayc_ir::{
     ir_function::{FunctionID, IRFunctionMap},
 };
 use rayc_qbice::TrackedEngine;
-use rayc_solver::Solver;
+use rayc_solver::{Solver, solver::CoroutineSavedLocalsVisibility};
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
-    Diagnostic, PlaceState, PossibleStates, StackState, StackStateProblem,
+    PlaceState, PossibleStates, StackState, StackStateProblem,
+    analyze_result::AnalyzeResult,
     diagnostic::{
         MoveOutOfBorrow, MoveOutOfHandlerCapture, UseAfterMove, UseAfterPartialMove,
         UseBeforeInitialization,
@@ -39,26 +40,28 @@ use crate::{
 /// the scope they were evaluated in, and on the edges into a merge which
 /// other edges reach without them.
 ///
-/// Returns the diagnostics found.
+/// Returns the diagnostics found, and the marker predicates of the selected
+/// drops which depend on what a coroutine holds. Those are proved once the
+/// coroutines' saved locals are known.
 pub async fn analyze(
     engine: &TrackedEngine,
     def_id: GlobalSymbolID,
     functions: &mut IRFunctionMap,
-) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::new();
+) -> AnalyzeResult {
+    let mut analyze_result = AnalyzeResult::default();
 
     // Nested functions use the enclosing definition's predicates and target,
     // but each function owns an independent CFG and stack state.
     let function_ids =
         functions.functions().map(|(function_id, _)| function_id).collect::<Vec<_>>();
     for function_id in function_ids {
-        let mut elaborator = DropElaborator::new(functions.get_function(function_id));
-        analyze_function(engine, def_id, functions, function_id, &mut elaborator, &mut diagnostics)
-            .await;
+        let mut elaborator =
+            DropElaborator::new(functions.get_function(function_id), &mut analyze_result);
+        analyze_function(engine, def_id, functions, function_id, &mut elaborator).await;
         elaborator.insert_drops(functions, function_id);
     }
 
-    diagnostics
+    analyze_result
 }
 
 /// Reports loads of possibly uninitialized places, and moves out of captures
@@ -77,13 +80,21 @@ async fn analyze_function(
     def_id: GlobalSymbolID,
     functions: &IRFunctionMap,
     function_id: FunctionID,
-    elaborator: &mut DropElaborator,
-    diagnostics: &mut Vec<Diagnostic>,
+    elaborator: &mut DropElaborator<'_>,
 ) {
     let function = functions.get_function(function_id);
     let captures = functions.captures_for_function(function_id);
-    let mut problem =
-        StackStateProblem::new(Solver::new(engine.clone(), def_id).await, function, captures).await;
+    let mut problem = StackStateProblem::new(
+        Solver::builder()
+            .engine(engine.clone())
+            .site(def_id)
+            .coroutine_visiblity(CoroutineSavedLocalsVisibility::Deferred)
+            .build()
+            .await,
+        function,
+        captures,
+    )
+    .await;
     let solution = function.solve_dataflow(&mut problem).await.unwrap();
 
     // Replay from stable block-entry facts. Reporting during fixpoint
@@ -118,12 +129,12 @@ async fn analyze_function(
                                 .address()
                                 .deref_base(engine)
                                 .unwrap_or_else(|| load.address().clone());
-                            check_read(expression.span(), &read, &state, function, diagnostics);
+                            check_read(elaborator, expression.span(), &read, &state, function);
 
                             // Memory behind a reference is only borrowed.
                             if problem.load_moves_out_of_borrow(load, expression.ty().clone()).await
                             {
-                                diagnostics.push(
+                                elaborator.push_diagnostic(
                                     MoveOutOfBorrow::builder()
                                         .move_span(expression.span())
                                         .build()
@@ -142,7 +153,7 @@ async fn analyze_function(
                                     .direct_local()
                                     .expect("a capture is a stack root");
                                 let capture_span = problem.binding_span(root).await;
-                                diagnostics.push(
+                                elaborator.push_diagnostic(
                                     MoveOutOfHandlerCapture::new(expression.span(), capture_span)
                                         .into(),
                                 );
@@ -153,7 +164,7 @@ async fn analyze_function(
                         // pointer it dereferences.
                         IRExprKind::RefOf(ref_of) => {
                             if let Some(base) = ref_of.address().deref_base(engine) {
-                                check_read(expression.span(), &base, &state, function, diagnostics);
+                                check_read(elaborator, expression.span(), &base, &state, function);
                             }
                         }
 
@@ -177,9 +188,7 @@ async fn analyze_function(
                 // Values still initialized when their scope ends are dropped
                 // just before the scope pops.
                 Instruction::ScopePop(scope_id) => {
-                    elaborator
-                        .scope_drops(point, *scope_id, &state, &mut problem, diagnostics)
-                        .await;
+                    elaborator.scope_drops(point, *scope_id, &state, &mut problem).await;
                 }
 
                 // The previous value of a reassigned place is dropped after
@@ -191,19 +200,12 @@ async fn analyze_function(
                 // memory still holds a value, which is dropped as a whole.
                 Instruction::Store(store) => {
                     if let Some(base) = store.address().deref_base(engine) {
-                        check_read(store.span(), &base, &state, function, diagnostics);
+                        check_read(elaborator, store.span(), &base, &state, function);
                     }
 
                     let ty = function.get_expression(store.expression()).ty().clone();
                     elaborator
-                        .reassignment_drops(
-                            point,
-                            store.address(),
-                            ty,
-                            &state,
-                            &mut problem,
-                            diagnostics,
-                        )
+                        .reassignment_drops(point, store.address(), ty, &state, &mut problem)
                         .await;
                 }
 
@@ -226,33 +228,33 @@ async fn analyze_function(
             continue;
         };
 
-        elaborator.merge_drops(*edge, exit, entry, &drop_order, &mut problem, diagnostics).await;
+        elaborator.merge_drops(*edge, exit, entry, &drop_order, &mut problem).await;
     }
 }
 
 /// Reports a read at `span` of the place `address` when that place may be
 /// uninitialized in `state`. Untracked places are never reported.
 fn check_read(
+    elaborator: &mut DropElaborator<'_>,
     span: rayc_lexical::tree::RelativeSpan,
     address: &Address,
     state: &StackState,
     function: &rayc_ir::ir_function::IRFunction,
-    diagnostics: &mut Vec<Diagnostic>,
 ) {
     if let Some(place_state) = state.place_state(address)
         && !place_state.is_initialized()
     {
-        diagnostics_for_load(span, place_state, function, diagnostics);
+        diagnostics_for_load(elaborator, span, place_state, function);
     }
 }
 
 /// Returns the spans of the most recent moves which may have left `state`
 /// uninitialized.
 fn diagnostics_for_load(
+    drop_elabotor: &mut DropElaborator<'_>,
     use_span: rayc_lexical::tree::RelativeSpan,
     state: &PlaceState,
     function: &rayc_ir::ir_function::IRFunction,
-    diags: &mut Vec<Diagnostic>,
 ) {
     let mut move_points = BTreeSet::new();
     let mut may_be_uninitialized_without_move = false;
@@ -262,7 +264,7 @@ fn diagnostics_for_load(
     });
 
     if may_be_uninitialized_without_move {
-        diags.push(UseBeforeInitialization::new(use_span).into());
+        drop_elabotor.push_diagnostic(UseBeforeInitialization::new(use_span).into());
     }
 
     if move_points.is_empty() {
@@ -270,7 +272,7 @@ fn diagnostics_for_load(
     }
 
     let move_spans = move_points.into_iter().map(|point| move_span(function, point)).collect();
-    diags.push(match state {
+    drop_elabotor.push_diagnostic(match state {
         PlaceState::Partial(_) => UseAfterPartialMove::new(use_span, move_spans).into(),
         PlaceState::Uniform(PossibleStates::Uninitialized(_)) => {
             UseAfterMove::new(use_span, move_spans).into()

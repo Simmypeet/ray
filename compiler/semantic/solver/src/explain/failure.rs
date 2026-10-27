@@ -1,7 +1,10 @@
 //! The failure tree: why a goal could not be proved.
 
 use qbice::{Decode, Encode, StableHash};
-use rayc_semantic_element::{drop_plan::DropPlanError, struct_body::FieldID};
+use rayc_lexical::tree::RelativeSpan;
+use rayc_semantic_element::{
+    drop_plan::DropPlanError, saved_local::SavedLocalKind, struct_body::FieldID,
+};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{poly_var::GlobalPolyVarID, trait_ref::TraitRef, where_clause::MarkerPredicate};
 
@@ -186,6 +189,49 @@ pub enum StructuralComponent {
 
     /// One capture of a closure, by index into its captured tuple.
     ClosureCapture(usize),
+
+    /// An argument of a suspended function, which its coroutine stores, at
+    /// the parameter it is passed for.
+    CoroutineUpvar(Option<RelativeSpan>),
+
+    /// A value that the coroutine holds while it is suspended.
+    CoroutineSavedLocal(CoroutineSavedLocal),
+
+    /// A capture of a suspended closure, which its coroutine stores, at
+    /// where the closure captures it.
+    CoroutineClosureCapture(RelativeSpan),
+}
+
+/// A value held by a coroutine across a suspension point, with where it
+/// comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+pub struct CoroutineSavedLocal {
+    kind: SavedLocalKind,
+    span: RelativeSpan,
+    suspension_span: RelativeSpan,
+}
+
+impl CoroutineSavedLocal {
+    #[must_use]
+    pub const fn new(
+        kind: SavedLocalKind,
+        span: RelativeSpan,
+        suspension_span: RelativeSpan,
+    ) -> Self {
+        Self { kind, span, suspension_span }
+    }
+
+    /// Returns what is held.
+    #[must_use]
+    pub const fn kind(&self) -> SavedLocalKind { self.kind }
+
+    /// Returns where the value is declared or evaluated.
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.span }
+
+    /// Returns the suspension point the value is held across.
+    #[must_use]
+    pub const fn suspension_span(&self) -> RelativeSpan { self.suspension_span }
 }
 
 /// A marker goal that the compiler rejects whatever the givens say.

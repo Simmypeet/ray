@@ -1,5 +1,7 @@
+use bon::Builder;
 use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
+use rayc_semantic_element::deferred_marker::DeferredMarker;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     subst::{MutSubstitutable, Subst},
@@ -22,19 +24,24 @@ pub mod typed_thunk;
 pub mod typed_variable;
 
 /// A typed AST and the capture layouts inferred for its nested functions.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable, Builder)]
 pub struct TypedAst {
     functions: TypedFunctionMap,
     captures: CapturePlan,
     /// Whether building this typed AST reported no error.
+    #[builder(default = false)]
     no_error: bool,
+    #[builder(default = Vec::new())]
+    deferred_markers: Vec<DeferredMarker>,
 }
 
 impl TypedAst {
-    #[must_use]
-    pub const fn new(functions: TypedFunctionMap, captures: CapturePlan) -> Self {
-        Self { functions, captures, no_error: false }
+    pub fn extend_deferred_markers(&mut self, markers: impl IntoIterator<Item = DeferredMarker>) {
+        self.deferred_markers.extend(markers);
     }
+
+    #[must_use]
+    pub fn deferred_markers(&self) -> &[DeferredMarker] { &self.deferred_markers }
 
     /// Returns whether building this typed AST reported no error.
     ///

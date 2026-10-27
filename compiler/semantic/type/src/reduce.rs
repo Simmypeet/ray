@@ -210,7 +210,7 @@ pub(crate) async fn reduce_trait_def_coroutine(
     // A coroutine type lists the arguments of the implementation first, then
     // those of its instance.
     let poly_vars = engine.get_enclosing_poly_var_maps(member_id).await;
-    let poly_args = poly_vars.args_from_subst(&substitution)?;
+    let poly_args = poly_vars.create_args_from_subst(&substitution)?;
 
     Some(Ty::new_def_coroutine(member_id, poly_args, engine))
 }

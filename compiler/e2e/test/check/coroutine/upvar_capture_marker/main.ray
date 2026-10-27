@@ -1,0 +1,23 @@
+pub marker Fizz
+
+
+impl !Fizz for int32
+impl['a, t] Fizz for &'a mut t where(t: Fizz)
+impl['a, t] Fizz for &'a t     where(t: Fizz)
+
+
+pub def requireFizz(value: a) given(_: core.Drop[a]) where(a: Fizz):
+    pass
+
+
+pub def identity(value: a) -> a:
+    return value
+
+
+pub struct Wrapper[a]:
+    value: a
+
+
+pub def main():
+    requireFizz(coro identity(42))
+    requireFizz(Wrapper{value=coro identity(42)})

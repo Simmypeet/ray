@@ -1,0 +1,48 @@
+pub marker Fizz
+
+
+impl !Fizz for int32
+impl['a, t] Fizz for &'a mut t where(t: Fizz)
+impl['a, t] Fizz for &'a t     where(t: Fizz)
+
+
+pub eff Yield:
+    def yield()
+
+
+pub def requireFizz(value: a) given(_: core.Drop[a]) where(a: Fizz):
+    pass
+
+
+pub trait Default[a]:
+    pub def default() -> a
+
+
+pub inst DefaultInt32 for Default[int32]:
+    def default() -> int32:
+        return 0
+
+
+pub inst DefaultBool for Default[bool]:
+    def default() -> bool:
+        return false
+
+
+pub def savedYield[a]() given(
+    defA: Default[a],
+    dropA: core.Drop[a]
+) -> a \ {Yield}:
+    let fst = defA.default()
+
+    Yield.yield()
+
+    savedYield[a]() # recursive call to savedYield
+
+    return fst
+
+
+pub def useYield() \ {Yield}:
+    # this will error since `int32` is saved and `int32` does not implement `Fizz`  
+    requireFizz(coro savedYield[int32]())
+    # Okay since `bool` is saved and `bool` implements `Fizz`
+    requireFizz(coro savedYield[bool]())

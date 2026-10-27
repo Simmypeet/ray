@@ -154,6 +154,13 @@ impl PredicateObligation {
     #[must_use]
     pub const fn span(&self) -> RelativeSpan { self.span }
 
+    /// Returns the predicate, the symbol whose where clause has it, and the
+    /// span of the use that requires it.
+    #[must_use]
+    pub fn into_parts(self) -> (PredicateKind, GlobalSymbolID, RelativeSpan) {
+        (self.predicate, self.symbol_id, self.span)
+    }
+
     #[must_use]
     pub fn constraint(&self) -> PredicateConstraint {
         match &self.predicate {
@@ -171,44 +178,6 @@ impl Substitutable for PredicateObligation {
         self.predicate
             .apply_subst(subst, engine)
             .map(|predicate| Self::new(predicate, self.symbol_id, self.span))
-    }
-}
-
-impl PredicateObligation {
-    /// Describes what the predicate requires, as in "`t` must equal `u`".
-    async fn describe_requirement(&self, engine: &TrackedEngine) -> String {
-        match &self.predicate {
-            PredicateKind::AssociatedTypeEquality(equality) => {
-                let left = equality.left().display(engine).await;
-                let right = equality.right().display(engine).await;
-                format!("`{left}` must equal `{right}`")
-            }
-            PredicateKind::Marker(predicate) => {
-                let implementor = predicate.implementor().display(engine).await;
-                let marker = engine.get_qualified_name(predicate.marker_id()).await;
-                format!("`{implementor}` must satisfy marker `{marker}`")
-            }
-            PredicateKind::Outlives(predicate) => {
-                let subject = predicate.lesser().display(engine).await;
-                let bound = predicate.greater().display(engine).await;
-                format!("`{subject}` must outlive `{bound}`")
-            }
-        }
-    }
-}
-
-impl Report for PredicateObligation {
-    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
-        let name = engine.get_qualified_name(self.symbol_id).await;
-        let requirement = self.describe_requirement(engine).await;
-
-        Rendered::builder()
-            .message(format!("where-clause obligation for `{name}` is not satisfied"))
-            .primary_highlight(Highlight::new(
-                engine.to_absolute_span(&self.span).await,
-                Some(requirement),
-            ))
-            .build()
     }
 }
 
@@ -297,7 +266,7 @@ impl RelationOrigin {
             }
             Self::Predicate(predicate) => {
                 let name = engine.get_qualified_name(predicate.symbol_id).await;
-                let requirement = predicate.describe_requirement(engine).await;
+                let requirement = predicate.predicate.describe_requirement(engine).await;
                 format!("this is required by the where clause of `{name}`: {requirement}")
             }
         }

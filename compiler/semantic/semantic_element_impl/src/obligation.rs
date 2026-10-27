@@ -12,11 +12,7 @@ use rayc_resolution::{
     Obligation, PredicateConstraint, PredicateObligation, ReferenceWf, RelationOrigin,
     TraitRefCheck, UnsatisfiedRelationOutlives,
 };
-use rayc_solver::{
-    Solver,
-    explain::{RequiredBy, UnsatisfiedGoal},
-    ty_relate::Step,
-};
+use rayc_solver::{Solver, ty_relate::Step};
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{constraint::outlives::OutlivesConstraints, where_clause::OutlivesPredicate};
 
@@ -136,13 +132,15 @@ impl ExpandedObligation {
         match self {
             Self::TraitRefCheck(check) => check.report(&engine).await,
             Self::Predicate(predicate) => {
-                // A marker goal is explained by the chain of premises that
-                // makes it fail; other predicates keep their own report.
-                let Some(failure) = solver.explain_predicate(predicate.predicate()).await else {
-                    return predicate.report(&engine).await;
-                };
-                let required_by = RequiredBy::WhereClause { symbol_id: predicate.symbol_id() };
-                UnsatisfiedGoal::new(predicate.span(), required_by, failure).report(&engine).await
+                solver
+                    .explain_unsatisfied_predicate(
+                        predicate.predicate().clone(),
+                        predicate.symbol_id(),
+                        predicate.span(),
+                    )
+                    .await
+                    .report(&engine)
+                    .await
             }
             Self::ReferenceWf(check) => check.report(&engine).await,
         }

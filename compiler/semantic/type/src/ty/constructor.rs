@@ -319,7 +319,7 @@ impl Ty {
         // an instance's `def` includes the arguments of the instance.
         let poly_vars = engine.get_enclosing_poly_var_maps(function_id).await;
         let poly_args = poly_vars
-            .args_from_subst(call_subst)
+            .create_args_from_subst(call_subst)
             .expect("the call should instantiate every parameter of the coroutine's function");
 
         Some(Self::new_def_coroutine(function_id, poly_args, engine))

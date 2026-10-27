@@ -572,6 +572,24 @@ impl Provenance {
     }
 
     pub(super) fn into_subst(self) -> Subst { self.subst }
+
+    #[must_use]
+    pub(super) fn get_predicate_obligation_from_cause_id(
+        &self,
+        cause_id: CauseID,
+    ) -> &PredicateObligation {
+        let root_cause_id = self.primary_root_cause_id(cause_id);
+
+        let Cause::Root(root) = &self.causes[root_cause_id] else {
+            unreachable!("the primary cause of a predicate obligation must be a root cause")
+        };
+
+        let RootCauseOrigin::PredicateObligation(predicate) = &root.origin else {
+            panic!("the primary cause of a predicate obligation must be a predicate obligation")
+        };
+
+        predicate
+    }
 }
 
 impl ConstraintSolver {

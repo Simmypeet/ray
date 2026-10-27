@@ -1,0 +1,22 @@
+pub marker Fizz
+
+
+impl !Fizz for int32
+impl['a, t] Fizz for &'a mut t where(t: Fizz)
+impl['a, t] Fizz for &'a t     where(t: Fizz)
+
+
+pub eff Yield:
+    def yield()
+
+
+pub def requireFizz(value: a) given(_: core.Drop[a]) where(a: Fizz):
+    pass
+
+
+pub def checkItself() \ {Yield}:
+    let number = 32
+    Yield.yield()
+    let result = number * number
+
+    requireFizz(coro checkItself())

@@ -190,17 +190,7 @@ impl MonoClosureInstance {
     pub const fn owner(&self) -> &MonoDefInstance { &self.owner }
 
     pub async fn from_closure(solver: &Solver, closure: ClosureView<'_>) -> Self {
-        let engine = solver.engine();
-        let maps = engine.get_enclosing_poly_var_maps(closure.owner_id()).await;
-
-        let substitution = maps.subst_from_args(closure.owner_arguments().iter().cloned());
-
-        assert_eq!(
-            substitution.len(),
-            closure.owner_arguments().len(),
-            "closure owner arguments must match enclosing definition's polymorphic variables"
-        );
-
+        let substitution = closure.create_subst(solver.engine()).await;
         let owner = MonoDefInstance::new(closure.owner_id(), substitution, solver).await;
         Self::new(owner, closure.local_closure_id())
     }

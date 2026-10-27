@@ -78,15 +78,6 @@ expression: snapshot
  9 │     type Return = bool
 10 │
 11 │ def invalid(value: int32) -> int32:
-   │     ^^^^^^^
-   ┆ [error]: function body effects do not match its signature: expected `{}`, but found `<error>`
-   ┆    ╭▸ compiler/e2e/test/check/semantic/core_def_invalid/main.ray:11:5
-   ┆    │
-   ┆ 11 │ def invalid(value: int32) -> int32:
-   ┆    │     ━━━━━━━ the function body has effects outside its signature
-   ┆ 12 │     return core.Def.call(value, value)
-   ┆    ╰╴           ─────────────────────────── effect `<error>` introduced here
-   ┆
 12 │     return core.Def.call(value, value)
 13 │
 14 │ inst Bare for Def[int32]:

@@ -5,10 +5,13 @@
 
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
-use rayc_qbice::TrackedEngine;
+use rayc_ir::get_ir;
 use rayc_semantic_element::{
     all_marker_implementations::get_all_marker_implementations,
-    marker_implementation::get_marker_implementation, struct_body::get_struct_body,
+    marker_implementation::get_marker_implementation,
+    parameter::get_parameter_map,
+    saved_local::{ClosureCoroutineBodyID, CoroutineBody, get_saved_locals},
+    struct_body::get_struct_body,
     variant_payload_ty::get_variant_payload_ty,
 };
 use rayc_symbol::{
@@ -26,7 +29,7 @@ use rayc_type::{
 
 use crate::{
     Solver,
-    explain::{BuiltInMarkerRule, StructuralComponent},
+    explain::{BuiltInMarkerRule, CoroutineSavedLocal, StructuralComponent},
 };
 
 mod explain;
@@ -107,6 +110,22 @@ enum MarkerRule {
 
     /// No rule applies to the type.
     Opaque,
+
+    /// [`MarkerEntailmentState`]'s is told to defer evaluating the saved locals
+    /// of the coroutine, which could cause cyclic queries.
+    CoroutineDeferred,
+}
+
+/// Determines whether when encoutering a coroutine, should the solver query
+/// for its saved locals or defer the query to be solved later when ready.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum CoroutineSavedLocalsVisibility {
+    /// The solver is allowed to query for the saved locals of the coroutine.
+    #[default]
+    Visible,
+
+    /// The solver shouldn't query for the saved locals of the coroutine.
+    Deferred,
 }
 
 /// State shared by marker goals solved with the same givens.
@@ -114,9 +133,15 @@ enum MarkerRule {
 pub(crate) struct MarkerEntailmentState {
     active_goals: Vec<MarkerEntailmentFrame>,
     memo: FxHashMap<MarkerPredicate, MarkerEntailment>,
+    visibility: CoroutineSavedLocalsVisibility,
 }
 
 impl MarkerEntailmentState {
+    #[must_use]
+    pub fn new(visibility: CoroutineSavedLocalsVisibility) -> Self {
+        Self { active_goals: Vec::new(), memo: FxHashMap::default(), visibility }
+    }
+
     /// Returns whether a marker goal is being proved.
     const fn has_active_goal(&self) -> bool { !self.active_goals.is_empty() }
 
@@ -210,7 +235,8 @@ impl Solver {
         };
 
         // Keep the cyclic root on the stack while revising its provisional
-        // result. It is complete only when one evaluation reproduces that value.
+        // result. It is complete only when one evaluation reproduces that
+        // value.
         loop {
             let result = Box::pin(self.prove_active_marker_goal(&goal)).await;
             if self.marker_entailment.update_provisional_result(&active, result) {
@@ -266,19 +292,7 @@ impl Solver {
 
         // Without an explicit rule, synthesize the auto-trait rule from the
         // values stored by the type. Empty structural types prove immediately.
-        structural_fields(goal.implementor(), self.engine()).await.map_or(
-            MarkerRule::Opaque,
-            |fields| {
-                MarkerRule::Structural(
-                    fields
-                        .into_iter()
-                        .map(|(component, ty)| {
-                            (component, MarkerPredicate::new(goal.marker_id(), ty))
-                        })
-                        .collect(),
-                )
-            },
-        )
+        self.structural_fields(goal).await
     }
 
     /// Returns the rule of a `Copy` goal whose answer is fixed by the
@@ -320,6 +334,7 @@ impl Solver {
         // rule was selected separately.
         match self.marker_rule(goal).await {
             MarkerRule::Holds => MarkerEntailment::Holds,
+            MarkerRule::CoroutineDeferred => MarkerEntailment::Deferred,
             MarkerRule::BuiltIn(_) | MarkerRule::Negative(_) | MarkerRule::Opaque => {
                 MarkerEntailment::Fails
             }
@@ -394,86 +409,214 @@ impl Solver {
 
         None
     }
-}
 
-/// Returns the values whose marker properties determine the enclosing type,
-/// each with where the type stores it. `None` represents an opaque or
-/// ill-kinded type that cannot be inferred.
-///
-/// A closure stores the tuple of its captures as one value, so that an
-/// explicit marker implementation of tuples applies to it too.
-async fn structural_fields(
-    ty: &Ty,
-    engine: &TrackedEngine,
-) -> Option<Vec<(StructuralComponent, Interned<Ty>)>> {
-    match ty {
-        Ty::Application(application) => match application.view() {
-            ApplicationView::Primitive(_) => Some(Vec::new()),
-            ApplicationView::Tuple(tuple) => Some(
-                tuple
-                    .args()
-                    .iter()
-                    .enumerate()
-                    .map(|(index, ty)| (StructuralComponent::TupleElement(index), ty.clone()))
-                    .collect(),
+    fn create_structural_from_components(
+        marker_id: GlobalSymbolID,
+        components: impl IntoIterator<Item = (StructuralComponent, Interned<Ty>)>,
+    ) -> MarkerRule {
+        let premises = components
+            .into_iter()
+            .map(|(component, ty)| (component, MarkerPredicate::new(marker_id, ty)))
+            .collect();
+
+        MarkerRule::Structural(premises)
+    }
+
+    fn should_defer_coroutine_body_of(&self, def_id: GlobalSymbolID) -> bool {
+        self.marker_entailment.visibility == CoroutineSavedLocalsVisibility::Deferred
+            && self.site == def_id
+    }
+
+    async fn structural_fields_coroutine(
+        &self,
+        view: &ApplicationView<'_>,
+        marker_id: GlobalSymbolID,
+    ) -> MarkerRule {
+        let (closure_body_id, subst) = match view {
+            ApplicationView::ClosureCoroutine(closure) => (
+                CoroutineBody::Closure(ClosureCoroutineBodyID::new(
+                    closure.closure_view().owner_id(),
+                    closure.closure_view().local_closure_id(),
+                )),
+                closure.closure_view().create_subst(self.engine()).await,
             ),
-            ApplicationView::Closure(closure) => {
-                Some(vec![(StructuralComponent::ClosureCaptures, closure.captured_tuple().clone())])
-            }
-            ApplicationView::Struct(struct_) => {
-                let body = engine.get_struct_body(struct_.symbol_id()).await;
-                let subst = engine.build_subst_from_args(struct_.symbol_id(), struct_.args()).await;
 
-                Some(
-                    body.iter()
-                        .map(|(field_id, field)| {
+            ApplicationView::DefCoroutine(def_coro) => {
+                (CoroutineBody::Def(def_coro.def_id()), def_coro.create_subst(self.engine()).await)
+            }
+
+            _ => unreachable!(),
+        };
+
+        if self.should_defer_coroutine_body_of(closure_body_id.def_id()) {
+            return MarkerRule::CoroutineDeferred;
+        }
+
+        let mut components = Vec::new();
+
+        match closure_body_id {
+            CoroutineBody::Def(def_id) => {
+                let params = self.engine().get_parameter_map(def_id).await;
+
+                components.extend(params.iter().map(|(_, param)| {
+                    (
+                        StructuralComponent::CoroutineUpvar(param.span()),
+                        param.ty().apply_subst_or_clone(&subst, self.engine()),
+                    )
+                }));
+            }
+
+            CoroutineBody::Closure(closure_coroutine_body_id) => {
+                let ir = self.engine().get_ir(closure_body_id.def_id()).await;
+                let function_id =
+                    ir.get_function_id_of_closure(closure_coroutine_body_id.local_closure_id());
+                let function = ir.get_function(function_id);
+                let closure_context = function.context().assert_as_closure_context();
+
+                components.extend(
+                    closure_context
+                        .parameters()
+                        .map(|(_, param)| {
                             (
-                                StructuralComponent::StructField(field_id),
-                                field.ty().apply_subst_or_clone(&subst, engine),
+                                StructuralComponent::CoroutineUpvar(Some(param.span())),
+                                param.ty().apply_subst_or_clone(&subst, self.engine()),
                             )
                         })
-                        .collect(),
+                        .collect::<Vec<_>>(),
+                );
+
+                let capture_map = ir
+                    .captures_for_function(function_id)
+                    .expect("should have a capture map for it");
+
+                components.extend(capture_map.iter().map(|(_, capture)| {
+                    (
+                        StructuralComponent::CoroutineClosureCapture(capture.span()),
+                        capture
+                            .storage_ty(self.engine())
+                            .apply_subst_or_clone(&subst, self.engine()),
+                    )
+                }));
+            }
+        }
+
+        // The values the body holds across its suspension points.
+        let saved_locals = self.engine().get_saved_locals(closure_body_id).await;
+        for saved_local in saved_locals.as_ref().into_iter().flat_map(|x| x.iter()) {
+            let origin = saved_local.origin();
+            components.push((
+                StructuralComponent::CoroutineSavedLocal(CoroutineSavedLocal::new(
+                    origin.kind(),
+                    origin.span(),
+                    origin.suspension_span(),
+                )),
+                Ty::erase_lifetimes(
+                    &saved_local.ty().apply_subst_or_clone(&subst, self.engine()),
+                    self.engine(),
                 )
-            }
-            // An enum holds the payload of whichever variant it is, so each
-            // payload type is a field.
-            ApplicationView::Enum(enum_) => {
-                let subst = enum_.create_subst(engine).await;
-                let mut fields = Vec::new();
+                .await,
+            ));
+        }
 
-                for variant_id in engine.get_members(enum_.symbol_id()).await.all_ids() {
-                    let variant_id = enum_.symbol_id().target_id.make_global(variant_id);
-                    if let Some(payload) = engine.get_variant_payload_ty(variant_id).await {
-                        fields.push((
-                            StructuralComponent::VariantPayload(variant_id),
-                            payload.apply_subst_or_clone(&subst, engine),
-                        ));
+        Self::create_structural_from_components(marker_id, components)
+    }
+
+    /// Returns the values whose marker properties determine the enclosing type,
+    /// each with where the type stores it. `None` represents an opaque or
+    /// ill-kinded type that cannot be inferred.
+    ///
+    /// A closure stores the tuple of its captures as one value, so that an
+    /// explicit marker implementation of tuples applies to it too.
+    async fn structural_fields(&self, goal: &MarkerPredicate) -> MarkerRule {
+        match &**goal.implementor() {
+            Ty::Application(application) => {
+                let view = application.view();
+                match &view {
+                    ApplicationView::Primitive(_) => {
+                        Self::create_structural_from_components(goal.marker_id(), [])
                     }
-                }
 
-                Some(fields)
+                    ApplicationView::Tuple(tuple) => Self::create_structural_from_components(
+                        goal.marker_id(),
+                        tuple.args().iter().enumerate().map(|(index, ty)| {
+                            (StructuralComponent::TupleElement(index), ty.clone())
+                        }),
+                    ),
+
+                    ApplicationView::Closure(closure) => Self::create_structural_from_components(
+                        goal.marker_id(),
+                        std::iter::once((
+                            StructuralComponent::ClosureCaptures,
+                            closure.captured_tuple().clone(),
+                        )),
+                    ),
+
+                    ApplicationView::Struct(struct_) => {
+                        let body = self.engine().get_struct_body(struct_.symbol_id()).await;
+                        let subst = self
+                            .engine()
+                            .build_subst_from_args(struct_.symbol_id(), struct_.args())
+                            .await;
+
+                        Self::create_structural_from_components(
+                            goal.marker_id(),
+                            body.iter().map(|(field_id, field)| {
+                                (
+                                    StructuralComponent::StructField(field_id),
+                                    field.ty().apply_subst_or_clone(&subst, self.engine()),
+                                )
+                            }),
+                        )
+                    }
+
+                    // An enum holds the payload of whichever variant it is, so each
+                    // payload type is a field.
+                    ApplicationView::Enum(enum_) => {
+                        let subst = enum_.create_subst(self.engine()).await;
+                        let mut fields = Vec::new();
+
+                        for variant_id in
+                            self.engine().get_members(enum_.symbol_id()).await.all_ids()
+                        {
+                            let variant_id = enum_.symbol_id().target_id.make_global(variant_id);
+                            if let Some(payload) =
+                                self.engine().get_variant_payload_ty(variant_id).await
+                            {
+                                fields.push((
+                                    StructuralComponent::VariantPayload(variant_id),
+                                    payload.apply_subst_or_clone(&subst, self.engine()),
+                                ));
+                            }
+                        }
+
+                        Self::create_structural_from_components(goal.marker_id(), fields)
+                    }
+
+                    ApplicationView::ClosureCoroutine(_) | ApplicationView::DefCoroutine(_) => {
+                        self.structural_fields_coroutine(&view, goal.marker_id()).await
+                    }
+
+                    ApplicationView::Pointer(_)
+                    | ApplicationView::Reference(_)
+                    | ApplicationView::NoOpDropInstance(_)
+                    | ApplicationView::TupleDropInstance(_)
+                    | ApplicationView::ClosureDropInstance(_)
+                    | ApplicationView::TraitDefCoroutine(_)
+                    | ApplicationView::ContinuationDefInstance(_)
+                    | ApplicationView::CoroutineInstance(_)
+                    | ApplicationView::CoroutineDropInstance(_)
+                    | ApplicationView::GeneratedAdtDropInstance(_)
+                    | ApplicationView::Instance(_)
+                    | ApplicationView::InstanceAssociated(_)
+                    | ApplicationView::DefInstance(_)
+                    | ApplicationView::Error => MarkerRule::Opaque,
+                }
             }
-            ApplicationView::Pointer(_)
-            | ApplicationView::Reference(_)
-            | ApplicationView::NoOpDropInstance(_)
-            | ApplicationView::TupleDropInstance(_)
-            | ApplicationView::ClosureDropInstance(_)
-            | ApplicationView::DefCoroutine(_)
-            | ApplicationView::TraitDefCoroutine(_)
-            | ApplicationView::ClosureCoroutine(_)
-            | ApplicationView::ContinuationDefInstance(_)
-            | ApplicationView::CoroutineInstance(_)
-            | ApplicationView::CoroutineDropInstance(_)
-            | ApplicationView::GeneratedAdtDropInstance(_)
-            | ApplicationView::Instance(_)
-            | ApplicationView::InstanceAssociated(_)
-            | ApplicationView::DefInstance(_)
-            | ApplicationView::Error => None,
-        },
-        Ty::Inference(_)
-        | Ty::PolyVar(_)
-        | Ty::SelfInstance(_)
-        | Ty::EffectRow(_)
-        | Ty::Lifetime(_) => None,
+            Ty::Inference(_)
+            | Ty::PolyVar(_)
+            | Ty::SelfInstance(_)
+            | Ty::EffectRow(_)
+            | Ty::Lifetime(_) => MarkerRule::Opaque,
+        }
     }
 }

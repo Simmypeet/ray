@@ -273,8 +273,9 @@ impl Session {
         // group the diagnostics by the document they are shown in
         let locator = Locator::new(&sources, overlay, root_file);
         for diagnostic in diagnostics {
-            let (uri, diagnostic) = locator.convert(diagnostic);
-            publications.entry(uri).or_default().diagnostics.push(diagnostic);
+            for (uri, diagnostic) in locator.convert(diagnostic) {
+                publications.entry(uri).or_default().diagnostics.push(diagnostic);
+            }
         }
 
         publications

@@ -54,13 +54,6 @@ expression: snapshot
    ┆    ╰╴                ━
    ┆
 15 │     return value
-   │            ^^^^^
-   ┆ [error]: mismatched types in return expression: expected `int32`, but found `<error>`
-   ┆    ╭▸ compiler/e2e/test/check/syntax/labelled_expectation/main.ray:15:12
-   ┆    │
-   ┆ 15 │     return value
-   ┆    ╰╴           ━━━━━
-   ┆
 16 │
 17 │ def missingStatement() -> int32:
 18 │     ,

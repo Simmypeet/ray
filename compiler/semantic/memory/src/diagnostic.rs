@@ -4,8 +4,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::obligation::PredicateObligation;
-use rayc_solver::explain::UnsatisfiedGoal;
+use rayc_solver::explain::UnsatisfiedPredicate;
 use rayc_symbol::source_map::to_absolute_span;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder)]
@@ -53,15 +52,12 @@ pub enum Diagnostic {
     UseAfterMove(UseAfterMove),
     UseAfterPartialMove(UseAfterPartialMove),
     UseBeforeInitialization(UseBeforeInitialization),
-    /// No `Drop` dictionary could be selected for a value dropped when its
-    /// scope ends.
-    UnresolvedScopeDrop(Box<UnsatisfiedGoal>),
     MoveOutOfHandlerCapture(MoveOutOfHandlerCapture),
     MoveOutOfBorrow(MoveOutOfBorrow),
 
     /// A selected `Drop` instance requires a where-clause predicate that does
     /// not hold at the dropping site.
-    UnsatisfiedScopeDropPredicate(PredicateObligation),
+    UnsatisfiedDropPredicate(UnsatisfiedPredicate),
 }
 
 async fn moved_value_report(
@@ -134,8 +130,7 @@ impl Report for Diagnostic {
                         .build(),
                 )
                 .build(),
-            Self::UnresolvedScopeDrop(diagnostic) => diagnostic.report(engine).await,
-            Self::UnsatisfiedScopeDropPredicate(diagnostic) => diagnostic.report(engine).await,
+            Self::UnsatisfiedDropPredicate(diagnostic) => diagnostic.report(engine).await,
             Self::MoveOutOfHandlerCapture(diagnostic) => {
                 move_out_of_handler_capture_report(engine, diagnostic).await
             }

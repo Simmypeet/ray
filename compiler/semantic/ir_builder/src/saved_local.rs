@@ -1,7 +1,5 @@
 //! Computes the saved locals of a coroutine body from its IR.
 
-use std::{future::Future, pin::Pin};
-
 use linkme::distributed_slice;
 use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_ir::{
@@ -14,7 +12,7 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::{
     parameter::get_parameter_map,
-    saved_local::{CoroutineBody, SavedLocal, SavedLocalKind, SavedLocalOrigin, SavedLocals},
+    saved_local::{SavedLocal, SavedLocalKind, SavedLocalOrigin, SavedLocals},
 };
 use rayc_symbol::{GlobalSymbolID, symbol_kind::get_symbol_kind};
 use rayc_type::ty::Ty;
@@ -38,10 +36,7 @@ impl Collector<'_> {
     ///
     /// The future is boxed, since a `run ... with` recurses into its nested
     /// bodies.
-    fn collect(
-        &mut self,
-        function_id: FunctionID,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+    async fn collect(&mut self, function_id: FunctionID) {
         Box::pin(async move {
             let function = self.functions.get_function(function_id);
 
@@ -69,6 +64,7 @@ impl Collector<'_> {
                 self.collect_waited(function, suspension_point.waited(), suspension_span).await;
             }
         })
+        .await;
     }
 
     /// Collects what the expression of a suspension point at
@@ -96,9 +92,14 @@ impl Collector<'_> {
             // hold their own saved locals.
             Waited::RunWith(run_with) => {
                 for &capture in run_with.captures().iter().chain(run_with.handler_captures()) {
-                    let ty = function.get_expression(capture).ty().clone();
-                    self.push(ty, SavedLocalKind::RunCapture, suspension_span, suspension_span)
-                        .await;
+                    let expression = function.get_expression(capture);
+                    self.push(
+                        expression.ty().clone(),
+                        SavedLocalKind::RunCapture,
+                        expression.span(),
+                        suspension_span,
+                    )
+                    .await;
                 }
 
                 self.runs.push(suspension_span);
@@ -180,7 +181,7 @@ async fn saved_locals_executor(
     &SavedLocals { body }: &SavedLocals,
     engine: &TrackedEngine,
 ) -> Option<Interned<[SavedLocal]>> {
-    let CoroutineBody::Def(def_id) = body;
+    let def_id = body.def_id();
 
     // An `extern def` has no body, so nothing is ever suspended in it.
     if !engine.get_symbol_kind(def_id).await.has_def_body() {
@@ -201,7 +202,11 @@ async fn saved_locals_executor(
         runs: Vec::new(),
         saved_locals: Vec::new(),
     };
-    collector.collect(functions.root_id()).await;
+
+    let function_id =
+        body.closure_id().map_or(functions.root_id(), |x| functions.get_function_id_of_closure(x));
+
+    collector.collect(function_id).await;
 
     Some(engine.intern_unsized(collector.saved_locals))
 }

@@ -1,0 +1,81 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ pub marker Fizz
+ 2 │
+ 3 │
+ 4 │ impl !Fizz for int32
+ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+ 6 │ impl['a, t] Fizz for &'a t     where(t: Fizz)
+ 7 │
+ 8 │
+ 9 │ pub eff Yield:
+10 │     def yield()
+11 │
+12 │
+13 │ pub def requireFizz(value: a) given(_: core.Drop[a]) where(a: Fizz):
+14 │     pass
+15 │
+16 │
+17 │ pub trait Default[a]:
+18 │     pub def default() -> a
+19 │
+20 │
+21 │ pub inst DefaultInt32 for Default[int32]:
+22 │     def default() -> int32:
+23 │         return 0
+24 │
+25 │
+26 │ pub inst DefaultBool for Default[bool]:
+27 │     def default() -> bool:
+28 │         return false
+29 │
+30 │
+31 │ def yieldAndReturn(a: a) given (_: core.Drop[a]) -> a \ {Yield}:
+32 │     Yield.yield()
+33 │     return a
+34 │
+35 │
+36 │ pub def instantiateClosure[a]() given(
+37 │     defA: Default[a],
+38 │     dropA: core.Drop[a],
+39 │ ) -> a \ {Yield}:
+40 │     let value = defA.default()
+41 │     let closure = () -> yieldAndReturn(value)
+42 │     return closure()
+43 │
+44 │
+45 │ pub def useYield() \ {Yield}:
+46 │     # this will error since `int32` is saved and `int32` does not implement `Fizz`
+47 │     requireFizz(coro instantiateClosure[int32]())
+   │     ^^^^^^^^^^^
+   ┆ [error]: `Continuation[(), &mut <coroutine of instantiateClosure[int32]>]` does not satisfy marker `main.Fizz`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_local_closure_capture_marker/main.ray:47:5
+   ┆    │
+   ┆ 47 │     requireFizz(coro instantiateClosure[int32]())
+   ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
+   ┆ [note]: the continuation stores the coroutine it resumes, of type `&mut <coroutine of instantiateClosure[int32]>`
+   ┆ [note]: `&mut <coroutine of instantiateClosure[int32]>: main.Fizz` holds only if `<coroutine of instantiateClosure[int32]>: main.Fizz`, by this implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_local_closure_capture_marker/main.ray:5:1
+   ┆   │
+   ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆ [note]: the coroutine of `main.instantiateClosure` is suspended inside this call, so it holds the callee's coroutine of type `<coroutine of <closure>() -> int32 \ {Yield}>`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_local_closure_capture_marker/main.ray:42:12
+   ┆    │
+   ┆ 42 │     return closure()
+   ┆    ╰╴           ━━━━━━━━━ suspended here
+   ┆ [note]: the coroutine of the closure stores a value of type `int32`, which the closure captures
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_local_closure_capture_marker/main.ray:40:9
+   ┆    │
+   ┆ 40 │     let value = defA.default()
+   ┆    ╰╴        ━━━━━
+   ┆ [note]: `int32` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_local_closure_capture_marker/main.ray:4:1
+   ┆   │
+   ┆ 4 │ impl !Fizz for int32
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━
+   ┆
+48 │     # this is okay since `bool` is saved
+49 │     requireFizz(coro instantiateClosure[bool]())

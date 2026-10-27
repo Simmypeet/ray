@@ -141,7 +141,7 @@ async fn lifetime_erased_instance(
 
     let erased = Ty::new_lifetime(Lifetime::Erased, engine);
     let substitution =
-        poly_vars.subst_from_args(std::iter::repeat_n(erased, poly_vars.all_poly_var_len()));
+        poly_vars.create_subst_from_args(std::iter::repeat_n(erased, poly_vars.all_poly_var_len()));
     Some(MonoDefInstance::new(def_id, substitution, solver).await)
 }
 

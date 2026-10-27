@@ -1,0 +1,78 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ pub marker Fizz
+ 2 │
+ 3 │
+ 4 │ impl !Fizz for int32
+ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+ 6 │ impl['a, t] Fizz for &'a t     where(t: Fizz)
+ 7 │
+ 8 │
+ 9 │ pub def requireFizz(value: a) given(_: core.Drop[a]) where(a: Fizz):
+10 │     pass
+11 │
+12 │
+13 │ pub def identity(value: a) -> a:
+14 │     return value
+15 │
+16 │
+17 │ pub struct Wrapper[a]:
+18 │     value: a
+19 │
+20 │
+21 │ pub def main():
+22 │     requireFizz(coro identity(42))
+   │     ^^^^^^^^^^^
+   ┆ [error]: `Continuation[(), &mut <coroutine of identity[int32]>]` does not satisfy marker `main.Fizz`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:22:5
+   ┆    │
+   ┆ 22 │     requireFizz(coro identity(42))
+   ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
+   ┆ [note]: the continuation stores the coroutine it resumes, of type `&mut <coroutine of identity[int32]>`
+   ┆ [note]: `&mut <coroutine of identity[int32]>: main.Fizz` holds only if `<coroutine of identity[int32]>: main.Fizz`, by this implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:5:1
+   ┆   │
+   ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆ [note]: the coroutine of `main.identity` stores an argument of type `int32`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:13:18
+   ┆    │
+   ┆ 13 │ pub def identity(value: a) -> a:
+   ┆    ╰╴                 ━━━━━━━━
+   ┆ [note]: `int32` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:4:1
+   ┆   │
+   ┆ 4 │ impl !Fizz for int32
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━
+   ┆
+23 │     requireFizz(Wrapper{value=coro identity(42)})
+   │     ^^^^^^^^^^^
+   ┆ [error]: `Wrapper[Continuation[(), &mut <coroutine of identity[int32]>]]` does not satisfy marker `main.Fizz`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:23:5
+   ┆    │
+   ┆ 23 │     requireFizz(Wrapper{value=coro identity(42)})
+   ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
+   ┆ [note]: `Wrapper[Continuation[(), &mut <coroutine of identity[int32]>]]` stores field `value` of type `Continuation[(), &mut <coroutine of identity[int32]>]`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:18:5
+   ┆    │
+   ┆ 18 │     value: a
+   ┆    ╰╴    ━━━━━
+   ┆ [note]: the continuation stores the coroutine it resumes, of type `&mut <coroutine of identity[int32]>`
+   ┆ [note]: `&mut <coroutine of identity[int32]>: main.Fizz` holds only if `<coroutine of identity[int32]>: main.Fizz`, by this implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:5:1
+   ┆   │
+   ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆ [note]: the coroutine of `main.identity` stores an argument of type `int32`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:13:18
+   ┆    │
+   ┆ 13 │ pub def identity(value: a) -> a:
+   ┆    ╰╴                 ━━━━━━━━
+   ┆ [note]: `int32` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/upvar_capture_marker/main.ray:4:1
+   ┆   │
+   ┆ 4 │ impl !Fizz for int32
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━
+   ┆

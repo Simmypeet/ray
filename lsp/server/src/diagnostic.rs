@@ -4,7 +4,8 @@
 //! while an LSP diagnostic has one range, one message and a flat list of
 //! related locations. The primary highlight becomes the range, the texts are
 //! joined into the message, and every other labelled highlight becomes a
-//! related location.
+//! related location. A note highlighted in the project becomes a diagnostic of
+//! its own with information severity.
 
 use std::path::Path;
 
@@ -104,8 +105,12 @@ impl<'a> Locator<'a> {
             .find_map(|highlight| self.location(highlight))
     }
 
-    /// Converts `diagnostic`, returning the document it is shown in.
-    pub(crate) fn convert(&self, diagnostic: &Rendered<usize>) -> (Url, Diagnostic) {
+    /// Converts `diagnostic` into LSP diagnostics, each paired with the
+    /// document it is shown in.
+    ///
+    /// The first diagnostic is the main one, followed by one for each note
+    /// highlighted in the project.
+    pub(crate) fn convert(&self, diagnostic: &Rendered<usize>) -> Vec<(Url, Diagnostic)> {
         let mut message = diagnostic.message().to_owned();
         let mut related = Vec::new();
 
@@ -118,9 +123,25 @@ impl<'a> Locator<'a> {
         }
         self.append_details(diagnostic.group(), &mut message, &mut related);
 
-        // a note's primary highlight is related under the note's message
-        // unless it has its own label
+        // a note highlighted in the project is shown as its own diagnostic and
+        // related under its message; any other note joins the message, and its
+        // primary highlight is related under the note's message unless it has
+        // its own label
+        let mut shown_notes = Vec::new();
         for note in diagnostic.notes() {
+            let location = note
+                .primary_highlight()
+                .filter(|highlight| !Self::is_in_core(highlight))
+                .and_then(|highlight| self.location(highlight));
+            if let Some(location) = location {
+                related.push(DiagnosticRelatedInformation {
+                    location: location.clone(),
+                    message: note.message().to_owned(),
+                });
+                shown_notes.push((note, location));
+                continue;
+            }
+
             message.push_str("\nnote: ");
             message.push_str(note.message());
             if let Some(highlight) = note.primary_highlight() {
@@ -147,26 +168,66 @@ impl<'a> Locator<'a> {
             None => self.first_project_location(diagnostic),
         };
 
+        // a note links back to the main diagnostic
+        let notes = shown_notes
+            .into_iter()
+            .map(|(note, note_location)| {
+                let mut message = note.message().to_owned();
+                let mut related = Vec::new();
+                if let Some(label) = note.primary_highlight().and_then(Highlight::message) {
+                    message.push('\n');
+                    message.push_str(label);
+                }
+                self.append_details(note.group(), &mut message, &mut related);
+                if let Some(location) = location.clone() {
+                    related.push(DiagnosticRelatedInformation {
+                        location,
+                        message: diagnostic.message().to_owned(),
+                    });
+                }
+
+                (
+                    note_location.uri,
+                    Self::lsp_diagnostic(
+                        note_location.range,
+                        DiagnosticSeverity::INFORMATION,
+                        message,
+                        related,
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+
         // without any location in the project, the diagnostic is shown at the
         // start of the root file
         let (uri, range) = location.map_or_else(
             || (self.root_file.clone(), Range::default()),
             |location| (location.uri, location.range),
         );
+        let severity = match diagnostic.severity() {
+            Severity::Info => DiagnosticSeverity::INFORMATION,
+            Severity::Warning => DiagnosticSeverity::WARNING,
+            Severity::Error => DiagnosticSeverity::ERROR,
+        };
 
-        let diagnostic = Diagnostic {
+        std::iter::once((uri, Self::lsp_diagnostic(range, severity, message, related)))
+            .chain(notes)
+            .collect()
+    }
+
+    fn lsp_diagnostic(
+        range: Range,
+        severity: DiagnosticSeverity,
+        message: String,
+        related: Vec<DiagnosticRelatedInformation>,
+    ) -> Diagnostic {
+        Diagnostic {
             range,
-            severity: Some(match diagnostic.severity() {
-                Severity::Info => DiagnosticSeverity::INFORMATION,
-                Severity::Warning => DiagnosticSeverity::WARNING,
-                Severity::Error => DiagnosticSeverity::ERROR,
-            }),
+            severity: Some(severity),
             source: Some("ray".to_owned()),
             message,
             related_information: (!related.is_empty()).then_some(related),
             ..Diagnostic::default()
-        };
-
-        (uri, diagnostic)
+        }
     }
 }

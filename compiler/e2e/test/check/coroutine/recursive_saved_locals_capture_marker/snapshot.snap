@@ -1,0 +1,78 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ pub marker Fizz
+ 2 │
+ 3 │
+ 4 │ impl !Fizz for int32
+ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+ 6 │ impl['a, t] Fizz for &'a t     where(t: Fizz)
+ 7 │
+ 8 │
+ 9 │ pub eff Yield:
+10 │     def yield()
+11 │
+12 │
+13 │ pub def requireFizz(value: a) given(_: core.Drop[a]) where(a: Fizz):
+14 │     pass
+15 │
+16 │
+17 │ pub trait Default[a]:
+18 │     pub def default() -> a
+19 │
+20 │
+21 │ pub inst DefaultInt32 for Default[int32]:
+22 │     def default() -> int32:
+23 │         return 0
+24 │
+25 │
+26 │ pub inst DefaultBool for Default[bool]:
+27 │     def default() -> bool:
+28 │         return false
+29 │
+30 │
+31 │ pub def savedYield[a]() given(
+32 │     defA: Default[a],
+33 │     dropA: core.Drop[a]
+34 │ ) -> a \ {Yield}:
+35 │     let fst = defA.default()
+36 │
+37 │     Yield.yield()
+38 │
+39 │     savedYield[a]() # recursive call to savedYield
+40 │
+41 │     return fst
+42 │
+43 │
+44 │ pub def useYield() \ {Yield}:
+45 │     # this will error since `int32` is saved and `int32` does not implement `Fizz`
+46 │     requireFizz(coro savedYield[int32]())
+   │     ^^^^^^^^^^^
+   ┆ [error]: `Continuation[(), &mut <coroutine of savedYield[int32]>]` does not satisfy marker `main.Fizz`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/recursive_saved_locals_capture_marker/main.ray:46:5
+   ┆    │
+   ┆ 46 │     requireFizz(coro savedYield[int32]())
+   ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
+   ┆ [note]: the continuation stores the coroutine it resumes, of type `&mut <coroutine of savedYield[int32]>`
+   ┆ [note]: `&mut <coroutine of savedYield[int32]>: main.Fizz` holds only if `<coroutine of savedYield[int32]>: main.Fizz`, by this implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/recursive_saved_locals_capture_marker/main.ray:5:1
+   ┆   │
+   ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆ [note]: the coroutine of `main.savedYield` holds a variable of type `int32` across a suspension point
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/recursive_saved_locals_capture_marker/main.ray:35:9
+   ┆    │
+   ┆ 35 │     let fst = defA.default()
+   ┆    │         ━━━ this variable
+   ┆ 36 │
+   ┆ 37 │     Yield.yield()
+   ┆    ╰╴    ───────────── suspended here
+   ┆ [note]: `int32` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/recursive_saved_locals_capture_marker/main.ray:4:1
+   ┆   │
+   ┆ 4 │ impl !Fizz for int32
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━
+   ┆
+47 │     # Okay since `bool` is saved and `bool` implements `Fizz`
+48 │     requireFizz(coro savedYield[bool]())

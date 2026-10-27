@@ -68,7 +68,6 @@ impl Solver {
                     ));
                 }
                 MarkerRule::Opaque => return Some(witness(&visited, next, Leaf::Opaque)),
-                MarkerRule::Holds => Vec::new(),
                 MarkerRule::Explicit { implementation_id, premises } => {
                     // An equality premise is rejected where the
                     // implementation is declared, and always fails here.
@@ -94,6 +93,9 @@ impl Solver {
                     .into_iter()
                     .map(|(component, premise)| (Step::Structural(component), premise))
                     .collect::<Vec<_>>(),
+
+                // Technically, MarkerRule::CoroutineDeferred should not appear here
+                MarkerRule::Holds | MarkerRule::CoroutineDeferred => Vec::new(),
             };
 
             // Follow only the premises with the same answer as the root:

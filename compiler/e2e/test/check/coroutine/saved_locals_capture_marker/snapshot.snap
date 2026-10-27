@@ -1,0 +1,91 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ pub marker Fizz
+ 2 │
+ 3 │
+ 4 │ impl !Fizz for int32
+ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+ 6 │ impl['a, t] Fizz for &'a t     where(t: Fizz)
+ 7 │
+ 8 │
+ 9 │ pub eff Yield:
+10 │     def yield()
+11 │
+12 │
+13 │ pub def requireFizz(value: a) given(_: core.Drop[a]) where(a: Fizz):
+14 │     pass
+15 │
+16 │
+17 │ pub trait Default[a]:
+18 │     pub def default() -> a
+19 │
+20 │
+21 │ pub inst DefaultInt32 for Default[int32]:
+22 │     def default() -> int32:
+23 │         return 0
+24 │
+25 │
+26 │ pub inst DefaultBool for Default[bool]:
+27 │     def default() -> bool:
+28 │         return false
+29 │
+30 │
+31 │ pub def savedYield[a, b]() given(
+32 │     defA: Default[a],
+33 │     defB: Default[b],
+34 │     dropA: core.Drop[a],
+35 │     dropB: core.Drop[b]
+36 │ ) -> (a, b) \ {Yield}:
+37 │     let fst = defA.default()
+38 │     let snd = defB.default()
+39 │
+40 │     Yield.yield()
+41 │
+42 │     return (fst, snd)
+43 │
+44 │
+45 │ pub def dontSave[a, b]() given(
+46 │     defA: Default[a],
+47 │     defB: Default[b]
+48 │ ) -> (a, b) \ {Yield}:
+49 │     let fst = defA.default()
+50 │     let snd = defB.default()
+51 │
+52 │     return (fst, snd)
+53 │
+54 │
+55 │ pub def useYield() \ {Yield}:
+56 │     # this will error since `int32` is saved and `int32` does not implement `Fizz`
+57 │     requireFizz(coro savedYield[int32, bool]())
+   │     ^^^^^^^^^^^
+   ┆ [error]: `Continuation[(), &mut <coroutine of savedYield[int32, bool]>]` does not satisfy marker `main.Fizz`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_locals_capture_marker/main.ray:57:5
+   ┆    │
+   ┆ 57 │     requireFizz(coro savedYield[int32, bool]())
+   ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
+   ┆ [note]: the continuation stores the coroutine it resumes, of type `&mut <coroutine of savedYield[int32, bool]>`
+   ┆ [note]: `&mut <coroutine of savedYield[int32, bool]>: main.Fizz` holds only if `<coroutine of savedYield[int32, bool]>: main.Fizz`, by this implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_locals_capture_marker/main.ray:5:1
+   ┆   │
+   ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆ [note]: the coroutine of `main.savedYield` holds a variable of type `int32` across a suspension point
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_locals_capture_marker/main.ray:37:9
+   ┆    │
+   ┆ 37 │     let fst = defA.default()
+   ┆    │         ━━━ this variable
+   ┆    ‡
+   ┆ 40 │     Yield.yield()
+   ┆    ╰╴    ───────────── suspended here
+   ┆ [note]: `int32` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_locals_capture_marker/main.ray:4:1
+   ┆   │
+   ┆ 4 │ impl !Fizz for int32
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━
+   ┆
+58 │     # Okay since `bool` is saved and `bool` implements `Fizz`
+59 │     requireFizz(coro savedYield[bool, bool]())
+60 │     # Okay since `dontSave` doesn't have suspension point
+61 │     requireFizz(coro dontSave[int32, bool]())

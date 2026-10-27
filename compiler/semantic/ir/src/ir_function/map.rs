@@ -3,6 +3,7 @@ use rayc_arena::Arena;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_semantic_element::deferred_marker::DeferredMarker;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     signature::get_effect_row,
@@ -39,6 +40,7 @@ pub struct IRFunctionMap {
     /// Whether the definition reported no error up to and including the
     /// building of this IR.
     no_error: bool,
+    deferred_markers: Vec<DeferredMarker>,
 }
 
 impl IRFunctionMap {
@@ -53,8 +55,18 @@ impl IRFunctionMap {
             root,
             closures: FxHashMap::default(),
             no_error: false,
+            deferred_markers: Vec::new(),
         }
     }
+
+    pub fn extend_deferred_markers(&mut self, markers: impl IntoIterator<Item = DeferredMarker>) {
+        self.deferred_markers.extend(markers);
+    }
+
+    /// Returns the marker predicates whose proof was deferred until the saved
+    /// locals of the coroutines in this definition are known.
+    #[must_use]
+    pub fn deferred_markers(&self) -> &[DeferredMarker] { &self.deferred_markers }
 
     /// Returns whether the definition reported no error up to and including
     /// the building of this IR: none in its typed AST, in its lowering or in
@@ -112,8 +124,14 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn closure_function(&self, closure_id: ClosureID) -> Option<FunctionID> {
-        self.closures.get(&closure_id).copied()
+    pub fn get_function_id_of_closure(&self, closure_id: ClosureID) -> FunctionID {
+        self.closures.get(&closure_id).copied().expect("should be a valid ID")
+    }
+
+    #[must_use]
+    pub fn get_function_of_closure(&self, closure_id: ClosureID) -> &IRFunction {
+        let function_id = self.get_function_id_of_closure(closure_id);
+        self.get_function(function_id)
     }
 
     /// Iterates over nominal closure identities and their lowered functions.

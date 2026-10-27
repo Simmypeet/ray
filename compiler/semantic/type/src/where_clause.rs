@@ -3,7 +3,7 @@
 use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::GlobalSymbolID;
+use rayc_symbol::{GlobalSymbolID, name::get_qualified_name};
 
 use crate::{
     subst::{Subst, Substitutable},
@@ -148,6 +148,27 @@ impl PredicateKind {
         match self {
             Self::AssociatedTypeEquality(equality) => Some(equality),
             Self::Outlives(_) | Self::Marker(_) => None,
+        }
+    }
+
+    /// Describes what the predicate requires, as in "`t` must equal `u`".
+    pub async fn describe_requirement(&self, engine: &TrackedEngine) -> String {
+        match self {
+            Self::AssociatedTypeEquality(equality) => {
+                let left = equality.left().display(engine).await;
+                let right = equality.right().display(engine).await;
+                format!("`{left}` must equal `{right}`")
+            }
+            Self::Marker(predicate) => {
+                let implementor = predicate.implementor().display(engine).await;
+                let marker = engine.get_qualified_name(predicate.marker_id()).await;
+                format!("`{implementor}` must satisfy marker `{marker}`")
+            }
+            Self::Outlives(predicate) => {
+                let subject = predicate.lesser().display(engine).await;
+                let bound = predicate.greater().display(engine).await;
+                format!("`{subject}` must outlive `{bound}`")
+            }
         }
     }
 }

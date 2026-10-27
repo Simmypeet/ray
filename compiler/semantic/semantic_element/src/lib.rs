@@ -1,6 +1,7 @@
 pub mod all_instance_implements_trait;
 pub mod all_marker_implementations;
 pub mod callable_parameter;
+pub mod deferred_marker;
 pub mod drop_plan;
 pub mod marker_implementation;
 pub mod parameter;

@@ -20,6 +20,7 @@ rayc_symbol.path = "../symbol"
 rayc_target.path = "../../base/target"
 rayc_typed_ast.path = "../typed_ast"
 rayc_type.path = "../type"
+rayc_handler.path = "../../base/handler"
 qbice.workspace = true
 bon.workspace = true
 derive_more.workspace = true
