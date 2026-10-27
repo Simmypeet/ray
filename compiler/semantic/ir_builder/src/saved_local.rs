@@ -33,9 +33,6 @@ struct Collector<'a> {
 
 impl Collector<'_> {
     /// Collects what `function_id` holds at each of its suspension points.
-    ///
-    /// The future is boxed, since a `run ... with` recurses into its nested
-    /// bodies.
     async fn collect(&mut self, function_id: IRFunctionID) {
         Box::pin(async move {
             let function = self.functions.get_function(function_id);

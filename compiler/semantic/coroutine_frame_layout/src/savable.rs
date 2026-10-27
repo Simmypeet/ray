@@ -1,10 +1,6 @@
 use derive_more::From;
 use qbice::{Decode, Encode, StableHash};
-use rayc_ir::{
-    address::Local, ir_closure::ClosureParameterID, ir_expr::IRExprID,
-    ir_operation_handler::OperationHandlerParameterID,
-};
-use rayc_semantic_element::parameter::ParameterID;
+use rayc_ir::{address::Local, ir_expr::IRExprID};
 
 /// The values that can be saved into a coroutine frame
 #[derive(
@@ -13,7 +9,4 @@ use rayc_semantic_element::parameter::ParameterID;
 pub enum Savable {
     Local(Local),
     Expression(IRExprID),
-    ClosureParameter(ClosureParameterID),
-    DefParameter(ParameterID),
-    OperationHandlerParameter(OperationHandlerParameterID),
 }
