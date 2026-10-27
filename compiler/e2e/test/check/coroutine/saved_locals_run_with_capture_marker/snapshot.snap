@@ -1,0 +1,106 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ pub marker Fizz
+ 2 │
+ 3 │
+ 4 │ impl !Fizz for int32
+ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+ 6 │ impl['a, t] Fizz for &'a t     where(t: Fizz)
+ 7 │
+ 8 │
+ 9 │ pub eff Yield:
+10 │     def yield()
+11 │
+12 │
+13 │ pub def requireFizz(value: a) given(_: core.Drop[a]) where(a: Fizz):
+14 │     pass
+15 │
+16 │
+17 │ pub trait Default[a]:
+18 │     pub def default() -> a
+19 │
+20 │
+21 │ pub inst DefaultInt32 for Default[int32]:
+22 │     def default() -> int32:
+23 │         return 0
+24 │
+25 │
+26 │ pub inst DefaultBool for Default[bool]:
+27 │     def default() -> bool:
+28 │         return false
+29 │
+30 │
+31 │ pub def savedYield[a]() given(
+32 │     defA: Default[a],
+33 │     dropA: core.Drop[a],
+34 │ ) -> a \ {Yield}:
+35 │     let fst = defA.default()
+36 │
+37 │     let result = run:
+38 │         Yield.yield()
+39 │         return fst
+40 │     with Yield:
+41 │         def yield():
+42 │             # propagate the yield up
+43 │             Yield.yield()
+44 │
+45 │     return result
+46 │
+47 │
+48 │ pub def handledRunWith[a]() given(
+49 │     defA: Default[a],
+50 │     dropA: core.Drop[a],
+51 │ ) -> a:
+52 │     let fst = defA.default()
+53 │
+54 │     let result = run:
+55 │         Yield.yield()
+56 │         return fst
+57 │     with Yield:
+58 │         def yield():
+59 │             pass
+60 │
+61 │     return result
+62 │
+63 │
+64 │ pub def useYield() \ {Yield}:
+65 │     # this will error since `int32` is saved and `int32` does not implement `Fizz`
+66 │     requireFizz(coro savedYield[int32]())
+   │     ^^^^^^^^^^^
+   ┆ [error]: `Continuation[(), &mut <coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>]` does not satisfy marker `main.Fizz`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_locals_run_with_capture_marker/main.ray:66:5
+   ┆    │
+   ┆ 66 │     requireFizz(coro savedYield[int32]())
+   ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
+   ┆ [note]: `Continuation[(), &mut <coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>]` stores field `coroutine` of type `&mut <coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>`
+   ┆    ╭▸ __ray_core__/core.ray:38:5
+   ┆    │
+   ┆ 38 │     coroutine: c
+   ┆    ╰╴    ━━━━━━━━━
+   ┆ [note]: `&mut <coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>: main.Fizz` holds only if `<coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>: main.Fizz`, by this implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_locals_run_with_capture_marker/main.ray:5:1
+   ┆   │
+   ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆ [note]: the coroutine `<coroutine of savedYield[int32; given DefaultInt32, <no-op drop instance>int32]>` saves a local of type `int32`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_locals_run_with_capture_marker/main.ray:37:18
+   ┆    │
+   ┆ 37 │       let result = run:
+   ┆    │ ┏━━━━━━━━━━━━━━━━━━┛
+   ┆ 38 │ ┃         Yield.yield()
+   ┆ 39 │ ┃         return fst
+   ┆ 40 │ ┃     with Yield:
+   ┆ 41 │ ┃         def yield():
+   ┆ 42 │ ┃             # propagate the yield up
+   ┆ 43 │ ┃             Yield.yield()
+   ┆    ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+   ┆ [note]: `int32` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_locals_run_with_capture_marker/main.ray:4:1
+   ┆   │
+   ┆ 4 │ impl !Fizz for int32
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━
+   ┆
+67 │     # Okay since `run-with` directly handles the yield
+68 │     requireFizz(coro handledRunWith[int32]())
