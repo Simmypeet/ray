@@ -1913,6 +1913,9 @@ dependencies = [
  "rayc_ir",
  "rayc_qbice",
  "rayc_semantic_element",
+ "rayc_solver",
+ "rayc_symbol",
+ "rayc_type",
 ]
 
 [[package]]

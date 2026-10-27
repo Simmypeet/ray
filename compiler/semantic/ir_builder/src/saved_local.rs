@@ -77,7 +77,7 @@ impl Collector<'_> {
     ) {
         match waited {
             // The arguments of a `perform` leave with the operation.
-            Waitee::Nothing => {}
+            Waitee::Perform => {}
 
             // The arguments of a call are the callee's upvars, so they are in
             // its coroutine type. An `extern def` has no body to wait in.

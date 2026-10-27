@@ -35,7 +35,7 @@ use crate::{
 pub enum Waitee<'a> {
     /// A `perform`, which waits for the handler of the operation, outside the
     /// function. Its arguments leave with the operation.
-    Nothing,
+    Perform,
 
     /// A call, which waits for the callee to complete. The arguments of the
     /// call are held by the callee.
@@ -143,9 +143,10 @@ impl<'a> SuspensionPoint<'a> {
 impl<'a> Waitee<'a> {
     /// Returns what the expression `kind`, evaluated at a suspension point,
     /// waits for.
-    fn of(kind: &'a IRExprKind) -> Self {
+    #[must_use]
+    pub fn of(kind: &'a IRExprKind) -> Self {
         match kind {
-            IRExprKind::Perform(_) => Self::Nothing,
+            IRExprKind::Perform(_) => Self::Perform,
             IRExprKind::Call(call) => Self::Call(call),
             IRExprKind::RunWith(run_with) => Self::RunWith(run_with),
             IRExprKind::Handle(handle) => Self::Handle(handle),

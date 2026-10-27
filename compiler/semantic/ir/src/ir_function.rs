@@ -21,6 +21,7 @@ use crate::{
     },
     ir_variable::{IRVariable, IRVariableID, IRVariableMap},
     scope::{Scope, ScopeID, ScopeMap},
+    suspension_point::Waitee,
     visit::{
         TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
         VisitTypeMutAsync,
@@ -167,6 +168,15 @@ impl IRFunction {
 
     #[must_use]
     pub fn get_expression(&self, id: IRExprID) -> &IRExpr { self.expression_map.get_expression(id) }
+
+    /// Gets the expression that is evaluated at a suspension point as a
+    /// [`Waitee`]. Will panic if the expression cannot be evaluated at a
+    /// suspension point.
+    #[must_use]
+    pub fn get_expression_as_waitee(&self, id: IRExprID) -> Waitee<'_> {
+        let expression = self.get_expression(id);
+        Waitee::of(expression.kind())
+    }
 
     #[must_use]
     pub fn get_variable(&self, id: IRVariableID) -> &IRVariable {
