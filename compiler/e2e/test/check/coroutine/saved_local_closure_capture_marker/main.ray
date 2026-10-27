@@ -1,0 +1,49 @@
+pub marker Fizz
+
+
+impl !Fizz for int32
+impl['a, t] Fizz for &'a mut t where(t: Fizz)
+impl['a, t] Fizz for &'a t     where(t: Fizz)
+
+
+pub eff Yield:
+    def yield()
+
+
+pub def requireFizz(value: a) given(_: core.Drop[a]) where(a: Fizz):
+    pass
+
+
+pub trait Default[a]:
+    pub def default() -> a
+
+
+pub inst DefaultInt32 for Default[int32]:
+    def default() -> int32:
+        return 0
+
+
+pub inst DefaultBool for Default[bool]:
+    def default() -> bool:
+        return false
+
+
+def yieldAndReturn(a: a) given (_: core.Drop[a]) -> a \ {Yield}:
+    Yield.yield()
+    return a
+
+
+pub def instantiateClosure[a]() given(
+    defA: Default[a],
+    dropA: core.Drop[a],
+) -> a \ {Yield}:
+    let value = defA.default()
+    let closure = () -> yieldAndReturn(value)
+    return closure()
+
+
+pub def useYield() \ {Yield}:
+    # this will error since `int32` is saved and `int32` does not implement `Fizz`  
+    requireFizz(coro instantiateClosure[int32]())
+    # this is okay since `bool` is saved
+    requireFizz(coro instantiateClosure[bool]())

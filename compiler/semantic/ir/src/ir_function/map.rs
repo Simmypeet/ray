@@ -218,8 +218,9 @@ impl IRFunctionMap {
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
+        span: RelativeSpan,
     ) -> FunctionID {
-        self.functions.insert(IRFunction::new_closure(return_ty, effect, capture_map))
+        self.functions.insert(IRFunction::new_closure(return_ty, effect, capture_map, span))
     }
 
     #[must_use]

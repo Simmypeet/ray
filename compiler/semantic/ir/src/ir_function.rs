@@ -61,13 +61,19 @@ impl IRFunction {
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
+        span: RelativeSpan,
     ) -> Self {
         Self {
             cfg: Cfg::default(),
             scope_map: ScopeMap::new(),
             variable_map: IRVariableMap::default(),
             expression_map: IRExpressionMap::default(),
-            context: IRContext::Closure(IRClosureContext::new(return_ty, effect, capture_map)),
+            context: IRContext::Closure(IRClosureContext::new(
+                return_ty,
+                effect,
+                capture_map,
+                span,
+            )),
         }
     }
 

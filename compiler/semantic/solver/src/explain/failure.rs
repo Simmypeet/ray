@@ -193,6 +193,9 @@ pub enum StructuralComponent {
 
     /// The value is stored into the coroutine frame.
     CoroutineSavedLocals(RelativeSpan),
+
+    /// The capture is saved into the coroutine frame of a closure.
+    CoroutineClosureCapture(RelativeSpan),
 }
 
 /// A marker goal that the compiler rejects whatever the givens say.

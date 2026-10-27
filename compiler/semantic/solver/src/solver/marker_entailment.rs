@@ -468,13 +468,13 @@ impl Solver {
 
             CoroutineBody::Closure(closure_coroutine_body_id) => {
                 let ir = self.engine().get_ir(closure_body_id.def_id()).await;
-                let function =
-                    ir.get_function_of_closure(closure_coroutine_body_id.local_closure_id());
+                let function_id =
+                    ir.get_function_id_of_closure(closure_coroutine_body_id.local_closure_id());
+                let function = ir.get_function(function_id);
+                let closure_context = function.context().assert_as_closure_context();
 
                 components.extend(
-                    function
-                        .context()
-                        .assert_as_closure_context()
+                    closure_context
                         .parameters()
                         .map(|(_, param)| {
                             (
@@ -484,7 +484,19 @@ impl Solver {
                         })
                         .collect::<Vec<_>>(),
                 );
-                // TODO: Continue with captures
+
+                let capture_map = ir
+                    .captures_for_function(function_id)
+                    .expect("should have a capture map for it");
+
+                components.extend(capture_map.iter().map(|(_, capture)| {
+                    (
+                        StructuralComponent::CoroutineClosureCapture(*closure_context.span()),
+                        capture
+                            .storage_ty(self.engine())
+                            .apply_subst_or_clone(&subst, self.engine()),
+                    )
+                }));
             }
         }
 

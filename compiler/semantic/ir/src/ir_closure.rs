@@ -21,6 +21,7 @@ pub struct IRClosureContext {
     return_ty: Interned<Ty>,
     effect: Interned<Ty>,
     capture_map: CaptureMapID,
+    span: RelativeSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
@@ -54,8 +55,9 @@ impl IRClosureContext {
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
+        span: RelativeSpan,
     ) -> Self {
-        Self { parameters: ClosureParameterMap::default(), return_ty, effect, capture_map }
+        Self { parameters: ClosureParameterMap::default(), return_ty, effect, capture_map, span }
     }
 
     #[must_use]
@@ -83,6 +85,11 @@ impl IRClosureContext {
 
     #[must_use]
     pub(crate) const fn capture_map(&self) -> CaptureMapID { self.capture_map }
+
+    /// Returns the span the declares the closure, which is used for diagnostics
+    /// when the closure is called.
+    #[must_use]
+    pub const fn span(&self) -> &RelativeSpan { &self.span }
 }
 
 #[derive(

@@ -781,6 +781,12 @@ async fn structural(
             format!("the coroutine `{owner_display}` saves a local of type `{value}`"),
             Some(highlight(engine, span).await),
         ),
+        StructuralComponent::CoroutineClosureCapture(span) => (
+            format!(
+                "the coroutine of closure `{owner_display}` captures a value of type `{value}`"
+            ),
+            Some(highlight(engine, span).await),
+        ),
     }
 }
 

@@ -119,6 +119,7 @@ impl FunctionBuildState {
             return_ty.clone(),
             context.function_effect().clone(),
             capture_map,
+            diagnostic_span,
         );
         for (typed_id, parameter) in closure_context.parameters() {
             let ir_id = ir_functions.insert_closure_parameter(
