@@ -56,18 +56,14 @@ expression: snapshot
 52 │     return (fst, snd)
 53 │
 54 │
-55 │ pub struct Wrapper[a]:
-56 │     value: a
-57 │
-58 │
-59 │ pub def useYield() \ {Yield}:
-60 │     # this will error since `int32` is saved and `int32` does not implement `Fizz`
-61 │     requireFizz(coro savedYield[int32, bool]())
+55 │ pub def useYield() \ {Yield}:
+56 │     # this will error since `int32` is saved and `int32` does not implement `Fizz`
+57 │     requireFizz(coro savedYield[int32, bool]())
    │     ^^^^^^^^^^^
    ┆ [error]: `Continuation[(), &mut <coroutine of savedYield[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>]` does not satisfy marker `main.Fizz`
-   ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_locals_capture_marker/main.ray:61:5
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_locals_capture_marker/main.ray:57:5
    ┆    │
-   ┆ 61 │     requireFizz(coro savedYield[int32, bool]())
+   ┆ 57 │     requireFizz(coro savedYield[int32, bool]())
    ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
    ┆ [note]: `Continuation[(), &mut <coroutine of savedYield[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>]` stores field `coroutine` of type `&mut <coroutine of savedYield[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>`
    ┆    ╭▸ __ray_core__/core.ray:38:5
@@ -90,7 +86,7 @@ expression: snapshot
    ┆ 4 │ impl !Fizz for int32
    ┆   ╰╴━━━━━━━━━━━━━━━━━━━━
    ┆
-62 │     # Okay since `bool` is saved and `bool` implements `Fizz`
-63 │     requireFizz(coro savedYield[bool, bool]())
-64 │     # Okay since `dontSave` doesn't have suspension point
-65 │     requireFizz(coro dontSave[int32, bool]())
+58 │     # Okay since `bool` is saved and `bool` implements `Fizz`
+59 │     requireFizz(coro savedYield[bool, bool]())
+60 │     # Okay since `dontSave` doesn't have suspension point
+61 │     requireFizz(coro dontSave[int32, bool]())

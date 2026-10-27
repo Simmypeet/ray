@@ -1,0 +1,89 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ pub marker Fizz
+ 2 │
+ 3 │
+ 4 │ impl !Fizz for int32
+ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+ 6 │ impl['a, t] Fizz for &'a t     where(t: Fizz)
+ 7 │
+ 8 │
+ 9 │ pub eff Yield:
+10 │     def yield()
+11 │
+12 │
+13 │ pub def requireFizz(value: a) given(_: core.Drop[a]) where(a: Fizz):
+14 │     pass
+15 │
+16 │
+17 │ pub trait Default[a]:
+18 │     pub def default() -> a
+19 │
+20 │
+21 │ pub inst DefaultInt32 for Default[int32]:
+22 │     def default() -> int32:
+23 │         return 0
+24 │
+25 │
+26 │ pub inst DefaultBool for Default[bool]:
+27 │     def default() -> bool:
+28 │         return false
+29 │
+30 │
+31 │ pub def savedYield[a]() given(
+32 │     defA: Default[a],
+33 │     dropA: core.Drop[a],
+34 │ ) -> a \ {Yield}:
+35 │     let fst = defA.default()
+36 │
+37 │     Yield.yield()
+38 │
+39 │     return fst
+40 │
+41 │
+42 │ pub def saveYieldTuple[a, b]() given(
+43 │     defA: Default[a],
+44 │     defB: Default[b],
+45 │     dropA: core.Drop[a],
+46 │     dropB: core.Drop[b]
+47 │ ) -> (a, b) \ {Yield}:
+48 │     let fst = savedYield[a]()
+49 │     let snd = savedYield[b]()
+50 │
+51 │     return (fst, snd)
+52 │
+53 │
+54 │ pub def useYield() \ {Yield}:
+55 │     # this will error since `int32` is saved and `int32` does not implement `Fizz`
+56 │     requireFizz(coro saveYieldTuple[int32, bool]())
+   │     ^^^^^^^^^^^
+   ┆ [error]: `Continuation[(), &mut <coroutine of saveYieldTuple[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>]` does not satisfy marker `main.Fizz`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_locals_propagate_capture_marker/main.ray:56:5
+   ┆    │
+   ┆ 56 │     requireFizz(coro saveYieldTuple[int32, bool]())
+   ┆    ╰╴    ━━━━━━━━━━━ required by the where clause of `main.requireFizz`
+   ┆ [note]: `Continuation[(), &mut <coroutine of saveYieldTuple[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>]` stores field `coroutine` of type `&mut <coroutine of saveYieldTuple[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>`
+   ┆    ╭▸ __ray_core__/core.ray:38:5
+   ┆    │
+   ┆ 38 │     coroutine: c
+   ┆    ╰╴    ━━━━━━━━━
+   ┆ [note]: `&mut <coroutine of saveYieldTuple[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>: main.Fizz` holds only if `<coroutine of saveYieldTuple[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>: main.Fizz`, by this implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_locals_propagate_capture_marker/main.ray:5:1
+   ┆   │
+   ┆ 5 │ impl['a, t] Fizz for &'a mut t where(t: Fizz)
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ┆ [note]: the coroutine `<coroutine of saveYieldTuple[int32, bool; given DefaultInt32, DefaultBool, <no-op drop instance>int32, <no-op drop instance>bool]>` saves a local of type `int32`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/saved_locals_propagate_capture_marker/main.ray:48:9
+   ┆    │
+   ┆ 48 │     let fst = savedYield[a]()
+   ┆    ╰╴        ━━━
+   ┆ [note]: `int32` is excluded by this negative implementation
+   ┆   ╭▸ compiler/e2e/test/check/coroutine/saved_locals_propagate_capture_marker/main.ray:4:1
+   ┆   │
+   ┆ 4 │ impl !Fizz for int32
+   ┆   ╰╴━━━━━━━━━━━━━━━━━━━━
+   ┆
+57 │     # Okay since `bool` is saved and `bool` implements `Fizz`
+58 │     requireFizz(coro saveYieldTuple[bool, bool]())

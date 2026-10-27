@@ -52,10 +52,6 @@ pub def dontSave[a, b]() given(
     return (fst, snd)
 
 
-pub struct Wrapper[a]:
-    value: a
-
-
 pub def useYield() \ {Yield}:
     # this will error since `int32` is saved and `int32` does not implement `Fizz`  
     requireFizz(coro savedYield[int32, bool]())
