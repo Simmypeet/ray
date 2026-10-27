@@ -20,15 +20,6 @@ expression: snapshot
  7 │
  8 │
  9 │ def incompleteInBody() -> int32 \ {Pair[int32, bool]}:
-   │     ^^^^^^^^^^^^^^^^
-   ┆ [error]: function body effects do not match its signature: expected `{Pair[int32, bool]}`, but found `{Pair[int32, <error>]}`
-   ┆    ╭▸ compiler/e2e/test/check/semantic/path_type_argument_inference/main.ray:9:5
-   ┆    │
-   ┆  9 │ def incompleteInBody() -> int32 \ {Pair[int32, bool]}:
-   ┆    │     ━━━━━━━━━━━━━━━━ the function body has effects outside its signature
-   ┆ 10 │     return Pair[int32].first()
-   ┆    ╰╴           ─────────────────── effect `{Pair[int32, <error>]}` introduced here
-   ┆
 10 │     return Pair[int32].first()
    │                ^^^^^^^
    ┆ [error]: type argument arity mismatch

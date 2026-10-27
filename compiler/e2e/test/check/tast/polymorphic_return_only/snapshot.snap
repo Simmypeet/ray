@@ -11,10 +11,3 @@ expression: snapshot
   ┆   ╰╴                                ━ symbol `a` is not found
   ┆
 2 │     return b
-  │            ^
-  ┆ [error]: mismatched types in return expression: expected `<error>`, but found `int32`
-  ┆   ╭▸ compiler/e2e/test/check/tast/polymorphic_return_only/main.ray:2:12
-  ┆   │
-  ┆ 2 │     return b
-  ┆   ╰╴           ━
-  ┆

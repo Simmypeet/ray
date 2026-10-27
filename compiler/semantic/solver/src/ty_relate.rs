@@ -332,9 +332,21 @@ impl Solver {
                     Err(Error::Conflicted)
                 }
             }
-        }?;
+        };
 
-        Ok(Entailment::new(step))
+        match step {
+            Ok(step) => Ok(Entailment::new(step)),
+            Err(Error::Conflicted) => {
+                if relate.lesser().contains_error() || relate.greater().contains_error() {
+                    // A type containing an error is not reported, since the
+                    // erroneous type was already reported where it was written.
+                    Ok(Entailment::new(Step::Derived(Vec::new())))
+                } else {
+                    Err(Error::Conflicted)
+                }
+            }
+            Err(error) => Err(error),
+        }
     }
 
     /// Returns whether `relate` relates two lifetimes by outlives
