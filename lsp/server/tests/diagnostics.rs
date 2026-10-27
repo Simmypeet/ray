@@ -388,6 +388,43 @@ fn related_locations_are_distinct_and_core_ones_can_be_opened() {
 }
 
 #[test]
+fn highlighted_notes_are_information_diagnostics() {
+    // Each note highlighted in the project is shown at its own range, and it
+    // and the main diagnostic link to each other.
+    let text = "marker Send\n\nimpl[a, b, c] !Send for (a, b, c)\n\nstruct Wrapper[a]:\n    \
+                value: a\n\ndef requireSend(value: a) -> a where (a: Send):\n    return \
+                value\n\ndef rejected(value: Wrapper[(int32, bool, int32)]) -> Wrapper[(int32, \
+                bool, int32)]:\n    return requireSend(value)\n";
+    let directory = project(&[("src/main.ray", text)]);
+    let uri = uri(&directory, "src/main.ray");
+    let mut editor = Editor::start();
+    editor.open(&uri, 1, text);
+    let diagnostics = editor.diagnostics(&uri, Some(1));
+
+    let main = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic["message"].as_str().unwrap().contains("does not satisfy"))
+        .expect("marker diagnostic");
+    assert_eq!(main["severity"], 1, "{main}");
+    assert!(!main["message"].as_str().unwrap().contains("note:"), "{main}");
+
+    let notes: Vec<_> =
+        diagnostics.iter().filter(|diagnostic| diagnostic["severity"] == 3).collect();
+    let note_lines: Vec<_> =
+        notes.iter().map(|note| note["range"]["start"]["line"].as_u64().unwrap()).collect();
+    assert_eq!(note_lines, [5, 2], "{diagnostics:?}");
+    for note in notes {
+        let location = json!({"uri":uri, "range":note["range"]});
+        let main_related = main["relatedInformation"].as_array().unwrap();
+        assert!(main_related.iter().any(|related| related["location"] == location), "{main}");
+
+        let back = &note["relatedInformation"][0];
+        assert_eq!(back["location"], json!({"uri":uri, "range":main["range"]}), "{note}");
+        assert!(main["message"].as_str().unwrap().starts_with(back["message"].as_str().unwrap()));
+    }
+}
+
+#[test]
 fn files_outside_projects_suggest_creating_one() {
     // Only projects are checked, so the user is told how to create one.
     let directory = tempfile::tempdir().unwrap();
