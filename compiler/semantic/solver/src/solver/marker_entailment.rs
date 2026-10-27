@@ -118,7 +118,7 @@ enum MarkerRule {
 
 /// Determines whether when encoutering a coroutine, should the solver query
 /// for its saved locals or defer the query to be solved later when ready.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum CoroutineSavedLocalsVisibility {
     /// The solver is allowed to query for the saved locals of the coroutine.
     #[default]
@@ -138,7 +138,7 @@ pub(crate) struct MarkerEntailmentState {
 
 impl MarkerEntailmentState {
     #[must_use]
-    pub const fn new(visibility: CoroutineSavedLocalsVisibility) -> Self {
+    pub fn new(visibility: CoroutineSavedLocalsVisibility) -> Self {
         Self { active_goals: Vec::new(), memo: FxHashMap::default(), visibility }
     }
 

@@ -400,16 +400,6 @@ impl Solver {
         (normalized, outlives)
     }
 
-    /// Replaces the generator of this solver's inference variables.
-    ///
-    /// This must be done before any inference variable is created, so that
-    /// every variable comes from one generator.
-    #[must_use]
-    pub fn with_inference_generator(mut self, generator: Box<dyn InferenceGenerator>) -> Self {
-        self.inference_generator = generator;
-        self
-    }
-
     /// The generator of this solver's inference variables. Callers that
     /// installed their own generator can downcast it through
     /// [`InferenceGenerator::as_any`].
