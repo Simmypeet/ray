@@ -96,6 +96,12 @@ impl LayoutContext<'_> {
 
         for (&suspension_point_id, &waitee_expr_id) in &points {
             for savable in self.savables_at(suspension_point_id.block_id()) {
+                if savable == Savable::Expression(waitee_expr_id) {
+                    // the waitee expression is not stored in the coroutine
+                    // frame
+                    continue;
+                }
+
                 match layout.placements.entry(savable) {
                     // it has been placed elsewhere, need to promote it to the prefix part
                     Entry::Occupied(mut occupied_entry) => {
