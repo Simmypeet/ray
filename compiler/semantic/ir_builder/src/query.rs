@@ -78,6 +78,7 @@ async fn build_ir_executor(
     // Later phases, like borrow checking, run only when nothing went wrong up
     // to here: an earlier error would leave them checking placeholder nodes.
     function.set_no_error(well_typed && diagnostics.is_empty());
+    function.extend_deferred_markers(typed_function.deferred_markers().iter().cloned());
 
     if engine.get_ir_verification(def_id.target_id).await
         && let Err(error) = crate::verification::verify(&function).await
@@ -114,10 +115,6 @@ async fn single_rendered_executor(
     &SingleRenderedKey { def_id }: &SingleRenderedKey,
     engine: &TrackedEngine,
 ) -> Interned<[Rendered<ByteIndex>]> {
-    if engine.get_def_body_syntax(def_id).await.is_none() {
-        return engine.intern_unsized([]);
-    }
-
     let (_, diagnostics) = engine.query(&BuildIR { def_id }).await;
     let mut rendered = Vec::new();
     for diagnostic in diagnostics.iter() {

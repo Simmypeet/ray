@@ -40,6 +40,9 @@ impl TypedAst {
         self.deferred_markers.extend(markers);
     }
 
+    #[must_use]
+    pub fn deferred_markers(&self) -> &[DeferredMarker] { &self.deferred_markers }
+
     /// Returns whether building this typed AST reported no error.
     ///
     /// A later phase reads this to skip the checks that are only meaningful
