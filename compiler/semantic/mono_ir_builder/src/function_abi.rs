@@ -99,7 +99,7 @@ impl FunctionABI {
 impl Context {
     pub(super) async fn plan_function(
         &mut self,
-        source_id: rayc_ir::ir_function::FunctionID,
+        source_id: rayc_ir::ir_function::IRFunctionID,
         source: &IRFunction,
     ) -> FunctionABI {
         let effects = self.lower_source_effects(source_id).await;

@@ -44,7 +44,7 @@ impl Builder {
     pub fn register_closure(
         &mut self,
         closure_id: ClosureID,
-        function_id: rayc_ir::ir_function::FunctionID,
+        function_id: rayc_ir::ir_function::IRFunctionID,
     ) {
         self.ir_functions.register_closure(closure_id, function_id);
     }

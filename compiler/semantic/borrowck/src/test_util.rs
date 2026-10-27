@@ -6,7 +6,7 @@ use rayc_ir::{
     address::{Address, Local, Projection},
     cfg::{BlockID, Conditional, Point, Terminator},
     ir_expr::{IRExpr, IRExprID, IRExprKind, load::Load, ref_of::RefOf},
-    ir_function::{FunctionID, IRFunctionMap},
+    ir_function::{IRFunctionID, IRFunctionMap},
     scope::ScopeID,
 };
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
@@ -31,7 +31,7 @@ use crate::{
 pub struct FunctionBuilder {
     engine: TrackedEngine,
     functions: IRFunctionMap,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
 }
 
 impl FunctionBuilder {
@@ -212,7 +212,7 @@ impl FunctionBuilder {
 /// [`FunctionBuilder`].
 pub struct Analysis {
     functions: IRFunctionMap,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
     constraints: LocalizedConstraints,
     live_loans: LiveLoans,
 }

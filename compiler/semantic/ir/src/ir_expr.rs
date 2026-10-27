@@ -22,7 +22,7 @@ use crate::{
         struct_initialization::StructInitialization,
         tuple::Tuple,
     },
-    ir_function::FunctionID,
+    ir_function::IRFunctionID,
     visit::{
         TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
         VisitTypeMutAsync,
@@ -221,8 +221,8 @@ impl IRExprKind {
     /// Returns the nested functions this expression creates: the body of a
     /// closure, or the handled body and the operation handlers of a `run ...
     /// with`.
-    pub fn created_functions(&self) -> impl Iterator<Item = FunctionID> + '_ {
-        let (function, handlers): (Option<FunctionID>, &[OperationHandler]) = match self {
+    pub fn created_functions(&self) -> impl Iterator<Item = IRFunctionID> + '_ {
+        let (function, handlers): (Option<IRFunctionID>, &[OperationHandler]) = match self {
             Self::Closure(closure) => (Some(closure.function_id()), &[]),
             Self::RunWith(run_with) => (Some(run_with.body().function_id()), run_with.handlers()),
             Self::Error

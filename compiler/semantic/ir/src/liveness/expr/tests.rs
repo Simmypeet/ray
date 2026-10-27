@@ -9,7 +9,7 @@ use super::{ExprLiveness, LiveExprs};
 use crate::{
     cfg::{BlockID, Conditional, Point, Terminator},
     ir_expr::{IRExpr, IRExprID, IRExprKind, phi::Phi, tuple::Tuple},
-    ir_function::{FunctionID, IRFunctionMap},
+    ir_function::{IRFunctionID, IRFunctionMap},
     liveness::{LiveMode, LiveRanges},
 };
 
@@ -18,7 +18,7 @@ use crate::{
 struct FunctionBuilder {
     engine: TrackedEngine,
     functions: IRFunctionMap,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
     ty: Interned<Ty>,
 }
 

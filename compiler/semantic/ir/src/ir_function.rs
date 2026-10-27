@@ -33,7 +33,7 @@ mod map;
 pub use context::IRContext;
 pub use map::IRFunctionMap;
 
-pub type FunctionID = ID<IRFunction>;
+pub type IRFunctionID = ID<IRFunction>;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IRFunction {
@@ -124,7 +124,7 @@ impl IRFunction {
     /// create, in unspecified order; see [`IRExprKind::created_functions`].
     ///
     /// [`IRExprKind::created_functions`]: crate::ir_expr::IRExprKind::created_functions
-    pub fn created_functions(&self) -> impl Iterator<Item = FunctionID> + '_ {
+    pub fn created_functions(&self) -> impl Iterator<Item = IRFunctionID> + '_ {
         self.expression_map
             .expressions()
             .flat_map(|(_, expression)| expression.kind().created_functions())
@@ -448,7 +448,7 @@ impl IRFunction {
     /// its body.
     ///
     /// The definition function stores no signature types.
-    fn visit_types<V: TypeVisitor>(&self, function_id: FunctionID, visitor: &mut V) {
+    fn visit_types<V: TypeVisitor>(&self, function_id: IRFunctionID, visitor: &mut V) {
         self.context.visit_types(TypeSite::Signature(function_id), visitor);
 
         let body = TypeSite::Body(function_id);
@@ -461,7 +461,7 @@ impl IRFunction {
     /// signature, then its body.
     ///
     /// The definition function stores no signature types.
-    fn visit_types_mut<V: TypeVisitorMut>(&mut self, function_id: FunctionID, visitor: &mut V) {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, function_id: IRFunctionID, visitor: &mut V) {
         self.context.visit_types_mut(TypeSite::Signature(function_id), visitor);
 
         let body = TypeSite::Body(function_id);
@@ -473,7 +473,7 @@ impl IRFunction {
     /// Like [`Self::visit_types_mut`], but with a visitor that may await.
     async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         visitor: &mut V,
     ) {
         self.context.visit_types_mut_async(TypeSite::Signature(function_id), visitor).await;

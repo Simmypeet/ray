@@ -11,7 +11,7 @@ use crate::{
     address::{Address, Local},
     cfg::{BlockID, Conditional, Point, Terminator},
     ir_expr::{IRExpr, ref_of::RefOf},
-    ir_function::{FunctionID, IRFunctionMap},
+    ir_function::{IRFunctionID, IRFunctionMap},
     scope::ScopeID,
 };
 
@@ -20,7 +20,7 @@ use crate::{
 struct FunctionBuilder {
     engine: TrackedEngine,
     functions: IRFunctionMap,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
     ty: Interned<Ty>,
 }
 

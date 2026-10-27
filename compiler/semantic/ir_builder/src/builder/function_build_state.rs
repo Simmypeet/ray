@@ -10,7 +10,7 @@ use rayc_ir::{
         ClosureParameter as IrClosureParameter, ClosureParameterID,
     },
     ir_expr::{IRExpr, IRExprID, IRExprKind, Suspension, load::Load, tuple::Tuple},
-    ir_function::{FunctionID as IrFunctionID, IRFunctionMap},
+    ir_function::{IRFunctionID as IrFunctionID, IRFunctionMap},
     ir_operation_handler::{
         OperationHandlerParameter as IrOperationHandlerParameter,
         OperationHandlerParameterID as IrOperationHandlerParameterID,

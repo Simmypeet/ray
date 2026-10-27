@@ -216,6 +216,22 @@ pub enum Terminator {
 }
 
 impl Terminator {
+    /// Determines whether this terminator is a suspension point. And if it is,
+    /// returns the expression it evaluates
+    #[must_use]
+    pub const fn suspension_waitee(&self) -> Option<IRExprID> {
+        match self {
+            Self::Suspend(suspend) => Some(suspend.expression),
+            Self::Handle(handle) if handle.abandon.is_some() => Some(handle.expression),
+
+            Self::Handle(_)
+            | Self::Abandon
+            | Self::Jump(_)
+            | Self::Conditional(_)
+            | Self::Return(_) => None,
+        }
+    }
+
     pub fn jump_targets(&self) -> impl Iterator<Item = BlockID> + '_ {
         self.direct_jump_targets().chain(self.abandon_block())
     }

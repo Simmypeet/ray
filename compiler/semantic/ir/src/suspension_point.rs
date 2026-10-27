@@ -23,8 +23,8 @@
 use crate::{
     address::Local,
     borrowed_locals::MaybeBorrowedLocals,
-    cfg::{Point, Terminator},
-    ir_expr::{IRExprID, IRExprKind, call::CallTarget, run_with::RunWith},
+    cfg::Point,
+    ir_expr::{IRExprID, IRExprKind, call::Call, handle::Handle, run_with::RunWith},
     ir_function::IRFunction,
     liveness::{expr::ExprLiveness, local::LocalLiveness},
 };
@@ -32,14 +32,14 @@ use crate::{
 /// What the expression evaluated at a suspension point waits for while the
 /// function is suspended there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Waited<'a> {
+pub enum Waitee<'a> {
     /// A `perform`, which waits for the handler of the operation, outside the
     /// function. Its arguments leave with the operation.
     Nothing,
 
     /// A call, which waits for the callee to complete. The arguments of the
     /// call are held by the callee.
-    Call(&'a CallTarget),
+    Call(&'a Call),
 
     /// A `run ... with`, which waits for its handled body and its operation
     /// handlers. Each is a nested function of the same function map, created
@@ -48,7 +48,7 @@ pub enum Waited<'a> {
 
     /// A `handle` that forwards an operation, which waits for the
     /// continuation operand, consumed by the `handle`.
-    Continuation(IRExprID),
+    Handle(&'a Handle),
 }
 
 /// One suspension point of a function, with what the function holds while it
@@ -60,7 +60,7 @@ pub struct SuspensionPoint<'a> {
     held_locals: Vec<Local>,
     held_expressions: Vec<IRExprID>,
     borrowed: Vec<Local>,
-    waited: Waited<'a>,
+    waited: Waitee<'a>,
 }
 
 impl<'a> SuspensionPoint<'a> {
@@ -77,16 +77,8 @@ impl<'a> SuspensionPoint<'a> {
                 continue;
             };
 
-            let expression = match terminator {
-                Terminator::Suspend(suspend) => suspend.expression(),
-                Terminator::Handle(handle) if handle.abandon_block().is_some() => {
-                    handle.expression()
-                }
-                Terminator::Handle(_)
-                | Terminator::Jump(_)
-                | Terminator::Conditional(_)
-                | Terminator::Return(_)
-                | Terminator::Abandon => continue,
+            let Some(expression) = terminator.suspension_waitee() else {
+                continue;
             };
 
             let traversed = "traversed blocks are reachable";
@@ -112,7 +104,7 @@ impl<'a> SuspensionPoint<'a> {
                 held_locals,
                 held_expressions,
                 borrowed,
-                waited: Waited::of(function.get_expression(expression).kind()),
+                waited: Waitee::of(function.get_expression(expression).kind()),
             });
         }
 
@@ -145,18 +137,18 @@ impl<'a> SuspensionPoint<'a> {
 
     /// Returns what the evaluated expression waits for.
     #[must_use]
-    pub const fn waited(&self) -> Waited<'a> { self.waited }
+    pub const fn waited(&self) -> Waitee<'a> { self.waited }
 }
 
-impl<'a> Waited<'a> {
+impl<'a> Waitee<'a> {
     /// Returns what the expression `kind`, evaluated at a suspension point,
     /// waits for.
     fn of(kind: &'a IRExprKind) -> Self {
         match kind {
             IRExprKind::Perform(_) => Self::Nothing,
-            IRExprKind::Call(call) => Self::Call(call.target()),
+            IRExprKind::Call(call) => Self::Call(call),
             IRExprKind::RunWith(run_with) => Self::RunWith(run_with),
-            IRExprKind::Handle(handle) => Self::Continuation(handle.continuation()),
+            IRExprKind::Handle(handle) => Self::Handle(handle),
 
             IRExprKind::Error
             | IRExprKind::Literal(_)

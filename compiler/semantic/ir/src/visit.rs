@@ -4,21 +4,21 @@ use rayc_type::ty::Ty;
 use crate::{
     ir_closure::CaptureMapID,
     ir_expr::{IRExpr, IRExprID},
-    ir_function::FunctionID,
+    ir_function::IRFunctionID,
 };
 
 /// Receives expressions together with their function-local identity.
 pub trait ExprVisitor {
-    fn visit_expr(&mut self, function_id: FunctionID, expression_id: IRExprID, expression: &IRExpr);
+    fn visit_expr(&mut self, function_id: IRFunctionID, expression_id: IRExprID, expression: &IRExpr);
 }
 
 impl<F> ExprVisitor for F
 where
-    F: FnMut(FunctionID, IRExprID, &IRExpr),
+    F: FnMut(IRFunctionID, IRExprID, &IRExpr),
 {
     fn visit_expr(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         expression_id: IRExprID,
         expression: &IRExpr,
     ) {
@@ -47,11 +47,11 @@ pub enum TypeSite {
     ///
     /// The definition function stores no signature types; its signature is
     /// the one declared by the definition.
-    Signature(FunctionID),
+    Signature(IRFunctionID),
 
     /// Any other type owned by a function, such as the type of a variable or
     /// of an expression, or a dictionary used by an instruction.
-    Body(FunctionID),
+    Body(IRFunctionID),
 }
 
 /// Receives types exposed by IR nodes, together with where they are stored.

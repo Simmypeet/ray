@@ -1904,6 +1904,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayc_coroutine_frame_layout"
+version = "0.1.0-beta.2"
+dependencies = [
+ "derive_more",
+ "qbice",
+ "rayc_hash",
+ "rayc_ir",
+ "rayc_qbice",
+ "rayc_semantic_element",
+]
+
+[[package]]
 name = "rayc_diagnostic"
 version = "0.1.0-beta.2"
 dependencies = [

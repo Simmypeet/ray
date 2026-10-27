@@ -10,7 +10,7 @@ use rayc_ir::{
     cfg::{BlockID, Instruction, Point, Terminator},
     ir_closure::CaptureMap,
     ir_expr::{IRExprID, IRExprKind},
-    ir_function::{FunctionID, IRFunction, IRFunctionMap},
+    ir_function::{IRFunctionID, IRFunction, IRFunctionMap},
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_solver::Solver;
@@ -191,7 +191,7 @@ impl LocalizedConstraints {
     /// function `function_id`, whose nested functions must be in `nested`.
     pub async fn collect(
         ir: &IRFunctionMap,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         effect: &Interned<Ty>,
         nested: &NestedRequirements,
         solver: &mut Solver,

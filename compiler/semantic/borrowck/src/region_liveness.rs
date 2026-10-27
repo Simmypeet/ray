@@ -10,7 +10,7 @@ use rayc_ir::{
     address::Local,
     cfg::{Instruction, Point, Terminator},
     ir_expr::IRExprID,
-    ir_function::{FunctionID, IRFunction, IRFunctionMap},
+    ir_function::{IRFunctionID, IRFunction, IRFunctionMap},
     liveness::{LiveMode, LiveRanges, expr::ExprLiveness, local::LocalLiveness},
     visit::{TypeSite, VisitType},
 };
@@ -59,7 +59,7 @@ impl RegionLiveness {
     /// Computes where each region of the function `function_id` is live.
     pub async fn compute(
         ir: &IRFunctionMap,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         engine: &TrackedEngine,
     ) -> Self {
         let function = ir.get_function(function_id);
@@ -158,7 +158,7 @@ impl RegionLiveness {
 /// Returns the owner of each region of the body of `function`.
 fn collect_owners(
     function: &IRFunction,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
 ) -> FxHashMap<RegionID, RegionOwner> {
     let mut collector =
         OwnerCollector { site: TypeSite::Body(function_id), owners: FxHashMap::default() };

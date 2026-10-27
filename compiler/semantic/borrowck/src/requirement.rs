@@ -4,7 +4,7 @@
 
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
-use rayc_ir::ir_function::FunctionID;
+use rayc_ir::ir_function::IRFunctionID;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{
@@ -86,12 +86,12 @@ impl ExternalRequirements {
 /// The requirements of the nested functions of a definition checked so far.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NestedRequirements {
-    by_function: FxHashMap<FunctionID, ExternalRequirements>,
+    by_function: FxHashMap<IRFunctionID, ExternalRequirements>,
 }
 
 impl NestedRequirements {
     /// Records what the checked function `function_id` requires of its creator.
-    pub(crate) fn record(&mut self, function_id: FunctionID, requirements: ExternalRequirements) {
+    pub(crate) fn record(&mut self, function_id: IRFunctionID, requirements: ExternalRequirements) {
         self.by_function.insert(function_id, requirements);
     }
 
@@ -99,7 +99,7 @@ impl NestedRequirements {
     /// checked already, requires of its creator.
     pub(crate) fn of(
         &self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
     ) -> impl ExactSizeIterator<Item = &ExternalRequirement> {
         self.by_function
             .get(&function_id)

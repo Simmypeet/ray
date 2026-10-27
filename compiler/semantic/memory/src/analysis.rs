@@ -5,7 +5,7 @@ use rayc_ir::{
     cfg::{BlockID, Instruction, Point, Terminator},
     dataflow::DataflowProblem,
     ir_expr::IRExprKind,
-    ir_function::{FunctionID, IRFunctionMap},
+    ir_function::{IRFunctionID, IRFunctionMap},
 };
 use rayc_qbice::TrackedEngine;
 use rayc_solver::{Solver, solver::CoroutineSavedLocalsVisibility};
@@ -79,7 +79,7 @@ async fn analyze_function(
     engine: &TrackedEngine,
     def_id: GlobalSymbolID,
     functions: &IRFunctionMap,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
     elaborator: &mut DropElaborator<'_>,
 ) {
     let function = functions.get_function(function_id);
