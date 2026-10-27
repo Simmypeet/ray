@@ -17,6 +17,7 @@ pub enum Placement {
     Prefix,
     SuspensionLocal(SuspensionLocalPlacement),
 }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum SuspensionLocalPlacement {
     /// Right at the start of the coroutine, after it's created, but before it
@@ -96,24 +97,21 @@ impl LayoutContext<'_> {
 
         for (&suspension_point_id, &waitee_expr_id) in &points {
             for savable in self.savables_at(suspension_point_id.block_id()) {
-                if savable == Savable::Expression(waitee_expr_id) {
-                    // the waitee expression is not stored in the coroutine
-                    // frame
-                    continue;
-                }
-
+                let local_suspension = Placement::SuspensionLocal(
+                    SuspensionLocalPlacement::SuspensionLocal(suspension_point_id),
+                );
                 match layout.placements.entry(savable) {
                     // it has been placed elsewhere, need to promote it to the prefix part
                     Entry::Occupied(mut occupied_entry) => {
-                        *occupied_entry.get_mut() = Placement::Prefix;
+                        if occupied_entry.get_mut() != &local_suspension {
+                            *occupied_entry.get_mut() = Placement::Prefix;
+                        }
                     }
 
                     // The value is not yet placed in the coroutine frame. place it exclusively in
                     // the suspension local part.
                     Entry::Vacant(vacant_entry) => {
-                        vacant_entry.insert(Placement::SuspensionLocal(
-                            SuspensionLocalPlacement::SuspensionLocal(suspension_point_id),
-                        ));
+                        vacant_entry.insert(local_suspension);
                     }
                 }
             }

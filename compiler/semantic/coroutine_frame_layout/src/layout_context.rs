@@ -88,25 +88,37 @@ impl<'a> LayoutContext<'a> {
 
     pub(crate) const fn ir_function(&self) -> &'a IRFunction { self.ir_function }
 
+    /// Returns the values held across the suspension point that terminates
+    /// `block_id`, each once.
+    ///
+    /// The expressions the terminator evaluates are not held: the waitee is
+    /// consumed by it, and the values it defines on its outgoing edges do not
+    /// exist yet while it is suspended.
     pub(crate) fn savables_at(&self, block_id: BlockID) -> impl Iterator<Item = Savable> + '_ {
+        let terminator = self
+            .ir_function
+            .block_terminator(block_id)
+            .expect("a suspension point is a terminator");
+        let borrowed_locals =
+            self.maybe_borrowed_locals.block_exit(block_id).expect("should exist");
+
+        // a local may be both live and borrowed, so the live ones that are
+        // borrowed are left to the borrowed locals
         let saved_locals = self
             .local_liveness
             .block_exit(block_id)
             .expect("should exist")
             .live()
+            .filter(|local| !borrowed_locals.contains(*local))
             .map(Savable::Local);
         let saved_exprs = self
             .expr_liveness
             .block_exit(block_id)
             .expect("should exist")
             .live()
+            .filter(|expr| !terminator.evaluated_expressions().any(|defined| defined == *expr))
             .map(Savable::Expression);
-        let saved_borrowed_locals = self
-            .maybe_borrowed_locals
-            .block_exit(block_id)
-            .expect("should exist")
-            .iter()
-            .map(Savable::Local);
+        let saved_borrowed_locals = borrowed_locals.iter().map(Savable::Local);
 
         saved_locals.chain(saved_exprs).chain(saved_borrowed_locals)
     }
