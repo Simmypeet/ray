@@ -2,12 +2,11 @@ use std::collections::hash_map::Entry;
 
 use qbice::{Decode, Encode, StableHash};
 use rayc_hash::FxHashMap;
-use rayc_ir::{
-    borrowed_locals::MaybeBorrowedLocals,
-    ir_expr::IRExprID,
-    liveness::{expr::ExprLiveness, local::LocalLiveness},
-};
+use rayc_ir::{self, get_ir, ir_expr::IRExprID, ir_function::IRFunctionID};
+use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
+use rayc_symbol::GlobalSymbolID;
+use rayc_type::subst::Subst;
 
 use crate::{layout_context::LayoutContext, savable::Savable, suspension_point::SuspensionPointID};
 
@@ -18,7 +17,6 @@ pub enum Placement {
     Prefix,
     SuspensionLocal(SuspensionLocalPlacement),
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum SuspensionLocalPlacement {
     /// Right at the start of the coroutine, after it's created, but before it
@@ -47,13 +45,25 @@ pub struct FrameLayout {
     suspension_locals: FxHashMap<SuspensionLocalPlacement, SuspensionLocalLayout>,
 }
 
+impl FrameLayout {
+    pub async fn compute(
+        engine: TrackedEngine,
+        solver: &mut Solver,
+        def_id: GlobalSymbolID,
+        local_ir_function_id: IRFunctionID,
+        subst: Subst,
+    ) -> Self {
+        let ir_function_map = engine.get_ir(def_id).await;
+        let ir_function = ir_function_map.get_function(local_ir_function_id);
+        let layout_context = LayoutContext::new(subst, engine, def_id, ir_function).await;
+
+        layout_context.compute_initial_frame_layout(solver).await
+    }
+}
+
 impl LayoutContext<'_> {
     async fn compute_initial_frame_layout(&self, solver: &mut Solver) -> FrameLayout {
         let points = self.calculate_waitee_for_each_suspension_point(solver).await;
-
-        let local_liveness = LocalLiveness::compute(self.ir_function()).await;
-        let expr_liveness = ExprLiveness::compute(self.ir_function()).await;
-        let maybe_borrowed_locals = MaybeBorrowedLocals::compute(self.ir_function()).await;
 
         let mut layout = FrameLayout {
             placements: FxHashMap::default(),
@@ -70,23 +80,7 @@ impl LayoutContext<'_> {
         }
 
         for (&suspension_point_id, &waitee_expr_id) in &points {
-            let saved_locals = local_liveness
-                .block_exit(suspension_point_id.block_id())
-                .expect("should exist")
-                .live()
-                .map(Savable::Local);
-            let saved_exprs = expr_liveness
-                .block_exit(suspension_point_id.block_id())
-                .expect("should exist")
-                .live()
-                .map(Savable::Expression);
-            let saved_borrowed_locals = maybe_borrowed_locals
-                .block_exit(suspension_point_id.block_id())
-                .expect("should exist")
-                .iter()
-                .map(Savable::Local);
-
-            for savable in saved_locals.chain(saved_exprs).chain(saved_borrowed_locals) {
+            for savable in self.savables_at(suspension_point_id.block_id()) {
                 match layout.placements.entry(savable) {
                     // it has been placed elsewhere, need to promote it to the prefix part
                     Entry::Occupied(mut occupied_entry) => {
@@ -110,6 +104,6 @@ impl LayoutContext<'_> {
             );
         }
 
-        todo!()
+        layout
     }
 }
