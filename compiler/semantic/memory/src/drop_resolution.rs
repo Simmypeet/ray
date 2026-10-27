@@ -1,6 +1,7 @@
 //! Selection of the `Drop` dictionary which drops a value of a given type.
 
 use qbice::storage::intern::Interned;
+use rayc_handler::Handler2;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_resolution::obligation::PredicateObligation;
 use rayc_semantic_element::deferred_marker::DeferredMarker;
@@ -46,19 +47,40 @@ impl DropInstance {
     }
 }
 
+/// The value whose drop requires a `Drop` dictionary, which a failure is
+/// reported against.
+#[derive(Debug, Clone, Copy)]
+pub struct DroppedValue {
+    /// The declaration of the dropped binding, or the dropped expression.
+    pub span: RelativeSpan,
+
+    /// The suspension point the value is held across, when it is dropped
+    /// only because the function is abandoned there.
+    pub suspension: Option<RelativeSpan>,
+}
+
+impl DroppedValue {
+    #[must_use]
+    pub const fn new_simple(span: RelativeSpan) -> Self { Self { span, suspension: None } }
+}
+
 /// Resolves the `Drop` dictionary for `ty` in the solver's environment and
 /// verifies the predicates required by the selected instances.
+///
+/// Returns `None` when no usable dictionary exists, after reporting why
+/// against `dropped` into `diagnostics`. A type containing an error is not
+/// reported, since the erroneous type was already reported where it was
+/// written.
 ///
 /// A marker predicate which depends on what a coroutine holds, while the
 /// solver cannot see it, does not fail the resolution. It is returned with
 /// the dictionary, to be proved once the coroutine's saved locals are known.
-///
-/// A type containing an error fails without a [`DropFailure`], since the
-/// erroneous type was already reported where it was written.
 pub async fn resolve_drop_instance(
     solver: &mut Solver,
     ty: Interned<Ty>,
-) -> Result<DropInstance, Vec<DropFailure>> {
+    dropped: DroppedValue,
+    diagnostics: &mut impl Handler2<Diagnostic>,
+) -> Option<DropInstance> {
     let engine = solver.engine();
     let drop_trait = engine.get_core_item(CoreItem::DropTrait).await;
     let trait_ref = TraitRef::new(drop_trait, Args::new([ty.clone()], engine));
@@ -72,16 +94,29 @@ pub async fn resolve_drop_instance(
         Err(error) => {
             // A failure that involves the error type has no explanation,
             // since the error was already reported.
-            return Err(ProofFailure::from_instance_error(trait_ref, &error)
-                .map(|failure| DropFailure::Unresolved { dropped: ty, failure })
-                .into_iter()
-                .collect());
+            if let Some(failure) = ProofFailure::from_instance_error(trait_ref, &error) {
+                // The `Drop` dictionary of a coroutine is assembled from one
+                // dictionary per argument, which the programmer acts on.
+                let required_by = if ty.as_coroutine_view().is_some() {
+                    RequiredBy::CoroutineArguments { suspension: dropped.suspension }
+                } else {
+                    RequiredBy::ScopeDrop { suspension: dropped.suspension }
+                };
+
+                diagnostics.receive(Diagnostic::UnsatisfiedGoal(Box::new(UnsatisfiedGoal::new(
+                    dropped.span,
+                    required_by,
+                    failure,
+                ))));
+            }
+
+            return None;
         }
     };
 
     // Instance search returns the where-clause predicates of the selected
     // proof tree rather than checking them itself.
-    let mut failures = Vec::new();
+    let mut holds_all = true;
     let mut deferred = Vec::new();
     for obligation in obligations {
         let (instance_id, predicate) = obligation.into_parts();
@@ -106,88 +141,25 @@ pub async fn resolve_drop_instance(
         }
 
         // A predicate that no proof explains keeps its plain report.
-        failures.push(
-            solver
-                .explain_predicate(&predicate)
-                .await
-                .map_or(DropFailure::UnsatisfiedPredicate(instance_id, predicate), |failure| {
-                    DropFailure::UnsatisfiedGoal { instance_id, failure }
-                }),
-        );
-    }
-
-    if failures.is_empty() { Ok(DropInstance { instance, deferred }) } else { Err(failures) }
-}
-
-/// Why no usable `Drop` dictionary exists for a type.
-#[derive(Debug, Clone)]
-pub enum DropFailure {
-    /// No `Drop` dictionary of `dropped` could be selected.
-    Unresolved { dropped: Interned<Ty>, failure: ProofFailure },
-
-    /// A where-clause predicate of the selected instance `instance_id` does
-    /// not hold, and the solver explains why.
-    UnsatisfiedGoal { instance_id: GlobalSymbolID, failure: ProofFailure },
-
-    /// A where-clause predicate of the selected instance does not hold, and
-    /// no proof explains it.
-    UnsatisfiedPredicate(GlobalSymbolID, PredicateKind),
-}
-
-impl DropFailure {
-    /// Reports this failure against the value declared at `span`.
-    #[must_use]
-    pub fn into_diagnostic(self, span: RelativeSpan) -> Diagnostic {
-        self.into_diagnostic_at(span, None)
-    }
-
-    /// Reports this failure against the value declared at `span`, which is
-    /// held across the suspension point at `suspension_span` and dropped if
-    /// the function is abandoned there.
-    #[must_use]
-    pub fn into_suspension_diagnostic(
-        self,
-        span: RelativeSpan,
-        suspension_span: RelativeSpan,
-    ) -> Diagnostic {
-        self.into_diagnostic_at(span, Some(suspension_span))
-    }
-
-    fn into_diagnostic_at(
-        self,
-        span: RelativeSpan,
-        suspension_span: Option<RelativeSpan>,
-    ) -> Diagnostic {
-        match self {
-            Self::Unresolved { dropped, failure } => {
-                // The `Drop` dictionary of a coroutine is assembled from one
-                // dictionary per argument, which the programmer acts on.
-                let required_by = if dropped.as_coroutine_view().is_some() {
-                    RequiredBy::CoroutineArguments { suspension: suspension_span }
-                } else {
-                    RequiredBy::ScopeDrop { suspension: suspension_span }
-                };
-
-                Diagnostic::UnresolvedScopeDrop(Box::new(UnsatisfiedGoal::new(
-                    span,
-                    required_by,
-                    failure,
-                )))
-            }
-            Self::UnsatisfiedGoal { instance_id, failure } => {
+        holds_all = false;
+        let diagnostic = solver.explain_predicate(&predicate).await.map_or_else(
+            || {
+                Diagnostic::UnsatisfiedDropPredicate(PredicateObligation::new(
+                    predicate,
+                    instance_id,
+                    dropped.span,
+                ))
+            },
+            |failure| {
                 Diagnostic::UnsatisfiedGoal(Box::new(UnsatisfiedGoal::new(
-                    span,
+                    dropped.span,
                     RequiredBy::WhereClause { symbol_id: instance_id },
                     failure,
                 )))
-            }
-            Self::UnsatisfiedPredicate(instance_id, predicate) => {
-                Diagnostic::UnsatisfiedScopeDropPredicate(PredicateObligation::new(
-                    predicate,
-                    instance_id,
-                    span,
-                ))
-            }
-        }
+            },
+        );
+        diagnostics.receive(diagnostic);
     }
+
+    holds_all.then_some(DropInstance { instance, deferred })
 }

@@ -6,7 +6,7 @@ use rayc_ir::{
     ir_operation_handler::OperationHandlerParameterID,
     ir_variable::IRVariableID,
 };
-use rayc_memory::drop_resolution::resolve_drop_instance;
+use rayc_memory::drop_resolution::{DroppedValue, resolve_drop_instance};
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{parameter::ParameterID, struct_body::FieldID};
 use rayc_solver::Solver;
@@ -103,22 +103,21 @@ impl Builder {
         let mut drops = Vec::new();
         for (_, requirement) in context.capture_plan(handler).captures() {
             let ty = requirement.storage_ty(&self.engine);
-            let drop_instance = match resolve_drop_instance(&mut self.solver, ty).await {
-                Ok(drop_instance) => {
-                    self.ir_functions.extend_deferred_markers(
-                        drop_instance.deferred_markers(requirement.span()),
-                    );
-                    drop_instance.instance().clone()
-                }
-                Err(failures) => {
-                    self.diagnostics.extend(
-                        failures
-                            .into_iter()
-                            .map(|failure| failure.into_diagnostic(requirement.span()).into()),
-                    );
-                    Ty::new_error(TyKind::Instance, &self.engine)
-                }
-            };
+            let dropped = DroppedValue::new_simple(requirement.span());
+
+            let drop_instance =
+                match resolve_drop_instance(&mut self.solver, ty, dropped, &mut self.diagnostics)
+                    .await
+                {
+                    Some(drop_instance) => {
+                        self.ir_functions.extend_deferred_markers(
+                            drop_instance.deferred_markers(requirement.span()),
+                        );
+                        drop_instance.instance().clone()
+                    }
+                    None => Ty::new_error(TyKind::Instance, &self.engine),
+                };
+
             drops.push(drop_instance);
         }
         drops

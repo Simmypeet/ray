@@ -16,7 +16,7 @@ use rayc_type::ty::Ty;
 use crate::{
     Diagnostic, PlaceState, PossibleStates, StackState, StackStateProblem,
     analyze_result::AnalyzeResult,
-    drop_resolution::{DropFailure, DropInstance, resolve_drop_instance},
+    drop_resolution::{DropInstance, DroppedValue, resolve_drop_instance},
 };
 
 /// Where a selected drop runs.
@@ -44,15 +44,18 @@ pub(crate) struct DropElaborator<'x> {
     /// of the dropped binding, or an [`Instruction::ExprDiscard`] of a value.
     drops: Vec<(DropSite, Instruction)>,
 
-    /// The selected `Drop` dictionary of each type, or why none is usable.
-    instances: FxHashMap<Interned<Ty>, Result<DropInstance, Vec<DropFailure>>>,
+    /// The selected `Drop` dictionary of each type which has a usable one.
+    ///
+    /// A type without one is resolved again for each binding or value it is
+    /// reported against, so its failure is never stored.
+    instances: FxHashMap<Interned<Ty>, DropInstance>,
 
     /// Bindings already reported for a type, so a binding which is dropped
-    /// on several paths is reported once.
+    /// on several paths is resolved and reported once.
     reported: FxHashSet<(Local, Interned<Ty>)>,
 
     /// Values already reported, so a value which is dropped on several paths
-    /// is reported once.
+    /// is resolved and reported once.
     reported_values: FxHashSet<IRExprID>,
 
     /// The abandon block of each suspension point, with the source of that
@@ -97,18 +100,6 @@ impl<'x> DropElaborator<'x> {
             // so no edge into one is balanced.
             DropSite::Edge(_) => None,
         }
-    }
-
-    /// Reports the `failures` to drop the value declared or evaluated at
-    /// `span`, at `site`.
-    fn report_failures(&mut self, site: DropSite, span: RelativeSpan, failures: Vec<DropFailure>) {
-        let suspension_span = self.suspension_span(site);
-        self.analyze_result.extend_diagnostics(failures.into_iter().map(|failure| {
-            match suspension_span {
-                Some(suspension_span) => failure.into_suspension_diagnostic(span, suspension_span),
-                None => failure.into_diagnostic(span),
-            }
-        }));
     }
 
     pub(crate) fn push_diagnostic(&mut self, diagnostic: Diagnostic) {
@@ -346,26 +337,24 @@ impl<'x> DropElaborator<'x> {
         ty: Interned<Ty>,
         problem: &mut StackStateProblem<'_>,
     ) {
-        match self.drop_instance(ty.clone(), problem).await {
-            Ok(drop_instance) => {
-                let span = problem.binding_span(root).await;
-                self.analyze_result.extend_deferred_markers(drop_instance.deferred_markers(span));
+        // Each binding is a separate fix site, but a binding which leaves
+        // scope on several paths is reported once.
+        if self.reported.contains(&(root, ty.clone())) {
+            return;
+        }
 
-                let drop_instance = drop_instance.instance();
-                if !drop_instance.is_no_op_drop_instance() {
-                    let drop = AddressDrop::new(address, drop_instance.clone(), span);
-                    self.drops.push((site, Instruction::AddressDrop(drop)));
-                }
-            }
+        let span = problem.binding_span(root).await;
+        let Some(drop_instance) = self.drop_instance(site, span, ty.clone(), problem).await else {
+            self.reported.insert((root, ty));
+            return;
+        };
 
-            // Each binding is a separate fix site, but a binding which leaves
-            // scope on several paths is reported once.
-            Err(failures) => {
-                if self.reported.insert((root, ty)) {
-                    let span = problem.binding_span(root).await;
-                    self.report_failures(site, span, failures);
-                }
-            }
+        self.analyze_result.extend_deferred_markers(drop_instance.deferred_markers(span));
+
+        let drop_instance = drop_instance.instance();
+        if !drop_instance.is_no_op_drop_instance() {
+            let drop = AddressDrop::new(address, drop_instance.clone(), span);
+            self.drops.push((site, Instruction::AddressDrop(drop)));
         }
     }
 
@@ -380,25 +369,24 @@ impl<'x> DropElaborator<'x> {
         value: IRExprID,
         problem: &mut StackStateProblem<'_>,
     ) {
-        match self.drop_instance(problem.value_type(value), problem).await {
-            Ok(drop_instance) => {
-                let span = problem.value_span(value);
-                self.analyze_result.extend_deferred_markers(drop_instance.deferred_markers(span));
+        // A value which is left behind on several paths is reported once.
+        if self.reported_values.contains(&value) {
+            return;
+        }
 
-                let drop_instance = drop_instance.instance();
-                if !drop_instance.is_no_op_drop_instance() {
-                    let discard = ExprDiscard::new(value, drop_instance.clone());
-                    self.drops.push((site, Instruction::ExprDiscard(discard)));
-                }
-            }
+        let span = problem.value_span(value);
+        let ty = problem.value_type(value);
+        let Some(drop_instance) = self.drop_instance(site, span, ty, problem).await else {
+            self.reported_values.insert(value);
+            return;
+        };
 
-            // A value which is left behind on several paths is reported once.
-            Err(failures) => {
-                if self.reported_values.insert(value) {
-                    let span = problem.value_span(value);
-                    self.report_failures(site, span, failures);
-                }
-            }
+        self.analyze_result.extend_deferred_markers(drop_instance.deferred_markers(span));
+
+        let drop_instance = drop_instance.instance();
+        if !drop_instance.is_no_op_drop_instance() {
+            let discard = ExprDiscard::new(value, drop_instance.clone());
+            self.drops.push((site, Instruction::ExprDiscard(discard)));
         }
     }
 
@@ -425,18 +413,30 @@ impl<'x> DropElaborator<'x> {
     }
 
     /// Returns the `Drop` dictionary for `ty`, resolving it on first use.
+    ///
+    /// When `ty` has no usable dictionary, reports why against the value
+    /// declared or evaluated at `span`, dropped at `site`, and returns `None`.
     async fn drop_instance(
         &mut self,
+        site: DropSite,
+        span: RelativeSpan,
         ty: Interned<Ty>,
         problem: &mut StackStateProblem<'_>,
-    ) -> Result<DropInstance, Vec<DropFailure>> {
-        if let Some(resolution) = self.instances.get(&ty) {
-            return resolution.clone();
+    ) -> Option<DropInstance> {
+        if let Some(drop_instance) = self.instances.get(&ty) {
+            return Some(drop_instance.clone());
         }
 
-        let resolution = resolve_drop_instance(problem.solver_mut(), ty.clone()).await;
-        self.instances.insert(ty, resolution.clone());
-        resolution
+        let dropped = DroppedValue { span, suspension: self.suspension_span(site) };
+        let drop_instance = resolve_drop_instance(
+            problem.solver_mut(),
+            ty.clone(),
+            dropped,
+            &mut *self.analyze_result,
+        )
+        .await?;
+        self.instances.insert(ty, drop_instance.clone());
+        Some(drop_instance)
     }
 }
 

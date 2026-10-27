@@ -115,3 +115,23 @@ impl<T: std::fmt::Debug> Handler<T> for Panic {
         panic!("{error:?}");
     }
 }
+
+/// An alternative trait to [`Handler`] that is not object-safe but allows
+/// for more ergonomic usage in some contexts.
+pub trait Handler2<T> {
+    fn receive(&mut self, error: T);
+
+    fn receive_many<I: IntoIterator<Item = T>>(&mut self, errors: I) {
+        for error in errors {
+            self.receive(error);
+        }
+    }
+}
+
+impl<T, U: From<T>> Handler2<T> for Vec<U> {
+    fn receive(&mut self, error: T) { self.push(error.into()) }
+
+    fn receive_many<I: IntoIterator<Item = T>>(&mut self, errors: I) {
+        self.extend(errors.into_iter().map(U::from));
+    }
+}

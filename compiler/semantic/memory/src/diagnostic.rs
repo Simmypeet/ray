@@ -53,20 +53,16 @@ pub enum Diagnostic {
     UseAfterMove(UseAfterMove),
     UseAfterPartialMove(UseAfterPartialMove),
     UseBeforeInitialization(UseBeforeInitialization),
-    /// No `Drop` dictionary could be selected for a value dropped when its
-    /// scope ends.
-    UnresolvedScopeDrop(Box<UnsatisfiedGoal>),
+    /// A goal required to drop a value could not be proved: no `Drop`
+    /// dictionary could be selected for it, or a where-clause predicate of
+    /// the selected instance does not hold.
+    UnsatisfiedGoal(Box<UnsatisfiedGoal>),
     MoveOutOfHandlerCapture(MoveOutOfHandlerCapture),
     MoveOutOfBorrow(MoveOutOfBorrow),
 
     /// A selected `Drop` instance requires a where-clause predicate that does
-    /// not hold at the dropping site, and the solver explains why.
-    #[from(skip)]
-    UnsatisfiedGoal(Box<UnsatisfiedGoal>),
-
-    /// A selected `Drop` instance requires a where-clause predicate that does
     /// not hold at the dropping site, and no proof explains it.
-    UnsatisfiedScopeDropPredicate(PredicateObligation),
+    UnsatisfiedDropPredicate(PredicateObligation),
 }
 
 async fn moved_value_report(
@@ -139,10 +135,8 @@ impl Report for Diagnostic {
                         .build(),
                 )
                 .build(),
-            Self::UnresolvedScopeDrop(diagnostic) | Self::UnsatisfiedGoal(diagnostic) => {
-                diagnostic.report(engine).await
-            }
-            Self::UnsatisfiedScopeDropPredicate(diagnostic) => diagnostic.report(engine).await,
+            Self::UnsatisfiedGoal(diagnostic) => diagnostic.report(engine).await,
+            Self::UnsatisfiedDropPredicate(diagnostic) => diagnostic.report(engine).await,
             Self::MoveOutOfHandlerCapture(diagnostic) => {
                 move_out_of_handler_capture_report(engine, diagnostic).await
             }

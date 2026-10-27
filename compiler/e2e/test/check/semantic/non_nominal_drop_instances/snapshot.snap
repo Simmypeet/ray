@@ -7,7 +7,7 @@ expression: snapshot
  3 │
  4 │ inst AnyDrop[a] for core.Drop[a]:
    │                     ^^^^^^^^^^^^
-   ┆ [error]: Drop instance must be declared for a struct type
+   ┆ [error]: Drop instance must be declared for a struct or enum type
    ┆   ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:4:21
    ┆   │
    ┆ 4 │ inst AnyDrop[a] for core.Drop[a]:
@@ -19,7 +19,7 @@ expression: snapshot
  8 │
  9 │ inst ItemDrop for core.Drop[c.Item] given (c: Convert[int32]):
    │                   ^^^^^^^^^^^^^^^^^
-   ┆ [error]: Drop instance must be declared for a struct type
+   ┆ [error]: Drop instance must be declared for a struct or enum type
    ┆   ╭▸ compiler/e2e/test/check/semantic/non_nominal_drop_instances/main.ray:9:19
    ┆   │
    ┆ 9 │ inst ItemDrop for core.Drop[c.Item] given (c: Convert[int32]):
