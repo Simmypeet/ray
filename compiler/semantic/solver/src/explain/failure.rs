@@ -190,6 +190,9 @@ pub enum StructuralComponent {
 
     /// The parameters of a suspended function being held by its coroutine
     CoroutineUpvar(Option<RelativeSpan>),
+
+    /// The value is stored into the coroutine frame.
+    CoroutineSavedLocals(RelativeSpan),
 }
 
 /// A marker goal that the compiler rejects whatever the givens say.

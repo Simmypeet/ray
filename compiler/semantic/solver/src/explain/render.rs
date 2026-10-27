@@ -777,6 +777,10 @@ async fn structural(
             format!("the coroutine `{owner_display}` captures an argument of type `{value}`"),
             if let Some(span) = span { Some(highlight(engine, span).await) } else { None },
         ),
+        StructuralComponent::CoroutineSavedLocals(span) => (
+            format!("the coroutine `{owner_display}` saves a local of type `{value}`"),
+            Some(highlight(engine, span).await),
+        ),
     }
 }
 

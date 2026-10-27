@@ -138,6 +138,10 @@ impl SavedLocal {
     /// Returns where the local comes from.
     #[must_use]
     pub const fn origin(&self) -> &SavedLocalOrigin { &self.origin }
+
+    /// Returns the span of what is saved: where it is declared or evaluated.
+    #[must_use]
+    pub const fn span(&self) -> RelativeSpan { self.origin.span() }
 }
 
 /// Computes the saved locals of a coroutine body, from the IR of the

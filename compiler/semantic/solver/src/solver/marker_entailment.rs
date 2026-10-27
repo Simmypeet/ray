@@ -10,7 +10,7 @@ use rayc_semantic_element::{
     all_marker_implementations::get_all_marker_implementations,
     marker_implementation::get_marker_implementation,
     parameter::get_parameter_map,
-    saved_local::{ClosureCoroutineBodyID, CoroutineBody},
+    saved_local::{ClosureCoroutineBodyID, CoroutineBody, get_saved_locals},
     struct_body::get_struct_body,
     variant_payload_ty::get_variant_payload_ty,
 };
@@ -488,7 +488,14 @@ impl Solver {
             }
         }
 
-        // TODO: Continue with saved locals
+        // push saved locals components
+        let saved_locals = self.engine().get_saved_locals(closure_body_id).await;
+        for saved_local in saved_locals.as_ref().into_iter().flat_map(|x| x.iter()) {
+            components.push((
+                StructuralComponent::CoroutineSavedLocals(saved_local.span()),
+                saved_local.ty().apply_subst_or_clone(&subst, self.engine()),
+            ));
+        }
 
         Self::create_structural_from_components(marker_id, components)
     }

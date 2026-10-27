@@ -1,0 +1,65 @@
+pub marker Fizz
+
+
+impl !Fizz for int32
+impl['a, t] Fizz for &'a mut t where(t: Fizz)
+impl['a, t] Fizz for &'a t     where(t: Fizz)
+
+
+pub eff Yield:
+    def yield()
+
+
+pub def requireFizz(value: a) given(_: core.Drop[a]) where(a: Fizz):
+    pass
+
+
+pub trait Default[a]:
+    pub def default() -> a
+
+
+pub inst DefaultInt32 for Default[int32]:
+    def default() -> int32:
+        return 0
+
+
+pub inst DefaultBool for Default[bool]:
+    def default() -> bool:
+        return false
+
+
+pub def savedYield[a, b]() given(
+    defA: Default[a],
+    defB: Default[b],
+    dropA: core.Drop[a], 
+    dropB: core.Drop[b]
+) -> (a, b) \ {Yield}:
+    let fst = defA.default()
+    let snd = defB.default()
+
+    Yield.yield()
+
+    return (fst, snd)
+
+
+pub def dontSave[a, b]() given(
+    defA: Default[a],
+    defB: Default[b]
+) -> (a, b) \ {Yield}:
+    let fst = defA.default()
+    let snd = defB.default()
+
+    return (fst, snd)
+
+
+pub struct Wrapper[a]:
+    value: a
+
+
+pub def useYield() \ {Yield}:
+    # this will error since `int32` is saved and `int32` does not implement `Fizz`  
+    requireFizz(coro savedYield[int32, bool]())
+    # Okay since `bool` is saved and `bool` implements `Fizz`
+    requireFizz(coro savedYield[bool, bool]())
+    # Okay since `dontSave` doesn't have suspension point
+    requireFizz(coro dontSave[int32, bool]())
