@@ -36,31 +36,34 @@ impl LayoutContext<'_> {
         !self.latest_type(&effect_row, solver).await.is_empty_effect_row()
     }
 
+    /// Iterates over every reachable suspension point of the IR function, with
+    /// the waitee expression its terminator evaluates, whether or not it still
+    /// suspends once the substitution is applied.
+    pub(crate) fn ir_suspension_points(
+        &self,
+    ) -> impl Iterator<Item = (SuspensionPointID, IRExprID)> + '_ {
+        self.ir_function().traverse().filter_map(|(block_id, block)| {
+            let suspending_expr_id = block.terminator()?.suspending_expr()?;
+            Some((SuspensionPointID(block_id), suspending_expr_id))
+        })
+    }
+
     /// Calculates the waitee expression for each suspension point in the given
     /// function.
     pub(crate) async fn calculate_waitee_for_each_suspension_point(
         &self,
         solver: &mut Solver,
-    ) -> FxHashMap<SuspensionPointID, IRExprID> {
+    ) -> FxHashMap<SuspensionPointID, Option<IRExprID>> {
         let mut suspensions = FxHashMap::default();
 
-        for (block_id, block) in self.ir_function().traverse() {
-            let Some(terminator) = block.terminator() else {
-                continue;
-            };
-
-            // the suspension point and the terminator
-            let Some(waitee_expr_id) = terminator.suspension_waitee() else {
-                continue;
-            };
-
-            let waitee = Waitee::of(self.ir_function().get_expression(waitee_expr_id).kind());
+        for (suspension_point_id, waitee_expr_id) in self.ir_suspension_points() {
+            let waitee = self.ir_function().get_expression_as_waitee(waitee_expr_id);
             let is_suspension_point = self.is_waitee_still_a_suspension_point(waitee, solver).await;
 
             // is still considered as a suspension point after the substitution
             // is applied
             if is_suspension_point {
-                suspensions.insert(SuspensionPointID(block_id), waitee_expr_id);
+                suspensions.insert(suspension_point_id, waitee.is_held().then_some(waitee_expr_id));
             }
         }
 

@@ -8,7 +8,10 @@ use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::subst::Subst;
 
-use crate::{layout_context::LayoutContext, savable::Savable, suspension_point::SuspensionPointID};
+use crate::{
+    candidate_index::CandidateIndex, layout_context::LayoutContext, savable::Savable,
+    suspension_point::SuspensionPointID,
+};
 
 /// Specifies where a savable value is placed in a coroutine frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -16,6 +19,22 @@ pub enum Placement {
     /// The value is stored in the coroutine prefix part.
     Prefix,
     SuspensionLocal(SuspensionLocalPlacement),
+}
+
+impl Placement {
+    /// Returns the suspension point whose variant alone holds the value, or
+    /// `None` when the value is in the prefix or in the start variant.
+    ///
+    /// Only such a value may share memory with a value of another variant.
+    #[must_use]
+    pub const fn suspension_point(&self) -> Option<SuspensionPointID> {
+        match self {
+            Self::SuspensionLocal(SuspensionLocalPlacement::SuspensionLocal(
+                suspension_point_id,
+            )) => Some(*suspension_point_id),
+            Self::Prefix | Self::SuspensionLocal(SuspensionLocalPlacement::Start) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -61,6 +80,19 @@ impl FrameLayout {
         // TODO: Has to do conflict resolution and upgrade the placement
         layout_context.compute_initial_frame_layout(solver).await
     }
+
+    /// Numbers the values placed in exactly one suspension variant: the ones
+    /// that may share memory with a value of another variant.
+    ///
+    /// Read from the initial placements, before any conflict promotion.
+    #[must_use]
+    pub fn candidate_index(&self) -> CandidateIndex {
+        CandidateIndex::new(
+            self.placements
+                .iter()
+                .filter_map(|(savable, placement)| placement.suspension_point().map(|_| *savable)),
+        )
+    }
 }
 
 impl LayoutContext<'_> {
@@ -100,6 +132,7 @@ impl LayoutContext<'_> {
                 let local_suspension = Placement::SuspensionLocal(
                     SuspensionLocalPlacement::SuspensionLocal(suspension_point_id),
                 );
+
                 match layout.placements.entry(savable) {
                     // it has been placed elsewhere, need to promote it to the prefix part
                     Entry::Occupied(mut occupied_entry) => {
@@ -116,10 +149,21 @@ impl LayoutContext<'_> {
                 }
             }
 
+            // the awaitee is only held at its own suspension point, so it is
+            // always placed in its variant
+            if waitee_expr_id.is_some() {
+                layout.placements.insert(
+                    Savable::Awaitee(suspension_point_id),
+                    Placement::SuspensionLocal(SuspensionLocalPlacement::SuspensionLocal(
+                        suspension_point_id,
+                    )),
+                );
+            }
+
             // set the suspension local layout for this suspension point
             layout.suspension_locals.insert(
                 SuspensionLocalPlacement::SuspensionLocal(suspension_point_id),
-                SuspensionLocalLayout { awaitee: Some(waitee_expr_id) },
+                SuspensionLocalLayout { awaitee: waitee_expr_id },
             );
         }
 

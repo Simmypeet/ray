@@ -77,7 +77,7 @@ impl<'a> SuspensionPoint<'a> {
                 continue;
             };
 
-            let Some(expression) = terminator.suspension_waitee() else {
+            let Some(expression) = terminator.suspending_expr() else {
                 continue;
             };
 
@@ -165,6 +165,17 @@ impl<'a> Waitee<'a> {
             | IRExprKind::StructInitialization(_) => {
                 unreachable!("only a call, a perform, a run or a handle suspends")
             }
+        }
+    }
+
+    /// Returns whether the waiting function holds what it waits for while it
+    /// is suspended: the callee, the handled body and its handlers, or the
+    /// continuation. A `perform` waits for a handler outside the function.
+    #[must_use]
+    pub const fn is_held(&self) -> bool {
+        match self {
+            Self::Perform => false,
+            Self::Call(_) | Self::RunWith(_) | Self::Handle(_) => true,
         }
     }
 }

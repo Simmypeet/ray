@@ -9,7 +9,12 @@ use crate::{
 
 /// Receives expressions together with their function-local identity.
 pub trait ExprVisitor {
-    fn visit_expr(&mut self, function_id: IRFunctionID, expression_id: IRExprID, expression: &IRExpr);
+    fn visit_expr(
+        &mut self,
+        function_id: IRFunctionID,
+        expression_id: IRExprID,
+        expression: &IRExpr,
+    );
 }
 
 impl<F> ExprVisitor for F

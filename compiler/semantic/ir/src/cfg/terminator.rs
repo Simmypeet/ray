@@ -219,7 +219,7 @@ impl Terminator {
     /// Determines whether this terminator is a suspension point. And if it is,
     /// returns the expression it evaluates
     #[must_use]
-    pub const fn suspension_waitee(&self) -> Option<IRExprID> {
+    pub const fn suspending_expr(&self) -> Option<IRExprID> {
         match self {
             Self::Suspend(suspend) => Some(suspend.expression),
             Self::Handle(handle) if handle.abandon.is_some() => Some(handle.expression),
