@@ -10,7 +10,7 @@ use rayc_ir::{
     address::Local,
     cfg::{Instruction, Point, Terminator},
     ir_expr::IRExprID,
-    ir_function::{IRFunctionID, IRFunction, IRFunctionMap},
+    ir_function::{IRFunction, IRFunctionID, IRFunctionMap},
     liveness::{LiveMode, LiveRanges, expr::ExprLiveness, local::LocalLiveness},
     visit::{TypeSite, VisitType},
 };

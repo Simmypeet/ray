@@ -7,7 +7,7 @@ use rayc_ir::{
         Point, Terminator,
     },
     ir_expr::IRExprID,
-    ir_function::{IRFunctionID, IRFunction, IRFunctionMap},
+    ir_function::{IRFunction, IRFunctionID, IRFunctionMap},
     scope::ScopeID,
 };
 use rayc_lexical::tree::RelativeSpan;

@@ -10,7 +10,7 @@ use rayc_ir::{
     cfg::{BlockID, Instruction, Point, Terminator},
     ir_closure::CaptureMap,
     ir_expr::{IRExprID, IRExprKind},
-    ir_function::{IRFunctionID, IRFunction, IRFunctionMap},
+    ir_function::{IRFunction, IRFunctionID, IRFunctionMap},
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_solver::Solver;
