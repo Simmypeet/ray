@@ -4,6 +4,7 @@
 //! See step A of `COROUTINE_FRAME_CONFLICT_PLAN.md`.
 
 use rayc_hash::FxHashMap;
+use rayc_transitive_closure::BitSet;
 
 use crate::savable::Savable;
 
@@ -55,5 +56,29 @@ impl CandidateIndex {
     #[must_use]
     pub fn values(&self) -> impl ExactSizeIterator<Item = Savable> + '_ {
         self.values.iter().copied()
+    }
+
+    /// Returns an empty set of candidates: a bitset with one bit per
+    /// candidate.
+    #[must_use]
+    pub fn empty_set(&self) -> BitSet { BitSet::new(self.values.len()) }
+
+    /// Returns the set of the candidates among `values`. The other values
+    /// are ignored.
+    #[must_use]
+    pub fn set_of(&self, values: impl IntoIterator<Item = Savable>) -> BitSet {
+        let mut set = self.empty_set();
+        self.extend_set(&mut set, values);
+        set
+    }
+
+    /// Adds the candidates among `values` to `set`, a set of this index. The
+    /// other values are ignored.
+    pub fn extend_set(&self, set: &mut BitSet, values: impl IntoIterator<Item = Savable>) {
+        for value in values {
+            if let Some(number) = self.number_of(value) {
+                set.set(number).expect("a set of the index has a bit for every candidate");
+            }
+        }
     }
 }
