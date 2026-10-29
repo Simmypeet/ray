@@ -221,6 +221,37 @@ impl ExprLiveness {
         Some(state)
     }
 
+    /// Calls `f` with each point of `block_id` and the expression values live
+    /// just before it, from the terminator back to the first instruction.
+    ///
+    /// It gives the same sets as [`Self::live_before`] at every point of the
+    /// block, in one pass instead of one replay per point. Nothing is called
+    /// when the block is unreachable.
+    pub fn for_each_point_rev(
+        &self,
+        function: &IRFunction,
+        block_id: BlockID,
+        mut f: impl FnMut(Point, &LiveExprs),
+    ) {
+        let Some(exit) = self.solution.block_exit(block_id) else {
+            return;
+        };
+        let problem = ExprLivenessProblem { function };
+        let mut state = exit.clone();
+
+        // The values the terminator consumes are live at its point.
+        if let Some(terminator) = function.block_terminator(block_id) {
+            problem.transfer_across_terminator(terminator, &mut state);
+        }
+        f(function.terminator_point(block_id), &state);
+
+        // Each instruction moves the state to just before itself.
+        for (point, instruction) in function.block_instructions_with_points_rev(block_id) {
+            problem.transfer(instruction, &mut state);
+            f(point, &state);
+        }
+    }
+
     /// Returns the points at which each expression value is live.
     ///
     /// The values a terminator consumes are live at its point, and the

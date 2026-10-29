@@ -173,6 +173,35 @@ impl MaybeBorrowedLocals {
         Some(state)
     }
 
+    /// Calls `f` with each point of `block_id` and the locals that may be
+    /// borrowed just before it, from the first instruction to the terminator.
+    ///
+    /// It gives the same sets as [`Self::borrowed_before`] at every point of
+    /// the block, in one pass instead of one replay per point. Nothing is
+    /// called when the block is unreachable.
+    pub fn for_each_point(
+        &self,
+        function: &IRFunction,
+        block_id: BlockID,
+        mut f: impl FnMut(Point, &BorrowedLocals),
+    ) {
+        let Some(entry) = self.solution.block_entry(block_id) else {
+            return;
+        };
+        let problem = BorrowedLocalsProblem { function };
+        let mut state = entry.clone();
+
+        // Each instruction moves the state to just after itself, which is
+        // just before the next point.
+        for (point, instruction) in function.block_instructions_with_points(block_id) {
+            f(point, &state);
+            problem.transfer(instruction, &mut state);
+        }
+
+        // A terminator borrows nothing, so this is also the exit of the block.
+        f(function.terminator_point(block_id), &state);
+    }
+
     /// Returns the locals that may be borrowed at the exit of `block_id`, or
     /// `None` when the block is unreachable.
     #[must_use]

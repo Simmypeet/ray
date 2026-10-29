@@ -196,3 +196,37 @@ async fn parameter_stays_borrowed() {
 
     assert_eq!(builder.borrowed_before(end).await, vec![p]);
 }
+
+// input: the sets `for_each_point` gives for the block
+// premise: push(s); x.&; pop(s); return, where `s` declares `x`
+// output: every point from the first instruction to the terminator, each with
+//         the set `borrowed_before` gives there
+#[tokio::test]
+async fn for_each_point_matches_borrowed_before_at_every_point() {
+    let mut builder = FunctionBuilder::new().await;
+    let scope = builder.scope();
+    let x = builder.variable(scope);
+    let entry = builder.entry();
+    builder.push_scope(entry, scope);
+    let address = builder.address(x);
+    builder.borrow(entry, address);
+    builder.pop_scope(entry, scope);
+    builder.terminate(entry, Terminator::Return(None));
+
+    let function = builder.functions.get_function(builder.function_id);
+    let borrowed_locals = MaybeBorrowedLocals::compute(function).await;
+
+    let mut visited = Vec::new();
+    borrowed_locals.for_each_point(function, entry, |point, borrowed| {
+        visited.push((point, borrowed.clone()));
+    });
+
+    let terminator = function.terminator_point(entry).instruction_idx();
+    let expected = (0..=terminator)
+        .map(|instruction_idx| {
+            let point = Point::builder().block_id(entry).instruction_idx(instruction_idx).build();
+            (point, borrowed_locals.borrowed_before(function, point).unwrap())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(visited, expected);
+}

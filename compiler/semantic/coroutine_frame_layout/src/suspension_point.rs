@@ -11,6 +11,13 @@ use crate::layout_context::LayoutContext;
 pub struct SuspensionPointID(BlockID);
 
 impl SuspensionPointID {
+    /// Identifies the suspension point that terminates `block_id`.
+    ///
+    /// Nothing checks that the block ends in a suspension; an ID of a block
+    /// that does not is simply never found among the suspension points.
+    #[must_use]
+    pub(crate) const fn new(block_id: BlockID) -> Self { Self(block_id) }
+
     #[must_use]
     pub const fn block_id(&self) -> BlockID { self.0 }
 }

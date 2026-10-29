@@ -320,6 +320,16 @@ impl IRFunction {
         self.cfg.instructions_with_points(block_id)
     }
 
+    /// Iterates over the instructions of a block, last to first, each with the
+    /// point it sits at.
+    #[must_use]
+    pub fn block_instructions_with_points_rev(
+        &self,
+        block_id: BlockID,
+    ) -> impl ExactSizeIterator<Item = (Point, &Instruction)> {
+        self.cfg.instructions_with_points_rev(block_id)
+    }
+
     /// Iterates over the points control reaches right after `point`; see
     /// [`Cfg::successor_points`].
     pub fn successor_points(&self, point: Point) -> impl Iterator<Item = Point> + '_ {
