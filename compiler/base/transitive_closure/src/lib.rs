@@ -132,6 +132,69 @@ impl BitSet {
         Some(changed)
     }
 
+    /// Perform a bitwise AND NOT operation with another bitset, clearing every
+    /// bit that is set in `other`
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if the bitsets have different sizes, otherwise returns
+    /// `Some` with `true` if there was a change in the bitset.
+    #[must_use]
+    pub fn difference(&mut self, other: &Self) -> Option<bool> {
+        if self.size != other.size {
+            return None;
+        }
+
+        let mut changed = false;
+        for (i, word) in other.bits.iter().enumerate() {
+            let old = self.bits[i];
+            self.bits[i] = old & !word;
+            changed |= old != self.bits[i];
+        }
+
+        Some(changed)
+    }
+
+    /// Checks if every bit set in this bitset is also set in `other`
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if the bitsets have different sizes.
+    #[must_use]
+    pub fn is_subset(&self, other: &Self) -> Option<bool> {
+        if self.size != other.size {
+            return None;
+        }
+
+        Some(self.bits.iter().zip(&other.bits).all(|(mine, theirs)| mine & !theirs == 0))
+    }
+
+    /// Returns the number of bits set to 1
+    #[must_use]
+    pub fn count_ones(&self) -> usize {
+        self.bits.iter().map(|word| word.count_ones() as usize).sum()
+    }
+
+    /// Iterates over the indices of the bits set to 1, in ascending order
+    pub fn ones(&self) -> impl Iterator<Item = usize> + '_ {
+        self.bits.iter().enumerate().flat_map(|(word_index, &word)| {
+            let mut remaining = word;
+
+            std::iter::from_fn(move || {
+                if remaining == 0 {
+                    return None;
+                }
+
+                let bit = remaining.trailing_zeros() as usize;
+
+                // clear the lowest set bit, which is the one just found
+                remaining &= remaining - 1;
+
+                Some(word_index * 64 + bit)
+            })
+        })
+    }
+
     /// Checks if any bit is set to 1
     #[allow(unused)]
     #[must_use]
@@ -258,6 +321,43 @@ mod test {
             assert!(!relation.has_path(i, i).unwrap());
         }
     }
+
+    /// Sets the bits of `indices` in a new bitset of `size` bits.
+    fn bit_set(size: usize, indices: &[usize]) -> BitSet {
+        let mut bits = BitSet::new(size);
+        for &index in indices {
+            bits.set(index).unwrap();
+        }
+        bits
+    }
+
+    #[test]
+    fn ones_lists_set_bits_across_words_in_order() {
+        let bits = bit_set(130, &[129, 0, 64, 63]);
+
+        assert_eq!(bits.ones().collect::<Vec<_>>(), [0, 63, 64, 129]);
+        assert_eq!(bits.count_ones(), 4);
+    }
+
+    #[test]
+    fn is_subset_checks_every_word() {
+        let small = bit_set(130, &[1, 70]);
+        let large = bit_set(130, &[1, 70, 128]);
+
+        assert_eq!(small.is_subset(&large), Some(true));
+        assert_eq!(large.is_subset(&small), Some(false));
+        assert_eq!(small.is_subset(&BitSet::new(64)), None);
+    }
+
+    #[test]
+    fn difference_clears_only_the_bits_of_other() {
+        let mut bits = bit_set(130, &[3, 65, 129]);
+
+        assert_eq!(bits.difference(&bit_set(130, &[65, 100])), Some(true));
+        assert_eq!(bits.ones().collect::<Vec<_>>(), [3, 129]);
+        assert_eq!(bits.difference(&bit_set(130, &[65])), Some(false));
+    }
+
     #[test]
     fn complex_edge() {
         let relation = TransitiveClosure::new([(0, 1), (2, 5), (1, 2)], 6, false).unwrap();
