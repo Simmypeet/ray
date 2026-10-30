@@ -7,7 +7,7 @@ use rayc_ir::{
         Point, Terminator,
     },
     ir_expr::IRExprID,
-    ir_function::{FunctionID, IRFunction, IRFunctionMap},
+    ir_function::{IRFunction, IRFunctionID, IRFunctionMap},
     scope::ScopeID,
 };
 use rayc_lexical::tree::RelativeSpan;
@@ -395,7 +395,7 @@ impl<'x> DropElaborator<'x> {
     /// A drop on an edge runs where it runs only when control follows that
     /// edge: at the end of the source block when the edge is the source's
     /// only one, and otherwise in a new block which splits the edge.
-    pub(crate) fn insert_drops(self, functions: &mut IRFunctionMap, function_id: FunctionID) {
+    pub(crate) fn insert_drops(self, functions: &mut IRFunctionMap, function_id: IRFunctionID) {
         let mut insertion = InstructionInsertion::new();
         let mut edge_points = FxHashMap::<ControlFlowEdge, Point>::default();
         for (site, instruction) in self.drops {
@@ -445,7 +445,7 @@ impl<'x> DropElaborator<'x> {
 /// otherwise.
 fn edge_drop_point(
     functions: &mut IRFunctionMap,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
     edge: ControlFlowEdge,
 ) -> Point {
     // A jump is the source's only edge, so the drops can end the source

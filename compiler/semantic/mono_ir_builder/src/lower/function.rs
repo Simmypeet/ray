@@ -1,6 +1,6 @@
 use rayc_ir::{
     cfg::Instruction as IRInstruction,
-    ir_function::{FunctionID as IRFunctionID, IRContext, IRFunction},
+    ir_function::{IRContext, IRFunction, IRFunctionID},
 };
 use rayc_mono_ir::{
     function::{Local, LocalID, LocalKind},

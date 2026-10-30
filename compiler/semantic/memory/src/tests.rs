@@ -8,7 +8,7 @@ use rayc_ir::{
     dataflow::{DataflowProblem, JoinLattice},
     ir_closure::ClosureParameter,
     ir_expr::{IRExpr, IRExprKind, load::Load, tuple::Tuple},
-    ir_function::{FunctionID, IRFunctionMap},
+    ir_function::{IRFunctionID, IRFunctionMap},
     ir_variable::IRVariableID,
 };
 use rayc_lexical::tree::{OffsetMode, ROOT_BRANCH_ID, RelativeLocation, RelativeSpan};
@@ -54,7 +54,7 @@ fn nested_tuple_type(engine: &TrackedEngine) -> Interned<Ty> {
     Ty::new_tuple(engine.intern_unsized([nested, leaf]), engine)
 }
 
-fn function_with_variable(ty: Interned<Ty>) -> (IRFunctionMap, FunctionID, Local) {
+fn function_with_variable(ty: Interned<Ty>) -> (IRFunctionMap, IRFunctionID, Local) {
     let mut functions = IRFunctionMap::new(GlobalSymbolID::default());
     let function_id = functions.root_id();
     let scope_id = functions.root_scope_id(function_id);
@@ -65,7 +65,7 @@ fn function_with_variable(ty: Interned<Ty>) -> (IRFunctionMap, FunctionID, Local
 async fn stack_state_problem(
     solver: Solver,
     functions: &IRFunctionMap,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
 ) -> StackStateProblem<'_> {
     StackStateProblem::new(
         solver,

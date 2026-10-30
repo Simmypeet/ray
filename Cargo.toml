@@ -36,6 +36,7 @@ members = [
     "compiler/semantic/solver",
     "compiler/semantic/check",
     "compiler/semantic/borrowck",
+    "compiler/semantic/coroutine_frame_layout",
 
     "compiler/codegen/c2",
 

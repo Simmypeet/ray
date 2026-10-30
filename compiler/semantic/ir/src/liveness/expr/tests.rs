@@ -9,7 +9,7 @@ use super::{ExprLiveness, LiveExprs};
 use crate::{
     cfg::{BlockID, Conditional, Point, Terminator},
     ir_expr::{IRExpr, IRExprID, IRExprKind, phi::Phi, tuple::Tuple},
-    ir_function::{FunctionID, IRFunctionMap},
+    ir_function::{IRFunctionID, IRFunctionMap},
     liveness::{LiveMode, LiveRanges},
 };
 
@@ -18,7 +18,7 @@ use crate::{
 struct FunctionBuilder {
     engine: TrackedEngine,
     functions: IRFunctionMap,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
     ty: Interned<Ty>,
 }
 
@@ -258,4 +258,34 @@ async fn phi_operand_live_range_ends_at_the_jump_from_its_predecessor() {
     ]);
     assert_eq!(builder.modes_in_block(then_value, else_block).await, vec![None, None]);
     assert_eq!(builder.modes_in_block(then_value, merge).await, vec![None, None]);
+}
+
+// input: the sets `for_each_point_rev` gives for the block
+// premise: v = ..; t = (v,); return t
+// output: every point from the terminator back to the first instruction, each
+//         with the set `live_before` gives there, so `t` is live at the
+//         return that consumes it
+#[tokio::test]
+async fn for_each_point_rev_matches_live_before_at_every_point() {
+    let mut builder = FunctionBuilder::new().await;
+    let entry = builder.entry();
+    let v = builder.value(entry);
+    let (t, _) = builder.define(entry, Tuple::new(vec![v]));
+    builder.terminate(entry, Terminator::Return(Some(t)));
+
+    let function = builder.functions.get_function(builder.function_id);
+    let liveness = builder.liveness().await;
+
+    let mut visited = Vec::new();
+    liveness.for_each_point_rev(function, entry, |point, live| visited.push((point, live.clone())));
+
+    let terminator = function.terminator_point(entry).instruction_idx();
+    let expected = (0..=terminator)
+        .rev()
+        .map(|instruction_idx| {
+            let point = Point::builder().block_id(entry).instruction_idx(instruction_idx).build();
+            (point, liveness.live_before(function, point).unwrap())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(visited, expected);
 }

@@ -1,0 +1,39 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def big() -> int32:
+    return 1
+
+
+def other() -> int32:
+    return 2
+
+
+def third() -> int32:
+    return 3
+
+
+def take(value: int32) -> int32:
+    return value
+
+
+def g() -> int32 \ {Yield[int32]}:
+    Yield.yield(0)
+    return 1
+
+
+def f(x: int32, y: int32) -> int32 \ {Yield[int32]}:
+    Yield.yield(x)
+    return y
+
+
+# The value of `x` is held at the suspension of `g()` and read while the
+# frame of `f`, the awaitee of its suspension, is built: the two conflict, and
+# the tie moves the value of `x` to the prefix. `r` is stored only after `f`
+# completes, so it keeps its variant.
+def awaitee_and_argument() -> int32 \ {Yield[int32]}:
+    let x = big()
+    let r = f(x, g())
+    Yield.yield(1)
+    return r

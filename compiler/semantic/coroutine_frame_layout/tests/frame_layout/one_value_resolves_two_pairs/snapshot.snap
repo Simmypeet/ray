@@ -1,0 +1,14 @@
+---
+source: compiler/semantic/coroutine_frame_layout/tests/frame_layout/mod.rs
+expression: snapshot
+---
+main.two_pairs:
+  prefix:
+    parameter #0
+    25:9 `a` (variable)
+  start:
+  suspended at 26:5 `Yield.yield(0)`:
+  suspended at 30:9 `Yield.yield(1)`:
+    28:13 `b` (variable)
+  suspended at 35:9 `Yield.yield(2)`:
+    33:13 `c` (variable)

@@ -21,6 +21,7 @@ use crate::{
     },
     ir_variable::{IRVariable, IRVariableID, IRVariableMap},
     scope::{Scope, ScopeID, ScopeMap},
+    suspension_point::Waitee,
     visit::{
         TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
         VisitTypeMutAsync,
@@ -33,7 +34,7 @@ mod map;
 pub use context::IRContext;
 pub use map::IRFunctionMap;
 
-pub type FunctionID = ID<IRFunction>;
+pub type IRFunctionID = ID<IRFunction>;
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct IRFunction {
@@ -124,7 +125,7 @@ impl IRFunction {
     /// create, in unspecified order; see [`IRExprKind::created_functions`].
     ///
     /// [`IRExprKind::created_functions`]: crate::ir_expr::IRExprKind::created_functions
-    pub fn created_functions(&self) -> impl Iterator<Item = FunctionID> + '_ {
+    pub fn created_functions(&self) -> impl Iterator<Item = IRFunctionID> + '_ {
         self.expression_map
             .expressions()
             .flat_map(|(_, expression)| expression.kind().created_functions())
@@ -167,6 +168,15 @@ impl IRFunction {
 
     #[must_use]
     pub fn get_expression(&self, id: IRExprID) -> &IRExpr { self.expression_map.get_expression(id) }
+
+    /// Gets the expression that is evaluated at a suspension point as a
+    /// [`Waitee`]. Will panic if the expression cannot be evaluated at a
+    /// suspension point.
+    #[must_use]
+    pub fn get_expression_as_waitee(&self, id: IRExprID) -> Waitee<'_> {
+        let expression = self.get_expression(id);
+        Waitee::of(expression.kind())
+    }
 
     #[must_use]
     pub fn get_variable(&self, id: IRVariableID) -> &IRVariable {
@@ -310,6 +320,16 @@ impl IRFunction {
         self.cfg.instructions_with_points(block_id)
     }
 
+    /// Iterates over the instructions of a block, last to first, each with the
+    /// point it sits at.
+    #[must_use]
+    pub fn block_instructions_with_points_rev(
+        &self,
+        block_id: BlockID,
+    ) -> impl ExactSizeIterator<Item = (Point, &Instruction)> {
+        self.cfg.instructions_with_points_rev(block_id)
+    }
+
     /// Iterates over the points control reaches right after `point`; see
     /// [`Cfg::successor_points`].
     pub fn successor_points(&self, point: Point) -> impl Iterator<Item = Point> + '_ {
@@ -448,7 +468,7 @@ impl IRFunction {
     /// its body.
     ///
     /// The definition function stores no signature types.
-    fn visit_types<V: TypeVisitor>(&self, function_id: FunctionID, visitor: &mut V) {
+    fn visit_types<V: TypeVisitor>(&self, function_id: IRFunctionID, visitor: &mut V) {
         self.context.visit_types(TypeSite::Signature(function_id), visitor);
 
         let body = TypeSite::Body(function_id);
@@ -461,7 +481,7 @@ impl IRFunction {
     /// signature, then its body.
     ///
     /// The definition function stores no signature types.
-    fn visit_types_mut<V: TypeVisitorMut>(&mut self, function_id: FunctionID, visitor: &mut V) {
+    fn visit_types_mut<V: TypeVisitorMut>(&mut self, function_id: IRFunctionID, visitor: &mut V) {
         self.context.visit_types_mut(TypeSite::Signature(function_id), visitor);
 
         let body = TypeSite::Body(function_id);
@@ -473,7 +493,7 @@ impl IRFunction {
     /// Like [`Self::visit_types_mut`], but with a visitor that may await.
     async fn visit_types_mut_async<V: TypeVisitorMutAsync>(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         visitor: &mut V,
     ) {
         self.context.visit_types_mut_async(TypeSite::Signature(function_id), visitor).await;

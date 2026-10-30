@@ -10,7 +10,7 @@ use rayc_type::{
     ty::{Ty, application::ClosureID},
 };
 
-use super::{FunctionID, IRContext, IRFunction};
+use super::{IRContext, IRFunction, IRFunctionID};
 use crate::{
     address::Address,
     cfg::{BlockID, ControlFlowEdge, InstructionInsertion, Terminator},
@@ -35,8 +35,8 @@ pub struct IRFunctionMap {
     /// Capture layouts referenced by nested-function contexts. Operation
     /// handlers belonging to one handler record share an entry.
     capture_maps: Arena<CaptureMap>,
-    root: FunctionID,
-    closures: FxHashMap<ClosureID, FunctionID>,
+    root: IRFunctionID,
+    closures: FxHashMap<ClosureID, IRFunctionID>,
     /// Whether the definition reported no error up to and including the
     /// building of this IR.
     no_error: bool,
@@ -85,7 +85,11 @@ impl IRFunctionMap {
     ///
     /// The definition function takes the effect row declared in the
     /// definition's signature, while a nested function stores its own.
-    pub async fn effect_of(&self, function_id: FunctionID, engine: &TrackedEngine) -> Interned<Ty> {
+    pub async fn effect_of(
+        &self,
+        function_id: IRFunctionID,
+        engine: &TrackedEngine,
+    ) -> Interned<Ty> {
         match self.get_function(function_id).context().nested_effect() {
             Some(effect) => effect.clone(),
             None => engine.get_effect_row(self.def_id).await,
@@ -93,24 +97,24 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn root_scope_id(&self, function_id: FunctionID) -> ScopeID {
+    pub fn root_scope_id(&self, function_id: IRFunctionID) -> ScopeID {
         self.get_function(function_id).root_scope_id()
     }
 
     #[must_use]
-    pub fn get_scope(&self, function_id: FunctionID, scope_id: ScopeID) -> &Scope {
+    pub fn get_scope(&self, function_id: IRFunctionID, scope_id: ScopeID) -> &Scope {
         self.get_function(function_id).get_scope(scope_id)
     }
 
     #[must_use]
-    pub fn insert_scope(&mut self, function_id: FunctionID, parent: ScopeID) -> ScopeID {
+    pub fn insert_scope(&mut self, function_id: IRFunctionID, parent: ScopeID) -> ScopeID {
         self.get_function_mut(function_id).insert_scope(parent)
     }
 
     #[must_use]
     pub fn insert_scope_branch(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         parent: ScopeID,
         branch_count: usize,
     ) -> Vec<ScopeID> {
@@ -118,13 +122,13 @@ impl IRFunctionMap {
     }
 
     /// Associates a source closure identity with its lowered local function.
-    pub fn register_closure(&mut self, closure_id: ClosureID, function_id: FunctionID) {
+    pub fn register_closure(&mut self, closure_id: ClosureID, function_id: IRFunctionID) {
         let _ = self.get_function(function_id).context().assert_as_closure_context();
         assert!(self.closures.insert(closure_id, function_id).is_none());
     }
 
     #[must_use]
-    pub fn get_function_id_of_closure(&self, closure_id: ClosureID) -> FunctionID {
+    pub fn get_function_id_of_closure(&self, closure_id: ClosureID) -> IRFunctionID {
         self.closures.get(&closure_id).copied().expect("should be a valid ID")
     }
 
@@ -136,11 +140,11 @@ impl IRFunctionMap {
 
     /// Iterates over nominal closure identities and their lowered functions.
     #[must_use]
-    pub fn closures(&self) -> impl ExactSizeIterator<Item = (ClosureID, FunctionID)> {
+    pub fn closures(&self) -> impl ExactSizeIterator<Item = (ClosureID, IRFunctionID)> {
         self.closures.iter().map(|(closure_id, function_id)| (*closure_id, *function_id))
     }
 
-    pub fn fill_return_on_unterminated_blocks(&mut self, function_id: FunctionID) {
+    pub fn fill_return_on_unterminated_blocks(&mut self, function_id: IRFunctionID) {
         self.get_function_mut(function_id).cfg.fill_return_on_unterminated_blocks();
     }
 
@@ -149,7 +153,7 @@ impl IRFunctionMap {
     pub const fn def_id(&self) -> GlobalSymbolID { self.def_id }
 
     #[must_use]
-    pub const fn root_id(&self) -> FunctionID { self.root }
+    pub const fn root_id(&self) -> IRFunctionID { self.root }
 
     #[must_use]
     pub fn root(&self) -> &IRFunction {
@@ -157,11 +161,11 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn get_function(&self, id: FunctionID) -> &IRFunction {
+    pub fn get_function(&self, id: IRFunctionID) -> &IRFunction {
         self.functions.get(id).expect("IR function should exist")
     }
 
-    fn get_function_mut(&mut self, id: FunctionID) -> &mut IRFunction {
+    fn get_function_mut(&mut self, id: IRFunctionID) -> &mut IRFunction {
         self.functions.get_mut(id).expect("IR function should exist")
     }
 
@@ -169,7 +173,7 @@ impl IRFunctionMap {
     ///
     /// The iteration order is not stable.
     #[must_use]
-    pub fn functions(&self) -> impl ExactSizeIterator<Item = (FunctionID, &IRFunction)> {
+    pub fn functions(&self) -> impl ExactSizeIterator<Item = (IRFunctionID, &IRFunction)> {
         self.functions.iter()
     }
 
@@ -180,7 +184,7 @@ impl IRFunctionMap {
     ///
     /// Otherwise, the order is not stable.
     #[must_use]
-    pub fn functions_innermost_first(&self) -> Vec<FunctionID> {
+    pub fn functions_innermost_first(&self) -> Vec<IRFunctionID> {
         let mut order = Vec::with_capacity(self.functions.len());
         let mut visited = FxHashSet::default();
 
@@ -218,7 +222,7 @@ impl IRFunctionMap {
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
-    ) -> FunctionID {
+    ) -> IRFunctionID {
         self.functions.insert(IRFunction::new_closure(return_ty, effect, capture_map))
     }
 
@@ -228,7 +232,7 @@ impl IRFunctionMap {
         return_ty: Interned<Ty>,
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
-    ) -> FunctionID {
+    ) -> IRFunctionID {
         self.functions.insert(IRFunction::new_thunk(return_ty, effect, capture_map))
     }
 
@@ -240,7 +244,7 @@ impl IRFunctionMap {
         effect: Interned<Ty>,
         capture_map: CaptureMapID,
         engine: &TrackedEngine,
-    ) -> FunctionID {
+    ) -> IRFunctionID {
         self.functions.insert(IRFunction::new_operation_handler(
             operation,
             return_ty,
@@ -253,7 +257,7 @@ impl IRFunctionMap {
     #[must_use]
     pub fn insert_closure_parameter(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         parameter: ClosureParameter,
     ) -> ClosureParameterID {
         self.get_function_mut(function_id).insert_closure_parameter(parameter)
@@ -262,7 +266,7 @@ impl IRFunctionMap {
     #[must_use]
     pub fn insert_operation_handler_parameter(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         parameter: OperationHandlerParameter,
     ) -> OperationHandlerParameterID {
         self.get_function_mut(function_id).insert_operation_handler_parameter(parameter)
@@ -287,14 +291,14 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn get_capture(&self, function_id: FunctionID, capture_id: CaptureID) -> &Capture {
+    pub fn get_capture(&self, function_id: IRFunctionID, capture_id: CaptureID) -> &Capture {
         self.capture_map(function_id).get_capture(capture_id)
     }
 
     #[must_use]
     pub fn captures(
         &self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
     ) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
         self.capture_map(function_id).iter()
     }
@@ -303,7 +307,7 @@ impl IRFunctionMap {
     ///
     /// Definition functions do not capture values and therefore return `None`.
     #[must_use]
-    pub fn captures_for_function(&self, function_id: FunctionID) -> Option<&CaptureMap> {
+    pub fn captures_for_function(&self, function_id: IRFunctionID) -> Option<&CaptureMap> {
         let function = self.get_function(function_id);
         match function.context() {
             IRContext::Def => None,
@@ -315,15 +319,15 @@ impl IRFunctionMap {
 
     /// Returns the arena-owned capture layout referenced by a nested function.
     #[must_use]
-    pub fn capture_map_id(&self, function_id: FunctionID) -> CaptureMapID {
-        self.get_function(function_id).context().capture_map()
+    pub fn capture_map_id(&self, function_id: IRFunctionID) -> CaptureMapID {
+        self.get_function(function_id).context().assert_capture_map_id()
     }
 
     /// Returns the capture layout of a nested function, or `None` for the
     /// definition function, which does not capture values.
     #[must_use]
-    pub fn nested_capture_map_id(&self, function_id: FunctionID) -> Option<CaptureMapID> {
-        self.get_function(function_id).context().nested_capture_map()
+    pub fn nested_capture_map_id(&self, function_id: IRFunctionID) -> Option<CaptureMapID> {
+        self.get_function(function_id).context().capture_map_id()
     }
 
     /// Visits every type stored in this map, together with where it is
@@ -375,30 +379,30 @@ impl IRFunctionMap {
         }
     }
 
-    fn capture_map(&self, function_id: FunctionID) -> &CaptureMap {
+    fn capture_map(&self, function_id: IRFunctionID) -> &CaptureMap {
         let capture_map = self.capture_map_id(function_id);
         self.capture_maps.get(capture_map).expect("IR capture map should exist")
     }
 
     #[must_use]
-    pub fn entry_block(&self, function_id: FunctionID) -> BlockID {
+    pub fn entry_block(&self, function_id: IRFunctionID) -> BlockID {
         self.get_function(function_id).entry_block()
     }
 
     #[must_use]
-    pub fn create_block(&mut self, function_id: FunctionID) -> BlockID {
+    pub fn create_block(&mut self, function_id: IRFunctionID) -> BlockID {
         self.get_function_mut(function_id).create_block()
     }
 
     #[must_use]
-    pub fn insert_expression(&mut self, function_id: FunctionID, expression: IRExpr) -> IRExprID {
+    pub fn insert_expression(&mut self, function_id: IRFunctionID, expression: IRExpr) -> IRExprID {
         self.get_function_mut(function_id).insert_expression(expression)
     }
 
     #[must_use]
     pub fn create_variable_in_scope(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         scope_id: ScopeID,
         ty: Interned<Ty>,
         span: RelativeSpan,
@@ -411,7 +415,7 @@ impl IRFunctionMap {
     #[must_use]
     pub fn create_temporary_in_scope(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         scope_id: ScopeID,
         ty: Interned<Ty>,
         span: RelativeSpan,
@@ -421,7 +425,7 @@ impl IRFunctionMap {
 
     pub fn push_expression(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         block_id: BlockID,
         expression: IRExprID,
     ) {
@@ -430,7 +434,7 @@ impl IRFunctionMap {
 
     pub fn push_expr_discard(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         block_id: BlockID,
         expression: IRExprID,
         drop_instance: Interned<Ty>,
@@ -440,7 +444,7 @@ impl IRFunctionMap {
 
     pub fn push_scope_push_instruction(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         block_id: BlockID,
         scope_id: ScopeID,
     ) {
@@ -449,7 +453,7 @@ impl IRFunctionMap {
 
     pub fn push_scope_pop_instruction(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         block_id: BlockID,
         scope_id: ScopeID,
     ) {
@@ -458,7 +462,7 @@ impl IRFunctionMap {
 
     pub fn push_store(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         block_id: BlockID,
         address: Address,
         value: IRExprID,
@@ -470,7 +474,7 @@ impl IRFunctionMap {
     /// Applies every instruction queued in `insertion` to `function_id`.
     pub fn insert_instructions(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         insertion: InstructionInsertion,
     ) {
         self.get_function_mut(function_id).insert_instructions(insertion);
@@ -479,13 +483,13 @@ impl IRFunctionMap {
     /// Redirects `edge` of `function_id` through a new empty block and
     /// returns that block, rewiring the phis of its target to take their
     /// value from the new block.
-    pub fn split_edge(&mut self, function_id: FunctionID, edge: ControlFlowEdge) -> BlockID {
+    pub fn split_edge(&mut self, function_id: IRFunctionID, edge: ControlFlowEdge) -> BlockID {
         self.get_function_mut(function_id).split_edge(edge)
     }
 
     pub fn set_terminator(
         &mut self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         block_id: BlockID,
         terminator: Terminator,
     ) {
@@ -495,7 +499,7 @@ impl IRFunctionMap {
     #[must_use]
     pub fn block_terminator(
         &self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         block_id: BlockID,
     ) -> Option<&Terminator> {
         self.get_function(function_id).block_terminator(block_id)

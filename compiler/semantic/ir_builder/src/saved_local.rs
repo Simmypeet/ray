@@ -5,8 +5,8 @@ use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_ir::{
     address::Local,
     get_ir,
-    ir_function::{FunctionID, IRFunction, IRFunctionMap},
-    suspension_point::{SuspensionPoint, Waited},
+    ir_function::{IRFunction, IRFunctionID, IRFunctionMap},
+    suspension_point::{SuspensionPoint, Waitee},
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
@@ -33,10 +33,7 @@ struct Collector<'a> {
 
 impl Collector<'_> {
     /// Collects what `function_id` holds at each of its suspension points.
-    ///
-    /// The future is boxed, since a `run ... with` recurses into its nested
-    /// bodies.
-    async fn collect(&mut self, function_id: FunctionID) {
+    async fn collect(&mut self, function_id: IRFunctionID) {
         Box::pin(async move {
             let function = self.functions.get_function(function_id);
 
@@ -72,17 +69,17 @@ impl Collector<'_> {
     async fn collect_waited(
         &mut self,
         function: &IRFunction,
-        waited: Waited<'_>,
+        waited: Waitee<'_>,
         suspension_span: RelativeSpan,
     ) {
         match waited {
             // The arguments of a `perform` leave with the operation.
-            Waited::Nothing => {}
+            Waitee::Perform => {}
 
             // The arguments of a call are the callee's upvars, so they are in
             // its coroutine type. An `extern def` has no body to wait in.
-            Waited::Call(target) => {
-                if let Some(coroutine) = target.coroutine_ty(self.engine).await {
+            Waitee::Call(call) => {
+                if let Some(coroutine) = call.coroutine_ty(self.engine).await {
                     self.push(coroutine, SavedLocalKind::Callee, suspension_span, suspension_span)
                         .await;
                 }
@@ -90,7 +87,7 @@ impl Collector<'_> {
 
             // The captures are the environment of the nested bodies, which
             // hold their own saved locals.
-            Waited::RunWith(run_with) => {
+            Waitee::RunWith(run_with) => {
                 for &capture in run_with.captures().iter().chain(run_with.handler_captures()) {
                     let expression = function.get_expression(capture);
                     self.push(
@@ -110,8 +107,8 @@ impl Collector<'_> {
                 self.runs.pop();
             }
 
-            Waited::Continuation(continuation) => {
-                let expression = function.get_expression(continuation);
+            Waitee::Handle(continuation) => {
+                let expression = function.get_expression(continuation.continuation());
                 self.push(
                     expression.ty().clone(),
                     SavedLocalKind::Continuation,

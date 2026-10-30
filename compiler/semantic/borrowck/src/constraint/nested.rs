@@ -16,7 +16,7 @@ use rayc_ir::{
         closure::Closure,
         run_with::{OperationHandler, RunWith},
     },
-    ir_function::FunctionID,
+    ir_function::IRFunctionID,
 };
 use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_type::{
@@ -77,7 +77,7 @@ impl ConstraintCollector<'_> {
     /// `closure_ty`.
     fn closure_interface(
         &self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         closure_ty: &ClosureView<'_>,
     ) -> Interface {
         let engine = self.solver.engine();
@@ -251,7 +251,7 @@ impl ConstraintCollector<'_> {
     async fn collect_nested_requirements(
         &mut self,
         point: Point,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
         instantiation: &Subst,
     ) {
         let nested = self.nested;

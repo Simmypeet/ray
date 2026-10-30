@@ -1,0 +1,30 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def big() -> int32:
+    return 1
+
+
+def other() -> int32:
+    return 2
+
+
+def third() -> int32:
+    return 3
+
+
+def take(value: int32) -> int32:
+    return value
+
+
+# Shape 1: `a` is held only at the first suspension and `b` only at the
+# second, but both are live between `let b` and `take(a)`. One of them must
+# go to the prefix, or writing `b` would overwrite `a`.
+def overlap() -> int32 \ {Yield[int32]}:
+    let a = big()
+    Yield.yield(1)
+    let b = other()
+    take(a)
+    Yield.yield(2)
+    return b

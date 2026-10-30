@@ -12,7 +12,7 @@ use crate::{
         AddressDrop, BlockID, Conditional, Instruction, InstructionInsertion, Point, Terminator,
     },
     ir_expr::{IRExpr, load::Load},
-    ir_function::{FunctionID, IRFunctionMap},
+    ir_function::{IRFunctionID, IRFunctionMap},
     liveness::{LiveMode, LiveRanges},
 };
 
@@ -21,7 +21,7 @@ use crate::{
 struct FunctionBuilder {
     engine: TrackedEngine,
     functions: IRFunctionMap,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
     ty: Interned<Ty>,
 }
 
@@ -330,4 +330,37 @@ async fn local_live_range_spans_a_block_that_does_not_mention_it() {
         Some(LiveMode::Use),
         Some(LiveMode::Use)
     ]);
+}
+
+// input: the sets `for_each_point_rev` gives for the block
+// premise: x = v; read(y); read(x); return
+// output: every point from the terminator back to the first instruction, each
+//         with the set `live_before` gives there
+#[tokio::test]
+async fn for_each_point_rev_matches_live_before_at_every_point() {
+    let mut builder = FunctionBuilder::new().await;
+    let x = builder.variable();
+    let y = builder.variable();
+    let entry = builder.entry();
+    let address = builder.address(x);
+    builder.store(entry, address);
+    builder.read(entry, y);
+    builder.read(entry, x);
+    builder.terminate(entry, Terminator::Return(None));
+
+    let function = builder.functions.get_function(builder.function_id);
+    let liveness = LocalLiveness::compute(function).await;
+
+    let mut visited = Vec::new();
+    liveness.for_each_point_rev(function, entry, |point, live| visited.push((point, live.clone())));
+
+    let terminator = function.terminator_point(entry).instruction_idx();
+    let expected = (0..=terminator)
+        .rev()
+        .map(|instruction_idx| {
+            let point = Point::builder().block_id(entry).instruction_idx(instruction_idx).build();
+            (point, liveness.live_before(function, point).unwrap())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(visited, expected);
 }

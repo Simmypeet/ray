@@ -3,7 +3,7 @@ use std::{error::Error, fmt};
 use rayc_ir::{
     cfg::{BlockID, ControlFlowEdge, Instruction, Point, Terminator},
     dataflow::{DataflowProblem, Direction, JoinLattice},
-    ir_function::{FunctionID, IRFunctionMap},
+    ir_function::{IRFunctionID, IRFunctionMap},
     scope::ScopeID,
 };
 
@@ -128,7 +128,7 @@ impl DataflowProblem for ScopeStackProblem {
 /// Describes a violated scope lifetime invariant in finalized IR.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerificationError {
-    function_id: FunctionID,
+    function_id: IRFunctionID,
     kind: VerificationErrorKind,
 }
 

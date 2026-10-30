@@ -201,6 +201,34 @@ impl LocalLiveness {
         Some(state)
     }
 
+    /// Calls `f` with each point of `block_id` and the locals live just
+    /// before it, from the terminator back to the first instruction.
+    ///
+    /// It gives the same sets as [`Self::live_before`] at every point of the
+    /// block, in one pass instead of one replay per point. Nothing is called
+    /// when the block is unreachable.
+    pub fn for_each_point_rev(
+        &self,
+        function: &IRFunction,
+        block_id: BlockID,
+        mut f: impl FnMut(Point, &LiveLocals),
+    ) {
+        let Some(exit) = self.solution.block_exit(block_id) else {
+            return;
+        };
+        let problem = LocalLivenessProblem { function };
+        let mut state = exit.clone();
+
+        // A terminator reads no local, so the exit facts hold at its point.
+        f(function.terminator_point(block_id), &state);
+
+        // Each instruction moves the state to just before itself.
+        for (point, instruction) in function.block_instructions_with_points_rev(block_id) {
+            problem.transfer(instruction, &mut state);
+            f(point, &state);
+        }
+    }
+
     /// Returns the points at which each local is live.
     #[must_use]
     pub fn live_ranges(&self, function: &IRFunction) -> LiveRanges<Local> {

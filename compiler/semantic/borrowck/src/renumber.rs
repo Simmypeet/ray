@@ -7,7 +7,7 @@ use rayc_arena::ID;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_ir::{
     ir_closure::CaptureMapID,
-    ir_function::{FunctionID, IRFunctionMap},
+    ir_function::{IRFunctionID, IRFunctionMap},
     visit::{TypeSite, TypeVisitorMutAsync},
 };
 use rayc_qbice::TrackedEngine;
@@ -29,7 +29,7 @@ pub struct Renumbering {
     capture_externals: FxHashMap<CaptureMapID, FxHashSet<ExternalRegionID>>,
 
     /// The external regions created in the signature of each nested function.
-    signature_externals: FxHashMap<FunctionID, FxHashSet<ExternalRegionID>>,
+    signature_externals: FxHashMap<IRFunctionID, FxHashSet<ExternalRegionID>>,
 }
 
 impl Renumbering {
@@ -68,7 +68,7 @@ impl Renumbering {
     /// function.
     pub fn signature_externals(
         &self,
-        function_id: FunctionID,
+        function_id: IRFunctionID,
     ) -> impl Iterator<Item = ExternalRegionID> + '_ {
         self.signature_externals.get(&function_id).into_iter().flatten().copied()
     }
@@ -85,7 +85,7 @@ struct Renumberer<'e> {
     capture_externals: FxHashMap<CaptureMapID, FxHashSet<ExternalRegionID>>,
 
     /// The external regions created in the signature of each nested function.
-    signature_externals: FxHashMap<FunctionID, FxHashSet<ExternalRegionID>>,
+    signature_externals: FxHashMap<IRFunctionID, FxHashSet<ExternalRegionID>>,
 }
 
 impl TypeVisitorMutAsync for Renumberer<'_> {

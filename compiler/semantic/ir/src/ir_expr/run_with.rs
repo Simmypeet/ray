@@ -9,7 +9,7 @@ use rayc_type::{
 use crate::{
     ir_closure::CaptureMapID,
     ir_expr::IRExprID,
-    ir_function::FunctionID,
+    ir_function::IRFunctionID,
     visit::{
         TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
         VisitTypeMutAsync,
@@ -20,18 +20,18 @@ use crate::{
 /// closure.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct HandledFunction {
-    function_id: FunctionID,
+    function_id: IRFunctionID,
     captures: Vec<IRExprID>,
 }
 
 impl HandledFunction {
     #[must_use]
-    pub const fn new(function_id: FunctionID, captures: Vec<IRExprID>) -> Self {
+    pub const fn new(function_id: IRFunctionID, captures: Vec<IRExprID>) -> Self {
         Self { function_id, captures }
     }
 
     #[must_use]
-    pub const fn function_id(&self) -> FunctionID { self.function_id }
+    pub const fn function_id(&self) -> IRFunctionID { self.function_id }
 
     #[must_use]
     pub fn captures(&self) -> &[IRExprID] { &self.captures }
@@ -40,12 +40,12 @@ impl HandledFunction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct OperationHandler {
     operation_id: GlobalSymbolID,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
 }
 
 impl OperationHandler {
     #[must_use]
-    pub const fn new(operation_id: GlobalSymbolID, function_id: FunctionID) -> Self {
+    pub const fn new(operation_id: GlobalSymbolID, function_id: IRFunctionID) -> Self {
         Self { operation_id, function_id }
     }
 
@@ -53,7 +53,7 @@ impl OperationHandler {
     pub const fn operation_id(&self) -> GlobalSymbolID { self.operation_id }
 
     #[must_use]
-    pub const fn function_id(&self) -> FunctionID { self.function_id }
+    pub const fn function_id(&self) -> IRFunctionID { self.function_id }
 }
 
 /// Runs a thunk under a complete set of handlers for one instantiated effect.

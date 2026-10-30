@@ -1,0 +1,35 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def big() -> int32:
+    return 1
+
+
+def other() -> int32:
+    return 2
+
+
+def third() -> int32:
+    return 3
+
+
+def take(value: int32) -> int32:
+    return value
+
+
+def g() -> int32 \ {Yield[int32]}:
+    Yield.yield(0)
+    return 1
+
+
+def pair(x: int32, y: int32) -> int32:
+    return x
+
+
+# The result of the first `g()` is held while the second `g()` suspends, so it
+# is in the variant of the second. It is written when the first `g()` resumes,
+# after the frame of that `g`, its awaitee, is done: the two share memory
+# instead of conflicting.
+def result_and_awaitee() -> int32 \ {Yield[int32]}:
+    return pair(g(), g())

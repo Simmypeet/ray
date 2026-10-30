@@ -6,7 +6,7 @@ use rayc_source_file::GlobalSourceID;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::{Integer, Primitive, Ty};
 
-use super::{FunctionID, IRFunctionMap};
+use super::{IRFunctionID, IRFunctionMap};
 use crate::{
     cfg::{BlockID, Conditional, ControlFlowEdgeKind, Terminator},
     ir_expr::{IRExpr, IRExprID, phi::Phi},
@@ -15,7 +15,7 @@ use crate::{
 /// Builds the root function of an [`IRFunctionMap`].
 struct FunctionBuilder {
     functions: IRFunctionMap,
-    function_id: FunctionID,
+    function_id: IRFunctionID,
     ty: Interned<Ty>,
 }
 
