@@ -1,166 +1,188 @@
 use qbice::storage::intern::Interned;
-use rayc_arena::Arena;
-use rayc_hash::FxHashMap;
 use rayc_ir::{
     ir_closure::{Capture, CaptureID, CaptureMapID},
+    ir_expr::handle::Handle,
     ir_function::{IRFunction, IRFunctionID, IRFunctionMap},
 };
 use rayc_mono_ir::{
-    MonoDefInstance, MonoEffectInstance, MonoIR,
-    function::MonoFunctionID,
-    ty::{
-        AggregateType, EffectHandler, Environment, FunctionSignature, MonoType, PointerMutability,
-        instantiate_effect,
-    },
+    MonoClosureInstance, MonoCoroutineInstance, MonoDefInstance, MonoEffectInstance,
+    MonoFragmentInstance, MonoIR, function::MonoFunctionID, signature::get_coroutine_signature,
+    ty::instantiate_effect,
 };
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::{ParameterMap, get_parameter_map};
 use rayc_solver::Solver;
-use rayc_symbol::GlobalSymbolID;
-use rayc_type::{signature::get_return_type, subst::Subst, ty::Ty};
+use rayc_symbol::{GlobalSymbolID, parent::get_parent_global};
+use rayc_type::subst::Subst;
 
-use crate::{
-    builder::Builder,
-    function_abi::{EnvironmentABI, EnvironmentABIID, FunctionABI},
-    resolver::Resolver,
-};
+use crate::{function_lowering::FunctionLowering, resolver::Resolver};
 
-/// Long-lived context shared while lowering one definition instance.
+mod callback;
+mod environments;
+
+use callback::CallbackFragment;
+pub(crate) use callback::CallbackStyleFunctionABI;
+pub(crate) use environments::EnvironmentAbi;
+use environments::Environments;
+
+/// How the fragment being lowered performs its effects, and the state that
+/// takes.
+enum FragmentStyle {
+    /// One function of the definition with the nested functions it creates,
+    /// which perform their effects through handlers.
+    Callback(CallbackFragment),
+
+    /// One function of the definition, as the `coroutine_resume` of the
+    /// fragment's instance.
+    Coroutine { function_id: IRFunctionID },
+}
+
+/// The closures that the function `function_id` creates.
+fn created_closures(
+    source: &IRFunctionMap,
+    function_id: IRFunctionID,
+) -> impl Iterator<Item = IRFunctionID> + '_ {
+    source
+        .get_function(function_id)
+        .created_functions()
+        .filter(|created| source.is_closure_function(*created))
+}
+
+/// Long-lived context shared while lowering one fragment.
 pub(crate) struct Context {
     engine: TrackedEngine,
-    instance: MonoDefInstance,
+    /// The fragment being lowered.
+    instance: MonoFragmentInstance,
+    /// The definition that owns the functions being lowered, whose substitution
+    /// they are lowered in.
+    owner: MonoDefInstance,
     resolver: Resolver,
     source: Interned<IRFunctionMap>,
-    environment_abis: Arena<EnvironmentABI>,
-    capture_environments: FxHashMap<CaptureMapID, EnvironmentABIID>,
-    function_abis: FxHashMap<IRFunctionID, FunctionABI>,
-    function_ids: FxHashMap<IRFunctionID, MonoFunctionID>,
+    environments: Environments,
+    style: FragmentStyle,
 }
 
 impl Context {
-    /// `solver` becomes the fragment's only solver, shared by every function
-    /// lowered from `source`.
-    pub(crate) fn new(
+    /// A context for lowering the definition `instance` in callback style,
+    /// with the fragment to lower it into.
+    pub(crate) async fn new_definition(
         solver: Solver,
         instance: MonoDefInstance,
         source: Interned<IRFunctionMap>,
-    ) -> Self {
+    ) -> (Self, MonoIR) {
+        let root = source.root_id();
+        Self::new_callback(solver, instance.clone(), source, instance.into(), root).await
+    }
+
+    /// A context for lowering the closure `instance` in callback style, with
+    /// the fragment to lower it into.
+    pub(crate) async fn new_closure(
+        solver: Solver,
+        instance: MonoClosureInstance,
+        source: Interned<IRFunctionMap>,
+    ) -> (Self, MonoIR) {
+        let owner = instance.owner().clone();
+        let root = source.get_function_id_of_closure(instance.closure_id());
+        Self::new_callback(solver, owner, source, instance.into(), root).await
+    }
+
+    /// `solver` becomes the fragment's only solver, shared by every function
+    /// lowered from `source`.
+    async fn new_callback(
+        solver: Solver,
+        owner: MonoDefInstance,
+        source: Interned<IRFunctionMap>,
+        instance: MonoFragmentInstance,
+        root: IRFunctionID,
+    ) -> (Self, MonoIR) {
         let engine = solver.engine().clone();
-        let resolver = Resolver::new(solver, instance.substitution().clone());
-        Self {
-            engine,
-            instance,
-            resolver,
-            source,
-            environment_abis: Arena::new(),
-            capture_environments: FxHashMap::default(),
-            function_abis: FxHashMap::default(),
-            function_ids: FxHashMap::default(),
+        let resolver = Resolver::new(solver, owner.substitution().clone());
+
+        let functions = callback::fragment_functions(&source, root);
+        let environment_functions = callback::environment_functions(&source, &functions);
+        let environments =
+            Environments::new(&resolver, &source, environment_functions.iter().copied()).await;
+        let (fragment, output) = CallbackFragment::new(
+            &resolver,
+            &source,
+            &environments,
+            owner.def_id(),
+            instance.clone(),
+            functions,
+        )
+        .await;
+
+        let style = FragmentStyle::Callback(fragment);
+        (Self { engine, instance, owner, resolver, source, environments, style }, output)
+    }
+
+    /// A context for lowering the function `function_id` of `owner` into the
+    /// `coroutine_resume` of `instance`, with the fragment to lower it into.
+    ///
+    /// `solver` becomes the fragment's only solver.
+    pub(crate) async fn new_coroutine(
+        solver: Solver,
+        owner: MonoDefInstance,
+        source: Interned<IRFunctionMap>,
+        instance: MonoCoroutineInstance,
+        function_id: IRFunctionID,
+    ) -> (Self, MonoIR) {
+        let engine = solver.engine().clone();
+        let resolver = Resolver::new(solver, owner.substitution().clone());
+
+        let environment_functions = created_closures(&source, function_id).collect::<Vec<_>>();
+        let environments =
+            Environments::new(&resolver, &source, environment_functions.iter().copied()).await;
+
+        let signature = engine.get_coroutine_signature(instance.clone()).await;
+        let output = MonoIR::new(instance.clone(), signature.resume_signature().clone());
+
+        let style = FragmentStyle::Coroutine { function_id };
+        let instance = instance.into();
+        (Self { engine, instance, owner, resolver, source, environments, style }, output)
+    }
+
+    fn callback(&self) -> &CallbackFragment {
+        match &self.style {
+            FragmentStyle::Callback(callback) => callback,
+            FragmentStyle::Coroutine { .. } => {
+                panic!("a coroutine fragment plans no function ABIs or target functions")
+            }
         }
+    }
+
+    /// The definition that owns the functions being lowered.
+    pub(crate) const fn def_id(&self) -> GlobalSymbolID { self.owner.def_id() }
+
+    /// The effect of `operation_id`, one of the effects that `handle` handles,
+    /// as an effect row of the owner would spell it.
+    pub(crate) async fn lower_handled_effect(
+        &self,
+        handle: &Handle,
+        operation_id: GlobalSymbolID,
+    ) -> MonoEffectInstance {
+        let effect_id = self
+            .engine
+            .get_parent_global(operation_id)
+            .await
+            .expect("an operation should belong to an effect");
+
+        MonoEffectInstance::new(effect_id, handle.handled_effect(effect_id).substitution().clone())
     }
 
     /// Dictionary and callee resolution in this definition's substitution.
     pub(crate) const fn resolver(&self) -> &Resolver { &self.resolver }
 
     pub(crate) async fn get_root_parameter_map(&self) -> Interned<ParameterMap> {
-        self.engine.get_parameter_map(self.instance.def_id()).await
+        self.engine.get_parameter_map(self.owner.def_id()).await
     }
 
-    pub(crate) async fn get_root_return_type(&self) -> Interned<Ty> {
-        self.engine.get_return_type(self.instance.def_id()).await
-    }
-
-    pub(crate) async fn lower_effects(&self, effect: &Interned<Ty>) -> Vec<MonoEffectInstance> {
-        self.resolver.lower_effects(effect).await
-    }
-
-    pub(crate) async fn lower_type(&self, ty: &Interned<Ty>) -> Interned<MonoType> {
-        self.resolver.lower_type(ty).await
-    }
-
-    pub(crate) fn create_function_signature(
-        &self,
-        parameter_types: impl IntoIterator<Item = Interned<MonoType>>,
-        return_type: Interned<MonoType>,
-    ) -> FunctionSignature {
-        MonoType::new_function_signature(parameter_types, return_type, &self.engine)
-    }
-
-    pub(crate) fn create_nominal_signature(
-        &self,
-        environment: Environment,
-        parameters: Vec<Interned<MonoType>>,
-        result: Interned<MonoType>,
-        effects: &[MonoEffectInstance],
-    ) -> FunctionSignature {
-        rayc_mono_ir::ty::nominal_body_signature(
-            &self.engine,
-            environment,
-            parameters,
-            result,
-            effects,
-        )
-    }
-
-    pub(crate) fn create_aggregate_type_for_capture_environment(
-        &self,
-        fields: Vec<Interned<MonoType>>,
-    ) -> Environment {
-        let captures = self.engine.intern_unsized(fields);
-        Environment::new(captures)
-    }
-
-    pub(crate) fn create_handler_pointer(&self, effect: MonoEffectInstance) -> Interned<MonoType> {
-        MonoType::new_handler_pointer(effect, &self.engine)
-    }
-
-    pub(crate) fn create_opaque_pointer(&self) -> Interned<MonoType> {
-        MonoType::new_opaque_pointer(&self.engine)
-    }
-
-    pub(crate) fn intern_environment_type(&self, environment: Environment) -> Interned<MonoType> {
-        self.engine.intern(MonoType::Aggregate(AggregateType::Environment(environment)))
-    }
-
-    pub(crate) fn create_pointer(
-        &self,
-        pointee: Interned<MonoType>,
-        mutability: PointerMutability,
-    ) -> Interned<MonoType> {
-        MonoType::new_pointer(pointee, mutability, &self.engine)
-    }
-
-    pub(crate) fn intern_effect_instance(
-        &self,
-        instance: MonoEffectInstance,
-    ) -> Interned<MonoType> {
-        self.engine
-            .intern(MonoType::Aggregate(AggregateType::EffectHandler(EffectHandler::new(instance))))
-    }
-
-    pub(crate) async fn lower_capture_storage_type(&self, ty: &Capture) -> Interned<MonoType> {
-        self.resolver.lower_type(&ty.storage_ty(&self.engine)).await
-    }
-
-    pub(crate) fn source_function(&self, source_id: IRFunctionID) -> IRFunction {
-        self.source.get_function(source_id).clone()
-    }
-
-    /// Lowers the effect row of a source function.
-    pub(crate) async fn lower_source_effects(
-        &self,
-        source_id: IRFunctionID,
-    ) -> Vec<MonoEffectInstance> {
-        let effect = self.source.effect_of(source_id, &self.engine).await;
-        self.lower_effects(&effect).await
+    pub(crate) fn source_function(&self, source_id: IRFunctionID) -> &IRFunction {
+        self.source.get_function(source_id)
     }
 
     pub(crate) fn source_capture_count(&self, source_id: IRFunctionID) -> usize {
         self.source.captures(source_id).len()
-    }
-
-    pub(crate) fn source_capture_map_id(&self, source_id: IRFunctionID) -> CaptureMapID {
-        self.source.capture_map_id(source_id)
     }
 
     pub(crate) fn source_captures(
@@ -170,23 +192,16 @@ impl Context {
         self.source.captures(source_id)
     }
 
-    pub(crate) fn function_abi(&self, source_id: IRFunctionID) -> &FunctionABI {
-        self.function_abis.get(&source_id).expect("nested MonoIR function ABI should be planned")
+    pub(crate) fn function_abi(&self, source_id: IRFunctionID) -> &CallbackStyleFunctionABI {
+        self.callback().function_abi(source_id)
     }
 
-    pub(crate) fn function_environment_abi(&self, source_id: IRFunctionID) -> &EnvironmentABI {
-        let environment_id = self.function_abi(source_id).environment_id();
-        self.environment_abis
-            .get(environment_id)
-            .expect("function environment ABI should be planned")
+    pub(crate) fn function_environment_abi(&self, source_id: IRFunctionID) -> &EnvironmentAbi {
+        self.environments.of_function(source_id)
     }
 
-    pub(crate) fn capture_environment_abi(&self, capture_map_id: CaptureMapID) -> &EnvironmentABI {
-        let environment_id = self
-            .capture_environments
-            .get(&capture_map_id)
-            .expect("capture environment ABI should be planned");
-        self.environment_abis.get(*environment_id).expect("capture environment ABI should exist")
+    pub(crate) fn capture_environment_abi(&self, capture_map_id: CaptureMapID) -> &EnvironmentAbi {
+        self.environments.of_capture_map(capture_map_id)
     }
 
     pub(crate) fn assert_function_uses_capture_environment(
@@ -194,48 +209,18 @@ impl Context {
         source_id: IRFunctionID,
         capture_map_id: CaptureMapID,
     ) {
-        let expected = self
-            .capture_environments
-            .get(&capture_map_id)
-            .expect("capture environment ABI should be planned");
-        assert_eq!(
-            self.function_abi(source_id).environment_id(),
-            *expected,
+        assert!(
+            self.environments.function_uses_capture_map(source_id, capture_map_id),
             "operation handlers in one handler record should share an environment ABI"
         );
     }
 
-    pub(super) fn plan_capture_environment(
-        &mut self,
-        capture_map_id: CaptureMapID,
-        environment: EnvironmentABI,
-    ) -> EnvironmentABIID {
-        if let Some(environment_id) = self.capture_environments.get(&capture_map_id).copied() {
-            let planned = self
-                .environment_abis
-                .get(environment_id)
-                .expect("capture environment ABI should exist");
-            assert_eq!(
-                planned, &environment,
-                "functions sharing a capture map should share an environment ABI"
-            );
-            environment_id
-        } else {
-            let environment_id = self.environment_abis.insert(environment);
-            assert!(self.capture_environments.insert(capture_map_id, environment_id).is_none());
-            environment_id
-        }
-    }
-
     pub(crate) fn target_function_id(&self, source_id: IRFunctionID) -> MonoFunctionID {
-        *self
-            .function_ids
-            .get(&source_id)
-            .expect("semantic IR function should be mapped to a MonoIR function")
+        self.callback().target_function_id(source_id)
     }
 
     pub(crate) fn apply_owner_substitution(&self, substitution: &mut Subst) {
-        substitution.compose(self.instance.substitution(), &self.engine);
+        substitution.compose(self.owner.substitution(), &self.engine);
     }
 
     pub(crate) async fn instantiate_effect(
@@ -243,61 +228,55 @@ impl Context {
         effect_id: GlobalSymbolID,
         substitution: &Subst,
     ) -> MonoEffectInstance {
-        self.engine.instantiate_effect(effect_id, substitution, self.instance.substitution()).await
+        self.engine.instantiate_effect(effect_id, substitution, self.owner.substitution()).await
     }
 
-    pub(crate) async fn definition_instance(
-        &self,
-        def_id: GlobalSymbolID,
-        substitution: Subst,
-    ) -> MonoDefInstance {
-        self.resolver.definition_instance(def_id, substitution).await
-    }
-
-    pub(crate) fn is_nominal(&self, source_id: IRFunctionID) -> bool {
-        self.source.closures().any(|(_, function)| function == source_id)
-    }
-
-    pub(crate) async fn lower(mut self) -> MonoIR {
-        let root_source_id = self.source.root_id();
-        let root_source = self.source.root().clone();
-        let root_abi = self.plan_function(root_source_id, &root_source).await;
-
-        // Callers spell this definition through its declared signature, so
-        // the body must implement exactly that interface.
-        assert_eq!(
-            root_abi.signature(),
-            self.resolver.def_signature(&self.instance).await.signature(),
-            "a lowered definition should implement its declared signature"
-        );
-
-        let source_ids = self.source.functions().map(|(id, _)| id).collect::<Vec<_>>();
-
-        let mut output = MonoIR::new(self.instance.clone(), root_abi.signature().clone());
-
-        self.function_abis.insert(root_source_id, root_abi);
-        self.function_ids.insert(root_source_id, output.root_id());
-
-        for source_id in source_ids.iter().copied() {
-            if source_id == root_source_id {
-                continue;
+    /// Lowers the fragment this context is for into `output`, which it was
+    /// created with.
+    pub(crate) async fn lower(self, output: MonoIR) -> MonoIR {
+        match &self.style {
+            FragmentStyle::Callback(_) => Box::pin(self.lower_callback(output)).await,
+            FragmentStyle::Coroutine { function_id } => {
+                let function_id = *function_id;
+                Box::pin(self.lower_coroutine(output, function_id)).await
             }
-
-            let source = self.source.get_function(source_id).clone();
-            let abi = self.plan_function(source_id, &source).await;
-            let target = output.insert_function(abi.kind(), abi.signature().clone());
-            self.function_abis.insert(source_id, abi);
-            self.function_ids.insert(source_id, target);
         }
+    }
 
-        for (closure, source) in self.source.closures() {
-            output.register_closure(closure, self.target_function_id(source));
+    /// The coroutine of a fragment in coroutine style.
+    fn coroutine_instance(&self) -> &MonoCoroutineInstance {
+        match &self.instance {
+            MonoFragmentInstance::CoroutineResume(instance) => instance,
+            MonoFragmentInstance::Definition(_)
+            | MonoFragmentInstance::Closure(_)
+            | MonoFragmentInstance::NominalDrop(_) => {
+                panic!("a fragment in coroutine style should be a `coroutine_resume`")
+            }
         }
+    }
 
-        for source_id in source_ids {
+    /// Lowers the function `source_id` into the `coroutine_resume` of the
+    /// fragment's instance.
+    async fn lower_coroutine(self, mut output: MonoIR, source_id: IRFunctionID) -> MonoIR {
+        let target_id = output.root_id();
+        let instance = self.coroutine_instance();
+        FunctionLowering::new_coroutine(&self, &mut output, target_id, source_id, instance)
+            .await
+            .lower_coroutine()
+            .await;
+
+        output
+    }
+
+    /// Lowers one definition or closure into one fragment, with the nested
+    /// functions it creates.
+    async fn lower_callback(self, mut output: MonoIR) -> MonoIR {
+        for source_id in self.callback().functions() {
             let target_id = self.target_function_id(source_id);
-            let mut builder = Builder::new(&mut output, target_id);
-            builder.lower_function(&self, source_id).await;
+            FunctionLowering::new_callback(&self, &mut output, target_id, source_id)
+                .await
+                .lower_function()
+                .await;
         }
 
         output
