@@ -38,8 +38,8 @@ impl<'a> Emitter<'a> {
 
     pub(crate) const fn engine(&self) -> &'a TrackedEngine { self.resolver.engine() }
 
-    pub(crate) fn parameter_ids(&self) -> Vec<LocalID> {
-        self.output.get_function(self.target_id).parameters().collect()
+    pub(crate) fn parameter_ids(&self) -> impl ExactSizeIterator<Item = LocalID> + '_ {
+        self.output.get_function(self.target_id).parameters()
     }
 
     /// The place of a whole local.
