@@ -5,13 +5,11 @@ use rayc_semantic_element::struct_body::FieldID;
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
-    MonoEffectInstance,
+    MonoEffectInstance, MonoStructInstance,
+    layout::StructLayout,
     operand::Operand,
     place::Place,
-    ty::{
-        Environment as EnvironmentTy, MonoType, PointerMutability, Struct as StructTy,
-        Tuple as TupleTy,
-    },
+    ty::{Environment as EnvironmentTy, MonoType, PointerMutability, Tuple as TupleTy},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -135,13 +133,13 @@ impl Cast {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub struct AggregateStruct {
-    ty: StructTy,
+    ty: MonoStructInstance,
     fields: BTreeMap<FieldID, Operand>,
 }
 
 impl AggregateStruct {
     #[must_use]
-    pub const fn ty(&self) -> &StructTy { &self.ty }
+    pub const fn ty(&self) -> &MonoStructInstance { &self.ty }
 
     #[must_use]
     pub const fn fields(&self) -> &BTreeMap<FieldID, Operand> { &self.fields }
@@ -205,7 +203,7 @@ pub struct AggregateEffectHandler {
     effect: MonoEffectInstance,
     /// One slot per operation, ordered by operation like [`HandlerLayout`].
     ///
-    /// [`HandlerLayout`]: crate::ty::HandlerLayout
+    /// [`HandlerLayout`]: crate::layout::HandlerLayout
     slots: BTreeMap<GlobalSymbolID, OperationHandlerSlot>,
 }
 
@@ -248,9 +246,10 @@ impl Rvalue {
     }
 
     #[must_use]
-    pub fn new_struct(ty: StructTy, fields: BTreeMap<FieldID, Operand>) -> Self {
-        assert_eq!(ty.fields().len(), fields.len());
+    pub fn new_struct(layout: &StructLayout, fields: BTreeMap<FieldID, Operand>) -> Self {
+        assert_eq!(layout.fields().len(), fields.len());
 
+        let ty = layout.instance().clone();
         Self::Aggregate(AggregateValue::Struct(AggregateStruct { ty, fields }))
     }
 
