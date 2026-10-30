@@ -1,8 +1,9 @@
 //! Concrete, C-like control-flow IR produced after semantic IR.
 //!
-//! A [`MonoIR`] is deliberately scoped to one concrete source-definition
-//! instance. It owns that definition's root function and all nested functions
-//! produced from its closures, thunks, and operation handlers. A fragment can
+//! A [`MonoIR`] is deliberately scoped to one concrete source definition or
+//! closure. It owns that function as its root and the nested functions that
+//! only it refers to: the thunks and operation handlers of its `run ... with`
+//! expressions. A closure it creates is a fragment of its own. A fragment can
 //! instead hold a compiler-generated nominal `Drop.drop` body or the
 //! `coroutine_resume` function of a coroutine. Calls to other fragments retain
 //! [`MonoFragmentInstance`] keys so a future incremental orchestrator can
@@ -13,8 +14,6 @@
 
 use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_arena::Arena;
-use rayc_hash::FxHashMap;
-use rayc_type::ty::application::ClosureID;
 
 use crate::{
     cfg::{BlockID, Terminator},
@@ -46,7 +45,6 @@ pub struct MonoIR {
     instance: MonoFragmentInstance,
     functions: Arena<MonoFunction>,
     root: MonoFunctionID,
-    closures: FxHashMap<ClosureID, MonoFunctionID>,
 }
 
 impl MonoIR {
@@ -58,35 +56,7 @@ impl MonoIR {
         let instance = instance.into();
         let mut functions = Arena::new();
         let root = functions.insert(MonoFunction::new(instance.root_kind(), root_signature));
-        Self { instance, functions, root, closures: FxHashMap::default() }
-    }
-
-    pub fn register_closure(&mut self, closure: ClosureID, function: MonoFunctionID) {
-        assert!(
-            matches!(self.instance, MonoFragmentInstance::Definition(_)),
-            "only definition fragments own source closures"
-        );
-        let _ = self.get_function(function);
-        assert!(!self.closures.values().any(|id| *id == function));
-        assert!(self.closures.insert(closure, function).is_none());
-    }
-
-    #[must_use]
-    pub fn closure_function(&self, closure: ClosureID) -> Option<MonoFunctionID> {
-        self.closures.get(&closure).copied()
-    }
-
-    #[must_use]
-    pub fn closure_instance(&self, function: MonoFunctionID) -> Option<MonoClosureInstance> {
-        let owner = match &self.instance {
-            MonoFragmentInstance::Definition(owner) => owner,
-            MonoFragmentInstance::NominalDrop(_) | MonoFragmentInstance::CoroutineResume(_) => {
-                return None;
-            }
-        };
-        self.closures.iter().find_map(|(closure, id)| {
-            (*id == function).then(|| MonoClosureInstance::new(owner.clone(), *closure))
-        })
+        Self { instance, functions, root }
     }
 
     #[must_use]
@@ -120,7 +90,10 @@ impl MonoIR {
         kind: MonoFunctionKind,
         signature: FunctionSignature,
     ) -> MonoFunctionID {
-        assert_ne!(kind, MonoFunctionKind::Def, "a MonoIR fragment has exactly one root def");
+        assert!(
+            matches!(kind, MonoFunctionKind::Thunk | MonoFunctionKind::OperationHandler),
+            "only the thunks and operation handlers of a fragment are nested in it"
+        );
         self.functions.insert(MonoFunction::new(kind, signature))
     }
 

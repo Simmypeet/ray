@@ -482,15 +482,15 @@ pub enum FrameSlot {
 
 impl FrameSlot {
     /// The place of this slot in the frame stored at `frame`.
-    pub fn project(self, frame: Place, engine: &TrackedEngine) -> Place {
-        let projection = match self {
+    #[must_use]
+    pub fn project(self, frame: &Place, engine: &TrackedEngine) -> Place {
+        frame.project(engine).with_projection(match self {
             Self::Prefix(field) => Projection::CoroutineFramePrefixField(field),
             Self::Start(field) => Projection::CoroutineFrameStartField(field),
             Self::Variant { variant, field } => {
                 Projection::CoroutineFrameVariantField { variant, field }
             }
-        };
-        frame.with_projection(projection, engine)
+        })
     }
 }
 
@@ -514,10 +514,8 @@ impl Upvar {
     pub fn place(self, arguments: &[Place], engine: &TrackedEngine) -> Place {
         match self {
             Self::Argument(index) => arguments[index].clone(),
-            Self::ClosureCapture(field) => {
-                arguments[0].clone().project_environment_field(field, engine)
-            }
-            Self::ClosureArgument(field) => arguments[1].clone().project_tuple_field(field, engine),
+            Self::ClosureCapture(field) => arguments[0].project(engine).environment_field(field),
+            Self::ClosureArgument(field) => arguments[1].project(engine).tuple_field(field),
         }
     }
 }
@@ -550,7 +548,7 @@ impl CoroutineFrame {
     #[must_use]
     pub fn variant_at(&self, block: IRBlockID) -> Option<FieldIndex> {
         let index = self.variants.iter().position(|variant| *variant == block)?;
-        Some(field_index(index))
+        Some(FieldIndex::from_usize(index))
     }
 
     /// What is stored in a coroutine when it is created, with where.
@@ -609,11 +607,11 @@ async fn build_coroutine_frame_executor(
         let slot = match placement {
             Placement::Prefix => {
                 prefix.push(ty);
-                FrameSlot::Prefix(field_index(prefix.len() - 1))
+                FrameSlot::Prefix(FieldIndex::from_usize(prefix.len() - 1))
             }
             Placement::SuspensionLocal(SuspensionLocalPlacement::Start) => {
                 start.push(ty);
-                FrameSlot::Start(field_index(start.len() - 1))
+                FrameSlot::Start(FieldIndex::from_usize(start.len() - 1))
             }
             Placement::SuspensionLocal(SuspensionLocalPlacement::SuspensionLocal(point)) => {
                 let variant = variants
@@ -621,8 +619,8 @@ async fn build_coroutine_frame_executor(
                     .expect("a placed suspension point should have a variant");
                 variant_fields[variant].push(ty);
                 FrameSlot::Variant {
-                    variant: field_index(variant),
-                    field: field_index(variant_fields[variant].len() - 1),
+                    variant: FieldIndex::from_usize(variant),
+                    field: FieldIndex::from_usize(variant_fields[variant].len() - 1),
                 }
             }
         };
@@ -692,17 +690,12 @@ async fn upvars(
     // `Def.call(closure, arguments)` takes the closure value and a tuple, which
     // the frame stores as the captures and parameters of the closure's body.
     let captures = source.captures(function_id).enumerate().map(|(index, (capture, _))| {
-        (Upvar::ClosureCapture(field_index(index)), slot_of(Local::Capture(capture)))
+        (Upvar::ClosureCapture(FieldIndex::from_usize(index)), slot_of(Local::Capture(capture)))
     });
-    let arguments = parameters
-        .iter()
-        .enumerate()
-        .map(|(index, local)| (Upvar::ClosureArgument(field_index(index)), slot_of(*local)));
+    let arguments = parameters.iter().enumerate().map(|(index, local)| {
+        (Upvar::ClosureArgument(FieldIndex::from_usize(index)), slot_of(*local))
+    });
     captures.chain(arguments).collect()
-}
-
-fn field_index(index: usize) -> FieldIndex {
-    FieldIndex::new(index.try_into().expect("a frame field index should fit in u32"))
 }
 
 #[cfg(test)]

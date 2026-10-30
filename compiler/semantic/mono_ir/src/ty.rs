@@ -118,6 +118,11 @@ impl MonoType {
         }
     }
 
+    #[must_use]
+    pub fn new_aggregate(aggregate: AggregateType, engine: &TrackedEngine) -> Interned<Self> {
+        engine.intern(Self::Aggregate(aggregate))
+    }
+
     /// The empty tuple.
     #[must_use]
     pub fn new_unit(engine: &TrackedEngine) -> Interned<Self> {

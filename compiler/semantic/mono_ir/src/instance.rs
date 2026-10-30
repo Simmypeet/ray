@@ -205,8 +205,13 @@ impl MonoCoroutineInstance {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum MonoFragmentInstance {
-    /// A source definition together with its nested closures and handlers.
+    /// A source definition together with the `run ... with` bodies and
+    /// operation handlers it creates. A closure it creates is a fragment of its
+    /// own.
     Definition(MonoDefInstance),
+    /// A source closure together with the `run ... with` bodies and operation
+    /// handlers it creates.
+    Closure(MonoClosureInstance),
     /// A compiler-generated structural `Drop.drop` for a nominal type.
     NominalDrop(MonoGeneratedAdtDropInstance),
     /// The `coroutine_resume` function of a coroutine.
@@ -219,6 +224,7 @@ impl MonoFragmentInstance {
     pub const fn root_kind(&self) -> MonoFunctionKind {
         match self {
             Self::Definition(_) | Self::NominalDrop(_) => MonoFunctionKind::Def,
+            Self::Closure(_) => MonoFunctionKind::Closure,
             Self::CoroutineResume(_) => MonoFunctionKind::CoroutineResume,
         }
     }
@@ -226,6 +232,10 @@ impl MonoFragmentInstance {
 
 impl From<MonoDefInstance> for MonoFragmentInstance {
     fn from(instance: MonoDefInstance) -> Self { Self::Definition(instance) }
+}
+
+impl From<MonoClosureInstance> for MonoFragmentInstance {
+    fn from(instance: MonoClosureInstance) -> Self { Self::Closure(instance) }
 }
 
 impl From<MonoGeneratedAdtDropInstance> for MonoFragmentInstance {
@@ -253,6 +263,9 @@ impl MonoClosureInstance {
 
     #[must_use]
     pub const fn owner(&self) -> &MonoDefInstance { &self.owner }
+
+    #[must_use]
+    pub const fn closure_id(&self) -> ClosureID { self.closure_id }
 
     pub async fn from_closure(solver: &Solver, closure: ClosureView<'_>) -> Self {
         let substitution = closure.create_subst(solver.engine()).await;
