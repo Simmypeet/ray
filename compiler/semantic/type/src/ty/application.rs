@@ -476,6 +476,38 @@ impl CoroutineView<'_> {
     }
 }
 
+/// A coroutine type whose suspended function is known, which is what a
+/// coroutine type reduces to once it is fully concrete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ConcreteCoroutineView<'x> {
+    /// See [`Constant::DefCoroutine`].
+    Def(DefCoroutineView<'x>),
+
+    /// See [`Constant::ClosureCoroutine`].
+    Closure(ClosureCoroutineView<'x>),
+}
+
+impl<'x> From<ConcreteCoroutineView<'x>> for CoroutineView<'x> {
+    fn from(view: ConcreteCoroutineView<'x>) -> Self {
+        match view {
+            ConcreteCoroutineView::Def(coroutine) => Self::Def(coroutine),
+            ConcreteCoroutineView::Closure(coroutine) => Self::Closure(coroutine),
+        }
+    }
+}
+
+impl ConcreteCoroutineView<'_> {
+    /// See [`CoroutineView::signature_id`].
+    pub async fn signature_id(&self, engine: &TrackedEngine) -> GlobalSymbolID {
+        CoroutineView::from(*self).signature_id(engine).await
+    }
+
+    /// See [`CoroutineView::create_subst`].
+    pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
+        CoroutineView::from(*self).create_subst(engine).await
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CoroutineDropInstanceView<'x> {
     coroutine: &'x Interned<Ty>,
