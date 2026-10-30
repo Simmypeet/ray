@@ -1,12 +1,7 @@
 use rayc_ir::ir_expr::{IRExprID, closure::Closure};
-use rayc_mono_ir::{
-    function::LocalID,
-    operand::{Constant, Operand},
-    rvalue::{AddressOf, Cast, Rvalue},
-    ty::{AggregateType, MonoType, PointerMutability},
-};
+use rayc_mono_ir::rvalue::Rvalue;
 
-use crate::{context::EnvironmentAbi, function_lowering::FunctionLowering};
+use crate::function_lowering::FunctionLowering;
 
 impl FunctionLowering<'_> {
     pub(super) fn lower_closure(&mut self, closure: &Closure, expression_id: IRExprID) {
