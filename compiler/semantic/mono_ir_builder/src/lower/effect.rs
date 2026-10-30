@@ -3,91 +3,73 @@ use std::collections::BTreeMap;
 use rayc_ir::ir_expr::{IRExprID, perform::Perform, run_with::RunWith};
 use rayc_mono_ir::{
     MonoEffectInstance,
-    function::{Local, LocalID, LocalKind},
+    function::LocalID,
     instance::FunctionReference,
     operand::Operand,
-    place::{FieldIndex, Place},
+    place::FieldIndex,
     rvalue::{AddressOf, OperationHandlerSlot, Rvalue},
-    ty::PointerMutability,
+    ty::{AggregateType, EffectHandler, MonoType, PointerMutability},
 };
 use rayc_symbol::GlobalSymbolID;
 
-use crate::{builder::Builder, context::Context};
+use crate::function_lowering::FunctionLowering;
 
-impl Builder<'_> {
-    pub(super) async fn lower_perform(
-        &mut self,
-        context: &Context,
-        perform: &Perform,
-        expression_id: IRExprID,
-    ) {
-        let instance =
-            context.instantiate_effect(perform.effect_id(), perform.substitution()).await;
-        let handler = self.handler_place(&instance).dereference();
+impl FunctionLowering<'_> {
+    pub(super) async fn lower_perform(&mut self, perform: &Perform, expression_id: IRExprID) {
+        let instance = self.instantiate_effect(perform.effect_id(), perform.substitution()).await;
+        let handler_pointer = self.handler_place(&instance);
+        let handler = self.project(&handler_pointer).dereference();
+        let projector = self.project(&handler);
 
         // access the environment first
-        let mut arguments = vec![Operand::Copy(
-            handler.clone().project_operation_record_environment(perform.operation_id()),
-        )];
+        let mut arguments =
+            vec![Operand::Copy(projector.operation_record_environment(perform.operation_id()))];
         arguments
             .extend(perform.arguments().iter().map(|argument| self.expression_operand(*argument)));
 
-        let destination = self.expression_place(expression_id);
-        let callee = Operand::Copy(
-            handler.project_operation_record_function_pointer(perform.operation_id()),
-        );
+        let callee =
+            Operand::Copy(projector.operation_record_function_pointer(perform.operation_id()));
 
-        self.push_call_with_destination(destination, callee, arguments);
+        self.call(Some(self.expression_place(expression_id)), callee, arguments);
     }
 
-    pub(super) async fn lower_run_with(
-        &mut self,
-        context: &Context,
-        run_with: &RunWith,
-        expression_id: IRExprID,
-    ) {
-        let instance =
-            context.instantiate_effect(run_with.effect_id(), run_with.substitution()).await;
-        let (handler_pointer, handler_environment) =
-            self.lower_effect_handler_pointer(context, run_with, instance.clone());
+    pub(super) async fn lower_run_with(&mut self, run_with: &RunWith, expression_id: IRExprID) {
+        // Its nested functions live in the fragment of the owning definition,
+        // which a coroutine's fragment cannot refer to yet.
+        assert!(!self.is_coroutine(), "`run ... with` in a coroutine is not lowered to MonoIR yet");
 
-        let body_abi = context.function_abi(run_with.body().function_id());
-        let body_environment = context.function_environment_abi(run_with.body().function_id());
-        let mut arguments = vec![self.emit_opaque_environment_pointer(
-            context,
-            run_with.body().captures(),
-            body_environment,
-        )];
+        let instance = self.instantiate_effect(run_with.effect_id(), run_with.substitution()).await;
+        let (handler_pointer, handler_environment) =
+            self.lower_effect_handler_pointer(run_with, instance.clone());
+
+        let body_id = run_with.body().function_id();
+        let body_abi = self.function_abi(body_id);
+        let body_environment = self.function_environment_abi(body_id);
+        let mut arguments = vec![
+            self.emit_opaque_environment_pointer(run_with.body().captures(), body_environment),
+        ];
 
         for effect in body_abi.effects() {
             if effect == &instance {
-                arguments.push(Operand::Copy(Place::new(handler_pointer)));
+                arguments.push(Operand::Copy(self.place(handler_pointer)));
             } else {
-                arguments.push(self.handler_operand(effect));
+                arguments.push(self.get_effect_instance_handler_operand(effect));
             }
         }
 
-        let destination = self.expression_place(expression_id);
-        let callee = Operand::Function(FunctionReference::Local(
-            context.target_function_id(run_with.body().function_id()),
-        ));
-        self.push_call_with_destination(destination, callee, arguments);
+        let callee = Operand::Function(FunctionReference::Local(self.target_function_id(body_id)));
+        self.call(Some(self.expression_place(expression_id)), callee, arguments);
 
         // The handlers only borrow their shared captures, so they are dropped
         // once the handled body has returned.
         if let Some(environment) = handler_environment {
-            self.drop_handler_captures(context, run_with, environment).await;
+            self.drop_handler_captures(run_with, environment).await;
         }
     }
 
     /// Drops the captures stored in a handler environment, in reverse order,
     /// with the dictionaries memory analysis selected for them.
-    async fn drop_handler_captures(
-        &mut self,
-        context: &Context,
-        run_with: &RunWith,
-        environment: LocalID,
-    ) {
+    async fn drop_handler_captures(&mut self, run_with: &RunWith, environment: LocalID) {
         let drops = run_with.handler_capture_drops();
         assert_eq!(
             drops.len(),
@@ -97,48 +79,46 @@ impl Builder<'_> {
 
         // `Drop.drop` returns unit, which is itself unused, so every call
         // writes to one scratch temporary.
-        let resolver = context.resolver();
-        let unit = resolver.unit_type().await;
-        let destination = Place::new(self.insert_local(Local::new(unit, LocalKind::Temporary)));
+        let destination = self.scratch_unit();
 
         // The captures come first in the environment, followed by any
         // captured effect handlers, which need no drop.
+        let environment = self.place(environment);
         for (index, drop_instance) in drops.iter().enumerate().rev() {
-            let capture = Place::new(environment)
-                .project_environment_field(FieldIndex::new(index.try_into().unwrap()));
-            self.lower_drop(resolver, capture, drop_instance, destination.clone()).await;
+            let capture =
+                self.project(&environment).environment_field(FieldIndex::from_usize(index));
+            self.lower_drop(capture, drop_instance, destination.clone()).await;
         }
     }
 
-    pub(super) fn lower_effect_handler_pointer(
+    fn lower_effect_handler_pointer(
         &mut self,
-        context: &Context,
         run_with: &RunWith,
         instance: MonoEffectInstance,
     ) -> (LocalID, Option<LocalID>) {
-        let handler_type = context.intern_effect_instance(instance.clone());
-        let handler_local =
-            self.insert_local(Local::new(handler_type.clone(), LocalKind::Temporary));
-        let (slots, environment) = self.lower_handler_slot(context, run_with);
+        let engine = self.engine();
+        let handler_type = MonoType::new_aggregate(
+            AggregateType::EffectHandler(EffectHandler::new(instance.clone())),
+            engine,
+        );
+        let handler = self.temporary(handler_type.clone());
+        let (slots, environment) = self.lower_handler_slot(run_with);
+        self.assign(handler.clone(), Rvalue::new_effect_handler(instance, slots));
 
-        self.assign(Place::new(handler_local), Rvalue::new_effect_handler(instance, slots));
-
-        let handler_pointer_type = context.create_pointer(handler_type, PointerMutability::Const);
-        let handler_pointer =
-            self.insert_local(Local::new(handler_pointer_type, LocalKind::Temporary));
+        let pointer_type = MonoType::new_pointer(handler_type, PointerMutability::Const, engine);
+        let pointer_local = self.temporary_local(pointer_type);
         self.assign(
-            Place::new(handler_pointer),
-            Rvalue::AddressOf(AddressOf::new(Place::new(handler_local), PointerMutability::Const)),
+            self.place(pointer_local),
+            Rvalue::AddressOf(AddressOf::new(handler, PointerMutability::Const)),
         );
 
-        (handler_pointer, environment)
+        (pointer_local, environment)
     }
 
     /// Builds the operation slots of a handler record, and returns them with
     /// the local of the environment the handlers share, if it has captures.
-    pub(super) fn lower_handler_slot(
+    fn lower_handler_slot(
         &mut self,
-        context: &Context,
         run_with: &RunWith,
     ) -> (BTreeMap<GlobalSymbolID, OperationHandlerSlot>, Option<LocalID>) {
         let mut slots = BTreeMap::new();
@@ -149,14 +129,14 @@ impl Builder<'_> {
 
         // Construct the environment exactly once from the handler group's
         // arena-owned ABI.
-        let environment_abi = context.capture_environment_abi(capture_map_id);
+        let environment_abi = self.capture_environment_abi(capture_map_id);
         let (environment, shared_environment) =
-            self.emit_environment(context, run_with.handler_captures(), environment_abi);
+            self.emit_environment(run_with.handler_captures(), environment_abi);
 
         for handler in run_with.handlers() {
-            context.assert_function_uses_capture_environment(handler.function_id(), capture_map_id);
+            self.assert_function_uses_capture_environment(handler.function_id(), capture_map_id);
             let fn_ptr = Operand::Function(FunctionReference::Local(
-                context.target_function_id(handler.function_id()),
+                self.target_function_id(handler.function_id()),
             ));
 
             assert!(

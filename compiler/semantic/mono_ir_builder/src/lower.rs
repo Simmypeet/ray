@@ -8,5 +8,6 @@ mod closure;
 mod coroutine;
 mod drop;
 mod effect;
+mod environment;
 mod expression;
 mod function;
