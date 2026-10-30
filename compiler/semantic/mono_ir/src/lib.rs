@@ -3,12 +3,13 @@
 //! A [`MonoIR`] is deliberately scoped to one concrete source-definition
 //! instance. It owns that definition's root function and all nested functions
 //! produced from its closures, thunks, and operation handlers. A fragment can
-//! instead hold a compiler-generated nominal `Drop.drop` body. Calls to other
-//! fragments retain [`MonoFragmentInstance`] keys so a future incremental
-//! orchestrator can request and reuse their independently cached fragments.
+//! instead hold a compiler-generated nominal `Drop.drop` body or the
+//! `coroutine_resume` function of a coroutine. Calls to other fragments retain
+//! [`MonoFragmentInstance`] keys so a future incremental orchestrator can
+//! request and reuse their independently cached fragments.
 //!
-//! This crate models the IR and exposes the cached query for concrete handler
-//! layouts. Definition lowering lives in `rayc_mono_ir_builder`.
+//! This crate models the IR and exposes the cached queries for the layouts of
+//! concrete aggregates. Definition lowering lives in `rayc_mono_ir_builder`.
 
 use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_arena::Arena;
@@ -26,6 +27,7 @@ pub mod cfg;
 pub mod function;
 pub mod instance;
 pub mod instruction;
+pub mod layout;
 pub mod operand;
 pub mod place;
 pub mod rvalue;
@@ -33,8 +35,8 @@ pub mod signature;
 pub mod ty;
 
 pub use instance::{
-    MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoFragmentInstance,
-    MonoGeneratedAdtDropInstance, MonoStructInstance,
+    MonoClosureInstance, MonoCoroutineInstance, MonoDefInstance, MonoEffectInstance,
+    MonoFragmentInstance, MonoGeneratedAdtDropInstance, MonoStructInstance,
 };
 
 /// The independently cacheable `MonoIR` fragment for one concrete definition
@@ -55,7 +57,7 @@ impl MonoIR {
     ) -> Self {
         let instance = instance.into();
         let mut functions = Arena::new();
-        let root = functions.insert(MonoFunction::new(MonoFunctionKind::Def, root_signature));
+        let root = functions.insert(MonoFunction::new(instance.root_kind(), root_signature));
         Self { instance, functions, root, closures: FxHashMap::default() }
     }
 
@@ -78,7 +80,9 @@ impl MonoIR {
     pub fn closure_instance(&self, function: MonoFunctionID) -> Option<MonoClosureInstance> {
         let owner = match &self.instance {
             MonoFragmentInstance::Definition(owner) => owner,
-            MonoFragmentInstance::NominalDrop(_) => return None,
+            MonoFragmentInstance::NominalDrop(_) | MonoFragmentInstance::CoroutineResume(_) => {
+                return None;
+            }
         };
         self.closures.iter().find_map(|(closure, id)| {
             (*id == function).then(|| MonoClosureInstance::new(owner.clone(), *closure))
