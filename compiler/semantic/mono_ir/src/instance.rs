@@ -7,12 +7,13 @@ use rayc_type::{
     ty::{
         Ty,
         application::{
-            ClosureID, ClosureView, GeneratedAdtDropInstanceView, View as ApplicationView,
+            ClosureID, ClosureView, ConcreteCoroutineView, GeneratedAdtDropInstanceView,
+            View as ApplicationView,
         },
     },
 };
 
-use crate::function::MonoFunctionID;
+use crate::function::{MonoFunctionID, MonoFunctionKind};
 
 /// Identifies one concrete instantiation of a source definition.
 ///
@@ -104,6 +105,8 @@ pub enum FunctionReference {
     Closure(MonoClosureInstance),
     /// The root function of a compiler-generated nominal Drop fragment.
     NominalDrop(MonoGeneratedAdtDropInstance),
+    /// The `coroutine_resume` function of a coroutine fragment.
+    CoroutineResume(MonoCoroutineInstance),
 }
 
 /// Identifies the compiler-generated `Drop.drop` body selected by one concrete
@@ -152,6 +155,51 @@ impl MonoGeneratedAdtDropInstance {
     }
 }
 
+/// Identifies one concrete coroutine: the suspended form of a definition or a
+/// closure.
+///
+/// The key is the coroutine type itself. It alone tells the suspended function
+/// and its signature, which a closure's owner and local ID would not.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct MonoCoroutineInstance {
+    coroutine: Interned<Ty>,
+}
+
+impl MonoCoroutineInstance {
+    /// Wraps a concrete coroutine type. The type is normalized, even when the
+    /// caller already did so, and its lifetimes are erased. `solver` is shared
+    /// so callers can reuse its state.
+    pub async fn new(coroutine: &Interned<Ty>, solver: &Solver) -> Self {
+        let coroutine = solver.normalize(coroutine).await;
+        let coroutine = Ty::erase_lifetimes(&coroutine, solver.engine()).await;
+
+        assert!(
+            coroutine.recursive_iter().all(|ty| match ty {
+                Ty::Application(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => true,
+                Ty::PolyVar(_) | Ty::Inference(_) | Ty::SelfInstance(_) => false,
+            }),
+            "coroutine types must be concrete: {coroutine:?}"
+        );
+        assert!(
+            coroutine.as_concrete_coroutine_view().is_some(),
+            "a coroutine instance must suspend a known function: {coroutine:?}"
+        );
+
+        Self { coroutine }
+    }
+
+    /// The coroutine type, whose suspended function is known once it is
+    /// concrete.
+    #[must_use]
+    pub fn view(&self) -> ConcreteCoroutineView<'_> {
+        self.coroutine
+            .as_concrete_coroutine_view()
+            .expect("a coroutine instance must suspend a known function")
+    }
+}
+
 /// Identifies one independently lowered `MonoIR` fragment.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
@@ -161,6 +209,19 @@ pub enum MonoFragmentInstance {
     Definition(MonoDefInstance),
     /// A compiler-generated structural `Drop.drop` for a nominal type.
     NominalDrop(MonoGeneratedAdtDropInstance),
+    /// The `coroutine_resume` function of a coroutine.
+    CoroutineResume(MonoCoroutineInstance),
+}
+
+impl MonoFragmentInstance {
+    /// The kind of the function at the root of this fragment.
+    #[must_use]
+    pub const fn root_kind(&self) -> MonoFunctionKind {
+        match self {
+            Self::Definition(_) | Self::NominalDrop(_) => MonoFunctionKind::Def,
+            Self::CoroutineResume(_) => MonoFunctionKind::CoroutineResume,
+        }
+    }
 }
 
 impl From<MonoDefInstance> for MonoFragmentInstance {
@@ -169,6 +230,10 @@ impl From<MonoDefInstance> for MonoFragmentInstance {
 
 impl From<MonoGeneratedAdtDropInstance> for MonoFragmentInstance {
     fn from(instance: MonoGeneratedAdtDropInstance) -> Self { Self::NominalDrop(instance) }
+}
+
+impl From<MonoCoroutineInstance> for MonoFragmentInstance {
+    fn from(instance: MonoCoroutineInstance) -> Self { Self::CoroutineResume(instance) }
 }
 
 /// A source closure in one concrete owner specialization.
