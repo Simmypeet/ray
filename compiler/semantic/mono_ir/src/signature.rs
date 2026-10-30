@@ -21,8 +21,11 @@ use rayc_symbol::{
 use rayc_type::signature::{get_effect_row, get_return_type};
 
 use crate::{
-    MonoDefInstance, MonoEffectInstance,
-    ty::{FunctionSignature, MonoType, ReturnType, lower_effects, lower_type},
+    MonoCoroutineInstance, MonoDefInstance, MonoEffectInstance,
+    ty::{
+        AggregateType, CoroutineProgress, CoroutineResume, EffectRow, FunctionSignature, MonoType,
+        PointerMutability, ReturnType, lower_effects, lower_type,
+    },
 };
 
 /// The calling convention of one concrete definition instance.
@@ -153,6 +156,74 @@ async fn def_signature_executor(
     };
     engine.intern(DefSignature { signature, effects })
 }
+
+/// The interface of a concrete coroutine, derived from the signature of the
+/// function it suspends.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
+pub struct CoroutineSignature {
+    row: EffectRow,
+    progress: CoroutineProgress,
+    resume_signature: FunctionSignature,
+}
+
+impl CoroutineSignature {
+    /// The effects the coroutine may perform.
+    #[must_use]
+    pub const fn row(&self) -> &EffectRow { &self.row }
+
+    /// What resuming the coroutine gives.
+    #[must_use]
+    pub const fn progress(&self) -> &CoroutineProgress { &self.progress }
+
+    /// The signature of `coroutine_resume`.
+    #[must_use]
+    pub const fn resume_signature(&self) -> &FunctionSignature { &self.resume_signature }
+}
+
+/// Derives the interface of a concrete coroutine.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
+#[value(Interned<CoroutineSignature>)]
+#[extend(name = get_coroutine_signature, by_val)]
+pub struct CoroutineSignatureKey {
+    /// The coroutine whose interface is requested.
+    pub instance: MonoCoroutineInstance,
+}
+
+#[executor(config = Config)]
+async fn coroutine_signature_executor(
+    key: &CoroutineSignatureKey,
+    engine: &TrackedEngine,
+) -> Interned<CoroutineSignature> {
+    let solver = Solver::without_givens(engine.clone()).await;
+    let view = key.instance.view();
+    let signature_id = view.signature_id(engine).await;
+    let substitution = view.create_subst(engine).await;
+
+    // A closure runs the signature of `core.Def.call`, whose return type and
+    // effect are projections that its dictionary tells.
+    let row =
+        EffectRow::new(&solver, &engine.get_effect_row(signature_id).await, &substitution).await;
+    let return_type =
+        lower_type(&solver, &engine.get_return_type(signature_id).await, &substitution).await;
+    let progress = CoroutineProgress::new(row.clone(), return_type);
+
+    // `coroutine_resume(frame, args)` returns the progress.
+    let frame =
+        engine.intern(MonoType::Aggregate(AggregateType::CoroutineFrame(key.instance.clone())));
+    let frame = MonoType::new_pointer(frame, PointerMutability::Mut, engine);
+    let args = engine.intern(MonoType::Aggregate(AggregateType::CoroutineResume(
+        CoroutineResume::new(row.clone()),
+    )));
+    let progress_type =
+        engine.intern(MonoType::Aggregate(AggregateType::CoroutineProgress(progress.clone())));
+    let resume_signature = MonoType::new_function_signature([frame, args], progress_type, engine);
+
+    engine.intern(CoroutineSignature { row, progress, resume_signature })
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static COROUTINE_SIGNATURE_EXECUTOR: Registration<Config> =
+    Registration::new::<CoroutineSignatureKey, CoroutineSignatureExecutor>();
 
 #[distributed_slice(RAY_PROGRAM)]
 static DEF_SIGNATURE_EXECUTOR: Registration<Config> =
