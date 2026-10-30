@@ -17,6 +17,8 @@ pub enum MonoFunctionKind {
     Closure,
     Thunk,
     OperationHandler,
+    /// The state machine that runs a coroutine up to its next suspension.
+    CoroutineResume,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
