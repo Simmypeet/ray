@@ -138,6 +138,12 @@ impl IRFunctionMap {
         self.get_function(function_id)
     }
 
+    /// Returns whether `function_id` is the body of a source closure.
+    #[must_use]
+    pub fn is_closure_function(&self, function_id: IRFunctionID) -> bool {
+        self.closures.values().any(|function| *function == function_id)
+    }
+
     /// Iterates over nominal closure identities and their lowered functions.
     #[must_use]
     pub fn closures(&self) -> impl ExactSizeIterator<Item = (ClosureID, IRFunctionID)> {

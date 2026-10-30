@@ -602,7 +602,7 @@ pub async fn nominal_environment(
 
 /// Plans the concrete nominal body call, including the inline environment and
 /// handlers.
-pub async fn nominal_signature(
+pub async fn closure_signature(
     solver: &Solver,
     closure: rayc_type::ty::application::ClosureView<'_>,
 ) -> (FunctionSignature, Vec<MonoEffectInstance>) {
@@ -614,12 +614,12 @@ pub async fn nominal_signature(
     }
     let effects = lower_effects(solver, closure.effect_row(), &Subst::new_empty()).await;
     let result = lower_type(solver, closure.return_type(), &Subst::new_empty()).await;
-    (nominal_body_signature(engine, environment, parameters, result, &effects), effects)
+    (closure_body_signature(engine, environment, parameters, result, &effects), effects)
 }
 
 /// Builds the by-value nominal ABI from concrete storage and source parameters.
 #[must_use]
-pub fn nominal_body_signature(
+pub fn closure_body_signature(
     engine: &TrackedEngine,
     environment: Environment,
     parameters: impl IntoIterator<Item = Interned<MonoType>>,
