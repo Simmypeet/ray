@@ -1,4 +1,5 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use rayc_ir::ir_expr::perform::Perform;
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
@@ -85,6 +86,11 @@ impl MonoEffectInstance {
     #[must_use]
     pub const fn new(effect_id: GlobalSymbolID, substitution: Subst) -> Self {
         Self { effect_id, substitution }
+    }
+
+    #[must_use]
+    pub fn of_perform(perform: &Perform) -> Self {
+        Self { effect_id: perform.effect_id(), substitution: perform.substitution().clone() }
     }
 
     #[must_use]
