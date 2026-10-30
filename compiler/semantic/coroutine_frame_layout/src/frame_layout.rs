@@ -10,7 +10,7 @@ use rayc_type::subst::Subst;
 
 use crate::{
     candidate_index::CandidateIndex, layout_context::LayoutContext, savable::Savable,
-    suspension_point::SuspensionPointID,
+    storage_conflict::StorageConflicts, suspension_point::SuspensionPointID,
 };
 
 /// Specifies where a savable value is placed in a coroutine frame.
@@ -77,8 +77,43 @@ impl FrameLayout {
         let layout_context =
             LayoutContext::new(subst, engine, def_id, local_ir_function_id, &ir_function_map).await;
 
-        // TODO: Has to do conflict resolution and upgrade the placement
-        layout_context.compute_initial_frame_layout(solver).await
+        // place every value as if no two variants overlapped
+        let mut layout = layout_context.compute_initial_frame_layout(solver).await;
+
+        // then move to the prefix the values that would overwrite a value of
+        // another variant still in use
+        let conflicts = layout_context
+            .storage_conflicts(layout.candidate_index(), |point| layout.suspends_at(point));
+        layout.promote_conflicts(&conflicts);
+
+        layout
+    }
+
+    /// Moves to the prefix the candidates that `conflicts` chooses, so that
+    /// no two values of different variants that need storage at a common
+    /// point are left to share memory.
+    fn promote_conflicts(&mut self, conflicts: &StorageConflicts) {
+        // collected first: the promotions read the placements that are
+        // written below
+        let promoted = conflicts
+            .promotions(|candidate| {
+                self.placements[&candidate]
+                    .suspension_point()
+                    .expect("a candidate is placed in exactly one suspension variant")
+            })
+            .collect::<Vec<_>>();
+
+        for savable in promoted {
+            self.placements.insert(savable, Placement::Prefix);
+        }
+    }
+
+    /// Returns whether the function still suspends at `suspension_point` in
+    /// this instance, which gives it a variant of its own.
+    #[must_use]
+    pub fn suspends_at(&self, suspension_point: SuspensionPointID) -> bool {
+        self.suspension_locals
+            .contains_key(&SuspensionLocalPlacement::SuspensionLocal(suspension_point))
     }
 
     /// Numbers the values placed in exactly one suspension variant: the ones

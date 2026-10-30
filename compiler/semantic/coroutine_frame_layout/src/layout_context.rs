@@ -9,12 +9,13 @@ use rayc_ir::{
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
+use rayc_transitive_closure::BitSet;
 use rayc_type::{
     subst::{Subst, Substitutable},
     ty::Ty,
 };
 
-use crate::savable::Savable;
+use crate::{candidate_index::CandidateIndex, savable::Savable};
 
 /// Stores the state required to compute the coroutine frame layout
 #[derive(Debug)]
@@ -121,5 +122,62 @@ impl<'a> LayoutContext<'a> {
         let saved_borrowed_locals = borrowed_locals.iter().map(Savable::Local);
 
         saved_locals.chain(saved_exprs).chain(saved_borrowed_locals)
+    }
+
+    /// Returns, for each point of `block_id` in order, the candidates of
+    /// `index` live just before it: locals and expression values, use-live or
+    /// drop-live. The last entry is the terminator's point.
+    pub(crate) fn live_candidates_before(
+        &self,
+        index: &CandidateIndex,
+        block_id: BlockID,
+    ) -> Vec<BitSet> {
+        let points = self.ir_function.block_instructions(block_id).len() + 1;
+        let mut before = vec![index.empty_set(); points];
+
+        self.local_liveness.for_each_point_rev(self.ir_function, block_id, |point, live| {
+            index.extend_set(&mut before[point.instruction_idx()], live.live().map(Savable::Local));
+        });
+        self.expr_liveness.for_each_point_rev(self.ir_function, block_id, |point, live| {
+            index.extend_set(
+                &mut before[point.instruction_idx()],
+                live.live().map(Savable::Expression),
+            );
+        });
+
+        before
+    }
+
+    /// Returns the candidates of `index` live at the exit of `block_id`, on
+    /// some edge out of it.
+    pub(crate) fn live_candidates_at_exit(
+        &self,
+        index: &CandidateIndex,
+        block_id: BlockID,
+    ) -> BitSet {
+        let traversed = "traversed blocks are reachable";
+        let locals = self.local_liveness.block_exit(block_id).expect(traversed).live();
+        let exprs = self.expr_liveness.block_exit(block_id).expect(traversed).live();
+
+        index.set_of(locals.map(Savable::Local).chain(exprs.map(Savable::Expression)))
+    }
+
+    /// Returns, for each point of `block_id` in order, the candidates of
+    /// `index` that may be borrowed just before it. The last entry is the
+    /// terminator's point; a terminator borrows nothing, so it is also the
+    /// exit of the block.
+    pub(crate) fn borrowed_candidates_before(
+        &self,
+        index: &CandidateIndex,
+        block_id: BlockID,
+    ) -> Vec<BitSet> {
+        let points = self.ir_function.block_instructions(block_id).len() + 1;
+        let mut before = Vec::with_capacity(points);
+
+        self.maybe_borrowed_locals.for_each_point(self.ir_function, block_id, |_, borrowed| {
+            before.push(index.set_of(borrowed.iter().map(Savable::Local)));
+        });
+
+        before
     }
 }
