@@ -1,0 +1,35 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def big() -> int32:
+    return 1
+
+
+def other() -> int32:
+    return 2
+
+
+def third() -> int32:
+    return 3
+
+
+def take(value: int32) -> int32:
+    return value
+
+
+# The main plan's example. `a` is only live on the `then` path and `b` only on
+# the `else` path, so no point needs both: they keep their variants and share
+# memory. `n` is held at all three suspensions and goes to the prefix.
+def branches(cond: bool, n: int32) -> int32 \ {Yield[int32]}:
+    if cond:
+        let a = big()
+        Yield.yield(1)
+        take(a)
+    else:
+        let b = other()
+        Yield.yield(2)
+        take(b)
+
+    Yield.yield(3)
+    return n

@@ -1,0 +1,36 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def big() -> int32:
+    return 1
+
+
+def other() -> int32:
+    return 2
+
+
+def third() -> int32:
+    return 3
+
+
+def take(value: int32) -> int32:
+    return value
+
+
+# `a` conflicts with `b` on one branch and with `c` on the other, while `b`
+# and `c` never meet. Promoting `a`, the value with the most conflicts,
+# resolves both pairs, so `b` and `c` keep their variants.
+def two_pairs(x: bool) -> int32 \ {Yield[int32]}:
+    let a = big()
+    Yield.yield(0)
+    if x:
+        let b = other()
+        take(a)
+        Yield.yield(1)
+        return b
+    else:
+        let c = third()
+        take(a)
+        Yield.yield(2)
+        return c

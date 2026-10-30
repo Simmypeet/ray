@@ -20,3 +20,16 @@ qbice.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+rayc_driver.path = "../../driver"
+rayc_target.path = "../../base/target"
+rayc_lexical.path = "../../syntax/lexical"
+insta = { workspace = true }
+tokio = { workspace = true }
+test-generator = { workspace = true }
+stacker = { workspace = true }
+
+[[test]]
+name = "frame_layout_e2e"
+path = "tests/frame_layout/mod.rs"

@@ -1,0 +1,17 @@
+---
+source: compiler/semantic/coroutine_frame_layout/tests/frame_layout/mod.rs
+expression: snapshot
+---
+main.g:
+  prefix:
+  start:
+  suspended at 22:5 `Yield.yield(0)`:
+
+main.result_and_awaitee:
+  prefix:
+  start:
+  suspended at 35:17 `g()`:
+    35:17 `g()` (awaitee)
+  suspended at 35:22 `g()`:
+    35:17 `g()` (expression)
+    35:22 `g()` (awaitee)

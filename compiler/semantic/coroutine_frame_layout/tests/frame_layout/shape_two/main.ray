@@ -1,0 +1,32 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def big() -> int32:
+    return 1
+
+
+def other() -> int32:
+    return 2
+
+
+def third() -> int32:
+    return 3
+
+
+def take(value: int32) -> int32:
+    return value
+
+
+# Shape 2: the suspensions are on different branches, so neither comes before
+# the other, yet `a` and `b` are both live right after `let b`. The tie goes
+# to the smaller value, which moves to the prefix.
+def branches(cond: bool) -> int32 \ {Yield[int32]}:
+    let a = big()
+    let b = other()
+    if cond:
+        Yield.yield(1)
+        return a
+    else:
+        Yield.yield(2)
+        return b

@@ -1908,15 +1908,22 @@ name = "rayc_coroutine_frame_layout"
 version = "0.1.0-beta.2"
 dependencies = [
  "derive_more",
+ "insta",
  "qbice",
+ "rayc_driver",
  "rayc_hash",
  "rayc_ir",
+ "rayc_lexical",
  "rayc_qbice",
  "rayc_semantic_element",
  "rayc_solver",
  "rayc_symbol",
+ "rayc_target",
  "rayc_transitive_closure",
  "rayc_type",
+ "stacker",
+ "test-generator",
+ "tokio",
 ]
 
 [[package]]

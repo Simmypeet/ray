@@ -29,10 +29,8 @@ impl Placement {
     #[must_use]
     pub const fn suspension_point(&self) -> Option<SuspensionPointID> {
         match self {
-            Self::SuspensionLocal(SuspensionLocalPlacement::SuspensionLocal(
-                suspension_point_id,
-            )) => Some(*suspension_point_id),
-            Self::Prefix | Self::SuspensionLocal(SuspensionLocalPlacement::Start) => None,
+            Self::SuspensionLocal(placement) => placement.suspension_point(),
+            Self::Prefix => None,
         }
     }
 }
@@ -44,6 +42,18 @@ pub enum SuspensionLocalPlacement {
     Start,
     /// The value is stored in the coroutine suspension local part.
     SuspensionLocal(SuspensionPointID),
+}
+
+impl SuspensionLocalPlacement {
+    /// Returns the suspension point of this variant, or `None` for the start
+    /// variant.
+    #[must_use]
+    pub const fn suspension_point(&self) -> Option<SuspensionPointID> {
+        match self {
+            Self::SuspensionLocal(suspension_point_id) => Some(*suspension_point_id),
+            Self::Start => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
@@ -106,6 +116,19 @@ impl FrameLayout {
         for savable in promoted {
             self.placements.insert(savable, Placement::Prefix);
         }
+    }
+
+    /// Iterates over every value the frame holds, with where it is placed, in
+    /// no particular order.
+    #[must_use]
+    pub fn placements(&self) -> impl ExactSizeIterator<Item = (Savable, Placement)> + '_ {
+        self.placements.iter().map(|(savable, placement)| (*savable, *placement))
+    }
+
+    /// Iterates over the suspension points where the function still suspends
+    /// in this instance, each of which has a variant, in no particular order.
+    pub fn suspension_points(&self) -> impl Iterator<Item = SuspensionPointID> + '_ {
+        self.suspension_locals.keys().filter_map(SuspensionLocalPlacement::suspension_point)
     }
 
     /// Returns whether the function still suspends at `suspension_point` in
