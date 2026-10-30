@@ -124,8 +124,7 @@ impl SubsetGraph {
         // What the body requires is the closure of its constraints.
         let mut pairs: Vec<_> =
             constraint_edges.iter().map(|&(lesser, edge)| (lesser, edge.greater)).collect();
-        let required = TransitiveClosure::new(pairs.iter().copied(), size, true)
-            .expect("every edge refers to an indexed region");
+        let required = TransitiveClosure::new(pairs.iter().copied(), size, true);
 
         // A universal region also outlives what the environment states.
         for &longer in &universals {
@@ -137,8 +136,7 @@ impl SubsetGraph {
                 }
             }
         }
-        let implied = TransitiveClosure::new(pairs.iter().copied(), size, true)
-            .expect("every edge refers to an indexed region");
+        let implied = TransitiveClosure::new(pairs.iter().copied(), size, true);
 
         // Group the constraints by the region they are out of, for the
         // search that explains an error.
@@ -167,8 +165,7 @@ impl SubsetGraph {
             self.universals
                 .iter()
                 .filter(move |&&universal| {
-                    universal != index
-                        && self.required.has_path(index, universal).expect("both are indexed")
+                    universal != index && self.required.has_path(index, universal)
                 })
                 .map(|&universal| &self.regions[universal])
         })
@@ -224,7 +221,7 @@ impl SubsetGraph {
             None => return false,
         };
 
-        self.implied.has_path(lesser, greater).expect("both are indexed")
+        self.implied.has_path(lesser, greater)
     }
 
     /// Returns the least universal region that the constraints and the

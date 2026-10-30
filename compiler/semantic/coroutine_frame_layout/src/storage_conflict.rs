@@ -12,10 +12,6 @@ use crate::{
     suspension_point::SuspensionPointID,
 };
 
-/// Every set of one index has one bit per candidate, so two of them always
-/// have the same size.
-const SAME_INDEX: &str = "sets of one candidate index have the same size";
-
 /// Which candidates of an instance need storage at the same point of the IR
 /// function.
 ///
@@ -39,7 +35,7 @@ impl StorageConflicts {
             return false;
         };
 
-        a != b && self.rows[a].get(b).expect(SAME_INDEX)
+        a != b && self.rows[a].get(b)
     }
 
     /// Returns the candidates to move to the prefix so that no two candidates
@@ -58,7 +54,7 @@ impl StorageConflicts {
         self.index
             .values()
             .enumerate()
-            .filter(move |(number, _)| promoted.get(*number).expect(SAME_INDEX))
+            .filter(move |(number, _)| promoted.get(*number))
             .map(|(_, value)| value)
     }
 }
@@ -78,11 +74,7 @@ fn promote_conflicts<V: Copy + Eq + Hash>(rows: &[BitSet], variant_of: &[V]) -> 
     // separate fields of it, so they never conflict.
     let mut in_variant = FxHashMap::<V, BitSet>::default();
     for (number, variant) in variant_of.iter().enumerate() {
-        in_variant
-            .entry(*variant)
-            .or_insert_with(|| BitSet::new(candidates))
-            .set(number)
-            .expect(SAME_INDEX);
+        in_variant.entry(*variant).or_insert_with(|| BitSet::new(candidates)).set(number);
     }
 
     // The conflicts that count: each row without its own variant, which also
@@ -92,7 +84,7 @@ fn promote_conflicts<V: Copy + Eq + Hash>(rows: &[BitSet], variant_of: &[V]) -> 
         .zip(variant_of)
         .map(|(row, variant)| {
             let mut others = row.clone();
-            others.difference(&in_variant[variant]).expect(SAME_INDEX);
+            others.difference(&in_variant[variant]);
             others
         })
         .collect::<Vec<_>>();
@@ -105,17 +97,17 @@ fn promote_conflicts<V: Copy + Eq + Hash>(rows: &[BitSet], variant_of: &[V]) -> 
         for y in others_of_x.ones().filter(|&y| y > x) {
             // `x` was promoted by an earlier pair of its row, which resolves
             // the rest of them
-            if promoted.get(x).expect(SAME_INDEX) {
+            if promoted.get(x) {
                 break;
             }
 
             // resolved by an earlier promotion of `y`
-            if promoted.get(y).expect(SAME_INDEX) {
+            if promoted.get(y) {
                 continue;
             }
 
             let loser = if counts[x] >= counts[y] { x } else { y };
-            promoted.set(loser).expect(SAME_INDEX);
+            promoted.set(loser);
         }
     }
 
@@ -143,14 +135,14 @@ impl ConflictRecorder {
         // Every pair of a subset of `recorded` is a pair of `recorded`, so it
         // is already in `rows`. Most points add no candidate to the set of
         // the point after them, so most points stop here.
-        if storage.is_subset(&self.recorded).expect(SAME_INDEX) {
+        if storage.is_subset(&self.recorded) {
             return;
         }
 
         // OR-ing the whole set into the row of each member records every
         // pair of members, in both directions.
         for member in storage.ones() {
-            self.rows[member].or(storage).expect(SAME_INDEX);
+            self.rows[member].or(storage);
         }
 
         self.recorded = storage.clone();
@@ -222,8 +214,8 @@ impl LayoutContext<'_> {
             // what it reads, what it writes and what is live after it, all
             // at once
             let mut storage = after;
-            storage.or(&live[terminator_idx]).expect(SAME_INDEX);
-            storage.or(&borrowed[terminator_idx]).expect(SAME_INDEX);
+            storage.or(&live[terminator_idx]);
+            storage.or(&borrowed[terminator_idx]);
             recorder.record(&storage);
         }
 
@@ -235,7 +227,7 @@ impl LayoutContext<'_> {
 
             let mut storage = index.set_of(Savable::written_by(instruction));
             for set in [&live[idx], &live[idx + 1], &borrowed[idx], &borrowed[idx + 1]] {
-                storage.or(set).expect(SAME_INDEX);
+                storage.or(set);
             }
             recorder.record(&storage);
         }
@@ -263,12 +255,12 @@ impl LayoutContext<'_> {
         recorder: &mut ConflictRecorder,
     ) {
         // resuming, recorded first since the walk goes backwards
-        after.or(borrowed).expect(SAME_INDEX);
+        after.or(borrowed);
         recorder.record(&after);
 
         // suspending
         let mut suspending = before.clone();
-        suspending.or(borrowed).expect(SAME_INDEX);
+        suspending.or(borrowed);
         // NOTE: It's fine to directly add the awaitee without checking whether
         // if the suspension point has an awaitee. It's fine because if it
         // doesn't have an awaitee, then the CandidateIndex will filter it out

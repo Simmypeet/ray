@@ -77,7 +77,7 @@ impl CandidateIndex {
     pub fn extend_set(&self, set: &mut BitSet, values: impl IntoIterator<Item = Savable>) {
         for value in values {
             if let Some(number) = self.number_of(value) {
-                set.set(number).expect("a set of the index has a bit for every candidate");
+                set.set(number);
             }
         }
     }

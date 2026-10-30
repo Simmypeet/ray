@@ -8,11 +8,11 @@ use super::promote_conflicts;
 fn rows(candidates: usize, pairs: &[(usize, usize)]) -> Vec<BitSet> {
     let mut rows = vec![BitSet::new(candidates); candidates];
     for (number, row) in rows.iter_mut().enumerate() {
-        row.set(number).unwrap();
+        row.set(number);
     }
     for &(x, y) in pairs {
-        rows[x].set(y).unwrap();
-        rows[y].set(x).unwrap();
+        rows[x].set(y);
+        rows[y].set(x);
     }
     rows
 }

@@ -105,8 +105,7 @@ impl OutlivesEnvironment {
         let static_outlives_all = (1..size).map(|index| (0, index));
 
         let closure =
-            TransitiveClosure::new(edges.into_iter().chain(static_outlives_all), size, true)
-                .expect("every edge refers to an indexed lifetime");
+            TransitiveClosure::new(edges.into_iter().chain(static_outlives_all), size, true);
 
         Self { lifetimes, closure, type_facts }
     }
@@ -128,7 +127,7 @@ impl OutlivesEnvironment {
         let Some(&less) = self.lifetimes.get(less) else {
             return false;
         };
-        let has_path = |shorter| self.closure.has_path(less, shorter).unwrap_or(false);
+        let has_path = |shorter| self.closure.has_path(less, shorter);
 
         // A lifetime known to outlive `'static` outlives every lifetime, even
         // one that no fact mentions.
