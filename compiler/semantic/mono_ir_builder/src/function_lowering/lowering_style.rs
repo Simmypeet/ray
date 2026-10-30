@@ -205,7 +205,10 @@ impl LoweringStyle {
         self.handlers().expect(NO_HANDLERS).get_place_of_effect_instance(effect)
     }
 
-    pub(crate) fn handler_operand(&self, effect: &MonoEffectInstance) -> Operand {
+    pub(crate) fn get_effect_instance_handler_operand(
+        &self,
+        effect: &MonoEffectInstance,
+    ) -> Operand {
         self.handlers().expect(NO_HANDLERS).get_effect_instance_operand(effect)
     }
 

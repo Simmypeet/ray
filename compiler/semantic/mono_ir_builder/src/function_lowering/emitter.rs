@@ -2,9 +2,10 @@
 
 use qbice::storage::intern::Interned;
 use rayc_mono_ir::{
-    MonoIR,
+    MonoDefInstance, MonoIR,
     cfg::{BlockID, Terminator},
     function::{Local, LocalID, LocalKind, MonoFunctionID},
+    instance::FunctionReference,
     instruction::{Assign, Call, Instruction},
     operand::{Constant, Operand},
     place::{Place, PlaceProjector},
@@ -126,6 +127,32 @@ impl<'a> Emitter<'a> {
         arguments: Vec<Operand>,
     ) {
         self.push_instruction(Instruction::Call(Call::new(destination, callee, arguments)));
+    }
+
+    pub(crate) async fn lower_call_with_args(
+        &mut self,
+        callee: MonoDefInstance,
+        arguments: Vec<Operand>,
+        destination: Place,
+    ) {
+        let callee_signature = self.resolver().def_signature(&callee).await;
+        let is_void = callee_signature.signature().return_type().is_void();
+        let callee = Operand::Function(FunctionReference::Global(callee));
+
+        // if the function has `void` return type, which is mostly from `extern
+        // def`, we don't need to assign the return value to the
+        // destination place
+        let call_destination = (!is_void).then(|| destination.clone());
+
+        self.call(call_destination, callee, arguments);
+
+        // if we are calling a `void`  function, we need to assign "fake" unit
+        // value to the destination place. (Actually, we don't need to
+        // assign anything, since unit type has only one value, and we
+        // can just use uninitialized value)
+        if is_void {
+            self.store_constant(destination, Constant::Unit);
+        }
     }
 
     pub(crate) fn set_terminator(&mut self, terminator: Terminator) {

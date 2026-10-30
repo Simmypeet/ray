@@ -8,6 +8,7 @@ use rayc_ir::{
 };
 use rayc_mono_ir::{
     MonoEffectInstance,
+    place::FieldIndex,
     ty::{Environment as EnvironmentTy, MonoType},
 };
 
@@ -56,6 +57,12 @@ impl EnvironmentAbi {
 
     pub(crate) fn captured_effects(&self) -> impl ExactSizeIterator<Item = &MonoEffectInstance> {
         self.captured_effects.iter()
+    }
+
+    pub(crate) fn captured_effects_with_field_offset(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (FieldIndex, &MonoEffectInstance)> {
+        self.captured_effects.iter().enumerate().map(|(id, x)| (FieldIndex::from_usize(id), x))
     }
 }
 

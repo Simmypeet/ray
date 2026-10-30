@@ -1,173 +1,38 @@
-use qbice::storage::intern::Interned;
-use rayc_ir::{
-    cfg::{AddressDrop, ExprDiscard},
-    ir_expr::{
-        IRExprID,
-        call::{Call as IRCall, CallTarget},
-    },
+use rayc_ir::ir_expr::{
+    IRExprID,
+    call::{Call as IRCall, CallTarget},
 };
 use rayc_mono_ir::{
     MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoGeneratedAdtDropInstance,
-    function::{Local, LocalKind},
     instance::FunctionReference,
-    instruction::{Call, Instruction},
-    operand::{Constant, Operand},
+    operand::Operand,
     place::{FieldIndex, Place},
-    rvalue::Rvalue,
     ty::{AggregateType, FunctionSignature, MonoType},
 };
-use rayc_type::ty::Ty;
 
 use crate::{
-    builder::Builder,
-    context::Context,
-    resolver::{InstanceCallable, Resolver},
+    function_lowering::{FunctionLowering, emitter::Emitter},
+    resolver::InstanceCallable,
 };
 
-impl Builder<'_> {
-    /// Drops `value` with the implementation selected by `dictionary`. Every
-    /// emitted call writes its unit result to `destination`.
-    pub(crate) async fn lower_drop(
-        &mut self,
-        resolver: &Resolver,
-        value: Place,
-        dictionary: &Interned<Ty>,
-        destination: Place,
-    ) {
-        match resolver.resolve_drop_call(dictionary).await {
-            InstanceCallable::Definition(callee) => {
-                self.lower_global_call(resolver, callee, vec![Operand::Copy(value)], destination)
-                    .await;
-            }
-            InstanceCallable::TupleDrop(element_instances) => {
-                Box::pin(self.lower_tuple_drop(resolver, value, &element_instances, destination))
-                    .await;
-            }
-            InstanceCallable::ClosureDrop(capture_instances) => {
-                Box::pin(self.lower_closure_drop(resolver, value, &capture_instances, destination))
-                    .await;
-            }
-            InstanceCallable::NominalDrop(instance) => {
-                self.lower_nominal_drop_call(instance, vec![Operand::Copy(value)], destination);
-            }
-            InstanceCallable::NoOp => {}
-            InstanceCallable::Closure(_, _, _) => {
-                panic!("a Drop dictionary cannot call a closure")
-            }
-        }
-    }
-
-    /// Drops the unused value of an expression statement with the dictionary
-    /// selected during type checking.
-    pub(super) async fn lower_expr_discard(&mut self, context: &Context, discard: &ExprDiscard) {
-        let resolver = context.resolver();
-
-        // `Drop.drop` returns unit, which is itself unused, so every call
-        // writes to one scratch temporary.
-        let unit = resolver.unit_type().await;
-        let destination = Place::new(self.insert_local(Local::new(unit, LocalKind::Temporary)));
-
-        let value = self.expression_place(discard.expression());
-        self.lower_drop(resolver, value, discard.drop_instance(), destination).await;
-    }
-
-    /// Drops the value held in a place with the dictionary selected by drop
-    /// elaboration. The place is passed to the drop directly, so no
-    /// temporary holds the moved value.
-    pub(super) async fn lower_address_drop(&mut self, context: &Context, drop: &AddressDrop) {
-        let resolver = context.resolver();
-
-        // `Drop.drop` returns unit, which is unused, so every call writes to
-        // one scratch temporary.
-        let unit = resolver.unit_type().await;
-        let destination = Place::new(self.insert_local(Local::new(unit, LocalKind::Temporary)));
-
-        let value = self.lower_address(drop.address());
-        self.lower_drop(resolver, value, drop.drop_instance(), destination).await;
-    }
-
-    /// Expands a built-in tuple `Drop` call into the selected element calls.
-    async fn lower_tuple_drop(
-        &mut self,
-        resolver: &Resolver,
-        tuple: Place,
-        element_instances: &[Interned<Ty>],
-        destination: Place,
-    ) {
-        // Destroy fields in reverse declaration order, matching scope teardown.
-        for (index, element_instance) in element_instances.iter().enumerate().rev() {
-            let field =
-                tuple.clone().project_tuple_field(FieldIndex::new(index.try_into().unwrap()));
-            self.lower_drop(resolver, field, element_instance, destination.clone()).await;
-        }
-    }
-
-    /// Expands a built-in closure `Drop` call into the selected capture calls.
-    async fn lower_closure_drop(
-        &mut self,
-        resolver: &Resolver,
-        closure: Place,
-        capture_instances: &[Interned<Ty>],
-        destination: Place,
-    ) {
-        // A closure value is its inline environment, whose fields are the
-        // captures. Destroy them in reverse order, matching tuple Drop.
-        for (index, capture_instance) in capture_instances.iter().enumerate().rev() {
-            let capture = closure
-                .clone()
-                .project_environment_field(FieldIndex::new(index.try_into().unwrap()));
-            self.lower_drop(resolver, capture, capture_instance, destination.clone()).await;
-        }
-    }
-
+impl Emitter<'_> {
     /// Calls a generated nominal Drop fragment. The fragment itself is
     /// discovered and lowered by the backend worklist.
-    fn lower_nominal_drop_call(
+    pub(crate) fn lower_nominal_drop_call(
         &mut self,
         instance: MonoGeneratedAdtDropInstance,
         arguments: Vec<Operand>,
         destination: Place,
     ) {
         let callee = Operand::Function(FunctionReference::NominalDrop(instance));
-        self.push_instruction(Instruction::Call(Call::new(Some(destination), callee, arguments)));
+        self.call(Some(destination), callee, arguments);
     }
+}
 
-    async fn lower_global_call(
-        &mut self,
-        resolver: &Resolver,
-        callee: MonoDefInstance,
-        mut arguments: Vec<Operand>,
-        destination: Place,
-    ) {
-        let callee_signature = resolver.def_signature(&callee).await;
-
-        // appends additional effect handler arguments to the call
-        for effect in callee_signature.effects() {
-            arguments.push(self.handler_operand(effect));
-        }
-
-        let is_void = callee_signature.signature().return_type().is_void();
-        let callee = Operand::Function(FunctionReference::Global(callee));
-
-        // if the function has `void` return type, which is mostly from `extern
-        // def`, we don't need to assign the return value to the
-        // destination place
-        let call_destination = (!is_void).then(|| destination.clone());
-
-        self.push_instruction(Instruction::Call(Call::new(call_destination, callee, arguments)));
-
-        // if we are calling a `void`  function, we need to assign "fake" unit
-        // value to the destination place. (Actually, we don't need to
-        // assign anything, since unit type has only one value, and we
-        // can just use uninitialized value)
-        if is_void {
-            self.assign(destination, Rvalue::Use(Operand::Constant(Constant::Unit)));
-        }
-    }
-
+impl FunctionLowering<'_> {
     /// Calls a nominal closure with its inline environment and expanded Args
     /// tuple.
-    fn lower_closure_call(
+    fn lower_closure_call_in_callback_style(
         &mut self,
         call: &IRCall,
         instance: MonoClosureInstance,
@@ -180,10 +45,10 @@ impl Builder<'_> {
 
         // The environment type must match
         let environment = self.expression_place(call.arguments()[0]);
-        assert_eq!(self.local_type(environment.local()), &signature.parameter_types()[0]);
+        assert_eq!(self.expression_type(call.arguments()[0]), &signature.parameter_types()[0]);
 
         let tuple = self.expression_place(call.arguments()[1]);
-        let tuple_type = self.local_type(tuple.local()).clone();
+        let tuple_type = self.expression_type(call.arguments()[1]).clone();
         let MonoType::Aggregate(AggregateType::Tuple(fields)) = &*tuple_type else {
             panic!("Def.call arguments must be a tuple")
         };
@@ -195,24 +60,20 @@ impl Builder<'_> {
         for (index, field) in fields.fields().iter().enumerate() {
             assert_eq!(field, &signature.parameter_types()[index + 1]);
             arguments.push(Operand::Copy(
-                tuple.clone().project_tuple_field(FieldIndex::new(index.try_into().unwrap())),
+                self.project(&tuple).tuple_field(FieldIndex::from_usize(index)),
             ));
         }
 
         // Resolve handlers at the call site, outside the capture storage.
-        arguments.extend(effects.iter().map(|effect| self.handler_operand(effect)));
+        arguments
+            .extend(effects.iter().map(|effect| self.get_effect_instance_handler_operand(effect)));
         let callee = Operand::Function(FunctionReference::Closure(instance));
 
-        self.push_instruction(Instruction::Call(Call::new(
-            Some(self.expression_place(expression_id)),
-            callee,
-            arguments,
-        )));
+        self.call(Some(self.expression_place(expression_id)), callee, arguments);
     }
 
-    pub(super) async fn lower_call(
+    pub(super) async fn lower_call_in_callback_style(
         &mut self,
-        context: &Context,
         call: &IRCall,
         expression_id: IRExprID,
     ) {
@@ -222,14 +83,14 @@ impl Builder<'_> {
             .map(|argument| self.expression_operand(*argument))
             .collect::<Vec<_>>();
 
-        let resolver = context.resolver();
+        let resolver = self.resolver();
         let destination = self.expression_place(expression_id);
         match call.target() {
             CallTarget::Direct { function_id, subst } => {
                 let mut substitution = subst.clone();
-                context.apply_owner_substitution(&mut substitution);
-                let callee = context.definition_instance(*function_id, substitution).await;
-                self.lower_global_call(resolver, callee, arguments, destination).await;
+                self.apply_owner_substitution(&mut substitution);
+                let callee = resolver.definition_instance(*function_id, substitution).await;
+                self.lower_direct_call_in_callback_style(callee, arguments, destination).await;
             }
             CallTarget::UnresolvedInstanceAssociated {
                 instance,
@@ -238,40 +99,75 @@ impl Builder<'_> {
             } => {
                 let callee =
                     resolver.resolve_instance_call(instance, *trait_def_id, trait_def_subst).await;
-                match callee {
-                    InstanceCallable::Definition(callee) => {
-                        self.lower_global_call(resolver, callee, arguments, destination).await;
-                    }
-                    InstanceCallable::Closure(instance, signature, effects) => {
-                        self.lower_closure_call(
-                            call,
-                            instance,
-                            &signature,
-                            &effects,
-                            expression_id,
-                        );
-                    }
-                    InstanceCallable::TupleDrop(element_instances) => {
-                        assert_eq!(call.arguments().len(), 1);
-                        let tuple = self.expression_place(call.arguments()[0]);
-                        self.lower_tuple_drop(resolver, tuple, &element_instances, destination)
-                            .await;
-                    }
-                    InstanceCallable::ClosureDrop(capture_instances) => {
-                        assert_eq!(call.arguments().len(), 1);
-                        let closure = self.expression_place(call.arguments()[0]);
-                        self.lower_closure_drop(resolver, closure, &capture_instances, destination)
-                            .await;
-                    }
-                    InstanceCallable::NominalDrop(instance) => {
-                        assert_eq!(call.arguments().len(), 1);
-                        self.lower_nominal_drop_call(instance, arguments, destination);
-                    }
-                    // The arguments have already been evaluated by their own IR
-                    // expressions. A built-in no-op Drop call emits no instruction.
-                    InstanceCallable::NoOp => {}
-                }
+
+                self.lower_instance_call_in_callback_style(
+                    call,
+                    callee,
+                    arguments,
+                    destination,
+                    expression_id,
+                )
+                .await;
             }
         }
+    }
+
+    /// Calls what an instance call resolved to.
+    async fn lower_instance_call_in_callback_style(
+        &mut self,
+        call: &IRCall,
+        callee: InstanceCallable,
+        arguments: Vec<Operand>,
+        destination: Place,
+        expression_id: IRExprID,
+    ) {
+        match callee {
+            InstanceCallable::Definition(callee) => {
+                self.lower_direct_call_in_callback_style(callee, arguments, destination).await;
+            }
+            InstanceCallable::Closure(instance, signature, effects) => {
+                self.lower_closure_call_in_callback_style(
+                    call,
+                    instance,
+                    &signature,
+                    &effects,
+                    expression_id,
+                );
+            }
+            InstanceCallable::TupleDrop(element_instances) => {
+                assert_eq!(call.arguments().len(), 1);
+                let tuple = self.expression_place(call.arguments()[0]);
+                self.lower_tuple_drop(&tuple, &element_instances, destination).await;
+            }
+            InstanceCallable::ClosureDrop(capture_instances) => {
+                assert_eq!(call.arguments().len(), 1);
+                let closure = self.expression_place(call.arguments()[0]);
+                self.lower_closure_drop(&closure, &capture_instances, destination).await;
+            }
+            InstanceCallable::NominalDrop(instance) => {
+                assert_eq!(call.arguments().len(), 1);
+                self.lower_nominal_drop_call(instance, arguments, destination);
+            }
+            // The arguments have already been evaluated by their own IR
+            // expressions. A built-in no-op Drop call emits no instruction.
+            InstanceCallable::NoOp => {}
+        }
+    }
+
+    /// Calls a global definition, passing on this function's handlers.
+    pub(crate) async fn lower_direct_call_in_callback_style(
+        &mut self,
+        callee: MonoDefInstance,
+        mut arguments: Vec<Operand>,
+        destination: Place,
+    ) {
+        let callee_signature = self.resolver().def_signature(&callee).await;
+
+        // appends additional effect handler arguments to the call
+        for effect in callee_signature.effects() {
+            arguments.push(self.get_effect_instance_handler_operand(effect));
+        }
+
+        self.lower_call_with_args(callee, arguments, destination).await;
     }
 }
