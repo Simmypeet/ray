@@ -5,6 +5,7 @@ mod address;
 mod call;
 mod cfg;
 mod closure;
+mod coro;
 mod coroutine;
 mod drop;
 mod effect;
