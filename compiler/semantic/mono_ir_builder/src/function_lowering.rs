@@ -223,7 +223,7 @@ impl FunctionLowering<'_> {
         dictionary: &Interned<Ty>,
         destination: Place,
     ) {
-        self.emit.lower_drop(value, dictionary, destination, self.style.handlers()).await;
+        self.emit.lower_drop(value, dictionary, destination).await;
     }
 
     /// Expands a built-in tuple `Drop` call, passing on this function's
@@ -234,9 +234,7 @@ impl FunctionLowering<'_> {
         element_instances: &[Interned<Ty>],
         destination: Place,
     ) {
-        self.emit
-            .lower_tuple_drop(tuple, element_instances, destination, self.style.handlers())
-            .await;
+        self.emit.lower_tuple_drop(tuple, element_instances, destination).await;
     }
 
     /// Expands a built-in closure `Drop` call, passing on this function's
@@ -247,9 +245,16 @@ impl FunctionLowering<'_> {
         capture_instances: &[Interned<Ty>],
         destination: Place,
     ) {
-        self.emit
-            .lower_closure_drop(closure, capture_instances, destination, self.style.handlers())
-            .await;
+        self.emit.lower_closure_drop(closure, capture_instances, destination).await;
+    }
+
+    pub(crate) async fn lower_call_with_args(
+        &mut self,
+        callee: MonoDefInstance,
+        arguments: Vec<Operand>,
+        destination: Place,
+    ) {
+        self.emit.lower_call_with_args(callee, arguments, destination).await;
     }
 
     /// Calls a generated nominal Drop fragment.
@@ -260,16 +265,6 @@ impl FunctionLowering<'_> {
         destination: Place,
     ) {
         self.emit.lower_nominal_drop_call(instance, arguments, destination);
-    }
-
-    /// Calls a global definition, passing on this function's handlers.
-    pub(crate) async fn lower_global_call(
-        &mut self,
-        callee: MonoDefInstance,
-        arguments: Vec<Operand>,
-        destination: Place,
-    ) {
-        self.emit.lower_global_call(callee, arguments, destination, self.style.handlers()).await;
     }
 
     pub(crate) fn block(&self, block: IRBlockID) -> BlockID { self.map.block(block) }
@@ -315,8 +310,11 @@ impl FunctionLowering<'_> {
         self.style.handler_place(effect)
     }
 
-    pub(crate) fn handler_operand(&self, effect: &MonoEffectInstance) -> Operand {
-        self.style.handler_operand(effect)
+    pub(crate) fn get_effect_instance_handler_operand(
+        &self,
+        effect: &MonoEffectInstance,
+    ) -> Operand {
+        self.style.get_effect_instance_handler_operand(effect)
     }
 
     pub(crate) const fn coroutine_form(&self) -> &CoroutineForm { self.style.coroutine_form() }
