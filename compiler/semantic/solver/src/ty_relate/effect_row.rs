@@ -19,7 +19,7 @@ impl Solver {
     /// `introduced`, such as a call, run where the effect is `ambient`,
     /// without binding any variables.
     ///
-    /// Type checking opens a closed `introduced` row before unifying it with
+    /// Type checking opens a closed `introduced` row when it relates it to
     /// `ambient`, so its labels only have to be a part of those of
     /// `ambient`: each is related to the label it matches, covariantly, and
     /// the labels and the tail of `ambient` that are left stand for the tail
@@ -74,7 +74,7 @@ impl Solver {
         // The tails, and the remainders rewritten onto them, carry the
         // variance of the rows.
         let relate_tails = |lesser: Interned<Ty>, greater: Interned<Ty>| {
-            DerivedConstraint::new_type_application_matching(lesser, greater, variance)
+            DerivedConstraint::new_effect_row_tail_matching(lesser, greater, variance)
         };
 
         match (lesser.tail(), greater.tail()) {

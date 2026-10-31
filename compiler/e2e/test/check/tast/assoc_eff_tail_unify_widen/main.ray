@@ -1,0 +1,21 @@
+pub trait EffWithAssoc[]:
+    pub type Assoc: Effect
+
+
+pub eff A:
+    def a()
+
+
+pub eff B:
+    def b()
+
+
+pub eff C:
+    def c()
+
+
+pub def composeTest(
+    param: def() \ {A | i.Assoc}
+) given (i: EffWithAssoc) \ {A, B, C} where (i.Assoc = {B}):
+    param()
+    C.c()

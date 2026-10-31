@@ -34,6 +34,10 @@ pub struct ConstraintSolver {
     provenance: Provenance,
     constraint_set: ConstraintSet,
     solver: Solver,
+
+    /// Whether the constraints reached the fixed point that defaulting effect
+    /// rows starts from, after which no closed row is opened to be bound.
+    effect_rows_settled: bool,
 }
 
 /// Answers `Copy` queries under the substitution solved so far.
@@ -61,6 +65,7 @@ impl ConstraintSolver {
         Self {
             provenance: Provenance::new(),
             constraint_set: ConstraintSet::new(),
+            effect_rows_settled: false,
             solver: Solver::builder()
                 .engine(engine)
                 .site(site)

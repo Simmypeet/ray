@@ -1,0 +1,68 @@
+eff Ask:
+    def ask() -> int32
+
+
+eff Wide:
+    def wide() -> int32
+
+
+eff Uses[e: Effect]:
+    def uses() -> int32
+
+
+def narrow() -> int32 \ {Uses[{Ask}]}:
+    return Uses[{Ask}].uses()
+
+
+# OK: the label is the same, and the row is only a part of the function's.
+def composes() -> int32 \ {Uses[{Ask}], Wide}:
+    return narrow() + Wide.wide()
+
+
+# ERROR: a row in the argument of a label is a part of that label, so it has to
+# match exactly, even though the label itself is on a row of the function.
+def argumentDiffers() -> int32 \ {Uses[{Ask, Wide}]}:
+    return narrow()
+
+
+def wider() -> int32 \ {Uses[{Ask, Wide}]}:
+    return Uses[{Ask, Wide}].uses()
+
+
+# ERROR: the two labels meet on a row of the function, whose lesser row may be
+# opened, but the rows in their arguments still have to match exactly.
+def argumentsMeetInBody() -> int32 \ {Uses[{Ask, Wide}]}:
+    return narrow() + wider()
+
+
+# ERROR: the same with the labels in the other order.
+def argumentsMeetInBodyOtherOrder() -> int32 \ {Uses[{Ask, Wide}]}:
+    return wider() + narrow()
+
+
+def takesCallback(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> () where (d.Args = (), d.Return = int32, d.Effect = {Ask, Wide}):
+    return ()
+
+
+def askOnly() -> int32 \ {Ask}:
+    return Ask.ask()
+
+
+# OK: only the row of a function can be a part of another.
+def wholeRow() -> int32 \ {Ask, Wide}:
+    return askOnly()
+
+
+# ERROR: a row in the type of a callable is a part of that type, so it is not
+# enough for it to be a part of the required row.
+def callableRowDiffers(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> () where (d.Args = (), d.Return = int32, d.Effect = {Ask}):
+    return takesCallback(callable)
+
+
+# ERROR: `Wide` is not in the signature, which is not opened to make room for it.
+def signatureNotOpened() -> int32 \ {Ask}:
+    return askOnly() + Wide.wide()
+
+
+def main() -> int32:
+    return 0

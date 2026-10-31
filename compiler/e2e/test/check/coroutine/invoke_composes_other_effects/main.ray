@@ -1,0 +1,63 @@
+eff Ask:
+    def ask() -> int32
+
+
+eff Wide:
+    def wide() -> int64
+    def wide2() -> int32
+
+
+# OK: `co.Effect` reduces to a closed row through the `where` clause, which only
+# has to be a part of the effect of the function.
+def composes(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 \ {Ask, Wide} where (co.Return = int32, co.Effect = {Ask}):
+    let total = k(value)
+    let wide = Wide.wide()
+    return total
+
+
+# OK: the same through a callable, after the other effect.
+def composesCallable(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 \ {Ask, Wide} where (d.Args = (), d.Return = int32, d.Effect = {Ask}):
+    let wide = Wide.wide()
+    return d.call(callable, ())
+
+
+def widen() -> int32 \ {Wide}:
+    return Wide.wide2()
+
+
+# OK: `g` is only known at the call of `h`, after `widen` was composed with it,
+# and only then does its effect reduce to a closed row.
+def knownLate(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 \ {Ask, Wide} where (d.Args = (), d.Return = int32, d.Effect = {Ask}):
+    let h = (g) -> widen() + g()
+    return h(callable)
+
+
+# OK: the same with the effects in the other order.
+def knownLateOtherOrder(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 \ {Ask, Wide} where (d.Args = (), d.Return = int32, d.Effect = {Ask}):
+    let h = (g) -> g() + widen()
+    return h(callable)
+
+
+# ERROR: `Wide` is outside the signature.
+def wideOutside(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 \ {Ask} where (co.Return = int32, co.Effect = {Ask}):
+    let total = k(value)
+    let wide = Wide.wide()
+    return total
+
+
+# ERROR: `Ask`, which the reduced row tells, is outside the signature.
+def askOutside(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 \ {Wide} where (co.Return = int32, co.Effect = {Ask}):
+    let total = k(value)
+    let wide = Wide.wide()
+    return total
+
+
+# ERROR: `d.Effect` does not reduce, so it stays opaque.
+def opaque(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 \ {Wide} where (d.Args = (), d.Return = int32):
+    let total = d.call(callable, ())
+    let wide = Wide.wide()
+    return total
+
+
+def main() -> int32:
+    return 0

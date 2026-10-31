@@ -3,6 +3,7 @@ use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_resolution::{Obligation, PredicateConstraint};
+use rayc_solver::ty_relate::DerivedConstraint;
 use rayc_type::{
     constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
     subst::Substitutable,
@@ -33,7 +34,16 @@ pub enum Constraint {
     InstanceTraitRef(InstanceTraitRef),
     MarkerPredicate(MarkerPredicate),
     TyRelate(TyRelate),
-    InstanceResolve { instance: Interned<Ty>, trait_ref: TraitRef },
+    /// Relates the effect row of something in a function to that of what
+    /// contains it, always covariantly. Unlike a [`Self::TyRelate`] of two
+    /// rows, which have to match exactly, the lesser row only has to be a
+    /// part of the greater row, so a closed lesser row may be opened.
+    #[from(skip)]
+    FunctionRowRelate(TyRelate),
+    InstanceResolve {
+        instance: Interned<Ty>,
+        trait_ref: TraitRef,
+    },
 }
 
 impl Constraint {
@@ -42,7 +52,7 @@ impl Constraint {
     /// for one of them to be bound.
     pub(super) fn waiting_variable_pair(&self) -> Option<TyRelate> {
         match self {
-            Self::TyRelate(relate) => {
+            Self::TyRelate(relate) | Self::FunctionRowRelate(relate) => {
                 let is_variable_pair = relate.lesser().as_inference().is_some()
                     && relate.greater().as_inference().is_some();
                 (is_variable_pair && relate.variance() != Variance::Invariant).then(|| {
@@ -52,6 +62,22 @@ impl Constraint {
             Self::InstanceTraitRef(_) | Self::MarkerPredicate(_) | Self::InstanceResolve { .. } => {
                 None
             }
+        }
+    }
+
+    /// Returns the constraint for what solving this constraint derived. It is
+    /// still a function-level relation of rows only if the rule that derived it
+    /// stays on those rows.
+    pub(super) fn derive(&self, derived: DerivedConstraint) -> Self {
+        match self {
+            Self::FunctionRowRelate(_) if derived.rule.stays_on_effect_row() => {
+                Self::FunctionRowRelate(derived.ty_relate)
+            }
+            Self::FunctionRowRelate(_)
+            | Self::TyRelate(_)
+            | Self::InstanceTraitRef(_)
+            | Self::MarkerPredicate(_)
+            | Self::InstanceResolve { .. } => Self::TyRelate(derived.ty_relate),
         }
     }
 }
@@ -77,6 +103,9 @@ impl Substitutable for Constraint {
             Self::TyRelate(ty_relate) => {
                 ty_relate.apply_subst(subst, engine).map(Constraint::TyRelate)
             }
+            Self::FunctionRowRelate(ty_relate) => {
+                ty_relate.apply_subst(subst, engine).map(Constraint::FunctionRowRelate)
+            }
             Self::MarkerPredicate(predicate) => {
                 predicate.apply_subst(subst, engine).map(Self::MarkerPredicate)
             }
@@ -88,7 +117,9 @@ impl Constraint {
     pub fn interned_recursive_iter(&self) -> Box<dyn Iterator<Item = &Interned<Ty>> + '_> {
         match self {
             Self::InstanceTraitRef(check) => Box::new(check.interned_recursive_iter()),
-            Self::TyRelate(ty_relate) => Box::new(ty_relate.interned_recursive_iter()),
+            Self::TyRelate(ty_relate) | Self::FunctionRowRelate(ty_relate) => {
+                Box::new(ty_relate.interned_recursive_iter())
+            }
             Self::MarkerPredicate(predicate) => {
                 Box::new(Ty::interned_recursive_iter(predicate.implementor()))
             }
@@ -159,23 +190,18 @@ impl TAstBuilder {
         introduced_effect: &Interned<Ty>,
     ) {
         let expr_effect = self.effect_of_expression(expression_id).clone();
-        let introduced_effect = introduced_effect.clone();
 
-        // try to open a closed row like `{IO, Exn}` to `{IO, Exn | ?X}` so that it can
-        // unify with other effects
-        let original_effect = introduced_effect.clone();
-        let introduced_effect =
-            Ty::open_closed_row(&introduced_effect, &mut self.constraint_solver, &self.engine)
-                .unwrap_or(introduced_effect);
-
+        // The row only has to be a part of the effect of the expression, which
+        // the solver sees to once it knows that the row is closed; see
+        // `TAstBuilder::prepare_row_binding` and
+        // `TAstBuilder::entail_opened_effect_row`.
         self.push_effect_unification_constraint(
-            introduced_effect,
+            introduced_effect.clone(),
             expr_effect,
             self.span_of_expression(expression_id),
-            // we pass the original effect before it's openned, so that the user can see
-            // the **actual** effect before it got mixed with other effects in the unification
-            // process
-            EffectUnificationSource::EffectIntroduction { original_effect },
+            EffectUnificationSource::EffectIntroduction {
+                original_effect: introduced_effect.clone(),
+            },
         )
         .await;
     }
@@ -367,19 +393,23 @@ impl TAstBuilder {
         span: RelativeSpan,
         source: EffectUnificationSource,
     ) -> PendingConstraint {
+        let relate = TyRelate::new(lesser.clone(), greater.clone(), Variance::Covariant);
+        let constraint = if source.relates_part_of_effect() {
+            Constraint::FunctionRowRelate(relate)
+        } else {
+            Constraint::TyRelate(relate)
+        };
+
         let cause_id = self.constraint_solver.provenance.insert_root_cause(
             EffectUnificationOrigin::builder()
-                .lesser(lesser.clone())
-                .greater(greater.clone())
+                .lesser(lesser)
+                .greater(greater)
                 .source(source)
                 .span(span)
                 .build(),
         );
 
-        PendingConstraint::builder()
-            .constraint(Constraint::TyRelate(TyRelate::new(lesser, greater, Variance::Covariant)))
-            .cause_id(cause_id)
-            .build()
+        PendingConstraint::builder().constraint(constraint).cause_id(cause_id).build()
     }
 
     async fn push_effect_unification_constraint(

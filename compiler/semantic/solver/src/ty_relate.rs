@@ -21,9 +21,28 @@ pub enum DerivationRule {
         argument_index: usize,
     },
 
+    /// Relates what is left of two effect rows, once their labels are matched,
+    /// onto their tails.
+    EffectRowTailMatching,
+
     /// Relates the generalization that an inference variable was bound to
     /// back to the type it was generalized from; see [`Step::Generalized`].
     Generalization,
+}
+
+impl DerivationRule {
+    /// Returns whether a constraint this rule derives from a relation of two
+    /// effect rows still relates those rows, rather than a type inside them.
+    ///
+    /// A row in the argument of a label or of a type is a part of that type,
+    /// which has to match exactly.
+    #[must_use]
+    pub const fn stays_on_effect_row(self) -> bool {
+        match self {
+            Self::EffectRowTailMatching | Self::Generalization => true,
+            Self::TypeApplicationMatching | Self::EffectLabelArgumentMatching { .. } => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -43,6 +62,15 @@ impl DerivedConstraint {
         variance: Variance,
     ) -> Self {
         Self::new(DerivationRule::TypeApplicationMatching, TyRelate::new(lesser, greater, variance))
+    }
+
+    #[must_use]
+    pub const fn new_effect_row_tail_matching(
+        lesser: Interned<Ty>,
+        greater: Interned<Ty>,
+        variance: Variance,
+    ) -> Self {
+        Self::new(DerivationRule::EffectRowTailMatching, TyRelate::new(lesser, greater, variance))
     }
 
     #[must_use]

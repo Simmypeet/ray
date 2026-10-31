@@ -224,12 +224,12 @@ async fn open_effect_rows_share_a_fresh_common_tail() {
     assert_eq!(
         step,
         Ok(Step::Derived(vec![
-            DerivedConstraint::new_type_application_matching(
+            DerivedConstraint::new_effect_row_tail_matching(
                 e1,
                 state_remainder,
                 Variance::Invariant
             ),
-            DerivedConstraint::new_type_application_matching(io_remainder, e2, Variance::Invariant),
+            DerivedConstraint::new_effect_row_tail_matching(io_remainder, e2, Variance::Invariant),
         ]))
     );
 }
