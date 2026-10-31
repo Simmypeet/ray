@@ -1,0 +1,18 @@
+eff Ask:
+    def ask() -> int32
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask() resume next: drive(next, 30)
+
+
+# Suspending a call through `Def` suspends the closure once it is known. The
+# closure's capture and its argument are both stored in the frame.
+def suspend(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 where (d.Args = (int32,), d.Return = int32, d.Effect = {Ask}):
+    return drive(coro d.call(callable, (2,)), ())
+
+
+def main() -> int32:
+    let captured = 10
+    return suspend((argument) -> captured + argument + Ask.ask())
