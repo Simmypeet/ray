@@ -1,0 +1,26 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+# `a` is only held across the first suspension and `b` only across the second,
+# so they share memory in the frame. Each must still read back what was written.
+def script() -> int32 \ {Yield[int32]}:
+    let a = 40
+    Yield.yield(1)
+    let kept = a
+    let b = 2
+    Yield.yield(2)
+    return kept + b
+
+
+def main() -> int32:
+    let mut total = 0
+    let mut k = coro script()
+    while true:
+        handle k():
+            case Yield.yield(value) resume next:
+                total = total + value
+                k = next
+            case return result:
+                return result + total - 3
+    return total

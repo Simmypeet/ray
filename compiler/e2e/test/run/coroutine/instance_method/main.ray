@@ -1,0 +1,32 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+trait Source[t]:
+    def next(self: t) -> int32 \ {Yield[int32]}
+
+
+inst CountFrom for Source[int32]:
+    def next(self: int32) -> int32 \ {Yield[int32]}:
+        Yield.yield(self)
+        Yield.yield(self + 1)
+        return self + 2
+
+
+# A coroutine of a call through an instance runs the instance's method.
+def driven[t](source: t) given (s: Source[t], _: core.Drop[t]) -> int32:
+    let mut total = 0
+    let mut k = coro s.next(source)
+    while true:
+        handle k():
+            case Yield.yield(value) resume next:
+                total = total + value
+                k = next
+            case return result:
+                return total + result
+    return total
+
+
+# 13 + 14 + 15 = 42
+def main() -> int32:
+    return driven(13)

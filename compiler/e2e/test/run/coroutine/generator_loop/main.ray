@@ -1,0 +1,25 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+def numbers() -> () \ {Yield[int32]}:
+    Yield.yield(1)
+    Yield.yield(2)
+    Yield.yield(39)
+
+
+# The coroutine is resumed in a loop by the `handle`, and runs from its next
+# suspension point each time.
+def main() -> int32:
+    let mut con = coro numbers()
+    let mut sum = 0
+
+    while true:
+        handle con():
+            case Yield.yield(value) resume k:
+                sum = sum + value
+                con = k
+            case return:
+                break
+
+    return sum
