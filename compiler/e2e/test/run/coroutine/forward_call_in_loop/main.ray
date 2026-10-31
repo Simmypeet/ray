@@ -1,0 +1,26 @@
+eff Next:
+    def next() -> int32
+
+
+def twoOf() -> int32 \ {Next}:
+    return Next.next() + Next.next()
+
+
+# Each iteration creates the frame of the callee again.
+def sum(count: int32) -> int32 \ {Next}:
+    let mut index = 0
+    let mut total = 0
+    while index != count:
+        total = total + twoOf()
+        index = index + 1
+    return total
+
+
+def drive(k: core.Continuation[r, c], value: r, n: int32) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Next}):
+    return handle k(value):
+        case Next.next() resume next: drive(next, n, n + 1)
+
+
+# (1 + 2) + (3 + 4) + (5 + 6) = 21
+def main() -> int32:
+    return drive(coro sum(3), (), 1)

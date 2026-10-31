@@ -1,0 +1,32 @@
+eff Small:
+    def small() -> int8
+
+
+eff Large:
+    def large(a: int32, b: int32) -> (int64, int64)
+
+
+def takesSmall() -> bool \ {Small}:
+    return Small.small() == 5
+
+
+# The callee has a smaller row and another return type, so both its progress
+# and what it is resumed with are converted. `Small.small` has a different tag
+# and resume member here than in `takesSmall`.
+def both() -> int32 \ {Large, Small}:
+    let pair = Large.large(1, 2)
+    let isFive = takesSmall()
+    if isFive:
+        if pair.0 + pair.1 == 30:
+            return 30
+    return 0
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Large, Small}):
+    return handle k(value):
+        case Large.large(a, b) resume next: drive(next, (10, 20))
+        case Small.small() resume next: drive(next, 5)
+
+
+def main() -> int32:
+    return drive(coro both(), ())

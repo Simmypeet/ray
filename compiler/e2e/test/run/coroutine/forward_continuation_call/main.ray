@@ -1,0 +1,21 @@
+eff Ask:
+    def ask(value: int32) -> int32
+
+
+def body() -> int32 \ {Ask}:
+    return Ask.ask(1) + Ask.ask(2)
+
+
+# Calling a continuation has no clauses: every operation goes to the handler of
+# this ordinary function, and the coroutine runs to completion.
+def finish(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 \ {Ask} where (co.Return = int32, co.Effect = {Ask}):
+    return k(value)
+
+
+# (1 + 10) + (2 + 10) = 23
+def main() -> int32:
+    return run:
+        return finish(coro body(), ())
+    with Ask:
+        def ask(value):
+            return value + 10
