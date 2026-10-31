@@ -10,17 +10,14 @@
 use rayc_mono_ir::{
     MonoGeneratedAdtDropInstance, MonoIR,
     cfg::Terminator,
-    function::{Local, LocalKind},
     operand::{Constant, Operand},
-    place::Place,
-    ty::ReturnType,
 };
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::drop_plan::{DropPlan, GeneratedDropBody, get_drop_plan};
 use rayc_solver::Solver;
 use rayc_type::subst::Subst;
 
-use crate::{builder::Builder, resolver::Resolver};
+use crate::{function_lowering::emitter::Emitter, resolver::Resolver};
 
 /// Lowers one generated nominal Drop instance into its own `MonoIR` fragment.
 pub(crate) async fn lower(
@@ -34,7 +31,8 @@ pub(crate) async fn lower(
     let external_instances = view.external_instances();
     let adt = nominal.as_adt_view().expect("a nominal Drop instance must name a struct or an enum");
 
-    // The solver only builds a `GeneratedAdtDropInstance` from a generated plan.
+    // The solver only builds a `GeneratedAdtDropInstance` from a generated
+    // plan.
     let plan = engine.get_drop_plan(adt.symbol_id()).await;
     let DropPlan::Generated(plan) = &*plan else {
         panic!("a nominal Drop instance requires a generated Drop plan")
@@ -51,16 +49,12 @@ pub(crate) async fn lower(
     // Build `drop(self: Nominal) -> unit` with a scratch local that receives
     // the unit result of every field drop call.
     let signature = resolver.nominal_drop_signature(&nominal).await;
-    let ReturnType::Value(unit) = signature.return_type().clone() else {
-        panic!("a generated Drop body returns a unit value")
-    };
-
     let mut output = MonoIR::new(instance.clone(), signature);
     let root_id = output.root_id();
-    let mut builder = Builder::new(&mut output, root_id);
+    let mut emit = Emitter::new(&resolver, &mut output, root_id);
 
-    let value = Place::new(builder.parameter_ids()[0]);
-    let destination = Place::new(builder.insert_local(Local::new(unit, LocalKind::Temporary)));
+    let value = emit.place(emit.parameter_ids().next().expect("should have self parameter"));
+    let destination = emit.new_unit_place();
 
     // TODO: lower the drop of an enum's payload once enum values are lowered
     // to MonoIR.
@@ -73,10 +67,10 @@ pub(crate) async fn lower(
     // teardown and the tuple Drop instance.
     for field in fields.iter().rev() {
         let dictionary = field.dictionary().instantiate(&substitution, external_instances, engine);
-        let field_place = value.clone().project_struct_field(field.field_id());
-        builder.lower_drop(&resolver, field_place, &dictionary, destination.clone()).await;
+        let field_place = emit.project(&value).struct_field(field.field_id());
+        emit.lower_drop(field_place, &dictionary, destination.clone()).await;
     }
 
-    builder.set_terminator(Terminator::Return(Some(Operand::Constant(Constant::Unit))));
+    emit.set_terminator(Terminator::Return(Some(Operand::Constant(Constant::Unit))));
     output
 }

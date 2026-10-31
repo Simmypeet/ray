@@ -2129,8 +2129,10 @@ dependencies = [
  "linkme",
  "qbice",
  "rayc_arena",
+ "rayc_coroutine_frame_layout",
  "rayc_extend",
  "rayc_hash",
+ "rayc_ir",
  "rayc_qbice",
  "rayc_semantic_element",
  "rayc_solver",
@@ -2144,6 +2146,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "qbice",
  "rayc_arena",
+ "rayc_coroutine_frame_layout",
  "rayc_hash",
  "rayc_ir",
  "rayc_lexical",

@@ -514,8 +514,25 @@ impl Upvar {
     pub fn place(self, arguments: &[Place], engine: &TrackedEngine) -> Place {
         match self {
             Self::Argument(index) => arguments[index].clone(),
-            Self::ClosureCapture(field) => arguments[0].project(engine).environment_field(field),
-            Self::ClosureArgument(field) => arguments[1].project(engine).tuple_field(field),
+            Self::ClosureCapture(field) => {
+                assert_eq!(
+                    arguments.len(),
+                    2,
+                    "closure always has two arguments: environment and argument tuple"
+                );
+
+                arguments[0].project(engine).environment_field(field)
+            }
+
+            Self::ClosureArgument(field) => {
+                assert_eq!(
+                    arguments.len(),
+                    2,
+                    "closure always has two arguments: environment and argument tuple"
+                );
+
+                arguments[1].project(engine).tuple_field(field)
+            }
         }
     }
 }

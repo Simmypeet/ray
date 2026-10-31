@@ -91,16 +91,17 @@ impl CoroutineForm {
 
     pub(crate) const fn frame_place(&self) -> &Place { &self.frame_place }
 
-    pub(crate) const fn resume_args(&self) -> &Place { &self.resume_args }
+    pub(crate) const fn resume_args_place(&self) -> &Place { &self.resume_args }
 
-    pub(crate) const fn progress(&self) -> &Place { &self.progress }
+    pub(crate) const fn progress_place(&self) -> &Place { &self.progress }
 
     pub(crate) const fn frame(&self) -> &Interned<CoroutineFrame> { &self.frame }
 
     pub(crate) const fn row_layout(&self) -> &Interned<EffectRowLayout> { &self.row_layout }
 
-    /// The block that continues `variant`.
-    pub(crate) fn resume_block(&self, variant: FieldIndex) -> BlockID {
+    /// The block that gets control after dispatching the state of the coroutine
+    /// frame. This might not necessarily be the same source block
+    pub(crate) fn dispatched_resume_block(&self, variant: FieldIndex) -> BlockID {
         *self.resume_blocks.get(&variant).expect("a lowered suspension point has a resume block")
     }
 
