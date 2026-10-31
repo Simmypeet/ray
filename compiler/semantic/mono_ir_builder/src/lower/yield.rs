@@ -16,7 +16,7 @@ use crate::{function_lowering::FunctionLowering, lower::expression::tuple_value}
 impl FunctionLowering<'_> {
     /// Lowers a `perform` of a coroutine: records where to continue, and
     /// returns the operation to whatever resumed the coroutine.
-    pub(super) fn lower_yield(
+    pub(super) async fn lower_yield(
         &mut self,
         source_block: IRBlockID,
         suspend: &Suspend,
@@ -32,7 +32,8 @@ impl FunctionLowering<'_> {
         let original_target = self.lower_edge(source_block, suspend.resume_block());
         self.create_resume_block(variant, suspend.expression(), original_target);
 
-        let effect_instance = MonoEffectInstance::of_perform(perform);
+        let effect_instance =
+            self.instantiate_effect(perform.effect_id(), perform.substitution()).await;
 
         let coroutine_form = self.coroutine_form();
         let coroutine_state_place =

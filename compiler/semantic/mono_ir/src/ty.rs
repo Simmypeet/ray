@@ -540,13 +540,10 @@ pub async fn lower_effects(
     let effect = effect.apply_subst_or_clone(substitution, solver.engine());
     let effect = solver.normalize(&effect).await;
     let effect = Ty::erase_lifetimes(&effect, solver.engine()).await;
-    lower_concrete_effects(solver.engine(), &effect).await
+    lower_concrete_effects(solver, &effect).await
 }
 
-async fn lower_concrete_effects(
-    engine: &TrackedEngine,
-    effect: &Interned<Ty>,
-) -> Vec<MonoEffectInstance> {
+async fn lower_concrete_effects(solver: &Solver, effect: &Interned<Ty>) -> Vec<MonoEffectInstance> {
     let Ty::EffectRow(row) = &**effect else {
         panic!("compiler-internal invariant violation: function effect is not an effect row")
     };
@@ -558,9 +555,11 @@ async fn lower_concrete_effects(
 
     let mut effects = Vec::with_capacity(row.labels().len());
     for label in row.labels() {
-        let substitution =
-            engine.build_subst_from_args(label.effect_symbol_id(), label.arguments()).await;
-        effects.push(MonoEffectInstance::new(label.effect_symbol_id(), substitution));
+        let substitution = solver
+            .engine()
+            .build_subst_from_args(label.effect_symbol_id(), label.arguments())
+            .await;
+        effects.push(MonoEffectInstance::new(label.effect_symbol_id(), substitution, solver).await);
     }
     effects.sort();
     effects.dedup();
@@ -569,15 +568,15 @@ async fn lower_concrete_effects(
 
 #[extend]
 pub async fn instantiate_effect(
-    self: &TrackedEngine,
+    self: &Solver,
     effect_id: GlobalSymbolID,
     substitution: &Subst,
     owner_substitution: &Subst,
 ) -> MonoEffectInstance {
     let mut substitution = substitution.clone();
-    substitution.apply_mut_subst(owner_substitution, self);
-    substitution.erase_lifetimes(self).await;
-    MonoEffectInstance::new(effect_id, substitution)
+    substitution.apply_mut_subst(owner_substitution, self.engine());
+    substitution.erase_lifetimes(self.engine()).await;
+    MonoEffectInstance::new(effect_id, substitution, self).await
 }
 
 const fn lower_mutability(mutability: Mutability) -> PointerMutability {

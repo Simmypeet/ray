@@ -7,7 +7,6 @@ use rayc_ir::{
 use rayc_mono_ir::{
     MonoClosureInstance, MonoCoroutineInstance, MonoDefInstance, MonoEffectInstance,
     MonoFragmentInstance, MonoIR, function::MonoFunctionID, signature::get_coroutine_signature,
-    ty::instantiate_effect,
 };
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::{ParameterMap, get_parameter_map};
@@ -167,7 +166,7 @@ impl Context {
             .await
             .expect("an operation should belong to an effect");
 
-        MonoEffectInstance::new(effect_id, handle.handled_effect(effect_id).substitution().clone())
+        self.instantiate_effect(effect_id, handle.handled_effect(effect_id).substitution()).await
     }
 
     /// Dictionary and callee resolution in this definition's substitution.
@@ -228,7 +227,7 @@ impl Context {
         effect_id: GlobalSymbolID,
         substitution: &Subst,
     ) -> MonoEffectInstance {
-        self.engine.instantiate_effect(effect_id, substitution, self.owner.substitution()).await
+        self.resolver.instantiate_effect(effect_id, substitution, self.owner.substitution()).await
     }
 
     /// Lowers the fragment this context is for into `output`, which it was

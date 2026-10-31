@@ -16,7 +16,10 @@ use rayc_mono_ir::{
         build_effect_row_layout, build_struct_layout,
     },
     signature::{CoroutineSignature, DefSignature, get_coroutine_signature, get_def_signature},
-    ty::{EffectRow, FunctionSignature, MonoType, closure_signature, lower_effects, lower_type},
+    ty::{
+        EffectRow, FunctionSignature, MonoType, closure_signature, instantiate_effect,
+        lower_effects, lower_type,
+    },
 };
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
@@ -298,5 +301,14 @@ impl Resolver {
     /// effects whose handlers the caller must pass.
     pub(crate) async fn def_signature(&self, instance: &MonoDefInstance) -> Interned<DefSignature> {
         self.engine.get_def_signature(instance.clone()).await
+    }
+
+    pub(crate) async fn instantiate_effect(
+        &self,
+        effect_id: GlobalSymbolID,
+        substitution: &Subst,
+        owner_substituion: &Subst,
+    ) -> MonoEffectInstance {
+        self.solver.instantiate_effect(effect_id, substitution, owner_substituion).await
     }
 }

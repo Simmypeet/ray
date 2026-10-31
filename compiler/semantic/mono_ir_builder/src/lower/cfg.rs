@@ -21,7 +21,7 @@ impl FunctionLowering<'_> {
             // coroutine only does so where the substitution emptied the row.
             IRTerminator::Suspend(suspend) => {
                 if let Some(variant) = self.suspension_variant(source_block) {
-                    self.lower_yield(source_block, suspend, variant);
+                    self.lower_yield(source_block, suspend, variant).await;
                     return;
                 }
                 self.lower_expression(suspend.expression()).await;

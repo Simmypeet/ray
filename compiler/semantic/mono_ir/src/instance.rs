@@ -1,5 +1,4 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
-use rayc_ir::ir_expr::perform::Perform;
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
@@ -52,13 +51,7 @@ impl MonoDefInstance {
             // Lifetimes never affect code generation, so `f['a]` and `f['b]`
             // share one instance.
             *value = Ty::erase_lifetimes(&normalized, engine).await;
-            assert!(
-                value.recursive_iter().all(|ty| match ty {
-                    Ty::Application(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => true,
-                    Ty::PolyVar(_) | Ty::Inference(_) | Ty::SelfInstance(_) => false,
-                }),
-                "definition arguments must be concrete: {value:?}"
-            );
+            debug_assert!(value.is_concrete());
         }
         Self { def_id, substitution }
     }
@@ -84,13 +77,15 @@ pub struct MonoEffectInstance {
 
 impl MonoEffectInstance {
     #[must_use]
-    pub const fn new(effect_id: GlobalSymbolID, substitution: Subst) -> Self {
-        Self { effect_id, substitution }
-    }
+    pub async fn new(effect_id: GlobalSymbolID, mut substitution: Subst, solver: &Solver) -> Self {
+        for val in substitution.codomain_mut() {
+            *val = solver.normalize(val).await;
+            *val = Ty::erase_lifetimes(val, solver.engine()).await;
 
-    #[must_use]
-    pub fn of_perform(perform: &Perform) -> Self {
-        Self { effect_id: perform.effect_id(), substitution: perform.substitution().clone() }
+            debug_assert!(val.is_concrete());
+        }
+
+        Self { effect_id, substitution }
     }
 
     #[must_use]
@@ -136,13 +131,7 @@ impl MonoGeneratedAdtDropInstance {
     pub async fn new(dictionary: &Interned<Ty>, solver: &Solver) -> Self {
         let dictionary = solver.normalize(dictionary).await;
         let dictionary = Ty::erase_lifetimes(&dictionary, solver.engine()).await;
-        assert!(
-            dictionary.recursive_iter().all(|ty| match ty {
-                Ty::Application(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => true,
-                Ty::PolyVar(_) | Ty::Inference(_) | Ty::SelfInstance(_) => false,
-            }),
-            "nominal Drop dictionaries must be concrete: {dictionary:?}"
-        );
+        debug_assert!(dictionary.is_concrete());
 
         Self { dictionary }
     }
@@ -181,14 +170,8 @@ impl MonoCoroutineInstance {
         let coroutine = solver.normalize(coroutine).await;
         let coroutine = Ty::erase_lifetimes(&coroutine, solver.engine()).await;
 
-        assert!(
-            coroutine.recursive_iter().all(|ty| match ty {
-                Ty::Application(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => true,
-                Ty::PolyVar(_) | Ty::Inference(_) | Ty::SelfInstance(_) => false,
-            }),
-            "coroutine types must be concrete: {coroutine:?}"
-        );
-        assert!(
+        debug_assert!(coroutine.is_concrete());
+        debug_assert!(
             coroutine.as_concrete_coroutine_view().is_some(),
             "a coroutine instance must suspend a known function: {coroutine:?}"
         );
@@ -291,7 +274,11 @@ pub struct MonoStructInstance {
 
 impl MonoStructInstance {
     #[must_use]
-    pub const fn new(struct_id: GlobalSymbolID, substitution: Subst) -> Self {
+    pub fn new(struct_id: GlobalSymbolID, substitution: Subst) -> Self {
+        for subst in substitution.codomain() {
+            debug_assert!(subst.is_concrete());
+        }
+
         Self { struct_id, substitution }
     }
 
