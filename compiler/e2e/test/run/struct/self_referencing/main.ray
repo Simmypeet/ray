@@ -1,0 +1,17 @@
+# `Node` refers to itself through a pointer, so lowering its type must not
+# lower its fields. A `Node` needs a pointer to a `Node` to be created and Ray
+# has no null pointer, so `sum` is only compiled, never called.
+struct Node:
+    value: int32
+    next: *mut Node
+
+
+def sum(node: *mut Node, count: int32) -> int32:
+    if count == 0:
+        return 0
+
+    return unsafe: node.*.value + sum(node.*.next, count - 1)
+
+
+def main() -> int32:
+    return 42

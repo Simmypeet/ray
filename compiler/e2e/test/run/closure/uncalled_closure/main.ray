@@ -1,0 +1,7 @@
+# Nothing calls the closure, so its body is never lowered. Creating it still
+# needs the type of its environment.
+def main() -> int32:
+    let offset = 41
+    let unused = (value) -> value + offset
+
+    return offset + 1
