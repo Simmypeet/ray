@@ -16,7 +16,7 @@ impl SuspensionPointID {
     /// Nothing checks that the block ends in a suspension; an ID of a block
     /// that does not is simply never found among the suspension points.
     #[must_use]
-    pub(crate) const fn new(block_id: BlockID) -> Self { Self(block_id) }
+    pub const fn new(block_id: BlockID) -> Self { Self(block_id) }
 
     #[must_use]
     pub const fn block_id(&self) -> BlockID { self.0 }

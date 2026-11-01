@@ -1,15 +1,9 @@
-use std::collections::BTreeMap;
-
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
-use rayc_semantic_element::struct_body::FieldID;
-use rayc_symbol::GlobalSymbolID;
 
 use crate::{
-    MonoEffectInstance, MonoStructInstance,
-    layout::StructLayout,
     operand::Operand,
     place::Place,
-    ty::{Environment as EnvironmentTy, MonoType, PointerMutability, Tuple as TupleTy},
+    ty::{MonoType, PointerMutability},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
@@ -129,98 +123,40 @@ impl Cast {
     pub const fn target(&self) -> &Interned<MonoType> { &self.target }
 }
 
+/// Reads the bytes of an operand of one type as a value of another type, both
+/// of which are spelled because a place alone does not tell its type.
+///
+/// The types may differ in size. Only the bytes that both have are defined, so
+/// what is read must not depend on the others: a `coroutine_resume_t` is read
+/// as that of another row through the member they have in common, which starts
+/// at the first byte of both.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
-pub struct AggregateStruct {
-    ty: MonoStructInstance,
-    fields: BTreeMap<FieldID, Operand>,
+pub struct Reinterpret {
+    operand: Operand,
+    source: Interned<MonoType>,
+    target: Interned<MonoType>,
 }
 
-impl AggregateStruct {
+impl Reinterpret {
     #[must_use]
-    pub const fn ty(&self) -> &MonoStructInstance { &self.ty }
-
-    #[must_use]
-    pub const fn fields(&self) -> &BTreeMap<FieldID, Operand> { &self.fields }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
-pub struct AggregateTuple {
-    ty: TupleTy,
-    fields: Vec<Operand>,
-}
-
-impl AggregateTuple {
-    #[must_use]
-    pub const fn ty(&self) -> &TupleTy { &self.ty }
-
-    #[must_use]
-    pub fn fields(&self) -> &[Operand] { &self.fields }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
-pub struct AggregateEnvironment {
-    ty: EnvironmentTy,
-    fields: Vec<Operand>,
-}
-
-impl AggregateEnvironment {
-    #[must_use]
-    pub const fn ty(&self) -> &EnvironmentTy { &self.ty }
-
-    #[must_use]
-    pub fn fields(&self) -> &[Operand] { &self.fields }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
-pub struct OperationHandlerSlot {
-    environment: Operand,
-    function: Operand,
-}
-
-impl OperationHandlerSlot {
-    #[must_use]
-    pub const fn new(environment: Operand, function: Operand) -> Self {
-        Self { environment, function }
+    pub const fn new(
+        operand: Operand,
+        source: Interned<MonoType>,
+        target: Interned<MonoType>,
+    ) -> Self {
+        Self { operand, source, target }
     }
 
     #[must_use]
-    pub const fn environment(&self) -> &Operand { &self.environment }
+    pub const fn operand(&self) -> &Operand { &self.operand }
 
     #[must_use]
-    pub const fn function(&self) -> &Operand { &self.function }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub struct AggregateEffectHandler {
-    effect: MonoEffectInstance,
-    /// One slot per operation, ordered by operation like [`HandlerLayout`].
-    ///
-    /// [`HandlerLayout`]: crate::layout::HandlerLayout
-    slots: BTreeMap<GlobalSymbolID, OperationHandlerSlot>,
-}
-
-impl AggregateEffectHandler {
-    #[must_use]
-    pub const fn effect(&self) -> &MonoEffectInstance { &self.effect }
+    pub const fn source(&self) -> &Interned<MonoType> { &self.source }
 
     #[must_use]
-    pub const fn slots(&self) -> &BTreeMap<GlobalSymbolID, OperationHandlerSlot> { &self.slots }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub enum AggregateValue {
-    Tuple(AggregateTuple),
-    Environment(AggregateEnvironment),
-    EffectHandler(AggregateEffectHandler),
-    Struct(AggregateStruct),
+    pub const fn target(&self) -> &Interned<MonoType> { &self.target }
 }
 
 /// A pure, shallow value computation.
@@ -234,35 +170,5 @@ pub enum Rvalue {
     Unary(Unary),
     Binary(Binary),
     Cast(Cast),
-    Aggregate(AggregateValue),
-}
-
-impl Rvalue {
-    #[must_use]
-    pub fn new_tuple(ty: TupleTy, fields: Vec<Operand>) -> Self {
-        assert_eq!(ty.len(), fields.len());
-
-        Self::Aggregate(AggregateValue::Tuple(AggregateTuple { ty, fields }))
-    }
-
-    #[must_use]
-    pub fn new_struct(layout: &StructLayout, fields: BTreeMap<FieldID, Operand>) -> Self {
-        assert_eq!(layout.fields().len(), fields.len());
-
-        let ty = layout.instance().clone();
-        Self::Aggregate(AggregateValue::Struct(AggregateStruct { ty, fields }))
-    }
-
-    #[must_use]
-    pub const fn new_environment(ty: EnvironmentTy, fields: Vec<Operand>) -> Self {
-        Self::Aggregate(AggregateValue::Environment(AggregateEnvironment { ty, fields }))
-    }
-
-    #[must_use]
-    pub const fn new_effect_handler(
-        effect: MonoEffectInstance,
-        slots: BTreeMap<GlobalSymbolID, OperationHandlerSlot>,
-    ) -> Self {
-        Self::Aggregate(AggregateValue::EffectHandler(AggregateEffectHandler { effect, slots }))
-    }
+    Reinterpret(Reinterpret),
 }

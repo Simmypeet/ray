@@ -1,6 +1,6 @@
 use std::collections::hash_map::Entry;
 
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_hash::FxHashMap;
 use rayc_ir::{self, get_ir, ir_expr::IRExprID, ir_function::IRFunctionID};
 use rayc_qbice::TrackedEngine;
@@ -69,7 +69,7 @@ pub struct SuspensionLocalLayout {
 ///
 /// The coroutine frame layout is divided into two parts: the prefix part and
 /// the suspension local part.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Identifiable, StableHash, Encode, Decode)]
 pub struct FrameLayout {
     placements: FxHashMap<Savable, Placement>,
     suspension_locals: FxHashMap<SuspensionLocalPlacement, SuspensionLocalLayout>,

@@ -273,17 +273,27 @@ pub enum AggregateType {
     Struct(MonoStructInstance),
     /// The `coroutine_frame_t` of a coroutine. It is nominal, so a frame type
     /// is lowered without reading the body of the suspended function; a
-    /// [`CoroutineFrameLayout`] tells its fields.
     ///
-    /// [`CoroutineFrameLayout`]: crate::layout::CoroutineFrameLayout
+    /// The shape is roughly like:
+    ///
+    /// ```c
+    /// typedef struct {
+    ///     tag_t tag;
+    ///     struct { ... } prefix;
+    ///     union {
+    ///         struct { ... } start;
+    ///         struct { ... } suspension_0;
+    ///         struct { ... } suspension_1;
+    ///         ...
+    ///     } suspension_locals;
+    /// }
+    /// ```
     CoroutineFrame(MonoCoroutineInstance),
-    /// The `coroutine_resume_t` of an effect row, which holds what a suspended
-    /// coroutine is resumed with.
+    /// See [`CoroutineResume`] for details.
     CoroutineResume(CoroutineResume),
-    /// The `coroutine_yield_t` of an effect row, which holds the operation a
-    /// coroutine suspended at.
+    /// See [`CoroutineYield`] for details.
     CoroutineYield(CoroutineYield),
-    /// The `coroutine_progress_t` of a coroutine: the result of resuming it.
+    /// See [`CoroutineProgress`] for details.
     CoroutineProgress(CoroutineProgress),
 }
 
@@ -309,6 +319,16 @@ impl EffectRow {
 }
 
 /// The `coroutine_resume_t` of an effect row.
+///
+/// The shape looks roughly like:
+///
+/// ```c
+/// typedef union {
+///     variant_0_t variant_0;
+///     variant_1_t variant_1;
+///     ...
+/// } coroutine_resume_t;
+/// ```
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
@@ -323,6 +343,30 @@ impl CoroutineResume {
 }
 
 /// The `coroutine_yield_t` of an effect row.
+///
+/// The shape looks roughly like:
+///
+/// ```c
+/// typedef struct {
+///     tag_t tag;
+///     union {
+///         tuple_args_0_t args_0;
+///         tuple_args_1_t args_1;
+///         ...
+///     } payload;
+/// } coroutine_yield_t;
+/// ```
+///
+/// Here the `tag_t` type depends on the number of operations in the row.
+/// Mostly, it is `uint8_t` for up to 256 operations.
+///
+/// For each effect operation in the row, the `coroutine_yield_t` has one
+/// corresponding variant of the payload union, which is a tuple of the
+/// operation's arguments.
+///
+/// The exact layout and information can be derived from [`EffectRowLayout`].
+///
+/// [`EffectRowLayout`]: crate::layout::EffectRowLayout
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
@@ -337,6 +381,23 @@ impl CoroutineYield {
 }
 
 /// What resuming a coroutine with the given effect row and return type gives.
+///
+/// The resulting aggregate of resuming a coroutine. The shape looks roughly
+/// like:
+///
+/// ```c
+/// typedef struct {
+///     uint8_t tag;
+///     union {
+///         coroutine_yield_t yield;
+///         return_t ret;
+///     } payload;
+/// }
+/// ```
+///
+/// The exact layout and information can be derived from [`EffectRowLayout`].
+///
+/// [`EffectRowLayout`]: crate::layout::EffectRowLayout
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]

@@ -1,9 +1,13 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use rayc_coroutine_frame_layout::savable::Savable;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::struct_body::FieldID;
 use rayc_symbol::GlobalSymbolID;
 
-use crate::function::LocalID;
+use crate::{
+    function::LocalID,
+    layout::coroutine::{ResumeVariantID, RowOperationID},
+};
 
 /// The zero-based field position within an aggregate value.
 #[derive(
@@ -40,6 +44,48 @@ impl FieldIndex {
     pub const fn index(self) -> u32 { self.0 }
 }
 
+/// Field access to the coroutine progress type. See
+/// [`crate::ty::CoroutineProgress`] for the fields of the type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum CoroutineProgress {
+    /// Roughtly corresponds to: `coroutine_progress_t.tag` in C.
+    Tag,
+    /// Rougly, corresponds to:  `coroutine_progress_t.payload.ret` in C.
+    ReturnPayload,
+    /// Roughly corresponds to: `coroutine_progress_t.payload.yield` in C.
+    ///
+    /// It has the type of the `coroutine_yield_t`. See
+    /// [`crate::ty::CoroutineYield`] further for the fields of the type.
+    YieldPayload,
+}
+
+/// Field access to the coroutine yield type. See [`crate::ty::CoroutineYield`]
+/// for the fields of the type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum CoroutineYield {
+    /// Roughtly corresponds to: `coroutine_yield_t.tag` in C.
+    Tag,
+    /// Roughly corresponds to: `coroutine_yield_t.payload.<operation>` in C.
+    OperationPayload(RowOperationID),
+}
+
+/// Field access to a coroutine frame. See
+/// [`crate::ty::AggregateType::CoroutineFrame`] for the fields of the type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum CourinteFrame {
+    /// Roughly corresponds to: `coroutine_frame_t.tag` in C.
+    Tag,
+
+    /// Roughly corresponds to:
+    /// `coroutine_frame_t.suspension_locals.<variant>.<field>` in C.
+    ///
+    /// The exact variant to use and field to access is determined by
+    /// [`FrameLayout`].
+    ///
+    /// [`FrameLayout`]: rayc_coroutine_frame_layout::frame_layout::FrameLayout
+    Savable(Savable),
+}
+
 #[derive(
     Debug,
     Clone,
@@ -61,24 +107,13 @@ pub enum Projection {
     StructFieldIndex(FieldID),
     OperationRecordEnvironmentField(GlobalSymbolID),
     OperationRecordFunctionPointerField(GlobalSymbolID),
-    /// The state of a coroutine frame: where it runs from when resumed.
-    CoroutineFrameState,
-    CoroutineFramePrefixField(FieldIndex),
-    CoroutineFrameStartField(FieldIndex),
-    CoroutineFrameVariantField {
-        variant: FieldIndex,
-        field: FieldIndex,
-    },
-    /// The member of a `coroutine_resume_t` of one of the row's resume types.
-    CoroutineResumeValue(FieldIndex),
-    /// Whether a `coroutine_progress_t` holds a yield or a return value.
-    CoroutineProgressTag,
-    CoroutineProgressYield,
-    CoroutineProgressReturn,
-    /// Which operation of the row a `coroutine_yield_t` performs.
-    CoroutineYieldTag,
-    /// The arguments of the operation of a `coroutine_yield_t`.
-    CoroutineYieldOperation(FieldIndex),
+    CoroutineFrame(CourinteFrame),
+    /// Access to the variant of [`CoroutineResume`]
+    ///
+    /// [`CoroutineResume`]: crate::ty::CoroutineResume
+    CoroutineResumeValue(ResumeVariantID),
+    CoroutineProgress(CoroutineProgress),
+    CoroutineYield(CoroutineYield),
 }
 
 /// An addressable `MonoIR` location.
@@ -154,36 +189,38 @@ impl PlaceProjector<'_> {
 
     #[must_use]
     pub fn coroutine_frame_state(self) -> Place {
-        self.with_projection(Projection::CoroutineFrameState)
+        self.with_projection(Projection::CoroutineFrame(CourinteFrame::Tag))
     }
 
     #[must_use]
-    pub fn coroutine_resume_value(self, value: FieldIndex) -> Place {
-        self.with_projection(Projection::CoroutineResumeValue(value))
+    pub fn coroutine_resume_value(self, resume_variant: ResumeVariantID) -> Place {
+        self.with_projection(Projection::CoroutineResumeValue(resume_variant))
     }
 
     #[must_use]
     pub fn coroutine_progress_tag(self) -> Place {
-        self.with_projection(Projection::CoroutineProgressTag)
+        self.with_projection(Projection::CoroutineProgress(CoroutineProgress::Tag))
     }
 
     #[must_use]
-    pub fn coroutine_progress_yield(self) -> Place {
-        self.with_projection(Projection::CoroutineProgressYield)
+    pub fn coroutine_progress_yield_payload(self) -> Place {
+        self.with_projection(Projection::CoroutineProgress(CoroutineProgress::YieldPayload))
     }
 
     #[must_use]
-    pub fn coroutine_progress_return(self) -> Place {
-        self.with_projection(Projection::CoroutineProgressReturn)
+    pub fn coroutine_progress_return_payload(self) -> Place {
+        self.with_projection(Projection::CoroutineProgress(CoroutineProgress::ReturnPayload))
     }
 
     #[must_use]
     pub fn coroutine_yield_tag(self) -> Place {
-        self.with_projection(Projection::CoroutineYieldTag)
+        self.with_projection(Projection::CoroutineYield(CoroutineYield::Tag))
     }
 
     #[must_use]
-    pub fn coroutine_yield_operation(self, operation: FieldIndex) -> Place {
-        self.with_projection(Projection::CoroutineYieldOperation(operation))
+    pub fn coroutine_yield_operation(self, operation: RowOperationID) -> Place {
+        self.with_projection(Projection::CoroutineYield(CoroutineYield::OperationPayload(
+            operation,
+        )))
     }
 }

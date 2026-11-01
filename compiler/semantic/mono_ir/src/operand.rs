@@ -1,6 +1,10 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 
-use crate::{instance::FunctionReference, place::Place, ty::MonoType};
+use crate::{
+    instance::FunctionReference,
+    place::Place,
+    ty::{AggregateType, MonoType},
+};
 
 /// A scalar or aggregate constant whose type is inherent in its variant.
 #[derive(
@@ -24,6 +28,9 @@ pub enum Constant {
     CInt(i32),
     CStr(Interned<str>),
     NullPointer(Interned<MonoType>),
+    /// The value of an aggregate with no members, which no field assignment
+    /// could initialize.
+    EmptyAggregate(AggregateType),
 }
 
 impl Constant {

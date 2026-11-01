@@ -497,9 +497,18 @@ impl<'x> From<ConcreteCoroutineView<'x>> for CoroutineView<'x> {
 }
 
 impl ConcreteCoroutineView<'_> {
-    /// See [`CoroutineView::signature_id`].
+    #[must_use]
     pub async fn signature_id(&self, engine: &TrackedEngine) -> GlobalSymbolID {
         CoroutineView::from(*self).signature_id(engine).await
+    }
+
+    /// Returns the def ID that owns this closure body
+    #[must_use]
+    pub const fn owner_def_id(&self) -> GlobalSymbolID {
+        match self {
+            Self::Def(coroutine) => coroutine.def_id(),
+            Self::Closure(coroutine) => coroutine.closure_view().owner_id(),
+        }
     }
 
     /// See [`CoroutineView::create_subst`].
