@@ -1,15 +1,21 @@
 //! How a function performs its effects, and the state that takes.
 
 use qbice::storage::intern::Interned;
-use rayc_coroutine_frame_layout::savable::Savable;
+use rayc_coroutine_frame_layout::{
+    frame_layout::{FrameLayout, Placement, SuspensionLocalPlacement},
+    savable::Savable,
+    suspension_point::SuspensionPointID,
+};
 use rayc_hash::FxHashMap;
 use rayc_ir::{cfg::BlockID as IRBlockID, ir_function::IRFunctionID};
 use rayc_mono_ir::{
     MonoCoroutineInstance, MonoEffectInstance,
     cfg::BlockID,
-    layout::{CoroutineFrame, EffectRowLayout},
+    layout::coroutine::{EffectRowLayout, FrameFieldTypes, FrameState},
     operand::{Constant, Operand},
-    place::{FieldIndex, Place},
+    place::Place,
+    signature::CoroutineSignature,
+    ty::MonoType,
 };
 use rayc_qbice::TrackedEngine;
 
@@ -17,8 +23,8 @@ use super::emitter::Emitter;
 use crate::context::Context;
 
 /// Why a function has no handlers to pass on.
-pub(crate) const NO_HANDLERS: &str = "a coroutine yields its operations, so calling an effectful \
-                                      function from one is not lowered to MonoIR yet";
+pub(crate) const NO_HANDLERS: &str = "a coroutine yields its operations rather than call a \
+                                      handler, so nothing in one should need a handler";
 
 /// The handler of each effect of a function, as places of that function.
 #[derive(Default)]
@@ -48,11 +54,13 @@ pub(crate) struct CoroutineForm {
     resume_args: Place,
     /// The local every `perform` and `return` builds its result in.
     progress: Place,
-    frame: Interned<CoroutineFrame>,
+    frame_layout: Interned<FrameLayout>,
+    frame_field_types: Interned<FrameFieldTypes>,
+    signature: Interned<CoroutineSignature>,
     row_layout: Interned<EffectRowLayout>,
-    /// The block that continues each variant, which lowering its suspension
+    /// The block that continues each suspension point, which lowering the
     /// point fills.
-    resume_blocks: FxHashMap<FieldIndex, BlockID>,
+    resume_blocks: FxHashMap<SuspensionPointID, BlockID>,
 }
 
 impl CoroutineForm {
@@ -67,7 +75,8 @@ impl CoroutineForm {
         let resolver = context.resolver();
         let signature = resolver.coroutine_signature(instance).await;
         let row_layout = resolver.effect_row_layout(signature.row()).await;
-        let frame = resolver.coroutine_frame(instance).await;
+        let frame_layout = resolver.frame_layout(instance).await;
+        let frame_field_types = resolver.frame_field_types(instance).await;
 
         let mut parameters = emit.parameter_ids();
         let frame_param = parameters.next().expect("should exist");
@@ -81,12 +90,22 @@ impl CoroutineForm {
         // Only a suspension point that direct control flow reaches is lowered.
         let mut resume_blocks = FxHashMap::default();
         for block in context.source_function(source_id).direct_reachables().blocks() {
-            if let Some(variant) = frame.variant_at(block) {
-                resume_blocks.insert(variant, emit.create_block());
+            let point = SuspensionPointID::new(block);
+            if frame_layout.suspends_at(point) {
+                resume_blocks.insert(point, emit.create_block());
             }
         }
 
-        Self { frame_place, resume_args, progress, frame, row_layout, resume_blocks }
+        Self {
+            frame_place,
+            resume_args,
+            progress,
+            frame_layout,
+            frame_field_types,
+            signature,
+            row_layout,
+            resume_blocks,
+        }
     }
 
     pub(crate) const fn frame_place(&self) -> &Place { &self.frame_place }
@@ -95,14 +114,19 @@ impl CoroutineForm {
 
     pub(crate) const fn progress_place(&self) -> &Place { &self.progress }
 
-    pub(crate) const fn frame(&self) -> &Interned<CoroutineFrame> { &self.frame }
+    /// The tag that the frame holds in the given state.
+    pub(crate) fn frame_state_tag(&self, state: FrameState) -> Constant {
+        state.tag(&self.frame_layout)
+    }
+
+    pub(crate) const fn signature(&self) -> &Interned<CoroutineSignature> { &self.signature }
 
     pub(crate) const fn row_layout(&self) -> &Interned<EffectRowLayout> { &self.row_layout }
 
     /// The block that gets control after dispatching the state of the coroutine
     /// frame. This might not necessarily be the same source block
-    pub(crate) fn dispatched_resume_block(&self, variant: FieldIndex) -> BlockID {
-        *self.resume_blocks.get(&variant).expect("a lowered suspension point has a resume block")
+    pub(crate) fn dispatched_resume_block(&self, point: SuspensionPointID) -> BlockID {
+        *self.resume_blocks.get(&point).expect("a lowered suspension point has a resume block")
     }
 
     /// The state of each suspension point with the block that continues it, in
@@ -111,7 +135,7 @@ impl CoroutineForm {
         let mut points = self
             .resume_blocks
             .iter()
-            .map(|(variant, block)| (self.frame.layout().suspended_state(*variant), *block))
+            .map(|(point, block)| (self.frame_state_tag(FrameState::Suspended(*point)), *block))
             .collect::<Vec<_>>();
         points.sort_unstable();
         points.into_iter()
@@ -119,13 +143,37 @@ impl CoroutineForm {
 
     /// The place of `savable` in the frame, if the frame holds it.
     pub(super) fn frame_place_of(&self, savable: Savable, engine: &TrackedEngine) -> Option<Place> {
-        Some(self.frame.slot(savable)?.project(&self.frame_place, engine))
+        self.frame_layout
+            .placement(savable)
+            .map(|_| self.frame_place.project(engine).coroutine_frame_savable(savable))
     }
 
-    /// The variant of the suspension point that terminates `block`, if the
-    /// function still suspends there.
-    fn suspension_variant(&self, block: IRBlockID) -> Option<FieldIndex> {
-        self.frame.variant_at(block)
+    /// Whether `savable` is in the start variant of the frame, which every
+    /// suspension variant overlaps. Nothing holds such a value across a
+    /// suspension point, or it would have been promoted to the prefix, so it
+    /// can live in a local of the first run of `coroutine_resume`.
+    pub(super) fn is_start_field(&self, savable: Savable) -> bool {
+        self.frame_layout.placement(savable)
+            == Some(Placement::SuspensionLocal(SuspensionLocalPlacement::Start))
+    }
+
+    /// The type of `savable`, which the frame holds.
+    pub(super) fn field_type(&self, savable: Savable) -> &Interned<MonoType> {
+        self.frame_field_types.get(savable)
+    }
+
+    /// The place of what the function holds while it is suspended at the
+    /// suspension point that terminates `block`.
+    pub(crate) fn awaitee_place(&self, block: IRBlockID, engine: &TrackedEngine) -> Place {
+        self.frame_place_of(Savable::Awaitee(SuspensionPointID::new(block)), engine)
+            .expect("a suspension point that waits for a coroutine holds it in the frame")
+    }
+
+    /// The suspension point that terminates `block`, if the function still
+    /// suspends there.
+    fn suspension_point(&self, block: IRBlockID) -> Option<SuspensionPointID> {
+        let point = SuspensionPointID::new(block);
+        self.frame_layout.suspends_at(point).then_some(point)
     }
 }
 
@@ -221,12 +269,12 @@ impl LoweringStyle {
         }
     }
 
-    /// The variant of the suspension point that terminates `block`, if this is
-    /// a `coroutine_resume` function that still suspends there.
-    pub(crate) fn suspension_variant(&self, block: IRBlockID) -> Option<FieldIndex> {
+    /// The suspension point that terminates `block`, if this is a
+    /// `coroutine_resume` function that still suspends there.
+    pub(crate) fn suspension_point(&self, block: IRBlockID) -> Option<SuspensionPointID> {
         match self {
             Self::Callback(_) => None,
-            Self::Coroutine(form) => form.suspension_variant(block),
+            Self::Coroutine(form) => form.suspension_point(block),
         }
     }
 }
