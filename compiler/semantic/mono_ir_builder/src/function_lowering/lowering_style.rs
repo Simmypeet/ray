@@ -60,7 +60,7 @@ pub(crate) struct CoroutineForm {
     row_layout: Interned<EffectRowLayout>,
     /// The block that continues each suspension point, which lowering the
     /// point fills.
-    resume_blocks: FxHashMap<SuspensionPointID, BlockID>,
+    dispatched_resume_blocks: FxHashMap<SuspensionPointID, BlockID>,
 }
 
 impl CoroutineForm {
@@ -88,11 +88,11 @@ impl CoroutineForm {
         let progress = emit.new_progress_temporary_place(&signature);
 
         // Only a suspension point that direct control flow reaches is lowered.
-        let mut resume_blocks = FxHashMap::default();
+        let mut dispatched_resume_blocks = FxHashMap::default();
         for block in context.source_function(source_id).direct_reachables().blocks() {
             let point = SuspensionPointID::new(block);
             if frame_layout.suspends_at(point) {
-                resume_blocks.insert(point, emit.create_block());
+                dispatched_resume_blocks.insert(point, emit.create_block());
             }
         }
 
@@ -104,7 +104,7 @@ impl CoroutineForm {
             frame_field_types,
             signature,
             row_layout,
-            resume_blocks,
+            dispatched_resume_blocks,
         }
     }
 
@@ -126,19 +126,18 @@ impl CoroutineForm {
     /// The block that gets control after dispatching the state of the coroutine
     /// frame. This might not necessarily be the same source block
     pub(crate) fn dispatched_resume_block(&self, point: SuspensionPointID) -> BlockID {
-        *self.resume_blocks.get(&point).expect("a lowered suspension point has a resume block")
+        *self
+            .dispatched_resume_blocks
+            .get(&point)
+            .expect("a lowered suspension point has a resume block")
     }
 
     /// The state of each suspension point with the block that continues it, in
     /// the order of the states.
     pub(crate) fn resume_points(&self) -> impl Iterator<Item = (Constant, BlockID)> {
-        let mut points = self
-            .resume_blocks
+        self.dispatched_resume_blocks
             .iter()
             .map(|(point, block)| (self.frame_state_tag(FrameState::Suspended(*point)), *block))
-            .collect::<Vec<_>>();
-        points.sort_unstable();
-        points.into_iter()
     }
 
     /// The place of `savable` in the frame, if the frame holds it.

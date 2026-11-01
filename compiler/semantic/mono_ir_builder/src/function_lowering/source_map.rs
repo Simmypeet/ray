@@ -20,7 +20,6 @@ use rayc_mono_ir::{
     rvalue::{Cast, Rvalue},
     ty::{AggregateType, MonoType, PointerMutability},
 };
-use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::parameter::ParameterID;
 
 use super::{emitter::Emitter, lowering_style::CoroutineForm};
@@ -61,6 +60,12 @@ impl SourceMap {
 
     /// Maps the values of a function in coroutine style to the frame of `form`,
     /// and everything else to locals of `coroutine_resume`.
+    ///
+    /// Also moves the start fields to locals at the top of the block of the
+    /// source entry, since the first value stored in a suspension variant may
+    /// overwrite them. Only the first resume runs them: the dispatch enters
+    /// that block when the coroutine has not started, and no block of a
+    /// source function jumps back to its entry.
     pub(super) async fn new_coroutine(
         context: &Context,
         source_id: IRFunctionID,
@@ -68,9 +73,15 @@ impl SourceMap {
         form: &CoroutineForm,
     ) -> Self {
         let mut map = Self::empty();
-        map.bind_frame_upvars(context, source_id, emit.engine(), form).await;
-        map.initialize_storage(context, source_id, emit, Some(form)).await;
         map.initialize_blocks(context, source_id, emit, true);
+
+        // Binding the upvars emits the moves into the selected block.
+        emit.select_block(map.block(context.source_function(source_id).entry_block()));
+        map.bind_frame_upvars(context, source_id, emit, form).await;
+        map.initialize_storage(context, source_id, emit, Some(form)).await;
+
+        // Leave the entry block selected for lowering.
+        emit.select_block(emit.entry_block());
 
         map
     }
@@ -141,21 +152,19 @@ impl SourceMap {
         environment_parameter
     }
 
-    /// Maps the parameters and captures, which are always in the frame.
+    /// Maps the parameters and captures, which always start in the frame.
     async fn bind_frame_upvars(
         &mut self,
         context: &Context,
         source_id: IRFunctionID,
-        engine: &TrackedEngine,
+        emit: &mut Emitter<'_>,
         form: &CoroutineForm,
     ) {
         let source = context.source_function(source_id);
 
-        let locals = source.parameter_locals(context.def_id(), engine).await;
+        let locals = source.parameter_locals(context.def_id(), emit.engine()).await;
         for local in locals {
-            let place = form
-                .frame_place_of(Savable::Local(local), engine)
-                .expect("a frame holds every parameter");
+            let place = Self::bind_frame_upvar(Savable::Local(local), emit, form);
             match local {
                 IRLocal::Parameter(parameter) => {
                     self.parameters.insert(parameter, place);
@@ -173,12 +182,27 @@ impl SourceMap {
 
         if source.context().capture_map_id().is_some() {
             for (capture, _) in context.source_captures(source_id) {
-                let place = form
-                    .frame_place_of(Savable::Local(IRLocal::Capture(capture)), engine)
-                    .expect("a frame holds every capture");
+                let savable = Savable::Local(IRLocal::Capture(capture));
+                let place = Self::bind_frame_upvar(savable, emit, form);
                 self.captures.insert(capture, place);
             }
         }
+    }
+
+    /// The place the function reads a parameter or capture from: its field in
+    /// the frame, or for a start field, a local that the selected block moves
+    /// it to.
+    fn bind_frame_upvar(savable: Savable, emit: &mut Emitter<'_>, form: &CoroutineForm) -> Place {
+        let field = form
+            .frame_place_of(savable, emit.engine())
+            .expect("a frame holds every parameter and capture");
+        if !form.is_start_field(savable) {
+            return field;
+        }
+
+        let local = emit.new_variable_place(form.field_type(savable).clone());
+        emit.store(local.clone(), Operand::Copy(field));
+        local
     }
 
     /// Maps the variables and expressions of the source function to their
