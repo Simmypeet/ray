@@ -72,15 +72,14 @@ pub enum CoroutineYield {
 /// Field access to a coroutine frame. See
 /// [`crate::ty::AggregateType::CoroutineFrame`] for the fields of the type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub enum CourinteFrame {
+pub enum CoroutineFrame {
     /// Roughly corresponds to: `coroutine_frame_t.tag` in C.
     Tag,
 
-    /// Roughly corresponds to:
-    /// `coroutine_frame_t.suspension_locals.<variant>.<field>` in C.
+    /// The member of `coroutine_frame_t` that holds the value.
     ///
-    /// The exact variant to use and field to access is determined by
-    /// [`FrameLayout`].
+    /// [`FrameLayout`] determines which part of the frame holds it, but the
+    /// member is named after the value alone, wherever it is placed.
     ///
     /// [`FrameLayout`]: rayc_coroutine_frame_layout::frame_layout::FrameLayout
     Savable(Savable),
@@ -107,7 +106,7 @@ pub enum Projection {
     StructFieldIndex(FieldID),
     OperationRecordEnvironmentField(GlobalSymbolID),
     OperationRecordFunctionPointerField(GlobalSymbolID),
-    CoroutineFrame(CourinteFrame),
+    CoroutineFrame(CoroutineFrame),
     /// Access to the variant of [`CoroutineResume`]
     ///
     /// [`CoroutineResume`]: crate::ty::CoroutineResume
@@ -189,7 +188,12 @@ impl PlaceProjector<'_> {
 
     #[must_use]
     pub fn coroutine_frame_state(self) -> Place {
-        self.with_projection(Projection::CoroutineFrame(CourinteFrame::Tag))
+        self.with_projection(Projection::CoroutineFrame(CoroutineFrame::Tag))
+    }
+
+    #[must_use]
+    pub fn coroutine_frame_savable(self, savable: Savable) -> Place {
+        self.with_projection(Projection::CoroutineFrame(CoroutineFrame::Savable(savable)))
     }
 
     #[must_use]

@@ -279,15 +279,18 @@ pub enum AggregateType {
     /// ```c
     /// typedef struct {
     ///     tag_t tag;
-    ///     struct { ... } prefix;
+    ///     ...; // the prefix
     ///     union {
-    ///         struct { ... } start;
-    ///         struct { ... } suspension_0;
-    ///         struct { ... } suspension_1;
+    ///         struct { ... }; // the start fields
+    ///         struct { ... }; // suspension 0
+    ///         struct { ... }; // suspension 1
     ///         ...
-    ///     } suspension_locals;
+    ///     };
     /// }
     /// ```
+    ///
+    /// A `coroutine_resume` moves the start fields to its locals as soon as it
+    /// starts, so a value of a suspension variant cannot overwrite them.
     CoroutineFrame(MonoCoroutineInstance),
     /// See [`CoroutineResume`] for details.
     CoroutineResume(CoroutineResume),
@@ -366,7 +369,7 @@ impl CoroutineResume {
 ///
 /// The exact layout and information can be derived from [`EffectRowLayout`].
 ///
-/// [`EffectRowLayout`]: crate::layout::EffectRowLayout
+/// [`EffectRowLayout`]: crate::layout::coroutine::EffectRowLayout
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
@@ -397,7 +400,7 @@ impl CoroutineYield {
 ///
 /// The exact layout and information can be derived from [`EffectRowLayout`].
 ///
-/// [`EffectRowLayout`]: crate::layout::EffectRowLayout
+/// [`EffectRowLayout`]: crate::layout::coroutine::EffectRowLayout
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
