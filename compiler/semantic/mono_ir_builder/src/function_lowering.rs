@@ -2,6 +2,7 @@
 //! The `lower` module does the lowering on top of it, through the methods here.
 
 use qbice::storage::intern::Interned;
+use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
 use rayc_ir::{
     cfg::{
         BlockID as IRBlockID, Instruction as IRInstruction, Reachables, Terminator as IRTerminator,
@@ -18,7 +19,7 @@ use rayc_mono_ir::{
     cfg::{BlockID, Terminator},
     function::{LocalID, MonoFunctionID},
     operand::{Constant, Operand},
-    place::{FieldIndex, Place, PlaceProjector},
+    place::{Place, PlaceProjector, Projection},
     rvalue::Rvalue,
     signature::CoroutineSignature,
     ty::MonoType,
@@ -172,6 +173,8 @@ impl FunctionLowering<'_> {
 
     pub(crate) fn entry_block(&self) -> BlockID { self.emit.entry_block() }
 
+    pub(crate) fn create_block(&mut self) -> BlockID { self.emit.create_block() }
+
     pub(crate) const fn select_block(&mut self, block: BlockID) { self.emit.select_block(block); }
 
     pub(crate) fn place(&self, local: LocalID) -> Place { self.emit.place(local) }
@@ -200,6 +203,22 @@ impl FunctionLowering<'_> {
 
     pub(crate) fn store_constant(&mut self, destination: Place, constant: Constant) {
         self.emit.store_constant(destination, constant);
+    }
+
+    pub(crate) fn initialize_aggregate(
+        &mut self,
+        destination: &Place,
+        members: impl IntoIterator<Item = (Projection, Operand)>,
+    ) {
+        self.emit.initialize_aggregate(destination, members);
+    }
+
+    pub(crate) fn initialize_tuple(&mut self, destination: &Place, fields: Vec<Operand>) {
+        self.emit.initialize_tuple(destination, fields);
+    }
+
+    pub(crate) fn initialize_environment(&mut self, destination: &Place, fields: Vec<Operand>) {
+        self.emit.initialize_environment(destination, fields);
     }
 
     pub(crate) fn call(
@@ -319,7 +338,13 @@ impl FunctionLowering<'_> {
 
     pub(crate) const fn coroutine_form(&self) -> &CoroutineForm { self.style.coroutine_form() }
 
-    pub(crate) fn suspension_variant(&self, block: IRBlockID) -> Option<FieldIndex> {
-        self.style.suspension_variant(block)
+    /// The place of what the function holds while it is suspended at the
+    /// suspension point that terminates `block`.
+    pub(crate) fn awaitee_place(&self, block: IRBlockID) -> Place {
+        self.coroutine_form().awaitee_place(block, self.engine())
+    }
+
+    pub(crate) fn suspension_point(&self, block: IRBlockID) -> Option<SuspensionPointID> {
+        self.style.suspension_point(block)
     }
 }
