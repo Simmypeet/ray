@@ -50,16 +50,13 @@ impl FunctionLowering<'_> {
 
         // There're three steps to create the ready-to-use environment:
         //
-        // 1. Constructs the environment aggregate value
-        // 2. Creates a pointer to the environment aggregate value
+        // 1. Initializes the fields of the environment
+        // 2. Creates a pointer to the environment
         // 3. Casts the pointer to an opaque pointer type
 
         let environment_local = self.temporary_local(environment_ty.clone());
         let environment_place = self.place(environment_local);
-        self.assign(
-            environment_place.clone(),
-            Rvalue::new_environment(environment.clone(), fields),
-        );
+        self.initialize_environment(&environment_place, fields);
 
         let pointer_type = MonoType::new_pointer(environment_ty, PointerMutability::Const, engine);
         let pointer = self.temporary(pointer_type);
