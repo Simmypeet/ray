@@ -11,7 +11,7 @@ use rayc_mono_ir::{
     place::{FieldIndex, Place, PlaceProjector, Projection},
     rvalue::Rvalue,
     signature::CoroutineSignature,
-    ty::{AggregateType, Environment, MonoType, Tuple},
+    ty::{AggregateType, MonoType},
 };
 use rayc_qbice::TrackedEngine;
 
@@ -129,48 +129,29 @@ impl<'a> Emitter<'a> {
     pub(crate) fn initialize_aggregate(
         &mut self,
         destination: &Place,
-        ty: AggregateType,
         members: impl IntoIterator<Item = (Projection, Operand)>,
     ) {
-        let mut is_empty = true;
         for (projection, operand) in members {
-            is_empty = false;
             self.store(self.project(destination).with_projection(projection), operand);
-        }
-
-        if is_empty {
-            self.store_constant(destination.clone(), Constant::EmptyAggregate(ty));
         }
     }
 
     /// Initializes the tuple of type `ty` at `destination` from one operand per
     /// element.
-    pub(crate) fn initialize_tuple(
-        &mut self,
-        destination: &Place,
-        ty: Tuple,
-        fields: Vec<Operand>,
-    ) {
-        assert_eq!(ty.len(), fields.len());
-
+    pub(crate) fn initialize_tuple(&mut self, destination: &Place, fields: Vec<Operand>) {
         let members = fields.into_iter().enumerate().map(|(index, operand)| {
             (Projection::TupleFieldIndex(FieldIndex::from_usize(index)), operand)
         });
-        self.initialize_aggregate(destination, AggregateType::Tuple(ty), members);
+        self.initialize_aggregate(destination, members);
     }
 
     /// Initializes the environment of type `ty` at `destination` from one
     /// operand per field.
-    pub(crate) fn initialize_environment(
-        &mut self,
-        destination: &Place,
-        ty: Environment,
-        fields: Vec<Operand>,
-    ) {
+    pub(crate) fn initialize_environment(&mut self, destination: &Place, fields: Vec<Operand>) {
         let members = fields.into_iter().enumerate().map(|(index, operand)| {
             (Projection::EnvironmentFieldIndex(FieldIndex::from_usize(index)), operand)
         });
-        self.initialize_aggregate(destination, AggregateType::Environment(ty), members);
+        self.initialize_aggregate(destination, members);
     }
 
     pub(crate) fn call(
