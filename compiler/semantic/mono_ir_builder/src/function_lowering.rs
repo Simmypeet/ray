@@ -117,16 +117,16 @@ impl<'a> FunctionLowering<'a> {
         self.source.block_terminator(block)
     }
 
-    /// Fills a new block with `emit`, which should terminate it. The current
-    /// block stays selected afterwards.
-    pub(crate) fn in_new_block(&mut self, emit: impl FnOnce(&mut Emitter<'a>)) -> BlockID {
-        self.emit.in_new_block(emit)
-    }
-
-    /// Fills `block` with `emit`, which should terminate it. The current block
-    /// stays selected afterwards.
-    pub(crate) fn in_block(&mut self, block: BlockID, emit: impl FnOnce(&mut Emitter<'a>)) {
-        self.emit.in_block(block, emit);
+    /// Fills the resume entry of `point` with `emit`, which should terminate
+    /// it. The dispatch of `coroutine_resume` enters that block when the frame
+    /// is suspended at `point`. The current block stays selected afterwards.
+    pub(crate) fn fill_resume_entry(
+        &mut self,
+        point: SuspensionPointID,
+        emit: impl FnOnce(&mut Self),
+    ) {
+        let block = self.style.coroutine_form_mut().claim_resume_entry(point);
+        self.in_block(block, emit);
     }
 
     /// Starts a projection of `place`.
@@ -234,6 +234,16 @@ impl FunctionLowering<'_> {
         self.emit.set_terminator(terminator);
     }
 
+    /// Ends the selected block with a switch on `value`, whose values other
+    /// than those of `targets` never happen.
+    pub(crate) fn set_switch_terminator(
+        &mut self,
+        value: Operand,
+        targets: Vec<(Constant, BlockID)>,
+    ) {
+        self.emit.set_switch_terminator(value, targets);
+    }
+
     /// Drops `value` with the implementation selected by `dictionary`, passing
     /// on this function's handlers.
     pub(crate) async fn lower_drop(
@@ -338,10 +348,10 @@ impl FunctionLowering<'_> {
 
     pub(crate) const fn coroutine_form(&self) -> &CoroutineForm { self.style.coroutine_form() }
 
-    /// The place of what the function holds while it is suspended at the
-    /// suspension point that terminates `block`.
-    pub(crate) fn awaitee_place(&self, block: IRBlockID) -> Place {
-        self.coroutine_form().awaitee_place(block, self.engine())
+    /// The place of the coroutine that the function waits for while it is
+    /// suspended at `point`.
+    pub(crate) fn awaitee_place(&self, point: SuspensionPointID) -> Place {
+        self.coroutine_form().awaitee_place(point, self.engine())
     }
 
     pub(crate) fn suspension_point(&self, block: IRBlockID) -> Option<SuspensionPointID> {

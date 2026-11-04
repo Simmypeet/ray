@@ -3,7 +3,7 @@
 use qbice::storage::intern::Interned;
 use rayc_mono_ir::{
     MonoDefInstance, MonoIR,
-    cfg::{BlockID, Terminator},
+    cfg::{BlockID, Switch, Terminator},
     function::{Local, LocalID, LocalKind, MonoFunctionID},
     instance::FunctionReference,
     instruction::{Assign, Call, Instruction},
@@ -15,7 +15,7 @@ use rayc_mono_ir::{
 };
 use rayc_qbice::TrackedEngine;
 
-use crate::resolver::Resolver;
+use crate::{function_lowering::FunctionLowering, resolver::Resolver};
 
 /// The function being emitted, and the block that instructions go to.
 pub(crate) struct Emitter<'a> {
@@ -84,24 +84,6 @@ impl<'a> Emitter<'a> {
     pub(crate) fn create_block(&mut self) -> BlockID { self.output.create_block(self.target_id) }
 
     pub(crate) const fn select_block(&mut self, block: BlockID) { self.block = block; }
-
-    /// Creates a block and fills it with `emit`, which should terminate it. The
-    /// current block stays selected afterwards.
-    pub(crate) fn in_new_block(&mut self, emit: impl FnOnce(&mut Self)) -> BlockID {
-        let block = self.create_block();
-        self.in_block(block, emit);
-
-        block
-    }
-
-    /// Fills `block` with `emit`, which should terminate it. The current block
-    /// stays selected afterwards.
-    pub(crate) fn in_block(&mut self, block: BlockID, emit: impl FnOnce(&mut Self)) {
-        let previous = self.block;
-        self.block = block;
-        emit(self);
-        self.block = previous;
-    }
 
     pub(crate) fn push_instruction(&mut self, instruction: Instruction) {
         self.output.push_instruction(self.target_id, self.block, instruction);
@@ -191,5 +173,54 @@ impl<'a> Emitter<'a> {
 
     pub(crate) fn set_terminator(&mut self, terminator: Terminator) {
         self.output.set_terminator(self.target_id, self.block, terminator);
+    }
+
+    /// Ends the selected block with a switch on `value`, whose values other
+    /// than those of `targets` never happen.
+    pub(crate) fn set_switch_terminator(
+        &mut self,
+        value: Operand,
+        targets: Vec<(Constant, BlockID)>,
+    ) {
+        let otherwise = self.in_new_block(|emit| emit.set_terminator(Terminator::Unreachable));
+        self.set_terminator(Terminator::Switch(Switch::new(value, targets, otherwise)));
+    }
+
+    /// Creates a block and fills it with `emit`, which should terminate it. The
+    /// current block stays selected afterwards.
+    fn in_new_block(&mut self, emit: impl FnOnce(&mut Self)) -> BlockID {
+        let block = self.create_block();
+        self.in_block(block, emit);
+
+        block
+    }
+
+    /// Fills `block` with `emit`, which should terminate it. The current block
+    /// stays selected afterwards.
+    fn in_block(&mut self, block: BlockID, emit: impl FnOnce(&mut Self)) {
+        let previous = self.block;
+        self.block = block;
+        emit(self);
+        self.block = previous;
+    }
+}
+
+impl FunctionLowering<'_> {
+    /// Creates a block and fills it with `emit`, which should terminate it. The
+    /// current block stays selected afterwards.
+    pub(crate) fn in_new_block(&mut self, emit: impl FnOnce(&mut Self)) -> BlockID {
+        let block = self.emit.create_block();
+        self.in_block(block, emit);
+
+        block
+    }
+
+    /// Fills `block` with `emit`, which should terminate it. The current block
+    /// stays selected afterwards.
+    pub(crate) fn in_block(&mut self, block: BlockID, emit: impl FnOnce(&mut Self)) {
+        let previous = self.emit.block;
+        self.emit.block = block;
+        emit(self);
+        self.emit.block = previous;
     }
 }
