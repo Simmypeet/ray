@@ -51,10 +51,10 @@ impl TranslationUnit {
     /// Adds every aggregate of `registry`, each after the aggregates it
     /// contains by value.
     pub(crate) fn define_aggregates(&mut self, registry: &AggregateRegistry) {
-        for (name, aggregate, handler_layout) in registry.in_definition_order() {
+        for (name, aggregate, layout) in registry.in_definition_order() {
             writeln!(self.aggregate_declarations, "typedef struct {name} {};", name.typedef())
                 .expect(WRITE_TO_STRING);
-            let definition = AggregateDefinition::new(aggregate, handler_layout);
+            let definition = AggregateDefinition::new(aggregate, layout);
             start_definition(&mut self.aggregate_definitions);
             writeln!(self.aggregate_definitions, "{definition}").expect(WRITE_TO_STRING);
         }

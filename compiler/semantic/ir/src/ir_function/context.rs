@@ -108,6 +108,8 @@ impl IRContext {
     ///
     /// The definition function takes the parameters declared in the
     /// definition's signature, while a nested function stores its own.
+    // TODO: Find a way to avoid having to allocate a Vec. I think if we have a
+    // `gen` block, this would avoid the allocation.
     pub async fn parameter_locals(
         &self,
         def_id: GlobalSymbolID,

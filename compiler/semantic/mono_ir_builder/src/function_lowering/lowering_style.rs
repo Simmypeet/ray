@@ -45,6 +45,12 @@ impl EffectHandlers {
     }
 }
 
+/// The block that the dispatch of `coroutine_resume` enters to continue one
+/// suspension point, and whether lowering the point has filled it yet.
+struct ResumeEntry {
+    block: BlockID,
+}
+
 /// What lowering a `coroutine_resume` function needs beyond a callback-style
 /// function.
 pub(crate) struct CoroutineForm {
@@ -52,20 +58,18 @@ pub(crate) struct CoroutineForm {
     frame_place: Place,
     /// The `args` parameter.
     resume_args: Place,
-    /// The local every `perform` and `return` builds its result in.
-    progress: Place,
     frame_layout: Interned<FrameLayout>,
     frame_field_types: Interned<FrameFieldTypes>,
     signature: Interned<CoroutineSignature>,
     row_layout: Interned<EffectRowLayout>,
-    /// The block that continues each suspension point, which lowering the
-    /// point fills.
-    dispatched_resume_blocks: FxHashMap<SuspensionPointID, BlockID>,
+    /// The resume entry of each suspension point, which lowering the point
+    /// fills.
+    resume_entries: FxHashMap<SuspensionPointID, ResumeEntry>,
 }
 
 impl CoroutineForm {
-    /// Reads the layouts of `instance`, and creates the locals and blocks that
-    /// `coroutine_resume` always has.
+    /// Reads the layouts of `instance`, and creates the resume entry of each
+    /// suspension point.
     async fn new(
         context: &Context,
         source_id: IRFunctionID,
@@ -85,34 +89,31 @@ impl CoroutineForm {
 
         let frame_place = emit.project(&emit.place(frame_param)).dereference();
         let resume_args = emit.place(resume_param);
-        let progress = emit.new_progress_temporary_place(&signature);
 
         // Only a suspension point that direct control flow reaches is lowered.
-        let mut dispatched_resume_blocks = FxHashMap::default();
+        let mut resume_entries = FxHashMap::default();
         for block in context.source_function(source_id).direct_reachables().blocks() {
             let point = SuspensionPointID::new(block);
             if frame_layout.suspends_at(point) {
-                dispatched_resume_blocks.insert(point, emit.create_block());
+                let entry = ResumeEntry { block: emit.create_block() };
+                resume_entries.insert(point, entry);
             }
         }
 
         Self {
             frame_place,
             resume_args,
-            progress,
             frame_layout,
             frame_field_types,
             signature,
             row_layout,
-            dispatched_resume_blocks,
+            resume_entries,
         }
     }
 
     pub(crate) const fn frame_place(&self) -> &Place { &self.frame_place }
 
     pub(crate) const fn resume_args_place(&self) -> &Place { &self.resume_args }
-
-    pub(crate) const fn progress_place(&self) -> &Place { &self.progress }
 
     /// The tag that the frame holds in the given state.
     pub(crate) fn frame_state_tag(&self, state: FrameState) -> Constant {
@@ -123,21 +124,23 @@ impl CoroutineForm {
 
     pub(crate) const fn row_layout(&self) -> &Interned<EffectRowLayout> { &self.row_layout }
 
-    /// The block that gets control after dispatching the state of the coroutine
-    /// frame. This might not necessarily be the same source block
-    pub(crate) fn dispatched_resume_block(&self, point: SuspensionPointID) -> BlockID {
-        *self
-            .dispatched_resume_blocks
-            .get(&point)
-            .expect("a lowered suspension point has a resume block")
+    /// Claims the resume entry of `point` for the lowering of that point to
+    /// fill. Each point fills its entry exactly once.
+    pub(super) fn claim_resume_entry(&self, point: SuspensionPointID) -> BlockID {
+        let entry =
+            self.resume_entries.get(&point).expect("a lowered suspension point has a resume entry");
+
+        entry.block
     }
 
-    /// The state of each suspension point with the block that continues it, in
-    /// the order of the states.
+    /// The state of each suspension point with its resume entry.
+    ///
+    /// The dispatch reads them once every block is lowered, so by then every
+    /// entry must have been filled.
     pub(crate) fn resume_points(&self) -> impl Iterator<Item = (Constant, BlockID)> {
-        self.dispatched_resume_blocks
-            .iter()
-            .map(|(point, block)| (self.frame_state_tag(FrameState::Suspended(*point)), *block))
+        self.resume_entries.iter().map(|(point, entry)| {
+            (self.frame_state_tag(FrameState::Suspended(*point)), entry.block)
+        })
     }
 
     /// The place of `savable` in the frame, if the frame holds it.
@@ -161,10 +164,10 @@ impl CoroutineForm {
         self.frame_field_types.get(savable)
     }
 
-    /// The place of what the function holds while it is suspended at the
-    /// suspension point that terminates `block`.
-    pub(crate) fn awaitee_place(&self, block: IRBlockID, engine: &TrackedEngine) -> Place {
-        self.frame_place_of(Savable::Awaitee(SuspensionPointID::new(block)), engine)
+    /// The place of the coroutine that the function waits for while it is
+    /// suspended at `point`.
+    pub(crate) fn awaitee_place(&self, point: SuspensionPointID, engine: &TrackedEngine) -> Place {
+        self.frame_place_of(Savable::Awaitee(point), engine)
             .expect("a suspension point that waits for a coroutine holds it in the frame")
     }
 
@@ -262,6 +265,14 @@ impl LoweringStyle {
 
     /// The form of a `coroutine_resume` function.
     pub(crate) const fn coroutine_form(&self) -> &CoroutineForm {
+        match self {
+            Self::Coroutine(form) => form,
+            Self::Callback(_) => panic!("this function should be a `coroutine_resume`"),
+        }
+    }
+
+    /// The form of a `coroutine_resume` function, to claim its resume entries.
+    pub(super) const fn coroutine_form_mut(&mut self) -> &mut CoroutineForm {
         match self {
             Self::Coroutine(form) => form,
             Self::Callback(_) => panic!("this function should be a `coroutine_resume`"),

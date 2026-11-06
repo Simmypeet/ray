@@ -8,12 +8,16 @@
 //! lowering the fragment goes through it rather than a fresh solver.
 
 use qbice::storage::intern::Interned;
+use rayc_coroutine_frame_layout::frame_layout::FrameLayout;
 use rayc_mono_ir::{
     MonoClosureInstance, MonoCoroutineInstance, MonoDefInstance, MonoEffectInstance,
     MonoGeneratedAdtDropInstance, MonoStructInstance,
     layout::{
-        CoroutineFrame, EffectRowLayout, StructLayout, build_coroutine_frame,
-        build_effect_row_layout, build_struct_layout,
+        CoroutineBody, StructLayout, build_struct_layout,
+        coroutine::{
+            EffectRowLayout, FrameFieldTypes, build_effect_row_layout, build_frame_field_types,
+            build_frame_layout,
+        },
     },
     signature::{CoroutineSignature, DefSignature, get_coroutine_signature, get_def_signature},
     ty::{
@@ -47,6 +51,8 @@ pub(crate) enum InstanceCallable {
     TupleDrop(Vec<Interned<Ty>>),
     ClosureDrop(Vec<Interned<Ty>>),
     NominalDrop(MonoGeneratedAdtDropInstance),
+    /// `Def.call` of a continuation, which resumes this coroutine.
+    Continuation(MonoCoroutineInstance),
     NoOp,
 }
 
@@ -132,8 +138,10 @@ impl Resolver {
             ApplicationView::CoroutineInstance(_) => {
                 panic!("the `Coroutine` trait has no method to call")
             }
-            ApplicationView::ContinuationDefInstance(_) => {
-                panic!("calling a continuation forwards operations, which is not lowered yet")
+            ApplicationView::ContinuationDefInstance(continuation) => {
+                assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DefCall).await);
+                let coroutine = continuation.coroutine_instance();
+                InstanceCallable::Continuation(self.resolve_coroutine_dictionary(coroutine).await)
             }
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
@@ -252,6 +260,24 @@ impl Resolver {
         InstanceCallable::Definition(self.definition_instance(instance_def_id, substitution).await)
     }
 
+    /// The coroutine that a call resumes if `dictionary` makes it a call of a
+    /// continuation, rather than of a function with a frame of its own.
+    pub(crate) async fn resolve_continuation_dictionary(
+        &self,
+        dictionary: &Interned<Ty>,
+    ) -> Option<MonoCoroutineInstance> {
+        let dictionary = dictionary.apply_subst_or_clone(&self.substitution, &self.engine);
+        let dictionary = self.solver.normalize(&dictionary).await;
+        let Ty::Application(application) = &*dictionary else {
+            return None;
+        };
+        let ApplicationView::ContinuationDefInstance(continuation) = application.view() else {
+            return None;
+        };
+
+        Some(self.resolve_coroutine_dictionary(continuation.coroutine_instance()).await)
+    }
+
     /// The coroutine behind a `Coroutine` dictionary, which is written for a
     /// coroutine type or a `&mut` to one.
     pub(crate) async fn resolve_coroutine_dictionary(
@@ -290,11 +316,23 @@ impl Resolver {
         self.engine.build_struct_layout(instance.clone()).await
     }
 
-    pub(crate) async fn coroutine_frame(
+    pub(crate) async fn frame_layout(
         &self,
         instance: &MonoCoroutineInstance,
-    ) -> Interned<CoroutineFrame> {
-        self.engine.build_coroutine_frame(instance.clone()).await
+    ) -> Interned<FrameLayout> {
+        self.engine.build_frame_layout(instance.clone()).await
+    }
+
+    pub(crate) async fn frame_field_types(
+        &self,
+        instance: &MonoCoroutineInstance,
+    ) -> Interned<FrameFieldTypes> {
+        self.engine.build_frame_field_types(instance.clone()).await
+    }
+
+    /// The function that `instance` suspends.
+    pub(crate) async fn coroutine_body(&self, instance: &MonoCoroutineInstance) -> CoroutineBody {
+        CoroutineBody::of(instance.view(), &self.solver).await
     }
 
     /// The calling signature of a global definition instance, including the

@@ -108,8 +108,11 @@ impl<'engine> Program<'engine> {
             // Defined by the fragment being printed.
             FunctionReference::Local(_) => {}
             FunctionReference::Global(instance) => self.fragments.insert(instance.clone()),
-            FunctionReference::Closure(closure) => self.fragments.insert(closure.owner().clone()),
+            FunctionReference::Closure(closure) => self.fragments.insert(closure.clone()),
             FunctionReference::NominalDrop(instance) => self.fragments.insert(instance.clone()),
+            FunctionReference::CoroutineResume(instance) => {
+                self.fragments.insert(instance.clone());
+            }
         }
     }
 
@@ -139,8 +142,14 @@ impl<'engine> Program<'engine> {
                 )
                 .await
             }
+            MonoFragmentInstance::Closure(instance) => {
+                rayc_mono_ir_builder::lower_closure(self.engine, instance).await
+            }
             MonoFragmentInstance::NominalDrop(instance) => {
                 rayc_mono_ir_builder::lower_nominal_drop(self.engine, instance).await
+            }
+            MonoFragmentInstance::CoroutineResume(instance) => {
+                rayc_mono_ir_builder::lower_coroutine_resume(self.engine, instance).await
             }
         }
     }

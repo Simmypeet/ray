@@ -125,6 +125,13 @@ impl FrameLayout {
         self.placements.iter().map(|(savable, placement)| (*savable, *placement))
     }
 
+    /// Returns where `savable` is placed, or `None` if the frame does not hold
+    /// it.
+    #[must_use]
+    pub fn placement(&self, savable: Savable) -> Option<Placement> {
+        self.placements.get(&savable).copied()
+    }
+
     /// Iterates over the suspension points where the function still suspends
     /// in this instance, each of which has a variant, in no particular order.
     pub fn suspension_points(&self) -> impl Iterator<Item = SuspensionPointID> + '_ {

@@ -8,9 +8,9 @@ use rayc_ir::ir_expr::{
 };
 use rayc_mono_ir::{
     operand::{Constant, Operand},
-    place::Place,
+    place::{Place, Projection},
     rvalue::{AddressOf, Binary, BinaryOperator, Rvalue},
-    ty::{MonoType, Tuple as TupleTy},
+    ty::MonoType,
 };
 
 use crate::function_lowering::FunctionLowering;
@@ -44,8 +44,12 @@ impl FunctionLowering<'_> {
             IRExprKind::Phi(_) => {}
             IRExprKind::Binary(binary) => self.lower_binary(binary, destination),
             IRExprKind::Call(call) => self.lower_call_in_callback_style(call, expression_id).await,
-            IRExprKind::Perform(perform) => self.lower_perform(perform, expression_id).await,
-            IRExprKind::RunWith(run_with) => self.lower_run_with(run_with, expression_id).await,
+            IRExprKind::Perform(perform) => {
+                self.lower_callback_perform(perform, expression_id).await;
+            }
+            IRExprKind::RunWith(run_with) => {
+                self.lower_callback_run_with(run_with, expression_id).await;
+            }
             IRExprKind::Tuple(tuple) => self.lower_tuple(tuple, expression_id),
             IRExprKind::StructInitialization(st) => self.lower_struct(st, expression_id).await,
             IRExprKind::Closure(closure) => self.lower_closure(closure, expression_id),
@@ -74,32 +78,26 @@ impl FunctionLowering<'_> {
         let ty = self.expression_type(expression_id).assert_as_struct();
         let layout = self.resolver().struct_layout(ty).await;
 
-        let fields = st
+        assert_eq!(layout.fields().len(), st.initializers().len());
+
+        let members = st
             .initializers()
             .iter()
-            .map(|(field_id, field)| (*field_id, self.expression_operand(*field)))
-            .collect();
+            .map(|(field_id, field)| {
+                (Projection::StructFieldIndex(*field_id), self.expression_operand(*field))
+            })
+            .collect::<Vec<_>>();
 
-        let value = Rvalue::new_struct(&layout, fields);
-        self.assign(self.expression_place(expression_id), value);
+        let destination = self.expression_place(expression_id);
+        self.initialize_aggregate(&destination, members);
     }
 
     fn lower_tuple(&mut self, tuple: &Tuple, expression_id: IRExprID) {
-        let ty = self.expression_type(expression_id).assert_as_tuple();
         let fields =
             tuple.elements().iter().map(|element| self.expression_operand(*element)).collect();
 
-        let value = tuple_value(ty, fields);
-        self.assign(self.expression_place(expression_id), value);
-    }
-}
-
-/// The value of a tuple of type `ty`. The empty tuple is the unit constant.
-pub(super) fn tuple_value(ty: &TupleTy, fields: Vec<Operand>) -> Rvalue {
-    if ty.is_empty() {
-        Rvalue::Use(Operand::Constant(Constant::Unit))
-    } else {
-        Rvalue::new_tuple(ty.clone(), fields)
+        let destination = self.expression_place(expression_id);
+        self.initialize_tuple(&destination, fields);
     }
 }
 

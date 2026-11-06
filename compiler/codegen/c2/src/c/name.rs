@@ -12,12 +12,15 @@ use qbice::{
     StableHash,
     stable_hash::{Sip128Hasher, StableHasher},
 };
+use rayc_coroutine_frame_layout::savable::Savable;
+use rayc_ir::address::Local;
 use rayc_mono_ir::{
-    MonoClosureInstance, MonoDefInstance, MonoFragmentInstance, MonoGeneratedAdtDropInstance,
-    MonoIR,
+    MonoClosureInstance, MonoCoroutineInstance, MonoDefInstance, MonoFragmentInstance,
+    MonoGeneratedAdtDropInstance, MonoIR,
     cfg::BlockID,
     function::{LocalID, MonoFunctionID, MonoFunctionKind},
-    place::Projection,
+    layout::coroutine::{ResumeVariantID, RowOperationID},
+    place::{CoroutineFrame, CoroutineProgress, CoroutineYield, Projection},
     ty::AggregateType,
 };
 use rayc_semantic_element::struct_body::FieldID;
@@ -77,6 +80,18 @@ impl AggregateName {
             AggregateType::Tuple(_) => ("Tuple", "rayc_c2::TupleLayout:v1"),
             AggregateType::Environment(_) => ("Environment", "rayc_c2::EnvironmentLayout:v1"),
             AggregateType::Struct(_) => ("Struct", "rayc_c2::StructLayout:v1"),
+            AggregateType::CoroutineFrame(_) => {
+                ("CoroutineFrame", "rayc_c2::CoroutineFrameLayout:v1")
+            }
+            AggregateType::CoroutineResume(_) => {
+                ("CoroutineResume", "rayc_c2::CoroutineResumeLayout:v1")
+            }
+            AggregateType::CoroutineYield(_) => {
+                ("CoroutineYield", "rayc_c2::CoroutineYieldLayout:v1")
+            }
+            AggregateType::CoroutineProgress(_) => {
+                ("CoroutineProgress", "rayc_c2::CoroutineProgressLayout:v1")
+            }
         };
         Self { id: StableID::of(domain, aggregate), category }
     }
@@ -142,7 +157,7 @@ impl fmt::Display for NominalDropName {
     }
 }
 
-/// The body of a source closure, which other fragments can reference.
+/// The root function of a source closure fragment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ClosureName(StableID);
 
@@ -158,11 +173,29 @@ impl fmt::Display for ClosureName {
     }
 }
 
+/// The `coroutine_resume` function of a coroutine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CoroutineResumeName(StableID);
+
+impl CoroutineResumeName {
+    pub(crate) fn of(instance: &MonoCoroutineInstance) -> Self {
+        Self(StableID::of("rayc_c2::CoroutineResume:v1", instance))
+    }
+}
+
+impl fmt::Display for CoroutineResumeName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "ray_coroutine_resume_{}", self.0)
+    }
+}
+
 /// The root function of an independently lowered fragment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FragmentName {
     Definition(DefinitionName),
+    Closure(ClosureName),
     NominalDrop(NominalDropName),
+    CoroutineResume(CoroutineResumeName),
 }
 
 impl FragmentName {
@@ -171,8 +204,12 @@ impl FragmentName {
             MonoFragmentInstance::Definition(instance) => {
                 Self::Definition(DefinitionName::of(instance))
             }
+            MonoFragmentInstance::Closure(instance) => Self::Closure(ClosureName::of(instance)),
             MonoFragmentInstance::NominalDrop(instance) => {
                 Self::NominalDrop(NominalDropName::of(instance))
+            }
+            MonoFragmentInstance::CoroutineResume(instance) => {
+                Self::CoroutineResume(CoroutineResumeName::of(instance))
             }
         }
     }
@@ -182,7 +219,9 @@ impl fmt::Display for FragmentName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Definition(name) => name.fmt(formatter),
+            Self::Closure(name) => name.fmt(formatter),
             Self::NominalDrop(name) => name.fmt(formatter),
+            Self::CoroutineResume(name) => name.fmt(formatter),
         }
     }
 }
@@ -192,20 +231,14 @@ impl fmt::Display for FragmentName {
 pub(crate) enum FunctionName {
     /// The fragment's root function.
     Root(FragmentName),
-    /// A closure, thunk, or operation handler nested in the fragment.
+    /// A thunk or operation handler nested in the fragment.
     Nested { fragment: FragmentName, category: &'static str, index: u64 },
-    /// A source closure body, named independently of its owning fragment so
-    /// other fragments can reference it.
-    Closure(ClosureName),
 }
 
 impl FunctionName {
     /// The name of `function_id` in `ir`, whose root function is called
     /// `fragment`.
     pub(crate) fn of(ir: &MonoIR, fragment: FragmentName, function_id: MonoFunctionID) -> Self {
-        if let Some(closure) = ir.closure_instance(function_id) {
-            return Self::Closure(ClosureName::of(&closure));
-        }
         if function_id == ir.root_id() {
             return Self::Root(fragment);
         }
@@ -224,7 +257,6 @@ impl fmt::Display for FunctionName {
             Self::Nested { fragment, category, index } => {
                 write!(formatter, "{fragment}_{category}_{index:X}")
             }
-            Self::Closure(name) => name.fmt(formatter),
         }
     }
 }
@@ -232,12 +264,12 @@ impl fmt::Display for FunctionName {
 /// The name segment distinguishing a nested function's origin.
 fn nested_function_category(kind: MonoFunctionKind) -> &'static str {
     match kind {
-        MonoFunctionKind::Def => {
-            panic!("compiler-internal invariant violation: nested function has def kind")
+        MonoFunctionKind::Def | MonoFunctionKind::Closure => {
+            panic!("compiler-internal invariant violation: a root kind on a nested function")
         }
-        MonoFunctionKind::Closure => "closure",
         MonoFunctionKind::Thunk => "thunk",
         MonoFunctionKind::OperationHandler => "handler",
+        MonoFunctionKind::CoroutineResume => "coroutine_resume",
     }
 }
 
@@ -269,6 +301,17 @@ pub(crate) enum FieldName {
     Struct(FieldID),
     OperationEnvironment(GlobalSymbolID),
     OperationFunction(GlobalSymbolID),
+    CoroutineFrameState,
+    /// The member of a frame that holds a value. The structs and the union
+    /// around it are anonymous, so accessing it does not depend on where the
+    /// layout places the value, and every member of a frame has a unique name.
+    CoroutineFrameSavable(Savable),
+    CoroutineResumeValue(ResumeVariantID),
+    /// The tag of a `coroutine_progress_t` or a `coroutine_yield_t`.
+    CoroutineTag,
+    CoroutineProgressYield,
+    CoroutineProgressReturn,
+    CoroutineYieldOperation(RowOperationID),
 }
 
 impl FieldName {
@@ -285,6 +328,22 @@ impl FieldName {
             }
             Projection::OperationRecordFunctionPointerField(operation) => {
                 Some(Self::OperationFunction(operation))
+            }
+            Projection::CoroutineFrame(CoroutineFrame::Tag) => Some(Self::CoroutineFrameState),
+            Projection::CoroutineFrame(CoroutineFrame::Savable(savable)) => {
+                Some(Self::CoroutineFrameSavable(savable))
+            }
+            Projection::CoroutineResumeValue(variant) => Some(Self::CoroutineResumeValue(variant)),
+            Projection::CoroutineProgress(CoroutineProgress::Tag)
+            | Projection::CoroutineYield(CoroutineYield::Tag) => Some(Self::CoroutineTag),
+            Projection::CoroutineProgress(CoroutineProgress::YieldPayload) => {
+                Some(Self::CoroutineProgressYield)
+            }
+            Projection::CoroutineProgress(CoroutineProgress::ReturnPayload) => {
+                Some(Self::CoroutineProgressReturn)
+            }
+            Projection::CoroutineYield(CoroutineYield::OperationPayload(operation)) => {
+                Some(Self::CoroutineYieldOperation(operation))
             }
         }
     }
@@ -307,6 +366,38 @@ impl fmt::Display for FieldName {
             Self::OperationFunction(operation) => {
                 write!(formatter, "operation_{}_function", operation_id(*operation))
             }
+            Self::CoroutineFrameState => formatter.write_str("state"),
+            Self::CoroutineFrameSavable(savable) => write_savable_name(formatter, *savable),
+            Self::CoroutineResumeValue(variant) => {
+                write!(formatter, "value{:X}", variant.index())
+            }
+            Self::CoroutineTag => formatter.write_str("tag"),
+            Self::CoroutineProgressYield => formatter.write_str("yield_value"),
+            Self::CoroutineProgressReturn => formatter.write_str("return_value"),
+            Self::CoroutineYieldOperation(operation) => {
+                write!(formatter, "operation{:X}", operation.index())
+            }
+        }
+    }
+}
+
+/// Writes the name of the member of a frame that holds `savable`.
+fn write_savable_name(formatter: &mut fmt::Formatter<'_>, savable: Savable) -> fmt::Result {
+    match savable {
+        Savable::Expression(expression) => write!(formatter, "expr{:X}", expression.index()),
+        Savable::Awaitee(point) => write!(formatter, "awaitee{:X}", point.block_id().index()),
+        Savable::Local(Local::Variable(variable)) => write!(formatter, "var{:X}", variable.index()),
+        Savable::Local(Local::Parameter(parameter)) => {
+            write!(formatter, "param{:X}", parameter.index())
+        }
+        Savable::Local(Local::ClosureParameter(parameter)) => {
+            write!(formatter, "closure_param{:X}", parameter.index())
+        }
+        Savable::Local(Local::OperationHandlerParameter(parameter)) => {
+            write!(formatter, "handler_param{:X}", parameter.index())
+        }
+        Savable::Local(Local::Capture(capture)) => {
+            write!(formatter, "capture{:X}", capture.index())
         }
     }
 }

@@ -113,6 +113,10 @@ impl IRFunction {
     #[must_use]
     pub const fn context(&self) -> &IRContext { &self.context }
 
+    /// Determines whether the function has a capture map.
+    #[must_use]
+    pub const fn has_capture(&self) -> bool { self.context().capture_map_id().is_some() }
+
     /// Returns the lifetime that a run of this function borrows the
     /// environment holding its captures for, when it does not own them; see
     /// [`IRContext::environment_lifetime`].

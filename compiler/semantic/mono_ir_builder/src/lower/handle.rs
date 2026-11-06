@@ -1,47 +1,20 @@
-use std::collections::BTreeMap;
-
 use rayc_ir::{
     cfg::{BlockID as IRBlockID, Handle as HandleTerminator, HandleClause},
-    ir_expr::{
-        IRExprKind,
-        handle::{Handle, YieldedValue},
-    },
+    ir_expr::{IRExprKind, handle::YieldedValue},
 };
 use rayc_mono_ir::{
-    MonoCoroutineInstance,
-    cfg::{BlockID, Switch, Terminator},
-    instance::FunctionReference,
-    layout::EffectRowLayout,
+    cfg::{BlockID, Terminator},
+    layout::coroutine::{RowOperationID, RowOperationKey},
     operand::Operand,
-    place::{FieldIndex, Place},
-    rvalue::Rvalue,
-    signature::CoroutineSignature,
-    ty::{AggregateType, CoroutineProgress, CoroutineResume, MonoType},
+    place::FieldIndex,
 };
-use rayc_semantic_element::struct_body::FieldID;
 
-use crate::{function_lowering::FunctionLowering, resolver::Resolver};
-
-/// What the edges out of a `handle` read.
-struct ResumedCoroutine<'a> {
-    /// The local that holds what the resume returned.
-    progress: &'a Place,
-    /// The frame that was resumed, which a clause's continuation keeps.
-    frame_pointer: &'a Operand,
-    /// The field of `core.Continuation` that holds the frame pointer.
-    continuation_field: FieldID,
-    row_layout: &'a EffectRowLayout,
-}
-
-/// The field of a `core.Continuation`, which holds the frame pointer.
-async fn continuation_field(resolver: &Resolver, continuation: &MonoType) -> FieldID {
-    let layout = resolver.struct_layout(continuation.assert_as_struct()).await;
-    *layout.fields().keys().next().expect("`core.Continuation` should have a field")
-}
+use super::poll::{PollLoop, Resumee, continuation_frame_field};
+use crate::function_lowering::FunctionLowering;
 
 impl FunctionLowering<'_> {
-    /// Lowers a `handle`: resumes the coroutine, and branches on how it came
-    /// back.
+    /// Lowers a `handle`: resumes the continuation in a poll loop, enters the
+    /// clause of each operation it handles, and forwards the others.
     pub(super) async fn lower_handle(
         &mut self,
         source_block: IRBlockID,
@@ -51,171 +24,75 @@ impl FunctionLowering<'_> {
         else {
             panic!("a `Handle` terminator evaluates a `Handle` expression")
         };
-        let resolver = self.resolver();
 
-        // The row is checked here rather than through the abandon block, which
-        // was decided before the substitution could empty the row.
-        assert!(
-            resolver.lower_effects(handle.forwarded_effect()).await.is_empty(),
-            "forwarding the operations of a resumed coroutine is not lowered to MonoIR yet"
-        );
-
-        let instance = resolver.resolve_coroutine_dictionary(handle.coroutine_instance()).await;
-        let signature = resolver.coroutine_signature(&instance).await;
-        let row_layout = resolver.effect_row_layout(signature.row()).await;
-
-        let continuation = self.expression_place(handle.continuation());
-        let field = continuation_field(resolver, self.expression_type(handle.continuation())).await;
-        let frame_pointer = Operand::Copy(self.project(&continuation).struct_field(field));
-
-        let progress = self.lower_resume_call(
-            handle,
-            &instance,
-            &signature,
-            &row_layout,
-            frame_pointer.clone(),
-        );
-
-        // Lower the edges while this block is still open, then branch to them.
-        let return_block = self.lower_handle_return_edge(source_block, terminator, &progress);
-        let resumed = ResumedCoroutine {
-            progress: &progress,
-            frame_pointer: &frame_pointer,
-            continuation_field: field,
-            row_layout: &row_layout,
+        // Resume the continuation with the value.
+        let instance =
+            self.resolver().resolve_coroutine_dictionary(handle.coroutine_instance()).await;
+        let resumee = Resumee::Continuation {
+            continuation: self.expression_place(handle.continuation()),
+            continuation_type: self.expression_type(handle.continuation()).clone(),
+            value: self.expression_operand(handle.value()),
+            value_type: self.expression_type(handle.value()).clone(),
         };
-        let yield_block =
-            self.lower_handle_yield_edges(source_block, terminator, handle, &resumed).await;
+        let poll = self.begin_poll(self.poll_site(source_block), instance, resumee).await;
 
-        let tag = self.project(&progress).coroutine_progress_tag();
-        self.set_switch_terminator(Operand::Copy(tag), vec![
-            (CoroutineProgress::return_tag(), return_block),
-            (CoroutineProgress::yield_tag(), yield_block),
-        ]);
-    }
-
-    /// Calls `coroutine_resume` with the value of `handle`, and returns the
-    /// place of the progress.
-    fn lower_resume_call(
-        &mut self,
-        handle: &Handle,
-        instance: &MonoCoroutineInstance,
-        signature: &CoroutineSignature,
-        row_layout: &EffectRowLayout,
-        frame_pointer: Operand,
-    ) -> Place {
-        // `args` holds the value in the member of its type.
-        let args = self.temporary(MonoType::new_aggregate(
-            AggregateType::CoroutineResume(CoroutineResume::new(signature.row().clone())),
-            self.engine(),
-        ));
-        let value = row_layout.resume_index(self.expression_type(handle.value()));
-        self.store(
-            self.project(&args).coroutine_resume_value(value),
-            self.expression_operand(handle.value()),
-        );
-
-        let progress = self.progress_temporary(signature);
-        self.call(
-            Some(progress.clone()),
-            Operand::Function(FunctionReference::CoroutineResume(instance.clone())),
-            vec![frame_pointer, Operand::Copy(args)],
-        );
-        progress
-    }
-
-    /// Creates the block taken when the coroutine completed, which defines the
-    /// value of the `Handle` expression.
-    fn lower_handle_return_edge(
-        &mut self,
-        source_block: IRBlockID,
-        terminator: &HandleTerminator,
-        progress: &Place,
-    ) -> BlockID {
-        let edge = self.lower_edge(source_block, terminator.return_block());
+        // A completed coroutine defines the value of the `Handle` expression.
+        let done = self.lower_edge(source_block, terminator.return_block());
         let destination = self.expression_place(terminator.expression());
-        let value = self.project(progress).coroutine_progress_return();
+        let return_arm = self.return_arm(&poll, destination, done);
 
-        self.in_new_block(|emit| {
-            emit.store(destination, Operand::Copy(value));
-            emit.set_terminator(Terminator::Goto(edge));
-        })
-    }
-
-    /// Creates the block taken when the coroutine suspended, which branches
-    /// to the clause of its operation.
-    async fn lower_handle_yield_edges(
-        &mut self,
-        source_block: IRBlockID,
-        terminator: &HandleTerminator,
-        handle: &Handle,
-        resumed: &ResumedCoroutine<'_>,
-    ) -> BlockID {
-        let yielded = self.project(resumed.progress).coroutine_progress_yield();
-
-        // A map orders the clauses by tag, whatever order they are stored in.
-        let mut targets = Vec::with_capacity(terminator.clauses().len());
+        // Each clause handles its operation.
+        let mut handled = Vec::with_capacity(terminator.clauses().len());
         for (operation_id, clause) in terminator.clauses() {
             let effect = self.lower_handled_effect(handle, operation_id).await;
-            let operation = resumed.row_layout.operation_index(&effect, operation_id);
-
-            let arguments = self.project(&yielded).coroutine_yield_operation(operation);
-            let block = self.lower_clause_edge(source_block, clause, &arguments, resumed).await;
-            targets.push((resumed.row_layout.yield_tag(operation), block));
+            let operation = poll.row_operation(&RowOperationKey::new(operation_id, effect));
+            let arm = self.clause_arm(source_block, clause, &poll, operation).await;
+            handled.push((operation, arm));
         }
 
-        let tag = self.project(&yielded).coroutine_yield_tag();
-        let otherwise = self.in_new_block(|emit| emit.set_terminator(Terminator::Unreachable));
-
-        self.in_new_block(|emit| {
-            emit.set_terminator(Terminator::Switch(Switch::new(
-                Operand::Copy(tag),
-                targets,
-                otherwise,
-            )));
-        })
+        self.finish_poll(&poll, return_arm, &handled);
     }
 
-    /// Creates the block that enters `clause`, which receives the arguments at
-    /// `arguments` and a new continuation that waits for the result of the
-    /// operation.
-    async fn lower_clause_edge(
+    /// Creates the arm that enters `clause` with the arguments of `operation`
+    /// and a new continuation that waits for the result of the operation.
+    async fn clause_arm(
         &mut self,
         source_block: IRBlockID,
         clause: &HandleClause,
-        arguments: &Place,
-        resumed: &ResumedCoroutine<'_>,
+        poll: &PollLoop,
+        operation: RowOperationID,
     ) -> BlockID {
         let edge = self.lower_edge(source_block, clause.block());
+        let arguments = self.yielded_arguments(poll, operation);
 
-        let mut values = Vec::with_capacity(clause.yielded().len());
+        // Each `Yielded` expression of the clause is an argument, or the
+        // continuation, whose only field is the pointer to the frame that was
+        // resumed.
+        let mut stores = Vec::with_capacity(clause.yielded().len());
         for yielded_id in clause.yielded() {
             let IRExprKind::Yielded(value) = self.source_expression(*yielded_id).kind() else {
                 panic!("a clause receives `Yielded` expressions")
             };
-            let value = match value.value() {
-                YieldedValue::Argument(index) => Rvalue::Use(Operand::Copy(
-                    self.project(arguments).tuple_field(FieldIndex::from_usize(index)),
-                )),
-                YieldedValue::Continuation => {
-                    let ty = self.expression_type(*yielded_id).assert_as_struct();
-                    let layout = self.resolver().struct_layout(ty).await;
-                    Rvalue::new_struct(
-                        &layout,
-                        BTreeMap::from([(
-                            resumed.continuation_field,
-                            resumed.frame_pointer.clone(),
-                        )]),
-                    )
+            let place = self.expression_place(*yielded_id);
+            stores.push(match value.value() {
+                YieldedValue::Argument(index) => {
+                    let argument =
+                        self.project(&arguments).tuple_field(FieldIndex::from_usize(index));
+                    (place, Operand::Copy(argument))
                 }
-            };
-
-            values.push((self.expression_place(*yielded_id), value));
+                YieldedValue::Continuation => {
+                    let continuation_type = self.expression_type(*yielded_id);
+                    let (field, _) =
+                        continuation_frame_field(self.resolver(), continuation_type).await;
+                    let frame_pointer = poll.frame_pointer().clone();
+                    (self.project(&place).struct_field(field), Operand::Copy(frame_pointer))
+                }
+            });
         }
 
         self.in_new_block(|emit| {
-            for (destination, value) in values {
-                emit.assign(destination, value);
+            for (destination, operand) in stores {
+                emit.store(destination, operand);
             }
 
             emit.set_terminator(Terminator::Goto(edge));

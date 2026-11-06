@@ -20,8 +20,8 @@ impl FunctionLowering<'_> {
             // continues with the value. Its abandon edge is never taken. A
             // coroutine only does so where the substitution emptied the row.
             IRTerminator::Suspend(suspend) => {
-                if let Some(variant) = self.suspension_variant(source_block) {
-                    self.lower_yield(source_block, suspend, variant).await;
+                if let Some(point) = self.suspension_point(source_block) {
+                    self.lower_suspension(point, suspend).await;
                     return;
                 }
                 self.lower_expression(suspend.expression()).await;
@@ -51,7 +51,7 @@ impl FunctionLowering<'_> {
                 );
 
                 if self.is_coroutine() {
-                    self.lower_coroutine_return(value);
+                    self.complete_coroutine(value);
                     return;
                 }
                 Terminator::Return(Some(value))

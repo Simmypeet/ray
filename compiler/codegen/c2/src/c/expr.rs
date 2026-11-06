@@ -91,6 +91,7 @@ impl Display for ConstantExpr<'_> {
             Constant::CInt(value) => value.fmt(formatter),
             Constant::CStr(value) => StringLiteral(value).fmt(formatter),
             Constant::NullPointer(ty) => write!(formatter, "(({})0)", TypeName(ty)),
+            Constant::EmptyAggregate(ty) => EmptyAggregateLiteral(ty).fmt(formatter),
         }
     }
 }

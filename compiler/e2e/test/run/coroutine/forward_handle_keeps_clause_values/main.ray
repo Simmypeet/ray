@@ -1,0 +1,41 @@
+eff Handled:
+    def handled(a: int32, b: int32) -> int32
+
+
+eff Passed:
+    def passed() -> int32
+
+
+def body() -> int32 \ {Handled, Passed}:
+    let first = Passed.passed()
+    return first + Handled.handled(first, 2) + Passed.passed()
+
+
+# The clause receives its arguments and the continuation out of a `handle` that
+# suspended here earlier, whose values may share memory with its awaitee.
+def driver(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 \ {Passed} where (co.Return = int32, co.Effect = {Handled, Passed}):
+    return handle k(value):
+        case Handled.handled(a, b) resume next:
+            let sum = a + b
+            let more = Passed.passed()
+            return finish(next, sum + more)
+
+
+# `body` performs `Handled` only once, so this clause never runs.
+def finish(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 \ {Passed} where (co.Return = int32, co.Effect = {Handled, Passed}):
+    return handle k(value):
+        case Handled.handled(a, b) resume _: a + b
+
+
+def run_it(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Passed}):
+    return handle k(value):
+        case Passed.passed() resume next: run_it(next, 3)
+
+
+def start() -> int32 \ {Passed}:
+    return driver(coro body(), ())
+
+
+# first = 3; handled = (3 + 2) + 3 = 8; last = 3; 3 + 8 + 3 = 14
+def main() -> int32:
+    return run_it(coro start(), ())

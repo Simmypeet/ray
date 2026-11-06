@@ -63,8 +63,8 @@ impl Emitter<'_> {
                 self.lower_nominal_drop_call(instance, vec![Operand::Copy(value)], destination);
             }
             InstanceCallable::NoOp => {}
-            InstanceCallable::Closure(_, _, _) => {
-                panic!("a Drop dictionary cannot call a closure")
+            InstanceCallable::Closure(_, _, _) | InstanceCallable::Continuation(_) => {
+                panic!("a Drop dictionary cannot call a closure or a continuation")
             }
         }
     }

@@ -161,6 +161,17 @@ impl<'p, 'engine> FunctionPrinter<'p, 'engine> {
                     BlockName(branch.else_block())
                 )
             }
+            Terminator::Switch(switch) => {
+                out.push_str("switch (");
+                self.write_operand(out, switch.discriminant()).await?;
+                out.push_str(") {");
+                for (value, target) in switch.targets() {
+                    out.push_str(" case ");
+                    self.write_operand_constant(out, value).await?;
+                    write!(out, ": goto {};", BlockName(target))?;
+                }
+                write!(out, " default: goto {}; }}", BlockName(switch.otherwise()))
+            }
             Terminator::Return(Some(value)) => {
                 out.push_str("return ");
                 self.write_operand(out, value).await?;

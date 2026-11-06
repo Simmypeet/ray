@@ -1,0 +1,41 @@
+eff Wide:
+    def wide() -> int64
+
+
+eff Ask:
+    def ask(value: int32) -> int32
+
+
+def body() -> int32 \ {Ask}:
+    return Ask.ask(1) + Ask.ask(2)
+
+
+# A coroutine calls a continuation, and keeps it in its frame while the operation
+# is handled further out. Its return type differs from that of the coroutine, so
+# the progress is converted.
+def finish(k: core.Continuation[r, c], value: r, extra: int32) given (co: core.Coroutine[c]) -> bool \ {Ask} where (co.Return = int32, co.Effect = {Ask}):
+    let total = k(value)
+    return total + extra == 26
+
+
+# The row of the caller has an operation that resumes with a wider type, so what
+# it is resumed with is converted on the way to the continuation as well.
+def outer(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> bool \ {Ask, Wide} where (co.Return = int32, co.Effect = {Ask}):
+    let matches = finish(k, value, 3)
+    let wide = Wide.wide()
+    if matches:
+        return wide == 9
+    return false
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> bool where (co.Return = bool, co.Effect = {Ask, Wide}):
+    return handle k(value):
+        case Ask.ask(value) resume next: drive(next, value + 10)
+        case Wide.wide() resume next: drive(next, 9)
+
+
+# total = (1 + 10) + (2 + 10) = 23; 23 + 3 = 26
+def main() -> int32:
+    if drive(coro outer(coro body(), ()), ()):
+        return 26
+    return 0
