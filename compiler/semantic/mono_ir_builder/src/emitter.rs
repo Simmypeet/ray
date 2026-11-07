@@ -163,7 +163,9 @@ impl<'a> Emitter<'a> {
         self.initialize_aggregate(destination, captures.chain(handler_records));
     }
 
-    pub(crate) fn call(&mut self, call: Call) { self.push_instruction(Instruction::Call(call)); }
+    pub(crate) fn push_call(&mut self, call: Call) {
+        self.push_instruction(Instruction::Call(call));
+    }
 
     /// Calls the definition `callee`, passing `handler_records` to its
     /// handler-record slots.
@@ -183,8 +185,13 @@ impl<'a> Emitter<'a> {
         // destination place
         let call_destination = (!is_void).then(|| destination.clone());
 
-        self.call(
-            Call::new(call_destination, callee, arguments).with_handler_records(handler_records),
+        self.push_call(
+            Call::builder()
+                .maybe_destination(call_destination)
+                .callee(callee)
+                .arguments(arguments)
+                .handler_records(handler_records)
+                .build(),
         );
 
         // if we are calling a `void`  function, we need to assign "fake" unit

@@ -1,3 +1,4 @@
+use bon::Builder;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{operand::Operand, place::Place, rvalue::Rvalue};
@@ -29,36 +30,29 @@ impl Assign {
 ///
 /// [`FunctionSignature`]: crate::ty::FunctionSignature
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+    Builder,
 )]
 pub struct Call {
     destination: Option<Place>,
     callee: Operand,
     environment: Option<Operand>,
     arguments: Vec<Operand>,
+    #[builder(default = Vec::new())]
     handler_records: Vec<Operand>,
 }
 
 impl Call {
-    /// A call with only source arguments.
-    #[must_use]
-    pub const fn new(destination: Option<Place>, callee: Operand, arguments: Vec<Operand>) -> Self {
-        Self { destination, callee, environment: None, arguments, handler_records: Vec::new() }
-    }
-
-    /// This call, passing `environment` to the callee's environment slot.
-    #[must_use]
-    pub fn with_environment(self, environment: Operand) -> Self {
-        Self { environment: Some(environment), ..self }
-    }
-
-    /// This call, passing `handler_records` to the callee's handler-record
-    /// slots, in their order.
-    #[must_use]
-    pub fn with_handler_records(self, handler_records: Vec<Operand>) -> Self {
-        Self { handler_records, ..self }
-    }
-
     #[must_use]
     pub const fn destination(&self) -> Option<&Place> { self.destination.as_ref() }
 
