@@ -130,3 +130,14 @@ together.
 
 When adding a getter method that returns a collection of items, prefer
 returning an iterator instead of a heap allocated collection like `Vec<T>`.
+
+# About iteration order of `FxHashMap` and `FxHashSet`
+
+When iterating the elements of `FxHashMap` or `FxHashSet`, you might be tempted
+to sort the elements before iterating them to make the iteration order
+deterministic to make the tests and incremental compilation more stable.
+However, this is not necessary because if the elements are inserted in the same
+order, which is always the case in our codebase, the iteration order is
+guaranteed to be the same. And of course, `FxHashMap` and `FxHashSet` don't use
+RandomState hasher, so its internal state and the iteration order is not
+affected by the process's random seed.
