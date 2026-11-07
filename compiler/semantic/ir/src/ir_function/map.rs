@@ -306,7 +306,7 @@ impl IRFunctionMap {
         &self,
         function_id: IRFunctionID,
     ) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
-        self.capture_map(function_id).iter()
+        self.capture_map(function_id).ordered_captures()
     }
 
     /// Returns the capture layout owned by a nested function context.

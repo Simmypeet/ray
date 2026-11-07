@@ -78,7 +78,7 @@ impl<'a> LayoutContext<'a> {
         self.ir_function.context().capture_map_id().map(|capture_map_id| {
             self.ir_function_map
                 .get_capture_map(capture_map_id)
-                .iter()
+                .ordered_captures()
                 .map(|(id, _)| Savable::Local(Local::Capture(id)))
         })
     }

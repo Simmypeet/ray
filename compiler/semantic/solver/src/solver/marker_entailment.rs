@@ -489,7 +489,7 @@ impl Solver {
                     .captures_for_function(function_id)
                     .expect("should have a capture map for it");
 
-                components.extend(capture_map.iter().map(|(_, capture)| {
+                components.extend(capture_map.ordered_captures().map(|(_, capture)| {
                     (
                         StructuralComponent::CoroutineClosureCapture(capture.span()),
                         capture

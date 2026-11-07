@@ -23,7 +23,7 @@ impl<'a> Lower<TypedExprWithID<&'a Closure>> for Builder {
         );
 
         // Keep the source identity even when lowering assigns a different function ID.
-        let function_id = self
+        let (function_id, captures) = self
             .lower_closure_function(
                 context,
                 closure.function_id(),
@@ -32,7 +32,7 @@ impl<'a> Lower<TypedExprWithID<&'a Closure>> for Builder {
             )
             .await;
         self.register_closure(closure_view.local_closure_id(), function_id);
-        let captures = self.lower_capture_operands(context, closure.function_id());
+        let captures = self.lower_capture_operands(context, closure.function_id(), &captures);
 
         LoweredExpression::RValue(self.emit_expression(IRExpr::new(
             IRExprKind::Closure(IrClosure::new(function_id, captures)),

@@ -1,4 +1,5 @@
 use qbice::storage::intern::Interned;
+use rayc_hash::FxHashMap;
 use rayc_ir::{
     address::Address,
     ir_closure::{CaptureID, ClosureParameterID},
@@ -11,7 +12,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::{parameter::ParameterID, struct_body::FieldID};
 use rayc_solver::Solver;
 use rayc_type::ty::{Ty, TyKind, application::ClosureID};
-use rayc_typed_ast::typed_function::TypedFunctionID;
+use rayc_typed_ast::{name_binding::Source, typed_function::TypedFunctionID};
 
 use self::function_build_state::FunctionBuildState;
 use crate::{context::LoweringContext, diagnostic::Diagnostic, statement::LoopTarget};
@@ -88,7 +89,7 @@ impl Builder {
 
 impl Builder {
     /// Resolves the `Drop` dictionary of each capture shared by the operation
-    /// handler `handler`, in capture-layout order.
+    /// handler `handler`, by the capture in `captures` that holds its source.
     ///
     /// The handlers only borrow their shared captures, so the function running
     /// the `run … with` drops them once the handled body returns. A borrowed
@@ -99,9 +100,13 @@ impl Builder {
         &mut self,
         context: &LoweringContext<'_>,
         handler: TypedFunctionID,
-    ) -> Vec<Interned<Ty>> {
-        let mut drops = Vec::new();
+        captures: &FxHashMap<Source, CaptureID>,
+    ) -> FxHashMap<CaptureID, Interned<Ty>> {
+        let mut drops = FxHashMap::default();
         for (_, requirement) in context.capture_plan(handler).captures() {
+            let capture = *captures
+                .get(&requirement.source())
+                .expect("every captured source should have a capture");
             let ty = requirement.storage_ty(&self.engine);
             let dropped = DroppedValue::new_simple(requirement.span());
 
@@ -118,7 +123,7 @@ impl Builder {
                     None => Ty::new_error(TyKind::Instance, &self.engine),
                 };
 
-            drops.push(drop_instance);
+            drops.insert(capture, drop_instance);
         }
         drops
     }

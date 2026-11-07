@@ -88,7 +88,9 @@ impl Collector<'_> {
             // The captures are the environment of the nested bodies, which
             // hold their own saved locals.
             Waitee::RunWith(run_with) => {
-                for &capture in run_with.captures().iter().chain(run_with.handler_captures()) {
+                for capture in
+                    run_with.captures().operands().chain(run_with.handler_captures().operands())
+                {
                     let expression = function.get_expression(capture);
                     self.push(
                         expression.ty().clone(),
