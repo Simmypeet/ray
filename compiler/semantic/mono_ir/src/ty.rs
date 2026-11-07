@@ -484,11 +484,6 @@ impl EnvironmentSlot {
 pub struct FunctionSignature {
     environment_slot: Option<EnvironmentSlot>,
     parameter_types: Interned<[Interned<MonoType>]>,
-    /// `None` rather than an empty row, so that every signature without
-    /// handler records is spelled the same way and can be built without an
-    /// engine.
-    // REVIEW: Let's remove the Option and always have an empty row. We can afford to make
-    // constructors accept additional engine
     handler_record_slots: EffectRow,
     return_type: ReturnType,
     variadic: bool,
@@ -659,10 +654,10 @@ pub async fn monomorphize_type(
     ty: &Interned<Ty>,
     substitution: &Subst,
 ) -> Interned<Ty> {
-    let effect = ty.apply_subst_or_clone(substitution, self.engine());
-    let effect = self.normalize(ty).await;
+    let ty = ty.apply_subst_or_clone(substitution, self.engine());
+    let ty = self.normalize(&ty).await;
 
-    Ty::erase_lifetimes(&effect, self.engine()).await
+    Ty::erase_lifetimes(&ty, self.engine()).await
 }
 
 /// Lowers a concrete, closed effect row using the supplied substitution.
