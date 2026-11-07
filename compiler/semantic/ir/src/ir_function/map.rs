@@ -325,14 +325,14 @@ impl IRFunctionMap {
 
     /// Returns the arena-owned capture layout referenced by a nested function.
     #[must_use]
-    pub fn capture_map_id(&self, function_id: IRFunctionID) -> CaptureMapID {
+    pub fn get_capture_map_id(&self, function_id: IRFunctionID) -> CaptureMapID {
         self.get_function(function_id).context().assert_capture_map_id()
     }
 
     /// Returns the capture layout of a nested function, or `None` for the
     /// definition function, which does not capture values.
     #[must_use]
-    pub fn nested_capture_map_id(&self, function_id: IRFunctionID) -> Option<CaptureMapID> {
+    pub fn try_get_capture_map_id(&self, function_id: IRFunctionID) -> Option<CaptureMapID> {
         self.get_function(function_id).context().capture_map_id()
     }
 
@@ -386,7 +386,7 @@ impl IRFunctionMap {
     }
 
     fn capture_map(&self, function_id: IRFunctionID) -> &CaptureMap {
-        let capture_map = self.capture_map_id(function_id);
+        let capture_map = self.get_capture_map_id(function_id);
         self.capture_maps.get(capture_map).expect("IR capture map should exist")
     }
 

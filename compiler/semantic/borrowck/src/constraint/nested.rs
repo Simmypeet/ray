@@ -164,7 +164,7 @@ impl ConstraintCollector<'_> {
 
         self.pair_captures(
             &mut interface,
-            self.ir.capture_map_id(body.function_id()),
+            self.ir.get_capture_map_id(body.function_id()),
             body.captures(),
         );
         interface.pair(body_context.return_ty(), ty);
@@ -197,7 +197,7 @@ impl ConstraintCollector<'_> {
         // The handlers share one capture layout, and so its external
         // regions.
         let handlers_shared_capture_map_id =
-            self.ir.capture_map_id(run_with.handlers()[0].function_id());
+            self.ir.get_capture_map_id(run_with.handlers()[0].function_id());
         self.pair_captures(
             &mut interface,
             handlers_shared_capture_map_id,
