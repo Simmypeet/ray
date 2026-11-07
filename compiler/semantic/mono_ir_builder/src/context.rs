@@ -16,6 +16,7 @@ use rayc_ir::{
 };
 use rayc_mono_ir::{
     MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance,
+    MonoRunWithInstance,
     cfg::BlockID,
     layout::{EnvironmentLayout, build_environment_layout},
     operand::Operand,
@@ -105,6 +106,12 @@ impl<'a> Context<'a> {
     /// creates.
     pub(crate) fn sibling_body(&self, function_id: IRFunctionID) -> MonoBodyInstance {
         self.body.with_ir_function(function_id)
+    }
+
+    /// The `run ... with` expression `expression` of the function being
+    /// lowered.
+    pub(crate) fn run_with_instance(&self, expression: IRExprID) -> MonoRunWithInstance {
+        MonoRunWithInstance::new(self.body.clone(), expression)
     }
 
     /// The calling signature of the function `function_id` of the same IR.
