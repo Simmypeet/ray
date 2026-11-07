@@ -1,21 +1,21 @@
 use rayc_ir::address::{Address, AddressRoot, Projection as IRProjection};
 use rayc_mono_ir::place::{FieldIndex, Place};
 
-use crate::function_lowering::FunctionLowering;
+use crate::{context::Context, emitter::Emitter};
 
-impl FunctionLowering<'_> {
-    pub(super) fn lower_address(&self, address: &Address) -> Place {
+impl Emitter<'_> {
+    pub(super) fn lower_address(&self, address: &Address, ctx: &Context<'_>) -> Place {
         let mut place = match address.root() {
             AddressRoot::Error => {
                 panic!("compiler-internal invariant violation: error address reached MonoIR")
             }
-            AddressRoot::Variable(variable) => self.variable_place(variable),
-            AddressRoot::Parameter(parameter) => self.parameter_place(parameter),
-            AddressRoot::ClosureParameter(parameter) => self.closure_parameter_place(parameter),
+            AddressRoot::Variable(variable) => ctx.variable_place(variable),
+            AddressRoot::Parameter(parameter) => ctx.parameter_place(parameter),
+            AddressRoot::ClosureParameter(parameter) => ctx.closure_parameter_place(parameter),
             AddressRoot::OperationHandlerParameter(parameter) => {
-                self.operation_parameter_place(parameter)
+                ctx.operation_parameter_place(parameter)
             }
-            AddressRoot::Capture(capture) => self.capture_place(capture),
+            AddressRoot::Capture(capture) => ctx.capture_place(capture),
         };
         for projection in address.projections() {
             let projector = self.project(&place);
