@@ -45,9 +45,13 @@ impl Emitter<'_> {
 
         let arguments =
             perform.arguments().iter().map(|argument| ctx.expression_operand(*argument)).collect();
-        self.call(
-            Call::new(Some(ctx.expression_place(expression_id)), fn_callee, arguments)
-                .with_environment(environment),
+        self.push_call(
+            Call::builder()
+                .destination(ctx.expression_place(expression_id))
+                .callee(fn_callee)
+                .arguments(arguments)
+                .environment(environment)
+                .build(),
         );
     }
 
@@ -125,10 +129,14 @@ impl Emitter<'_> {
             .collect();
 
         let callee = Operand::Function(FunctionReference::Local(ctx.target_function_id(body_id)));
-        self.call(
-            Call::new(Some(ctx.expression_place(expression_id)), callee, Vec::new())
-                .with_environment(environment)
-                .with_handler_records(handler_records),
+        self.push_call(
+            Call::builder()
+                .destination(ctx.expression_place(expression_id))
+                .callee(callee)
+                .arguments(Vec::new())
+                .handler_records(handler_records)
+                .environment(environment)
+                .build(),
         );
 
         // The handlers only borrow their shared captures, so they are dropped

@@ -2,39 +2,39 @@
 //! what does not read the source function is available on the [`Emitter`].
 
 use qbice::storage::intern::Interned;
-use rayc_ir::cfg::{AddressDrop, ExprDiscard};
+use rayc_ir::{
+    cfg::{AddressDrop, ExprDiscard},
+    ir_closure::CaptureID,
+};
 use rayc_mono_ir::{
     operand::Operand,
     place::{FieldIndex, Place},
 };
 use rayc_type::ty::Ty;
 
-use crate::{
-    function_lowering::{FunctionLowering, emitter::Emitter},
-    resolver::InstanceCallable,
-};
+use crate::{context::Context, emitter::Emitter, resolver::InstanceCallable};
 
-impl FunctionLowering<'_> {
+impl Emitter<'_> {
     /// Drops the unused value of an expression statement with the dictionary
     /// selected during type checking.
-    pub(super) async fn lower_expr_discard(&mut self, discard: &ExprDiscard) {
+    pub(super) async fn lower_expr_discard(&mut self, discard: &ExprDiscard, ctx: &Context<'_>) {
         // `Drop.drop` returns unit, which is itself unused, so every call
         // writes to one scratch temporary.
-        let destination = self.scratch_unit();
+        let destination = self.new_unit_place();
 
-        let value = self.expression_place(discard.expression());
+        let value = ctx.expression_place(discard.expression());
         self.lower_drop(value, discard.drop_instance(), destination).await;
     }
 
     /// Drops the value held in a place with the dictionary selected by drop
     /// elaboration. The place is passed to the drop directly, so no
     /// temporary holds the moved value.
-    pub(super) async fn lower_address_drop(&mut self, drop: &AddressDrop) {
+    pub(super) async fn lower_address_drop(&mut self, drop: &AddressDrop, ctx: &Context<'_>) {
         // `Drop.drop` returns unit, which is unused, so every call writes to
         // one scratch temporary.
-        let destination = self.scratch_unit();
+        let destination = self.new_unit_place();
 
-        let value = self.lower_address(drop.address());
+        let value = self.lower_address(drop.address(), ctx);
         self.lower_drop(value, drop.drop_instance(), destination).await;
     }
 }
@@ -51,19 +51,20 @@ impl Emitter<'_> {
     ) {
         match self.resolver().resolve_drop_call(dictionary).await {
             InstanceCallable::Definition(callee) => {
-                self.lower_call_with_args(callee, vec![Operand::Copy(value)], destination).await;
+                let arguments = vec![Operand::Copy(value)];
+                self.lower_call_with_args(callee, arguments, Vec::new(), destination).await;
             }
             InstanceCallable::TupleDrop(element_instances) => {
                 Box::pin(self.lower_tuple_drop(&value, &element_instances, destination)).await;
             }
-            InstanceCallable::ClosureDrop(capture_instances) => {
-                Box::pin(self.lower_closure_drop(&value, &capture_instances, destination)).await;
+            InstanceCallable::ClosureDrop(captures) => {
+                Box::pin(self.lower_closure_drop(&value, &captures, destination)).await;
             }
             InstanceCallable::NominalDrop(instance) => {
                 self.lower_nominal_drop_call(instance, vec![Operand::Copy(value)], destination);
             }
             InstanceCallable::NoOp => {}
-            InstanceCallable::Closure(_, _, _) | InstanceCallable::Continuation(_) => {
+            InstanceCallable::Closure(_, _) | InstanceCallable::Continuation(_) => {
                 panic!("a Drop dictionary cannot call a closure or a continuation")
             }
         }
@@ -83,17 +84,18 @@ impl Emitter<'_> {
         }
     }
 
-    /// Expands a built-in closure `Drop` call into the selected capture calls.
+    /// Expands a built-in closure `Drop` call into the selected capture calls,
+    /// one per capture with its `Drop` dictionary.
     pub(crate) async fn lower_closure_drop(
         &mut self,
         closure: &Place,
-        capture_instances: &[Interned<Ty>],
+        captures: &[(CaptureID, Interned<Ty>)],
         destination: Place,
     ) {
         // A closure value is its inline environment, whose fields are the
         // captures. Destroy them in reverse order, matching tuple Drop.
-        for (index, capture_instance) in capture_instances.iter().enumerate().rev() {
-            let capture = self.project(closure).environment_field(FieldIndex::from_usize(index));
+        for (capture, capture_instance) in captures.iter().rev() {
+            let capture = self.project(closure).environment_capture(*capture);
             self.lower_drop(capture, capture_instance, destination.clone()).await;
         }
     }

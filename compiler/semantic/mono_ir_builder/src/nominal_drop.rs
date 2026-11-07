@@ -53,7 +53,7 @@ pub(crate) async fn lower(
     let root_id = output.root_id();
     let mut emit = Emitter::new(&resolver, &mut output, root_id);
 
-    let value = emit.place(emit.parameter_ids().next().expect("should have self parameter"));
+    let value = emit.local_place(emit.parameter_ids().next().expect("should have self parameter"));
     let destination = emit.new_unit_place();
 
     // TODO: lower the drop of an enum's payload once enum values are lowered

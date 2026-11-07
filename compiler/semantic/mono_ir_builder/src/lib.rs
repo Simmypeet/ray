@@ -16,10 +16,11 @@ use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::subst::Subst;
 
-use crate::context::Context;
+use crate::fragment::Fragment;
 
 mod context;
-mod function_lowering;
+mod emitter;
+mod fragment;
 mod lower;
 mod nominal_drop;
 mod resolver;
@@ -35,8 +36,8 @@ pub async fn lower_ir(
     let source = engine.get_ir(def_id).await;
     let solver = Solver::without_givens(engine.clone()).await;
     let instance = MonoDefInstance::new(def_id, substitution, &solver).await;
-    let (context, output) = Context::new_definition(solver, instance, source).await;
-    context.lower(output).await
+    let (fragment, output) = Fragment::new_definition(solver, instance, source).await;
+    fragment.lower(output).await
 }
 
 /// Lowers one concrete source closure into `MonoIR`.
@@ -44,8 +45,8 @@ pub async fn lower_ir(
 pub async fn lower_closure(engine: &TrackedEngine, instance: MonoClosureInstance) -> MonoIR {
     let source = engine.get_ir(instance.owner().def_id()).await;
     let solver = Solver::without_givens(engine.clone()).await;
-    let (context, output) = Context::new_closure(solver, instance, source).await;
-    context.lower(output).await
+    let (fragment, output) = Fragment::new_closure(solver, instance, source).await;
+    fragment.lower(output).await
 }
 
 /// Lowers the compiler-generated `Drop.drop` body selected by one concrete
@@ -69,7 +70,7 @@ pub async fn lower_coroutine_resume(
     let body = CoroutineBody::of(instance.view(), &solver).await;
     let source = engine.get_ir(body.def_id()).await;
     let function_id = body.function_id(&source);
-    let (context, output) =
-        Context::new_coroutine(solver, body.into_owner(), source, instance, function_id).await;
-    context.lower(output).await
+    let (fragment, output) =
+        Fragment::new_coroutine(solver, body.into_owner(), source, instance, function_id).await;
+    fragment.lower(output).await
 }
