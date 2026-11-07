@@ -52,7 +52,7 @@ impl Emitter<'_> {
                 );
 
                 if ctx.is_coroutine() {
-                    self.complete_coroutine(value, ctx);
+                    self.lower_complete_coroutine(value, ctx);
                     return;
                 }
                 Terminator::Return(Some(value))
