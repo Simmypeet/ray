@@ -65,9 +65,8 @@ impl Emitter<'_> {
                 "closure always has two arguments: environment and argument tuple"
             );
 
-            for (index, (capture, _)) in source.captures(function_id).enumerate() {
-                let field = FieldIndex::from_usize(index);
-                let value = self.project(&environment).environment_field(field);
+            for (capture, _) in source.get_captures_of_function(function_id) {
+                let value = self.project(&environment).environment_capture(capture);
                 self.store_upvar(destination, Local::Capture(capture), value);
             }
 

@@ -176,7 +176,7 @@ impl SourceMap {
         }
 
         if source.context().capture_map_id().is_some() {
-            for (capture, _) in fragment.source_captures(source_id) {
+            for (capture, _) in fragment.get_captures_of_source_function(source_id) {
                 let savable = Savable::Local(IRLocal::Capture(capture));
                 let place = Self::bind_frame_upvar(savable, emit, form);
                 self.captures.insert(capture, place);

@@ -302,7 +302,7 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn captures(
+    pub fn get_captures_of_function(
         &self,
         function_id: IRFunctionID,
     ) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {

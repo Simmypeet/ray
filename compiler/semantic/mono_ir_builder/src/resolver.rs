@@ -218,7 +218,7 @@ impl Resolver {
         let instance = MonoClosureInstance::from_closure(&self.solver, closure).await;
         let source = self.engine.get_ir(instance.owner().def_id()).await;
         let function_id = source.get_function_id_of_closure(instance.closure_id());
-        source.captures(function_id).map(|(capture, _)| capture).collect()
+        source.get_captures_of_function(function_id).map(|(capture, _)| capture).collect()
     }
 
     /// Maps a trait method into the concrete instance and method namespaces.

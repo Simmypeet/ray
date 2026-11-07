@@ -177,11 +177,11 @@ impl Fragment {
         self.source.get_function(source_id)
     }
 
-    pub(crate) fn source_captures(
+    pub(crate) fn get_captures_of_source_function(
         &self,
         source_id: IRFunctionID,
     ) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
-        self.source.captures(source_id)
+        self.source.get_captures_of_function(source_id)
     }
 
     pub(crate) fn function_abi(&self, source_id: IRFunctionID) -> &CallbackStyleFunctionABI {
