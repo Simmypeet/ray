@@ -100,16 +100,10 @@ impl Fragment {
         let functions = callback::fragment_functions(&source, root);
         let environment_functions = callback::environment_functions(&source, &functions);
         let environments =
-            Environments::new(&resolver, &source, environment_functions.iter().copied()).await;
-        let (fragment, output) = CallbackFragment::new(
-            &resolver,
-            &source,
-            &environments,
-            owner.def_id(),
-            instance.clone(),
-            functions,
-        )
-        .await;
+            Environments::new(&resolver, &source, &owner, environment_functions.iter().copied())
+                .await;
+        let (fragment, output) =
+            CallbackFragment::new(&resolver, &source, &owner, instance.clone(), functions).await;
 
         let style = FragmentStyle::Callback(fragment);
         (Self { engine, instance, owner, resolver, source, environments, style }, output)
@@ -131,10 +125,11 @@ impl Fragment {
 
         let environment_functions = created_closures(&source, function_id).collect::<Vec<_>>();
         let environments =
-            Environments::new(&resolver, &source, environment_functions.iter().copied()).await;
+            Environments::new(&resolver, &source, &owner, environment_functions.iter().copied())
+                .await;
 
         let signature = engine.get_coroutine_signature(instance.clone()).await;
-        let output = MonoIR::new(instance.clone(), signature.resume_signature().clone());
+        let output = MonoIR::new(instance.clone(), signature.resume_signature().clone(), &engine);
 
         let style = FragmentStyle::Coroutine { function_id };
         let instance = instance.into();
@@ -180,10 +175,6 @@ impl Fragment {
 
     pub(crate) fn source_function(&self, source_id: IRFunctionID) -> &IRFunction {
         self.source.get_function(source_id)
-    }
-
-    pub(crate) fn source_capture_count(&self, source_id: IRFunctionID) -> usize {
-        self.source.captures(source_id).len()
     }
 
     pub(crate) fn source_captures(
