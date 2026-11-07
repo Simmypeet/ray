@@ -28,7 +28,7 @@ use rayc_symbol::{
 use rayc_type::signature::{get_effect_row, get_return_type};
 
 use crate::{
-    MonoClosureInstance, MonoCoroutineInstance, MonoDefInstance, MonoEnvironmentInstance,
+    MonoCoroutineInstance, MonoDefInstance, MonoEnvironmentInstance,
     ty::{
         AggregateType, CoroutineProgress, CoroutineResume, EffectRow, EnvironmentSlot,
         FunctionSignature, MonoType, PointerMutability, ReturnType, lower_type,
@@ -187,14 +187,8 @@ async fn callback_function_signature_executor(
         // A closure body receives its environment by value, as callers of the
         // closure's `Def.call` pass it.
         IRContext::Closure(closure) => {
-            let closure_id = source
-                .closures()
-                .find_map(|(closure, function)| (function == key.function_id).then_some(closure))
-                .expect("a closure body should be registered as a closure");
-            let environment = MonoEnvironmentInstance::Closure(MonoClosureInstance::new(
-                owner.clone(),
-                closure_id,
-            ));
+            let capture_map = source.get_capture_map_id(key.function_id);
+            let environment = MonoEnvironmentInstance::new(owner.clone(), capture_map);
             let parameters = closure.parameters().map(|(_, p)| p.ty().clone()).collect();
             (parameters, EnvironmentSlot::ByValue(environment), true)
         }

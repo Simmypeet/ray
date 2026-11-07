@@ -1,5 +1,6 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
-use rayc_ir::ir_closure::CaptureMapID;
+use rayc_ir::{get_ir, ir_closure::CaptureMapID};
+use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
@@ -264,7 +265,10 @@ impl MonoClosureInstance {
     }
 }
 
-/// One capture environment in one concrete owner specialization.
+/// The capture environment of one capture map in one concrete owner
+/// specialization: the inline environment of a closure, which is also the
+/// value type of the closure, or the environment that the body of a
+/// `run ... with` or the clauses of one handler record share.
 ///
 /// It is nominal, so lowering an environment type never lowers its captures,
 /// which an [`EnvironmentLayout`] tells.
@@ -273,25 +277,33 @@ impl MonoClosureInstance {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
-pub enum MonoEnvironmentInstance {
-    /// The inline environment of a closure, which is also the value type of
-    /// the closure.
-    Closure(MonoClosureInstance),
-
-    /// The environment that the functions of one capture map share: the body
-    /// of a `run ... with`, or the clauses of one handler record.
-    Nested { owner: MonoDefInstance, capture_map: CaptureMapID },
+pub struct MonoEnvironmentInstance {
+    owner: MonoDefInstance,
+    capture_map: CaptureMapID,
 }
 
 impl MonoEnvironmentInstance {
+    /// The environment of `capture_map`, a capture map of the IR of `owner`.
+    #[must_use]
+    pub const fn new(owner: MonoDefInstance, capture_map: CaptureMapID) -> Self {
+        Self { owner, capture_map }
+    }
+
+    /// The inline environment of `closure`, whose capture map is in the IR of
+    /// its owner.
+    pub async fn of_closure(closure: &MonoClosureInstance, engine: &TrackedEngine) -> Self {
+        let source = engine.get_ir(closure.owner().def_id()).await;
+        let function_id = source.get_function_id_of_closure(closure.closure_id());
+        Self::new(closure.owner().clone(), source.get_capture_map_id(function_id))
+    }
+
     /// The definition whose IR holds the captures of the environment.
     #[must_use]
-    pub const fn owner(&self) -> &MonoDefInstance {
-        match self {
-            Self::Closure(closure) => closure.owner(),
-            Self::Nested { owner, .. } => owner,
-        }
-    }
+    pub const fn owner(&self) -> &MonoDefInstance { &self.owner }
+
+    /// The capture map, in the IR of the owner, that the environment holds.
+    #[must_use]
+    pub const fn capture_map(&self) -> CaptureMapID { self.capture_map }
 }
 
 /// A concrete instantiation of a source struct definition.

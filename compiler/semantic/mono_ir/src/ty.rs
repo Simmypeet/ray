@@ -575,7 +575,7 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
 
             ApplicationView::Closure(closure) => {
                 let closure = MonoClosureInstance::from_closure(solver, closure).await;
-                let environment = MonoEnvironmentInstance::Closure(closure);
+                let environment = MonoEnvironmentInstance::of_closure(&closure, engine).await;
                 engine.intern(MonoType::Aggregate(AggregateType::Environment(environment)))
             }
 

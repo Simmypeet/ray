@@ -334,16 +334,11 @@ async fn build_environment_layout_executor(
     let owner = instance.owner();
     let solver = Solver::without_givens(engine.clone()).await;
     let source = engine.get_ir(owner.def_id()).await;
-    let capture_map = match instance {
-        MonoEnvironmentInstance::Closure(closure) => {
-            source.capture_map_id(source.get_function_id_of_closure(closure.closure_id()))
-        }
-        MonoEnvironmentInstance::Nested { capture_map, .. } => *capture_map,
-    };
+    let capture_map = instance.capture_map();
 
     // Each capture is stored as its binding, or as a reference to it.
     let mut captures = FxHashMap::default();
-    for (capture_id, capture) in source.get_capture_map(capture_map).iter() {
+    for (capture_id, capture) in source.get_capture_map(capture_map).ordered_captures() {
         let ty = lower_type(&solver, &capture.storage_ty(engine), owner.substitution()).await;
         captures.insert(capture_id, ty);
     }
