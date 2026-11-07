@@ -126,10 +126,10 @@ impl CoroutineForm {
     /// Claims the resume entry of `point` for the lowering of that point to
     /// fill. Each point fills its entry exactly once.
     pub(crate) fn claim_resume_entry(&self, point: SuspensionPointID) -> BlockID {
-        let entry =
-            self.resume_entries.get(&point).expect("a lowered suspension point has a resume entry");
-
-        entry.block
+        self.resume_entries
+            .get(&point)
+            .expect("a lowered suspension point has a resume entry")
+            .block
     }
 
     /// The state of each suspension point with its resume entry.
