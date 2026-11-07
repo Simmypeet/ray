@@ -113,9 +113,13 @@ impl IRFunction {
     #[must_use]
     pub const fn context(&self) -> &IRContext { &self.context }
 
-    /// Determines whether the function has a capture map.
+    /// Returns `true` if this IR represents the closure.
     #[must_use]
-    pub const fn has_capture(&self) -> bool { self.context().capture_map_id().is_some() }
+    pub const fn is_closure(&self) -> bool { matches!(self.context(), IRContext::Closure(_)) }
+
+    /// Returns `true` if this IR represents the top-level definition function.
+    #[must_use]
+    pub const fn is_def(&self) -> bool { matches!(self.context(), IRContext::Def) }
 
     /// Returns the lifetime that a run of this function borrows the
     /// environment holding its captures for, when it does not own them; see
