@@ -7,37 +7,38 @@ use rayc_mono_ir::{
     operand::{Constant, Operand},
 };
 
-use crate::function_lowering::FunctionLowering;
+use crate::{context::Context, emitter::Emitter};
 
-impl FunctionLowering<'_> {
+impl Emitter<'_> {
     pub(super) async fn lower_terminator(
         &mut self,
         source_block: IRBlockID,
         terminator: &IRTerminator,
+        ctx: &Context<'_>,
     ) {
         let terminator = match terminator {
             // In direct form a suspension point evaluates its expression and
             // continues with the value. Its abandon edge is never taken. A
             // coroutine only does so where the substitution emptied the row.
             IRTerminator::Suspend(suspend) => {
-                if let Some(point) = self.suspension_point(source_block) {
-                    self.lower_suspension(point, suspend).await;
+                if let Some(point) = ctx.suspension_point(source_block) {
+                    self.lower_suspension(point, suspend, ctx).await;
                     return;
                 }
-                self.lower_expression(suspend.expression()).await;
-                Terminator::Goto(self.lower_edge(source_block, suspend.resume_block()))
+                self.lower_expression(suspend.expression(), ctx).await;
+                Terminator::Goto(self.lower_edge(source_block, suspend.resume_block(), ctx))
             }
             IRTerminator::Handle(handle) => {
-                self.lower_handle(source_block, handle).await;
+                self.lower_handle(source_block, handle, ctx).await;
                 return;
             }
             IRTerminator::Jump(successor) => {
-                Terminator::Goto(self.lower_edge(source_block, *successor))
+                Terminator::Goto(self.lower_edge(source_block, *successor, ctx))
             }
             IRTerminator::Conditional(conditional) => Terminator::Branch(Branch::new(
-                self.expression_operand(conditional.condition()),
-                self.lower_edge(source_block, conditional.then_block()),
-                self.lower_edge(source_block, conditional.else_block()),
+                ctx.expression_operand(conditional.condition()),
+                self.lower_edge(source_block, conditional.then_block(), ctx),
+                self.lower_edge(source_block, conditional.else_block(), ctx),
             )),
             // Only an abandon edge reaches it, and direct form never takes
             // one, so abandon blocks are not lowered.
@@ -47,11 +48,11 @@ impl FunctionLowering<'_> {
             IRTerminator::Return(value) => {
                 let value = value.map_or_else(
                     || Operand::Constant(Constant::Unit),
-                    |value| self.expression_operand(value),
+                    |value| ctx.expression_operand(value),
                 );
 
-                if self.is_coroutine() {
-                    self.complete_coroutine(value);
+                if ctx.is_coroutine() {
+                    self.complete_coroutine(value, ctx);
                     return;
                 }
                 Terminator::Return(Some(value))
@@ -65,24 +66,29 @@ impl FunctionLowering<'_> {
     /// All incoming values are first copied to temporaries, then written to
     /// their phi destinations. This preserves parallel-copy semantics when phi
     /// inputs and destinations overlap.
-    pub(super) fn lower_edge(&mut self, predecessor: IRBlockID, successor: IRBlockID) -> BlockID {
-        let target = self.block(successor);
+    pub(super) fn lower_edge(
+        &mut self,
+        predecessor: IRBlockID,
+        successor: IRBlockID,
+        ctx: &Context<'_>,
+    ) -> BlockID {
+        let target = ctx.block(successor);
 
         // place all incoming phi values into their destination locals.
-        let copies = self
+        let copies = ctx
             .source_block_instructions(successor)
             .iter()
             .filter_map(|instruction| {
                 let IRInstruction::Expression(expression_id) = instruction else {
                     return None;
                 };
-                let IRExprKind::Phi(phi) = self.source_expression(*expression_id).kind() else {
+                let IRExprKind::Phi(phi) = ctx.source_expression(*expression_id).kind() else {
                     return None;
                 };
                 let incoming = phi.value_from(predecessor).unwrap_or_else(|| {
                     panic!("phi {expression_id:?} has no input for predecessor {predecessor:?}")
                 });
-                Some((self.expression_place(*expression_id), self.expression_operand(incoming)))
+                Some((ctx.expression_place(*expression_id), ctx.expression_operand(incoming)))
             })
             .collect::<Vec<_>>();
 
