@@ -138,7 +138,7 @@ impl<'p, 'engine> FunctionPrinter<'p, 'engine> {
         }
         self.write_operand(out, call.callee()).await?;
         out.push('(');
-        for (index, argument) in call.arguments().iter().enumerate() {
+        for (index, argument) in call.abi_arguments().enumerate() {
             if index != 0 {
                 out.push_str(", ");
             }

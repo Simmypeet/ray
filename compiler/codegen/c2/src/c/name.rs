@@ -13,13 +13,16 @@ use qbice::{
     stable_hash::{Sip128Hasher, StableHasher},
 };
 use rayc_coroutine_frame_layout::savable::Savable;
-use rayc_ir::address::Local;
+use rayc_ir::{address::Local, ir_closure::CaptureID};
 use rayc_mono_ir::{
     MonoClosureInstance, MonoCoroutineInstance, MonoDefInstance, MonoFragmentInstance,
     MonoGeneratedAdtDropInstance, MonoIR,
     cfg::BlockID,
     function::{LocalID, MonoFunctionID, MonoFunctionKind},
-    layout::coroutine::{ResumeVariantID, RowOperationID},
+    layout::{
+        HandlerRecordID,
+        coroutine::{ResumeVariantID, RowOperationID},
+    },
     place::{CoroutineFrame, CoroutineProgress, CoroutineYield, Projection},
     ty::AggregateType,
 };
@@ -76,7 +79,9 @@ pub(crate) struct AggregateName {
 impl AggregateName {
     pub(crate) fn of(aggregate: &AggregateType) -> Self {
         let (category, domain) = match aggregate {
-            AggregateType::EffectHandler(_) => ("EffectHandler", "rayc_c2::EffectHandlerLayout:v1"),
+            AggregateType::EffectHandlerCallback(_) => {
+                ("EffectHandler", "rayc_c2::EffectHandlerLayout:v1")
+            }
             AggregateType::Tuple(_) => ("Tuple", "rayc_c2::TupleLayout:v1"),
             AggregateType::Environment(_) => ("Environment", "rayc_c2::EnvironmentLayout:v1"),
             AggregateType::Struct(_) => ("Struct", "rayc_c2::StructLayout:v1"),
@@ -297,7 +302,8 @@ impl fmt::Display for BlockName {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FieldName {
     Tuple(u32),
-    Environment(u32),
+    EnvironmentCapture(CaptureID),
+    EnvironmentHandlerRecord(HandlerRecordID),
     Struct(FieldID),
     OperationEnvironment(GlobalSymbolID),
     OperationFunction(GlobalSymbolID),
@@ -320,7 +326,10 @@ impl FieldName {
     pub(crate) const fn of_projection(projection: Projection) -> Option<Self> {
         match projection {
             Projection::Dereference => None,
-            Projection::EnvironmentFieldIndex(index) => Some(Self::Environment(index.index())),
+            Projection::EnvironmentCapture(capture) => Some(Self::EnvironmentCapture(capture)),
+            Projection::EnvironmentHandlerRecord(record) => {
+                Some(Self::EnvironmentHandlerRecord(record))
+            }
             Projection::TupleFieldIndex(index) => Some(Self::Tuple(index.index())),
             Projection::StructFieldIndex(field) => Some(Self::Struct(field)),
             Projection::OperationRecordEnvironmentField(operation) => {
@@ -348,7 +357,7 @@ impl FieldName {
         }
     }
 
-    /// The member at `index` of a tuple or environment layout.
+    /// The member at `index` of a tuple layout.
     pub(crate) fn positional(index: usize, make: fn(u32) -> Self) -> Self {
         make(index.try_into().expect("aggregate field index should fit in u32"))
     }
@@ -358,7 +367,10 @@ impl fmt::Display for FieldName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Tuple(index) => write!(formatter, "elem{index:X}"),
-            Self::Environment(index) => write!(formatter, "capture{index:X}"),
+            Self::EnvironmentCapture(capture) => write!(formatter, "capture{:X}", capture.index()),
+            Self::EnvironmentHandlerRecord(record) => {
+                write!(formatter, "handler{:X}", record.index())
+            }
             Self::Struct(field) => write!(formatter, "field_{}", field.index()),
             Self::OperationEnvironment(operation) => {
                 write!(formatter, "operation_{}_environment", operation_id(*operation))

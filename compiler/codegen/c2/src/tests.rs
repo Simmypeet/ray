@@ -44,15 +44,18 @@ async fn writes_ordered_translation_unit_from_mono_ir() {
     let unit_aggregate = AggregateType::Tuple(unit_tuple.clone());
     let unit_type = engine.intern(MonoType::Aggregate(unit_aggregate));
 
-    let signature =
-        FunctionSignature::new(engine.intern_unsized([outer_type]), ReturnType::Value(unit_type));
+    let signature = FunctionSignature::builder()
+        .parameter_types(engine.intern_unsized([outer_type]))
+        .return_type(ReturnType::Value(unit_type))
+        .engine(&engine)
+        .build();
     let instance = MonoDefInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(7)),
         Subst::new_empty(),
         &solver,
     )
     .await;
-    let mut ir = MonoIR::new(instance.clone(), signature);
+    let mut ir = MonoIR::new(instance.clone(), signature, &engine);
     ir.set_terminator(
         ir.root_id(),
         ir.entry_block(ir.root_id()),
@@ -94,8 +97,11 @@ async fn discovers_called_definition_through_worklist() {
     let solver = Solver::without_givens(engine.clone()).await;
     let unit_tuple = Tuple::new(engine.intern_unsized(Vec::new()));
     let unit_type = engine.intern(MonoType::Aggregate(AggregateType::Tuple(unit_tuple)));
-    let signature =
-        FunctionSignature::new(engine.intern_unsized(Vec::new()), ReturnType::Value(unit_type));
+    let signature = FunctionSignature::builder()
+        .parameter_types(engine.intern_unsized(Vec::new()))
+        .return_type(ReturnType::Value(unit_type))
+        .engine(&engine)
+        .build();
     let root_instance = MonoDefInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(11)),
         Subst::new_empty(),
@@ -109,7 +115,7 @@ async fn discovers_called_definition_through_worklist() {
     )
     .await;
 
-    let mut root = MonoIR::new(root_instance.clone(), signature.clone());
+    let mut root = MonoIR::new(root_instance.clone(), signature.clone(), &engine);
     root.push_instruction(
         root.root_id(),
         root.entry_block(root.root_id()),
@@ -125,7 +131,7 @@ async fn discovers_called_definition_through_worklist() {
         Terminator::Return(Some(Operand::Constant(Constant::Unit))),
     );
 
-    let mut dependency = MonoIR::new(dependency_instance.clone(), signature);
+    let mut dependency = MonoIR::new(dependency_instance.clone(), signature, &engine);
     dependency.set_terminator(
         dependency.root_id(),
         dependency.entry_block(dependency.root_id()),

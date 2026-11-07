@@ -3,14 +3,18 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_mono_ir::{
-    MonoCoroutineInstance, MonoEffectInstance, MonoStructInstance,
+    MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance, MonoStructInstance,
     layout::{
-        HandlerLayout, StructLayout, build_handler_layout, build_struct_layout,
+        EffectHandlerCallbackLayout, EnvironmentLayout, StructLayout, build_environment_layout,
+        build_handler_layout, build_struct_layout,
         coroutine::{
             EffectRowLayout, build_effect_row_layout, build_frame_field_types, build_frame_layout,
         },
     },
-    ty::{AggregateType, CoroutineYield, EffectRow, FunctionSignature, MonoType, ReturnType},
+    ty::{
+        AggregateType, CoroutineYield, EffectHandlerCallback, EffectRow, FunctionSignature,
+        MonoType, ReturnType,
+    },
 };
 use rayc_qbice::TrackedEngine;
 
@@ -29,8 +33,9 @@ use crate::c::{
 pub(crate) struct AggregateRegistry {
     /// Each registered aggregate with its precomputed C name.
     names: FxHashMap<AggregateType, AggregateName>,
-    handler_layouts: FxHashMap<MonoEffectInstance, Interned<HandlerLayout>>,
+    handler_layouts: FxHashMap<MonoEffectInstance, Interned<EffectHandlerCallbackLayout>>,
     struct_layouts: FxHashMap<MonoStructInstance, Interned<StructLayout>>,
+    environment_layouts: FxHashMap<MonoEnvironmentInstance, Interned<EnvironmentLayout>>,
     frame_members: FxHashMap<MonoCoroutineInstance, FrameMembers>,
     row_layouts: FxHashMap<EffectRow, Interned<EffectRowLayout>>,
 }
@@ -69,7 +74,7 @@ impl AggregateRegistry {
     async fn complete(&mut self, engine: &TrackedEngine, mut found: Vec<AggregateType>) {
         while let Some(aggregate) = found.pop() {
             match &aggregate {
-                AggregateType::EffectHandler(handler) => {
+                AggregateType::EffectHandlerCallback(handler) => {
                     let instance = handler.mono_effect_instance();
                     let layout = engine.build_handler_layout(instance.clone()).await;
                     for operation in layout.operations() {
@@ -80,10 +85,15 @@ impl AggregateRegistry {
                 AggregateType::Tuple(tuple) => {
                     tuple.fields().iter().for_each(|field| self.discover_type(field, &mut found));
                 }
-                AggregateType::Environment(environment) => {
-                    for capture in environment.captures() {
+                AggregateType::Environment(instance) => {
+                    let layout = engine.build_environment_layout(instance.clone()).await;
+                    for (_, capture) in layout.captures() {
                         self.discover_type(capture, &mut found);
                     }
+                    for (_, record) in layout.handler_records() {
+                        self.discover_handler_record(record.effect(), &mut found);
+                    }
+                    self.environment_layouts.insert(instance.clone(), layout);
                 }
                 AggregateType::Struct(instance) => {
                     let layout = engine.build_struct_layout(instance.clone()).await;
@@ -170,13 +180,31 @@ impl AggregateRegistry {
         signature: &FunctionSignature,
         found: &mut Vec<AggregateType>,
     ) {
+        if let Some(slot) = signature.environment_slot() {
+            self.discover_type(&slot.ty(), found);
+        }
         for parameter in signature.parameter_types() {
             self.discover_type(parameter, found);
+        }
+        for effect in signature.handler_record_slots() {
+            self.discover_handler_record(effect, found);
         }
         match signature.return_type() {
             ReturnType::Void => {}
             ReturnType::Value(ty) => self.discover_type(ty, found),
         }
+    }
+
+    /// Names the handler record of `effect`, which a pointer refers to.
+    fn discover_handler_record(
+        &mut self,
+        effect: &MonoEffectInstance,
+        found: &mut Vec<AggregateType>,
+    ) {
+        self.discover(
+            AggregateType::EffectHandlerCallback(EffectHandlerCallback::new(effect.clone())),
+            found,
+        );
     }
 
     fn discover(&mut self, aggregate: AggregateType, found: &mut Vec<AggregateType>) {
@@ -189,7 +217,7 @@ impl AggregateRegistry {
     /// The layout of `aggregate`, if a query tells it.
     fn layout_of(&self, aggregate: &AggregateType) -> NominalLayout<'_> {
         match aggregate {
-            AggregateType::EffectHandler(handler) => NominalLayout::EffectHandler(
+            AggregateType::EffectHandlerCallback(handler) => NominalLayout::EffectHandler(
                 self.handler_layouts
                     .get(handler.mono_effect_instance())
                     .expect("a registered effect handler should have its layout"),
@@ -206,14 +234,21 @@ impl AggregateRegistry {
                 NominalLayout::EffectRow(self.row_layout(yielded.row()))
             }
             AggregateType::Struct(instance) => NominalLayout::Struct(self.struct_layout(instance)),
-            AggregateType::Tuple(_)
-            | AggregateType::Environment(_)
-            | AggregateType::CoroutineProgress(_) => NominalLayout::None,
+            AggregateType::Environment(instance) => {
+                NominalLayout::Environment(self.environment_layout(instance))
+            }
+            AggregateType::Tuple(_) | AggregateType::CoroutineProgress(_) => NominalLayout::None,
         }
     }
 
     fn struct_layout(&self, instance: &MonoStructInstance) -> &StructLayout {
         self.struct_layouts.get(instance).expect("a registered struct should have its layout")
+    }
+
+    fn environment_layout(&self, instance: &MonoEnvironmentInstance) -> &EnvironmentLayout {
+        self.environment_layouts
+            .get(instance)
+            .expect("a registered environment should have its layout")
     }
 
     fn row_layout(&self, row: &EffectRow) -> &EffectRowLayout {
@@ -247,11 +282,12 @@ impl AggregateRegistry {
     ) -> Vec<(AggregateName, &'a AggregateType)> {
         match aggregate {
             // Handler members are pointers, which need no complete type.
-            AggregateType::EffectHandler(_) => Vec::new(),
+            AggregateType::EffectHandlerCallback(_) => Vec::new(),
             AggregateType::Tuple(tuple) => self.named_aggregates(tuple.fields()),
-            AggregateType::Environment(environment) => {
-                self.named_aggregates(environment.captures())
-            }
+            // Handler records are pointers, which need no complete type.
+            AggregateType::Environment(instance) => self.named_aggregates(
+                self.environment_layout(instance).captures().map(|(_, capture)| capture),
+            ),
             AggregateType::Struct(instance) => {
                 self.named_aggregates(self.struct_layout(instance).fields().values())
             }

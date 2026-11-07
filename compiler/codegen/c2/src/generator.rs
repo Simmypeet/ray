@@ -1,6 +1,8 @@
 //! The worklist driver that turns `MonoIR` fragments into a translation unit.
 
-use rayc_mono_ir::{MonoDefInstance, MonoFragmentInstance, MonoIR, signature::get_def_signature};
+use rayc_mono_ir::{
+    MonoDefInstance, MonoFragmentInstance, MonoIR, signature::get_callback_def_signature,
+};
 
 use crate::{
     c::{name::DefinitionName, ty::FunctionDeclaration},
@@ -89,10 +91,9 @@ impl<'engine> Generator<'engine> {
 
     /// Declares an extern definition through its declared signature.
     async fn declare_extern(&mut self, instance: MonoDefInstance, name: &str) {
-        let signature = self.program.engine().get_def_signature(instance).await;
-        let signature = signature.signature();
-        self.program.use_signature(signature).await;
-        let declaration = FunctionDeclaration::new(signature, &name);
+        let signature = self.program.engine().get_callback_def_signature(instance).await;
+        self.program.use_signature(&signature).await;
+        let declaration = FunctionDeclaration::new(&signature, &name);
         self.unit.declare_function(format_args!("extern {declaration}"));
     }
 

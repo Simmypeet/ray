@@ -36,6 +36,7 @@ use rayc_mono_ir::{
     MonoCoroutineInstance,
     cfg::{BlockID, Terminator},
     instance::FunctionReference,
+    instruction::Call,
     layout::coroutine::{EffectRowLayout, RowOperationID, RowOperationKey},
     operand::{Constant, Operand},
     place::Place,
@@ -48,7 +49,7 @@ use rayc_mono_ir::{
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::struct_body::FieldID;
 
-use crate::{function_lowering::FunctionLowering, resolver::Resolver};
+use crate::{context::Context, emitter::Emitter, resolver::Resolver};
 
 /// Where a poll loop is in the function being lowered.
 #[derive(Debug, Clone, Copy)]
@@ -70,6 +71,11 @@ impl PollSite {
             Self::Suspending(_) => true,
         }
     }
+
+    /// Where a poll loop that `block` of the function of `ctx` ends with is.
+    pub(super) fn of(block: IRBlockID, ctx: &Context<'_>) -> Self {
+        ctx.suspension_point(block).map_or(Self::Inline, Self::Suspending)
+    }
 }
 
 /// How the function holds the frame of the coroutine it resumes, and what it
@@ -90,7 +96,9 @@ pub(super) enum Resumee {
 }
 
 impl Resumee {
-    /// What the coroutine is first resumed with, and its type.
+    /// What the coroutine is first resumed with, and its type: unit for a
+    /// frame that has not started, or the value a continuation is called
+    /// with.
     fn first_resume_value(&self, engine: &TrackedEngine) -> (Operand, Interned<MonoType>) {
         match self {
             Self::NewFrame { .. } => {
@@ -170,55 +178,91 @@ fn resume_type(row: &EffectRow, engine: &TrackedEngine) -> Interned<MonoType> {
     )
 }
 
-impl FunctionLowering<'_> {
-    /// Where a poll loop that `block` ends with is.
-    pub(super) fn poll_site(&self, block: IRBlockID) -> PollSite {
-        self.suspension_point(block).map_or(PollSite::Inline, PollSite::Suspending)
-    }
-
+impl Emitter<'_> {
     /// Ends the current block by entering a new poll loop that resumes
     /// `instance`, and leaves the poll block selected with the resume call in
     /// it. [`Self::finish_poll`] terminates it.
+    ///
+    /// ```c
+    ///     args.<member of v's type> = v;          // v is unit for a new frame
+    ///     held = <hold_resumee>;
+    ///     <enter_poll_block>                      // ends with `goto poll;`
+    /// poll:                                       // left selected
+    ///     frame_pointer = <load_frame_pointer>;
+    ///     progress = callee_resume(frame_pointer, args);
+    ///     // no terminator yet: `finish_poll` adds the switch
+    /// ```
     pub(super) async fn begin_poll(
         &mut self,
         site: PollSite,
         instance: MonoCoroutineInstance,
         resumee: Resumee,
+        ctx: &Context<'_>,
     ) -> PollLoop {
-        let engine = self.engine();
         let resolver = self.resolver();
         let signature = resolver.coroutine_signature(&instance).await;
         let row_layout = resolver.effect_row_layout(signature.row()).await;
         let coroutine = ResumedCoroutine { instance, signature, row_layout };
 
         // `args` holds the first resume value in the member of its type.
-        let args = self.temporary(resume_type(coroutine.signature.row(), engine));
-        let (value, value_type) = resumee.first_resume_value(engine);
-        let member = coroutine.row_layout.get_resume_variant_id(&value_type);
-        self.store(self.project(&args).coroutine_resume_value(member), value);
+        let args = self.lower_coroutine_begin_args(&coroutine, &resumee);
 
         // Whatever outlives a return from `coroutine_resume` must be in the
         // frame, so a suspending loop keeps the continuation there.
-        let held = self.hold_resumee(site, &resumee);
-        let block = self.enter_poll_block(site, &coroutine, &args);
+        let held = self.hold_resumee(site, &resumee, ctx);
+        let block = self.enter_poll_block(site, &coroutine, &args, ctx);
 
         // The frame pointer is taken in the poll block, since nothing but the
         // frame outlives a return from `coroutine_resume`. It is also copied
         // out first: the values a clause receives may share memory with an
         // awaitee that holds the continuation.
         let frame_pointer = self.load_frame_pointer(&resumee, held).await;
-        let progress = self.progress_temporary(&coroutine.signature);
-        self.call(
-            Some(progress.clone()),
-            Operand::Function(FunctionReference::CoroutineResume(coroutine.instance.clone())),
-            vec![Operand::Copy(frame_pointer.clone()), Operand::Copy(args.clone())],
+        let progress = self.new_progress_temporary_place(&coroutine.signature);
+        self.push_call(
+            Call::builder()
+                .destination(progress.clone())
+                .callee(Operand::Function(FunctionReference::CoroutineResume(
+                    coroutine.instance.clone(),
+                )))
+                .arguments(vec![Operand::Copy(frame_pointer.clone()), Operand::Copy(args.clone())])
+                .build(),
         );
 
         PollLoop { resumed: coroutine, site, block, args, progress, frame_pointer }
     }
 
+    fn lower_coroutine_begin_args(
+        &mut self,
+        coroutine: &ResumedCoroutine,
+        resumee: &Resumee,
+    ) -> Place {
+        let engine = self.engine();
+
+        let args = self.new_temporary_place(MonoType::new_aggregate(
+            AggregateType::CoroutineResume(CoroutineResume::new(coroutine.signature.row().clone())),
+            engine,
+        ));
+        let (value, value_type) = resumee.first_resume_value(engine);
+        let member = coroutine.row_layout.get_resume_variant_id(&value_type);
+        self.store(self.project(&args).coroutine_resume_value(member), value);
+
+        args
+    }
+
     /// The place the poll block reads the frame of `resumee` from.
-    fn hold_resumee(&mut self, site: PollSite, resumee: &Resumee) -> Place {
+    ///
+    /// Only a continuation resumed at a suspension point emits anything: it is
+    /// moved into the frame, since a local does not outlive a return from
+    /// `coroutine_resume`.
+    ///
+    /// ```c
+    /// // inline, continuation `k`:     nothing; the place is `k`
+    /// // suspending, new frame:        nothing; the place is the callee frame,
+    /// //                               which is already in this frame
+    /// // suspending, continuation `k`:
+    ///     frame->awaitee_p = k;        // the place is `frame->awaitee_p`
+    /// ```
+    fn hold_resumee(&mut self, site: PollSite, resumee: &Resumee, ctx: &Context<'_>) -> Place {
         match (resumee, site) {
             (Resumee::NewFrame { frame, .. }, PollSite::Suspending(_)) => frame.clone(),
             (Resumee::NewFrame { .. }, PollSite::Inline) => {
@@ -226,7 +270,7 @@ impl FunctionLowering<'_> {
             }
             (Resumee::Continuation { continuation, .. }, PollSite::Inline) => continuation.clone(),
             (Resumee::Continuation { continuation, .. }, PollSite::Suspending(point)) => {
-                let awaitee = self.awaitee_place(point);
+                let awaitee = ctx.awaitee_place(point);
                 self.store(awaitee.clone(), Operand::Copy(continuation.clone()));
                 awaitee
             }
@@ -239,22 +283,35 @@ impl FunctionLowering<'_> {
     /// At a suspension point, the state is stored before the first poll, so
     /// a forwarded operation needs nothing more to come back: the resume entry
     /// of the point converts the result of the operation and polls again.
+    ///
+    /// ```c
+    ///     // in the current block:
+    ///     frame->state = SUSPENDED_AT_p;           // suspending only
+    ///     goto poll;
+    ///
+    /// resume_entry_p:                              // suspending only
+    ///     args = <forwarded_resume_args>;
+    ///     goto poll;
+    ///
+    /// poll:                                        // new, left selected
+    /// ```
     fn enter_poll_block(
         &mut self,
         site: PollSite,
         resumed: &ResumedCoroutine,
         args: &Place,
+        ctx: &Context<'_>,
     ) -> BlockID {
         let poll = self.create_block();
 
         if let PollSite::Suspending(point) = site {
-            let forwarded_args = self.forwarded_resume_args(resumed);
+            let forwarded_args = self.forwarded_resume_args(resumed, ctx);
             let destination = args.clone();
-            self.fill_resume_entry(point, |emit| {
+            self.fill_resume_entry(point, ctx, |emit| {
                 emit.assign(destination, forwarded_args);
                 emit.set_terminator(Terminator::Goto(poll));
             });
-            self.store_suspended_state(point);
+            self.store_suspended_state(point, ctx);
         }
 
         self.set_terminator(Terminator::Goto(poll));
@@ -270,9 +327,16 @@ impl FunctionLowering<'_> {
     /// tell which member that is, so the conversion cannot name it. It does not
     /// have to: every member of a `coroutine_resume_t` starts at its first
     /// byte, so reading the bytes as the other type reads the same value.
-    fn forwarded_resume_args(&self, resumed: &ResumedCoroutine) -> Rvalue {
+    ///
+    /// It emits nothing itself; it is the right-hand side of an assignment:
+    ///
+    /// ```c
+    /// own_args                        // both rows are the same
+    /// (callee_resume_t) own_args      // otherwise, a reinterpretation
+    /// ```
+    fn forwarded_resume_args(&self, resumed: &ResumedCoroutine, ctx: &Context<'_>) -> Rvalue {
         let engine = self.engine();
-        let form = self.coroutine_form();
+        let form = ctx.coroutine_form();
         let args = Operand::Copy(form.resume_args_place().clone());
         let own_row = form.signature().row();
         let row = resumed.signature.row();
@@ -290,6 +354,11 @@ impl FunctionLowering<'_> {
 
     /// Stores the pointer to the frame of `resumee`, held at `held`, in a new
     /// local of the selected block.
+    ///
+    /// ```c
+    ///     frame_pointer = &held;          // a new frame, held by value
+    ///     frame_pointer = held.frame;     // a `core.Continuation`
+    /// ```
     async fn load_frame_pointer(&mut self, resumee: &Resumee, held: Place) -> Place {
         match resumee {
             Resumee::NewFrame { frame_type, .. } => {
@@ -298,7 +367,7 @@ impl FunctionLowering<'_> {
                     PointerMutability::Mut,
                     self.engine(),
                 );
-                let frame_pointer = self.temporary(pointer_type);
+                let frame_pointer = self.new_temporary_place(pointer_type);
                 self.assign(
                     frame_pointer.clone(),
                     Rvalue::AddressOf(AddressOf::new(held, PointerMutability::Mut)),
@@ -308,7 +377,7 @@ impl FunctionLowering<'_> {
             Resumee::Continuation { continuation_type, .. } => {
                 let (field, pointer_type) =
                     continuation_frame_field(self.resolver(), continuation_type).await;
-                let frame_pointer = self.temporary(pointer_type);
+                let frame_pointer = self.new_temporary_place(pointer_type);
                 self.store(
                     frame_pointer.clone(),
                     Operand::Copy(self.project(&held).struct_field(field)),
@@ -323,6 +392,12 @@ impl FunctionLowering<'_> {
     ///
     /// The result is stored only once the callee is done with its frame,
     /// which may share memory with `destination`.
+    ///
+    /// ```c
+    /// return_arm:
+    ///     destination = progress.return_value;
+    ///     goto done;
+    /// ```
     pub(super) fn return_arm(
         &mut self,
         poll: &PollLoop,
@@ -338,7 +413,11 @@ impl FunctionLowering<'_> {
     }
 
     /// The place of the arguments of `operation`, which the resumed coroutine
-    /// yielded.
+    /// yielded. It emits nothing; the place is:
+    ///
+    /// ```c
+    /// progress.yield.operation
+    /// ```
     pub(super) fn yielded_arguments(&self, poll: &PollLoop, operation: RowOperationID) -> Place {
         let yielded = self.project(&poll.progress).coroutine_progress_yield_payload();
         self.project(&yielded).coroutine_yield_operation(operation)
@@ -347,18 +426,34 @@ impl FunctionLowering<'_> {
     /// Terminates the poll block: a completed coroutine takes `return_arm`, an
     /// operation in `handled` takes its arm, and every other operation is
     /// forwarded.
+    ///
+    /// ```c
+    /// poll:
+    ///     ...                                      // from `begin_poll`
+    ///     switch (progress.tag) {
+    ///     case RETURN: goto return_arm;
+    ///     case YIELD:  goto yield_arm;
+    ///     }
+    ///
+    /// // with no clauses, in a coroutine whose progress has the callee's type:
+    /// yield_arm:
+    ///     return progress;
+    ///
+    /// // otherwise, `yield_arm` is the `yield_switch`
+    /// ```
     pub(super) fn finish_poll(
         &mut self,
         poll: &PollLoop,
         return_arm: BlockID,
         handled: &[(RowOperationID, BlockID)],
+        ctx: &Context<'_>,
     ) {
         // Without clauses, a coroutine whose progress has the same type as the
         // resumed one's passes on the whole progress.
-        let yield_arm = if handled.is_empty() && self.forwards_whole_progress(poll) {
+        let yield_arm = if handled.is_empty() && poll.forwards_whole_progress(ctx) {
             self.forward_whole_progress_arm(poll)
         } else {
-            self.yield_switch(poll, handled)
+            self.yield_switch(poll, handled, ctx)
         };
 
         let tag = Operand::Copy(self.project(&poll.progress).coroutine_progress_tag());
@@ -371,7 +466,20 @@ impl FunctionLowering<'_> {
     }
 
     /// Creates the block that branches on the operation the coroutine yielded.
-    fn yield_switch(&mut self, poll: &PollLoop, handled: &[(RowOperationID, BlockID)]) -> BlockID {
+    ///
+    /// ```c
+    /// yield_switch:
+    ///     switch (progress.yield.tag) {
+    ///     case OP_a: goto clause_arm_a;            // in `handled`
+    ///     case OP_b: goto forward_arm_b;           // anything else; forward.rs
+    ///     }
+    /// ```
+    fn yield_switch(
+        &mut self,
+        poll: &PollLoop,
+        handled: &[(RowOperationID, BlockID)],
+        ctx: &Context<'_>,
+    ) -> BlockID {
         let row_layout = poll.row_layout();
 
         // Each operation goes to its clause, or else is forwarded.
@@ -380,7 +488,7 @@ impl FunctionLowering<'_> {
             let arm = handled
                 .iter()
                 .find_map(|(handled, arm)| (*handled == operation).then_some(*arm))
-                .unwrap_or_else(|| self.forward_arm(poll, operation));
+                .unwrap_or_else(|| self.forward_arm(poll, operation, ctx));
             targets.push((row_layout.yield_tag(operation), arm));
         }
 

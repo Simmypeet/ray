@@ -9,15 +9,15 @@ use rayc_coroutine_frame_layout::{
 };
 use rayc_mono_ir::{
     layout::{
-        HandlerLayout, StructLayout,
+        EffectHandlerCallbackLayout, EnvironmentLayout, StructLayout,
         coroutine::{EffectRowLayout, FrameFieldTypes, FrameState},
     },
-    ty::{AggregateType, CoroutineProgress, CoroutineYield, MonoType},
+    ty::{AggregateType, CoroutineProgress, CoroutineYield, EffectHandlerCallback, MonoType},
 };
 
 use crate::c::{
     name::{AggregateName, FieldName},
-    ty::{Declaration, FunctionDeclaration},
+    ty::{ConstPointerDeclaration, Declaration, FunctionDeclaration},
 };
 
 /// The member every empty aggregate carries, since C forbids empty structs.
@@ -97,7 +97,8 @@ impl FrameMembers {
 pub(crate) enum NominalLayout<'a> {
     /// The aggregate spells its own fields.
     None,
-    EffectHandler(&'a HandlerLayout),
+    EffectHandler(&'a EffectHandlerCallbackLayout),
+    Environment(&'a EnvironmentLayout),
     Struct(&'a StructLayout),
     CoroutineFrame(&'a FrameMembers),
     EffectRow(&'a EffectRowLayout),
@@ -128,13 +129,37 @@ impl<'a> AggregateDefinition<'a> {
             let signature = operation.signature();
             let environment = FieldName::OperationEnvironment(operation.operation_id());
             let environment_type = signature
-                .parameter_types()
-                .first()
-                .expect("an operation signature should have an environment parameter");
-            writeln!(formatter, "    {};", Declaration::new(environment_type, &environment))?;
+                .environment_slot()
+                .expect("an operation signature should have an environment slot")
+                .ty();
+            writeln!(formatter, "    {};", Declaration::new(&environment_type, &environment))?;
 
             let function = FieldName::OperationFunction(operation.operation_id());
             writeln!(formatter, "    {};", FunctionDeclaration::pointer(signature, &function))?;
+        }
+        Ok(())
+    }
+
+    /// Writes a member per capture, then a `const EffectHandler_E *` per
+    /// handler record.
+    fn write_environment_members(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let NominalLayout::Environment(layout) = self.layout else {
+            panic!("an environment should have a resolved environment layout")
+        };
+        if layout.is_empty() {
+            formatter.write_str(UNIT_MEMBER)?;
+        }
+
+        for (capture, ty) in layout.captures() {
+            let name = FieldName::EnvironmentCapture(capture);
+            writeln!(formatter, "    {};", Declaration::new(ty, &name))?;
+        }
+        for (record_id, record) in layout.handler_records() {
+            let name = FieldName::EnvironmentHandlerRecord(record_id);
+            let record = MonoType::Aggregate(AggregateType::EffectHandlerCallback(
+                EffectHandlerCallback::new(record.effect().clone()),
+            ));
+            writeln!(formatter, "    {};", ConstPointerDeclaration::new(&record, &name))?;
         }
         Ok(())
     }
@@ -227,17 +252,11 @@ impl Display for AggregateDefinition<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(formatter, "struct {} {{", AggregateName::of(self.aggregate))?;
         match self.aggregate {
-            AggregateType::EffectHandler(_) => self.write_handler_members(formatter)?,
+            AggregateType::EffectHandlerCallback(_) => self.write_handler_members(formatter)?,
             AggregateType::Tuple(tuple) => {
                 write_positional_members(formatter, tuple.fields(), FieldName::Tuple)?;
             }
-            AggregateType::Environment(environment) => {
-                write_positional_members(
-                    formatter,
-                    environment.captures(),
-                    FieldName::Environment,
-                )?;
-            }
+            AggregateType::Environment(_) => self.write_environment_members(formatter)?,
             AggregateType::Struct(_) => self.write_struct_members(formatter)?,
             AggregateType::CoroutineFrame(_) => self.write_frame_members(formatter)?,
             AggregateType::CoroutineResume(_) => self.write_resume_members(formatter)?,
@@ -250,7 +269,7 @@ impl Display for AggregateDefinition<'_> {
     }
 }
 
-/// Writes one member per element of a tuple or environment layout.
+/// Writes one member per element of a tuple layout.
 fn write_positional_members<T: AsRef<MonoType>>(
     formatter: &mut fmt::Formatter<'_>,
     types: &[T],
