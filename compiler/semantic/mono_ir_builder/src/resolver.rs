@@ -12,13 +12,14 @@ use rayc_coroutine_frame_layout::frame_layout::FrameLayout;
 use rayc_ir::{get_ir, ir_closure::CaptureID};
 use rayc_mono_ir::{
     MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoFunctionInstance,
-    MonoGeneratedAdtDropInstance, MonoStructInstance,
+    MonoGeneratedAdtDropInstance, MonoRunWithInstance, MonoStructInstance,
     layout::{
         StructLayout, build_struct_layout,
         coroutine::{
             EffectRowLayout, FrameFieldTypes, build_effect_row_layout, build_frame_field_types,
             build_frame_layout,
         },
+        run_with::{RunWithLayout, build_run_with_layout},
     },
     signature::{
         CoroutineSignature, get_callback_signature, get_coroutine_signature,
@@ -352,6 +353,13 @@ impl Resolver {
         instance: &MonoStructInstance,
     ) -> Interned<StructLayout> {
         self.engine.build_struct_layout(instance.clone()).await
+    }
+
+    pub(crate) async fn run_with_layout(
+        &self,
+        instance: &MonoRunWithInstance,
+    ) -> Interned<RunWithLayout> {
+        self.engine.build_run_with_layout(instance.clone()).await
     }
 
     pub(crate) async fn frame_layout(
