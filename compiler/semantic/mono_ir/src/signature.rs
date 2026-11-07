@@ -21,35 +21,16 @@ use rayc_symbol::{
 use rayc_type::signature::{get_effect_row, get_return_type};
 
 use crate::{
-    MonoCoroutineInstance, MonoDefInstance, MonoEffectInstance,
+    MonoCoroutineInstance, MonoDefInstance,
     ty::{
         AggregateType, CoroutineProgress, CoroutineResume, EffectRow, FunctionSignature, MonoType,
-        PointerMutability, ReturnType, lower_effects, lower_type,
+        PointerMutability, ReturnType, lower_type,
     },
 };
 
-/// The calling convention of one concrete definition instance.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub struct DefSignature {
-    signature: FunctionSignature,
-    effects: Vec<MonoEffectInstance>,
-}
-
-impl DefSignature {
-    /// The C-level signature, including one trailing handler pointer per
-    /// effect.
-    #[must_use]
-    pub const fn signature(&self) -> &FunctionSignature { &self.signature }
-
-    /// The effects whose handlers a caller passes after the source
-    /// arguments, in parameter order.
-    #[must_use]
-    pub fn effects(&self) -> &[MonoEffectInstance] { &self.effects }
-}
-
 /// Derives the calling signature of a concrete definition instance.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
-#[value(Interned<DefSignature>)]
+#[value(Interned<FunctionSignature>)]
 #[extend(name = get_def_signature, by_val)]
 pub struct DefSignatureKey {
     /// The definition instance whose interface is requested.
@@ -121,24 +102,23 @@ impl DefKind {
 async fn def_signature_executor(
     key: &DefSignatureKey,
     engine: &TrackedEngine,
-) -> Interned<DefSignature> {
+) -> Interned<FunctionSignature> {
     let def_id = key.instance.def_id();
     let substitution = key.instance.substitution();
     let kind = DefKind::of(engine.get_symbol_kind(def_id).await);
     let solver = Solver::without_givens(engine.clone()).await;
 
-    // Source parameters, then one handler pointer per effect.
+    // Source parameters, then a handler record per effect.
     let mut parameter_types = Vec::new();
     for (_, parameter) in engine.get_parameter_map(def_id).await.iter() {
         parameter_types.push(lower_type(&solver, parameter.ty(), substitution).await);
     }
+
     let effects = if kind.receives_handlers() {
-        lower_effects(&solver, &engine.get_effect_row(def_id).await, substitution).await
+        EffectRow::new(&solver, &engine.get_effect_row(def_id).await, substitution).await
     } else {
-        Vec::new()
+        EffectRow::new_empty(engine)
     };
-    parameter_types
-        .extend(effects.iter().map(|effect| MonoType::new_handler_pointer(effect.clone(), engine)));
 
     let return_type =
         lower_type(&solver, &engine.get_return_type(def_id).await, substitution).await;
@@ -149,12 +129,17 @@ async fn def_signature_executor(
     };
 
     let parameter_types = engine.intern_unsized(parameter_types);
-    let signature = if kind.may_be_variadic() && engine.is_variadic_def(def_id).await {
-        FunctionSignature::new_variadic(parameter_types, return_type)
-    } else {
-        FunctionSignature::new(parameter_types, return_type)
-    };
-    engine.intern(DefSignature { signature, effects })
+    let variadic = kind.may_be_variadic() && engine.is_variadic_def(def_id).await;
+
+    engine.intern(
+        FunctionSignature::builder()
+            .parameter_types(parameter_types)
+            .return_type(return_type)
+            .variadic(variadic)
+            .handler_record_slots(effects)
+            .engine(engine)
+            .build(),
+    )
 }
 
 /// The interface of a concrete coroutine, derived from the signature of the
@@ -214,9 +199,15 @@ async fn coroutine_signature_executor(
     let args = engine.intern(MonoType::Aggregate(AggregateType::CoroutineResume(
         CoroutineResume::new(row.clone()),
     )));
+
     let progress_type =
         engine.intern(MonoType::Aggregate(AggregateType::CoroutineProgress(progress.clone())));
-    let resume_signature = MonoType::new_function_signature([frame, args], progress_type, engine);
+
+    let resume_signature = FunctionSignature::builder()
+        .parameter_types(engine.intern_unsized([frame, args]))
+        .return_type(ReturnType::Value(progress_type))
+        .engine(engine)
+        .build();
 
     engine.intern(CoroutineSignature { row, progress, resume_signature })
 }

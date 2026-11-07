@@ -431,10 +431,10 @@ async fn build_effect_row_layout_executor(
         let layout = engine.build_handler_layout(effect.clone()).await;
 
         for operation in layout.operations() {
-            // The handler ABI starts with the environment, which a yield has
-            // no use for.
+            // A yield has no use for the environment of the handler ABI, so
+            // it carries the source arguments only.
             let signature = operation.signature();
-            let arguments = engine.intern_unsized(signature.parameter_types()[1..].to_vec());
+            let arguments = engine.intern_unsized(signature.parameter_types().to_vec());
             let ReturnType::Value(resume_type) = signature.return_type() else {
                 panic!("an operation handler returns a value")
             };

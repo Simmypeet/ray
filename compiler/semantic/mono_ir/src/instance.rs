@@ -1,4 +1,5 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use rayc_ir::ir_closure::CaptureMapID;
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
@@ -260,6 +261,36 @@ impl MonoClosureInstance {
         let substitution = closure.create_subst(solver.engine()).await;
         let owner = MonoDefInstance::new(closure.owner_id(), substitution, solver).await;
         Self::new(owner, closure.local_closure_id())
+    }
+}
+
+/// One capture environment in one concrete owner specialization.
+///
+/// It is nominal, so lowering an environment type never lowers its captures,
+/// which an [`EnvironmentLayout`] tells.
+///
+/// [`EnvironmentLayout`]: crate::layout::EnvironmentLayout
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub enum MonoEnvironmentInstance {
+    /// The inline environment of a closure, which is also the value type of
+    /// the closure.
+    Closure(MonoClosureInstance),
+
+    /// The environment that the functions of one capture map share: the body
+    /// of a `run ... with`, or the clauses of one handler record.
+    Nested { owner: MonoDefInstance, capture_map: CaptureMapID },
+}
+
+impl MonoEnvironmentInstance {
+    /// The definition whose IR holds the captures of the environment.
+    #[must_use]
+    pub const fn owner(&self) -> &MonoDefInstance {
+        match self {
+            Self::Closure(closure) => closure.owner(),
+            Self::Nested { owner, .. } => owner,
+        }
     }
 }
 

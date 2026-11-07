@@ -10,7 +10,10 @@ use rayc_type::{
 };
 
 use crate::{
-    instance::{MonoCoroutineInstance, MonoEffectInstance, MonoStructInstance},
+    instance::{
+        MonoClosureInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance,
+        MonoStructInstance,
+    },
     layout::TagType,
     operand::Constant,
 };
@@ -88,9 +91,9 @@ impl MonoType {
     }
 
     #[must_use]
-    pub fn assert_as_effect_handler(&self) -> &EffectHandler {
+    pub fn assert_as_effect_handler(&self) -> &EffectHandlerCallback {
         match self {
-            Self::Aggregate(AggregateType::EffectHandler(handler)) => handler,
+            Self::Aggregate(AggregateType::EffectHandlerCallback(handler)) => handler,
             _ => panic!(
                 "compiler-internal invariant violation: expected effect handler type, got {self:?}"
             ),
@@ -145,24 +148,13 @@ impl MonoType {
     }
 
     #[must_use]
-    pub fn new_function_signature(
-        parameter_types: impl IntoIterator<Item = Interned<Self>>,
-        return_type: Interned<Self>,
-        engine: &TrackedEngine,
-    ) -> FunctionSignature {
-        FunctionSignature::new(
-            engine.intern_unsized(parameter_types.into_iter().collect::<Vec<_>>()),
-            ReturnType::Value(return_type),
-        )
-    }
-
-    #[must_use]
     pub fn new_handler_pointer(
         instance: MonoEffectInstance,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
-        let handler = engine
-            .intern(Self::Aggregate(AggregateType::EffectHandler(EffectHandler::new(instance))));
+        let handler = engine.intern(Self::Aggregate(AggregateType::EffectHandlerCallback(
+            EffectHandlerCallback::new(instance),
+        )));
         Self::new_pointer(handler, PointerMutability::Const, engine)
     }
 }
@@ -197,22 +189,22 @@ impl PointerType {
 
 /// The nominal record type for one concrete effect instantiation.
 ///
-/// Its fields are described by a corresponding [`HandlerLayout`], which can
-/// be derived from the concrete effect instance when needed. C code generation
-/// can emit that layout as a struct of callback closures and pass a pointer to
-/// the struct as a hidden parameter to effectful functions. The type is nominal
-/// so a callback that itself uses effects does not create a recursively
-/// expanded structural type.
+/// Its fields are described by a corresponding [`EffectHandlerCallbackLayout`],
+/// which can be derived from the concrete effect instance when needed. C code
+/// generation can emit that layout as a struct of callback closures and pass a
+/// pointer to the struct as a hidden parameter to effectful functions. The type
+/// is nominal so a callback that itself uses effects does not create a
+/// recursively expanded structural type.
 ///
-/// [`HandlerLayout`]: crate::layout::HandlerLayout
+/// [`EffectHandlerCallbackLayout`]: crate::layout::EffectHandlerCallbackLayout
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
-pub struct EffectHandler {
+pub struct EffectHandlerCallback {
     mono_effect_instance: MonoEffectInstance,
 }
 
-impl EffectHandler {
+impl EffectHandlerCallback {
     #[must_use]
     pub const fn new(mono_effect_instance: MonoEffectInstance) -> Self {
         Self { mono_effect_instance }
@@ -243,29 +235,19 @@ impl Tuple {
     pub fn is_empty(&self) -> bool { self.fields.is_empty() }
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
-pub struct Environment {
-    captures: Interned<[Interned<MonoType>]>,
-}
-
-impl Environment {
-    #[must_use]
-    pub const fn new(captures: Interned<[Interned<MonoType>]>) -> Self { Self { captures } }
-
-    #[must_use]
-    pub fn captures(&self) -> &[Interned<MonoType>] { &self.captures }
-}
-
 /// An aggregate with a layout determined by its semantic role.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum AggregateType {
-    EffectHandler(EffectHandler),
+    EffectHandlerCallback(EffectHandlerCallback),
     Tuple(Tuple),
-    Environment(Environment),
+    /// A capture environment. It is nominal, so an environment type is
+    /// lowered without lowering its captures, which an [`EnvironmentLayout`]
+    /// tells.
+    ///
+    /// [`EnvironmentLayout`]: crate::layout::EnvironmentLayout
+    Environment(MonoEnvironmentInstance),
     /// A concrete struct. It is nominal, so a struct type is lowered without
     /// lowering its fields, which a [`StructLayout`] tells.
     ///
@@ -316,6 +298,14 @@ impl EffectRow {
         let effects = lower_effects(solver, effect, substitution).await;
         Self { effects: solver.engine().intern_unsized(effects) }
     }
+
+    #[must_use]
+    pub fn new_empty(engine: &TrackedEngine) -> Self {
+        Self { effects: engine.intern_unsized(Vec::new()) }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.effects.is_empty() }
 
     #[must_use]
     pub fn effects(&self) -> &[MonoEffectInstance] { &self.effects }
@@ -452,35 +442,102 @@ impl ReturnType {
     }
 }
 
+/// How a function receives the environment that holds its captures.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub enum EnvironmentSlot {
+    /// As `void *`: the body of a `run ... with`, an operation handler, and
+    /// the callback slots of a handler record, which are called without
+    /// knowing the environment of the callback.
+    Opaque,
+
+    /// The environment itself, by value: the body of a closure, whose value
+    /// is its environment.
+    ByValue(MonoEnvironmentInstance),
+}
+
+impl EnvironmentSlot {
+    /// The type of the parameter that receives the environment.
+    #[must_use]
+    pub fn ty(&self) -> MonoType {
+        match self {
+            Self::Opaque => MonoType::OpaquePointer(PointerMutability::Mut),
+            Self::ByValue(environment) => {
+                MonoType::Aggregate(AggregateType::Environment(environment.clone()))
+            }
+        }
+    }
+}
+
 /// A concrete calling signature shared by direct and indirect calls.
+///
+/// Besides its source parameters, a function may receive an environment and a
+/// handler record per effect it performs. In C they are passed in this order:
+///
+/// ```c
+/// return_t f(environment, parameter..., const EffectHandler_E *handler_E...);
+/// ```
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub struct FunctionSignature {
+    environment_slot: Option<EnvironmentSlot>,
     parameter_types: Interned<[Interned<MonoType>]>,
+    /// `None` rather than an empty row, so that every signature without
+    /// handler records is spelled the same way and can be built without an
+    /// engine.
+    // REVIEW: Let's remove the Option and always have an empty row. We can afford to make
+    // constructors accept additional engine
+    handler_record_slots: EffectRow,
     return_type: ReturnType,
     variadic: bool,
 }
 
+#[bon::bon]
+impl FunctionSignature {
+    #[builder]
+    pub fn builder(
+        parameter_types: Interned<[Interned<MonoType>]>,
+        return_type: ReturnType,
+        engine: &TrackedEngine,
+        environment_slot: Option<EnvironmentSlot>,
+        handler_record_slots: Option<EffectRow>,
+        #[builder(default = false)] variadic: bool,
+    ) -> Self {
+        let handler_record_slots =
+            handler_record_slots.unwrap_or_else(|| EffectRow::new_empty(engine));
+
+        Self { environment_slot, parameter_types, handler_record_slots, return_type, variadic }
+    }
+}
+
 impl FunctionSignature {
     #[must_use]
-    pub const fn new(
-        parameter_types: Interned<[Interned<MonoType>]>,
-        return_type: ReturnType,
-    ) -> Self {
-        Self { parameter_types, return_type, variadic: false }
+    pub const fn environment_slot(&self) -> Option<&EnvironmentSlot> {
+        self.environment_slot.as_ref()
     }
 
-    #[must_use]
-    pub const fn new_variadic(
-        parameter_types: Interned<[Interned<MonoType>]>,
-        return_type: ReturnType,
-    ) -> Self {
-        Self { parameter_types, return_type, variadic: true }
-    }
-
+    /// The types of the source parameters, without the environment and the
+    /// handler records.
     #[must_use]
     pub fn parameter_types(&self) -> &[Interned<MonoType>] { &self.parameter_types }
+
+    /// The effects whose handler records the function receives, in the order
+    /// it receives them.
+    #[must_use]
+    pub fn handler_record_slots(&self) -> &[MonoEffectInstance] {
+        self.handler_record_slots.effects()
+    }
+
+    /// The number of parameters in C: the environment, the source parameters
+    /// and the handler records.
+    #[must_use]
+    pub fn abi_parameter_count(&self) -> usize {
+        usize::from(self.environment_slot.is_some())
+            + self.parameter_types.len()
+            + self.handler_record_slots().len()
+    }
 
     #[must_use]
     pub const fn return_type(&self) -> &ReturnType { &self.return_type }
@@ -522,7 +579,8 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
             }
 
             ApplicationView::Closure(closure) => {
-                let environment = Box::pin(nominal_environment(solver, closure)).await;
+                let closure = MonoClosureInstance::from_closure(solver, closure).await;
+                let environment = MonoEnvironmentInstance::Closure(closure);
                 engine.intern(MonoType::Aggregate(AggregateType::Environment(environment)))
             }
 
@@ -595,15 +653,25 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
     }
 }
 
+#[extend]
+pub async fn monomorphize_type(
+    self: &Solver,
+    ty: &Interned<Ty>,
+    substitution: &Subst,
+) -> Interned<Ty> {
+    let effect = ty.apply_subst_or_clone(substitution, self.engine());
+    let effect = self.normalize(ty).await;
+
+    Ty::erase_lifetimes(&effect, self.engine()).await
+}
+
 /// Lowers a concrete, closed effect row using the supplied substitution.
 pub async fn lower_effects(
     solver: &Solver,
     effect: &Interned<Ty>,
     substitution: &Subst,
 ) -> Vec<MonoEffectInstance> {
-    let effect = effect.apply_subst_or_clone(substitution, solver.engine());
-    let effect = solver.normalize(&effect).await;
-    let effect = Ty::erase_lifetimes(&effect, solver.engine()).await;
+    let effect = solver.monomorphize_type(effect, substitution).await;
     lower_concrete_effects(solver, &effect).await
 }
 
@@ -650,49 +718,27 @@ const fn lower_mutability(mutability: Mutability) -> PointerMutability {
     }
 }
 
-/// The inline storage shared by nominal values and their body ABI.
-pub async fn nominal_environment(
-    solver: &Solver,
-    closure: rayc_type::ty::application::ClosureView<'_>,
-) -> Environment {
-    let engine = solver.engine();
-    let tuple = lower_type(solver, closure.captured_tuple(), &Subst::new_empty()).await;
-    let MonoType::Aggregate(AggregateType::Tuple(tuple)) = &*tuple else {
-        panic!("closure captures must be a tuple")
-    };
-    Environment::new(engine.intern_unsized(tuple.fields().to_vec()))
-}
-
-/// Plans the concrete nominal body call, including the inline environment and
-/// handlers.
+/// The signature of the body of a concrete closure, which receives the
+/// closure's environment by value.
 pub async fn closure_signature(
     solver: &Solver,
     closure: rayc_type::ty::application::ClosureView<'_>,
-) -> (FunctionSignature, Vec<MonoEffectInstance>) {
+) -> FunctionSignature {
     let engine = solver.engine();
-    let environment = nominal_environment(solver, closure).await;
+    let environment =
+        MonoEnvironmentInstance::Closure(MonoClosureInstance::from_closure(solver, closure).await);
     let mut parameters = Vec::new();
     for parameter in closure.params() {
         parameters.push(lower_type(solver, parameter, &Subst::new_empty()).await);
     }
-    let effects = lower_effects(solver, closure.effect_row(), &Subst::new_empty()).await;
+    let row = EffectRow::new(solver, closure.effect_row(), &Subst::new_empty()).await;
     let result = lower_type(solver, closure.return_type(), &Subst::new_empty()).await;
-    (closure_body_signature(engine, environment, parameters, result, &effects), effects)
-}
 
-/// Builds the by-value nominal ABI from concrete storage and source parameters.
-#[must_use]
-pub fn closure_body_signature(
-    engine: &TrackedEngine,
-    environment: Environment,
-    parameters: impl IntoIterator<Item = Interned<MonoType>>,
-    result: Interned<MonoType>,
-    effects: &[MonoEffectInstance],
-) -> FunctionSignature {
-    let mut body_parameters =
-        vec![engine.intern(MonoType::Aggregate(AggregateType::Environment(environment)))];
-    body_parameters.extend(parameters);
-    body_parameters
-        .extend(effects.iter().map(|effect| MonoType::new_handler_pointer(effect.clone(), engine)));
-    MonoType::new_function_signature(body_parameters, result, engine)
+    FunctionSignature::builder()
+        .parameter_types(engine.intern_unsized(parameters))
+        .return_type(ReturnType::Value(result))
+        .environment_slot(EnvironmentSlot::ByValue(environment))
+        .handler_record_slots(row)
+        .engine(engine)
+        .build()
 }

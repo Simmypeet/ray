@@ -14,6 +14,7 @@
 
 use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_arena::Arena;
+use rayc_qbice::TrackedEngine;
 
 use crate::{
     cfg::{BlockID, Terminator},
@@ -35,7 +36,8 @@ pub mod ty;
 
 pub use instance::{
     MonoClosureInstance, MonoCoroutineInstance, MonoDefInstance, MonoEffectInstance,
-    MonoFragmentInstance, MonoGeneratedAdtDropInstance, MonoStructInstance,
+    MonoEnvironmentInstance, MonoFragmentInstance, MonoGeneratedAdtDropInstance,
+    MonoStructInstance,
 };
 
 /// The independently cacheable `MonoIR` fragment for one concrete definition
@@ -52,10 +54,12 @@ impl MonoIR {
     pub fn new(
         instance: impl Into<MonoFragmentInstance>,
         root_signature: FunctionSignature,
+        engine: &TrackedEngine,
     ) -> Self {
         let instance = instance.into();
         let mut functions = Arena::new();
-        let root = functions.insert(MonoFunction::new(instance.root_kind(), root_signature));
+        let root =
+            functions.insert(MonoFunction::new(instance.root_kind(), root_signature, engine));
         Self { instance, functions, root }
     }
 
@@ -89,12 +93,13 @@ impl MonoIR {
         &mut self,
         kind: MonoFunctionKind,
         signature: FunctionSignature,
+        engine: &TrackedEngine,
     ) -> MonoFunctionID {
         assert!(
             matches!(kind, MonoFunctionKind::Thunk | MonoFunctionKind::OperationHandler),
             "only the thunks and operation handlers of a fragment are nested in it"
         );
-        self.functions.insert(MonoFunction::new(kind, signature))
+        self.functions.insert(MonoFunction::new(kind, signature, engine))
     }
 
     #[must_use]

@@ -1,8 +1,10 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{ID, OrderedArena};
+use rayc_qbice::TrackedEngine;
 
 use crate::{
     cfg::{BasicBlock, BlockID, MonoCfg, Terminator},
+    instance::MonoEffectInstance,
     instruction::Instruction,
     ty::{FunctionSignature, MonoType},
 };
@@ -47,25 +49,51 @@ impl Local {
     pub const fn kind(&self) -> LocalKind { self.kind }
 }
 
+/// A function of a fragment, with a parameter local for each slot of its
+/// signature.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct MonoFunction {
     kind: MonoFunctionKind,
     signature: FunctionSignature,
+
+    environment: Option<LocalID>,
     parameters: Vec<LocalID>,
+    /// One local per handler-record slot, in the order of the slots.
+    handler_records: Vec<LocalID>,
+
     locals: OrderedArena<Local>,
     cfg: MonoCfg,
 }
 
 impl MonoFunction {
-    pub(crate) fn new(kind: MonoFunctionKind, signature: FunctionSignature) -> Self {
+    pub(crate) fn new(
+        kind: MonoFunctionKind,
+        signature: FunctionSignature,
+        engine: &TrackedEngine,
+    ) -> Self {
+        // The parameter locals are created in C order, so they are the first
+        // locals of the function in that order.
         let mut locals = OrderedArena::new();
-        let parameters = signature
-            .parameter_types()
+        let mut parameter = |ty| locals.insert(Local::new(ty, LocalKind::Parameter));
+
+        let environment =
+            signature.environment_slot().map(|slot| parameter(engine.intern(slot.ty())));
+        let parameters = signature.parameter_types().iter().cloned().map(&mut parameter).collect();
+        let handler_records = signature
+            .handler_record_slots()
             .iter()
-            .map(|ty| locals.insert(Local::new(ty.clone(), LocalKind::Parameter)))
+            .map(|effect| parameter(MonoType::new_handler_pointer(effect.clone(), engine)))
             .collect();
 
-        Self { kind, signature, parameters, locals, cfg: MonoCfg::new() }
+        Self {
+            kind,
+            signature,
+            environment,
+            parameters,
+            handler_records,
+            locals,
+            cfg: MonoCfg::new(),
+        }
     }
 
     #[must_use]
@@ -74,9 +102,33 @@ impl MonoFunction {
     #[must_use]
     pub const fn signature(&self) -> &FunctionSignature { &self.signature }
 
+    /// The local that receives the environment, if the function has an
+    /// environment slot.
+    #[must_use]
+    pub const fn environment(&self) -> Option<LocalID> { self.environment }
+
+    /// The locals of the source parameters, without the environment and the
+    /// handler records.
     #[must_use]
     pub fn parameters(&self) -> impl ExactSizeIterator<Item = LocalID> + '_ {
         self.parameters.iter().copied()
+    }
+
+    /// The local that receives each handler record, with its effect.
+    #[must_use]
+    pub fn handler_records(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&MonoEffectInstance, LocalID)> + '_ {
+        self.signature.handler_record_slots().iter().zip(self.handler_records.iter().copied())
+    }
+
+    /// Every parameter local in C order: the environment, the source
+    /// parameters, then the handler records.
+    pub fn abi_parameters(&self) -> impl Iterator<Item = LocalID> + '_ {
+        self.environment
+            .into_iter()
+            .chain(self.parameters.iter().copied())
+            .chain(self.handler_records.iter().copied())
     }
 
     #[must_use]

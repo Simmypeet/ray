@@ -19,6 +19,7 @@ rayc_type.path = "../type"
 rayc_hash.path = "../../base/hash"
 qbice.workspace = true
 linkme.workspace = true
+bon.workspace = true
 
 [lints]
 workspace = true

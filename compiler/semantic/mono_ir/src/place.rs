@@ -1,12 +1,16 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_coroutine_frame_layout::savable::Savable;
+use rayc_ir::ir_closure::CaptureID;
 use rayc_qbice::TrackedEngine;
 use rayc_semantic_element::struct_body::FieldID;
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
     function::LocalID,
-    layout::coroutine::{ResumeVariantID, RowOperationID},
+    layout::{
+        HandlerRecordID,
+        coroutine::{ResumeVariantID, RowOperationID},
+    },
 };
 
 /// The zero-based field position within an aggregate value.
@@ -101,7 +105,11 @@ pub enum CoroutineFrame {
 )]
 pub enum Projection {
     Dereference,
-    EnvironmentFieldIndex(FieldIndex),
+    /// A capture of an environment, named by the capture it holds.
+    EnvironmentCapture(CaptureID),
+    /// A handler record stored in an environment, which only an operation
+    /// handler's environment has.
+    EnvironmentHandlerRecord(HandlerRecordID),
     TupleFieldIndex(FieldIndex),
     StructFieldIndex(FieldID),
     OperationRecordEnvironmentField(GlobalSymbolID),
@@ -162,8 +170,13 @@ impl PlaceProjector<'_> {
     pub fn dereference(self) -> Place { self.with_projection(Projection::Dereference) }
 
     #[must_use]
-    pub fn environment_field(self, field: FieldIndex) -> Place {
-        self.with_projection(Projection::EnvironmentFieldIndex(field))
+    pub fn environment_capture(self, capture: CaptureID) -> Place {
+        self.with_projection(Projection::EnvironmentCapture(capture))
+    }
+
+    #[must_use]
+    pub fn environment_handler_record(self, handler_record: HandlerRecordID) -> Place {
+        self.with_projection(Projection::EnvironmentHandlerRecord(handler_record))
     }
 
     #[must_use]
