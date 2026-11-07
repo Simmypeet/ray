@@ -226,14 +226,19 @@ impl<'a> Emitter<'a> {
         block
     }
 
-    /// Fills `block` with `emit`, which should terminate it. The current block
-    /// stays selected afterwards.
-    pub(crate) fn in_block(&mut self, block: BlockID, emit: impl FnOnce(&mut Self)) {
+    /// Fills `block` with `emit`, and returns what it returns. The current
+    /// block stays selected afterwards.
+    pub(crate) fn in_block<R>(&mut self, block: BlockID, emit: impl FnOnce(&mut Self) -> R) -> R {
         let previous = self.block;
         self.block = block;
-        emit(self);
+        let result = emit(self);
         self.block = previous;
+
+        result
     }
+
+    /// The block that instructions go to.
+    pub(crate) const fn selected_block(&self) -> BlockID { self.block }
 
     /// Fills the resume entry of `point` with `emit`, which should terminate
     /// it. The dispatch of `coroutine_resume` enters that block when the frame
