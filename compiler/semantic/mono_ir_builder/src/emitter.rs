@@ -2,17 +2,16 @@ use qbice::storage::intern::Interned;
 use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
 use rayc_ir::ir_closure::CaptureID;
 use rayc_mono_ir::{
-    MonoDefInstance, MonoEffectInstance, MonoIR,
+    MonoEffectInstance, MonoFunctionInstance,
     cfg::{BlockID, Switch, Terminator},
-    function::{Local, LocalID, LocalKind, MonoFunctionID},
-    instance::FunctionReference,
+    function::{Local, LocalID, LocalKind, MonoFunction},
     instruction::{Assign, Call, Instruction},
     layout::HandlerRecordID,
     operand::{Constant, Operand},
     place::{FieldIndex, Place, PlaceProjector, Projection},
     rvalue::Rvalue,
     signature::CoroutineSignature,
-    ty::{AggregateType, MonoType},
+    ty::{AggregateType, EnvironmentSlot, MonoType},
 };
 use rayc_qbice::TrackedEngine;
 
@@ -21,19 +20,14 @@ use crate::{context::Context, resolver::Resolver};
 /// The function being emitted, and the block that instructions go to.
 pub(crate) struct Emitter<'a> {
     resolver: &'a Resolver,
-    output: &'a mut MonoIR,
-    target_id: MonoFunctionID,
+    output: &'a mut MonoFunction,
     block: BlockID,
 }
 
 impl<'a> Emitter<'a> {
-    pub(crate) fn new(
-        resolver: &'a Resolver,
-        output: &'a mut MonoIR,
-        target_id: MonoFunctionID,
-    ) -> Self {
-        let block = output.entry_block(target_id);
-        Self { resolver, output, target_id, block }
+    pub(crate) const fn new(resolver: &'a Resolver, output: &'a mut MonoFunction) -> Self {
+        let block = output.entry_block();
+        Self { resolver, output, block }
     }
 
     pub(crate) const fn resolver(&self) -> &'a Resolver { self.resolver }
@@ -42,20 +36,26 @@ impl<'a> Emitter<'a> {
 
     /// The local that receives the environment, if the function has an
     /// environment slot.
-    pub(crate) fn environment_parameter(&self) -> Option<LocalID> {
-        self.output.get_function(self.target_id).environment()
+    pub(crate) const fn environment_parameter(&self) -> Option<LocalID> {
+        self.output.environment()
+    }
+
+    /// How the function receives its environment, if it has an environment
+    /// slot.
+    pub(crate) const fn environment_slot(&self) -> Option<&EnvironmentSlot> {
+        self.output.signature().environment_slot()
     }
 
     /// The locals of the source parameters.
     pub(crate) fn parameter_ids(&self) -> impl ExactSizeIterator<Item = LocalID> + '_ {
-        self.output.get_function(self.target_id).parameters()
+        self.output.parameters()
     }
 
     /// The local that receives each handler record, with its effect.
     pub(crate) fn handler_record_parameters(
         &self,
     ) -> impl ExactSizeIterator<Item = (&MonoEffectInstance, LocalID)> + '_ {
-        self.output.get_function(self.target_id).handler_records()
+        self.output.handler_records()
     }
 
     /// The place of a whole local.
@@ -70,7 +70,7 @@ impl<'a> Emitter<'a> {
     }
 
     pub(crate) fn new_temporary_local(&mut self, ty: Interned<MonoType>) -> LocalID {
-        self.output.insert_local(self.target_id, Local::new(ty, LocalKind::Temporary))
+        self.output.insert_local(Local::new(ty, LocalKind::Temporary))
     }
 
     pub(crate) fn new_temporary_place(&mut self, ty: Interned<MonoType>) -> Place {
@@ -79,7 +79,7 @@ impl<'a> Emitter<'a> {
     }
 
     pub(crate) fn new_variable_place(&mut self, ty: Interned<MonoType>) -> Place {
-        let local = self.output.insert_local(self.target_id, Local::new(ty, LocalKind::Variable));
+        let local = self.output.insert_local(Local::new(ty, LocalKind::Variable));
         self.local_place(local)
     }
 
@@ -94,14 +94,14 @@ impl<'a> Emitter<'a> {
         self.new_temporary_place(MonoType::new_unit(self.engine()))
     }
 
-    pub(crate) fn entry_block(&self) -> BlockID { self.output.entry_block(self.target_id) }
+    pub(crate) const fn entry_block(&self) -> BlockID { self.output.entry_block() }
 
-    pub(crate) fn create_block(&mut self) -> BlockID { self.output.create_block(self.target_id) }
+    pub(crate) fn create_block(&mut self) -> BlockID { self.output.create_block() }
 
     pub(crate) const fn select_block(&mut self, block: BlockID) { self.block = block; }
 
     pub(crate) fn push_instruction(&mut self, instruction: Instruction) {
-        self.output.push_instruction(self.target_id, self.block, instruction);
+        self.output.push_instruction(self.block, instruction);
     }
 
     pub(crate) fn assign(&mut self, destination: Place, value: Rvalue) {
@@ -167,18 +167,17 @@ impl<'a> Emitter<'a> {
         self.push_instruction(Instruction::Call(call));
     }
 
-    /// Calls the definition `callee`, passing `handler_records` to its
-    /// handler-record slots.
+    /// Calls `callee`, passing `handler_records` to its handler-record slots.
     pub(crate) async fn lower_call_with_args(
         &mut self,
-        callee: MonoDefInstance,
+        callee: MonoFunctionInstance,
         arguments: Vec<Operand>,
         handler_records: Vec<Operand>,
         destination: Place,
     ) {
-        let callee_signature = self.resolver().callback_def_signature(&callee).await;
+        let callee_signature = self.resolver().function_signature(&callee).await;
         let is_void = callee_signature.return_type().is_void();
-        let callee = Operand::Function(FunctionReference::Global(callee));
+        let callee = Operand::Function(callee);
 
         // if the function has `void` return type, which is mostly from `extern
         // def`, we don't need to assign the return value to the
@@ -204,7 +203,7 @@ impl<'a> Emitter<'a> {
     }
 
     pub(crate) fn set_terminator(&mut self, terminator: Terminator) {
-        self.output.set_terminator(self.target_id, self.block, terminator);
+        self.output.set_terminator(self.block, terminator);
     }
 
     /// Ends the selected block with a switch on `value`, whose values other

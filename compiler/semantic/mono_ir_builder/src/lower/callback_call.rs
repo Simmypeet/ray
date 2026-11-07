@@ -3,8 +3,7 @@ use rayc_ir::ir_expr::{
     call::{Call as IRCall, CallTarget},
 };
 use rayc_mono_ir::{
-    MonoClosureInstance, MonoDefInstance, MonoGeneratedAdtDropInstance,
-    instance::FunctionReference,
+    MonoBodyInstance, MonoFunctionInstance, MonoGeneratedAdtDropInstance,
     instruction::Call,
     operand::Operand,
     place::{FieldIndex, Place},
@@ -16,7 +15,7 @@ use crate::{
 };
 
 impl Emitter<'_> {
-    /// Calls a generated nominal Drop fragment. The fragment itself is
+    /// Calls a generated nominal Drop function. The function itself is
     /// discovered and lowered by the backend worklist.
     pub(crate) fn lower_nominal_drop_call(
         &mut self,
@@ -27,7 +26,7 @@ impl Emitter<'_> {
         self.push_call(
             Call::builder()
                 .destination(destination)
-                .callee(Operand::Function(FunctionReference::NominalDrop(instance)))
+                .callee(Operand::Function(MonoFunctionInstance::NominalDrop(instance)))
                 .arguments(arguments)
                 .build(),
         );
@@ -38,7 +37,7 @@ impl Emitter<'_> {
     fn lower_closure_call_in_callback_style(
         &mut self,
         call: &IRCall,
-        instance: MonoClosureInstance,
+        instance: MonoBodyInstance,
         signature: &FunctionSignature,
         expression_id: IRExprID,
         ctx: &Context<'_>,
@@ -66,7 +65,7 @@ impl Emitter<'_> {
             .iter()
             .map(|effect| ctx.get_effect_instance_handler_operand(effect))
             .collect();
-        let callee = Operand::Function(FunctionReference::Closure(instance));
+        let callee = Operand::Function(MonoFunctionInstance::Body(instance));
 
         self.push_call(
             Call::builder()
@@ -97,7 +96,7 @@ impl Emitter<'_> {
             CallTarget::Direct { function_id, subst } => {
                 let mut substitution = subst.clone();
                 ctx.apply_owner_substitution(&mut substitution);
-                let callee = resolver.definition_instance(*function_id, substitution).await;
+                let callee = resolver.direct_callee(*function_id, substitution).await;
                 self.lower_direct_call_in_callback_style(callee, arguments, destination, ctx).await;
             }
             CallTarget::UnresolvedInstanceAssociated {
@@ -133,6 +132,7 @@ impl Emitter<'_> {
     ) {
         match callee {
             InstanceCallable::Definition(callee) => {
+                let callee = callee.into();
                 self.lower_direct_call_in_callback_style(callee, arguments, destination, ctx).await;
             }
             InstanceCallable::Closure(instance, signature) => {
@@ -179,15 +179,16 @@ impl Emitter<'_> {
         }
     }
 
-    /// Calls a global definition, passing on this function's handlers.
+    /// Calls `callee`, a definition function or an `extern def`, passing on
+    /// this function's handlers.
     pub(crate) async fn lower_direct_call_in_callback_style(
         &mut self,
-        callee: MonoDefInstance,
+        callee: MonoFunctionInstance,
         arguments: Vec<Operand>,
         destination: Place,
         ctx: &Context<'_>,
     ) {
-        let callee_signature = self.resolver().callback_def_signature(&callee).await;
+        let callee_signature = self.resolver().function_signature(&callee).await;
         let handler_records = callee_signature
             .handler_record_slots()
             .iter()

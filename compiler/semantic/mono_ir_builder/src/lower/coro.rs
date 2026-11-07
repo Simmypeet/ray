@@ -47,9 +47,9 @@ impl Emitter<'_> {
         );
 
         // What the frame stores depends on the function it suspends.
-        let body = resolver.coroutine_body(instance).await;
+        let body = instance.body();
         let source = engine.get_ir(body.def_id()).await;
-        let function_id = body.function_id(&source);
+        let function_id = body.ir_function_id();
         let function = source.get_function(function_id);
         let parameters = function.parameter_locals(body.def_id(), engine).await;
 

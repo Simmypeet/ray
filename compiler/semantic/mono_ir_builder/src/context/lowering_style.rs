@@ -7,11 +7,14 @@ use rayc_coroutine_frame_layout::{
     suspension_point::SuspensionPointID,
 };
 use rayc_hash::FxHashMap;
-use rayc_ir::{cfg::BlockID as IRBlockID, ir_function::IRFunctionID};
+use rayc_ir::{cfg::BlockID as IRBlockID, ir_function::IRFunction};
 use rayc_mono_ir::{
     MonoCoroutineInstance, MonoEffectInstance,
     cfg::BlockID,
-    layout::coroutine::{EffectRowLayout, FrameFieldTypes, FrameState},
+    layout::{
+        EnvironmentLayout,
+        coroutine::{EffectRowLayout, FrameFieldTypes, FrameState},
+    },
     operand::{Constant, Operand},
     place::Place,
     signature::CoroutineSignature,
@@ -19,7 +22,7 @@ use rayc_mono_ir::{
 };
 use rayc_qbice::TrackedEngine;
 
-use crate::{emitter::Emitter, fragment::Fragment};
+use crate::emitter::Emitter;
 
 /// Why a function has no handlers to pass on.
 pub(crate) const NO_HANDLERS: &str = "a coroutine yields its operations rather than call a \
@@ -68,14 +71,13 @@ pub(crate) struct CoroutineForm {
 
 impl CoroutineForm {
     /// Reads the layouts of `instance`, and creates the resume entry of each
-    /// suspension point.
+    /// suspension point of `function`, the function it suspends.
     async fn new(
-        fragment: &Fragment,
-        source_id: IRFunctionID,
+        function: &IRFunction,
         emit: &mut Emitter<'_>,
         instance: &MonoCoroutineInstance,
     ) -> Self {
-        let resolver = fragment.resolver();
+        let resolver = emit.resolver();
         let signature = resolver.coroutine_signature(instance).await;
         let row_layout = resolver.effect_row_layout(signature.row()).await;
         let frame_layout = resolver.frame_layout(instance).await;
@@ -91,7 +93,7 @@ impl CoroutineForm {
 
         // Only a suspension point that direct control flow reaches is lowered.
         let mut resume_entries = FxHashMap::default();
-        for block in fragment.source_function(source_id).direct_reachables().blocks() {
+        for block in function.direct_reachables().blocks() {
             let point = SuspensionPointID::new(block);
             if frame_layout.suspends_at(point) {
                 let entry = ResumeEntry { block: emit.create_block() };
@@ -192,12 +194,10 @@ pub(crate) enum LoweringStyle {
 impl LoweringStyle {
     /// The style of a function that performs its effects through handlers:
     /// its handler-record parameters hold them, or else the handler records of
-    /// `environment`.
+    /// `environment`, the layout and place of its environment.
     pub(super) fn new_callback(
-        fragment: &Fragment,
-        source_id: IRFunctionID,
         emit: &Emitter<'_>,
-        environment: Option<&Place>,
+        environment: Option<(&Interned<EnvironmentLayout>, &Place)>,
     ) -> Self {
         let mut handlers = EffectHandlers::default();
 
@@ -206,8 +206,7 @@ impl LoweringStyle {
         }
 
         // Only an operation handler's environment has handler records.
-        if let Some(environment) = environment {
-            let layout = fragment.function_environment_abi(source_id).layout();
+        if let Some((layout, environment)) = environment {
             for (record_id, record) in layout.handler_records() {
                 let place = emit.project(environment).environment_handler_record(record_id);
                 handlers.insert(record.effect().clone(), place);
@@ -217,15 +216,14 @@ impl LoweringStyle {
         Self::Callback(handlers)
     }
 
-    /// The style of a function lowered into the `coroutine_resume` of
-    /// `instance`.
+    /// The style of `function` lowered into the `coroutine_resume` of
+    /// `instance`, which suspends it.
     pub(super) async fn new_coroutine(
-        fragment: &Fragment,
-        source_id: IRFunctionID,
+        function: &IRFunction,
         emit: &mut Emitter<'_>,
         instance: &MonoCoroutineInstance,
     ) -> Self {
-        Self::Coroutine(CoroutineForm::new(fragment, source_id, emit, instance).await)
+        Self::Coroutine(CoroutineForm::new(function, emit, instance).await)
     }
 
     pub(crate) const fn is_coroutine(&self) -> bool {

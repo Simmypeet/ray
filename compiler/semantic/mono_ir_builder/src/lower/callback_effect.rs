@@ -11,9 +11,8 @@
 
 use rayc_ir::ir_expr::{IRExprID, perform::Perform, run_with::RunWith};
 use rayc_mono_ir::{
-    MonoEffectInstance,
+    MonoEffectInstance, MonoFunctionInstance,
     function::LocalID,
-    instance::FunctionReference,
     instruction::Call,
     operand::Operand,
     place::Projection,
@@ -73,9 +72,9 @@ impl Emitter<'_> {
         )
     }
 
-    /// Lowers a `run ... with` to a call of its body, a thunk in the same
-    /// fragment, with the handler record built in place of this function's
-    /// handler of the handled effect:
+    /// Lowers a `run ... with` to a call of its body, a thunk lowered on its
+    /// own, with the handler record built in place of this function's handler
+    /// of the handled effect:
     ///
     /// ```c
     /// // run { body } with E { op(x) { clause } }
@@ -100,23 +99,26 @@ impl Emitter<'_> {
         expression_id: IRExprID,
         ctx: &Context<'_>,
     ) {
-        // Its nested functions live in the fragment of the owning definition,
-        // which a coroutine's fragment cannot refer to yet.
+        // A coroutine has no handlers to pass on to the body for the effects
+        // that the `run ... with` does not handle.
         assert!(!ctx.is_coroutine(), "`run ... with` in a coroutine is not lowered to MonoIR yet");
 
         let instance = ctx.instantiate_effect(run_with.effect_id(), run_with.substitution()).await;
         let (handler_pointer, handler_environment) =
-            self.lower_effect_handler_pointer(run_with, instance.clone(), ctx);
+            self.lower_effect_handler_pointer(run_with, instance.clone(), ctx).await;
 
         let body_id = run_with.body().function_id();
-        let body_abi = ctx.function_abi(body_id);
-        let body_environment = ctx.function_environment_abi(body_id);
-        let environment =
-            self.emit_opaque_environment_pointer(run_with.body().captures(), body_environment, ctx);
+        let body_signature = ctx.sibling_signature(body_id).await;
+        let body_environment = ctx.function_environment_layout(body_id).await;
+        let environment = self.emit_opaque_environment_pointer(
+            run_with.body().captures(),
+            &body_environment,
+            ctx,
+        );
 
         // The new record handles its effect, and this function's own handlers
         // the others.
-        let handler_records = body_abi
+        let handler_records = body_signature
             .handler_record_slots()
             .iter()
             .map(|effect| {
@@ -128,7 +130,7 @@ impl Emitter<'_> {
             })
             .collect();
 
-        let callee = Operand::Function(FunctionReference::Local(ctx.target_function_id(body_id)));
+        let callee = Operand::Function(MonoFunctionInstance::Body(ctx.sibling_body(body_id)));
         self.push_call(
             Call::builder()
                 .destination(ctx.expression_place(expression_id))
@@ -169,9 +171,9 @@ impl Emitter<'_> {
         // records of the environment need no drop.
         let capture_map_id =
             run_with.handler_capture_map().expect("an environment comes from a capture map");
-        let environment_abi = ctx.capture_environment_abi(capture_map_id);
+        let environment_layout = ctx.capture_environment_layout(capture_map_id).await;
         let environment = self.local_place(environment);
-        for capture in environment_abi.capture_ids().rev() {
+        for capture in environment_layout.capture_ids().rev() {
             let drop_instance = drops
                 .get(&capture)
                 .expect("memory analysis selects a Drop dictionary for every handler capture");
@@ -188,7 +190,7 @@ impl Emitter<'_> {
     /// E_handler_t handler = { ... };              // lower_handler_members
     /// const E_handler_t *handler_pointer = &handler;
     /// ```
-    fn lower_effect_handler_pointer(
+    async fn lower_effect_handler_pointer(
         &mut self,
         run_with: &RunWith,
         instance: MonoEffectInstance,
@@ -199,7 +201,7 @@ impl Emitter<'_> {
         let handler_type = MonoType::new_aggregate(aggregate, engine);
         let handler = self.new_temporary_place(handler_type.clone());
 
-        let (members, environment) = self.lower_handler_members(run_with, ctx);
+        let (members, environment) = self.lower_handler_members(run_with, ctx).await;
         self.initialize_aggregate(&handler, members);
 
         let pointer_type = MonoType::new_pointer(handler_type, PointerMutability::Const, engine);
@@ -232,7 +234,7 @@ impl Emitter<'_> {
     /// ```c
     /// T op_handler(void *env, X x); // its handlers are in `env`, after the captures
     /// ```
-    fn lower_handler_members(
+    async fn lower_handler_members(
         &mut self,
         run_with: &RunWith,
         ctx: &Context<'_>,
@@ -242,17 +244,16 @@ impl Emitter<'_> {
             return (Vec::new(), None);
         };
 
-        // Construct the environment exactly once from the handler group's
-        // arena-owned ABI.
-        let environment_abi = ctx.capture_environment_abi(capture_map_id);
+        // Construct the environment that the handlers share exactly once.
+        let environment_layout = ctx.capture_environment_layout(capture_map_id).await;
         let (environment, shared_environment) =
-            self.emit_environment(run_with.handler_captures(), environment_abi, ctx);
+            self.emit_environment(run_with.handler_captures(), &environment_layout, ctx);
 
         let mut members = Vec::with_capacity(run_with.handlers().len() * 2);
         for handler in run_with.handlers() {
             ctx.assert_function_uses_capture_environment(handler.function_id(), capture_map_id);
-            let fn_ptr = Operand::Function(FunctionReference::Local(
-                ctx.target_function_id(handler.function_id()),
+            let fn_ptr = Operand::Function(MonoFunctionInstance::Body(
+                ctx.sibling_body(handler.function_id()),
             ));
 
             let operation = handler.operation_id();

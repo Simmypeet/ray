@@ -54,7 +54,7 @@ impl Emitter<'_> {
             }
             IRExprKind::Tuple(tuple) => self.lower_tuple(tuple, expression_id, ctx),
             IRExprKind::StructInitialization(st) => self.lower_struct(st, expression_id, ctx).await,
-            IRExprKind::Closure(closure) => self.lower_closure(closure, expression_id, ctx),
+            IRExprKind::Closure(closure) => self.lower_closure(closure, expression_id, ctx).await,
             IRExprKind::Coroutine(coroutine) => {
                 self.lower_coro(coroutine, expression_id, ctx).await;
             }

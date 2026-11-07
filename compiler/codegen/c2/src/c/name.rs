@@ -15,10 +15,9 @@ use qbice::{
 use rayc_coroutine_frame_layout::savable::Savable;
 use rayc_ir::{address::Local, ir_closure::CaptureID};
 use rayc_mono_ir::{
-    MonoClosureInstance, MonoCoroutineInstance, MonoDefInstance, MonoFragmentInstance,
-    MonoGeneratedAdtDropInstance, MonoIR,
+    MonoBodyInstance, MonoCoroutineInstance, MonoFunctionInstance, MonoGeneratedAdtDropInstance,
     cfg::BlockID,
-    function::{LocalID, MonoFunctionID, MonoFunctionKind},
+    function::LocalID,
     layout::{
         HandlerRecordID,
         coroutine::{ResumeVariantID, RowOperationID},
@@ -121,32 +120,35 @@ impl fmt::Display for AggregateTypedefName {
     }
 }
 
-/// The root function of a source definition instance.
+/// A function of the IR of a source definition instance, named by the
+/// definition, its substitution and the index of the function in the IR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DefinitionName {
+pub(crate) struct BodyName {
     symbol: StableID,
     substitution: StableID,
+    function: u64,
 }
 
-impl DefinitionName {
-    pub(crate) fn of(instance: &MonoDefInstance) -> Self {
+impl BodyName {
+    pub(crate) fn of(instance: &MonoBodyInstance) -> Self {
         Self {
             symbol: StableID::of("rayc_c2::DefinitionSymbol:v1", &instance.def_id()),
             substitution: StableID::of(
                 "rayc_c2::DefinitionSubstitution:v1",
                 instance.substitution(),
             ),
+            function: instance.ir_function_id().index(),
         }
     }
 }
 
-impl fmt::Display for DefinitionName {
+impl fmt::Display for BodyName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "ray_def_{}_{}", self.symbol, self.substitution)
+        write!(formatter, "ray_def_{}_{}_fn{:X}", self.symbol, self.substitution, self.function)
     }
 }
 
-/// The root function of a compiler-generated nominal `Drop.drop` fragment.
+/// A compiler-generated nominal `Drop.drop` function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NominalDropName(StableID);
 
@@ -159,22 +161,6 @@ impl NominalDropName {
 impl fmt::Display for NominalDropName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "ray_drop_{}", self.0)
-    }
-}
-
-/// The root function of a source closure fragment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ClosureName(StableID);
-
-impl ClosureName {
-    pub(crate) fn of(instance: &MonoClosureInstance) -> Self {
-        Self(StableID::of("rayc_c2::NominalClosure:v1", instance))
-    }
-}
-
-impl fmt::Display for ClosureName {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "ray_nominal_{}", self.0)
     }
 }
 
@@ -194,63 +180,32 @@ impl fmt::Display for CoroutineResumeName {
     }
 }
 
-/// The root function of an independently lowered fragment.
+/// Any independently lowered function, which this translation unit defines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FragmentName {
-    Definition(DefinitionName),
-    Closure(ClosureName),
+pub(crate) enum FunctionName {
+    Body(BodyName),
     NominalDrop(NominalDropName),
     CoroutineResume(CoroutineResumeName),
 }
 
-impl FragmentName {
-    pub(crate) fn of(instance: &MonoFragmentInstance) -> Self {
+impl FunctionName {
+    /// The name of the function `instance`.
+    ///
+    /// # Panics
+    ///
+    /// Panics for an `extern def`, which keeps its source name.
+    pub(crate) fn of(instance: &MonoFunctionInstance) -> Self {
         match instance {
-            MonoFragmentInstance::Definition(instance) => {
-                Self::Definition(DefinitionName::of(instance))
+            MonoFunctionInstance::Body(instance) => Self::Body(BodyName::of(instance)),
+            MonoFunctionInstance::ExternDef(_) => {
+                panic!("an `extern def` keeps its source name and is never defined")
             }
-            MonoFragmentInstance::Closure(instance) => Self::Closure(ClosureName::of(instance)),
-            MonoFragmentInstance::NominalDrop(instance) => {
+            MonoFunctionInstance::NominalDrop(instance) => {
                 Self::NominalDrop(NominalDropName::of(instance))
             }
-            MonoFragmentInstance::CoroutineResume(instance) => {
+            MonoFunctionInstance::CoroutineResume(instance) => {
                 Self::CoroutineResume(CoroutineResumeName::of(instance))
             }
-        }
-    }
-}
-
-impl fmt::Display for FragmentName {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Definition(name) => name.fmt(formatter),
-            Self::Closure(name) => name.fmt(formatter),
-            Self::NominalDrop(name) => name.fmt(formatter),
-            Self::CoroutineResume(name) => name.fmt(formatter),
-        }
-    }
-}
-
-/// Any function owned by a `MonoIR` fragment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FunctionName {
-    /// The fragment's root function.
-    Root(FragmentName),
-    /// A thunk or operation handler nested in the fragment.
-    Nested { fragment: FragmentName, category: &'static str, index: u64 },
-}
-
-impl FunctionName {
-    /// The name of `function_id` in `ir`, whose root function is called
-    /// `fragment`.
-    pub(crate) fn of(ir: &MonoIR, fragment: FragmentName, function_id: MonoFunctionID) -> Self {
-        if function_id == ir.root_id() {
-            return Self::Root(fragment);
-        }
-        Self::Nested {
-            fragment,
-            category: nested_function_category(ir.get_function(function_id).kind()),
-            index: function_id.index(),
         }
     }
 }
@@ -258,23 +213,10 @@ impl FunctionName {
 impl fmt::Display for FunctionName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Root(fragment) => fragment.fmt(formatter),
-            Self::Nested { fragment, category, index } => {
-                write!(formatter, "{fragment}_{category}_{index:X}")
-            }
+            Self::Body(name) => name.fmt(formatter),
+            Self::NominalDrop(name) => name.fmt(formatter),
+            Self::CoroutineResume(name) => name.fmt(formatter),
         }
-    }
-}
-
-/// The name segment distinguishing a nested function's origin.
-fn nested_function_category(kind: MonoFunctionKind) -> &'static str {
-    match kind {
-        MonoFunctionKind::Def | MonoFunctionKind::Closure => {
-            panic!("compiler-internal invariant violation: a root kind on a nested function")
-        }
-        MonoFunctionKind::Thunk => "thunk",
-        MonoFunctionKind::OperationHandler => "handler",
-        MonoFunctionKind::CoroutineResume => "coroutine_resume",
     }
 }
 

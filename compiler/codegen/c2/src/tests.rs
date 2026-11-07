@@ -3,10 +3,11 @@ use std::{
     process::{Command, Stdio},
 };
 
+use rayc_ir::ir_function::IRFunctionID;
 use rayc_mono_ir::{
-    MonoDefInstance, MonoIR,
+    MonoBodyInstance, MonoFunctionInstance,
     cfg::Terminator,
-    instance::FunctionReference,
+    function::MonoFunction,
     instruction::{Call, Instruction},
     operand::{Constant, Operand},
     ty::{AggregateType, FunctionSignature, MonoType, ReturnType, Tuple},
@@ -18,7 +19,7 @@ use rayc_target::TargetID;
 use rayc_type::subst::Subst;
 
 use crate::{
-    c::name::{AggregateName, DefinitionName},
+    c::name::{AggregateName, BodyName},
     generator::Generator,
     write_c_translation_unit_from_mono_ir,
 };
@@ -49,21 +50,21 @@ async fn writes_ordered_translation_unit_from_mono_ir() {
         .return_type(ReturnType::Value(unit_type))
         .engine(&engine)
         .build();
-    let instance = MonoDefInstance::new(
+    let instance = MonoBodyInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(7)),
+        IRFunctionID::new(0),
         Subst::new_empty(),
         &solver,
     )
     .await;
-    let mut ir = MonoIR::new(instance.clone(), signature, &engine);
-    ir.set_terminator(
-        ir.root_id(),
-        ir.entry_block(ir.root_id()),
+    let mut function = MonoFunction::new(instance.clone(), signature, &engine);
+    function.set_terminator(
+        function.entry_block(),
         Terminator::Return(Some(Operand::Constant(Constant::Unit))),
     );
 
     let mut output = Vec::new();
-    write_c_translation_unit_from_mono_ir(&engine, [ir], &mut output).await.unwrap();
+    write_c_translation_unit_from_mono_ir(&engine, [function], &mut output).await.unwrap();
     let output = String::from_utf8(output).unwrap();
 
     let type_forwards = output.find("/* Aggregate type forward declarations */").unwrap();
@@ -80,7 +81,7 @@ async fn writes_ordered_translation_unit_from_mono_ir() {
         output.find(&format!("struct {} {{", AggregateName::of(&outer_aggregate))).unwrap();
     assert!(inner_definition < outer_definition);
 
-    let definition_name = DefinitionName::of(&instance);
+    let definition_name = BodyName::of(&instance);
     assert!(output.contains(&format!("{definition_name}(")));
 
     assert_compiles(&output);
@@ -88,8 +89,8 @@ async fn writes_ordered_translation_unit_from_mono_ir() {
 
 // Input: one preloaded definition that directly calls a second preloaded
 // definition which is not placed in the initial definition queue.
-// Premise: global MonoIR calls extend `def_worklist` and definition identities
-// can be named without inspecting the callee body.
+// Premise: calls extend the function worklist and definition identities can be
+// named without inspecting the callee body.
 // Output: both stable function definitions are present in compilable C.
 #[tokio::test]
 async fn discovers_called_definition_through_worklist() {
@@ -102,39 +103,39 @@ async fn discovers_called_definition_through_worklist() {
         .return_type(ReturnType::Value(unit_type))
         .engine(&engine)
         .build();
-    let root_instance = MonoDefInstance::new(
+    let root_instance = MonoBodyInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(11)),
+        IRFunctionID::new(0),
         Subst::new_empty(),
         &solver,
     )
     .await;
-    let dependency_instance = MonoDefInstance::new(
+    let dependency_instance = MonoBodyInstance::new(
         TargetID::TEST.make_global(SymbolID::from_u128(12)),
+        IRFunctionID::new(0),
         Subst::new_empty(),
         &solver,
     )
     .await;
 
-    let mut root = MonoIR::new(root_instance.clone(), signature.clone(), &engine);
+    let mut root = MonoFunction::new(root_instance.clone(), signature.clone(), &engine);
     root.push_instruction(
-        root.root_id(),
-        root.entry_block(root.root_id()),
-        Instruction::Call(Call::new(
-            None,
-            Operand::Function(FunctionReference::Global(dependency_instance.clone())),
-            Vec::new(),
-        )),
+        root.entry_block(),
+        Instruction::Call(
+            Call::builder()
+                .callee(Operand::Function(MonoFunctionInstance::Body(dependency_instance.clone())))
+                .arguments(Vec::new())
+                .build(),
+        ),
     );
     root.set_terminator(
-        root.root_id(),
-        root.entry_block(root.root_id()),
+        root.entry_block(),
         Terminator::Return(Some(Operand::Constant(Constant::Unit))),
     );
 
-    let mut dependency = MonoIR::new(dependency_instance.clone(), signature, &engine);
+    let mut dependency = MonoFunction::new(dependency_instance.clone(), signature, &engine);
     dependency.set_terminator(
-        dependency.root_id(),
-        dependency.entry_block(dependency.root_id()),
+        dependency.entry_block(),
         Terminator::Return(Some(Operand::Constant(Constant::Unit))),
     );
 
@@ -142,8 +143,8 @@ async fn discovers_called_definition_through_worklist() {
         .generate()
         .await
         .to_string();
-    assert!(output.contains(&format!("{}(void) {{", DefinitionName::of(&root_instance))));
-    assert!(output.contains(&format!("{}(void) {{", DefinitionName::of(&dependency_instance))));
+    assert!(output.contains(&format!("{}(void) {{", BodyName::of(&root_instance))));
+    assert!(output.contains(&format!("{}(void) {{", BodyName::of(&dependency_instance))));
 
     assert_compiles(&output);
 }

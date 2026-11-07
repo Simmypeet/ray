@@ -4,40 +4,34 @@ use std::fmt::{self, Display, Write as _};
 
 use qbice::storage::intern::Interned;
 use rayc_mono_ir::{
-    instance::FunctionReference,
+    MonoFunctionInstance,
     operand::{Constant, Operand},
     rvalue::{Reinterpret, Rvalue},
 };
+use rayc_symbol::name::get_name;
 
 use crate::{
     c::{
         expr::{ConstantExpr, PlaceExpr, binary_operator_token, unary_operator_token},
-        name::{ClosureName, CoroutineResumeName, DefinitionName, FunctionName, NominalDropName},
+        name::FunctionName,
         ty::TypeName,
     },
     print::FunctionPrinter,
-    program::Linkage,
 };
 
 /// The C spelling of a referenced function.
 #[derive(Debug, Clone)]
 enum CalleeName {
-    Local(FunctionName),
-    Closure(ClosureName),
-    NominalDrop(NominalDropName),
-    CoroutineResume(CoroutineResumeName),
-    Definition(DefinitionName),
+    /// A function generated in this translation unit.
+    Internal(FunctionName),
+    /// A function provided by the C environment under its source name.
     Extern(Interned<str>),
 }
 
 impl Display for CalleeName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Local(name) => name.fmt(formatter),
-            Self::Closure(name) => name.fmt(formatter),
-            Self::NominalDrop(name) => name.fmt(formatter),
-            Self::CoroutineResume(name) => name.fmt(formatter),
-            Self::Definition(name) => name.fmt(formatter),
+            Self::Internal(name) => name.fmt(formatter),
             Self::Extern(name) => formatter.write_str(name),
         }
     }
@@ -141,22 +135,16 @@ impl FunctionPrinter<'_, '_> {
         }
     }
 
-    async fn callee_name(&self, reference: &FunctionReference) -> CalleeName {
-        match reference {
-            FunctionReference::Local(function_id) => {
-                CalleeName::Local(self.fragment.name(*function_id))
+    async fn callee_name(&self, instance: &MonoFunctionInstance) -> CalleeName {
+        match instance {
+            MonoFunctionInstance::ExternDef(def_id) => {
+                CalleeName::Extern(self.program.engine().get_name(*def_id).await)
             }
-            FunctionReference::Closure(closure) => CalleeName::Closure(ClosureName::of(closure)),
-            FunctionReference::NominalDrop(instance) => {
-                CalleeName::NominalDrop(NominalDropName::of(instance))
+            MonoFunctionInstance::Body(_)
+            | MonoFunctionInstance::NominalDrop(_)
+            | MonoFunctionInstance::CoroutineResume(_) => {
+                CalleeName::Internal(FunctionName::of(instance))
             }
-            FunctionReference::CoroutineResume(instance) => {
-                CalleeName::CoroutineResume(CoroutineResumeName::of(instance))
-            }
-            FunctionReference::Global(instance) => match self.program.linkage(instance).await {
-                Linkage::Internal => CalleeName::Definition(DefinitionName::of(instance)),
-                Linkage::Extern(name) => CalleeName::Extern(name),
-            },
         }
     }
 }

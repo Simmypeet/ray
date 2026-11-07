@@ -1,76 +1,86 @@
-//! Lowers one concrete semantic IR definition or closure, one generated nominal
-//! Drop instance, or the `coroutine_resume` of one coroutine, into an
-//! independently cacheable [`rayc_mono_ir::MonoIR`] fragment.
+//! Lowers one concrete function into an independently cacheable
+//! [`MonoFunction`]: one function of the semantic IR of a concrete definition,
+//! one generated nominal Drop instance, or the `coroutine_resume` of one
+//! coroutine.
 //!
-//! This crate intentionally exposes ordinary lowering functions rather than
-//! incremental queries. A future orchestrator can use the same
-//! `(GlobalSymbolID, Subst)` inputs as its query key.
+//! This crate intentionally exposes an ordinary lowering function rather than
+//! an incremental query. A future orchestrator can use the same
+//! [`MonoFunctionInstance`] input as its query key.
 
 use rayc_ir::get_ir;
 use rayc_mono_ir::{
-    MonoClosureInstance, MonoCoroutineInstance, MonoDefInstance, MonoGeneratedAdtDropInstance,
-    MonoIR, layout::CoroutineBody,
+    MonoBodyInstance, MonoCoroutineInstance, MonoFunctionInstance, function::MonoFunction,
+    signature::get_coroutine_signature,
 };
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
-use rayc_symbol::GlobalSymbolID;
-use rayc_type::subst::Subst;
 
-use crate::fragment::Fragment;
+use crate::{context::Context, emitter::Emitter, resolver::Resolver};
 
 mod context;
 mod emitter;
-mod fragment;
 mod lower;
 mod nominal_drop;
 mod resolver;
 
-/// Lowers one concrete source-definition instantiation into `MonoIR`.
+/// Lowers the function that `instance` identifies into `MonoFunction`.
+///
+/// # Panics
+///
+/// Panics for an `extern def`, which has no body to lower: it is only
+/// declared.
 #[must_use]
-pub async fn lower_ir(
+pub async fn lower_function(
     engine: &TrackedEngine,
-    def_id: GlobalSymbolID,
-    substitution: Subst,
-) -> MonoIR {
-    // One solver serves the whole fragment, starting with its own key.
-    let source = engine.get_ir(def_id).await;
+    instance: MonoFunctionInstance,
+) -> MonoFunction {
+    match instance {
+        MonoFunctionInstance::Body(instance) => lower_body(engine, instance).await,
+        MonoFunctionInstance::ExternDef(_) => panic!("an `extern def` has no body to lower"),
+        MonoFunctionInstance::NominalDrop(instance) => nominal_drop::lower(engine, instance).await,
+        MonoFunctionInstance::CoroutineResume(instance) => {
+            lower_coroutine_resume(engine, instance).await
+        }
+    }
+}
+
+/// Lowers one function of the IR of a concrete definition in callback style.
+async fn lower_body(engine: &TrackedEngine, instance: MonoBodyInstance) -> MonoFunction {
+    // One solver serves the whole function, in the instantiation of its
+    // definition.
     let solver = Solver::without_givens(engine.clone()).await;
-    let instance = MonoDefInstance::new(def_id, substitution, &solver).await;
-    let (fragment, output) = Fragment::new_definition(solver, instance, source).await;
-    fragment.lower(output).await
+    let resolver = Resolver::new(solver, instance.substitution().clone());
+    let source = engine.get_ir(instance.def_id()).await;
+
+    // The function implements the signature its callers spell.
+    let signature = resolver.callback_signature(&instance).await;
+    let mut output = MonoFunction::new(instance.clone(), signature, engine);
+
+    let mut emit = Emitter::new(&resolver, &mut output);
+    let ctx = Context::new_callback(&resolver, instance, source, &mut emit).await;
+    Box::pin(emit.lower_function(&ctx)).await;
+
+    output
 }
 
-/// Lowers one concrete source closure into `MonoIR`.
-#[must_use]
-pub async fn lower_closure(engine: &TrackedEngine, instance: MonoClosureInstance) -> MonoIR {
-    let source = engine.get_ir(instance.owner().def_id()).await;
-    let solver = Solver::without_givens(engine.clone()).await;
-    let (fragment, output) = Fragment::new_closure(solver, instance, source).await;
-    fragment.lower(output).await
-}
-
-/// Lowers the compiler-generated `Drop.drop` body selected by one concrete
-/// nominal Drop dictionary into `MonoIR`.
-#[must_use]
-pub async fn lower_nominal_drop(
-    engine: &TrackedEngine,
-    instance: MonoGeneratedAdtDropInstance,
-) -> MonoIR {
-    nominal_drop::lower(engine, instance).await
-}
-
-/// Lowers the `coroutine_resume` function of one concrete coroutine into
-/// `MonoIR`.
-#[must_use]
-pub async fn lower_coroutine_resume(
+/// Lowers the `coroutine_resume` function of one concrete coroutine.
+async fn lower_coroutine_resume(
     engine: &TrackedEngine,
     instance: MonoCoroutineInstance,
-) -> MonoIR {
+) -> MonoFunction {
+    // One solver serves the whole function, in the instantiation of the
+    // definition of the suspended function.
     let solver = Solver::without_givens(engine.clone()).await;
-    let body = CoroutineBody::of(instance.view(), &solver).await;
-    let source = engine.get_ir(body.def_id()).await;
-    let function_id = body.function_id(&source);
-    let (fragment, output) =
-        Fragment::new_coroutine(solver, body.into_owner(), source, instance, function_id).await;
-    fragment.lower(output).await
+    let resolver = Resolver::new(solver, instance.body().substitution().clone());
+    let source = engine.get_ir(instance.body().def_id()).await;
+
+    let signature = engine.get_coroutine_signature(instance.clone()).await;
+    let mut output =
+        MonoFunction::new(instance.clone(), signature.resume_signature().clone(), engine);
+
+    let mut emit = Emitter::new(&resolver, &mut output);
+    let ctx = Context::new_coroutine(&resolver, &instance, source, &mut emit).await;
+    Box::pin(emit.lower_coroutine(&ctx)).await;
+
+    output
 }

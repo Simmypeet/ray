@@ -1,7 +1,7 @@
-//! Worklist-driven C code generation from [`rayc_mono_ir::MonoIR`].
+//! Worklist-driven C code generation from [`MonoFunction`]s.
 //!
-//! The backend consumes independently lowered definition fragments. Calls to
-//! other fragments schedule them on a worklist, and every aggregate type the
+//! The backend consumes independently lowered functions. Calls to other
+//! functions schedule them on a worklist, and every aggregate type the
 //! generated code mentions is collected so its `struct` can be defined before
 //! use.
 //!
@@ -10,15 +10,15 @@
 //! - [`c`] renders C syntax (names, types, expressions) as allocation-free
 //!   [`std::fmt::Display`] adaptors;
 //! - `program` holds the program-wide state discovered while generating: the
-//!   fragment `worklist` and the `aggregates` used so far. Everything else,
+//!   function `worklist` and the `aggregates` used so far. Everything else,
 //!   such as signatures and linkage, comes from engine queries;
-//! - `print` writes a fragment's functions, recording what they refer to, and
-//!   `generator` drives it over the worklist;
+//! - `print` writes a function, recording what it refers to, and `generator`
+//!   drives it over the worklist;
 //! - `unit` assembles the final translation unit.
 
 use std::io::{self, Write};
 
-use rayc_mono_ir::{MonoDefInstance, MonoIR};
+use rayc_mono_ir::{MonoBodyInstance, function::MonoFunction};
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
 use rayc_symbol::{
@@ -82,25 +82,24 @@ pub async fn write_c_translation_unit(
         None => None,
     };
 
-    // The worklist future holds per-fragment lowering state such as its
+    // The worklist future holds per-function lowering state such as its
     // solver; keep it on the heap so callers' futures stay small.
     let unit =
         Box::pin(Generator::new(engine, roots, std::iter::empty(), entry_point).generate()).await;
     write!(output, "{unit}")
 }
 
-/// Generates a C translation unit starting with already-lowered `MonoIR`
-/// fragments. Calls to fragments not present in `definitions` are lowered on
-/// demand through `rayc_mono_ir_builder`.
+/// Generates a C translation unit starting with already-lowered
+/// `MonoFunction`s. Calls to functions not present in `functions` are lowered
+/// on demand through `rayc_mono_ir_builder`.
 pub async fn write_c_translation_unit_from_mono_ir(
     engine: &TrackedEngine,
-    definitions: impl IntoIterator<Item = MonoIR>,
+    functions: impl IntoIterator<Item = MonoFunction>,
     output: &mut impl Write,
 ) -> io::Result<()> {
-    let definitions = definitions.into_iter().collect::<Vec<_>>();
-    let roots =
-        definitions.iter().map(|definition| definition.instance().clone()).collect::<Vec<_>>();
-    let unit = Generator::new(engine, roots, definitions, None).generate().await;
+    let functions = functions.into_iter().collect::<Vec<_>>();
+    let roots = functions.iter().map(|function| function.instance().clone()).collect::<Vec<_>>();
+    let unit = Generator::new(engine, roots, functions, None).generate().await;
     write!(output, "{unit}")
 }
 
@@ -110,7 +109,7 @@ async fn root_definitions(
     engine: &TrackedEngine,
     target_id: TargetID,
     solver: &Solver,
-) -> Vec<MonoDefInstance> {
+) -> Vec<MonoBodyInstance> {
     let mut roots = Vec::new();
     for def_id in engine.get_all_def_with_body_ids(target_id).await.iter().copied() {
         let def_id = target_id.make_global(def_id);
@@ -133,7 +132,7 @@ async fn lifetime_erased_instance(
     engine: &TrackedEngine,
     def_id: GlobalSymbolID,
     solver: &Solver,
-) -> Option<MonoDefInstance> {
+) -> Option<MonoBodyInstance> {
     let poly_vars = engine.get_enclosing_poly_var_maps(def_id).await;
     if !poly_vars.has_only_lifetimes() {
         return None;
@@ -142,7 +141,7 @@ async fn lifetime_erased_instance(
     let erased = Ty::new_lifetime(Lifetime::Erased, engine);
     let substitution =
         poly_vars.create_subst_from_args(std::iter::repeat_n(erased, poly_vars.all_poly_var_len()));
-    Some(MonoDefInstance::new(def_id, substitution, solver).await)
+    Some(MonoBodyInstance::new_definition(def_id, substitution, solver).await)
 }
 
 /// Whether a symbol with a body is generated from that body, as opposed to

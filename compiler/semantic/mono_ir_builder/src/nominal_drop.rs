@@ -1,15 +1,16 @@
 //! Lowers the compiler-generated `Drop.drop` body of a nominal type.
 //!
-//! The fragment is keyed by a concrete `GeneratedAdtDropInstance` dictionary.
+//! The function is keyed by a concrete `GeneratedAdtDropInstance` dictionary.
 //! Its body follows the nominal type's `GeneratedDropPlan`: each field recipe
 //! is instantiated with the nominal's type arguments and the dictionary's
 //! external instances, then dropped exactly like a stored dictionary would be.
 //! A recursive field produces a call to another (or the same) generated
-//! fragment rather than inlining its recipe.
+//! function rather than inlining its recipe.
 
 use rayc_mono_ir::{
-    MonoGeneratedAdtDropInstance, MonoIR,
+    MonoGeneratedAdtDropInstance,
     cfg::Terminator,
+    function::MonoFunction,
     operand::{Constant, Operand},
 };
 use rayc_qbice::TrackedEngine;
@@ -19,11 +20,11 @@ use rayc_type::subst::Subst;
 
 use crate::{emitter::Emitter, resolver::Resolver};
 
-/// Lowers one generated nominal Drop instance into its own `MonoIR` fragment.
+/// Lowers one generated nominal Drop instance into its own `MonoFunction`.
 pub(crate) async fn lower(
     engine: &TrackedEngine,
     instance: MonoGeneratedAdtDropInstance,
-) -> MonoIR {
+) -> MonoFunction {
     // The dictionary key is concrete, so no owner substitution applies.
     let resolver = Resolver::new(Solver::without_givens(engine.clone()).await, Subst::new_empty());
     let view = instance.view();
@@ -49,9 +50,8 @@ pub(crate) async fn lower(
     // Build `drop(self: Nominal) -> unit` with a scratch local that receives
     // the unit result of every field drop call.
     let signature = resolver.nominal_drop_signature(&nominal).await;
-    let mut output = MonoIR::new(instance.clone(), signature, engine);
-    let root_id = output.root_id();
-    let mut emit = Emitter::new(&resolver, &mut output, root_id);
+    let mut output = MonoFunction::new(instance.clone(), signature, engine);
+    let mut emit = Emitter::new(&resolver, &mut output);
 
     let value = emit.local_place(emit.parameter_ids().next().expect("should have self parameter"));
     let destination = emit.new_unit_place();

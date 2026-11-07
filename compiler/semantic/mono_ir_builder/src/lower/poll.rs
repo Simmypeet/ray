@@ -33,9 +33,8 @@ use qbice::storage::intern::Interned;
 use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
 use rayc_ir::cfg::BlockID as IRBlockID;
 use rayc_mono_ir::{
-    MonoCoroutineInstance,
+    MonoCoroutineInstance, MonoFunctionInstance,
     cfg::{BlockID, Terminator},
-    instance::FunctionReference,
     instruction::Call,
     layout::coroutine::{EffectRowLayout, RowOperationID, RowOperationKey},
     operand::{Constant, Operand},
@@ -221,7 +220,7 @@ impl Emitter<'_> {
         self.push_call(
             Call::builder()
                 .destination(progress.clone())
-                .callee(Operand::Function(FunctionReference::CoroutineResume(
+                .callee(Operand::Function(MonoFunctionInstance::CoroutineResume(
                     coroutine.instance.clone(),
                 )))
                 .arguments(vec![Operand::Copy(frame_pointer.clone()), Operand::Copy(args.clone())])

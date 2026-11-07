@@ -1,74 +1,62 @@
-//! The queue of `MonoIR` fragments awaiting code generation.
+//! The queue of `MonoFunction`s awaiting code generation.
 
 use std::collections::VecDeque;
 
 use rayc_hash::{FxHashMap, FxHashSet};
-use rayc_mono_ir::{MonoDefInstance, MonoFragmentInstance, MonoIR};
+use rayc_mono_ir::{MonoFunctionInstance, function::MonoFunction};
 
-/// A fragment taken from the [`FragmentWorklist`].
+/// A function taken from the [`FunctionWorklist`].
 #[derive(Debug)]
-pub(crate) enum PendingFragment {
-    /// The caller supplied the fragment's lowered body up front.
-    Lowered(MonoIR),
-    /// The fragment must still be lowered (or, for an extern definition,
-    /// only declared).
-    Unlowered(MonoFragmentInstance),
+pub(crate) enum PendingFunction {
+    /// The caller supplied the function's lowered body up front.
+    Lowered(Box<MonoFunction>),
+    /// The function must still be lowered (or, for an `extern def`, only
+    /// declared).
+    Unlowered(MonoFunctionInstance),
 }
 
-/// A first-in, first-out queue of fragments that yields each fragment once.
+/// A first-in, first-out queue of functions that yields each function once.
 #[derive(Debug, Default)]
-pub(crate) struct FragmentWorklist {
-    pending: VecDeque<MonoFragmentInstance>,
-    seen: FxHashSet<MonoFragmentInstance>,
-    preloaded: FxHashMap<MonoFragmentInstance, MonoIR>,
-    /// The source definitions among `preloaded`, kept after their bodies are
-    /// taken.
-    preloaded_definitions: FxHashSet<MonoDefInstance>,
+pub(crate) struct FunctionWorklist {
+    pending: VecDeque<MonoFunctionInstance>,
+    seen: FxHashSet<MonoFunctionInstance>,
+    preloaded: FxHashMap<MonoFunctionInstance, MonoFunction>,
 }
 
-impl FragmentWorklist {
-    /// Creates a worklist whose fragments, when reached, are taken from
+impl FunctionWorklist {
+    /// Creates a worklist whose functions, when reached, are taken from
     /// `preloaded` instead of being lowered.
-    pub(crate) fn with_preloaded(preloaded: impl IntoIterator<Item = MonoIR>) -> Self {
+    pub(crate) fn with_preloaded(preloaded: impl IntoIterator<Item = MonoFunction>) -> Self {
         let mut worklist = Self::default();
-        for ir in preloaded {
-            if let MonoFragmentInstance::Definition(instance) = ir.instance() {
-                worklist.preloaded_definitions.insert(instance.clone());
-            }
-            let previous = worklist.preloaded.insert(ir.instance().clone(), ir);
-            assert!(
-                previous.is_none(),
-                "a MonoIR definition instance should only be preloaded once"
-            );
+        for function in preloaded {
+            let previous = worklist.preloaded.insert(function.instance().clone(), function);
+            assert!(previous.is_none(), "a MonoFunction should only be preloaded once");
         }
         worklist
     }
 
-    /// Whether `instance`'s body was supplied up front.
-    pub(crate) fn is_preloaded_definition(&self, instance: &MonoDefInstance) -> bool {
-        self.preloaded_definitions.contains(instance)
-    }
-
-    /// Schedules `fragment` unless it has been scheduled before.
-    pub(crate) fn insert(&mut self, fragment: impl Into<MonoFragmentInstance>) {
-        let fragment = fragment.into();
-        if self.seen.insert(fragment.clone()) {
-            self.pending.push_back(fragment);
+    /// Schedules `function` unless it has been scheduled before.
+    pub(crate) fn insert(&mut self, function: impl Into<MonoFunctionInstance>) {
+        let function = function.into();
+        if self.seen.insert(function.clone()) {
+            self.pending.push_back(function);
         }
     }
 
-    /// Whether `fragment` has ever been scheduled.
-    pub(crate) fn contains(&self, fragment: &MonoFragmentInstance) -> bool {
-        self.seen.contains(fragment)
+    /// Whether `function` has ever been scheduled.
+    pub(crate) fn contains(&self, function: &MonoFunctionInstance) -> bool {
+        self.seen.contains(function)
     }
 
-    /// Takes the next scheduled fragment.
-    pub(crate) fn pop(&mut self) -> Option<PendingFragment> {
-        let fragment = self.pending.pop_front()?;
+    /// Takes the next scheduled function.
+    pub(crate) fn pop(&mut self) -> Option<PendingFunction> {
+        let function = self.pending.pop_front()?;
         Some(
             self.preloaded
-                .remove(&fragment)
-                .map_or(PendingFragment::Unlowered(fragment), PendingFragment::Lowered),
+                .remove(&function)
+                .map_or(PendingFunction::Unlowered(function), |function| {
+                    PendingFunction::Lowered(Box::new(function))
+                }),
         )
     }
 }

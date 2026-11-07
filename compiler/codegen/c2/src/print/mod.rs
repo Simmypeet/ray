@@ -2,23 +2,22 @@
 //!
 //! The printer writes straight into a definition buffer and records, through
 //! [`Program`], everything the printed code refers to: the aggregate types it
-//! spells and the fragments it calls. Every type is recorded where it is
+//! spells and the functions it calls. Every type is recorded where it is
 //! printed, so a type can only appear in the output if its definition will
 //! too. Statements are printed here; [`value`] prints operands and rvalues.
 
 use std::fmt::{self, Write as _};
 
 use rayc_mono_ir::{
-    MonoIR,
     cfg::Terminator,
-    function::{LocalKind, MonoFunction, MonoFunctionID},
+    function::{LocalKind, MonoFunction},
     instruction::{Call, Instruction},
 };
 
 use crate::{
     c::{
         expr::PlaceExpr,
-        name::{BlockName, FragmentName, FunctionName, LocalName},
+        name::{BlockName, FunctionName, LocalName},
         ty::{Declaration, FunctionDeclaration},
     },
     program::Program,
@@ -26,51 +25,16 @@ use crate::{
 
 mod value;
 
-/// The functions of one fragment with their C names, in ID order.
-#[derive(Debug)]
-pub(crate) struct FragmentFunctions {
-    entries: Vec<(MonoFunctionID, FunctionName)>,
-}
-
-impl FragmentFunctions {
-    pub(crate) fn of(ir: &MonoIR) -> Self {
-        let fragment = FragmentName::of(ir.instance());
-        let mut entries = ir
-            .functions()
-            .map(|(id, _)| (id, FunctionName::of(ir, fragment, id)))
-            .collect::<Vec<_>>();
-        entries.sort_unstable_by_key(|(id, _)| *id);
-        Self { entries }
-    }
-
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (MonoFunctionID, FunctionName)> + '_ {
-        self.entries.iter().copied()
-    }
-
-    fn name(&self, function_id: MonoFunctionID) -> FunctionName {
-        let index = self
-            .entries
-            .binary_search_by_key(&function_id, |(id, _)| *id)
-            .expect("local function reference should name a function of its fragment");
-        self.entries[index].1
-    }
-}
-
-/// Prints one function definition of a fragment.
+/// Prints one function definition.
 #[derive(Debug)]
 pub(crate) struct FunctionPrinter<'p, 'engine> {
     program: &'p mut Program<'engine>,
-    fragment: &'p FragmentFunctions,
     function: &'p MonoFunction,
 }
 
 impl<'p, 'engine> FunctionPrinter<'p, 'engine> {
-    pub(crate) const fn new(
-        program: &'p mut Program<'engine>,
-        fragment: &'p FragmentFunctions,
-        function: &'p MonoFunction,
-    ) -> Self {
-        Self { program, fragment, function }
+    pub(crate) const fn new(program: &'p mut Program<'engine>, function: &'p MonoFunction) -> Self {
+        Self { program, function }
     }
 
     /// Writes the definition of the function called `name`.
@@ -106,7 +70,7 @@ impl<'p, 'engine> FunctionPrinter<'p, 'engine> {
                 out.push('\n');
             }
             let terminator =
-                block.terminator().expect("reachable MonoIR block should have a terminator");
+                block.terminator().expect("reachable MonoFunction block should have a terminator");
             out.push_str("    ");
             self.write_terminator(out, terminator).await?;
             out.push('\n');

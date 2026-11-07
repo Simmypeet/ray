@@ -52,7 +52,7 @@ impl Emitter<'_> {
         match self.resolver().resolve_drop_call(dictionary).await {
             InstanceCallable::Definition(callee) => {
                 let arguments = vec![Operand::Copy(value)];
-                self.lower_call_with_args(callee, arguments, Vec::new(), destination).await;
+                self.lower_call_with_args(callee.into(), arguments, Vec::new(), destination).await;
             }
             InstanceCallable::TupleDrop(element_instances) => {
                 Box::pin(self.lower_tuple_drop(&value, &element_instances, destination)).await;
