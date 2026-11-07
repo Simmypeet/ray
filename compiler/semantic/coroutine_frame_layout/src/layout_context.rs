@@ -103,6 +103,10 @@ impl<'a> LayoutContext<'a> {
         let borrowed_locals =
             self.maybe_borrowed_locals.block_exit(block_id).expect("should exist");
 
+        // A borrowed capture stays in the environment the frame points to.
+        let is_in_frame =
+            |local: &Local| !(self.borrows_captures() && matches!(local, Local::Capture(_)));
+
         // a local may be both live and borrowed, so the live ones that are
         // borrowed are left to the borrowed locals
         let saved_locals = self
@@ -111,6 +115,7 @@ impl<'a> LayoutContext<'a> {
             .expect("should exist")
             .live()
             .filter(|local| !borrowed_locals.contains(*local))
+            .filter(is_in_frame)
             .map(Savable::Local);
         let saved_exprs = self
             .expr_liveness
@@ -119,7 +124,7 @@ impl<'a> LayoutContext<'a> {
             .live()
             .filter(|expr| !terminator.evaluated_expressions().any(|defined| defined == *expr))
             .map(Savable::Expression);
-        let saved_borrowed_locals = borrowed_locals.iter().map(Savable::Local);
+        let saved_borrowed_locals = borrowed_locals.iter().filter(is_in_frame).map(Savable::Local);
 
         saved_locals.chain(saved_exprs).chain(saved_borrowed_locals)
     }

@@ -17,6 +17,14 @@ pub enum Savable {
     /// handlers of a `run ... with`, or the continuation of a forwarding
     /// `handle`. A `perform` has none.
     Awaitee(SuspensionPointID),
+
+    /// The pointer to the environment of a function that borrows its
+    /// captures, which is an operation handler.
+    ///
+    /// The clauses of a `run ... with` share one environment, which each of
+    /// their frames points to. So such a frame never holds a capture, only
+    /// this pointer, from which every capture is read.
+    Environment,
 }
 
 impl Savable {

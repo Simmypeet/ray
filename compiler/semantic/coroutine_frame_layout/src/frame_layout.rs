@@ -178,18 +178,17 @@ impl LayoutContext<'_> {
             );
         }
 
-        // initialize captures
-        for captures in self.capture_savables().into_iter().flatten() {
-            // if the captures are borrowed, this means that the function will
-            // be invoked multiple times and captures should be survived across
-            // multiple invocations.
-            let placement = if self.borrows_captures() {
-                Placement::Prefix
-            } else {
-                Placement::SuspensionLocal(SuspensionLocalPlacement::Start)
-            };
-
-            layout.placements.insert(captures, placement);
+        // A function that borrows its captures shares its environment with
+        // others, so the frame only points to it, for as long as it lives.
+        // Any other function owns its captures, which start in the frame.
+        if self.borrows_captures() {
+            layout.placements.insert(Savable::Environment, Placement::Prefix);
+        } else {
+            for capture in self.capture_savables().into_iter().flatten() {
+                layout
+                    .placements
+                    .insert(capture, Placement::SuspensionLocal(SuspensionLocalPlacement::Start));
+            }
         }
 
         for (&suspension_point_id, &waitee_expr_id) in &points {

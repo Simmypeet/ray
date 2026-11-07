@@ -232,6 +232,7 @@ impl Renderer<'_> {
                 location: Some(self.suspension_point(suspension_point).await),
                 kind: "awaitee".to_owned(),
             },
+            Savable::Environment => Value { location: None, kind: "environment".to_owned() },
         }
     }
 
