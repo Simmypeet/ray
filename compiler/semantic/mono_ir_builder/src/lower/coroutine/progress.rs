@@ -10,7 +10,7 @@ use rayc_mono_ir::{
     ty::CoroutineProgress,
 };
 
-use crate::function_lowering::FunctionLowering;
+use crate::{context::Context, emitter::Emitter};
 
 /// A return from `coroutine_resume` that yields one operation of its own row.
 pub(in crate::lower) struct OwnYield {
@@ -34,7 +34,7 @@ pub(in crate::lower) enum YieldArguments {
     Tuple(Operand),
 }
 
-impl FunctionLowering<'_> {
+impl Emitter<'_> {
     /// Ends the block `emit` has selected by returning the yield with
     /// `arguments`.
     pub(in crate::lower) fn emit_own_yield(
@@ -56,8 +56,12 @@ impl FunctionLowering<'_> {
 
     /// Records in the frame that the coroutine is suspended at `point`, so
     /// that the next resume enters the resume entry of `point`.
-    pub(in crate::lower) fn store_suspended_state(&mut self, point: SuspensionPointID) {
-        let form = self.coroutine_form();
+    pub(in crate::lower) fn store_suspended_state(
+        &mut self,
+        point: SuspensionPointID,
+        ctx: &Context<'_>,
+    ) {
+        let form = ctx.coroutine_form();
         let state = self.project(form.frame_place()).coroutine_frame_state();
         let suspended = form.frame_state_tag(FrameState::Suspended(point));
 
@@ -65,16 +69,20 @@ impl FunctionLowering<'_> {
     }
 
     /// A new local for the progress this coroutine returns.
-    fn own_progress_temporary(&mut self) -> Place {
-        let signature = self.coroutine_form().signature().clone();
-        self.progress_temporary(&signature)
+    fn create_own_progress_temporary(&mut self, ctx: &Context<'_>) -> Place {
+        let signature = ctx.coroutine_form().signature().clone();
+        self.new_progress_temporary_place(&signature)
     }
 
     /// The yield of `key`, an operation of this coroutine's own row, built in
     /// a new progress local.
-    pub(in crate::lower) fn own_yield(&mut self, key: &RowOperationKey) -> OwnYield {
-        let progress = self.own_progress_temporary();
-        let row_layout = self.coroutine_form().row_layout();
+    pub(in crate::lower) fn create_own_yield(
+        &mut self,
+        key: &RowOperationKey,
+        ctx: &Context<'_>,
+    ) -> OwnYield {
+        let progress = self.create_own_progress_temporary(ctx);
+        let row_layout = ctx.coroutine_form().row_layout();
         let operation = row_layout.get_row_operation_id(key);
 
         let yielded = self.project(&progress).coroutine_progress_yield_payload();
@@ -89,9 +97,9 @@ impl FunctionLowering<'_> {
     }
 
     /// Lowers a `return` of a coroutine, which completes it.
-    pub(in crate::lower) fn complete_coroutine(&mut self, value: Operand) {
-        let progress = self.own_progress_temporary();
-        let form = self.coroutine_form();
+    pub(in crate::lower) fn lower_complete_coroutine(&mut self, value: Operand, ctx: &Context<'_>) {
+        let progress = self.create_own_progress_temporary(ctx);
+        let form = ctx.coroutine_form();
         let state = self.project(form.frame_place()).coroutine_frame_state();
         let completed = form.frame_state_tag(FrameState::Completed);
 
