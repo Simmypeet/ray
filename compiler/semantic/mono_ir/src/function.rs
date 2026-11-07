@@ -1,5 +1,6 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{ID, OrderedArena};
+use rayc_ir::ir_function::IRContext;
 use rayc_qbice::TrackedEngine;
 
 use crate::{
@@ -21,6 +22,20 @@ pub enum MonoFunctionKind {
     OperationHandler,
     /// The state machine that runs a coroutine up to its next suspension.
     CoroutineResume,
+}
+
+impl MonoFunctionKind {
+    /// The kind of the callback-style function lowered from a function of a
+    /// definition's IR with `context`.
+    #[must_use]
+    pub const fn of_callback_function(context: &IRContext) -> Self {
+        match context {
+            IRContext::Def => Self::Def,
+            IRContext::Closure(_) => Self::Closure,
+            IRContext::Thunk(_) => Self::Thunk,
+            IRContext::OperationHandler(_) => Self::OperationHandler,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]

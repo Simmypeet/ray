@@ -47,7 +47,7 @@ pub enum Operand {
     Constant(Constant),
     /// The address of a function. Its signature is that of the referenced
     /// function: a local function's own, or
-    /// [`get_def_signature`](crate::signature::get_def_signature) for a
+    /// [`get_callback_def_signature`](crate::signature::get_callback_def_signature) for a
     /// global definition. Callers thus depend on a callee's declaration
     /// rather than its lowered body.
     Function(FunctionReference),

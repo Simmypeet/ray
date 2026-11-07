@@ -712,28 +712,3 @@ const fn lower_mutability(mutability: Mutability) -> PointerMutability {
         Mutability::Mutable => PointerMutability::Mut,
     }
 }
-
-/// The signature of the body of a concrete closure, which receives the
-/// closure's environment by value.
-pub async fn closure_signature(
-    solver: &Solver,
-    closure: rayc_type::ty::application::ClosureView<'_>,
-) -> FunctionSignature {
-    let engine = solver.engine();
-    let environment =
-        MonoEnvironmentInstance::Closure(MonoClosureInstance::from_closure(solver, closure).await);
-    let mut parameters = Vec::new();
-    for parameter in closure.params() {
-        parameters.push(lower_type(solver, parameter, &Subst::new_empty()).await);
-    }
-    let row = EffectRow::new(solver, closure.effect_row(), &Subst::new_empty()).await;
-    let result = lower_type(solver, closure.return_type(), &Subst::new_empty()).await;
-
-    FunctionSignature::builder()
-        .parameter_types(engine.intern_unsized(parameters))
-        .return_type(ReturnType::Value(result))
-        .environment_slot(EnvironmentSlot::ByValue(environment))
-        .handler_record_slots(row)
-        .engine(engine)
-        .build()
-}

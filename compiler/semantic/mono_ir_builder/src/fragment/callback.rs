@@ -1,19 +1,16 @@
 //! What only a fragment in callback style needs: the calling convention and
 //! target of each of its functions.
 
-use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
-use rayc_ir::ir_function::{IRContext, IRFunction, IRFunctionID, IRFunctionMap};
+use rayc_ir::ir_function::{IRFunctionID, IRFunctionMap};
 use rayc_mono_ir::{
-    MonoEffectInstance, MonoFragmentInstance, MonoIR,
+    MonoDefInstance, MonoEffectInstance, MonoFragmentInstance, MonoIR,
     function::{MonoFunctionID, MonoFunctionKind},
-    ty::{FunctionSignature, MonoType, closure_body_signature},
+    signature::get_callback_function_signature,
+    ty::FunctionSignature,
 };
-use rayc_semantic_element::parameter::get_parameter_map;
-use rayc_symbol::GlobalSymbolID;
-use rayc_type::signature::get_return_type;
 
-use super::{created_closures, environments::Environments};
+use super::created_closures;
 use crate::resolver::Resolver;
 
 /// The concrete calling convention of one function in callback style.
@@ -21,16 +18,27 @@ use crate::resolver::Resolver;
 pub(crate) struct CallbackStyleFunctionABI {
     kind: MonoFunctionKind,
     signature: FunctionSignature,
-    effects: Vec<MonoEffectInstance>,
 }
 
 impl CallbackStyleFunctionABI {
-    pub(crate) fn effects(&self) -> impl ExactSizeIterator<Item = &MonoEffectInstance> {
-        self.effects.iter()
+    /// Reads how the function `function_id` of the IR of `owner` is called.
+    async fn of(
+        resolver: &Resolver,
+        source: &IRFunctionMap,
+        owner: &MonoDefInstance,
+        function_id: IRFunctionID,
+    ) -> Self {
+        let kind =
+            MonoFunctionKind::of_callback_function(source.get_function(function_id).context());
+        let signature =
+            resolver.engine().get_callback_function_signature(owner.clone(), function_id).await;
+
+        Self { kind, signature: (*signature).clone() }
     }
 
-    pub(crate) fn captures_effect_handlers(&self) -> bool {
-        self.kind == MonoFunctionKind::OperationHandler
+    /// The effects whose handler records a caller passes, in their order.
+    pub(crate) fn handler_record_slots(&self) -> &[MonoEffectInstance] {
+        self.signature.handler_record_slots()
     }
 }
 
@@ -84,34 +92,24 @@ impl CallbackFragment {
     pub(super) async fn new(
         resolver: &Resolver,
         source: &IRFunctionMap,
-        environments: &Environments,
-        def_id: GlobalSymbolID,
+        owner: &MonoDefInstance,
         instance: MonoFragmentInstance,
         functions: Vec<IRFunctionID>,
     ) -> (Self, MonoIR) {
-        let planner = FunctionPlanner { resolver, source, environments, def_id };
         let (root, nested) = functions.split_first().expect("a fragment should have a root");
-
-        // Callers spell a definition through its declared signature, so the
-        // body must implement exactly that interface.
-        let root_abi = planner.plan_function(*root).await;
-        if let MonoFragmentInstance::Definition(definition) = &instance {
-            assert_eq!(
-                &root_abi.signature,
-                resolver.def_signature(definition).await.signature(),
-                "a lowered definition should implement its declared signature"
-            );
-        }
+        let root_abi = CallbackStyleFunctionABI::of(resolver, source, owner, *root).await;
 
         // Declare the root, then every nested function in order.
-        let mut output = MonoIR::new(instance, root_abi.signature.clone());
+        let engine = resolver.engine();
+        let mut output = MonoIR::new(instance, root_abi.signature.clone(), engine);
         let mut function_abis = FxHashMap::default();
         let mut function_ids = FxHashMap::default();
         function_ids.insert(*root, output.root_id());
         function_abis.insert(*root, root_abi);
         for function in nested.iter().copied() {
-            let abi = planner.plan_function(function).await;
-            function_ids.insert(function, output.insert_function(abi.kind, abi.signature.clone()));
+            let abi = CallbackStyleFunctionABI::of(resolver, source, owner, function).await;
+            let function_id = output.insert_function(abi.kind, abi.signature.clone(), engine);
+            function_ids.insert(function, function_id);
             function_abis.insert(function, abi);
         }
 
@@ -132,108 +130,5 @@ impl CallbackFragment {
             .function_ids
             .get(&function_id)
             .expect("semantic IR function should be mapped to a MonoIR function")
-    }
-}
-
-/// What the kind of a function decides about its calling convention.
-struct FunctionShape {
-    kind: MonoFunctionKind,
-    parameter_types: Vec<Interned<MonoType>>,
-    return_type: Interned<MonoType>,
-}
-
-/// What planning the calling convention of a function reads.
-struct FunctionPlanner<'a> {
-    resolver: &'a Resolver,
-    source: &'a IRFunctionMap,
-    environments: &'a Environments,
-    def_id: GlobalSymbolID,
-}
-
-impl FunctionPlanner<'_> {
-    /// Plans how a function is called.
-    async fn plan_function(&self, function_id: IRFunctionID) -> CallbackStyleFunctionABI {
-        let engine = self.resolver.engine();
-        let effect = self.source.effect_of(function_id, engine).await;
-        let effects = self.resolver.lower_effects(&effect).await;
-        let FunctionShape { kind, mut parameter_types, return_type } =
-            self.plan_shape(self.source.get_function(function_id)).await;
-
-        // Nominal bodies and dictionary calls share the same
-        // environment/handler ABI.
-        let signature = if self.source.is_closure_function(function_id) {
-            let environment = self.environments.of_function(function_id).environment_type().clone();
-            closure_body_signature(engine, environment, parameter_types, return_type, &effects)
-        } else {
-            // Operation callbacks capture handlers instead of receiving them.
-            if kind != MonoFunctionKind::OperationHandler {
-                parameter_types.extend(
-                    effects
-                        .iter()
-                        .map(|effect| MonoType::new_handler_pointer(effect.clone(), engine)),
-                );
-            }
-            MonoType::new_function_signature(parameter_types, return_type, engine)
-        };
-
-        CallbackStyleFunctionABI { kind, signature, effects }
-    }
-
-    /// Reads the parameters and result of a function from what kind of function
-    /// it is.
-    async fn plan_shape(&self, source: &IRFunction) -> FunctionShape {
-        let engine = self.resolver.engine();
-        let resolver = self.resolver;
-
-        match source.context() {
-            IRContext::Def => {
-                let parameters = engine.get_parameter_map(self.def_id).await;
-                let mut parameter_types = Vec::new();
-                for (_, parameter) in parameters.iter() {
-                    parameter_types.push(resolver.lower_type(parameter.ty()).await);
-                }
-                let return_type = engine.get_return_type(self.def_id).await;
-
-                FunctionShape {
-                    kind: MonoFunctionKind::Def,
-                    parameter_types,
-                    return_type: resolver.lower_type(&return_type).await,
-                }
-            }
-
-            // Every closure body uses the nominal environment ABI.
-            IRContext::Closure(context) => {
-                let mut parameter_types = Vec::new();
-                for (_, parameter) in context.parameters() {
-                    parameter_types.push(resolver.lower_type(parameter.ty()).await);
-                }
-
-                FunctionShape {
-                    kind: MonoFunctionKind::Closure,
-                    parameter_types,
-                    return_type: resolver.lower_type(context.return_ty()).await,
-                }
-            }
-
-            // The first parameter carries the erased capture environment.
-            IRContext::Thunk(context) => FunctionShape {
-                kind: MonoFunctionKind::Thunk,
-                parameter_types: vec![MonoType::new_opaque_pointer(engine)],
-                return_type: resolver.lower_type(context.return_ty()).await,
-            },
-
-            IRContext::OperationHandler(context) => {
-                let mut parameter_types = vec![MonoType::new_opaque_pointer(engine)];
-                for (_, parameter) in context.parameters() {
-                    parameter_types.push(resolver.lower_type(parameter.ty()).await);
-                }
-
-                FunctionShape {
-                    kind: MonoFunctionKind::OperationHandler,
-                    parameter_types,
-                    return_type: resolver.lower_type(context.return_ty()).await,
-                }
-            }
-        }
     }
 }
