@@ -16,9 +16,9 @@ use rayc_mono_ir::{
     cfg::BlockID,
     function::LocalID,
     operand::Operand,
-    place::{FieldIndex, Place},
+    place::Place,
     rvalue::{Cast, Rvalue},
-    ty::{AggregateType, MonoType, PointerMutability},
+    ty::{MonoType, PointerMutability},
 };
 use rayc_semantic_element::parameter::ParameterID;
 
@@ -101,8 +101,9 @@ impl SourceMap {
         }
     }
 
-    /// Maps the parameters of the source function to those of the target, and
-    /// returns the one that holds the environment, if any.
+    /// Maps the source parameters of the source function to those of the
+    /// target, and returns the parameter that holds the environment, if any.
+    /// `LoweringStyle` maps the handler-record parameters.
     async fn bind_parameters(
         &mut self,
         fragment: &Fragment,
@@ -110,48 +111,39 @@ impl SourceMap {
         emit: &Emitter<'_>,
     ) -> Option<LocalID> {
         let mut parameters = emit.parameter_ids();
+        let context = fragment.source_function(source_id).context();
 
-        let environment_parameter = match fragment.source_function(source_id).context() {
+        match context {
             IRContext::Def => {
                 for ((parameter_id, _), target_id) in
                     fragment.get_root_parameter_map().await.iter().zip(parameters.by_ref())
                 {
                     self.parameters.insert(parameter_id, emit.place(target_id));
                 }
-                None
             }
             IRContext::Closure(closure) => {
-                let environment = parameters.next().expect("closure should have an environment");
                 for ((parameter_id, _), target_id) in closure.parameters().zip(parameters.by_ref())
                 {
                     self.closure_parameters.insert(parameter_id, emit.place(target_id));
                 }
-                Some(environment)
             }
-            IRContext::Thunk(_) => {
-                Some(parameters.next().expect("thunk should have an environment"))
-            }
+            IRContext::Thunk(_) => {}
             IRContext::OperationHandler(handler) => {
-                let environment =
-                    parameters.next().expect("operation handler should have an environment");
                 for ((parameter_id, _), target_id) in handler.parameters().zip(parameters.by_ref())
                 {
                     self.operation_parameters.insert(parameter_id, emit.place(target_id));
                 }
-                Some(environment)
             }
-        };
+        }
+        assert_eq!(parameters.len(), 0, "every source parameter should be bound");
 
-        // The handler parameters come last; `LoweringStyle` maps them.
-        let abi = fragment.function_abi(source_id);
-        let handler_parameters =
-            if abi.captures_effect_handlers() { 0 } else { abi.effects().len() };
+        // Every function but a definition has an environment.
+        let environment_parameter = emit.environment_parameter();
         assert_eq!(
-            parameters.len(),
-            handler_parameters,
-            "MonoIR signature parameters should be consumed"
+            environment_parameter.is_some(),
+            context.capture_map_id().is_some(),
+            "a function should have an environment slot exactly when it has captures"
         );
-
         environment_parameter
     }
 
@@ -271,7 +263,7 @@ impl SourceMap {
         environment_parameter: LocalID,
     ) -> Option<Place> {
         let environment_abi = fragment.function_environment_abi(source_id);
-        if environment_abi.environment_type().captures().is_empty() {
+        if environment_abi.layout().is_empty() {
             return None;
         }
 
@@ -283,12 +275,10 @@ impl SourceMap {
             cast_environment_pointer(environment_abi, emit, environment_parameter)
         };
 
-        for (index, capture_id) in environment_abi.capture_ids().enumerate() {
-            let place = emit.project(&environment).environment_field(FieldIndex::from_usize(index));
+        for capture_id in environment_abi.capture_ids() {
+            let place = emit.project(&environment).environment_capture(capture_id);
             self.captures.insert(capture_id, place);
         }
-
-        assert_eq!(fragment.source_capture_count(source_id), environment_abi.capture_count());
 
         Some(environment)
     }
@@ -351,9 +341,8 @@ fn cast_environment_pointer(
     environment_parameter: LocalID,
 ) -> Place {
     let engine = emit.engine();
-    let environment = AggregateType::Environment(environment_abi.environment_type().clone());
     let pointer_type = MonoType::new_pointer(
-        MonoType::new_aggregate(environment, engine),
+        engine.intern(environment_abi.environment_type()),
         PointerMutability::Mut,
         engine,
     );

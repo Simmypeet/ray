@@ -190,9 +190,9 @@ pub(crate) enum LoweringStyle {
 }
 
 impl LoweringStyle {
-    /// The style of a function that performs its effects through handlers: the
-    /// parameters after its source parameters hold them, or else the fields
-    /// after the captures of `environment`.
+    /// The style of a function that performs its effects through handlers:
+    /// its handler-record parameters hold them, or else the handler records of
+    /// `environment`.
     pub(super) fn new_callback(
         fragment: &Fragment,
         source_id: IRFunctionID,
@@ -201,25 +201,16 @@ impl LoweringStyle {
     ) -> Self {
         let mut handlers = EffectHandlers::default();
 
-        let abi = fragment.function_abi(source_id);
-
-        if !abi.captures_effect_handlers() {
-            // this means the effect handlers are passed as parameters after the
-            // source parameters
-            let parameters = emit.parameter_ids();
-            let first = parameters.len() - abi.effects().len();
-
-            for (effect, parameter) in abi.effects().cloned().zip(parameters.skip(first)) {
-                handlers.insert(effect, emit.place(parameter));
-            }
+        for (effect, parameter) in emit.handler_record_parameters() {
+            handlers.insert(effect.clone(), emit.place(parameter));
         }
 
-        // Initialize effect handlers from the same environment ABI used by its
-        // producer.
+        // Only an operation handler's environment has handler records.
         if let Some(environment) = environment {
-            let environment_abi = fragment.function_environment_abi(source_id);
-            for (field, effect) in environment_abi.captured_effects_with_field_offset() {
-                handlers.insert(effect.clone(), emit.project(environment).environment_field(field));
+            let layout = fragment.function_environment_abi(source_id).layout();
+            for (record_id, record) in layout.handler_records() {
+                let place = emit.project(environment).environment_handler_record(record_id);
+                handlers.insert(record.effect().clone(), place);
             }
         }
 

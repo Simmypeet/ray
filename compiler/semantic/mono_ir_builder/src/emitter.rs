@@ -1,13 +1,13 @@
-//! Emits instructions and blocks into one `MonoIR` function.
-
 use qbice::storage::intern::Interned;
 use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
+use rayc_ir::ir_closure::CaptureID;
 use rayc_mono_ir::{
-    MonoDefInstance, MonoIR,
+    MonoDefInstance, MonoEffectInstance, MonoIR,
     cfg::{BlockID, Switch, Terminator},
     function::{Local, LocalID, LocalKind, MonoFunctionID},
     instance::FunctionReference,
     instruction::{Assign, Call, Instruction},
+    layout::HandlerRecordID,
     operand::{Constant, Operand},
     place::{FieldIndex, Place, PlaceProjector, Projection},
     rvalue::Rvalue,
@@ -40,8 +40,22 @@ impl<'a> Emitter<'a> {
 
     pub(crate) const fn engine(&self) -> &'a TrackedEngine { self.resolver.engine() }
 
+    /// The local that receives the environment, if the function has an
+    /// environment slot.
+    pub(crate) fn environment_parameter(&self) -> Option<LocalID> {
+        self.output.get_function(self.target_id).environment()
+    }
+
+    /// The locals of the source parameters.
     pub(crate) fn parameter_ids(&self) -> impl ExactSizeIterator<Item = LocalID> + '_ {
         self.output.get_function(self.target_id).parameters()
+    }
+
+    /// The local that receives each handler record, with its effect.
+    pub(crate) fn handler_record_parameters(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&MonoEffectInstance, LocalID)> + '_ {
+        self.output.get_function(self.target_id).handler_records()
     }
 
     /// The place of a whole local.
@@ -121,39 +135,47 @@ impl<'a> Emitter<'a> {
 
     /// Initializes the tuple of type `ty` at `destination` from one operand per
     /// element.
-    pub(crate) fn initialize_tuple(&mut self, destination: &Place, fields: Vec<Operand>) {
+    pub(crate) fn initialize_tuple(
+        &mut self,
+        destination: &Place,
+        fields: impl IntoIterator<Item = Operand>,
+    ) {
         let members = fields.into_iter().enumerate().map(|(index, operand)| {
             (Projection::TupleFieldIndex(FieldIndex::from_usize(index)), operand)
         });
         self.initialize_aggregate(destination, members);
     }
 
-    /// Initializes the environment of type `ty` at `destination` from one
-    /// operand per field.
-    pub(crate) fn initialize_environment(&mut self, destination: &Place, fields: Vec<Operand>) {
-        let members = fields.into_iter().enumerate().map(|(index, operand)| {
-            (Projection::EnvironmentFieldIndex(FieldIndex::from_usize(index)), operand)
-        });
-        self.initialize_aggregate(destination, members);
-    }
-
-    pub(crate) fn call(
+    /// Initializes the environment at `destination` from an operand per
+    /// capture and per handler record.
+    pub(crate) fn initialize_environment(
         &mut self,
-        destination: Option<Place>,
-        callee: Operand,
-        arguments: Vec<Operand>,
+        destination: &Place,
+        captures: impl IntoIterator<Item = (CaptureID, Operand)>,
+        handler_records: impl IntoIterator<Item = (HandlerRecordID, Operand)>,
     ) {
-        self.push_instruction(Instruction::Call(Call::new(destination, callee, arguments)));
+        let captures = captures
+            .into_iter()
+            .map(|(capture, operand)| (Projection::EnvironmentCapture(capture), operand));
+        let handler_records = handler_records
+            .into_iter()
+            .map(|(record, operand)| (Projection::EnvironmentHandlerRecord(record), operand));
+        self.initialize_aggregate(destination, captures.chain(handler_records));
     }
 
+    pub(crate) fn call(&mut self, call: Call) { self.push_instruction(Instruction::Call(call)); }
+
+    /// Calls the definition `callee`, passing `handler_records` to its
+    /// handler-record slots.
     pub(crate) async fn lower_call_with_args(
         &mut self,
         callee: MonoDefInstance,
         arguments: Vec<Operand>,
+        handler_records: Vec<Operand>,
         destination: Place,
     ) {
-        let callee_signature = self.resolver().def_signature(&callee).await;
-        let is_void = callee_signature.signature().return_type().is_void();
+        let callee_signature = self.resolver().callback_def_signature(&callee).await;
+        let is_void = callee_signature.return_type().is_void();
         let callee = Operand::Function(FunctionReference::Global(callee));
 
         // if the function has `void` return type, which is mostly from `extern
@@ -161,7 +183,9 @@ impl<'a> Emitter<'a> {
         // destination place
         let call_destination = (!is_void).then(|| destination.clone());
 
-        self.call(call_destination, callee, arguments);
+        self.call(
+            Call::new(call_destination, callee, arguments).with_handler_records(handler_records),
+        );
 
         // if we are calling a `void`  function, we need to assign "fake" unit
         // value to the destination place. (Actually, we don't need to
