@@ -1,5 +1,5 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
-use rayc_ir::{get_ir, ir_closure::CaptureMapID, ir_function::IRFunctionID};
+use rayc_ir::{get_ir, ir_closure::CaptureMapID, ir_expr::IRExprID, ir_function::IRFunctionID};
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
@@ -224,6 +224,39 @@ impl MonoCoroutineInstance {
     /// The function that the coroutine suspends.
     #[must_use]
     pub const fn body(&self) -> &MonoBodyInstance { &self.0 }
+}
+
+/// Identifies one `run ... with` expression of a concrete function, which
+/// suspends the `coroutine_resume` of that function.
+///
+/// While the function is suspended there, it holds the frames of the handled
+/// body and of the clause that runs, with the environment the clauses share,
+/// in one aggregate; see [`RunWithLayout`].
+///
+/// [`RunWithLayout`]: crate::layout::run_with::RunWithLayout
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct MonoRunWithInstance {
+    owner: MonoBodyInstance,
+    expression: IRExprID,
+}
+
+impl MonoRunWithInstance {
+    /// The `run ... with` expression `expression` of the function `owner`.
+    #[must_use]
+    pub const fn new(owner: MonoBodyInstance, expression: IRExprID) -> Self {
+        Self { owner, expression }
+    }
+
+    /// The function that evaluates the `run ... with`, whose IR also holds
+    /// its body and its clauses.
+    #[must_use]
+    pub const fn owner(&self) -> &MonoBodyInstance { &self.owner }
+
+    /// The `run ... with` expression in the function of the owner.
+    #[must_use]
+    pub const fn expression(&self) -> IRExprID { self.expression }
 }
 
 /// Identifies one independently lowered `MonoFunction`, which is also how a

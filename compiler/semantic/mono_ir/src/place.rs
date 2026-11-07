@@ -89,6 +89,23 @@ pub enum CoroutineFrame {
     Savable(Savable),
 }
 
+/// Field access to what a coroutine holds while it is suspended at a `run ...
+/// with`. See [`crate::ty::AggregateType::RunWithAwaitee`] for the fields of
+/// the type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum RunWithAwaitee {
+    /// The environment that the clauses share.
+    HandlerEnvironment,
+    /// The frame of the handled body.
+    Body,
+    /// Whether the body or a clause runs; see
+    /// [`crate::layout::run_with::RunWithPhase`].
+    Phase,
+    /// The frame of the clause of the operation, in the union of the frames
+    /// of the clauses.
+    Clause(GlobalSymbolID),
+}
+
 #[derive(
     Debug,
     Clone,
@@ -121,6 +138,7 @@ pub enum Projection {
     CoroutineResumeValue(ResumeVariantID),
     CoroutineProgress(CoroutineProgress),
     CoroutineYield(CoroutineYield),
+    RunWithAwaitee(RunWithAwaitee),
 }
 
 /// An addressable `MonoIR` location.
@@ -239,5 +257,26 @@ impl PlaceProjector<'_> {
         self.with_projection(Projection::CoroutineYield(CoroutineYield::OperationPayload(
             operation,
         )))
+    }
+
+    #[must_use]
+    pub fn run_with_handler_environment(self) -> Place {
+        self.with_projection(Projection::RunWithAwaitee(RunWithAwaitee::HandlerEnvironment))
+    }
+
+    #[must_use]
+    pub fn run_with_body(self) -> Place {
+        self.with_projection(Projection::RunWithAwaitee(RunWithAwaitee::Body))
+    }
+
+    #[must_use]
+    pub fn run_with_phase(self) -> Place {
+        self.with_projection(Projection::RunWithAwaitee(RunWithAwaitee::Phase))
+    }
+
+    /// The frame of the clause of `operation`.
+    #[must_use]
+    pub fn run_with_clause(self, operation: GlobalSymbolID) -> Place {
+        self.with_projection(Projection::RunWithAwaitee(RunWithAwaitee::Clause(operation)))
     }
 }

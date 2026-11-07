@@ -27,5 +27,5 @@ pub mod ty;
 
 pub use instance::{
     MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance,
-    MonoFunctionInstance, MonoGeneratedAdtDropInstance, MonoStructInstance,
+    MonoFunctionInstance, MonoGeneratedAdtDropInstance, MonoRunWithInstance, MonoStructInstance,
 };

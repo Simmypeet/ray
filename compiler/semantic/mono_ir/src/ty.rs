@@ -12,7 +12,7 @@ use rayc_type::{
 use crate::{
     instance::{
         MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance,
-        MonoStructInstance,
+        MonoRunWithInstance, MonoStructInstance,
     },
     layout::TagType,
     operand::Constant,
@@ -280,6 +280,25 @@ pub enum AggregateType {
     CoroutineYield(CoroutineYield),
     /// See [`CoroutineProgress`] for details.
     CoroutineProgress(CoroutineProgress),
+    /// What a `coroutine_resume` holds while it is suspended at a `run ...
+    /// with`: the environment the clauses share, the frame of the handled
+    /// body, which of them runs, and the frame of the clause that runs. It is
+    /// nominal; a [`RunWithLayout`] tells its members.
+    ///
+    /// ```c
+    /// typedef struct {
+    ///     handler_env_t handler_env;  // only if the clauses have captures
+    ///     body_frame_t  body;
+    ///     tag_t         phase;        // the body, or the clause that runs
+    ///     union {
+    ///         clause_a_frame_t clause_a;
+    ///         ...
+    ///     };
+    /// } run_with_awaitee_t;
+    /// ```
+    ///
+    /// [`RunWithLayout`]: crate::layout::run_with::RunWithLayout
+    RunWithAwaitee(MonoRunWithInstance),
 }
 
 /// A closed effect row in its canonical order, which is that of

@@ -40,6 +40,7 @@ use crate::{
 };
 
 pub mod coroutine;
+pub mod run_with;
 
 /// The unsigned integer type of a tag, which tells the variant of a value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

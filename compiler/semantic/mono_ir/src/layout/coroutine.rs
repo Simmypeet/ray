@@ -15,7 +15,7 @@ use rayc_ir::{
     cfg::Terminator,
     get_ir,
     ir_expr::call::Call,
-    ir_function::{IRFunction, IRFunctionID, IRFunctionMap},
+    ir_function::{IRFunction, IRFunctionMap},
     suspension_point::Waitee,
 };
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
@@ -28,10 +28,11 @@ use rayc_type::{
 };
 
 use crate::{
-    MonoCoroutineInstance, MonoEffectInstance,
+    MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance,
+    MonoRunWithInstance,
     layout::{TagType, build_handler_layout as _},
     operand::Constant,
-    ty::{AggregateType, EffectRow, MonoType, ReturnType, Tuple, lower_type},
+    ty::{AggregateType, EffectRow, MonoType, PointerMutability, ReturnType, Tuple, lower_type},
 };
 
 /// Builds the [`FrameLayout`] of a concrete coroutine instance.
@@ -146,20 +147,13 @@ async fn build_frame_field_types_executor(
 ) -> Interned<FrameFieldTypes> {
     let solver = Solver::without_givens(engine.clone()).await;
     let body = key.instance.body();
-    let def_id = body.def_id();
-    let source = engine.get_ir(def_id).await;
-    let function_id = body.ir_function_id();
-    let function = source.get_function(function_id);
-    let substitution = body.substitution();
+    let source = engine.get_ir(body.def_id()).await;
+    let frame = SuspendedFunction { solver: &solver, body, source: &source };
     let layout = engine.build_frame_layout(key.instance.clone()).await;
 
-    // Lower the type of every value as the suspended function spells it.
     let mut types = BTreeMap::new();
     for (savable, _) in layout.placements() {
-        let ty =
-            savable_type(&solver, substitution, &source, function, def_id, function_id, savable)
-                .await;
-        types.insert(savable, lower_type(&solver, &ty, substitution).await);
+        types.insert(savable, frame.savable_type(savable).await);
     }
 
     engine.intern(FrameFieldTypes(types))
@@ -169,66 +163,110 @@ async fn build_frame_field_types_executor(
 static BUILD_FRAME_FIELD_TYPES_EXECUTOR: Registration<Config> =
     Registration::new::<BuildFrameFieldTypes, BuildFrameFieldTypesExecutor>();
 
-/// The type of a value that a frame holds, as the suspended function spells it.
-async fn savable_type(
-    solver: &Solver,
-    substitution: &Subst,
-    source: &IRFunctionMap,
-    function: &IRFunction,
-    def_id: GlobalSymbolID,
-    function_id: IRFunctionID,
-    savable: Savable,
-) -> Interned<Ty> {
-    let engine = solver.engine();
-    match savable {
-        Savable::Expression(expression) => function.get_expression(expression).ty().clone(),
-        Savable::Local(Local::Variable(variable)) => function.get_variable(variable).ty().clone(),
-        Savable::Local(Local::Parameter(parameter)) => {
-            engine.get_parameter_map(def_id).await[parameter].ty().clone()
-        }
-        Savable::Local(Local::ClosureParameter(parameter)) => {
-            function.context().assert_as_closure_context().get_parameter(parameter).ty().clone()
-        }
-        Savable::Local(Local::Capture(capture)) => {
-            source.get_capture(function_id, capture).storage_ty(engine)
-        }
-        Savable::Local(Local::OperationHandlerParameter(_)) => {
-            panic!("the coroutine form of an operation handler is not lowered to MonoIR yet")
-        }
-        Savable::Awaitee(point) => awaitee_type(solver, substitution, function, point).await,
-    }
+/// The function a coroutine suspends, whose values its frame holds.
+struct SuspendedFunction<'a> {
+    solver: &'a Solver,
+    body: &'a MonoBodyInstance,
+    source: &'a IRFunctionMap,
 }
 
-/// The type of what the function holds while it is suspended at `point`.
-async fn awaitee_type(
-    solver: &Solver,
-    substitution: &Subst,
-    function: &IRFunction,
-    point: SuspensionPointID,
-) -> Interned<Ty> {
-    let engine = solver.engine();
-    let expression = function
-        .block_terminator(point.block_id())
-        .and_then(Terminator::suspending_expr)
-        .expect("an awaitee is held at a suspension point");
+impl SuspendedFunction<'_> {
+    const fn engine(&self) -> &TrackedEngine { self.solver.engine() }
 
-    match function.get_expression_as_waitee(expression) {
-        // The coroutine a continuation resumes is already somewhere else, as
-        // for a `handle`. It is the first argument of `Def.call`.
-        Waitee::Call(call) if calls_continuation(solver, substitution, call).await => {
-            function.get_expression(call.arguments()[0]).ty().clone()
+    fn function(&self) -> &IRFunction { self.source.get_function(self.body.ir_function_id()) }
+
+    async fn lower_type(&self, ty: &Interned<Ty>) -> Interned<MonoType> {
+        lower_type(self.solver, ty, self.body.substitution()).await
+    }
+
+    /// The type of a value that the frame holds.
+    async fn savable_type(&self, savable: Savable) -> Interned<MonoType> {
+        match savable {
+            Savable::Local(local) => self.lower_type(&self.local_type(local).await).await,
+            Savable::Expression(expression) => {
+                self.lower_type(self.function().get_expression(expression).ty()).await
+            }
+            Savable::Awaitee(point) => self.awaitee_type(point).await,
+            Savable::Environment => self.environment_pointer_type(),
         }
-        // The callee runs in a frame stored in the frame of its caller.
-        Waitee::Call(call) => {
-            call.coroutine_ty(engine).await.expect("a call of an `extern def` does not suspend")
+    }
+
+    /// The type of `local`, as the suspended function spells it.
+    async fn local_type(&self, local: Local) -> Interned<Ty> {
+        let function = self.function();
+        match local {
+            Local::Variable(variable) => function.get_variable(variable).ty().clone(),
+            Local::Parameter(parameter) => {
+                self.engine().get_parameter_map(self.body.def_id()).await[parameter].ty().clone()
+            }
+            Local::ClosureParameter(parameter) => {
+                function.context().assert_as_closure_context().get_parameter(parameter).ty().clone()
+            }
+            Local::OperationHandlerParameter(parameter) => function
+                .context()
+                .assert_as_operation_handler_context()
+                .get_parameter(parameter)
+                .ty()
+                .clone(),
+            Local::Capture(capture) => self
+                .source
+                .get_capture(self.body.ir_function_id(), capture)
+                .storage_ty(self.engine()),
         }
-        // The coroutine a `handle` resumes is already somewhere else, behind
-        // the continuation.
-        Waitee::Handle(handle) => function.get_expression(handle.continuation()).ty().clone(),
-        Waitee::RunWith(_) => {
-            panic!("forwarding the operations of a `run ... with` is not lowered to MonoIR yet")
-        }
-        Waitee::Perform => panic!("a `perform` holds nothing while it is suspended"),
+    }
+
+    /// The type of the pointer to the environment of a function that borrows
+    /// its captures.
+    fn environment_pointer_type(&self) -> Interned<MonoType> {
+        let engine = self.engine();
+        let capture_map = self.source.get_capture_map_id(self.body.ir_function_id());
+        let environment = MonoEnvironmentInstance::new(self.body, capture_map);
+        let environment = MonoType::new_aggregate(AggregateType::Environment(environment), engine);
+
+        MonoType::new_pointer(environment, PointerMutability::Mut, engine)
+    }
+
+    /// The type of what the function holds while it is suspended at `point`.
+    async fn awaitee_type(&self, point: SuspensionPointID) -> Interned<MonoType> {
+        let function = self.function();
+        let expression = function
+            .block_terminator(point.block_id())
+            .and_then(Terminator::suspending_expr)
+            .expect("an awaitee is held at a suspension point");
+
+        let ty = match function.get_expression_as_waitee(expression) {
+            // The coroutine a continuation resumes is already somewhere else,
+            // as for a `handle`. It is the first argument of `Def.call`.
+            Waitee::Call(call)
+                if calls_continuation(self.solver, self.body.substitution(), call).await =>
+            {
+                function.get_expression(call.arguments()[0]).ty().clone()
+            }
+
+            // The callee runs in a frame stored in the frame of its caller.
+            Waitee::Call(call) => call
+                .coroutine_ty(self.engine())
+                .await
+                .expect("a call of an `extern def` does not suspend"),
+
+            // The coroutine a `handle` resumes is already somewhere else,
+            // behind the continuation.
+            Waitee::Handle(handle) => function.get_expression(handle.continuation()).ty().clone(),
+
+            // The body and the clauses have no source type: they are held
+            // together in an aggregate of their own.
+            Waitee::RunWith(_) => {
+                let instance = MonoRunWithInstance::new(self.body.clone(), expression);
+                return MonoType::new_aggregate(
+                    AggregateType::RunWithAwaitee(instance),
+                    self.engine(),
+                );
+            }
+
+            Waitee::Perform => panic!("a `perform` holds nothing while it is suspended"),
+        };
+
+        self.lower_type(&ty).await
     }
 }
 
