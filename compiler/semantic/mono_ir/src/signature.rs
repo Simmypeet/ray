@@ -38,7 +38,7 @@ use crate::{
 /// Derives the callback-style signature of a concrete definition instance,
 /// from its declaration alone, so that an `extern def` has one too.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
-#[value(Interned<FunctionSignature>)]
+#[value(FunctionSignature)]
 #[extend(name = get_callback_def_signature, by_val)]
 pub struct CallbackDefSignatureKey {
     /// The definition instance whose interface is requested.
@@ -110,7 +110,7 @@ impl DefKind {
 async fn callback_def_signature_executor(
     key: &CallbackDefSignatureKey,
     engine: &TrackedEngine,
-) -> Interned<FunctionSignature> {
+) -> FunctionSignature {
     let def_id = key.instance.def_id();
     let substitution = key.instance.substitution();
     let kind = DefKind::of(engine.get_symbol_kind(def_id).await);
@@ -142,22 +142,20 @@ async fn callback_def_signature_executor(
     let parameter_types = engine.intern_unsized(parameter_types);
     let variadic = kind.may_be_variadic() && engine.is_variadic_def(def_id).await;
 
-    engine.intern(
-        FunctionSignature::builder()
-            .parameter_types(parameter_types)
-            .return_type(return_type)
-            .variadic(variadic)
-            .handler_record_slots(effects)
-            .engine(engine)
-            .build(),
-    )
+    FunctionSignature::builder()
+        .parameter_types(parameter_types)
+        .return_type(return_type)
+        .variadic(variadic)
+        .handler_record_slots(effects)
+        .engine(engine)
+        .build()
 }
 
 /// Derives the callback-style signature of a function in the IR of a concrete
 /// definition instance: the definition itself, the body of one of its
 /// closures, the body of a `run ... with`, or the clause of one.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
-#[value(Interned<FunctionSignature>)]
+#[value(FunctionSignature)]
 #[extend(name = get_callback_function_signature, by_val)]
 pub struct CallbackFunctionSignatureKey {
     /// The definition instance whose IR holds the function.
@@ -170,7 +168,7 @@ pub struct CallbackFunctionSignatureKey {
 async fn callback_function_signature_executor(
     key: &CallbackFunctionSignatureKey,
     engine: &TrackedEngine,
-) -> Interned<FunctionSignature> {
+) -> FunctionSignature {
     let owner = &key.owner;
     let substitution = owner.substitution();
     let source = engine.get_ir(owner.def_id()).await;
@@ -219,15 +217,13 @@ async fn callback_function_signature_executor(
         None
     };
 
-    engine.intern(
-        FunctionSignature::builder()
-            .parameter_types(engine.intern_unsized(parameter_types))
-            .return_type(ReturnType::Value(return_type))
-            .environment_slot(environment_slot)
-            .maybe_handler_record_slots(handler_record_slots)
-            .engine(engine)
-            .build(),
-    )
+    FunctionSignature::builder()
+        .parameter_types(engine.intern_unsized(parameter_types))
+        .return_type(ReturnType::Value(return_type))
+        .environment_slot(environment_slot)
+        .maybe_handler_record_slots(handler_record_slots)
+        .engine(engine)
+        .build()
 }
 
 /// The interface of a concrete coroutine, derived from the signature of the

@@ -33,7 +33,7 @@ impl CallbackStyleFunctionABI {
         let signature =
             resolver.engine().get_callback_function_signature(owner.clone(), function_id).await;
 
-        Self { kind, signature: (*signature).clone() }
+        Self { kind, signature }
     }
 
     /// The effects whose handler records a caller passes, in their order.

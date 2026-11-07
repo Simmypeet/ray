@@ -17,7 +17,7 @@ use rayc_semantic_element::drop_plan::{DropPlan, GeneratedDropBody, get_drop_pla
 use rayc_solver::Solver;
 use rayc_type::subst::Subst;
 
-use crate::{function_lowering::emitter::Emitter, resolver::Resolver};
+use crate::{emitter::Emitter, resolver::Resolver};
 
 /// Lowers one generated nominal Drop instance into its own `MonoIR` fragment.
 pub(crate) async fn lower(
@@ -49,7 +49,7 @@ pub(crate) async fn lower(
     // Build `drop(self: Nominal) -> unit` with a scratch local that receives
     // the unit result of every field drop call.
     let signature = resolver.nominal_drop_signature(&nominal).await;
-    let mut output = MonoIR::new(instance.clone(), signature);
+    let mut output = MonoIR::new(instance.clone(), signature, engine);
     let root_id = output.root_id();
     let mut emit = Emitter::new(&resolver, &mut output, root_id);
 

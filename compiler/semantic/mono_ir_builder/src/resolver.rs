@@ -9,6 +9,7 @@
 
 use qbice::storage::intern::Interned;
 use rayc_coroutine_frame_layout::frame_layout::FrameLayout;
+use rayc_ir::{get_ir, ir_closure::CaptureID};
 use rayc_mono_ir::{
     MonoClosureInstance, MonoCoroutineInstance, MonoDefInstance, MonoEffectInstance,
     MonoGeneratedAdtDropInstance, MonoStructInstance,
@@ -19,11 +20,11 @@ use rayc_mono_ir::{
             build_frame_layout,
         },
     },
-    signature::{CoroutineSignature, DefSignature, get_coroutine_signature, get_def_signature},
-    ty::{
-        EffectRow, FunctionSignature, MonoType, closure_signature, instantiate_effect,
-        lower_effects, lower_type,
+    signature::{
+        CoroutineSignature, get_callback_def_signature, get_callback_function_signature,
+        get_coroutine_signature,
     },
+    ty::{EffectRow, FunctionSignature, MonoType, ReturnType, instantiate_effect, lower_type},
 };
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
@@ -47,9 +48,10 @@ use rayc_type::{
 /// The concrete implementation selected by an instance call.
 pub(crate) enum InstanceCallable {
     Definition(MonoDefInstance),
-    Closure(MonoClosureInstance, FunctionSignature, Vec<MonoEffectInstance>),
+    Closure(MonoClosureInstance, FunctionSignature),
     TupleDrop(Vec<Interned<Ty>>),
-    ClosureDrop(Vec<Interned<Ty>>),
+    /// The `Drop` dictionary of each capture of a closure.
+    ClosureDrop(Vec<(CaptureID, Interned<Ty>)>),
     NominalDrop(MonoGeneratedAdtDropInstance),
     /// `Def.call` of a continuation, which resumes this coroutine.
     Continuation(MonoCoroutineInstance),
@@ -73,11 +75,6 @@ impl Resolver {
     /// Lowers a type from the owner's generic context.
     pub(crate) async fn lower_type(&self, ty: &Interned<Ty>) -> Interned<MonoType> {
         lower_type(&self.solver, ty, &self.substitution).await
-    }
-
-    /// Lowers an effect row from the owner's generic context.
-    pub(crate) async fn lower_effects(&self, effect: &Interned<Ty>) -> Vec<MonoEffectInstance> {
-        lower_effects(&self.solver, effect, &self.substitution).await
     }
 
     /// Normalizes a callee's arguments into a definition fragment key.
@@ -124,7 +121,14 @@ impl Resolver {
             }
             ApplicationView::ClosureDropInstance(instance) => {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
-                InstanceCallable::ClosureDrop(instance.capture_instances().to_vec())
+                let captures = self.closure_capture_ids(instance.closure()).await;
+                assert_eq!(captures.len(), instance.capture_instances().len());
+                InstanceCallable::ClosureDrop(
+                    captures
+                        .into_iter()
+                        .zip(instance.capture_instances().iter().cloned())
+                        .collect(),
+                )
             }
             ApplicationView::GeneratedAdtDropInstance(_) => {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
@@ -170,7 +174,11 @@ impl Resolver {
     pub(crate) async fn nominal_drop_signature(&self, nominal: &Interned<Ty>) -> FunctionSignature {
         let parameter = self.lower_type(nominal).await;
         let unit = MonoType::new_unit(&self.engine);
-        MonoType::new_function_signature([parameter], unit, &self.engine)
+        FunctionSignature::builder()
+            .parameter_types(self.engine.intern_unsized([parameter]))
+            .return_type(ReturnType::Value(unit))
+            .engine(&self.engine)
+            .build()
     }
 
     /// Selects a nominal body and its ABI from a built-in Def dictionary.
@@ -191,8 +199,26 @@ impl Resolver {
         // Leave body discovery to the backend worklist to allow fragment
         // cycles.
         let instance = MonoClosureInstance::from_closure(&self.solver, closure).await;
-        let (signature, effects) = closure_signature(&self.solver, closure).await;
-        InstanceCallable::Closure(instance, signature, effects)
+        let signature = self.closure_body_signature(&instance).await;
+        InstanceCallable::Closure(instance, signature)
+    }
+
+    /// The signature of the body of the closure `instance`, which is a function
+    /// of the IR of its owner.
+    async fn closure_body_signature(&self, instance: &MonoClosureInstance) -> FunctionSignature {
+        let source = self.engine.get_ir(instance.owner().def_id()).await;
+        let function_id = source.get_function_id_of_closure(instance.closure_id());
+        self.engine.get_callback_function_signature(instance.owner().clone(), function_id).await
+    }
+
+    /// The captures of the closure of type `closure_ty`, in the order of its
+    /// captured tuple, which is the order of its capture map.
+    async fn closure_capture_ids(&self, closure_ty: &Interned<Ty>) -> Vec<CaptureID> {
+        let closure = closure_ty.unwrap_as_closure_view();
+        let instance = MonoClosureInstance::from_closure(&self.solver, closure).await;
+        let source = self.engine.get_ir(instance.owner().def_id()).await;
+        let function_id = source.get_function_id_of_closure(instance.closure_id());
+        source.captures(function_id).map(|(capture, _)| capture).collect()
     }
 
     /// Maps a trait method into the concrete instance and method namespaces.
@@ -337,8 +363,11 @@ impl Resolver {
 
     /// The calling signature of a global definition instance, including the
     /// effects whose handlers the caller must pass.
-    pub(crate) async fn def_signature(&self, instance: &MonoDefInstance) -> Interned<DefSignature> {
-        self.engine.get_def_signature(instance.clone()).await
+    pub(crate) async fn callback_def_signature(
+        &self,
+        instance: &MonoDefInstance,
+    ) -> FunctionSignature {
+        self.engine.get_callback_def_signature(instance.clone()).await
     }
 
     pub(crate) async fn instantiate_effect(
