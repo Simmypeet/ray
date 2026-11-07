@@ -16,33 +16,50 @@ use qbice::{
 };
 use rayc_ir::{
     get_ir,
-    ir_function::{IRContext, IRFunctionID},
+    ir_function::{IRContext, IRFunctionMap},
 };
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_solver::Solver;
 use rayc_symbol::{
+    GlobalSymbolID,
     symbol_kind::{SymbolKind, get_symbol_kind},
     syntax::is_variadic_def,
 };
-use rayc_type::signature::{get_effect_row, get_return_type};
+use rayc_type::{
+    signature::{get_effect_row, get_return_type},
+    subst::Subst,
+};
 
 use crate::{
-    MonoCoroutineInstance, MonoDefInstance, MonoEnvironmentInstance,
+    MonoBodyInstance, MonoCoroutineInstance, MonoEnvironmentInstance,
     ty::{
         AggregateType, CoroutineProgress, CoroutineResume, EffectRow, EnvironmentSlot,
         FunctionSignature, MonoType, PointerMutability, ReturnType, lower_type,
     },
 };
 
-/// Derives the callback-style signature of a concrete definition instance,
-/// from its declaration alone, so that an `extern def` has one too.
+/// Derives the callback-style signature of a function in the IR of a concrete
+/// definition instantiation: the definition itself, the body of one of its
+/// closures, the body of a `run ... with`, or the clause of one.
+///
+/// The signature of the definition function is its declared signature.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
 #[value(FunctionSignature)]
-#[extend(name = get_callback_def_signature, by_val)]
-pub struct CallbackDefSignatureKey {
-    /// The definition instance whose interface is requested.
-    pub instance: MonoDefInstance,
+#[extend(name = get_callback_signature, by_val)]
+pub struct CallbackSignatureKey {
+    /// The function whose interface is requested.
+    pub instance: MonoBodyInstance,
+}
+
+/// Derives the C signature of an `extern def` from its declaration, since it
+/// has no IR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
+#[value(FunctionSignature)]
+#[extend(name = get_extern_def_signature, by_val)]
+pub struct ExternDefSignatureKey {
+    /// The `extern def` whose interface is requested.
+    pub def_id: GlobalSymbolID,
 }
 
 /// How a definition's kind shapes its calling convention.
@@ -107,12 +124,38 @@ impl DefKind {
 }
 
 #[executor(config = Config)]
-async fn callback_def_signature_executor(
-    key: &CallbackDefSignatureKey,
+async fn callback_signature_executor(
+    key: &CallbackSignatureKey,
     engine: &TrackedEngine,
 ) -> FunctionSignature {
-    let def_id = key.instance.def_id();
-    let substitution = key.instance.substitution();
+    let instance = &key.instance;
+    let source = engine.get_ir(instance.def_id()).await;
+
+    // The definition implements exactly its declared signature, which is what
+    // its callers spell.
+    if instance.ir_function_id() == source.root_id() {
+        declared_signature(instance.def_id(), instance.substitution(), engine).await
+    } else {
+        nested_function_signature(instance, &source, engine).await
+    }
+}
+
+#[executor(config = Config)]
+async fn extern_def_signature_executor(
+    key: &ExternDefSignatureKey,
+    engine: &TrackedEngine,
+) -> FunctionSignature {
+    // An `extern def` cannot be polymorphic, so nothing needs substituting.
+    declared_signature(key.def_id, &Subst::new_empty(), engine).await
+}
+
+/// The signature that the definition `def_id` declares, instantiated with
+/// `substitution`.
+async fn declared_signature(
+    def_id: GlobalSymbolID,
+    substitution: &Subst,
+    engine: &TrackedEngine,
+) -> FunctionSignature {
     let kind = DefKind::of(engine.get_symbol_kind(def_id).await);
     let solver = Solver::without_givens(engine.clone()).await;
 
@@ -128,15 +171,12 @@ async fn callback_def_signature_executor(
         EffectRow::new_empty(engine)
     };
 
-    let return_type_raw =
+    let return_type =
         lower_type(&solver, &engine.get_return_type(def_id).await, substitution).await;
-
-    let return_type = if kind.returns_unit_as_void() && return_type_raw.is_unit() {
+    let return_type = if kind.returns_unit_as_void() && return_type.is_unit() {
         ReturnType::Void
     } else {
-        ReturnType::Value(
-            lower_type(&solver, &engine.get_return_type(def_id).await, substitution).await,
-        )
+        ReturnType::Value(return_type)
     };
 
     let parameter_types = engine.intern_unsized(parameter_types);
@@ -151,42 +191,28 @@ async fn callback_def_signature_executor(
         .build()
 }
 
-/// Derives the callback-style signature of a function in the IR of a concrete
-/// definition instance: the definition itself, the body of one of its
-/// closures, the body of a `run ... with`, or the clause of one.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
-#[value(FunctionSignature)]
-#[extend(name = get_callback_function_signature, by_val)]
-pub struct CallbackFunctionSignatureKey {
-    /// The definition instance whose IR holds the function.
-    pub owner: MonoDefInstance,
-    /// The function in the IR of `owner`.
-    pub function_id: IRFunctionID,
-}
-
-#[executor(config = Config)]
-async fn callback_function_signature_executor(
-    key: &CallbackFunctionSignatureKey,
+/// The signature of a function of `source`, the IR of `instance`, other than
+/// the definition function, which receives an environment.
+async fn nested_function_signature(
+    instance: &MonoBodyInstance,
+    source: &IRFunctionMap,
     engine: &TrackedEngine,
 ) -> FunctionSignature {
-    let owner = &key.owner;
-    let substitution = owner.substitution();
-    let source = engine.get_ir(owner.def_id()).await;
-    let function = source.get_function(key.function_id);
+    let substitution = instance.substitution();
+    let function_id = instance.ir_function_id();
+    let function = source.get_function(function_id);
     let solver = Solver::without_givens(engine.clone()).await;
 
     // What the kind of the function decides: its source parameters, how it
     // receives its environment, and whether it receives handler records.
     let (parameters, environment_slot, receives_handler_records) = match function.context() {
-        // The definition implements exactly its declared signature, which is
-        // what its callers spell.
-        IRContext::Def => return engine.get_callback_def_signature(owner.clone()).await,
+        IRContext::Def => panic!("the definition function takes its declared signature"),
 
         // A closure body receives its environment by value, as callers of the
         // closure's `Def.call` pass it.
         IRContext::Closure(closure) => {
-            let capture_map = source.get_capture_map_id(key.function_id);
-            let environment = MonoEnvironmentInstance::new(owner.clone(), capture_map);
+            let capture_map = source.get_capture_map_id(function_id);
+            let environment = MonoEnvironmentInstance::new(instance, capture_map);
             let parameters = closure.parameters().map(|(_, p)| p.ty().clone()).collect();
             (parameters, EnvironmentSlot::ByValue(environment), true)
         }
@@ -202,16 +228,16 @@ async fn callback_function_signature_executor(
         }
     };
 
-    // Lower the source parameters, the result and the effects in the owner's
-    // substitution.
+    // Lower the source parameters, the result and the effects in the
+    // definition's substitution.
     let mut parameter_types = Vec::with_capacity(parameters.len());
     for parameter in &parameters {
         parameter_types.push(lower_type(&solver, parameter, substitution).await);
     }
-    let return_type = function.context().return_ty(owner.def_id(), engine).await;
+    let return_type = function.context().return_ty(instance.def_id(), engine).await;
     let return_type = lower_type(&solver, &return_type, substitution).await;
     let handler_record_slots = if receives_handler_records {
-        let effect = source.effect_of(key.function_id, engine).await;
+        let effect = source.effect_of(function_id, engine).await;
         Some(EffectRow::new(&solver, &effect, substitution).await)
     } else {
         None
@@ -226,8 +252,8 @@ async fn callback_function_signature_executor(
         .build()
 }
 
-/// The interface of a concrete coroutine, derived from the signature of the
-/// function it suspends.
+/// The interface of a concrete coroutine, derived from the function it
+/// suspends.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct CoroutineSignature {
     row: EffectRow,
@@ -264,16 +290,17 @@ async fn coroutine_signature_executor(
     engine: &TrackedEngine,
 ) -> Interned<CoroutineSignature> {
     let solver = Solver::without_givens(engine.clone()).await;
-    let view = key.instance.view();
-    let signature_id = view.signature_id(engine).await;
-    let substitution = view.create_subst(engine).await;
+    let body = key.instance.body();
+    let substitution = body.substitution();
+    let source = engine.get_ir(body.def_id()).await;
+    let function = source.get_function(body.ir_function_id());
 
-    // A closure runs the signature of `core.Def.call`, whose return type and
-    // effect are projections that its dictionary tells.
-    let row =
-        EffectRow::new(&solver, &engine.get_effect_row(signature_id).await, &substitution).await;
-    let return_type =
-        lower_type(&solver, &engine.get_return_type(signature_id).await, &substitution).await;
+    // The coroutine performs what the function performs, and returns what it
+    // returns.
+    let effect = source.effect_of(body.ir_function_id(), engine).await;
+    let row = EffectRow::new(&solver, &effect, substitution).await;
+    let return_type = function.context().return_ty(body.def_id(), engine).await;
+    let return_type = lower_type(&solver, &return_type, substitution).await;
     let progress = CoroutineProgress::new(row.clone(), return_type);
 
     // `coroutine_resume(frame, args)` returns the progress.
@@ -301,9 +328,9 @@ static COROUTINE_SIGNATURE_EXECUTOR: Registration<Config> =
     Registration::new::<CoroutineSignatureKey, CoroutineSignatureExecutor>();
 
 #[distributed_slice(RAY_PROGRAM)]
-static CALLBACK_DEF_SIGNATURE_EXECUTOR: Registration<Config> =
-    Registration::new::<CallbackDefSignatureKey, CallbackDefSignatureExecutor>();
+static CALLBACK_SIGNATURE_EXECUTOR: Registration<Config> =
+    Registration::new::<CallbackSignatureKey, CallbackSignatureExecutor>();
 
 #[distributed_slice(RAY_PROGRAM)]
-static CALLBACK_FUNCTION_SIGNATURE_EXECUTOR: Registration<Config> =
-    Registration::new::<CallbackFunctionSignatureKey, CallbackFunctionSignatureExecutor>();
+static EXTERN_DEF_SIGNATURE_EXECUTOR: Registration<Config> =
+    Registration::new::<ExternDefSignatureKey, ExternDefSignatureExecutor>();

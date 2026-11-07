@@ -24,15 +24,12 @@ use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     subst::{Subst, Substitutable},
-    ty::{
-        Ty,
-        application::{ConcreteCoroutineView, View as ApplicationView},
-    },
+    ty::{Ty, application::View as ApplicationView},
 };
 
 use crate::{
     MonoCoroutineInstance, MonoEffectInstance,
-    layout::{CoroutineBody, TagType, build_handler_layout as _},
+    layout::{TagType, build_handler_layout as _},
     operand::Constant,
     ty::{AggregateType, EffectRow, MonoType, ReturnType, Tuple, lower_type},
 };
@@ -51,22 +48,14 @@ async fn build_frame_layout_executor(
     engine: &TrackedEngine,
 ) -> Interned<FrameLayout> {
     let mut solver = Solver::without_givens(engine.clone()).await;
-    let def_id = key.key.view().owner_def_id();
-    let ir = engine.get_ir(def_id).await;
-
-    let local_ir_function_id = match key.key.view() {
-        ConcreteCoroutineView::Def(_) => ir.root_id(),
-        ConcreteCoroutineView::Closure(closure_coroutine_view) => {
-            ir.get_function_id_of_closure(closure_coroutine_view.closure_view().local_closure_id())
-        }
-    };
+    let body = key.key.body();
 
     let frame_layout = FrameLayout::compute(
         engine.clone(),
         &mut solver,
-        def_id,
-        local_ir_function_id,
-        key.key.view().create_subst(engine).await,
+        body.def_id(),
+        body.ir_function_id(),
+        body.substitution().clone(),
     )
     .await;
 
@@ -156,12 +145,12 @@ async fn build_frame_field_types_executor(
     engine: &TrackedEngine,
 ) -> Interned<FrameFieldTypes> {
     let solver = Solver::without_givens(engine.clone()).await;
-    let body = CoroutineBody::of(key.instance.view(), &solver).await;
+    let body = key.instance.body();
     let def_id = body.def_id();
     let source = engine.get_ir(def_id).await;
-    let function_id = body.function_id(&source);
+    let function_id = body.ir_function_id();
     let function = source.get_function(function_id);
-    let substitution = body.owner.substitution();
+    let substitution = body.substitution();
     let layout = engine.build_frame_layout(key.instance.clone()).await;
 
     // Lower the type of every value as the suspended function spells it.

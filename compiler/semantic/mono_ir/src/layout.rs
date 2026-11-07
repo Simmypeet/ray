@@ -19,7 +19,7 @@ use rayc_hash::FxHashMap;
 use rayc_ir::{
     get_ir,
     ir_closure::{CaptureID, CaptureMapID},
-    ir_function::{IRContext, IRFunctionID, IRFunctionMap},
+    ir_function::{IRContext, IRFunctionMap},
 };
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::{
@@ -28,15 +28,15 @@ use rayc_semantic_element::{
 };
 use rayc_solver::Solver;
 use rayc_symbol::{GlobalSymbolID, member::get_members};
-use rayc_type::{
-    signature::get_return_type,
-    ty::application::{ClosureID, ConcreteCoroutineView},
-};
+use rayc_type::{signature::get_return_type, subst::Subst};
 
 use crate::{
-    instance::{MonoDefInstance, MonoEffectInstance, MonoEnvironmentInstance, MonoStructInstance},
+    instance::{MonoEffectInstance, MonoEnvironmentInstance, MonoStructInstance},
     operand::Constant,
-    ty::{EnvironmentSlot, FunctionSignature, MonoType, ReturnType, lower_effects, lower_type},
+    ty::{
+        AggregateType, EnvironmentSlot, FunctionSignature, MonoType, ReturnType, lower_effects,
+        lower_type,
+    },
 };
 
 pub mod coroutine;
@@ -274,7 +274,11 @@ pub type HandlerRecordID = ID<HandlerRecord>;
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct EnvironmentLayout {
     instance: MonoEnvironmentInstance,
+    /// The type of each capture.
     captures: FxHashMap<CaptureID, Interned<MonoType>>,
+    /// The captures in the order of the IR capture map, which is the order of
+    /// the capture expressions that build the environment.
+    capture_order: Vec<CaptureID>,
     // Ordered, since code generation iterates over the records.
     handler_records: OrderedArena<HandlerRecord>,
     handler_record_ids_by_effect: FxHashMap<MonoEffectInstance, HandlerRecordID>,
@@ -284,10 +288,28 @@ impl EnvironmentLayout {
     #[must_use]
     pub const fn instance(&self) -> &MonoEnvironmentInstance { &self.instance }
 
-    /// The type of each capture.
+    /// The type of each capture, in the order of the capture expressions that
+    /// build the environment.
     #[must_use]
-    pub fn captures(&self) -> impl ExactSizeIterator<Item = (CaptureID, &Interned<MonoType>)> {
-        self.captures.iter().map(|(capture, ty)| (*capture, ty))
+    pub fn captures(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (CaptureID, &Interned<MonoType>)> + DoubleEndedIterator {
+        self.capture_ids().map(|capture| (capture, self.capture_type(capture)))
+    }
+
+    /// The captures, in the order of the capture expressions that build the
+    /// environment.
+    #[must_use]
+    pub fn capture_ids(
+        &self,
+    ) -> impl ExactSizeIterator<Item = CaptureID> + DoubleEndedIterator + '_ {
+        self.capture_order.iter().copied()
+    }
+
+    /// The type of the environment itself.
+    #[must_use]
+    pub fn environment_type(&self) -> MonoType {
+        MonoType::Aggregate(AggregateType::Environment(self.instance.clone()))
     }
 
     #[must_use]
@@ -331,27 +353,32 @@ async fn build_environment_layout_executor(
     engine: &TrackedEngine,
 ) -> Interned<EnvironmentLayout> {
     let instance = &key.instance;
-    let owner = instance.owner();
+    let substitution = instance.substitution();
     let solver = Solver::without_givens(engine.clone()).await;
-    let source = engine.get_ir(owner.def_id()).await;
+    let source = engine.get_ir(instance.def_id()).await;
     let capture_map = instance.capture_map();
 
-    // Each capture is stored as its binding, or as a reference to it.
+    // Each capture is stored as its binding, or as a reference to it. The
+    // order of the capture map is kept as is.
+    let ordered_captures = source.get_capture_map(capture_map).ordered_captures();
     let mut captures = FxHashMap::default();
-    for (capture_id, capture) in source.get_capture_map(capture_map).ordered_captures() {
-        let ty = lower_type(&solver, &capture.storage_ty(engine), owner.substitution()).await;
+    let mut capture_order = Vec::with_capacity(ordered_captures.len());
+    for (capture_id, capture) in ordered_captures {
+        let ty = lower_type(&solver, &capture.storage_ty(engine), substitution).await;
         captures.insert(capture_id, ty);
+        capture_order.push(capture_id);
     }
 
     // An operation handler is called through the slot of a handler record,
     // which has no handler-record slots, so the handlers it performs with are
     // in its environment instead.
     let (handler_records, handler_record_ids_by_effect) =
-        handled_effects_of_capture_map(&source, capture_map, owner, &solver).await;
+        handled_effects_of_capture_map(&source, capture_map, substitution, &solver).await;
 
     engine.intern(EnvironmentLayout {
         instance: instance.clone(),
         captures,
+        capture_order,
         handler_records,
         handler_record_ids_by_effect,
     })
@@ -363,7 +390,7 @@ async fn build_environment_layout_executor(
 async fn handled_effects_of_capture_map(
     source: &IRFunctionMap,
     capture_map: CaptureMapID,
-    owner: &MonoDefInstance,
+    substitution: &Subst,
     solver: &Solver,
 ) -> (OrderedArena<HandlerRecord>, FxHashMap<MonoEffectInstance, HandlerRecordID>) {
     let engine = solver.engine();
@@ -384,7 +411,7 @@ async fn handled_effects_of_capture_map(
         }
 
         let effect = source.effect_of(function_id, engine).await;
-        let lowered = lower_effects(solver, &effect, owner.substitution()).await;
+        let lowered = lower_effects(solver, &effect, substitution).await;
 
         for mono_effect_inst in lowered {
             match handler_record_ids_by_effect.entry(mono_effect_inst.clone()) {
@@ -403,44 +430,6 @@ async fn handled_effects_of_capture_map(
 #[distributed_slice(RAY_PROGRAM)]
 static BUILD_ENVIRONMENT_LAYOUT_EXECUTOR: Registration<Config> =
     Registration::new::<BuildEnvironmentLayout, BuildEnvironmentLayoutExecutor>();
-
-/// The function a coroutine suspends, in the IR of its owning definition.
-#[derive(Debug)]
-pub struct CoroutineBody {
-    owner: MonoDefInstance,
-    closure: Option<ClosureID>,
-}
-
-impl CoroutineBody {
-    pub async fn of(view: ConcreteCoroutineView<'_>, solver: &Solver) -> Self {
-        let engine = solver.engine();
-        match view {
-            ConcreteCoroutineView::Def(coroutine) => {
-                let substitution = coroutine.create_subst(engine).await;
-                let owner = MonoDefInstance::new(coroutine.def_id(), substitution, solver).await;
-                Self { owner, closure: None }
-            }
-            ConcreteCoroutineView::Closure(coroutine) => {
-                let closure = coroutine.closure_view();
-                let substitution = closure.create_subst(engine).await;
-                let owner = MonoDefInstance::new(closure.owner_id(), substitution, solver).await;
-                Self { owner, closure: Some(closure.local_closure_id()) }
-            }
-        }
-    }
-
-    #[must_use]
-    pub fn into_owner(self) -> MonoDefInstance { self.owner }
-
-    #[must_use]
-    pub const fn def_id(&self) -> GlobalSymbolID { self.owner.def_id() }
-
-    #[must_use]
-    pub fn function_id(&self, source: &IRFunctionMap) -> IRFunctionID {
-        self.closure
-            .map_or_else(|| source.root_id(), |closure| source.get_function_id_of_closure(closure))
-    }
-}
 
 #[cfg(test)]
 mod tests {

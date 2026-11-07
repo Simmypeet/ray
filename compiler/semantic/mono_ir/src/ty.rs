@@ -11,7 +11,7 @@ use rayc_type::{
 
 use crate::{
     instance::{
-        MonoClosureInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance,
+        MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance,
         MonoStructInstance,
     },
     layout::TagType,
@@ -574,8 +574,10 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
             }
 
             ApplicationView::Closure(closure) => {
-                let closure = MonoClosureInstance::from_closure(solver, closure).await;
-                let environment = MonoEnvironmentInstance::of_closure(&closure, engine).await;
+                let body = MonoBodyInstance::from_closure(solver, closure).await;
+                let environment = MonoEnvironmentInstance::of_body(&body, engine)
+                    .await
+                    .expect("a closure body has an environment");
                 engine.intern(MonoType::Aggregate(AggregateType::Environment(environment)))
             }
 
@@ -610,7 +612,7 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
                 panic!("unresolved associated type reached code generation")
             }
             ApplicationView::DefCoroutine(_) | ApplicationView::ClosureCoroutine(_) => {
-                let instance = MonoCoroutineInstance::new(ty, solver).await;
+                let instance = MonoCoroutineInstance::from_type(ty, solver).await;
                 engine.intern(MonoType::Aggregate(AggregateType::CoroutineFrame(instance)))
             }
             // Only the coroutine of a declared instance's method or of a
