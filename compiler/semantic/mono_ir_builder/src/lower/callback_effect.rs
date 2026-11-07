@@ -117,7 +117,7 @@ impl Emitter<'_> {
             .iter()
             .map(|effect| {
                 if effect == &instance {
-                    Operand::Copy(self.place(handler_pointer))
+                    Operand::Copy(self.local_place(handler_pointer))
                 } else {
                     ctx.get_effect_instance_handler_operand(effect)
                 }
@@ -162,7 +162,7 @@ impl Emitter<'_> {
         let capture_map_id =
             run_with.handler_capture_map().expect("an environment comes from a capture map");
         let environment_abi = ctx.capture_environment_abi(capture_map_id);
-        let environment = self.place(environment);
+        let environment = self.local_place(environment);
         for capture in environment_abi.capture_ids().rev() {
             let drop_instance = drops
                 .get(&capture)
@@ -197,7 +197,7 @@ impl Emitter<'_> {
         let pointer_type = MonoType::new_pointer(handler_type, PointerMutability::Const, engine);
         let pointer_local = self.new_temporary_local(pointer_type);
         self.assign(
-            self.place(pointer_local),
+            self.local_place(pointer_local),
             Rvalue::AddressOf(AddressOf::new(handler, PointerMutability::Const)),
         );
 

@@ -86,8 +86,8 @@ impl CoroutineForm {
         let resume_param = parameters.next().expect("should exist");
         drop(parameters);
 
-        let frame_place = emit.project(&emit.place(frame_param)).dereference();
-        let resume_args = emit.place(resume_param);
+        let frame_place = emit.project(&emit.local_place(frame_param)).dereference();
+        let resume_args = emit.local_place(resume_param);
 
         // Only a suspension point that direct control flow reaches is lowered.
         let mut resume_entries = FxHashMap::default();
@@ -202,7 +202,7 @@ impl LoweringStyle {
         let mut handlers = EffectHandlers::default();
 
         for (effect, parameter) in emit.handler_record_parameters() {
-            handlers.insert(effect.clone(), emit.place(parameter));
+            handlers.insert(effect.clone(), emit.local_place(parameter));
         }
 
         // Only an operation handler's environment has handler records.

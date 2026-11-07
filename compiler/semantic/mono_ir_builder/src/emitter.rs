@@ -59,7 +59,7 @@ impl<'a> Emitter<'a> {
     }
 
     /// The place of a whole local.
-    pub(crate) fn place(&self, local: LocalID) -> Place { Place::new(local, self.engine()) }
+    pub(crate) fn local_place(&self, local: LocalID) -> Place { Place::new(local, self.engine()) }
 
     /// Starts a projection of `place`.
     pub(crate) const fn project<'p>(&self, place: &'p Place) -> PlaceProjector<'p>
@@ -75,12 +75,12 @@ impl<'a> Emitter<'a> {
 
     pub(crate) fn new_temporary_place(&mut self, ty: Interned<MonoType>) -> Place {
         let local = self.new_temporary_local(ty);
-        self.place(local)
+        self.local_place(local)
     }
 
     pub(crate) fn new_variable_place(&mut self, ty: Interned<MonoType>) -> Place {
         let local = self.output.insert_local(self.target_id, Local::new(ty, LocalKind::Variable));
-        self.place(local)
+        self.local_place(local)
     }
 
     /// A temporary for what a `coroutine_resume` with `signature` returns.

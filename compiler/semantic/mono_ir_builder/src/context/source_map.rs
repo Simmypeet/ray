@@ -118,20 +118,20 @@ impl SourceMap {
                 for ((parameter_id, _), target_id) in
                     fragment.get_root_parameter_map().await.iter().zip(parameters.by_ref())
                 {
-                    self.parameters.insert(parameter_id, emit.place(target_id));
+                    self.parameters.insert(parameter_id, emit.local_place(target_id));
                 }
             }
             IRContext::Closure(closure) => {
                 for ((parameter_id, _), target_id) in closure.parameters().zip(parameters.by_ref())
                 {
-                    self.closure_parameters.insert(parameter_id, emit.place(target_id));
+                    self.closure_parameters.insert(parameter_id, emit.local_place(target_id));
                 }
             }
             IRContext::Thunk(_) => {}
             IRContext::OperationHandler(handler) => {
                 for ((parameter_id, _), target_id) in handler.parameters().zip(parameters.by_ref())
                 {
-                    self.operation_parameters.insert(parameter_id, emit.place(target_id));
+                    self.operation_parameters.insert(parameter_id, emit.local_place(target_id));
                 }
             }
         }
@@ -270,7 +270,7 @@ impl SourceMap {
         let environment = if environment_abi.by_value() {
             // no need to dereference the environment parameter, it is already
             // the correct type
-            emit.place(environment_parameter)
+            emit.local_place(environment_parameter)
         } else {
             cast_environment_pointer(environment_abi, emit, environment_parameter)
         };
@@ -348,7 +348,7 @@ fn cast_environment_pointer(
     );
 
     let pointer = emit.new_temporary_place(pointer_type.clone());
-    let parameter = Operand::Copy(emit.place(environment_parameter));
+    let parameter = Operand::Copy(emit.local_place(environment_parameter));
     emit.assign(pointer.clone(), Rvalue::Cast(Cast::new(parameter, pointer_type)));
 
     emit.project(&pointer).dereference()
