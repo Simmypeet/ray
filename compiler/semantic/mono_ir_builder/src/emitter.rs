@@ -1,6 +1,7 @@
 //! Emits instructions and blocks into one `MonoIR` function.
 
 use qbice::storage::intern::Interned;
+use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
 use rayc_mono_ir::{
     MonoDefInstance, MonoIR,
     cfg::{BlockID, Switch, Terminator},
@@ -15,7 +16,7 @@ use rayc_mono_ir::{
 };
 use rayc_qbice::TrackedEngine;
 
-use crate::{function_lowering::FunctionLowering, resolver::Resolver};
+use crate::{context::Context, resolver::Resolver};
 
 /// The function being emitted, and the block that instructions go to.
 pub(crate) struct Emitter<'a> {
@@ -188,7 +189,7 @@ impl<'a> Emitter<'a> {
 
     /// Creates a block and fills it with `emit`, which should terminate it. The
     /// current block stays selected afterwards.
-    fn in_new_block(&mut self, emit: impl FnOnce(&mut Self)) -> BlockID {
+    pub(crate) fn in_new_block(&mut self, emit: impl FnOnce(&mut Self)) -> BlockID {
         let block = self.create_block();
         self.in_block(block, emit);
 
@@ -197,30 +198,23 @@ impl<'a> Emitter<'a> {
 
     /// Fills `block` with `emit`, which should terminate it. The current block
     /// stays selected afterwards.
-    fn in_block(&mut self, block: BlockID, emit: impl FnOnce(&mut Self)) {
+    pub(crate) fn in_block(&mut self, block: BlockID, emit: impl FnOnce(&mut Self)) {
         let previous = self.block;
         self.block = block;
         emit(self);
         self.block = previous;
     }
-}
 
-impl FunctionLowering<'_> {
-    /// Creates a block and fills it with `emit`, which should terminate it. The
-    /// current block stays selected afterwards.
-    pub(crate) fn in_new_block(&mut self, emit: impl FnOnce(&mut Self)) -> BlockID {
-        let block = self.emit.create_block();
+    /// Fills the resume entry of `point` with `emit`, which should terminate
+    /// it. The dispatch of `coroutine_resume` enters that block when the frame
+    /// is suspended at `point`. The current block stays selected afterwards.
+    pub(crate) fn fill_resume_entry(
+        &mut self,
+        point: SuspensionPointID,
+        ctx: &Context<'_>,
+        emit: impl FnOnce(&mut Self),
+    ) {
+        let block = ctx.coroutine_form().claim_resume_entry(point);
         self.in_block(block, emit);
-
-        block
-    }
-
-    /// Fills `block` with `emit`, which should terminate it. The current block
-    /// stays selected afterwards.
-    pub(crate) fn in_block(&mut self, block: BlockID, emit: impl FnOnce(&mut Self)) {
-        let previous = self.emit.block;
-        self.emit.block = block;
-        emit(self);
-        self.emit.block = previous;
     }
 }

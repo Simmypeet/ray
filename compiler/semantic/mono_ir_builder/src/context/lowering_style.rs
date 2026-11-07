@@ -19,8 +19,7 @@ use rayc_mono_ir::{
 };
 use rayc_qbice::TrackedEngine;
 
-use super::emitter::Emitter;
-use crate::context::Context;
+use crate::{emitter::Emitter, fragment::Fragment};
 
 /// Why a function has no handlers to pass on.
 pub(crate) const NO_HANDLERS: &str = "a coroutine yields its operations rather than call a \
@@ -71,12 +70,12 @@ impl CoroutineForm {
     /// Reads the layouts of `instance`, and creates the resume entry of each
     /// suspension point.
     async fn new(
-        context: &Context,
+        fragment: &Fragment,
         source_id: IRFunctionID,
         emit: &mut Emitter<'_>,
         instance: &MonoCoroutineInstance,
     ) -> Self {
-        let resolver = context.resolver();
+        let resolver = fragment.resolver();
         let signature = resolver.coroutine_signature(instance).await;
         let row_layout = resolver.effect_row_layout(signature.row()).await;
         let frame_layout = resolver.frame_layout(instance).await;
@@ -92,7 +91,7 @@ impl CoroutineForm {
 
         // Only a suspension point that direct control flow reaches is lowered.
         let mut resume_entries = FxHashMap::default();
-        for block in context.source_function(source_id).direct_reachables().blocks() {
+        for block in fragment.source_function(source_id).direct_reachables().blocks() {
             let point = SuspensionPointID::new(block);
             if frame_layout.suspends_at(point) {
                 let entry = ResumeEntry { block: emit.create_block() };
@@ -126,7 +125,7 @@ impl CoroutineForm {
 
     /// Claims the resume entry of `point` for the lowering of that point to
     /// fill. Each point fills its entry exactly once.
-    pub(super) fn claim_resume_entry(&self, point: SuspensionPointID) -> BlockID {
+    pub(crate) fn claim_resume_entry(&self, point: SuspensionPointID) -> BlockID {
         let entry =
             self.resume_entries.get(&point).expect("a lowered suspension point has a resume entry");
 
@@ -195,14 +194,14 @@ impl LoweringStyle {
     /// parameters after its source parameters hold them, or else the fields
     /// after the captures of `environment`.
     pub(super) fn new_callback(
-        context: &Context,
+        fragment: &Fragment,
         source_id: IRFunctionID,
         emit: &Emitter<'_>,
         environment: Option<&Place>,
     ) -> Self {
         let mut handlers = EffectHandlers::default();
 
-        let abi = context.function_abi(source_id);
+        let abi = fragment.function_abi(source_id);
 
         if !abi.captures_effect_handlers() {
             // this means the effect handlers are passed as parameters after the
@@ -218,7 +217,7 @@ impl LoweringStyle {
         // Initialize effect handlers from the same environment ABI used by its
         // producer.
         if let Some(environment) = environment {
-            let environment_abi = context.function_environment_abi(source_id);
+            let environment_abi = fragment.function_environment_abi(source_id);
             for (field, effect) in environment_abi.captured_effects_with_field_offset() {
                 handlers.insert(effect.clone(), emit.project(environment).environment_field(field));
             }
@@ -230,12 +229,12 @@ impl LoweringStyle {
     /// The style of a function lowered into the `coroutine_resume` of
     /// `instance`.
     pub(super) async fn new_coroutine(
-        context: &Context,
+        fragment: &Fragment,
         source_id: IRFunctionID,
         emit: &mut Emitter<'_>,
         instance: &MonoCoroutineInstance,
     ) -> Self {
-        Self::Coroutine(CoroutineForm::new(context, source_id, emit, instance).await)
+        Self::Coroutine(CoroutineForm::new(fragment, source_id, emit, instance).await)
     }
 
     pub(crate) const fn is_coroutine(&self) -> bool {
@@ -265,14 +264,6 @@ impl LoweringStyle {
 
     /// The form of a `coroutine_resume` function.
     pub(crate) const fn coroutine_form(&self) -> &CoroutineForm {
-        match self {
-            Self::Coroutine(form) => form,
-            Self::Callback(_) => panic!("this function should be a `coroutine_resume`"),
-        }
-    }
-
-    /// The form of a `coroutine_resume` function, to claim its resume entries.
-    pub(super) const fn coroutine_form_mut(&mut self) -> &mut CoroutineForm {
         match self {
             Self::Coroutine(form) => form,
             Self::Callback(_) => panic!("this function should be a `coroutine_resume`"),

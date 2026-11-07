@@ -22,8 +22,11 @@ use rayc_mono_ir::{
 };
 use rayc_semantic_element::parameter::ParameterID;
 
-use super::{emitter::Emitter, lowering_style::CoroutineForm};
-use crate::context::{Context, EnvironmentAbi};
+use super::lowering_style::CoroutineForm;
+use crate::{
+    emitter::Emitter,
+    fragment::{EnvironmentAbi, Fragment},
+};
 
 /// Maps semantic IR identities to the places and blocks of one target function.
 pub(crate) struct SourceMap {
@@ -43,17 +46,17 @@ impl SourceMap {
     /// creating the locals and blocks they need. Also returns the place of its
     /// environment, if it has one with anything in it.
     pub(super) async fn new_callback(
-        context: &Context,
+        fragment: &Fragment,
         source_id: IRFunctionID,
         emit: &mut Emitter<'_>,
     ) -> (Self, Option<Place>) {
         let mut map = Self::empty();
-        let environment_parameter = map.bind_parameters(context, source_id, emit).await;
+        let environment_parameter = map.bind_parameters(fragment, source_id, emit).await;
 
-        map.initialize_storage(context, source_id, emit, None).await;
-        map.initialize_blocks(context, source_id, emit, false);
+        map.initialize_storage(fragment, source_id, emit, None).await;
+        map.initialize_blocks(fragment, source_id, emit, false);
         let environment = environment_parameter
-            .and_then(|parameter| map.bind_environment(context, source_id, emit, parameter));
+            .and_then(|parameter| map.bind_environment(fragment, source_id, emit, parameter));
 
         (map, environment)
     }
@@ -67,18 +70,18 @@ impl SourceMap {
     /// that block when the coroutine has not started, and no block of a
     /// source function jumps back to its entry.
     pub(super) async fn new_coroutine(
-        context: &Context,
+        fragment: &Fragment,
         source_id: IRFunctionID,
         emit: &mut Emitter<'_>,
         form: &CoroutineForm,
     ) -> Self {
         let mut map = Self::empty();
-        map.initialize_blocks(context, source_id, emit, true);
+        map.initialize_blocks(fragment, source_id, emit, true);
 
         // Binding the upvars emits the moves into the selected block.
-        emit.select_block(map.block(context.source_function(source_id).entry_block()));
-        map.bind_frame_upvars(context, source_id, emit, form).await;
-        map.initialize_storage(context, source_id, emit, Some(form)).await;
+        emit.select_block(map.block(fragment.source_function(source_id).entry_block()));
+        map.bind_frame_upvars(fragment, source_id, emit, form).await;
+        map.initialize_storage(fragment, source_id, emit, Some(form)).await;
 
         // Leave the entry block selected for lowering.
         emit.select_block(emit.entry_block());
@@ -102,16 +105,16 @@ impl SourceMap {
     /// returns the one that holds the environment, if any.
     async fn bind_parameters(
         &mut self,
-        context: &Context,
+        fragment: &Fragment,
         source_id: IRFunctionID,
         emit: &Emitter<'_>,
     ) -> Option<LocalID> {
         let mut parameters = emit.parameter_ids();
 
-        let environment_parameter = match context.source_function(source_id).context() {
+        let environment_parameter = match fragment.source_function(source_id).context() {
             IRContext::Def => {
                 for ((parameter_id, _), target_id) in
-                    context.get_root_parameter_map().await.iter().zip(parameters.by_ref())
+                    fragment.get_root_parameter_map().await.iter().zip(parameters.by_ref())
                 {
                     self.parameters.insert(parameter_id, emit.place(target_id));
                 }
@@ -140,7 +143,7 @@ impl SourceMap {
         };
 
         // The handler parameters come last; `LoweringStyle` maps them.
-        let abi = context.function_abi(source_id);
+        let abi = fragment.function_abi(source_id);
         let handler_parameters =
             if abi.captures_effect_handlers() { 0 } else { abi.effects().len() };
         assert_eq!(
@@ -155,14 +158,14 @@ impl SourceMap {
     /// Maps the parameters and captures, which always start in the frame.
     async fn bind_frame_upvars(
         &mut self,
-        context: &Context,
+        fragment: &Fragment,
         source_id: IRFunctionID,
         emit: &mut Emitter<'_>,
         form: &CoroutineForm,
     ) {
-        let source = context.source_function(source_id);
+        let source = fragment.source_function(source_id);
 
-        let locals = source.parameter_locals(context.def_id(), emit.engine()).await;
+        let locals = source.parameter_locals(fragment.def_id(), emit.engine()).await;
         for local in locals {
             let place = Self::bind_frame_upvar(Savable::Local(local), emit, form);
             match local {
@@ -181,7 +184,7 @@ impl SourceMap {
         }
 
         if source.context().capture_map_id().is_some() {
-            for (capture, _) in context.source_captures(source_id) {
+            for (capture, _) in fragment.source_captures(source_id) {
                 let savable = Savable::Local(IRLocal::Capture(capture));
                 let place = Self::bind_frame_upvar(savable, emit, form);
                 self.captures.insert(capture, place);
@@ -210,13 +213,13 @@ impl SourceMap {
     /// otherwise.
     async fn initialize_storage(
         &mut self,
-        context: &Context,
+        fragment: &Fragment,
         source_id: IRFunctionID,
         emit: &mut Emitter<'_>,
         form: Option<&CoroutineForm>,
     ) {
-        let source = context.source_function(source_id);
-        let resolver = context.resolver();
+        let source = fragment.source_function(source_id);
+        let resolver = fragment.resolver();
         let engine = emit.engine();
         let frame_place = |savable| form?.frame_place_of(savable, engine);
 
@@ -241,12 +244,12 @@ impl SourceMap {
     /// the target entry, unless the target function starts with a dispatch.
     fn initialize_blocks(
         &mut self,
-        context: &Context,
+        fragment: &Fragment,
         source_id: IRFunctionID,
         emit: &mut Emitter<'_>,
         entry_is_dispatch: bool,
     ) {
-        let source = context.source_function(source_id);
+        let source = fragment.source_function(source_id);
         for source_block in source.direct_reachables().blocks() {
             let target_block = if source_block == source.entry_block() && !entry_is_dispatch {
                 emit.entry_block()
@@ -262,12 +265,12 @@ impl SourceMap {
     /// if it has anything in it.
     fn bind_environment(
         &mut self,
-        context: &Context,
+        fragment: &Fragment,
         source_id: IRFunctionID,
         emit: &mut Emitter<'_>,
         environment_parameter: LocalID,
     ) -> Option<Place> {
-        let environment_abi = context.function_environment_abi(source_id);
+        let environment_abi = fragment.function_environment_abi(source_id);
         if environment_abi.environment_type().captures().is_empty() {
             return None;
         }
@@ -285,7 +288,7 @@ impl SourceMap {
             self.captures.insert(capture_id, place);
         }
 
-        assert_eq!(context.source_capture_count(source_id), environment_abi.capture_count());
+        assert_eq!(fragment.source_capture_count(source_id), environment_abi.capture_count());
 
         Some(environment)
     }
