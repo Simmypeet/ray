@@ -1,0 +1,29 @@
+eff Ask:
+    def ask(value: int32) -> int32
+
+
+eff Log:
+    def log(value: int32) -> int32
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Log}):
+    return handle k(value):
+        case Log.log(value) resume next: drive(next, value + 1)
+
+
+def suspend(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 where (d.Args = (int32,), d.Return = int32, d.Effect = {Log}):
+    return drive(coro d.call(callable, (2,)), ())
+
+
+# The body of a closure that runs as a coroutine is a `run`, whose body and
+# clause capture from the closure.
+#
+# ask(2) = 2 + 20 + log(2) = 25; 25 + 10 = 35
+def main() -> int32:
+    let captured = 10
+    let offset = 20
+    return suspend((argument) -> run:
+        return Ask.ask(argument) + captured
+    with Ask:
+        def ask(value):
+            return value + offset + Log.log(value))

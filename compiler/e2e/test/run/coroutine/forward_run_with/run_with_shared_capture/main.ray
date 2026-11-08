@@ -1,0 +1,44 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+def trace(value: int32) -> int32:
+    printf("log %d\n", value)
+    return value
+
+
+eff Counter:
+    def bump() -> int32
+    def read() -> int32
+
+
+eff Log:
+    def log(value: int32) -> int32
+
+
+# The clauses share `total`. Each suspends on `Log` in the middle of using it,
+# so a clause frame is alive while the other clause's earlier write must
+# still be visible.
+def body() -> int32 \ {Log}:
+    let mut total = 1
+    return run:
+        let a = Counter.bump()
+        let b = Counter.read()
+        let c = Counter.bump()
+        return a + b + c + Counter.read()
+    with Counter:
+        def bump():
+            total = total + Log.log(total)
+            return total
+        def read():
+            let seen = Log.log(total)
+            return total + seen
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Log}):
+    return handle k(value):
+        case Log.log(value) resume next: drive(next, trace(value))
+
+
+# a = 2; b = 2 + 2 = 4; c = 4; read = 4 + 4 = 8; 2 + 4 + 4 + 8 = 18
+def main() -> int32:
+    return drive(coro body(), ())
