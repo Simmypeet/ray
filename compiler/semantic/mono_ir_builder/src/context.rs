@@ -182,6 +182,14 @@ impl<'a> Context<'a> {
         abandon_block(self.source_function(), point)
     }
 
+    /// The expression that the function evaluates at `point`, which waits for
+    /// what the function holds while it is suspended there.
+    pub(crate) fn suspending_expression(&self, point: SuspensionPointID) -> IRExprID {
+        self.source_block_terminator(point.block_id())
+            .and_then(IRTerminator::suspending_expr)
+            .expect("a suspension point evaluates an expression")
+    }
+
     /// Asserts that the function `function_id` of the same IR uses the
     /// environment of `capture_map_id`.
     pub(crate) fn assert_function_uses_capture_environment(

@@ -106,6 +106,13 @@ impl Frame {
         self.field_types.get(savable)
     }
 
+    /// Whether the function owns a coroutine that it waits for while it is
+    /// suspended at `point`: the frame of a callee, or the frames of the body
+    /// and the clauses of a `run ... with`.
+    pub(crate) fn holds_awaitee(&self, point: SuspensionPointID) -> bool {
+        self.layout.placement(Savable::Awaitee(point)).is_some()
+    }
+
     /// The place of the coroutine that the function waits for while it is
     /// suspended at `point`.
     pub(crate) fn awaitee_place(&self, point: SuspensionPointID, engine: &TrackedEngine) -> Place {

@@ -4,9 +4,7 @@
 //!
 //! ```c
 //!     args = <first resume value>;         // unit for a new frame
-//!     // only at a suspension point of a `coroutine_resume`:
-//!     frame->awaitee = continuation;       //   a continuation outlives the return
-//!     frame->state = SUSPENDED_AT_p;
+//!     frame->state = SUSPENDED_AT_p;       // only at a suspension point
 //!     goto poll;
 //!
 //! resume_entry_p:                          // only at a suspension point
@@ -106,6 +104,20 @@ impl Resumee {
             Self::Continuation { value, value_type, .. } => (value.clone(), value_type.clone()),
         }
     }
+
+    /// The place the poll block reads the frame from: the frame itself, or
+    /// the continuation that points to it.
+    ///
+    /// At a suspension point, the frame layout keeps either in the frame of
+    /// the function, since nothing else outlives a return from
+    /// `coroutine_resume`: a new frame as the awaitee, and the operand that
+    /// holds a continuation as a value held across the point.
+    const fn place(&self) -> &Place {
+        match self {
+            Self::NewFrame { frame, .. } => frame,
+            Self::Continuation { continuation, .. } => continuation,
+        }
+    }
 }
 
 /// A coroutine that the function being lowered resumes.
@@ -198,7 +210,6 @@ impl Emitter<'_> {
     ///
     /// ```c
     ///     args.<member of v's type> = v;          // v is unit for a new frame
-    ///     held = <hold_resumee>;
     ///     <enter_poll_block>                      // ends with `goto poll;`
     /// poll:                                       // left selected
     ///     frame_pointer = <load_frame_pointer>;
@@ -220,16 +231,13 @@ impl Emitter<'_> {
         let member = coroutine.row_layout.get_resume_variant_id(&value_type);
         self.store(self.project(&args).coroutine_resume_value(member), value);
 
-        // Whatever outlives a return from `coroutine_resume` must be in the
-        // frame, so a suspending loop keeps the continuation there.
-        let held = self.hold_resumee(site, &resumee, ctx);
         let block = self.enter_poll_block(site, coroutine.signature.row(), &args, ctx);
 
         // The frame pointer is taken in the poll block, since nothing but the
         // frame outlives a return from `coroutine_resume`. It is also copied
-        // out first: the values a clause receives may share memory with an
-        // awaitee that holds the continuation.
-        let frame_pointer = self.load_frame_pointer(&resumee, held).await;
+        // out first: the values a clause receives may share memory with the
+        // operand that holds the continuation.
+        let frame_pointer = self.load_frame_pointer(&resumee).await;
         let progress = self.push_resume_call(&coroutine, &frame_pointer, &args);
 
         PollLoop { resumed: coroutine, site, block, args, progress, frame_pointer }
@@ -322,34 +330,6 @@ impl Emitter<'_> {
         self.store_constant(poll.resume_value_place(&unit, self.engine()), Constant::Unit);
     }
 
-    /// The place the poll block reads the frame of `resumee` from.
-    ///
-    /// Only a continuation resumed at a suspension point emits anything: it is
-    /// moved into the frame, since a local does not outlive a return from
-    /// `coroutine_resume`.
-    ///
-    /// ```c
-    /// // inline, continuation `k`:     nothing; the place is `k`
-    /// // suspending, new frame:        nothing; the place is the callee frame,
-    /// //                               which is already in this frame
-    /// // suspending, continuation `k`:
-    ///     frame->awaitee_p = k;        // the place is `frame->awaitee_p`
-    /// ```
-    fn hold_resumee(&mut self, site: PollSite, resumee: &Resumee, ctx: &Context<'_>) -> Place {
-        match (resumee, site) {
-            (Resumee::NewFrame { frame, .. }, PollSite::Suspending(_)) => frame.clone(),
-            (Resumee::NewFrame { .. }, PollSite::Inline) => {
-                panic!("only a suspending call creates a frame for its callee")
-            }
-            (Resumee::Continuation { continuation, .. }, PollSite::Inline) => continuation.clone(),
-            (Resumee::Continuation { continuation, .. }, PollSite::Suspending(point)) => {
-                let awaitee = ctx.awaitee_place(point);
-                self.store(awaitee.clone(), Operand::Copy(continuation.clone()));
-                awaitee
-            }
-        }
-    }
-
     /// Ends the current block by jumping to a new poll block, which it returns
     /// selected.
     ///
@@ -424,14 +404,15 @@ impl Emitter<'_> {
         ))
     }
 
-    /// Stores the pointer to the frame of `resumee`, held at `held`, in a new
-    /// local of the selected block.
+    /// Stores the pointer to the frame of `resumee` in a new local of the
+    /// selected block.
     ///
     /// ```c
-    ///     frame_pointer = &held;          // a new frame, held by value
-    ///     frame_pointer = held.frame;     // a `core.Continuation`
+    ///     frame_pointer = &frame;         // a new frame, held by value
+    ///     frame_pointer = k.frame;        // a `core.Continuation` `k`
     /// ```
-    async fn load_frame_pointer(&mut self, resumee: &Resumee, held: Place) -> Place {
+    async fn load_frame_pointer(&mut self, resumee: &Resumee) -> Place {
+        let held = resumee.place().clone();
         match resumee {
             Resumee::NewFrame { frame_type, .. } => {
                 self.take_frame_address(held, frame_type.clone())

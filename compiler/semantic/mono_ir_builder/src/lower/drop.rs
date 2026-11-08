@@ -176,7 +176,7 @@ impl Emitter<'_> {
     ///     frame_pointer = &frame;
     ///     coroutine_drop(frame_pointer);
     /// ```
-    async fn call_coroutine_drop(
+    pub(super) async fn call_coroutine_drop(
         &mut self,
         frame: &Place,
         coroutine: &MonoCoroutineInstance,

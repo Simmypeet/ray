@@ -14,7 +14,6 @@ use rayc_ir::{
     address::Local,
     cfg::Terminator,
     get_ir,
-    ir_expr::call::Call,
     ir_function::{IRFunction, IRFunctionMap},
     suspension_point::Waitee,
 };
@@ -22,10 +21,7 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::parameter::get_parameter_map;
 use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
-use rayc_type::{
-    subst::{Subst, Substitutable},
-    ty::{Ty, application::View as ApplicationView},
-};
+use rayc_type::ty::Ty;
 
 use crate::{
     MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance,
@@ -226,7 +222,8 @@ impl SuspendedFunction<'_> {
         MonoType::new_pointer(environment, PointerMutability::Mut, engine)
     }
 
-    /// The type of what the function holds while it is suspended at `point`.
+    /// The type of the coroutine that the function owns and waits for while it
+    /// is suspended at `point`.
     async fn awaitee_type(&self, point: SuspensionPointID) -> Interned<MonoType> {
         let function = self.function();
         let expression = function
@@ -234,55 +231,30 @@ impl SuspendedFunction<'_> {
             .and_then(Terminator::suspending_expr)
             .expect("an awaitee is held at a suspension point");
 
-        let ty = match function.get_expression_as_waitee(expression) {
-            // The coroutine a continuation resumes is already somewhere else,
-            // as for a `handle`. It is the first argument of `Def.call`.
-            Waitee::Call(call)
-                if calls_continuation(self.solver, self.body.substitution(), call).await =>
-            {
-                function.get_expression(call.arguments()[0]).ty().clone()
-            }
-
+        match function.get_expression_as_waitee(expression) {
             // The callee runs in a frame stored in the frame of its caller.
-            Waitee::Call(call) => call
-                .coroutine_ty(self.engine())
-                .await
-                .expect("a call of an `extern def` does not suspend"),
-
-            // The coroutine a `handle` resumes is already somewhere else,
-            // behind the continuation.
-            Waitee::Handle(handle) => function.get_expression(handle.continuation()).ty().clone(),
+            Waitee::Call(call) => {
+                let coroutine = call
+                    .coroutine_ty(self.engine())
+                    .await
+                    .expect("a call of an `extern def` does not suspend");
+                self.lower_type(&coroutine).await
+            }
 
             // The body and the clauses have no source type: they are held
             // together in an aggregate of their own.
             Waitee::RunWith(_) => {
                 let instance = MonoRunWithInstance::new(self.body.clone(), expression);
-                return MonoType::new_aggregate(
-                    AggregateType::RunWithAwaitee(instance),
-                    self.engine(),
-                );
+                MonoType::new_aggregate(AggregateType::RunWithAwaitee(instance), self.engine())
             }
 
-            Waitee::Perform => panic!("a `perform` holds nothing while it is suspended"),
-        };
-
-        self.lower_type(&ty).await
+            // A continuation only points to a frame that something else owns,
+            // so the frame holds its operand instead of an awaitee.
+            Waitee::Perform | Waitee::Handle(_) => {
+                panic!("only a callee frame or a `run ... with` is held as an awaitee")
+            }
+        }
     }
-}
-
-/// Whether `call` dispatches through the `Def` dictionary of a continuation.
-async fn calls_continuation(solver: &Solver, substitution: &Subst, call: &Call) -> bool {
-    let Some(dictionary) = call.target().dispatch_instance() else {
-        return false;
-    };
-    let dictionary = dictionary.apply_subst_or_clone(substitution, solver.engine());
-    let dictionary = solver.normalize(&dictionary).await;
-
-    matches!(
-        &*dictionary,
-        Ty::Application(application)
-            if matches!(application.view(), ApplicationView::ContinuationDefInstance(_))
-    )
 }
 
 /// One operation of a concrete effect row.

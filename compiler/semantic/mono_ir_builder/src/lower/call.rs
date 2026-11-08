@@ -1,3 +1,4 @@
+use qbice::storage::intern::Interned;
 use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
 use rayc_ir::ir_expr::call::Call as IRCall;
 use rayc_mono_ir::{
@@ -5,6 +6,7 @@ use rayc_mono_ir::{
     cfg::BlockID,
     operand::Operand,
     place::{FieldIndex, Place},
+    ty::MonoType,
 };
 
 use super::poll::{PollSite, Resumee};
@@ -18,6 +20,17 @@ impl Emitter<'_> {
     ) -> Option<MonoCoroutineInstance> {
         let dictionary = call.target().dispatch_instance()?;
         self.resolver().resolve_continuation_dictionary(dictionary).await
+    }
+
+    /// The type of the frame that the callee of `call` runs in, when `call`
+    /// suspends and is not a call of a continuation: the caller holds that
+    /// frame while it waits.
+    pub(super) async fn callee_frame_type(&self, call: &IRCall) -> Interned<MonoType> {
+        let coroutine_ty = call
+            .coroutine_ty(self.engine())
+            .await
+            .expect("a call of an `extern def` does not suspend");
+        self.resolver().lower_type(&coroutine_ty).await
     }
 
     /// Calls a continuation: resumes it with the only element of the argument
@@ -63,11 +76,7 @@ impl Emitter<'_> {
         done: BlockID,
         ctx: &Context<'_>,
     ) {
-        let coroutine_ty = call
-            .coroutine_ty(self.engine())
-            .await
-            .expect("a call of an `extern def` does not suspend");
-        let frame_type = self.resolver().lower_type(&coroutine_ty).await;
+        let frame_type = self.callee_frame_type(call).await;
         let instance = frame_type.assert_as_coroutine_frame().clone();
 
         // Create the frame of the callee where this coroutine holds what it
