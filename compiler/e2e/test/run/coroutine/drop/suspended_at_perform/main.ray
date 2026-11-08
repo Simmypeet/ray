@@ -1,0 +1,49 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Noisy:
+    pub value: int32
+
+impl !core.Copy for Noisy
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def abandoned() -> int32:
+    printf("abandoned\n")
+    return 0
+
+
+# Answers the first `Ask` by dropping the continuation, so the coroutine stays
+# suspended there until its storage ends.
+def abandon(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask() resume _: abandoned()
+
+
+def gen(param: Noisy) -> int32 \ {Ask}:
+    let outer = Noisy { value = 1 }
+    if true:
+        let first = Noisy { value = 2 }
+        let second = Noisy { value = 3 }
+        let answer = Ask.ask()
+        printf("never printed %d\n", answer + first.value + second.value)
+    return outer.value + param.value
+
+
+# The frame is dropped while it is suspended at the `perform`, so it drops what
+# the function holds there as if its scopes ended: the inner scope first, each
+# in reverse declaration order, then the parameter.
+def main() -> int32:
+    if true:
+        let result = abandon(coro gen(Noisy { value = 0 }), ())
+        printf("result %d\n", result)
+    printf("after scope\n")
+    return 0
