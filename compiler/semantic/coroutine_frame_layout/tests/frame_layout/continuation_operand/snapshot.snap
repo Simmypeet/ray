@@ -1,0 +1,31 @@
+---
+source: compiler/semantic/coroutine_frame_layout/tests/frame_layout/mod.rs
+expression: snapshot
+---
+main.call_continuation:
+  prefix:
+    parameter #2
+  start:
+    parameter #0
+    parameter #1
+  suspended at 22:12 `k(value)`:
+    22:12 `k` (expression)
+
+main.call_new_frame:
+  prefix:
+  start:
+  suspended at 15:12 `inner()`:
+    15:12 `inner()` (awaitee)
+
+main.forward_handle:
+  prefix:
+  start:
+    parameter #0
+    parameter #1
+  suspended at 27:12 `handle k(value): …`:
+    27:19 `k` (expression)
+
+main.inner:
+  prefix:
+  start:
+  suspended at 10:12 `Ask.ask()`:

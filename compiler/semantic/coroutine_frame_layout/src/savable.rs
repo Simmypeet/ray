@@ -12,10 +12,14 @@ pub enum Savable {
     Local(Local),
     Expression(IRExprID),
 
-    /// What the function waits for while suspended at the suspension point:
-    /// the callee's frame of a call, the frames of the handled body and its
-    /// handlers of a `run ... with`, or the continuation of a forwarding
-    /// `handle`. A `perform` has none.
+    /// The coroutine that the function owns and waits for while suspended at
+    /// the suspension point: the callee's frame of a call, or the frames of
+    /// the handled body and its handlers of a `run ... with`.
+    ///
+    /// A `perform` has none. Neither has a forwarding `handle` or a call of a
+    /// continuation: the continuation only points to a frame that something
+    /// else owns, so its operand is held as an ordinary
+    /// [`Savable::Expression`] instead.
     Awaitee(SuspensionPointID),
 
     /// The pointer to the environment of a function that borrows its

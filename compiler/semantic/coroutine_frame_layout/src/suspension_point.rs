@@ -1,9 +1,14 @@
 use qbice::{Decode, Encode, StableHash};
 use rayc_hash::FxHashMap;
-use rayc_ir::{cfg::BlockID, ir_expr::IRExprID, suspension_point::Waitee};
+use rayc_ir::{
+    cfg::BlockID,
+    ir_expr::{IRExprID, call::Call},
+    suspension_point::Waitee,
+};
 use rayc_solver::Solver;
+use rayc_type::ty::{Ty, application::View as ApplicationView};
 
-use crate::layout_context::LayoutContext;
+use crate::{layout_context::LayoutContext, savable::Savable};
 
 /// Used to identify a suspension point in the IR. Typically, it's the terminal
 /// of a particular block.
@@ -20,6 +25,44 @@ impl SuspensionPointID {
 
     #[must_use]
     pub const fn block_id(&self) -> BlockID { self.0 }
+}
+
+/// What the function keeps, besides the values live across a suspension
+/// point, for what the expression it evaluates there waits for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Awaited {
+    /// Nothing: a `perform` waits for a handler outside the function.
+    Nothing,
+
+    /// A coroutine that the function owns, in the awaitee of the suspension
+    /// point: the frame of the callee of the call `expression`, or the frames
+    /// of the body and the clauses of the `run ... with` `expression`.
+    Awaitee(IRExprID),
+
+    /// A continuation: the operand of a `handle` or of a call of one. It only
+    /// points to a frame that something else owns, so the function holds the
+    /// operand itself across the suspension point, as an ordinary value,
+    /// rather than an awaitee.
+    Continuation(IRExprID),
+}
+
+impl Awaited {
+    /// The expression whose coroutine the awaitee holds, if there is one.
+    pub(crate) const fn awaitee(self) -> Option<IRExprID> {
+        match self {
+            Self::Awaitee(expression) => Some(expression),
+            Self::Nothing | Self::Continuation(_) => None,
+        }
+    }
+
+    /// The value held across the suspension point for what it waits for, if
+    /// any: the operand that holds the continuation.
+    pub(crate) const fn held_value(self) -> Option<Savable> {
+        match self {
+            Self::Continuation(operand) => Some(Savable::Expression(operand)),
+            Self::Nothing | Self::Awaitee(_) => None,
+        }
+    }
 }
 
 impl LayoutContext<'_> {
@@ -55,12 +98,12 @@ impl LayoutContext<'_> {
         })
     }
 
-    /// Calculates the waitee expression for each suspension point in the given
-    /// function.
-    pub(crate) async fn calculate_waitee_for_each_suspension_point(
+    /// Calculates what the function keeps for each suspension point where it
+    /// still suspends once the substitution is applied.
+    pub(crate) async fn calculate_awaited_for_each_suspension_point(
         &self,
         solver: &mut Solver,
-    ) -> FxHashMap<SuspensionPointID, Option<IRExprID>> {
+    ) -> FxHashMap<SuspensionPointID, Awaited> {
         let mut suspensions = FxHashMap::default();
 
         for (suspension_point_id, waitee_expr_id) in self.ir_suspension_points() {
@@ -70,10 +113,51 @@ impl LayoutContext<'_> {
             // is still considered as a suspension point after the substitution
             // is applied
             if is_suspension_point {
-                suspensions.insert(suspension_point_id, waitee.is_held().then_some(waitee_expr_id));
+                let awaited = self.awaited(waitee_expr_id, waitee, solver).await;
+                suspensions.insert(suspension_point_id, awaited);
             }
         }
 
         suspensions
+    }
+
+    /// What the function keeps for `waitee`, the expression `expression`,
+    /// while it is suspended at it.
+    async fn awaited(
+        &self,
+        expression: IRExprID,
+        waitee: Waitee<'_>,
+        solver: &mut Solver,
+    ) -> Awaited {
+        match waitee {
+            Waitee::Perform => Awaited::Nothing,
+            Waitee::Handle(handle) => Awaited::Continuation(handle.continuation()),
+
+            // `Def.call(k, arguments)` of a continuation takes it first. Any
+            // other call runs its callee in a frame of its own.
+            Waitee::Call(call) => {
+                if self.calls_continuation(call, solver).await {
+                    Awaited::Continuation(call.arguments()[0])
+                } else {
+                    Awaited::Awaitee(expression)
+                }
+            }
+
+            Waitee::RunWith(_) => Awaited::Awaitee(expression),
+        }
+    }
+
+    /// Whether `call` dispatches through the `Def` dictionary of a
+    /// continuation, once the substitution is applied.
+    async fn calls_continuation(&self, call: &Call, solver: &mut Solver) -> bool {
+        let Some(dictionary) = call.target().dispatch_instance() else {
+            return false;
+        };
+
+        matches!(
+            &*self.latest_type(dictionary, solver).await,
+            Ty::Application(application)
+                if matches!(application.view(), ApplicationView::ContinuationDefInstance(_))
+        )
     }
 }

@@ -246,6 +246,11 @@ impl LayoutContext<'_> {
     /// before it writes a result: a result is returned by value and then
     /// stored, as in `frame.v_next.r = resume(&frame.v_this.awaitee)`, never
     /// written through a pointer into the frame while the awaitee runs.
+    ///
+    /// A continuation that a `handle` or a call of one holds instead of an
+    /// awaitee is an operand of the terminator, so it is already `before` it,
+    /// and shares memory with the results on the same terms: the state machine
+    /// copies the frame pointer out of it before it writes a result.
     fn record_suspension(
         index: &CandidateIndex,
         awaitee: Savable,
