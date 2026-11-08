@@ -1,0 +1,20 @@
+ pub eff Getter:
+    def get() -> int32
+
+
+pub def propagate() -> int32 \ {Getter}:
+    return run:
+        return Getter.get()
+    with Getter:
+        def get():
+            return Getter.get()
+
+
+def main() -> int32:
+    let val = run:
+        return propagate()
+    with Getter:
+        def get():
+            return 21
+
+    return val
