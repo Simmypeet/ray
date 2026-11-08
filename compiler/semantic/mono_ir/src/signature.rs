@@ -259,6 +259,7 @@ pub struct CoroutineSignature {
     row: EffectRow,
     progress: CoroutineProgress,
     resume_signature: FunctionSignature,
+    drop_signature: FunctionSignature,
 }
 
 impl CoroutineSignature {
@@ -273,6 +274,10 @@ impl CoroutineSignature {
     /// The signature of `coroutine_resume`.
     #[must_use]
     pub const fn resume_signature(&self) -> &FunctionSignature { &self.resume_signature }
+
+    /// The signature of `coroutine_drop`.
+    #[must_use]
+    pub const fn drop_signature(&self) -> &FunctionSignature { &self.drop_signature }
 }
 
 /// Derives the interface of a concrete coroutine.
@@ -315,12 +320,20 @@ async fn coroutine_signature_executor(
         engine.intern(MonoType::Aggregate(AggregateType::CoroutineProgress(progress.clone())));
 
     let resume_signature = FunctionSignature::builder()
-        .parameter_types(engine.intern_unsized([frame, args]))
+        .parameter_types(engine.intern_unsized([frame.clone(), args]))
         .return_type(ReturnType::Value(progress_type))
         .engine(engine)
         .build();
 
-    engine.intern(CoroutineSignature { row, progress, resume_signature })
+    // `coroutine_drop(frame)` returns unit, as a `Drop.drop` does. It takes
+    // the frame by pointer, since a frame that has started never moves.
+    let drop_signature = FunctionSignature::builder()
+        .parameter_types(engine.intern_unsized([frame]))
+        .return_type(ReturnType::Value(MonoType::new_unit(engine)))
+        .engine(engine)
+        .build();
+
+    engine.intern(CoroutineSignature { row, progress, resume_signature, drop_signature })
 }
 
 #[distributed_slice(RAY_PROGRAM)]

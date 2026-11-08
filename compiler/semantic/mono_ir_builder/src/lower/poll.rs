@@ -451,7 +451,11 @@ impl Emitter<'_> {
 
     /// Stores the address of `frame`, of type `frame_type`, in a new local of
     /// the selected block.
-    fn take_frame_address(&mut self, frame: Place, frame_type: Interned<MonoType>) -> Place {
+    pub(super) fn take_frame_address(
+        &mut self,
+        frame: Place,
+        frame_type: Interned<MonoType>,
+    ) -> Place {
         let pointer_type = MonoType::new_pointer(frame_type, PointerMutability::Mut, self.engine());
         let frame_pointer = self.new_temporary_place(pointer_type);
         self.assign(

@@ -23,7 +23,11 @@ impl Emitter<'_> {
         }
     }
 
-    async fn lower_instruction(&mut self, instruction: &IRInstruction, ctx: &Context<'_>) {
+    pub(super) async fn lower_instruction(
+        &mut self,
+        instruction: &IRInstruction,
+        ctx: &Context<'_>,
+    ) {
         match instruction {
             IRInstruction::ScopePush(_) | IRInstruction::ScopePop(_) => {}
             IRInstruction::ExprDiscard(discard) => self.lower_expr_discard(discard, ctx).await,

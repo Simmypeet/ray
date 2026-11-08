@@ -28,7 +28,11 @@
 //!
 //! A suspension point that waits for another coroutine fills its resume entry
 //! in `poll.rs` instead.
+//!
+//! The same function is also lowered into the `coroutine_drop` of the
+//! coroutine, in `abandon.rs`.
 
+mod abandon;
 mod dispatch;
 mod perform_yield;
 mod progress;

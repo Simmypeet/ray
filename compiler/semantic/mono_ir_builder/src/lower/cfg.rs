@@ -40,10 +40,11 @@ impl Emitter<'_> {
                 self.lower_edge(source_block, conditional.then_block(), ctx),
                 self.lower_edge(source_block, conditional.else_block(), ctx),
             )),
-            // Only an abandon edge reaches it, and direct form never takes
-            // one, so abandon blocks are not lowered.
+            // Only an abandon edge reaches it, which neither direct form nor
+            // `coroutine_resume` takes. Only `coroutine_drop` lowers abandon
+            // blocks, with `lower_abandon_block`.
             IRTerminator::Abandon => {
-                unreachable!("an abandon block is not lowered in direct form")
+                unreachable!("an abandon block is only lowered into `coroutine_drop`")
             }
             IRTerminator::Return(value) => {
                 let value = value.map_or_else(

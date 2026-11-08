@@ -274,6 +274,10 @@ pub enum MonoFunctionInstance {
     NominalDrop(MonoGeneratedAdtDropInstance),
     /// The `coroutine_resume` function of a coroutine.
     CoroutineResume(MonoCoroutineInstance),
+    /// The `coroutine_drop` function of a coroutine, which drops a frame that
+    /// has started: what it holds where it is suspended, and nothing once it
+    /// has completed.
+    CoroutineDrop(MonoCoroutineInstance),
 }
 
 impl From<MonoBodyInstance> for MonoFunctionInstance {

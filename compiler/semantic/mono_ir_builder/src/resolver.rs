@@ -415,6 +415,9 @@ impl Resolver {
             MonoFunctionInstance::CoroutineResume(coroutine) => {
                 self.coroutine_signature(coroutine).await.resume_signature().clone()
             }
+            MonoFunctionInstance::CoroutineDrop(coroutine) => {
+                self.coroutine_signature(coroutine).await.drop_signature().clone()
+            }
         }
     }
 

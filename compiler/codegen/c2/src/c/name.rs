@@ -183,12 +183,29 @@ impl fmt::Display for CoroutineResumeName {
     }
 }
 
+/// The `coroutine_drop` function of a coroutine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CoroutineDropName(StableID);
+
+impl CoroutineDropName {
+    pub(crate) fn of(instance: &MonoCoroutineInstance) -> Self {
+        Self(StableID::of("rayc_c2::CoroutineDrop:v1", instance))
+    }
+}
+
+impl fmt::Display for CoroutineDropName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "ray_coroutine_drop_{}", self.0)
+    }
+}
+
 /// Any independently lowered function, which this translation unit defines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FunctionName {
     Body(BodyName),
     NominalDrop(NominalDropName),
     CoroutineResume(CoroutineResumeName),
+    CoroutineDrop(CoroutineDropName),
 }
 
 impl FunctionName {
@@ -209,6 +226,9 @@ impl FunctionName {
             MonoFunctionInstance::CoroutineResume(instance) => {
                 Self::CoroutineResume(CoroutineResumeName::of(instance))
             }
+            MonoFunctionInstance::CoroutineDrop(instance) => {
+                Self::CoroutineDrop(CoroutineDropName::of(instance))
+            }
         }
     }
 }
@@ -219,6 +239,7 @@ impl fmt::Display for FunctionName {
             Self::Body(name) => name.fmt(formatter),
             Self::NominalDrop(name) => name.fmt(formatter),
             Self::CoroutineResume(name) => name.fmt(formatter),
+            Self::CoroutineDrop(name) => name.fmt(formatter),
         }
     }
 }

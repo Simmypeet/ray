@@ -8,11 +8,12 @@ use rayc_ir::{
     ir_closure::CaptureID,
 };
 use rayc_mono_ir::{
-    MonoCoroutineInstance,
+    MonoCoroutineInstance, MonoFunctionInstance,
     cfg::{Switch, Terminator},
     layout::coroutine::FrameState,
     operand::Operand,
     place::{FieldIndex, Place},
+    ty::{AggregateType, MonoType},
 };
 use rayc_type::ty::Ty;
 
@@ -69,7 +70,8 @@ impl Emitter<'_> {
                 self.lower_nominal_drop_call(instance, vec![Operand::Copy(value)], destination);
             }
             InstanceCallable::CoroutineDrop { coroutine, upvars } => {
-                Box::pin(self.lower_coroutine_drop(&value, &coroutine, &upvars, destination)).await;
+                Box::pin(self.lower_coroutine_drop_call(&value, &coroutine, &upvars, destination))
+                    .await;
             }
             InstanceCallable::NoOp => {}
             InstanceCallable::Closure(_, _) | InstanceCallable::Continuation(_) => {
@@ -114,13 +116,13 @@ impl Emitter<'_> {
     /// leaves the block after the switch selected.
     ///
     /// Only a frame that has not started holds its upvars, which are dropped
-    /// with the dictionaries of the `coro` that created it. A started frame is
-    /// not dropped yet: what it holds leaks.
+    /// with the dictionaries of the `coro` that created it. Any other frame is
+    /// dropped by the `coroutine_drop` of the coroutine.
     ///
     /// ```c
     ///     switch (frame.state) {
     ///     case NOT_STARTED: goto drop_upvars;
-    ///     default:          goto done;
+    ///     default:          goto drop_started;
     ///     }
     ///
     /// drop_upvars:
@@ -128,9 +130,14 @@ impl Emitter<'_> {
     ///     d0.drop(frame.param0);
     ///     goto done;
     ///
+    /// drop_started:
+    ///     frame_pointer = &frame;
+    ///     coroutine_drop(frame_pointer);
+    ///     goto done;
+    ///
     /// done:                               // left selected
     /// ```
-    pub(crate) async fn lower_coroutine_drop(
+    pub(crate) async fn lower_coroutine_drop_call(
         &mut self,
         frame: &Place,
         coroutine: &MonoCoroutineInstance,
@@ -141,19 +148,49 @@ impl Emitter<'_> {
         let state = Operand::Copy(self.project(frame).coroutine_frame_state());
         let not_started = FrameState::NotStarted.tag(&layout);
 
-        // Only a frame that has not started drops its upvars.
+        // Only a frame that has not started drops its upvars here.
         let drop_upvars = self.create_block();
+        let drop_started = self.create_block();
         let done = self.create_block();
         let targets = vec![(not_started, drop_upvars)];
-        self.set_terminator(Terminator::Switch(Switch::new(state, targets, done)));
+        self.set_terminator(Terminator::Switch(Switch::new(state, targets, drop_started)));
 
         // A drop may leave another block selected, so the jump to `done` ends
         // whichever block is selected after the upvars.
         self.select_block(drop_upvars);
-        self.drop_not_started_upvars(frame, coroutine, upvars, destination).await;
+        self.drop_not_started_upvars(frame, coroutine, upvars, destination.clone()).await;
+        self.set_terminator(Terminator::Goto(done));
+
+        // A frame that has started drops what it holds by itself.
+        self.select_block(drop_started);
+        self.call_coroutine_drop(frame, coroutine, destination).await;
         self.set_terminator(Terminator::Goto(done));
 
         self.select_block(done);
+    }
+
+    /// Calls the `coroutine_drop` of `coroutine` on the frame at `frame`,
+    /// which has started, writing its unit result to `destination`.
+    ///
+    /// ```c
+    ///     frame_pointer = &frame;
+    ///     coroutine_drop(frame_pointer);
+    /// ```
+    async fn call_coroutine_drop(
+        &mut self,
+        frame: &Place,
+        coroutine: &MonoCoroutineInstance,
+        destination: Place,
+    ) {
+        let frame_type = MonoType::new_aggregate(
+            AggregateType::CoroutineFrame(coroutine.clone()),
+            self.engine(),
+        );
+        let frame_pointer = self.take_frame_address(frame.clone(), frame_type);
+
+        let callee = MonoFunctionInstance::CoroutineDrop(coroutine.clone());
+        let arguments = vec![Operand::Copy(frame_pointer)];
+        self.lower_call_with_args(callee, arguments, Vec::new(), destination).await;
     }
 
     /// Drops the upvars of the frame at `frame`, of `coroutine`, which has not

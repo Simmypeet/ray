@@ -94,6 +94,27 @@ impl<'a> Context<'a> {
         Self { resolver, body, source, map, style }
     }
 
+    /// The context of the function that `instance` suspends, lowered into the
+    /// `coroutine_drop` of `instance`. `emit` creates its blocks.
+    ///
+    /// Only the abandon block of each suspension point is lowered, so only
+    /// those blocks and the values held in the frame are mapped.
+    pub(crate) async fn new_coroutine_drop(
+        resolver: &'a Resolver,
+        instance: &MonoCoroutineInstance,
+        source: Interned<IRFunctionMap>,
+        emit: &mut Emitter<'_>,
+    ) -> Self {
+        let body = instance.body().clone();
+        let function = source.get_function(body.ir_function_id());
+        let style = LoweringStyle::new_coroutine_drop(emit, instance).await;
+        let frame = style.frame();
+        let abandon_blocks = frame.suspension_points().map(|point| abandon_block(function, point));
+        let map = SourceMap::new_coroutine_drop(emit, frame, abandon_blocks);
+
+        Self { resolver, body, source, map, style }
+    }
+
     const fn engine(&self) -> &TrackedEngine { self.resolver.engine() }
 
     /// The function being lowered.
@@ -153,6 +174,12 @@ impl<'a> Context<'a> {
 
     pub(crate) fn source_block_terminator(&self, block: IRBlockID) -> Option<&IRTerminator> {
         self.source_function().block_terminator(block)
+    }
+
+    /// The block that the function takes when it is dropped while it is
+    /// suspended at `point`.
+    pub(crate) fn source_abandon_block(&self, point: SuspensionPointID) -> IRBlockID {
+        abandon_block(self.source_function(), point)
     }
 
     /// Asserts that the function `function_id` of the same IR uses the
@@ -261,6 +288,14 @@ impl<'a> Context<'a> {
     pub(crate) fn suspension_point(&self, block: IRBlockID) -> Option<SuspensionPointID> {
         self.style.suspension_point(block)
     }
+}
+
+/// The abandon block of `point`, a suspension point of `function`.
+fn abandon_block(function: &IRFunction, point: SuspensionPointID) -> IRBlockID {
+    function
+        .block_terminator(point.block_id())
+        .and_then(IRTerminator::abandon_block)
+        .expect("a suspension point has an abandon block")
 }
 
 /// The layout of the environment of `capture_map`, a capture map of the IR that

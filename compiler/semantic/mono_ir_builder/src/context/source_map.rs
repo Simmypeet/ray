@@ -88,6 +88,64 @@ impl SourceMap {
         map
     }
 
+    /// Maps what the `coroutine_drop` of a function reads: `abandon_blocks`,
+    /// the abandon block of each suspension point, and the values that `frame`
+    /// holds while the function is suspended.
+    ///
+    /// What an abandon block drops is held across its suspension point, so it
+    /// is in the frame, outside the start variant. Nothing else is mapped, so
+    /// an abandon block that reads anything else fails to lower, rather than
+    /// read memory the function no longer holds.
+    pub(super) fn new_coroutine_drop(
+        emit: &mut Emitter<'_>,
+        frame: &Frame,
+        abandon_blocks: impl IntoIterator<Item = IRBlockID>,
+    ) -> Self {
+        let mut map = Self::empty();
+        for block in abandon_blocks {
+            map.blocks.insert(block, emit.create_block());
+        }
+
+        for savable in frame.suspended_savables() {
+            let place = frame.place_of(savable, emit.engine()).expect("the frame holds it");
+            match savable {
+                Savable::Local(local) => map.insert_local(local, place),
+                Savable::Expression(expression) => {
+                    let ty = frame.field_type(savable).clone();
+                    map.expressions.insert(expression, (place, ty));
+                }
+
+                // Nothing in an abandon block names them: the lowering
+                // abandons the awaitee itself, and an environment that is only
+                // pointed to is not dropped.
+                Savable::Awaitee(_) | Savable::Environment => {}
+            }
+        }
+
+        map
+    }
+
+    /// Maps `local` to `place`.
+    fn insert_local(&mut self, local: IRLocal, place: Place) {
+        match local {
+            IRLocal::Variable(variable) => {
+                self.variables.insert(variable, place);
+            }
+            IRLocal::Parameter(parameter) => {
+                self.parameters.insert(parameter, place);
+            }
+            IRLocal::ClosureParameter(parameter) => {
+                self.closure_parameters.insert(parameter, place);
+            }
+            IRLocal::OperationHandlerParameter(parameter) => {
+                self.operation_parameters.insert(parameter, place);
+            }
+            IRLocal::Capture(capture) => {
+                self.captures.insert(capture, place);
+            }
+        }
+    }
+
     fn empty() -> Self {
         Self {
             blocks: FxHashMap::default(),

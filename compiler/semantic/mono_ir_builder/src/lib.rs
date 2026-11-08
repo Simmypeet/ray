@@ -1,7 +1,7 @@
 //! Lowers one concrete function into an independently cacheable
 //! [`MonoFunction`]: one function of the semantic IR of a concrete definition,
-//! one generated nominal Drop instance, or the `coroutine_resume` of one
-//! coroutine.
+//! one generated nominal Drop instance, or the `coroutine_resume` or the
+//! `coroutine_drop` of one coroutine.
 //!
 //! This crate intentionally exposes an ordinary lowering function rather than
 //! an incremental query. A future orchestrator can use the same
@@ -40,6 +40,9 @@ pub async fn lower_function(
         MonoFunctionInstance::NominalDrop(instance) => nominal_drop::lower(engine, instance).await,
         MonoFunctionInstance::CoroutineResume(instance) => {
             lower_coroutine_resume(engine, instance).await
+        }
+        MonoFunctionInstance::CoroutineDrop(instance) => {
+            lower_coroutine_drop(engine, instance).await
         }
     }
 }
@@ -81,6 +84,31 @@ async fn lower_coroutine_resume(
     let mut emit = Emitter::new(&resolver, &mut output);
     let ctx = Context::new_coroutine(&resolver, &instance, source, &mut emit).await;
     Box::pin(emit.lower_coroutine(&ctx)).await;
+
+    output
+}
+
+/// Lowers the `coroutine_drop` function of one concrete coroutine.
+async fn lower_coroutine_drop(
+    engine: &TrackedEngine,
+    instance: MonoCoroutineInstance,
+) -> MonoFunction {
+    // One solver serves the whole function, in the instantiation of the
+    // definition of the suspended function.
+    let solver = Solver::without_givens(engine.clone()).await;
+    let resolver = Resolver::new(solver, instance.body().substitution().clone());
+    let source = engine.get_ir(instance.body().def_id()).await;
+
+    let signature = engine.get_coroutine_signature(instance.clone()).await;
+    let mut output = MonoFunction::new(
+        MonoFunctionInstance::CoroutineDrop(instance.clone()),
+        signature.drop_signature().clone(),
+        engine,
+    );
+
+    let mut emit = Emitter::new(&resolver, &mut output);
+    let ctx = Context::new_coroutine_drop(&resolver, &instance, source, &mut emit).await;
+    Box::pin(emit.lower_coroutine_drop(&ctx)).await;
 
     output
 }

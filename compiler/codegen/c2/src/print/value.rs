@@ -142,7 +142,8 @@ impl FunctionPrinter<'_, '_> {
             }
             MonoFunctionInstance::Body(_)
             | MonoFunctionInstance::NominalDrop(_)
-            | MonoFunctionInstance::CoroutineResume(_) => {
+            | MonoFunctionInstance::CoroutineResume(_)
+            | MonoFunctionInstance::CoroutineDrop(_) => {
                 CalleeName::Internal(FunctionName::of(instance))
             }
         }

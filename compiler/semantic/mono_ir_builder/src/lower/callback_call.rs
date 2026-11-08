@@ -163,7 +163,7 @@ impl Emitter<'_> {
             InstanceCallable::CoroutineDrop { coroutine, upvars } => {
                 assert_eq!(call.arguments().len(), 1);
                 let frame = ctx.expression_place(call.arguments()[0]);
-                self.lower_coroutine_drop(&frame, &coroutine, &upvars, destination).await;
+                self.lower_coroutine_drop_call(&frame, &coroutine, &upvars, destination).await;
             }
             // The call has blocks of its own, and what follows it continues
             // in a new one.

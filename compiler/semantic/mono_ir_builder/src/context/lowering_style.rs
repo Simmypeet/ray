@@ -119,6 +119,22 @@ impl Frame {
         let point = SuspensionPointID::new(block);
         self.layout.suspends_at(point).then_some(point)
     }
+
+    /// Iterates over the suspension points where the function still suspends,
+    /// in no particular order.
+    pub(crate) fn suspension_points(&self) -> impl Iterator<Item = SuspensionPointID> + '_ {
+        self.layout.suspension_points()
+    }
+
+    /// Iterates over the values that the frame holds outside its start
+    /// variant: the only ones still there once the function has suspended,
+    /// since the first suspension overwrites the start variant.
+    pub(super) fn suspended_savables(&self) -> impl Iterator<Item = Savable> + '_ {
+        self.layout
+            .placements()
+            .filter(|(savable, _)| !self.is_start_field(*savable))
+            .map(|(savable, _)| savable)
+    }
 }
 
 /// The block that the dispatch of `coroutine_resume` enters to continue one
@@ -208,6 +224,10 @@ pub(crate) enum LoweringStyle {
     /// An operation returns from `coroutine_resume` to whatever resumed it. The
     /// function holds what it needs across a suspension in its frame.
     Coroutine(CoroutineForm),
+
+    /// The `coroutine_drop` of the function: it performs nothing, and only
+    /// drops what the frame holds where the function is suspended.
+    CoroutineDrop(Frame),
 }
 
 impl LoweringStyle {
@@ -245,17 +265,33 @@ impl LoweringStyle {
         Self::Coroutine(CoroutineForm::new(function, emit, instance).await)
     }
 
+    /// The style of the `coroutine_drop` of `instance`, whose only parameter
+    /// points to the frame.
+    pub(super) async fn new_coroutine_drop(
+        emit: &Emitter<'_>,
+        instance: &MonoCoroutineInstance,
+    ) -> Self {
+        let mut parameters = emit.parameter_ids();
+        let frame_param = parameters.next().expect("`coroutine_drop` takes the frame");
+        assert!(parameters.next().is_none(), "`coroutine_drop` only takes the frame");
+
+        Self::CoroutineDrop(Frame::new(emit, frame_param, instance).await)
+    }
+
+    /// Whether the function is lowered from the function that a coroutine
+    /// suspends, into its `coroutine_resume` or its `coroutine_drop`. Such a
+    /// function has a frame, and no handlers.
     pub(crate) const fn is_coroutine(&self) -> bool {
         match self {
             Self::Callback(_) => false,
-            Self::Coroutine(_) => true,
+            Self::Coroutine(_) | Self::CoroutineDrop(_) => true,
         }
     }
 
     pub(crate) const fn handlers(&self) -> Option<&EffectHandlers> {
         match self {
             Self::Callback(handlers) => Some(handlers),
-            Self::Coroutine(_) => None,
+            Self::Coroutine(_) | Self::CoroutineDrop(_) => None,
         }
     }
 
@@ -274,7 +310,9 @@ impl LoweringStyle {
     pub(crate) const fn coroutine_form(&self) -> &CoroutineForm {
         match self {
             Self::Coroutine(form) => form,
-            Self::Callback(_) => panic!("this function should be a `coroutine_resume`"),
+            Self::Callback(_) | Self::CoroutineDrop(_) => {
+                panic!("this function should be a `coroutine_resume`")
+            }
         }
     }
 
@@ -282,16 +320,18 @@ impl LoweringStyle {
     pub(crate) const fn frame(&self) -> &Frame {
         match self {
             Self::Coroutine(form) => &form.frame,
+            Self::CoroutineDrop(frame) => frame,
             Self::Callback(_) => panic!("only a function lowered in coroutine style has a frame"),
         }
     }
 
-    /// The suspension point that terminates `block`, if this is a
-    /// `coroutine_resume` function that still suspends there.
+    /// The suspension point that terminates `block`, if this function has a
+    /// frame and still suspends there.
     pub(crate) fn suspension_point(&self, block: IRBlockID) -> Option<SuspensionPointID> {
         match self {
             Self::Callback(_) => None,
             Self::Coroutine(form) => form.frame.suspension_point(block),
+            Self::CoroutineDrop(frame) => frame.suspension_point(block),
         }
     }
 }
