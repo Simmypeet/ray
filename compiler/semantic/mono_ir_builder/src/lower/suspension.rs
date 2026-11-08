@@ -30,8 +30,8 @@ impl Emitter<'_> {
                     self.lower_new_frame_call(point, call, destination, done, ctx).await;
                 }
             }
-            Waitee::RunWith(_) => {
-                panic!("`run ... with` in a coroutine is not lowered to MonoIR yet")
+            Waitee::RunWith(run_with) => {
+                self.lower_run_with_suspension(point, suspend, run_with, ctx).await;
             }
             Waitee::Handle(_) => panic!("a `handle` is evaluated by a `Handle` terminator"),
         }

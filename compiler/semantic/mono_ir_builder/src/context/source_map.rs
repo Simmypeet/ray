@@ -147,7 +147,8 @@ impl SourceMap {
         );
     }
 
-    /// Maps the parameters and captures, which always start in the frame.
+    /// Maps the parameters and captures, which always start in the frame, or
+    /// for borrowed captures, in the environment that the frame points to.
     async fn bind_frame_upvars(
         &mut self,
         source: &IRFunctionMap,
@@ -167,20 +168,37 @@ impl SourceMap {
                 IRLocal::ClosureParameter(parameter) => {
                     self.closure_parameters.insert(parameter, place);
                 }
-                IRLocal::Variable(_)
-                | IRLocal::OperationHandlerParameter(_)
-                | IRLocal::Capture(_) => {
-                    panic!("a coroutine's function is a definition or a closure")
+                IRLocal::OperationHandlerParameter(parameter) => {
+                    self.operation_parameters.insert(parameter, place);
+                }
+                IRLocal::Variable(_) | IRLocal::Capture(_) => {
+                    panic!("only a parameter starts a function")
                 }
             }
         }
 
-        if function.context().capture_map_id().is_some() {
-            for (capture, _) in source.get_captures_of_function(body.ir_function_id()) {
-                let savable = Savable::Local(IRLocal::Capture(capture));
-                let place = Self::bind_frame_upvar(savable, emit, form);
-                self.captures.insert(capture, place);
-            }
+        // A definition has no captures.
+        if function.context().capture_map_id().is_none() {
+            return;
+        }
+
+        // The clauses of a `run ... with` share their environment, which the
+        // frame points to: `(*frame->environment).capture`.
+        let shared_environment = function.context().borrows_captures().then(|| {
+            let pointer = form
+                .frame_place_of(Savable::Environment, emit.engine())
+                .expect("the frame of a function that borrows its captures points to them");
+            emit.project(&pointer).dereference()
+        });
+
+        for (capture, _) in source.get_captures_of_function(body.ir_function_id()) {
+            let place = match &shared_environment {
+                Some(environment) => emit.project(environment).environment_capture(capture),
+                None => {
+                    Self::bind_frame_upvar(Savable::Local(IRLocal::Capture(capture)), emit, form)
+                }
+            };
+            self.captures.insert(capture, place);
         }
     }
 

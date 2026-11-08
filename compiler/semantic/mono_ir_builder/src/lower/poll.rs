@@ -144,6 +144,20 @@ impl PollLoop {
 
     pub(super) const fn row_layout(&self) -> &Interned<EffectRowLayout> { &self.resumed.row_layout }
 
+    /// The row of the resumed coroutine.
+    pub(super) fn row(&self) -> &EffectRow { self.resumed.signature.row() }
+
+    /// The member of `args` that holds a value of `ty`, which the resumed
+    /// coroutine is resumed with.
+    pub(super) fn resume_value_place(
+        &self,
+        ty: &Interned<MonoType>,
+        engine: &TrackedEngine,
+    ) -> Place {
+        let member = self.resumed.row_layout.get_resume_variant_id(ty);
+        self.args.project(engine).coroutine_resume_value(member)
+    }
+
     /// Whether the resumed coroutine returns a progress of the type `own`.
     pub(super) fn has_progress_type_of(&self, own: &CoroutineSignature) -> bool {
         own.progress() == self.resumed.signature.progress()
@@ -198,24 +212,95 @@ impl Emitter<'_> {
         resumee: Resumee,
         ctx: &Context<'_>,
     ) -> PollLoop {
-        let resolver = self.resolver();
-        let signature = resolver.coroutine_signature(&instance).await;
-        let row_layout = resolver.effect_row_layout(signature.row()).await;
-        let coroutine = ResumedCoroutine { instance, signature, row_layout };
+        let coroutine = self.resumed_coroutine(instance).await;
+        let args = self.new_temporary_place(resume_type(coroutine.signature.row(), self.engine()));
 
         // `args` holds the first resume value in the member of its type.
-        let args = self.lower_coroutine_begin_args(&coroutine, &resumee);
+        let (value, value_type) = resumee.first_resume_value(self.engine());
+        let member = coroutine.row_layout.get_resume_variant_id(&value_type);
+        self.store(self.project(&args).coroutine_resume_value(member), value);
 
         // Whatever outlives a return from `coroutine_resume` must be in the
         // frame, so a suspending loop keeps the continuation there.
         let held = self.hold_resumee(site, &resumee, ctx);
-        let block = self.enter_poll_block(site, &coroutine, &args, ctx);
+        let block = self.enter_poll_block(site, coroutine.signature.row(), &args, ctx);
 
         // The frame pointer is taken in the poll block, since nothing but the
         // frame outlives a return from `coroutine_resume`. It is also copied
         // out first: the values a clause receives may share memory with an
         // awaitee that holds the continuation.
         let frame_pointer = self.load_frame_pointer(&resumee, held).await;
+        let progress = self.push_resume_call(&coroutine, &frame_pointer, &args);
+
+        PollLoop { resumed: coroutine, site, block, args, progress, frame_pointer }
+    }
+
+    /// Creates a poll loop that resumes the frame of `instance` at `frame`,
+    /// which the awaitee of `point` holds, without entering it. Its poll block
+    /// is filled, and the current block stays selected.
+    ///
+    /// Several such loops share the suspension point, so the caller enters
+    /// them, and fills the resume entry of the point: it sets
+    /// [`PollLoop::args`] and jumps to [`PollLoop::block`].
+    ///
+    /// ```c
+    /// poll:
+    ///     frame_pointer = &frame;
+    ///     progress = callee_resume(frame_pointer, args);
+    ///     // no terminator yet: `finish_poll` adds the switch
+    /// ```
+    pub(super) async fn create_held_frame_poll(
+        &mut self,
+        point: SuspensionPointID,
+        instance: MonoCoroutineInstance,
+        frame: Place,
+    ) -> PollLoop {
+        let engine = self.engine();
+        let coroutine = self.resumed_coroutine(instance).await;
+        let args = self.new_temporary_place(resume_type(coroutine.signature.row(), engine));
+        let frame_type = MonoType::new_aggregate(
+            AggregateType::CoroutineFrame(coroutine.instance.clone()),
+            engine,
+        );
+
+        let block = self.create_block();
+        let (frame_pointer, progress) = self.in_block(block, |emit| {
+            let frame_pointer = emit.take_frame_address(frame, frame_type);
+            let progress = emit.push_resume_call(&coroutine, &frame_pointer, &args);
+            (frame_pointer, progress)
+        });
+
+        PollLoop {
+            resumed: coroutine,
+            site: PollSite::Suspending(point),
+            block,
+            args,
+            progress,
+            frame_pointer,
+        }
+    }
+
+    /// Reads the signature and the row layout of `instance`.
+    async fn resumed_coroutine(&self, instance: MonoCoroutineInstance) -> ResumedCoroutine {
+        let resolver = self.resolver();
+        let signature = resolver.coroutine_signature(&instance).await;
+        let row_layout = resolver.effect_row_layout(signature.row()).await;
+
+        ResumedCoroutine { instance, signature, row_layout }
+    }
+
+    /// Resumes `coroutine` in the selected block, and returns the new local
+    /// that holds what it returned.
+    ///
+    /// ```c
+    ///     progress = callee_resume(frame_pointer, args);
+    /// ```
+    fn push_resume_call(
+        &mut self,
+        coroutine: &ResumedCoroutine,
+        frame_pointer: &Place,
+        args: &Place,
+    ) -> Place {
         let progress = self.new_progress_temporary_place(&coroutine.signature);
         self.push_call(
             Call::builder()
@@ -227,25 +312,14 @@ impl Emitter<'_> {
                 .build(),
         );
 
-        PollLoop { resumed: coroutine, site, block, args, progress, frame_pointer }
+        progress
     }
 
-    fn lower_coroutine_begin_args(
-        &mut self,
-        coroutine: &ResumedCoroutine,
-        resumee: &Resumee,
-    ) -> Place {
-        let engine = self.engine();
-
-        let args = self.new_temporary_place(MonoType::new_aggregate(
-            AggregateType::CoroutineResume(CoroutineResume::new(coroutine.signature.row().clone())),
-            engine,
-        ));
-        let (value, value_type) = resumee.first_resume_value(engine);
-        let member = coroutine.row_layout.get_resume_variant_id(&value_type);
-        self.store(self.project(&args).coroutine_resume_value(member), value);
-
-        args
+    /// Stores the unit value that a frame that has not started is first
+    /// resumed with in the `args` of `poll`.
+    pub(super) fn store_start_resume_args(&mut self, poll: &PollLoop) {
+        let unit = MonoType::new_unit(self.engine());
+        self.store_constant(poll.resume_value_place(&unit, self.engine()), Constant::Unit);
     }
 
     /// The place the poll block reads the frame of `resumee` from.
@@ -297,14 +371,14 @@ impl Emitter<'_> {
     fn enter_poll_block(
         &mut self,
         site: PollSite,
-        resumed: &ResumedCoroutine,
+        row: &EffectRow,
         args: &Place,
         ctx: &Context<'_>,
     ) -> BlockID {
         let poll = self.create_block();
 
         if let PollSite::Suspending(point) = site {
-            let forwarded_args = self.forwarded_resume_args(resumed, ctx);
+            let forwarded_args = self.forwarded_resume_args(row, ctx);
             let destination = args.clone();
             self.fill_resume_entry(point, ctx, |emit| {
                 emit.assign(destination, forwarded_args);
@@ -319,8 +393,8 @@ impl Emitter<'_> {
         poll
     }
 
-    /// The `args` of this `coroutine_resume` as those of `resumed`, which
-    /// performed the operation they hold the result of.
+    /// The `args` of this `coroutine_resume` as those of a coroutine of
+    /// `row`, which performed the operation they hold the result of.
     ///
     /// The result is in a member of its type in both, but the row does not
     /// tell which member that is, so the conversion cannot name it. It does not
@@ -333,12 +407,11 @@ impl Emitter<'_> {
     /// own_args                        // both rows are the same
     /// (callee_resume_t) own_args      // otherwise, a reinterpretation
     /// ```
-    fn forwarded_resume_args(&self, resumed: &ResumedCoroutine, ctx: &Context<'_>) -> Rvalue {
+    pub(super) fn forwarded_resume_args(&self, row: &EffectRow, ctx: &Context<'_>) -> Rvalue {
         let engine = self.engine();
         let form = ctx.coroutine_form();
         let args = Operand::Copy(form.resume_args_place().clone());
         let own_row = form.signature().row();
-        let row = resumed.signature.row();
 
         if own_row == row {
             return Rvalue::Use(args);
@@ -361,17 +434,7 @@ impl Emitter<'_> {
     async fn load_frame_pointer(&mut self, resumee: &Resumee, held: Place) -> Place {
         match resumee {
             Resumee::NewFrame { frame_type, .. } => {
-                let pointer_type = MonoType::new_pointer(
-                    frame_type.clone(),
-                    PointerMutability::Mut,
-                    self.engine(),
-                );
-                let frame_pointer = self.new_temporary_place(pointer_type);
-                self.assign(
-                    frame_pointer.clone(),
-                    Rvalue::AddressOf(AddressOf::new(held, PointerMutability::Mut)),
-                );
-                frame_pointer
+                self.take_frame_address(held, frame_type.clone())
             }
             Resumee::Continuation { continuation_type, .. } => {
                 let (field, pointer_type) =
@@ -384,6 +447,19 @@ impl Emitter<'_> {
                 frame_pointer
             }
         }
+    }
+
+    /// Stores the address of `frame`, of type `frame_type`, in a new local of
+    /// the selected block.
+    fn take_frame_address(&mut self, frame: Place, frame_type: Interned<MonoType>) -> Place {
+        let pointer_type = MonoType::new_pointer(frame_type, PointerMutability::Mut, self.engine());
+        let frame_pointer = self.new_temporary_place(pointer_type);
+        self.assign(
+            frame_pointer.clone(),
+            Rvalue::AddressOf(AddressOf::new(frame, PointerMutability::Mut)),
+        );
+
+        frame_pointer
     }
 
     /// Creates the arm taken when the coroutine completed, which stores its

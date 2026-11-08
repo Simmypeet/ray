@@ -11,6 +11,7 @@ use rayc_mono_ir::{
     layout::{
         EffectHandlerCallbackLayout, EnvironmentLayout, StructLayout,
         coroutine::{EffectRowLayout, FrameFieldTypes, FrameState},
+        run_with::RunWithLayout,
     },
     ty::{AggregateType, CoroutineProgress, CoroutineYield, EffectHandlerCallback, MonoType},
 };
@@ -102,6 +103,7 @@ pub(crate) enum NominalLayout<'a> {
     Struct(&'a StructLayout),
     CoroutineFrame(&'a FrameMembers),
     EffectRow(&'a EffectRowLayout),
+    RunWithAwaitee(&'a RunWithLayout),
 }
 
 /// The `struct` definition of one aggregate layout.
@@ -200,6 +202,38 @@ impl<'a> AggregateDefinition<'a> {
         formatter.write_str("    };\n")
     }
 
+    /// `{ handler_environment; body; phase; union { clause frames } }`. The
+    /// union is anonymous, so a clause frame is named by its operation alone.
+    fn write_run_with_members(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let NominalLayout::RunWithAwaitee(layout) = self.layout else {
+            panic!("a `run ... with` awaitee should have a resolved layout")
+        };
+
+        if let Some(environment) = layout.handler_environment() {
+            let environment = MonoType::Aggregate(AggregateType::Environment(environment.clone()));
+            let name = FieldName::RunWithHandlerEnvironment;
+            writeln!(formatter, "    {};", Declaration::new(&environment, &name))?;
+        }
+
+        let body = MonoType::Aggregate(AggregateType::CoroutineFrame(layout.body().clone()));
+        writeln!(formatter, "    {};", Declaration::new(&body, &FieldName::RunWithBody))?;
+
+        let phase_type = layout.phase_tag_type().mono_type();
+        writeln!(formatter, "    {};", Declaration::new(&phase_type, &FieldName::RunWithPhase))?;
+
+        if layout.clauses().len() == 0 {
+            return Ok(());
+        }
+        formatter.write_str("    union {\n")?;
+        for clause in layout.clauses() {
+            let frame =
+                MonoType::Aggregate(AggregateType::CoroutineFrame(clause.coroutine().clone()));
+            let name = FieldName::RunWithClause(clause.operation_id());
+            writeln!(formatter, "        {};", Declaration::new(&frame, &name))?;
+        }
+        formatter.write_str("    };\n")
+    }
+
     /// `{ tag; union { arguments of each operation } }`.
     fn write_yield_members(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let NominalLayout::EffectRow(layout) = self.layout else {
@@ -264,6 +298,7 @@ impl Display for AggregateDefinition<'_> {
             AggregateType::CoroutineProgress(progress) => {
                 write_progress_members(formatter, progress)?;
             }
+            AggregateType::RunWithAwaitee(_) => self.write_run_with_members(formatter)?,
         }
         formatter.write_str("};")
     }

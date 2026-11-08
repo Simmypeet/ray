@@ -3,13 +3,15 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_mono_ir::{
-    MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance, MonoStructInstance,
+    MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance, MonoRunWithInstance,
+    MonoStructInstance,
     layout::{
         EffectHandlerCallbackLayout, EnvironmentLayout, StructLayout, build_environment_layout,
         build_handler_layout, build_struct_layout,
         coroutine::{
             EffectRowLayout, build_effect_row_layout, build_frame_field_types, build_frame_layout,
         },
+        run_with::{RunWithClause, RunWithLayout, build_run_with_layout},
     },
     ty::{
         AggregateType, CoroutineYield, EffectHandlerCallback, EffectRow, FunctionSignature,
@@ -38,6 +40,7 @@ pub(crate) struct AggregateRegistry {
     environment_layouts: FxHashMap<MonoEnvironmentInstance, Interned<EnvironmentLayout>>,
     frame_members: FxHashMap<MonoCoroutineInstance, FrameMembers>,
     row_layouts: FxHashMap<EffectRow, Interned<EffectRowLayout>>,
+    run_with_layouts: FxHashMap<MonoRunWithInstance, Interned<RunWithLayout>>,
 }
 
 impl AggregateRegistry {
@@ -120,6 +123,13 @@ impl AggregateRegistry {
                         AggregateType::CoroutineYield(CoroutineYield::new(progress.row().clone()));
                     self.discover(yielded, &mut found);
                     self.discover_type(progress.return_type(), &mut found);
+                }
+                AggregateType::RunWithAwaitee(instance) => {
+                    let layout = engine.build_run_with_layout(instance.clone()).await;
+                    for member in run_with_member_aggregates(&layout) {
+                        self.discover(member, &mut found);
+                    }
+                    self.run_with_layouts.insert(instance.clone(), layout);
                 }
             }
         }
@@ -237,8 +247,17 @@ impl AggregateRegistry {
             AggregateType::Environment(instance) => {
                 NominalLayout::Environment(self.environment_layout(instance))
             }
+            AggregateType::RunWithAwaitee(instance) => {
+                NominalLayout::RunWithAwaitee(self.run_with_layout(instance))
+            }
             AggregateType::Tuple(_) | AggregateType::CoroutineProgress(_) => NominalLayout::None,
         }
+    }
+
+    fn run_with_layout(&self, instance: &MonoRunWithInstance) -> &RunWithLayout {
+        self.run_with_layouts
+            .get(instance)
+            .expect("a registered `run ... with` awaitee should have its layout")
     }
 
     fn struct_layout(&self, instance: &MonoStructInstance) -> &StructLayout {
@@ -318,6 +337,19 @@ impl AggregateRegistry {
                 dependencies.sort_unstable_by_key(|(name, _)| *name);
                 dependencies
             }
+            // Every member is held by value.
+            AggregateType::RunWithAwaitee(instance) => {
+                let mut dependencies = run_with_member_aggregates(self.run_with_layout(instance))
+                    .map(|member| {
+                        self.names
+                            .get_key_value(&member)
+                            .map(|(aggregate, name)| (*name, aggregate))
+                            .expect("a member of a registered awaitee should be registered")
+                    })
+                    .collect::<Vec<_>>();
+                dependencies.sort_unstable_by_key(|(name, _)| *name);
+                dependencies
+            }
         }
     }
 
@@ -339,6 +371,18 @@ impl AggregateRegistry {
         dependencies.sort_unstable_by_key(|(name, _)| *name);
         dependencies
     }
+}
+
+/// The aggregates that a `run ... with` awaitee holds: the environment of its
+/// clauses, and the frames of its body and of each clause.
+fn run_with_member_aggregates(layout: &RunWithLayout) -> impl Iterator<Item = AggregateType> + '_ {
+    let environment = layout.handler_environment().cloned().map(AggregateType::Environment);
+    let frames = std::iter::once(layout.body())
+        .chain(layout.clauses().map(RunWithClause::coroutine))
+        .cloned()
+        .map(AggregateType::CoroutineFrame);
+
+    environment.into_iter().chain(frames)
 }
 
 /// The aggregate a value of type `ty` contains inline, if any.

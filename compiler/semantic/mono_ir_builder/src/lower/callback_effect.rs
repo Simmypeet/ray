@@ -6,8 +6,10 @@
 //! effect of its row as a parameter after its source parameters. An operation
 //! handler finds them in fields of its environment after its captures.
 //!
-//! A coroutine yields its operations instead, so neither is lowered here for
-//! one.
+//! A coroutine yields its operations instead, so a `perform` of one is not
+//! lowered here. Neither is a `run ... with` of one, unless it suspends
+//! nothing: then its body and clauses only perform the handled effect, and
+//! run to completion as callbacks.
 
 use rayc_ir::ir_expr::{IRExprID, perform::Perform, run_with::RunWith};
 use rayc_mono_ir::{
@@ -15,7 +17,7 @@ use rayc_mono_ir::{
     function::LocalID,
     instruction::Call,
     operand::Operand,
-    place::Projection,
+    place::{Place, Projection},
     rvalue::{AddressOf, Rvalue},
     ty::{AggregateType, EffectHandlerCallback, MonoType, PointerMutability},
 };
@@ -99,10 +101,6 @@ impl Emitter<'_> {
         expression_id: IRExprID,
         ctx: &Context<'_>,
     ) {
-        // A coroutine has no handlers to pass on to the body for the effects
-        // that the `run ... with` does not handle.
-        assert!(!ctx.is_coroutine(), "`run ... with` in a coroutine is not lowered to MonoIR yet");
-
         let instance = ctx.instantiate_effect(run_with.effect_id(), run_with.substitution()).await;
         let (handler_pointer, handler_environment) =
             self.lower_effect_handler_pointer(run_with, instance.clone(), ctx).await;
@@ -117,7 +115,12 @@ impl Emitter<'_> {
         );
 
         // The new record handles its effect, and this function's own handlers
-        // the others.
+        // the others. A coroutine has none, so there it suspends instead,
+        // unless the body performs nothing else.
+        assert!(
+            !ctx.is_coroutine() || body_signature.handler_record_slots() == [instance.clone()],
+            "a `run ... with` of a coroutine forwards its residual effect by suspending"
+        );
         let handler_records = body_signature
             .handler_record_slots()
             .iter()
@@ -144,7 +147,8 @@ impl Emitter<'_> {
         // The handlers only borrow their shared captures, so they are dropped
         // once the handled body has returned.
         if let Some(environment) = handler_environment {
-            self.drop_handler_captures(run_with, environment, ctx).await;
+            let environment = self.local_place(environment);
+            self.drop_handler_captures(run_with, &environment, ctx).await;
         }
     }
 
@@ -155,10 +159,10 @@ impl Emitter<'_> {
     /// ```c
     /// drop(handler_env.capture_n); ...; drop(handler_env.capture_0);
     /// ```
-    async fn drop_handler_captures(
+    pub(super) async fn drop_handler_captures(
         &mut self,
         run_with: &RunWith,
-        environment: LocalID,
+        environment: &Place,
         ctx: &Context<'_>,
     ) {
         let drops = run_with.handler_capture_drops();
@@ -172,12 +176,11 @@ impl Emitter<'_> {
         let capture_map_id =
             run_with.handler_capture_map().expect("an environment comes from a capture map");
         let environment_layout = ctx.capture_environment_layout(capture_map_id).await;
-        let environment = self.local_place(environment);
         for capture in environment_layout.capture_ids().rev() {
             let drop_instance = drops
                 .get(&capture)
                 .expect("memory analysis selects a Drop dictionary for every handler capture");
-            let capture = self.project(&environment).environment_capture(capture);
+            let capture = self.project(environment).environment_capture(capture);
             self.lower_drop(capture, drop_instance, destination.clone()).await;
         }
     }
@@ -220,8 +223,8 @@ impl Emitter<'_> {
     ///
     /// ```c
     /// // The clauses share one environment: their captures, then the
-    /// // handlers of the effects the clauses perform. Without captures it is
-    /// // NULL.
+    /// // handlers of the effects the clauses perform. Without operation handlers
+    /// // it is NULL.
     /// handler_env_t handler_env = { capture_0, ..., handler_F };
     /// void *handler_env_pointer = (void *)&handler_env;
     ///

@@ -2,6 +2,7 @@ use rayc_coroutine_frame_layout::savable::Savable;
 use rayc_ir::{
     address::Local,
     get_ir,
+    ir_closure::CaptureOperands,
     ir_expr::{IRExprID, coroutine::Coroutine},
 };
 use rayc_mono_ir::{
@@ -9,6 +10,8 @@ use rayc_mono_ir::{
     layout::coroutine::FrameState,
     operand::Operand,
     place::{FieldIndex, Place},
+    rvalue::{AddressOf, Rvalue},
+    ty::PointerMutability,
 };
 
 use crate::{context::Context, emitter::Emitter};
@@ -38,13 +41,7 @@ impl Emitter<'_> {
         mut arguments: impl ExactSizeIterator<Item = Place>,
     ) {
         let engine = self.engine();
-        let resolver = self.resolver();
-        let layout = resolver.frame_layout(instance).await;
-
-        self.store_constant(
-            self.project(destination).coroutine_frame_state(),
-            FrameState::NotStarted.tag(&layout),
-        );
+        self.store_not_started_state(destination, instance).await;
 
         // What the frame stores depends on the function it suspends.
         let body = instance.body();
@@ -83,6 +80,76 @@ impl Emitter<'_> {
         } else {
             panic!("a `coro` must call a closure or a definition, not a {function:?}");
         }
+    }
+
+    /// Creates at `destination` a frame of `instance`, the handled body of a
+    /// `run ... with`, that has not started. The body owns its captures,
+    /// whose operands are `captures`.
+    ///
+    /// ```c
+    /// frame = { .state = NOT_STARTED, .capture0 = ..., ... };
+    /// ```
+    pub(super) async fn initialize_run_with_body(
+        &mut self,
+        destination: &Place,
+        instance: &MonoCoroutineInstance,
+        captures: &CaptureOperands,
+        ctx: &Context<'_>,
+    ) {
+        self.store_not_started_state(destination, instance).await;
+
+        for capture in captures.captures() {
+            let value = ctx.expression_place(captures.get_operand_of(capture));
+            self.store_upvar(destination, Local::Capture(capture), value);
+        }
+    }
+
+    /// Creates at `destination` a frame of `instance`, the clause of an
+    /// operation, that has not started. It points to `environment`, which
+    /// the clauses share, and its parameters are the elements of the tuple
+    /// `arguments`.
+    ///
+    /// ```c
+    /// frame = { .state = NOT_STARTED, .environment = &environment, .param0 = arguments.elem0, ... };
+    /// ```
+    pub(super) async fn initialize_run_with_clause(
+        &mut self,
+        destination: &Place,
+        instance: &MonoCoroutineInstance,
+        environment: Place,
+        arguments: &Place,
+    ) {
+        let engine = self.engine();
+        self.store_not_started_state(destination, instance).await;
+
+        let pointer = self.project(destination).coroutine_frame_savable(Savable::Environment);
+        self.assign(
+            pointer,
+            Rvalue::AddressOf(AddressOf::new(environment, PointerMutability::Mut)),
+        );
+
+        let body = instance.body();
+        let source = engine.get_ir(body.def_id()).await;
+        let function = source.get_function(body.ir_function_id());
+        let parameters = function.parameter_locals(body.def_id(), engine).await;
+        for (index, local) in parameters.into_iter().enumerate() {
+            let value = self.project(arguments).tuple_field(FieldIndex::from_usize(index));
+            self.store_upvar(destination, local, value);
+        }
+    }
+
+    /// Stores in the frame at `destination`, of `instance`, that it has not
+    /// started.
+    async fn store_not_started_state(
+        &mut self,
+        destination: &Place,
+        instance: &MonoCoroutineInstance,
+    ) {
+        let layout = self.resolver().frame_layout(instance).await;
+        self.store_constant(
+            self.project(destination).coroutine_frame_state(),
+            FrameState::NotStarted.tag(&layout),
+        );
     }
 
     /// Stores what `local` starts with in the frame at `frame`.

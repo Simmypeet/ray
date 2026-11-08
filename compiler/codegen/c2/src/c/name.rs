@@ -22,7 +22,7 @@ use rayc_mono_ir::{
         HandlerRecordID,
         coroutine::{ResumeVariantID, RowOperationID},
     },
-    place::{CoroutineFrame, CoroutineProgress, CoroutineYield, Projection},
+    place::{CoroutineFrame, CoroutineProgress, CoroutineYield, Projection, RunWithAwaitee},
     ty::AggregateType,
 };
 use rayc_semantic_element::struct_body::FieldID;
@@ -95,6 +95,9 @@ impl AggregateName {
             }
             AggregateType::CoroutineProgress(_) => {
                 ("CoroutineProgress", "rayc_c2::CoroutineProgressLayout:v1")
+            }
+            AggregateType::RunWithAwaitee(_) => {
+                ("RunWithAwaitee", "rayc_c2::RunWithAwaiteeLayout:v1")
             }
         };
         Self { id: StableID::of(domain, aggregate), category }
@@ -260,6 +263,11 @@ pub(crate) enum FieldName {
     CoroutineProgressYield,
     CoroutineProgressReturn,
     CoroutineYieldOperation(RowOperationID),
+    RunWithHandlerEnvironment,
+    RunWithBody,
+    RunWithPhase,
+    /// The frame of the clause of an operation, in an anonymous union.
+    RunWithClause(GlobalSymbolID),
 }
 
 impl FieldName {
@@ -296,6 +304,14 @@ impl FieldName {
             Projection::CoroutineYield(CoroutineYield::OperationPayload(operation)) => {
                 Some(Self::CoroutineYieldOperation(operation))
             }
+            Projection::RunWithAwaitee(RunWithAwaitee::HandlerEnvironment) => {
+                Some(Self::RunWithHandlerEnvironment)
+            }
+            Projection::RunWithAwaitee(RunWithAwaitee::Body) => Some(Self::RunWithBody),
+            Projection::RunWithAwaitee(RunWithAwaitee::Phase) => Some(Self::RunWithPhase),
+            Projection::RunWithAwaitee(RunWithAwaitee::Clause(operation)) => {
+                Some(Self::RunWithClause(operation))
+            }
         }
     }
 
@@ -331,6 +347,12 @@ impl fmt::Display for FieldName {
             Self::CoroutineYieldOperation(operation) => {
                 write!(formatter, "operation{:X}", operation.index())
             }
+            Self::RunWithHandlerEnvironment => formatter.write_str("handler_environment"),
+            Self::RunWithBody => formatter.write_str("body"),
+            Self::RunWithPhase => formatter.write_str("phase"),
+            Self::RunWithClause(operation) => {
+                write!(formatter, "clause_{}", operation_id(*operation))
+            }
         }
     }
 }
@@ -353,6 +375,7 @@ fn write_savable_name(formatter: &mut fmt::Formatter<'_>, savable: Savable) -> f
         Savable::Local(Local::Capture(capture)) => {
             write!(formatter, "capture{:X}", capture.index())
         }
+        Savable::Environment => formatter.write_str("environment"),
     }
 }
 
