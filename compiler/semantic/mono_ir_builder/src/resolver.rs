@@ -57,6 +57,13 @@ pub(crate) enum InstanceCallable {
     /// The `Drop` dictionary of each capture of a closure.
     ClosureDrop(Vec<(CaptureID, Interned<Ty>)>),
     NominalDrop(MonoGeneratedAdtDropInstance),
+    /// The `Drop` of the frame of a coroutine, with the `Drop` dictionary of
+    /// each of its upvars, in parameter order, which the `coro` that created
+    /// it chose.
+    CoroutineDrop {
+        coroutine: MonoCoroutineInstance,
+        upvars: Vec<Interned<Ty>>,
+    },
     /// `Def.call` of a continuation, which resumes this coroutine.
     Continuation(MonoCoroutineInstance),
     NoOp,
@@ -129,11 +136,17 @@ impl Resolver {
             ApplicationView::DefInstance(closure_ty) => {
                 self.resolve_closure_call(closure_ty, trait_def_id).await
             }
-            // Dropping a coroutine is not lowered yet: it does nothing, so what
-            // the frame holds leaks.
-            ApplicationView::NoOpDropInstance(_) | ApplicationView::CoroutineDropInstance(_) => {
+            ApplicationView::NoOpDropInstance(_) => {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
                 InstanceCallable::NoOp
+            }
+            ApplicationView::CoroutineDropInstance(instance) => {
+                assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
+                InstanceCallable::CoroutineDrop {
+                    coroutine: MonoCoroutineInstance::from_type(instance.coroutine(), &self.solver)
+                        .await,
+                    upvars: instance.upvar_instances().to_vec(),
+                }
             }
             ApplicationView::TupleDropInstance(instance) => {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);

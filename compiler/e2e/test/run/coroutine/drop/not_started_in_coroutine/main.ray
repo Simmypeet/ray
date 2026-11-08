@@ -1,0 +1,41 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Noisy:
+    pub value: int32
+
+impl !core.Copy for Noisy
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def inner(value: Noisy) -> int32 \ {Ask}:
+    return value.value + Ask.ask()
+
+
+# The storage of the inner coroutine is held across a suspension of the outer
+# one, so it lives in the outer frame. The outer `coroutine_resume` drops it
+# from there when its scope ends.
+def outer() -> int32 \ {Ask}:
+    if true:
+        let k = coro inner(Noisy { value = 1 })
+        let answer = Ask.ask()
+        printf("created, then asked %d\n", answer)
+    printf("after scope\n")
+    return Ask.ask()
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask() resume next: drive(next, 7)
+
+
+def main() -> int32:
+    return drive(coro outer(), ())

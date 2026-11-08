@@ -1,0 +1,35 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Noisy:
+    pub value: int32
+
+impl !core.Copy for Noisy
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def pair(first: Noisy, second: Noisy) -> int32 \ {Ask}:
+    return first.value + second.value + Ask.ask()
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask() resume next: drive(next, 10)
+
+
+# The coroutine runs to the end, and its body drops the arguments when it
+# returns. Its storage then holds nothing, so it drops nothing more.
+def main() -> int32:
+    if true:
+        let result = drive(coro pair(Noisy { value = 1 }, Noisy { value = 2 }), ())
+        printf("result %d\n", result)
+    printf("after scope\n")
+    return 0

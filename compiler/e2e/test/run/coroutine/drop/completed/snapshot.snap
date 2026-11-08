@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+drop 2
+drop 1
+result 13
+after scope
+
+
+stderr:

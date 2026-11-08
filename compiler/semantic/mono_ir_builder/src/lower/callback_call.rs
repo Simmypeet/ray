@@ -158,6 +158,13 @@ impl Emitter<'_> {
                 assert_eq!(call.arguments().len(), 1);
                 self.lower_nominal_drop_call(instance, arguments, destination);
             }
+            // The drop switches on the state of the frame, and what follows
+            // it continues in a new block.
+            InstanceCallable::CoroutineDrop { coroutine, upvars } => {
+                assert_eq!(call.arguments().len(), 1);
+                let frame = ctx.expression_place(call.arguments()[0]);
+                self.lower_coroutine_drop(&frame, &coroutine, &upvars, destination).await;
+            }
             // The call has blocks of its own, and what follows it continues
             // in a new one.
             InstanceCallable::Continuation(instance) => {
