@@ -24,7 +24,7 @@ use rayc_mono_ir::{
 };
 use rayc_semantic_element::parameter::{ParameterID, get_parameter_map};
 
-use super::lowering_style::CoroutineForm;
+use super::lowering_style::Frame;
 use crate::emitter::Emitter;
 
 /// Maps semantic IR identities to the places and blocks of one target function.
@@ -60,8 +60,8 @@ impl SourceMap {
         (map, environment)
     }
 
-    /// Maps the values of a function in coroutine style to the frame of `form`,
-    /// and everything else to locals of `coroutine_resume`.
+    /// Maps the values of a function in coroutine style to `frame`, and
+    /// everything else to locals of `coroutine_resume`.
     ///
     /// Also moves the start fields to locals at the top of the block of the
     /// source entry, since the first value stored in a suspension variant may
@@ -72,15 +72,15 @@ impl SourceMap {
         source: &IRFunctionMap,
         body: &MonoBodyInstance,
         emit: &mut Emitter<'_>,
-        form: &CoroutineForm,
+        frame: &Frame,
     ) -> Self {
         let mut map = Self::empty();
         map.initialize_blocks(source, body, emit, true);
 
         // Binding the upvars emits the moves into the selected block.
         emit.select_block(map.block(source.get_function(body.ir_function_id()).entry_block()));
-        map.bind_frame_upvars(source, body, emit, form).await;
-        map.initialize_storage(source, body, emit, Some(form)).await;
+        map.bind_frame_upvars(source, body, emit, frame).await;
+        map.initialize_storage(source, body, emit, Some(frame)).await;
 
         // Leave the entry block selected for lowering.
         emit.select_block(emit.entry_block());
@@ -154,13 +154,13 @@ impl SourceMap {
         source: &IRFunctionMap,
         body: &MonoBodyInstance,
         emit: &mut Emitter<'_>,
-        form: &CoroutineForm,
+        frame: &Frame,
     ) {
         let function = source.get_function(body.ir_function_id());
 
         let locals = function.parameter_locals(body.def_id(), emit.engine()).await;
         for local in locals {
-            let place = Self::bind_frame_upvar(Savable::Local(local), emit, form);
+            let place = Self::bind_frame_upvar(Savable::Local(local), emit, frame);
             match local {
                 IRLocal::Parameter(parameter) => {
                     self.parameters.insert(parameter, place);
@@ -185,8 +185,8 @@ impl SourceMap {
         // The clauses of a `run ... with` share their environment, which the
         // frame points to: `(*frame->environment).capture`.
         let shared_environment = function.context().borrows_captures().then(|| {
-            let pointer = form
-                .frame_place_of(Savable::Environment, emit.engine())
+            let pointer = frame
+                .place_of(Savable::Environment, emit.engine())
                 .expect("the frame of a function that borrows its captures points to them");
             emit.project(&pointer).dereference()
         });
@@ -195,7 +195,7 @@ impl SourceMap {
             let place = match &shared_environment {
                 Some(environment) => emit.project(environment).environment_capture(capture),
                 None => {
-                    Self::bind_frame_upvar(Savable::Local(IRLocal::Capture(capture)), emit, form)
+                    Self::bind_frame_upvar(Savable::Local(IRLocal::Capture(capture)), emit, frame)
                 }
             };
             self.captures.insert(capture, place);
@@ -205,33 +205,32 @@ impl SourceMap {
     /// The place the function reads a parameter or capture from: its field in
     /// the frame, or for a start field, a local that the selected block moves
     /// it to.
-    fn bind_frame_upvar(savable: Savable, emit: &mut Emitter<'_>, form: &CoroutineForm) -> Place {
-        let field = form
-            .frame_place_of(savable, emit.engine())
+    fn bind_frame_upvar(savable: Savable, emit: &mut Emitter<'_>, frame: &Frame) -> Place {
+        let field = frame
+            .place_of(savable, emit.engine())
             .expect("a frame holds every parameter and capture");
-        if !form.is_start_field(savable) {
+        if !frame.is_start_field(savable) {
             return field;
         }
 
-        let local = emit.new_variable_place(form.field_type(savable).clone());
+        let local = emit.new_variable_place(frame.field_type(savable).clone());
         emit.store(local.clone(), Operand::Copy(field));
         local
     }
 
     /// Maps the variables and expressions of the source function to their
-    /// storage: a field of the frame of `form` if it holds them, or a new local
-    /// otherwise.
+    /// storage: a field of `frame` if it holds them, or a new local otherwise.
     async fn initialize_storage(
         &mut self,
         source: &IRFunctionMap,
         body: &MonoBodyInstance,
         emit: &mut Emitter<'_>,
-        form: Option<&CoroutineForm>,
+        frame: Option<&Frame>,
     ) {
         let function = source.get_function(body.ir_function_id());
         let resolver = emit.resolver();
         let engine = emit.engine();
-        let frame_place = |savable| form?.frame_place_of(savable, engine);
+        let frame_place = |savable| frame?.place_of(savable, engine);
 
         for (variable_id, variable) in function.variables() {
             let savable = Savable::Local(IRLocal::Variable(variable_id));

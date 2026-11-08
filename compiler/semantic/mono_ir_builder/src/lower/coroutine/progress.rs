@@ -61,11 +61,17 @@ impl Emitter<'_> {
         point: SuspensionPointID,
         ctx: &Context<'_>,
     ) {
-        let form = ctx.coroutine_form();
-        let state = self.project(form.frame_place()).coroutine_frame_state();
-        let suspended = form.frame_state_tag(FrameState::Suspended(point));
+        self.store_frame_state(FrameState::Suspended(point), ctx);
+    }
 
-        self.store_constant(state, suspended);
+    /// Records `state` in the tag of the frame.
+    ///
+    /// ```c
+    ///     frame->state = STATE;
+    /// ```
+    fn store_frame_state(&mut self, state: FrameState, ctx: &Context<'_>) {
+        let frame = ctx.frame();
+        self.store_constant(frame.state_place(self.engine()), frame.state_tag(state));
     }
 
     /// A new local for the progress this coroutine returns.
@@ -99,11 +105,8 @@ impl Emitter<'_> {
     /// Lowers a `return` of a coroutine, which completes it.
     pub(in crate::lower) fn lower_complete_coroutine(&mut self, value: Operand, ctx: &Context<'_>) {
         let progress = self.create_own_progress_temporary(ctx);
-        let form = ctx.coroutine_form();
-        let state = self.project(form.frame_place()).coroutine_frame_state();
-        let completed = form.frame_state_tag(FrameState::Completed);
 
-        self.store_constant(state, completed);
+        self.store_frame_state(FrameState::Completed, ctx);
         self.store_constant(
             self.project(&progress).coroutine_progress_tag(),
             CoroutineProgress::return_tag(),

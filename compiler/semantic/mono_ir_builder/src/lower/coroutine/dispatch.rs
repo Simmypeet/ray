@@ -19,11 +19,11 @@ impl Emitter<'_> {
     /// entry of the suspension point it is suspended at.
     fn lower_resume_dispatch(&mut self, ctx: &Context<'_>) {
         let start = ctx.block(ctx.source_entry_block());
-        let form = ctx.coroutine_form();
-        let state = self.project(form.frame_place()).coroutine_frame_state();
+        let frame = ctx.frame();
+        let state = frame.state_place(self.engine());
 
-        let targets = std::iter::once((form.frame_state_tag(FrameState::NotStarted), start))
-            .chain(form.resume_points())
+        let targets = std::iter::once((frame.state_tag(FrameState::NotStarted), start))
+            .chain(ctx.coroutine_form().resume_points())
             .collect::<Vec<_>>();
 
         self.set_switch_terminator(Operand::Copy(state), targets);

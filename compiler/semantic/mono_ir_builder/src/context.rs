@@ -33,7 +33,7 @@ use crate::{emitter::Emitter, resolver::Resolver};
 pub(crate) mod lowering_style;
 pub(crate) mod source_map;
 
-use lowering_style::{CoroutineForm, LoweringStyle};
+use lowering_style::{CoroutineForm, Frame, LoweringStyle};
 use source_map::SourceMap;
 
 /// What lowering one function of a definition's IR reads, which stays the
@@ -89,7 +89,7 @@ impl<'a> Context<'a> {
         let body = instance.body().clone();
         let function = source.get_function(body.ir_function_id());
         let style = LoweringStyle::new_coroutine(function, emit, instance).await;
-        let map = SourceMap::new_coroutine(&source, &body, emit, style.coroutine_form()).await;
+        let map = SourceMap::new_coroutine(&source, &body, emit, style.frame()).await;
 
         Self { resolver, body, source, map, style }
     }
@@ -249,10 +249,13 @@ impl<'a> Context<'a> {
 
     pub(crate) const fn coroutine_form(&self) -> &CoroutineForm { self.style.coroutine_form() }
 
+    /// The frame of the coroutine that the function works on.
+    pub(crate) const fn frame(&self) -> &Frame { self.style.frame() }
+
     /// The place of the coroutine that the function waits for while it is
     /// suspended at `point`.
     pub(crate) fn awaitee_place(&self, point: SuspensionPointID) -> Place {
-        self.coroutine_form().awaitee_place(point, self.engine())
+        self.frame().awaitee_place(point, self.engine())
     }
 
     pub(crate) fn suspension_point(&self, block: IRBlockID) -> Option<SuspensionPointID> {
