@@ -134,6 +134,9 @@ fn build_arguments(file_path: &Path, executable_path: &Path) -> Arguments {
         executable_path.as_os_str().to_owned(),
     ]);
     arguments.enable_ir_verification();
+    // a leaked heap allocation then fails the fixture through its stderr and
+    // exit code
+    arguments.enable_heap_check();
     arguments
 }
 

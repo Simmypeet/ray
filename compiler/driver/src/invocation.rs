@@ -4,14 +4,16 @@
 use std::path::{Path, PathBuf};
 
 use rayc_project::{OUTPUT_DIRECTORY_NAME, Project};
-use rayc_target::{Arguments, OptimizationLevel, TargetKind};
+use rayc_target::{Arguments, TargetKind};
+
+use crate::native::CompileOptions;
 
 /// The artifact an invocation produces after a successful check.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Artifact {
     kind: TargetKind,
     output_path: Option<PathBuf>,
-    optimization_level: OptimizationLevel,
+    compile_options: CompileOptions,
     run: bool,
 }
 
@@ -23,8 +25,8 @@ impl Artifact {
     /// default output path or one was requested.
     pub(super) fn output_path(&self) -> Option<&Path> { self.output_path.as_deref() }
 
-    /// Returns the optimization level the artifact is compiled with.
-    pub(super) const fn optimization_level(&self) -> OptimizationLevel { self.optimization_level }
+    /// Returns how the C translation units of the artifact are compiled.
+    pub(super) const fn compile_options(&self) -> CompileOptions { self.compile_options }
 
     /// Returns whether the produced executable should be launched.
     pub(super) const fn should_run(&self) -> bool { self.run }
@@ -142,6 +144,8 @@ impl Artifact {
             kind.default_file_name(target_name).map(|name| output_directory.join(name))
         });
 
-        Some(Self { kind, output_path, optimization_level, run: arguments.should_run() })
+        let compile_options = CompileOptions::new(optimization_level, arguments.heap_check());
+
+        Some(Self { kind, output_path, compile_options, run: arguments.should_run() })
     }
 }

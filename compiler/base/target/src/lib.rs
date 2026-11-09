@@ -185,6 +185,14 @@ pub struct Output {
     /// project, or to the current working directory for a source file.
     #[clap(short = 'o', long = "output")]
     output: Option<PathBuf>,
+
+    /// Builds the program with the heap check, which reports the heap
+    /// allocations still alive when the entry point returns.
+    ///
+    /// This is an internal configuration knob used by tests. It is
+    /// intentionally not exposed as a user-facing CLI flag.
+    #[clap(skip = false)]
+    heap_check: bool,
 }
 
 /// Represents the `run` subcommand of the compiler.
@@ -476,6 +484,26 @@ impl Arguments {
 
     /// Enables verification of finalized function IR for this invocation.
     pub const fn enable_ir_verification(&mut self) { self.command.input_mut().verify_ir = true; }
+
+    /// Returns whether the program is built with the heap check.
+    #[must_use]
+    pub const fn heap_check(&self) -> bool {
+        match &self.command {
+            Command::Run(run) => run.output.heap_check,
+            Command::Check(_) => false,
+            Command::Build(build) => build.output.heap_check,
+        }
+    }
+
+    /// Builds the program with the heap check. A check-only invocation builds
+    /// nothing, so it is left unchanged.
+    pub const fn enable_heap_check(&mut self) {
+        match &mut self.command {
+            Command::Run(run) => run.output.heap_check = true,
+            Command::Check(_) => {}
+            Command::Build(build) => build.output.heap_check = true,
+        }
+    }
 
     #[must_use]
     pub const fn chrome_tracing(&self) -> bool { self.command.input().chrome_tracing }

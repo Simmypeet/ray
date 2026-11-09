@@ -108,18 +108,40 @@ impl fmt::Display for NativeError {
     }
 }
 
+/// How the C translation units of an artifact are compiled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct CompileOptions {
+    optimization_level: OptimizationLevel,
+    heap_check: bool,
+}
+
+impl CompileOptions {
+    /// Creates the options. With `heap_check`, every translation unit is
+    /// compiled with `RAY_HEAP_CHECK` defined, which the generated code and
+    /// the runtime both read.
+    pub(super) const fn new(optimization_level: OptimizationLevel, heap_check: bool) -> Self {
+        Self { optimization_level, heap_check }
+    }
+
+    /// The `cc` flags these options give to every compilation.
+    fn flags(self) -> impl Iterator<Item = &'static str> {
+        std::iter::once(optimization_flag(self.optimization_level))
+            .chain(self.heap_check.then_some("-DRAY_HEAP_CHECK"))
+    }
+}
+
 /// Compiles a C source file into an object file.
 pub(super) fn compile_c(
     c_path: &Path,
     object_path: &Path,
-    optimization_level: OptimizationLevel,
+    options: CompileOptions,
 ) -> Result<(), NativeError> {
     let output = Command::new("cc")
         .arg("-c")
         .arg(c_path)
         .arg("-o")
         .arg(object_path)
-        .arg(optimization_flag(optimization_level))
+        .args(options.flags())
         .output()
         .map_err(|source| NativeError::CompilerSpawn {
             phase: NativePhase::Compilation,

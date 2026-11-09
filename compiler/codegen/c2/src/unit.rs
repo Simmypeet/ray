@@ -26,6 +26,9 @@ const PRELUDE: &str = "\
 /* Ray runtime, defined in its own translation unit */
 void *ray_alloc(size_t size);
 void ray_free(void *pointer);
+#ifdef RAY_HEAP_CHECK
+void ray_check_heap(void);
+#endif
 
 ";
 
@@ -61,10 +64,24 @@ impl TranslationUnit {
     }
 
     /// Adds a `main` that runs the given Ray entry point.
+    ///
+    /// With `RAY_HEAP_CHECK` defined, `main` checks that no heap allocation
+    /// is left once the entry point returns. A program that ends through an
+    /// `exit` of its own is not checked: its live allocations are no leak.
     pub(crate) fn define_entry_point(&mut self, entry_point: BodyName) {
         start_definition(&mut self.function_definitions);
-        writeln!(self.function_definitions, "int main(void) {{ return {entry_point}(); }}")
-            .expect(WRITE_TO_STRING);
+        writeln!(
+            self.function_definitions,
+            "\
+int main(void) {{
+    int result = {entry_point}();
+#ifdef RAY_HEAP_CHECK
+    ray_check_heap();
+#endif
+    return result;
+}}"
+        )
+        .expect(WRITE_TO_STRING);
     }
 
     /// Adds every aggregate of `registry`, each after the aggregates it
