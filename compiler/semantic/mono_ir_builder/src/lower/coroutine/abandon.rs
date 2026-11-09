@@ -14,7 +14,7 @@
 //!     }
 //!
 //! abandon_entry_p:                        // abandon what p waits for
-//!     callee_drop(&frame->awaitee_p);
+//!     callee_drop(&frame->child_p);
 //!     goto abandon_block_p;
 //!
 //! abandon_block_p:                        // the abandon block of p
@@ -27,7 +27,7 @@ use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
 use rayc_ir::{
     cfg::{BlockID as IRBlockID, Terminator as IRTerminator},
     ir_expr::{IRExprID, call::Call as IRCall, run_with::RunWith},
-    suspension_point::Waitee,
+    suspension_point::SuspendingExpr,
 };
 use rayc_mono_ir::{
     cfg::{BlockID, Terminator},
@@ -79,7 +79,7 @@ impl Emitter<'_> {
         // the jump ends whichever block is selected after it.
         let entry = self.create_block();
         self.select_block(entry);
-        self.abandon_awaitee(point, ctx).await;
+        self.abandon_child_frame(point, ctx).await;
         self.set_terminator(Terminator::Goto(ctx.block(abandon_block)));
 
         entry
@@ -110,42 +110,42 @@ impl Emitter<'_> {
         self.return_unit();
     }
 
-    /// Abandons the awaitee of `point`, the coroutine that the function owns
-    /// and waits for while it is suspended there, starting in the selected
-    /// block, and leaves the block after it selected.
+    /// Abandons the child frame of `point`, the coroutine that the function
+    /// owns and waits for while it is suspended there, starting in the
+    /// selected block, and leaves the block after it selected.
     ///
-    /// Without an awaitee there is nothing to abandon. A `perform` waits for a
-    /// handler outside the function. The continuation of a `handle` or of a
-    /// call of one points to a frame that something else owns: the storage of
-    /// some `coro`, which is dropped where that storage ends.
-    async fn abandon_awaitee(&mut self, point: SuspensionPointID, ctx: &Context<'_>) {
-        if !ctx.frame().holds_awaitee(point) {
+    /// Without a child frame there is nothing to abandon. A `perform` waits for
+    /// a handler outside the function. The continuation of a `handle` or of
+    /// a call of one points to a frame that something else owns: the
+    /// storage of some `coro`, which is dropped where that storage ends.
+    async fn abandon_child_frame(&mut self, point: SuspensionPointID, ctx: &Context<'_>) {
+        if !ctx.frame().holds_child_frame(point) {
             return;
         }
 
         let expression = ctx.suspending_expression(point);
-        match Waitee::of(ctx.source_expression(expression).kind()) {
-            Waitee::Call(call) => self.abandon_callee(point, call, ctx).await,
-            Waitee::RunWith(run_with) => {
+        match SuspendingExpr::of(ctx.source_expression(expression).kind()) {
+            SuspendingExpr::Call(call) => self.abandon_callee(point, call, ctx).await,
+            SuspendingExpr::RunWith(run_with) => {
                 self.abandon_run_with(point, expression, run_with, ctx).await;
             }
-            Waitee::Perform | Waitee::Handle(_) => {
-                unreachable!("only a callee frame or a `run ... with` is held as an awaitee")
+            SuspendingExpr::Perform | SuspendingExpr::Handle(_) => {
+                unreachable!("only a callee frame or a `run ... with` is held as a child frame")
             }
         }
     }
 
     /// Abandons the callee of `call`, the call at `point`, which runs in a
-    /// frame of its own in the awaitee of `point`.
+    /// frame of its own: the child frame of `point`.
     ///
     /// ```c
-    ///     callee_drop(&frame->awaitee_p);
+    ///     callee_drop(&frame->child_p);
     /// ```
     async fn abandon_callee(&mut self, point: SuspensionPointID, call: &IRCall, ctx: &Context<'_>) {
         let frame_type = self.callee_frame_type(call).await;
         let callee = frame_type.assert_as_coroutine_frame();
         let destination = self.new_unit_place();
-        self.call_coroutine_drop(&ctx.awaitee_place(point), callee, destination).await;
+        self.call_coroutine_drop(&ctx.child_frame_place(point), callee, destination).await;
     }
 
     /// Abandons `run_with`, the `run ... with` expression `expression` at
@@ -156,18 +156,18 @@ impl Emitter<'_> {
     /// captures: the reverse of the order they were created in.
     ///
     /// ```c
-    ///     switch (frame->awaitee_p.phase) {
+    ///     switch (frame->child_p.phase) {
     ///     case PHASE_BODY:     goto abandon_body;
     ///     case PHASE_CLAUSE_a: goto abandon_clause_a;     // one per clause
     ///     }
     ///
     /// abandon_clause_a:
-    ///     clause_a_drop(&frame->awaitee_p.clause_a);
+    ///     clause_a_drop(&frame->child_p.clause_a);
     ///     goto abandon_body;
     ///
     /// abandon_body:                                       // left selected
-    ///     body_drop(&frame->awaitee_p.body);
-    ///     drop(frame->awaitee_p.handler_environment.capture_n); ...
+    ///     body_drop(&frame->child_p.body);
+    ///     drop(frame->child_p.handler_environment.capture_n); ...
     /// ```
     async fn abandon_run_with(
         &mut self,
@@ -177,7 +177,7 @@ impl Emitter<'_> {
         ctx: &Context<'_>,
     ) {
         let layout = self.resolver().run_with_layout(&ctx.run_with_instance(expression)).await;
-        let awaitee = ctx.awaitee_place(point);
+        let frames = ctx.child_frame_place(point);
         let destination = self.new_unit_place();
         let entry = self.selected_block();
 
@@ -187,7 +187,7 @@ impl Emitter<'_> {
         for clause in layout.clauses() {
             let block = self.create_block();
             self.select_block(block);
-            let frame = self.project(&awaitee).run_with_clause(clause.operation_id());
+            let frame = self.project(&frames).run_with_clause(clause.operation_id());
             self.call_coroutine_drop(&frame, clause.coroutine(), destination.clone()).await;
             self.set_terminator(Terminator::Goto(abandon_body));
 
@@ -197,16 +197,16 @@ impl Emitter<'_> {
 
         // Only the phase tells which clause runs, if any.
         self.select_block(entry);
-        let phase = Operand::Copy(self.project(&awaitee).run_with_phase());
+        let phase = Operand::Copy(self.project(&frames).run_with_phase());
         self.set_switch_terminator(phase, targets);
 
         // The body is suspended in every phase. The clauses are done with
         // their captures once the clause that runs is dropped.
         self.select_block(abandon_body);
-        let body = self.project(&awaitee).run_with_body();
+        let body = self.project(&frames).run_with_body();
         self.call_coroutine_drop(&body, layout.body(), destination).await;
         if run_with.handler_capture_map().is_some() {
-            let environment = self.project(&awaitee).run_with_handler_environment();
+            let environment = self.project(&frames).run_with_handler_environment();
             self.drop_handler_captures(run_with, &environment, ctx).await;
         }
     }

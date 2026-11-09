@@ -58,7 +58,7 @@ impl SuspensionLocalPlacement {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct SuspensionLocalLayout {
-    awaitee: Option<IRExprID>,
+    child_frame: Option<IRExprID>,
 }
 
 /// The layout of a coroutine frame, which stores the values that a coroutine
@@ -162,7 +162,7 @@ impl FrameLayout {
 
 impl LayoutContext<'_> {
     async fn compute_initial_frame_layout(&self, solver: &mut Solver) -> FrameLayout {
-        let points = self.calculate_awaited_for_each_suspension_point(solver).await;
+        let points = self.calculate_suspended_on_for_each_suspension_point(solver).await;
 
         let mut layout = FrameLayout {
             placements: FxHashMap::default(),
@@ -191,10 +191,11 @@ impl LayoutContext<'_> {
             }
         }
 
-        for (&suspension_point_id, &awaited) in &points {
+        for (&suspension_point_id, &suspended_on) in &points {
             // The continuation of a `handle` or of a call of one is held like
             // any value live across the suspension point.
-            let held = self.savables_at(suspension_point_id.block_id()).chain(awaited.held_value());
+            let held =
+                self.savables_at(suspension_point_id.block_id()).chain(suspended_on.held_value());
             for savable in held {
                 let local_suspension = Placement::SuspensionLocal(
                     SuspensionLocalPlacement::SuspensionLocal(suspension_point_id),
@@ -216,12 +217,12 @@ impl LayoutContext<'_> {
                 }
             }
 
-            // the awaitee is only held at its own suspension point, so it is
-            // always placed in its variant
-            let awaitee = awaited.awaitee();
-            if awaitee.is_some() {
+            // the child frame is only held at its own suspension point, so it
+            // is always placed in its variant
+            let child_frame = suspended_on.child_frame();
+            if child_frame.is_some() {
                 layout.placements.insert(
-                    Savable::Awaitee(suspension_point_id),
+                    Savable::ChildFrame(suspension_point_id),
                     Placement::SuspensionLocal(SuspensionLocalPlacement::SuspensionLocal(
                         suspension_point_id,
                     )),
@@ -231,7 +232,7 @@ impl LayoutContext<'_> {
             // set the suspension local layout for this suspension point
             layout.suspension_locals.insert(
                 SuspensionLocalPlacement::SuspensionLocal(suspension_point_id),
-                SuspensionLocalLayout { awaitee },
+                SuspensionLocalLayout { child_frame },
             );
         }
 

@@ -1,5 +1,5 @@
 use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
-use rayc_ir::{cfg::Suspend, suspension_point::Waitee};
+use rayc_ir::{cfg::Suspend, suspension_point::SuspendingExpr};
 
 use super::poll::PollSite;
 use crate::{context::Context, emitter::Emitter};
@@ -14,9 +14,9 @@ impl Emitter<'_> {
         ctx: &Context<'_>,
     ) {
         let kind = ctx.source_expression(suspend.expression()).kind();
-        match Waitee::of(kind) {
-            Waitee::Perform => self.lower_yield_perform(point, suspend, ctx).await,
-            Waitee::Call(call) => {
+        match SuspendingExpr::of(kind) {
+            SuspendingExpr::Perform => self.lower_yield_perform(point, suspend, ctx).await,
+            SuspendingExpr::Call(call) => {
                 let done = self.lower_edge(point.block_id(), suspend.resume_block(), ctx);
                 let destination = ctx.expression_place(suspend.expression());
 
@@ -30,10 +30,10 @@ impl Emitter<'_> {
                     self.lower_new_frame_call(point, call, destination, done, ctx).await;
                 }
             }
-            Waitee::RunWith(run_with) => {
+            SuspendingExpr::RunWith(run_with) => {
                 self.lower_run_with_suspension(point, suspend, run_with, ctx).await;
             }
-            Waitee::Handle(_) => panic!("a `handle` is evaluated by a `Handle` terminator"),
+            SuspendingExpr::Handle(_) => panic!("a `handle` is evaluated by a `Handle` terminator"),
         }
     }
 }

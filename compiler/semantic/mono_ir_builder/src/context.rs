@@ -289,8 +289,8 @@ impl<'a> Context<'a> {
 
     /// The place of the coroutine that the function waits for while it is
     /// suspended at `point`.
-    pub(crate) fn awaitee_place(&self, point: SuspensionPointID) -> Place {
-        self.frame().awaitee_place(point, self.engine())
+    pub(crate) fn child_frame_place(&self, point: SuspensionPointID) -> Place {
+        self.frame().child_frame_place(point, self.engine())
     }
 
     pub(crate) fn suspension_point(&self, block: IRBlockID) -> Option<SuspensionPointID> {

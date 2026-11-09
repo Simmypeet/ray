@@ -103,7 +103,7 @@ pub(crate) enum NominalLayout<'a> {
     Struct(&'a StructLayout),
     CoroutineFrame(&'a FrameMembers),
     EffectRow(&'a EffectRowLayout),
-    RunWithAwaitee(&'a RunWithLayout),
+    RunWithFrames(&'a RunWithLayout),
 }
 
 /// The `struct` definition of one aggregate layout.
@@ -205,8 +205,8 @@ impl<'a> AggregateDefinition<'a> {
     /// `{ handler_environment; body; phase; union { clause frames } }`. The
     /// union is anonymous, so a clause frame is named by its operation alone.
     fn write_run_with_members(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let NominalLayout::RunWithAwaitee(layout) = self.layout else {
-            panic!("a `run ... with` awaitee should have a resolved layout")
+        let NominalLayout::RunWithFrames(layout) = self.layout else {
+            panic!("the frames of a `run ... with` should have a resolved layout")
         };
 
         if let Some(environment) = layout.handler_environment() {
@@ -298,7 +298,7 @@ impl Display for AggregateDefinition<'_> {
             AggregateType::CoroutineProgress(progress) => {
                 write_progress_members(formatter, progress)?;
             }
-            AggregateType::RunWithAwaitee(_) => self.write_run_with_members(formatter)?,
+            AggregateType::RunWithFrames(_) => self.write_run_with_members(formatter)?,
         }
         formatter.write_str("};")
     }

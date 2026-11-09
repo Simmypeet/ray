@@ -6,7 +6,7 @@ use rayc_ir::{
     address::Local,
     get_ir,
     ir_function::{IRFunction, IRFunctionID, IRFunctionMap},
-    suspension_point::{SuspensionPoint, Waitee},
+    suspension_point::{SuspendingExpr, SuspensionPoint},
 };
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
@@ -58,7 +58,8 @@ impl Collector<'_> {
                     .await;
                 }
 
-                self.collect_waited(function, suspension_point.waited(), suspension_span).await;
+                self.collect_waited(function, suspension_point.suspending_expr(), suspension_span)
+                    .await;
             }
         })
         .await;
@@ -69,16 +70,16 @@ impl Collector<'_> {
     async fn collect_waited(
         &mut self,
         function: &IRFunction,
-        waited: Waitee<'_>,
+        suspending: SuspendingExpr<'_>,
         suspension_span: RelativeSpan,
     ) {
-        match waited {
+        match suspending {
             // The arguments of a `perform` leave with the operation.
-            Waitee::Perform => {}
+            SuspendingExpr::Perform => {}
 
             // The arguments of a call are the callee's upvars, so they are in
             // its coroutine type. An `extern def` has no body to wait in.
-            Waitee::Call(call) => {
+            SuspendingExpr::Call(call) => {
                 if let Some(coroutine) = call.coroutine_ty(self.engine).await {
                     self.push(coroutine, SavedLocalKind::Callee, suspension_span, suspension_span)
                         .await;
@@ -87,7 +88,7 @@ impl Collector<'_> {
 
             // The captures are the environment of the nested bodies, which
             // hold their own saved locals.
-            Waitee::RunWith(run_with) => {
+            SuspendingExpr::RunWith(run_with) => {
                 for capture in
                     run_with.captures().operands().chain(run_with.handler_captures().operands())
                 {
@@ -109,7 +110,7 @@ impl Collector<'_> {
                 self.runs.pop();
             }
 
-            Waitee::Handle(continuation) => {
+            SuspendingExpr::Handle(continuation) => {
                 let expression = function.get_expression(continuation.continuation());
                 self.push(
                     expression.ty().clone(),

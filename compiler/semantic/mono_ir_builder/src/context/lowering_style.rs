@@ -109,14 +109,18 @@ impl Frame {
     /// Whether the function owns a coroutine that it waits for while it is
     /// suspended at `point`: the frame of a callee, or the frames of the body
     /// and the clauses of a `run ... with`.
-    pub(crate) fn holds_awaitee(&self, point: SuspensionPointID) -> bool {
-        self.layout.placement(Savable::Awaitee(point)).is_some()
+    pub(crate) fn holds_child_frame(&self, point: SuspensionPointID) -> bool {
+        self.layout.placement(Savable::ChildFrame(point)).is_some()
     }
 
     /// The place of the coroutine that the function waits for while it is
     /// suspended at `point`.
-    pub(crate) fn awaitee_place(&self, point: SuspensionPointID, engine: &TrackedEngine) -> Place {
-        self.place_of(Savable::Awaitee(point), engine)
+    pub(crate) fn child_frame_place(
+        &self,
+        point: SuspensionPointID,
+        engine: &TrackedEngine,
+    ) -> Place {
+        self.place_of(Savable::ChildFrame(point), engine)
             .expect("a suspension point that waits for a coroutine holds it in the frame")
     }
 

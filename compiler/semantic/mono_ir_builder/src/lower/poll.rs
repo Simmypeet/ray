@@ -12,7 +12,7 @@
 //!     goto poll;
 //!
 //! poll:
-//!     frame_pointer = &frame->awaitee | continuation.frame;
+//!     frame_pointer = &frame->child | continuation.frame;
 //!     progress = callee_resume(frame_pointer, args);
 //!     switch (progress.tag) {
 //!     case RETURN: result = progress.return_value; goto done;    // return arm
@@ -110,8 +110,8 @@ impl Resumee {
     ///
     /// At a suspension point, the frame layout keeps either in the frame of
     /// the function, since nothing else outlives a return from
-    /// `coroutine_resume`: a new frame as the awaitee, and the operand that
-    /// holds a continuation as a value held across the point.
+    /// `coroutine_resume`: a new frame as the child frame of the point, and
+    /// the operand that holds a continuation as a value held across it.
     const fn place(&self) -> &Place {
         match self {
             Self::NewFrame { frame, .. } => frame,
@@ -244,8 +244,8 @@ impl Emitter<'_> {
     }
 
     /// Creates a poll loop that resumes the frame of `instance` at `frame`,
-    /// which the awaitee of `point` holds, without entering it. Its poll block
-    /// is filled, and the current block stays selected.
+    /// which the child frame of `point` holds, without entering it. Its poll
+    /// block is filled, and the current block stays selected.
     ///
     /// Several such loops share the suspension point, so the caller enters
     /// them, and fills the resume entry of the point: it sets

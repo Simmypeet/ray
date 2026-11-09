@@ -15,7 +15,7 @@ main.call_new_frame:
   prefix:
   start:
   suspended at 15:12 `inner()`:
-    15:12 `inner()` (awaitee)
+    15:12 `inner()` (child frame)
 
 main.forward_handle:
   prefix:

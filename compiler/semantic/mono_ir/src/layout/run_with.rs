@@ -48,12 +48,12 @@ pub enum RunWithPhase {
     Clause(GlobalSymbolID),
 }
 
-/// The members of a [`AggregateType::RunWithAwaitee`].
+/// The members of a [`AggregateType::RunWithFrames`].
 ///
 /// At most one clause runs at a time, since the body waits at its operation
 /// until the clause returns, so the frames of the clauses overlap.
 ///
-/// [`AggregateType::RunWithAwaitee`]: crate::ty::AggregateType::RunWithAwaitee
+/// [`AggregateType::RunWithFrames`]: crate::ty::AggregateType::RunWithFrames
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct RunWithLayout {
     instance: MonoRunWithInstance,
@@ -139,7 +139,7 @@ async fn build_run_with_layout_executor(
     let function = source.get_function(owner.ir_function_id());
     let IRExprKind::RunWith(run_with) = function.get_expression(instance.expression()).kind()
     else {
-        panic!("a `run ... with` awaitee should be keyed by a `run ... with` expression")
+        panic!("the frames of a `run ... with` should be keyed by a `run ... with` expression")
     };
 
     // The body and the clauses are functions of the IR of the owner, in its

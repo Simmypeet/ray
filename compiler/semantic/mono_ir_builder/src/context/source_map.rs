@@ -116,9 +116,9 @@ impl SourceMap {
                 }
 
                 // Nothing in an abandon block names them: the lowering
-                // abandons the awaitee itself, and an environment that is only
+                // abandons the child frame itself, and an environment that is only
                 // pointed to is not dropped.
-                Savable::Awaitee(_) | Savable::Environment => {}
+                Savable::ChildFrame(_) | Savable::Environment => {}
             }
         }
 

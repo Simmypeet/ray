@@ -7,11 +7,11 @@ main.g:
   start:
   suspended at 22:5 `Yield.yield(0)`:
 
-main.result_and_awaitee:
+main.result_and_child_frame:
   prefix:
   start:
   suspended at 35:17 `g()`:
-    35:17 `g()` (awaitee)
+    35:17 `g()` (child frame)
   suspended at 35:22 `g()`:
     35:17 `g()` (expression)
-    35:22 `g()` (awaitee)
+    35:22 `g()` (child frame)

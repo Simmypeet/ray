@@ -294,11 +294,11 @@ pub enum AggregateType {
     ///         clause_a_frame_t clause_a;
     ///         ...
     ///     };
-    /// } run_with_awaitee_t;
+    /// } run_with_frames_t;
     /// ```
     ///
     /// [`RunWithLayout`]: crate::layout::run_with::RunWithLayout
-    RunWithAwaitee(MonoRunWithInstance),
+    RunWithFrames(MonoRunWithInstance),
 }
 
 /// A closed effect row in its canonical order, which is that of

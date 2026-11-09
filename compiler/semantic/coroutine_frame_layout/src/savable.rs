@@ -12,15 +12,20 @@ pub enum Savable {
     Local(Local),
     Expression(IRExprID),
 
-    /// The coroutine that the function owns and waits for while suspended at
-    /// the suspension point: the callee's frame of a call, or the frames of
-    /// the handled body and its handlers of a `run ... with`.
+    /// The child frame of the suspension point: the coroutine that the
+    /// function owns and waits for while suspended there. It is the callee's
+    /// frame of a call, or the frames of the handled body and its handlers of a
+    /// `run ... with`.
+    ///
+    /// It has no counterpart in the IR. The lowering creates it when the
+    /// function reaches the suspension point, and it is gone once the
+    /// function leaves it, whether the child completes or is abandoned.
     ///
     /// A `perform` has none. Neither has a forwarding `handle` or a call of a
     /// continuation: the continuation only points to a frame that something
     /// else owns, so its operand is held as an ordinary
     /// [`Savable::Expression`] instead.
-    Awaitee(SuspensionPointID),
+    ChildFrame(SuspensionPointID),
 
     /// The pointer to the environment of a function that borrows its
     /// captures, which is an operation handler.

@@ -22,7 +22,7 @@ use rayc_mono_ir::{
         HandlerRecordID,
         coroutine::{ResumeVariantID, RowOperationID},
     },
-    place::{CoroutineFrame, CoroutineProgress, CoroutineYield, Projection, RunWithAwaitee},
+    place::{CoroutineFrame, CoroutineProgress, CoroutineYield, Projection, RunWithFrames},
     ty::AggregateType,
 };
 use rayc_semantic_element::struct_body::FieldID;
@@ -96,9 +96,7 @@ impl AggregateName {
             AggregateType::CoroutineProgress(_) => {
                 ("CoroutineProgress", "rayc_c2::CoroutineProgressLayout:v1")
             }
-            AggregateType::RunWithAwaitee(_) => {
-                ("RunWithAwaitee", "rayc_c2::RunWithAwaiteeLayout:v1")
-            }
+            AggregateType::RunWithFrames(_) => ("RunWithFrames", "rayc_c2::RunWithFramesLayout:v1"),
         };
         Self { id: StableID::of(domain, aggregate), category }
     }
@@ -325,12 +323,12 @@ impl FieldName {
             Projection::CoroutineYield(CoroutineYield::OperationPayload(operation)) => {
                 Some(Self::CoroutineYieldOperation(operation))
             }
-            Projection::RunWithAwaitee(RunWithAwaitee::HandlerEnvironment) => {
+            Projection::RunWithFrames(RunWithFrames::HandlerEnvironment) => {
                 Some(Self::RunWithHandlerEnvironment)
             }
-            Projection::RunWithAwaitee(RunWithAwaitee::Body) => Some(Self::RunWithBody),
-            Projection::RunWithAwaitee(RunWithAwaitee::Phase) => Some(Self::RunWithPhase),
-            Projection::RunWithAwaitee(RunWithAwaitee::Clause(operation)) => {
+            Projection::RunWithFrames(RunWithFrames::Body) => Some(Self::RunWithBody),
+            Projection::RunWithFrames(RunWithFrames::Phase) => Some(Self::RunWithPhase),
+            Projection::RunWithFrames(RunWithFrames::Clause(operation)) => {
                 Some(Self::RunWithClause(operation))
             }
         }
@@ -382,7 +380,9 @@ impl fmt::Display for FieldName {
 fn write_savable_name(formatter: &mut fmt::Formatter<'_>, savable: Savable) -> fmt::Result {
     match savable {
         Savable::Expression(expression) => write!(formatter, "expr{:X}", expression.index()),
-        Savable::Awaitee(point) => write!(formatter, "awaitee{:X}", point.block_id().index()),
+        Savable::ChildFrame(point) => {
+            write!(formatter, "child_frame{:X}", point.block_id().index())
+        }
         Savable::Local(Local::Variable(variable)) => write!(formatter, "var{:X}", variable.index()),
         Savable::Local(Local::Parameter(parameter)) => {
             write!(formatter, "param{:X}", parameter.index())

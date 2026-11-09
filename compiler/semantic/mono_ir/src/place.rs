@@ -90,10 +90,10 @@ pub enum CoroutineFrame {
 }
 
 /// Field access to what a coroutine holds while it is suspended at a `run ...
-/// with`. See [`crate::ty::AggregateType::RunWithAwaitee`] for the fields of
+/// with`. See [`crate::ty::AggregateType::RunWithFrames`] for the fields of
 /// the type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-pub enum RunWithAwaitee {
+pub enum RunWithFrames {
     /// The environment that the clauses share.
     HandlerEnvironment,
     /// The frame of the handled body.
@@ -138,7 +138,7 @@ pub enum Projection {
     CoroutineResumeValue(ResumeVariantID),
     CoroutineProgress(CoroutineProgress),
     CoroutineYield(CoroutineYield),
-    RunWithAwaitee(RunWithAwaitee),
+    RunWithFrames(RunWithFrames),
 }
 
 /// An addressable `MonoIR` location.
@@ -261,22 +261,22 @@ impl PlaceProjector<'_> {
 
     #[must_use]
     pub fn run_with_handler_environment(self) -> Place {
-        self.with_projection(Projection::RunWithAwaitee(RunWithAwaitee::HandlerEnvironment))
+        self.with_projection(Projection::RunWithFrames(RunWithFrames::HandlerEnvironment))
     }
 
     #[must_use]
     pub fn run_with_body(self) -> Place {
-        self.with_projection(Projection::RunWithAwaitee(RunWithAwaitee::Body))
+        self.with_projection(Projection::RunWithFrames(RunWithFrames::Body))
     }
 
     #[must_use]
     pub fn run_with_phase(self) -> Place {
-        self.with_projection(Projection::RunWithAwaitee(RunWithAwaitee::Phase))
+        self.with_projection(Projection::RunWithFrames(RunWithFrames::Phase))
     }
 
     /// The frame of the clause of `operation`.
     #[must_use]
     pub fn run_with_clause(self, operation: GlobalSymbolID) -> Place {
-        self.with_projection(Projection::RunWithAwaitee(RunWithAwaitee::Clause(operation)))
+        self.with_projection(Projection::RunWithFrames(RunWithFrames::Clause(operation)))
     }
 }

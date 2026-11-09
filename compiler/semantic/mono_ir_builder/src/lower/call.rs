@@ -81,7 +81,7 @@ impl Emitter<'_> {
 
         // Create the frame of the callee where this coroutine holds what it
         // waits for.
-        let frame = ctx.awaitee_place(point);
+        let frame = ctx.child_frame_place(point);
         let arguments = call.arguments().iter().map(|argument| ctx.expression_place(*argument));
         self.initialize_coroutine(&frame, &instance, arguments).await;
 

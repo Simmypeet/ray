@@ -2,14 +2,14 @@
 source: compiler/semantic/coroutine_frame_layout/tests/frame_layout/mod.rs
 expression: snapshot
 ---
-main.awaitee_and_argument:
+main.child_frame_and_argument:
   prefix:
     37:15 `x` (expression)
   start:
   suspended at 37:13 `f(x, g())`:
-    37:13 `f(x, g())` (awaitee)
+    37:13 `f(x, g())` (child frame)
   suspended at 37:18 `g()`:
-    37:18 `g()` (awaitee)
+    37:18 `g()` (child frame)
   suspended at 38:5 `Yield.yield(1)`:
     37:9 `r` (variable)
 

@@ -12,7 +12,7 @@ def body() -> int32 \ {Handled, Passed}:
 
 
 # The clause receives its arguments and the continuation out of a `handle` that
-# suspended here earlier, whose values may share memory with its awaitee.
+# suspended here earlier, whose values may share memory with its continuation.
 def driver(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 \ {Passed} where (co.Return = int32, co.Effect = {Handled, Passed}):
     return handle k(value):
         case Handled.handled(a, b) resume next:

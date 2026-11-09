@@ -92,9 +92,9 @@ impl<'a> LayoutContext<'a> {
     /// Returns the values held across the suspension point that terminates
     /// `block_id`, each once.
     ///
-    /// The expressions the terminator evaluates are not held: the waitee is
-    /// consumed by it, and the values it defines on its outgoing edges do not
-    /// exist yet while it is suspended.
+    /// The expressions the terminator evaluates are not held: the suspending
+    /// expression is consumed by it, and the values it defines on its outgoing
+    /// edges do not exist yet while it is suspended.
     pub(crate) fn savables_at(&self, block_id: BlockID) -> impl Iterator<Item = Savable> + '_ {
         let terminator = self
             .ir_function

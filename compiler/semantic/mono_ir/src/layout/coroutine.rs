@@ -15,7 +15,7 @@ use rayc_ir::{
     cfg::Terminator,
     get_ir,
     ir_function::{IRFunction, IRFunctionMap},
-    suspension_point::Waitee,
+    suspension_point::SuspendingExpr,
 };
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::parameter::get_parameter_map;
@@ -182,7 +182,7 @@ impl SuspendedFunction<'_> {
             Savable::Expression(expression) => {
                 self.lower_type(self.function().get_expression(expression).ty()).await
             }
-            Savable::Awaitee(point) => self.awaitee_type(point).await,
+            Savable::ChildFrame(point) => self.child_frame_type(point).await,
             Savable::Environment => self.environment_pointer_type(),
         }
     }
@@ -224,16 +224,16 @@ impl SuspendedFunction<'_> {
 
     /// The type of the coroutine that the function owns and waits for while it
     /// is suspended at `point`.
-    async fn awaitee_type(&self, point: SuspensionPointID) -> Interned<MonoType> {
+    async fn child_frame_type(&self, point: SuspensionPointID) -> Interned<MonoType> {
         let function = self.function();
         let expression = function
             .block_terminator(point.block_id())
             .and_then(Terminator::suspending_expr)
-            .expect("an awaitee is held at a suspension point");
+            .expect("a child frame is held at a suspension point");
 
-        match function.get_expression_as_waitee(expression) {
+        match function.get_suspending_expr(expression) {
             // The callee runs in a frame stored in the frame of its caller.
-            Waitee::Call(call) => {
+            SuspendingExpr::Call(call) => {
                 let coroutine = call
                     .coroutine_ty(self.engine())
                     .await
@@ -243,15 +243,15 @@ impl SuspendedFunction<'_> {
 
             // The body and the clauses have no source type: they are held
             // together in an aggregate of their own.
-            Waitee::RunWith(_) => {
+            SuspendingExpr::RunWith(_) => {
                 let instance = MonoRunWithInstance::new(self.body.clone(), expression);
-                MonoType::new_aggregate(AggregateType::RunWithAwaitee(instance), self.engine())
+                MonoType::new_aggregate(AggregateType::RunWithFrames(instance), self.engine())
             }
 
             // A continuation only points to a frame that something else owns,
-            // so the frame holds its operand instead of an awaitee.
-            Waitee::Perform | Waitee::Handle(_) => {
-                panic!("only a callee frame or a `run ... with` is held as an awaitee")
+            // so the frame holds its operand instead of a child frame.
+            SuspendingExpr::Perform | SuspendingExpr::Handle(_) => {
+                panic!("only a callee frame or a `run ... with` is held as a child frame")
             }
         }
     }

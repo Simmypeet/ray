@@ -124,7 +124,7 @@ impl AggregateRegistry {
                     self.discover(yielded, &mut found);
                     self.discover_type(progress.return_type(), &mut found);
                 }
-                AggregateType::RunWithAwaitee(instance) => {
+                AggregateType::RunWithFrames(instance) => {
                     let layout = engine.build_run_with_layout(instance.clone()).await;
                     for member in run_with_member_aggregates(&layout) {
                         self.discover(member, &mut found);
@@ -247,8 +247,8 @@ impl AggregateRegistry {
             AggregateType::Environment(instance) => {
                 NominalLayout::Environment(self.environment_layout(instance))
             }
-            AggregateType::RunWithAwaitee(instance) => {
-                NominalLayout::RunWithAwaitee(self.run_with_layout(instance))
+            AggregateType::RunWithFrames(instance) => {
+                NominalLayout::RunWithFrames(self.run_with_layout(instance))
             }
             AggregateType::Tuple(_) | AggregateType::CoroutineProgress(_) => NominalLayout::None,
         }
@@ -257,7 +257,7 @@ impl AggregateRegistry {
     fn run_with_layout(&self, instance: &MonoRunWithInstance) -> &RunWithLayout {
         self.run_with_layouts
             .get(instance)
-            .expect("a registered `run ... with` awaitee should have its layout")
+            .expect("the frames of a registered `run ... with` should have their layout")
     }
 
     fn struct_layout(&self, instance: &MonoStructInstance) -> &StructLayout {
@@ -338,13 +338,16 @@ impl AggregateRegistry {
                 dependencies
             }
             // Every member is held by value.
-            AggregateType::RunWithAwaitee(instance) => {
+            AggregateType::RunWithFrames(instance) => {
                 let mut dependencies = run_with_member_aggregates(self.run_with_layout(instance))
                     .map(|member| {
                         self.names
                             .get_key_value(&member)
                             .map(|(aggregate, name)| (*name, aggregate))
-                            .expect("a member of a registered awaitee should be registered")
+                            .expect(
+                                "a member of the registered frames of a `run ... with` should be \
+                                 registered",
+                            )
                     })
                     .collect::<Vec<_>>();
                 dependencies.sort_unstable_by_key(|(name, _)| *name);
@@ -373,8 +376,8 @@ impl AggregateRegistry {
     }
 }
 
-/// The aggregates that a `run ... with` awaitee holds: the environment of its
-/// clauses, and the frames of its body and of each clause.
+/// The aggregates that the frames of a `run ... with` hold: the environment of
+/// its clauses, and the frames of its body and of each clause.
 fn run_with_member_aggregates(layout: &RunWithLayout) -> impl Iterator<Item = AggregateType> + '_ {
     let environment = layout.handler_environment().cloned().map(AggregateType::Environment);
     let frames = std::iter::once(layout.body())
