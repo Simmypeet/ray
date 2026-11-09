@@ -527,270 +527,797 @@ def script() -> int32 \ {Many}:
     return 0
 
 
-def drive(k: core.Continuation[(), c], total: int32) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Many}):
-    return handle k(()):
-        case Many.op0() resume next: drive(next, total + 1)
-        case Many.op1() resume next: drive(next, total + 1)
-        case Many.op2() resume next: drive(next, total + 1)
-        case Many.op3() resume next: drive(next, total + 1)
-        case Many.op4() resume next: drive(next, total + 1)
-        case Many.op5() resume next: drive(next, total + 1)
-        case Many.op6() resume next: drive(next, total + 1)
-        case Many.op7() resume next: drive(next, total + 1)
-        case Many.op8() resume next: drive(next, total + 1)
-        case Many.op9() resume next: drive(next, total + 1)
-        case Many.op10() resume next: drive(next, total + 1)
-        case Many.op11() resume next: drive(next, total + 1)
-        case Many.op12() resume next: drive(next, total + 1)
-        case Many.op13() resume next: drive(next, total + 1)
-        case Many.op14() resume next: drive(next, total + 1)
-        case Many.op15() resume next: drive(next, total + 1)
-        case Many.op16() resume next: drive(next, total + 1)
-        case Many.op17() resume next: drive(next, total + 1)
-        case Many.op18() resume next: drive(next, total + 1)
-        case Many.op19() resume next: drive(next, total + 1)
-        case Many.op20() resume next: drive(next, total + 1)
-        case Many.op21() resume next: drive(next, total + 1)
-        case Many.op22() resume next: drive(next, total + 1)
-        case Many.op23() resume next: drive(next, total + 1)
-        case Many.op24() resume next: drive(next, total + 1)
-        case Many.op25() resume next: drive(next, total + 1)
-        case Many.op26() resume next: drive(next, total + 1)
-        case Many.op27() resume next: drive(next, total + 1)
-        case Many.op28() resume next: drive(next, total + 1)
-        case Many.op29() resume next: drive(next, total + 1)
-        case Many.op30() resume next: drive(next, total + 1)
-        case Many.op31() resume next: drive(next, total + 1)
-        case Many.op32() resume next: drive(next, total + 1)
-        case Many.op33() resume next: drive(next, total + 1)
-        case Many.op34() resume next: drive(next, total + 1)
-        case Many.op35() resume next: drive(next, total + 1)
-        case Many.op36() resume next: drive(next, total + 1)
-        case Many.op37() resume next: drive(next, total + 1)
-        case Many.op38() resume next: drive(next, total + 1)
-        case Many.op39() resume next: drive(next, total + 1)
-        case Many.op40() resume next: drive(next, total + 1)
-        case Many.op41() resume next: drive(next, total + 1)
-        case Many.op42() resume next: drive(next, total + 1)
-        case Many.op43() resume next: drive(next, total + 1)
-        case Many.op44() resume next: drive(next, total + 1)
-        case Many.op45() resume next: drive(next, total + 1)
-        case Many.op46() resume next: drive(next, total + 1)
-        case Many.op47() resume next: drive(next, total + 1)
-        case Many.op48() resume next: drive(next, total + 1)
-        case Many.op49() resume next: drive(next, total + 1)
-        case Many.op50() resume next: drive(next, total + 1)
-        case Many.op51() resume next: drive(next, total + 1)
-        case Many.op52() resume next: drive(next, total + 1)
-        case Many.op53() resume next: drive(next, total + 1)
-        case Many.op54() resume next: drive(next, total + 1)
-        case Many.op55() resume next: drive(next, total + 1)
-        case Many.op56() resume next: drive(next, total + 1)
-        case Many.op57() resume next: drive(next, total + 1)
-        case Many.op58() resume next: drive(next, total + 1)
-        case Many.op59() resume next: drive(next, total + 1)
-        case Many.op60() resume next: drive(next, total + 1)
-        case Many.op61() resume next: drive(next, total + 1)
-        case Many.op62() resume next: drive(next, total + 1)
-        case Many.op63() resume next: drive(next, total + 1)
-        case Many.op64() resume next: drive(next, total + 1)
-        case Many.op65() resume next: drive(next, total + 1)
-        case Many.op66() resume next: drive(next, total + 1)
-        case Many.op67() resume next: drive(next, total + 1)
-        case Many.op68() resume next: drive(next, total + 1)
-        case Many.op69() resume next: drive(next, total + 1)
-        case Many.op70() resume next: drive(next, total + 1)
-        case Many.op71() resume next: drive(next, total + 1)
-        case Many.op72() resume next: drive(next, total + 1)
-        case Many.op73() resume next: drive(next, total + 1)
-        case Many.op74() resume next: drive(next, total + 1)
-        case Many.op75() resume next: drive(next, total + 1)
-        case Many.op76() resume next: drive(next, total + 1)
-        case Many.op77() resume next: drive(next, total + 1)
-        case Many.op78() resume next: drive(next, total + 1)
-        case Many.op79() resume next: drive(next, total + 1)
-        case Many.op80() resume next: drive(next, total + 1)
-        case Many.op81() resume next: drive(next, total + 1)
-        case Many.op82() resume next: drive(next, total + 1)
-        case Many.op83() resume next: drive(next, total + 1)
-        case Many.op84() resume next: drive(next, total + 1)
-        case Many.op85() resume next: drive(next, total + 1)
-        case Many.op86() resume next: drive(next, total + 1)
-        case Many.op87() resume next: drive(next, total + 1)
-        case Many.op88() resume next: drive(next, total + 1)
-        case Many.op89() resume next: drive(next, total + 1)
-        case Many.op90() resume next: drive(next, total + 1)
-        case Many.op91() resume next: drive(next, total + 1)
-        case Many.op92() resume next: drive(next, total + 1)
-        case Many.op93() resume next: drive(next, total + 1)
-        case Many.op94() resume next: drive(next, total + 1)
-        case Many.op95() resume next: drive(next, total + 1)
-        case Many.op96() resume next: drive(next, total + 1)
-        case Many.op97() resume next: drive(next, total + 1)
-        case Many.op98() resume next: drive(next, total + 1)
-        case Many.op99() resume next: drive(next, total + 1)
-        case Many.op100() resume next: drive(next, total + 1)
-        case Many.op101() resume next: drive(next, total + 1)
-        case Many.op102() resume next: drive(next, total + 1)
-        case Many.op103() resume next: drive(next, total + 1)
-        case Many.op104() resume next: drive(next, total + 1)
-        case Many.op105() resume next: drive(next, total + 1)
-        case Many.op106() resume next: drive(next, total + 1)
-        case Many.op107() resume next: drive(next, total + 1)
-        case Many.op108() resume next: drive(next, total + 1)
-        case Many.op109() resume next: drive(next, total + 1)
-        case Many.op110() resume next: drive(next, total + 1)
-        case Many.op111() resume next: drive(next, total + 1)
-        case Many.op112() resume next: drive(next, total + 1)
-        case Many.op113() resume next: drive(next, total + 1)
-        case Many.op114() resume next: drive(next, total + 1)
-        case Many.op115() resume next: drive(next, total + 1)
-        case Many.op116() resume next: drive(next, total + 1)
-        case Many.op117() resume next: drive(next, total + 1)
-        case Many.op118() resume next: drive(next, total + 1)
-        case Many.op119() resume next: drive(next, total + 1)
-        case Many.op120() resume next: drive(next, total + 1)
-        case Many.op121() resume next: drive(next, total + 1)
-        case Many.op122() resume next: drive(next, total + 1)
-        case Many.op123() resume next: drive(next, total + 1)
-        case Many.op124() resume next: drive(next, total + 1)
-        case Many.op125() resume next: drive(next, total + 1)
-        case Many.op126() resume next: drive(next, total + 1)
-        case Many.op127() resume next: drive(next, total + 1)
-        case Many.op128() resume next: drive(next, total + 1)
-        case Many.op129() resume next: drive(next, total + 1)
-        case Many.op130() resume next: drive(next, total + 1)
-        case Many.op131() resume next: drive(next, total + 1)
-        case Many.op132() resume next: drive(next, total + 1)
-        case Many.op133() resume next: drive(next, total + 1)
-        case Many.op134() resume next: drive(next, total + 1)
-        case Many.op135() resume next: drive(next, total + 1)
-        case Many.op136() resume next: drive(next, total + 1)
-        case Many.op137() resume next: drive(next, total + 1)
-        case Many.op138() resume next: drive(next, total + 1)
-        case Many.op139() resume next: drive(next, total + 1)
-        case Many.op140() resume next: drive(next, total + 1)
-        case Many.op141() resume next: drive(next, total + 1)
-        case Many.op142() resume next: drive(next, total + 1)
-        case Many.op143() resume next: drive(next, total + 1)
-        case Many.op144() resume next: drive(next, total + 1)
-        case Many.op145() resume next: drive(next, total + 1)
-        case Many.op146() resume next: drive(next, total + 1)
-        case Many.op147() resume next: drive(next, total + 1)
-        case Many.op148() resume next: drive(next, total + 1)
-        case Many.op149() resume next: drive(next, total + 1)
-        case Many.op150() resume next: drive(next, total + 1)
-        case Many.op151() resume next: drive(next, total + 1)
-        case Many.op152() resume next: drive(next, total + 1)
-        case Many.op153() resume next: drive(next, total + 1)
-        case Many.op154() resume next: drive(next, total + 1)
-        case Many.op155() resume next: drive(next, total + 1)
-        case Many.op156() resume next: drive(next, total + 1)
-        case Many.op157() resume next: drive(next, total + 1)
-        case Many.op158() resume next: drive(next, total + 1)
-        case Many.op159() resume next: drive(next, total + 1)
-        case Many.op160() resume next: drive(next, total + 1)
-        case Many.op161() resume next: drive(next, total + 1)
-        case Many.op162() resume next: drive(next, total + 1)
-        case Many.op163() resume next: drive(next, total + 1)
-        case Many.op164() resume next: drive(next, total + 1)
-        case Many.op165() resume next: drive(next, total + 1)
-        case Many.op166() resume next: drive(next, total + 1)
-        case Many.op167() resume next: drive(next, total + 1)
-        case Many.op168() resume next: drive(next, total + 1)
-        case Many.op169() resume next: drive(next, total + 1)
-        case Many.op170() resume next: drive(next, total + 1)
-        case Many.op171() resume next: drive(next, total + 1)
-        case Many.op172() resume next: drive(next, total + 1)
-        case Many.op173() resume next: drive(next, total + 1)
-        case Many.op174() resume next: drive(next, total + 1)
-        case Many.op175() resume next: drive(next, total + 1)
-        case Many.op176() resume next: drive(next, total + 1)
-        case Many.op177() resume next: drive(next, total + 1)
-        case Many.op178() resume next: drive(next, total + 1)
-        case Many.op179() resume next: drive(next, total + 1)
-        case Many.op180() resume next: drive(next, total + 1)
-        case Many.op181() resume next: drive(next, total + 1)
-        case Many.op182() resume next: drive(next, total + 1)
-        case Many.op183() resume next: drive(next, total + 1)
-        case Many.op184() resume next: drive(next, total + 1)
-        case Many.op185() resume next: drive(next, total + 1)
-        case Many.op186() resume next: drive(next, total + 1)
-        case Many.op187() resume next: drive(next, total + 1)
-        case Many.op188() resume next: drive(next, total + 1)
-        case Many.op189() resume next: drive(next, total + 1)
-        case Many.op190() resume next: drive(next, total + 1)
-        case Many.op191() resume next: drive(next, total + 1)
-        case Many.op192() resume next: drive(next, total + 1)
-        case Many.op193() resume next: drive(next, total + 1)
-        case Many.op194() resume next: drive(next, total + 1)
-        case Many.op195() resume next: drive(next, total + 1)
-        case Many.op196() resume next: drive(next, total + 1)
-        case Many.op197() resume next: drive(next, total + 1)
-        case Many.op198() resume next: drive(next, total + 1)
-        case Many.op199() resume next: drive(next, total + 1)
-        case Many.op200() resume next: drive(next, total + 1)
-        case Many.op201() resume next: drive(next, total + 1)
-        case Many.op202() resume next: drive(next, total + 1)
-        case Many.op203() resume next: drive(next, total + 1)
-        case Many.op204() resume next: drive(next, total + 1)
-        case Many.op205() resume next: drive(next, total + 1)
-        case Many.op206() resume next: drive(next, total + 1)
-        case Many.op207() resume next: drive(next, total + 1)
-        case Many.op208() resume next: drive(next, total + 1)
-        case Many.op209() resume next: drive(next, total + 1)
-        case Many.op210() resume next: drive(next, total + 1)
-        case Many.op211() resume next: drive(next, total + 1)
-        case Many.op212() resume next: drive(next, total + 1)
-        case Many.op213() resume next: drive(next, total + 1)
-        case Many.op214() resume next: drive(next, total + 1)
-        case Many.op215() resume next: drive(next, total + 1)
-        case Many.op216() resume next: drive(next, total + 1)
-        case Many.op217() resume next: drive(next, total + 1)
-        case Many.op218() resume next: drive(next, total + 1)
-        case Many.op219() resume next: drive(next, total + 1)
-        case Many.op220() resume next: drive(next, total + 1)
-        case Many.op221() resume next: drive(next, total + 1)
-        case Many.op222() resume next: drive(next, total + 1)
-        case Many.op223() resume next: drive(next, total + 1)
-        case Many.op224() resume next: drive(next, total + 1)
-        case Many.op225() resume next: drive(next, total + 1)
-        case Many.op226() resume next: drive(next, total + 1)
-        case Many.op227() resume next: drive(next, total + 1)
-        case Many.op228() resume next: drive(next, total + 1)
-        case Many.op229() resume next: drive(next, total + 1)
-        case Many.op230() resume next: drive(next, total + 1)
-        case Many.op231() resume next: drive(next, total + 1)
-        case Many.op232() resume next: drive(next, total + 1)
-        case Many.op233() resume next: drive(next, total + 1)
-        case Many.op234() resume next: drive(next, total + 1)
-        case Many.op235() resume next: drive(next, total + 1)
-        case Many.op236() resume next: drive(next, total + 1)
-        case Many.op237() resume next: drive(next, total + 1)
-        case Many.op238() resume next: drive(next, total + 1)
-        case Many.op239() resume next: drive(next, total + 1)
-        case Many.op240() resume next: drive(next, total + 1)
-        case Many.op241() resume next: drive(next, total + 1)
-        case Many.op242() resume next: drive(next, total + 1)
-        case Many.op243() resume next: drive(next, total + 1)
-        case Many.op244() resume next: drive(next, total + 1)
-        case Many.op245() resume next: drive(next, total + 1)
-        case Many.op246() resume next: drive(next, total + 1)
-        case Many.op247() resume next: drive(next, total + 1)
-        case Many.op248() resume next: drive(next, total + 1)
-        case Many.op249() resume next: drive(next, total + 1)
-        case Many.op250() resume next: drive(next, total + 1)
-        case Many.op251() resume next: drive(next, total + 1)
-        case Many.op252() resume next: drive(next, total + 1)
-        case Many.op253() resume next: drive(next, total + 1)
-        case Many.op254() resume next: drive(next, total + 1)
-        case Many.op255() resume next: drive(next, total + 1)
-        case Many.op256() resume next: drive(next, total + 1)
-        case Many.op257() resume next: drive(next, total + 1)
-        case Many.op258() resume next: drive(next, total + 1)
-        case Many.op259() resume next: drive(next, total + 1)
-        case return result: result + total
 
-
+# The handler resumes the coroutine in a loop rather than recursing once per
+# operation, so the stack stays flat across all 260 suspensions.
 def main() -> int32:
-    return drive(coro script(), 0) - 218
+    let mut con = coro script()
+    let mut total = 0
+
+    while true:
+        handle con(()):
+            case Many.op0() resume next:
+                total = total + 1
+                con = next
+            case Many.op1() resume next:
+                total = total + 1
+                con = next
+            case Many.op2() resume next:
+                total = total + 1
+                con = next
+            case Many.op3() resume next:
+                total = total + 1
+                con = next
+            case Many.op4() resume next:
+                total = total + 1
+                con = next
+            case Many.op5() resume next:
+                total = total + 1
+                con = next
+            case Many.op6() resume next:
+                total = total + 1
+                con = next
+            case Many.op7() resume next:
+                total = total + 1
+                con = next
+            case Many.op8() resume next:
+                total = total + 1
+                con = next
+            case Many.op9() resume next:
+                total = total + 1
+                con = next
+            case Many.op10() resume next:
+                total = total + 1
+                con = next
+            case Many.op11() resume next:
+                total = total + 1
+                con = next
+            case Many.op12() resume next:
+                total = total + 1
+                con = next
+            case Many.op13() resume next:
+                total = total + 1
+                con = next
+            case Many.op14() resume next:
+                total = total + 1
+                con = next
+            case Many.op15() resume next:
+                total = total + 1
+                con = next
+            case Many.op16() resume next:
+                total = total + 1
+                con = next
+            case Many.op17() resume next:
+                total = total + 1
+                con = next
+            case Many.op18() resume next:
+                total = total + 1
+                con = next
+            case Many.op19() resume next:
+                total = total + 1
+                con = next
+            case Many.op20() resume next:
+                total = total + 1
+                con = next
+            case Many.op21() resume next:
+                total = total + 1
+                con = next
+            case Many.op22() resume next:
+                total = total + 1
+                con = next
+            case Many.op23() resume next:
+                total = total + 1
+                con = next
+            case Many.op24() resume next:
+                total = total + 1
+                con = next
+            case Many.op25() resume next:
+                total = total + 1
+                con = next
+            case Many.op26() resume next:
+                total = total + 1
+                con = next
+            case Many.op27() resume next:
+                total = total + 1
+                con = next
+            case Many.op28() resume next:
+                total = total + 1
+                con = next
+            case Many.op29() resume next:
+                total = total + 1
+                con = next
+            case Many.op30() resume next:
+                total = total + 1
+                con = next
+            case Many.op31() resume next:
+                total = total + 1
+                con = next
+            case Many.op32() resume next:
+                total = total + 1
+                con = next
+            case Many.op33() resume next:
+                total = total + 1
+                con = next
+            case Many.op34() resume next:
+                total = total + 1
+                con = next
+            case Many.op35() resume next:
+                total = total + 1
+                con = next
+            case Many.op36() resume next:
+                total = total + 1
+                con = next
+            case Many.op37() resume next:
+                total = total + 1
+                con = next
+            case Many.op38() resume next:
+                total = total + 1
+                con = next
+            case Many.op39() resume next:
+                total = total + 1
+                con = next
+            case Many.op40() resume next:
+                total = total + 1
+                con = next
+            case Many.op41() resume next:
+                total = total + 1
+                con = next
+            case Many.op42() resume next:
+                total = total + 1
+                con = next
+            case Many.op43() resume next:
+                total = total + 1
+                con = next
+            case Many.op44() resume next:
+                total = total + 1
+                con = next
+            case Many.op45() resume next:
+                total = total + 1
+                con = next
+            case Many.op46() resume next:
+                total = total + 1
+                con = next
+            case Many.op47() resume next:
+                total = total + 1
+                con = next
+            case Many.op48() resume next:
+                total = total + 1
+                con = next
+            case Many.op49() resume next:
+                total = total + 1
+                con = next
+            case Many.op50() resume next:
+                total = total + 1
+                con = next
+            case Many.op51() resume next:
+                total = total + 1
+                con = next
+            case Many.op52() resume next:
+                total = total + 1
+                con = next
+            case Many.op53() resume next:
+                total = total + 1
+                con = next
+            case Many.op54() resume next:
+                total = total + 1
+                con = next
+            case Many.op55() resume next:
+                total = total + 1
+                con = next
+            case Many.op56() resume next:
+                total = total + 1
+                con = next
+            case Many.op57() resume next:
+                total = total + 1
+                con = next
+            case Many.op58() resume next:
+                total = total + 1
+                con = next
+            case Many.op59() resume next:
+                total = total + 1
+                con = next
+            case Many.op60() resume next:
+                total = total + 1
+                con = next
+            case Many.op61() resume next:
+                total = total + 1
+                con = next
+            case Many.op62() resume next:
+                total = total + 1
+                con = next
+            case Many.op63() resume next:
+                total = total + 1
+                con = next
+            case Many.op64() resume next:
+                total = total + 1
+                con = next
+            case Many.op65() resume next:
+                total = total + 1
+                con = next
+            case Many.op66() resume next:
+                total = total + 1
+                con = next
+            case Many.op67() resume next:
+                total = total + 1
+                con = next
+            case Many.op68() resume next:
+                total = total + 1
+                con = next
+            case Many.op69() resume next:
+                total = total + 1
+                con = next
+            case Many.op70() resume next:
+                total = total + 1
+                con = next
+            case Many.op71() resume next:
+                total = total + 1
+                con = next
+            case Many.op72() resume next:
+                total = total + 1
+                con = next
+            case Many.op73() resume next:
+                total = total + 1
+                con = next
+            case Many.op74() resume next:
+                total = total + 1
+                con = next
+            case Many.op75() resume next:
+                total = total + 1
+                con = next
+            case Many.op76() resume next:
+                total = total + 1
+                con = next
+            case Many.op77() resume next:
+                total = total + 1
+                con = next
+            case Many.op78() resume next:
+                total = total + 1
+                con = next
+            case Many.op79() resume next:
+                total = total + 1
+                con = next
+            case Many.op80() resume next:
+                total = total + 1
+                con = next
+            case Many.op81() resume next:
+                total = total + 1
+                con = next
+            case Many.op82() resume next:
+                total = total + 1
+                con = next
+            case Many.op83() resume next:
+                total = total + 1
+                con = next
+            case Many.op84() resume next:
+                total = total + 1
+                con = next
+            case Many.op85() resume next:
+                total = total + 1
+                con = next
+            case Many.op86() resume next:
+                total = total + 1
+                con = next
+            case Many.op87() resume next:
+                total = total + 1
+                con = next
+            case Many.op88() resume next:
+                total = total + 1
+                con = next
+            case Many.op89() resume next:
+                total = total + 1
+                con = next
+            case Many.op90() resume next:
+                total = total + 1
+                con = next
+            case Many.op91() resume next:
+                total = total + 1
+                con = next
+            case Many.op92() resume next:
+                total = total + 1
+                con = next
+            case Many.op93() resume next:
+                total = total + 1
+                con = next
+            case Many.op94() resume next:
+                total = total + 1
+                con = next
+            case Many.op95() resume next:
+                total = total + 1
+                con = next
+            case Many.op96() resume next:
+                total = total + 1
+                con = next
+            case Many.op97() resume next:
+                total = total + 1
+                con = next
+            case Many.op98() resume next:
+                total = total + 1
+                con = next
+            case Many.op99() resume next:
+                total = total + 1
+                con = next
+            case Many.op100() resume next:
+                total = total + 1
+                con = next
+            case Many.op101() resume next:
+                total = total + 1
+                con = next
+            case Many.op102() resume next:
+                total = total + 1
+                con = next
+            case Many.op103() resume next:
+                total = total + 1
+                con = next
+            case Many.op104() resume next:
+                total = total + 1
+                con = next
+            case Many.op105() resume next:
+                total = total + 1
+                con = next
+            case Many.op106() resume next:
+                total = total + 1
+                con = next
+            case Many.op107() resume next:
+                total = total + 1
+                con = next
+            case Many.op108() resume next:
+                total = total + 1
+                con = next
+            case Many.op109() resume next:
+                total = total + 1
+                con = next
+            case Many.op110() resume next:
+                total = total + 1
+                con = next
+            case Many.op111() resume next:
+                total = total + 1
+                con = next
+            case Many.op112() resume next:
+                total = total + 1
+                con = next
+            case Many.op113() resume next:
+                total = total + 1
+                con = next
+            case Many.op114() resume next:
+                total = total + 1
+                con = next
+            case Many.op115() resume next:
+                total = total + 1
+                con = next
+            case Many.op116() resume next:
+                total = total + 1
+                con = next
+            case Many.op117() resume next:
+                total = total + 1
+                con = next
+            case Many.op118() resume next:
+                total = total + 1
+                con = next
+            case Many.op119() resume next:
+                total = total + 1
+                con = next
+            case Many.op120() resume next:
+                total = total + 1
+                con = next
+            case Many.op121() resume next:
+                total = total + 1
+                con = next
+            case Many.op122() resume next:
+                total = total + 1
+                con = next
+            case Many.op123() resume next:
+                total = total + 1
+                con = next
+            case Many.op124() resume next:
+                total = total + 1
+                con = next
+            case Many.op125() resume next:
+                total = total + 1
+                con = next
+            case Many.op126() resume next:
+                total = total + 1
+                con = next
+            case Many.op127() resume next:
+                total = total + 1
+                con = next
+            case Many.op128() resume next:
+                total = total + 1
+                con = next
+            case Many.op129() resume next:
+                total = total + 1
+                con = next
+            case Many.op130() resume next:
+                total = total + 1
+                con = next
+            case Many.op131() resume next:
+                total = total + 1
+                con = next
+            case Many.op132() resume next:
+                total = total + 1
+                con = next
+            case Many.op133() resume next:
+                total = total + 1
+                con = next
+            case Many.op134() resume next:
+                total = total + 1
+                con = next
+            case Many.op135() resume next:
+                total = total + 1
+                con = next
+            case Many.op136() resume next:
+                total = total + 1
+                con = next
+            case Many.op137() resume next:
+                total = total + 1
+                con = next
+            case Many.op138() resume next:
+                total = total + 1
+                con = next
+            case Many.op139() resume next:
+                total = total + 1
+                con = next
+            case Many.op140() resume next:
+                total = total + 1
+                con = next
+            case Many.op141() resume next:
+                total = total + 1
+                con = next
+            case Many.op142() resume next:
+                total = total + 1
+                con = next
+            case Many.op143() resume next:
+                total = total + 1
+                con = next
+            case Many.op144() resume next:
+                total = total + 1
+                con = next
+            case Many.op145() resume next:
+                total = total + 1
+                con = next
+            case Many.op146() resume next:
+                total = total + 1
+                con = next
+            case Many.op147() resume next:
+                total = total + 1
+                con = next
+            case Many.op148() resume next:
+                total = total + 1
+                con = next
+            case Many.op149() resume next:
+                total = total + 1
+                con = next
+            case Many.op150() resume next:
+                total = total + 1
+                con = next
+            case Many.op151() resume next:
+                total = total + 1
+                con = next
+            case Many.op152() resume next:
+                total = total + 1
+                con = next
+            case Many.op153() resume next:
+                total = total + 1
+                con = next
+            case Many.op154() resume next:
+                total = total + 1
+                con = next
+            case Many.op155() resume next:
+                total = total + 1
+                con = next
+            case Many.op156() resume next:
+                total = total + 1
+                con = next
+            case Many.op157() resume next:
+                total = total + 1
+                con = next
+            case Many.op158() resume next:
+                total = total + 1
+                con = next
+            case Many.op159() resume next:
+                total = total + 1
+                con = next
+            case Many.op160() resume next:
+                total = total + 1
+                con = next
+            case Many.op161() resume next:
+                total = total + 1
+                con = next
+            case Many.op162() resume next:
+                total = total + 1
+                con = next
+            case Many.op163() resume next:
+                total = total + 1
+                con = next
+            case Many.op164() resume next:
+                total = total + 1
+                con = next
+            case Many.op165() resume next:
+                total = total + 1
+                con = next
+            case Many.op166() resume next:
+                total = total + 1
+                con = next
+            case Many.op167() resume next:
+                total = total + 1
+                con = next
+            case Many.op168() resume next:
+                total = total + 1
+                con = next
+            case Many.op169() resume next:
+                total = total + 1
+                con = next
+            case Many.op170() resume next:
+                total = total + 1
+                con = next
+            case Many.op171() resume next:
+                total = total + 1
+                con = next
+            case Many.op172() resume next:
+                total = total + 1
+                con = next
+            case Many.op173() resume next:
+                total = total + 1
+                con = next
+            case Many.op174() resume next:
+                total = total + 1
+                con = next
+            case Many.op175() resume next:
+                total = total + 1
+                con = next
+            case Many.op176() resume next:
+                total = total + 1
+                con = next
+            case Many.op177() resume next:
+                total = total + 1
+                con = next
+            case Many.op178() resume next:
+                total = total + 1
+                con = next
+            case Many.op179() resume next:
+                total = total + 1
+                con = next
+            case Many.op180() resume next:
+                total = total + 1
+                con = next
+            case Many.op181() resume next:
+                total = total + 1
+                con = next
+            case Many.op182() resume next:
+                total = total + 1
+                con = next
+            case Many.op183() resume next:
+                total = total + 1
+                con = next
+            case Many.op184() resume next:
+                total = total + 1
+                con = next
+            case Many.op185() resume next:
+                total = total + 1
+                con = next
+            case Many.op186() resume next:
+                total = total + 1
+                con = next
+            case Many.op187() resume next:
+                total = total + 1
+                con = next
+            case Many.op188() resume next:
+                total = total + 1
+                con = next
+            case Many.op189() resume next:
+                total = total + 1
+                con = next
+            case Many.op190() resume next:
+                total = total + 1
+                con = next
+            case Many.op191() resume next:
+                total = total + 1
+                con = next
+            case Many.op192() resume next:
+                total = total + 1
+                con = next
+            case Many.op193() resume next:
+                total = total + 1
+                con = next
+            case Many.op194() resume next:
+                total = total + 1
+                con = next
+            case Many.op195() resume next:
+                total = total + 1
+                con = next
+            case Many.op196() resume next:
+                total = total + 1
+                con = next
+            case Many.op197() resume next:
+                total = total + 1
+                con = next
+            case Many.op198() resume next:
+                total = total + 1
+                con = next
+            case Many.op199() resume next:
+                total = total + 1
+                con = next
+            case Many.op200() resume next:
+                total = total + 1
+                con = next
+            case Many.op201() resume next:
+                total = total + 1
+                con = next
+            case Many.op202() resume next:
+                total = total + 1
+                con = next
+            case Many.op203() resume next:
+                total = total + 1
+                con = next
+            case Many.op204() resume next:
+                total = total + 1
+                con = next
+            case Many.op205() resume next:
+                total = total + 1
+                con = next
+            case Many.op206() resume next:
+                total = total + 1
+                con = next
+            case Many.op207() resume next:
+                total = total + 1
+                con = next
+            case Many.op208() resume next:
+                total = total + 1
+                con = next
+            case Many.op209() resume next:
+                total = total + 1
+                con = next
+            case Many.op210() resume next:
+                total = total + 1
+                con = next
+            case Many.op211() resume next:
+                total = total + 1
+                con = next
+            case Many.op212() resume next:
+                total = total + 1
+                con = next
+            case Many.op213() resume next:
+                total = total + 1
+                con = next
+            case Many.op214() resume next:
+                total = total + 1
+                con = next
+            case Many.op215() resume next:
+                total = total + 1
+                con = next
+            case Many.op216() resume next:
+                total = total + 1
+                con = next
+            case Many.op217() resume next:
+                total = total + 1
+                con = next
+            case Many.op218() resume next:
+                total = total + 1
+                con = next
+            case Many.op219() resume next:
+                total = total + 1
+                con = next
+            case Many.op220() resume next:
+                total = total + 1
+                con = next
+            case Many.op221() resume next:
+                total = total + 1
+                con = next
+            case Many.op222() resume next:
+                total = total + 1
+                con = next
+            case Many.op223() resume next:
+                total = total + 1
+                con = next
+            case Many.op224() resume next:
+                total = total + 1
+                con = next
+            case Many.op225() resume next:
+                total = total + 1
+                con = next
+            case Many.op226() resume next:
+                total = total + 1
+                con = next
+            case Many.op227() resume next:
+                total = total + 1
+                con = next
+            case Many.op228() resume next:
+                total = total + 1
+                con = next
+            case Many.op229() resume next:
+                total = total + 1
+                con = next
+            case Many.op230() resume next:
+                total = total + 1
+                con = next
+            case Many.op231() resume next:
+                total = total + 1
+                con = next
+            case Many.op232() resume next:
+                total = total + 1
+                con = next
+            case Many.op233() resume next:
+                total = total + 1
+                con = next
+            case Many.op234() resume next:
+                total = total + 1
+                con = next
+            case Many.op235() resume next:
+                total = total + 1
+                con = next
+            case Many.op236() resume next:
+                total = total + 1
+                con = next
+            case Many.op237() resume next:
+                total = total + 1
+                con = next
+            case Many.op238() resume next:
+                total = total + 1
+                con = next
+            case Many.op239() resume next:
+                total = total + 1
+                con = next
+            case Many.op240() resume next:
+                total = total + 1
+                con = next
+            case Many.op241() resume next:
+                total = total + 1
+                con = next
+            case Many.op242() resume next:
+                total = total + 1
+                con = next
+            case Many.op243() resume next:
+                total = total + 1
+                con = next
+            case Many.op244() resume next:
+                total = total + 1
+                con = next
+            case Many.op245() resume next:
+                total = total + 1
+                con = next
+            case Many.op246() resume next:
+                total = total + 1
+                con = next
+            case Many.op247() resume next:
+                total = total + 1
+                con = next
+            case Many.op248() resume next:
+                total = total + 1
+                con = next
+            case Many.op249() resume next:
+                total = total + 1
+                con = next
+            case Many.op250() resume next:
+                total = total + 1
+                con = next
+            case Many.op251() resume next:
+                total = total + 1
+                con = next
+            case Many.op252() resume next:
+                total = total + 1
+                con = next
+            case Many.op253() resume next:
+                total = total + 1
+                con = next
+            case Many.op254() resume next:
+                total = total + 1
+                con = next
+            case Many.op255() resume next:
+                total = total + 1
+                con = next
+            case Many.op256() resume next:
+                total = total + 1
+                con = next
+            case Many.op257() resume next:
+                total = total + 1
+                con = next
+            case Many.op258() resume next:
+                total = total + 1
+                con = next
+            case Many.op259() resume next:
+                total = total + 1
+                con = next
+            case return result:
+                total = total + result
+                break
+
+    return total - 218
