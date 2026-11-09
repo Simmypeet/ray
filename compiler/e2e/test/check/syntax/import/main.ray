@@ -2,11 +2,12 @@
 # in an inline module body, in every accepted form.
 import core
 import core.Drop, core.Copy
+import core.Option as COption, core.Drop as Other, core
 import (core.Drop, core.Copy)
 import ()
 from core import Drop
 from core import (
-  Drop,
+  Drop as D,
   Copy,
 )
 from super.a import (b)

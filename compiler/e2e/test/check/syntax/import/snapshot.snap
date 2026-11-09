@@ -6,21 +6,22 @@ expression: snapshot
  2 │ # in an inline module body, in every accepted form.
  3 │ import core
  4 │ import core.Drop, core.Copy
- 5 │ import (core.Drop, core.Copy)
- 6 │ import ()
- 7 │ from core import Drop
- 8 │ from core import (
- 9 │   Drop,
-10 │   Copy,
-11 │ )
-12 │ from super.a import (b)
-13 │
-14 │ module inner:
-15 │   import core.Drop
-16 │   from target import inner
-17 │
-18 │   pub def helper():
-19 │     pass
-20 │
-21 │ pub def main():
-22 │   pass
+ 5 │ import core.Option as COption, core.Drop as Other, core
+ 6 │ import (core.Drop, core.Copy)
+ 7 │ import ()
+ 8 │ from core import Drop
+ 9 │ from core import (
+10 │   Drop as D,
+11 │   Copy,
+12 │ )
+13 │ from super.a import (b)
+14 │
+15 │ module inner:
+16 │   import core.Drop
+17 │   from target import inner
+18 │
+19 │   pub def helper():
+20 │     pass
+21 │
+22 │ pub def main():
+23 │   pass

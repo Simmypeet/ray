@@ -1,8 +1,9 @@
 //! Module imports written at the top of a module's content.
 //!
 //! ```text
-//! import-list-paren ::= '(' (path (',' path)*)? ')'
-//! import-list-inline ::= path (',' path)*
+//! import-item ::= path ('as' identifier)?
+//! import-list-paren ::= '(' (import-item (',' import-item)*)? ')'
+//! import-list-inline ::= import-item (',' import-item)*
 //! import-list ::= import-list-paren | import-list-inline
 //! import ::= 'import' import-list
 //!
@@ -22,22 +23,44 @@ use rayc_parser::{
     },
 };
 
-use crate::{Keyword, path::Path};
+use crate::{Identifier, Keyword, path::Path};
 
 abstract_tree::abstract_tree! {
-    /// `(a, b.c, ...)`
+    /// `as name`, the name that an imported path is brought in under.
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
-    pub struct ParenthesizedImportList {
-        pub paths: #[multi] Path = ast::<Path>().repeat_all_with_separator(',')
+    pub struct ImportAlias {
+        pub as_keyword: Keyword = expect::Keyword::As,
+        pub name: Identifier = expect::Identifier
     }
 }
 
 abstract_tree::abstract_tree! {
-    /// `a, b.c, ...`
+    /// `path` or `path as name`.
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct ImportItem {
+        pub path: Path = ast::<Path>(),
+        // committing on `as` reports a missing name after it, instead of
+        // leaving the `as` behind as an unexpected token
+        pub alias: ImportAlias =
+            ast::<ImportAlias>().commit_if(expect::Keyword::As.lookahead())
+    }
+}
+
+abstract_tree::abstract_tree! {
+    /// `(a, b.c as d, ...)`
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    #{fragment = Fragment::Delimited(DelimiterKind::Parenthesis)}
+    pub struct ParenthesizedImportList {
+        pub items: #[multi] ImportItem = ast::<ImportItem>().repeat_all_with_separator(',')
+    }
+}
+
+abstract_tree::abstract_tree! {
+    /// `a, b.c as d, ...`
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     pub struct InlineImportList {
-        pub paths: #[multi] Path = ast::<Path>().repeat_with_separator_at_least_once(',')
+        pub items: #[multi] ImportItem =
+            ast::<ImportItem>().repeat_with_separator_at_least_once(',')
     }
 }
 
@@ -50,11 +73,11 @@ abstract_tree::abstract_tree! {
 }
 
 impl ImportList {
-    /// Returns the imported paths regardless of how the list is written.
-    pub fn paths(&self) -> impl Iterator<Item = Path> {
+    /// Returns the imported items regardless of how the list is written.
+    pub fn items(&self) -> impl Iterator<Item = ImportItem> {
         let (parenthesized, inline) = match self {
-            Self::Parenthesized(list) => (Some(list.paths()), None),
-            Self::Inline(list) => (None, Some(list.paths())),
+            Self::Parenthesized(list) => (Some(list.items()), None),
+            Self::Inline(list) => (None, Some(list.items())),
         };
 
         parenthesized.into_iter().flatten().chain(inline.into_iter().flatten())
