@@ -293,16 +293,7 @@ impl TAstBuilder {
         let forwarded_effect = handle.forwarded_effect().clone();
         let expression = self.insert_expression(handle, span, answer_ty).await;
 
-        // The `handle` itself performs what it forwards. A row that is known
-        // by now is introduced like the effect of a call, which opens it so
-        // that it composes with the other effects of the function.
-        // TODO: This is a bit of a hack to make the composition work, it relies
-        // on the fact that the concrete effect row must be known at this point.
-        // Most of the time, it would. But if it is not, it could left user with
-        // a confusing error why the effect composition is not working.
-        // Perhaps, a new better effect system and inference would solve
-        // this issue :-P
-        let forwarded_effect = self.latest_type(&forwarded_effect).await;
+        // The `handle` itself performs what it forwards.
         self.push_effect_introduction(expression, &forwarded_effect).await;
 
         expression

@@ -1,0 +1,15 @@
+eff Offset:
+    def apply(value: int32) -> int32
+
+
+# The handled body and the operation handler are nested in the closure, which
+# is lowered apart from the definition that creates it.
+def main() -> int32:
+    let offset = 7
+    let compute = (value) -> run:
+        return Offset.apply(value)
+    with Offset:
+        def apply(value):
+            return value + offset
+
+    return compute(35)

@@ -228,10 +228,11 @@ impl Renderer<'_> {
                 let span = self.ir_function.get_expression(expression_id).span();
                 Value { location: Some(self.locate(&span).await), kind: "expression".to_owned() }
             }
-            Savable::Awaitee(suspension_point) => Value {
+            Savable::ChildFrame(suspension_point) => Value {
                 location: Some(self.suspension_point(suspension_point).await),
-                kind: "awaitee".to_owned(),
+                kind: "child frame".to_owned(),
             },
+            Savable::Environment => Value { location: None, kind: "environment".to_owned() },
         }
     }
 

@@ -1,0 +1,34 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Noisy:
+    pub value: int32
+
+impl !core.Copy for Noisy
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def hold[t](value: t) given (_: core.Drop[t]) -> int32 \ {Ask}:
+    return Ask.ask()
+
+
+# The `coro` drops the argument with the `Drop[t]` that `create` received, which
+# is the one of `Noisy` once `create` is instantiated.
+def create[t](value: t) given (_: core.Drop[t]):
+    if true:
+        let k = coro hold(value)
+        printf("created\n")
+    printf("after scope\n")
+
+
+def main() -> int32:
+    create(Noisy { value = 1 })
+    return 0

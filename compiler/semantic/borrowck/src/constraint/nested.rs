@@ -10,9 +10,8 @@
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     cfg::Point,
-    ir_closure::CaptureMapID,
+    ir_closure::{CaptureMapID, CaptureOperands},
     ir_expr::{
-        IRExprID,
         closure::Closure,
         run_with::{OperationHandler, RunWith},
     },
@@ -60,9 +59,13 @@ impl ConstraintCollector<'_> {
             .as_tuple_view()
             .expect("the captures of a closure type should be a tuple");
 
-        // Each capture operand is stored in the closure value.
-        for (operand, capture_ty) in closure.captures().iter().zip(captured.args()) {
-            let operand_ty = self.function.get_expression(*operand).ty();
+        // Each capture operand is stored in the closure value, whose captured
+        // tuple follows the order of the capture map.
+        let capture_map =
+            self.ir.get_capture_map(self.ir.get_capture_map_id(closure.function_id()));
+        for ((capture, _), capture_ty) in capture_map.ordered_captures().zip(captured.args()) {
+            let operand = closure.captures().get_operand_of(capture);
+            let operand_ty = self.function.get_expression(operand).ty();
             self.relate(point, operand_ty, capture_ty, Variance::Covariant).await;
         }
 
@@ -93,7 +96,8 @@ impl ConstraintCollector<'_> {
 
         // Pair each type of the interface of the body with the argument of
         // the closure type that was built from it.
-        let capture_types = captures.iter().map(|(_, capture)| capture.storage_ty(engine));
+        let capture_types =
+            captures.ordered_captures().map(|(_, capture)| capture.storage_ty(engine));
         let parameter_types = context.parameters().map(|(_, parameter)| parameter.ty().clone());
         let signature = [
             (context.return_ty().clone(), closure_ty.return_type()),
@@ -130,11 +134,13 @@ impl ConstraintCollector<'_> {
 
         // The handlers only borrow their captures, so this function drops
         // them once the handled body returns.
-        for (operand, drop_instance) in
-            run_with.handler_captures().iter().zip(run_with.handler_capture_drops())
-        {
-            let operand_ty = self.function.get_expression(*operand).ty();
-            self.collect_drop(point, operand_ty, drop_instance).await;
+        if let Some(capture_map) = run_with.handler_capture_map() {
+            for (capture, _) in self.ir.get_capture_map(capture_map).ordered_captures() {
+                let operand = run_with.handler_captures().get_operand_of(capture);
+                let operand_ty = self.function.get_expression(operand).ty();
+                let drop_instance = &run_with.handler_capture_drops()[&capture];
+                self.collect_drop(point, operand_ty, drop_instance).await;
+            }
         }
 
         // The body and the handlers are created with the types of the
@@ -164,7 +170,7 @@ impl ConstraintCollector<'_> {
 
         self.pair_captures(
             &mut interface,
-            self.ir.capture_map_id(body.function_id()),
+            self.ir.get_capture_map_id(body.function_id()),
             body.captures(),
         );
         interface.pair(body_context.return_ty(), ty);
@@ -197,7 +203,7 @@ impl ConstraintCollector<'_> {
         // The handlers share one capture layout, and so its external
         // regions.
         let handlers_shared_capture_map_id =
-            self.ir.capture_map_id(run_with.handlers()[0].function_id());
+            self.ir.get_capture_map_id(run_with.handlers()[0].function_id());
         self.pair_captures(
             &mut interface,
             handlers_shared_capture_map_id,
@@ -207,18 +213,19 @@ impl ConstraintCollector<'_> {
         interface
     }
 
-    /// Pairs the capture layout of `function_id` with the types of `operands`.
+    /// Pairs the capture layout of `capture_map_id` with the types of
+    /// `operands`, the operand stored in each of its captures.
     fn pair_captures(
         &self,
         interface: &mut Interface,
         capture_map_id: CaptureMapID,
-        operands: &[IRExprID],
+        operands: &CaptureOperands,
     ) {
         let engine = self.solver.engine();
         let captures = self.ir.get_capture_map(capture_map_id);
 
-        for ((_, capture), operand) in captures.iter().zip(operands) {
-            let operand_ty = self.function.get_expression(*operand).ty();
+        for (capture_id, capture) in captures.ordered_captures() {
+            let operand_ty = self.function.get_expression(operands.get_operand_of(capture_id)).ty();
             interface.pair(&capture.storage_ty(engine), operand_ty);
         }
     }

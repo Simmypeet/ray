@@ -313,6 +313,21 @@ impl Ty {
         Some(coroutine_view)
     }
 
+    /// Returns the coroutine type this type is, if it suspends a known
+    /// function rather than a call through an instance.
+    #[must_use]
+    pub fn as_concrete_coroutine_view(&self) -> Option<application::ConcreteCoroutineView<'_>> {
+        match self.as_coroutine_view()? {
+            application::CoroutineView::Def(view) => {
+                Some(application::ConcreteCoroutineView::Def(view))
+            }
+            application::CoroutineView::Closure(view) => {
+                Some(application::ConcreteCoroutineView::Closure(view))
+            }
+            application::CoroutineView::TraitDef(_) => None,
+        }
+    }
+
     /// Returns the coroutine type this type is, whether it suspends a known
     /// function or a call through an instance.
     #[must_use]

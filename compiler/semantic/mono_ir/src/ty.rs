@@ -1,26 +1,22 @@
-use std::collections::BTreeMap;
-
-use linkme::distributed_slice;
-use qbice::{
-    Decode, Encode, Identifiable, Query, StableHash, executor, program::Registration,
-    storage::intern::Interned,
-};
+use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_extend::extend;
-use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
-use rayc_semantic_element::{
-    parameter::get_parameter_map,
-    struct_body::{FieldID, get_struct_body},
-};
+use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
-use rayc_symbol::{GlobalSymbolID, member::get_members};
+use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
     poly_var::build_subst_from_args,
-    signature::get_return_type,
     subst::{MutSubstitutable, Subst, Substitutable},
     ty::{Integer, Mutability, Primitive, Ty, application::View as ApplicationView},
 };
 
-use crate::instance::{MonoEffectInstance, MonoStructInstance};
+use crate::{
+    instance::{
+        MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance,
+        MonoRunWithInstance, MonoStructInstance,
+    },
+    layout::TagType,
+    operand::Constant,
+};
 
 /// A fully concrete type with a direct runtime representation.
 #[derive(
@@ -95,9 +91,9 @@ impl MonoType {
     }
 
     #[must_use]
-    pub fn assert_as_effect_handler(&self) -> &EffectHandler {
+    pub fn assert_as_effect_handler(&self) -> &EffectHandlerCallback {
         match self {
-            Self::Aggregate(AggregateType::EffectHandler(handler)) => handler,
+            Self::Aggregate(AggregateType::EffectHandlerCallback(handler)) => handler,
             _ => panic!(
                 "compiler-internal invariant violation: expected effect handler type, got {self:?}"
             ),
@@ -105,13 +101,36 @@ impl MonoType {
     }
 
     #[must_use]
-    pub fn assert_as_struct(&self) -> &Struct {
+    pub fn assert_as_struct(&self) -> &MonoStructInstance {
         match self {
             Self::Aggregate(AggregateType::Struct(struct_)) => struct_,
             _ => {
                 panic!("compiler-internal invariant violation: expected struct type, got {self:?}")
             }
         }
+    }
+
+    /// Returns the frame type of the coroutine this type is, or panics.
+    #[must_use]
+    pub fn assert_as_coroutine_frame(&self) -> &MonoCoroutineInstance {
+        match self {
+            Self::Aggregate(AggregateType::CoroutineFrame(instance)) => instance,
+            _ => panic!(
+                "compiler-internal invariant violation: expected coroutine frame, got {self:?}"
+            ),
+        }
+    }
+
+    #[must_use]
+    pub fn new_aggregate(aggregate: AggregateType, engine: &TrackedEngine) -> Interned<Self> {
+        engine.intern(Self::Aggregate(aggregate))
+    }
+
+    /// The empty tuple.
+    #[must_use]
+    pub fn new_unit(engine: &TrackedEngine) -> Interned<Self> {
+        let fields = engine.intern_unsized(Vec::new());
+        engine.intern(Self::Aggregate(AggregateType::Tuple(Tuple::new(fields))))
     }
 
     #[must_use]
@@ -129,24 +148,13 @@ impl MonoType {
     }
 
     #[must_use]
-    pub fn new_function_signature(
-        parameter_types: impl IntoIterator<Item = Interned<Self>>,
-        return_type: Interned<Self>,
-        engine: &TrackedEngine,
-    ) -> FunctionSignature {
-        FunctionSignature::new(
-            engine.intern_unsized(parameter_types.into_iter().collect::<Vec<_>>()),
-            ReturnType::Value(return_type),
-        )
-    }
-
-    #[must_use]
     pub fn new_handler_pointer(
         instance: MonoEffectInstance,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
-        let handler = engine
-            .intern(Self::Aggregate(AggregateType::EffectHandler(EffectHandler::new(instance))));
+        let handler = engine.intern(Self::Aggregate(AggregateType::EffectHandlerCallback(
+            EffectHandlerCallback::new(instance),
+        )));
         Self::new_pointer(handler, PointerMutability::Const, engine)
     }
 }
@@ -179,46 +187,24 @@ impl PointerType {
     pub const fn mutability(&self) -> PointerMutability { self.mutability }
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
-pub struct Struct {
-    instance: MonoStructInstance,
-    fields: BTreeMap<FieldID, Interned<MonoType>>,
-}
-
-impl Struct {
-    #[must_use]
-    pub const fn new(
-        instance: MonoStructInstance,
-        fields: BTreeMap<FieldID, Interned<MonoType>>,
-    ) -> Self {
-        Self { instance, fields }
-    }
-
-    #[must_use]
-    pub const fn instance(&self) -> &MonoStructInstance { &self.instance }
-
-    #[must_use]
-    pub const fn fields(&self) -> &BTreeMap<FieldID, Interned<MonoType>> { &self.fields }
-}
-
 /// The nominal record type for one concrete effect instantiation.
 ///
-/// Its fields are described by a corresponding [`HandlerLayout`], which can
-/// be derived from the concrete effect instance when needed. C code generation
-/// can emit that layout as a struct of callback closures and pass a pointer to
-/// the struct as a hidden parameter to effectful functions. The type is nominal
-/// so a callback that itself uses effects does not create a recursively
-/// expanded structural type.
+/// Its fields are described by a corresponding [`EffectHandlerCallbackLayout`],
+/// which can be derived from the concrete effect instance when needed. C code
+/// generation can emit that layout as a struct of callback closures and pass a
+/// pointer to the struct as a hidden parameter to effectful functions. The type
+/// is nominal so a callback that itself uses effects does not create a
+/// recursively expanded structural type.
+///
+/// [`EffectHandlerCallbackLayout`]: crate::layout::EffectHandlerCallbackLayout
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
-pub struct EffectHandler {
+pub struct EffectHandlerCallback {
     mono_effect_instance: MonoEffectInstance,
 }
 
-impl EffectHandler {
+impl EffectHandlerCallback {
     #[must_use]
     pub const fn new(mono_effect_instance: MonoEffectInstance) -> Self {
         Self { mono_effect_instance }
@@ -249,30 +235,211 @@ impl Tuple {
     pub fn is_empty(&self) -> bool { self.fields.is_empty() }
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
-pub struct Environment {
-    captures: Interned<[Interned<MonoType>]>,
-}
-
-impl Environment {
-    #[must_use]
-    pub const fn new(captures: Interned<[Interned<MonoType>]>) -> Self { Self { captures } }
-
-    #[must_use]
-    pub fn captures(&self) -> &[Interned<MonoType>] { &self.captures }
-}
-
 /// An aggregate with a layout determined by its semantic role.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum AggregateType {
-    EffectHandler(EffectHandler),
+    EffectHandlerCallback(EffectHandlerCallback),
     Tuple(Tuple),
-    Environment(Environment),
-    Struct(Struct),
+    /// A capture environment. It is nominal, so an environment type is
+    /// lowered without lowering its captures, which an [`EnvironmentLayout`]
+    /// tells.
+    ///
+    /// [`EnvironmentLayout`]: crate::layout::EnvironmentLayout
+    Environment(MonoEnvironmentInstance),
+    /// A concrete struct. It is nominal, so a struct type is lowered without
+    /// lowering its fields, which a [`StructLayout`] tells.
+    ///
+    /// [`StructLayout`]: crate::layout::StructLayout
+    Struct(MonoStructInstance),
+    /// The `coroutine_frame_t` of a coroutine. It is nominal, so a frame type
+    /// is lowered without reading the body of the suspended function; a
+    ///
+    /// The shape is roughly like:
+    ///
+    /// ```c
+    /// typedef struct {
+    ///     tag_t tag;
+    ///     ...; // the prefix
+    ///     union {
+    ///         struct { ... }; // the start fields
+    ///         struct { ... }; // suspension 0
+    ///         struct { ... }; // suspension 1
+    ///         ...
+    ///     };
+    /// }
+    /// ```
+    ///
+    /// A `coroutine_resume` moves the start fields to its locals as soon as it
+    /// starts, so a value of a suspension variant cannot overwrite them.
+    CoroutineFrame(MonoCoroutineInstance),
+    /// See [`CoroutineResume`] for details.
+    CoroutineResume(CoroutineResume),
+    /// See [`CoroutineYield`] for details.
+    CoroutineYield(CoroutineYield),
+    /// See [`CoroutineProgress`] for details.
+    CoroutineProgress(CoroutineProgress),
+    /// What a `coroutine_resume` holds while it is suspended at a `run ...
+    /// with`: the environment the clauses share, the frame of the handled
+    /// body, which of them runs, and the frame of the clause that runs. It is
+    /// nominal; a [`RunWithLayout`] tells its members.
+    ///
+    /// ```c
+    /// typedef struct {
+    ///     handler_env_t handler_env;  // only if the clauses have captures
+    ///     body_frame_t  body;
+    ///     tag_t         phase;        // the body, or the clause that runs
+    ///     union {
+    ///         clause_a_frame_t clause_a;
+    ///         ...
+    ///     };
+    /// } run_with_frames_t;
+    /// ```
+    ///
+    /// [`RunWithLayout`]: crate::layout::run_with::RunWithLayout
+    RunWithFrames(MonoRunWithInstance),
+}
+
+/// A closed effect row in its canonical order, which is that of
+/// [`lower_effects`].
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct EffectRow {
+    effects: Interned<[MonoEffectInstance]>,
+}
+
+impl EffectRow {
+    /// Lowers a concrete, closed effect row using the supplied substitution.
+    #[must_use]
+    pub async fn new(solver: &Solver, effect: &Interned<Ty>, substitution: &Subst) -> Self {
+        let effects = lower_effects(solver, effect, substitution).await;
+        Self { effects: solver.engine().intern_unsized(effects) }
+    }
+
+    #[must_use]
+    pub fn new_empty(engine: &TrackedEngine) -> Self {
+        Self { effects: engine.intern_unsized(Vec::new()) }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.effects.is_empty() }
+
+    #[must_use]
+    pub fn effects(&self) -> &[MonoEffectInstance] { &self.effects }
+}
+
+/// The `coroutine_resume_t` of an effect row.
+///
+/// The shape looks roughly like:
+///
+/// ```c
+/// typedef union {
+///     variant_0_t variant_0;
+///     variant_1_t variant_1;
+///     ...
+/// } coroutine_resume_t;
+/// ```
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct CoroutineResume(EffectRow);
+
+impl CoroutineResume {
+    #[must_use]
+    pub const fn new(row: EffectRow) -> Self { Self(row) }
+
+    #[must_use]
+    pub const fn row(&self) -> &EffectRow { &self.0 }
+}
+
+/// The `coroutine_yield_t` of an effect row.
+///
+/// The shape looks roughly like:
+///
+/// ```c
+/// typedef struct {
+///     tag_t tag;
+///     union {
+///         tuple_args_0_t args_0;
+///         tuple_args_1_t args_1;
+///         ...
+///     } payload;
+/// } coroutine_yield_t;
+/// ```
+///
+/// Here the `tag_t` type depends on the number of operations in the row.
+/// Mostly, it is `uint8_t` for up to 256 operations.
+///
+/// For each effect operation in the row, the `coroutine_yield_t` has one
+/// corresponding variant of the payload union, which is a tuple of the
+/// operation's arguments.
+///
+/// The exact layout and information can be derived from [`EffectRowLayout`].
+///
+/// [`EffectRowLayout`]: crate::layout::coroutine::EffectRowLayout
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct CoroutineYield(EffectRow);
+
+impl CoroutineYield {
+    #[must_use]
+    pub const fn new(row: EffectRow) -> Self { Self(row) }
+
+    #[must_use]
+    pub const fn row(&self) -> &EffectRow { &self.0 }
+}
+
+/// What resuming a coroutine with the given effect row and return type gives.
+///
+/// The resulting aggregate of resuming a coroutine. The shape looks roughly
+/// like:
+///
+/// ```c
+/// typedef struct {
+///     uint8_t tag;
+///     union {
+///         coroutine_yield_t yield;
+///         return_t ret;
+///     } payload;
+/// }
+/// ```
+///
+/// The exact layout and information can be derived from [`EffectRowLayout`].
+///
+/// [`EffectRowLayout`]: crate::layout::coroutine::EffectRowLayout
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct CoroutineProgress {
+    row: EffectRow,
+    return_type: Interned<MonoType>,
+}
+
+impl CoroutineProgress {
+    /// The type of the tag, which tells a return from a yield.
+    pub const TAG_TYPE: TagType = TagType::Uint8;
+
+    /// The coroutine completed; the progress holds its return value.
+    #[must_use]
+    pub fn return_tag() -> Constant { Self::TAG_TYPE.constant(0) }
+
+    /// The coroutine suspended; the progress holds its `coroutine_yield_t`.
+    #[must_use]
+    pub fn yield_tag() -> Constant { Self::TAG_TYPE.constant(1) }
+
+    #[must_use]
+    pub const fn new(row: EffectRow, return_type: Interned<MonoType>) -> Self {
+        Self { row, return_type }
+    }
+
+    #[must_use]
+    pub const fn row(&self) -> &EffectRow { &self.row }
+
+    #[must_use]
+    pub const fn return_type(&self) -> &Interned<MonoType> { &self.return_type }
 }
 
 #[derive(
@@ -294,91 +461,103 @@ impl ReturnType {
     }
 }
 
+/// How a function receives the environment that holds its captures.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub enum EnvironmentSlot {
+    /// As `void *`: the body of a `run ... with`, an operation handler, and
+    /// the callback slots of a handler record, which are called without
+    /// knowing the environment of the callback.
+    Opaque,
+
+    /// The environment itself, by value: the body of a closure, whose value
+    /// is its environment.
+    ByValue(MonoEnvironmentInstance),
+}
+
+impl EnvironmentSlot {
+    /// The type of the parameter that receives the environment.
+    #[must_use]
+    pub fn ty(&self) -> MonoType {
+        match self {
+            Self::Opaque => MonoType::OpaquePointer(PointerMutability::Mut),
+            Self::ByValue(environment) => {
+                MonoType::Aggregate(AggregateType::Environment(environment.clone()))
+            }
+        }
+    }
+}
+
 /// A concrete calling signature shared by direct and indirect calls.
+///
+/// Besides its source parameters, a function may receive an environment and a
+/// handler record per effect it performs. In C they are passed in this order:
+///
+/// ```c
+/// return_t f(environment, parameter..., const EffectHandler_E *handler_E...);
+/// ```
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub struct FunctionSignature {
+    environment_slot: Option<EnvironmentSlot>,
     parameter_types: Interned<[Interned<MonoType>]>,
+    handler_record_slots: EffectRow,
     return_type: ReturnType,
     variadic: bool,
 }
 
+#[bon::bon]
+impl FunctionSignature {
+    #[builder]
+    pub fn builder(
+        parameter_types: Interned<[Interned<MonoType>]>,
+        return_type: ReturnType,
+        engine: &TrackedEngine,
+        environment_slot: Option<EnvironmentSlot>,
+        handler_record_slots: Option<EffectRow>,
+        #[builder(default = false)] variadic: bool,
+    ) -> Self {
+        let handler_record_slots =
+            handler_record_slots.unwrap_or_else(|| EffectRow::new_empty(engine));
+
+        Self { environment_slot, parameter_types, handler_record_slots, return_type, variadic }
+    }
+}
+
 impl FunctionSignature {
     #[must_use]
-    pub const fn new(
-        parameter_types: Interned<[Interned<MonoType>]>,
-        return_type: ReturnType,
-    ) -> Self {
-        Self { parameter_types, return_type, variadic: false }
+    pub const fn environment_slot(&self) -> Option<&EnvironmentSlot> {
+        self.environment_slot.as_ref()
     }
 
-    #[must_use]
-    pub const fn new_variadic(
-        parameter_types: Interned<[Interned<MonoType>]>,
-        return_type: ReturnType,
-    ) -> Self {
-        Self { parameter_types, return_type, variadic: true }
-    }
-
+    /// The types of the source parameters, without the environment and the
+    /// handler records.
     #[must_use]
     pub fn parameter_types(&self) -> &[Interned<MonoType>] { &self.parameter_types }
+
+    /// The effects whose handler records the function receives, in the order
+    /// it receives them.
+    #[must_use]
+    pub fn handler_record_slots(&self) -> &[MonoEffectInstance] {
+        self.handler_record_slots.effects()
+    }
+
+    /// The number of parameters in C: the environment, the source parameters
+    /// and the handler records.
+    #[must_use]
+    pub fn abi_parameter_count(&self) -> usize {
+        usize::from(self.environment_slot.is_some())
+            + self.parameter_types.len()
+            + self.handler_record_slots().len()
+    }
 
     #[must_use]
     pub const fn return_type(&self) -> &ReturnType { &self.return_type }
 
     #[must_use]
     pub const fn is_variadic(&self) -> bool { self.variadic }
-}
-
-/// One callback slot in a concrete effect-handler record.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
-pub struct EffectOperation {
-    operation_id: GlobalSymbolID,
-    signature: FunctionSignature,
-}
-
-impl EffectOperation {
-    #[must_use]
-    pub const fn new(operation_id: GlobalSymbolID, signature: FunctionSignature) -> Self {
-        Self { operation_id, signature }
-    }
-
-    #[must_use]
-    pub const fn operation_id(&self) -> GlobalSymbolID { self.operation_id }
-
-    #[must_use]
-    pub const fn signature(&self) -> &FunctionSignature { &self.signature }
-}
-
-/// The operation slots of one nominal, concrete effect-handler record.
-///
-/// C code generation can represent this as a struct with one closure field per
-/// operation. Each closure consists of a callback address with the operation's
-/// [`FunctionSignature`] and an opaque environment pointer. There is no
-/// continuation or resumption slot: invoking an operation is an ordinary
-/// callback call that returns to its caller.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
-)]
-pub struct HandlerLayout {
-    instance: MonoEffectInstance,
-    operations: Vec<EffectOperation>,
-}
-
-impl HandlerLayout {
-    #[must_use]
-    pub const fn new(instance: MonoEffectInstance, operations: Vec<EffectOperation>) -> Self {
-        Self { instance, operations }
-    }
-
-    #[must_use]
-    pub const fn instance(&self) -> &MonoEffectInstance { &self.instance }
-
-    #[must_use]
-    pub fn operations(&self) -> &[EffectOperation] { &self.operations }
 }
 
 /// Lowers a type of kind star using the supplied concrete substitution.
@@ -414,7 +593,10 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
             }
 
             ApplicationView::Closure(closure) => {
-                let environment = Box::pin(nominal_environment(solver, closure)).await;
+                let body = MonoBodyInstance::from_closure(solver, closure).await;
+                let environment = MonoEnvironmentInstance::of_body(&body, engine)
+                    .await
+                    .expect("a closure body has an environment");
                 engine.intern(MonoType::Aggregate(AggregateType::Environment(environment)))
             }
 
@@ -442,28 +624,20 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
             }
             ApplicationView::Struct(struct_view) => {
                 let substitution = struct_view.create_subst(engine).await;
-                let struct_body = engine.get_struct_body(struct_view.symbol_id()).await;
-
-                // Lower each struct field's type under the concrete type
-                // argument substitution.
-                let mut fields = BTreeMap::new();
-                for (field_id, field) in struct_body.iter() {
-                    let field_type = Box::pin(lower_type(solver, field.ty(), &substitution)).await;
-                    fields.insert(field_id, field_type);
-                }
-
                 let instance = MonoStructInstance::new(struct_view.symbol_id(), substitution);
-                engine.intern(MonoType::Aggregate(AggregateType::Struct(Struct::new(
-                    instance, fields,
-                ))))
+                engine.intern(MonoType::Aggregate(AggregateType::Struct(instance)))
             }
             ApplicationView::InstanceAssociated(_) => {
                 panic!("unresolved associated type reached code generation")
             }
-            ApplicationView::DefCoroutine(_)
-            | ApplicationView::TraitDefCoroutine(_)
-            | ApplicationView::ClosureCoroutine(_) => {
-                panic!("coroutine types are not lowered to MonoIR yet")
+            ApplicationView::DefCoroutine(_) | ApplicationView::ClosureCoroutine(_) => {
+                let instance = MonoCoroutineInstance::from_type(ty, solver).await;
+                engine.intern(MonoType::Aggregate(AggregateType::CoroutineFrame(instance)))
+            }
+            // Only the coroutine of a declared instance's method or of a
+            // closure has a body to suspend, and both have reduced by now.
+            ApplicationView::TraitDefCoroutine(_) => {
+                panic!("a coroutine without a body to suspend reached MonoIR")
             }
             ApplicationView::Enum(_) => panic!("enum types are not lowered to MonoIR yet"),
             ApplicationView::NoOpDropInstance(_)
@@ -495,22 +669,29 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
     }
 }
 
+#[extend]
+pub async fn monomorphize_type(
+    self: &Solver,
+    ty: &Interned<Ty>,
+    substitution: &Subst,
+) -> Interned<Ty> {
+    let ty = ty.apply_subst_or_clone(substitution, self.engine());
+    let ty = self.normalize(&ty).await;
+
+    Ty::erase_lifetimes(&ty, self.engine()).await
+}
+
 /// Lowers a concrete, closed effect row using the supplied substitution.
 pub async fn lower_effects(
     solver: &Solver,
     effect: &Interned<Ty>,
     substitution: &Subst,
 ) -> Vec<MonoEffectInstance> {
-    let effect = effect.apply_subst_or_clone(substitution, solver.engine());
-    let effect = solver.normalize(&effect).await;
-    let effect = Ty::erase_lifetimes(&effect, solver.engine()).await;
-    lower_concrete_effects(solver.engine(), &effect).await
+    let effect = solver.monomorphize_type(effect, substitution).await;
+    lower_concrete_effects(solver, &effect).await
 }
 
-async fn lower_concrete_effects(
-    engine: &TrackedEngine,
-    effect: &Interned<Ty>,
-) -> Vec<MonoEffectInstance> {
+async fn lower_concrete_effects(solver: &Solver, effect: &Interned<Ty>) -> Vec<MonoEffectInstance> {
     let Ty::EffectRow(row) = &**effect else {
         panic!("compiler-internal invariant violation: function effect is not an effect row")
     };
@@ -522,9 +703,11 @@ async fn lower_concrete_effects(
 
     let mut effects = Vec::with_capacity(row.labels().len());
     for label in row.labels() {
-        let substitution =
-            engine.build_subst_from_args(label.effect_symbol_id(), label.arguments()).await;
-        effects.push(MonoEffectInstance::new(label.effect_symbol_id(), substitution));
+        let substitution = solver
+            .engine()
+            .build_subst_from_args(label.effect_symbol_id(), label.arguments())
+            .await;
+        effects.push(MonoEffectInstance::new(label.effect_symbol_id(), substitution, solver).await);
     }
     effects.sort();
     effects.dedup();
@@ -533,112 +716,20 @@ async fn lower_concrete_effects(
 
 #[extend]
 pub async fn instantiate_effect(
-    self: &TrackedEngine,
+    self: &Solver,
     effect_id: GlobalSymbolID,
     substitution: &Subst,
     owner_substitution: &Subst,
 ) -> MonoEffectInstance {
     let mut substitution = substitution.clone();
-    substitution.apply_mut_subst(owner_substitution, self);
-    substitution.erase_lifetimes(self).await;
-    MonoEffectInstance::new(effect_id, substitution)
+    substitution.apply_mut_subst(owner_substitution, self.engine());
+    substitution.erase_lifetimes(self.engine()).await;
+    MonoEffectInstance::new(effect_id, substitution, self).await
 }
-
-/// Derives the callback slots for one concrete effect instantiation.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
-#[value(Interned<HandlerLayout>)]
-#[extend(name = build_handler_layout, by_val)]
-pub struct BuildHandlerLayout {
-    /// The concrete effect whose operation signatures determine the layout.
-    pub instance: MonoEffectInstance,
-}
-
-#[executor(config = Config)]
-async fn build_handler_layout_executor(
-    key: &BuildHandlerLayout,
-    engine: &TrackedEngine,
-) -> Interned<HandlerLayout> {
-    let instance = &key.instance;
-    let solver = Solver::without_givens(engine.clone()).await;
-    let members = engine.get_members(instance.effect_id()).await;
-    let mut operations = members
-        .namable_members()
-        .map(|operation| instance.effect_id().target_id.make_global(operation))
-        .collect::<Vec<_>>();
-    operations.sort_unstable();
-
-    let mut lowered_operations = Vec::with_capacity(operations.len());
-    for operation_id in operations {
-        let parameters = engine.get_parameter_map(operation_id).await;
-        let mut parameter_types = vec![MonoType::new_opaque_pointer(engine)];
-        for (_, parameter) in parameters.iter() {
-            parameter_types
-                .push(lower_type(&solver, parameter.ty(), instance.substitution()).await);
-        }
-        let return_type = engine.get_return_type(operation_id).await;
-        let return_type = lower_type(&solver, &return_type, instance.substitution()).await;
-        lowered_operations.push(EffectOperation::new(
-            operation_id,
-            MonoType::new_function_signature(parameter_types, return_type, engine),
-        ));
-    }
-    engine.intern(HandlerLayout::new(instance.clone(), lowered_operations))
-}
-
-#[distributed_slice(RAY_PROGRAM)]
-static BUILD_HANDLER_LAYOUT_EXECUTOR: Registration<Config> =
-    Registration::new::<BuildHandlerLayout, BuildHandlerLayoutExecutor>();
 
 const fn lower_mutability(mutability: Mutability) -> PointerMutability {
     match mutability {
         Mutability::Immutable => PointerMutability::Const,
         Mutability::Mutable => PointerMutability::Mut,
     }
-}
-
-/// The inline storage shared by nominal values and their body ABI.
-pub async fn nominal_environment(
-    solver: &Solver,
-    closure: rayc_type::ty::application::ClosureView<'_>,
-) -> Environment {
-    let engine = solver.engine();
-    let tuple = lower_type(solver, closure.captured_tuple(), &Subst::new_empty()).await;
-    let MonoType::Aggregate(AggregateType::Tuple(tuple)) = &*tuple else {
-        panic!("closure captures must be a tuple")
-    };
-    Environment::new(engine.intern_unsized(tuple.fields().to_vec()))
-}
-
-/// Plans the concrete nominal body call, including the inline environment and
-/// handlers.
-pub async fn nominal_signature(
-    solver: &Solver,
-    closure: rayc_type::ty::application::ClosureView<'_>,
-) -> (FunctionSignature, Vec<MonoEffectInstance>) {
-    let engine = solver.engine();
-    let environment = nominal_environment(solver, closure).await;
-    let mut parameters = Vec::new();
-    for parameter in closure.params() {
-        parameters.push(lower_type(solver, parameter, &Subst::new_empty()).await);
-    }
-    let effects = lower_effects(solver, closure.effect_row(), &Subst::new_empty()).await;
-    let result = lower_type(solver, closure.return_type(), &Subst::new_empty()).await;
-    (nominal_body_signature(engine, environment, parameters, result, &effects), effects)
-}
-
-/// Builds the by-value nominal ABI from concrete storage and source parameters.
-#[must_use]
-pub fn nominal_body_signature(
-    engine: &TrackedEngine,
-    environment: Environment,
-    parameters: impl IntoIterator<Item = Interned<MonoType>>,
-    result: Interned<MonoType>,
-    effects: &[MonoEffectInstance],
-) -> FunctionSignature {
-    let mut body_parameters =
-        vec![engine.intern(MonoType::Aggregate(AggregateType::Environment(environment)))];
-    body_parameters.extend(parameters);
-    body_parameters
-        .extend(effects.iter().map(|effect| MonoType::new_handler_pointer(effect.clone(), engine)));
-    MonoType::new_function_signature(body_parameters, result, engine)
 }

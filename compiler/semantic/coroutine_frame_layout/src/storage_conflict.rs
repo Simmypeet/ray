@@ -155,7 +155,7 @@ impl LayoutContext<'_> {
     ///
     /// A candidate needs storage at a point when it is live just before or
     /// just after it, written there, or may be borrowed just before or just
-    /// after it. An awaitee needs storage at its own suspension point.
+    /// after it. A child frame needs storage at its own suspension point.
     ///
     /// `suspends_at` tells whether the function still suspends at a
     /// suspension point in this instance. Such a terminator is two moments,
@@ -204,7 +204,7 @@ impl LayoutContext<'_> {
         if suspends {
             Self::record_suspension(
                 index,
-                Savable::Awaitee(SuspensionPointID::new(block_id)),
+                Savable::ChildFrame(SuspensionPointID::new(block_id)),
                 &live[terminator_idx],
                 after,
                 &borrowed[terminator_idx],
@@ -234,21 +234,27 @@ impl LayoutContext<'_> {
     }
 
     /// Records the suspension that terminates `block_id` as two moments, so
-    /// that its awaitee and its results may share memory:
+    /// that its child frame and its results may share memory:
     ///
-    /// - suspending: what is live `before` it is read and the awaitee is built;
-    /// - resuming: the awaitee is done, and what is live `after` it, which
+    /// - suspending: what is live `before` it is read and the child frame is
+    ///   built;
+    /// - resuming: the child frame is done, and what is live `after` it, which
     ///   holds the results, is written.
     ///
     /// What may be `borrowed` is pointed at during both.
     ///
-    /// This is sound only if the state machine finishes with the awaitee
+    /// This is sound only if the state machine finishes with the child frame
     /// before it writes a result: a result is returned by value and then
-    /// stored, as in `frame.v_next.r = resume(&frame.v_this.awaitee)`, never
-    /// written through a pointer into the frame while the awaitee runs.
+    /// stored, as in `frame.v_next.r = resume(&frame.v_this.child)`, never
+    /// written through a pointer into the frame while the child frame runs.
+    ///
+    /// A continuation that a `handle` or a call of one holds instead of a
+    /// child frame is an operand of the terminator, so it is already `before`
+    /// it, and shares memory with the results on the same terms: the state
+    /// machine copies the frame pointer out of it before it writes a result.
     fn record_suspension(
         index: &CandidateIndex,
-        awaitee: Savable,
+        child_frame: Savable,
         before: &BitSet,
         mut after: BitSet,
         borrowed: &BitSet,
@@ -261,11 +267,10 @@ impl LayoutContext<'_> {
         // suspending
         let mut suspending = before.clone();
         suspending.or(borrowed);
-        // NOTE: It's fine to directly add the awaitee without checking whether
-        // if the suspension point has an awaitee. It's fine because if it
-        // doesn't have an awaitee, then the CandidateIndex will filter it out
-        // and not include it in the BitSet.
-        index.extend_set(&mut suspending, std::iter::once(awaitee));
+        // NOTE: It's fine to directly add the child frame without checking
+        // whether the suspension point has one. If it doesn't, then the
+        // CandidateIndex will filter it out and not include it in the BitSet.
+        index.extend_set(&mut suspending, std::iter::once(child_frame));
         recorder.record(&suspending);
     }
 }

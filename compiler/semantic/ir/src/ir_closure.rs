@@ -1,5 +1,6 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 use rayc_arena::{ID, OrderedArena};
+use rayc_hash::FxHashMap;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_type::{
@@ -9,6 +10,7 @@ use rayc_type::{
 
 use crate::{
     address::Local,
+    ir_expr::IRExprID,
     visit::{
         TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
         VisitTypeMutAsync,
@@ -197,7 +199,7 @@ impl CaptureMap {
     }
 
     #[must_use]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
+    pub fn ordered_captures(&self) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
         self.captures.iter()
     }
 
@@ -205,6 +207,49 @@ impl CaptureMap {
     #[must_use]
     pub fn locals(&self) -> impl ExactSizeIterator<Item = Local> + '_ {
         self.captures.iter().map(|(capture_id, _)| Local::Capture(capture_id))
+    }
+}
+
+/// The operand stored in each capture of a capture map, when a closure or the
+/// functions of a `run ... with` are created.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
+pub struct CaptureOperands {
+    operands: FxHashMap<CaptureID, IRExprID>,
+}
+
+impl CaptureOperands {
+    /// The operand stored in `capture`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capture` is not a capture of the capture map.
+    #[must_use]
+    pub fn get_operand_of(&self, capture: CaptureID) -> IRExprID {
+        *self.operands.get(&capture).expect("every capture should have an operand")
+    }
+
+    /// The operand of each capture, in no particular order.
+    #[must_use]
+    pub fn operands(&self) -> impl ExactSizeIterator<Item = IRExprID> + '_ {
+        self.operands.values().copied()
+    }
+
+    /// The captures that have an operand, in no particular order.
+    #[must_use]
+    pub fn captures(&self) -> impl ExactSizeIterator<Item = CaptureID> + '_ {
+        self.operands.keys().copied()
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize { self.operands.len() }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.operands.is_empty() }
+}
+
+impl FromIterator<(CaptureID, IRExprID)> for CaptureOperands {
+    fn from_iter<T: IntoIterator<Item = (CaptureID, IRExprID)>>(iter: T) -> Self {
+        Self { operands: iter.into_iter().collect() }
     }
 }
 
@@ -347,7 +392,7 @@ impl VisitTypeMutAsync for Capture {
 
 impl VisitType for CaptureMap {
     fn visit_types<V: TypeVisitor>(&self, site: TypeSite, visitor: &mut V) {
-        for (_, capture) in self.iter() {
+        for (_, capture) in self.ordered_captures() {
             capture.visit_types(site, visitor);
         }
     }

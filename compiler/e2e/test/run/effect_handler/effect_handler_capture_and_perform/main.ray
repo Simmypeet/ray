@@ -1,0 +1,17 @@
+eff Base:
+    def get() -> int32
+
+eff Offset:
+    def apply(value: int32) -> int32
+
+def main() -> int32:
+    return run:
+        let offset = 7
+        return run:
+            return Offset.apply(30)
+        with Offset:
+            def apply(value):
+                return value + offset + Base.get()
+    with Base:
+        def get():
+            return 5

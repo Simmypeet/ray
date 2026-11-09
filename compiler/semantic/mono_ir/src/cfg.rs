@@ -1,7 +1,10 @@
 use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_arena::{Arena, ID};
 
-use crate::{instruction::Instruction, operand::Operand};
+use crate::{
+    instruction::Instruction,
+    operand::{Constant, Operand},
+};
 
 pub type BlockID = ID<BasicBlock>;
 
@@ -30,12 +33,47 @@ impl Branch {
     pub const fn else_block(&self) -> BlockID { self.else_block }
 }
 
+/// Jumps to the block listed for the value of an integer discriminant.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct Switch {
+    discriminant: Operand,
+    targets: Vec<(Constant, BlockID)>,
+    otherwise: BlockID,
+}
+
+impl Switch {
+    #[must_use]
+    pub const fn new(
+        discriminant: Operand,
+        targets: Vec<(Constant, BlockID)>,
+        otherwise: BlockID,
+    ) -> Self {
+        Self { discriminant, targets, otherwise }
+    }
+
+    #[must_use]
+    pub const fn discriminant(&self) -> &Operand { &self.discriminant }
+
+    /// Iterates over the listed values with the block each jumps to.
+    #[must_use]
+    pub fn targets(&self) -> impl ExactSizeIterator<Item = (&Constant, BlockID)> {
+        self.targets.iter().map(|(value, block)| (value, *block))
+    }
+
+    /// Returns the block taken for any value that is not listed.
+    #[must_use]
+    pub const fn otherwise(&self) -> BlockID { self.otherwise }
+}
+
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum Terminator {
     Goto(BlockID),
     Branch(Branch),
+    Switch(Switch),
     Return(Option<Operand>),
     Unreachable,
 }

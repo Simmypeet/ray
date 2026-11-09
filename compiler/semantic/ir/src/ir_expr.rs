@@ -6,6 +6,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_type::ty::Ty;
 
 use crate::{
+    ir_closure::CaptureOperands,
     ir_expr::{
         binary::Binary,
         call::Call,
@@ -196,9 +197,11 @@ impl IRExprKind {
     /// a nested function it creates: the captures of a closure, or those of
     /// the handled body and of the operation handlers of a `run ... with`.
     pub fn capture_operands(&self) -> impl Iterator<Item = IRExprID> + '_ {
-        let (captures, handler_captures): (&[IRExprID], &[IRExprID]) = match self {
-            Self::Closure(closure) => (closure.captures(), &[]),
-            Self::RunWith(run_with) => (run_with.captures(), run_with.handler_captures()),
+        let (captures, handler_captures) = match self {
+            Self::Closure(closure) => (Some(closure.captures()), None),
+            Self::RunWith(run_with) => {
+                (Some(run_with.captures()), Some(run_with.handler_captures()))
+            }
             Self::Error
             | Self::Literal(_)
             | Self::RefOf(_)
@@ -212,10 +215,10 @@ impl IRExprKind {
             | Self::Coroutine(_)
             | Self::Yielded(_)
             | Self::Handle(_)
-            | Self::StructInitialization(_) => (&[], &[]),
+            | Self::StructInitialization(_) => (None, None),
         };
 
-        captures.iter().chain(handler_captures).copied()
+        captures.into_iter().chain(handler_captures).flat_map(CaptureOperands::operands)
     }
 
     /// Returns the nested functions this expression creates: the body of a
@@ -249,17 +252,18 @@ impl IRExprKind {
     pub fn operands(&self) -> impl Iterator<Item = IRExprID> + '_ {
         // One variant per shape of operand list, which avoids boxing the
         // iterator.
-        enum Iter<A, B, C, D, E, F, G> {
+        enum Iter<A, B, C, D, E, F, G, H> {
             None(A),
             Single(G),
             Pair(B),
             Slice(C),
-            Slices(D),
+            Captures(H),
+            RunWithCaptures(D),
             Phi(E),
             Fields(F),
         }
 
-        impl<A, B, C, D, E, F, G> Iterator for Iter<A, B, C, D, E, F, G>
+        impl<A, B, C, D, E, F, G, H> Iterator for Iter<A, B, C, D, E, F, G, H>
         where
             A: Iterator<Item = IRExprID>,
             B: Iterator<Item = IRExprID>,
@@ -268,6 +272,7 @@ impl IRExprKind {
             E: Iterator<Item = IRExprID>,
             F: Iterator<Item = IRExprID>,
             G: Iterator<Item = IRExprID>,
+            H: Iterator<Item = IRExprID>,
         {
             type Item = IRExprID;
 
@@ -277,7 +282,8 @@ impl IRExprKind {
                     Self::Single(iter) => iter.next(),
                     Self::Pair(iter) => iter.next(),
                     Self::Slice(iter) => iter.next(),
-                    Self::Slices(iter) => iter.next(),
+                    Self::Captures(iter) => iter.next(),
+                    Self::RunWithCaptures(iter) => iter.next(),
                     Self::Phi(iter) => iter.next(),
                     Self::Fields(iter) => iter.next(),
                 }
@@ -295,11 +301,11 @@ impl IRExprKind {
             Self::Perform(perform) => Iter::Slice(perform.arguments().iter().copied()),
             Self::Tuple(tuple) => Iter::Slice(tuple.elements().iter().copied()),
             Self::RefToPointer(coercion) => Iter::Single(std::iter::once(coercion.reference())),
-            Self::Closure(closure) => Iter::Slice(closure.captures().iter().copied()),
+            Self::Closure(closure) => Iter::Captures(closure.captures().operands()),
             Self::Coroutine(coroutine) => Iter::Slice(coroutine.arguments().iter().copied()),
-            Self::RunWith(run_with) => {
-                Iter::Slices(run_with.captures().iter().chain(run_with.handler_captures()).copied())
-            }
+            Self::RunWith(run_with) => Iter::RunWithCaptures(
+                run_with.captures().operands().chain(run_with.handler_captures().operands()),
+            ),
             Self::StructInitialization(initialization) => {
                 Iter::Fields(initialization.initializers().values().copied())
             }

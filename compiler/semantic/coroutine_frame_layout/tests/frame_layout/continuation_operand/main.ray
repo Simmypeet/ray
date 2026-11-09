@@ -1,0 +1,28 @@
+eff Ask:
+    def ask() -> int32
+
+
+eff Tell:
+    def tell() -> int32
+
+
+def inner() -> int32 \ {Ask}:
+    return Ask.ask()
+
+
+# A call that runs its callee in a new frame holds it as a child frame.
+def call_new_frame() -> int32 \ {Ask}:
+    return inner()
+
+
+# A call of a continuation has no child frame: the continuation only points
+# to a frame that something else owns. Its operand is held across the
+# suspension instead, as a value of the variant, beside `extra`.
+def call_continuation(k: core.Continuation[r, c], value: r, extra: int32) given (co: core.Coroutine[c]) -> int32 \ {Ask} where (co.Return = int32, co.Effect = {Ask}):
+    return k(value) + extra
+
+
+# Neither has a `handle` that forwards an operation.
+def forward_handle(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 \ {Ask} where (co.Return = int32, co.Effect = {Ask, Tell}):
+    return handle k(value):
+        case Tell.tell() resume _: 0

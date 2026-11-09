@@ -1,0 +1,45 @@
+eff Inner:
+    def inner() -> int64
+
+
+eff Outer:
+    def outer(value: int32) -> int32
+
+
+def body() -> int32 \ {Inner, Outer}:
+    let first = Outer.outer(1)
+    let wide = Inner.inner()
+    let second = Outer.outer(first)
+    if wide == 7:
+        return first + second
+    return 0
+
+
+# A coroutine that handles `Inner` and forwards `Outer` as a yield of its own.
+# The continuation is kept in its frame while the operation is handled further
+# out, and `Inner.inner` resumes with a member `Outer` has no use for.
+def driveInner(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 \ {Outer} where (co.Return = int32, co.Effect = {Inner, Outer}):
+    return handle k(value):
+        case Inner.inner() resume next: finish(next, 7)
+
+
+# `finish` is another function, since a coroutine cannot store its own frame
+# yet. `body` performs `Inner` only once, so this clause never runs.
+def finish(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 \ {Outer} where (co.Return = int32, co.Effect = {Inner, Outer}):
+    return handle k(value):
+        case Inner.inner() resume _: 0
+
+
+def wrapper(extra: int32) -> int32 \ {Outer}:
+    let result = driveInner(coro body(), ())
+    return result + extra
+
+
+def driveOuter(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Outer}):
+    return handle k(value):
+        case Outer.outer(value) resume next: driveOuter(next, value + 10)
+
+
+# first = 11, second = 21; 32 + 1 = 33
+def main() -> int32:
+    return driveOuter(coro wrapper(1), ())

@@ -16,6 +16,7 @@ use rayc_type::{
         inference::{GenInfer, Inference},
         lifetime::Lifetime,
     },
+    variance::Variance,
     where_clause::MarkerPredicate,
 };
 
@@ -70,13 +71,31 @@ impl PendingConstraint {
     }
 }
 
+/// What to do with a relation that may bind a function-level row variable.
+enum RowBinding {
+    /// Relate this, which may have the lesser row opened.
+    Relate(TyRelate),
+    /// Wait for a binding that may reduce the lesser side.
+    Wait(TyRelate),
+}
+
+/// Returns whether `ty` mentions an inference variable that may still be bound.
+/// A lifetime inference variable never is.
+fn waits_for_inference(ty: &Interned<Ty>) -> bool {
+    Ty::interned_recursive_iter(ty)
+        .filter_map(|ty| ty.as_inference())
+        .any(|inference| inference.kind() != TyKind::Lifetime)
+}
+
 impl TAstBuilder {
     pub(super) async fn push_constraint(&mut self, constr: PendingConstraint) {
         self.push_constraints(vec![constr]).await;
     }
 
+    /// Registers what solving `parent` derived.
     fn register_derived_constraint(
         &mut self,
+        parent: &Constraint,
         parent_cause: CauseID,
         derived_constraint: DerivedConstraint,
     ) -> PendingConstraint {
@@ -85,10 +104,7 @@ impl TAstBuilder {
             .provenance
             .insert_derivation_cause(derived_constraint.rule, parent_cause);
 
-        PendingConstraint {
-            constraint: Constraint::TyRelate(derived_constraint.ty_relate),
-            cause_id,
-        }
+        PendingConstraint { constraint: parent.derive(derived_constraint), cause_id }
     }
 
     pub(in crate::tast_builder) async fn push_constraints(
@@ -125,6 +141,14 @@ impl TAstBuilder {
                 }
                 Constraint::TyRelate(ty_relate) => {
                     self.entail_relate(ty_relate, pending_constraint.cause_id, &mut queued).await;
+                }
+                Constraint::FunctionRowRelate(ty_relate) => {
+                    self.entail_function_row_relate(
+                        ty_relate,
+                        pending_constraint.cause_id,
+                        &mut queued,
+                    )
+                    .await;
                 }
             }
         }
@@ -166,21 +190,26 @@ impl TAstBuilder {
         cause_id: CauseID,
         queued: &mut Vec<PendingConstraint>,
     ) {
-        match self.constraint_solver.solver.entail_instance_trait_ref(&check).await {
-            Ok(Step::Derived(derived)) => queued.extend(
-                derived
-                    .into_iter()
-                    .map(|derived| self.register_derived_constraint(cause_id, derived)),
-            ),
-            Ok(Step::NoProgress) => {
-                self.constraint_solver.constraint_set.residual_constraints.push(
-                    PendingConstraint { constraint: Constraint::InstanceTraitRef(check), cause_id },
-                );
+        let step = self.constraint_solver.solver.entail_instance_trait_ref(&check).await;
+        let constraint = Constraint::InstanceTraitRef(check);
+        match step {
+            Ok(Step::Derived(derived)) => {
+                queued.extend(derived.into_iter().map(|derived| {
+                    self.register_derived_constraint(&constraint, cause_id, derived)
+                }));
             }
-            Err(error) => self.constraint_solver.constraint_set.errored_constraints.push((
-                ConstraintError::TyRelate(error),
-                PendingConstraint { constraint: Constraint::InstanceTraitRef(check), cause_id },
-            )),
+            Ok(Step::NoProgress) => {
+                self.constraint_solver
+                    .constraint_set
+                    .residual_constraints
+                    .push(PendingConstraint { constraint, cause_id });
+            }
+            Err(error) => {
+                self.constraint_solver.constraint_set.errored_constraints.push((
+                    ConstraintError::TyRelate(error),
+                    PendingConstraint { constraint, cause_id },
+                ));
+            }
             Ok(Step::Subst(_) | Step::Generalized { .. }) => {
                 unreachable!("trait checks only derive type relations")
             }
@@ -268,13 +297,57 @@ impl TAstBuilder {
         cause_id: CauseID,
         queued: &mut Vec<PendingConstraint>,
     ) {
+        let step = self.constraint_solver.solver.entail_ty_relate(&ty_relate).await;
+        self.apply_relate_step(step, Constraint::TyRelate(ty_relate), cause_id, queued);
+    }
+
+    /// Takes one step towards a function-level relation of effect rows, whose
+    /// lesser row may be opened to be a part of the greater row.
+    async fn entail_function_row_relate(
+        &mut self,
+        ty_relate: TyRelate,
+        cause_id: CauseID,
+        queued: &mut Vec<PendingConstraint>,
+    ) {
+        let ty_relate = match self.prepare_row_binding(ty_relate).await {
+            RowBinding::Relate(ty_relate) => ty_relate,
+            RowBinding::Wait(ty_relate) => {
+                self.constraint_solver.constraint_set.residual_constraints.push(
+                    PendingConstraint {
+                        constraint: Constraint::FunctionRowRelate(ty_relate),
+                        cause_id,
+                    },
+                );
+                return;
+            }
+        };
+
+        let mut step = self.constraint_solver.solver.entail_ty_relate(&ty_relate).await;
+        if matches!(step, Err(ty_relate::Error::Conflicted))
+            && let Some(retried) = self.entail_opened_effect_row(&ty_relate).await
+        {
+            step = Ok(retried);
+        }
+
+        self.apply_relate_step(step, Constraint::FunctionRowRelate(ty_relate), cause_id, queued);
+    }
+
+    /// Carries out the `step` taken towards the relation `constraint`.
+    fn apply_relate_step(
+        &mut self,
+        step: Result<ty_relate::Entailment, ty_relate::Error>,
+        constraint: Constraint,
+        cause_id: CauseID,
+        queued: &mut Vec<PendingConstraint>,
+    ) {
         // Type inference ignores lifetimes, so the outlives constraints of the
         // step are dropped; the borrow checker re-infers them on the IR.
-        let step = self.constraint_solver.solver.entail_ty_relate(&ty_relate).await;
         match step.map(|entailment| entailment.into_parts().0) {
-            Ok(Step::Derived(constrs)) => {
+            Ok(Step::Derived(derived)) => {
                 queued.extend(
-                    constrs.into_iter().map(|x| self.register_derived_constraint(cause_id, x)),
+                    derived
+                        .into_iter()
+                        .map(|x| self.register_derived_constraint(&constraint, cause_id, x)),
                 );
             }
 
@@ -283,24 +356,70 @@ impl TAstBuilder {
             Ok(Step::Generalized { subst, derived }) => {
                 self.apply_step_subst(&subst, cause_id, queued);
                 queued.extend(
-                    derived.into_iter().map(|x| self.register_derived_constraint(cause_id, x)),
+                    derived
+                        .into_iter()
+                        .map(|x| self.register_derived_constraint(&constraint, cause_id, x)),
                 );
             }
 
             // The relation was normalized, so it waits for a binding.
             Ok(Step::NoProgress) => {
-                self.constraint_solver.constraint_set.residual_constraints.push(
-                    PendingConstraint { constraint: Constraint::TyRelate(ty_relate), cause_id },
-                );
+                self.constraint_solver
+                    .constraint_set
+                    .residual_constraints
+                    .push(PendingConstraint { constraint, cause_id });
             }
 
             Err(err) => {
                 self.constraint_solver.constraint_set.errored_constraints.push((
                     ConstraintError::TyRelate(err),
-                    PendingConstraint { constraint: Constraint::TyRelate(ty_relate), cause_id },
+                    PendingConstraint { constraint, cause_id },
                 ));
             }
         }
+    }
+
+    /// Keeps a function-level row variable from being bound to something that
+    /// is, or may turn out to be, a closed row.
+    ///
+    /// A closed row is what the variable would then be for good: it is the
+    /// greater side of what comes next, and opening the lesser side of that
+    /// relation cannot make room for another effect. So the variable is bound
+    /// to the opened row, and to a projection only once nothing can reduce it.
+    async fn prepare_row_binding(&mut self, ty_relate: TyRelate) -> RowBinding {
+        let is_row_variable = ty_relate
+            .greater()
+            .as_inference()
+            .is_some_and(|inference| inference.kind() == TyKind::EffectRow);
+        if !is_row_variable || self.constraint_solver.effect_rows_settled {
+            return RowBinding::Relate(ty_relate);
+        }
+
+        let lesser = self.latest_type(ty_relate.lesser()).await;
+        if lesser.is_projection() && waits_for_inference(&lesser) {
+            return RowBinding::Wait(ty_relate);
+        }
+
+        let opened = Ty::open_closed_row(&lesser, &mut self.constraint_solver, &self.engine);
+        RowBinding::Relate(opened.map_or(ty_relate.clone(), |opened| {
+            TyRelate::new(opened, ty_relate.greater().clone(), ty_relate.variance())
+        }))
+    }
+
+    /// Retries a function-level relation of effect rows that conflicted, with
+    /// its lesser row opened: what performs `{IO}` can run where the effect is
+    /// `{IO, Exn}`. Returns `None` if there is nothing to open, or if opening
+    /// it does not help either, so the error is the one of the original
+    /// rows.
+    async fn entail_opened_effect_row(
+        &mut self,
+        ty_relate: &TyRelate,
+    ) -> Option<ty_relate::Entailment> {
+        let lesser = self.latest_type(ty_relate.lesser()).await;
+        let opened = Ty::open_closed_row(&lesser, &mut self.constraint_solver, &self.engine)?;
+        let retried = TyRelate::new(opened, ty_relate.greater().clone(), Variance::Covariant);
+
+        self.constraint_solver.solver.entail_ty_relate(&retried).await.ok()
     }
 
     /// Composes a substitution produced for the constraint with `cause_id`
@@ -477,6 +596,10 @@ impl TAstBuilder {
     /// solved constraint. Rows mentioned by those constraints are left alone,
     /// so their diagnostics are reported against the uninferred row.
     async fn default_effect_rows(&mut self) {
+        // No effect can arrive from here on, so what is closed stays closed. A
+        // row opened now would have a tail that nothing defaults.
+        self.constraint_solver.effect_rows_settled = true;
+
         let effect_rows = self.constraint_solver.take_recorded_effect_row_inferences();
         let excluded = self.constraint_solver.provenance.inferences_in(
             self.constraint_solver.constraint_set.failed_pending_constraints(),

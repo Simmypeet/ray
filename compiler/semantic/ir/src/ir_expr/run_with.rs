@@ -1,4 +1,5 @@
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use rayc_hash::FxHashMap;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::{
@@ -7,8 +8,7 @@ use rayc_type::{
 };
 
 use crate::{
-    ir_closure::CaptureMapID,
-    ir_expr::IRExprID,
+    ir_closure::{CaptureID, CaptureMapID, CaptureOperands},
     ir_function::IRFunctionID,
     visit::{
         TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
@@ -18,23 +18,25 @@ use crate::{
 
 /// A nested function paired with the capture operands used to create its
 /// closure.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct HandledFunction {
     function_id: IRFunctionID,
-    captures: Vec<IRExprID>,
+    /// The operand stored in each capture of the function's capture map.
+    captures: CaptureOperands,
 }
 
 impl HandledFunction {
     #[must_use]
-    pub const fn new(function_id: IRFunctionID, captures: Vec<IRExprID>) -> Self {
+    pub const fn new(function_id: IRFunctionID, captures: CaptureOperands) -> Self {
         Self { function_id, captures }
     }
 
     #[must_use]
     pub const fn function_id(&self) -> IRFunctionID { self.function_id }
 
+    /// The operand stored in each capture of the function's capture map.
     #[must_use]
-    pub fn captures(&self) -> &[IRExprID] { &self.captures }
+    pub const fn captures(&self) -> &CaptureOperands { &self.captures }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
@@ -57,18 +59,19 @@ impl OperationHandler {
 }
 
 /// Runs a thunk under a complete set of handlers for one instantiated effect.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct RunWith {
     effect_id: GlobalSymbolID,
     substitution: Subst,
     body: HandledFunction,
-    handler_captures: Vec<IRExprID>,
+    /// The operand stored in each capture of the handlers' shared capture map.
+    handler_captures: CaptureOperands,
 
-    /// The `Drop` dictionary of each handler capture, in the same order.
+    /// The `Drop` dictionary of each handler capture.
     ///
     /// The handlers only borrow their shared captures, so the enclosing
     /// function drops them once the handled body returns.
-    handler_capture_drops: Vec<Interned<Ty>>,
+    handler_capture_drops: FxHashMap<CaptureID, Interned<Ty>>,
     handler_capture_map: Option<CaptureMapID>,
     handlers: Vec<OperationHandler>,
     residual_effect: Interned<Ty>,
@@ -85,15 +88,17 @@ impl RunWith {
         effect_id: GlobalSymbolID,
         substitution: Subst,
         body: HandledFunction,
-        handler_captures: Vec<IRExprID>,
-        handler_capture_drops: Vec<Interned<Ty>>,
+        handler_captures: CaptureOperands,
+        handler_capture_drops: FxHashMap<CaptureID, Interned<Ty>>,
         handler_capture_map: Option<CaptureMapID>,
         handlers: Vec<OperationHandler>,
         residual_effect: Interned<Ty>,
     ) -> Self {
-        assert_eq!(
-            handler_capture_drops.len(),
-            handler_captures.len(),
+        assert!(
+            handler_capture_drops.len() == handler_captures.len()
+                && handler_captures
+                    .captures()
+                    .all(|capture| handler_capture_drops.contains_key(&capture)),
             "every handler capture needs exactly one Drop dictionary"
         );
         Self {
@@ -117,13 +122,15 @@ impl RunWith {
     #[must_use]
     pub const fn body(&self) -> &HandledFunction { &self.body }
 
+    /// The operand stored in each capture of the handlers' shared capture map.
     #[must_use]
-    pub fn handler_captures(&self) -> &[IRExprID] { &self.handler_captures }
+    pub const fn handler_captures(&self) -> &CaptureOperands { &self.handler_captures }
 
-    /// Returns the `Drop` dictionary of each handler capture, in the order of
-    /// [`Self::handler_captures`].
+    /// Returns the `Drop` dictionary of each handler capture.
     #[must_use]
-    pub fn handler_capture_drops(&self) -> &[Interned<Ty>] { &self.handler_capture_drops }
+    pub const fn handler_capture_drops(&self) -> &FxHashMap<CaptureID, Interned<Ty>> {
+        &self.handler_capture_drops
+    }
 
     #[must_use]
     pub const fn handler_capture_map(&self) -> Option<CaptureMapID> { self.handler_capture_map }
@@ -131,8 +138,9 @@ impl RunWith {
     #[must_use]
     pub fn handlers(&self) -> &[OperationHandler] { &self.handlers }
 
+    /// The operand stored in each capture of the handled body.
     #[must_use]
-    pub fn captures(&self) -> &[IRExprID] { self.body.captures() }
+    pub const fn captures(&self) -> &CaptureOperands { self.body.captures() }
 
     /// Returns the effect row that is left of the effect of the handled body
     /// once the handled effect is taken out of it: what the body performs
@@ -160,7 +168,7 @@ impl VisitType for RunWith {
         for ty in self.substitution.codomain() {
             visitor.visit_type(ty, site);
         }
-        for drop_instance in &self.handler_capture_drops {
+        for drop_instance in self.handler_capture_drops.values() {
             visitor.visit_type(drop_instance, site);
         }
         visitor.visit_type(&self.residual_effect, site);
@@ -172,7 +180,7 @@ impl VisitTypeMut for RunWith {
         for ty in self.substitution.codomain_mut() {
             visitor.visit_type_mut(ty, site);
         }
-        for drop_instance in &mut self.handler_capture_drops {
+        for drop_instance in self.handler_capture_drops.values_mut() {
             visitor.visit_type_mut(drop_instance, site);
         }
         visitor.visit_type_mut(&mut self.residual_effect, site);
@@ -188,7 +196,7 @@ impl VisitTypeMutAsync for RunWith {
         for ty in self.substitution.codomain_mut() {
             visitor.visit_type_mut_async(ty, site).await;
         }
-        for drop_instance in &mut self.handler_capture_drops {
+        for drop_instance in self.handler_capture_drops.values_mut() {
             visitor.visit_type_mut_async(drop_instance, site).await;
         }
         visitor.visit_type_mut_async(&mut self.residual_effect, site).await;

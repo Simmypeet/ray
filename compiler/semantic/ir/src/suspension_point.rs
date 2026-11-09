@@ -29,10 +29,10 @@ use crate::{
     liveness::{expr::ExprLiveness, local::LocalLiveness},
 };
 
-/// What the expression evaluated at a suspension point waits for while the
-/// function is suspended there.
+/// The expression that a suspension point evaluates, by what it waits for
+/// while the function is suspended there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Waitee<'a> {
+pub enum SuspendingExpr<'a> {
     /// A `perform`, which waits for the handler of the operation, outside the
     /// function. Its arguments leave with the operation.
     Perform,
@@ -60,7 +60,7 @@ pub struct SuspensionPoint<'a> {
     held_locals: Vec<Local>,
     held_expressions: Vec<IRExprID>,
     borrowed: Vec<Local>,
-    waited: Waitee<'a>,
+    suspending_expr: SuspendingExpr<'a>,
 }
 
 impl<'a> SuspensionPoint<'a> {
@@ -104,7 +104,7 @@ impl<'a> SuspensionPoint<'a> {
                 held_locals,
                 held_expressions,
                 borrowed,
-                waited: Waitee::of(function.get_expression(expression).kind()),
+                suspending_expr: SuspendingExpr::of(function.get_expression(expression).kind()),
             });
         }
 
@@ -135,12 +135,12 @@ impl<'a> SuspensionPoint<'a> {
     #[must_use]
     pub fn borrowed(&self) -> &[Local] { &self.borrowed }
 
-    /// Returns what the evaluated expression waits for.
+    /// Returns the evaluated expression, by what it waits for.
     #[must_use]
-    pub const fn waited(&self) -> Waitee<'a> { self.waited }
+    pub const fn suspending_expr(&self) -> SuspendingExpr<'a> { self.suspending_expr }
 }
 
-impl<'a> Waitee<'a> {
+impl<'a> SuspendingExpr<'a> {
     /// Returns what the expression `kind`, evaluated at a suspension point,
     /// waits for.
     #[must_use]
@@ -165,17 +165,6 @@ impl<'a> Waitee<'a> {
             | IRExprKind::StructInitialization(_) => {
                 unreachable!("only a call, a perform, a run or a handle suspends")
             }
-        }
-    }
-
-    /// Returns whether the waiting function holds what it waits for while it
-    /// is suspended: the callee, the handled body and its handlers, or the
-    /// continuation. A `perform` waits for a handler outside the function.
-    #[must_use]
-    pub const fn is_held(&self) -> bool {
-        match self {
-            Self::Perform => false,
-            Self::Call(_) | Self::RunWith(_) | Self::Handle(_) => true,
         }
     }
 }

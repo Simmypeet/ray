@@ -1,0 +1,8 @@
+def pure(value: int32) -> int32:
+    return value + 1
+
+
+# A coroutine without an effect only ever returns.
+def main() -> int32:
+    return handle (coro pure(41))():
+        case return result: result

@@ -8,6 +8,8 @@ rust-version.workspace = true
 
 [dependencies]
 rayc_arena.path = "../../base/arena"
+rayc_coroutine_frame_layout.path = "../coroutine_frame_layout"
+rayc_ir.path = "../ir"
 rayc_extend.path = "../../base/extend"
 rayc_qbice.path = "../../base/qbice"
 rayc_semantic_element.path = "../semantic_element"
@@ -17,6 +19,7 @@ rayc_type.path = "../type"
 rayc_hash.path = "../../base/hash"
 qbice.workspace = true
 linkme.workspace = true
+bon.workspace = true
 
 [lints]
 workspace = true

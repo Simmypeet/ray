@@ -1,0 +1,23 @@
+eff Yield[t]:
+    def yield(value: t) -> t
+
+
+# One coroutine per instantiation, each with its own frame and effect row.
+def echo[t](value: t) given (_: core.Drop[t]) -> t \ {Yield[t]}:
+    return Yield[t].yield(value)
+
+
+def driveInt(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Yield[int32]}):
+    return handle k(value):
+        case Yield.yield(value) resume next: driveInt(next, value + 1)
+
+
+def driveBool(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> bool where (co.Return = bool, co.Effect = {Yield[bool]}):
+    return handle k(value):
+        case Yield.yield(value) resume next: driveBool(next, value)
+
+
+def main() -> int32:
+    if driveBool(coro echo(true), ()):
+        return driveInt(coro echo(41), ())
+    return 0

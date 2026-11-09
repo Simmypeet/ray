@@ -71,6 +71,10 @@ impl Lifetime {
             Self::Erased | Self::Region(_) => false,
         }
     }
+
+    /// Returns whether this lifetime is an erased lifetime.
+    #[must_use]
+    pub const fn is_erased(&self) -> bool { matches!(self, Self::Erased) }
 }
 
 impl fmt::Display for Lifetime {

@@ -21,7 +21,7 @@ use crate::{
     },
     ir_variable::{IRVariable, IRVariableID, IRVariableMap},
     scope::{Scope, ScopeID, ScopeMap},
-    suspension_point::Waitee,
+    suspension_point::SuspendingExpr,
     visit::{
         TypeSite, TypeVisitor, TypeVisitorMut, TypeVisitorMutAsync, VisitType, VisitTypeMut,
         VisitTypeMutAsync,
@@ -113,6 +113,14 @@ impl IRFunction {
     #[must_use]
     pub const fn context(&self) -> &IRContext { &self.context }
 
+    /// Returns `true` if this IR represents the closure.
+    #[must_use]
+    pub const fn is_closure(&self) -> bool { matches!(self.context(), IRContext::Closure(_)) }
+
+    /// Returns `true` if this IR represents the top-level definition function.
+    #[must_use]
+    pub const fn is_def(&self) -> bool { matches!(self.context(), IRContext::Def) }
+
     /// Returns the lifetime that a run of this function borrows the
     /// environment holding its captures for, when it does not own them; see
     /// [`IRContext::environment_lifetime`].
@@ -170,12 +178,12 @@ impl IRFunction {
     pub fn get_expression(&self, id: IRExprID) -> &IRExpr { self.expression_map.get_expression(id) }
 
     /// Gets the expression that is evaluated at a suspension point as a
-    /// [`Waitee`]. Will panic if the expression cannot be evaluated at a
-    /// suspension point.
+    /// [`SuspendingExpr`]. Will panic if the expression cannot be evaluated at
+    /// a suspension point.
     #[must_use]
-    pub fn get_expression_as_waitee(&self, id: IRExprID) -> Waitee<'_> {
+    pub fn get_suspending_expr(&self, id: IRExprID) -> SuspendingExpr<'_> {
         let expression = self.get_expression(id);
-        Waitee::of(expression.kind())
+        SuspendingExpr::of(expression.kind())
     }
 
     #[must_use]

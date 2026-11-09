@@ -1,6 +1,10 @@
-use rayc_ir::ir_expr::{
-    IRExpr, IRExprKind,
-    run_with::{HandledFunction, OperationHandler, RunWith as IRRunWith},
+use rayc_hash::FxHashMap;
+use rayc_ir::{
+    ir_closure::CaptureOperands,
+    ir_expr::{
+        IRExpr, IRExprKind,
+        run_with::{HandledFunction, OperationHandler, RunWith as IRRunWith},
+    },
 };
 use rayc_typed_ast::typed_expr::run_with::RunWith;
 
@@ -18,11 +22,11 @@ impl<'a> Lower<TypedExprWithID<&'a RunWith>> for Builder {
     ) -> LoweredExpression {
         let typed_expression = context.expression(expression.id());
         let run_with = expression.node();
-        let body_function =
+        let (body_function, body_captures) =
             self.lower_thunk_function(context, run_with.body(), typed_expression.span()).await;
         let body = HandledFunction::new(
             body_function,
-            self.lower_capture_operands(context, run_with.body()),
+            self.lower_capture_operands(context, run_with.body(), &body_captures),
         );
 
         // Materialize one capture layout and one operand list for the complete
@@ -36,14 +40,14 @@ impl<'a> Lower<TypedExprWithID<&'a RunWith>> for Builder {
                             .all(|handler| context.shares_capture_plan(handler, function_id)),
                         "operation handlers in one run-with expression should share a capture plan"
                     );
-                    let operands = self.lower_capture_operands(context, function_id);
-                    let drops = self.handler_capture_drops(context, function_id).await;
                     let (capture_map, bindings) = self.lower_capture_map(context, function_id);
+                    let operands = self.lower_capture_operands(context, function_id, &bindings);
+                    let drops = self.handler_capture_drops(context, function_id, &bindings).await;
 
                     (operands, drops, Some(capture_map), Some(bindings))
                 }
 
-                None => (Vec::new(), Vec::new(), None, None),
+                None => (CaptureOperands::default(), FxHashMap::default(), None, None),
             };
 
         let mut handlers = Vec::new();

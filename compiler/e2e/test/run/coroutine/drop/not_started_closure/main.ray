@@ -1,0 +1,36 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Noisy:
+    pub value: int32
+
+impl !core.Copy for Noisy
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def consume(first: Noisy, second: Noisy) -> int32:
+    return first.value + second.value
+
+
+# The frame of a closure coroutine holds the closure's captures and the
+# elements of the argument tuple as fields of their own. Before it starts, the
+# argument is dropped first, then the capture, as when the closure returns.
+def suspend(callable: f) given (d: core.Def[f], _: core.Drop[f]) where (d.Args = (Noisy,), d.Return = int32, d.Effect = {Ask}):
+    if true:
+        let k = coro d.call(callable, (Noisy { value = 2 },))
+        printf("created\n")
+    printf("after scope\n")
+
+
+def main() -> int32:
+    let captured = Noisy { value = 1 }
+    suspend((argument) -> consume(move captured, argument) + Ask.ask())
+    return 0

@@ -1,0 +1,19 @@
+eff Ask:
+    def ask(value: int32) -> int32
+
+
+# The residual of the `run` is the row `e` of `compute`, which is empty in the
+# coroutine `main` creates. So the `run` does not suspend `compute`: its body
+# and clause run to completion in one resume.
+def compute[e: Effect](base: int32) -> int32 \ e:
+    return run:
+        return Ask.ask(2) + Ask.ask(3)
+    with Ask:
+        def ask(value):
+            return value * base
+
+
+# 2 * 20 + 3 * 20 = 100
+def main() -> int32:
+    return handle (coro compute(20))():
+        case return result: result

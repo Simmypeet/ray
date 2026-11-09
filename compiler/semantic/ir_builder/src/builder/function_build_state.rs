@@ -6,7 +6,7 @@ use rayc_ir::{
     address::Address,
     cfg::{BlockID, Suspend, Terminator},
     ir_closure::{
-        Capture, CaptureID, CaptureMapID, CaptureMode as IrCaptureMode,
+        Capture, CaptureID, CaptureMapID, CaptureMode as IrCaptureMode, CaptureOperands,
         ClosureParameter as IrClosureParameter, ClosureParameterID,
     },
     ir_expr::{IRExpr, IRExprID, IRExprKind, Suspension, load::Load, tuple::Tuple},
@@ -368,25 +368,29 @@ impl Builder {
         (self.ir_functions, self.diagnostics)
     }
 
+    /// Lowers a closure body, and returns it with the capture that holds each
+    /// captured source.
     pub async fn lower_closure_function(
         &mut self,
         context: &LoweringContext<'_>,
         typed_function_id: TypedFunctionID,
         return_ty: Interned<Ty>,
         diagnostic_span: RelativeSpan,
-    ) -> IrFunctionID {
+    ) -> (IrFunctionID, FxHashMap<Source, CaptureID>) {
         let closure_context = context.for_function(typed_function_id);
         self.start_closure(&closure_context, return_ty, diagnostic_span);
         self.lower_current_function(&closure_context).await;
-        self.finish_closure()
+        self.finish_nested_function()
     }
 
+    /// Lowers the body of a `run ... with`, and returns it with the capture
+    /// that holds each captured source.
     pub async fn lower_thunk_function(
         &mut self,
         context: &LoweringContext<'_>,
         typed_function_id: TypedFunctionID,
         diagnostic_span: RelativeSpan,
-    ) -> IrFunctionID {
+    ) -> (IrFunctionID, FxHashMap<Source, CaptureID>) {
         let thunk_context = context.for_function(typed_function_id);
         self.start_thunk(&thunk_context, diagnostic_span);
         self.lower_current_function(&thunk_context).await;
@@ -404,7 +408,7 @@ impl Builder {
         let handler_context = context.for_function(typed_function_id);
         self.start_operation_handler(&handler_context, diagnostic_span, capture_map, captures);
         self.lower_current_function(&handler_context).await;
-        self.finish_nested_function()
+        self.finish_nested_function().0
     }
 
     pub fn lower_capture_map(
@@ -471,26 +475,33 @@ impl Builder {
         self.suspended_functions.push(enclosing);
     }
 
-    fn finish_closure(&mut self) -> IrFunctionID { self.finish_nested_function() }
-
-    fn finish_nested_function(&mut self) -> IrFunctionID {
+    /// Resumes the enclosing function, and returns the finished nested one
+    /// with the capture that holds each captured source.
+    fn finish_nested_function(&mut self) -> (IrFunctionID, FxHashMap<Source, CaptureID>) {
         let enclosing = self
             .suspended_functions
             .pop()
             .expect("a closure should suspend its enclosing IR function");
-        let closure = mem::replace(&mut self.building_function, enclosing);
-        closure.ir_function_id
+        let nested = mem::replace(&mut self.building_function, enclosing);
+        (nested.ir_function_id, nested.captures)
     }
 
+    /// Emits the operand of each capture of the nested function
+    /// `typed_function_id`, in the order of its capture plan, and returns
+    /// them by the capture in `captures` that holds their source.
     pub fn lower_capture_operands(
         &mut self,
         context: &LoweringContext<'_>,
         typed_function_id: TypedFunctionID,
-    ) -> Vec<IRExprID> {
+        captures: &FxHashMap<Source, CaptureID>,
+    ) -> CaptureOperands {
         context
             .capture_plan(typed_function_id)
             .captures()
             .map(|(_, requirement)| {
+                let capture = *captures
+                    .get(&requirement.source())
+                    .expect("every captured source should have a capture");
                 let address = self.source_address(requirement.source());
                 let (kind, ty) = match requirement.mode() {
                     // A capture moved inside the nested function must leave
@@ -504,7 +515,7 @@ impl Builder {
                         requirement.storage_ty(&self.engine),
                     ),
                 };
-                self.emit_expression(IRExpr::new(kind, requirement.span(), ty))
+                (capture, self.emit_expression(IRExpr::new(kind, requirement.span(), ty)))
             })
             .collect()
     }

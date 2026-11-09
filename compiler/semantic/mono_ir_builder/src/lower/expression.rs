@@ -1,147 +1,119 @@
 use qbice::storage::intern::Interned;
-use rayc_ir::{
-    ir_expr::{
-        IRExprID, IRExprKind, binary::BinaryOp as IRBinaryOperator, literal::Literal,
-        struct_initialization::StructInitialization, tuple::Tuple,
-    },
-    ir_function::IRFunction,
+use rayc_ir::ir_expr::{
+    IRExprID, IRExprKind,
+    binary::{Binary as IRBinary, BinaryOp as IRBinaryOperator},
+    literal::Literal,
+    struct_initialization::StructInitialization,
+    tuple::Tuple,
 };
 use rayc_mono_ir::{
-    instruction::{Assign, Instruction},
     operand::{Constant, Operand},
-    place::Place,
+    place::{Place, Projection},
     rvalue::{AddressOf, Binary, BinaryOperator, Rvalue},
     ty::MonoType,
 };
 
-use crate::{builder::Builder, context::Context};
+use crate::{context::Context, emitter::Emitter};
 
-impl Builder<'_> {
-    pub(super) async fn lower_expression(
-        &mut self,
-        context: &Context,
-        expression_id: IRExprID,
-        source: &IRFunction,
-    ) {
-        let expression = source.get_expression(expression_id);
-        let destination = self.expression_place(expression_id);
+impl Emitter<'_> {
+    pub(super) async fn lower_expression(&mut self, expression_id: IRExprID, ctx: &Context<'_>) {
+        let destination = ctx.expression_place(expression_id);
 
-        match expression.kind() {
+        match ctx.source_expression(expression_id).kind() {
             IRExprKind::Error => {
                 panic!("compiler-internal invariant violation: error expression reached MonoIR")
             }
             IRExprKind::Literal(literal) => {
-                let ty = self.local_type(destination.local());
-                let constant = lower_literal(literal, ty);
-                self.assign(destination, Rvalue::Use(Operand::Constant(constant)));
+                let constant = lower_literal(literal, ctx.expression_type(expression_id));
+                self.store_constant(destination, constant);
             }
             IRExprKind::RefOf(reference) => {
-                let ty = self.local_type(destination.local());
-                let MonoType::Pointer(pointer) = &**ty else {
-                    panic!("RefOf should produce a pointer type")
-                };
-                self.assign(
-                    destination,
-                    Rvalue::AddressOf(AddressOf::new(
-                        self.lower_address(reference.address()),
-                        pointer.mutability(),
-                    )),
-                );
+                let ty = ctx.expression_type(expression_id).assert_as_pointer();
+                let address = self.lower_address(reference.address(), ctx);
+                let value = Rvalue::AddressOf(AddressOf::new(address, ty.mutability()));
+                self.assign(destination, value);
             }
             // References and raw pointers share a representation, so the
             // coercion only forwards the address.
             IRExprKind::RefToPointer(coercion) => {
-                self.assign(
-                    destination,
-                    Rvalue::Use(self.expression_operand(coercion.reference())),
-                );
+                self.store(destination, ctx.expression_operand(coercion.reference()));
             }
             IRExprKind::Load(load) => {
-                self.assign(
-                    destination,
-                    Rvalue::Use(Operand::Copy(self.lower_address(load.address()))),
-                );
+                self.store(destination, Operand::Copy(self.lower_address(load.address(), ctx)));
             }
             IRExprKind::Phi(_) => {}
-            IRExprKind::Binary(binary) => {
-                let operator = match binary.operator() {
-                    IRBinaryOperator::Equal => BinaryOperator::Equal,
-                    IRBinaryOperator::NotEqual => BinaryOperator::NotEqual,
-                    IRBinaryOperator::Plus => BinaryOperator::Add,
-                    IRBinaryOperator::Minus => BinaryOperator::Subtract,
-                    IRBinaryOperator::Multiply => BinaryOperator::Multiply,
-                    IRBinaryOperator::Divide => BinaryOperator::Divide,
-                };
-                self.assign(
-                    destination,
-                    Rvalue::Binary(Binary::new(
-                        self.expression_operand(binary.left()),
-                        operator,
-                        self.expression_operand(binary.right()),
-                    )),
-                );
-            }
+            IRExprKind::Binary(binary) => self.lower_binary(binary, destination, ctx),
             IRExprKind::Call(call) => {
-                self.lower_call(context, call, expression_id).await;
+                self.lower_call_in_callback_style(call, expression_id, ctx).await;
             }
             IRExprKind::Perform(perform) => {
-                self.lower_perform(context, perform, expression_id).await;
+                self.lower_callback_perform(perform, expression_id, ctx).await;
             }
             IRExprKind::RunWith(run_with) => {
-                self.lower_run_with(context, run_with, expression_id).await;
+                self.lower_callback_run_with(run_with, expression_id, ctx).await;
             }
-            IRExprKind::Tuple(tuple) => {
-                self.lower_tuple(tuple, destination);
+            IRExprKind::Tuple(tuple) => self.lower_tuple(tuple, expression_id, ctx),
+            IRExprKind::StructInitialization(st) => self.lower_struct(st, expression_id, ctx).await,
+            IRExprKind::Closure(closure) => self.lower_closure(closure, expression_id, ctx).await,
+            IRExprKind::Coroutine(coroutine) => {
+                self.lower_coro(coroutine, expression_id, ctx).await;
             }
 
-            IRExprKind::StructInitialization(st) => {
-                self.lower_struct(st, destination);
-            }
-
-            IRExprKind::Closure(closure) => self.lower_closure(context, closure, expression_id),
-
-            // The coroutine form of a function is not lowered yet.
-            IRExprKind::Coroutine(_) => {
-                panic!("coroutine construction is not lowered to MonoIR yet")
-            }
+            // No instruction evaluates them: a `Handle` terminator defines
+            // them on its outgoing edges.
             IRExprKind::Handle(_) | IRExprKind::Yielded(_) => {
-                panic!("resuming a coroutine is not lowered to MonoIR yet")
+                panic!("a `Handle` terminator should evaluate its expressions")
             }
         }
     }
 
-    fn lower_struct(&mut self, st: &StructInitialization, destination: Place) {
-        let ty = self.local_type(destination.local());
-        let ty = ty.assert_as_struct();
-
-        let fields = st
-            .initializers()
-            .iter()
-            .map(|(field_id, field)| (*field_id, self.expression_operand(*field)))
-            .collect();
-
-        let value = Rvalue::new_struct(ty.clone(), fields);
-        self.assign(destination, value);
+    fn lower_binary(&mut self, binary: &IRBinary, destination: Place, ctx: &Context<'_>) {
+        let value = Binary::new(
+            ctx.expression_operand(binary.left()),
+            lower_binary_operator(binary.operator()),
+            ctx.expression_operand(binary.right()),
+        );
+        self.assign(destination, Rvalue::Binary(value));
     }
 
-    fn lower_tuple(&mut self, tuple: &Tuple, destination: Place) {
-        let ty = self.local_type(destination.local());
-        let ty = ty.assert_as_tuple();
+    async fn lower_struct(
+        &mut self,
+        st: &StructInitialization,
+        expression_id: IRExprID,
+        ctx: &Context<'_>,
+    ) {
+        let ty = ctx.expression_type(expression_id).assert_as_struct();
+        let layout = self.resolver().struct_layout(ty).await;
 
-        let value = if ty.is_empty() {
-            Rvalue::Use(Operand::Constant(Constant::Unit))
-        } else {
-            let fields =
-                tuple.elements().iter().map(|element| self.expression_operand(*element)).collect();
+        assert_eq!(layout.fields().len(), st.initializers().len());
 
-            Rvalue::new_tuple(ty.clone(), fields)
-        };
-
-        self.assign(destination, value);
+        let destination = ctx.expression_place(expression_id);
+        self.initialize_aggregate(
+            &destination,
+            st.initializers().iter().map(|(field_id, field)| {
+                (Projection::StructFieldIndex(*field_id), ctx.expression_operand(*field))
+            }),
+        );
     }
 
-    pub(super) fn assign(&mut self, destination: Place, value: Rvalue) {
-        self.push_instruction(Instruction::Assign(Assign::new(destination, value)));
+    fn lower_tuple(&mut self, tuple: &Tuple, expression_id: IRExprID, ctx: &Context<'_>) {
+        let destination = ctx.expression_place(expression_id);
+
+        self.initialize_tuple(
+            &destination,
+            tuple.elements().iter().map(|element| ctx.expression_operand(*element)),
+        );
+    }
+}
+
+const fn lower_binary_operator(operator: IRBinaryOperator) -> BinaryOperator {
+    match operator {
+        IRBinaryOperator::Equal => BinaryOperator::Equal,
+        IRBinaryOperator::NotEqual => BinaryOperator::NotEqual,
+        IRBinaryOperator::Plus => BinaryOperator::Add,
+        IRBinaryOperator::Minus => BinaryOperator::Subtract,
+        IRBinaryOperator::Multiply => BinaryOperator::Multiply,
+        IRBinaryOperator::Divide => BinaryOperator::Divide,
     }
 }
 

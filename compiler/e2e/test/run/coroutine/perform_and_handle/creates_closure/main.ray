@@ -1,0 +1,23 @@
+eff Yield:
+    def yield(value: int32) -> ()
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Yield}):
+    return handle k(value):
+        case Yield.yield(yielded) resume next: yielded + drive(next, ())
+
+
+def apply(callable: f, value: int32) given (d: core.Def[f], _: core.Drop[f]) -> int32 where (d.Args = (int32,), d.Return = int32, d.Effect = {}):
+    return d.call(callable, (value,))
+
+
+# The coroutine creates a closure before a suspension and uses it after, so the
+# closure's environment is stored in the frame.
+def numbers(offset: int32) -> int32 \ {Yield}:
+    let add = (value) -> value + offset
+    Yield.yield(6)
+    return apply(add, 31)
+
+
+def main() -> int32:
+    return drive(coro numbers(5), ())

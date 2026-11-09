@@ -1,6 +1,6 @@
 use std::collections::hash_map::Entry;
 
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_hash::FxHashMap;
 use rayc_ir::{self, get_ir, ir_expr::IRExprID, ir_function::IRFunctionID};
 use rayc_qbice::TrackedEngine;
@@ -58,7 +58,7 @@ impl SuspensionLocalPlacement {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct SuspensionLocalLayout {
-    awaitee: Option<IRExprID>,
+    child_frame: Option<IRExprID>,
 }
 
 /// The layout of a coroutine frame, which stores the values that a coroutine
@@ -69,7 +69,7 @@ pub struct SuspensionLocalLayout {
 ///
 /// The coroutine frame layout is divided into two parts: the prefix part and
 /// the suspension local part.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Identifiable, StableHash, Encode, Decode)]
 pub struct FrameLayout {
     placements: FxHashMap<Savable, Placement>,
     suspension_locals: FxHashMap<SuspensionLocalPlacement, SuspensionLocalLayout>,
@@ -125,6 +125,13 @@ impl FrameLayout {
         self.placements.iter().map(|(savable, placement)| (*savable, *placement))
     }
 
+    /// Returns where `savable` is placed, or `None` if the frame does not hold
+    /// it.
+    #[must_use]
+    pub fn placement(&self, savable: Savable) -> Option<Placement> {
+        self.placements.get(&savable).copied()
+    }
+
     /// Iterates over the suspension points where the function still suspends
     /// in this instance, each of which has a variant, in no particular order.
     pub fn suspension_points(&self) -> impl Iterator<Item = SuspensionPointID> + '_ {
@@ -155,7 +162,7 @@ impl FrameLayout {
 
 impl LayoutContext<'_> {
     async fn compute_initial_frame_layout(&self, solver: &mut Solver) -> FrameLayout {
-        let points = self.calculate_waitee_for_each_suspension_point(solver).await;
+        let points = self.calculate_suspended_on_for_each_suspension_point(solver).await;
 
         let mut layout = FrameLayout {
             placements: FxHashMap::default(),
@@ -171,22 +178,25 @@ impl LayoutContext<'_> {
             );
         }
 
-        // initialize captures
-        for captures in self.capture_savables().into_iter().flatten() {
-            // if the captures are borrowed, this means that the function will
-            // be invoked multiple times and captures should be survived across
-            // multiple invocations.
-            let placement = if self.borrows_captures() {
-                Placement::Prefix
-            } else {
-                Placement::SuspensionLocal(SuspensionLocalPlacement::Start)
-            };
-
-            layout.placements.insert(captures, placement);
+        // A function that borrows its captures shares its environment with
+        // others, so the frame only points to it, for as long as it lives.
+        // Any other function owns its captures, which start in the frame.
+        if self.borrows_captures() {
+            layout.placements.insert(Savable::Environment, Placement::Prefix);
+        } else {
+            for capture in self.capture_savables().into_iter().flatten() {
+                layout
+                    .placements
+                    .insert(capture, Placement::SuspensionLocal(SuspensionLocalPlacement::Start));
+            }
         }
 
-        for (&suspension_point_id, &waitee_expr_id) in &points {
-            for savable in self.savables_at(suspension_point_id.block_id()) {
+        for (&suspension_point_id, &suspended_on) in &points {
+            // The continuation of a `handle` or of a call of one is held like
+            // any value live across the suspension point.
+            let held =
+                self.savables_at(suspension_point_id.block_id()).chain(suspended_on.held_value());
+            for savable in held {
                 let local_suspension = Placement::SuspensionLocal(
                     SuspensionLocalPlacement::SuspensionLocal(suspension_point_id),
                 );
@@ -207,11 +217,12 @@ impl LayoutContext<'_> {
                 }
             }
 
-            // the awaitee is only held at its own suspension point, so it is
-            // always placed in its variant
-            if waitee_expr_id.is_some() {
+            // the child frame is only held at its own suspension point, so it
+            // is always placed in its variant
+            let child_frame = suspended_on.child_frame();
+            if child_frame.is_some() {
                 layout.placements.insert(
-                    Savable::Awaitee(suspension_point_id),
+                    Savable::ChildFrame(suspension_point_id),
                     Placement::SuspensionLocal(SuspensionLocalPlacement::SuspensionLocal(
                         suspension_point_id,
                     )),
@@ -221,7 +232,7 @@ impl LayoutContext<'_> {
             // set the suspension local layout for this suspension point
             layout.suspension_locals.insert(
                 SuspensionLocalPlacement::SuspensionLocal(suspension_point_id),
-                SuspensionLocalLayout { awaitee: waitee_expr_id },
+                SuspensionLocalLayout { child_frame },
             );
         }
 

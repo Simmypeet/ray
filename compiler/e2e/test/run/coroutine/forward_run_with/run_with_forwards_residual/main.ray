@@ -1,0 +1,39 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+def trace(value: int32) -> int32:
+    printf("log %d\n", value)
+    return value
+
+
+eff Ask:
+    def ask(value: int32) -> int32
+
+
+eff Log:
+    def log(value: int32) -> int32
+
+
+# The body of the `run` performs `Log`, which is forwarded, and `Ask`, which
+# the clause handles. The clause performs `Log` too, so both the body and the
+# clause yield out of `body` while it is suspended at the `run`.
+def body() -> int32 \ {Log}:
+    let before = Log.log(1)
+    let result = run:
+        let first = Log.log(2)
+        let second = Ask.ask(first)
+        return first + second
+    with Ask:
+        def ask(value):
+            return value + Log.log(value * 10)
+    return before + result
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Log}):
+    return handle k(value):
+        case Log.log(value) resume next: drive(next, trace(value) + 1)
+
+
+# before = 2; first = 3; ask(3) = 3 + 31 = 34; result = 37; 2 + 37 = 39
+def main() -> int32:
+    return drive(coro body(), ())

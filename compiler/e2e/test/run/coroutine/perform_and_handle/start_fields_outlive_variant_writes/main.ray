@@ -1,0 +1,26 @@
+eff Yield[t]:
+    def yield(value: t) -> ()
+
+
+# `left` and `right` are not held across the suspension, so they are start
+# fields, which `a` overlaps in the frame. They are read after `a` is written, so
+# they must have been moved out of the frame by then.
+def script(left: int32, right: int32) -> int32 \ {Yield[int32]}:
+    let a = 40
+    let sum = left + right
+    Yield.yield(sum)
+    return a
+
+
+# The sum of 1 and 2 is yielded, and 40 is returned.
+def main() -> int32:
+    let mut total = 0
+    let mut k = coro script(1, 2)
+    while true:
+        handle k():
+            case Yield.yield(value) resume next:
+                total = total + value
+                k = next
+            case return result:
+                return result + total
+    return total

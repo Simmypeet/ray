@@ -4,41 +4,34 @@ use std::fmt::{self, Display, Write as _};
 
 use qbice::storage::intern::Interned;
 use rayc_mono_ir::{
-    instance::FunctionReference,
+    MonoFunctionInstance,
     operand::{Constant, Operand},
-    rvalue::{AggregateValue, Rvalue},
-    ty::{AggregateType, EffectHandler},
+    rvalue::{Reinterpret, Rvalue},
 };
+use rayc_symbol::name::get_name;
 
 use crate::{
     c::{
         expr::{ConstantExpr, PlaceExpr, binary_operator_token, unary_operator_token},
-        name::{
-            AggregateName, ClosureName, DefinitionName, FieldName, FunctionName, NominalDropName,
-        },
+        name::FunctionName,
         ty::TypeName,
     },
     print::FunctionPrinter,
-    program::Linkage,
 };
 
 /// The C spelling of a referenced function.
 #[derive(Debug, Clone)]
 enum CalleeName {
-    Local(FunctionName),
-    Closure(ClosureName),
-    NominalDrop(NominalDropName),
-    Definition(DefinitionName),
+    /// A function generated in this translation unit.
+    Internal(FunctionName),
+    /// A function provided by the C environment under its source name.
     Extern(Interned<str>),
 }
 
 impl Display for CalleeName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Local(name) => name.fmt(formatter),
-            Self::Closure(name) => name.fmt(formatter),
-            Self::NominalDrop(name) => name.fmt(formatter),
-            Self::Definition(name) => name.fmt(formatter),
+            Self::Internal(name) => name.fmt(formatter),
             Self::Extern(name) => formatter.write_str(name),
         }
     }
@@ -70,77 +63,29 @@ impl FunctionPrinter<'_, '_> {
                 out.push_str("))");
                 Ok(())
             }
-            Rvalue::Aggregate(aggregate) => self.write_aggregate_value(out, aggregate).await,
+            Rvalue::Reinterpret(reinterpret) => self.write_reinterpret(out, reinterpret).await,
         }
     }
 
-    /// Writes a compound literal that initializes every member.
-    async fn write_aggregate_value(
+    /// A compound literal of a union of both types, whose bytes are written as
+    /// one and read as the other, which C defines even for types that differ
+    /// in size.
+    async fn write_reinterpret(
         &mut self,
         out: &mut String,
-        value: &AggregateValue,
+        reinterpret: &Reinterpret,
     ) -> fmt::Result {
-        let ty = aggregate_type_of(value);
-        write!(out, "(({}){{ ", AggregateName::of(&ty).typedef())?;
-        self.program.use_aggregate(ty).await;
-
-        let mut members = 0;
-        match value {
-            AggregateValue::Tuple(tuple) => {
-                for (index, operand) in tuple.fields().iter().enumerate() {
-                    self.write_member(
-                        out,
-                        &mut members,
-                        FieldName::positional(index, FieldName::Tuple),
-                        operand,
-                    )
-                    .await?;
-                }
-            }
-            AggregateValue::Environment(environment) => {
-                for (index, operand) in environment.fields().iter().enumerate() {
-                    let field = FieldName::positional(index, FieldName::Environment);
-                    self.write_member(out, &mut members, field, operand).await?;
-                }
-            }
-            AggregateValue::Struct(st) => {
-                for (field, operand) in st.fields() {
-                    self.write_member(out, &mut members, FieldName::Struct(*field), operand)
-                        .await?;
-                }
-            }
-            // Each operation slot is a closure: an environment and a callback.
-            AggregateValue::EffectHandler(handler) => {
-                for (operation, slot) in handler.slots() {
-                    let environment = FieldName::OperationEnvironment(*operation);
-                    self.write_member(out, &mut members, environment, slot.environment()).await?;
-                    let function = FieldName::OperationFunction(*operation);
-                    self.write_member(out, &mut members, function, slot.function()).await?;
-                }
-            }
-        }
-
-        if members == 0 {
-            out.push_str("._unit = 0");
-        }
-        out.push_str(" })");
+        self.program.use_type(reinterpret.source()).await;
+        self.program.use_type(reinterpret.target()).await;
+        write!(
+            out,
+            "((union {{ {} source; {} target; }}){{ .source = ",
+            TypeName(reinterpret.source()),
+            TypeName(reinterpret.target()),
+        )?;
+        self.write_operand(out, reinterpret.operand()).await?;
+        out.push_str(" }).target");
         Ok(())
-    }
-
-    /// Writes the `.field = value` initializer after the `members` before it.
-    async fn write_member(
-        &mut self,
-        out: &mut String,
-        members: &mut usize,
-        field: FieldName,
-        operand: &Operand,
-    ) -> fmt::Result {
-        if *members != 0 {
-            out.push_str(", ");
-        }
-        *members += 1;
-        write!(out, ".{field} = ")?;
-        self.write_operand(out, operand).await
     }
 
     pub(super) async fn write_operand(
@@ -150,10 +95,7 @@ impl FunctionPrinter<'_, '_> {
     ) -> fmt::Result {
         match operand {
             Operand::Copy(place) => write!(out, "{}", PlaceExpr(place)),
-            Operand::Constant(constant) => {
-                self.use_constant_type(constant).await;
-                write!(out, "{}", ConstantExpr::new(constant, self.program.unit_type()))
-            }
+            Operand::Constant(constant) => self.write_operand_constant(out, constant).await,
             Operand::Function(reference) => {
                 self.program.use_function(reference);
                 write!(out, "{}", self.callee_name(reference).await)
@@ -161,11 +103,21 @@ impl FunctionPrinter<'_, '_> {
         }
     }
 
+    pub(super) async fn write_operand_constant(
+        &mut self,
+        out: &mut String,
+        constant: &Constant,
+    ) -> fmt::Result {
+        self.use_constant_type(constant).await;
+        write!(out, "{}", ConstantExpr::new(constant, self.program.unit_type()))
+    }
+
     /// Records the aggregate types a constant is spelled with.
     async fn use_constant_type(&mut self, constant: &Constant) {
         match constant {
             Constant::Unit => self.program.use_aggregate(self.program.unit_type().clone()).await,
             Constant::NullPointer(ty) => self.program.use_type(ty).await,
+            Constant::EmptyAggregate(ty) => self.program.use_aggregate(ty.clone()).await,
             Constant::Bool(_)
             | Constant::Int8(_)
             | Constant::Int16(_)
@@ -183,33 +135,17 @@ impl FunctionPrinter<'_, '_> {
         }
     }
 
-    async fn callee_name(&self, reference: &FunctionReference) -> CalleeName {
-        match reference {
-            FunctionReference::Local(function_id) => {
-                CalleeName::Local(self.fragment.name(*function_id))
+    async fn callee_name(&self, instance: &MonoFunctionInstance) -> CalleeName {
+        match instance {
+            MonoFunctionInstance::ExternDef(def_id) => {
+                CalleeName::Extern(self.program.engine().get_name(*def_id).await)
             }
-            FunctionReference::Closure(closure) => CalleeName::Closure(ClosureName::of(closure)),
-            FunctionReference::NominalDrop(instance) => {
-                CalleeName::NominalDrop(NominalDropName::of(instance))
+            MonoFunctionInstance::Body(_)
+            | MonoFunctionInstance::NominalDrop(_)
+            | MonoFunctionInstance::CoroutineResume(_)
+            | MonoFunctionInstance::CoroutineDrop(_) => {
+                CalleeName::Internal(FunctionName::of(instance))
             }
-            FunctionReference::Global(instance) => match self.program.linkage(instance).await {
-                Linkage::Internal => CalleeName::Definition(DefinitionName::of(instance)),
-                Linkage::Extern(name) => CalleeName::Extern(name),
-            },
         }
-    }
-}
-
-/// The aggregate type an aggregate value constructs.
-fn aggregate_type_of(value: &AggregateValue) -> AggregateType {
-    match value {
-        AggregateValue::Tuple(tuple) => AggregateType::Tuple(tuple.ty().clone()),
-        AggregateValue::Environment(environment) => {
-            AggregateType::Environment(environment.ty().clone())
-        }
-        AggregateValue::EffectHandler(handler) => {
-            AggregateType::EffectHandler(EffectHandler::new(handler.effect().clone()))
-        }
-        AggregateValue::Struct(st) => AggregateType::Struct(st.ty().clone()),
     }
 }

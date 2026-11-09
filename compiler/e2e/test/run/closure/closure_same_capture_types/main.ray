@@ -1,0 +1,9 @@
+def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+    return d.call(value, args)
+
+def main() -> int32:
+    let base = 40
+    let offset = 2
+    let add = (value) -> value + base
+    let sub = (value) -> value - offset
+    return invoke(add, (invoke(sub, (4,)),))

@@ -1863,7 +1863,9 @@ name = "rayc_c2"
 version = "0.1.0-beta.2"
 dependencies = [
  "qbice",
+ "rayc_coroutine_frame_layout",
  "rayc_hash",
+ "rayc_ir",
  "rayc_mono_ir",
  "rayc_mono_ir_builder",
  "rayc_qbice",
@@ -2126,11 +2128,14 @@ dependencies = [
 name = "rayc_mono_ir"
 version = "0.1.0-beta.2"
 dependencies = [
+ "bon",
  "linkme",
  "qbice",
  "rayc_arena",
+ "rayc_coroutine_frame_layout",
  "rayc_extend",
  "rayc_hash",
+ "rayc_ir",
  "rayc_qbice",
  "rayc_semantic_element",
  "rayc_solver",
@@ -2144,6 +2149,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "qbice",
  "rayc_arena",
+ "rayc_coroutine_frame_layout",
  "rayc_hash",
  "rayc_ir",
  "rayc_lexical",

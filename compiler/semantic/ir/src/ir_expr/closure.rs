@@ -1,23 +1,25 @@
 use qbice::{Decode, Encode, StableHash};
 
-use crate::{ir_expr::IRExprID, ir_function::IRFunctionID};
+use crate::{ir_closure::CaptureOperands, ir_function::IRFunctionID};
 
 /// Creates a nominal closure whose capture storage is described by its type.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct Closure {
     function_id: IRFunctionID,
-    captures: Vec<IRExprID>,
+    /// The operand stored in each capture of the closure body's capture map.
+    captures: CaptureOperands,
 }
 
 impl Closure {
     #[must_use]
-    pub const fn new(function_id: IRFunctionID, captures: Vec<IRExprID>) -> Self {
+    pub const fn new(function_id: IRFunctionID, captures: CaptureOperands) -> Self {
         Self { function_id, captures }
     }
 
     #[must_use]
     pub const fn function_id(&self) -> IRFunctionID { self.function_id }
 
+    /// The operand stored in each capture of the closure body's capture map.
     #[must_use]
-    pub fn captures(&self) -> &[IRExprID] { &self.captures }
+    pub const fn captures(&self) -> &CaptureOperands { &self.captures }
 }

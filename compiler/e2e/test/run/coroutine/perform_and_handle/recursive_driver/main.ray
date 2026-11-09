@@ -1,0 +1,17 @@
+eff Ask:
+    def ask() -> int32
+
+
+def addTwo() -> int32 \ {Ask}:
+    return Ask.ask() + Ask.ask()
+
+
+# The first continuation waits for `()` and every later one for an `int32`, so
+# this driver has one instance per type it resumes with.
+def supply(k: core.Continuation[r, c], value: r, n: int32) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask() resume next: supply(next, n, n + 1)
+
+
+def main() -> int32:
+    return supply(coro addTwo(), (), 20)

@@ -1,0 +1,28 @@
+eff Handled:
+    def handled() -> int32
+
+
+eff Passed:
+    def passed(value: int32) -> int32
+
+
+def body() -> int32 \ {Handled, Passed}:
+    let first = Passed.passed(1)
+    let second = Handled.handled()
+    return first + second + Passed.passed(2)
+
+
+# `Passed` has no clause, so its handler in this ordinary function runs and the
+# coroutine is resumed with its result, from the same `handle`.
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 \ {Passed} where (co.Return = int32, co.Effect = {Handled, Passed}):
+    return handle k(value):
+        case Handled.handled() resume next: drive(next, 100)
+
+
+# first = 11, second = 100, third = 12: 123, which exits as 123
+def main() -> int32:
+    return run:
+        return drive(coro body(), ())
+    with Passed:
+        def passed(value):
+            return value + 10

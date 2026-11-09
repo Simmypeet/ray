@@ -1,0 +1,29 @@
+eff Ask:
+    def ask() -> int32
+
+
+eff Wide:
+    def wide() -> int32
+
+
+def widen() -> int32 \ {Wide}:
+    return Wide.wide()
+
+
+# The effect of `g` is only known at the call of `h`, and is a closed row.
+def both(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 \ {Ask, Wide} where (d.Args = (), d.Return = int32, d.Effect = {Ask}):
+    let h = (g) -> widen() + g()
+    return h(callable)
+
+
+# 32 + 10 = 42
+def main() -> int32:
+    return run:
+        return run:
+            return both(() -> Ask.ask())
+        with Wide:
+            def wide():
+                return 32
+    with Ask:
+        def ask():
+            return 10

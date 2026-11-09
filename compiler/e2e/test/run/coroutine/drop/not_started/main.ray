@@ -1,0 +1,31 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Noisy:
+    pub value: int32
+
+impl !core.Copy for Noisy
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def pair(first: Noisy, second: Noisy) -> int32 \ {Ask}:
+    return first.value + second.value + Ask.ask()
+
+
+# The coroutine is never resumed, so its frame still holds the arguments when
+# its storage ends. They are dropped like the parameters of a function that
+# returns: the last one first.
+def main() -> int32:
+    if true:
+        let k = coro pair(Noisy { value = 1 }, Noisy { value = 2 })
+        printf("created\n")
+    printf("after scope\n")
+    return 0

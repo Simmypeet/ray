@@ -1,0 +1,119 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ eff Ask:
+ 2 │     def ask() -> int32
+ 3 │
+ 4 │
+ 5 │ eff Wide:
+ 6 │     def wide() -> int32
+ 7 │
+ 8 │
+ 9 │ eff Uses[e: Effect]:
+10 │     def uses() -> int32
+11 │
+12 │
+13 │ def narrow() -> int32 \ {Uses[{Ask}]}:
+14 │     return Uses[{Ask}].uses()
+15 │
+16 │
+17 │ # OK: the label is the same, and the row is only a part of the function's.
+18 │ def composes() -> int32 \ {Uses[{Ask}], Wide}:
+19 │     return narrow() + Wide.wide()
+20 │
+21 │
+22 │ # ERROR: a row in the argument of a label is a part of that label, so it has to
+23 │ # match exactly, even though the label itself is on a row of the function.
+24 │ def argumentDiffers() -> int32 \ {Uses[{Ask, Wide}]}:
+   │     ^^^^^^^^^^^^^^^
+   ┆ [error]: function body effects do not match its signature: expected `{Uses[{Ask, Wide}]}`, but found `{Uses[{Ask}]}`
+   ┆    ╭▸ compiler/e2e/test/check/tast/effect_row_exact_inside_types/main.ray:24:5
+   ┆    │
+   ┆ 24 │ def argumentDiffers() -> int32 \ {Uses[{Ask, Wide}]}:
+   ┆    │     ━━━━━━━━━━━━━━━ the function body has effects outside its signature
+   ┆ 25 │     return narrow()
+   ┆    ╰╴           ──────── effect `{Uses[{Ask}]}` introduced here
+   ┆
+25 │     return narrow()
+26 │
+27 │
+28 │ def wider() -> int32 \ {Uses[{Ask, Wide}]}:
+29 │     return Uses[{Ask, Wide}].uses()
+30 │
+31 │
+32 │ # ERROR: the two labels meet on a row of the function, whose lesser row may be
+33 │ # opened, but the rows in their arguments still have to match exactly.
+34 │ def argumentsMeetInBody() -> int32 \ {Uses[{Ask, Wide}]}:
+35 │     return narrow() + wider()
+   │            ^^^^^^^^
+   ┆ [error]: incompatible effect rows `{Uses[{Ask}]}` and `{Uses[{Ask, Wide}]}`
+   ┆    ╭▸ compiler/e2e/test/check/tast/effect_row_exact_inside_types/main.ray:35:12
+   ┆    │
+   ┆ 35 │     return narrow() + wider()
+   ┆    │            ┯━━━━━━━   ─────── effect `{Uses[{Ask, Wide}]}` introduced here
+   ┆    │            │
+   ┆    ╰╴           these effect rows cannot be composed
+   ┆
+36 │
+37 │
+38 │ # ERROR: the same with the labels in the other order.
+39 │ def argumentsMeetInBodyOtherOrder() -> int32 \ {Uses[{Ask, Wide}]}:
+40 │     return wider() + narrow()
+   │            ^^^^^^^
+   ┆ [error]: incompatible effect rows `{Uses[{Ask, Wide}]}` and `{Uses[{Ask}]}`
+   ┆    ╭▸ compiler/e2e/test/check/tast/effect_row_exact_inside_types/main.ray:40:12
+   ┆    │
+   ┆ 39 │ def argumentsMeetInBodyOtherOrder() -> int32 \ {Uses[{Ask, Wide}]}:
+   ┆    │     ───────────────────────────── function body effect `{Uses[{Ask}]}` is checked against its signature here
+   ┆ 40 │     return wider() + narrow()
+   ┆    │            ┯━━━━━━   ──────── effect `{Uses[{Ask}]}` introduced here
+   ┆    │            │
+   ┆    ╰╴           these effect rows cannot be composed
+   ┆
+41 │
+42 │
+43 │ def takesCallback(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> () where (d.Args = (), d.Return = int32, d.Effect = {Ask, Wide}):
+44 │     return ()
+45 │
+46 │
+47 │ def askOnly() -> int32 \ {Ask}:
+48 │     return Ask.ask()
+49 │
+50 │
+51 │ # OK: only the row of a function can be a part of another.
+52 │ def wholeRow() -> int32 \ {Ask, Wide}:
+53 │     return askOnly()
+54 │
+55 │
+56 │ # ERROR: a row in the type of a callable is a part of that type, so it is not
+57 │ # enough for it to be a part of the required row.
+58 │ def callableRowDiffers(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> () where (d.Args = (), d.Return = int32, d.Effect = {Ask}):
+59 │     return takesCallback(callable)
+   │            ^^^^^^^^^^^^^
+   ┆ [error]: where-clause obligation for `main.takesCallback` is not satisfied
+   ┆    ╭▸ compiler/e2e/test/check/tast/effect_row_exact_inside_types/main.ray:59:12
+   ┆    │
+   ┆ 59 │     return takesCallback(callable)
+   ┆    ╰╴           ━━━━━━━━━━━━━ `d.Effect` must equal `{Ask, Wide}`
+   ┆
+60 │
+61 │
+62 │ # ERROR: `Wide` is not in the signature, which is not opened to make room for it.
+63 │ def signatureNotOpened() -> int32 \ {Ask}:
+   │     ^^^^^^^^^^^^^^^^^^
+   ┆ [error]: function body effects do not match its signature: expected `{Ask}`, but found `{Wide, Ask}`
+   ┆    ╭▸ compiler/e2e/test/check/tast/effect_row_exact_inside_types/main.ray:63:5
+   ┆    │
+   ┆ 63 │ def signatureNotOpened() -> int32 \ {Ask}:
+   ┆    │     ━━━━━━━━━━━━━━━━━━ the function body has effects outside its signature
+   ┆ 64 │     return askOnly() + Wide.wide()
+   ┆    │            ┬────────   ─────────── effect `{Wide}` introduced here
+   ┆    │            │
+   ┆    ╰╴           effect `{Ask}` introduced here
+   ┆
+64 │     return askOnly() + Wide.wide()
+65 │
+66 │
+67 │ def main() -> int32:
+68 │     return 0

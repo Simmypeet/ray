@@ -12,12 +12,17 @@ use qbice::{
     StableHash,
     stable_hash::{Sip128Hasher, StableHasher},
 };
+use rayc_coroutine_frame_layout::savable::Savable;
+use rayc_ir::{address::Local, ir_closure::CaptureID};
 use rayc_mono_ir::{
-    MonoClosureInstance, MonoDefInstance, MonoFragmentInstance, MonoGeneratedAdtDropInstance,
-    MonoIR,
+    MonoBodyInstance, MonoCoroutineInstance, MonoFunctionInstance, MonoGeneratedAdtDropInstance,
     cfg::BlockID,
-    function::{LocalID, MonoFunctionID, MonoFunctionKind},
-    place::Projection,
+    function::LocalID,
+    layout::{
+        HandlerRecordID,
+        coroutine::{ResumeVariantID, RowOperationID},
+    },
+    place::{CoroutineFrame, CoroutineProgress, CoroutineYield, Projection, RunWithFrames},
     ty::AggregateType,
 };
 use rayc_semantic_element::struct_body::FieldID;
@@ -73,10 +78,25 @@ pub(crate) struct AggregateName {
 impl AggregateName {
     pub(crate) fn of(aggregate: &AggregateType) -> Self {
         let (category, domain) = match aggregate {
-            AggregateType::EffectHandler(_) => ("EffectHandler", "rayc_c2::EffectHandlerLayout:v1"),
+            AggregateType::EffectHandlerCallback(_) => {
+                ("EffectHandler", "rayc_c2::EffectHandlerLayout:v1")
+            }
             AggregateType::Tuple(_) => ("Tuple", "rayc_c2::TupleLayout:v1"),
             AggregateType::Environment(_) => ("Environment", "rayc_c2::EnvironmentLayout:v1"),
             AggregateType::Struct(_) => ("Struct", "rayc_c2::StructLayout:v1"),
+            AggregateType::CoroutineFrame(_) => {
+                ("CoroutineFrame", "rayc_c2::CoroutineFrameLayout:v1")
+            }
+            AggregateType::CoroutineResume(_) => {
+                ("CoroutineResume", "rayc_c2::CoroutineResumeLayout:v1")
+            }
+            AggregateType::CoroutineYield(_) => {
+                ("CoroutineYield", "rayc_c2::CoroutineYieldLayout:v1")
+            }
+            AggregateType::CoroutineProgress(_) => {
+                ("CoroutineProgress", "rayc_c2::CoroutineProgressLayout:v1")
+            }
+            AggregateType::RunWithFrames(_) => ("RunWithFrames", "rayc_c2::RunWithFramesLayout:v1"),
         };
         Self { id: StableID::of(domain, aggregate), category }
     }
@@ -101,32 +121,35 @@ impl fmt::Display for AggregateTypedefName {
     }
 }
 
-/// The root function of a source definition instance.
+/// A function of the IR of a source definition instance, named by the
+/// definition, its substitution and the index of the function in the IR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DefinitionName {
+pub(crate) struct BodyName {
     symbol: StableID,
     substitution: StableID,
+    function: u64,
 }
 
-impl DefinitionName {
-    pub(crate) fn of(instance: &MonoDefInstance) -> Self {
+impl BodyName {
+    pub(crate) fn of(instance: &MonoBodyInstance) -> Self {
         Self {
             symbol: StableID::of("rayc_c2::DefinitionSymbol:v1", &instance.def_id()),
             substitution: StableID::of(
                 "rayc_c2::DefinitionSubstitution:v1",
                 instance.substitution(),
             ),
+            function: instance.ir_function_id().index(),
         }
     }
 }
 
-impl fmt::Display for DefinitionName {
+impl fmt::Display for BodyName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "ray_def_{}_{}", self.symbol, self.substitution)
+        write!(formatter, "ray_def_{}_{}_fn{:X}", self.symbol, self.substitution, self.function)
     }
 }
 
-/// The root function of a compiler-generated nominal `Drop.drop` fragment.
+/// A compiler-generated nominal `Drop.drop` function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NominalDropName(StableID);
 
@@ -142,77 +165,68 @@ impl fmt::Display for NominalDropName {
     }
 }
 
-/// The body of a source closure, which other fragments can reference.
+/// The `coroutine_resume` function of a coroutine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ClosureName(StableID);
+pub(crate) struct CoroutineResumeName(StableID);
 
-impl ClosureName {
-    pub(crate) fn of(instance: &MonoClosureInstance) -> Self {
-        Self(StableID::of("rayc_c2::NominalClosure:v1", instance))
+impl CoroutineResumeName {
+    pub(crate) fn of(instance: &MonoCoroutineInstance) -> Self {
+        Self(StableID::of("rayc_c2::CoroutineResume:v1", instance))
     }
 }
 
-impl fmt::Display for ClosureName {
+impl fmt::Display for CoroutineResumeName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "ray_nominal_{}", self.0)
+        write!(formatter, "ray_coroutine_resume_{}", self.0)
     }
 }
 
-/// The root function of an independently lowered fragment.
+/// The `coroutine_drop` function of a coroutine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FragmentName {
-    Definition(DefinitionName),
-    NominalDrop(NominalDropName),
-}
+pub(crate) struct CoroutineDropName(StableID);
 
-impl FragmentName {
-    pub(crate) fn of(instance: &MonoFragmentInstance) -> Self {
-        match instance {
-            MonoFragmentInstance::Definition(instance) => {
-                Self::Definition(DefinitionName::of(instance))
-            }
-            MonoFragmentInstance::NominalDrop(instance) => {
-                Self::NominalDrop(NominalDropName::of(instance))
-            }
-        }
+impl CoroutineDropName {
+    pub(crate) fn of(instance: &MonoCoroutineInstance) -> Self {
+        Self(StableID::of("rayc_c2::CoroutineDrop:v1", instance))
     }
 }
 
-impl fmt::Display for FragmentName {
+impl fmt::Display for CoroutineDropName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Definition(name) => name.fmt(formatter),
-            Self::NominalDrop(name) => name.fmt(formatter),
-        }
+        write!(formatter, "ray_coroutine_drop_{}", self.0)
     }
 }
 
-/// Any function owned by a `MonoIR` fragment.
+/// Any independently lowered function, which this translation unit defines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FunctionName {
-    /// The fragment's root function.
-    Root(FragmentName),
-    /// A closure, thunk, or operation handler nested in the fragment.
-    Nested { fragment: FragmentName, category: &'static str, index: u64 },
-    /// A source closure body, named independently of its owning fragment so
-    /// other fragments can reference it.
-    Closure(ClosureName),
+    Body(BodyName),
+    NominalDrop(NominalDropName),
+    CoroutineResume(CoroutineResumeName),
+    CoroutineDrop(CoroutineDropName),
 }
 
 impl FunctionName {
-    /// The name of `function_id` in `ir`, whose root function is called
-    /// `fragment`.
-    pub(crate) fn of(ir: &MonoIR, fragment: FragmentName, function_id: MonoFunctionID) -> Self {
-        if let Some(closure) = ir.closure_instance(function_id) {
-            return Self::Closure(ClosureName::of(&closure));
-        }
-        if function_id == ir.root_id() {
-            return Self::Root(fragment);
-        }
-        Self::Nested {
-            fragment,
-            category: nested_function_category(ir.get_function(function_id).kind()),
-            index: function_id.index(),
+    /// The name of the function `instance`.
+    ///
+    /// # Panics
+    ///
+    /// Panics for an `extern def`, which keeps its source name.
+    pub(crate) fn of(instance: &MonoFunctionInstance) -> Self {
+        match instance {
+            MonoFunctionInstance::Body(instance) => Self::Body(BodyName::of(instance)),
+            MonoFunctionInstance::ExternDef(_) => {
+                panic!("an `extern def` keeps its source name and is never defined")
+            }
+            MonoFunctionInstance::NominalDrop(instance) => {
+                Self::NominalDrop(NominalDropName::of(instance))
+            }
+            MonoFunctionInstance::CoroutineResume(instance) => {
+                Self::CoroutineResume(CoroutineResumeName::of(instance))
+            }
+            MonoFunctionInstance::CoroutineDrop(instance) => {
+                Self::CoroutineDrop(CoroutineDropName::of(instance))
+            }
         }
     }
 }
@@ -220,24 +234,11 @@ impl FunctionName {
 impl fmt::Display for FunctionName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Root(fragment) => fragment.fmt(formatter),
-            Self::Nested { fragment, category, index } => {
-                write!(formatter, "{fragment}_{category}_{index:X}")
-            }
-            Self::Closure(name) => name.fmt(formatter),
+            Self::Body(name) => name.fmt(formatter),
+            Self::NominalDrop(name) => name.fmt(formatter),
+            Self::CoroutineResume(name) => name.fmt(formatter),
+            Self::CoroutineDrop(name) => name.fmt(formatter),
         }
-    }
-}
-
-/// The name segment distinguishing a nested function's origin.
-fn nested_function_category(kind: MonoFunctionKind) -> &'static str {
-    match kind {
-        MonoFunctionKind::Def => {
-            panic!("compiler-internal invariant violation: nested function has def kind")
-        }
-        MonoFunctionKind::Closure => "closure",
-        MonoFunctionKind::Thunk => "thunk",
-        MonoFunctionKind::OperationHandler => "handler",
     }
 }
 
@@ -265,10 +266,27 @@ impl fmt::Display for BlockName {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FieldName {
     Tuple(u32),
-    Environment(u32),
+    EnvironmentCapture(CaptureID),
+    EnvironmentHandlerRecord(HandlerRecordID),
     Struct(FieldID),
     OperationEnvironment(GlobalSymbolID),
     OperationFunction(GlobalSymbolID),
+    CoroutineFrameState,
+    /// The member of a frame that holds a value. The structs and the union
+    /// around it are anonymous, so accessing it does not depend on where the
+    /// layout places the value, and every member of a frame has a unique name.
+    CoroutineFrameSavable(Savable),
+    CoroutineResumeValue(ResumeVariantID),
+    /// The tag of a `coroutine_progress_t` or a `coroutine_yield_t`.
+    CoroutineTag,
+    CoroutineProgressYield,
+    CoroutineProgressReturn,
+    CoroutineYieldOperation(RowOperationID),
+    RunWithHandlerEnvironment,
+    RunWithBody,
+    RunWithPhase,
+    /// The frame of the clause of an operation, in an anonymous union.
+    RunWithClause(GlobalSymbolID),
 }
 
 impl FieldName {
@@ -277,7 +295,10 @@ impl FieldName {
     pub(crate) const fn of_projection(projection: Projection) -> Option<Self> {
         match projection {
             Projection::Dereference => None,
-            Projection::EnvironmentFieldIndex(index) => Some(Self::Environment(index.index())),
+            Projection::EnvironmentCapture(capture) => Some(Self::EnvironmentCapture(capture)),
+            Projection::EnvironmentHandlerRecord(record) => {
+                Some(Self::EnvironmentHandlerRecord(record))
+            }
             Projection::TupleFieldIndex(index) => Some(Self::Tuple(index.index())),
             Projection::StructFieldIndex(field) => Some(Self::Struct(field)),
             Projection::OperationRecordEnvironmentField(operation) => {
@@ -286,10 +307,34 @@ impl FieldName {
             Projection::OperationRecordFunctionPointerField(operation) => {
                 Some(Self::OperationFunction(operation))
             }
+            Projection::CoroutineFrame(CoroutineFrame::Tag) => Some(Self::CoroutineFrameState),
+            Projection::CoroutineFrame(CoroutineFrame::Savable(savable)) => {
+                Some(Self::CoroutineFrameSavable(savable))
+            }
+            Projection::CoroutineResumeValue(variant) => Some(Self::CoroutineResumeValue(variant)),
+            Projection::CoroutineProgress(CoroutineProgress::Tag)
+            | Projection::CoroutineYield(CoroutineYield::Tag) => Some(Self::CoroutineTag),
+            Projection::CoroutineProgress(CoroutineProgress::YieldPayload) => {
+                Some(Self::CoroutineProgressYield)
+            }
+            Projection::CoroutineProgress(CoroutineProgress::ReturnPayload) => {
+                Some(Self::CoroutineProgressReturn)
+            }
+            Projection::CoroutineYield(CoroutineYield::OperationPayload(operation)) => {
+                Some(Self::CoroutineYieldOperation(operation))
+            }
+            Projection::RunWithFrames(RunWithFrames::HandlerEnvironment) => {
+                Some(Self::RunWithHandlerEnvironment)
+            }
+            Projection::RunWithFrames(RunWithFrames::Body) => Some(Self::RunWithBody),
+            Projection::RunWithFrames(RunWithFrames::Phase) => Some(Self::RunWithPhase),
+            Projection::RunWithFrames(RunWithFrames::Clause(operation)) => {
+                Some(Self::RunWithClause(operation))
+            }
         }
     }
 
-    /// The member at `index` of a tuple or environment layout.
+    /// The member at `index` of a tuple layout.
     pub(crate) fn positional(index: usize, make: fn(u32) -> Self) -> Self {
         make(index.try_into().expect("aggregate field index should fit in u32"))
     }
@@ -299,7 +344,10 @@ impl fmt::Display for FieldName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Tuple(index) => write!(formatter, "elem{index:X}"),
-            Self::Environment(index) => write!(formatter, "capture{index:X}"),
+            Self::EnvironmentCapture(capture) => write!(formatter, "capture{:X}", capture.index()),
+            Self::EnvironmentHandlerRecord(record) => {
+                write!(formatter, "handler{:X}", record.index())
+            }
             Self::Struct(field) => write!(formatter, "field_{}", field.index()),
             Self::OperationEnvironment(operation) => {
                 write!(formatter, "operation_{}_environment", operation_id(*operation))
@@ -307,7 +355,48 @@ impl fmt::Display for FieldName {
             Self::OperationFunction(operation) => {
                 write!(formatter, "operation_{}_function", operation_id(*operation))
             }
+            Self::CoroutineFrameState => formatter.write_str("state"),
+            Self::CoroutineFrameSavable(savable) => write_savable_name(formatter, *savable),
+            Self::CoroutineResumeValue(variant) => {
+                write!(formatter, "value{:X}", variant.index())
+            }
+            Self::CoroutineTag => formatter.write_str("tag"),
+            Self::CoroutineProgressYield => formatter.write_str("yield_value"),
+            Self::CoroutineProgressReturn => formatter.write_str("return_value"),
+            Self::CoroutineYieldOperation(operation) => {
+                write!(formatter, "operation{:X}", operation.index())
+            }
+            Self::RunWithHandlerEnvironment => formatter.write_str("handler_environment"),
+            Self::RunWithBody => formatter.write_str("body"),
+            Self::RunWithPhase => formatter.write_str("phase"),
+            Self::RunWithClause(operation) => {
+                write!(formatter, "clause_{}", operation_id(*operation))
+            }
         }
+    }
+}
+
+/// Writes the name of the member of a frame that holds `savable`.
+fn write_savable_name(formatter: &mut fmt::Formatter<'_>, savable: Savable) -> fmt::Result {
+    match savable {
+        Savable::Expression(expression) => write!(formatter, "expr{:X}", expression.index()),
+        Savable::ChildFrame(point) => {
+            write!(formatter, "child_frame{:X}", point.block_id().index())
+        }
+        Savable::Local(Local::Variable(variable)) => write!(formatter, "var{:X}", variable.index()),
+        Savable::Local(Local::Parameter(parameter)) => {
+            write!(formatter, "param{:X}", parameter.index())
+        }
+        Savable::Local(Local::ClosureParameter(parameter)) => {
+            write!(formatter, "closure_param{:X}", parameter.index())
+        }
+        Savable::Local(Local::OperationHandlerParameter(parameter)) => {
+            write!(formatter, "handler_param{:X}", parameter.index())
+        }
+        Savable::Local(Local::Capture(capture)) => {
+            write!(formatter, "capture{:X}", capture.index())
+        }
+        Savable::Environment => formatter.write_str("environment"),
     }
 }
 

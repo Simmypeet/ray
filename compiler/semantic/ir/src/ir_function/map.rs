@@ -138,6 +138,12 @@ impl IRFunctionMap {
         self.get_function(function_id)
     }
 
+    /// Returns whether `function_id` is the body of a source closure.
+    #[must_use]
+    pub fn is_closure_function(&self, function_id: IRFunctionID) -> bool {
+        self.closures.values().any(|function| *function == function_id)
+    }
+
     /// Iterates over nominal closure identities and their lowered functions.
     #[must_use]
     pub fn closures(&self) -> impl ExactSizeIterator<Item = (ClosureID, IRFunctionID)> {
@@ -296,11 +302,11 @@ impl IRFunctionMap {
     }
 
     #[must_use]
-    pub fn captures(
+    pub fn get_captures_of_function(
         &self,
         function_id: IRFunctionID,
     ) -> impl ExactSizeIterator<Item = (CaptureID, &Capture)> {
-        self.capture_map(function_id).iter()
+        self.capture_map(function_id).ordered_captures()
     }
 
     /// Returns the capture layout owned by a nested function context.
@@ -319,14 +325,14 @@ impl IRFunctionMap {
 
     /// Returns the arena-owned capture layout referenced by a nested function.
     #[must_use]
-    pub fn capture_map_id(&self, function_id: IRFunctionID) -> CaptureMapID {
+    pub fn get_capture_map_id(&self, function_id: IRFunctionID) -> CaptureMapID {
         self.get_function(function_id).context().assert_capture_map_id()
     }
 
     /// Returns the capture layout of a nested function, or `None` for the
     /// definition function, which does not capture values.
     #[must_use]
-    pub fn nested_capture_map_id(&self, function_id: IRFunctionID) -> Option<CaptureMapID> {
+    pub fn try_get_capture_map_id(&self, function_id: IRFunctionID) -> Option<CaptureMapID> {
         self.get_function(function_id).context().capture_map_id()
     }
 
@@ -380,7 +386,7 @@ impl IRFunctionMap {
     }
 
     fn capture_map(&self, function_id: IRFunctionID) -> &CaptureMap {
-        let capture_map = self.capture_map_id(function_id);
+        let capture_map = self.get_capture_map_id(function_id);
         self.capture_maps.get(capture_map).expect("IR capture map should exist")
     }
 

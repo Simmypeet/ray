@@ -1,17 +1,31 @@
 //! Resolves dictionaries and callee signatures in one concrete owner.
 //!
-//! Both source-definition fragments and generated nominal Drop fragments call
-//! through dictionaries. The owner substitution is empty for a generated Drop
-//! fragment because its dictionary key is already concrete.
+//! Both functions of source definitions and generated nominal Drop functions
+//! call through dictionaries. The owner substitution is empty for a generated
+//! Drop function because its dictionary key is already concrete.
 //!
-//! The resolver owns the fragment's single `Solver`; every normalization while
-//! lowering the fragment goes through it rather than a fresh solver.
+//! The resolver owns the single `Solver` of the function being lowered; every
+//! normalization while lowering it goes through it rather than a fresh solver.
 
 use qbice::storage::intern::Interned;
+use rayc_coroutine_frame_layout::frame_layout::FrameLayout;
+use rayc_ir::{get_ir, ir_closure::CaptureID};
 use rayc_mono_ir::{
-    MonoClosureInstance, MonoDefInstance, MonoEffectInstance, MonoGeneratedAdtDropInstance,
-    signature::{DefSignature, get_def_signature},
-    ty::{FunctionSignature, MonoType, lower_effects, lower_type, nominal_signature},
+    MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoFunctionInstance,
+    MonoGeneratedAdtDropInstance, MonoRunWithInstance, MonoStructInstance,
+    layout::{
+        StructLayout, build_struct_layout,
+        coroutine::{
+            EffectRowLayout, FrameFieldTypes, build_effect_row_layout, build_frame_field_types,
+            build_frame_layout,
+        },
+        run_with::{RunWithLayout, build_run_with_layout},
+    },
+    signature::{
+        CoroutineSignature, get_callback_signature, get_coroutine_signature,
+        get_extern_def_signature,
+    },
+    ty::{EffectRow, FunctionSignature, MonoType, ReturnType, instantiate_effect, lower_type},
 };
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
@@ -20,6 +34,7 @@ use rayc_symbol::{
     core_item::{CoreItem, get_core_item},
     member::get_member_by_name,
     name::get_name,
+    symbol_kind::{SymbolKind, get_symbol_kind},
 };
 use rayc_type::{
     instance_member::get_instance_member,
@@ -34,15 +49,27 @@ use rayc_type::{
 
 /// The concrete implementation selected by an instance call.
 pub(crate) enum InstanceCallable {
-    Definition(MonoDefInstance),
-    Closure(MonoClosureInstance, FunctionSignature, Vec<MonoEffectInstance>),
+    /// The definition function of a definition.
+    Definition(MonoBodyInstance),
+    /// The body of a closure, with its signature.
+    Closure(MonoBodyInstance, FunctionSignature),
     TupleDrop(Vec<Interned<Ty>>),
-    ClosureDrop(Vec<Interned<Ty>>),
+    /// The `Drop` dictionary of each capture of a closure.
+    ClosureDrop(Vec<(CaptureID, Interned<Ty>)>),
     NominalDrop(MonoGeneratedAdtDropInstance),
+    /// The `Drop` of the frame of a coroutine, with the `Drop` dictionary of
+    /// each of its upvars, in parameter order, which the `coro` that created
+    /// it chose.
+    CoroutineDrop {
+        coroutine: MonoCoroutineInstance,
+        upvars: Vec<Interned<Ty>>,
+    },
+    /// `Def.call` of a continuation, which resumes this coroutine.
+    Continuation(MonoCoroutineInstance),
     NoOp,
 }
 
-/// Instance-resolution state shared by every function in one fragment.
+/// Instance-resolution state of the function being lowered.
 pub(crate) struct Resolver {
     engine: TrackedEngine,
     solver: Solver,
@@ -54,23 +81,36 @@ impl Resolver {
         Self { engine: solver.engine().clone(), solver, substitution }
     }
 
+    pub(crate) const fn engine(&self) -> &TrackedEngine { &self.engine }
+
     /// Lowers a type from the owner's generic context.
     pub(crate) async fn lower_type(&self, ty: &Interned<Ty>) -> Interned<MonoType> {
         lower_type(&self.solver, ty, &self.substitution).await
     }
 
-    /// Lowers an effect row from the owner's generic context.
-    pub(crate) async fn lower_effects(&self, effect: &Interned<Ty>) -> Vec<MonoEffectInstance> {
-        lower_effects(&self.solver, effect, &self.substitution).await
+    /// The function that a direct call of `def_id` with `substitution` calls:
+    /// the `extern def` itself, or else the definition function of `def_id`.
+    pub(crate) async fn direct_callee(
+        &self,
+        def_id: GlobalSymbolID,
+        substitution: Subst,
+    ) -> MonoFunctionInstance {
+        // An `extern def` has no IR and cannot be polymorphic.
+        if self.engine.get_symbol_kind(def_id).await == SymbolKind::ExternDef {
+            return MonoFunctionInstance::ExternDef(def_id);
+        }
+
+        self.definition_instance(def_id, substitution).await.into()
     }
 
-    /// Normalizes a callee's arguments into a definition fragment key.
+    /// Normalizes a callee's arguments into the key of its definition
+    /// function.
     pub(crate) async fn definition_instance(
         &self,
         def_id: GlobalSymbolID,
         substitution: Subst,
-    ) -> MonoDefInstance {
-        MonoDefInstance::new(def_id, substitution, &self.solver).await
+    ) -> MonoBodyInstance {
+        MonoBodyInstance::new_definition(def_id, substitution, &self.solver).await
     }
 
     /// Resolves an abstract trait-method call to a definition or nominal
@@ -100,27 +140,45 @@ impl Resolver {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
                 InstanceCallable::NoOp
             }
+            ApplicationView::CoroutineDropInstance(instance) => {
+                assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
+                InstanceCallable::CoroutineDrop {
+                    coroutine: MonoCoroutineInstance::from_type(instance.coroutine(), &self.solver)
+                        .await,
+                    upvars: instance.upvar_instances().to_vec(),
+                }
+            }
             ApplicationView::TupleDropInstance(instance) => {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
                 InstanceCallable::TupleDrop(instance.element_instances().to_vec())
             }
             ApplicationView::ClosureDropInstance(instance) => {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
-                InstanceCallable::ClosureDrop(instance.capture_instances().to_vec())
+                let captures = self.closure_capture_ids(instance.closure()).await;
+                assert_eq!(captures.len(), instance.capture_instances().len());
+                InstanceCallable::ClosureDrop(
+                    captures
+                        .into_iter()
+                        .zip(instance.capture_instances().iter().cloned())
+                        .collect(),
+                )
             }
             ApplicationView::GeneratedAdtDropInstance(_) => {
                 assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DropMethod).await);
 
-                // The generated body is a separate fragment so recursive
+                // The generated body is a separate function so recursive
                 // nominal types do not expand indefinitely at the call site.
                 InstanceCallable::NominalDrop(
                     MonoGeneratedAdtDropInstance::new(&dictionary_ty, &self.solver).await,
                 )
             }
-            ApplicationView::CoroutineInstance(_)
-            | ApplicationView::ContinuationDefInstance(_)
-            | ApplicationView::CoroutineDropInstance(_) => {
-                panic!("coroutine dictionaries are not lowered to MonoIR yet")
+            ApplicationView::CoroutineInstance(_) => {
+                panic!("the `Coroutine` trait has no method to call")
+            }
+            ApplicationView::ContinuationDefInstance(continuation) => {
+                assert_eq!(trait_def_id, self.engine.get_core_item(CoreItem::DefCall).await);
+                let coroutine = continuation.coroutine_instance();
+                InstanceCallable::Continuation(self.resolve_coroutine_dictionary(coroutine).await)
             }
             ApplicationView::Primitive(_)
             | ApplicationView::Tuple(_)
@@ -148,13 +206,12 @@ impl Resolver {
     /// The ABI of a generated `Drop.drop`, matching `drop(self: T) -> unit`.
     pub(crate) async fn nominal_drop_signature(&self, nominal: &Interned<Ty>) -> FunctionSignature {
         let parameter = self.lower_type(nominal).await;
-        let unit = self.unit_type().await;
-        MonoType::new_function_signature([parameter], unit, &self.engine)
-    }
-
-    /// The lowered unit type, which every `Drop.drop` call returns.
-    pub(crate) async fn unit_type(&self) -> Interned<MonoType> {
-        lower_type(&self.solver, &Ty::new_unit(&self.engine), &Subst::new_empty()).await
+        let unit = MonoType::new_unit(&self.engine);
+        FunctionSignature::builder()
+            .parameter_types(self.engine.intern_unsized([parameter]))
+            .return_type(ReturnType::Value(unit))
+            .engine(&self.engine)
+            .build()
     }
 
     /// Selects a nominal body and its ABI from a built-in Def dictionary.
@@ -172,11 +229,22 @@ impl Resolver {
             panic!("DefInstance requires a nominal closure")
         };
 
-        // Leave owner-body discovery to the backend worklist to allow fragment
-        // cycles.
-        let instance = MonoClosureInstance::from_closure(&self.solver, closure).await;
-        let (signature, effects) = nominal_signature(&self.solver, closure).await;
-        InstanceCallable::Closure(instance, signature, effects)
+        // Leave body discovery to the backend worklist to allow cycles.
+        let instance = MonoBodyInstance::from_closure(&self.solver, closure).await;
+        let signature = self.callback_signature(&instance).await;
+        InstanceCallable::Closure(instance, signature)
+    }
+
+    /// The captures of the closure of type `closure_ty`, in the order of its
+    /// captured tuple, which is the order of its capture map.
+    async fn closure_capture_ids(&self, closure_ty: &Interned<Ty>) -> Vec<CaptureID> {
+        let closure = closure_ty.unwrap_as_closure_view();
+        let instance = MonoBodyInstance::from_closure(&self.solver, closure).await;
+        let source = self.engine.get_ir(instance.def_id()).await;
+        source
+            .get_captures_of_function(instance.ir_function_id())
+            .map(|(capture, _)| capture)
+            .collect()
     }
 
     /// Maps a trait method into the concrete instance and method namespaces.
@@ -240,13 +308,125 @@ impl Resolver {
         substitution.compose(&local_substitution, &self.engine);
 
         // From this point on, the call is indistinguishable from any other
-        // global MonoIR call: a concrete definition ID plus its substitution.
+        // call of a definition: a concrete definition ID plus its substitution.
         InstanceCallable::Definition(self.definition_instance(instance_def_id, substitution).await)
     }
 
-    /// The calling signature of a global definition instance, including the
+    /// The coroutine that a call resumes if `dictionary` makes it a call of a
+    /// continuation, rather than of a function with a frame of its own.
+    pub(crate) async fn resolve_continuation_dictionary(
+        &self,
+        dictionary: &Interned<Ty>,
+    ) -> Option<MonoCoroutineInstance> {
+        let dictionary = dictionary.apply_subst_or_clone(&self.substitution, &self.engine);
+        let dictionary = self.solver.normalize(&dictionary).await;
+        let Ty::Application(application) = &*dictionary else {
+            return None;
+        };
+        let ApplicationView::ContinuationDefInstance(continuation) = application.view() else {
+            return None;
+        };
+
+        Some(self.resolve_coroutine_dictionary(continuation.coroutine_instance()).await)
+    }
+
+    /// The coroutine behind a `Coroutine` dictionary, which is written for a
+    /// coroutine type or a `&mut` to one.
+    pub(crate) async fn resolve_coroutine_dictionary(
+        &self,
+        dictionary: &Interned<Ty>,
+    ) -> MonoCoroutineInstance {
+        let dictionary = dictionary.apply_subst_or_clone(&self.substitution, &self.engine);
+        let dictionary = self.solver.normalize(&dictionary).await;
+        let Ty::Application(application) = &*dictionary else {
+            panic!("a `Coroutine` dictionary should be a concrete application")
+        };
+        let ApplicationView::CoroutineInstance(coroutine) = application.view() else {
+            panic!("a `Coroutine` dictionary should be the built-in instance")
+        };
+        let coroutine =
+            coroutine.as_reference_view().map_or(coroutine, |reference| reference.pointee());
+
+        MonoCoroutineInstance::from_type(coroutine, &self.solver).await
+    }
+
+    pub(crate) async fn coroutine_signature(
+        &self,
+        instance: &MonoCoroutineInstance,
+    ) -> Interned<CoroutineSignature> {
+        self.engine.get_coroutine_signature(instance.clone()).await
+    }
+
+    pub(crate) async fn effect_row_layout(&self, row: &EffectRow) -> Interned<EffectRowLayout> {
+        self.engine.build_effect_row_layout(row.clone()).await
+    }
+
+    pub(crate) async fn struct_layout(
+        &self,
+        instance: &MonoStructInstance,
+    ) -> Interned<StructLayout> {
+        self.engine.build_struct_layout(instance.clone()).await
+    }
+
+    pub(crate) async fn run_with_layout(
+        &self,
+        instance: &MonoRunWithInstance,
+    ) -> Interned<RunWithLayout> {
+        self.engine.build_run_with_layout(instance.clone()).await
+    }
+
+    pub(crate) async fn frame_layout(
+        &self,
+        instance: &MonoCoroutineInstance,
+    ) -> Interned<FrameLayout> {
+        self.engine.build_frame_layout(instance.clone()).await
+    }
+
+    pub(crate) async fn frame_field_types(
+        &self,
+        instance: &MonoCoroutineInstance,
+    ) -> Interned<FrameFieldTypes> {
+        self.engine.build_frame_field_types(instance.clone()).await
+    }
+
+    /// The calling signature of a function of a definition's IR, including the
     /// effects whose handlers the caller must pass.
-    pub(crate) async fn def_signature(&self, instance: &MonoDefInstance) -> Interned<DefSignature> {
-        self.engine.get_def_signature(instance.clone()).await
+    pub(crate) async fn callback_signature(
+        &self,
+        instance: &MonoBodyInstance,
+    ) -> FunctionSignature {
+        self.engine.get_callback_signature(instance.clone()).await
+    }
+
+    /// The calling signature of any function, which a caller spells without
+    /// lowering it.
+    pub(crate) async fn function_signature(
+        &self,
+        instance: &MonoFunctionInstance,
+    ) -> FunctionSignature {
+        match instance {
+            MonoFunctionInstance::Body(body) => self.callback_signature(body).await,
+            MonoFunctionInstance::ExternDef(def_id) => {
+                self.engine.get_extern_def_signature(*def_id).await
+            }
+            MonoFunctionInstance::NominalDrop(drop) => {
+                self.nominal_drop_signature(drop.view().nominal()).await
+            }
+            MonoFunctionInstance::CoroutineResume(coroutine) => {
+                self.coroutine_signature(coroutine).await.resume_signature().clone()
+            }
+            MonoFunctionInstance::CoroutineDrop(coroutine) => {
+                self.coroutine_signature(coroutine).await.drop_signature().clone()
+            }
+        }
+    }
+
+    pub(crate) async fn instantiate_effect(
+        &self,
+        effect_id: GlobalSymbolID,
+        substitution: &Subst,
+        owner_substituion: &Subst,
+    ) -> MonoEffectInstance {
+        self.solver.instantiate_effect(effect_id, substitution, owner_substituion).await
     }
 }

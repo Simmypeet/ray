@@ -1,0 +1,12 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 21
+
+stdout:
+
+
+stderr:

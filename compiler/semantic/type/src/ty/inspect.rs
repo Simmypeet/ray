@@ -348,6 +348,20 @@ impl Ty {
         })
     }
 
+    /// Determines whether the type is concrete, meaning it contains no
+    /// inference variables, no polymorphic, no unreduced projections, and
+    /// lifetimes are all erased.
+    #[must_use]
+    pub fn is_concrete(&self) -> bool {
+        self.recursive_iter().all(|x| match x {
+            Self::Application(application) => !application.is_projection(),
+            Self::EffectRow(_) => true,
+            Self::Lifetime(lifetime) => lifetime.is_erased(),
+
+            Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) => false,
+        })
+    }
+
     #[must_use]
     pub fn has_poly_variable(&self, poly_var: &GlobalPolyVarID) -> bool {
         self.recursive_iter().any(|ty| match ty {

@@ -7,11 +7,17 @@
 //! [`MonoType`] and rendered once the base type is reached, so no
 //! intermediate strings are allocated.
 
-use std::fmt::{self, Display};
+use std::{
+    borrow::Cow,
+    fmt::{self, Display},
+};
 
 use rayc_mono_ir::{
     function::MonoFunction,
-    ty::{FunctionSignature, MonoType, PointerMutability, ReturnType},
+    ty::{
+        AggregateType, EffectHandlerCallback, FunctionSignature, MonoType, PointerMutability,
+        ReturnType,
+    },
 };
 
 use crate::c::name::{AggregateName, LocalName};
@@ -179,6 +185,36 @@ impl Display for Declaration<'_> {
     }
 }
 
+/// A `const pointee *name` declaration, given the pointee itself, so the
+/// pointer type need not be interned. Without a name it is a type name.
+#[derive(Clone, Copy)]
+pub(crate) struct ConstPointerDeclaration<'a> {
+    pointee: &'a MonoType,
+    name: Option<&'a dyn Display>,
+}
+
+impl<'a> ConstPointerDeclaration<'a> {
+    pub(crate) const fn new(pointee: &'a MonoType, name: &'a dyn Display) -> Self {
+        Self { pointee, name: Some(name) }
+    }
+
+    const fn type_name(pointee: &'a MonoType) -> Self { Self { pointee, name: None } }
+}
+
+impl fmt::Debug for ConstPointerDeclaration<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "ConstPointerDeclaration({self})")
+    }
+}
+
+impl Display for ConstPointerDeclaration<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let inner = self.name.map_or(Declarator::Abstract, Declarator::Name);
+        let declarator = Declarator::Pointer { is_const: false, inner: &inner };
+        Declaration { ty: self.pointee, declarator, is_const: true }.fmt(formatter)
+    }
+}
+
 /// A C type name without an identifier, as used in casts.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TypeName<'a>(pub(crate) &'a MonoType);
@@ -206,25 +242,66 @@ struct ParameterList<'a> {
 
 impl Display for ParameterList<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let types = self.signature.parameter_types();
+        let signature = self.signature;
         match self.parameters {
+            // The environment, the source parameters, then the handler
+            // records, as `FunctionSignature` orders them in C.
             Parameters::Unnamed => {
-                write_separated(formatter, types.iter().map(|ty| TypeName(ty)))?;
+                let environment = signature
+                    .environment_slot()
+                    .map(|slot| UnnamedParameter::Value(Cow::Owned(slot.ty())));
+                let parameters = signature
+                    .parameter_types()
+                    .iter()
+                    .map(|ty| UnnamedParameter::Value(Cow::Borrowed(&**ty)));
+                let handler_records = signature.handler_record_slots().iter().map(|effect| {
+                    UnnamedParameter::HandlerRecord(MonoType::Aggregate(
+                        AggregateType::EffectHandlerCallback(EffectHandlerCallback::new(
+                            effect.clone(),
+                        )),
+                    ))
+                });
+                write_separated(
+                    formatter,
+                    environment.into_iter().chain(parameters).chain(handler_records),
+                )?;
             }
+            // The parameter locals are created in the same order, with the
+            // type of each slot.
             Parameters::NamedAfter(function) => {
-                assert_eq!(types.len(), function.parameters().len());
-                let names = function.parameters().map(LocalName);
-                let declarations =
-                    types.iter().zip(names).map(|(ty, name)| NamedParameter { ty, name });
+                assert_eq!(signature.abi_parameter_count(), function.abi_parameters().count());
+                let declarations = function.abi_parameters().map(|local| NamedParameter {
+                    ty: function.get_local(local).ty(),
+                    name: LocalName(local),
+                });
                 write_separated(formatter, declarations)?;
             }
         }
 
-        match (self.signature.is_variadic(), types.is_empty()) {
+        match (signature.is_variadic(), signature.abi_parameter_count() == 0) {
             (true, true) => formatter.write_str("..."),
             (true, false) => formatter.write_str(", ..."),
             (false, true) => formatter.write_str("void"),
             (false, false) => Ok(()),
+        }
+    }
+}
+
+/// A parameter of a prototype, which has no name.
+enum UnnamedParameter<'a> {
+    Value(Cow<'a, MonoType>),
+    /// `const EffectHandler_E *`, given by the record type itself, since a
+    /// prototype has no engine to intern the pointer type with.
+    HandlerRecord(MonoType),
+}
+
+impl Display for UnnamedParameter<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Value(ty) => TypeName(ty).fmt(formatter),
+            Self::HandlerRecord(record) => {
+                ConstPointerDeclaration::type_name(record).fmt(formatter)
+            }
         }
     }
 }

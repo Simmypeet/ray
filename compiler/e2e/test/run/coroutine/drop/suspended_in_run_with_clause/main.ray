@@ -1,0 +1,55 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Noisy:
+    pub value: int32
+
+impl !core.Copy for Noisy
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+eff Ask:
+    def ask() -> int32
+
+
+eff Counter:
+    def bump() -> int32
+
+
+def abandoned() -> int32:
+    printf("abandoned\n")
+    return 0
+
+
+# Answers the first `Ask` by dropping the continuation, so the coroutine stays
+# suspended there until its storage ends.
+def abandon(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask() resume _: abandoned()
+
+
+# The clause yields `Ask` out of `gen` while the body waits for it at
+# `Counter.bump`. Dropping the frame of `gen` drops the clause first, which
+# only borrows `outside`, then the body, and then what `gen` holds itself.
+def gen() -> int32 \ {Ask}:
+    let outside = Noisy { value = 0 }
+    let result = run:
+        let local = Noisy { value = 2 }
+        return local.value + Counter.bump()
+    with Counter:
+        def bump():
+            let held = Noisy { value = 3 }
+            return held.value + outside.value + Ask.ask()
+    return result + outside.value
+
+
+def main() -> int32:
+    if true:
+        let result = abandon(coro gen(), ())
+        printf("result %d\n", result)
+    printf("after scope\n")
+    return 0

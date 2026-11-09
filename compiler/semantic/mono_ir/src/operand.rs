@@ -1,6 +1,10 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 
-use crate::{instance::FunctionReference, place::Place, ty::MonoType};
+use crate::{
+    instance::MonoFunctionInstance,
+    place::Place,
+    ty::{AggregateType, MonoType},
+};
 
 /// A scalar or aggregate constant whose type is inherent in its variant.
 #[derive(
@@ -24,6 +28,9 @@ pub enum Constant {
     CInt(i32),
     CStr(Interned<str>),
     NullPointer(Interned<MonoType>),
+    /// The value of an aggregate with no members, which no field assignment
+    /// could initialize.
+    EmptyAggregate(AggregateType),
 }
 
 impl Constant {
@@ -38,10 +45,5 @@ impl Constant {
 pub enum Operand {
     Copy(Place),
     Constant(Constant),
-    /// The address of a function. Its signature is that of the referenced
-    /// function: a local function's own, or
-    /// [`get_def_signature`](crate::signature::get_def_signature) for a
-    /// global definition. Callers thus depend on a callee's declaration
-    /// rather than its lowered body.
-    Function(FunctionReference),
+    Function(MonoFunctionInstance),
 }

@@ -1,0 +1,25 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ pub trait EffWithAssoc[]:
+ 2 │     pub type Assoc: Effect
+ 3 │
+ 4 │
+ 5 │ pub eff A:
+ 6 │     def a()
+ 7 │
+ 8 │
+ 9 │ pub eff B:
+10 │     def b()
+11 │
+12 │
+13 │ pub eff C:
+14 │     def c()
+15 │
+16 │
+17 │ pub def composeTest(
+18 │     param: def() \ {A | i.Assoc}
+19 │ ) given (i: EffWithAssoc) \ {A, B, C} where (i.Assoc = {B}):
+20 │     param()
+21 │     C.c()

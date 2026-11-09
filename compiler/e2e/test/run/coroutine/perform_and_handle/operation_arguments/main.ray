@@ -1,0 +1,24 @@
+eff Log:
+    def add(left: int32, right: int32) -> int32
+    def flag(value: bool) -> bool
+    def mark() -> ()
+
+
+# Several operations with different arguments and different resume types.
+def script() -> int32 \ {Log}:
+    let sum = Log.add(30, 12)
+    Log.mark()
+    if Log.flag(true):
+        return sum
+    return 0
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Log}):
+    return handle k(value):
+        case Log.add(left, right) resume next: drive(next, left + right)
+        case Log.flag(value) resume next: drive(next, value)
+        case Log.mark() resume next: drive(next, ())
+
+
+def main() -> int32:
+    return drive(coro script(), ())

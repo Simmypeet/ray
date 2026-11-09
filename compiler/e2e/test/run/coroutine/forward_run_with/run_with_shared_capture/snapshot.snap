@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 18
+
+stdout:
+log 1
+log 2
+log 2
+log 4
+
+
+stderr:

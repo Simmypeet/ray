@@ -1,0 +1,15 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 7
+
+stdout:
+created, then asked 7
+drop 1
+after scope
+
+
+stderr:

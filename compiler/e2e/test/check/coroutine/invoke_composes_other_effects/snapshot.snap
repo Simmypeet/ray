@@ -1,0 +1,100 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ eff Ask:
+ 2 │     def ask() -> int32
+ 3 │
+ 4 │
+ 5 │ eff Wide:
+ 6 │     def wide() -> int64
+ 7 │     def wide2() -> int32
+ 8 │
+ 9 │
+10 │ # OK: `co.Effect` reduces to a closed row through the `where` clause, which only
+11 │ # has to be a part of the effect of the function.
+12 │ def composes(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 \ {Ask, Wide} where (co.Return = int32, co.Effect = {Ask}):
+13 │     let total = k(value)
+14 │     let wide = Wide.wide()
+15 │     return total
+16 │
+17 │
+18 │ # OK: the same through a callable, after the other effect.
+19 │ def composesCallable(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 \ {Ask, Wide} where (d.Args = (), d.Return = int32, d.Effect = {Ask}):
+20 │     let wide = Wide.wide()
+21 │     return d.call(callable, ())
+22 │
+23 │
+24 │ def widen() -> int32 \ {Wide}:
+25 │     return Wide.wide2()
+26 │
+27 │
+28 │ # OK: `g` is only known at the call of `h`, after `widen` was composed with it,
+29 │ # and only then does its effect reduce to a closed row.
+30 │ def knownLate(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 \ {Ask, Wide} where (d.Args = (), d.Return = int32, d.Effect = {Ask}):
+31 │     let h = (g) -> widen() + g()
+32 │     return h(callable)
+33 │
+34 │
+35 │ # OK: the same with the effects in the other order.
+36 │ def knownLateOtherOrder(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 \ {Ask, Wide} where (d.Args = (), d.Return = int32, d.Effect = {Ask}):
+37 │     let h = (g) -> g() + widen()
+38 │     return h(callable)
+39 │
+40 │
+41 │ # ERROR: `Wide` is outside the signature.
+42 │ def wideOutside(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 \ {Ask} where (co.Return = int32, co.Effect = {Ask}):
+   │     ^^^^^^^^^^^
+   ┆ [error]: function body effects do not match its signature: expected `{Ask}`, but found `{Ask, Wide}`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/invoke_composes_other_effects/main.ray:42:5
+   ┆    │
+   ┆ 42 │ def wideOutside(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 \ {Ask} where (co.Return = int32, co.Effe…
+   ┆    │     ━━━━━━━━━━━ the function body has effects outside its signature
+   ┆ 43 │     let total = k(value)
+   ┆    │                 ──────── effect `{Ask}` introduced here
+   ┆ 44 │     let wide = Wide.wide()
+   ┆    ╰╴               ─────────── effect `{Wide}` introduced here
+   ┆
+43 │     let total = k(value)
+44 │     let wide = Wide.wide()
+45 │     return total
+46 │
+47 │
+48 │ # ERROR: `Ask`, which the reduced row tells, is outside the signature.
+49 │ def askOutside(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 \ {Wide} where (co.Return = int32, co.Effect = {Ask}):
+   │     ^^^^^^^^^^
+   ┆ [error]: function body effects do not match its signature: expected `{Wide}`, but found `{Ask, Wide}`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/invoke_composes_other_effects/main.ray:49:5
+   ┆    │
+   ┆ 49 │ def askOutside(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 \ {Wide} where (co.Return = int32, co.Effe…
+   ┆    │     ━━━━━━━━━━ the function body has effects outside its signature
+   ┆ 50 │     let total = k(value)
+   ┆    │                 ──────── effect `{Ask}` introduced here
+   ┆ 51 │     let wide = Wide.wide()
+   ┆    ╰╴               ─────────── effect `{Wide}` introduced here
+   ┆
+50 │     let total = k(value)
+51 │     let wide = Wide.wide()
+52 │     return total
+53 │
+54 │
+55 │ # ERROR: `d.Effect` does not reduce, so it stays opaque.
+56 │ def opaque(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 \ {Wide} where (d.Args = (), d.Return = int32):
+   │     ^^^^^^
+   ┆ [error]: function body effects do not match its signature: expected `{Wide}`, but found `d.Effect`
+   ┆    ╭▸ compiler/e2e/test/check/coroutine/invoke_composes_other_effects/main.ray:56:5
+   ┆    │
+   ┆ 56 │ def opaque(callable: f) given (d: core.Def[f], _: core.Drop[f]) -> int32 \ {Wide} where (d.Args = (), d.Return = int32):
+   ┆    │     ━━━━━━ the function body has effects outside its signature
+   ┆ 57 │     let total = d.call(callable, ())
+   ┆    │                 ──────────────────── effect `d.Effect` introduced here
+   ┆ 58 │     let wide = Wide.wide()
+   ┆    ╰╴               ─────────── effect `{Wide}` introduced here
+   ┆
+57 │     let total = d.call(callable, ())
+58 │     let wide = Wide.wide()
+59 │     return total
+60 │
+61 │
+62 │ def main() -> int32:
+63 │     return 0

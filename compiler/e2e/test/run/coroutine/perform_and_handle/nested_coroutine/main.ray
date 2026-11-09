@@ -1,0 +1,34 @@
+eff Outer:
+    def outer(value: int32) -> int32
+
+
+eff Inner:
+    def inner(value: int32) -> int32
+
+
+def innermost() -> int32 \ {Inner}:
+    return Inner.inner(1) + Inner.inner(2)
+
+
+def driveInner(k: core.Continuation[r, c], value: r, total: int32) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Inner}):
+    return handle k(value):
+        case Inner.inner(value) resume next: driveInner(next, value * 2, total + value)
+        case return result: result + total
+
+
+# A coroutine creates and drives another coroutine, whose frame is stored in its
+# own, while it also suspends for itself.
+def middle() -> int32 \ {Outer}:
+    let first = Outer.outer(10)
+    let inner = driveInner(coro innermost(), (), 0)
+    return first + inner + Outer.outer(0)
+
+
+def driveOuter(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Outer}):
+    return handle k(value):
+        case Outer.outer(value) resume next: driveOuter(next, value + 15)
+
+
+# 25 + (2 + 4 + 3) + 15 = 49
+def main() -> int32:
+    return driveOuter(coro middle(), ())

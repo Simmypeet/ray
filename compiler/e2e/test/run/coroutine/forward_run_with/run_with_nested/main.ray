@@ -1,0 +1,43 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+def trace(value: int32) -> int32:
+    printf("log %d\n", value)
+    return value
+
+
+eff Outer:
+    def outer(value: int32) -> int32
+
+
+eff Inner:
+    def inner(value: int32) -> int32
+
+
+eff Log:
+    def log(value: int32) -> int32
+
+
+# The inner `run` is in the body of the outer one. Its clause performs `Outer`,
+# which the outer clause handles, and `Log`, which leaves `body`.
+def body() -> int32 \ {Log}:
+    return run:
+        let x = run:
+            return Inner.inner(1) + Outer.outer(2)
+        with Inner:
+            def inner(value):
+                return Outer.outer(value) + Log.log(value)
+        return x + Outer.outer(3)
+    with Outer:
+        def outer(value):
+            return value * 2 + Log.log(value)
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Log}):
+    return handle k(value):
+        case Log.log(value) resume next: drive(next, trace(value))
+
+
+# inner(1) = outer(1) + 1 = 3 + 1 = 4; outer(2) = 6; x = 10; outer(3) = 9; 19
+def main() -> int32:
+    return drive(coro body(), ())

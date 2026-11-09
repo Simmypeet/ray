@@ -189,6 +189,20 @@ pub(super) enum ResolvedRootCause {
     EffectUnification(ResolvedEffectUnification),
 }
 
+impl EffectUnificationSource {
+    /// Returns whether the source only requires the effects of something to be
+    /// a part of those of what contains it.
+    ///
+    /// A signature has to match the body it is checked against, and a handled
+    /// effect has to be visible in the coroutine's row, so neither is one.
+    pub(super) const fn relates_part_of_effect(&self) -> bool {
+        match self {
+            Self::EffectSharing | Self::EffectIntroduction { .. } => true,
+            Self::FunctionBodyEffect | Self::HandledEffect { .. } => false,
+        }
+    }
+}
+
 impl Provenance {
     pub fn insert_instance_resolution_cause(&mut self, parent_cause_id: CauseID) -> CauseID {
         self.insert_derived_cause(StepRule::InstanceResolved { parent_cause_id })

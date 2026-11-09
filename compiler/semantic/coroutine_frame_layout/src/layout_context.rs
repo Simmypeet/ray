@@ -78,7 +78,7 @@ impl<'a> LayoutContext<'a> {
         self.ir_function.context().capture_map_id().map(|capture_map_id| {
             self.ir_function_map
                 .get_capture_map(capture_map_id)
-                .iter()
+                .ordered_captures()
                 .map(|(id, _)| Savable::Local(Local::Capture(id)))
         })
     }
@@ -92,9 +92,9 @@ impl<'a> LayoutContext<'a> {
     /// Returns the values held across the suspension point that terminates
     /// `block_id`, each once.
     ///
-    /// The expressions the terminator evaluates are not held: the waitee is
-    /// consumed by it, and the values it defines on its outgoing edges do not
-    /// exist yet while it is suspended.
+    /// The expressions the terminator evaluates are not held: the suspending
+    /// expression is consumed by it, and the values it defines on its outgoing
+    /// edges do not exist yet while it is suspended.
     pub(crate) fn savables_at(&self, block_id: BlockID) -> impl Iterator<Item = Savable> + '_ {
         let terminator = self
             .ir_function
@@ -102,6 +102,10 @@ impl<'a> LayoutContext<'a> {
             .expect("a suspension point is a terminator");
         let borrowed_locals =
             self.maybe_borrowed_locals.block_exit(block_id).expect("should exist");
+
+        // A borrowed capture stays in the environment the frame points to.
+        let is_in_frame =
+            |local: &Local| !(self.borrows_captures() && matches!(local, Local::Capture(_)));
 
         // a local may be both live and borrowed, so the live ones that are
         // borrowed are left to the borrowed locals
@@ -111,6 +115,7 @@ impl<'a> LayoutContext<'a> {
             .expect("should exist")
             .live()
             .filter(|local| !borrowed_locals.contains(*local))
+            .filter(is_in_frame)
             .map(Savable::Local);
         let saved_exprs = self
             .expr_liveness
@@ -119,7 +124,7 @@ impl<'a> LayoutContext<'a> {
             .live()
             .filter(|expr| !terminator.evaluated_expressions().any(|defined| defined == *expr))
             .map(Savable::Expression);
-        let saved_borrowed_locals = borrowed_locals.iter().map(Savable::Local);
+        let saved_borrowed_locals = borrowed_locals.iter().filter(is_in_frame).map(Savable::Local);
 
         saved_locals.chain(saved_exprs).chain(saved_borrowed_locals)
     }
