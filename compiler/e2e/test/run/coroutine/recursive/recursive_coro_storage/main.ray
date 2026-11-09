@@ -1,0 +1,40 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+def trace(depth: int32) -> int32:
+    printf("ask %d\n", depth)
+    return depth
+
+
+eff Ask:
+    def ask(depth: int32) -> int32
+
+
+eff Tell:
+    def tell() -> int32
+
+
+# `walk` builds the coroutine of the next level in the storage of a `coro`,
+# and holds that storage across the `handle`, so the frame of `walk` would
+# hold the frame of `walk`. The `handle` handles `Tell` and forwards `Ask`.
+# `value` is held across the `handle` too.
+def walk(n: int32) -> int32 \ {Ask, Tell}:
+    let value = Ask.ask(n)
+    if n == 0:
+        return value
+    let k = coro walk(n - 1)
+    let rest = handle k():
+        case Tell.tell() resume _: 0
+    return value + rest
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 where (co.Return = int32, co.Effect = {Ask, Tell}):
+    return handle k(value):
+        case Ask.ask(depth) resume next: drive(next, trace(depth) * 10)
+        case Tell.tell() resume _: 0
+
+
+# 30 + 20 + 10 + 0 = 60
+def main() -> int32:
+    printf("result %d\n", drive(coro walk(3), ()))
+    return 0

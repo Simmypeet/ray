@@ -1,0 +1,64 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Noisy:
+    pub value: int32
+
+impl !core.Copy for Noisy
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+eff Ask:
+    def ask() -> int32
+
+
+eff Tell:
+    def tell() -> int32
+
+
+def abandoned() -> int32:
+    printf("abandoned\n")
+    return 0
+
+
+# Answers the first `Ask` by dropping the continuation, so the coroutine stays
+# suspended there until its storage ends.
+def abandon(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask() resume _: abandoned()
+
+
+# Four frames of `descend` are suspended, each boxed in the storage of a `coro`
+# in the frame of the level above. The storage is declared after `held`, so
+# each level drops the level below first: innermost first, and every box is
+# freed.
+def descend(n: int32) -> int32 \ {Ask, Tell}:
+    let held = Noisy { value = n }
+    if n == 0:
+        return held.value + Ask.ask()
+    let k = coro descend(n - 1)
+    let rest = handle k():
+        case Tell.tell() resume _: 0
+    return held.value + rest
+
+
+# `Tell` is never performed, so this only forwards `Ask`.
+def forward(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 \ {Ask} where (co.Return = int32, co.Effect = {Ask, Tell}):
+    return handle k(value):
+        case Tell.tell() resume _: 0
+
+
+def start() -> int32 \ {Ask}:
+    return forward(coro descend(3), ())
+
+
+def main() -> int32:
+    if true:
+        let result = abandon(coro start(), ())
+        printf("result %d\n", result)
+    printf("after scope\n")
+    return 0

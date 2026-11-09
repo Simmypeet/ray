@@ -1,0 +1,31 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+def trace(leaf: int32) -> int32:
+    printf("leaf %d\n", leaf)
+    return leaf
+
+
+eff Ask:
+    def ask(leaf: int32) -> int32
+
+
+# Each of the two recursive calls holds the frame of `walk` on its own, so
+# both have to be boxed.
+def walk(n: int32, leaf: int32) -> int32 \ {Ask}:
+    if n == 0:
+        return Ask.ask(leaf)
+    let left = walk(n - 1, leaf * 2)
+    let right = walk(n - 1, leaf * 2 + 1)
+    return left + right
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask(leaf) resume next: drive(next, trace(leaf))
+
+
+# the leaves are 4 to 7: 4 + 5 + 6 + 7 = 22
+def main() -> int32:
+    printf("result %d\n", drive(coro walk(2, 1), ()))
+    return 0

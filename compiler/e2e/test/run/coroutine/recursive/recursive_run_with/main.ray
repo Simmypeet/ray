@@ -1,0 +1,44 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+def trace(value: int32) -> int32:
+    printf("log %d\n", value)
+    return value
+
+
+eff Ask:
+    def ask() -> int32
+
+
+eff Log:
+    def log(value: int32) -> int32
+
+
+# The body of the `run` calls `nest` again, so the frames of the `run` hold
+# the frame of `nest`, which holds them. The body calls it twice, so boxing
+# the frames of the `run` once is cheaper than boxing both calls.
+#
+# The body forwards the `Log` of the inner `nest`, and the clause performs
+# `Log` itself, so both yield out of `nest` while it is suspended at the `run`.
+def nest(n: int32) -> int32 \ {Log}:
+    if n == 0:
+        return Log.log(0)
+    let result = run:
+        let first = nest(n - 1)
+        let second = nest(n - 1)
+        return first + second + Ask.ask()
+    with Ask:
+        def ask():
+            return Log.log(n)
+    return result
+
+
+def drive(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Log}):
+    return handle k(value):
+        case Log.log(value) resume next: drive(next, trace(value) + 1)
+
+
+# nest(0) = 1; nest(1) = 1 + 1 + 2 = 4; nest(2) = 4 + 4 + 3 = 11
+def main() -> int32:
+    printf("result %d\n", drive(coro nest(2), ()))
+    return 0

@@ -1,0 +1,17 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+leaf 4
+leaf 5
+leaf 6
+leaf 7
+result 22
+
+
+stderr:

@@ -1,0 +1,17 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 0
+
+stdout:
+ask 3
+ask 2
+ask 1
+ask 0
+result 60
+
+
+stderr:
