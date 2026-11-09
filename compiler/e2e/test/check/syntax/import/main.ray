@@ -1,0 +1,22 @@
+# Imports are written at the top of a module's content, both in a file and
+# in an inline module body, in every accepted form.
+import core
+import core.Drop, core.Copy
+import (core.Drop, core.Copy)
+import ()
+from core import Drop
+from core import (
+  Drop,
+  Copy,
+)
+from super.a import (b)
+
+module inner:
+  import core.Drop
+  from target import inner
+
+  pub def helper():
+    pass
+
+pub def main():
+  pass

@@ -1,0 +1,56 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ # A malformed import is reported on its own line and parsing continues with
+ 2 │ # the next import and then the module members.
+ 3 │ import
+   │       ^
+   ┆ [error]: unexpected new line, expected identifier, `super` keyword, `target` keyword, `this` keyword, or `( ... )` block
+   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:3:7
+   ┆   │
+   ┆ 3 │   import
+   ┆   │ ┏━━━━━━━┛
+   ┆ 4 │ ┃ from core
+   ┆   ╰╴┗━┛
+   ┆
+ 4 │ from core
+   │          ^
+   ┆ [error]: unexpected new line, expected `.` punctuation, `import` keyword, or `[ ... ]` block
+   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:4:10
+   ┆   │
+   ┆ 4 │   from core
+   ┆   │ ┏━━━━━━━━━━┛
+   ┆ 5 │ ┃ import core.Drop core.Copy
+   ┆   ╰╴┗━┛
+   ┆
+ 5 │ import core.Drop core.Copy
+   │                  ^^^^
+   ┆ [error]: unexpected `core` identifier, expected `,` punctuation, `.` punctuation, new line, or `[ ... ]` block
+   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:5:18
+   ┆   │
+   ┆ 5 │ import core.Drop core.Copy
+   ┆   ╰╴                 ━━━━
+   ┆
+ 6 │ from core import (Drop Copy)
+   │                        ^^^^
+   ┆ [error]: unexpected `Copy` identifier, expected `,` punctuation, `.` punctuation, or `[ ... ]` block
+   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:6:24
+   ┆   │
+   ┆ 6 │ from core import (Drop Copy)
+   ┆   ╰╴                       ━━━━
+   ┆
+ 7 │ import core.Drop
+ 8 │
+ 9 │ pub def main():
+10 │   pass
+11 │
+12 │ # Imports are only accepted at the top of the module's content.
+13 │ import core.Copy
+   │ ^^^^^^
+   ┆ [error]: unexpected `import` keyword, expected module member or `pass` keyword
+   ┆    ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:13:1
+   ┆    │
+   ┆ 13 │ import core.Copy
+   ┆    ╰╴━━━━━━
+   ┆

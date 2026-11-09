@@ -12,6 +12,7 @@ use crate::{
     effect::Effect,
     r#enum::Enum,
     extern_def::ExternDef,
+    import::Import,
     instance::Instance,
     marker::{Marker, MarkerImplementation},
     r#struct::Struct,
@@ -39,6 +40,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
     #{fragment = Fragment::Indentation}
     pub struct ModuleBody {
+        pub imports: #[multi] Import = Import::lines(),
         pub members: #[multi] Passable<ModuleMember> =
             ast::<Passable<ModuleMember>>().line().repeat_all()
     }
@@ -73,6 +75,7 @@ abstract_tree::abstract_tree! {
         Decode
     )]
     pub struct ModuleContent {
+        pub imports: #[multi] Import = Import::lines(),
         pub members: #[multi] Passable<ModuleMember> =
             ast::<Passable<ModuleMember>>().line().repeat_all()
     }

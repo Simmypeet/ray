@@ -1,0 +1,26 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ # Imports are written at the top of a module's content, both in a file and
+ 2 │ # in an inline module body, in every accepted form.
+ 3 │ import core
+ 4 │ import core.Drop, core.Copy
+ 5 │ import (core.Drop, core.Copy)
+ 6 │ import ()
+ 7 │ from core import Drop
+ 8 │ from core import (
+ 9 │   Drop,
+10 │   Copy,
+11 │ )
+12 │ from super.a import (b)
+13 │
+14 │ module inner:
+15 │   import core.Drop
+16 │   from target import inner
+17 │
+18 │   pub def helper():
+19 │     pass
+20 │
+21 │ pub def main():
+22 │   pass
