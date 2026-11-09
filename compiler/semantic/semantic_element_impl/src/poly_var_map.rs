@@ -294,20 +294,37 @@ async fn insert_given_parameters(
                 .obligation_handler(obligations)
                 .build();
 
-            let (Some(name), Some(trait_ref)) = (parameter.name(), parameter.trait_reference())
-            else {
+            let Some(trait_path) = parameter.trait_reference() else {
                 continue;
             };
-            let Ok(trait_ref) = resolver.resolve_trait_path(&trait_ref).await else {
+            // `None` declares an anonymous parameter, as `core.Drop[t]` or
+            // `_: core.Drop[t]`.
+            let name = match parameter.name() {
+                Some(name) => {
+                    let Some(name) = name.name() else { continue };
+                    (*name.kind.0 != *"_").then_some(name)
+                }
+                None => None,
+            };
+            let Ok(trait_ref) = resolver.resolve_trait_path(&trait_path).await else {
                 continue;
             };
 
-            insert_poly_var(
-                poly_vars,
-                enclosing,
-                PolyVar::new_instance(name.kind.0.clone(), trait_ref, name.span()),
-                storage,
-            );
+            match name {
+                Some(name) => insert_poly_var(
+                    poly_vars,
+                    enclosing,
+                    PolyVar::new_instance(name.kind.0.clone(), trait_ref, name.span()),
+                    storage,
+                ),
+                None => {
+                    poly_vars.insert_anonymous(PolyVar::new_instance(
+                        engine.intern_unsized("_"),
+                        trait_ref,
+                        trait_path.span(),
+                    ));
+                }
+            }
         }
     }
 }

@@ -128,11 +128,16 @@ impl GivenTraits {
             .iter()
             .flat_map(GivenParameters::parameters)
         {
+            // An anonymous parameter cannot be referred to, so discovery
+            // never needs its trait.
             let (Some(name), Some(trait_reference)) =
-                (parameter.name(), parameter.trait_reference())
+                (parameter.name().and_then(|name| name.name()), parameter.trait_reference())
             else {
                 continue;
             };
+            if *name.kind.0 == *"_" {
+                continue;
+            }
             let Some(symbol_id) = find_path_target(engine, site, &trait_reference).await else {
                 continue;
             };

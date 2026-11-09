@@ -388,9 +388,9 @@ impl Explanation {
         let child_display = child.display(engine).await;
         let (message, highlight) = match step {
             Step::NestedInstanceGiven { instance_id, parameter } => {
-                let (name, span) = poly_var(engine, parameter).await;
+                let (given, span) = given_parameter(engine, parameter).await;
                 let message = format!(
-                    "`{}` matches `{}`, but its given `{name}` needs `{child_display}`",
+                    "`{}` matches `{}`, but its {given} needs `{child_display}`",
                     engine.get_qualified_name(instance_id).await,
                     parent.display(engine).await,
                 );
@@ -464,7 +464,7 @@ impl Explanation {
                 // A requirement on a type variable can be passed in by the
                 // caller; one on a concrete type cannot.
                 if goal.contains_poly_var() {
-                    self.help = Some(format!("add `given (_: {})`", goal.display(engine).await));
+                    self.help = Some(format!("add `given ({})`", goal.display(engine).await));
                 }
             }
             Leaf::UndeterminedParameter(parameter) => {
@@ -550,8 +550,8 @@ impl Explanation {
     ) {
         let mut highlights = Vec::new();
         for parameter in givens {
-            let (name, span) = poly_var(engine, *parameter).await;
-            highlights.push(labeled(engine, span, format!("given `{name}`")).await);
+            let (given, span) = given_parameter(engine, *parameter).await;
+            highlights.push(labeled(engine, span, given).await);
         }
         self.ambiguity(engine, goal, "several givens provide", highlights, at_root).await;
     }
@@ -918,6 +918,22 @@ async fn declaration(
 async fn poly_var(engine: &TrackedEngine, parameter: GlobalPolyVarID) -> (String, RelativeSpan) {
     let map = engine.get_poly_var_map(parameter.parent_id()).await;
     (map.name_of(parameter.id()).to_owned(), map[parameter.id()].span())
+}
+
+/// Describes a given parameter as "given `name`", or as "anonymous given"
+/// when it has no name, and returns its declaration.
+async fn given_parameter(
+    engine: &TrackedEngine,
+    parameter: GlobalPolyVarID,
+) -> (String, RelativeSpan) {
+    let map = engine.get_poly_var_map(parameter.parent_id()).await;
+    let name = map.name_of(parameter.id());
+    let description = if map.find_by_name(name) == Some(parameter.id()) {
+        format!("given `{name}`")
+    } else {
+        "anonymous given".to_owned()
+    };
+    (description, map[parameter.id()].span())
 }
 
 /// Explains a dropped argument of a coroutine, at the parameter it was

@@ -157,14 +157,15 @@ impl Resolver<'_> {
                 if let Some(argument_name) = argument.name() {
                     saw_named = true;
                     let Some(name) = argument_name.name() else { continue };
-                    let Some(index) = parameters
-                        .into_iter()
-                        .flat_map(PolyVarMap::iter)
-                        .skip(type_parameter_count)
-                        .position(|(_, expected)| {
-                            expected.is_source() && **expected.name() == *name.kind.0
-                        })
-                    else {
+                    // Anonymous and generated dictionaries bypass the name
+                    // index, so only named given parameters are found.
+                    let Some(index) = parameters.and_then(|parameters| {
+                        let id = parameters.find_by_name(&name.kind.0)?;
+                        parameters
+                            .iter()
+                            .skip(type_parameter_count)
+                            .position(|(parameter_id, _)| parameter_id == id)
+                    }) else {
                         self.report_given_argument_not_found(name.kind.0.clone(), name.span());
                         continue;
                     };
