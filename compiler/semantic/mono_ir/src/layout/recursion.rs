@@ -221,15 +221,14 @@ async fn scc_representative_executor(
     engine: &TrackedEngine,
 ) -> Option<MonoCoroutineInstance> {
     let graph = ReachableGraph::explore(key.instance.clone(), engine).await;
-    let members = graph.component_of_start();
 
-    // a single member is on a cycle only if it holds itself
-    let is_trivial = match members.as_slice() {
-        [member] => !graph.holds_itself(member),
-        _ => false,
-    };
+    // a trivial component needs no walk backward to find its members
+    if !graph.start_is_on_cycle() {
+        return None;
+    }
 
-    if is_trivial { None } else { members.into_iter().next() }
+    // the members come in `Ord` order, so the first is the smallest
+    graph.component_of_start().into_iter().next()
 }
 
 #[distributed_slice(RAY_PROGRAM)]
@@ -351,14 +350,20 @@ struct ReachableGraph {
     nodes: Vec<MonoCoroutineInstance>,
     numbers: FxHashMap<MonoCoroutineInstance, usize>,
     slots: Vec<Interned<[FrameSlot]>>,
+    /// Whether a slot of some coroutine found holds the start.
+    start_is_held: bool,
 }
 
 impl ReachableGraph {
     /// Finds every coroutine that `start` reaches, reading nothing but their
     /// slots.
     async fn explore(start: MonoCoroutineInstance, engine: &TrackedEngine) -> Self {
-        let mut graph =
-            Self { nodes: Vec::new(), numbers: FxHashMap::default(), slots: Vec::new() };
+        let mut graph = Self {
+            nodes: Vec::new(),
+            numbers: FxHashMap::default(),
+            slots: Vec::new(),
+            start_is_held: false,
+        };
         graph.insert(start);
 
         // breadth first: every node found is explored once, in order
@@ -366,8 +371,11 @@ impl ReachableGraph {
         while let Some(node) = graph.nodes.get(next).cloned() {
             let slots = engine.get_frame_successors(node).await;
             for target in slots.iter().flat_map(FrameSlot::targets) {
-                if !graph.numbers.contains_key(target) {
-                    graph.insert(target.clone());
+                match graph.numbers.get(target) {
+                    // the start is numbered first
+                    Some(0) => graph.start_is_held = true,
+                    Some(_) => {}
+                    None => graph.insert(target.clone()),
                 }
             }
             graph.slots.push(slots);
@@ -421,13 +429,15 @@ impl ReachableGraph {
         members
     }
 
+    /// Whether the start is on a cycle: whether its component is not trivial.
+    ///
+    /// The start is on a cycle exactly when a coroutine found holds it. That
+    /// holder is the start itself, or another coroutine that the start reaches
+    /// and that reaches the start back, so a member of its component.
+    const fn start_is_on_cycle(&self) -> bool { self.start_is_held }
+
     /// The slots of `node`.
     fn slots_of(&self, node: &MonoCoroutineInstance) -> impl Iterator<Item = &FrameSlot> {
         self.slots[self.numbers[node]].iter()
-    }
-
-    /// Whether a slot of `node` holds `node` itself.
-    fn holds_itself(&self, node: &MonoCoroutineInstance) -> bool {
-        self.slots_of(node).any(|slot| slot.targets().any(|target| target == node))
     }
 }
