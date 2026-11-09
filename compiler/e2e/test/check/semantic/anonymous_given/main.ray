@@ -1,0 +1,27 @@
+trait Eq[a]:
+    def equals(lhs: a, rhs: a) -> bool
+
+inst EqInt for Eq[int32]:
+    def equals(lhs: int32, rhs: int32) -> bool:
+        return lhs == rhs
+
+def mixed(value: a) given (Eq[a], named: Eq[a]) -> bool:
+    return named.equals(value, value) and Eq.equals(value, value)
+
+def underscores() given (_: Eq[int32], _: Eq[int32]) -> bool:
+    return true
+
+def positional() -> bool:
+    return mixed[given EqInt, EqInt](1) and underscores[given EqInt, EqInt]()
+
+def byName() -> bool:
+    return mixed[given named = EqInt](1)
+
+def anonymousByName() -> bool:
+    return underscores[given _ = EqInt]()
+
+def anonymousIsNotAName(value: a) given (Eq[a]) -> bool:
+    return _.equals(value, value)
+
+def needsDrop(value: a) -> ():
+    return ()

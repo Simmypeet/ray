@@ -131,7 +131,7 @@ expression: snapshot
    ┆ 76 │     forget(value, if condition:
    ┆    │            ━━━━━ this value is dropped when it goes out of scope
    ┆    │
-   ┆    ╰ help: add `given (_: core.Drop[a])`
+   ┆    ╰ help: add `given (core.Drop[a])`
    ┆
 77 │         return 0
 78 │     else:

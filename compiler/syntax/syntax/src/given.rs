@@ -10,9 +10,19 @@ use crate::{Identifier, Keyword, Punctuation, path::Path};
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
-    pub struct GivenParameter {
+    pub struct GivenParameterName {
         pub name: Identifier = expect::Identifier,
-        pub colon: Punctuation = ':',
+        pub colon: Punctuation = ':'
+    }
+}
+
+abstract_tree::abstract_tree! {
+    /// A given parameter, as `d: core.Drop[t]`. The name is optional: an
+    /// anonymous parameter, as `core.Drop[t]`, still provides its instance to
+    /// the body, but cannot be referred to or supplied by name.
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+    pub struct GivenParameter {
+        pub name: GivenParameterName = ast::<GivenParameterName>().optional(),
         pub trait_reference: Path = ast::<Path>()
     }
 }

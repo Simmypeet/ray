@@ -61,7 +61,7 @@ expression: snapshot
    ┆ 34 │     return print(xs)
    ┆    │            ━━━━━
    ┆    │
-   ┆    ╰ help: add `given (_: main.Show[a])`
+   ┆    ╰ help: add `given (main.Show[a])`
    ┆ [note]: `main.ShowList` matches `main.Show[List[a]]`, but its given `element` needs `main.Show[a]`
    ┆    ╭▸ compiler/e2e/test/check/tast/instance_failure_given_chain/main.ray:16:43
    ┆    │

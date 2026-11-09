@@ -13,7 +13,7 @@ expression: snapshot
   ┆ 4 │     () -> value
   ┆   │ ━━━━━━━━━━━━━━━
   ┆   │
-  ┆   ╰ help: add `given (_: core.Drop[a])`
+  ┆   ╰ help: add `given (core.Drop[a])`
   ┆ [note]: dropping the closure drops a value it captures, of type `a`
   ┆ [note]: no instance of `core.Drop[a]` exists
   ┆

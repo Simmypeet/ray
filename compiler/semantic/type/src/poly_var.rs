@@ -253,6 +253,15 @@ impl PolyVarMap {
         self.type_parameters().nth(index).map(|(_, poly_var)| poly_var.kind())
     }
 
+    /// Inserts a source variable that has no name, such as the anonymous
+    /// given parameter `core.Drop[t]` in `given (core.Drop[t])`. It keeps
+    /// its source position, so it is still supplied positionally, but it
+    /// bypasses the source-name index and can never be found by name.
+    pub fn insert_anonymous(&mut self, variable: PolyVar) -> PolyVarID {
+        assert!(matches!(variable.origin, PolyVarOrigin::Source));
+        self.poly_vars.insert(variable)
+    }
+
     /// Generated binders deliberately bypass the source-name index.
     pub fn insert_generated(&mut self, mut variable: PolyVar, origin: PolyVarOrigin) -> PolyVarID {
         assert!(!matches!(origin, PolyVarOrigin::Source));

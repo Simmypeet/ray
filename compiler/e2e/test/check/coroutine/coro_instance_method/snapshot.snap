@@ -87,7 +87,7 @@ expression: snapshot
    ┆ 62 │     let k = coro s.next(source)
    ┆    │             ━━━━━━━━━━━━━━━━━━━ the arguments of this coroutine are dropped if it is never resumed
    ┆    │
-   ┆    ╰ help: add `given (_: core.Drop[t])`
+   ┆    ╰ help: add `given (core.Drop[t])`
    ┆
 63 │
 64 │
