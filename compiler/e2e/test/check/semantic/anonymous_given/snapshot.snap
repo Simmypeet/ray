@@ -1,0 +1,65 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ trait Eq[a]:
+ 2 │     def equals(lhs: a, rhs: a) -> bool
+ 3 │
+ 4 │ inst EqInt for Eq[int32]:
+ 5 │     def equals(lhs: int32, rhs: int32) -> bool:
+ 6 │         return lhs == rhs
+ 7 │
+ 8 │ def mixed(value: a) given (Eq[a], named: Eq[a]) -> bool:
+ 9 │     return named.equals(value, value) and Eq.equals(value, value)
+   │                                           ^^^^^^^^^
+   ┆ [error]: ambiguous lexical instances: `main.Eq[a]`
+   ┆   ╭▸ compiler/e2e/test/check/semantic/anonymous_given/main.ray:9:43
+   ┆   │
+   ┆ 8 │ def mixed(value: a) given (Eq[a], named: Eq[a]) -> bool:
+   ┆   │                            ┬────  ───── given `named`
+   ┆   │                            │
+   ┆   │                            anonymous given
+   ┆ 9 │     return named.equals(value, value) and Eq.equals(value, value)
+   ┆   ╰╴                                          ━━━━━━━━━
+   ┆
+10 │
+11 │ def underscores() given (_: Eq[int32], _: Eq[int32]) -> bool:
+12 │     return true
+13 │
+14 │ def positional() -> bool:
+15 │     return mixed[given EqInt, EqInt](1) and underscores[given EqInt, EqInt]()
+16 │
+17 │ def byName() -> bool:
+18 │     return mixed[given named = EqInt](1)
+19 │
+20 │ def anonymousByName() -> bool:
+21 │     return underscores[given _ = EqInt]()
+   │                              ^
+   ┆ [error]: given parameter `_` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/anonymous_given/main.ray:21:30
+   ┆    │
+   ┆ 21 │     return underscores[given _ = EqInt]()
+   ┆    ╰╴                             ━ given parameter `_` is not found
+   ┆
+22 │
+23 │ def anonymousIsNotAName(value: a) given (Eq[a]) -> bool:
+24 │     return _.equals(value, value)
+   │            ^
+   ┆ [error]: symbol `_` is not found
+   ┆    ╭▸ compiler/e2e/test/check/semantic/anonymous_given/main.ray:24:12
+   ┆    │
+   ┆ 24 │     return _.equals(value, value)
+   ┆    ╰╴           ━ symbol `_` is not found
+   ┆
+25 │
+26 │ def needsDrop(value: a) -> ():
+   │               ^^^^^^^^
+   ┆ [error]: no implicit instance found: `core.Drop[a]`
+   ┆    ╭▸ compiler/e2e/test/check/semantic/anonymous_given/main.ray:26:15
+   ┆    │
+   ┆ 26 │ def needsDrop(value: a) -> ():
+   ┆    │               ━━━━━━━━ this value is dropped when it goes out of scope
+   ┆    │
+   ┆    ╰ help: add `given (core.Drop[a])`
+   ┆
+27 │     return ()

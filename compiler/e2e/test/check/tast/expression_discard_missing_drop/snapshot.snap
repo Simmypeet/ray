@@ -15,5 +15,5 @@ expression: snapshot
   ┆ 6 │     identity(value)
   ┆   │     ━━━━━━━━━━━━━━━
   ┆   │
-  ┆   ╰ help: add `given (_: core.Drop[a])`
+  ┆   ╰ help: add `given (core.Drop[a])`
   ┆

@@ -36,7 +36,7 @@ expression: snapshot
    ┆ 17 │     let pair = (1, (true, value))
    ┆    │         ━━━━ this value is dropped when it goes out of scope
    ┆    │
-   ┆    ╰ help: add `given (_: core.Drop[a])`
+   ┆    ╰ help: add `given (core.Drop[a])`
    ┆ [note]: dropping `(int32, (bool, a))` drops its element `1`, of type `(bool, a)`
    ┆ [note]: dropping `(bool, a)` drops its element `1`, of type `a`
    ┆ [note]: no instance of `core.Drop[a]` exists

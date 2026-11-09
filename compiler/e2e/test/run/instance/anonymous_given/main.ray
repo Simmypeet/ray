@@ -1,0 +1,16 @@
+trait Identity[t]:
+    def identity(value: t) -> t
+
+inst IntIdentity for Identity[int32]:
+    def identity(value: int32) -> int32:
+        return value
+
+inst BoolIdentity for Identity[bool]:
+    def identity(value: bool) -> bool:
+        return value
+
+pub def choose(cond: bool, trueVal: int32, falseVal: int32) given(Identity[int32], Identity[bool]) -> int32:
+    return if Identity.identity(cond): Identity.identity(trueVal) else: Identity.identity(falseVal)
+
+def main() -> int32:
+    return choose[given IntIdentity, BoolIdentity](true, 40, 0) + choose(false, 0, 2)
