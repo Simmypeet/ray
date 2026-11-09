@@ -15,7 +15,7 @@ use tempfile::{Builder, NamedTempFile, TempPath};
 
 use crate::{
     invocation::Artifact,
-    native::{CompileOptions, NativeError, compile_c, launch_executable, link_executable},
+    native::{NativeError, NativeOptions, compile_c, launch_executable, link_executable},
 };
 
 /// A temporary compiler-owned artifact.
@@ -135,7 +135,7 @@ pub(super) async fn execute(
                 engine,
                 target_id,
                 entry_point,
-                artifact.compile_options(),
+                artifact.native_options(),
                 output_path,
             )
             .await?;
@@ -147,7 +147,7 @@ pub(super) async fn execute(
             }
         }
         TargetKind::Object => {
-            build_object(engine, target_id, artifact.compile_options(), output_path).await?;
+            build_object(engine, target_id, artifact.native_options(), output_path).await?;
             Ok(ExitCode::SUCCESS)
         }
         TargetKind::C => {
@@ -194,7 +194,7 @@ async fn emit_final_c(
 async fn build_object(
     engine: &TrackedEngine,
     target_id: TargetID,
-    compile_options: CompileOptions,
+    native_options: NativeOptions,
     output_path: &Path,
 ) -> Result<(), ArtifactError> {
     // both are staged first, so that a failure leaves neither half written
@@ -203,7 +203,7 @@ async fn build_object(
         engine,
         target_id,
         CTranslationUnitOptions::ordinary(),
-        compile_options,
+        native_options,
         &staging,
         output_path,
     )
@@ -211,7 +211,7 @@ async fn build_object(
 
     let runtime_path = runtime_sibling_path(output_path, "o");
     let runtime_staging = temporary_output_path(&runtime_path)?;
-    compile_runtime_c(compile_options, &runtime_staging, &runtime_path)?;
+    compile_runtime_c(native_options, &runtime_staging, &runtime_path)?;
 
     persist_output(staging, output_path)?;
     persist_output(runtime_staging, &runtime_path)
@@ -223,7 +223,7 @@ async fn build_executable(
     engine: &TrackedEngine,
     target_id: TargetID,
     entry_point: GlobalSymbolID,
-    compile_options: CompileOptions,
+    native_options: NativeOptions,
     output_path: &Path,
 ) -> Result<(), ArtifactError> {
     let executable_staging = temporary_output_path(output_path)?;
@@ -233,16 +233,16 @@ async fn build_executable(
         engine,
         target_id,
         CTranslationUnitOptions::executable(entry_point),
-        compile_options,
+        native_options,
         &generated,
         output_path,
     )
     .await?;
 
     let runtime = temporary_artifact(TemporaryArtifact::Object, output_path)?;
-    compile_runtime_c(compile_options, &runtime, output_path)?;
+    compile_runtime_c(native_options, &runtime, output_path)?;
 
-    link_executable(&[&generated, &runtime], &executable_staging)?;
+    link_executable(&[&generated, &runtime], &executable_staging, native_options)?;
     persist_output(executable_staging, output_path)
 }
 
@@ -251,25 +251,25 @@ async fn compile_generated_c(
     engine: &TrackedEngine,
     target_id: TargetID,
     options: CTranslationUnitOptions,
-    compile_options: CompileOptions,
+    native_options: NativeOptions,
     object_path: &Path,
     output_path: &Path,
 ) -> Result<(), ArtifactError> {
     let c_path = temporary_c_input(engine, target_id, options, output_path).await?;
-    compile_c(&c_path, object_path, compile_options)?;
+    compile_c(&c_path, object_path, native_options)?;
     Ok(())
 }
 
 /// Compiles the runtime translation unit into `object_path`.
 fn compile_runtime_c(
-    compile_options: CompileOptions,
+    native_options: NativeOptions,
     object_path: &Path,
     output_path: &Path,
 ) -> Result<(), ArtifactError> {
     let mut c_file = temporary_artifact_file(TemporaryArtifact::CSource, output_path)?;
     write_runtime_c(c_file.as_file_mut(), output_path)?;
     let c_path = c_file.into_temp_path();
-    compile_c(&c_path, object_path, compile_options)?;
+    compile_c(&c_path, object_path, native_options)?;
     Ok(())
 }
 

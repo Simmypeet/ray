@@ -28,12 +28,12 @@ pub def printTemporary(temp: Temporary, value: ()):
 
 
 pub def main() -> int32:
-    let mut cond = false
-    scanf("%d", cond.&mut)
+    let mut input: int32 = 0
+    scanf("%d", input.&mut)
 
     printTemporary(
         makeTemporary(1), 
-        if cond:
+        if input != 0:
             return 0
         else:
             ()

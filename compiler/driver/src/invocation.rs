@@ -6,14 +6,14 @@ use std::path::{Path, PathBuf};
 use rayc_project::{OUTPUT_DIRECTORY_NAME, Project};
 use rayc_target::{Arguments, TargetKind};
 
-use crate::native::CompileOptions;
+use crate::native::NativeOptions;
 
 /// The artifact an invocation produces after a successful check.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Artifact {
     kind: TargetKind,
     output_path: Option<PathBuf>,
-    compile_options: CompileOptions,
+    native_options: NativeOptions,
     run: bool,
 }
 
@@ -25,8 +25,8 @@ impl Artifact {
     /// default output path or one was requested.
     pub(super) fn output_path(&self) -> Option<&Path> { self.output_path.as_deref() }
 
-    /// Returns how the C translation units of the artifact are compiled.
-    pub(super) const fn compile_options(&self) -> CompileOptions { self.compile_options }
+    /// Returns how the native toolchain compiles and links the artifact.
+    pub(super) const fn native_options(&self) -> NativeOptions { self.native_options }
 
     /// Returns whether the produced executable should be launched.
     pub(super) const fn should_run(&self) -> bool { self.run }
@@ -144,8 +144,9 @@ impl Artifact {
             kind.default_file_name(target_name).map(|name| output_directory.join(name))
         });
 
-        let compile_options = CompileOptions::new(optimization_level, arguments.heap_check());
+        let native_options =
+            NativeOptions::new(optimization_level, arguments.heap_check(), arguments.sanitizer());
 
-        Some(Self { kind, output_path, compile_options, run: arguments.should_run() })
+        Some(Self { kind, output_path, native_options, run: arguments.should_run() })
     }
 }

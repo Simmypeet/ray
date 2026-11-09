@@ -6,7 +6,7 @@ use std::{
     process::{Command, ExitCode, ExitStatus},
 };
 
-use rayc_target::OptimizationLevel;
+use rayc_target::{OptimizationLevel, Sanitizer};
 
 /// A native compilation phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,25 +108,42 @@ impl fmt::Display for NativeError {
     }
 }
 
-/// How the C translation units of an artifact are compiled.
+/// How the native toolchain compiles and links an artifact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct CompileOptions {
+pub(super) struct NativeOptions {
     optimization_level: OptimizationLevel,
     heap_check: bool,
+    sanitizer: Option<Sanitizer>,
 }
 
-impl CompileOptions {
-    /// Creates the options. With `heap_check`, every translation unit is
-    /// compiled with `RAY_HEAP_CHECK` defined, which the generated code and
-    /// the runtime both read.
-    pub(super) const fn new(optimization_level: OptimizationLevel, heap_check: bool) -> Self {
-        Self { optimization_level, heap_check }
+impl NativeOptions {
+    /// Creates the options.
+    ///
+    /// With `heap_check`, every translation unit is compiled with
+    /// `RAY_HEAP_CHECK` defined, which the generated code and the runtime
+    /// both read. A `sanitizer` instruments every translation unit, and its
+    /// runtime is linked into the executable.
+    pub(super) const fn new(
+        optimization_level: OptimizationLevel,
+        heap_check: bool,
+        sanitizer: Option<Sanitizer>,
+    ) -> Self {
+        Self { optimization_level, heap_check, sanitizer }
     }
 
     /// The `cc` flags these options give to every compilation.
-    fn flags(self) -> impl Iterator<Item = &'static str> {
+    fn compile_flags(self) -> impl Iterator<Item = &'static str> {
         std::iter::once(optimization_flag(self.optimization_level))
             .chain(self.heap_check.then_some("-DRAY_HEAP_CHECK"))
+            .chain(self.sanitizer_flags())
+    }
+
+    /// The `cc` flags these options give to the link of an executable.
+    fn link_flags(self) -> impl Iterator<Item = &'static str> { self.sanitizer_flags() }
+
+    /// The flags of the sanitizer, which compiling and linking both need.
+    fn sanitizer_flags(self) -> impl Iterator<Item = &'static str> {
+        self.sanitizer.map(sanitizer_flags).unwrap_or_default().iter().copied()
     }
 }
 
@@ -134,14 +151,14 @@ impl CompileOptions {
 pub(super) fn compile_c(
     c_path: &Path,
     object_path: &Path,
-    options: CompileOptions,
+    options: NativeOptions,
 ) -> Result<(), NativeError> {
     let output = Command::new("cc")
         .arg("-c")
         .arg(c_path)
         .arg("-o")
         .arg(object_path)
-        .args(options.flags())
+        .args(options.compile_flags())
         .output()
         .map_err(|source| NativeError::CompilerSpawn {
             phase: NativePhase::Compilation,
@@ -163,16 +180,20 @@ pub(super) fn compile_c(
 pub(super) fn link_executable(
     object_paths: &[&Path],
     executable_path: &Path,
+    options: NativeOptions,
 ) -> Result<(), NativeError> {
-    let output =
-        Command::new("cc").args(object_paths).arg("-o").arg(executable_path).output().map_err(
-            |source| NativeError::CompilerSpawn {
-                phase: NativePhase::Linking,
-                input_paths: object_paths.iter().map(|path| path.to_path_buf()).collect(),
-                output_path: executable_path.to_owned(),
-                source,
-            },
-        )?;
+    let output = Command::new("cc")
+        .args(object_paths)
+        .args(options.link_flags())
+        .arg("-o")
+        .arg(executable_path)
+        .output()
+        .map_err(|source| NativeError::CompilerSpawn {
+            phase: NativePhase::Linking,
+            input_paths: object_paths.iter().map(|path| path.to_path_buf()).collect(),
+            output_path: executable_path.to_owned(),
+            source,
+        })?;
 
     check_compiler_status(
         NativePhase::Linking,
@@ -247,6 +268,13 @@ const fn optimization_flag(optimization_level: OptimizationLevel) -> &'static st
         OptimizationLevel::O1 => "-O1",
         OptimizationLevel::O2 => "-O2",
         OptimizationLevel::O3 => "-O3",
+    }
+}
+
+const fn sanitizer_flags(sanitizer: Sanitizer) -> &'static [&'static str] {
+    match sanitizer {
+        // the frame pointers give the reports full stack traces
+        Sanitizer::Address => &["-fsanitize=address", "-fno-omit-frame-pointer"],
     }
 }
 

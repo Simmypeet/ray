@@ -65,5 +65,10 @@ jobs:
       - name: Show C compiler
         run: cc --version
 
+      # On Linux the run fixtures are built with ASan, which also runs
+      # LeakSanitizer there. It is not used elsewhere: macOS has no leak
+      # checking, and ASan through MinGW `cc` is unreliable on Windows.
       - name: Run tests
         run: cargo nextest run --workspace --no-fail-fast
+        env:
+          RAYC_E2E_SANITIZE: ${{ runner.os == 'Linux' && 'address' || '' }}

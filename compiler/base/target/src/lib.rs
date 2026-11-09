@@ -183,8 +183,8 @@ pub struct Output {
     /// The output path of the program. If not specified, the program will be
     /// named after the target and written to the `target` directory of the
     /// project, or to the current working directory for a source file.
-    #[clap(short = 'o', long = "output")]
-    output: Option<PathBuf>,
+    #[clap(id = "output", short = 'o', long = "output")]
+    path: Option<PathBuf>,
 
     /// Builds the program with the heap check, which reports the heap
     /// allocations still alive when the entry point returns.
@@ -193,6 +193,13 @@ pub struct Output {
     /// intentionally not exposed as a user-facing CLI flag.
     #[clap(skip = false)]
     heap_check: bool,
+
+    /// The sanitizer the program is built with, if any.
+    ///
+    /// This is an internal configuration knob used by tests. It is
+    /// intentionally not exposed as a user-facing CLI flag.
+    #[clap(skip = None)]
+    sanitizer: Option<Sanitizer>,
 }
 
 /// Represents the `run` subcommand of the compiler.
@@ -326,6 +333,16 @@ pub enum Cli {
     /// Creates a new project.
     #[clap(name = "new")]
     New(New),
+}
+
+/// A sanitizer that a program can be built with, to catch memory errors as
+/// it runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Sanitizer {
+    /// The address sanitizer, `-fsanitize=address`. It catches a use after
+    /// free, a double free and an access out of bounds, and also a leak where
+    /// its leak checker runs.
+    Address,
 }
 
 /// Optimizations level for the compiler.
@@ -465,9 +482,9 @@ impl Arguments {
     #[must_use]
     pub fn requested_output_path(&self) -> Option<&Path> {
         match &self.command {
-            Command::Run(run) => run.output.output.as_deref(),
+            Command::Run(run) => run.output.path.as_deref(),
             Command::Check(_) => None,
-            Command::Build(build) => build.output.output.as_deref(),
+            Command::Build(build) => build.output.path.as_deref(),
         }
     }
 
@@ -502,6 +519,26 @@ impl Arguments {
             Command::Run(run) => run.output.heap_check = true,
             Command::Check(_) => {}
             Command::Build(build) => build.output.heap_check = true,
+        }
+    }
+
+    /// Returns the sanitizer the program is built with, if any.
+    #[must_use]
+    pub const fn sanitizer(&self) -> Option<Sanitizer> {
+        match &self.command {
+            Command::Run(run) => run.output.sanitizer,
+            Command::Check(_) => None,
+            Command::Build(build) => build.output.sanitizer,
+        }
+    }
+
+    /// Builds the program with `sanitizer`. A check-only invocation builds
+    /// nothing, so it is left unchanged.
+    pub const fn enable_sanitizer(&mut self, sanitizer: Sanitizer) {
+        match &mut self.command {
+            Command::Run(run) => run.output.sanitizer = Some(sanitizer),
+            Command::Check(_) => {}
+            Command::Build(build) => build.output.sanitizer = Some(sanitizer),
         }
     }
 
