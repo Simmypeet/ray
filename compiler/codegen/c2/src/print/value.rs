@@ -64,6 +64,12 @@ impl FunctionPrinter<'_, '_> {
                 Ok(())
             }
             Rvalue::Reinterpret(reinterpret) => self.write_reinterpret(out, reinterpret).await,
+            // the aggregates are defined before every function, so `sizeof`
+            // sees a complete type
+            Rvalue::HeapAllocate(ty) => {
+                self.program.use_type(ty).await;
+                write!(out, "ray_alloc(sizeof({}))", TypeName(ty))
+            }
         }
     }
 

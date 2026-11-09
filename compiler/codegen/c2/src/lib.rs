@@ -15,6 +15,10 @@
 //! - `print` writes a function, recording what it refers to, and `generator`
 //!   drives it over the worklist;
 //! - `unit` assembles the final translation unit.
+//!
+//! The functions that the generated code needs from the C environment, such as
+//! heap allocation, form a second translation unit, the runtime, which
+//! [`write_c_runtime`] writes. The two are compiled apart and linked together.
 
 use std::io::{self, Write};
 
@@ -101,6 +105,21 @@ pub async fn write_c_translation_unit_from_mono_ir(
     let roots = functions.iter().map(|function| function.instance().clone()).collect::<Vec<_>>();
     let unit = Generator::new(engine, roots, functions, None).generate().await;
     write!(output, "{unit}")
+}
+
+/// The source of the Ray runtime, a C translation unit that every program is
+/// linked with.
+///
+/// It is kept apart from the generated unit so that the C headers it includes
+/// cannot conflict with the `extern def`s of a Ray program.
+const RUNTIME: &str = include_str!("../resource/runtime.c");
+
+/// Writes the Ray runtime: the C translation unit that defines the functions
+/// the generated code calls, such as `ray_alloc` and `ray_free`.
+///
+/// Every generated translation unit must be linked with it.
+pub fn write_c_runtime(output: &mut impl Write) -> io::Result<()> {
+    output.write_all(RUNTIME.as_bytes())
 }
 
 /// The definitions of `target_id` that need no caller to choose their

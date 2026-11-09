@@ -6,7 +6,7 @@ use std::{
     process::{Command, ExitCode, ExitStatus},
 };
 
-use rayc_target::OptimizationLevel;
+use rayc_target::{OptimizationLevel, Sanitizer};
 
 /// A native compilation phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,20 +29,20 @@ impl NativePhase {
 pub(super) enum NativeError {
     CompilerSpawn {
         phase: NativePhase,
-        input_path: PathBuf,
+        input_paths: Vec<PathBuf>,
         output_path: PathBuf,
         source: io::Error,
     },
     CompilerFailure {
         phase: NativePhase,
-        input_path: PathBuf,
+        input_paths: Vec<PathBuf>,
         output_path: PathBuf,
         status: ExitStatus,
         stderr: String,
     },
     CompilerTerminated {
         phase: NativePhase,
-        input_path: PathBuf,
+        input_paths: Vec<PathBuf>,
         output_path: PathBuf,
         stderr: String,
     },
@@ -65,26 +65,26 @@ pub(super) enum NativeError {
 impl fmt::Display for NativeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::CompilerSpawn { phase, input_path, output_path, source } => {
+            Self::CompilerSpawn { phase, input_paths, output_path, source } => {
                 write_compiler_context(
                     formatter,
                     *phase,
-                    input_path,
+                    input_paths,
                     output_path,
                     "failed to spawn",
                 )?;
                 write!(formatter, ": {source}")
             }
-            Self::CompilerFailure { phase, input_path, output_path, status, stderr } => {
-                write_compiler_context(formatter, *phase, input_path, output_path, "failed")?;
+            Self::CompilerFailure { phase, input_paths, output_path, status, stderr } => {
+                write_compiler_context(formatter, *phase, input_paths, output_path, "failed")?;
                 write!(formatter, " with {status}")?;
                 write_stderr(formatter, stderr)
             }
-            Self::CompilerTerminated { phase, input_path, output_path, stderr } => {
+            Self::CompilerTerminated { phase, input_paths, output_path, stderr } => {
                 write_compiler_context(
                     formatter,
                     *phase,
-                    input_path,
+                    input_paths,
                     output_path,
                     "terminated without an exit code",
                 )?;
@@ -108,53 +108,96 @@ impl fmt::Display for NativeError {
     }
 }
 
+/// How the native toolchain compiles and links an artifact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct NativeOptions {
+    optimization_level: OptimizationLevel,
+    heap_check: bool,
+    sanitizer: Option<Sanitizer>,
+}
+
+impl NativeOptions {
+    /// Creates the options.
+    ///
+    /// With `heap_check`, every translation unit is compiled with
+    /// `RAY_HEAP_CHECK` defined, which the generated code and the runtime
+    /// both read. A `sanitizer` instruments every translation unit, and its
+    /// runtime is linked into the executable.
+    pub(super) const fn new(
+        optimization_level: OptimizationLevel,
+        heap_check: bool,
+        sanitizer: Option<Sanitizer>,
+    ) -> Self {
+        Self { optimization_level, heap_check, sanitizer }
+    }
+
+    /// The `cc` flags these options give to every compilation.
+    fn compile_flags(self) -> impl Iterator<Item = &'static str> {
+        std::iter::once(optimization_flag(self.optimization_level))
+            .chain(self.heap_check.then_some("-DRAY_HEAP_CHECK"))
+            .chain(self.sanitizer_flags())
+    }
+
+    /// The `cc` flags these options give to the link of an executable.
+    fn link_flags(self) -> impl Iterator<Item = &'static str> { self.sanitizer_flags() }
+
+    /// The flags of the sanitizer, which compiling and linking both need.
+    fn sanitizer_flags(self) -> impl Iterator<Item = &'static str> {
+        self.sanitizer.map(sanitizer_flags).unwrap_or_default().iter().copied()
+    }
+}
+
 /// Compiles a C source file into an object file.
 pub(super) fn compile_c(
     c_path: &Path,
     object_path: &Path,
-    optimization_level: OptimizationLevel,
+    options: NativeOptions,
 ) -> Result<(), NativeError> {
     let output = Command::new("cc")
         .arg("-c")
         .arg(c_path)
         .arg("-o")
         .arg(object_path)
-        .arg(optimization_flag(optimization_level))
+        .args(options.compile_flags())
         .output()
         .map_err(|source| NativeError::CompilerSpawn {
             phase: NativePhase::Compilation,
-            input_path: c_path.to_owned(),
+            input_paths: vec![c_path.to_owned()],
             output_path: object_path.to_owned(),
             source,
         })?;
 
     check_compiler_status(
         NativePhase::Compilation,
-        c_path,
+        &[c_path],
         object_path,
         output.status,
         &output.stderr,
     )
 }
 
-/// Links an object file into an executable.
+/// Links object files into an executable.
 pub(super) fn link_executable(
-    object_path: &Path,
+    object_paths: &[&Path],
     executable_path: &Path,
+    options: NativeOptions,
 ) -> Result<(), NativeError> {
-    let output =
-        Command::new("cc").arg(object_path).arg("-o").arg(executable_path).output().map_err(
-            |source| NativeError::CompilerSpawn {
-                phase: NativePhase::Linking,
-                input_path: object_path.to_owned(),
-                output_path: executable_path.to_owned(),
-                source,
-            },
-        )?;
+    let output = Command::new("cc")
+        .args(object_paths)
+        .args(options.link_flags())
+        .arg("-o")
+        .arg(executable_path)
+        .output()
+        .map_err(|source| NativeError::CompilerSpawn {
+            phase: NativePhase::Linking,
+            input_paths: object_paths.iter().map(|path| path.to_path_buf()).collect(),
+            output_path: executable_path.to_owned(),
+            source,
+        })?;
 
     check_compiler_status(
         NativePhase::Linking,
-        object_path,
+        object_paths,
         executable_path,
         output.status,
         &output.stderr,
@@ -191,7 +234,7 @@ pub(super) fn launch_executable(path: &Path) -> Result<ExitCode, NativeError> {
 
 fn check_compiler_status(
     phase: NativePhase,
-    input_path: &Path,
+    input_paths: &[&Path],
     output_path: &Path,
     status: ExitStatus,
     stderr: &[u8],
@@ -204,7 +247,7 @@ fn check_compiler_status(
     if status.code().is_some() {
         Err(NativeError::CompilerFailure {
             phase,
-            input_path: input_path.to_owned(),
+            input_paths: input_paths.iter().map(|path| path.to_path_buf()).collect(),
             output_path: output_path.to_owned(),
             status,
             stderr,
@@ -212,7 +255,7 @@ fn check_compiler_status(
     } else {
         Err(NativeError::CompilerTerminated {
             phase,
-            input_path: input_path.to_owned(),
+            input_paths: input_paths.iter().map(|path| path.to_path_buf()).collect(),
             output_path: output_path.to_owned(),
             stderr,
         })
@@ -228,6 +271,13 @@ const fn optimization_flag(optimization_level: OptimizationLevel) -> &'static st
     }
 }
 
+const fn sanitizer_flags(sanitizer: Sanitizer) -> &'static [&'static str] {
+    match sanitizer {
+        // the frame pointers give the reports full stack traces
+        Sanitizer::Address => &["-fsanitize=address", "-fno-omit-frame-pointer"],
+    }
+}
+
 fn write_stderr(formatter: &mut fmt::Formatter<'_>, stderr: &str) -> fmt::Result {
     if stderr.trim().is_empty() {
         Ok(())
@@ -239,15 +289,21 @@ fn write_stderr(formatter: &mut fmt::Formatter<'_>, stderr: &str) -> fmt::Result
 fn write_compiler_context(
     formatter: &mut fmt::Formatter<'_>,
     phase: NativePhase,
-    input_path: &Path,
+    input_paths: &[PathBuf],
     output_path: &Path,
     outcome: &str,
 ) -> fmt::Result {
     write!(
         formatter,
-        "{} with `cc` {outcome} while producing '{}' from '{}'",
+        "{} with `cc` {outcome} while producing '{}' from ",
         phase.description(),
         output_path.display(),
-        input_path.display()
-    )
+    )?;
+    for (index, input_path) in input_paths.iter().enumerate() {
+        if index != 0 {
+            formatter.write_str(", ")?;
+        }
+        write!(formatter, "'{}'", input_path.display())?;
+    }
+    Ok(())
 }

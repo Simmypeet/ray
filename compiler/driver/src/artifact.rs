@@ -10,12 +10,12 @@ use std::{
 use rayc_c2::CTranslationUnitOptions;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
-use rayc_target::{OptimizationLevel, TargetID, TargetKind};
+use rayc_target::{TargetID, TargetKind};
 use tempfile::{Builder, NamedTempFile, TempPath};
 
 use crate::{
     invocation::Artifact,
-    native::{NativeError, compile_c, launch_executable, link_executable},
+    native::{NativeError, NativeOptions, compile_c, launch_executable, link_executable},
 };
 
 /// A temporary compiler-owned artifact.
@@ -135,7 +135,7 @@ pub(super) async fn execute(
                 engine,
                 target_id,
                 entry_point,
-                artifact.optimization_level(),
+                artifact.native_options(),
                 output_path,
             )
             .await?;
@@ -147,7 +147,7 @@ pub(super) async fn execute(
             }
         }
         TargetKind::Object => {
-            build_object(engine, target_id, artifact.optimization_level(), output_path).await?;
+            build_object(engine, target_id, artifact.native_options(), output_path).await?;
             Ok(ExitCode::SUCCESS)
         }
         TargetKind::C => {
@@ -160,11 +160,17 @@ pub(super) async fn execute(
     }
 }
 
+/// Writes the generated C to `output_path`, and the runtime it must be linked
+/// with beside it, at [`runtime_sibling_path`].
+///
+/// The two stay apart: the headers the runtime includes could conflict with
+/// the `extern def`s of the generated unit.
 async fn emit_final_c(
     engine: &TrackedEngine,
     target_id: TargetID,
     output_path: &Path,
 ) -> Result<(), ArtifactError> {
+    // both are staged first, so that a failure leaves neither half written
     let mut staging = temporary_output_file(output_path)?;
     write_c(
         engine,
@@ -175,49 +181,96 @@ async fn emit_final_c(
     )
     .await?;
 
-    staging.persist(output_path).map_err(|error| ArtifactError::PersistOutput {
-        path: output_path.to_owned(),
-        source: error.error,
-    })?;
+    let runtime_path = runtime_sibling_path(output_path, "c");
+    let mut runtime_staging = temporary_output_file(&runtime_path)?;
+    write_runtime_c(runtime_staging.as_file_mut(), &runtime_path)?;
 
-    Ok(())
+    persist_output(staging.into_temp_path(), output_path)?;
+    persist_output(runtime_staging.into_temp_path(), &runtime_path)
 }
 
+/// Compiles the generated code to `output_path`, and the runtime it must be
+/// linked with beside it, at [`runtime_sibling_path`].
 async fn build_object(
     engine: &TrackedEngine,
     target_id: TargetID,
-    optimization_level: OptimizationLevel,
+    native_options: NativeOptions,
     output_path: &Path,
 ) -> Result<(), ArtifactError> {
+    // both are staged first, so that a failure leaves neither half written
     let staging = temporary_output_path(output_path)?;
-    let c_path =
-        temporary_c_input(engine, target_id, CTranslationUnitOptions::ordinary(), output_path)
-            .await?;
+    compile_generated_c(
+        engine,
+        target_id,
+        CTranslationUnitOptions::ordinary(),
+        native_options,
+        &staging,
+        output_path,
+    )
+    .await?;
 
-    compile_c(&c_path, &staging, optimization_level)?;
-    persist_output(staging, output_path)
+    let runtime_path = runtime_sibling_path(output_path, "o");
+    let runtime_staging = temporary_output_path(&runtime_path)?;
+    compile_runtime_c(native_options, &runtime_staging, &runtime_path)?;
+
+    persist_output(staging, output_path)?;
+    persist_output(runtime_staging, &runtime_path)
 }
 
+/// Compiles the generated code and the runtime, each as a translation unit of
+/// its own, and links them into an executable.
 async fn build_executable(
     engine: &TrackedEngine,
     target_id: TargetID,
     entry_point: GlobalSymbolID,
-    optimization_level: OptimizationLevel,
+    native_options: NativeOptions,
     output_path: &Path,
 ) -> Result<(), ArtifactError> {
     let executable_staging = temporary_output_path(output_path)?;
-    let c_path = temporary_c_input(
+
+    let generated = temporary_artifact(TemporaryArtifact::Object, output_path)?;
+    compile_generated_c(
         engine,
         target_id,
         CTranslationUnitOptions::executable(entry_point),
+        native_options,
+        &generated,
         output_path,
     )
     .await?;
-    let object_path = temporary_artifact(TemporaryArtifact::Object, output_path)?;
 
-    compile_c(&c_path, &object_path, optimization_level)?;
-    link_executable(&object_path, &executable_staging)?;
+    let runtime = temporary_artifact(TemporaryArtifact::Object, output_path)?;
+    compile_runtime_c(native_options, &runtime, output_path)?;
+
+    link_executable(&[&generated, &runtime], &executable_staging, native_options)?;
     persist_output(executable_staging, output_path)
+}
+
+/// Compiles the generated translation unit into `object_path`.
+async fn compile_generated_c(
+    engine: &TrackedEngine,
+    target_id: TargetID,
+    options: CTranslationUnitOptions,
+    native_options: NativeOptions,
+    object_path: &Path,
+    output_path: &Path,
+) -> Result<(), ArtifactError> {
+    let c_path = temporary_c_input(engine, target_id, options, output_path).await?;
+    compile_c(&c_path, object_path, native_options)?;
+    Ok(())
+}
+
+/// Compiles the runtime translation unit into `object_path`.
+fn compile_runtime_c(
+    native_options: NativeOptions,
+    object_path: &Path,
+    output_path: &Path,
+) -> Result<(), ArtifactError> {
+    let mut c_file = temporary_artifact_file(TemporaryArtifact::CSource, output_path)?;
+    write_runtime_c(c_file.as_file_mut(), output_path)?;
+    let c_path = c_file.into_temp_path();
+    compile_c(&c_path, object_path, native_options)?;
+    Ok(())
 }
 
 async fn temporary_c_input(
@@ -244,6 +297,23 @@ async fn write_c(
     writer
         .flush()
         .map_err(|source| ArtifactError::FlushC { output_path: output_path.to_owned(), source })
+}
+
+fn write_runtime_c(writer: &mut impl Write, output_path: &Path) -> Result<(), ArtifactError> {
+    rayc_c2::write_c_runtime(writer).map_err(|source| ArtifactError::GenerateC {
+        output_path: output_path.to_owned(),
+        source,
+    })?;
+    writer
+        .flush()
+        .map_err(|source| ArtifactError::FlushC { output_path: output_path.to_owned(), source })
+}
+
+/// Where `--emit c` and `--emit obj` write the runtime: beside `output_path`,
+/// with its extension replaced by `runtime.<extension>`, so `out.c` gets
+/// `out.runtime.c` and `out.o` gets `out.runtime.o`.
+fn runtime_sibling_path(output_path: &Path, extension: &str) -> PathBuf {
+    output_path.with_extension(format!("runtime.{extension}"))
 }
 
 fn temporary_output_file(output_path: &Path) -> Result<NamedTempFile, ArtifactError> {

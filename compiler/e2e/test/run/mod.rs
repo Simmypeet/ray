@@ -9,7 +9,7 @@ use std::{
 
 use clap::Parser;
 use insta::assert_snapshot;
-use rayc_target::Arguments;
+use rayc_target::{Arguments, Sanitizer};
 
 // Each discovered source fixture is compiled to a native executable and
 // checked only by its process-level behavior.
@@ -134,7 +134,26 @@ fn build_arguments(file_path: &Path, executable_path: &Path) -> Arguments {
         executable_path.as_os_str().to_owned(),
     ]);
     arguments.enable_ir_verification();
+    // a leaked heap allocation then fails the fixture through its stderr and
+    // exit code
+    arguments.enable_heap_check();
+    if let Some(sanitizer) = sanitizer_from_environment() {
+        arguments.enable_sanitizer(sanitizer);
+    }
     arguments
+}
+
+/// The sanitizer that `RAYC_E2E_SANITIZE` asks the fixtures to be built with.
+///
+/// The variable is opt-in: unset or empty, the fixtures are built without
+/// one. CI sets it where the sanitizer is supported.
+fn sanitizer_from_environment() -> Option<Sanitizer> {
+    let value = std::env::var("RAYC_E2E_SANITIZE").ok()?;
+    match value.as_str() {
+        "" => None,
+        "address" => Some(Sanitizer::Address),
+        _ => panic!("RAYC_E2E_SANITIZE should be empty or `address`, not `{value}`"),
+    }
 }
 
 fn render_outputs(outputs: &[Output]) -> String {
