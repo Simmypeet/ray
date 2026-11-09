@@ -1,12 +1,24 @@
 use derive_more::From;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_ir::{address::Local, cfg::Instruction, ir_expr::IRExprID};
 
 use crate::suspension_point::SuspensionPointID;
 
 /// The values that can be saved into a coroutine frame
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+    From,
 )]
 pub enum Savable {
     Local(Local),
@@ -37,6 +49,15 @@ pub enum Savable {
 }
 
 impl Savable {
+    /// Whether this is the child frame of a suspension point.
+    #[must_use]
+    pub const fn is_child_frame(&self) -> bool {
+        match self {
+            Self::ChildFrame(_) => true,
+            Self::Local(_) | Self::Expression(_) | Self::Environment => false,
+        }
+    }
+
     /// Returns the value whose own storage `instruction` writes, if any.
     ///
     /// This is read from the instruction, not from liveness: a store to a

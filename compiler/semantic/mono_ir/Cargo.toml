@@ -17,6 +17,7 @@ rayc_solver.path = "../solver"
 rayc_symbol.path = "../symbol"
 rayc_type.path = "../type"
 rayc_hash.path = "../../base/hash"
+rayc_transitive_closure.path = "../../base/transitive_closure"
 qbice.workspace = true
 linkme.workspace = true
 bon.workspace = true
