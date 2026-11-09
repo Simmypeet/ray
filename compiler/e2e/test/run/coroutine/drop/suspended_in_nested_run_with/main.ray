@@ -1,0 +1,66 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Noisy:
+    pub value: int32
+
+impl !core.Copy for Noisy
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+eff Ask:
+    def ask() -> int32
+
+
+eff Counter:
+    def bump() -> int32
+
+
+eff Inner:
+    def inner() -> int32
+
+
+def abandoned() -> int32:
+    printf("abandoned\n")
+    return 0
+
+
+# Answers the first `Ask` by dropping the continuation, so the coroutine stays
+# suspended there until its storage ends.
+def abandon(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask() resume _: abandoned()
+
+
+# The clause of `Counter.bump` runs a `run ... with` of its own, whose clause
+# yields `Ask` out of `gen`. Each level is suspended in the one around it, and
+# they are dropped innermost first: the inner clause, the inner body, the outer
+# clause, then the outer body.
+def gen() -> int32 \ {Ask}:
+    let result = run:
+        let body_held = Noisy { value = 1 }
+        return body_held.value + Counter.bump()
+    with Counter:
+        def bump():
+            let clause_held = Noisy { value = 2 }
+            let nested = run:
+                let nested_body_held = Noisy { value = 3 }
+                return nested_body_held.value + Inner.inner()
+            with Inner:
+                def inner():
+                    let nested_clause_held = Noisy { value = 4 }
+                    return nested_clause_held.value + Ask.ask()
+            return clause_held.value + nested
+    return result
+
+
+def main() -> int32:
+    if true:
+        let result = abandon(coro gen(), ())
+        printf("result %d\n", result)
+    printf("after scope\n")
+    return 0

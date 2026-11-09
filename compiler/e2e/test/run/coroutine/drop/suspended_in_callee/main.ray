@@ -1,0 +1,50 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Noisy:
+    pub value: int32
+
+impl !core.Copy for Noisy
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+eff Ask:
+    def ask() -> int32
+
+
+def abandoned() -> int32:
+    printf("abandoned\n")
+    return 0
+
+
+# Answers the first `Ask` by dropping the continuation, so the coroutine stays
+# suspended there until its storage ends.
+def abandon(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask() resume _: abandoned()
+
+
+def inner(param: Noisy) -> int32 \ {Ask}:
+    let local = Noisy { value = 2 }
+    return param.value + local.value + Ask.ask()
+
+
+# `outer` is suspended at the call while `inner` is suspended at its `perform`,
+# in a frame that the frame of `outer` holds. Dropping the frame of `outer`
+# drops that of `inner` first, its variable and then its parameter, and then
+# what `outer` holds itself.
+def outer() -> int32 \ {Ask}:
+    let mine = Noisy { value = 1 }
+    return inner(Noisy { value = 3 }) + mine.value
+
+
+def main() -> int32:
+    if true:
+        let result = abandon(coro outer(), ())
+        printf("result %d\n", result)
+    printf("after scope\n")
+    return 0
