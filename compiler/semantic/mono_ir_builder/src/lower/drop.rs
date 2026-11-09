@@ -2,6 +2,7 @@
 //! what does not read the source function is available on the [`Emitter`].
 
 use qbice::storage::intern::Interned;
+use rayc_coroutine_frame_layout::savable::Savable;
 use rayc_ir::{
     address::Local,
     cfg::{AddressDrop, ExprDiscard},
@@ -23,6 +24,11 @@ use crate::{context::Context, emitter::Emitter, resolver::InstanceCallable};
 impl Emitter<'_> {
     /// Drops the unused value of an expression statement with the dictionary
     /// selected during type checking.
+    ///
+    /// A boxed `Coroutine` expression ends here when its owner is abandoned
+    /// before the store that would move it, so its box is freed once it is
+    /// dropped. In theory, this never happens: the frame never holds the
+    /// expression, which the store right after it ends.
     pub(super) async fn lower_expr_discard(&mut self, discard: &ExprDiscard, ctx: &Context<'_>) {
         // `Drop.drop` returns unit, which is itself unused, so every call
         // writes to one scratch temporary.
@@ -30,11 +36,21 @@ impl Emitter<'_> {
 
         let value = ctx.expression_place(discard.expression());
         self.lower_drop(value, discard.drop_instance(), destination).await;
+        self.free_frame_box(Savable::Expression(discard.expression()), ctx);
     }
 
     /// Drops the value held in a place with the dictionary selected by drop
     /// elaboration. The place is passed to the drop directly, so no
     /// temporary holds the moved value.
+    ///
+    /// A boxed `coro` storage ends here, on the normal path and in every
+    /// abandon block, so its box is freed once it is dropped. The drop of a
+    /// frame switches on its state, and the free follows both arms.
+    ///
+    /// ```c
+    ///     ...drop *frame->storage...
+    ///     ray_free(frame->storage);                  // boxed only
+    /// ```
     pub(super) async fn lower_address_drop(&mut self, drop: &AddressDrop, ctx: &Context<'_>) {
         // `Drop.drop` returns unit, which is unused, so every call writes to
         // one scratch temporary.
@@ -42,6 +58,18 @@ impl Emitter<'_> {
 
         let value = self.lower_address(drop.address(), ctx);
         self.lower_drop(value, drop.drop_instance(), destination).await;
+        // A boxed local is the storage of a `coro`, which nothing names, so
+        // it is only ever dropped whole. Dropping a part of it would leave
+        // its box without a free.
+        match drop.address().whole_local() {
+            Some(local) => self.free_frame_box(Savable::Local(local), ctx),
+            None => assert!(
+                drop.address()
+                    .direct_local()
+                    .is_none_or(|local| ctx.frame_box(Savable::Local(local)).is_none()),
+                "a boxed local holds a frame, which is only dropped whole"
+            ),
+        }
     }
 }
 

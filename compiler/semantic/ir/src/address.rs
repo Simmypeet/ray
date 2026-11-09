@@ -196,6 +196,18 @@ impl Address {
         self.local()
     }
 
+    /// Returns the local this address selects whole, or `None` when the
+    /// address is an error address or selects only a part of the local, or
+    /// memory behind a pointer.
+    #[must_use]
+    pub fn whole_local(&self) -> Option<Local> {
+        if !self.projections.is_empty() {
+            return None;
+        }
+
+        self.local()
+    }
+
     #[must_use]
     pub fn projections(&self) -> &[Projection] { &self.projections }
 

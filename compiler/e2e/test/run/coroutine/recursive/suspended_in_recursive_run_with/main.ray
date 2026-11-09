@@ -1,0 +1,58 @@
+pub extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Noisy:
+    pub value: int32
+
+impl !core.Copy for Noisy
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+eff Ask:
+    def ask() -> int32
+
+
+eff Counter:
+    def bump() -> int32
+
+
+def abandoned() -> int32:
+    printf("abandoned\n")
+    return 0
+
+
+# Answers the first `Ask` by dropping the continuation, so the coroutine stays
+# suspended there until its storage ends.
+def abandon(k: core.Continuation[r, c], value: r) given (co: core.Coroutine[c], _: core.Drop[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask() resume _: abandoned()
+
+
+# The frames of each `run` are boxed, since its body calls `nest` again. The
+# first `Ask` comes from the innermost `nest`, inside the bodies of two `run`s.
+# Dropping the coroutine drops each `nest` innermost first, and frees every
+# box.
+def nest(n: int32) -> int32 \ {Ask}:
+    let held = Noisy { value = n }
+    if n == 0:
+        return held.value + Ask.ask()
+    let result = run:
+        let first = nest(n - 1)
+        let second = nest(n - 1)
+        return first + second + Counter.bump()
+    with Counter:
+        def bump():
+            return Ask.ask()
+    return result + held.value
+
+
+def main() -> int32:
+    if true:
+        let result = abandon(coro nest(2), ())
+        printf("result %d\n", result)
+    printf("after scope\n")
+    return 0

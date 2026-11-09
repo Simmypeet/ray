@@ -34,6 +34,7 @@
 
 mod abandon;
 mod dispatch;
+mod frame_box;
 mod perform_yield;
 mod progress;
 

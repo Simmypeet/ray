@@ -3,7 +3,7 @@
 //! emitted with, passing this context along.
 
 use qbice::storage::intern::Interned;
-use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
+use rayc_coroutine_frame_layout::{savable::Savable, suspension_point::SuspensionPointID};
 use rayc_ir::{
     cfg::{
         BlockID as IRBlockID, Instruction as IRInstruction, Reachables, Terminator as IRTerminator,
@@ -291,6 +291,31 @@ impl<'a> Context<'a> {
     /// suspended at `point`.
     pub(crate) fn child_frame_place(&self, point: SuspensionPointID) -> Place {
         self.frame().child_frame_place(point, self.engine())
+    }
+
+    /// The member that points to the value of `savable` on the heap, if the
+    /// function has a frame and the frame boxes `savable` to break a
+    /// recursion.
+    ///
+    /// A function lowered in callback style has no frame, so it boxes nothing.
+    pub(crate) fn frame_box(&self, savable: Savable) -> Option<Place> {
+        if !self.is_coroutine() {
+            return None;
+        }
+
+        self.frame().box_pointer_of(savable, self.engine())
+    }
+
+    /// The type of the value of `savable`, which the frame holds by value or
+    /// in a box.
+    pub(crate) fn raw_frame_field_type(&self, savable: Savable) -> Interned<MonoType> {
+        self.frame().raw_field_type(savable).clone()
+    }
+
+    /// Whether the function has a frame that holds `savable`, by value or in
+    /// a box.
+    pub(crate) fn frame_holds(&self, savable: Savable) -> bool {
+        self.is_coroutine() && self.frame().holds(savable)
     }
 
     pub(crate) fn suspension_point(&self, block: IRBlockID) -> Option<SuspensionPointID> {

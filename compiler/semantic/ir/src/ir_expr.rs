@@ -106,6 +106,29 @@ impl IRExprKind {
         }
     }
 
+    /// Returns the `Coroutine` this expression is, if it is one.
+    #[must_use]
+    pub const fn as_coroutine(&self) -> Option<&Coroutine> {
+        match self {
+            Self::Coroutine(coroutine) => Some(coroutine),
+            Self::Error
+            | Self::Literal(_)
+            | Self::RefOf(_)
+            | Self::RefToPointer(_)
+            | Self::Load(_)
+            | Self::Phi(_)
+            | Self::Binary(_)
+            | Self::Call(_)
+            | Self::Perform(_)
+            | Self::RunWith(_)
+            | Self::Tuple(_)
+            | Self::Closure(_)
+            | Self::Handle(_)
+            | Self::Yielded(_)
+            | Self::StructInitialization(_) => None,
+        }
+    }
+
     /// Returns the `Handle` this expression is, if it is one.
     #[must_use]
     pub const fn as_handle(&self) -> Option<&Handle> {

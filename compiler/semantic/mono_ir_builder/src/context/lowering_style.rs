@@ -85,11 +85,42 @@ impl Frame {
     /// The tag that the frame holds in the given state.
     pub(crate) fn state_tag(&self, state: FrameState) -> Constant { state.tag(&self.layout) }
 
-    /// The place of `savable` in the frame, if the frame holds it.
+    /// The place of `savable` in the frame, if the frame holds it: its member,
+    /// or where its member points if it is boxed.
+    ///
+    /// ```c
+    /// frame->savable              // held by value
+    /// *frame->savable             // boxed
+    /// ```
     pub(super) fn place_of(&self, savable: Savable, engine: &TrackedEngine) -> Option<Place> {
+        let member = self.member_place(savable, engine)?;
+
+        Some(if self.field_types.is_boxed(savable) {
+            member.project(engine).dereference()
+        } else {
+            member
+        })
+    }
+
+    /// The member of `savable` in the frame, if the frame holds it.
+    fn member_place(&self, savable: Savable, engine: &TrackedEngine) -> Option<Place> {
         self.layout
             .placement(savable)
             .map(|_| self.place.project(engine).coroutine_frame_savable(savable))
+    }
+
+    /// The member that points to the value of `savable` on the heap, if the
+    /// frame boxes it. The value is allocated and freed through it.
+    ///
+    /// ```c
+    /// frame->savable
+    /// ```
+    pub(crate) fn box_pointer_of(&self, savable: Savable, engine: &TrackedEngine) -> Option<Place> {
+        if !self.field_types.is_boxed(savable) {
+            return None;
+        }
+
+        self.member_place(savable, engine)
     }
 
     /// Whether `savable` is in the start variant of the frame, which every
@@ -101,16 +132,21 @@ impl Frame {
             == Some(Placement::SuspensionLocal(SuspensionLocalPlacement::Start))
     }
 
-    /// The type of `savable`, which the frame holds.
-    pub(super) fn field_type(&self, savable: Savable) -> &Interned<MonoType> {
-        self.field_types.get(savable)
+    /// The type of `savable`, which the frame holds, by value or in a box.
+    pub(super) fn raw_field_type(&self, savable: Savable) -> &Interned<MonoType> {
+        self.field_types.raw_field_type(savable)
     }
 
     /// Whether the function owns a coroutine that it waits for while it is
     /// suspended at `point`: the frame of a callee, or the frames of the body
     /// and the clauses of a `run ... with`.
     pub(crate) fn holds_child_frame(&self, point: SuspensionPointID) -> bool {
-        self.layout.placement(Savable::ChildFrame(point)).is_some()
+        self.holds(Savable::ChildFrame(point))
+    }
+
+    /// Whether the frame holds `savable`, by value or in a box.
+    pub(super) fn holds(&self, savable: Savable) -> bool {
+        self.layout.placement(savable).is_some()
     }
 
     /// The place of the coroutine that the function waits for while it is

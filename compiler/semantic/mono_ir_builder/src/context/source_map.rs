@@ -111,7 +111,7 @@ impl SourceMap {
             match savable {
                 Savable::Local(local) => map.insert_local(local, place),
                 Savable::Expression(expression) => {
-                    let ty = frame.field_type(savable).clone();
+                    let ty = frame.raw_field_type(savable).clone();
                     map.expressions.insert(expression, (place, ty));
                 }
 
@@ -271,7 +271,7 @@ impl SourceMap {
             return field;
         }
 
-        let local = emit.new_variable_place(frame.field_type(savable).clone());
+        let local = emit.new_variable_place(frame.raw_field_type(savable).clone());
         emit.store(local.clone(), Operand::Copy(field));
         local
     }

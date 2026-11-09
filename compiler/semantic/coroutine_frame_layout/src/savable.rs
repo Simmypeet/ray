@@ -1,12 +1,24 @@
 use derive_more::From;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 use rayc_ir::{address::Local, cfg::Instruction, ir_expr::IRExprID};
 
 use crate::suspension_point::SuspensionPointID;
 
 /// The values that can be saved into a coroutine frame
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+    From,
 )]
 pub enum Savable {
     Local(Local),

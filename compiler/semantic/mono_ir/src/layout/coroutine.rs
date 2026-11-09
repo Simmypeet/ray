@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, ops::Index};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ops::Index,
+};
 
 use linkme::distributed_slice;
 use qbice::{
@@ -26,7 +29,7 @@ use rayc_type::ty::Ty;
 use crate::{
     MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance,
     MonoRunWithInstance,
-    layout::{TagType, build_handler_layout as _},
+    layout::{TagType, build_handler_layout as _, recursion::get_boxing_edges as _},
     operand::Constant,
     ty::{AggregateType, EffectRow, MonoType, PointerMutability, ReturnType, Tuple, lower_type},
 };
@@ -106,39 +109,79 @@ impl FrameState {
     }
 }
 
-/// The type of every value that the frame of one concrete coroutine holds,
-/// which is what [`FrameLayout`] leaves out because it does not lower types.
+/// The type of every member of the frame of one concrete coroutine, which is
+/// what [`FrameLayout`] leaves out because it does not lower types.
+///
+/// A boxed member holds a `*mut T` to its value on the heap instead of the
+/// value of type `T` itself.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
-pub struct FrameFieldTypes(BTreeMap<Savable, Interned<MonoType>>);
+pub struct FrameFieldTypes {
+    types: BTreeMap<Savable, Interned<MonoType>>,
+    boxed: BTreeSet<Savable>,
+}
 
 impl FrameFieldTypes {
-    /// The type of `savable`.
+    /// The type of the member of `savable`: a pointer to the value if it is
+    /// boxed, or the type of the value otherwise.
     ///
     /// # Panics
     ///
     /// Panics if the frame does not hold `savable`.
     #[must_use]
     pub fn get(&self, savable: Savable) -> &Interned<MonoType> {
-        self.0.get(&savable).expect("a value of the frame layout should have a type")
+        self.types.get(&savable).expect("a value of the frame layout should have a type")
     }
 
-    /// Iterates over the type of every value the frame holds.
+    /// The type of the value of `savable`, which a boxed member points to.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the frame does not hold `savable`.
     #[must_use]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Interned<MonoType>> { self.0.values() }
+    pub fn raw_field_type(&self, savable: Savable) -> &Interned<MonoType> {
+        let member = self.get(savable);
+        if self.is_boxed(savable) { member.assert_as_pointer().pointee() } else { member }
+    }
+
+    /// Whether the member of `savable` points to its value on the heap.
+    #[must_use]
+    pub fn is_boxed(&self, savable: Savable) -> bool { self.boxed.contains(&savable) }
+
+    /// Iterates over the values whose members are boxed, in `Savable` order.
+    #[must_use]
+    pub fn boxed(&self) -> impl ExactSizeIterator<Item = Savable> + '_ {
+        self.boxed.iter().copied()
+    }
+
+    /// Iterates over the type of every member.
+    #[must_use]
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Interned<MonoType>> { self.types.values() }
+
+    /// Iterates over every value the frame holds with the type of its
+    /// member, in `Savable` order.
+    #[must_use]
+    pub fn fields(&self) -> impl ExactSizeIterator<Item = (Savable, &Interned<MonoType>)> {
+        self.types.iter().map(|(savable, ty)| (*savable, ty))
+    }
 }
 
-/// Derives the type of every value that the frame of a coroutine holds.
+/// Derives the type of every value that the frame of a coroutine holds, as
+/// the frame would hold it if nothing were boxed.
+///
+/// The frame graph of the recursion analysis is read from these types, so
+/// they must not depend on the boxing that the analysis chooses. The types
+/// the generated code uses are [`BuildFrameFieldTypes`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
 #[value(Interned<FrameFieldTypes>)]
-#[extend(name = build_frame_field_types, by_val)]
-pub struct BuildFrameFieldTypes {
+#[extend(name = build_inline_frame_field_types, by_val)]
+pub struct BuildInlineFrameFieldTypes {
     /// The coroutine whose frame is requested.
     pub instance: MonoCoroutineInstance,
 }
 
 #[executor(config = Config)]
-async fn build_frame_field_types_executor(
-    key: &BuildFrameFieldTypes,
+async fn build_inline_frame_field_types_executor(
+    key: &BuildInlineFrameFieldTypes,
     engine: &TrackedEngine,
 ) -> Interned<FrameFieldTypes> {
     let solver = Solver::without_givens(engine.clone()).await;
@@ -152,7 +195,45 @@ async fn build_frame_field_types_executor(
         types.insert(savable, frame.savable_type(savable).await);
     }
 
-    engine.intern(FrameFieldTypes(types))
+    engine.intern(FrameFieldTypes { types, boxed: BTreeSet::new() })
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static BUILD_INLINE_FRAME_FIELD_TYPES_EXECUTOR: Registration<Config> =
+    Registration::new::<BuildInlineFrameFieldTypes, BuildInlineFrameFieldTypesExecutor>();
+
+/// Derives the type of every member of the frame of a coroutine, as the
+/// generated code lays it out: the [`BuildInlineFrameFieldTypes`], with a
+/// pointer in each slot that [`BoxingEdges`] boxes.
+///
+/// [`BoxingEdges`]: crate::layout::recursion::BoxingEdges
+#[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
+#[value(Interned<FrameFieldTypes>)]
+#[extend(name = build_frame_field_types, by_val)]
+pub struct BuildFrameFieldTypes {
+    /// The coroutine whose frame is requested.
+    pub instance: MonoCoroutineInstance,
+}
+
+#[executor(config = Config)]
+async fn build_frame_field_types_executor(
+    key: &BuildFrameFieldTypes,
+    engine: &TrackedEngine,
+) -> Interned<FrameFieldTypes> {
+    let inline = engine.build_inline_frame_field_types(key.instance.clone()).await;
+    let boxed = engine.get_boxing_edges(key.instance.clone()).await;
+    if boxed.is_empty() {
+        return inline;
+    }
+
+    // each boxed member points to its value on the heap
+    let mut types = inline.types.clone();
+    for savable in boxed.iter() {
+        let member = types.get_mut(savable).expect("a boxed slot is a member of the frame");
+        *member = MonoType::new_pointer(member.clone(), PointerMutability::Mut, engine);
+    }
+
+    engine.intern(FrameFieldTypes { types, boxed: boxed.iter().copied().collect() })
 }
 
 #[distributed_slice(RAY_PROGRAM)]
