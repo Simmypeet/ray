@@ -159,10 +159,11 @@ impl Reinterpret {
     pub const fn target(&self) -> &Interned<MonoType> { &self.target }
 }
 
-/// A pure, shallow value computation.
+/// A shallow value computation.
 ///
 /// Operands cannot contain nested computations. Calls are instructions rather
-/// than rvalues so evaluation order is always explicit in the CFG.
+/// than rvalues so evaluation order is always explicit in the CFG. Every
+/// rvalue is pure except [`Rvalue::HeapAllocate`].
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub enum Rvalue {
     Use(Operand),
@@ -171,4 +172,13 @@ pub enum Rvalue {
     Binary(Binary),
     Cast(Cast),
     Reinterpret(Reinterpret),
+
+    /// Allocates uninitialized heap memory for one value of the given type,
+    /// giving a `*mut` pointer to it.
+    ///
+    /// The memory is released by an [`Instruction::HeapFree`] of that
+    /// pointer. Allocation never fails: the program aborts instead.
+    ///
+    /// [`Instruction::HeapFree`]: crate::instruction::Instruction::HeapFree
+    HeapAllocate(Interned<MonoType>),
 }

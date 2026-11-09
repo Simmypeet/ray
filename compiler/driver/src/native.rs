@@ -29,20 +29,20 @@ impl NativePhase {
 pub(super) enum NativeError {
     CompilerSpawn {
         phase: NativePhase,
-        input_path: PathBuf,
+        input_paths: Vec<PathBuf>,
         output_path: PathBuf,
         source: io::Error,
     },
     CompilerFailure {
         phase: NativePhase,
-        input_path: PathBuf,
+        input_paths: Vec<PathBuf>,
         output_path: PathBuf,
         status: ExitStatus,
         stderr: String,
     },
     CompilerTerminated {
         phase: NativePhase,
-        input_path: PathBuf,
+        input_paths: Vec<PathBuf>,
         output_path: PathBuf,
         stderr: String,
     },
@@ -65,26 +65,26 @@ pub(super) enum NativeError {
 impl fmt::Display for NativeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::CompilerSpawn { phase, input_path, output_path, source } => {
+            Self::CompilerSpawn { phase, input_paths, output_path, source } => {
                 write_compiler_context(
                     formatter,
                     *phase,
-                    input_path,
+                    input_paths,
                     output_path,
                     "failed to spawn",
                 )?;
                 write!(formatter, ": {source}")
             }
-            Self::CompilerFailure { phase, input_path, output_path, status, stderr } => {
-                write_compiler_context(formatter, *phase, input_path, output_path, "failed")?;
+            Self::CompilerFailure { phase, input_paths, output_path, status, stderr } => {
+                write_compiler_context(formatter, *phase, input_paths, output_path, "failed")?;
                 write!(formatter, " with {status}")?;
                 write_stderr(formatter, stderr)
             }
-            Self::CompilerTerminated { phase, input_path, output_path, stderr } => {
+            Self::CompilerTerminated { phase, input_paths, output_path, stderr } => {
                 write_compiler_context(
                     formatter,
                     *phase,
-                    input_path,
+                    input_paths,
                     output_path,
                     "terminated without an exit code",
                 )?;
@@ -123,30 +123,30 @@ pub(super) fn compile_c(
         .output()
         .map_err(|source| NativeError::CompilerSpawn {
             phase: NativePhase::Compilation,
-            input_path: c_path.to_owned(),
+            input_paths: vec![c_path.to_owned()],
             output_path: object_path.to_owned(),
             source,
         })?;
 
     check_compiler_status(
         NativePhase::Compilation,
-        c_path,
+        &[c_path],
         object_path,
         output.status,
         &output.stderr,
     )
 }
 
-/// Links an object file into an executable.
+/// Links object files into an executable.
 pub(super) fn link_executable(
-    object_path: &Path,
+    object_paths: &[&Path],
     executable_path: &Path,
 ) -> Result<(), NativeError> {
     let output =
-        Command::new("cc").arg(object_path).arg("-o").arg(executable_path).output().map_err(
+        Command::new("cc").args(object_paths).arg("-o").arg(executable_path).output().map_err(
             |source| NativeError::CompilerSpawn {
                 phase: NativePhase::Linking,
-                input_path: object_path.to_owned(),
+                input_paths: object_paths.iter().map(|path| path.to_path_buf()).collect(),
                 output_path: executable_path.to_owned(),
                 source,
             },
@@ -154,7 +154,7 @@ pub(super) fn link_executable(
 
     check_compiler_status(
         NativePhase::Linking,
-        object_path,
+        object_paths,
         executable_path,
         output.status,
         &output.stderr,
@@ -191,7 +191,7 @@ pub(super) fn launch_executable(path: &Path) -> Result<ExitCode, NativeError> {
 
 fn check_compiler_status(
     phase: NativePhase,
-    input_path: &Path,
+    input_paths: &[&Path],
     output_path: &Path,
     status: ExitStatus,
     stderr: &[u8],
@@ -204,7 +204,7 @@ fn check_compiler_status(
     if status.code().is_some() {
         Err(NativeError::CompilerFailure {
             phase,
-            input_path: input_path.to_owned(),
+            input_paths: input_paths.iter().map(|path| path.to_path_buf()).collect(),
             output_path: output_path.to_owned(),
             status,
             stderr,
@@ -212,7 +212,7 @@ fn check_compiler_status(
     } else {
         Err(NativeError::CompilerTerminated {
             phase,
-            input_path: input_path.to_owned(),
+            input_paths: input_paths.iter().map(|path| path.to_path_buf()).collect(),
             output_path: output_path.to_owned(),
             stderr,
         })
@@ -239,15 +239,21 @@ fn write_stderr(formatter: &mut fmt::Formatter<'_>, stderr: &str) -> fmt::Result
 fn write_compiler_context(
     formatter: &mut fmt::Formatter<'_>,
     phase: NativePhase,
-    input_path: &Path,
+    input_paths: &[PathBuf],
     output_path: &Path,
     outcome: &str,
 ) -> fmt::Result {
     write!(
         formatter,
-        "{} with `cc` {outcome} while producing '{}' from '{}'",
+        "{} with `cc` {outcome} while producing '{}' from ",
         phase.description(),
         output_path.display(),
-        input_path.display()
-    )
+    )?;
+    for (index, input_path) in input_paths.iter().enumerate() {
+        if index != 0 {
+            formatter.write_str(", ")?;
+        }
+        write!(formatter, "'{}'", input_path.display())?;
+    }
+    Ok(())
 }

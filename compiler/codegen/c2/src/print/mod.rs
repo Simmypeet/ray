@@ -93,6 +93,12 @@ impl<'p, 'engine> FunctionPrinter<'p, 'engine> {
                 Ok(())
             }
             Instruction::Call(call) => self.write_call(out, call).await,
+            Instruction::HeapFree(pointer) => {
+                out.push_str("ray_free(");
+                self.write_operand(out, pointer).await?;
+                out.push_str(");");
+                Ok(())
+            }
         }
     }
 

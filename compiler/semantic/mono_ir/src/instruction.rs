@@ -81,4 +81,11 @@ impl Call {
 pub enum Instruction {
     Assign(Assign),
     Call(Call),
+
+    /// Releases the heap memory that an [`Rvalue::HeapAllocate`] gave, through
+    /// the pointer it gave.
+    ///
+    /// Only the memory is released: a value still stored in it is not
+    /// dropped.
+    HeapFree(Operand),
 }
