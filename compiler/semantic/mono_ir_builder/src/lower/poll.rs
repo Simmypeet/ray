@@ -79,8 +79,9 @@ impl PollSite {
 /// first resumes it with.
 pub(super) enum Resumee {
     /// A frame of a callee that has not started, which the function has
-    /// created in its own frame. It is first resumed with unit.
-    NewFrame { frame: Place, frame_type: Interned<MonoType> },
+    /// created in its own frame, or in a box that `heap_box` points to. It is
+    /// first resumed with unit.
+    NewFrame { frame: Place, frame_type: Interned<MonoType>, heap_box: Option<Place> },
 
     /// A `core.Continuation`, which points to a frame somewhere else. It is
     /// first resumed with `value`.
@@ -102,6 +103,15 @@ impl Resumee {
                 (Operand::Constant(Constant::Unit), MonoType::new_unit(engine))
             }
             Self::Continuation { value, value_type, .. } => (value.clone(), value_type.clone()),
+        }
+    }
+
+    /// The member that points to the box of the frame, which the function
+    /// frees once the coroutine completes, if the frame is boxed.
+    const fn heap_box(&self) -> Option<&Place> {
+        match self {
+            Self::NewFrame { heap_box, .. } => heap_box.as_ref(),
+            Self::Continuation { .. } => None,
         }
     }
 
@@ -141,6 +151,9 @@ pub(super) struct PollLoop {
     progress: Place,
     /// The local that holds the pointer to the frame that was resumed.
     frame_pointer: Place,
+    /// The member that points to the box of a new frame, which the return arm
+    /// frees, if the frame is boxed.
+    heap_box: Option<Place>,
 }
 
 impl PollLoop {
@@ -239,13 +252,17 @@ impl Emitter<'_> {
         // operand that holds the continuation.
         let frame_pointer = self.load_frame_pointer(&resumee).await;
         let progress = self.push_resume_call(&coroutine, &frame_pointer, &args);
+        let heap_box = resumee.heap_box().cloned();
 
-        PollLoop { resumed: coroutine, site, block, args, progress, frame_pointer }
+        PollLoop { resumed: coroutine, site, block, args, progress, frame_pointer, heap_box }
     }
 
     /// Creates a poll loop that resumes the frame of `instance` at `frame`,
     /// which the child frame of `point` holds, without entering it. Its poll
     /// block is filled, and the current block stays selected.
+    ///
+    /// The frame is not freed when it completes: it is part of a child frame,
+    /// which is freed as a whole, if it is boxed.
     ///
     /// Several such loops share the suspension point, so the caller enters
     /// them, and fills the resume entry of the point: it sets
@@ -285,6 +302,7 @@ impl Emitter<'_> {
             args,
             progress,
             frame_pointer,
+            heap_box: None,
         }
     }
 
@@ -447,14 +465,18 @@ impl Emitter<'_> {
         frame_pointer
     }
 
-    /// Creates the arm taken when the coroutine completed, which stores its
-    /// result in `destination` and continues in `done`.
+    /// Creates the arm taken when the coroutine completed, which frees the box
+    /// of a boxed new frame, stores its result in `destination`, and continues
+    /// in `done`.
     ///
     /// The result is stored only once the callee is done with its frame,
-    /// which may share memory with `destination`.
+    /// which may share memory with `destination`. For a boxed frame, it is
+    /// the member that points to the box that may share memory with it, so
+    /// the box is freed first. The result is already in `progress`.
     ///
     /// ```c
     /// return_arm:
+    ///     ray_free(frame->child_p);               // a boxed new frame only
     ///     destination = progress.return_value;
     ///     goto done;
     /// ```
@@ -466,7 +488,12 @@ impl Emitter<'_> {
     ) -> BlockID {
         let value = self.project(&poll.progress).coroutine_progress_return_payload();
 
+        let heap_box = poll.heap_box.clone();
+
         self.in_new_block(|emit| {
+            if let Some(heap_box) = heap_box {
+                emit.heap_free(heap_box);
+            }
             emit.store(destination, Operand::Copy(value));
             emit.set_terminator(Terminator::Goto(done));
         })

@@ -3,7 +3,7 @@
 //! emitted with, passing this context along.
 
 use qbice::storage::intern::Interned;
-use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
+use rayc_coroutine_frame_layout::{savable::Savable, suspension_point::SuspensionPointID};
 use rayc_ir::{
     cfg::{
         BlockID as IRBlockID, Instruction as IRInstruction, Reachables, Terminator as IRTerminator,
@@ -291,6 +291,18 @@ impl<'a> Context<'a> {
     /// suspended at `point`.
     pub(crate) fn child_frame_place(&self, point: SuspensionPointID) -> Place {
         self.frame().child_frame_place(point, self.engine())
+    }
+
+    /// The member that points to the child frame of `point` on the heap, if
+    /// the frame boxes it to break a recursion.
+    pub(crate) fn child_frame_box(&self, point: SuspensionPointID) -> Option<Place> {
+        self.frame().box_pointer_of(Savable::ChildFrame(point), self.engine())
+    }
+
+    /// The type of the child frame of `point`: the frame of a callee, or the
+    /// frames of a `run ... with`.
+    pub(crate) fn child_frame_type(&self, point: SuspensionPointID) -> Interned<MonoType> {
+        self.frame().field_type(Savable::ChildFrame(point)).clone()
     }
 
     pub(crate) fn suspension_point(&self, block: IRBlockID) -> Option<SuspensionPointID> {

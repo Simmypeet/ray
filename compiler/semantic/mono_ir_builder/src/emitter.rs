@@ -108,6 +108,26 @@ impl<'a> Emitter<'a> {
         self.push_instruction(Instruction::Assign(Assign::new(destination, value)));
     }
 
+    /// Allocates uninitialized heap memory for a value of type `ty`, and stores
+    /// the pointer to it in `pointer`.
+    ///
+    /// ```c
+    ///     pointer = ray_alloc(sizeof(ty));
+    /// ```
+    pub(crate) fn heap_allocate(&mut self, pointer: Place, ty: Interned<MonoType>) {
+        self.assign(pointer, Rvalue::HeapAllocate(ty));
+    }
+
+    /// Frees the heap memory that `pointer` points to, without dropping what
+    /// it holds.
+    ///
+    /// ```c
+    ///     ray_free(pointer);
+    /// ```
+    pub(crate) fn heap_free(&mut self, pointer: Place) {
+        self.push_instruction(Instruction::HeapFree(Operand::Copy(pointer)));
+    }
+
     /// Stores the value of `operand` in `destination`.
     pub(crate) fn store(&mut self, destination: Place, operand: Operand) {
         self.assign(destination, Rvalue::Use(operand));

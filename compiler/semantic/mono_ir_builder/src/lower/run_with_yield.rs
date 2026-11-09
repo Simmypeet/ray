@@ -213,8 +213,14 @@ impl Emitter<'_> {
     /// Ends the current block by creating the environment of the clauses and
     /// the frame of the body in the child frame, and entering the body's loop.
     ///
+    /// A child frame that holds this coroutine's frame in turn is boxed. Its
+    /// box is allocated first, and holds everything that the `run ... with`
+    /// creates, so it is allocated once, however many operations the body
+    /// performs.
+    ///
     /// ```c
     /// // the block that evaluates the `run ... with`
+    ///     frame->child_p = ray_alloc(sizeof(run_with_frames_t));          // boxed only
     ///     frame->child_p.handler_environment = { .capture0 = ..., ... };  // with captures only
     ///     frame->child_p.body = { .state = NOT_STARTED, .capture3 = ..., ... };
     ///     frame->child_p.phase = PHASE_BODY;
@@ -224,6 +230,7 @@ impl Emitter<'_> {
     /// ```
     async fn start_run_with(&mut self, site: &RunWithSite<'_>, body: &PollLoop, ctx: &Context<'_>) {
         let run_with = site.run_with;
+        self.allocate_child_frame_box(site.point, ctx);
 
         // The clauses only borrow their captures, so they live in the
         // child frame. The handler records of the environment stay unset: a
@@ -300,12 +307,14 @@ impl Emitter<'_> {
     /// `done`.
     ///
     /// The clauses are done with their captures by then, so they are dropped
-    /// first. The result is stored only afterwards, since `destination` may
-    /// share memory with the child frame.
+    /// first, and a boxed child frame is freed next. The result is stored only
+    /// afterwards, since `destination` may share memory with the child frame,
+    /// or with the member that points to its box.
     ///
     /// ```c
     /// body_return_arm:
     ///     drop(frame->child_p.handler_environment.capture_n); ...;  // with captures only
+    ///     ray_free(frame->child_p);                                 // boxed only
     ///     destination = progress.return_value;
     ///     goto done;
     /// ```
@@ -325,6 +334,7 @@ impl Emitter<'_> {
             let environment = self.project(&site.frames).run_with_handler_environment();
             self.drop_handler_captures(site.run_with, &environment, ctx).await;
         }
+        self.free_child_frame_box(site.point, ctx);
         let value = self.project(body.progress()).coroutine_progress_return_payload();
         self.store(destination, Operand::Copy(value));
         self.set_terminator(Terminator::Goto(done));

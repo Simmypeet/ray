@@ -136,16 +136,19 @@ impl Emitter<'_> {
     }
 
     /// Abandons the callee of `call`, the call at `point`, which runs in a
-    /// frame of its own: the child frame of `point`.
+    /// frame of its own: the child frame of `point`. A boxed frame is freed
+    /// once it is dropped.
     ///
     /// ```c
     ///     callee_drop(&frame->child_p);
+    ///     ray_free(frame->child_p);               // boxed only
     /// ```
     async fn abandon_callee(&mut self, point: SuspensionPointID, call: &IRCall, ctx: &Context<'_>) {
         let frame_type = self.callee_frame_type(call).await;
         let callee = frame_type.assert_as_coroutine_frame();
         let destination = self.new_unit_place();
         self.call_coroutine_drop(&ctx.child_frame_place(point), callee, destination).await;
+        self.free_child_frame_box(point, ctx);
     }
 
     /// Abandons `run_with`, the `run ... with` expression `expression` at
@@ -153,7 +156,8 @@ impl Emitter<'_> {
     ///
     /// The clause that runs, if any, goes first, since it borrows the captures
     /// of the clauses and the body waits for it. The body goes next, then the
-    /// captures: the reverse of the order they were created in.
+    /// captures: the reverse of the order they were created in. A boxed child
+    /// frame is freed last, once nothing in it is left.
     ///
     /// ```c
     ///     switch (frame->child_p.phase) {
@@ -168,6 +172,7 @@ impl Emitter<'_> {
     /// abandon_body:                                       // left selected
     ///     body_drop(&frame->child_p.body);
     ///     drop(frame->child_p.handler_environment.capture_n); ...
+    ///     ray_free(frame->child_p);                       // boxed only
     /// ```
     async fn abandon_run_with(
         &mut self,
@@ -209,6 +214,7 @@ impl Emitter<'_> {
             let environment = self.project(&frames).run_with_handler_environment();
             self.drop_handler_captures(run_with, &environment, ctx).await;
         }
+        self.free_child_frame_box(point, ctx);
     }
 
     /// Ends the selected block by returning unit, as a `Drop.drop` does.

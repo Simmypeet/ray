@@ -68,6 +68,9 @@ impl Emitter<'_> {
     /// Lowers a call that suspends at `point`: the callee runs in a new frame
     /// in the frame of this coroutine, whose operations are forwarded until it
     /// returns. It then continues in `done` with its result in `destination`.
+    ///
+    /// A callee that holds this coroutine's frame in turn runs in a box
+    /// instead, which the frame points to while the call lasts.
     pub(super) async fn lower_new_frame_call(
         &mut self,
         point: SuspensionPointID,
@@ -80,13 +83,14 @@ impl Emitter<'_> {
         let instance = frame_type.assert_as_coroutine_frame().clone();
 
         // Create the frame of the callee where this coroutine holds what it
-        // waits for.
+        // waits for, in a box if it is boxed.
+        let heap_box = self.allocate_child_frame_box(point, ctx);
         let frame = ctx.child_frame_place(point);
         let arguments = call.arguments().iter().map(|argument| ctx.expression_place(*argument));
         self.initialize_coroutine(&frame, &instance, arguments).await;
 
         // Resume the new frame until it returns, forwarding every operation.
-        let resumee = Resumee::NewFrame { frame, frame_type };
+        let resumee = Resumee::NewFrame { frame, frame_type, heap_box };
         let poll = self.begin_poll(PollSite::Suspending(point), instance, resumee, ctx).await;
         let return_arm = self.return_arm(&poll, destination, done);
         self.finish_poll(&poll, return_arm, &[], ctx);

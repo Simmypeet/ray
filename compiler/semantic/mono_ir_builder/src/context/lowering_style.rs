@@ -70,6 +70,14 @@ impl Frame {
         let field_types = resolver.frame_field_types(instance).await;
         let place = emit.project(&emit.local_place(pointer)).dereference();
 
+        // only a child frame is created and ended where its box can be
+        if let Some(savable) = field_types.boxed().find(|savable| !savable.is_child_frame()) {
+            unimplemented!(
+                "the frame of {instance:?} boxes {savable:?} to break a recursion, but only the \
+                 frame of a callee or of a `run ... with` can be boxed yet"
+            );
+        }
+
         Self { place, layout, field_types }
     }
 
@@ -85,11 +93,42 @@ impl Frame {
     /// The tag that the frame holds in the given state.
     pub(crate) fn state_tag(&self, state: FrameState) -> Constant { state.tag(&self.layout) }
 
-    /// The place of `savable` in the frame, if the frame holds it.
+    /// The place of `savable` in the frame, if the frame holds it: its member,
+    /// or where its member points if it is boxed.
+    ///
+    /// ```c
+    /// frame->savable              // held by value
+    /// *frame->savable             // boxed
+    /// ```
     pub(super) fn place_of(&self, savable: Savable, engine: &TrackedEngine) -> Option<Place> {
+        let member = self.member_place(savable, engine)?;
+
+        Some(if self.field_types.is_boxed(savable) {
+            member.project(engine).dereference()
+        } else {
+            member
+        })
+    }
+
+    /// The member of `savable` in the frame, if the frame holds it.
+    fn member_place(&self, savable: Savable, engine: &TrackedEngine) -> Option<Place> {
         self.layout
             .placement(savable)
             .map(|_| self.place.project(engine).coroutine_frame_savable(savable))
+    }
+
+    /// The member that points to the value of `savable` on the heap, if the
+    /// frame boxes it. The value is allocated and freed through it.
+    ///
+    /// ```c
+    /// frame->savable
+    /// ```
+    pub(crate) fn box_pointer_of(&self, savable: Savable, engine: &TrackedEngine) -> Option<Place> {
+        if !self.field_types.is_boxed(savable) {
+            return None;
+        }
+
+        self.member_place(savable, engine)
     }
 
     /// Whether `savable` is in the start variant of the frame, which every
@@ -101,9 +140,9 @@ impl Frame {
             == Some(Placement::SuspensionLocal(SuspensionLocalPlacement::Start))
     }
 
-    /// The type of `savable`, which the frame holds.
+    /// The type of `savable`, which the frame holds, by value or in a box.
     pub(super) fn field_type(&self, savable: Savable) -> &Interned<MonoType> {
-        self.field_types.get(savable)
+        self.field_types.value_type(savable)
     }
 
     /// Whether the function owns a coroutine that it waits for while it is
