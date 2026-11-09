@@ -125,20 +125,32 @@ impl FrameFieldTypes {
     /// Iterates over the type of every value the frame holds.
     #[must_use]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &Interned<MonoType>> { self.0.values() }
+
+    /// Iterates over every value the frame holds with its type, in `Savable`
+    /// order.
+    #[must_use]
+    pub fn fields(&self) -> impl ExactSizeIterator<Item = (Savable, &Interned<MonoType>)> {
+        self.0.iter().map(|(savable, ty)| (*savable, ty))
+    }
 }
 
-/// Derives the type of every value that the frame of a coroutine holds.
+/// Derives the type of every value that the frame of a coroutine holds, as
+/// the frame would hold it if nothing were boxed.
+///
+/// The frame graph of the recursion analysis is read from these types, so
+/// they must not depend on the boxing that the analysis chooses. The types
+/// the generated code uses are [`BuildFrameFieldTypes`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
 #[value(Interned<FrameFieldTypes>)]
-#[extend(name = build_frame_field_types, by_val)]
-pub struct BuildFrameFieldTypes {
+#[extend(name = build_inline_frame_field_types, by_val)]
+pub struct BuildInlineFrameFieldTypes {
     /// The coroutine whose frame is requested.
     pub instance: MonoCoroutineInstance,
 }
 
 #[executor(config = Config)]
-async fn build_frame_field_types_executor(
-    key: &BuildFrameFieldTypes,
+async fn build_inline_frame_field_types_executor(
+    key: &BuildInlineFrameFieldTypes,
     engine: &TrackedEngine,
 ) -> Interned<FrameFieldTypes> {
     let solver = Solver::without_givens(engine.clone()).await;
@@ -153,6 +165,30 @@ async fn build_frame_field_types_executor(
     }
 
     engine.intern(FrameFieldTypes(types))
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static BUILD_INLINE_FRAME_FIELD_TYPES_EXECUTOR: Registration<Config> =
+    Registration::new::<BuildInlineFrameFieldTypes, BuildInlineFrameFieldTypesExecutor>();
+
+/// Derives the type of every value that the frame of a coroutine holds, as
+/// the generated code lays it out.
+///
+/// Nothing is boxed yet, so these are the [`BuildInlineFrameFieldTypes`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
+#[value(Interned<FrameFieldTypes>)]
+#[extend(name = build_frame_field_types, by_val)]
+pub struct BuildFrameFieldTypes {
+    /// The coroutine whose frame is requested.
+    pub instance: MonoCoroutineInstance,
+}
+
+#[executor(config = Config)]
+async fn build_frame_field_types_executor(
+    key: &BuildFrameFieldTypes,
+    engine: &TrackedEngine,
+) -> Interned<FrameFieldTypes> {
+    engine.build_inline_frame_field_types(key.instance.clone()).await
 }
 
 #[distributed_slice(RAY_PROGRAM)]
