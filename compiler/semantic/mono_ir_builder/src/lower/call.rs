@@ -1,5 +1,5 @@
 use qbice::storage::intern::Interned;
-use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
+use rayc_coroutine_frame_layout::{savable::Savable, suspension_point::SuspensionPointID};
 use rayc_ir::ir_expr::call::Call as IRCall;
 use rayc_mono_ir::{
     MonoCoroutineInstance,
@@ -84,7 +84,7 @@ impl Emitter<'_> {
 
         // Create the frame of the callee where this coroutine holds what it
         // waits for, in a box if it is boxed.
-        let heap_box = self.allocate_child_frame_box(point, ctx);
+        let heap_box = self.allocate_frame_box(Savable::ChildFrame(point), ctx);
         let frame = ctx.child_frame_place(point);
         let arguments = call.arguments().iter().map(|argument| ctx.expression_place(*argument));
         self.initialize_coroutine(&frame, &instance, arguments).await;

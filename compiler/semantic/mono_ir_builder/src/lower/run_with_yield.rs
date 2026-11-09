@@ -65,7 +65,7 @@
 //! Every jump between the loops stays in one call of `coroutine_resume`, so
 //! nothing but the child frame lives across a return from it.
 
-use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
+use rayc_coroutine_frame_layout::{savable::Savable, suspension_point::SuspensionPointID};
 use rayc_ir::{cfg::Suspend, ir_expr::run_with::RunWith};
 use rayc_mono_ir::{
     cfg::{BlockID, Terminator},
@@ -230,7 +230,7 @@ impl Emitter<'_> {
     /// ```
     async fn start_run_with(&mut self, site: &RunWithSite<'_>, body: &PollLoop, ctx: &Context<'_>) {
         let run_with = site.run_with;
-        self.allocate_child_frame_box(site.point, ctx);
+        self.allocate_frame_box(Savable::ChildFrame(site.point), ctx);
 
         // The clauses only borrow their captures, so they live in the
         // child frame. The handler records of the environment stay unset: a
@@ -334,7 +334,7 @@ impl Emitter<'_> {
             let environment = self.project(&site.frames).run_with_handler_environment();
             self.drop_handler_captures(site.run_with, &environment, ctx).await;
         }
-        self.free_child_frame_box(site.point, ctx);
+        self.free_frame_box(Savable::ChildFrame(site.point), ctx);
         let value = self.project(body.progress()).coroutine_progress_return_payload();
         self.store(destination, Operand::Copy(value));
         self.set_terminator(Terminator::Goto(done));

@@ -70,14 +70,6 @@ impl Frame {
         let field_types = resolver.frame_field_types(instance).await;
         let place = emit.project(&emit.local_place(pointer)).dereference();
 
-        // only a child frame is created and ended where its box can be
-        if let Some(savable) = field_types.boxed().find(|savable| !savable.is_child_frame()) {
-            unimplemented!(
-                "the frame of {instance:?} boxes {savable:?} to break a recursion, but only the \
-                 frame of a callee or of a `run ... with` can be boxed yet"
-            );
-        }
-
         Self { place, layout, field_types }
     }
 
@@ -141,15 +133,20 @@ impl Frame {
     }
 
     /// The type of `savable`, which the frame holds, by value or in a box.
-    pub(super) fn field_type(&self, savable: Savable) -> &Interned<MonoType> {
-        self.field_types.value_type(savable)
+    pub(super) fn raw_field_type(&self, savable: Savable) -> &Interned<MonoType> {
+        self.field_types.raw_field_type(savable)
     }
 
     /// Whether the function owns a coroutine that it waits for while it is
     /// suspended at `point`: the frame of a callee, or the frames of the body
     /// and the clauses of a `run ... with`.
     pub(crate) fn holds_child_frame(&self, point: SuspensionPointID) -> bool {
-        self.layout.placement(Savable::ChildFrame(point)).is_some()
+        self.holds(Savable::ChildFrame(point))
+    }
+
+    /// Whether the frame holds `savable`, by value or in a box.
+    pub(super) fn holds(&self, savable: Savable) -> bool {
+        self.layout.placement(savable).is_some()
     }
 
     /// The place of the coroutine that the function waits for while it is

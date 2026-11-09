@@ -138,7 +138,7 @@ impl FrameFieldTypes {
     ///
     /// Panics if the frame does not hold `savable`.
     #[must_use]
-    pub fn value_type(&self, savable: Savable) -> &Interned<MonoType> {
+    pub fn raw_field_type(&self, savable: Savable) -> &Interned<MonoType> {
         let member = self.get(savable);
         if self.is_boxed(savable) { member.assert_as_pointer().pointee() } else { member }
     }

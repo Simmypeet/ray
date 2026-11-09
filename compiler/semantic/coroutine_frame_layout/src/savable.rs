@@ -49,15 +49,6 @@ pub enum Savable {
 }
 
 impl Savable {
-    /// Whether this is the child frame of a suspension point.
-    #[must_use]
-    pub const fn is_child_frame(&self) -> bool {
-        match self {
-            Self::ChildFrame(_) => true,
-            Self::Local(_) | Self::Expression(_) | Self::Environment => false,
-        }
-    }
-
     /// Returns the value whose own storage `instruction` writes, if any.
     ///
     /// This is read from the instruction, not from liveness: a store to a

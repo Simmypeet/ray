@@ -33,8 +33,8 @@
 //! coroutine, in `abandon.rs`.
 
 mod abandon;
-mod child_frame_box;
 mod dispatch;
+mod frame_box;
 mod perform_yield;
 mod progress;
 

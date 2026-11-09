@@ -1,10 +1,26 @@
 //! The frame graph, which tells where a coroutine frame holds other frames by
 //! value, and so where a recursive coroutine holds its own frame.
 //!
+//! Such a frame would have no finite size, so some of its slots are boxed: the
+//! slot keeps a pointer, and the frames it held live on the heap. The slots to
+//! box are chosen in four queries:
+//!
+//! 1. [`FrameSuccessors`] reads the slots of one frame that hold other frames:
+//!    the edges of the graph.
+//! 2. [`SccRepresentative`] finds the strongly connected component of a
+//!    coroutine, and names its smallest member, unless the component has no
+//!    cycle.
+//! 3. [`BreakRecursion`] chooses, once per component, as few slots as it can
+//!    whose boxing breaks every cycle in it.
+//! 4. [`BoxingEdges`] gives one coroutine its part of that choice, which
+//!    [`BuildFrameFieldTypes`] turns into pointer members.
+//!
 //! The graph is read from the frame field types before any boxing, which
-//! [`BuildInlineFrameFieldTypes`] gives.
+//! [`BuildInlineFrameFieldTypes`] gives, so no query depends on its own
+//! answer.
 //!
 //! [`BuildInlineFrameFieldTypes`]: crate::layout::coroutine::BuildInlineFrameFieldTypes
+//! [`BuildFrameFieldTypes`]: crate::layout::coroutine::BuildFrameFieldTypes
 
 mod solver;
 
@@ -368,6 +384,11 @@ impl ReachableGraph {
 
     /// The members of the strongly connected component of the start, in
     /// `Ord` order: the coroutines it reaches that also reach it.
+    ///
+    /// Every node already is one the start reaches, so the walk backward from
+    /// the start finds the members. It walks only the slots of those nodes,
+    /// and that misses no member: every coroutine on a path from a member back
+    /// to the start is reached from the start too, through that member.
     fn component_of_start(&self) -> Vec<MonoCoroutineInstance> {
         // walk the slots backward from the start
         let mut predecessors = vec![Vec::new(); self.nodes.len()];

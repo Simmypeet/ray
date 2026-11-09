@@ -57,12 +57,22 @@ impl Upvars {
 
 impl Emitter<'_> {
     /// Stores the arguments of a `coro` in a frame that has not started.
+    ///
+    /// A boxed expression is first written here, so its box is allocated
+    /// just before. In theory, the expression is never boxed, since the store
+    /// right after it ends it before any suspension point.
+    ///
+    /// ```c
+    ///     frame->e = ray_alloc(sizeof(c_frame_t));   // boxed only
+    ///     *frame->e = (c_frame_t){ .state = NOT_STARTED, ... };
+    /// ```
     pub(super) async fn lower_coro(
         &mut self,
         coroutine: &Coroutine,
         expression_id: IRExprID,
         ctx: &Context<'_>,
     ) {
+        self.allocate_frame_box(Savable::Expression(expression_id), ctx);
         let destination = ctx.expression_place(expression_id);
         let instance = ctx.expression_type(expression_id).assert_as_coroutine_frame().clone();
         let arguments =

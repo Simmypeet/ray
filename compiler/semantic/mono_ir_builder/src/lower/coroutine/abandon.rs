@@ -23,7 +23,7 @@
 //! }
 //! ```
 
-use rayc_coroutine_frame_layout::suspension_point::SuspensionPointID;
+use rayc_coroutine_frame_layout::{savable::Savable, suspension_point::SuspensionPointID};
 use rayc_ir::{
     cfg::{BlockID as IRBlockID, Terminator as IRTerminator},
     ir_expr::{IRExprID, call::Call as IRCall, run_with::RunWith},
@@ -148,7 +148,7 @@ impl Emitter<'_> {
         let callee = frame_type.assert_as_coroutine_frame();
         let destination = self.new_unit_place();
         self.call_coroutine_drop(&ctx.child_frame_place(point), callee, destination).await;
-        self.free_child_frame_box(point, ctx);
+        self.free_frame_box(Savable::ChildFrame(point), ctx);
     }
 
     /// Abandons `run_with`, the `run ... with` expression `expression` at
@@ -214,7 +214,7 @@ impl Emitter<'_> {
             let environment = self.project(&frames).run_with_handler_environment();
             self.drop_handler_captures(run_with, &environment, ctx).await;
         }
-        self.free_child_frame_box(point, ctx);
+        self.free_frame_box(Savable::ChildFrame(point), ctx);
     }
 
     /// Ends the selected block by returning unit, as a `Drop.drop` does.

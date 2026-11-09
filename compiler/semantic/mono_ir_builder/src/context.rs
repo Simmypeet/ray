@@ -293,16 +293,29 @@ impl<'a> Context<'a> {
         self.frame().child_frame_place(point, self.engine())
     }
 
-    /// The member that points to the child frame of `point` on the heap, if
-    /// the frame boxes it to break a recursion.
-    pub(crate) fn child_frame_box(&self, point: SuspensionPointID) -> Option<Place> {
-        self.frame().box_pointer_of(Savable::ChildFrame(point), self.engine())
+    /// The member that points to the value of `savable` on the heap, if the
+    /// function has a frame and the frame boxes `savable` to break a
+    /// recursion.
+    ///
+    /// A function lowered in callback style has no frame, so it boxes nothing.
+    pub(crate) fn frame_box(&self, savable: Savable) -> Option<Place> {
+        if !self.is_coroutine() {
+            return None;
+        }
+
+        self.frame().box_pointer_of(savable, self.engine())
     }
 
-    /// The type of the child frame of `point`: the frame of a callee, or the
-    /// frames of a `run ... with`.
-    pub(crate) fn child_frame_type(&self, point: SuspensionPointID) -> Interned<MonoType> {
-        self.frame().field_type(Savable::ChildFrame(point)).clone()
+    /// The type of the value of `savable`, which the frame holds by value or
+    /// in a box.
+    pub(crate) fn raw_frame_field_type(&self, savable: Savable) -> Interned<MonoType> {
+        self.frame().raw_field_type(savable).clone()
+    }
+
+    /// Whether the function has a frame that holds `savable`, by value or in
+    /// a box.
+    pub(crate) fn frame_holds(&self, savable: Savable) -> bool {
+        self.is_coroutine() && self.frame().holds(savable)
     }
 
     pub(crate) fn suspension_point(&self, block: IRBlockID) -> Option<SuspensionPointID> {
