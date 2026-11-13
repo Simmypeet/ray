@@ -6,19 +6,19 @@ expression: snapshot
  2 │ # in an inline module body, in every accepted form.
  3 │ import core
  4 │ import core.Drop, core.Copy
- 5 │ import core.Option as COption, core.Drop as Other, core
- 6 │ import (core.Drop, core.Copy)
+ 5 │ import core.NoDrop as Wrapper, core.Def as Callable, inner as nested
+ 6 │ import (core.Coroutine, core.Continuation)
  7 │ import ()
- 8 │ from core import Drop
- 9 │ from core import (
-10 │   Drop as D,
-11 │   Copy,
+ 8 │ from core import Drop as Dropping
+ 9 │ from inner import (
+10 │   helper as assist,
+11 │   helper,
 12 │ )
-13 │ from super.a import (b)
+13 │ from target.inner import (helper as aid)
 14 │
 15 │ module inner:
 16 │   import core.Drop
-17 │   from target import inner
+17 │   from target import inner as itself
 18 │
 19 │   pub def helper():
 20 │     pass

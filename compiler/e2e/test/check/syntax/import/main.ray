@@ -2,19 +2,19 @@
 # in an inline module body, in every accepted form.
 import core
 import core.Drop, core.Copy
-import core.Option as COption, core.Drop as Other, core
-import (core.Drop, core.Copy)
+import core.NoDrop as Wrapper, core.Def as Callable, inner as nested
+import (core.Coroutine, core.Continuation)
 import ()
-from core import Drop
-from core import (
-  Drop as D,
-  Copy,
+from core import Drop as Dropping
+from inner import (
+  helper as assist,
+  helper,
 )
-from super.a import (b)
+from target.inner import (helper as aid)
 
 module inner:
   import core.Drop
-  from target import inner
+  from target import inner as itself
 
   pub def helper():
     pass

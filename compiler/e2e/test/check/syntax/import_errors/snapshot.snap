@@ -32,13 +32,13 @@ expression: snapshot
    ┆ 5 │ import core.Drop core.Copy
    ┆   ╰╴                 ━━━━
    ┆
- 6 │ from core import (Drop Copy)
-   │                        ^^^^
+ 6 │ from core import (NoDrop Copy)
+   │                          ^^^^
    ┆ [error]: unexpected `Copy` identifier, expected `,` punctuation, `.` punctuation, `as` keyword, or `[ ... ]` block
-   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:6:24
+   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:6:26
    ┆   │
-   ┆ 6 │ from core import (Drop Copy)
-   ┆   ╰╴                       ━━━━
+   ┆ 6 │ from core import (NoDrop Copy)
+   ┆   ╰╴                         ━━━━
    ┆
  7 │ import core.Drop as
    │                    ^
@@ -58,7 +58,7 @@ expression: snapshot
    ┆ 8 │ from core import (Drop as 1, Copy)
    ┆   ╰╴                          ━
    ┆
- 9 │ import core.Drop
+ 9 │ import core.Coroutine
 10 │
 11 │ pub def main():
 12 │   pass

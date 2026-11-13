@@ -1,0 +1,40 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ # An import binds a name in the scope of its module to the symbol that its
+ 2 │ # path names, under its last segment or under its alias.
+ 3 │ from core import Copy as Plain, Drop
+ 4 │ import shapes.Square, shapes.detail
+ 5 │ import target as root
+ 6 │
+ 7 │
+ 8 │ module shapes:
+ 9 │     pub struct Square:
+10 │         pub side: int32
+11 │
+12 │     pub def area(square: Square) -> int32:
+13 │         return square.side * square.side
+14 │
+15 │     pub module detail:
+16 │         pub def twice(value: int32) -> int32:
+17 │             return value + value
+18 │
+19 │
+20 │ module report:
+21 │     # An inline module has its own imports: the ones of its parent are not
+22 │     # visible here.
+23 │     from super.shapes import Square, area
+24 │     import super.shapes.detail.twice as double
+25 │
+26 │     pub def total(square: Square) -> int32:
+27 │         return double(area(square))
+28 │
+29 │
+30 │ def keep[t](value: t) given (_: Drop[t]) -> t where (t: Plain):
+31 │     return value
+32 │
+33 │
+34 │ def main() -> int32:
+35 │     let square = Square { side = keep(3) }
+36 │     return report.total(square) + detail.twice(1) + root.shapes.area(square)
