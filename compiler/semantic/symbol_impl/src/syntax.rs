@@ -1,12 +1,13 @@
 use linkme::distributed_slice;
-use qbice::{executor, program::Registration};
+use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::syntax::{
-    DefBodySyntaxKey, EffectRowSyntaxKey, GivenParameterListSyntaxKey, InstanceTraitSyntaxKey,
-    KindAscriptionSyntaxKey, LinearTypeKey, MarkerImplementationMarkerSyntaxKey,
-    MarkerImplementationTypeSyntaxKey, NegativeMarkerImplementationSyntaxKey,
-    ParameterListSyntaxKey, ReturnTypeSyntaxKey, StructBodySyntaxKey, TypeDefinitionSyntaxKey,
-    TypeParameterListSyntaxKey, VariadicDefKey, VariantPayloadSyntaxKey, WhereClauseSyntaxKey,
+    DefBodySyntaxKey, EffectRowSyntaxKey, GivenParameterListSyntaxKey, ImportsSyntaxKey,
+    InstanceTraitSyntaxKey, KindAscriptionSyntaxKey, LinearTypeKey,
+    MarkerImplementationMarkerSyntaxKey, MarkerImplementationTypeSyntaxKey,
+    NegativeMarkerImplementationSyntaxKey, ParameterListSyntaxKey, ReturnTypeSyntaxKey,
+    StructBodySyntaxKey, TypeDefinitionSyntaxKey, TypeParameterListSyntaxKey, VariadicDefKey,
+    VariantPayloadSyntaxKey, WhereClauseSyntaxKey,
 };
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
@@ -239,3 +240,17 @@ pub async fn kind_ascription_syntax_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static KIND_ASCRIPTION_SYNTAX_EXECUTOR: Registration<Config> =
     Registration::new::<KindAscriptionSyntaxKey, KindAscriptionSyntaxExecutor>();
+
+#[executor(config = Config)]
+pub async fn imports_syntax_executor(
+    &ImportsSyntaxKey { module_id }: &ImportsSyntaxKey,
+    engine: &TrackedEngine,
+) -> Interned<[rayc_syntax::import::Import]> {
+    let table = engine.get_symbol_table(module_id).await;
+
+    table.get_imports_syntax(module_id.id)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static IMPORTS_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<ImportsSyntaxKey, ImportsSyntaxExecutor>();

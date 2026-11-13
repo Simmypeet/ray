@@ -56,6 +56,34 @@ pub struct Key {
 }
 
 impl SymbolKind {
+    /// Checks if a symbol of this kind can be imported into a module.
+    ///
+    /// A symbol that is only meaningful through its parent, such as a variant
+    /// that takes the type arguments of its enum, can't be imported: a path
+    /// names it through the parent instead.
+    #[must_use]
+    pub const fn is_importable(&self) -> bool {
+        match self {
+            Self::Def
+            | Self::Effect
+            | Self::Enum
+            | Self::ExternDef
+            | Self::Marker
+            | Self::Module
+            | Self::Struct
+            | Self::Trait => true,
+
+            Self::EffectOperation
+            | Self::Instance
+            | Self::InstanceDef
+            | Self::InstanceType
+            | Self::MarkerImplementation
+            | Self::TraitDef
+            | Self::TraitType
+            | Self::Variant => false,
+        }
+    }
+
     /// Checks if this kind of symbol has a [`Member`] component.
     #[must_use]
     pub const fn has_member(&self) -> bool {
