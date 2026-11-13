@@ -8,6 +8,7 @@
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashSet;
 use rayc_qbice::TrackedEngine;
+use rayc_semantic_element::import::get_imports;
 use rayc_symbol::{
     GlobalSymbolID, get_target_root_module_id,
     member::{get_members, try_get_members},
@@ -146,7 +147,7 @@ async fn find_first_segment(
 }
 
 /// What the first segment of a path can name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PathStart {
     /// A type, effect or instance parameter in scope.
     PolyVar(GlobalPolyVarID),
@@ -154,6 +155,10 @@ pub enum PathStart {
     /// A member of the module enclosing the site, or the root module of a
     /// linked target.
     Symbol(GlobalSymbolID),
+
+    /// A name that the module enclosing the site imports, which may differ
+    /// from the name of the symbol it is bound to.
+    Import(Interned<str>, GlobalSymbolID),
 }
 
 /// Lists what the first segment of a path written at `site` can name, in the
@@ -187,6 +192,14 @@ pub async fn path_starts(
         let member_id = site.target_id.make_global(member_id);
         if names.insert(engine.get_name(member_id).await) {
             starts.push(PathStart::Symbol(member_id));
+        }
+    }
+
+    // the names that the closest module imports, which can't collide with
+    // its members
+    for (name, symbol_id) in engine.get_imports(module_id).await.iter() {
+        if names.insert(name.clone()) {
+            starts.push(PathStart::Import(name.clone(), symbol_id));
         }
     }
 

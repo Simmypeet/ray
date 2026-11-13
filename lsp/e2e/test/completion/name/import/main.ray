@@ -1,0 +1,14 @@
+# An imported name is offered under its alias, and the imports of another
+# module are not.
+import shapes.area as size
+
+
+module shapes:
+    from super import main as entry
+
+    pub def area() -> int32:
+        return 0
+
+
+pub def main():
+  let result = a<cursor>

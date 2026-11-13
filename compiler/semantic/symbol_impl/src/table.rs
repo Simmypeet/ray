@@ -24,6 +24,7 @@ use rayc_syntax::{
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
     given::GivenParameterList,
+    import::Import,
     kind::KindAscription,
     module::ModuleContent,
     path::Path as SyntaxPath,
@@ -67,6 +68,9 @@ pub struct Infos {
     type_definition: Option<Option<Type>>,
     kind_ascription: Option<Option<KindAscription>>,
     variant_payload: Option<Option<Type>>,
+
+    /// The imports written at the top of a module.
+    imports: Option<Vec<Import>>,
 }
 
 #[derive(Debug, Default, StableHash, Encode, Decode)]
@@ -88,6 +92,7 @@ struct SyntaxTable {
     type_definitions: Map<Option<Type>>,
     kind_ascriptions: Map<Option<KindAscription>>,
     variant_payloads: Map<Option<Type>>,
+    imports: Map<Interned<[Import]>>,
 }
 
 /// Stores the information of the symbols declared in a single source file. It
@@ -376,6 +381,11 @@ impl Table {
         self.syntaxes.variant_payloads.get(&symbol_id).cloned().unwrap()
     }
 
+    #[must_use]
+    pub fn get_imports_syntax(&self, symbol_id: SymbolID) -> Interned<[Import]> {
+        self.syntaxes.imports.get(&symbol_id).cloned().unwrap()
+    }
+
     /// Returns the ID of the source file of this table, or `None` if the file
     /// could not be loaded.
     #[must_use]
@@ -444,6 +454,7 @@ impl Table {
         &mut self,
         key: &TableKey,
         member: MemberBuilder,
+        imports: Vec<Import>,
         definition_span: Option<RelativeSpan>,
         engine: &TrackedEngine,
     ) {
@@ -460,6 +471,7 @@ impl Table {
                 .maybe_span(key.declaration.map(|declaration| declaration.span))
                 .maybe_definition_span(definition_span)
                 .member(member)
+                .imports(imports)
                 .build(),
             engine,
         );
@@ -547,6 +559,10 @@ impl Table {
             self.syntaxes.variant_payloads.insert(symbol_id, variant_payload);
         }
 
+        if let Some(imports) = info.imports {
+            self.syntaxes.imports.insert(symbol_id, engine.intern_unsized(imports));
+        }
+
         if let Some(member) = info.member {
             self.members.insert(symbol_id, engine.intern(member.member));
             self.diagnostics
@@ -593,6 +609,16 @@ impl Table {
     ) {
         self.members.insert(symbol_id, engine.intern(member.member));
         self.diagnostics.extend(member.redef_errors.into_iter().map(Diagnostic::ItemRedefinition));
+    }
+
+    /// Stores the imports of the module `symbol_id`.
+    pub(crate) fn insert_symbol_imports(
+        &mut self,
+        symbol_id: SymbolID,
+        imports: Vec<Import>,
+        engine: &TrackedEngine,
+    ) {
+        self.syntaxes.imports.insert(symbol_id, engine.intern_unsized(imports));
     }
 }
 
@@ -770,16 +796,18 @@ async fn table_executor(Key { table_key: key }: &Key, engine: &TrackedEngine) ->
 
     // register the members the file defines for its module
     let module_content = table.load_source_file(key, engine).await;
+    let mut imports = Vec::new();
     if let Some(module_content) = &module_content {
         table
             .register_module_members(&mut member, module_content.members(), &key.directory, engine)
             .await;
+        imports.extend(module_content.imports());
     }
 
     // a file module is declared in another file, but its information is
     // stored here, alongside its members
     let definition_span = module_content.as_ref().map(SourceElement::span);
-    table.insert_module(key, member, definition_span, engine);
+    table.insert_module(key, member, imports, definition_span, engine);
 
     Arc::new(table)
 }

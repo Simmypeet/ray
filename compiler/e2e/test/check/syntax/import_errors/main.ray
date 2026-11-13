@@ -1,0 +1,15 @@
+# A malformed import is reported on its own line and parsing continues with
+# the next import and then the module members.
+import
+from core
+import core.Drop core.Copy
+from core import (NoDrop Copy)
+import core.Drop as
+from core import (Drop as 1, Copy)
+import core.Coroutine
+
+pub def main():
+  pass
+
+# Imports are only accepted at the top of the module's content.
+import core.Copy

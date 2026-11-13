@@ -24,6 +24,7 @@ pub mod r#enum;
 pub mod expression;
 pub mod extern_def;
 pub mod given;
+pub mod import;
 pub mod instance;
 pub mod irrefutable_pattern;
 pub mod kind;

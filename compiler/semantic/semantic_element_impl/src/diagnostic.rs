@@ -155,6 +155,13 @@ async fn single_rendered_executor(
         }
     }
 
+    if kind == rayc_symbol::symbol_kind::SymbolKind::Module {
+        let key = rayc_semantic_element::import::Key { module_id: symbol_id };
+        for diagnostic in engine.query(&DiagnosticKey::new(key)).await.iter() {
+            rendered.push(diagnostic.report(engine).await);
+        }
+    }
+
     // Structs and effects report the uses of their parameters outside the
     // declared variances.
     if kind.has_variance_map() {

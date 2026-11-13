@@ -54,10 +54,10 @@ async fn fixture(local_argument: bool) -> (TrackedEngine, Interned<Ty>, Interned
         rayc_symbol::member::Key { symbol_id: instance_id },
         engine.intern(members),
     )]))));
-    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-        rayc_symbol::symbol_kind::Key { symbol_id: member_id },
-        SymbolKind::InstanceType,
-    )]))));
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
+        (rayc_symbol::symbol_kind::Key { symbol_id: instance_id }, SymbolKind::Instance),
+        (rayc_symbol::symbol_kind::Key { symbol_id: member_id }, SymbolKind::InstanceType),
+    ]))));
     engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
         (crate::poly_var::Key { symbol_id: instance_id }, engine.intern(instance_vars)),
         (crate::poly_var::Key { symbol_id: trait_member }, engine.intern(trait_vars)),

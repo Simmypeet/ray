@@ -1,0 +1,36 @@
+# An import binds a name in the scope of its module to the symbol that its
+# path names, under its last segment or under its alias.
+from core import Copy as Plain, Drop
+import shapes.Square, shapes.detail
+import target as root
+
+
+module shapes:
+    pub struct Square:
+        pub side: int32
+
+    pub def area(square: Square) -> int32:
+        return square.side * square.side
+
+    pub module detail:
+        pub def twice(value: int32) -> int32:
+            return value + value
+
+
+module report:
+    # An inline module has its own imports: the ones of its parent are not
+    # visible here.
+    from super.shapes import Square, area
+    import super.shapes.detail.twice as double
+
+    pub def total(square: Square) -> int32:
+        return double(area(square))
+
+
+def keep[t](value: t) given (_: Drop[t]) -> t where (t: Plain):
+    return value
+
+
+def main() -> int32:
+    let square = Square { side = keep(3) }
+    return report.total(square) + detail.twice(1) + root.shapes.area(square)

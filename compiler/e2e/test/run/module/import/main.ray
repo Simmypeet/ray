@@ -1,0 +1,27 @@
+# An imported name calls the function it is bound to, not a member of the
+# same name elsewhere.
+from numbers import ten as base
+import numbers.detail.add_one
+
+
+module numbers:
+    pub def ten() -> int32:
+        return 10
+
+    pub module detail:
+        pub def add_one(value: int32) -> int32:
+            return value + 1
+
+
+module other:
+    from super.numbers.detail import add_one as increment
+
+    # `add_one` here would be the import of the root module, which is not
+    # visible in this module.
+    pub def add_one(value: int32) -> int32:
+        return increment(increment(value))
+
+
+def main() -> int32:
+    # 11 + 30 + 1
+    return add_one(base()) + other.add_one(28) + 1

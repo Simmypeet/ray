@@ -446,10 +446,10 @@ async fn concrete_associated_argument_does_not_become_external_requirement() {
         MemberKey { symbol_id: implementation },
         members,
     )]))));
-    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-        SymbolKindKey { symbol_id: implementation_member },
-        SymbolKind::InstanceType,
-    )]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
+        (SymbolKindKey { symbol_id: implementation }, SymbolKind::Instance),
+        (SymbolKindKey { symbol_id: implementation_member }, SymbolKind::InstanceType),
+    ]))));
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
         InstanceMemberKey { symbol_id: implementation_member },
         Some(correspondence),

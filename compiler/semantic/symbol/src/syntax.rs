@@ -1,12 +1,13 @@
 //! Contains the queries for retrieving syntax items defined to a particular
 //! symbol.
 
-use qbice::{Decode, Encode, Query, StableHash};
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_syntax::{
     def::{ParameterList, ReturnType},
     effect::TypeParameterList,
     effect_row::EffectRowAnnotation,
     given::GivenParameterList,
+    import::Import,
     kind::KindAscription,
     path::Path,
     statement::Block,
@@ -190,4 +191,16 @@ pub struct WhereClauseSyntaxKey {
 #[extend(by_val, name = get_kind_ascription_syntax)]
 pub struct KindAscriptionSyntaxKey {
     pub symbol_id: GlobalSymbolID,
+}
+
+/// Retrieves the imports written at the top of a module, in declaration
+/// order.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Interned<[Import]>)]
+#[extend(by_val, name = get_imports_syntax)]
+pub struct ImportsSyntaxKey {
+    /// The global ID of the module.
+    pub module_id: GlobalSymbolID,
 }

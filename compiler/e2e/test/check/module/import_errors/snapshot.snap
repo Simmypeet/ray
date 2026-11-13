@@ -1,0 +1,147 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ # Each import reports why it binds nothing, or why its name is taken.
+ 2 │ import nothing
+   │        ^^^^^^^
+   ┆ [error]: symbol `nothing` is not found
+   ┆   ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:2:8
+   ┆   │
+   ┆ 2 │ import nothing
+   ┆   ╰╴       ━━━━━━━ symbol `nothing` is not found
+   ┆
+ 3 │ import shapes.Hidden
+   │               ^^^^^^
+   ┆ [error]: struct `Hidden` is not accessible here
+   ┆    ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:3:15
+   ┆    │
+   ┆  3 │ import shapes.Hidden
+   ┆    │               ━━━━━━ `Hidden` is not accessible here
+   ┆    ‡
+   ┆ 19 │     struct Hidden:
+   ┆    │            ────── `Hidden` is declared here
+   ┆    │
+   ┆    ╰ help: `Hidden` is only accessible within `main.shapes`; declare it with `pub` to make it public
+   ┆
+ 4 │ import shapes.Shape.Circle
+   │        ^^^^^^^^^^^^^^^^^^^
+   ┆ [error]: variant cannot be imported
+   ┆   ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:4:8
+   ┆   │
+   ┆ 4 │ import shapes.Shape.Circle
+   ┆   │        ━━━━━━━━━━━━━━━━━━━
+   ┆   │
+   ┆   ╰ help: import its parent instead and name it through the parent
+   ┆
+ 5 │ import shapes.Square[int32] as Generic
+   │                     ^^^^^^^
+   ┆ [error]: an imported path cannot have arguments
+   ┆   ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:5:21
+   ┆   │
+   ┆ 5 │ import shapes.Square[int32] as Generic
+   ┆   │                     ━━━━━━━
+   ┆   │
+   ┆   ╰ help: supply the arguments where the imported name is used
+   ┆
+ 6 │ import super
+   │        ^^^^^
+   ┆ [error]: the imported path has no name to bind
+   ┆   ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:6:8
+   ┆   │
+   ┆ 6 │ import super
+   ┆   │        ━━━━━
+   ┆   │
+   ┆   ╰ help: name the import with `as`, as in `import super as parent`
+   ┆
+ 7 │ import super as parent
+   │        ^^^^^
+   ┆ [error]: `super` cannot be used in the root module, which has no parent module
+   ┆   ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:7:8
+   ┆   │
+   ┆ 7 │ import super as parent
+   ┆   ╰╴       ━━━━━
+   ┆
+ 8 │ import this as me
+   │        ^^^^
+   ┆ [error]: `this` is only valid within a trait body
+   ┆   ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:8:8
+   ┆   │
+   ┆ 8 │ import this as me
+   ┆   ╰╴       ━━━━
+   ┆
+ 9 │ from nothing import (first, second)
+   │      ^^^^^^^
+   ┆ [error]: symbol `nothing` is not found
+   ┆   ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:9:6
+   ┆   │
+   ┆ 9 │ from nothing import (first, second)
+   ┆   ╰╴     ━━━━━━━ symbol `nothing` is not found
+   ┆
+10 │ from shapes import super as up
+   │                    ^^^^^
+   ┆ [error]: a path imported from a `from` clause must start with a name
+   ┆    ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:10:20
+   ┆    │
+   ┆ 10 │ from shapes import super as up
+   ┆    ╰╴                   ━━━━━
+   ┆
+11 │ import shapes.area, shapes.detail.area
+   │                                   ^^^^
+   ┆ [error]: the name `area` is already defined in the scope `main`
+   ┆    ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:11:35
+   ┆    │
+   ┆ 11 │ import shapes.area, shapes.detail.area
+   ┆    │               ┬───                ━━━━ imported again here
+   ┆    │               │
+   ┆    │               the name is imported here
+   ┆    │
+   ┆    ╰ help: rename the import with `as`
+   ┆
+12 │ import shapes.Square
+   │               ^^^^^^
+   ┆ [error]: the name `Square` is already defined in the scope `main`
+   ┆    ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:12:15
+   ┆    │
+   ┆ 12 │ import shapes.Square
+   ┆    │               ━━━━━━ imported again here
+   ┆    ‡
+   ┆ 33 │ struct Square:
+   ┆    │        ────── the name is declared here
+   ┆    │
+   ┆    ╰ help: rename the import with `as`
+   ┆
+13 │
+14 │
+15 │ module shapes:
+16 │     pub struct Square[t]:
+17 │         pub side: t
+18 │
+19 │     struct Hidden:
+20 │         value: int32
+21 │
+22 │     pub enum Shape:
+23 │         Circle(int32)
+24 │
+25 │     pub def area() -> int32:
+26 │         return 0
+27 │
+28 │     pub module detail:
+29 │         pub def area() -> int32:
+30 │             return 1
+31 │
+32 │
+33 │ struct Square:
+34 │     side: int32
+35 │
+36 │
+37 │ def main() -> int32:
+38 │     # a name that failed to import is not found
+39 │     return area() + nothing.value()
+   │                     ^^^^^^^
+   ┆ [error]: symbol `nothing` is not found
+   ┆    ╭▸ compiler/e2e/test/check/module/import_errors/main.ray:39:21
+   ┆    │
+   ┆ 39 │     return area() + nothing.value()
+   ┆    ╰╴                    ━━━━━━━ symbol `nothing` is not found
+   ┆

@@ -77,13 +77,16 @@ impl Member {
 }
 
 /// Retrieves the member ID of the given name in the symbol with the given ID.
+///
+/// Returns `None` if the symbol has no such member or is of a kind that does
+/// not have members.
 #[extend]
 pub async fn get_member_by_name(
     self: &TrackedEngine,
     symbol_id: Global<SymbolID>,
     name: &str,
 ) -> Option<Global<SymbolID>> {
-    let members = self.get_members(symbol_id).await;
+    let members = self.try_get_members(symbol_id).await?;
     members.get_by_name(name).map(|id| symbol_id.target_id.make_global(id))
 }
 

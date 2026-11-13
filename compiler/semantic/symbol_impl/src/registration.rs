@@ -740,8 +740,9 @@ impl Table {
             )
             .await;
 
-        // an inline module defines its members in its body
+        // an inline module defines its members and imports in its body
         let mut module_members = member_builder.child_module(module_id, name.clone());
+        let mut imports = Vec::new();
         if let Some(body) = body {
             Box::pin(self.register_module_members(
                 &mut module_members,
@@ -750,9 +751,12 @@ impl Table {
                 engine,
             ))
             .await;
+
+            imports.extend(body.imports());
         }
 
         self.insert_symbol_members(module_id.id, module_members, engine);
+        self.insert_symbol_imports(module_id.id, imports, engine);
     }
 
     /// Registers the members of a module whose directory is `directory`.

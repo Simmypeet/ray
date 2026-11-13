@@ -20,6 +20,7 @@ pub use obligation::{
     Obligation, PredicateConstraint, PredicateObligation, ReferenceWf, RelationOrigin,
     TraitRefCheck, UnsatisfiedRelationOutlives, WfCheck,
 };
+pub mod import;
 pub mod inference;
 pub mod lifetime;
 pub mod path;
@@ -78,6 +79,8 @@ pub enum Diagnostic {
     MissingGivenArgument(MissingGivenArgument),
     /// A given parameter was assigned more than once.
     DuplicateGivenArgument(DuplicateGivenArgument),
+    /// An import names nothing that can be imported.
+    InvalidImport(import::InvalidImport),
     /// A named lifetime is not declared.
     LifetimeNotFound(lifetime::LifetimeNotFound),
     /// A lifetime is elided where elision is not allowed.
@@ -112,6 +115,7 @@ impl Report for Diagnostic {
             Self::GivenArgumentNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::MissingGivenArgument(diagnostic) => diagnostic.report(engine).await,
             Self::DuplicateGivenArgument(diagnostic) => diagnostic.report(engine).await,
+            Self::InvalidImport(diagnostic) => diagnostic.report(engine).await,
             Self::LifetimeNotFound(diagnostic) => diagnostic.report(engine).await,
             Self::MissingLifetime(diagnostic) => diagnostic.report(engine).await,
         }

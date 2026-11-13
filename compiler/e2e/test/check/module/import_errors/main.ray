@@ -1,0 +1,39 @@
+# Each import reports why it binds nothing, or why its name is taken.
+import nothing
+import shapes.Hidden
+import shapes.Shape.Circle
+import shapes.Square[int32] as Generic
+import super
+import super as parent
+import this as me
+from nothing import (first, second)
+from shapes import super as up
+import shapes.area, shapes.detail.area
+import shapes.Square
+
+
+module shapes:
+    pub struct Square[t]:
+        pub side: t
+
+    struct Hidden:
+        value: int32
+
+    pub enum Shape:
+        Circle(int32)
+
+    pub def area() -> int32:
+        return 0
+
+    pub module detail:
+        pub def area() -> int32:
+            return 1
+
+
+struct Square:
+    side: int32
+
+
+def main() -> int32:
+    # a name that failed to import is not found
+    return area() + nothing.value()

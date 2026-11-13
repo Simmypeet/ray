@@ -1,0 +1,74 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ # A malformed import is reported on its own line and parsing continues with
+ 2 │ # the next import and then the module members.
+ 3 │ import
+   │       ^
+   ┆ [error]: unexpected new line, expected identifier, `super` keyword, `target` keyword, `this` keyword, or `( ... )` block
+   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:3:7
+   ┆   │
+   ┆ 3 │   import
+   ┆   │ ┏━━━━━━━┛
+   ┆ 4 │ ┃ from core
+   ┆   ╰╴┗━┛
+   ┆
+ 4 │ from core
+   │          ^
+   ┆ [error]: unexpected new line, expected `.` punctuation, `import` keyword, or `[ ... ]` block
+   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:4:10
+   ┆   │
+   ┆ 4 │   from core
+   ┆   │ ┏━━━━━━━━━━┛
+   ┆ 5 │ ┃ import core.Drop core.Copy
+   ┆   ╰╴┗━┛
+   ┆
+ 5 │ import core.Drop core.Copy
+   │                  ^^^^
+   ┆ [error]: unexpected `core` identifier, expected `,` punctuation, `.` punctuation, new line, `as` keyword, or `[ ... ]` block
+   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:5:18
+   ┆   │
+   ┆ 5 │ import core.Drop core.Copy
+   ┆   ╰╴                 ━━━━
+   ┆
+ 6 │ from core import (NoDrop Copy)
+   │                          ^^^^
+   ┆ [error]: unexpected `Copy` identifier, expected `,` punctuation, `.` punctuation, `as` keyword, or `[ ... ]` block
+   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:6:26
+   ┆   │
+   ┆ 6 │ from core import (NoDrop Copy)
+   ┆   ╰╴                         ━━━━
+   ┆
+ 7 │ import core.Drop as
+   │                    ^
+   ┆ [error]: unexpected new line, expected identifier
+   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:7:20
+   ┆   │
+   ┆ 7 │   import core.Drop as
+   ┆   │ ┏━━━━━━━━━━━━━━━━━━━━┛
+   ┆ 8 │ ┃ from core import (Drop as 1, Copy)
+   ┆   ╰╴┗━┛
+   ┆
+ 8 │ from core import (Drop as 1, Copy)
+   │                           ^
+   ┆ [error]: unexpected numeric literal, expected identifier
+   ┆   ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:8:27
+   ┆   │
+   ┆ 8 │ from core import (Drop as 1, Copy)
+   ┆   ╰╴                          ━
+   ┆
+ 9 │ import core.Coroutine
+10 │
+11 │ pub def main():
+12 │   pass
+13 │
+14 │ # Imports are only accepted at the top of the module's content.
+15 │ import core.Copy
+   │ ^^^^^^
+   ┆ [error]: unexpected `import` keyword, expected module member or `pass` keyword
+   ┆    ╭▸ compiler/e2e/test/check/syntax/import_errors/main.ray:15:1
+   ┆    │
+   ┆ 15 │ import core.Copy
+   ┆    ╰╴━━━━━━
+   ┆

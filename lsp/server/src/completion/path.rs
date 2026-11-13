@@ -229,6 +229,14 @@ pub(super) async fn first_segments(
                     items.push(symbol_item(engine, symbol_id, Some(Rank::Start)).await);
                 }
             }
+            PathStart::Import(name, symbol_id) => {
+                if position.offers(engine.get_symbol_kind(symbol_id).await) {
+                    let mut item = symbol_item(engine, symbol_id, Some(Rank::Start)).await;
+                    item.sort_text = Some(format!("{}{}", Rank::Start.prefix(), name.as_ref()));
+                    item.label = name.to_string();
+                    items.push(item);
+                }
+            }
         }
     }
 
