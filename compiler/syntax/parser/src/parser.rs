@@ -172,6 +172,17 @@ pub trait ParserExt {
         RepeatWithSeparatorAtLeastOnce(self, separator)
     }
 
+    /// Similar to [`Parser::repeat`], but requires at least one successful
+    /// parse of the `self` parser.
+    ///
+    /// Grammatically, this is equivalent to `self+`.
+    fn repeat_at_least_once(self) -> RepeatAtLeastOnce<Self>
+    where
+        Self: Sized,
+    {
+        RepeatAtLeastOnce(self)
+    }
+
     /// Makes the new line significant for the parser and then invokes the
     /// parser. After the parser is invoked and if there's still tokens left in
     /// the branch, expects a new line token.
@@ -635,6 +646,33 @@ impl<I: Interner, T: Parser<I>> Parser<I> for Repeat<T> {
 }
 
 impl<T: Output<Extract = One>> Output for Repeat<T> {
+    type Extract = Multiple;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(&self, node: &'a crate::concrete_tree::Node) -> Option<Self::Output<'a>> {
+        T::output(&self.0, node)
+    }
+}
+
+/// See [`Parser::repeat_at_least_once`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RepeatAtLeastOnce<T>(pub T);
+
+impl<I: Interner, T: Parser<I>> Parser<I> for RepeatAtLeastOnce<T> {
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
+        self.0.parse(state)?;
+
+        let mut checkpoint = state.checkpoint();
+        while self.0.parse(state) == Ok(()) {
+            checkpoint = state.checkpoint();
+        }
+        state.restore(checkpoint);
+
+        Ok(())
+    }
+}
+
+impl<T: Output<Extract = One>> Output for RepeatAtLeastOnce<T> {
     type Extract = Multiple;
     type Output<'a> = T::Output<'a>;
 

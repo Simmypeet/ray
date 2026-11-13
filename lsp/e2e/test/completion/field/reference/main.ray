@@ -1,4 +1,5 @@
-# A reference offers no fields, because field access does not dereference it.
+# A reference offers the fields behind it, through every layer of references,
+# because field access dereferences it.
 struct Point:
   x: int32
   y: int32
@@ -6,4 +7,5 @@ struct Point:
 pub def main():
   let point = Point { x = 1, y = 2 }
   let reference = point.&
-  let x = reference.<cursor>
+  let double = reference.&
+  let x = double.<cursor>

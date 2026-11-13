@@ -1,0 +1,41 @@
+struct Vector2:
+    x: int32
+    y: int32
+
+struct Segment:
+    start: Vector2
+    end: Vector2
+
+# A field is read through a reference without writing `.*`.
+def x_of(point: &Vector2) -> int32:
+    return point.x
+
+# A field is read through every reference in front of it.
+def y_of(point: &&Vector2) -> int32:
+    return point.y
+
+# A tuple element is read through a reference too.
+def second(pair: &(int32, int32)) -> int32:
+    return pair.1
+
+# A field is assigned through a mutable reference.
+def move_right(point: &mut Vector2) -> ():
+    point.x = point.x + 1
+    return ()
+
+# A field of a field is reached through the reference, and borrowed again.
+def end_y(segment: &Segment) -> &int32:
+    return segment.end.y.&
+
+def main() -> int32:
+    let mut point = Vector2 { x = 1, y = 2 }
+    move_right(point.&mut)
+    let reference = point.&
+
+    let double = reference.&
+    let segment = Segment { start = point, end = Vector2 { x = 10, y = 20 } }
+    let pair = (3, 4)
+
+    # 2 + 2 + 2 + 4 + 20 + 2 = 32
+    let total = x_of(reference) + y_of(double) + double.x + second(pair.&) + end_y(segment.&).*
+    return total + segment.&.start.x

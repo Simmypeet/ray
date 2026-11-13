@@ -3,8 +3,8 @@ use rayc_semantic_element::struct_body::{Field, get_struct_body};
 use rayc_source_file::SourceElement;
 use rayc_symbol::GlobalSymbolID;
 use rayc_syntax::expression::{
-    Deref as DerefSyntax, DotMember, DotPostfix, FieldAccess as FieldAccessSyntax, Postfix,
-    PostfixOperator, RefOf as RefOfSyntax, TupleIndex as TupleIndexSyntax,
+    Deref as DerefSyntax, DotMember, DotPostfix, FieldAccess as FieldAccessSyntax, PlaceOperator,
+    PlaceOperators, Postfix, PostfixOperator, RefOf as RefOfSyntax, TupleIndex as TupleIndexSyntax,
 };
 use rayc_type::{
     subst::Substitutable,
@@ -53,17 +53,19 @@ impl TAstBuilder {
         let mut bound = self.bind(leaf).await;
         for postfix in syn.postfixes().take(operator_count) {
             let val = match postfix {
-                PostfixOperator::Call(call) => Some(self.build_closure_call(bound, &call).await),
+                PostfixOperator::Call(call) => Ok(self.build_closure_call(bound, &call).await),
                 PostfixOperator::Dot(dot) => self.build_dot_postfix(bound, &dot).await,
             };
 
-            bound = if let Some(val) = val {
-                val
-            } else {
+            bound = match val {
+                Ok(val) => val,
+
                 // if the postfix operator failed to bind then we return an error expression
                 // but we still want to keep the children of the expression so that we can
                 // report errors on them as well
-                self.push_error_expression_with_children(syn.span(), vec![bound.into()]).await
+                Err(operand) => {
+                    self.push_error_expression_with_children(syn.span(), vec![operand.into()]).await
+                }
             };
         }
 
@@ -95,34 +97,87 @@ impl TAstBuilder {
         ));
     }
 
-    /// Binds the operator `dot` applied to `bound`, or returns `None` if it
-    /// fails.
+    /// Binds the operator `dot` applied to `bound`.
+    ///
+    /// If it fails, returns the operand to keep as the child of the error
+    /// expression standing for the failed operator: `bound`, or `bound`
+    /// already dereferenced for a member access.
     ///
     /// A field, a tuple index or a member still missing is recorded as a
-    /// member access before it is checked, so that the member of a failed
-    /// access can still be completed.
+    /// member access of the dereferenced receiver before it is checked, so
+    /// that the member of a failed access can still be completed.
     async fn build_dot_postfix(
         &mut self,
         bound: TypedExprID,
         dot: &DotPostfix,
-    ) -> Option<TypedExprID> {
-        let Some(member) = dot.member() else {
-            // a dangling `.`, whose member is still being typed
-            self.record_member_access(dot.span(), bound);
-            return None;
-        };
+    ) -> Result<TypedExprID, TypedExprID> {
+        match dot.member() {
+            Some(DotMember::PlaceOperators(operators)) => {
+                Ok(self.build_place_operators(bound, &operators).await)
+            }
+            Some(DotMember::TupleIndex(index)) => {
+                let receiver = self.member_receiver(bound, dot).await;
+                self.build_tuple_index(receiver, &index).await.ok_or(receiver)
+            }
+            Some(DotMember::FieldAccess(access)) => {
+                let receiver = self.member_receiver(bound, dot).await;
+                self.build_field_access(receiver, &access).await.ok_or(receiver)
+            }
 
-        match member {
-            DotMember::RefOf(ref_of) => Some(self.build_ref_of(bound, &ref_of).await),
-            DotMember::Deref(deref) => Some(self.build_deref(bound, &deref).await),
-            DotMember::TupleIndex(index) => {
-                self.record_member_access(dot.span(), bound);
-                self.build_tuple_index(bound, &index).await
-            }
-            DotMember::FieldAccess(access) => {
-                self.record_member_access(dot.span(), bound);
-                self.build_field_access(bound, &access).await
-            }
+            // a dangling `.`, whose member is still being typed
+            None => Err(self.member_receiver(bound, dot).await),
+        }
+    }
+
+    /// Returns the receiver of the member access `dot` applied to `bound`,
+    /// which is `bound` dereferenced through every reference in front of the
+    /// member, and records the access.
+    async fn member_receiver(&mut self, bound: TypedExprID, dot: &DotPostfix) -> TypedExprID {
+        let receiver = self.auto_deref(bound).await;
+        self.record_member_access(dot.span(), receiver);
+        receiver
+    }
+
+    /// Applies the operators of the run `operators` to `bound` from left to
+    /// right: `p.*&` borrows the place `p` refers to.
+    async fn build_place_operators(
+        &mut self,
+        mut bound: TypedExprID,
+        operators: &PlaceOperators,
+    ) -> TypedExprID {
+        for operator in operators.operators() {
+            bound = match operator {
+                PlaceOperator::RefOf(ref_of) => self.build_ref_of(bound, &ref_of).await,
+                PlaceOperator::Deref(deref) => self.build_deref(bound, &deref).await,
+            };
+        }
+
+        bound
+    }
+
+    /// Dereferences `bound` for as long as its type is a reference, so that a
+    /// member is accessed through any number of references: `p.x` with `p`
+    /// of type `&&S` is `p.*.*.x`.
+    ///
+    /// A raw pointer is not dereferenced, as in Rust: its dereference needs
+    /// `unsafe`, so it is written out.
+    async fn auto_deref(&mut self, mut bound: TypedExprID) -> TypedExprID {
+        let span = self.span_of_expression(bound);
+
+        loop {
+            let ty = self.latest_type(&self.type_of_expression(bound)).await;
+            let Some(reference) = ty.as_reference_view() else {
+                return bound;
+            };
+
+            let pointee = reference.pointee().clone();
+            bound = self
+                .insert_expression(
+                    TypedExprKind::Deref(Deref::new(bound, DerefKind::Reference)),
+                    span,
+                    pointee,
+                )
+                .await;
         }
     }
 
