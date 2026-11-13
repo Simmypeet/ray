@@ -3,7 +3,7 @@ use rayc_lexical::tree::DelimiterKind;
 use rayc_parser::{
     abstract_tree,
     expect::{self, Ext, Fragment},
-    parser::{IntoChoice, ParserExt, ast},
+    parser::{ParserExt, ast},
 };
 
 use crate::{
@@ -411,7 +411,7 @@ abstract_tree::abstract_tree! {
     )]
     /// The `&` or `&mut` of a [`PlaceOperators`], which borrows the operand.
     pub struct RefOf {
-        pub ampersand: Punctuation = '&',
+        pub ampersand: Punctuation = '&'.no_prior_insignificant(),
         pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
     }
 }
@@ -431,7 +431,7 @@ abstract_tree::abstract_tree! {
     )]
     /// The `*` of a [`PlaceOperators`], which dereferences the operand.
     pub struct Deref {
-        pub asterisk: Punctuation = '*',
+        pub asterisk: Punctuation = '*'.no_prior_insignificant(),
     }
 }
 
@@ -475,11 +475,7 @@ abstract_tree::abstract_tree! {
     /// that `x.* * y` is still a multiplication.
     pub struct PlaceOperators {
         pub operators: #[multi] PlaceOperator = ast::<PlaceOperator>()
-            .repeat_with_separator_at_least_once(
-                ('*'.no_prior_insignificant(), '&'.no_prior_insignificant())
-                    .into_choice()
-                    .lookahead()
-            )
+            .repeat_at_least_once()
     }
 }
 
