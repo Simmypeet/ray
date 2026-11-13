@@ -1,0 +1,41 @@
+struct Resource:
+    value: int32
+
+impl !core.Copy for Resource
+
+struct Holder:
+    resource: Resource
+    count: int32
+
+def consume(resource: Resource) -> ():
+    return ()
+
+def moveOut(holder: &&Holder) -> ():
+    # ERROR: the field is reached through references, so it is only borrowed.
+    consume(holder.resource)
+    return ()
+
+def writeThroughShared(holder: &mut &Holder) -> ():
+    # ERROR: the inner reference is shared.
+    holder.count = 1
+    return ()
+
+def writeThroughUnique(holder: &mut &mut Holder) -> ():
+    # OK: every reference in front of the field is unique.
+    holder.count = 1
+    return ()
+
+def tupleThroughReference(pair: &(int32, Resource)) -> int32:
+    # OK: a `Copy` element is copied out of the borrow.
+    return pair.0
+
+def rawPointer(holder: *Holder) -> int32:
+    # ERROR: a raw pointer is not dereferenced implicitly.
+    return unsafe: holder.count
+
+def notAStruct(value: &&int32) -> int32:
+    # ERROR: the type behind the references has no fields.
+    return value.count
+
+def main() -> ():
+    return ()

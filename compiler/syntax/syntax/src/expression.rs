@@ -3,7 +3,7 @@ use rayc_lexical::tree::DelimiterKind;
 use rayc_parser::{
     abstract_tree,
     expect::{self, Ext, Fragment},
-    parser::{ParserExt, ast},
+    parser::{IntoChoice, ParserExt, ast},
 };
 
 use crate::{
@@ -409,9 +409,9 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
-    /// The `&` or `&mut` after a `.`, which borrows the operand.
+    /// The `&` or `&mut` of a [`PlaceOperators`], which borrows the operand.
     pub struct RefOf {
-        pub asterisk: Punctuation = '&',
+        pub ampersand: Punctuation = '&',
         pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
     }
 }
@@ -429,9 +429,57 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
-    /// The `*` after a `.`, which dereferences the operand.
+    /// The `*` of a [`PlaceOperators`], which dereferences the operand.
     pub struct Deref {
         pub asterisk: Punctuation = '*',
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    /// A single operator of a [`PlaceOperators`].
+    pub enum PlaceOperator {
+        RefOf(RefOf = ast::<RefOf>()),
+        Deref(Deref = ast::<Deref>()),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode
+    )]
+    /// The run of `*`, `&` and `&mut` after a `.`, such as `.*`, `.**` or
+    /// `.*&mut`, applied to the operand from left to right.
+    ///
+    /// Every operator after the first directly follows the one before it, so
+    /// that `x.* * y` is still a multiplication.
+    pub struct PlaceOperators {
+        pub operators: #[multi] PlaceOperator = ast::<PlaceOperator>()
+            .repeat_with_separator_at_least_once(
+                ('*'.no_prior_insignificant(), '&'.no_prior_insignificant())
+                    .into_choice()
+                    .lookahead()
+            )
     }
 }
 
@@ -467,7 +515,7 @@ abstract_tree::abstract_tree! {
         Encode,
         Decode
     )]
-    /// A `.` and the member after it, such as `.x`, `.0`, `.&` or `.*`.
+    /// A `.` and the member after it, such as `.x`, `.0`, `.&` or `.**`.
     pub struct DotPostfix {
         pub dot: Punctuation = '.',
         // a dangling `.` is kept without a member, so that the member after it
@@ -491,8 +539,7 @@ abstract_tree::abstract_tree! {
     )]
     /// What follows the `.` of a [`DotPostfix`].
     pub enum DotMember {
-        RefOf(RefOf = ast::<RefOf>()),
-        Deref(Deref = ast::<Deref>()),
+        PlaceOperators(PlaceOperators = ast::<PlaceOperators>()),
         TupleIndex(TupleIndex = ast::<TupleIndex>()),
         FieldAccess(FieldAccess = ast::<FieldAccess>())
     }

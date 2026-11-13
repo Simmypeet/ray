@@ -19,7 +19,8 @@ pub struct MemberAccess {
     /// missing.
     span: RelativeSpan,
 
-    /// The expression whose member is accessed.
+    /// The expression whose member is accessed, after it has been
+    /// dereferenced through the references in front of the member.
     receiver: TypedFunctionLocalID<TypedExprID>,
 }
 

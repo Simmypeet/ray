@@ -1,0 +1,25 @@
+# Increments the value behind two references, dereferencing both with one
+# `.**`.
+def increment(value: &mut &mut int32) -> ():
+    value.** = value.** + 1
+    return ()
+
+# Borrows the value behind two references again, with `.**&`.
+def flatten['a, 'b](value: &'a &'b int32) -> &'a int32:
+    return value.**&
+
+def main() -> int32:
+    let mut value = 4
+    let mut reference = value.&mut
+    increment(reference.&mut)
+
+    # `.*&mut` reborrows the place a mutable reference refers to.
+    let mut reborrowed = reference.*&mut
+    reborrowed.* = reborrowed.* + 1
+
+    # a space separates a dereference from a multiplication
+    let shared = value.&
+    let squared = shared.* * shared.*
+
+    # `.&*` borrows and then dereferences again
+    return flatten(shared.&).* + squared + value.&*

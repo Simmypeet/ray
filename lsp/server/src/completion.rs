@@ -195,7 +195,9 @@ async fn complete_names(
 /// Lists the members of a receiver of type `ty` that `def_id` can access,
 /// sorted by name.
 ///
-/// A reference has no members: field access does not dereference it.
+/// The binder records the receiver already dereferenced through the
+/// references in front of the member, so `ty` is the type whose members the
+/// access looks up.
 async fn complete_members(
     engine: &TrackedEngine,
     def_id: GlobalSymbolID,
