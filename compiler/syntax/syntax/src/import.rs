@@ -14,7 +14,7 @@
 //! insignificant, so a parenthesized list may span several lines.
 
 use qbice::{Decode, Encode, StableHash};
-use rayc_lexical::tree::DelimiterKind;
+use rayc_lexical::tree::{DelimiterKind, RelativeSpan};
 use rayc_parser::{
     abstract_tree,
     expect::{self, Fragment},
@@ -22,8 +22,12 @@ use rayc_parser::{
         Ast, Choice, IntoChoice, Line, Lookahead, ParserExt, Recoverable, RepeatWithCommit, ast,
     },
 };
+use rayc_source_file::SourceElement;
 
-use crate::{Identifier, Keyword, path::Path};
+use crate::{
+    Identifier, Keyword,
+    path::{Path, PathRoot},
+};
 
 abstract_tree::abstract_tree! {
     /// `as name`, the name that an imported path is brought in under.
@@ -43,6 +47,51 @@ abstract_tree::abstract_tree! {
         // leaving the `as` behind as an unexpected token
         pub alias: ImportAlias =
             ast::<ImportAlias>().commit_if(expect::Keyword::As.lookahead())
+    }
+}
+
+/// The name that an [`ImportItem`] binds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportItemName {
+    /// The alias of the item, or else the last segment of its path.
+    Identifier(Identifier),
+
+    /// The path consists of only a keyword root, such as `super`, which can't
+    /// be used as a name; the span is the one of the path.
+    Keyword(RelativeSpan),
+
+    /// The name is missing because of a syntax error, which the parser has
+    /// reported.
+    Missing,
+}
+
+impl ImportItem {
+    /// Returns the name that this item binds: its alias, or else the last
+    /// segment of its path.
+    #[must_use]
+    pub fn bound_name(&self) -> ImportItemName {
+        if let Some(alias) = self.alias() {
+            return alias.name().map_or(ImportItemName::Missing, ImportItemName::Identifier);
+        }
+        let Some(path) = self.path() else { return ImportItemName::Missing };
+
+        // the last segment written after the root, if any
+        if let Some(last) = path.rest().last() {
+            return last
+                .segment()
+                .and_then(|segment| segment.identifier())
+                .map_or(ImportItemName::Missing, ImportItemName::Identifier);
+        }
+
+        match path.root() {
+            Some(PathRoot::Segment(segment)) => {
+                segment.identifier().map_or(ImportItemName::Missing, ImportItemName::Identifier)
+            }
+            Some(PathRoot::This(_) | PathRoot::Target(_) | PathRoot::Super(_)) => {
+                ImportItemName::Keyword(path.span())
+            }
+            None => ImportItemName::Missing,
+        }
     }
 }
 
