@@ -7,14 +7,16 @@ use qbice::storage::intern::Interned;
 use rayc_handler::Handler;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
+use rayc_semantic_element::import::get_imports;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
     GlobalSymbolID, get_target_root_module_id,
-    member::{get_member_by_name, try_get_members},
+    member::get_member_by_name,
     parent::{get_closest_module_id, get_parent_global},
     symbol_kind::{SymbolKind, get_symbol_kind},
 };
 use rayc_syntax::path::{Path, PathRoot};
+use rayc_target::TargetID;
 use rayc_type::{
     poly_var::{GlobalPolyVarID, PolyVarMap, PolyVarStack, get_poly_var_map},
     subst::{Subst, Substitutable},
@@ -491,9 +493,7 @@ pub(crate) async fn find_path_symbol(
 ) -> Option<GlobalSymbolID> {
     // A later segment names a member of the symbol before it.
     if let Some(previous) = previous {
-        return engine.try_get_members(previous).await.and_then(|members| {
-            members.get_by_name(name).map(|member_id| previous.target_id.make_global(member_id))
-        });
+        return engine.get_member_by_name(previous, name).await;
     }
 
     // The first segment names a member of the closest enclosing module...
@@ -503,12 +503,29 @@ pub(crate) async fn find_path_symbol(
         return Some(local);
     }
 
-    // ...or, after local names, the root of an explicitly linked target.
+    // ...or a name that the module imports, which can't collide with a
+    // member...
+    if let Some(imported) = engine.get_imports(closest_module_id).await.get(name) {
+        return Some(imported);
+    }
+
+    // ...or, after the names of the module, the root of an explicitly linked
+    // target.
+    find_target_root_by_name(engine, site.target_id, name).await
+}
+
+/// Finds the root module of the target named `name`, if `target_id` links
+/// to it.
+pub(crate) async fn find_target_root_by_name(
+    engine: &TrackedEngine,
+    target_id: TargetID,
+    name: &str,
+) -> Option<GlobalSymbolID> {
     let targets = engine.query(&rayc_target::MapKey).await;
-    let target_id = *targets.get(name)?;
-    let linked = engine.query(&rayc_target::LinkKey { target_id: site.target_id }).await;
-    if !linked.contains(&target_id) {
+    let linked_target_id = *targets.get(name)?;
+    let linked = engine.query(&rayc_target::LinkKey { target_id }).await;
+    if !linked.contains(&linked_target_id) {
         return None;
     }
-    Some(target_id.make_global(engine.get_target_root_module_id(target_id).await))
+    Some(linked_target_id.make_global(engine.get_target_root_module_id(linked_target_id).await))
 }
