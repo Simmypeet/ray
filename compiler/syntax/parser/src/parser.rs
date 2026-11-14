@@ -1,6 +1,7 @@
 //! Contains the [`Parser`] trait and various combinators.
 use std::marker::PhantomData;
 
+use rayc_lexical::{token, tree::RelativeLocation};
 use rayc_qbice::Interner;
 
 use crate::{
@@ -47,6 +48,21 @@ pub trait ParserExt {
         Self: Sized,
     {
         Recoverable(self)
+    }
+
+    /// Like [`ParserExt::recoverable`], except that it does not recover when
+    /// the next token satisfies `stop`: it then fails as the plain parser
+    /// does, so that an enclosing parser can stop before that token.
+    ///
+    /// The dangling `.` of a path recovers this way, while a `.` followed by
+    /// a tuple index or a place operator is left to the postfix operator of
+    /// an expression.
+    fn recoverable_unless<F>(self, stop: F) -> RecoverableUnless<Self, F>
+    where
+        Self: Sized,
+        F: Fn(&token::Kind<RelativeLocation>) -> bool,
+    {
+        RecoverableUnless { parser: self, stop }
     }
 
     /// Repeats the given parser until it fails, creating a list (zero or more)
@@ -416,6 +432,48 @@ impl<T: Output> Output for Recoverable<T> {
 
     fn output<'a>(&self, node: &'a crate::concrete_tree::Node) -> Option<Self::Output<'a>> {
         T::output(&self.0, node)
+    }
+}
+
+/// See [`ParserExt::recoverable_unless`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct RecoverableUnless<T, F> {
+    /// The parser to recover from.
+    pub parser: T,
+
+    /// Tells whether the next token stops the parser from recovering.
+    pub stop: F,
+}
+
+impl<I: Interner, T: Parser<I>, F: Fn(&token::Kind<RelativeLocation>) -> bool> Parser<I>
+    for RecoverableUnless<T, F>
+{
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
+        let stops = state
+            .peek()
+            .and_then(|(node, _)| node.as_leaf())
+            .is_some_and(|token| (self.stop)(token));
+
+        let result = self.parser.parse(state);
+        if stops {
+            return result;
+        }
+
+        // keep what the failed parser consumed, as `Recoverable` does
+        if result == Err(Unexpected) {
+            state.emit_error();
+        }
+
+        Ok(())
+    }
+}
+
+impl<T: Output, F> Output for RecoverableUnless<T, F> {
+    type Extract = One;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(&self, node: &'a crate::concrete_tree::Node) -> Option<Self::Output<'a>> {
+        T::output(&self.parser, node)
     }
 }
 

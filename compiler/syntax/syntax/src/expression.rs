@@ -390,7 +390,9 @@ pub enum Leaf {
         Coro(Coro = ast::<Coro>()),
         StructInitialization(StructInitialization = ast::<StructInitialization>()),
         DirectCall(DirectCall = ast::<DirectCall>()),
-        Identifier(Identifier = expect::Identifier),
+        // a local, a variant such as `Option.None`, or a local followed by
+        // field accesses: the binder tells them apart
+        Path(Path = ast::<Path>()),
         Literal(Literal = ast::<Literal>()),
         Parenthesized(Parenthesized = ast::<Parenthesized>()),
     }
