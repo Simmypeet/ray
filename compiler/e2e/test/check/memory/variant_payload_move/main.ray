@@ -1,0 +1,25 @@
+enum Maybe[t]:
+    Some(t)
+    Nothing
+
+struct Resource:
+    value: int32
+
+impl !core.Copy for Resource
+
+def consume(value: Resource) -> ():
+    return ()
+
+# OK: a `Copy` payload is copied into the variant.
+def copied() -> int32:
+    let value = 1
+    let maybe = Maybe.Some(value)
+    return value
+
+def main() -> ():
+    let resource = Resource { value = 1 }
+    let maybe = Maybe.Some(resource)
+
+    # ERROR: `resource` was moved into the variant.
+    consume(resource)
+    return ()

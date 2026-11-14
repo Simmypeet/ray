@@ -1,0 +1,73 @@
+enum Maybe[t]:
+    Some(t)
+    Nothing
+
+enum List[t]:
+    Cons((t, *List[t]))
+    Nil
+
+module shapes:
+    pub enum Shape:
+        Square(int32)
+        Circle(int32)
+
+struct Point:
+    x: int32
+    y: int32
+
+struct Holder:
+    point: Point
+    pair: (int32, int32)
+
+struct Callbacks[f]:
+    callback: f
+
+# OK: a variant without a payload, its enum arguments inferred from the
+# return type.
+def nothing() -> Maybe[int32]:
+    return Maybe.Nothing
+
+# OK: a variant called with its payload infers the enum arguments from it.
+def some() -> Maybe[bool]:
+    return Maybe.Some(true)
+
+# OK: the enum arguments can be written out.
+def explicit() -> Maybe[int32]:
+    let value = Maybe[int32].Nothing
+    return value
+
+# OK: a payload declared as a tuple is passed as one.
+def cons(tail: *List[int32]) -> List[int32]:
+    return List.Cons((1, tail))
+
+# OK: a variant named through a module path.
+def square() -> shapes.Shape:
+    return shapes.Shape.Square(4)
+
+# OK: a variant of a generic enum in a generic function.
+def wrap[t](value: t) -> Maybe[t]:
+    return Maybe.Some(value)
+
+# OK: a path rooted at a local is the local followed by field accesses,
+# before or after a tuple index or a place operator.
+def fields(holder: Holder) -> int32:
+    let reference = holder.&
+    let x = holder.point.x
+    let first = holder.pair.0
+    let y = reference.*.point.y
+    return x + first + y
+
+# OK: a path rooted at a local calls the closure it names.
+def callField(holder: Callbacks[f]) given (d: core.Def[f]) -> int32 where (d.Args = (int32,), d.Return = int32, d.Effect = {}):
+    return holder.callback(1)
+
+# OK: a local shadows an enum of the same name.
+def shadow(Maybe: Point) -> int32:
+    return Maybe.x
+
+# ERROR: the payload has the wrong type.
+def mismatched() -> Maybe[int32]:
+    return Maybe[int32].Some(true)
+
+def main() -> int32:
+    return 0

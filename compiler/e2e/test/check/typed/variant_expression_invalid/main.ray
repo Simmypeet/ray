@@ -1,0 +1,59 @@
+enum Maybe[t]:
+    Some(t)
+    Nothing
+
+module shapes:
+    enum Hidden:
+        Secret(int32)
+
+struct Point:
+    x: int32
+
+def helper() -> int32:
+    return 0
+
+# ERROR: a variant carrying a payload is not called.
+def missingPayload() -> Maybe[int32]:
+    return Maybe.Some
+
+# ERROR: a variant without a payload is called.
+def calledNothing() -> Maybe[int32]:
+    return Maybe.Nothing()
+
+# ERROR: a payload is a single value.
+def twoArguments() -> Maybe[(int32, int32)]:
+    return Maybe.Some(1, 2)
+
+# ERROR: nothing tells the type argument of `Maybe`.
+def undetermined():
+    let value = Maybe.Nothing
+
+# ERROR: neither an enum nor a function is a value.
+def notValues():
+    let enum_ = Maybe
+    let enum_path = target.Maybe
+    let function = target.helper
+
+# ERROR: a variant that does not exist.
+def unknownVariant() -> Maybe[int32]:
+    return Maybe.Other
+
+# ERROR: the enum of the variant is private to `shapes`.
+def hidden() -> int32:
+    let value = shapes.Hidden.Secret(1)
+    return 0
+
+# ERROR: a variant cannot be suspended.
+def suspended():
+    let continuation = coro Maybe.Some(1)
+
+# ERROR: a field takes no type arguments.
+def fieldArguments(point: Point) -> int32:
+    return point.x[int32]
+
+# ERROR: a field that does not exist, on a path rooted at a local.
+def unknownField(point: Point) -> int32:
+    return point.z
+
+def main() -> int32:
+    return 0

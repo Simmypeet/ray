@@ -1,0 +1,165 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ enum Maybe[t]:
+ 2 │     Some(t)
+ 3 │     Nothing
+ 4 │
+ 5 │ module shapes:
+ 6 │     enum Hidden:
+ 7 │         Secret(int32)
+ 8 │
+ 9 │ struct Point:
+10 │     x: int32
+11 │
+12 │ def helper() -> int32:
+13 │     return 0
+14 │
+15 │ # ERROR: a variant carrying a payload is not called.
+16 │ def missingPayload() -> Maybe[int32]:
+17 │     return Maybe.Some
+   │            ^^^^^^^^^^
+   ┆ [error]: variant `main.Maybe.Some` carries a payload
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:17:12
+   ┆    │
+   ┆ 17 │     return Maybe.Some
+   ┆    │            ━━━━━━━━━━
+   ┆    │
+   ┆    ╰ help: write `Some(value)` to construct it with its payload
+   ┆
+18 │
+19 │ # ERROR: a variant without a payload is called.
+20 │ def calledNothing() -> Maybe[int32]:
+21 │     return Maybe.Nothing()
+   │            ^^^^^^^^^^^^^^^
+   ┆ [error]: variant `main.Maybe.Nothing` carries no payload
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:21:12
+   ┆    │
+   ┆ 21 │     return Maybe.Nothing()
+   ┆    │            ━━━━━━━━━━━━━━━
+   ┆    │
+   ┆    ╰ help: write `Nothing` without parentheses to construct it
+   ┆
+22 │
+23 │ # ERROR: a payload is a single value.
+24 │ def twoArguments() -> Maybe[(int32, int32)]:
+25 │     return Maybe.Some(1, 2)
+   │            ^^^^^^^^^^^^^^^^
+   ┆ [error]: variant `main.Maybe.Some` expects 1 payload value, but 2 were provided
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:25:12
+   ┆    │
+   ┆ 25 │     return Maybe.Some(1, 2)
+   ┆    │            ━━━━━━━━━━━━━━━━
+   ┆    │
+   ┆    ╰ help: a payload of several values is a tuple: write `Some((first, second))`
+   ┆
+26 │
+27 │ # ERROR: nothing tells the type argument of `Maybe`.
+28 │ def undetermined():
+29 │     let value = Maybe.Nothing
+   │                 ^^^^^^^^^^^^^
+   ┆ [error]: type annotation required
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:29:17
+   ┆    │
+   ┆  1 │ enum Maybe[t]:
+   ┆    │            ─ type parameter declared here
+   ┆    ‡
+   ┆ 29 │     let value = Maybe.Nothing
+   ┆    │                 ━━━━━━━━━━━━━ cannot infer the type parameter `t` of `main.Maybe`
+   ┆    │
+   ┆    ╰ help: consider providing the type arguments of `main.Maybe` explicitly
+   ┆
+30 │
+31 │ # ERROR: neither an enum nor a function is a value.
+32 │ def notValues():
+33 │     let enum_ = Maybe
+   │                 ^^^^^
+   ┆ [error]: unbound name `Maybe`
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:33:17
+   ┆    │
+   ┆ 33 │     let enum_ = Maybe
+   ┆    ╰╴                ━━━━━
+   ┆
+34 │     let enum_path = target.Maybe
+   │                     ^^^^^^^^^^^^
+   ┆ [error]: enum `main.Maybe` is not a value
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:34:21
+   ┆    │
+   ┆ 34 │     let enum_path = target.Maybe
+   ┆    ╰╴                    ━━━━━━━━━━━━ expected a value
+   ┆
+35 │     let function = target.helper
+   │                    ^^^^^^^^^^^^^
+   ┆ [error]: def `main.helper` is not a value
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:35:20
+   ┆    │
+   ┆ 35 │     let function = target.helper
+   ┆    ╰╴                   ━━━━━━━━━━━━━ expected a value
+   ┆
+36 │
+37 │ # ERROR: a variant that does not exist.
+38 │ def unknownVariant() -> Maybe[int32]:
+39 │     return Maybe.Other
+   │                  ^^^^^
+   ┆ [error]: symbol `Other` is not found
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:39:18
+   ┆    │
+   ┆ 39 │     return Maybe.Other
+   ┆    ╰╴                 ━━━━━ symbol `Other` is not found
+   ┆
+40 │
+41 │ # ERROR: the enum of the variant is private to `shapes`.
+42 │ def hidden() -> int32:
+43 │     let value = shapes.Hidden.Secret(1)
+   │                        ^^^^^^
+   ┆ [error]: enum `Hidden` is not accessible here
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:43:24
+   ┆    │
+   ┆  6 │     enum Hidden:
+   ┆    │          ────── `Hidden` is declared here
+   ┆    ‡
+   ┆ 43 │     let value = shapes.Hidden.Secret(1)
+   ┆    │                        ━━━━━━ `Hidden` is not accessible here
+   ┆    │
+   ┆    ╰ help: `Hidden` is only accessible within `main.shapes`; declare it with `pub` to make it public
+   ┆
+44 │     return 0
+45 │
+46 │ # ERROR: a variant cannot be suspended.
+47 │ def suspended():
+48 │     let continuation = coro Maybe.Some(1)
+   │                             ^^^^^^^^^^^^^
+   ┆ [error]: `coro` is not supported on this call yet
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:48:29
+   ┆    │
+   ┆ 48 │     let continuation = coro Maybe.Some(1)
+   ┆    │                             ━━━━━━━━━━━━━ a coroutine cannot be created from this call
+   ┆    │
+   ┆    ╰ help: only a call of a named `def` or trait method can be suspended for now
+   ┆
+49 │
+50 │ # ERROR: a field takes no type arguments.
+51 │ def fieldArguments(point: Point) -> int32:
+52 │     return point.x[int32]
+   │                   ^^^^^^^
+   ┆ [error]: a field takes no type arguments
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:52:19
+   ┆    │
+   ┆ 52 │     return point.x[int32]
+   ┆    ╰╴                  ━━━━━━━ remove these arguments
+   ┆
+53 │
+54 │ # ERROR: a field that does not exist, on a path rooted at a local.
+55 │ def unknownField(point: Point) -> int32:
+56 │     return point.z
+   │                  ^
+   ┆ [error]: struct `main.Point` has no field named `z`
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression_invalid/main.ray:56:18
+   ┆    │
+   ┆ 56 │     return point.z
+   ┆    ╰╴                 ━ unknown struct field
+   ┆
+57 │
+58 │ def main() -> int32:
+59 │     return 0
