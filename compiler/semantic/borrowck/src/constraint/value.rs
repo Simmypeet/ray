@@ -1,14 +1,18 @@
 //! The constraints of building a value from other values, and of passing a
-//! value along the control flow: tuples, struct initializations, phis and
-//! returns.
+//! value along the control flow: tuples, struct initializations, variants,
+//! phis and returns.
 
 use qbice::storage::intern::Interned;
 use rayc_ir::{
     address::Projection,
     cfg::Point,
-    ir_expr::{IRExprID, phi::Phi, struct_initialization::StructInitialization, tuple::Tuple},
+    ir_expr::{
+        IRExprID, phi::Phi, struct_initialization::StructInitialization, tuple::Tuple,
+        variant::Variant,
+    },
 };
-use rayc_type::{ty::Ty, variance::Variance};
+use rayc_semantic_element::variant_payload_ty::get_variant_payload_ty;
+use rayc_type::{subst::Substitutable, ty::Ty, variance::Variance};
 
 use super::ConstraintCollector;
 
@@ -65,5 +69,35 @@ impl ConstraintCollector<'_> {
         let substitution = struct_ty.create_subst(self.solver.engine()).await;
         self.collect_where_clause(point, initialization.struct_id(), &substitution).await;
         self.collect_instance_arguments(point, initialization.struct_id(), &substitution).await;
+    }
+
+    /// Collects the constraints of `variant`, whose enum value has type `ty`:
+    /// `typeof(payload) <: payload type`, with the payload type instantiated
+    /// by the arguments of `ty`.
+    pub(super) async fn collect_variant(
+        &mut self,
+        point: Point,
+        variant: &Variant,
+        ty: &Interned<Ty>,
+    ) {
+        let enum_ty = ty.as_enum_view().expect("a variant has an enum type");
+        let substitution = enum_ty.create_subst(self.solver.engine()).await;
+
+        if let Some(payload) = variant.payload() {
+            let payload_ty = self
+                .solver
+                .engine()
+                .get_variant_payload_ty(variant.variant_id())
+                .await
+                .expect("a variant constructed with a payload declares one")
+                .apply_subst_or_clone(&substitution, self.solver.engine());
+            let value_ty = self.function.get_expression(payload).ty();
+            self.relate(point, value_ty, &payload_ty, Variance::Covariant).await;
+        }
+
+        // A value of the enum type only exists when the where clause of the
+        // enum holds, its inferred outlives predicates included.
+        self.collect_where_clause(point, enum_ty.symbol_id(), &substitution).await;
+        self.collect_instance_arguments(point, enum_ty.symbol_id(), &substitution).await;
     }
 }

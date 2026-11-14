@@ -430,6 +430,9 @@ impl ConstraintCollector<'_> {
             IRExprKind::StructInitialization(initialization) => {
                 self.collect_struct_initialization(point, initialization, expression.ty()).await;
             }
+            IRExprKind::Variant(variant) => {
+                self.collect_variant(point, variant, expression.ty()).await;
+            }
 
             // Neither reads a place nor relates two values.
             IRExprKind::Error | IRExprKind::Literal(_) => {}
