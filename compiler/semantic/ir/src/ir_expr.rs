@@ -22,6 +22,7 @@ use crate::{
         run_with::{OperationHandler, RunWith},
         struct_initialization::StructInitialization,
         tuple::Tuple,
+        variant::Variant,
     },
     ir_function::IRFunctionID,
     visit::{
@@ -44,6 +45,7 @@ pub mod ref_to_pointer;
 pub mod run_with;
 pub mod struct_initialization;
 pub mod tuple;
+pub mod variant;
 
 /// Identifies an expression value stored in a function's expression arena.
 pub type IRExprID = ID<IRExpr>;
@@ -80,6 +82,7 @@ pub enum IRExprKind {
     Handle(Handle),
     Yielded(Yielded),
     StructInitialization(StructInitialization),
+    Variant(Variant),
 }
 
 impl IRExprKind {
@@ -102,7 +105,8 @@ impl IRExprKind {
             | Self::Coroutine(_)
             | Self::Yielded(_)
             | Self::Handle(_)
-            | Self::StructInitialization(_) => None,
+            | Self::StructInitialization(_)
+            | Self::Variant(_) => None,
         }
     }
 
@@ -125,7 +129,8 @@ impl IRExprKind {
             | Self::Closure(_)
             | Self::Handle(_)
             | Self::Yielded(_)
-            | Self::StructInitialization(_) => None,
+            | Self::StructInitialization(_)
+            | Self::Variant(_) => None,
         }
     }
 
@@ -148,7 +153,8 @@ impl IRExprKind {
             | Self::Closure(_)
             | Self::Coroutine(_)
             | Self::Yielded(_)
-            | Self::StructInitialization(_) => None,
+            | Self::StructInitialization(_)
+            | Self::Variant(_) => None,
         }
     }
 
@@ -171,7 +177,8 @@ impl IRExprKind {
             | Self::Coroutine(_)
             | Self::Yielded(_)
             | Self::Handle(_)
-            | Self::StructInitialization(_) => None,
+            | Self::StructInitialization(_)
+            | Self::Variant(_) => None,
         }
     }
 
@@ -212,7 +219,8 @@ impl IRExprKind {
             | Self::Closure(_)
             | Self::Coroutine(_)
             | Self::Yielded(_)
-            | Self::StructInitialization(_) => Suspension::Never,
+            | Self::StructInitialization(_)
+            | Self::Variant(_) => Suspension::Never,
         }
     }
 
@@ -238,7 +246,8 @@ impl IRExprKind {
             | Self::Coroutine(_)
             | Self::Yielded(_)
             | Self::Handle(_)
-            | Self::StructInitialization(_) => (None, None),
+            | Self::StructInitialization(_)
+            | Self::Variant(_) => (None, None),
         };
 
         captures.into_iter().chain(handler_captures).flat_map(CaptureOperands::operands)
@@ -264,7 +273,8 @@ impl IRExprKind {
             | Self::Coroutine(_)
             | Self::Yielded(_)
             | Self::Handle(_)
-            | Self::StructInitialization(_) => (None, &[]),
+            | Self::StructInitialization(_)
+            | Self::Variant(_) => (None, &[]),
         };
 
         function.into_iter().chain(handlers.iter().map(OperationHandler::function_id))
@@ -275,8 +285,9 @@ impl IRExprKind {
     pub fn operands(&self) -> impl Iterator<Item = IRExprID> + '_ {
         // One variant per shape of operand list, which avoids boxing the
         // iterator.
-        enum Iter<A, B, C, D, E, F, G, H> {
+        enum Iter<A, B, C, D, E, F, G, H, I> {
             None(A),
+            Optional(I),
             Single(G),
             Pair(B),
             Slice(C),
@@ -286,7 +297,7 @@ impl IRExprKind {
             Fields(F),
         }
 
-        impl<A, B, C, D, E, F, G, H> Iterator for Iter<A, B, C, D, E, F, G, H>
+        impl<A, B, C, D, E, F, G, H, I> Iterator for Iter<A, B, C, D, E, F, G, H, I>
         where
             A: Iterator<Item = IRExprID>,
             B: Iterator<Item = IRExprID>,
@@ -296,12 +307,14 @@ impl IRExprKind {
             F: Iterator<Item = IRExprID>,
             G: Iterator<Item = IRExprID>,
             H: Iterator<Item = IRExprID>,
+            I: Iterator<Item = IRExprID>,
         {
             type Item = IRExprID;
 
             fn next(&mut self) -> Option<Self::Item> {
                 match self {
                     Self::None(iter) => iter.next(),
+                    Self::Optional(iter) => iter.next(),
                     Self::Single(iter) => iter.next(),
                     Self::Pair(iter) => iter.next(),
                     Self::Slice(iter) => iter.next(),
@@ -332,6 +345,7 @@ impl IRExprKind {
             Self::StructInitialization(initialization) => {
                 Iter::Fields(initialization.initializers().values().copied())
             }
+            Self::Variant(variant) => Iter::Optional(variant.payload().into_iter()),
         }
     }
 }
@@ -416,6 +430,7 @@ impl VisitType for IRExprKind {
             | Self::Binary(_)
             | Self::Tuple(_)
             | Self::StructInitialization(_)
+            | Self::Variant(_)
             | Self::Coroutine(_)
             | Self::Yielded(_)
             | Self::Closure(_) => {}
@@ -450,6 +465,7 @@ impl VisitTypeMut for IRExpr {
             | IRExprKind::Binary(_)
             | IRExprKind::Tuple(_)
             | IRExprKind::StructInitialization(_)
+            | IRExprKind::Variant(_)
             | IRExprKind::Coroutine(_)
             | IRExprKind::Yielded(_)
             | IRExprKind::Closure(_) => {}
@@ -480,6 +496,7 @@ impl VisitTypeMutAsync for IRExpr {
             | IRExprKind::Binary(_)
             | IRExprKind::Tuple(_)
             | IRExprKind::StructInitialization(_)
+            | IRExprKind::Variant(_)
             | IRExprKind::Coroutine(_)
             | IRExprKind::Yielded(_)
             | IRExprKind::Closure(_) => {}
