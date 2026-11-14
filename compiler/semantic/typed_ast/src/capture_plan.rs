@@ -13,13 +13,12 @@ use crate::{
     name_binding::{NameBindingID, Source},
     statement::Statement,
     typed_expr::{
-        TypedExprID, TypedExprKind,
+        SubExprs, TypedExprID, TypedExprKind,
         binary::{Binary, BinaryOp},
         call::{Call, CallTarget},
         handle::Handle,
         if_else::IfElse,
         run_with::RunWith,
-        struct_initialization::StructInitialization,
         while_loop::While,
     },
     typed_function::{TypedFunctionID, TypedFunctionMap},
@@ -360,16 +359,8 @@ impl<O: CopyOracle> Analyzer<'_, O> {
                 .await;
             }
             TypedExprKind::Tuple(tuple) => {
-                for element in tuple.elements() {
-                    self.visit_expression(
-                        function_id,
-                        functions,
-                        *element,
-                        UseMode::new_value_implicit(),
-                        plan,
-                    )
+                self.visit_values(function_id, functions, tuple.elements().iter().copied(), plan)
                     .await;
-                }
             }
             TypedExprKind::Call(call) => {
                 self.visit_call(function_id, functions, call, plan).await;
@@ -381,16 +372,8 @@ impl<O: CopyOracle> Analyzer<'_, O> {
 
             // The coroutine takes its arguments as a call does.
             TypedExprKind::Coro(coro) => {
-                for argument in coro.arguments() {
-                    self.visit_expression(
-                        function_id,
-                        functions,
-                        *argument,
-                        UseMode::new_value_implicit(),
-                        plan,
-                    )
+                self.visit_values(function_id, functions, coro.arguments().iter().copied(), plan)
                     .await;
-                }
             }
             TypedExprKind::Binary(binary) => {
                 self.visit_binary(function_id, functions, *binary, plan).await;
@@ -457,9 +440,12 @@ impl<O: CopyOracle> Analyzer<'_, O> {
             TypedExprKind::Handle(handle) => {
                 self.visit_handle(function_id, functions, handle, plan).await;
             }
+            // The fields and the payload are moved into the value.
             TypedExprKind::StructInitialization(initialization) => {
-                self.visit_struct_initialization(function_id, functions, initialization, plan)
-                    .await;
+                self.visit_values(function_id, functions, initialization.sub_exprs(), plan).await;
+            }
+            TypedExprKind::Variant(variant) => {
+                self.visit_values(function_id, functions, variant.sub_exprs(), plan).await;
             }
             TypedExprKind::Errored(errored) => {
                 self.visit_errored(function_id, functions, errored, plan).await;
@@ -583,18 +569,19 @@ impl<O: CopyOracle> Analyzer<'_, O> {
         }
     }
 
-    async fn visit_struct_initialization(
+    /// Visits each of `values`, used as plain values.
+    async fn visit_values(
         &mut self,
         function_id: TypedFunctionID,
         functions: &TypedFunctionMap,
-        initialization: &StructInitialization,
+        values: impl IntoIterator<Item = TypedExprID>,
         plan: &mut FunctionCapturePlan,
     ) {
-        for initializer in initialization.initializers() {
+        for value in values {
             self.visit_expression(
                 function_id,
                 functions,
-                initializer.expression(),
+                value,
                 UseMode::new_value_implicit(),
                 plan,
             )

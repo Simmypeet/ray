@@ -299,12 +299,15 @@ impl TAstBuilder {
             return self.push_error_expression(syn.span()).await;
         };
 
-        if let Some(identifier) = path.bare_identifier()
-            && self.lookup_name_binding(&identifier.kind.0).is_some()
-        {
+        // A path rooted at a local calls the value it names: `f(x)` or
+        // `p.callback(x)`.
+        if path.root_name().is_some_and(|root| self.lookup_name_binding(&root.kind.0).is_some()) {
             return match invocation {
                 Invocation::Call => {
-                    let callee = self.bind(identifier).await;
+                    let callee = self
+                        .bind_local_path(&path)
+                        .await
+                        .expect("a path rooted at a local should bind as a local");
                     self.build_closure_call(callee, &call).await
                 }
 
@@ -321,6 +324,17 @@ impl TAstBuilder {
                 .push_error_expression_with_expression_children(syn.span(), arguments)
                 .await;
         };
+
+        // A variant called with its payload constructs the enum value, which
+        // runs nothing a coroutine could suspend.
+        if let PathResolution::Variant(variant) = &resolution {
+            return match invocation {
+                Invocation::Call => self.build_variant(variant, Some(arguments), syn.span()).await,
+                Invocation::Coroutine { span } => {
+                    self.reject_coro_operand(syn.span(), true, arguments, span).await
+                }
+            };
+        }
         let Some((target, call_subst)) = self.resolve_call_target(&resolution, path.span()).await
         else {
             return self

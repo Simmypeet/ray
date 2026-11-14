@@ -16,7 +16,7 @@ use crate::{
         literal::Literal, r#move::Move, paren::Paren, ref_of::RefOf, ref_to_pointer::RefToPointer,
         run_with::RunWith, statement_block::StatementBlock,
         struct_initialization::StructInitialization, tuple::Tuple, tuple_index::TupleIndex,
-        while_loop::While,
+        variant::Variant, while_loop::While,
     },
 };
 
@@ -42,6 +42,7 @@ pub mod statement_block;
 pub mod struct_initialization;
 pub mod tuple;
 pub mod tuple_index;
+pub mod variant;
 pub mod while_loop;
 
 /// Retrieves the child expressions of the current expression node.
@@ -70,92 +71,98 @@ pub enum TypedExprKind {
     RunWith(RunWith),
     Handle(Handle),
     StructInitialization(StructInitialization),
+    Variant(Variant),
     StatementBlock(StatementBlock),
     Errored(Errored),
 }
 
+// There must be a better way to do this while doesn't require boxing the
+// iterator 😭
+/// The iterator of the child expressions of a [`TypedExprKind`], one variant
+/// per kind of expression.
+enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V> {
+    A(A),
+    B(B),
+    C(C),
+    D(D),
+    E(E),
+    F(F),
+    G(G),
+    H(H),
+    I(I),
+    J(J),
+    K(K),
+    L(L),
+    M(M),
+    N(N),
+    O(O),
+    P(P),
+    Q(Q),
+    R(R),
+    S(S),
+    T(T),
+    U(U),
+    V(V),
+}
+
+impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V> Iterator
+    for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>
+where
+    A: Iterator<Item = TypedExprID>,
+    B: Iterator<Item = TypedExprID>,
+    C: Iterator<Item = TypedExprID>,
+    D: Iterator<Item = TypedExprID>,
+    E: Iterator<Item = TypedExprID>,
+    F: Iterator<Item = TypedExprID>,
+    G: Iterator<Item = TypedExprID>,
+    H: Iterator<Item = TypedExprID>,
+    I: Iterator<Item = TypedExprID>,
+    J: Iterator<Item = TypedExprID>,
+    K: Iterator<Item = TypedExprID>,
+    L: Iterator<Item = TypedExprID>,
+    M: Iterator<Item = TypedExprID>,
+    N: Iterator<Item = TypedExprID>,
+    O: Iterator<Item = TypedExprID>,
+    P: Iterator<Item = TypedExprID>,
+    Q: Iterator<Item = TypedExprID>,
+    R: Iterator<Item = TypedExprID>,
+    S: Iterator<Item = TypedExprID>,
+    T: Iterator<Item = TypedExprID>,
+    U: Iterator<Item = TypedExprID>,
+    V: Iterator<Item = TypedExprID>,
+{
+    type Item = TypedExprID;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::A(iter) => iter.next(),
+            Self::B(iter) => iter.next(),
+            Self::C(iter) => iter.next(),
+            Self::D(iter) => iter.next(),
+            Self::E(iter) => iter.next(),
+            Self::F(iter) => iter.next(),
+            Self::G(iter) => iter.next(),
+            Self::H(iter) => iter.next(),
+            Self::I(iter) => iter.next(),
+            Self::J(iter) => iter.next(),
+            Self::K(iter) => iter.next(),
+            Self::L(iter) => iter.next(),
+            Self::M(iter) => iter.next(),
+            Self::N(iter) => iter.next(),
+            Self::O(iter) => iter.next(),
+            Self::P(iter) => iter.next(),
+            Self::Q(iter) => iter.next(),
+            Self::R(iter) => iter.next(),
+            Self::S(iter) => iter.next(),
+            Self::T(iter) => iter.next(),
+            Self::U(iter) => iter.next(),
+            Self::V(iter) => iter.next(),
+        }
+    }
+}
+
 impl SubExprs for TypedExprKind {
     fn sub_exprs(&self) -> impl Iterator<Item = TypedExprID> {
-        // There must be a better way to do this while doesn't require boxing the
-        // iterator 😭
-        pub enum Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U> {
-            A(A),
-            B(B),
-            C(C),
-            D(D),
-            E(E),
-            F(F),
-            G(G),
-            H(H),
-            I(I),
-            J(J),
-            K(K),
-            L(L),
-            M(M),
-            N(N),
-            O(O),
-            P(P),
-            Q(Q),
-            R(R),
-            S(S),
-            T(T),
-            U(U),
-        }
-
-        impl<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U> Iterator
-            for Iter<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U>
-        where
-            A: Iterator<Item = TypedExprID>,
-            B: Iterator<Item = TypedExprID>,
-            C: Iterator<Item = TypedExprID>,
-            D: Iterator<Item = TypedExprID>,
-            E: Iterator<Item = TypedExprID>,
-            F: Iterator<Item = TypedExprID>,
-            G: Iterator<Item = TypedExprID>,
-            H: Iterator<Item = TypedExprID>,
-            I: Iterator<Item = TypedExprID>,
-            J: Iterator<Item = TypedExprID>,
-            K: Iterator<Item = TypedExprID>,
-            L: Iterator<Item = TypedExprID>,
-            M: Iterator<Item = TypedExprID>,
-            N: Iterator<Item = TypedExprID>,
-            O: Iterator<Item = TypedExprID>,
-            P: Iterator<Item = TypedExprID>,
-            Q: Iterator<Item = TypedExprID>,
-            R: Iterator<Item = TypedExprID>,
-            S: Iterator<Item = TypedExprID>,
-            T: Iterator<Item = TypedExprID>,
-            U: Iterator<Item = TypedExprID>,
-        {
-            type Item = TypedExprID;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                match self {
-                    Self::A(iter) => iter.next(),
-                    Self::B(iter) => iter.next(),
-                    Self::C(iter) => iter.next(),
-                    Self::D(iter) => iter.next(),
-                    Self::E(iter) => iter.next(),
-                    Self::F(iter) => iter.next(),
-                    Self::G(iter) => iter.next(),
-                    Self::H(iter) => iter.next(),
-                    Self::I(iter) => iter.next(),
-                    Self::J(iter) => iter.next(),
-                    Self::K(iter) => iter.next(),
-                    Self::L(iter) => iter.next(),
-                    Self::M(iter) => iter.next(),
-                    Self::N(iter) => iter.next(),
-                    Self::O(iter) => iter.next(),
-                    Self::P(iter) => iter.next(),
-                    Self::Q(iter) => iter.next(),
-                    Self::R(iter) => iter.next(),
-                    Self::S(iter) => iter.next(),
-                    Self::T(iter) => iter.next(),
-                    Self::U(iter) => iter.next(),
-                }
-            }
-        }
-
         match self {
             Self::Literal(x) => Iter::A(x.sub_exprs()),
             Self::Identifier(x) => Iter::B(x.sub_exprs()),
@@ -178,6 +185,7 @@ impl SubExprs for TypedExprKind {
             Self::RefToPointer(x) => Iter::S(x.sub_exprs()),
             Self::Coro(x) => Iter::T(x.sub_exprs()),
             Self::Handle(x) => Iter::U(x.sub_exprs()),
+            Self::Variant(x) => Iter::V(x.sub_exprs()),
         }
     }
 }
@@ -268,7 +276,8 @@ impl MutSubstitutable for TypedExpr {
             | TypedExprKind::Deref(_)
             | TypedExprKind::Move(_)
             | TypedExprKind::Paren(_)
-            | TypedExprKind::StructInitialization(_) => {}
+            | TypedExprKind::StructInitialization(_)
+            | TypedExprKind::Variant(_) => {}
         }
     }
 }
@@ -337,7 +346,8 @@ impl TypedExprMap {
             | TypedExprKind::Move(_)
             | TypedExprKind::RunWith(_)
             | TypedExprKind::Handle(_)
-            | TypedExprKind::StructInitialization(_) => LvalueClassification::NotLvalue,
+            | TypedExprKind::StructInitialization(_)
+            | TypedExprKind::Variant(_) => LvalueClassification::NotLvalue,
         }
     }
 }

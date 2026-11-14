@@ -14,11 +14,13 @@ pub mod leaf;
 pub mod literal;
 pub mod r#move;
 pub mod parenthesized;
+pub mod path;
 pub mod postfix;
 pub mod r#return;
 pub mod run_with;
 pub mod struct_initialization;
 pub mod r#unsafe;
+pub mod variant;
 pub mod while_loop;
 
 impl Bind<Expression> for TAstBuilder {

@@ -8,8 +8,11 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_solver::explain::{ExplainedGoal, UnsatisfiedPredicate};
 use rayc_symbol::{
-    GlobalSymbolID, accessibility::Accessibility, name::get_qualified_name,
-    source_map::to_absolute_span, symbol_kind::get_symbol_kind,
+    GlobalSymbolID,
+    accessibility::Accessibility,
+    name::{get_name, get_qualified_name},
+    source_map::to_absolute_span,
+    symbol_kind::get_symbol_kind,
 };
 use rayc_type::{
     constraint::ty_relate::TyRelate,
@@ -54,6 +57,108 @@ impl Report for SymbolNotCallable {
         Rendered::builder()
             .message(format!("symbol `{} {}` is not callable", kind.str(), qual_name))
             .primary_highlight(Highlight::builder().span(abs_span).build())
+            .build()
+    }
+}
+
+/// A path in an expression names a symbol that is not a value, such as a
+/// function that is not called or an enum.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
+)]
+pub struct SymbolNotValue {
+    symbol_id: GlobalSymbolID,
+    span: RelativeSpan,
+}
+
+impl Report for SymbolNotValue {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let qual_name = engine.get_qualified_name(self.symbol_id).await;
+        let kind = engine.get_symbol_kind(self.symbol_id).await;
+
+        Rendered::builder()
+            .message(format!("{} `{qual_name}` is not a value", kind.str()))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("expected a value")
+                    .build(),
+            )
+            .build()
+    }
+}
+
+/// A variant is constructed with arguments that do not match its payload:
+/// one argument when it carries a payload, and no call at all when it does
+/// not.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
+)]
+pub struct MismatchedVariantPayload {
+    variant_id: GlobalSymbolID,
+
+    /// Whether the variant declares a payload.
+    has_payload: bool,
+
+    /// The number of arguments the variant is called with, or `None` when it
+    /// is not called.
+    found: Option<usize>,
+
+    span: RelativeSpan,
+}
+
+impl Report for MismatchedVariantPayload {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let qual_name = engine.get_qualified_name(self.variant_id).await;
+        let name = engine.get_name(self.variant_id).await;
+
+        let (message, help) = match (self.has_payload, self.found) {
+            (true, None) => (
+                format!("variant `{qual_name}` carries a payload"),
+                format!("write `{}(value)` to construct it with its payload", &*name),
+            ),
+            (true, Some(found)) => (
+                format!("variant `{qual_name}` expects 1 payload value, but {found} were provided"),
+                format!(
+                    "a payload of several values is a tuple: write `{}((first, second))`",
+                    &*name
+                ),
+            ),
+            (false, _) => (
+                format!("variant `{qual_name}` carries no payload"),
+                format!("write `{}` without parentheses to construct it", &*name),
+            ),
+        };
+
+        Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder().span(engine.to_absolute_span(&self.span).await).build(),
+            )
+            .help_message(help)
+            .build()
+    }
+}
+
+/// A field is accessed with type arguments, which only a symbol takes.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode, Builder,
+)]
+pub struct FieldTypeArguments {
+    /// The arguments after the name of the field.
+    span: RelativeSpan,
+}
+
+impl Report for FieldTypeArguments {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("a field takes no type arguments")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("remove these arguments")
+                    .build(),
+            )
             .build()
     }
 }
@@ -1184,6 +1289,7 @@ impl Report for ResidualSubtype {
             SubtypeSource::StructFieldInitialization => {
                 "mismatched type in struct field initializer"
             }
+            SubtypeSource::VariantPayload => "mismatched type in variant payload",
             SubtypeSource::HandleContinuation => "`handle` expects a continuation to resume",
             SubtypeSource::HandleResumeValue => {
                 "mismatched type of the value a coroutine is resumed with"
@@ -1315,6 +1421,9 @@ pub enum Diagnostic {
     Resolution(rayc_resolution::Diagnostic),
     UnboundName(UnboundName),
     SymbolNotCallable(SymbolNotCallable),
+    SymbolNotValue(SymbolNotValue),
+    MismatchedVariantPayload(MismatchedVariantPayload),
+    FieldTypeArguments(FieldTypeArguments),
     CoroOperandNotCall(CoroOperandNotCall),
     UnsupportedCoroCallee(UnsupportedCoroCallee),
     MismatchedArgumentCount(MismatchedArgumentCount),
@@ -1366,6 +1475,9 @@ impl Report for Diagnostic {
             Self::SymbolNotCallable(symbol_not_callable) => {
                 symbol_not_callable.report(engine).await
             }
+            Self::SymbolNotValue(diagnostic) => diagnostic.report(engine).await,
+            Self::MismatchedVariantPayload(diagnostic) => diagnostic.report(engine).await,
+            Self::FieldTypeArguments(diagnostic) => diagnostic.report(engine).await,
             Self::CoroOperandNotCall(diagnostic) => diagnostic.report(engine).await,
             Self::HandleOperandNotCall(diagnostic) => diagnostic.report(engine).await,
             Self::HandleClauseNotOperation(diagnostic) => diagnostic.report(engine).await,
