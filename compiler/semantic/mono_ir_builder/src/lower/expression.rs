@@ -54,6 +54,7 @@ impl Emitter<'_> {
             }
             IRExprKind::Tuple(tuple) => self.lower_tuple(tuple, expression_id, ctx),
             IRExprKind::StructInitialization(st) => self.lower_struct(st, expression_id, ctx).await,
+            IRExprKind::Variant(_) => unimplemented!("lowering an enum variant to MonoIR"),
             IRExprKind::Closure(closure) => self.lower_closure(closure, expression_id, ctx).await,
             IRExprKind::Coroutine(coroutine) => {
                 self.lower_coro(coroutine, expression_id, ctx).await;
