@@ -2,9 +2,12 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_semantic_element::struct_body::{Field, get_struct_body};
 use rayc_source_file::SourceElement;
 use rayc_symbol::GlobalSymbolID;
-use rayc_syntax::expression::{
-    Deref as DerefSyntax, DotMember, DotPostfix, FieldAccess as FieldAccessSyntax, PlaceOperator,
-    PlaceOperators, Postfix, PostfixOperator, RefOf as RefOfSyntax, TupleIndex as TupleIndexSyntax,
+use rayc_syntax::{
+    Identifier as IdentifierSyntax,
+    expression::{
+        Deref as DerefSyntax, DotMember, DotPostfix, PlaceOperator, PlaceOperators, Postfix,
+        PostfixOperator, RefOf as RefOfSyntax, TupleIndex as TupleIndexSyntax,
+    },
 };
 use rayc_type::{
     subst::Substitutable,
@@ -121,7 +124,8 @@ impl TAstBuilder {
             }
             Some(DotMember::FieldAccess(access)) => {
                 let receiver = self.member_receiver(bound, dot).await;
-                self.build_field_access(receiver, &access).await.ok_or(receiver)
+                let Some(name) = access.name() else { return Err(receiver) };
+                self.build_field_access(receiver, &name).await.ok_or(receiver)
             }
 
             // a dangling `.`, whose member is still being typed
@@ -133,8 +137,19 @@ impl TAstBuilder {
     /// which is `bound` dereferenced through every reference in front of the
     /// member, and records the access.
     async fn member_receiver(&mut self, bound: TypedExprID, dot: &DotPostfix) -> TypedExprID {
+        self.member_receiver_at(bound, dot.span()).await
+    }
+
+    /// Returns the receiver of the member access at `span`, the `.` and the
+    /// member after it, applied to `bound`: `bound` dereferenced through
+    /// every reference in front of the member. Records the access.
+    pub(super) async fn member_receiver_at(
+        &mut self,
+        bound: TypedExprID,
+        span: RelativeSpan,
+    ) -> TypedExprID {
         let receiver = self.auto_deref(bound).await;
-        self.record_member_access(dot.span(), receiver);
+        self.record_member_access(span, receiver);
         receiver
     }
 
@@ -181,12 +196,13 @@ impl TAstBuilder {
         }
     }
 
-    async fn build_field_access(
+    /// Binds the access of the field `name` of `bound`, which is already
+    /// dereferenced.
+    pub(super) async fn build_field_access(
         &mut self,
         bound: TypedExprID,
-        field_access: &FieldAccessSyntax,
+        name: &IdentifierSyntax,
     ) -> Option<TypedExprID> {
-        let name = field_access.name()?;
         let operand_span = self.span_of_expression(bound);
         let ty = self.latest_type(&self.type_of_expression(bound)).await;
 
@@ -212,7 +228,7 @@ impl TAstBuilder {
             self.push_diagnostic(Diagnostic::UnknownStructField(
                 UnknownStructField::builder()
                     .struct_id(st.symbol_id())
-                    .name(name.kind.0)
+                    .name(name.kind.0.clone())
                     .span(name.span)
                     .build(),
             ));
@@ -227,7 +243,7 @@ impl TAstBuilder {
         Some(
             self.insert_expression(
                 TypedExprKind::FieldAccess(FieldAccess::new(bound, field_id)),
-                operand_span.join(&field_access.span()),
+                operand_span.join(&name.span),
                 field_ty,
             )
             .await,

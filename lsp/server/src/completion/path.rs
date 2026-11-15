@@ -1,9 +1,9 @@
 //! Completes the segment of a path at the cursor.
 //!
 //! A path is a `Path` node wherever the syntax has one: in signatures, and in
-//! the calls and struct initializations of a body. While a call is typed in a
-//! body, before its `(`, the path is still a chain of field accesses on an
-//! identifier that is not a local.
+//! the expressions, calls and struct initializations of a body. A path of a
+//! body whose first segment names a local is a chain of field accesses
+//! instead, which is completed as members.
 //!
 //! The segments before the cursor are looked up as the resolver does, from
 //! the site the path is written at, and what can follow them is filtered by
@@ -23,10 +23,7 @@ use rayc_symbol::{
 };
 use rayc_syntax::{
     effect_row::{ConcreteEffectRow, EffectRow, EffectRowTail},
-    expression::{
-        DirectCall, DotMember, HandleOperationClause, Leaf, Postfix, PostfixOperator, RunWith,
-        StructInitialization,
-    },
+    expression::{DirectCall, HandleOperationClause, Leaf, Postfix, RunWith, StructInitialization},
     given::{GivenArgument, GivenParameter},
     instance::Instance,
     marker::MarkerImplementation,
@@ -42,6 +39,7 @@ use crate::segment::SegmentAt;
 
 /// The segment of a path at the cursor, and where the path is written.
 pub(super) struct PathCursor {
+    segment_at: SegmentAt,
     segment: Segment,
     position: Position,
 }
@@ -69,60 +67,24 @@ impl PathCursor {
         let segment = if segment_at.is_on_root() {
             Segment::First
         } else {
-            Segment::After(segment_at.into_prefix_before()?)
+            Segment::After(segment_at.clone().into_prefix_before()?)
         };
 
-        Some(Self { segment, position })
+        Some(Self { segment_at, segment, position })
     }
 
-    /// Finds the path being typed at `offset` in `body`, before the `(` or
-    /// `{` that makes the parser read it as one: an identifier followed by
-    /// field accesses, where the identifier is not a local in `functions`.
-    pub(super) async fn in_postfix(
+    /// Returns whether the path at the cursor is a local followed by field
+    /// accesses in `functions`, whose members are completed instead.
+    ///
+    /// See [`SegmentAt::is_rooted_at_local`].
+    pub(super) async fn is_rooted_at_local(
+        &self,
         engine: &TrackedEngine,
         token_tree: &Tree,
-        body: &Node,
+        syntax: &Node,
         functions: &TypedFunctionMap,
-        offset: ByteIndex,
-    ) -> Option<Self> {
-        let before = offset.checked_sub(1)?;
-        let postfix = body.get_deepest_ast::<Postfix>(token_tree, before)?;
-        let Some(Leaf::Identifier(root)) = postfix.leaf() else {
-            return None;
-        };
-
-        // the field names before the `.` holding the cursor are the segments
-        // of the path
-        let mut names = Vec::new();
-        let mut operators = postfix.postfixes();
-        loop {
-            let PostfixOperator::Dot(dot) = operators.next()? else {
-                return None;
-            };
-            if token_tree.span_contains_cursor(&dot.span(), offset) {
-                break;
-            }
-            let Some(DotMember::FieldAccess(field_access)) = dot.member() else {
-                return None;
-            };
-            names.push(field_access.name()?.kind.0);
-        }
-
-        // a local of the same name makes the chain a member access, as the
-        // binder looks up a bare identifier among the locals first
-        let root_end = token_tree.absolute_span_of(&root.span).end;
-        let is_local = functions
-            .visible_name_bindings(engine, root_end)
-            .await
-            .any(|(_, name_binding)| *name_binding.name() == root.kind.0);
-        if is_local {
-            return None;
-        }
-
-        Some(Self {
-            segment: Segment::After(PathPrefix::new(PrefixRoot::Name(root.kind.0), names)),
-            position: Position::Expression,
-        })
+    ) -> bool {
+        self.segment_at.is_rooted_at_local(engine, token_tree, syntax, functions).await
     }
 
     /// Returns whether the cursor is on a first segment that may name a
@@ -295,8 +257,8 @@ pub(super) enum Position {
     /// The struct of a struct initialization.
     StructInitialization,
 
-    /// An expression being typed, which may become a call or a struct
-    /// initialization.
+    /// An expression, which may name a variant, or become a call or a
+    /// struct initialization as it is typed.
     Expression,
 
     /// A given argument, which names a dictionary.
@@ -323,6 +285,12 @@ impl Position {
             .is_some_and(|x| is_path(x.path()))
         {
             return Self::StructInitialization;
+        }
+        if syntax.get_deepest_ast::<Postfix>(token_tree, byte).is_some_and(|x| match x.leaf() {
+            Some(Leaf::Path(path)) => is_path(Some(path)),
+            Some(_) | None => false,
+        }) {
+            return Self::Expression;
         }
         if syntax.get_deepest_ast::<RunWith>(token_tree, byte).is_some_and(|x| is_path(x.effect()))
         {

@@ -181,7 +181,8 @@ async fn analyze_function(
                         | IRExprKind::Handle(_)
                         | IRExprKind::Yielded(_)
                         | IRExprKind::RunWith(_)
-                        | IRExprKind::StructInitialization(_) => {}
+                        | IRExprKind::StructInitialization(_)
+                        | IRExprKind::Variant(_) => {}
                     }
                 }
 

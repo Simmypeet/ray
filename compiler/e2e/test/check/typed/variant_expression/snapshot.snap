@@ -1,0 +1,84 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ enum Maybe[t]:
+ 2 │     Some(t)
+ 3 │     Nothing
+ 4 │
+ 5 │ enum List[t]:
+ 6 │     Cons((t, *List[t]))
+ 7 │     Nil
+ 8 │
+ 9 │ module shapes:
+10 │     pub enum Shape:
+11 │         Square(int32)
+12 │         Circle(int32)
+13 │
+14 │ struct Point:
+15 │     x: int32
+16 │     y: int32
+17 │
+18 │ struct Holder:
+19 │     point: Point
+20 │     pair: (int32, int32)
+21 │
+22 │ struct Callbacks[f]:
+23 │     callback: f
+24 │
+25 │ # OK: a variant without a payload, its enum arguments inferred from the
+26 │ # return type.
+27 │ def nothing() -> Maybe[int32]:
+28 │     return Maybe.Nothing
+29 │
+30 │ # OK: a variant called with its payload infers the enum arguments from it.
+31 │ def some() -> Maybe[bool]:
+32 │     return Maybe.Some(true)
+33 │
+34 │ # OK: the enum arguments can be written out.
+35 │ def explicit() -> Maybe[int32]:
+36 │     let value = Maybe[int32].Nothing
+37 │     return value
+38 │
+39 │ # OK: a payload declared as a tuple is passed as one.
+40 │ def cons(tail: *List[int32]) -> List[int32]:
+41 │     return List.Cons((1, tail))
+42 │
+43 │ # OK: a variant named through a module path.
+44 │ def square() -> shapes.Shape:
+45 │     return shapes.Shape.Square(4)
+46 │
+47 │ # OK: a variant of a generic enum in a generic function.
+48 │ def wrap[t](value: t) -> Maybe[t]:
+49 │     return Maybe.Some(value)
+50 │
+51 │ # OK: a path rooted at a local is the local followed by field accesses,
+52 │ # before or after a tuple index or a place operator.
+53 │ def fields(holder: Holder) -> int32:
+54 │     let reference = holder.&
+55 │     let x = holder.point.x
+56 │     let first = holder.pair.0
+57 │     let y = reference.*.point.y
+58 │     return x + first + y
+59 │
+60 │ # OK: a path rooted at a local calls the closure it names.
+61 │ def callField(holder: Callbacks[f]) given (d: core.Def[f]) -> int32 where (d.Args = (int32,), d.Return = int32, d.Effect = {}):
+62 │     return holder.callback(1)
+63 │
+64 │ # OK: a local shadows an enum of the same name.
+65 │ def shadow(Maybe: Point) -> int32:
+66 │     return Maybe.x
+67 │
+68 │ # ERROR: the payload has the wrong type.
+69 │ def mismatched() -> Maybe[int32]:
+70 │     return Maybe[int32].Some(true)
+   │                              ^^^^
+   ┆ [error]: mismatched type in variant payload: expected `int32`, but found `bool`
+   ┆    ╭▸ compiler/e2e/test/check/typed/variant_expression/main.ray:70:30
+   ┆    │
+   ┆ 70 │     return Maybe[int32].Some(true)
+   ┆    ╰╴                             ━━━━
+   ┆
+71 │
+72 │ def main() -> int32:
+73 │     return 0

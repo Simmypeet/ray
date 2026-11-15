@@ -28,6 +28,7 @@ mod struct_initialization;
 mod tuple;
 mod tuple_index;
 mod typed_expr_id;
+mod variant;
 mod while_loop;
 
 pub use typed_expr_id::TypedExprWithID;
@@ -128,6 +129,9 @@ impl Builder {
             }
             TypedExprKind::StructInitialization(st) => {
                 self.lower(context, TypedExprWithID::new(st, expression_id)).await
+            }
+            TypedExprKind::Variant(variant) => {
+                self.lower(context, TypedExprWithID::new(variant, expression_id)).await
             }
             TypedExprKind::Errored(errored) => {
                 self.lower(context, TypedExprWithID::new(errored, expression_id)).await

@@ -59,6 +59,11 @@ expression: canonical_completions(&response)
   },
   {
     "kind": 14,
+    "label": "target",
+    "sortText": "2target"
+  },
+  {
+    "kind": 14,
     "label": "true",
     "sortText": "2true"
   },

@@ -10,7 +10,7 @@ impl Bind<Leaf> for TAstBuilder {
             Leaf::Coro(coro) => self.bind(coro).await,
             Leaf::StructInitialization(initialization) => self.bind(initialization).await,
             Leaf::DirectCall(call) => self.bind(call).await,
-            Leaf::Identifier(token) => self.bind(token).await,
+            Leaf::Path(path) => self.bind(path).await,
             Leaf::Literal(literal) => self.bind(literal).await,
             Leaf::Parenthesized(parenthesized) => self.bind(parenthesized).await,
         }

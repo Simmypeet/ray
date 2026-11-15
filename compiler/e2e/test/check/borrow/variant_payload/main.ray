@@ -1,0 +1,25 @@
+enum Maybe[t]:
+    Some(t)
+    Nothing
+
+def consume(_: t) given (_: core.Drop[t]):
+    pass
+
+# ERROR: the variant returns a borrow of a local.
+def escape() -> Maybe[&'static int32]:
+    let value = 1
+    return Maybe.Some(value.&)
+
+def main():
+    let mut x = 0
+    let maybe = Maybe.Some(x.&)
+
+    # ERROR: `maybe` still borrows `x`.
+    x = x + 1
+    consume(maybe)
+
+    # OK: a variant without a payload borrows nothing.
+    let mut y = 0
+    let nothing = Maybe[&int32].Nothing
+    y = y + 1
+    consume(nothing)

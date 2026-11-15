@@ -63,6 +63,9 @@ pub enum SubtypeSource {
     ReturnType,
     StructFieldInitialization,
 
+    /// The payload a variant is constructed with.
+    VariantPayload,
+
     /// The callee of the call that a `handle` resumes has to be a
     /// continuation.
     HandleContinuation,

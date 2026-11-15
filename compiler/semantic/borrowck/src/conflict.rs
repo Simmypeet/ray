@@ -268,7 +268,8 @@ impl<'a> ConflictChecker<'a> {
             | IRExprKind::Coroutine(_)
             | IRExprKind::Handle(_)
             | IRExprKind::Yielded(_)
-            | IRExprKind::StructInitialization(_) => {}
+            | IRExprKind::StructInitialization(_)
+            | IRExprKind::Variant(_) => {}
         }
     }
 

@@ -486,6 +486,19 @@ impl TAstBuilder {
         .await;
     }
 
+    pub async fn push_variant_payload_constraint(
+        &mut self,
+        expected_ty: &Interned<Ty>,
+        expression: TypedExprID,
+    ) {
+        self.push_subtype_constraint_with_expr(
+            expression,
+            expected_ty,
+            SubtypeSource::VariantPayload,
+        )
+        .await;
+    }
+
     pub async fn push_binary_operator_constraint(
         &mut self,
         expected_ty: &Interned<Ty>,

@@ -1,5 +1,8 @@
 use qbice::{Decode, Encode, StableHash};
-use rayc_lexical::tree::{DelimiterKind, RelativeSpan};
+use rayc_lexical::{
+    token,
+    tree::{DelimiterKind, RelativeLocation, RelativeSpan},
+};
 use rayc_parser::{
     abstract_tree,
     expect::{self, Fragment},
@@ -69,12 +72,25 @@ abstract_tree::abstract_tree! {
     pub struct PathContinuation {
         pub dot: Punctuation = '.',
         // a dangling `.` is kept without a segment, so that the segment after
-        // it can be completed
-        pub segment: PathSegment = ast::<PathSegment>().recoverable()
+        // it can be completed; a `.` followed by a tuple index or a place
+        // operator ends the path instead, so that the path of an expression
+        // leaves `x.0` and `x.*` to its postfix operators
+        pub segment: PathSegment = ast::<PathSegment>()
+            .recoverable_unless(PathContinuation::ends_path)
     }
 }
 
 impl PathContinuation {
+    /// Returns whether `token`, right after a `.`, ends the path before that
+    /// `.`: a tuple index, or a place operator such as `&` or `*`.
+    fn ends_path(token: &token::Kind<RelativeLocation>) -> bool {
+        token.kind.is_numeric()
+            || token
+                .kind
+                .as_punctuation()
+                .is_some_and(|punctuation| matches!(punctuation.0, '&' | '*'))
+    }
+
     /// Returns the span of the continuation without the arguments of its
     /// segment: its `.` and the name after it, if any.
     #[must_use]
@@ -101,6 +117,22 @@ impl Path {
             Some(PathRoot::This(_) | PathRoot::Target(_) | PathRoot::Super(_)) | None => None,
         };
         root.into_iter().chain(self.rest().filter_map(|part| part.segment()))
+    }
+
+    /// Returns the name of the first segment if it is an ordinary segment
+    /// without arguments, which is how an expression names a local: `x` in
+    /// `x.field`.
+    #[must_use]
+    pub fn root_name(&self) -> Option<Identifier> {
+        let Some(PathRoot::Segment(segment)) = self.root() else {
+            return None;
+        };
+
+        if segment.arguments().is_some() {
+            return None;
+        }
+
+        segment.identifier()
     }
 
     /// Returns the `Identifier` if the `Path` is a simple path with a single

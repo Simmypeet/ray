@@ -101,6 +101,14 @@ async fn instantiation_of(expression: &TypedExpr, engine: &TrackedEngine) -> Opt
             Some(struct_view.create_subst(engine).await)
         }
 
+        // A variant carries the type arguments of its enum in its type.
+        TypedExprKind::Variant(_) => {
+            let enum_view =
+                expression.ty().as_enum_view().expect("a variant should have an enum type");
+
+            Some(enum_view.create_subst(engine).await)
+        }
+
         // A `coro` carries the type arguments of the suspended function in
         // the coroutine type it creates.
         TypedExprKind::Coro(coro) => Some(coro.coroutine().instantiation(engine).await),

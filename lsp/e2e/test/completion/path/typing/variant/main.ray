@@ -1,0 +1,7 @@
+# A path naming an enum in a body offers its variants.
+enum Maybe[t]:
+  Some(t)
+  Nothing
+
+pub def main():
+  let value: Maybe[int32] = Maybe.N<cursor>

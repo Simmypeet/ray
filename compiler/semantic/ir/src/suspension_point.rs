@@ -162,7 +162,8 @@ impl<'a> SuspendingExpr<'a> {
             | IRExprKind::Closure(_)
             | IRExprKind::Coroutine(_)
             | IRExprKind::Yielded(_)
-            | IRExprKind::StructInitialization(_) => {
+            | IRExprKind::StructInitialization(_)
+            | IRExprKind::Variant(_) => {
                 unreachable!("only a call, a perform, a run or a handle suspends")
             }
         }

@@ -1,0 +1,51 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+ 1 │ enum Maybe[t]:
+ 2 │     Some(t)
+ 3 │     Nothing
+ 4 │
+ 5 │ def consume(_: t) given (_: core.Drop[t]):
+ 6 │     pass
+ 7 │
+ 8 │ # ERROR: the variant returns a borrow of a local.
+ 9 │ def escape() -> Maybe[&'static int32]:
+10 │     let value = 1
+11 │     return Maybe.Some(value.&)
+   │            ^^^^^^^^^^^^^^^^^^^
+   ┆ [error]: cannot return a value referencing data owned by the current function
+   ┆    ╭▸ compiler/e2e/test/check/borrow/variant_payload/main.ray:11:12
+   ┆    │
+   ┆ 11 │     return Maybe.Some(value.&)
+   ┆    │            ┯━━━━━━━━━━┬──────━
+   ┆    │            │          │
+   ┆    │            │          the data is borrowed here
+   ┆    ╰╴           this returns a value referencing data owned by the current function
+   ┆
+12 │
+13 │ def main():
+14 │     let mut x = 0
+15 │     let maybe = Maybe.Some(x.&)
+16 │
+17 │     # ERROR: `maybe` still borrows `x`.
+18 │     x = x + 1
+   │     ^^^^^^^^^
+   ┆ [error]: cannot assign to a place because it is borrowed
+   ┆    ╭▸ compiler/e2e/test/check/borrow/variant_payload/main.ray:18:5
+   ┆    │
+   ┆ 15 │     let maybe = Maybe.Some(x.&)
+   ┆    │                            ─── immutable borrow occurs here
+   ┆    ‡
+   ┆ 18 │     x = x + 1
+   ┆    │     ━━━━━━━━━ the borrowed place is assigned here
+   ┆ 19 │     consume(maybe)
+   ┆    ╰╴            ───── borrow later used here
+   ┆
+19 │     consume(maybe)
+20 │
+21 │     # OK: a variant without a payload borrows nothing.
+22 │     let mut y = 0
+23 │     let nothing = Maybe[&int32].Nothing
+24 │     y = y + 1
+25 │     consume(nothing)

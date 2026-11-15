@@ -394,14 +394,14 @@ impl TAstBuilder {
         }
 
         // `name(arguments)` is parsed as the call of a path. A continuation
-        // is a value, so only the name of a local binding can be one.
+        // is a value, so only a path rooted at a local can name one: `k` or
+        // `state.k`.
         if operator_count == 0
             && let Some(Leaf::DirectCall(direct_call)) = operand.leaf()
-            && let Some(identifier) = direct_call.path().and_then(|path| path.bare_identifier())
-            && self.lookup_name_binding(&identifier.kind.0).is_some()
+            && let Some(path) = direct_call.path()
             && let Some(call) = direct_call.call()
+            && let Some(continuation) = self.bind_local_path(&path).await
         {
-            let continuation = self.bind(identifier).await;
             let arguments = self.bind_call_arguments(&call).await;
             return Some(ResumedCall { continuation, arguments, arguments_span: call.span() });
         }
