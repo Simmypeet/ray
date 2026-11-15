@@ -7,6 +7,12 @@
 //! [`MonoType`] and rendered once the base type is reached, so no
 //! intermediate strings are allocated.
 //!
+//! Several identifiers of the same type can share one declaration. The base
+//! type is written once, but the declarator is written around each identifier,
+//! since in C the `*` and `(...)` belong to the identifier, not to the base:
+//! `int32_t *a, *b` declares two pointers, while `int32_t *a, b` would declare
+//! `b` an `int32_t`.
+//!
 //! Spelling a type asks the engine whether it is zero-sized, since a value
 //! that holds nothing is never declared, passed or returned; so the types
 //! here implement [`WriteC`] rather than [`Display`]. A type nests other types,
@@ -17,7 +23,7 @@
 use std::fmt::Display;
 
 use rayc_mono_ir::{
-    function::MonoFunction,
+    function::{LocalID, MonoFunction},
     ty::{
         AggregateType, EffectHandlerCallback, FunctionSignature, MonoType, PointerMutability,
         ReturnType,
@@ -33,13 +39,22 @@ use crate::c::{
 /// across an `.await`, so it must be shareable between threads.
 type DeclaredName<'a> = &'a (dyn Display + Sync);
 
-/// The part of a C declaration that surrounds the declared identifier.
+/// The identifiers a declaration declares, all of the same type.
+#[derive(Clone, Copy)]
+enum Identifiers<'a> {
+    /// None, as in a type name used by a cast.
+    None,
+    /// One name.
+    Name(DeclaredName<'a>),
+    /// At least one local, as in `int32_t ray_local_1, ray_local_2`.
+    Locals(&'a [LocalID]),
+}
+
+/// The part of a C declaration that surrounds a declared identifier.
 #[derive(Clone, Copy)]
 enum Declarator<'a> {
-    /// No identifier, as in a type name used by a cast.
-    Abstract,
-    /// The declared identifier itself.
-    Name(DeclaredName<'a>),
+    /// Where the identifier goes, if the declaration has one.
+    Identifier,
     /// `*inner`, or `*const inner` when the pointer object is `const`.
     Pointer { is_const: bool, inner: &'a Self },
     /// `inner(parameters)`: a function returning the base type.
@@ -47,25 +62,32 @@ enum Declarator<'a> {
 }
 
 impl Declarator<'_> {
-    const fn is_abstract(&self) -> bool { matches!(self, Self::Abstract) }
+    /// Whether the declarator is only the identifier, so a type name, which
+    /// has none, writes nothing for it.
+    const fn is_identifier(&self) -> bool { matches!(self, Self::Identifier) }
 
     /// Whether the declared object is a pointer to the base type, which C
     /// lets be incomplete.
     const fn is_pointer(&self) -> bool { matches!(self, Self::Pointer { .. }) }
 
-    async fn write_c(&self, writer: &mut CWriter<'_>) {
+    /// Writes the declarator around `identifier`, or around nothing in a type
+    /// name.
+    async fn write_c(&self, writer: &mut CWriter<'_>, identifier: Option<DeclaredName<'_>>) {
         match self {
-            Self::Abstract => {}
-            Self::Name(name) => writer.push(name),
+            Self::Identifier => {
+                if let Some(identifier) = identifier {
+                    writer.push(identifier);
+                }
+            }
             Self::Pointer { is_const, inner } => {
                 writer.push("*");
                 if *is_const {
                     writer.push("const");
-                    if !inner.is_abstract() {
+                    if identifier.is_some() || !inner.is_identifier() {
                         writer.push(" ");
                     }
                 }
-                Box::pin(inner.write_c(writer)).await;
+                Box::pin(inner.write_c(writer, identifier)).await;
             }
             // a postfix `(...)` binds tighter than a prefix `*`, so a pointer
             // being called through needs parentheses: `(*f)(int32_t)`
@@ -73,11 +95,11 @@ impl Declarator<'_> {
                 match inner {
                     Self::Pointer { .. } => {
                         writer.push("(");
-                        Box::pin(inner.write_c(writer)).await;
+                        Box::pin(inner.write_c(writer, identifier)).await;
                         writer.push(")");
                     }
-                    Self::Abstract | Self::Name(_) | Self::Function { .. } => {
-                        Box::pin(inner.write_c(writer)).await;
+                    Self::Identifier | Self::Function { .. } => {
+                        Box::pin(inner.write_c(writer, identifier)).await;
                     }
                 }
                 writer.push("(");
@@ -89,23 +111,41 @@ impl Declarator<'_> {
     }
 }
 
-/// Writes `base declarator`, qualifying the base when the declared object is
-/// `const`.
+/// Writes `base declarator`, qualifying the base when the declared objects
+/// are `const`, with the declarator written around each of the `identifiers`
+/// in turn.
 async fn write_declaration(
     writer: &mut CWriter<'_>,
     base: impl Display,
     is_const: bool,
     declarator: &Declarator<'_>,
+    identifiers: Identifiers<'_>,
 ) {
     if is_const {
         writer.push("const ");
     }
     writer.push(base);
-    if declarator.is_abstract() {
-        return;
+
+    match identifiers {
+        // a type name with nothing around its missing identifier is the base
+        // alone, as in `(int32_t)x`
+        Identifiers::None => {
+            if !declarator.is_identifier() {
+                writer.push(" ");
+                declarator.write_c(writer, None).await;
+            }
+        }
+        Identifiers::Name(name) => {
+            writer.push(" ");
+            declarator.write_c(writer, Some(name)).await;
+        }
+        Identifiers::Locals(locals) => {
+            for (index, local) in locals.iter().enumerate() {
+                writer.push(if index == 0 { " " } else { ", " });
+                declarator.write_c(writer, Some(&LocalName(*local))).await;
+            }
+        }
     }
-    writer.push(" ");
-    declarator.write_c(writer).await;
 }
 
 /// Writes a function returning the signature's return type, where
@@ -115,24 +155,27 @@ async fn write_function_declaration(
     writer: &mut CWriter<'_>,
     signature: &FunctionSignature,
     declarator: Declarator<'_>,
+    identifiers: Identifiers<'_>,
 ) {
     match signature.return_type() {
         ReturnType::Value(ty) if !writer.is_zero_sized(ty).await => {
-            let declaration = Declaration { ty, declarator, is_const: false };
+            let declaration = Declaration { ty, declarator, identifiers, is_const: false };
             Box::pin(declaration.write_to(writer)).await;
         }
         ReturnType::Void | ReturnType::Value(_) => {
-            write_declaration(writer, "void", false, &declarator).await;
+            write_declaration(writer, "void", false, &declarator, identifiers).await;
         }
     }
 }
 
-/// A C declaration of `declarator` with type `ty`, e.g. `int32_t ray_local_0`.
+/// A C declaration of `identifiers` with type `ty`, e.g.
+/// `int32_t ray_local_0`.
 #[derive(Clone, Copy)]
 pub(crate) struct Declaration<'a> {
     ty: &'a MonoType,
     declarator: Declarator<'a>,
-    /// Whether the declared object itself is `const`.
+    identifiers: Identifiers<'a>,
+    /// Whether the declared objects themselves are `const`.
     is_const: bool,
 }
 
@@ -140,16 +183,28 @@ impl<'a> Declaration<'a> {
     /// Declares `name`, whose type must not be zero-sized: no object of such
     /// a type is ever declared.
     pub(crate) const fn new(ty: &'a MonoType, name: DeclaredName<'a>) -> Self {
-        Self { ty, declarator: Declarator::Name(name), is_const: false }
+        Self::of(ty, Identifiers::Name(name))
+    }
+
+    /// Declares every one of `locals` in one declaration, as locals of type
+    /// `ty`, which must not be zero-sized.
+    pub(crate) fn locals(ty: &'a MonoType, locals: &'a [LocalID]) -> Self {
+        assert!(!locals.is_empty(), "a declaration should declare at least one local");
+        Self::of(ty, Identifiers::Locals(locals))
+    }
+
+    const fn of(ty: &'a MonoType, identifiers: Identifiers<'a>) -> Self {
+        Self { ty, declarator: Declarator::Identifier, identifiers, is_const: false }
     }
 
     async fn write_base(&self, writer: &mut CWriter<'_>, base: impl Display) {
-        write_declaration(writer, base, self.is_const, &self.declarator).await;
+        write_declaration(writer, base, self.is_const, &self.declarator, self.identifiers).await;
     }
 
     /// Writes a pointer to the named `pointee` base type.
     async fn write_pointer_to(&self, writer: &mut CWriter<'_>, pointee: &str) {
-        write_declaration(writer, pointee, false, &self.pointer_declarator()).await;
+        let declarator = self.pointer_declarator();
+        write_declaration(writer, pointee, false, &declarator, self.identifiers).await;
     }
 
     /// The current declarator wrapped in a pointer, which carries the
@@ -208,6 +263,7 @@ impl Declaration<'_> {
                 let pointee_declaration = Declaration {
                     ty: pointer.pointee(),
                     declarator: self.pointer_declarator(),
+                    identifiers: self.identifiers,
                     is_const: pointer.mutability() == PointerMutability::Const,
                 };
                 Box::pin(pointee_declaration.write_to(writer)).await;
@@ -220,7 +276,7 @@ impl Declaration<'_> {
                     signature,
                     parameters: Parameters::Unnamed,
                 };
-                write_function_declaration(writer, signature, function).await;
+                write_function_declaration(writer, signature, function, self.identifiers).await;
             }
         }
     }
@@ -235,8 +291,11 @@ struct ConstPointerTypeName<'a> {
 
 impl ConstPointerTypeName<'_> {
     async fn write_to(&self, writer: &mut CWriter<'_>) {
-        let declarator = Declarator::Pointer { is_const: false, inner: &Declarator::Abstract };
-        Declaration { ty: self.pointee, declarator, is_const: true }.write_to(writer).await;
+        let declarator = Declarator::Pointer { is_const: false, inner: &Declarator::Identifier };
+        let identifiers = Identifiers::None;
+        Declaration { ty: self.pointee, declarator, identifiers, is_const: true }
+            .write_to(writer)
+            .await;
     }
 }
 
@@ -256,8 +315,7 @@ impl WriteC for TypeName<'_> {
 
 impl TypeName<'_> {
     async fn write_to(&self, writer: &mut CWriter<'_>) {
-        let declarator = Declarator::Abstract;
-        Declaration { ty: self.ty, declarator, is_const: false }.write_to(writer).await;
+        Declaration::of(self.ty, Identifiers::None).write_to(writer).await;
     }
 }
 
@@ -365,10 +423,11 @@ impl<'a> FunctionDeclaration<'a> {
 impl WriteC for FunctionDeclaration<'_> {
     async fn write_c(&self, writer: &mut CWriter<'_>) {
         let function = Declarator::Function {
-            inner: &Declarator::Name(self.name),
+            inner: &Declarator::Identifier,
             signature: self.signature,
             parameters: self.parameters,
         };
-        write_function_declaration(writer, self.signature, function).await;
+        let identifiers = Identifiers::Name(self.name);
+        write_function_declaration(writer, self.signature, function, identifiers).await;
     }
 }

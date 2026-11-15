@@ -11,10 +11,11 @@
 //! leaving an assignment out loses nothing.
 
 use qbice::storage::intern::Interned;
+use rayc_hash::FxHashMap;
 use rayc_mono_ir::{
     MonoFunctionInstance,
     cfg::Terminator,
-    function::{LocalKind, MonoFunction},
+    function::{LocalID, LocalKind, MonoFunction},
     instruction::{Call, Instruction},
     operand::{Constant, Operand},
     place::Place,
@@ -22,12 +23,7 @@ use rayc_mono_ir::{
 };
 
 use crate::{
-    c::{
-        expr::PlaceExpr,
-        name::{BlockName, LocalName},
-        ty::Declaration,
-        writer::CWriter,
-    },
+    c::{expr::PlaceExpr, name::BlockName, ty::Declaration, writer::CWriter},
     projection::projected_type,
 };
 
@@ -55,14 +51,14 @@ impl<'f, 'engine> FunctionPrinter<'f, 'engine> {
         self.writer.push(format_args!("{declaration} {{\n"));
 
         // locals other than parameters are declared up front, unless they
-        // hold nothing
+        // hold nothing, with one declaration for every type
         let mut has_body_locals = false;
-        for (local_id, local) in function.locals() {
-            if !is_declared_in_body(local.kind()) || self.writer.is_zero_sized(local.ty()).await {
+        for (ty, locals) in body_locals_by_type(function) {
+            if self.writer.is_zero_sized(ty).await {
                 continue;
             }
             self.writer.push("    ");
-            self.writer.write(&Declaration::new(local.ty(), &LocalName(local_id))).await;
+            self.writer.write(&Declaration::locals(ty, &locals)).await;
             self.writer.push(";\n");
             has_body_locals = true;
         }
@@ -251,6 +247,25 @@ impl<'f, 'engine> FunctionPrinter<'f, 'engine> {
             Operand::Constant(_) | Operand::Function(_) => false,
         }
     }
+}
+
+/// The locals declared at the top of the body of `function`, grouped by type.
+/// The groups are in the order their types first appear among the locals,
+/// and the locals of a group in their own order.
+fn body_locals_by_type(function: &MonoFunction) -> Vec<(&MonoType, Vec<LocalID>)> {
+    let mut groups = Vec::<(&MonoType, Vec<LocalID>)>::new();
+    let mut group_of_type = FxHashMap::<&MonoType, usize>::default();
+    for (local_id, local) in function.locals() {
+        if !is_declared_in_body(local.kind()) {
+            continue;
+        }
+        let group = *group_of_type.entry(local.ty()).or_insert_with(|| {
+            groups.push((local.ty(), Vec::new()));
+            groups.len() - 1
+        });
+        groups[group].1.push(local_id);
+    }
+    groups
 }
 
 /// Whether a local is declared at the top of the function body rather than
