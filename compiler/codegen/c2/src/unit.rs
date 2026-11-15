@@ -26,6 +26,7 @@ const PRELUDE: &str = "\
 /* Ray runtime, defined in its own translation unit */
 void *ray_alloc(size_t size);
 void ray_free(void *pointer);
+extern max_align_t ray_zst_anchor;
 #ifdef RAY_HEAP_CHECK
 void ray_check_heap(void);
 #endif
@@ -86,11 +87,18 @@ int main(void) {{
 
     /// Adds every aggregate of `registry`, each after the aggregates it
     /// contains by value.
+    ///
+    /// A zero-sized aggregate is only declared: no value of it is ever
+    /// stored, so it is only spelled behind a pointer.
     pub(crate) fn define_aggregates(&mut self, registry: &AggregateRegistry) {
         for (name, aggregate, layout) in registry.in_definition_order() {
             writeln!(self.aggregate_declarations, "typedef struct {name} {};", name.typedef())
                 .expect(WRITE_TO_STRING);
-            let definition = AggregateDefinition::new(aggregate, layout);
+            if registry.is_aggregate_zero_sized(aggregate) {
+                continue;
+            }
+
+            let definition = AggregateDefinition::new(aggregate, layout, registry);
             start_definition(&mut self.aggregate_definitions);
             writeln!(self.aggregate_definitions, "{definition}").expect(WRITE_TO_STRING);
         }

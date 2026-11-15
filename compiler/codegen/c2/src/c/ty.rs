@@ -20,7 +20,10 @@ use rayc_mono_ir::{
     },
 };
 
-use crate::c::name::{AggregateName, LocalName};
+use crate::{
+    aggregates::AggregateRegistry,
+    c::name::{AggregateName, LocalName},
+};
 
 /// The part of a C declaration that surrounds the declared identifier.
 #[derive(Clone, Copy)]
@@ -32,7 +35,12 @@ enum Declarator<'a> {
     /// `*inner`, or `*const inner` when the pointer object is `const`.
     Pointer { is_const: bool, inner: &'a Self },
     /// `inner(parameters)`: a function returning the base type.
-    Function { inner: &'a Self, signature: &'a FunctionSignature, parameters: Parameters<'a> },
+    Function {
+        inner: &'a Self,
+        signature: &'a FunctionSignature,
+        parameters: Parameters<'a>,
+        layouts: &'a AggregateRegistry,
+    },
 }
 
 impl fmt::Debug for Declarator<'_> {
@@ -43,6 +51,10 @@ impl fmt::Debug for Declarator<'_> {
 
 impl Declarator<'_> {
     const fn is_abstract(&self) -> bool { matches!(self, Self::Abstract) }
+
+    /// Whether the declared object is a pointer to the base type, which C
+    /// lets be incomplete.
+    const fn is_pointer(&self) -> bool { matches!(self, Self::Pointer { .. }) }
 }
 
 impl Display for Declarator<'_> {
@@ -62,12 +74,13 @@ impl Display for Declarator<'_> {
             }
             // A postfix `(...)` binds tighter than a prefix `*`, so a pointer
             // being called through needs parentheses: `(*f)(int32_t)`.
-            Self::Function { inner, signature, parameters } => {
+            Self::Function { inner, signature, parameters, layouts } => {
                 match inner {
                     Self::Pointer { .. } => write!(formatter, "({inner})"),
                     Self::Abstract | Self::Name(_) | Self::Function { .. } => inner.fmt(formatter),
                 }?;
-                write!(formatter, "({})", ParameterList { signature, parameters: *parameters })
+                let parameters = ParameterList { signature, parameters: *parameters, layouts };
+                write!(formatter, "({parameters})")
             }
         }
     }
@@ -92,15 +105,21 @@ fn write_declaration(
 }
 
 /// Writes a function returning the signature's return type, where
-/// `declarator` is a [`Declarator::Function`].
+/// `declarator` is a [`Declarator::Function`]. A function whose result is
+/// zero-sized returns `void`.
 fn write_function_declaration(
     formatter: &mut fmt::Formatter<'_>,
     signature: &FunctionSignature,
     declarator: Declarator<'_>,
+    layouts: &AggregateRegistry,
 ) -> fmt::Result {
     match signature.return_type() {
-        ReturnType::Void => write_declaration(formatter, &"void", false, &declarator),
-        ReturnType::Value(ty) => Declaration { ty, declarator, is_const: false }.fmt(formatter),
+        ReturnType::Value(ty) if !layouts.is_zero_sized(ty) => {
+            Declaration { ty, declarator, is_const: false, layouts }.fmt(formatter)
+        }
+        ReturnType::Void | ReturnType::Value(_) => {
+            write_declaration(formatter, &"void", false, &declarator)
+        }
     }
 }
 
@@ -111,11 +130,18 @@ pub(crate) struct Declaration<'a> {
     declarator: Declarator<'a>,
     /// Whether the declared object itself is `const`.
     is_const: bool,
+    layouts: &'a AggregateRegistry,
 }
 
 impl<'a> Declaration<'a> {
-    pub(crate) const fn new(ty: &'a MonoType, name: &'a dyn Display) -> Self {
-        Self { ty, declarator: Declarator::Name(name), is_const: false }
+    /// Declares `name`, whose type must not be zero-sized: no object of such
+    /// a type is ever declared.
+    pub(crate) const fn new(
+        ty: &'a MonoType,
+        name: &'a dyn Display,
+        layouts: &'a AggregateRegistry,
+    ) -> Self {
+        Self { ty, declarator: Declarator::Name(name), is_const: false, layouts }
     }
 
     fn write_base(&self, formatter: &mut fmt::Formatter<'_>, base: &dyn Display) -> fmt::Result {
@@ -150,7 +176,13 @@ impl Display for Declaration<'_> {
             MonoType::Usize => self.write_base(formatter, &"uintptr_t"),
             MonoType::Float32 => self.write_base(formatter, &"float"),
             MonoType::CInt => self.write_base(formatter, &"int"),
+            // A zero-sized aggregate is never defined, so only a pointer to it
+            // can be spelled.
             MonoType::Aggregate(aggregate) => {
+                assert!(
+                    self.declarator.is_pointer() || !self.layouts.is_zero_sized(self.ty),
+                    "a zero-sized type is only spelled behind a pointer"
+                );
                 self.write_base(formatter, &AggregateName::of(aggregate).typedef())
             }
 
@@ -169,6 +201,7 @@ impl Display for Declaration<'_> {
                 ty: pointer.pointee(),
                 declarator: self.pointer_declarator(),
                 is_const: pointer.mutability() == PointerMutability::Const,
+                layouts: self.layouts,
             }
             .fmt(formatter),
 
@@ -178,8 +211,9 @@ impl Display for Declaration<'_> {
                     inner: &pointer,
                     signature,
                     parameters: Parameters::Unnamed,
+                    layouts: self.layouts,
                 };
-                write_function_declaration(formatter, signature, function)
+                write_function_declaration(formatter, signature, function, self.layouts)
             }
         }
     }
@@ -191,14 +225,21 @@ impl Display for Declaration<'_> {
 pub(crate) struct ConstPointerDeclaration<'a> {
     pointee: &'a MonoType,
     name: Option<&'a dyn Display>,
+    layouts: &'a AggregateRegistry,
 }
 
 impl<'a> ConstPointerDeclaration<'a> {
-    pub(crate) const fn new(pointee: &'a MonoType, name: &'a dyn Display) -> Self {
-        Self { pointee, name: Some(name) }
+    pub(crate) const fn new(
+        pointee: &'a MonoType,
+        name: &'a dyn Display,
+        layouts: &'a AggregateRegistry,
+    ) -> Self {
+        Self { pointee, name: Some(name), layouts }
     }
 
-    const fn type_name(pointee: &'a MonoType) -> Self { Self { pointee, name: None } }
+    const fn type_name(pointee: &'a MonoType, layouts: &'a AggregateRegistry) -> Self {
+        Self { pointee, name: None, layouts }
+    }
 }
 
 impl fmt::Debug for ConstPointerDeclaration<'_> {
@@ -211,17 +252,29 @@ impl Display for ConstPointerDeclaration<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let inner = self.name.map_or(Declarator::Abstract, Declarator::Name);
         let declarator = Declarator::Pointer { is_const: false, inner: &inner };
-        Declaration { ty: self.pointee, declarator, is_const: true }.fmt(formatter)
+        Declaration { ty: self.pointee, declarator, is_const: true, layouts: self.layouts }
+            .fmt(formatter)
     }
 }
 
 /// A C type name without an identifier, as used in casts.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct TypeName<'a>(pub(crate) &'a MonoType);
+pub(crate) struct TypeName<'a> {
+    ty: &'a MonoType,
+    layouts: &'a AggregateRegistry,
+}
+
+impl<'a> TypeName<'a> {
+    pub(crate) const fn new(ty: &'a MonoType, layouts: &'a AggregateRegistry) -> Self {
+        Self { ty, layouts }
+    }
+}
 
 impl Display for TypeName<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Declaration { ty: self.0, declarator: Declarator::Abstract, is_const: false }.fmt(formatter)
+        let declarator = Declarator::Abstract;
+        Declaration { ty: self.ty, declarator, is_const: false, layouts: self.layouts }
+            .fmt(formatter)
     }
 }
 
@@ -235,50 +288,60 @@ enum Parameters<'a> {
 }
 
 /// The contents of a function declarator's parentheses.
+///
+/// A parameter of a zero-sized type is left out, since it passes nothing.
 struct ParameterList<'a> {
     signature: &'a FunctionSignature,
     parameters: Parameters<'a>,
+    layouts: &'a AggregateRegistry,
 }
 
 impl Display for ParameterList<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let signature = self.signature;
-        match self.parameters {
+        let layouts = self.layouts;
+        let written = match self.parameters {
             // The environment, the source parameters, then the handler
-            // records, as `FunctionSignature` orders them in C.
+            // records, as `FunctionSignature` orders them in C. A handler
+            // record is a pointer, which is never zero-sized.
             Parameters::Unnamed => {
                 let environment = signature
                     .environment_slot()
-                    .map(|slot| UnnamedParameter::Value(Cow::Owned(slot.ty())));
+                    .map(|slot| Cow::Owned(slot.ty()))
+                    .filter(|ty| !layouts.is_zero_sized(ty))
+                    .map(|ty| UnnamedParameter::Value(ty, layouts));
                 let parameters = signature
                     .parameter_types()
                     .iter()
-                    .map(|ty| UnnamedParameter::Value(Cow::Borrowed(&**ty)));
+                    .filter(|ty| !layouts.is_zero_sized(ty))
+                    .map(|ty| UnnamedParameter::Value(Cow::Borrowed(&**ty), layouts));
                 let handler_records = signature.handler_record_slots().iter().map(|effect| {
-                    UnnamedParameter::HandlerRecord(MonoType::Aggregate(
-                        AggregateType::EffectHandlerCallback(EffectHandlerCallback::new(
-                            effect.clone(),
+                    UnnamedParameter::HandlerRecord(
+                        MonoType::Aggregate(AggregateType::EffectHandlerCallback(
+                            EffectHandlerCallback::new(effect.clone()),
                         )),
-                    ))
+                        layouts,
+                    )
                 });
                 write_separated(
                     formatter,
                     environment.into_iter().chain(parameters).chain(handler_records),
-                )?;
+                )?
             }
             // The parameter locals are created in the same order, with the
             // type of each slot.
             Parameters::NamedAfter(function) => {
                 assert_eq!(signature.abi_parameter_count(), function.abi_parameters().count());
-                let declarations = function.abi_parameters().map(|local| NamedParameter {
-                    ty: function.get_local(local).ty(),
-                    name: LocalName(local),
-                });
-                write_separated(formatter, declarations)?;
+                let declarations = function
+                    .abi_parameters()
+                    .map(|local| (local, function.get_local(local).ty()))
+                    .filter(|(_, ty)| !layouts.is_zero_sized(ty))
+                    .map(|(local, ty)| NamedParameter { ty, name: LocalName(local), layouts });
+                write_separated(formatter, declarations)?
             }
-        }
+        };
 
-        match (signature.is_variadic(), signature.abi_parameter_count() == 0) {
+        match (signature.is_variadic(), written == 0) {
             (true, true) => formatter.write_str("..."),
             (true, false) => formatter.write_str(", ..."),
             (false, true) => formatter.write_str("void"),
@@ -289,18 +352,18 @@ impl Display for ParameterList<'_> {
 
 /// A parameter of a prototype, which has no name.
 enum UnnamedParameter<'a> {
-    Value(Cow<'a, MonoType>),
+    Value(Cow<'a, MonoType>, &'a AggregateRegistry),
     /// `const EffectHandler_E *`, given by the record type itself, since a
     /// prototype has no engine to intern the pointer type with.
-    HandlerRecord(MonoType),
+    HandlerRecord(MonoType, &'a AggregateRegistry),
 }
 
 impl Display for UnnamedParameter<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Value(ty) => TypeName(ty).fmt(formatter),
-            Self::HandlerRecord(record) => {
-                ConstPointerDeclaration::type_name(record).fmt(formatter)
+            Self::Value(ty, layouts) => TypeName::new(ty, layouts).fmt(formatter),
+            Self::HandlerRecord(record, layouts) => {
+                ConstPointerDeclaration::type_name(record, layouts).fmt(formatter)
             }
         }
     }
@@ -311,11 +374,12 @@ impl Display for UnnamedParameter<'_> {
 struct NamedParameter<'a> {
     ty: &'a MonoType,
     name: LocalName,
+    layouts: &'a AggregateRegistry,
 }
 
 impl Display for NamedParameter<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Declaration::new(self.ty, &self.name).fmt(formatter)
+        Declaration::new(self.ty, &self.name, self.layouts).fmt(formatter)
     }
 }
 
@@ -327,6 +391,7 @@ pub(crate) struct FunctionDeclaration<'a> {
     name: &'a dyn Display,
     parameters: Parameters<'a>,
     is_pointer: bool,
+    layouts: &'a AggregateRegistry,
 }
 
 impl fmt::Debug for FunctionDeclaration<'_> {
@@ -337,13 +402,21 @@ impl fmt::Debug for FunctionDeclaration<'_> {
 
 impl<'a> FunctionDeclaration<'a> {
     /// Declares a function called `name`.
-    pub(crate) const fn new(signature: &'a FunctionSignature, name: &'a dyn Display) -> Self {
-        Self { signature, name, parameters: Parameters::Unnamed, is_pointer: false }
+    pub(crate) const fn new(
+        signature: &'a FunctionSignature,
+        name: &'a dyn Display,
+        layouts: &'a AggregateRegistry,
+    ) -> Self {
+        Self { signature, name, parameters: Parameters::Unnamed, is_pointer: false, layouts }
     }
 
     /// Declares a function-pointer object called `name`.
-    pub(crate) const fn pointer(signature: &'a FunctionSignature, name: &'a dyn Display) -> Self {
-        Self { signature, name, parameters: Parameters::Unnamed, is_pointer: true }
+    pub(crate) const fn pointer(
+        signature: &'a FunctionSignature,
+        name: &'a dyn Display,
+        layouts: &'a AggregateRegistry,
+    ) -> Self {
+        Self { signature, name, parameters: Parameters::Unnamed, is_pointer: true, layouts }
     }
 
     /// Spells the parameters with the local names of `function`.
@@ -358,22 +431,28 @@ impl Display for FunctionDeclaration<'_> {
         let name = Declarator::Name(self.name);
         let pointer = Declarator::Pointer { is_const: false, inner: &name };
         let inner = if self.is_pointer { &pointer } else { &name };
-        let function =
-            Declarator::Function { inner, signature: self.signature, parameters: self.parameters };
-        write_function_declaration(formatter, self.signature, function)
+        let function = Declarator::Function {
+            inner,
+            signature: self.signature,
+            parameters: self.parameters,
+            layouts: self.layouts,
+        };
+        write_function_declaration(formatter, self.signature, function, self.layouts)
     }
 }
 
-/// Writes `items` separated by `", "`.
+/// Writes `items` separated by `", "`, and returns how many there were.
 fn write_separated(
     out: &mut impl fmt::Write,
     items: impl IntoIterator<Item = impl Display>,
-) -> fmt::Result {
-    for (index, item) in items.into_iter().enumerate() {
-        if index != 0 {
+) -> Result<usize, fmt::Error> {
+    let mut count = 0;
+    for item in items {
+        if count != 0 {
             out.write_str(", ")?;
         }
         write!(out, "{item}")?;
+        count += 1;
     }
-    Ok(())
+    Ok(count)
 }

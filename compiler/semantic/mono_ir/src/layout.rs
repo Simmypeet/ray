@@ -41,6 +41,7 @@ use crate::{
 
 pub mod coroutine;
 pub mod recursion;
+pub mod repr;
 pub mod run_with;
 
 /// The unsigned integer type of a tag, which tells the variant of a value.
@@ -162,6 +163,19 @@ impl EffectHandlerCallbackLayout {
 
     #[must_use]
     pub fn operations(&self) -> &[EffectOperation] { &self.operations }
+
+    /// The callback slot of `operation_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the effect has no such operation.
+    #[must_use]
+    pub fn operation(&self, operation_id: GlobalSymbolID) -> &EffectOperation {
+        self.operations
+            .iter()
+            .find(|operation| operation.operation_id == operation_id)
+            .expect("an effect handler record should have a slot for each of its operations")
+    }
 }
 
 /// Derives the callback slots for one concrete effect instantiation.
@@ -324,6 +338,16 @@ impl EnvironmentLayout {
         &self,
     ) -> impl ExactSizeIterator<Item = (HandlerRecordID, &HandlerRecord)> {
         self.handler_records.iter()
+    }
+
+    /// The handler record `record_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the environment holds no such record.
+    #[must_use]
+    pub fn handler_record(&self, record_id: HandlerRecordID) -> &HandlerRecord {
+        self.handler_records.get(record_id).expect("the environment should hold the handler record")
     }
 
     /// The record that holds the handler of `effect`.

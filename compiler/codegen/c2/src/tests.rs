@@ -1,6 +1,7 @@
 use std::{
     io::Write,
     process::{Command, Stdio},
+    sync::Arc,
 };
 
 use rayc_ir::ir_function::IRFunctionID;
@@ -12,7 +13,7 @@ use rayc_mono_ir::{
     operand::{Constant, Operand},
     ty::{AggregateType, FunctionSignature, MonoType, ReturnType, Tuple},
 };
-use rayc_qbice::create_minimal_engine;
+use rayc_qbice::{Engine, InMemoryFactory, RAY_PROGRAM, TrackedEngine};
 use rayc_solver::Solver;
 use rayc_symbol::SymbolID;
 use rayc_target::TargetID;
@@ -32,7 +33,7 @@ use crate::{
 // outer struct while the function uses its stable definition name.
 #[tokio::test]
 async fn writes_ordered_translation_unit_from_mono_ir() {
-    let engine = create_minimal_engine().await;
+    let engine = create_engine().await;
     let solver = Solver::without_givens(engine.clone()).await;
     let int32 = engine.intern(MonoType::Int32);
     let inner_tuple = Tuple::new(engine.intern_unsized([int32]));
@@ -94,7 +95,7 @@ async fn writes_ordered_translation_unit_from_mono_ir() {
 // Output: both stable function definitions are present in compilable C.
 #[tokio::test]
 async fn discovers_called_definition_through_worklist() {
-    let engine = create_minimal_engine().await;
+    let engine = create_engine().await;
     let solver = Solver::without_givens(engine.clone()).await;
     let unit_tuple = Tuple::new(engine.intern_unsized(Vec::new()));
     let unit_type = engine.intern(MonoType::Aggregate(AggregateType::Tuple(unit_tuple)));
@@ -147,6 +148,21 @@ async fn discovers_called_definition_through_worklist() {
     assert!(output.contains(&format!("{}(void) {{", BodyName::of(&dependency_instance))));
 
     assert_compiles(&output);
+}
+
+/// An engine with every query of the compiler, without any source: the
+/// layouts of the tuples these tests use need none.
+async fn create_engine() -> TrackedEngine {
+    let mut engine = Engine::new_with(
+        qbice::serialize::Plugin::default(),
+        InMemoryFactory,
+        qbice::stable_hash::SeededStableHasherBuilder::new(0),
+    )
+    .await
+    .unwrap();
+    engine.register_program(RAY_PROGRAM);
+
+    Arc::new(engine).tracked().await
 }
 
 fn assert_compiles(output: &str) {

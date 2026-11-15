@@ -7,13 +7,20 @@ use rayc_mono_ir::{
     operand::Constant,
     place::Place,
     rvalue::{BinaryOperator, UnaryOperator},
-    ty::AggregateType,
 };
 
-use crate::c::{
-    name::{AggregateName, FieldName, LocalName},
-    ty::TypeName,
+use crate::{
+    aggregates::AggregateRegistry,
+    c::{
+        name::{FieldName, LocalName},
+        ty::TypeName,
+    },
 };
+
+/// The address of every place of a zero-sized type, which has no storage of
+/// its own. The runtime defines the anchor, whose address is valid and aligned
+/// for any type; since such a place holds nothing, all of them may share it.
+pub(crate) const ZERO_SIZED_ADDRESS: &str = "((void *)&ray_zst_anchor)";
 
 /// The lvalue expression designating a [`Place`], e.g.
 /// `(*ray_local_0).elem1`.
@@ -47,35 +54,26 @@ impl Display for PlaceExpr<'_> {
     }
 }
 
-/// A compound literal of an aggregate with no members, e.g.
-/// `((RayTuple_<id>_t){ ._unit = 0 })`.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct EmptyAggregateLiteral<'a>(pub(crate) &'a AggregateType);
-
-impl Display for EmptyAggregateLiteral<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "(({}){{ ._unit = 0 }})", AggregateName::of(self.0).typedef())
-    }
-}
-
-/// A constant operand.
+/// A constant operand, which is not zero-sized: a value that holds nothing is
+/// never spelled.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ConstantExpr<'a> {
     constant: &'a Constant,
-    /// The empty tuple type, which a unit constant is a value of.
-    unit: &'a AggregateType,
+    layouts: &'a AggregateRegistry,
 }
 
 impl<'a> ConstantExpr<'a> {
-    pub(crate) const fn new(constant: &'a Constant, unit: &'a AggregateType) -> Self {
-        Self { constant, unit }
+    pub(crate) const fn new(constant: &'a Constant, layouts: &'a AggregateRegistry) -> Self {
+        Self { constant, layouts }
     }
 }
 
 impl Display for ConstantExpr<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.constant {
-            Constant::Unit => EmptyAggregateLiteral(self.unit).fmt(formatter),
+            Constant::Unit | Constant::EmptyAggregate(_) => {
+                panic!("a zero-sized constant is never spelled: {:?}", self.constant)
+            }
             Constant::Bool(value) => value.fmt(formatter),
             Constant::Int8(value) => write!(formatter, "INT8_C({value})"),
             Constant::Int16(value) => write!(formatter, "INT16_C({value})"),
@@ -90,8 +88,9 @@ impl Display for ConstantExpr<'_> {
             Constant::Float32(bits) => Float32Literal(f32::from_bits(*bits)).fmt(formatter),
             Constant::CInt(value) => value.fmt(formatter),
             Constant::CStr(value) => StringLiteral(value).fmt(formatter),
-            Constant::NullPointer(ty) => write!(formatter, "(({})0)", TypeName(ty)),
-            Constant::EmptyAggregate(ty) => EmptyAggregateLiteral(ty).fmt(formatter),
+            Constant::NullPointer(ty) => {
+                write!(formatter, "(({})0)", TypeName::new(ty, self.layouts))
+            }
         }
     }
 }

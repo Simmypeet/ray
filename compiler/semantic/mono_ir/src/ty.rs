@@ -72,6 +72,31 @@ impl MonoType {
         matches!(self, Self::Aggregate(AggregateType::Tuple(tuple)) if tuple.is_empty())
     }
 
+    /// The aggregate a value of this type holds inline, if the type is one.
+    #[must_use]
+    pub const fn as_aggregate(&self) -> Option<&AggregateType> {
+        match self {
+            Self::Aggregate(aggregate) => Some(aggregate),
+            Self::Bool
+            | Self::Int8
+            | Self::Int16
+            | Self::Int32
+            | Self::Int64
+            | Self::Isize
+            | Self::Uint8
+            | Self::Uint16
+            | Self::Uint32
+            | Self::Uint64
+            | Self::Usize
+            | Self::Float32
+            | Self::CInt
+            | Self::CStr
+            | Self::OpaquePointer(_)
+            | Self::Pointer(_)
+            | Self::FunctionPointer(_) => None,
+        }
+    }
+
     #[must_use]
     pub fn assert_as_tuple(&self) -> &Tuple {
         match self {

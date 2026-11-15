@@ -1867,7 +1867,6 @@ dependencies = [
  "rayc_hash",
  "rayc_ir",
  "rayc_mono_ir",
- "rayc_mono_ir_builder",
  "rayc_qbice",
  "rayc_semantic_element",
  "rayc_solver",
@@ -1956,6 +1955,7 @@ dependencies = [
  "rayc_hash",
  "rayc_ir_builder",
  "rayc_lexical_impl",
+ "rayc_mono_ir_builder",
  "rayc_project",
  "rayc_qbice",
  "rayc_semantic_element",
@@ -2148,6 +2148,7 @@ dependencies = [
 name = "rayc_mono_ir_builder"
 version = "0.1.0-beta.2"
 dependencies = [
+ "linkme",
  "qbice",
  "rayc_arena",
  "rayc_coroutine_frame_layout",

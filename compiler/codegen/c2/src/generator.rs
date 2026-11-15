@@ -76,15 +76,16 @@ impl<'engine> Generator<'engine> {
     }
 
     async fn process_function(&mut self, function: PendingFunction) {
-        let function = match function {
-            PendingFunction::Lowered(function) => *function,
+        match function {
+            PendingFunction::Lowered(function) => self.print_function(&function).await,
             PendingFunction::Unlowered(MonoFunctionInstance::ExternDef(def_id)) => {
                 self.declare_extern(def_id).await;
-                return;
             }
-            PendingFunction::Unlowered(instance) => self.program.lower(instance).await,
-        };
-        self.print_function(&function).await;
+            PendingFunction::Unlowered(instance) => {
+                let function = self.program.lower(instance).await;
+                self.print_function(&function).await;
+            }
+        }
     }
 
     /// Declares an `extern def` under its source name, through its declared
@@ -95,7 +96,7 @@ impl<'engine> Generator<'engine> {
         let signature = engine.get_extern_def_signature(def_id).await;
         self.program.use_signature(&signature).await;
         let name: &str = &name;
-        let declaration = FunctionDeclaration::new(&signature, &name);
+        let declaration = FunctionDeclaration::new(&signature, &name, self.program.layouts());
         self.unit.declare_function(format_args!("extern {declaration}"));
     }
 
@@ -109,7 +110,8 @@ impl<'engine> Generator<'engine> {
             .expect("writing to a String cannot fail");
         self.unit.define_function(&self.definition);
 
-        let declaration = FunctionDeclaration::new(function.signature(), &name);
+        let declaration =
+            FunctionDeclaration::new(function.signature(), &name, self.program.layouts());
         self.unit.declare_function(declaration.with_parameters_of(function));
     }
 }

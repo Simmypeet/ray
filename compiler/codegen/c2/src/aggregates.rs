@@ -9,16 +9,23 @@ use rayc_mono_ir::{
         EffectHandlerCallbackLayout, EnvironmentLayout, StructLayout, build_environment_layout,
         build_handler_layout, build_struct_layout,
         coroutine::{
-            EffectRowLayout, build_effect_row_layout, build_frame_field_types, build_frame_layout,
+            EffectRowLayout, FrameState, build_effect_row_layout, build_frame_field_types,
+            build_frame_layout,
         },
+        repr::{Repr, get_aggregate_repr},
         run_with::{RunWithClause, RunWithLayout, build_run_with_layout},
     },
+    place::{
+        CoroutineFrame, CoroutineProgress as ProgressMember, CoroutineYield as YieldMember,
+        Projection, RunWithFrames,
+    },
     ty::{
-        AggregateType, CoroutineYield, EffectHandlerCallback, EffectRow, FunctionSignature,
-        MonoType, ReturnType,
+        AggregateType, CoroutineProgress, CoroutineYield, EffectHandlerCallback, EffectRow,
+        FunctionSignature, MonoType, ReturnType,
     },
 };
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::GlobalSymbolID;
 
 use crate::c::{
     aggregate::{FrameMembers, NominalLayout},
@@ -35,6 +42,8 @@ use crate::c::{
 pub(crate) struct AggregateRegistry {
     /// Each registered aggregate with its precomputed C name.
     names: FxHashMap<AggregateType, AggregateName>,
+    /// How each registered aggregate is represented.
+    reprs: FxHashMap<AggregateType, Repr>,
     handler_layouts: FxHashMap<MonoEffectInstance, Interned<EffectHandlerCallbackLayout>>,
     struct_layouts: FxHashMap<MonoStructInstance, Interned<StructLayout>>,
     environment_layouts: FxHashMap<MonoEnvironmentInstance, Interned<EnvironmentLayout>>,
@@ -76,6 +85,9 @@ impl AggregateRegistry {
     /// need a heap-allocated future per level.
     async fn complete(&mut self, engine: &TrackedEngine, mut found: Vec<AggregateType>) {
         while let Some(aggregate) = found.pop() {
+            let repr = engine.get_aggregate_repr(aggregate.clone()).await;
+            self.reprs.insert(aggregate.clone(), repr);
+
             match &aggregate {
                 AggregateType::EffectHandlerCallback(handler) => {
                     let instance = handler.mono_effect_instance();
@@ -224,6 +236,176 @@ impl AggregateRegistry {
         }
     }
 
+    /// Whether a value of `ty` holds nothing, so it is never stored, passed
+    /// or returned.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `ty` is an aggregate that has not been registered: every type
+    /// is registered where it is printed.
+    pub(crate) fn is_zero_sized(&self, ty: &MonoType) -> bool {
+        ty.as_aggregate().is_some_and(|aggregate| self.is_aggregate_zero_sized(aggregate))
+    }
+
+    /// Whether a value of `aggregate` holds nothing. A zero-sized aggregate is
+    /// only declared, never defined.
+    pub(crate) fn is_aggregate_zero_sized(&self, aggregate: &AggregateType) -> bool {
+        self.reprs
+            .get(aggregate)
+            .expect("an aggregate should be registered before it is spelled")
+            .is_zero_sized()
+    }
+
+    /// The type of the place that `projection` selects from a place of type
+    /// `ty`, whose aggregates have been registered.
+    ///
+    /// `engine` interns the types that no layout holds, such as tags.
+    pub(crate) fn projected_type(
+        &self,
+        ty: &MonoType,
+        projection: Projection,
+        engine: &TrackedEngine,
+    ) -> Interned<MonoType> {
+        const NOT_AN_AGGREGATE: &str = "a member is projected from an aggregate";
+
+        // Dereferencing is the only projection of a non-aggregate.
+        let aggregate = match projection {
+            Projection::Dereference => return ty.assert_as_pointer().pointee().clone(),
+            Projection::EnvironmentCapture(_)
+            | Projection::EnvironmentHandlerRecord(_)
+            | Projection::TupleFieldIndex(_)
+            | Projection::StructFieldIndex(_)
+            | Projection::OperationRecordEnvironmentField(_)
+            | Projection::OperationRecordFunctionPointerField(_)
+            | Projection::CoroutineFrame(_)
+            | Projection::CoroutineResumeValue(_)
+            | Projection::CoroutineProgress(_)
+            | Projection::CoroutineYield(_)
+            | Projection::RunWithFrames(_) => ty.as_aggregate().expect(NOT_AN_AGGREGATE),
+        };
+
+        match (projection, aggregate) {
+            (Projection::EnvironmentCapture(capture), AggregateType::Environment(instance)) => {
+                self.environment_layout(instance).capture_type(capture).clone()
+            }
+            (
+                Projection::EnvironmentHandlerRecord(record),
+                AggregateType::Environment(instance),
+            ) => {
+                let record = self.environment_layout(instance).handler_record(record);
+                MonoType::new_handler_pointer(record.effect().clone(), engine)
+            }
+            (Projection::TupleFieldIndex(index), AggregateType::Tuple(tuple)) => {
+                let index = usize::try_from(index.index()).expect("a field index fits in usize");
+                tuple.fields()[index].clone()
+            }
+            (Projection::StructFieldIndex(field), AggregateType::Struct(instance)) => self
+                .struct_layout(instance)
+                .fields()
+                .get(&field)
+                .expect("a struct should have the field it is projected to")
+                .clone(),
+            (
+                Projection::OperationRecordEnvironmentField(operation),
+                AggregateType::EffectHandlerCallback(handler),
+            ) => {
+                let signature = self.handler_operation_signature(handler, operation);
+                let environment = signature
+                    .environment_slot()
+                    .expect("an operation signature should have an environment slot");
+                engine.intern(environment.ty())
+            }
+            (
+                Projection::OperationRecordFunctionPointerField(operation),
+                AggregateType::EffectHandlerCallback(handler),
+            ) => {
+                let signature = self.handler_operation_signature(handler, operation);
+                engine.intern(MonoType::FunctionPointer(signature.clone()))
+            }
+            (Projection::CoroutineFrame(member), AggregateType::CoroutineFrame(instance)) => {
+                let members = self.frame_members(instance);
+                match member {
+                    CoroutineFrame::Tag => {
+                        engine.intern(FrameState::tag_type(members.layout()).mono_type())
+                    }
+                    CoroutineFrame::Savable(savable) => members.type_of(savable).clone(),
+                }
+            }
+            (Projection::CoroutineResumeValue(variant), AggregateType::CoroutineResume(resume)) => {
+                self.row_layout(resume.row())[variant].ty().clone()
+            }
+            (Projection::CoroutineProgress(member), AggregateType::CoroutineProgress(progress)) => {
+                match member {
+                    ProgressMember::Tag => engine.intern(CoroutineProgress::TAG_TYPE.mono_type()),
+                    ProgressMember::ReturnPayload => progress.return_type().clone(),
+                    ProgressMember::YieldPayload => MonoType::new_aggregate(
+                        AggregateType::CoroutineYield(CoroutineYield::new(progress.row().clone())),
+                        engine,
+                    ),
+                }
+            }
+            (Projection::CoroutineYield(member), AggregateType::CoroutineYield(yielded)) => {
+                let layout = self.row_layout(yielded.row());
+                match member {
+                    YieldMember::Tag => engine.intern(layout.yield_tag_type().mono_type()),
+                    YieldMember::OperationPayload(operation) => {
+                        layout[operation].arguments().clone()
+                    }
+                }
+            }
+            (Projection::RunWithFrames(member), AggregateType::RunWithFrames(instance)) => {
+                self.run_with_member_type(instance, member, engine)
+            }
+            (projection, aggregate) => {
+                panic!("{projection:?} does not select a member of {aggregate:?}")
+            }
+        }
+    }
+
+    /// The type of `member` of the frames of the `run ... with` `instance`.
+    fn run_with_member_type(
+        &self,
+        instance: &MonoRunWithInstance,
+        member: RunWithFrames,
+        engine: &TrackedEngine,
+    ) -> Interned<MonoType> {
+        let layout = self.run_with_layout(instance);
+        let frame = |instance: &MonoCoroutineInstance| {
+            MonoType::new_aggregate(AggregateType::CoroutineFrame(instance.clone()), engine)
+        };
+
+        match member {
+            RunWithFrames::HandlerEnvironment => {
+                let environment = layout
+                    .handler_environment()
+                    .expect("only a `run ... with` with clauses has a handler environment");
+                MonoType::new_aggregate(AggregateType::Environment(environment.clone()), engine)
+            }
+            RunWithFrames::Body => frame(layout.body()),
+            RunWithFrames::Phase => engine.intern(layout.phase_tag_type().mono_type()),
+            RunWithFrames::Clause(operation) => frame(layout.clause(operation).coroutine()),
+        }
+    }
+
+    /// The signature of the callback of `operation` in the record of `handler`.
+    fn handler_operation_signature(
+        &self,
+        handler: &EffectHandlerCallback,
+        operation: GlobalSymbolID,
+    ) -> &FunctionSignature {
+        self.handler_layouts
+            .get(handler.mono_effect_instance())
+            .expect("a registered effect handler should have its layout")
+            .operation(operation)
+            .signature()
+    }
+
+    fn frame_members(&self, instance: &MonoCoroutineInstance) -> &FrameMembers {
+        self.frame_members
+            .get(instance)
+            .expect("a registered coroutine frame should have its members")
+    }
+
     /// The layout of `aggregate`, if a query tells it.
     fn layout_of(&self, aggregate: &AggregateType) -> NominalLayout<'_> {
         match aggregate {
@@ -232,11 +414,9 @@ impl AggregateRegistry {
                     .get(handler.mono_effect_instance())
                     .expect("a registered effect handler should have its layout"),
             ),
-            AggregateType::CoroutineFrame(instance) => NominalLayout::CoroutineFrame(
-                self.frame_members
-                    .get(instance)
-                    .expect("a registered coroutine frame should have its members"),
-            ),
+            AggregateType::CoroutineFrame(instance) => {
+                NominalLayout::CoroutineFrame(self.frame_members(instance))
+            }
             AggregateType::CoroutineResume(resume) => {
                 NominalLayout::EffectRow(self.row_layout(resume.row()))
             }
@@ -311,11 +491,7 @@ impl AggregateRegistry {
                 self.named_aggregates(self.struct_layout(instance).fields().values())
             }
             AggregateType::CoroutineFrame(instance) => {
-                let members = self
-                    .frame_members
-                    .get(instance)
-                    .expect("a registered coroutine frame should have its members");
-                self.named_aggregates(members.types())
+                self.named_aggregates(self.frame_members(instance).types())
             }
             AggregateType::CoroutineResume(resume) => self.named_aggregates(
                 self.row_layout(resume.row()).resume_variants().map(|(_, variant)| variant.ty()),
@@ -362,7 +538,7 @@ impl AggregateRegistry {
     ) -> Vec<(AggregateName, &'a AggregateType)> {
         let mut dependencies = types
             .into_iter()
-            .filter_map(|ty| by_value_aggregate(ty))
+            .filter_map(|ty| ty.as_aggregate())
             .map(|aggregate| {
                 let name = *self
                     .names
@@ -386,30 +562,6 @@ fn run_with_member_aggregates(layout: &RunWithLayout) -> impl Iterator<Item = Ag
         .map(AggregateType::CoroutineFrame);
 
     environment.into_iter().chain(frames)
-}
-
-/// The aggregate a value of type `ty` contains inline, if any.
-const fn by_value_aggregate(ty: &MonoType) -> Option<&AggregateType> {
-    match ty {
-        MonoType::Aggregate(aggregate) => Some(aggregate),
-        MonoType::Bool
-        | MonoType::Int8
-        | MonoType::Int16
-        | MonoType::Int32
-        | MonoType::Int64
-        | MonoType::Isize
-        | MonoType::Uint8
-        | MonoType::Uint16
-        | MonoType::Uint32
-        | MonoType::Uint64
-        | MonoType::Usize
-        | MonoType::Float32
-        | MonoType::CInt
-        | MonoType::CStr
-        | MonoType::OpaquePointer(_)
-        | MonoType::Pointer(_)
-        | MonoType::FunctionPointer(_) => None,
-    }
 }
 
 /// Depth-first post-order over by-value containment.

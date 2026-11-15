@@ -1,4 +1,4 @@
-use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_arena::{ID, OrderedArena};
 use rayc_qbice::TrackedEngine;
 
@@ -51,6 +51,21 @@ pub struct MonoFunction {
 
     locals: OrderedArena<Local>,
     cfg: MonoCfg,
+}
+
+/// Lowers the function that `instance` identifies to [`MonoFunction`].
+///
+/// `rayc_mono_ir_builder` executes the query, so each function is lowered once
+/// and reused until its inputs change.
+///
+/// An `extern def` has no body to lower, so asking for one panics: it is only
+/// declared.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
+#[value(Interned<MonoFunction>)]
+#[extend(name = get_mono_function, by_val)]
+pub struct MonoFunctionKey {
+    /// The function to lower.
+    pub instance: MonoFunctionInstance,
 }
 
 impl MonoFunction {
