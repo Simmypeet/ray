@@ -28,7 +28,7 @@
 //! [`write_c_runtime`] writes. The two units are compiled separately and
 //! linked together.
 
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 
 use rayc_mono_ir::MonoFunctionInstance;
 use rayc_qbice::TrackedEngine;
@@ -109,7 +109,12 @@ pub async fn write_c_translation_unit(
     });
 
     let unit = TranslationUnit::new(engine, functions, entry_point).await;
-    write!(output, "{unit}")
+
+    // the unit is written in many small pieces, which `output` may pass on
+    // one by one, such as to a file
+    let mut output = BufWriter::new(output);
+    write!(output, "{unit}")?;
+    output.flush()
 }
 
 /// The source of the Ray runtime, a C translation unit that every program is

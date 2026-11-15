@@ -17,6 +17,7 @@ rayc_semantic_element.path = "../../semantic/semantic_element"
 rayc_solver.path = "../../semantic/solver"
 rayc_symbol.path = "../../semantic/symbol"
 rayc_target.path = "../../base/target"
+rayc_tokio.path = "../../base/tokio"
 rayc_type.path = "../../semantic/type"
 
 [lints]

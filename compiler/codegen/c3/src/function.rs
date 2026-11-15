@@ -80,10 +80,14 @@ impl FunctionOutput {
 }
 
 /// Generates the function `instance`.
+///
+/// The job owns everything it reads, so it can be spawned as a task of its
+/// own; cloning the engine only clones a handle to it.
 pub(crate) async fn generate_function(
-    engine: &TrackedEngine,
+    engine: TrackedEngine,
     instance: MonoFunctionInstance,
 ) -> FunctionOutput {
+    let engine = &engine;
     let description = describe_function(engine, &instance).await;
     match instance {
         MonoFunctionInstance::ExternDef(def_id) => {
