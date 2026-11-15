@@ -1877,6 +1877,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayc_c3"
+version = "0.1.0-beta.2"
+dependencies = [
+ "rayc_qbice",
+ "rayc_symbol",
+ "rayc_target",
+]
+
+[[package]]
 name = "rayc_check"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -1948,6 +1957,7 @@ dependencies = [
  "linkme",
  "qbice",
  "rayc_c2",
+ "rayc_c3",
  "rayc_check",
  "rayc_corelib",
  "rayc_diagnostic",

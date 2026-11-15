@@ -14,6 +14,7 @@ use crate::{
 };
 
 mod artifact;
+mod c_backend;
 mod entry_point;
 mod invocation;
 mod native;

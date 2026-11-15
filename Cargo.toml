@@ -39,6 +39,7 @@ members = [
     "compiler/semantic/coroutine_frame_layout",
 
     "compiler/codegen/c2",
+    "compiler/codegen/c3",
 
     "compiler/e2e",
 

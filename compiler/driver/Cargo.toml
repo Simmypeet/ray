@@ -29,6 +29,7 @@ rayc_semantic_element_impl.path = "../semantic/semantic_element_impl"
 rayc_ir_builder.path = "../semantic/ir_builder"
 rayc_mono_ir_builder.path = "../semantic/mono_ir_builder"
 rayc_c2.path = "../codegen/c2"
+rayc_c3.path = "../codegen/c3"
 dunce.workspace = true
 qbice.workspace = true
 linkme.workspace = true

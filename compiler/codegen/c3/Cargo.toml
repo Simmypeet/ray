@@ -1,0 +1,15 @@
+[package]
+name = "rayc_c3"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rayc_qbice.path = "../../base/qbice"
+rayc_symbol.path = "../../semantic/symbol"
+rayc_target.path = "../../base/target"
+
+[lints]
+workspace = true
