@@ -20,7 +20,7 @@ use rayc_mono_ir::{
         coroutine::{
             FrameState, build_effect_row_layout, build_frame_field_types, build_frame_layout,
         },
-        repr::get_aggregate_repr,
+        repr::{Repr, get_aggregate_repr},
         run_with::build_run_with_layout,
     },
     ty::{
@@ -51,8 +51,10 @@ struct FoundAggregate {
     /// The members that hold something: a member of a zero-sized type is
     /// left out, and so is a union or struct of nothing else.
     members: Members,
-    /// Whether a value of it holds nothing, so it is only declared.
-    is_zero_sized: bool,
+    /// How a value of it is represented. Only a direct aggregate is defined;
+    /// any other is only declared, and spelled as a struct only behind a
+    /// pointer.
+    repr: Repr,
 }
 
 impl ProgramAggregates {
@@ -85,15 +87,15 @@ impl ProgramAggregates {
             // only the members that hold something are defined
             let mut zero_sized = FxHashSet::default();
             for member in member_aggregates {
-                if is_zero_sized(engine, &member).await {
+                if engine.get_aggregate_repr(member.clone()).await.is_zero_sized() {
                     zero_sized.insert(member);
                 }
             }
             members.retain_stored(&|ty| ty.as_aggregate().is_none_or(|a| !zero_sized.contains(a)));
 
-            let is_zero_sized = is_zero_sized(engine, &aggregate).await;
+            let repr = engine.get_aggregate_repr(aggregate.clone()).await;
             let name = AggregateName::of(&aggregate);
-            aggregates.insert(name, FoundAggregate { aggregate, members, is_zero_sized });
+            aggregates.insert(name, FoundAggregate { aggregate, members, repr });
         }
 
         Self { aggregates }
@@ -114,8 +116,10 @@ impl ProgramAggregates {
     /// member. Aggregates that do not depend on each other are ordered by
     /// name.
     ///
-    /// A zero-sized aggregate is only declared: no value of it is ever
-    /// stored, so it is only spelled behind a pointer.
+    /// Only a direct aggregate is defined. Any other is only declared: a
+    /// value of a zero-sized one is never stored, and one of a transparent
+    /// one is stored as its member, so either is spelled as its struct only
+    /// behind a pointer.
     pub(crate) fn definitions(&self) -> impl Iterator<Item = AggregateDefinition<'_>> {
         let mut ordering = TopologicalOrdering::default();
         for name in self.aggregates.keys() {
@@ -124,7 +128,7 @@ impl ProgramAggregates {
 
         ordering.ordered.into_iter().filter_map(|name| {
             let found = &self.aggregates[&name];
-            (!found.is_zero_sized).then(|| AggregateDefinition::new(name, &found.members))
+            found.repr.is_direct().then(|| AggregateDefinition::new(name, &found.members))
         })
     }
 
@@ -134,18 +138,22 @@ impl ProgramAggregates {
     fn by_value_dependencies(&self, name: AggregateName) -> Vec<AggregateName> {
         let mut dependencies = Vec::new();
         self.aggregates[&name].members.for_each_type(&mut |ty| {
-            if let Some(aggregate) = ty.as_aggregate() {
-                dependencies.push(AggregateName::of(aggregate));
+            if let Some(stored) = self.stored_aggregate(ty) {
+                dependencies.push(AggregateName::of(stored));
             }
         });
         dependencies.sort_unstable();
         dependencies
     }
-}
 
-/// Whether a value of `aggregate` holds nothing.
-async fn is_zero_sized(engine: &TrackedEngine, aggregate: &AggregateType) -> bool {
-    engine.get_aggregate_repr(aggregate.clone()).await.is_zero_sized()
+    /// The aggregate whose definition a value of `ty` is spelled with, if
+    /// any: a transparent aggregate is spelled as the member it stores, and a
+    /// member is the innermost such, so it is direct if it is an aggregate.
+    fn stored_aggregate<'a>(&'a self, ty: &'a MonoType) -> Option<&'a AggregateType> {
+        let aggregate = ty.as_aggregate()?;
+        let repr = &self.aggregates[&AggregateName::of(aggregate)].repr;
+        repr.transparent_inner().map_or(Some(aggregate), |inner| inner.as_aggregate())
+    }
 }
 
 /// Every member of `aggregate`, as the layout query of its kind tells,

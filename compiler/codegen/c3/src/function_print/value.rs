@@ -2,8 +2,10 @@
 
 use rayc_mono_ir::{
     MonoFunctionInstance,
+    layout::repr::Repr,
     operand::{Constant, Operand},
-    rvalue::{Reinterpret, Rvalue},
+    rvalue::{AddressOf, Reinterpret, Rvalue},
+    ty::MonoType,
 };
 use rayc_symbol::name::get_name;
 
@@ -23,14 +25,7 @@ impl FunctionPrinter<'_, '_> {
     pub(super) async fn write_rvalue(&mut self, value: &Rvalue) {
         match value {
             Rvalue::Use(operand) => self.write_operand(operand).await,
-            // a place that holds nothing has no storage of its own
-            Rvalue::AddressOf(address) => {
-                if self.is_place_zero_sized(address.place()).await {
-                    self.writer.push(ZERO_SIZED_ADDRESS);
-                    return;
-                }
-                self.writer.push(format_args!("&{}", PlaceExpr(address.place())));
-            }
+            Rvalue::AddressOf(address) => self.write_address_of(address).await,
             Rvalue::Unary(unary) => {
                 self.writer.push(format_args!("({}", unary_operator_token(unary.operator())));
                 self.write_operand(unary.operand()).await;
@@ -65,6 +60,33 @@ impl FunctionPrinter<'_, '_> {
         }
     }
 
+    /// The address of a place, as a pointer to the place's type.
+    ///
+    /// A place that holds nothing has no storage of its own. A place of a
+    /// transparent aggregate is spelled as the member it stores, so its
+    /// address is cast to a pointer to the aggregate's struct, which is how a
+    /// pointer to the aggregate is spelled.
+    async fn write_address_of(&mut self, address: &AddressOf) {
+        let (ty, projections) = self.spell_place(address.place()).await;
+        let place = PlaceExpr::new(address.place().local(), &projections);
+        match self.writer.repr(&ty).await {
+            Repr::ZeroSized => self.writer.push(ZERO_SIZED_ADDRESS),
+            Repr::Transparent(_) => {
+                let engine = self.writer.engine();
+                let pointer = MonoType::new_pointer(ty, address.mutability(), engine);
+                self.writer.push("((");
+                self.writer.write(&TypeName::new(&pointer)).await;
+                self.writer.push(")&");
+                self.writer.write(&place).await;
+                self.writer.push(")");
+            }
+            Repr::Direct => {
+                self.writer.push("&");
+                self.writer.write(&place).await;
+            }
+        }
+    }
+
     /// A compound literal of a union of both types, whose bytes are written as
     /// one and read as the other, which C defines even for types that differ
     /// in size.
@@ -92,7 +114,7 @@ impl FunctionPrinter<'_, '_> {
 
     pub(super) async fn write_operand(&mut self, operand: &Operand) {
         match operand {
-            Operand::Copy(place) => self.writer.push(PlaceExpr(place)),
+            Operand::Copy(place) => self.write_place(place).await,
             Operand::Constant(constant) => self.write_operand_constant(constant).await,
             // naming a function is the only way to refer to one, so this is
             // where the functions the body needs are found

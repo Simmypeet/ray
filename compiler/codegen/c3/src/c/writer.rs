@@ -7,7 +7,7 @@ use std::{
 };
 
 use rayc_mono_ir::{
-    layout::repr::get_aggregate_repr,
+    layout::repr::{Repr, get_repr},
     ty::{AggregateType, MonoType},
 };
 use rayc_qbice::TrackedEngine;
@@ -16,8 +16,9 @@ use crate::aggregates::AggregateRegistry;
 
 const WRITE_TO_STRING: &str = "writing to a String cannot fail";
 
-/// C syntax whose spelling may need the engine, such as a type: whether a
-/// type is zero-sized decides how it is spelled, and only a query knows.
+/// C syntax whose spelling may need the engine, such as a type: the
+/// representation of a type decides how it is spelled, and only a query
+/// knows.
 ///
 /// It is the asynchronous counterpart of [`Display`]. C syntax that never
 /// needs the engine, such as a name, implements [`Display`] instead.
@@ -53,15 +54,13 @@ impl<'engine> CWriter<'engine> {
     /// Writes `item`, which may query the engine.
     pub(crate) async fn write(&mut self, item: &impl WriteC) { item.write_c(self).await }
 
+    /// How a value of `ty` is represented.
+    pub(crate) async fn repr(&self, ty: &MonoType) -> Repr { self.engine.get_repr(ty).await }
+
     /// Whether a value of `ty` holds nothing, so it is never stored, passed
     /// or returned.
     pub(crate) async fn is_zero_sized(&self, ty: &MonoType) -> bool {
-        match ty.as_aggregate() {
-            Some(aggregate) => {
-                self.engine.get_aggregate_repr(aggregate.clone()).await.is_zero_sized()
-            }
-            None => false,
-        }
+        self.repr(ty).await.is_zero_sized()
     }
 
     /// Records that the output spells `aggregate`.

@@ -1,0 +1,105 @@
+extern def printf(format: cstr, ...) -> c_int
+
+
+# Only `value` is stored, so a `Meters` is an `int32`.
+struct Meters:
+    value: int32
+
+
+# A wrapper of a wrapper is the innermost value, so a `Distance` is an
+# `int32` too.
+struct Distance:
+    meters: Meters
+    unit: ()
+
+
+# Two values are stored, so a `Pair` is a struct, which `Boxed` is then.
+struct Pair:
+    left: int32
+    right: int32
+
+
+struct Boxed:
+    pair: Pair
+
+
+# A `Link` is a pointer to a `Link`, which is spelled as a pointer to its
+# struct. Creating one needs a pointer to one, and Ray has no null pointer, so
+# `follow` is only compiled, never called.
+struct Link:
+    next: *mut Link
+
+
+# The only stored value needs dropping.
+struct Noisy:
+    value: int32
+
+
+inst NoisyDrop for core.Drop[Noisy]:
+    def drop(self: Noisy):
+        printf("drop noisy %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+    return d.call(value, args)
+
+
+# A wrapper is passed and returned as its value.
+def scale(distance: Distance, factor: int32) -> Distance:
+    return Distance { meters = Meters { value = distance.meters.value * factor }, unit = () }
+
+
+# A pointer to a wrapper points to its value.
+def bump(meters: &mut Meters):
+    meters.value = meters.value + 1
+
+
+def read(distance: *Distance) -> int32:
+    return unsafe: distance.*.meters.value
+
+
+def swap(boxed: &mut Boxed):
+    let left = boxed.pair.left
+    boxed.pair.left = boxed.pair.right
+    boxed.pair.right = left
+
+
+def wrap(value: t) -> core.NoDrop[t]:
+    return core.NoDrop { value = move value }
+
+
+# Follows `count` links from `link`.
+def follow(link: *mut Link, count: int32) -> int32:
+    if count == 0:
+        return 0
+
+    return 1 + follow(unsafe: link.*.next, count - 1)
+
+
+# 13 + 13 + 7 + 3 + (13 - 9) + 2 + 3 + 9 + 13 + 1 = 68
+def main() -> int32:
+    # 3 * 4, then bumped once through a pointer
+    let mut distance = scale(Distance { meters = Meters { value = 3 }, unit = () }, 4)
+    bump(distance.meters.&mut)
+    let read_distance = read(distance.&)
+
+    let mut boxed = Boxed { pair = Pair { left = 7, right = 1 } }
+    swap(boxed.&mut)
+    swap(boxed.&mut)
+
+    # Generic wrappers of a scalar, a pointer, and a struct.
+    let scalar = wrap(3)
+    let pointer = wrap(distance.meters.&)
+    let pair = wrap(Pair { left = 2, right = 3 })
+
+    # Each closure captures one value, so its environment is that value: a
+    # `Meters`, so an `int32`, and a pointer to a `Distance`.
+    let meters = Meters { value = 9 }
+    let moved = invoke(() -> move meters, ())
+    let borrowed = invoke(() -> distance.meters.value, ())
+
+    # Dropping a wrapper passes its value.
+    let noisy = Noisy { value = 1 }
+
+    return read_distance + distance.meters.value + boxed.pair.left + scalar.value + pointer.value.*.value - 9 + pair.value.left + pair.value.right + moved.value + borrowed + noisy.value
