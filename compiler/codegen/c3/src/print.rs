@@ -1,11 +1,8 @@
 //! Printing of function definitions.
 //!
-//! The printer writes straight into a definition buffer and records, through
-//! the function's [`FunctionContext`], everything the printed code refers to:
-//! the aggregate types it spells and the functions it calls. Every type is
-//! recorded where it is printed, so a type can only appear in the output if its
-//! declaration will too. Statements are printed here; [`value`] prints operands
-//! and rvalues.
+//! The printer writes through a [`CWriter`], which records every aggregate
+//! type the printed code spells, and itself records every function the code
+//! calls. Statements are printed here; [`value`] prints operands and rvalues.
 //!
 //! A value of a zero-sized type holds nothing, so it is never stored, passed
 //! or returned: a local of such a type is not declared, an assignment to one
@@ -13,14 +10,15 @@
 //! a heap allocation is pure, and none of a zero-sized type allocates, so
 //! leaving an assignment out loses nothing.
 
-use std::fmt::{self, Write as _};
-
+use qbice::storage::intern::Interned;
 use rayc_mono_ir::{
+    MonoFunctionInstance,
     cfg::Terminator,
     function::{LocalKind, MonoFunction},
     instruction::{Call, Instruction},
-    operand::Operand,
+    operand::{Constant, Operand},
     place::Place,
+    ty::{AggregateType, MonoType},
 };
 
 use crate::{
@@ -28,47 +26,48 @@ use crate::{
         expr::PlaceExpr,
         name::{BlockName, LocalName},
         ty::Declaration,
+        writer::CWriter,
     },
-    context::FunctionContext,
+    projection::projected_type,
 };
 
 mod value;
 
 /// Prints the definition of one function.
 #[derive(Debug)]
-pub(crate) struct FunctionPrinter<'p, 'engine> {
-    context: &'p mut FunctionContext<'engine>,
-    function: &'p MonoFunction,
+pub(crate) struct FunctionPrinter<'f, 'engine> {
+    writer: CWriter<'engine>,
+    function: &'f MonoFunction,
+    /// Every function the printed code refers to, in the order the references
+    /// appear and possibly repeated.
+    callees: Vec<MonoFunctionInstance>,
 }
 
-impl<'p, 'engine> FunctionPrinter<'p, 'engine> {
-    pub(crate) const fn new(
-        context: &'p mut FunctionContext<'engine>,
-        function: &'p MonoFunction,
-    ) -> Self {
-        Self { context, function }
+impl<'f, 'engine> FunctionPrinter<'f, 'engine> {
+    /// A printer of `function` that continues writing into `writer`.
+    pub(crate) const fn new(writer: CWriter<'engine>, function: &'f MonoFunction) -> Self {
+        Self { writer, function, callees: Vec::new() }
     }
 
     /// Writes the definition of the function, headed by its `declaration`.
-    pub(crate) async fn print(&mut self, out: &mut String, declaration: &str) -> fmt::Result {
+    pub(crate) async fn print(&mut self, declaration: &str) {
         let function = self.function;
-        writeln!(out, "{declaration} {{")?;
+        self.writer.push(format_args!("{declaration} {{\n"));
 
         // locals other than parameters are declared up front, unless they
         // hold nothing
         let mut has_body_locals = false;
         for (local_id, local) in function.locals() {
-            if !is_declared_in_body(local.kind()) || self.context.is_zero_sized(local.ty()).await {
+            if !is_declared_in_body(local.kind()) || self.writer.is_zero_sized(local.ty()).await {
                 continue;
             }
-            let name = LocalName(local_id);
-            let declaration =
-                Declaration::new(local.ty(), &name, self.context.aggregate_registry());
-            writeln!(out, "    {declaration};")?;
+            self.writer.push("    ");
+            self.writer.write(&Declaration::new(local.ty(), &LocalName(local_id))).await;
+            self.writer.push(";\n");
             has_body_locals = true;
         }
         if has_body_locals {
-            out.push('\n');
+            self.writer.push("\n");
         }
 
         // blocks follow as labels, starting at the entry block, which C
@@ -78,49 +77,49 @@ impl<'p, 'engine> FunctionPrinter<'p, 'engine> {
             (*block_id != function.entry_block(), block_id.index())
         });
         for (block_id, block) in blocks {
-            writeln!(out, "{}:", BlockName(block_id))?;
+            self.writer.push(format_args!("{}:\n", BlockName(block_id)));
             for instruction in block.instructions() {
-                self.write_instruction(out, instruction).await?;
+                self.write_instruction(instruction).await;
             }
             let terminator =
                 block.terminator().expect("reachable MonoFunction block should have a terminator");
-            out.push_str("    ");
-            self.write_terminator(out, terminator).await?;
-            out.push('\n');
+            self.writer.push("    ");
+            self.write_terminator(terminator).await;
+            self.writer.push("\n");
         }
 
-        out.push('}');
-        Ok(())
+        self.writer.push("}");
+    }
+
+    /// The definition written, the functions it refers to, and the aggregate
+    /// types spelled by everything the writer was used for.
+    pub(crate) fn finish(self) -> (String, Vec<MonoFunctionInstance>, Vec<AggregateType>) {
+        let (definition, aggregates) = self.writer.finish();
+        (definition, self.callees, aggregates)
     }
 
     /// Writes the statement of `instruction` as a line of its own, or nothing
     /// if it only moves a value that holds nothing.
-    async fn write_instruction(
-        &mut self,
-        out: &mut String,
-        instruction: &Instruction,
-    ) -> fmt::Result {
+    async fn write_instruction(&mut self, instruction: &Instruction) {
         match instruction {
             Instruction::Assign(assign) => {
                 if self.is_place_zero_sized(assign.destination()).await {
-                    return Ok(());
+                    return;
                 }
-                write!(out, "    {} = ", PlaceExpr(assign.destination()))?;
-                self.write_rvalue(out, assign.value()).await?;
-                out.push_str(";\n");
-                Ok(())
+                self.writer.push(format_args!("    {} = ", PlaceExpr(assign.destination())));
+                self.write_rvalue(assign.value()).await;
+                self.writer.push(";\n");
             }
-            Instruction::Call(call) => self.write_call(out, call).await,
+            Instruction::Call(call) => self.write_call(call).await,
 
             // a zero-sized value is never allocated, so it is never freed
             Instruction::HeapFree(pointer) => {
                 if self.points_to_zero_sized(pointer).await {
-                    return Ok(());
+                    return;
                 }
-                out.push_str("    ray_free(");
-                self.write_operand(out, pointer).await?;
-                out.push_str(");\n");
-                Ok(())
+                self.writer.push("    ray_free(");
+                self.write_operand(pointer).await;
+                self.writer.push(");\n");
             }
         }
     }
@@ -128,86 +127,128 @@ impl<'p, 'engine> FunctionPrinter<'p, 'engine> {
     /// Writes `destination = callee(arguments);`. The call is always made,
     /// since it may have effects, but a result or an argument that holds
     /// nothing is not passed: the callee neither returns nor takes it.
-    async fn write_call(&mut self, out: &mut String, call: &Call) -> fmt::Result {
-        out.push_str("    ");
+    async fn write_call(&mut self, call: &Call) {
+        self.writer.push("    ");
         if let Some(destination) = call.destination()
             && !self.is_place_zero_sized(destination).await
         {
-            write!(out, "{} = ", PlaceExpr(destination))?;
+            self.writer.push(format_args!("{} = ", PlaceExpr(destination)));
         }
-        self.write_operand(out, call.callee()).await?;
+        self.write_operand(call.callee()).await;
 
-        out.push('(');
+        self.writer.push("(");
         let mut is_first = true;
         for argument in call.abi_arguments() {
             if self.is_operand_zero_sized(argument).await {
                 continue;
             }
             if !is_first {
-                out.push_str(", ");
+                self.writer.push(", ");
             }
             is_first = false;
-            self.write_operand(out, argument).await?;
+            self.write_operand(argument).await;
         }
-        out.push_str(");\n");
-        Ok(())
+        self.writer.push(");\n");
+    }
+
+    async fn write_terminator(&mut self, terminator: &Terminator) {
+        match terminator {
+            Terminator::Goto(target) => {
+                self.writer.push(format_args!("goto {};", BlockName(*target)));
+            }
+            Terminator::Branch(branch) => {
+                self.writer.push("if (");
+                self.write_operand(branch.condition()).await;
+                self.writer.push(format_args!(
+                    ") goto {}; else goto {};",
+                    BlockName(branch.then_block()),
+                    BlockName(branch.else_block())
+                ));
+            }
+            Terminator::Switch(switch) => {
+                self.writer.push("switch (");
+                self.write_operand(switch.discriminant()).await;
+                self.writer.push(") {");
+                for (value, target) in switch.targets() {
+                    self.writer.push(" case ");
+                    self.write_operand_constant(value).await;
+                    self.writer.push(format_args!(": goto {};", BlockName(target)));
+                }
+                self.writer
+                    .push(format_args!(" default: goto {}; }}", BlockName(switch.otherwise())));
+            }
+            // a function whose result holds nothing returns `void`
+            Terminator::Return(Some(value)) if !self.is_operand_zero_sized(value).await => {
+                self.writer.push("return ");
+                self.write_operand(value).await;
+                self.writer.push(";");
+            }
+            Terminator::Return(Some(_) | None) => self.writer.push("return;"),
+            Terminator::Unreachable => self.writer.push("__builtin_unreachable();"),
+        }
+    }
+
+    /// The type of `place`: the type of its local, narrowed by each
+    /// projection in turn.
+    async fn place_type(&self, place: &Place) -> Interned<MonoType> {
+        let mut ty = self.function.get_local(place.local()).ty().clone();
+        for projection in place.projections() {
+            ty = projected_type(self.writer.engine(), &ty, *projection).await;
+        }
+        ty
     }
 
     /// Whether `place` holds nothing.
-    async fn is_place_zero_sized(&mut self, place: &Place) -> bool {
-        self.context.is_place_zero_sized(self.function, place).await
+    async fn is_place_zero_sized(&self, place: &Place) -> bool {
+        let ty = self.place_type(place).await;
+        self.writer.is_zero_sized(&ty).await
     }
 
     /// Whether the value of `operand` holds nothing.
-    async fn is_operand_zero_sized(&mut self, operand: &Operand) -> bool {
-        self.context.is_operand_zero_sized(self.function, operand).await
+    async fn is_operand_zero_sized(&self, operand: &Operand) -> bool {
+        match operand {
+            Operand::Copy(place) => self.is_place_zero_sized(place).await,
+            Operand::Constant(constant) => self.is_constant_zero_sized(constant).await,
+            // a function is spelled as its address
+            Operand::Function(_) => false,
+        }
+    }
+
+    /// Whether `constant` holds nothing.
+    async fn is_constant_zero_sized(&self, constant: &Constant) -> bool {
+        match constant {
+            Constant::Unit => true,
+            Constant::EmptyAggregate(aggregate) => {
+                let ty = MonoType::Aggregate(aggregate.clone());
+                self.writer.is_zero_sized(&ty).await
+            }
+            Constant::Bool(_)
+            | Constant::Int8(_)
+            | Constant::Int16(_)
+            | Constant::Int32(_)
+            | Constant::Int64(_)
+            | Constant::Isize(_)
+            | Constant::Uint8(_)
+            | Constant::Uint16(_)
+            | Constant::Uint32(_)
+            | Constant::Uint64(_)
+            | Constant::Usize(_)
+            | Constant::Float32(_)
+            | Constant::CInt(_)
+            | Constant::CStr(_)
+            | Constant::NullPointer(_) => false,
+        }
     }
 
     /// Whether `pointer`, an operand of a pointer type, points to a value that
     /// holds nothing.
-    async fn points_to_zero_sized(&mut self, pointer: &Operand) -> bool {
+    async fn points_to_zero_sized(&self, pointer: &Operand) -> bool {
         match pointer {
             Operand::Copy(place) => {
-                let ty = self.context.place_type(self.function, place).await;
-                self.context.is_zero_sized(ty.assert_as_pointer().pointee()).await
+                let ty = self.place_type(place).await;
+                self.writer.is_zero_sized(ty.assert_as_pointer().pointee()).await
             }
             Operand::Constant(_) | Operand::Function(_) => false,
-        }
-    }
-
-    async fn write_terminator(&mut self, out: &mut String, terminator: &Terminator) -> fmt::Result {
-        match terminator {
-            Terminator::Goto(target) => write!(out, "goto {};", BlockName(*target)),
-            Terminator::Branch(branch) => {
-                out.push_str("if (");
-                self.write_operand(out, branch.condition()).await?;
-                write!(
-                    out,
-                    ") goto {}; else goto {};",
-                    BlockName(branch.then_block()),
-                    BlockName(branch.else_block())
-                )
-            }
-            Terminator::Switch(switch) => {
-                out.push_str("switch (");
-                self.write_operand(out, switch.discriminant()).await?;
-                out.push_str(") {");
-                for (value, target) in switch.targets() {
-                    out.push_str(" case ");
-                    self.write_operand_constant(out, value).await?;
-                    write!(out, ": goto {};", BlockName(target))?;
-                }
-                write!(out, " default: goto {}; }}", BlockName(switch.otherwise()))
-            }
-            // a function whose result holds nothing returns `void`
-            Terminator::Return(Some(value)) if !self.is_operand_zero_sized(value).await => {
-                out.push_str("return ");
-                self.write_operand(out, value).await?;
-                out.push(';');
-                Ok(())
-            }
-            Terminator::Return(Some(_) | None) => out.write_str("return;"),
-            Terminator::Unreachable => out.write_str("__builtin_unreachable();"),
         }
     }
 }

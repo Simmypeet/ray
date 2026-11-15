@@ -6,11 +6,10 @@
 //!
 //! The crate is organized around one unit of work, generating a function:
 //!
-//! - `c` renders C syntax, such as names, as allocation-free
-//!   [`std::fmt::Display`] adaptors that never query the engine;
+//! - `c` renders C syntax as allocation-free adaptors: names and expressions as
+//!   [`std::fmt::Display`], types as `WriteC`, which may ask the engine;
 //! - `roots` finds the functions generation starts from;
-//! - `aggregates` finds the aggregate types one function's code mentions;
-//! - `context` holds what generating one function has found so far;
+//! - `aggregates` collects the aggregate types one function's code spells;
 //! - `function` generates one function, reporting the functions and the
 //!   aggregate types it refers to;
 //! - `describe` tells what each generated item is in Ray, for a comment above
@@ -43,7 +42,6 @@ use crate::{
 
 mod aggregates;
 mod c;
-mod context;
 mod coordinator;
 mod describe;
 mod function;

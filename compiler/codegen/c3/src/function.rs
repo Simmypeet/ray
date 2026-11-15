@@ -17,8 +17,8 @@ use crate::{
     c::{
         name::{FunctionName, LinkName},
         ty::FunctionDeclaration,
+        writer::CWriter,
     },
-    context::FunctionContext,
     describe::describe_function,
     print::FunctionPrinter,
 };
@@ -110,15 +110,16 @@ async fn declare_extern(
     def_id: GlobalSymbolID,
     description: String,
 ) -> FunctionOutput {
-    let mut context = FunctionContext::new(engine);
     let name = LinkName::Extern(engine.get_name(def_id).await);
     let signature = engine.get_extern_def_signature(def_id).await;
 
-    context.use_signature(&signature).await;
-    let declaration = FunctionDeclaration::new(&signature, &name, context.aggregate_registry());
-    let declaration = format!("extern {declaration}");
+    let mut writer = CWriter::new(engine);
+    writer.push("extern ");
+    writer.write(&FunctionDeclaration::new(&signature, &name)).await;
+    let (declaration, aggregates) = writer.finish();
 
-    context.finish(MonoFunctionInstance::ExternDef(def_id), description, declaration, None)
+    let instance = MonoFunctionInstance::ExternDef(def_id);
+    FunctionOutput::new(instance, description, declaration, None, Vec::new(), aggregates)
 }
 
 /// Declares and defines a lowered function.
@@ -127,22 +128,20 @@ async fn define(
     function: &MonoFunction,
     description: String,
 ) -> FunctionOutput {
-    let mut context = FunctionContext::new(engine);
+    let mut writer = CWriter::new(engine);
 
-    // the declaration: its types are registered before they are spelled
-    context.use_signature(function.signature()).await;
+    // the declaration, taken out of the writer, which keeps the aggregates it
+    // spells
     let name = LinkName::Generated(FunctionName::of(function.instance()));
-    let declaration =
-        FunctionDeclaration::new(function.signature(), &name, context.aggregate_registry())
-            .with_parameters_of(function)
-            .to_string();
+    let declaration = FunctionDeclaration::new(function.signature(), &name);
+    writer.write(&declaration.with_parameters_of(function)).await;
+    let declaration = writer.take_text();
 
     // the definition repeats the declaration as its head
-    let mut definition = String::new();
-    FunctionPrinter::new(&mut context, function)
-        .print(&mut definition, &declaration)
-        .await
-        .expect("writing to a String cannot fail");
+    let mut printer = FunctionPrinter::new(writer, function);
+    printer.print(&declaration).await;
+    let (definition, callees, aggregates) = printer.finish();
 
-    context.finish(function.instance().clone(), description, declaration, Some(definition))
+    let instance = function.instance().clone();
+    FunctionOutput::new(instance, description, declaration, Some(definition), callees, aggregates)
 }

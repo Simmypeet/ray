@@ -1,7 +1,5 @@
 //! Printing of operands and rvalues.
 
-use std::fmt::{self, Write as _};
-
 use rayc_mono_ir::{
     MonoFunctionInstance,
     operand::{Constant, Operand},
@@ -22,49 +20,47 @@ use crate::{
 };
 
 impl FunctionPrinter<'_, '_> {
-    pub(super) async fn write_rvalue(&mut self, out: &mut String, value: &Rvalue) -> fmt::Result {
+    pub(super) async fn write_rvalue(&mut self, value: &Rvalue) {
         match value {
-            Rvalue::Use(operand) => self.write_operand(out, operand).await,
+            Rvalue::Use(operand) => self.write_operand(operand).await,
             // a place that holds nothing has no storage of its own
             Rvalue::AddressOf(address) => {
                 if self.is_place_zero_sized(address.place()).await {
-                    out.push_str(ZERO_SIZED_ADDRESS);
-                    return Ok(());
+                    self.writer.push(ZERO_SIZED_ADDRESS);
+                    return;
                 }
-                write!(out, "&{}", PlaceExpr(address.place()))
+                self.writer.push(format_args!("&{}", PlaceExpr(address.place())));
             }
             Rvalue::Unary(unary) => {
-                write!(out, "({}", unary_operator_token(unary.operator()))?;
-                self.write_operand(out, unary.operand()).await?;
-                out.push(')');
-                Ok(())
+                self.writer.push(format_args!("({}", unary_operator_token(unary.operator())));
+                self.write_operand(unary.operand()).await;
+                self.writer.push(")");
             }
             Rvalue::Binary(binary) => {
-                out.push('(');
-                self.write_operand(out, binary.left()).await?;
-                write!(out, " {} ", binary_operator_token(binary.operator()))?;
-                self.write_operand(out, binary.right()).await?;
-                out.push(')');
-                Ok(())
+                self.writer.push("(");
+                self.write_operand(binary.left()).await;
+                self.writer.push(format_args!(" {} ", binary_operator_token(binary.operator())));
+                self.write_operand(binary.right()).await;
+                self.writer.push(")");
             }
             Rvalue::Cast(cast) => {
-                self.context.use_type(cast.target()).await;
-                let target = TypeName::new(cast.target(), self.context.aggregate_registry());
-                write!(out, "(({target})(")?;
-                self.write_operand(out, cast.operand()).await?;
-                out.push_str("))");
-                Ok(())
+                self.writer.push("((");
+                self.writer.write(&TypeName::new(cast.target())).await;
+                self.writer.push(")(");
+                self.write_operand(cast.operand()).await;
+                self.writer.push("))");
             }
-            Rvalue::Reinterpret(reinterpret) => self.write_reinterpret(out, reinterpret).await,
+            Rvalue::Reinterpret(reinterpret) => self.write_reinterpret(reinterpret).await,
             // the aggregates are defined before every function, so `sizeof`
             // sees a complete type; a value that holds nothing needs no memory
             Rvalue::HeapAllocate(ty) => {
-                if self.context.is_zero_sized(ty).await {
-                    out.push_str(ZERO_SIZED_ADDRESS);
-                    return Ok(());
+                if self.writer.is_zero_sized(ty).await {
+                    self.writer.push(ZERO_SIZED_ADDRESS);
+                    return;
                 }
-                let ty = TypeName::new(ty, self.context.aggregate_registry());
-                write!(out, "ray_alloc(sizeof({ty}))")
+                self.writer.push("ray_alloc(sizeof(");
+                self.writer.write(&TypeName::new(ty)).await;
+                self.writer.push("))");
             }
         }
     }
@@ -76,72 +72,40 @@ impl FunctionPrinter<'_, '_> {
     /// The target is not zero-sized, since its assignment would be left out.
     /// A zero-sized source holds nothing, so what is read from the target
     /// cannot depend on it: the target is zero instead.
-    async fn write_reinterpret(
-        &mut self,
-        out: &mut String,
-        reinterpret: &Reinterpret,
-    ) -> fmt::Result {
-        self.context.use_type(reinterpret.target()).await;
-        let is_source_zero_sized = self.context.is_zero_sized(reinterpret.source()).await;
-        let target = TypeName::new(reinterpret.target(), self.context.aggregate_registry());
-        if is_source_zero_sized {
-            return write!(out, "(({target}){{ 0 }})");
+    async fn write_reinterpret(&mut self, reinterpret: &Reinterpret) {
+        let target = TypeName::new(reinterpret.target());
+        if self.writer.is_zero_sized(reinterpret.source()).await {
+            self.writer.push("((");
+            self.writer.write(&target).await;
+            self.writer.push("){ 0 })");
+            return;
         }
 
-        let source = TypeName::new(reinterpret.source(), self.context.aggregate_registry());
-        write!(out, "((union {{ {source} source; {target} target; }}){{ .source = ")?;
-        self.write_operand(out, reinterpret.operand()).await?;
-        out.push_str(" }).target");
-        Ok(())
+        self.writer.push("((union { ");
+        self.writer.write(&TypeName::new(reinterpret.source())).await;
+        self.writer.push(" source; ");
+        self.writer.write(&target).await;
+        self.writer.push(" target; }){ .source = ");
+        self.write_operand(reinterpret.operand()).await;
+        self.writer.push(" }).target");
     }
 
-    pub(super) async fn write_operand(
-        &mut self,
-        out: &mut String,
-        operand: &Operand,
-    ) -> fmt::Result {
+    pub(super) async fn write_operand(&mut self, operand: &Operand) {
         match operand {
-            Operand::Copy(place) => write!(out, "{}", PlaceExpr(place)),
-            Operand::Constant(constant) => self.write_operand_constant(out, constant).await,
+            Operand::Copy(place) => self.writer.push(PlaceExpr(place)),
+            Operand::Constant(constant) => self.write_operand_constant(constant).await,
             // naming a function is the only way to refer to one, so this is
             // where the functions the body needs are found
             Operand::Function(instance) => {
-                self.context.use_function(instance);
-                write!(out, "{}", self.link_name(instance).await)
+                self.callees.push(instance.clone());
+                let name = self.link_name(instance).await;
+                self.writer.push(name);
             }
         }
     }
 
-    pub(super) async fn write_operand_constant(
-        &mut self,
-        out: &mut String,
-        constant: &Constant,
-    ) -> fmt::Result {
-        self.use_constant_type(constant).await;
-        write!(out, "{}", ConstantExpr::new(constant, self.context.aggregate_registry()))
-    }
-
-    /// Records the aggregate types a constant is spelled with.
-    async fn use_constant_type(&mut self, constant: &Constant) {
-        match constant {
-            Constant::NullPointer(ty) => self.context.use_type(ty).await,
-            Constant::Unit
-            | Constant::EmptyAggregate(_)
-            | Constant::Bool(_)
-            | Constant::Int8(_)
-            | Constant::Int16(_)
-            | Constant::Int32(_)
-            | Constant::Int64(_)
-            | Constant::Isize(_)
-            | Constant::Uint8(_)
-            | Constant::Uint16(_)
-            | Constant::Uint32(_)
-            | Constant::Uint64(_)
-            | Constant::Usize(_)
-            | Constant::Float32(_)
-            | Constant::CInt(_)
-            | Constant::CStr(_) => {}
-        }
+    pub(super) async fn write_operand_constant(&mut self, constant: &Constant) {
+        self.writer.write(&ConstantExpr::new(constant)).await;
     }
 
     /// The name `instance` is linked under, which an `extern def` takes from
@@ -149,7 +113,7 @@ impl FunctionPrinter<'_, '_> {
     async fn link_name(&self, instance: &MonoFunctionInstance) -> LinkName {
         match instance {
             MonoFunctionInstance::ExternDef(def_id) => {
-                LinkName::Extern(self.context.engine().get_name(*def_id).await)
+                LinkName::Extern(self.writer.engine().get_name(*def_id).await)
             }
             MonoFunctionInstance::Body(_)
             | MonoFunctionInstance::NominalDrop(_)
