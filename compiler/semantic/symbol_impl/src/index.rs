@@ -15,7 +15,7 @@ use rayc_symbol::{GlobalSymbolID, SymbolID};
 use rayc_target::TargetID;
 use rayc_tokio::join_set::JoinSet;
 
-use crate::table::{Table, TableKey, get_table};
+use crate::table::{Table, TableKey, TableSummary, get_table};
 
 /// Locates the information of the symbols of a target, which is spread over
 /// the tables of its source files.
@@ -65,7 +65,7 @@ impl TableIndex {
     }
 
     /// Records the symbols and the source file of the given table.
-    fn insert_table(&mut self, table_key: Interned<TableKey>, table: &Table) {
+    fn insert_table(&mut self, table_key: Interned<TableKey>, table: &TableSummary) {
         for symbol_id in table.all_symbol_ids() {
             self.symbol_tables.insert(symbol_id, table_key.clone());
         }
@@ -94,15 +94,39 @@ pub struct TableIndexKey {
     pub target_id: TargetID,
 }
 
-/// Retrieves the table of the given key, handing the key back so that the
-/// table can be told apart from the ones retrieved by the other tasks.
-async fn load_table(
+/// A projection of the table of a source file for its [`TableSummary`].
+///
+/// The table changes with any edit to its file, whereas the symbols it
+/// stores rarely do: the index of the target reads the summaries, so that it
+/// recomputes only when a symbol is added or removed.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query)]
+#[value(Arc<TableSummary>)]
+struct TableSummaryKey {
+    table_key: Interned<TableKey>,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn table_summary_executor(
+    TableSummaryKey { table_key }: &TableSummaryKey,
+    engine: &TrackedEngine,
+) -> Arc<TableSummary> {
+    Arc::new(engine.get_table(table_key).await.summary())
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static TABLE_SUMMARY_EXECUTOR: Registration<Config> =
+    Registration::new::<TableSummaryKey, TableSummaryExecutor>();
+
+/// Retrieves the summary of the table of the given key, handing the key back
+/// so that the summary can be told apart from the ones retrieved by the other
+/// tasks.
+async fn load_table_summary(
     engine: TrackedEngine,
     table_key: Interned<TableKey>,
-) -> (Interned<TableKey>, Arc<Table>) {
-    let table = engine.get_table(&table_key).await;
+) -> (Interned<TableKey>, Arc<TableSummary>) {
+    let summary = engine.query(&TableSummaryKey { table_key: table_key.clone() }).await;
 
-    (table_key, table)
+    (table_key, summary)
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
@@ -112,19 +136,19 @@ async fn table_index_executor(
 ) -> Arc<TableIndex> {
     let root_key = engine.intern(TableKey::new_target_root(target_id, engine).await);
 
-    // retrieves the tables concurrently, one task per source file: the tables
-    // of the file modules are requested as soon as the table of the file
-    // declaring them is available
+    // retrieves the summaries of the tables concurrently, one task per source
+    // file: the tables of the file modules are requested as soon as the table
+    // of the file declaring them is available
     let mut index = TableIndex::default();
     let mut tasks = JoinSet::new();
-    tasks.spawn(load_table(engine.clone(), root_key));
+    tasks.spawn(load_table_summary(engine.clone(), root_key));
 
-    while let Some((table_key, table)) = tasks.next().await {
-        for next_table_key in table.next_tables() {
-            tasks.spawn(load_table(engine.clone(), next_table_key.clone()));
+    while let Some((table_key, summary)) = tasks.next().await {
+        for next_table_key in summary.next_tables() {
+            tasks.spawn(load_table_summary(engine.clone(), next_table_key.clone()));
         }
 
-        index.insert_table(table_key, &table);
+        index.insert_table(table_key, &summary);
     }
 
     index.sort_tables();
@@ -137,7 +161,7 @@ static TABLE_INDEX_EXECUTOR: Registration<Config> =
     Registration::new::<TableIndexKey, TableIndexExecutor>();
 
 /// A projection of the [`TableIndex`] for the key of the table storing the
-/// information of a single symbol.
+/// information of a single symbol, or `None` if no table stores it.
 ///
 /// The index changes whenever a symbol is added or removed anywhere in the
 /// target, whereas the table of a particular symbol rarely changes.
@@ -149,7 +173,7 @@ struct SymbolTableKey {
     symbol_id: GlobalSymbolID,
 }
 
-#[executor(config = Config)]
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
 async fn symbol_table_executor(
     &SymbolTableKey { symbol_id }: &SymbolTableKey,
     engine: &TrackedEngine,
@@ -161,15 +185,19 @@ async fn symbol_table_executor(
 static SYMBOL_TABLE_EXECUTOR: Registration<Config> =
     Registration::new::<SymbolTableKey, SymbolTableExecutor>();
 
-/// Returns the table storing the information of the given symbol.
+/// Returns the table storing the information of the given symbol, or `None`
+/// if no table stores it.
+///
+/// The projections of a symbol's information read the table through this,
+/// so it must not panic for a symbol that has been removed.
 #[extend]
-pub async fn get_symbol_table(self: &TrackedEngine, symbol_id: GlobalSymbolID) -> Arc<Table> {
-    let table_key = self
-        .query(&SymbolTableKey { symbol_id })
-        .await
-        .unwrap_or_else(|| panic!("the symbol {symbol_id:?} is not in any table"));
+pub async fn try_get_symbol_table(
+    self: &TrackedEngine,
+    symbol_id: GlobalSymbolID,
+) -> Option<Arc<Table>> {
+    let table_key = self.query(&SymbolTableKey { symbol_id }).await?;
 
-    self.get_table(&table_key).await
+    Some(self.get_table(&table_key).await)
 }
 
 /// Returns the module whose members the source file `source_id` defines, or
@@ -186,15 +214,19 @@ pub async fn get_source_file_module(
         .map(|module_id| source_id.target_id.make_global(module_id))
 }
 
-/// Returns the tables of every source file of the given target.
+/// Returns the summaries of the tables of every source file of the given
+/// target.
 #[extend]
-pub async fn get_target_tables(self: &TrackedEngine, target_id: TargetID) -> Vec<Arc<Table>> {
+pub async fn get_target_table_summaries(
+    self: &TrackedEngine,
+    target_id: TargetID,
+) -> Vec<Arc<TableSummary>> {
     let index = self.get_table_index(target_id).await;
 
-    let mut tables = Vec::new();
+    let mut summaries = Vec::new();
     for table_key in index.table_keys() {
-        tables.push(self.get_table(table_key).await);
+        summaries.push(self.query(&TableSummaryKey { table_key: table_key.clone() }).await);
     }
 
-    tables
+    summaries
 }

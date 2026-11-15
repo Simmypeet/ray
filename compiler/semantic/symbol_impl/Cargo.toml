@@ -20,6 +20,7 @@ rayc_arena = { path = "../../base/arena" }
 rayc_tokio = { path = "../../base/tokio" }
 rayc_parser = { path = "../../syntax/parser" }
 rayc_qbice = { path = "../../base/qbice" }
+paste = { workspace = true }
 qbice = { workspace = true }
 linkme = { workspace = true }
 tokio = { workspace = true }

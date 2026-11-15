@@ -131,9 +131,6 @@ impl Table {
     pub(crate) fn push_diagnostic(&mut self, diagnostic: Diagnostic) {
         self.diagnostics.push(diagnostic);
     }
-
-    #[must_use]
-    pub fn member(&self, id: SymbolID) -> Option<&Interned<Member>> { self.members.get(&id) }
 }
 
 #[derive(Debug, Default)]
@@ -256,146 +253,155 @@ impl MemberBuilder {
     }
 }
 
+/// The getters of the information of a symbol give `None` for a symbol that
+/// is not in the table: the projections of the table read them, and must
+/// not panic.
+#[allow(clippy::option_option)]
 impl Table {
     #[must_use]
     pub fn new() -> Self { Self::default() }
 
     #[must_use]
-    pub fn get_symbol_kind(&self, symbol_id: SymbolID) -> SymbolKind {
-        self.symbol_kinds.get(&symbol_id).copied().unwrap()
+    pub fn get_members(&self, symbol_id: SymbolID) -> Option<Interned<Member>> {
+        self.members.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn get_span(&self, symbol_id: SymbolID) -> Option<RelativeSpan> {
-        self.spans.get(&symbol_id).copied().unwrap()
+    pub fn get_symbol_kind(&self, symbol_id: SymbolID) -> Option<SymbolKind> {
+        self.symbol_kinds.get(&symbol_id).copied()
     }
 
     #[must_use]
-    pub fn get_definition_span(&self, symbol_id: SymbolID) -> Option<RelativeSpan> {
-        self.definition_spans.get(&symbol_id).copied().unwrap()
+    pub fn get_span(&self, symbol_id: SymbolID) -> Option<Option<RelativeSpan>> {
+        self.spans.get(&symbol_id).copied()
     }
 
     #[must_use]
-    pub fn get_name(&self, symbol_id: SymbolID) -> Interned<str> {
-        self.names.get(&symbol_id).cloned().unwrap()
+    pub fn get_definition_span(&self, symbol_id: SymbolID) -> Option<Option<RelativeSpan>> {
+        self.definition_spans.get(&symbol_id).copied()
     }
 
     #[must_use]
-    pub fn get_declared_accessibility(&self, symbol_id: SymbolID) -> DeclaredAccessibility {
-        self.accessibilities.get(&symbol_id).copied().unwrap()
+    pub fn get_name(&self, symbol_id: SymbolID) -> Option<Interned<str>> {
+        self.names.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn get_parent(&self, symbol_id: SymbolID) -> Option<SymbolID> {
-        self.parents.get(&symbol_id).copied().unwrap()
+    pub fn get_declared_accessibility(&self, symbol_id: SymbolID) -> Option<DeclaredAccessibility> {
+        self.accessibilities.get(&symbol_id).copied()
     }
 
     #[must_use]
-    pub fn get_parameter_list_syntax(&self, symbol_id: SymbolID) -> Option<ParameterList> {
-        self.syntaxes.parameter_lists.get(&symbol_id).cloned().unwrap()
+    pub fn get_parent(&self, symbol_id: SymbolID) -> Option<Option<SymbolID>> {
+        self.parents.get(&symbol_id).copied()
     }
 
     #[must_use]
-    pub fn get_return_type_syntax(&self, symbol_id: SymbolID) -> Option<ReturnType> {
-        self.syntaxes.return_types.get(&symbol_id).cloned().unwrap()
+    pub fn get_parameter_list_syntax(&self, symbol_id: SymbolID) -> Option<Option<ParameterList>> {
+        self.syntaxes.parameter_lists.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn get_effect_row_syntax(&self, symbol_id: SymbolID) -> Option<EffectRowAnnotation> {
-        self.syntaxes.effect_rows.get(&symbol_id).cloned().unwrap()
+    pub fn get_return_type_syntax(&self, symbol_id: SymbolID) -> Option<Option<ReturnType>> {
+        self.syntaxes.return_types.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn get_def_body_syntax(&self, symbol_id: SymbolID) -> Option<Block> {
-        self.syntaxes.def_bodies.get(&symbol_id).cloned().unwrap()
+    pub fn get_effect_row_syntax(
+        &self,
+        symbol_id: SymbolID,
+    ) -> Option<Option<EffectRowAnnotation>> {
+        self.syntaxes.effect_rows.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn get_struct_body_syntax(&self, symbol_id: SymbolID) -> Option<StructBody> {
-        self.syntaxes.struct_bodies.get(&symbol_id).cloned().unwrap()
+    pub fn get_def_body_syntax(&self, symbol_id: SymbolID) -> Option<Option<Block>> {
+        self.syntaxes.def_bodies.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn is_linear_type(&self, symbol_id: SymbolID) -> bool {
-        self.syntaxes.linear_types.get(&symbol_id).copied().unwrap()
+    pub fn get_struct_body_syntax(&self, symbol_id: SymbolID) -> Option<Option<StructBody>> {
+        self.syntaxes.struct_bodies.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn is_variadic_def(&self, symbol_id: SymbolID) -> bool {
-        self.syntaxes.variadic_defs.get(&symbol_id).copied().unwrap()
+    pub fn is_linear_type(&self, symbol_id: SymbolID) -> Option<bool> {
+        self.syntaxes.linear_types.get(&symbol_id).copied()
     }
 
     #[must_use]
-    pub fn get_type_parameter_list_syntax(&self, symbol_id: SymbolID) -> Option<TypeParameterList> {
-        self.syntaxes.type_parameters.get(&symbol_id).cloned().unwrap()
+    pub fn is_variadic_def(&self, symbol_id: SymbolID) -> Option<bool> {
+        self.syntaxes.variadic_defs.get(&symbol_id).copied()
+    }
+
+    #[must_use]
+    pub fn get_type_parameter_list_syntax(
+        &self,
+        symbol_id: SymbolID,
+    ) -> Option<Option<TypeParameterList>> {
+        self.syntaxes.type_parameters.get(&symbol_id).cloned()
     }
 
     #[must_use]
     pub fn get_given_parameter_list_syntax(
         &self,
         symbol_id: SymbolID,
-    ) -> Option<GivenParameterList> {
-        self.syntaxes.given_parameter_lists.get(&symbol_id).cloned().unwrap()
+    ) -> Option<Option<GivenParameterList>> {
+        self.syntaxes.given_parameter_lists.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn get_where_clause_syntax(&self, symbol_id: SymbolID) -> Option<WhereClause> {
-        self.syntaxes.where_clauses.get(&symbol_id).cloned().unwrap()
+    pub fn get_where_clause_syntax(&self, symbol_id: SymbolID) -> Option<Option<WhereClause>> {
+        self.syntaxes.where_clauses.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn get_instance_trait_syntax(&self, symbol_id: SymbolID) -> Option<SyntaxPath> {
-        self.syntaxes.instance_traits.get(&symbol_id).cloned().unwrap()
+    pub fn get_instance_trait_syntax(&self, symbol_id: SymbolID) -> Option<Option<SyntaxPath>> {
+        self.syntaxes.instance_traits.get(&symbol_id).cloned()
     }
 
     #[must_use]
     pub fn get_marker_implementation_marker_syntax(
         &self,
         symbol_id: SymbolID,
-    ) -> Option<SyntaxPath> {
-        self.syntaxes.marker_implementation_markers.get(&symbol_id).cloned().unwrap()
+    ) -> Option<Option<SyntaxPath>> {
+        self.syntaxes.marker_implementation_markers.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn is_negative_marker_implementation(&self, symbol_id: SymbolID) -> bool {
-        self.syntaxes.negative_marker_implementations.get(&symbol_id).copied().unwrap()
+    pub fn is_negative_marker_implementation(&self, symbol_id: SymbolID) -> Option<bool> {
+        self.syntaxes.negative_marker_implementations.get(&symbol_id).copied()
     }
 
     #[must_use]
-    pub fn get_marker_implementation_type_syntax(&self, symbol_id: SymbolID) -> Option<Type> {
-        self.syntaxes.marker_implementation_types.get(&symbol_id).cloned().unwrap()
+    pub fn get_marker_implementation_type_syntax(
+        &self,
+        symbol_id: SymbolID,
+    ) -> Option<Option<Type>> {
+        self.syntaxes.marker_implementation_types.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn get_type_definition_syntax(&self, symbol_id: SymbolID) -> Option<Type> {
-        self.syntaxes.type_definitions.get(&symbol_id).cloned().unwrap()
+    pub fn get_type_definition_syntax(&self, symbol_id: SymbolID) -> Option<Option<Type>> {
+        self.syntaxes.type_definitions.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn get_kind_ascription_syntax(&self, symbol_id: SymbolID) -> Option<KindAscription> {
-        self.syntaxes.kind_ascriptions.get(&symbol_id).cloned().unwrap()
+    pub fn get_kind_ascription_syntax(
+        &self,
+        symbol_id: SymbolID,
+    ) -> Option<Option<KindAscription>> {
+        self.syntaxes.kind_ascriptions.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn get_variant_payload_syntax(&self, symbol_id: SymbolID) -> Option<Type> {
-        self.syntaxes.variant_payloads.get(&symbol_id).cloned().unwrap()
+    pub fn get_variant_payload_syntax(&self, symbol_id: SymbolID) -> Option<Option<Type>> {
+        self.syntaxes.variant_payloads.get(&symbol_id).cloned()
     }
 
     #[must_use]
-    pub fn get_imports_syntax(&self, symbol_id: SymbolID) -> Interned<[Import]> {
-        self.syntaxes.imports.get(&symbol_id).cloned().unwrap()
-    }
-
-    /// Returns the ID of the source file of this table, or `None` if the file
-    /// could not be loaded.
-    #[must_use]
-    pub const fn source_id(&self) -> Option<LocalSourceID> { self.source_id }
-
-    /// Returns the keys of the tables of the file modules declared in this
-    /// file.
-    #[must_use]
-    pub fn next_tables(&self) -> impl DoubleEndedIterator<Item = &Interned<TableKey>> {
-        self.next_tables.iter()
+    pub fn get_imports_syntax(&self, symbol_id: SymbolID) -> Option<Interned<[Import]>> {
+        self.syntaxes.imports.get(&symbol_id).cloned()
     }
 
     /// Records the table of a file module declared in this file, which stores
@@ -622,29 +628,74 @@ impl Table {
     }
 }
 
+/// What the index of a target and the symbols of a target by kind need from
+/// the table of a source file: the symbols it stores, without their syntax,
+/// which changes with any edit to the file, even inside a function body.
+#[derive(Debug, StableHash, Encode, Decode)]
+pub struct TableSummary {
+    /// The symbols the table stores, with their kinds.
+    symbols: Vec<(SymbolID, SymbolKind)>,
+
+    /// The symbols declared with a parameter list.
+    callable_def_ids: Vec<SymbolID>,
+
+    /// The ID of the source file of the table, or `None` if the file could
+    /// not be loaded.
+    source_id: Option<LocalSourceID>,
+
+    /// The tables of the file modules declared in the file, in declaration
+    /// order.
+    next_tables: Vec<Interned<TableKey>>,
+}
+
 impl Table {
+    /// Summarizes the symbols this table stores.
+    #[must_use]
+    pub fn summary(&self) -> TableSummary {
+        TableSummary {
+            symbols: self.symbol_kinds.iter().map(|(id, kind)| (*id, *kind)).collect(),
+            callable_def_ids: self.syntaxes.parameter_lists.keys().copied().collect(),
+            source_id: self.source_id,
+            next_tables: self.next_tables.clone(),
+        }
+    }
+}
+
+impl TableSummary {
     pub fn all_symbol_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
-        self.symbol_kinds.keys().copied()
+        self.symbols.iter().map(|(id, _)| *id)
     }
 
     /// Returns the IDs of the symbols of the given kind declared in this
     /// file.
     pub fn symbol_ids_of_kind(&self, kind: SymbolKind) -> impl Iterator<Item = SymbolID> + '_ {
-        self.symbol_kinds
+        self.symbols
             .iter()
             .filter_map(move |(id, symbol_kind)| (*symbol_kind == kind).then_some(*id))
     }
 
     pub fn all_adt_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
-        self.symbol_kinds.iter().filter_map(|(id, kind)| kind.is_adt().then_some(*id))
+        self.symbols.iter().filter_map(|(id, kind)| kind.is_adt().then_some(*id))
     }
 
     pub fn all_def_with_body_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
-        self.symbol_kinds.iter().filter_map(|(id, kind)| kind.has_def_body().then_some(*id))
+        self.symbols.iter().filter_map(|(id, kind)| kind.has_def_body().then_some(*id))
     }
 
     pub fn all_callable_def_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
-        self.syntaxes.parameter_lists.keys().copied()
+        self.callable_def_ids.iter().copied()
+    }
+
+    /// Returns the ID of the source file of the table, or `None` if the file
+    /// could not be loaded.
+    #[must_use]
+    pub const fn source_id(&self) -> Option<LocalSourceID> { self.source_id }
+
+    /// Returns the keys of the tables of the file modules declared in the
+    /// file.
+    #[must_use]
+    pub fn next_tables(&self) -> impl DoubleEndedIterator<Item = &Interned<TableKey>> {
+        self.next_tables.iter()
     }
 }
 
