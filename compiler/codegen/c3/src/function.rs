@@ -11,34 +11,60 @@ use rayc_mono_ir::{
     instruction::{Call, Instruction},
     operand::Operand,
     rvalue::Rvalue,
+    signature::get_extern_def_signature,
+    ty::AggregateType,
 };
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::name::get_name;
+use rayc_symbol::{GlobalSymbolID, name::get_name};
 
-use crate::c::name::{FunctionName, LinkName};
+use crate::{
+    c::{
+        name::{FunctionName, LinkName},
+        ty::FunctionDeclaration,
+    },
+    context::FunctionContext,
+};
 
 /// What generating one function produced.
 #[derive(Debug)]
 pub(crate) struct FunctionOutput {
     instance: MonoFunctionInstance,
-    /// The name the function is defined or declared under.
-    name: LinkName,
+    /// The C declaration of the function, without the trailing `;`.
+    declaration: String,
     /// Every function the generated code refers to, in the order the
     /// references appear and possibly repeated.
     callees: Vec<MonoFunctionInstance>,
+    /// Every aggregate type the generated code mentions, closed under the
+    /// types of their members.
+    aggregates: Vec<AggregateType>,
 }
 
 impl FunctionOutput {
+    pub(crate) const fn new(
+        instance: MonoFunctionInstance,
+        declaration: String,
+        callees: Vec<MonoFunctionInstance>,
+        aggregates: Vec<AggregateType>,
+    ) -> Self {
+        Self { instance, declaration, callees, aggregates }
+    }
+
     /// The function that was generated.
     pub(crate) const fn instance(&self) -> &MonoFunctionInstance { &self.instance }
 
-    /// The name the function is defined or declared under.
-    pub(crate) const fn name(&self) -> &LinkName { &self.name }
+    /// The C declaration of the function, without the trailing `;`.
+    pub(crate) fn declaration(&self) -> &str { &self.declaration }
 
     /// The functions the generated code refers to, which must be generated
     /// too.
     pub(crate) fn callees(&self) -> impl Iterator<Item = &MonoFunctionInstance> {
         self.callees.iter()
+    }
+
+    /// The aggregate types the generated code mentions, which must be
+    /// declared, in no particular order.
+    pub(crate) fn aggregates(&self) -> impl Iterator<Item = &AggregateType> {
+        self.aggregates.iter()
     }
 }
 
@@ -48,41 +74,67 @@ pub(crate) async fn generate_function(
     instance: MonoFunctionInstance,
 ) -> FunctionOutput {
     match instance {
-        // provided by the C environment: there is no body to lower, and so
-        // nothing it refers to
-        MonoFunctionInstance::ExternDef(def_id) => FunctionOutput {
-            name: LinkName::Extern(engine.get_name(def_id).await),
-            instance,
-            callees: Vec::new(),
-        },
+        MonoFunctionInstance::ExternDef(def_id) => declare_extern(engine, def_id).await,
 
         MonoFunctionInstance::Body(_)
         | MonoFunctionInstance::NominalDrop(_)
         | MonoFunctionInstance::CoroutineResume(_)
         | MonoFunctionInstance::CoroutineDrop(_) => {
             let function = engine.get_mono_function(instance).await;
-            FunctionGenerator::new(&function).generate()
+            FunctionGenerator::new(engine, &function).generate().await
         }
     }
 }
 
-/// Walks the body of one lowered function.
+/// Declares an `extern def`, which the C environment provides: there is no
+/// body to lower, so it refers to no function.
 ///
-/// For now it only records the functions the body refers to; it is the
-/// skeleton that will print the body as C.
-#[derive(Debug)]
-struct FunctionGenerator<'f> {
-    function: &'f MonoFunction,
-    callees: Vec<MonoFunctionInstance>,
+/// It is declared under its source name, through its declared signature, with
+/// unnamed parameters, since it has no parameter locals.
+async fn declare_extern(engine: &TrackedEngine, def_id: GlobalSymbolID) -> FunctionOutput {
+    let mut context = FunctionContext::new(engine);
+    let name = LinkName::Extern(engine.get_name(def_id).await);
+    let signature = engine.get_extern_def_signature(def_id).await;
+
+    context.use_signature(&signature).await;
+    let declaration = FunctionDeclaration::new(&signature, &name, context.aggregate_registry());
+    let declaration = format!("extern {declaration}");
+
+    context.finish(MonoFunctionInstance::ExternDef(def_id), declaration)
 }
 
-impl<'f> FunctionGenerator<'f> {
-    const fn new(function: &'f MonoFunction) -> Self { Self { function, callees: Vec::new() } }
+/// Generates one lowered function.
+///
+/// For now it writes the declaration and walks the body only for the
+/// functions it refers to; it is the skeleton that will print the body as C.
+#[derive(Debug)]
+struct FunctionGenerator<'f, 'engine> {
+    context: FunctionContext<'engine>,
+    function: &'f MonoFunction,
+}
 
-    fn generate(mut self) -> FunctionOutput {
-        // every block, in arena order; which order does not matter, since only
-        // the set of callees is observable
-        for (_, block) in self.function.blocks() {
+impl<'f, 'engine> FunctionGenerator<'f, 'engine> {
+    fn new(engine: &'engine TrackedEngine, function: &'f MonoFunction) -> Self {
+        Self { context: FunctionContext::new(engine), function }
+    }
+
+    async fn generate(mut self) -> FunctionOutput {
+        let function = self.function;
+
+        // the declaration: its types are registered before they are spelled
+        self.context.use_signature(function.signature()).await;
+        let name = LinkName::Generated(FunctionName::of(function.instance()));
+        let declaration = FunctionDeclaration::new(
+            function.signature(),
+            &name,
+            self.context.aggregate_registry(),
+        )
+        .with_parameters_of(function)
+        .to_string();
+
+        // the body, in arena order: which order does not matter, since only
+        // the set of callees is observable so far
+        for (_, block) in function.blocks() {
             for instruction in block.instructions() {
                 self.visit_instruction(instruction);
             }
@@ -91,12 +143,7 @@ impl<'f> FunctionGenerator<'f> {
             self.visit_terminator(terminator);
         }
 
-        let instance = self.function.instance().clone();
-        FunctionOutput {
-            name: LinkName::Generated(FunctionName::of(&instance)),
-            instance,
-            callees: self.callees,
-        }
+        self.context.finish(function.instance().clone(), declaration)
     }
 
     fn visit_instruction(&mut self, instruction: &Instruction) {
@@ -144,7 +191,7 @@ impl<'f> FunctionGenerator<'f> {
     /// to another function.
     fn visit_operand(&mut self, operand: &Operand) {
         match operand {
-            Operand::Function(instance) => self.callees.push(instance.clone()),
+            Operand::Function(instance) => self.context.use_function(instance),
             Operand::Copy(_) | Operand::Constant(_) => {}
         }
     }

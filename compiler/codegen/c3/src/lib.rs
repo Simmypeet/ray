@@ -9,7 +9,10 @@
 //! - `c` renders C syntax, such as names, as allocation-free
 //!   [`std::fmt::Display`] adaptors that never query the engine;
 //! - `roots` finds the functions generation starts from;
-//! - `function` generates one function, reporting the functions it refers to;
+//! - `aggregates` finds the aggregate types one function's code mentions;
+//! - `context` holds what generating one function has found so far;
+//! - `function` generates one function, reporting the functions and the
+//!   aggregate types it refers to;
 //! - `coordinator` schedules every function reachable from the roots, each
 //!   once;
 //! - `unit` assembles the generated functions into a translation unit.
@@ -33,7 +36,9 @@ use crate::{
     unit::TranslationUnit,
 };
 
+mod aggregates;
 mod c;
+mod context;
 mod coordinator;
 mod function;
 mod roots;
@@ -63,7 +68,8 @@ impl CTranslationUnitOptions {
 /// from the definitions in `target_id` that are polymorphic over lifetimes at
 /// most.
 ///
-/// For now, the reachable functions are only listed in comments.
+/// For now, the unit only declares the reachable functions and the aggregate
+/// types they use.
 pub async fn write_c_translation_unit(
     engine: &TrackedEngine,
     target_id: TargetID,

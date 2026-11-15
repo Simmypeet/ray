@@ -1,8 +1,11 @@
 //! The sections of a generated C translation unit.
 
-use std::fmt::{self, Display};
+use std::{
+    collections::BTreeSet,
+    fmt::{self, Display},
+};
 
-use crate::coordinator::GeneratedFunctions;
+use crate::{c::name::AggregateName, coordinator::GeneratedFunctions, function::FunctionOutput};
 
 /// The includes, and the runtime functions the generated code calls.
 ///
@@ -32,24 +35,45 @@ void ray_check_heap(void);
 
 /// A generated C translation unit, which renders through [`Display`].
 ///
-/// For now, each generated function is only listed, by name, in a comment.
+/// For now, it only declares: every aggregate type, as an incomplete struct,
+/// and every function.
 #[derive(Debug)]
 pub(crate) struct TranslationUnit {
+    /// The aggregates of every function, sorted by name. A `typedef` of an
+    /// incomplete struct may come in any order, so sorting only keeps the
+    /// output stable.
+    aggregates: BTreeSet<AggregateName>,
     functions: GeneratedFunctions,
 }
 
 impl TranslationUnit {
-    pub(crate) const fn new(functions: GeneratedFunctions) -> Self { Self { functions } }
+    pub(crate) fn new(functions: GeneratedFunctions) -> Self {
+        let aggregates = functions
+            .values()
+            .flat_map(FunctionOutput::aggregates)
+            .map(AggregateName::of)
+            .collect();
+        Self { aggregates, functions }
+    }
 }
 
 impl Display for TranslationUnit {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(PRELUDE)?;
 
-        writeln!(formatter, "/* Reachable functions */")?;
-        for function in self.functions.values() {
-            writeln!(formatter, "/* {} */", function.name())?;
+        // a pointer to an incomplete struct can be spelled anywhere, and so
+        // can a by-value parameter or result in a declaration
+        writeln!(formatter, "/* Aggregate type forward declarations */")?;
+        for name in &self.aggregates {
+            writeln!(formatter, "typedef struct {name} {};", name.typedef())?;
         }
-        Ok(())
+        writeln!(formatter)?;
+
+        // declarations may come in any order; these follow the instances
+        writeln!(formatter, "/* Function forward declarations */")?;
+        for function in self.functions.values() {
+            writeln!(formatter, "{};", function.declaration())?;
+        }
+        writeln!(formatter)
     }
 }
