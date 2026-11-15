@@ -45,7 +45,7 @@ mod c;
 mod coordinator;
 mod describe;
 mod function;
-mod print;
+mod function_print;
 mod projection;
 mod roots;
 mod unit;

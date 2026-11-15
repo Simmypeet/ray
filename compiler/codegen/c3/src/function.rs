@@ -20,7 +20,7 @@ use crate::{
         writer::CWriter,
     },
     describe::describe_function,
-    print::FunctionPrinter,
+    function_print::FunctionPrinter,
 };
 
 /// What generating one function produced.

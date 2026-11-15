@@ -16,7 +16,7 @@ use crate::{
         name::{FunctionName, LinkName},
         ty::TypeName,
     },
-    print::FunctionPrinter,
+    function_print::FunctionPrinter,
 };
 
 impl FunctionPrinter<'_, '_> {
