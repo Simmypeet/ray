@@ -25,6 +25,15 @@ impl<T: 'static> JoinSet<T> {
         self.inner.spawn(future);
     }
 
+    /// The number of tasks in the set that have not been taken out by
+    /// [`Self::next`] yet, finished or not.
+    #[must_use]
+    pub fn len(&self) -> usize { self.inner.len() }
+
+    /// Whether every task in the set has been taken out by [`Self::next`].
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.inner.is_empty() }
+
     /// Awaits all tasks in the list, ensuring they complete before proceeding.
     pub async fn ensure_join_all(&mut self) {
         while let Some(task) = self.inner.join_next().await {

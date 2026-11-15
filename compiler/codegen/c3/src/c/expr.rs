@@ -9,12 +9,10 @@ use rayc_mono_ir::{
     rvalue::{BinaryOperator, UnaryOperator},
 };
 
-use crate::{
-    aggregates::AggregateRegistry,
-    c::{
-        name::{FieldName, LocalName},
-        ty::TypeName,
-    },
+use crate::c::{
+    name::{FieldName, LocalName},
+    ty::TypeName,
+    writer::{CWriter, WriteC},
 };
 
 /// The address of every place of a zero-sized type, which has no storage of
@@ -33,8 +31,8 @@ pub(crate) struct PlaceExpr<'a>(pub(crate) &'a Place);
 
 impl Display for PlaceExpr<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // The last projection is outermost: open every dereference in
-        // reverse, then apply the projections in order around the local.
+        // the last projection is outermost: open every dereference in
+        // reverse, then apply the projections in order around the local
         let projections = self.0.projections();
         for projection in projections.iter().rev() {
             if FieldName::of_projection(*projection).is_none() {
@@ -59,37 +57,38 @@ impl Display for PlaceExpr<'_> {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ConstantExpr<'a> {
     constant: &'a Constant,
-    layouts: &'a AggregateRegistry,
 }
 
 impl<'a> ConstantExpr<'a> {
-    pub(crate) const fn new(constant: &'a Constant, layouts: &'a AggregateRegistry) -> Self {
-        Self { constant, layouts }
-    }
+    pub(crate) const fn new(constant: &'a Constant) -> Self { Self { constant } }
 }
 
-impl Display for ConstantExpr<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl WriteC for ConstantExpr<'_> {
+    async fn write_c(&self, writer: &mut CWriter<'_>) {
         match self.constant {
             Constant::Unit | Constant::EmptyAggregate(_) => {
                 panic!("a zero-sized constant is never spelled: {:?}", self.constant)
             }
-            Constant::Bool(value) => value.fmt(formatter),
-            Constant::Int8(value) => write!(formatter, "INT8_C({value})"),
-            Constant::Int16(value) => write!(formatter, "INT16_C({value})"),
-            Constant::Int32(value) => write!(formatter, "INT32_C({value})"),
-            Constant::Int64(value) => write!(formatter, "INT64_C({value})"),
-            Constant::Uint8(value) => write!(formatter, "UINT8_C({value})"),
-            Constant::Uint16(value) => write!(formatter, "UINT16_C({value})"),
-            Constant::Uint32(value) => write!(formatter, "UINT32_C({value})"),
-            Constant::Uint64(value) => write!(formatter, "UINT64_C({value})"),
-            Constant::Isize(value) => write!(formatter, "((intptr_t)INT64_C({value}))"),
-            Constant::Usize(value) => write!(formatter, "((uintptr_t)UINT64_C({value}))"),
-            Constant::Float32(bits) => Float32Literal(f32::from_bits(*bits)).fmt(formatter),
-            Constant::CInt(value) => value.fmt(formatter),
-            Constant::CStr(value) => StringLiteral(value).fmt(formatter),
+            Constant::Bool(value) => writer.push(value),
+            // the `<stdint.h>` macros give each literal its exact width
+            Constant::Int8(value) => writer.push(format_args!("INT8_C({value})")),
+            Constant::Int16(value) => writer.push(format_args!("INT16_C({value})")),
+            Constant::Int32(value) => writer.push(format_args!("INT32_C({value})")),
+            Constant::Int64(value) => writer.push(format_args!("INT64_C({value})")),
+            Constant::Uint8(value) => writer.push(format_args!("UINT8_C({value})")),
+            Constant::Uint16(value) => writer.push(format_args!("UINT16_C({value})")),
+            Constant::Uint32(value) => writer.push(format_args!("UINT32_C({value})")),
+            Constant::Uint64(value) => writer.push(format_args!("UINT64_C({value})")),
+            Constant::Isize(value) => writer.push(format_args!("((intptr_t)INT64_C({value}))")),
+            Constant::Usize(value) => writer.push(format_args!("((uintptr_t)UINT64_C({value}))")),
+            Constant::Float32(bits) => writer.push(Float32Literal(f32::from_bits(*bits))),
+            Constant::CInt(value) => writer.push(value),
+            Constant::CStr(value) => writer.push(StringLiteral(value)),
+            // the only constant that spells a type
             Constant::NullPointer(ty) => {
-                write!(formatter, "(({})0)", TypeName::new(ty, self.layouts))
+                writer.push("((");
+                writer.write(&TypeName::new(ty)).await;
+                writer.push(")0)");
             }
         }
     }

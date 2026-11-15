@@ -1,16 +1,20 @@
 //! C identifiers for generated items.
 //!
-//! Every name is a small `Copy` value that renders itself through
-//! [`fmt::Display`], so names are written straight into the output buffer
-//! instead of being materialized as intermediate `String`s. Names derived from
-//! semantic identities embed a stable hash, which keeps them deterministic
-//! across compilations and independent of discovery order.
+//! Every name is a small value that renders itself through [`fmt::Display`],
+//! so names are written straight into the output buffer instead of being
+//! materialized as intermediate `String`s.
+//!
+//! Names derived from semantic identities embed a stable hash rather than a
+//! counter. A name then depends only on what it names, never on which function
+//! happened to be generated first, which keeps the output the same however
+//! functions are scheduled.
 
 use std::fmt;
 
 use qbice::{
     StableHash,
     stable_hash::{Sip128Hasher, StableHasher},
+    storage::intern::Interned,
 };
 use rayc_coroutine_frame_layout::savable::Savable;
 use rayc_ir::{address::Local, ir_closure::CaptureID};
@@ -29,6 +33,9 @@ use rayc_semantic_element::struct_body::FieldID;
 use rayc_symbol::GlobalSymbolID;
 
 /// A domain-separated 128-bit stable hash, rendered in base 62.
+///
+/// The domain keeps equal values of different kinds of items, such as a
+/// coroutine's resume and drop functions, from sharing a name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct StableID(u128);
 
@@ -45,9 +52,10 @@ impl fmt::Display for StableID {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         const ALPHABET: &[u8; 62] =
             b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+        // 62^22 > 2^128, so 22 digits hold any u128
         const MAX_ENCODED_LENGTH: usize = 22;
 
-        // Fill the digits from the least significant end of a stack buffer.
+        // fill the digits from the least significant end of a stack buffer
         let mut value = self.0;
         let mut encoded = [0; MAX_ENCODED_LENGTH];
         let mut start = encoded.len();
@@ -67,8 +75,8 @@ impl fmt::Display for StableID {
 
 /// The C struct tag of an aggregate type, e.g. `RayTuple_<id>`.
 ///
-/// The derived ordering follows the stable ID, which is what the aggregate
-/// definitions are sorted by.
+/// The derived ordering follows the stable ID, which is what the aggregates
+/// are sorted by in the output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct AggregateName {
     id: StableID,
@@ -79,24 +87,24 @@ impl AggregateName {
     pub(crate) fn of(aggregate: &AggregateType) -> Self {
         let (category, domain) = match aggregate {
             AggregateType::EffectHandlerCallback(_) => {
-                ("EffectHandler", "rayc_c2::EffectHandlerLayout:v1")
+                ("EffectHandler", "rayc_c3::EffectHandlerLayout:v1")
             }
-            AggregateType::Tuple(_) => ("Tuple", "rayc_c2::TupleLayout:v1"),
-            AggregateType::Environment(_) => ("Environment", "rayc_c2::EnvironmentLayout:v1"),
-            AggregateType::Struct(_) => ("Struct", "rayc_c2::StructLayout:v1"),
+            AggregateType::Tuple(_) => ("Tuple", "rayc_c3::TupleLayout:v1"),
+            AggregateType::Environment(_) => ("Environment", "rayc_c3::EnvironmentLayout:v1"),
+            AggregateType::Struct(_) => ("Struct", "rayc_c3::StructLayout:v1"),
             AggregateType::CoroutineFrame(_) => {
-                ("CoroutineFrame", "rayc_c2::CoroutineFrameLayout:v1")
+                ("CoroutineFrame", "rayc_c3::CoroutineFrameLayout:v1")
             }
             AggregateType::CoroutineResume(_) => {
-                ("CoroutineResume", "rayc_c2::CoroutineResumeLayout:v1")
+                ("CoroutineResume", "rayc_c3::CoroutineResumeLayout:v1")
             }
             AggregateType::CoroutineYield(_) => {
-                ("CoroutineYield", "rayc_c2::CoroutineYieldLayout:v1")
+                ("CoroutineYield", "rayc_c3::CoroutineYieldLayout:v1")
             }
             AggregateType::CoroutineProgress(_) => {
-                ("CoroutineProgress", "rayc_c2::CoroutineProgressLayout:v1")
+                ("CoroutineProgress", "rayc_c3::CoroutineProgressLayout:v1")
             }
-            AggregateType::RunWithFrames(_) => ("RunWithFrames", "rayc_c2::RunWithFramesLayout:v1"),
+            AggregateType::RunWithFrames(_) => ("RunWithFrames", "rayc_c3::RunWithFramesLayout:v1"),
         };
         Self { id: StableID::of(domain, aggregate), category }
     }
@@ -123,6 +131,9 @@ impl fmt::Display for AggregateTypedefName {
 
 /// A function of the IR of a source definition instance, named by the
 /// definition, its substitution and the index of the function in the IR.
+///
+/// One definition can lower to several IR functions, such as the closures
+/// it contains, which the index tells apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BodyName {
     symbol: StableID,
@@ -133,9 +144,9 @@ pub(crate) struct BodyName {
 impl BodyName {
     pub(crate) fn of(instance: &MonoBodyInstance) -> Self {
         Self {
-            symbol: StableID::of("rayc_c2::DefinitionSymbol:v1", &instance.def_id()),
+            symbol: StableID::of("rayc_c3::DefinitionSymbol:v1", &instance.def_id()),
             substitution: StableID::of(
-                "rayc_c2::DefinitionSubstitution:v1",
+                "rayc_c3::DefinitionSubstitution:v1",
                 instance.substitution(),
             ),
             function: instance.ir_function_id().index(),
@@ -155,7 +166,7 @@ pub(crate) struct NominalDropName(StableID);
 
 impl NominalDropName {
     pub(crate) fn of(instance: &MonoGeneratedAdtDropInstance) -> Self {
-        Self(StableID::of("rayc_c2::NominalDrop:v1", instance))
+        Self(StableID::of("rayc_c3::NominalDrop:v1", instance))
     }
 }
 
@@ -171,7 +182,7 @@ pub(crate) struct CoroutineResumeName(StableID);
 
 impl CoroutineResumeName {
     pub(crate) fn of(instance: &MonoCoroutineInstance) -> Self {
-        Self(StableID::of("rayc_c2::CoroutineResume:v1", instance))
+        Self(StableID::of("rayc_c3::CoroutineResume:v1", instance))
     }
 }
 
@@ -187,7 +198,7 @@ pub(crate) struct CoroutineDropName(StableID);
 
 impl CoroutineDropName {
     pub(crate) fn of(instance: &MonoCoroutineInstance) -> Self {
-        Self(StableID::of("rayc_c2::CoroutineDrop:v1", instance))
+        Self(StableID::of("rayc_c3::CoroutineDrop:v1", instance))
     }
 }
 
@@ -211,7 +222,8 @@ impl FunctionName {
     ///
     /// # Panics
     ///
-    /// Panics for an `extern def`, which keeps its source name.
+    /// Panics for an `extern def`, which keeps its source name (see
+    /// [`LinkName::Extern`]).
     pub(crate) fn of(instance: &MonoFunctionInstance) -> Self {
         match instance {
             MonoFunctionInstance::Body(instance) => Self::Body(BodyName::of(instance)),
@@ -238,6 +250,25 @@ impl fmt::Display for FunctionName {
             Self::NominalDrop(name) => name.fmt(formatter),
             Self::CoroutineResume(name) => name.fmt(formatter),
             Self::CoroutineDrop(name) => name.fmt(formatter),
+        }
+    }
+}
+
+/// The name a function is linked under.
+///
+/// Generated functions get a [`FunctionName`]; an `extern def` keeps its
+/// source name, since the C environment defines it under that name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LinkName {
+    Generated(FunctionName),
+    Extern(Interned<str>),
+}
+
+impl fmt::Display for LinkName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Generated(name) => name.fmt(formatter),
+            Self::Extern(name) => formatter.write_str(name),
         }
     }
 }
@@ -333,11 +364,6 @@ impl FieldName {
             }
         }
     }
-
-    /// The member at `index` of a tuple layout.
-    pub(crate) fn positional(index: usize, make: fn(u32) -> Self) -> Self {
-        make(index.try_into().expect("aggregate field index should fit in u32"))
-    }
 }
 
 impl fmt::Display for FieldName {
@@ -400,6 +426,8 @@ fn write_savable_name(formatter: &mut fmt::Formatter<'_>, savable: Savable) -> f
     }
 }
 
+/// The stable ID of an effect operation, which names its members in a
+/// handler record and its clause in the frames of a `run ... with`.
 fn operation_id(operation: GlobalSymbolID) -> StableID {
-    StableID::of("rayc_c2::EffectOperation:v1", &operation)
+    StableID::of("rayc_c3::EffectOperation:v1", &operation)
 }
