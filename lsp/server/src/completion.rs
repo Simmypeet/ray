@@ -9,7 +9,8 @@
 //! - After a `.` in a body, it offers the members of the receiver's type: the
 //!   fields of a struct that the def can access, or the indices of a tuple. The
 //!   typed AST records every member access with its receiver, including the
-//!   ones that fail to bind, such as a dangling `p.`.
+//!   ones that fail to bind, such as a dangling `p.`. The parser reads `p.x` as
+//!   a path, which is a member access when `p` names a local.
 //! - Elsewhere in a body, it offers the local variables visible at the cursor,
 //!   as the typed AST records them, then the first segments of a path.
 //!
@@ -68,32 +69,31 @@ async fn complete_in_definition(
         return Vec::new();
     };
 
-    // a path, in a signature or a body
-    if let Some(cursor) = PathCursor::at(file.token_tree(), file.syntax(), offset) {
-        let mut items = cursor.complete(engine, site.symbol_id()).await;
-
-        // in a body, a call may call a local closure by its name
-        if cursor.may_name_local() && site.body().is_some() {
-            let typed_ast = engine.get_typed_ast(site.symbol_id()).await;
-            items.extend(complete_names(engine, typed_ast.functions(), offset).await);
-        }
-
-        return items;
-    }
-
-    // the rest is only completed in a body
+    // a path in a signature, which names no local
+    let path_cursor = PathCursor::at(file.token_tree(), file.syntax(), offset);
     let Some(body) = site.body() else {
-        return Vec::new();
+        return match path_cursor {
+            Some(cursor) => cursor.complete(engine, site.symbol_id()).await,
+            None => Vec::new(),
+        };
     };
     let body = Node::Branch(body.inner_tree().clone());
     let typed_ast = engine.get_typed_ast(site.symbol_id()).await;
     let functions = typed_ast.functions();
 
-    // a path being typed, before the `(` or `{` that makes it one
-    if let Some(cursor) =
-        PathCursor::in_postfix(engine, file.token_tree(), &body, functions, offset).await
+    // a path in a body, unless it is a local followed by field accesses,
+    // whose members are completed below
+    if let Some(cursor) = path_cursor
+        && !cursor.is_rooted_at_local(engine, file.token_tree(), file.syntax(), functions).await
     {
-        return cursor.complete(engine, site.symbol_id()).await;
+        let mut items = cursor.complete(engine, site.symbol_id()).await;
+
+        // a call may call a local closure, and an expression may be a local
+        if cursor.may_name_local() {
+            items.extend(complete_names(engine, functions, offset).await);
+        }
+
+        return items;
     }
 
     // the member of an access, whose receiver the binder recorded

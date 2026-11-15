@@ -8,11 +8,17 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::{RelativeSpan, Tree};
 use rayc_parser::concrete_tree::Node;
+use rayc_qbice::TrackedEngine;
 use rayc_resolution::prefix::PathPrefix;
-use rayc_source_file::{AbsoluteSpan, ByteIndex};
-use rayc_syntax::path::{Path, PathContinuation, PathRoot};
+use rayc_source_file::{AbsoluteSpan, ByteIndex, SourceElement};
+use rayc_syntax::{
+    expression::{Leaf, Postfix},
+    path::{Path, PathContinuation, PathRoot},
+};
+use rayc_typed_ast::typed_function::TypedFunctionMap;
 
 /// The segment of a path that the cursor is on, and the segments before it.
+#[derive(Clone)]
 pub(crate) struct SegmentAt {
     path: Path,
     root: PathRoot,
@@ -60,6 +66,45 @@ impl SegmentAt {
 
     /// Returns the path holding the segment.
     pub(crate) const fn path(&self) -> &Path { &self.path }
+
+    /// Returns whether the path holding the segment is a local followed by
+    /// field accesses, `p.x.y`, rather than a path naming a symbol.
+    ///
+    /// As the binder does, it is one when it is written as an expression or
+    /// as a callee, and its first segment names a local of `functions` that
+    /// is visible there.
+    pub(crate) async fn is_rooted_at_local(
+        &self,
+        engine: &TrackedEngine,
+        token_tree: &Tree,
+        syntax: &Node,
+        functions: &TypedFunctionMap,
+    ) -> bool {
+        let Some(root) = self.path.root_name() else {
+            return false;
+        };
+
+        // only the path of an expression or of a call may name a local; the
+        // path of a type never does
+        let span = self.path.span();
+        let start = token_tree.absolute_span_of(&span).start;
+        let is_expression = syntax.get_deepest_ast::<Postfix>(token_tree, start).is_some_and(
+            |postfix| match postfix.leaf() {
+                Some(Leaf::Path(path)) => path.span() == span,
+                Some(Leaf::DirectCall(call)) => call.path().is_some_and(|path| path.span() == span),
+                Some(_) | None => false,
+            },
+        );
+        if !is_expression {
+            return false;
+        }
+
+        let root_end = token_tree.absolute_span_of(&root.span).end;
+        functions
+            .visible_name_bindings(engine, root_end)
+            .await
+            .any(|(_, name_binding)| *name_binding.name() == root.kind.0)
+    }
 
     /// Returns whether the cursor is on the root of the path.
     pub(crate) const fn is_on_root(&self) -> bool { self.continuation.is_none() }

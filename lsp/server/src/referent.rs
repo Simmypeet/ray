@@ -13,7 +13,6 @@
 use qbice::storage::intern::Interned;
 use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
-use rayc_resolution::prefix::PathPrefix;
 use rayc_source_file::ByteIndex;
 use rayc_symbol::GlobalSymbolID;
 use rayc_type::ty::Ty;
@@ -43,15 +42,26 @@ impl Referent {
 
         // a local variable or parameter, which only the parameters and the
         // body of a `def` declare
-        if let Some(typed_ast) = site.typed_ast(engine).await
+        let typed_ast = site.typed_ast(engine).await;
+        if let Some(typed_ast) = &typed_ast
             && let Some((name_binding, span)) =
                 typed_ast.functions().name_binding_at(engine, offset).await
         {
             return Some((Self::Local(Local::new(name_binding)), span));
         }
 
-        // a segment of a path, naming a symbol
-        let (prefix, span) = segment_at(file, offset)?;
+        // a segment of a path, naming a symbol, unless the path is a local
+        // followed by field accesses
+        let (segment_at, span) = segment_at(file, offset)?;
+        if let Some(typed_ast) = &typed_ast
+            && segment_at
+                .is_rooted_at_local(engine, file.token_tree(), file.syntax(), typed_ast.functions())
+                .await
+        {
+            return None;
+        }
+
+        let prefix = segment_at.into_prefix_through()?;
         let symbol_id = prefix.find_symbol(engine, site.symbol_id()).await?;
         Some((Self::Symbol(symbol_id), span))
     }
@@ -84,9 +94,8 @@ impl Local {
 }
 
 /// Finds the segment of a path that the cursor at `offset` touches in `file`,
-/// returning the beginning of the path up to that segment and the span of its
-/// name.
-fn segment_at(file: &File, offset: ByteIndex) -> Option<(PathPrefix, RelativeSpan)> {
+/// with the span of its name.
+fn segment_at(file: &File, offset: ByteIndex) -> Option<(SegmentAt, RelativeSpan)> {
     // the editor points at the character after the cursor, while a cursor
     // right after a name, as when it is typed, is in the path before it
     for byte in [Some(offset), offset.checked_sub(1)].into_iter().flatten() {
@@ -97,7 +106,7 @@ fn segment_at(file: &File, offset: ByteIndex) -> Option<(PathPrefix, RelativeSpa
         };
 
         let span = segment_at.name_span()?;
-        return Some((segment_at.into_prefix_through()?, span));
+        return Some((segment_at, span));
     }
 
     None
