@@ -41,6 +41,20 @@ pub(crate) struct AggregateRegistry {
 }
 
 impl AggregateRegistry {
+    /// Registers every aggregate that `ty` mentions.
+    pub(crate) async fn insert_type(&mut self, engine: &TrackedEngine, ty: &MonoType) {
+        let mut pending = Vec::new();
+        self.discover_type(ty, &mut pending);
+        self.complete(engine, pending).await;
+    }
+
+    /// Registers `aggregate` itself.
+    pub(crate) async fn insert(&mut self, engine: &TrackedEngine, aggregate: AggregateType) {
+        let mut pending = Vec::new();
+        self.discover(aggregate, &mut pending);
+        self.complete(engine, pending).await;
+    }
+
     /// Registers every aggregate that `signature` mentions.
     pub(crate) async fn insert_signature(
         &mut self,
@@ -60,12 +74,20 @@ impl AggregateRegistry {
     /// Panics if `ty` is an aggregate that has not been registered: every type
     /// is registered before it is spelled.
     pub(crate) fn is_zero_sized(&self, ty: &MonoType) -> bool {
-        ty.as_aggregate().is_some_and(|aggregate| {
-            self.reprs
-                .get(aggregate)
-                .expect("an aggregate should be registered before it is spelled")
-                .is_zero_sized()
-        })
+        ty.as_aggregate().is_some_and(|aggregate| self.is_aggregate_zero_sized(aggregate))
+    }
+
+    /// Whether a value of `aggregate` holds nothing. A zero-sized aggregate is
+    /// only declared, never defined.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `aggregate` has not been registered.
+    pub(crate) fn is_aggregate_zero_sized(&self, aggregate: &AggregateType) -> bool {
+        self.reprs
+            .get(aggregate)
+            .expect("an aggregate should be registered before it is spelled")
+            .is_zero_sized()
     }
 
     /// Every aggregate found, in no particular order.
