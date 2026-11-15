@@ -22,7 +22,7 @@ impl Ty {
         let mut symbol_names = FxHashMap::default();
         self.collect_display_context(engine, &mut poly_var_maps, &mut symbol_names).await;
 
-        TyDisplay { ty: self, poly_var_maps, symbol_names }
+        TyDisplay { ty: self, poly_var_maps, symbol_names, omit_erased_lifetimes: false }
     }
 
     async fn collect_display_context(
@@ -114,9 +114,28 @@ pub struct TyDisplay<'x> {
     ty: &'x Ty,
     poly_var_maps: FxHashMap<GlobalSymbolID, Interned<PolyVarMap>>,
     symbol_names: FxHashMap<GlobalSymbolID, Interned<str>>,
+    /// Whether an erased lifetime argument is left out, as it always is in a
+    /// reference.
+    omit_erased_lifetimes: bool,
 }
 
 impl TyDisplay<'_> {
+    /// Leaves out every erased lifetime argument, as in `Ref[int32]` for
+    /// `Ref['_, int32]`.
+    ///
+    /// Code generation erases every lifetime, so there they only add noise.
+    /// Diagnostics keep them, since they may tell types apart there.
+    #[must_use]
+    pub const fn without_erased_lifetimes(mut self) -> Self {
+        self.omit_erased_lifetimes = true;
+        self
+    }
+
+    /// Whether `argument` is an erased lifetime this display leaves out.
+    fn is_omitted(&self, argument: &Ty) -> bool {
+        self.omit_erased_lifetimes && *argument == Ty::Lifetime(Lifetime::Erased)
+    }
+
     fn fmt_symbol_application<'x>(
         &self,
         symbol_id: GlobalSymbolID,
@@ -133,31 +152,32 @@ impl TyDisplay<'_> {
             .take_while(|(_, poly_var)| poly_var.kind() != TyKind::Instance)
             .count();
 
-        let mut arguments = arguments.into_iter().peekable();
-        if type_argument_count > 0 {
-            f.write_char('[')?;
-            for (index, argument) in arguments.by_ref().take(type_argument_count).enumerate() {
-                if index > 0 {
-                    f.write_str(", ")?;
-                }
-                self.fmt_ty(argument, f)?;
+        // `[types; given instances]`, `[types]`, `[given instances]`, or
+        // nothing when every argument is left out
+        let (mut types, mut instances) = (0_usize, 0_usize);
+        for (index, argument) in arguments.into_iter().enumerate() {
+            if self.is_omitted(argument) {
+                continue;
             }
-            if arguments.peek().is_some() {
-                f.write_str("; given ")?;
-            }
-        } else if arguments.peek().is_some() {
-            f.write_str("[given ")?;
-        } else {
-            return Ok(());
-        }
 
-        for (index, argument) in arguments.enumerate() {
-            if index > 0 {
-                f.write_str(", ")?;
+            let is_type = index < type_argument_count;
+            match (is_type, types, instances) {
+                (true, 0, _) => f.write_char('[')?,
+                (false, 0, 0) => f.write_str("[given ")?,
+                (false, _, 0) => f.write_str("; given ")?,
+                _ => f.write_str(", ")?,
             }
             self.fmt_ty(argument, f)?;
+
+            if is_type {
+                types += 1;
+            } else {
+                instances += 1;
+            }
         }
-        f.write_char(']')?;
+        if types + instances > 0 {
+            f.write_char(']')?;
+        }
 
         Ok(())
     }

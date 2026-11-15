@@ -13,6 +13,10 @@
 //! - `context` holds what generating one function has found so far;
 //! - `function` generates one function, reporting the functions and the
 //!   aggregate types it refers to;
+//! - `describe` tells what each generated item is in Ray, for a comment above
+//!   it;
+//! - `print` writes the body of a function, and `projection` tells the types of
+//!   the places it writes;
 //! - `coordinator` schedules every function reachable from the roots, each
 //!   once;
 //! - `unit` assembles the generated functions into a translation unit.
@@ -31,6 +35,7 @@ use rayc_symbol::GlobalSymbolID;
 use rayc_target::TargetID;
 
 use crate::{
+    c::name::BodyName,
     coordinator::Coordinator,
     roots::{lifetime_erased_instance, root_definitions},
     unit::TranslationUnit,
@@ -40,7 +45,10 @@ mod aggregates;
 mod c;
 mod context;
 mod coordinator;
+mod describe;
 mod function;
+mod print;
+mod projection;
 mod roots;
 mod unit;
 
@@ -68,8 +76,7 @@ impl CTranslationUnitOptions {
 /// from the definitions in `target_id` that are polymorphic over lifetimes at
 /// most.
 ///
-/// For now, the unit only declares the reachable functions and the aggregate
-/// types they use.
+/// For now, the aggregate types are only declared, not defined.
 pub async fn write_c_translation_unit(
     engine: &TrackedEngine,
     target_id: TargetID,
@@ -92,14 +99,17 @@ pub async fn write_c_translation_unit(
     let functions = Coordinator::new(engine).generate(roots).await;
 
     // the entry point has no type parameters, so it is a root itself
-    if let Some(entry_point) = entry_point {
+    let entry_point = entry_point.map(|entry_point| {
+        let name = BodyName::of(&entry_point);
         assert!(
             functions.contains_key(&MonoFunctionInstance::Body(entry_point)),
             "the executable entry point should be among the generated functions"
         );
-    }
+        name
+    });
 
-    write!(output, "{}", TranslationUnit::new(functions))
+    let unit = TranslationUnit::new(engine, functions, entry_point).await;
+    write!(output, "{unit}")
 }
 
 /// The source of the Ray runtime, a C translation unit that every program is

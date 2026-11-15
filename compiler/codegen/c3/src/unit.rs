@@ -1,11 +1,18 @@
 //! The sections of a generated C translation unit.
 
 use std::{
-    collections::BTreeSet,
+    collections::BTreeMap,
     fmt::{self, Display},
 };
 
-use crate::{c::name::AggregateName, coordinator::GeneratedFunctions, function::FunctionOutput};
+use rayc_qbice::TrackedEngine;
+
+use crate::{
+    c::name::{AggregateName, BodyName},
+    coordinator::GeneratedFunctions,
+    describe::describe_aggregate,
+    function::FunctionOutput,
+};
 
 /// The includes, and the runtime functions the generated code calls.
 ///
@@ -35,25 +42,73 @@ void ray_check_heap(void);
 
 /// A generated C translation unit, which renders through [`Display`].
 ///
-/// For now, it only declares: every aggregate type, as an incomplete struct,
-/// and every function.
+/// For now, the aggregate types are only declared, as incomplete structs.
 #[derive(Debug)]
 pub(crate) struct TranslationUnit {
-    /// The aggregates of every function, sorted by name. A `typedef` of an
-    /// incomplete struct may come in any order, so sorting only keeps the
-    /// output stable.
-    aggregates: BTreeSet<AggregateName>,
+    /// The aggregates of every function, each with what it is in Ray, sorted
+    /// by name. A `typedef` of an incomplete struct may come in any order, so
+    /// sorting only keeps the output stable.
+    aggregates: BTreeMap<AggregateName, String>,
     functions: GeneratedFunctions,
+    /// The Ray entry point that `main` runs, for an executable.
+    entry_point: Option<BodyName>,
 }
 
 impl TranslationUnit {
-    pub(crate) fn new(functions: GeneratedFunctions) -> Self {
-        let aggregates = functions
+    pub(crate) async fn new(
+        engine: &TrackedEngine,
+        functions: GeneratedFunctions,
+        entry_point: Option<BodyName>,
+    ) -> Self {
+        // many functions use the same aggregate: each is described once
+        let used = functions
             .values()
             .flat_map(FunctionOutput::aggregates)
-            .map(AggregateName::of)
-            .collect();
-        Self { aggregates, functions }
+            .map(|aggregate| (AggregateName::of(aggregate), aggregate))
+            .collect::<BTreeMap<_, _>>();
+        let mut aggregates = BTreeMap::new();
+        for (name, aggregate) in used {
+            aggregates.insert(name, describe_aggregate(engine, aggregate).await);
+        }
+
+        Self { aggregates, functions, entry_point }
+    }
+
+    /// Writes every function definition, then `main`, each after a blank
+    /// line but the first.
+    fn write_function_definitions(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let definitions = self
+            .functions
+            .values()
+            .filter_map(|function| Some((function.description(), function.definition()?)));
+        for (index, (description, definition)) in definitions.enumerate() {
+            if index != 0 {
+                writeln!(formatter)?;
+            }
+            writeln!(formatter, "{}\n{definition}", Comment(description))?;
+        }
+
+        // with `RAY_HEAP_CHECK` defined, `main` checks that no heap allocation
+        // is left once the entry point returns; a program that ends through
+        // an `exit` of its own is not checked, since its live allocations are
+        // no leak
+        if let Some(entry_point) = self.entry_point {
+            if !self.functions.is_empty() {
+                writeln!(formatter)?;
+            }
+            writeln!(
+                formatter,
+                "\
+int main(void) {{
+    int result = {entry_point}();
+#ifdef RAY_HEAP_CHECK
+    ray_check_heap();
+#endif
+    return result;
+}}"
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -64,16 +119,35 @@ impl Display for TranslationUnit {
         // a pointer to an incomplete struct can be spelled anywhere, and so
         // can a by-value parameter or result in a declaration
         writeln!(formatter, "/* Aggregate type forward declarations */")?;
-        for name in &self.aggregates {
+        for (name, description) in &self.aggregates {
+            writeln!(formatter, "{}", Comment(description))?;
             writeln!(formatter, "typedef struct {name} {};", name.typedef())?;
         }
         writeln!(formatter)?;
 
-        // declarations may come in any order; these follow the instances
+        writeln!(formatter, "/* Aggregate type definitions */")?;
+        writeln!(formatter)?;
+
+        // every function is declared before any is defined, so definitions
+        // may come in any order and call each other freely
         writeln!(formatter, "/* Function forward declarations */")?;
         for function in self.functions.values() {
+            writeln!(formatter, "{}", Comment(function.description()))?;
             writeln!(formatter, "{};", function.declaration())?;
         }
+        writeln!(formatter)?;
+
+        writeln!(formatter, "/* Function definitions */")?;
+        self.write_function_definitions(formatter)?;
         writeln!(formatter)
+    }
+}
+
+/// A C comment, `/* text */`, which `text` cannot end early.
+struct Comment<'a>(&'a str);
+
+impl Display for Comment<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "/* {} */", self.0.replace("*/", "* /"))
     }
 }
