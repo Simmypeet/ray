@@ -19,10 +19,21 @@ use qbice::{
     stable_hash::{Sip128Hasher, StableHasher},
     storage::intern::Interned,
 };
+use rayc_coroutine_frame_layout::savable::Savable;
+use rayc_ir::{address::Local, ir_closure::CaptureID};
 use rayc_mono_ir::{
     MonoBodyInstance, MonoCoroutineInstance, MonoFunctionInstance, MonoGeneratedAdtDropInstance,
-    function::LocalID, ty::AggregateType,
+    cfg::BlockID,
+    function::LocalID,
+    layout::{
+        HandlerRecordID,
+        coroutine::{ResumeVariantID, RowOperationID},
+    },
+    place::{CoroutineFrame, CoroutineProgress, CoroutineYield, Projection, RunWithFrames},
+    ty::AggregateType,
 };
+use rayc_semantic_element::struct_body::FieldID;
+use rayc_symbol::GlobalSymbolID;
 
 /// A domain-separated 128-bit stable hash, rendered in base 62.
 ///
@@ -273,4 +284,153 @@ impl fmt::Display for LocalName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "ray_local_{:X}", self.0.index())
     }
+}
+
+/// The label of a basic block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BlockName(pub(crate) BlockID);
+
+impl fmt::Display for BlockName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "ray_block_{:X}", self.0.index())
+    }
+}
+
+/// A member of a generated aggregate struct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FieldName {
+    Tuple(u32),
+    EnvironmentCapture(CaptureID),
+    EnvironmentHandlerRecord(HandlerRecordID),
+    Struct(FieldID),
+    OperationEnvironment(GlobalSymbolID),
+    OperationFunction(GlobalSymbolID),
+    CoroutineFrameState,
+    /// The member of a frame that holds a value. The structs and the union
+    /// around it are anonymous, so accessing it does not depend on where the
+    /// layout places the value, and every member of a frame has a unique name.
+    CoroutineFrameSavable(Savable),
+    CoroutineResumeValue(ResumeVariantID),
+    /// The tag of a `coroutine_progress_t` or a `coroutine_yield_t`.
+    CoroutineTag,
+    CoroutineProgressYield,
+    CoroutineProgressReturn,
+    CoroutineYieldOperation(RowOperationID),
+    RunWithHandlerEnvironment,
+    RunWithBody,
+    RunWithPhase,
+    /// The frame of the clause of an operation, in an anonymous union.
+    RunWithClause(GlobalSymbolID),
+}
+
+impl FieldName {
+    /// The member selected by a place projection, or `None` for a
+    /// dereference.
+    pub(crate) const fn of_projection(projection: Projection) -> Option<Self> {
+        match projection {
+            Projection::Dereference => None,
+            Projection::EnvironmentCapture(capture) => Some(Self::EnvironmentCapture(capture)),
+            Projection::EnvironmentHandlerRecord(record) => {
+                Some(Self::EnvironmentHandlerRecord(record))
+            }
+            Projection::TupleFieldIndex(index) => Some(Self::Tuple(index.index())),
+            Projection::StructFieldIndex(field) => Some(Self::Struct(field)),
+            Projection::OperationRecordEnvironmentField(operation) => {
+                Some(Self::OperationEnvironment(operation))
+            }
+            Projection::OperationRecordFunctionPointerField(operation) => {
+                Some(Self::OperationFunction(operation))
+            }
+            Projection::CoroutineFrame(CoroutineFrame::Tag) => Some(Self::CoroutineFrameState),
+            Projection::CoroutineFrame(CoroutineFrame::Savable(savable)) => {
+                Some(Self::CoroutineFrameSavable(savable))
+            }
+            Projection::CoroutineResumeValue(variant) => Some(Self::CoroutineResumeValue(variant)),
+            Projection::CoroutineProgress(CoroutineProgress::Tag)
+            | Projection::CoroutineYield(CoroutineYield::Tag) => Some(Self::CoroutineTag),
+            Projection::CoroutineProgress(CoroutineProgress::YieldPayload) => {
+                Some(Self::CoroutineProgressYield)
+            }
+            Projection::CoroutineProgress(CoroutineProgress::ReturnPayload) => {
+                Some(Self::CoroutineProgressReturn)
+            }
+            Projection::CoroutineYield(CoroutineYield::OperationPayload(operation)) => {
+                Some(Self::CoroutineYieldOperation(operation))
+            }
+            Projection::RunWithFrames(RunWithFrames::HandlerEnvironment) => {
+                Some(Self::RunWithHandlerEnvironment)
+            }
+            Projection::RunWithFrames(RunWithFrames::Body) => Some(Self::RunWithBody),
+            Projection::RunWithFrames(RunWithFrames::Phase) => Some(Self::RunWithPhase),
+            Projection::RunWithFrames(RunWithFrames::Clause(operation)) => {
+                Some(Self::RunWithClause(operation))
+            }
+        }
+    }
+}
+
+impl fmt::Display for FieldName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Tuple(index) => write!(formatter, "elem{index:X}"),
+            Self::EnvironmentCapture(capture) => write!(formatter, "capture{:X}", capture.index()),
+            Self::EnvironmentHandlerRecord(record) => {
+                write!(formatter, "handler{:X}", record.index())
+            }
+            Self::Struct(field) => write!(formatter, "field_{}", field.index()),
+            Self::OperationEnvironment(operation) => {
+                write!(formatter, "operation_{}_environment", operation_id(*operation))
+            }
+            Self::OperationFunction(operation) => {
+                write!(formatter, "operation_{}_function", operation_id(*operation))
+            }
+            Self::CoroutineFrameState => formatter.write_str("state"),
+            Self::CoroutineFrameSavable(savable) => write_savable_name(formatter, *savable),
+            Self::CoroutineResumeValue(variant) => {
+                write!(formatter, "value{:X}", variant.index())
+            }
+            Self::CoroutineTag => formatter.write_str("tag"),
+            Self::CoroutineProgressYield => formatter.write_str("yield_value"),
+            Self::CoroutineProgressReturn => formatter.write_str("return_value"),
+            Self::CoroutineYieldOperation(operation) => {
+                write!(formatter, "operation{:X}", operation.index())
+            }
+            Self::RunWithHandlerEnvironment => formatter.write_str("handler_environment"),
+            Self::RunWithBody => formatter.write_str("body"),
+            Self::RunWithPhase => formatter.write_str("phase"),
+            Self::RunWithClause(operation) => {
+                write!(formatter, "clause_{}", operation_id(*operation))
+            }
+        }
+    }
+}
+
+/// Writes the name of the member of a frame that holds `savable`.
+fn write_savable_name(formatter: &mut fmt::Formatter<'_>, savable: Savable) -> fmt::Result {
+    match savable {
+        Savable::Expression(expression) => write!(formatter, "expr{:X}", expression.index()),
+        Savable::ChildFrame(point) => {
+            write!(formatter, "child_frame{:X}", point.block_id().index())
+        }
+        Savable::Local(Local::Variable(variable)) => write!(formatter, "var{:X}", variable.index()),
+        Savable::Local(Local::Parameter(parameter)) => {
+            write!(formatter, "param{:X}", parameter.index())
+        }
+        Savable::Local(Local::ClosureParameter(parameter)) => {
+            write!(formatter, "closure_param{:X}", parameter.index())
+        }
+        Savable::Local(Local::OperationHandlerParameter(parameter)) => {
+            write!(formatter, "handler_param{:X}", parameter.index())
+        }
+        Savable::Local(Local::Capture(capture)) => {
+            write!(formatter, "capture{:X}", capture.index())
+        }
+        Savable::Environment => formatter.write_str("environment"),
+    }
+}
+
+/// The stable ID of an effect operation, which names its members in a
+/// handler record and its clause in the frames of a `run ... with`.
+fn operation_id(operation: GlobalSymbolID) -> StableID {
+    StableID::of("rayc_c2::EffectOperation:v1", &operation)
 }

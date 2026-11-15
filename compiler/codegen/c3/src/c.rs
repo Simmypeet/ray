@@ -5,5 +5,6 @@
 //! buffer without intermediate allocations. Nothing here queries the compiler
 //! engine; facts that require queries are resolved beforehand.
 
+pub(crate) mod expr;
 pub(crate) mod name;
 pub(crate) mod ty;
