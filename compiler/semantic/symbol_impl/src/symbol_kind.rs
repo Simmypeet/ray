@@ -15,7 +15,7 @@ use rayc_symbol::{
     SymbolID,
     symbol_kind::{
         AllAdtIDs, AllCallableDefIDs, AllDefWithBodyIDs, AllEffectIDs, AllInstanceIDs,
-        AllSymbolIDs, Key, SymbolKind,
+        AllMarkerImplementationIDs, AllSymbolIDs, Key, SymbolKind,
     },
 };
 
@@ -72,6 +72,22 @@ pub async fn all_instance_ids_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static ALL_INSTANCE_IDS_EXECUTOR: Registration<Config> =
     Registration::new::<AllInstanceIDs, AllInstanceIdsExecutor>();
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
+pub async fn all_marker_implementation_ids_executor(
+    &AllMarkerImplementationIDs { target }: &AllMarkerImplementationIDs,
+    engine: &TrackedEngine,
+) -> Arc<[SymbolID]> {
+    let summaries = engine.get_target_table_summaries(target).await;
+    summaries
+        .iter()
+        .flat_map(|summary| summary.symbol_ids_of_kind(SymbolKind::MarkerImplementation))
+        .collect()
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static ALL_MARKER_IMPLEMENTATION_IDS_EXECUTOR: Registration<Config> =
+    Registration::new::<AllMarkerImplementationIDs, AllMarkerImplementationIdsExecutor>();
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
 pub async fn all_adt_ids_executor(

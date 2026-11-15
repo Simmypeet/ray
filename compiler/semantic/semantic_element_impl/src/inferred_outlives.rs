@@ -37,7 +37,10 @@ struct InferredOutlivesMapKey {
     target_id: TargetID,
 }
 
-#[executor(config = Config)]
+/// A firewall: its readers are the projections of each ADT's requirements,
+/// which rerun when it changes, so that a reader of the requirements of an ADT
+/// recomputes only when those do.
+#[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
 async fn inferred_outlives_map_executor(
     &InferredOutlivesMapKey { target_id }: &InferredOutlivesMapKey,
     engine: &TrackedEngine,
@@ -79,13 +82,40 @@ async fn inferred_outlives_map_executor(
 static INFERRED_OUTLIVES_MAP_EXECUTOR: Registration<Config> =
     Registration::new::<InferredOutlivesMapKey, InferredOutlivesMapExecutor>();
 
+/// The inferred outlives requirements of one struct or enum in the map of its
+/// target, or `None` if the map has none for it.
+///
+/// The map of a target recomputes on an edit to any struct or enum of the
+/// target. The engine then reruns every projection of it, so that only the
+/// readers of requirements that changed recompute. A projection must not
+/// panic, even for a symbol that the edit removed.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<Interned<[OutlivesPredicate]>>)]
+struct InferredOutlivesProjection {
+    adt_id: GlobalSymbolID,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn inferred_outlives_projection_executor(
+    &InferredOutlivesProjection { adt_id }: &InferredOutlivesProjection,
+    engine: &TrackedEngine,
+) -> Option<Interned<[OutlivesPredicate]>> {
+    let map = engine.query(&InferredOutlivesMapKey { target_id: adt_id.target_id }).await;
+    map.get(&adt_id.id).cloned()
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static INFERRED_OUTLIVES_PROJECTION_EXECUTOR: Registration<Config> =
+    Registration::new::<InferredOutlivesProjection, InferredOutlivesProjectionExecutor>();
+
 #[executor(config = Config)]
 async fn inferred_outlives_executor(
     &InferredOutlivesKey { adt_id }: &InferredOutlivesKey,
     engine: &TrackedEngine,
 ) -> Interned<[OutlivesPredicate]> {
-    let map = engine.query(&InferredOutlivesMapKey { target_id: adt_id.target_id }).await;
-    map.get(&adt_id.id).cloned().expect("incorrect key")
+    engine.query(&InferredOutlivesProjection { adt_id }).await.expect("incorrect key")
 }
 
 #[distributed_slice(RAY_PROGRAM)]

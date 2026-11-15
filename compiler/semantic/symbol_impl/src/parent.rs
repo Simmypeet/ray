@@ -5,7 +5,7 @@ use rayc_symbol::{SymbolID, parent::Key};
 
 use crate::projection::{project, symbol_projection};
 
-symbol_projection!(ParentProjection -> Option<SymbolID> = get_arent);
+symbol_projection!(ParentProjection -> Option<SymbolID> = get_parent);
 
 #[executor(config = Config)]
 pub async fn parent_executor(&Key { symbol_id }: &Key, engine: &TrackedEngine) -> Option<SymbolID> {

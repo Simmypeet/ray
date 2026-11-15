@@ -18,7 +18,7 @@ use rayc_symbol::{
     GlobalSymbolID,
     source_map::to_absolute_span,
     span::get_span,
-    symbol_kind::{SymbolKind, get_all_symbol_ids, get_symbol_kind},
+    symbol_kind::get_all_marker_implementation_ids,
     syntax::{
         get_marker_implementation_marker_syntax, get_marker_implementation_type_syntax,
         get_where_clause_syntax, is_negative_marker_implementation,
@@ -362,11 +362,8 @@ async fn overlaps_executor(
 ) -> Interned<[Overlap]> {
     // the marker implementations of the target in source order
     let mut ordered = Vec::new();
-    for id in engine.get_all_symbol_ids(target_id).await.iter().copied() {
+    for id in engine.get_all_marker_implementation_ids(target_id).await.iter().copied() {
         let symbol_id = target_id.make_global(id);
-        if engine.get_symbol_kind(symbol_id).await != SymbolKind::MarkerImplementation {
-            continue;
-        }
         let Some(span) = engine.get_span(symbol_id).await else {
             continue;
         };

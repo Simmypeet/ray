@@ -256,6 +256,17 @@ pub struct AllInstanceIDs {
     pub target: TargetID,
 }
 
+/// Retrieves all marker implementation symbol IDs, of either polarity, in a
+/// given target.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Arc<[SymbolID]>)]
+#[extend(name = get_all_marker_implementation_ids, by_val)]
+pub struct AllMarkerImplementationIDs {
+    pub target: TargetID,
+}
+
 /// Retrieves all ADT (struct and enum) symbol IDs in a given target.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,

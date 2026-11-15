@@ -24,7 +24,7 @@ use rayc_type::{
     variance::{Variance, VarianceMap, get_variance},
 };
 
-use super::{VarianceExecutor, VariancesExecutor};
+use super::{VarianceExecutor, VarianceProjectionExecutor, VariancesExecutor};
 
 /// Returns the variances of a map in the order of its poly var map.
 fn variances(map: &VarianceMap) -> Vec<Variance> { map.iter().collect() }
@@ -248,6 +248,7 @@ impl Declarations {
         engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(payloads)));
         engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(symbol_kinds)));
         engine_mut.register_executor(Arc::new(VariancesExecutor));
+        engine_mut.register_executor(Arc::new(VarianceProjectionExecutor));
         engine_mut.register_executor(Arc::new(VarianceExecutor));
 
         engine.tracked().await

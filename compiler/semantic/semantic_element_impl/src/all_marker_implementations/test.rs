@@ -9,10 +9,7 @@ use rayc_semantic_element::{
         Key as MarkerImplementationKey, MarkerImplementation, MarkerImplementationPolarity,
     },
 };
-use rayc_symbol::{
-    SymbolID,
-    symbol_kind::{AllSymbolIDs, Key as SymbolKindKey, SymbolKind},
-};
+use rayc_symbol::{SymbolID, symbol_kind::AllMarkerImplementationIDs};
 use rayc_target::{LinkKey, TargetID};
 use rayc_type::ty::{Ty, self_instance::SelfInstance};
 
@@ -40,14 +37,15 @@ async fn query_recursively_collects_linked_marker_implementations() {
     let implementor = engine.intern(Ty::SelfInstance(SelfInstance::new(marker_id)));
 
     engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
-        (AllSymbolIDs { target: local }, Arc::from([local_implementation.id])),
-        (AllSymbolIDs { target: dependency }, Arc::from([dependency_implementation.id])),
-        (AllSymbolIDs { target: transitive }, Arc::from([transitive_implementation.id])),
-    ]))));
-    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
-        (SymbolKindKey { symbol_id: local_implementation }, SymbolKind::MarkerImplementation),
-        (SymbolKindKey { symbol_id: dependency_implementation }, SymbolKind::MarkerImplementation),
-        (SymbolKindKey { symbol_id: transitive_implementation }, SymbolKind::MarkerImplementation),
+        (AllMarkerImplementationIDs { target: local }, Arc::from([local_implementation.id])),
+        (
+            AllMarkerImplementationIDs { target: dependency },
+            Arc::from([dependency_implementation.id]),
+        ),
+        (
+            AllMarkerImplementationIDs { target: transitive },
+            Arc::from([transitive_implementation.id]),
+        ),
     ]))));
     engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
         (

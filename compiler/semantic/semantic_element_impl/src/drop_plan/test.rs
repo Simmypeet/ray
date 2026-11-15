@@ -37,7 +37,9 @@ use rayc_type::{
     where_clause::{Key as WhereClauseKey, WhereClause},
 };
 
-use super::{Evaluator, NominalDropPlanExecutor, TargetDropPlansExecutor};
+use super::{
+    DropPlanProjectionExecutor, Evaluator, NominalDropPlanExecutor, TargetDropPlansExecutor,
+};
 
 fn span() -> RelativeSpan {
     let location =
@@ -170,6 +172,7 @@ async fn mutually_recursive_plans_share_external_requirement() {
         (StructBodyKey { symbol_id: b }, b_body),
     ]))));
     engine_mut.register_executor(Arc::new(TargetDropPlansExecutor));
+    engine_mut.register_executor(Arc::new(DropPlanProjectionExecutor));
     engine_mut.register_executor(Arc::new(NominalDropPlanExecutor));
 
     let tracked = engine.tracked().await;
@@ -248,6 +251,7 @@ async fn foreign_field_uses_its_defining_targets_plan() {
         (StructBodyKey { symbol_id: leaf }, leaf_body),
     ]))));
     engine_mut.register_executor(Arc::new(TargetDropPlansExecutor));
+    engine_mut.register_executor(Arc::new(DropPlanProjectionExecutor));
     engine_mut.register_executor(Arc::new(NominalDropPlanExecutor));
 
     let tracked = engine.tracked().await;
@@ -589,6 +593,7 @@ async fn enum_plan_drops_each_variant_payload() {
         (VariantPayloadTyKey { symbol_id: none }, None),
     ]))));
     engine_mut.register_executor(Arc::new(TargetDropPlansExecutor));
+    engine_mut.register_executor(Arc::new(DropPlanProjectionExecutor));
     engine_mut.register_executor(Arc::new(NominalDropPlanExecutor));
 
     let tracked = engine.tracked().await;

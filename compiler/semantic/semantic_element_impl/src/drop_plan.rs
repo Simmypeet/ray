@@ -10,7 +10,9 @@
 //! not recursively expand the field recipe for `Node[t]`.
 
 use linkme::distributed_slice;
-use qbice::{executor, program::Registration, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration, storage::intern::Interned,
+};
 use rayc_hash::{FxHashMap, FxHashSet};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::{
@@ -44,6 +46,33 @@ use rayc_type::{
 
 const MAX_REQUIREMENT_PASSES: usize = 64;
 
+/// The plan of one struct or enum in the map of its target, or `None` if the
+/// map has none for it.
+///
+/// The map of a target recomputes on an edit to any struct, enum or `Drop`
+/// instance of the target. The engine then reruns every projection of it, so
+/// that only the readers of a plan that changed recompute. A projection must
+/// not panic, even for a symbol that the edit removed.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<Interned<DropPlan>>)]
+struct DropPlanProjection {
+    symbol_id: GlobalSymbolID,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn drop_plan_projection_executor(
+    &DropPlanProjection { symbol_id }: &DropPlanProjection,
+    engine: &TrackedEngine,
+) -> Option<Interned<DropPlan>> {
+    engine.get_target_drop_plans(symbol_id.target_id).await.get(&symbol_id.id).cloned()
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static DROP_PLAN_PROJECTION_EXECUTOR: Registration<Config> =
+    Registration::new::<DropPlanProjection, DropPlanProjectionExecutor>();
+
 /// The public per-nominal query is only a lookup into the defining target's
 /// completed map. Foreign nominal fields can therefore request their own
 /// target's result without reentering the current target's fixed point.
@@ -52,19 +81,16 @@ async fn nominal_drop_plan_executor(
     &NominalDropPlan { symbol_id }: &NominalDropPlan,
     engine: &TrackedEngine,
 ) -> Interned<DropPlan> {
-    engine
-        .get_target_drop_plans(symbol_id.target_id)
-        .await
-        .get(&symbol_id.id)
-        .cloned()
-        .expect("invalid id")
+    engine.query(&DropPlanProjection { symbol_id }).await.expect("invalid id")
 }
 
 #[distributed_slice(RAY_PROGRAM)]
 static NOMINAL_DROP_PLAN_EXECUTOR: Registration<Config> =
     Registration::new::<NominalDropPlan, NominalDropPlanExecutor>();
 
-#[executor(config = Config)]
+/// A firewall: its readers are the projections of each plan, which rerun when
+/// it changes, so that a reader of a plan recomputes only when its plan does.
+#[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
 async fn target_drop_plans_executor(
     &TargetDropPlans { target_id }: &TargetDropPlans,
     engine: &TrackedEngine,
