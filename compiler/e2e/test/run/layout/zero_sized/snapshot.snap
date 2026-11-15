@@ -1,0 +1,23 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 51
+
+stdout:
+relay 7
+drop token
+drop token
+ask 2
+relay 1
+drop token
+drop token
+drop token
+drop token
+drop token
+drop token
+
+
+stderr:

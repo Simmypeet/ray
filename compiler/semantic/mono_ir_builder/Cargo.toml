@@ -18,6 +18,7 @@ rayc_symbol.path = "../symbol"
 rayc_solver.path = "../solver"
 rayc_type.path = "../type"
 qbice.workspace = true
+linkme.workspace = true
 
 [dev-dependencies]
 rayc_lexical.path = "../../syntax/lexical"

@@ -72,6 +72,31 @@ impl MonoType {
         matches!(self, Self::Aggregate(AggregateType::Tuple(tuple)) if tuple.is_empty())
     }
 
+    /// The aggregate a value of this type holds inline, if the type is one.
+    #[must_use]
+    pub const fn as_aggregate(&self) -> Option<&AggregateType> {
+        match self {
+            Self::Aggregate(aggregate) => Some(aggregate),
+            Self::Bool
+            | Self::Int8
+            | Self::Int16
+            | Self::Int32
+            | Self::Int64
+            | Self::Isize
+            | Self::Uint8
+            | Self::Uint16
+            | Self::Uint32
+            | Self::Uint64
+            | Self::Usize
+            | Self::Float32
+            | Self::CInt
+            | Self::CStr
+            | Self::OpaquePointer(_)
+            | Self::Pointer(_)
+            | Self::FunctionPointer(_) => None,
+        }
+    }
+
     #[must_use]
     pub fn assert_as_tuple(&self) -> &Tuple {
         match self {
@@ -466,13 +491,14 @@ impl ReturnType {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum EnvironmentSlot {
-    /// As `void *`: the body of a `run ... with`, an operation handler, and
-    /// the callback slots of a handler record, which are called without
-    /// knowing the environment of the callback.
+    /// As `void *`: an operation handler, and the callback slots of a handler
+    /// record, which are called without knowing the environment of the
+    /// callback.
     Opaque,
 
     /// The environment itself, by value: the body of a closure, whose value
-    /// is its environment.
+    /// is its environment, and the body of a `run ... with`, which only the
+    /// function that runs it calls.
     ByValue(MonoEnvironmentInstance),
 }
 

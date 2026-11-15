@@ -12,7 +12,10 @@ use rayc_symbol::name::get_name;
 
 use crate::{
     c::{
-        expr::{ConstantExpr, PlaceExpr, binary_operator_token, unary_operator_token},
+        expr::{
+            ConstantExpr, PlaceExpr, ZERO_SIZED_ADDRESS, binary_operator_token,
+            unary_operator_token,
+        },
         name::FunctionName,
         ty::TypeName,
     },
@@ -41,7 +44,14 @@ impl FunctionPrinter<'_, '_> {
     pub(super) async fn write_rvalue(&mut self, out: &mut String, value: &Rvalue) -> fmt::Result {
         match value {
             Rvalue::Use(operand) => self.write_operand(out, operand).await,
-            Rvalue::AddressOf(address) => write!(out, "&{}", PlaceExpr(address.place())),
+            // A place that holds nothing has no storage of its own.
+            Rvalue::AddressOf(address) => {
+                if self.is_place_zero_sized(address.place()).await {
+                    out.push_str(ZERO_SIZED_ADDRESS);
+                    return Ok(());
+                }
+                write!(out, "&{}", PlaceExpr(address.place()))
+            }
             Rvalue::Unary(unary) => {
                 write!(out, "({}", unary_operator_token(unary.operator()))?;
                 self.write_operand(out, unary.operand()).await?;
@@ -58,17 +68,20 @@ impl FunctionPrinter<'_, '_> {
             }
             Rvalue::Cast(cast) => {
                 self.program.use_type(cast.target()).await;
-                write!(out, "(({})(", TypeName(cast.target()))?;
+                write!(out, "(({})(", TypeName::new(cast.target(), self.program.layouts()))?;
                 self.write_operand(out, cast.operand()).await?;
                 out.push_str("))");
                 Ok(())
             }
             Rvalue::Reinterpret(reinterpret) => self.write_reinterpret(out, reinterpret).await,
             // the aggregates are defined before every function, so `sizeof`
-            // sees a complete type
+            // sees a complete type. A value that holds nothing needs no memory.
             Rvalue::HeapAllocate(ty) => {
-                self.program.use_type(ty).await;
-                write!(out, "ray_alloc(sizeof({}))", TypeName(ty))
+                if self.program.is_zero_sized(ty).await {
+                    out.push_str(ZERO_SIZED_ADDRESS);
+                    return Ok(());
+                }
+                write!(out, "ray_alloc(sizeof({}))", TypeName::new(ty, self.program.layouts()))
             }
         }
     }
@@ -76,19 +89,24 @@ impl FunctionPrinter<'_, '_> {
     /// A compound literal of a union of both types, whose bytes are written as
     /// one and read as the other, which C defines even for types that differ
     /// in size.
+    ///
+    /// The target is not zero-sized, since its assignment would be left out.
+    /// A zero-sized source holds nothing, so what is read from the target
+    /// cannot depend on it: the target is zero instead.
     async fn write_reinterpret(
         &mut self,
         out: &mut String,
         reinterpret: &Reinterpret,
     ) -> fmt::Result {
-        self.program.use_type(reinterpret.source()).await;
         self.program.use_type(reinterpret.target()).await;
-        write!(
-            out,
-            "((union {{ {} source; {} target; }}){{ .source = ",
-            TypeName(reinterpret.source()),
-            TypeName(reinterpret.target()),
-        )?;
+        let is_source_zero_sized = self.program.is_zero_sized(reinterpret.source()).await;
+        let target = TypeName::new(reinterpret.target(), self.program.layouts());
+        if is_source_zero_sized {
+            return write!(out, "(({target}){{ 0 }})");
+        }
+
+        let source = TypeName::new(reinterpret.source(), self.program.layouts());
+        write!(out, "((union {{ {source} source; {target} target; }}){{ .source = ")?;
         self.write_operand(out, reinterpret.operand()).await?;
         out.push_str(" }).target");
         Ok(())
@@ -115,16 +133,16 @@ impl FunctionPrinter<'_, '_> {
         constant: &Constant,
     ) -> fmt::Result {
         self.use_constant_type(constant).await;
-        write!(out, "{}", ConstantExpr::new(constant, self.program.unit_type()))
+        write!(out, "{}", ConstantExpr::new(constant, self.program.layouts()))
     }
 
     /// Records the aggregate types a constant is spelled with.
     async fn use_constant_type(&mut self, constant: &Constant) {
         match constant {
-            Constant::Unit => self.program.use_aggregate(self.program.unit_type().clone()).await,
             Constant::NullPointer(ty) => self.program.use_type(ty).await,
-            Constant::EmptyAggregate(ty) => self.program.use_aggregate(ty.clone()).await,
-            Constant::Bool(_)
+            Constant::Unit
+            | Constant::EmptyAggregate(_)
+            | Constant::Bool(_)
             | Constant::Int8(_)
             | Constant::Int16(_)
             | Constant::Int32(_)

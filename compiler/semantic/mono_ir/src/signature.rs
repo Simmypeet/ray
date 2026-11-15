@@ -217,7 +217,13 @@ async fn nested_function_signature(
             (parameters, EnvironmentSlot::ByValue(environment), true)
         }
 
-        IRContext::Thunk(_) => (Vec::new(), EnvironmentSlot::Opaque, true),
+        // The body of a `run ... with` is only called directly, by the
+        // function that runs it, so it receives its environment by value.
+        IRContext::Thunk(_) => {
+            let capture_map = source.get_capture_map_id(function_id);
+            let environment = MonoEnvironmentInstance::new(instance, capture_map);
+            (Vec::new(), EnvironmentSlot::ByValue(environment), true)
+        }
 
         // An operation handler is called through the slot of a handler record,
         // which has no handler-record slots, so it finds its handler records in

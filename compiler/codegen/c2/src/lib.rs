@@ -86,8 +86,8 @@ pub async fn write_c_translation_unit(
         None => None,
     };
 
-    // The worklist future holds per-function lowering state such as its
-    // solver; keep it on the heap so callers' futures stay small.
+    // The worklist future holds the state of printing a function across
+    // queries; keep it on the heap so callers' futures stay small.
     let unit =
         Box::pin(Generator::new(engine, roots, std::iter::empty(), entry_point).generate()).await;
     write!(output, "{unit}")
@@ -95,7 +95,7 @@ pub async fn write_c_translation_unit(
 
 /// Generates a C translation unit starting with already-lowered
 /// `MonoFunction`s. Calls to functions not present in `functions` are lowered
-/// on demand through `rayc_mono_ir_builder`.
+/// on demand through the `get_mono_function` query.
 pub async fn write_c_translation_unit_from_mono_ir(
     engine: &TrackedEngine,
     functions: impl IntoIterator<Item = MonoFunction>,

@@ -16,6 +16,13 @@
 static size_t ray_live_allocations;
 #endif
 
+/*
+ * The address of every value of a zero-sized type, which has no storage of
+ * its own. Such a value holds nothing, so all of them may share one address;
+ * it only has to be valid and aligned for any type.
+ */
+max_align_t ray_zst_anchor;
+
 void *ray_alloc(size_t size)
 {
     void *pointer = malloc(size);

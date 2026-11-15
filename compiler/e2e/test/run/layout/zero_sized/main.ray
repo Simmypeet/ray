@@ -1,0 +1,79 @@
+extern def printf(format: cstr, ...) -> c_int
+
+
+# Every field holds nothing, so a `Token` holds nothing either. Its `Drop` still
+# runs.
+struct Token:
+    unit: ()
+
+
+inst TokenDrop for core.Drop[Token]:
+    def drop(self: Token):
+        printf("drop token\n")
+        core.NoDrop { value = move self }
+
+
+# Only `value` is stored.
+struct Tagged:
+    token: Token
+    value: int32
+
+
+# Resuming after `ask` passes nothing.
+eff Ask:
+    def ask(value: int32)
+
+
+def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+    return d.call(value, args)
+
+
+# Neither the token argument nor the token result is passed.
+def relay(token: Token, value: int32) -> Token:
+    printf("relay %d\n", value)
+    return token
+
+
+# A reference to a place that holds nothing is still a pointer.
+def inspect(token: &Token, unit: &()) -> int32:
+    let copied = unit.*
+    return 1
+
+
+# The token lives across both suspensions.
+def asks(base: int32) -> int32 \ {Ask}:
+    let token = Token { unit = () }
+    Ask.ask(base)
+    let tagged = Tagged { token = relay(token, base), value = base + 1 }
+    Ask.ask(tagged.value)
+    return tagged.value
+
+
+def drive(k: core.Continuation[r, c], value: r, seen: int32) given (co: core.Coroutine[c]) -> int32 where (co.Return = int32, co.Effect = {Ask}):
+    return handle k(value):
+        case Ask.ask(value) resume next: drive(next, (), seen + value)
+        case return result: result + seen
+
+
+# 40 + 1 + 2 + (2 + 1 + 2) + 3 = 51
+def main() -> int32:
+    let tagged = Tagged { token = relay(Token { unit = () }, 7), value = 40 }
+    let checked = inspect(tagged.token.&, tagged.token.unit.&)
+
+    # The closure captures only a token, so its environment holds nothing.
+    let token = Token { unit = () }
+    let closure = () -> move token
+    invoke(closure, ())
+
+    # The body borrows places that hold nothing.
+    let probe = Token { unit = () }
+    let unit = ()
+    let handled = run:
+        Ask.ask(2)
+        return inspect(probe.&, unit.&) + 1
+    with Ask:
+        def ask(value):
+            printf("ask %d\n", value)
+
+    let driven = drive(coro asks(1), (), 0)
+    return tagged.value + checked + handled + driven + 3

@@ -1,18 +1,20 @@
-//! Lowers one concrete function into an independently cacheable
+//! Lowers one concrete function into an independently cached
 //! [`MonoFunction`]: one function of the semantic IR of a concrete definition,
 //! one generated nominal Drop instance, or the `coroutine_resume` or the
 //! `coroutine_drop` of one coroutine.
 //!
-//! This crate intentionally exposes an ordinary lowering function rather than
-//! an incremental query. A future orchestrator can use the same
-//! [`MonoFunctionInstance`] input as its query key.
+//! The crate executes the [`MonoFunctionKey`] query, which callers ask through
+//! `get_mono_function`. It exposes nothing else.
 
+use linkme::distributed_slice;
+use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_ir::get_ir;
 use rayc_mono_ir::{
-    MonoBodyInstance, MonoCoroutineInstance, MonoFunctionInstance, function::MonoFunction,
+    MonoBodyInstance, MonoCoroutineInstance, MonoFunctionInstance,
+    function::{MonoFunction, MonoFunctionKey},
     signature::get_coroutine_signature,
 };
-use rayc_qbice::TrackedEngine;
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_solver::Solver;
 
 use crate::{context::Context, emitter::Emitter, resolver::Resolver};
@@ -23,17 +25,28 @@ mod lower;
 mod nominal_drop;
 mod resolver;
 
+/// Keeps this crate linked so its distributed query registration is retained.
+pub const fn black_box() {}
+
+#[executor(config = Config)]
+async fn mono_function_executor(
+    key: &MonoFunctionKey,
+    engine: &TrackedEngine,
+) -> Interned<MonoFunction> {
+    engine.intern(lower_function(engine, key.instance.clone()).await)
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static MONO_FUNCTION_EXECUTOR: Registration<Config> =
+    Registration::new::<MonoFunctionKey, MonoFunctionExecutor>();
+
 /// Lowers the function that `instance` identifies into `MonoFunction`.
 ///
 /// # Panics
 ///
 /// Panics for an `extern def`, which has no body to lower: it is only
 /// declared.
-#[must_use]
-pub async fn lower_function(
-    engine: &TrackedEngine,
-    instance: MonoFunctionInstance,
-) -> MonoFunction {
+async fn lower_function(engine: &TrackedEngine, instance: MonoFunctionInstance) -> MonoFunction {
     match instance {
         MonoFunctionInstance::Body(instance) => lower_body(engine, instance).await,
         MonoFunctionInstance::ExternDef(_) => panic!("an `extern def` has no body to lower"),
