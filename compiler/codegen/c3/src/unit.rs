@@ -8,9 +8,13 @@ use std::{
 use rayc_qbice::TrackedEngine;
 
 use crate::{
-    c::name::{AggregateName, BodyName},
+    c::{
+        name::{AggregateName, BodyName},
+        writer::CWriter,
+    },
     coordinator::GeneratedFunctions,
     describe::describe_aggregate,
+    finalise::ProgramAggregates,
     function::FunctionOutput,
 };
 
@@ -41,14 +45,15 @@ void ray_check_heap(void);
 ";
 
 /// A generated C translation unit, which renders through [`Display`].
-///
-/// For now, the aggregate types are only declared, as incomplete structs.
 #[derive(Debug)]
 pub(crate) struct TranslationUnit {
-    /// The aggregates of every function, each with what it is in Ray, sorted
+    /// Every aggregate of the program, each with what it is in Ray, sorted
     /// by name. A `typedef` of an incomplete struct may come in any order, so
     /// sorting only keeps the output stable.
     aggregates: BTreeMap<AggregateName, String>,
+    /// The `struct` definition of every aggregate that is defined, each after
+    /// the aggregates it holds by value.
+    aggregate_definitions: Vec<(AggregateName, String)>,
     functions: GeneratedFunctions,
     /// The Ray entry point that `main` runs, for an executable.
     entry_point: Option<BodyName>,
@@ -60,18 +65,42 @@ impl TranslationUnit {
         functions: GeneratedFunctions,
         entry_point: Option<BodyName>,
     ) -> Self {
+        let spelled = functions.values().flat_map(FunctionOutput::aggregates);
+        let program = ProgramAggregates::new(engine, spelled).await;
+
         // many functions use the same aggregate: each is described once
-        let used = functions
-            .values()
-            .flat_map(FunctionOutput::aggregates)
-            .map(|aggregate| (AggregateName::of(aggregate), aggregate))
-            .collect::<BTreeMap<_, _>>();
         let mut aggregates = BTreeMap::new();
-        for (name, aggregate) in used {
+        for (name, aggregate) in program.iter() {
             aggregates.insert(name, describe_aggregate(engine, aggregate).await);
         }
 
-        Self { aggregates, functions, entry_point }
+        // a definition spells the types of its members, which the finaliser
+        // found already, so every aggregate spelled has its `typedef`
+        let mut writer = CWriter::new(engine);
+        let mut aggregate_definitions = Vec::new();
+        for definition in program.definitions() {
+            writer.write(&definition).await;
+            aggregate_definitions.push((definition.name(), writer.take_text()));
+        }
+        let (_, spelled) = writer.finish();
+        assert!(
+            spelled.iter().all(|aggregate| program.contains(aggregate)),
+            "an aggregate definition should only spell aggregates found by the finaliser"
+        );
+
+        Self { aggregates, aggregate_definitions, functions, entry_point }
+    }
+
+    /// Writes every aggregate definition, each after a blank line but the
+    /// first.
+    fn write_aggregate_definitions(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, (name, definition)) in self.aggregate_definitions.iter().enumerate() {
+            if index != 0 {
+                writeln!(formatter)?;
+            }
+            writeln!(formatter, "{}\n{definition}", Comment(&self.aggregates[name]))?;
+        }
+        Ok(())
     }
 
     /// Writes every function definition, then `main`, each after a blank
@@ -126,6 +155,7 @@ impl Display for TranslationUnit {
         writeln!(formatter)?;
 
         writeln!(formatter, "/* Aggregate type definitions */")?;
+        self.write_aggregate_definitions(formatter)?;
         writeln!(formatter)?;
 
         // every function is declared before any is defined, so definitions

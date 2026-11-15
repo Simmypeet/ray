@@ -18,7 +18,10 @@
 //!   the places it writes;
 //! - `coordinator` schedules every function reachable from the roots, each
 //!   once;
-//! - `unit` assembles the generated functions into a translation unit.
+//! - `finalise` finds every aggregate the program needs, once every function is
+//!   generated, and orders their definitions;
+//! - `unit` assembles the generated functions and aggregates into a translation
+//!   unit.
 //!
 //! The generated code needs some functions from the C environment, such as
 //! heap allocation. They form a second translation unit, the runtime, which
@@ -44,6 +47,7 @@ mod aggregates;
 mod c;
 mod coordinator;
 mod describe;
+mod finalise;
 mod function;
 mod function_print;
 mod projection;
@@ -73,8 +77,6 @@ impl CTranslationUnitOptions {
 /// Generates a C translation unit for all definition instantiations reachable
 /// from the definitions in `target_id` that are polymorphic over lifetimes at
 /// most.
-///
-/// For now, the aggregate types are only declared, not defined.
 pub async fn write_c_translation_unit(
     engine: &TrackedEngine,
     target_id: TargetID,
