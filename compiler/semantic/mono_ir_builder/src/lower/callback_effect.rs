@@ -82,10 +82,11 @@ impl Emitter<'_> {
     /// // run { body } with E { op(x) { clause } }
     /// const E_handler_t *handler_pointer = ...;  // lower_effect_handler_pointer
     ///
-    /// // The body takes its environment, then one handler per effect of its
-    /// // row: the record for `E`, and this function's own for the others.
+    /// // The body takes its environment by value, then one handler per effect
+    /// // of its row: the record for `E`, and this function's own for the
+    /// // others.
     /// body_env_t body_env = { capture_0, ... };
-    /// result = body_thunk((void *)&body_env, handler_pointer, handler_F);
+    /// result = body_thunk(body_env, handler_pointer, handler_F);
     ///
     /// drop(handler_env.capture_n); ...;          // drop_handler_captures
     /// ```
@@ -93,7 +94,7 @@ impl Emitter<'_> {
     /// where the body is
     ///
     /// ```c
-    /// R body_thunk(void *env, const E_handler_t *handler_E, const F_handler_t *handler_F);
+    /// R body_thunk(body_env_t env, const E_handler_t *handler_E, const F_handler_t *handler_F);
     /// ```
     pub(super) async fn lower_callback_run_with(
         &mut self,
@@ -108,11 +109,8 @@ impl Emitter<'_> {
         let body_id = run_with.body().function_id();
         let body_signature = ctx.sibling_signature(body_id).await;
         let body_environment = ctx.function_environment_layout(body_id).await;
-        let environment = self.emit_opaque_environment_pointer(
-            run_with.body().captures(),
-            &body_environment,
-            ctx,
-        );
+        let environment =
+            self.emit_environment_value(run_with.body().captures(), &body_environment, ctx);
 
         // The new record handles its effect, and this function's own handlers
         // the others. A coroutine has none, so there it suspends instead,

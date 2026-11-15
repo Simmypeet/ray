@@ -466,13 +466,14 @@ impl ReturnType {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub enum EnvironmentSlot {
-    /// As `void *`: the body of a `run ... with`, an operation handler, and
-    /// the callback slots of a handler record, which are called without
-    /// knowing the environment of the callback.
+    /// As `void *`: an operation handler, and the callback slots of a handler
+    /// record, which are called without knowing the environment of the
+    /// callback.
     Opaque,
 
     /// The environment itself, by value: the body of a closure, whose value
-    /// is its environment.
+    /// is its environment, and the body of a `run ... with`, which only the
+    /// function that runs it calls.
     ByValue(MonoEnvironmentInstance),
 }
 
