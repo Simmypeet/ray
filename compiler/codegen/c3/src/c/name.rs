@@ -21,6 +21,7 @@ use qbice::{
 };
 use rayc_mono_ir::{
     MonoBodyInstance, MonoCoroutineInstance, MonoFunctionInstance, MonoGeneratedAdtDropInstance,
+    function::LocalID, ty::AggregateType,
 };
 
 /// A domain-separated 128-bit stable hash, rendered in base 62.
@@ -61,6 +62,62 @@ impl fmt::Display for StableID {
 
         let encoded = str::from_utf8(&encoded[start..]).map_err(|_| fmt::Error)?;
         formatter.write_str(encoded)
+    }
+}
+
+/// The C struct tag of an aggregate type, e.g. `RayTuple_<id>`.
+///
+/// The derived ordering follows the stable ID, which is what the aggregates
+/// are sorted by in the output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct AggregateName {
+    id: StableID,
+    category: &'static str,
+}
+
+impl AggregateName {
+    pub(crate) fn of(aggregate: &AggregateType) -> Self {
+        let (category, domain) = match aggregate {
+            AggregateType::EffectHandlerCallback(_) => {
+                ("EffectHandler", "rayc_c2::EffectHandlerLayout:v1")
+            }
+            AggregateType::Tuple(_) => ("Tuple", "rayc_c2::TupleLayout:v1"),
+            AggregateType::Environment(_) => ("Environment", "rayc_c2::EnvironmentLayout:v1"),
+            AggregateType::Struct(_) => ("Struct", "rayc_c2::StructLayout:v1"),
+            AggregateType::CoroutineFrame(_) => {
+                ("CoroutineFrame", "rayc_c2::CoroutineFrameLayout:v1")
+            }
+            AggregateType::CoroutineResume(_) => {
+                ("CoroutineResume", "rayc_c2::CoroutineResumeLayout:v1")
+            }
+            AggregateType::CoroutineYield(_) => {
+                ("CoroutineYield", "rayc_c2::CoroutineYieldLayout:v1")
+            }
+            AggregateType::CoroutineProgress(_) => {
+                ("CoroutineProgress", "rayc_c2::CoroutineProgressLayout:v1")
+            }
+            AggregateType::RunWithFrames(_) => ("RunWithFrames", "rayc_c2::RunWithFramesLayout:v1"),
+        };
+        Self { id: StableID::of(domain, aggregate), category }
+    }
+
+    /// The `typedef` alias used everywhere the aggregate is spelled as a type.
+    pub(crate) const fn typedef(self) -> AggregateTypedefName { AggregateTypedefName(self) }
+}
+
+impl fmt::Display for AggregateName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "Ray{}_{}", self.category, self.id)
+    }
+}
+
+/// The `typedef` alias of an aggregate, e.g. `RayTuple_<id>_t`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AggregateTypedefName(AggregateName);
+
+impl fmt::Display for AggregateTypedefName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}_t", self.0)
     }
 }
 
@@ -205,5 +262,15 @@ impl fmt::Display for LinkName {
             Self::Generated(name) => name.fmt(formatter),
             Self::Extern(name) => formatter.write_str(name),
         }
+    }
+}
+
+/// A function-local variable, including parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LocalName(pub(crate) LocalID);
+
+impl fmt::Display for LocalName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "ray_local_{:X}", self.0.index())
     }
 }
