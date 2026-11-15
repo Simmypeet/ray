@@ -6,3 +6,4 @@
 //! engine; facts that require queries are resolved beforehand.
 
 pub(crate) mod name;
+pub(crate) mod ty;
