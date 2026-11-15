@@ -7,13 +7,13 @@ use std::{
     process::ExitCode,
 };
 
+use rayc_c3::CTranslationUnitOptions;
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 use rayc_target::{TargetID, TargetKind};
 use tempfile::{Builder, NamedTempFile, TempPath};
 
 use crate::{
-    c_backend::{CBackend, CTranslationUnitOptions},
     invocation::Artifact,
     native::{NativeError, NativeOptions, compile_c, launch_executable, link_executable},
 };
@@ -291,18 +291,18 @@ async fn write_c(
     writer: &mut impl Write,
     output_path: &Path,
 ) -> Result<(), ArtifactError> {
-    CBackend::from_environment()
-        .write_translation_unit(engine, target_id, options, writer)
-        .await
-        .map_err(|source| ArtifactError::GenerateC { output_path: output_path.to_owned(), source })?;
+    rayc_c3::write_c_translation_unit(engine, target_id, options, writer).await.map_err(
+        |source| ArtifactError::GenerateC { output_path: output_path.to_owned(), source },
+    )?;
     writer
         .flush()
         .map_err(|source| ArtifactError::FlushC { output_path: output_path.to_owned(), source })
 }
 
 fn write_runtime_c(writer: &mut impl Write, output_path: &Path) -> Result<(), ArtifactError> {
-    CBackend::from_environment().write_runtime(writer).map_err(|source| {
-        ArtifactError::GenerateC { output_path: output_path.to_owned(), source }
+    rayc_c3::write_c_runtime(writer).map_err(|source| ArtifactError::GenerateC {
+        output_path: output_path.to_owned(),
+        source,
     })?;
     writer
         .flush()

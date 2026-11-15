@@ -8,9 +8,6 @@
 //! counter. A name then depends only on what it names, never on which function
 //! happened to be generated first, which keeps the output the same however
 //! functions are scheduled.
-//!
-//! The hash domains are spelled as in `rayc_c2`, so that both backends give
-//! every item the same name and their output can be compared directly.
 
 use std::fmt;
 
@@ -90,24 +87,24 @@ impl AggregateName {
     pub(crate) fn of(aggregate: &AggregateType) -> Self {
         let (category, domain) = match aggregate {
             AggregateType::EffectHandlerCallback(_) => {
-                ("EffectHandler", "rayc_c2::EffectHandlerLayout:v1")
+                ("EffectHandler", "rayc_c3::EffectHandlerLayout:v1")
             }
-            AggregateType::Tuple(_) => ("Tuple", "rayc_c2::TupleLayout:v1"),
-            AggregateType::Environment(_) => ("Environment", "rayc_c2::EnvironmentLayout:v1"),
-            AggregateType::Struct(_) => ("Struct", "rayc_c2::StructLayout:v1"),
+            AggregateType::Tuple(_) => ("Tuple", "rayc_c3::TupleLayout:v1"),
+            AggregateType::Environment(_) => ("Environment", "rayc_c3::EnvironmentLayout:v1"),
+            AggregateType::Struct(_) => ("Struct", "rayc_c3::StructLayout:v1"),
             AggregateType::CoroutineFrame(_) => {
-                ("CoroutineFrame", "rayc_c2::CoroutineFrameLayout:v1")
+                ("CoroutineFrame", "rayc_c3::CoroutineFrameLayout:v1")
             }
             AggregateType::CoroutineResume(_) => {
-                ("CoroutineResume", "rayc_c2::CoroutineResumeLayout:v1")
+                ("CoroutineResume", "rayc_c3::CoroutineResumeLayout:v1")
             }
             AggregateType::CoroutineYield(_) => {
-                ("CoroutineYield", "rayc_c2::CoroutineYieldLayout:v1")
+                ("CoroutineYield", "rayc_c3::CoroutineYieldLayout:v1")
             }
             AggregateType::CoroutineProgress(_) => {
-                ("CoroutineProgress", "rayc_c2::CoroutineProgressLayout:v1")
+                ("CoroutineProgress", "rayc_c3::CoroutineProgressLayout:v1")
             }
-            AggregateType::RunWithFrames(_) => ("RunWithFrames", "rayc_c2::RunWithFramesLayout:v1"),
+            AggregateType::RunWithFrames(_) => ("RunWithFrames", "rayc_c3::RunWithFramesLayout:v1"),
         };
         Self { id: StableID::of(domain, aggregate), category }
     }
@@ -147,9 +144,9 @@ pub(crate) struct BodyName {
 impl BodyName {
     pub(crate) fn of(instance: &MonoBodyInstance) -> Self {
         Self {
-            symbol: StableID::of("rayc_c2::DefinitionSymbol:v1", &instance.def_id()),
+            symbol: StableID::of("rayc_c3::DefinitionSymbol:v1", &instance.def_id()),
             substitution: StableID::of(
-                "rayc_c2::DefinitionSubstitution:v1",
+                "rayc_c3::DefinitionSubstitution:v1",
                 instance.substitution(),
             ),
             function: instance.ir_function_id().index(),
@@ -169,7 +166,7 @@ pub(crate) struct NominalDropName(StableID);
 
 impl NominalDropName {
     pub(crate) fn of(instance: &MonoGeneratedAdtDropInstance) -> Self {
-        Self(StableID::of("rayc_c2::NominalDrop:v1", instance))
+        Self(StableID::of("rayc_c3::NominalDrop:v1", instance))
     }
 }
 
@@ -185,7 +182,7 @@ pub(crate) struct CoroutineResumeName(StableID);
 
 impl CoroutineResumeName {
     pub(crate) fn of(instance: &MonoCoroutineInstance) -> Self {
-        Self(StableID::of("rayc_c2::CoroutineResume:v1", instance))
+        Self(StableID::of("rayc_c3::CoroutineResume:v1", instance))
     }
 }
 
@@ -201,7 +198,7 @@ pub(crate) struct CoroutineDropName(StableID);
 
 impl CoroutineDropName {
     pub(crate) fn of(instance: &MonoCoroutineInstance) -> Self {
-        Self(StableID::of("rayc_c2::CoroutineDrop:v1", instance))
+        Self(StableID::of("rayc_c3::CoroutineDrop:v1", instance))
     }
 }
 
@@ -432,5 +429,5 @@ fn write_savable_name(formatter: &mut fmt::Formatter<'_>, savable: Savable) -> f
 /// The stable ID of an effect operation, which names its members in a
 /// handler record and its clause in the frames of a `run ... with`.
 fn operation_id(operation: GlobalSymbolID) -> StableID {
-    StableID::of("rayc_c2::EffectOperation:v1", &operation)
+    StableID::of("rayc_c3::EffectOperation:v1", &operation)
 }
