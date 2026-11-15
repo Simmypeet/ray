@@ -1880,9 +1880,13 @@ dependencies = [
 name = "rayc_c3"
 version = "0.1.0-beta.2"
 dependencies = [
+ "rayc_hash",
+ "rayc_mono_ir",
  "rayc_qbice",
+ "rayc_solver",
  "rayc_symbol",
  "rayc_target",
+ "rayc_type",
 ]
 
 [[package]]

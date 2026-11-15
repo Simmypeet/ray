@@ -4,6 +4,14 @@
 //! `rayc_c2` and is built up incrementally next to it; the driver selects it
 //! with `RAYC_C_BACKEND=c3`.
 //!
+//! The crate is organized around one unit of work, generating a function:
+//!
+//! - `roots` finds the functions generation starts from;
+//! - `function` generates one function, reporting the functions it refers to;
+//! - `coordinator` schedules every function reachable from the roots, each
+//!   once;
+//! - `unit` assembles the generated functions into a translation unit.
+//!
 //! The generated code needs some functions from the C environment, such as
 //! heap allocation. They form a second translation unit, the runtime, which
 //! [`write_c_runtime`] writes. The two units are compiled separately and
@@ -11,10 +19,21 @@
 
 use std::io::{self, Write};
 
+use rayc_mono_ir::MonoFunctionInstance;
 use rayc_qbice::TrackedEngine;
+use rayc_solver::Solver;
 use rayc_symbol::GlobalSymbolID;
 use rayc_target::TargetID;
 
+use crate::{
+    coordinator::Coordinator,
+    roots::{lifetime_erased_instance, root_definitions},
+    unit::TranslationUnit,
+};
+
+mod coordinator;
+mod function;
+mod roots;
 mod unit;
 
 /// Options controlling the contents of a generated C translation unit.
@@ -41,19 +60,37 @@ impl CTranslationUnitOptions {
 /// from the definitions in `target_id` that are polymorphic over lifetimes at
 /// most.
 ///
-/// For now, only the prelude is written.
-#[expect(
-    clippy::unused_async,
-    unused_variables,
-    reason = "no function is generated yet, so the engine is not queried"
-)]
+/// For now, the reachable functions are only listed in comments.
 pub async fn write_c_translation_unit(
     engine: &TrackedEngine,
     target_id: TargetID,
     options: CTranslationUnitOptions,
     output: &mut impl Write,
 ) -> io::Result<()> {
-    output.write_all(unit::PRELUDE.as_bytes())
+    // every root instance is normalized with the same solver
+    let solver = Solver::without_givens(engine.clone()).await;
+    let roots = root_definitions(engine, target_id, &solver).await;
+    let entry_point = match options.entry_point {
+        Some(entry_point) => Some(
+            lifetime_erased_instance(engine, entry_point, &solver)
+                .await
+                .expect("a validated entry point should not be polymorphic"),
+        ),
+        None => None,
+    };
+
+    // generate every function reachable from the roots
+    let functions = Coordinator::new(engine).generate(roots).await;
+
+    // the entry point has no type parameters, so it is a root itself
+    if let Some(entry_point) = entry_point {
+        assert!(
+            functions.contains_key(&MonoFunctionInstance::Body(entry_point)),
+            "the executable entry point should be among the generated functions"
+        );
+    }
+
+    write!(output, "{}", TranslationUnit::new(functions))
 }
 
 /// The source of the Ray runtime, a C translation unit that every program is

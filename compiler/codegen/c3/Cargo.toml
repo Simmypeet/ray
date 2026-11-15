@@ -7,9 +7,13 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rayc_hash.path = "../../base/hash"
+rayc_mono_ir.path = "../../semantic/mono_ir"
 rayc_qbice.path = "../../base/qbice"
+rayc_solver.path = "../../semantic/solver"
 rayc_symbol.path = "../../semantic/symbol"
 rayc_target.path = "../../base/target"
+rayc_type.path = "../../semantic/type"
 
 [lints]
 workspace = true
