@@ -15,6 +15,7 @@ use rayc_type::poly_var;
 
 use crate::{
     build::{DiagnosticKey, ObligationKey},
+    marker_implementation::get_overlapping_implementation,
     obligation::solve_obligations,
     variance::VarianceMismatchKey,
 };
@@ -102,6 +103,11 @@ async fn single_rendered_executor(
         // them as implied predicates of its where clause.
         for diagnostic in diagnostics.iter() {
             rendered.push(diagnostic.report(engine).await);
+        }
+
+        // overlaps are checked over the whole target
+        if let Some(overlap) = get_overlapping_implementation(engine, symbol_id).await {
+            rendered.push(overlap.report(engine).await);
         }
     }
 

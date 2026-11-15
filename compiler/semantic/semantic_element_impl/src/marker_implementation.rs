@@ -1,9 +1,13 @@
 use derive_more::From;
-use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use linkme::distributed_slice;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 use rayc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use rayc_handler::{Handler, Storage};
 use rayc_lexical::tree::RelativeSpan;
-use rayc_qbice::TrackedEngine;
+use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_resolution::resolver::Resolver;
 use rayc_semantic_element::marker_implementation::{
     Key, MarkerImplementation as SemanticMarkerImplementation, MarkerImplementationPolarity,
@@ -20,6 +24,7 @@ use rayc_symbol::{
         get_where_clause_syntax, is_negative_marker_implementation,
     },
 };
+use rayc_target::TargetID;
 use rayc_type::{
     poly_var::{GlobalPolyVarID, get_enclosing_poly_var_maps, get_poly_var_map},
     ty::{Ty, application::View as ApplicationView},
@@ -202,7 +207,6 @@ pub enum Diagnostic {
     InvalidHead(InvalidHead),
     InvalidTypeVariableOccurrence(InvalidTypeVariableOccurrence),
     NegativeImplementationWhereClause(NegativeImplementationWhereClause),
-    OverlappingImplementation(OverlappingImplementation),
 }
 
 impl Report for Diagnostic {
@@ -212,7 +216,6 @@ impl Report for Diagnostic {
             Self::InvalidHead(diagnostic) => diagnostic.report(engine).await,
             Self::InvalidTypeVariableOccurrence(diagnostic) => diagnostic.report(engine).await,
             Self::NegativeImplementationWhereClause(diagnostic) => diagnostic.report(engine).await,
-            Self::OverlappingImplementation(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -325,49 +328,94 @@ async fn validate_head(
     valid
 }
 
-async fn find_overlapping_implementation(
-    engine: &TrackedEngine,
-    symbol_id: GlobalSymbolID,
-    implementation: &SemanticMarkerImplementation,
-) -> Option<RelativeSpan> {
-    if !implementation.has_valid_head() || implementation.marker_id().is_none() {
-        return None;
-    }
+/// An implementation that overlaps an earlier one, in source order, with the
+/// diagnostic it reports.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+struct Overlap {
+    implementation: GlobalSymbolID,
+    diagnostic: OverlappingImplementation,
+}
 
-    let current_span = engine.get_span(symbol_id).await?;
-    let current_absolute = engine.to_absolute_span(&current_span).await;
-    let current_position = (current_absolute.source_id, current_absolute.start);
-    let mut previous = Vec::new();
-    for id in engine.get_all_symbol_ids(symbol_id.target_id).await.iter().copied() {
-        let candidate = symbol_id.target_id.make_global(id);
-        if engine.get_symbol_kind(candidate).await != SymbolKind::MarkerImplementation {
+/// The overlaps between the marker implementations of a target: every
+/// implementation that overlaps an earlier one in source order, with the first
+/// earlier one it overlaps.
+///
+/// Overlap is a property of the whole set of implementations, decided in source
+/// order, which reads the text of every file declaring one. Only the
+/// diagnostics read it, so that an edit to such a file dirties no semantic
+/// query. It is a firewall: the edit makes it recompute, but the diagnostics
+/// only when an overlap changes.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Interned<[Overlap]>)]
+struct OverlapsKey {
+    target_id: TargetID,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
+async fn overlaps_executor(
+    &OverlapsKey { target_id }: &OverlapsKey,
+    engine: &TrackedEngine,
+) -> Interned<[Overlap]> {
+    // the marker implementations of the target in source order
+    let mut ordered = Vec::new();
+    for id in engine.get_all_symbol_ids(target_id).await.iter().copied() {
+        let symbol_id = target_id.make_global(id);
+        if engine.get_symbol_kind(symbol_id).await != SymbolKind::MarkerImplementation {
             continue;
         }
-        let Some(span) = engine.get_span(candidate).await else {
+        let Some(span) = engine.get_span(symbol_id).await else {
             continue;
         };
         let absolute = engine.to_absolute_span(&span).await;
-        let position = (absolute.source_id, absolute.start);
+        let implementation = engine.get_marker_implementation(symbol_id).await;
+        ordered.push(((absolute.source_id, absolute.start), span, symbol_id, implementation));
+    }
+    ordered.sort_unstable_by_key(|(position, ..)| *position);
 
-        // Only query implementations that appear before the current one. This
-        // directs semantic-element dependencies from later declarations to
-        // earlier ones, preventing query cycles. It also makes the later
-        // declaration responsible for reporting the overlap, so the same
-        // conflict is not diagnosed from both implementations.
-        if position < current_position {
-            previous.push((position, span, candidate));
+    // a later implementation reports the first earlier one it overlaps, so
+    // that the same conflict is not reported from both
+    let mut overlaps = Vec::new();
+    for (index, (_, current_span, symbol_id, implementation)) in ordered.iter().enumerate() {
+        if !implementation.has_valid_head() || implementation.marker_id().is_none() {
+            continue;
+        }
+
+        let previous =
+            ordered[..index].iter().find(|(_, _, _, candidate)| implementation.overlaps(candidate));
+        if let Some((_, previous_span, ..)) = previous {
+            overlaps.push(Overlap {
+                implementation: *symbol_id,
+                diagnostic: OverlappingImplementation {
+                    current_span: *current_span,
+                    previous_span: *previous_span,
+                },
+            });
         }
     }
-    previous.sort_unstable_by_key(|(position, _, _)| *position);
 
-    for (_, span, candidate) in previous {
-        let candidate = engine.get_marker_implementation(candidate).await;
-        if implementation.overlaps(&candidate) {
-            return Some(span);
-        }
-    }
+    engine.intern_unsized(overlaps)
+}
 
-    None
+#[distributed_slice(RAY_PROGRAM)]
+static OVERLAPS_EXECUTOR: Registration<Config> =
+    Registration::new::<OverlapsKey, OverlapsExecutor>();
+
+/// Returns the overlap the marker implementation `symbol_id` reports, if it
+/// overlaps an earlier implementation of its target.
+pub(crate) async fn get_overlapping_implementation(
+    engine: &TrackedEngine,
+    symbol_id: GlobalSymbolID,
+) -> Option<OverlappingImplementation> {
+    let overlaps = engine.query(&OverlapsKey { target_id: symbol_id.target_id }).await;
+
+    overlaps
+        .iter()
+        .find(|overlap| overlap.implementation == symbol_id)
+        .map(|overlap| overlap.diagnostic)
 }
 
 impl Build for Key {
@@ -420,20 +468,10 @@ impl Build for Key {
             ));
         }
 
-        // Compare only against earlier declarations to keep overlap queries acyclic.
+        // overlaps with the other implementations are checked over the whole
+        // target, by `OverlapsKey`
         let implementation =
             SemanticMarkerImplementation::new(marker_id, implementor, valid_head, polarity);
-        if let Some(previous_span) =
-            find_overlapping_implementation(engine, symbol_id, &implementation).await
-        {
-            diagnostics.receive(Diagnostic::OverlappingImplementation(OverlappingImplementation {
-                current_span: engine
-                    .get_span(symbol_id)
-                    .await
-                    .expect("a marker implementation should have a source span"),
-                previous_span,
-            }));
-        }
 
         Output::new_with(
             engine.intern(implementation),
