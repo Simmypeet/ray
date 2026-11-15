@@ -32,7 +32,7 @@ void ray_check_heap(void);
 
 /// A generated C translation unit, which renders through [`Display`].
 ///
-/// For now, each generated function is only listed in a comment.
+/// For now, each generated function is only listed, by name, in a comment.
 #[derive(Debug)]
 pub(crate) struct TranslationUnit {
     functions: GeneratedFunctions,
@@ -47,8 +47,8 @@ impl Display for TranslationUnit {
         formatter.write_str(PRELUDE)?;
 
         writeln!(formatter, "/* Reachable functions */")?;
-        for instance in self.functions.keys() {
-            writeln!(formatter, "/* {instance:?} */")?;
+        for function in self.functions.values() {
+            writeln!(formatter, "/* {} */", function.name())?;
         }
         Ok(())
     }

@@ -6,6 +6,8 @@
 //!
 //! The crate is organized around one unit of work, generating a function:
 //!
+//! - `c` renders C syntax, such as names, as allocation-free
+//!   [`std::fmt::Display`] adaptors that never query the engine;
 //! - `roots` finds the functions generation starts from;
 //! - `function` generates one function, reporting the functions it refers to;
 //! - `coordinator` schedules every function reachable from the roots, each
@@ -31,6 +33,7 @@ use crate::{
     unit::TranslationUnit,
 };
 
+mod c;
 mod coordinator;
 mod function;
 mod roots;

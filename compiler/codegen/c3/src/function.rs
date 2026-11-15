@@ -13,11 +13,16 @@ use rayc_mono_ir::{
     rvalue::Rvalue,
 };
 use rayc_qbice::TrackedEngine;
+use rayc_symbol::name::get_name;
+
+use crate::c::name::{FunctionName, LinkName};
 
 /// What generating one function produced.
 #[derive(Debug)]
 pub(crate) struct FunctionOutput {
     instance: MonoFunctionInstance,
+    /// The name the function is defined or declared under.
+    name: LinkName,
     /// Every function the generated code refers to, in the order the
     /// references appear and possibly repeated.
     callees: Vec<MonoFunctionInstance>,
@@ -26,6 +31,9 @@ pub(crate) struct FunctionOutput {
 impl FunctionOutput {
     /// The function that was generated.
     pub(crate) const fn instance(&self) -> &MonoFunctionInstance { &self.instance }
+
+    /// The name the function is defined or declared under.
+    pub(crate) const fn name(&self) -> &LinkName { &self.name }
 
     /// The functions the generated code refers to, which must be generated
     /// too.
@@ -42,7 +50,11 @@ pub(crate) async fn generate_function(
     match instance {
         // provided by the C environment: there is no body to lower, and so
         // nothing it refers to
-        MonoFunctionInstance::ExternDef(_) => FunctionOutput { instance, callees: Vec::new() },
+        MonoFunctionInstance::ExternDef(def_id) => FunctionOutput {
+            name: LinkName::Extern(engine.get_name(def_id).await),
+            instance,
+            callees: Vec::new(),
+        },
 
         MonoFunctionInstance::Body(_)
         | MonoFunctionInstance::NominalDrop(_)
@@ -79,7 +91,12 @@ impl<'f> FunctionGenerator<'f> {
             self.visit_terminator(terminator);
         }
 
-        FunctionOutput { instance: self.function.instance().clone(), callees: self.callees }
+        let instance = self.function.instance().clone();
+        FunctionOutput {
+            name: LinkName::Generated(FunctionName::of(&instance)),
+            instance,
+            callees: self.callees,
+        }
     }
 
     fn visit_instruction(&mut self, instruction: &Instruction) {

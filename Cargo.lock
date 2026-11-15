@@ -1880,6 +1880,7 @@ dependencies = [
 name = "rayc_c3"
 version = "0.1.0-beta.2"
 dependencies = [
+ "qbice",
  "rayc_hash",
  "rayc_mono_ir",
  "rayc_qbice",
