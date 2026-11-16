@@ -7,11 +7,12 @@ edit: adds `pub def extra` to `m0.ray`, between its helpers and `work0`, and a c
 diff at modules = 3, edited_functions = 3:
   --- m0.ray
   +++ m0.ray
-  @@ -57,4 +57,8 @@
+  @@ -57,4 +57,9 @@
 
 
   +pub def extra(seed: int32) -> int32:
-  +    return seed + 1
+  +    let flag = invoke(() -> identity(seed != 0), ())
+  +    return if flag: seed + 1 else: 0
   +
   +
    pub def work0(seed: int32) -> int32:
@@ -29,42 +30,20 @@ diagnostics after the edit: none
 along modules [3, 6, 9, 12]:
   adds: file modules like `m1.ray`, which `main.ray` declares and calls and the edit does not touch
   grows:
-    firewalls:
-      rayc_semantic_element_impl:
-        marker_implementation::OverlapsKey linear in dirtied edges
     projections:
+      rayc_symbol:
+        member::MemberByNameKey linear in recomputed unchanged, dirtied edges
       rayc_symbol_impl:
-        index::SymbolTableKey linear in recomputed unchanged, dirtied edges
-    normal queries:
-      rayc_borrowck:
-        query::BorrowCheck       linear in dirtied edges
-        query::RenderedKey       linear in dirtied edges
-        query::SingleRenderedKey linear in dirtied edges
-      rayc_ir:
-        Key linear in dirtied edges
-      rayc_ir_builder:
-        query::BuildIR               linear in dirtied edges
-        query::EntailDeferredMarkers linear in dirtied edges
-        query::RenderedKey           linear in dirtied edges
-        query::SingleRenderedKey     linear in dirtied edges
-      rayc_semantic_element:
-        all_instance_implements_trait::AllInstanceImplementsTrait linear in dirtied edges
-      rayc_source_file:
-        FilePathKey linear in recomputed unchanged, dirtied edges
-      rayc_typed_ast:
-        Key linear in dirtied edges
-      rayc_typed_ast_builder:
-        query::BuildTAst         linear in dirtied edges
-        query::RenderedKey       linear in dirtied edges
-        query::SingleRenderedKey linear in dirtied edges
+        index::SourceFilePathKey linear in recomputed unchanged, dirtied edges
+        index::SymbolTableKey    linear in recomputed unchanged, dirtied edges
 
 along edited_functions [3, 6, 9, 12]:
   adds: functions like `work1` to `m0.ray`, the edited module, below the added function
   grows:
     projections:
+      rayc_symbol:
+        member::MemberByNameKey linear in recomputed unchanged, dirtied edges
       rayc_symbol_impl:
-        syntax::ParameterListSyntaxProjection          linear in recomputed changed, dirtied edges
-        syntax::ReturnTypeSyntaxProjection             linear in recomputed changed, dirtied edges
         accessibility::DeclaredAccessibilityProjection linear in recomputed unchanged, dirtied edges
         index::SymbolTableKey                          linear in recomputed unchanged, dirtied edges
         parent::ParentProjection                       linear in recomputed unchanged, dirtied edges
@@ -73,59 +52,8 @@ along edited_functions [3, 6, 9, 12]:
         syntax::DefBodySyntaxProjection                linear in recomputed unchanged, dirtied edges
         syntax::EffectRowSyntaxProjection              linear in recomputed unchanged, dirtied edges
         syntax::GivenParameterListSyntaxProjection     linear in recomputed unchanged, dirtied edges
+        syntax::ParameterListSyntaxProjection          linear in recomputed unchanged, dirtied edges
+        syntax::ReturnTypeSyntaxProjection             linear in recomputed unchanged, dirtied edges
         syntax::TypeParameterListSyntaxProjection      linear in recomputed unchanged, dirtied edges
         syntax::VariadicDefProjection                  linear in recomputed unchanged, dirtied edges
         syntax::WhereClauseSyntaxProjection            linear in recomputed unchanged, dirtied edges
-    normal queries:
-      rayc_borrowck:
-        query::BorrowCheck       linear in recomputed unchanged, dirtied edges
-        query::RenderedKey       linear in dirtied edges
-        query::SingleRenderedKey linear in dirtied edges
-      rayc_ir:
-        Key linear in dirtied edges
-      rayc_ir_builder:
-        query::BuildIR               linear in recomputed unchanged, dirtied edges
-        query::EntailDeferredMarkers linear in dirtied edges
-        query::RenderedKey           linear in dirtied edges
-        query::SingleRenderedKey     linear in dirtied edges
-      rayc_semantic_element:
-        parameter::Key          linear in recomputed changed, dirtied edges
-        callable_parameter::Key linear in dirtied edges
-      rayc_semantic_element_impl:
-        build::Key<rayc_semantic_element::parameter::Key>           linear in recomputed changed, dirtied edges
-        build::DiagnosticKey<rayc_semantic_element::parameter::Key> linear in recomputed unchanged, dirtied edges
-        build::Key<rayc_semantic_element::callable_parameter::Key>  linear in recomputed unchanged, dirtied edges
-        build::Key<rayc_type::poly_var::Key>                        linear in recomputed unchanged, dirtied edges
-        build::Key<rayc_type::signature::ReturnTypeKey>             linear in recomputed unchanged, dirtied edges
-        build::ObligationKey<rayc_semantic_element::parameter::Key> linear in recomputed unchanged, dirtied edges
-        build::DiagnosticKey<rayc_type::poly_var::Key>              linear in dirtied edges
-        build::DiagnosticKey<rayc_type::signature::EffectRowKey>    linear in dirtied edges
-        build::DiagnosticKey<rayc_type::signature::ReturnTypeKey>   linear in dirtied edges
-        build::DiagnosticKey<rayc_type::where_clause::DeclaredKey>  linear in dirtied edges
-        build::Key<rayc_type::signature::EffectRowKey>              linear in dirtied edges
-        build::Key<rayc_type::where_clause::DeclaredKey>            linear in dirtied edges
-        build::ObligationKey<rayc_type::poly_var::Key>              linear in dirtied edges
-        build::ObligationKey<rayc_type::signature::EffectRowKey>    linear in dirtied edges
-        build::ObligationKey<rayc_type::signature::ReturnTypeKey>   linear in dirtied edges
-        build::ObligationKey<rayc_type::where_clause::DeclaredKey>  linear in dirtied edges
-        diagnostic::RenderedKey                                     linear in dirtied edges
-        diagnostic::SingleRenderedKey                               linear in dirtied edges
-      rayc_solver:
-        givens::Key                      linear in dirtied edges
-        outlives::OutlivesEnvironmentKey linear in dirtied edges
-      rayc_symbol:
-        syntax::ParameterListSyntaxKey linear in recomputed changed, dirtied edges
-        syntax::ReturnTypeSyntaxKey    linear in recomputed changed, dirtied edges
-      rayc_type:
-        where_clause::Key          linear in recomputed unchanged, dirtied edges
-        poly_var::EnclosingMapsKey linear in dirtied edges
-        poly_var::Key              linear in dirtied edges
-        signature::EffectRowKey    linear in dirtied edges
-        signature::ReturnTypeKey   linear in dirtied edges
-        where_clause::DeclaredKey  linear in dirtied edges
-      rayc_typed_ast:
-        Key linear in recomputed changed, dirtied edges
-      rayc_typed_ast_builder:
-        query::BuildTAst         linear in recomputed changed, dirtied edges
-        query::SingleRenderedKey linear in recomputed unchanged, dirtied edges
-        query::RenderedKey       linear in dirtied edges

@@ -10,8 +10,8 @@ use rayc_qbice::TrackedEngine;
 use rayc_resolution::import::ImportResolver;
 use rayc_semantic_element::import::{Imports, Key};
 use rayc_symbol::{
-    GlobalSymbolID, member::get_members, name::get_qualified_name, source_map::to_absolute_span,
-    span::get_span, syntax::get_imports_syntax,
+    GlobalSymbolID, member::get_member_by_name, name::get_qualified_name,
+    source_map::to_absolute_span, span::get_span, syntax::get_imports_syntax,
 };
 use rayc_syntax::{import::ImportItemName, path::Path};
 
@@ -183,7 +183,6 @@ impl Build for Key {
 
     async fn execute(engine: &TrackedEngine, &Self { module_id }: &Self) -> Output<Self> {
         let syntax = engine.get_imports_syntax(module_id).await;
-        let members = engine.get_members(module_id).await;
         let resolution_diagnostics = Storage::new();
         let resolver = ImportResolver::new(engine, module_id, &resolution_diagnostics);
 
@@ -211,10 +210,13 @@ impl Build for Key {
                 let name = identifier.kind.0.clone();
 
                 // the name must not be taken by a member, even one declared
-                // after the imports, nor by an earlier import
-                let owner = members
-                    .get_by_name(&name)
-                    .map(|id| ImportNameOwner::Member(module_id.target_id.make_global(id)))
+                // after the imports, nor by an earlier import; the member is
+                // looked up by name, so that the imports of a module do not
+                // depend on its members of other names
+                let owner = engine
+                    .get_member_by_name(module_id, &name)
+                    .await
+                    .map(ImportNameOwner::Member)
                     .or_else(|| spans_by_name.get(&name).copied().map(ImportNameOwner::Import));
                 if let Some(owner) = owner {
                     diagnostics.push(Diagnostic::NameCollision(ImportNameCollision {

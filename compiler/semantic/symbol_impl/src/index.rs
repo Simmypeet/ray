@@ -200,6 +200,46 @@ pub async fn try_get_symbol_table(
     Some(self.get_table(&table_key).await)
 }
 
+/// A projection of the [`TableIndex`] for the path of a single source file,
+/// or `None` if the file is not loaded into its target.
+///
+/// The index changes whenever a symbol is added or removed anywhere in the
+/// target, whereas the path of a source file rarely changes. Every query that
+/// reads a source file reads its path, so reading it from the index directly
+/// would dirty all of them with such an edit.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<Interned<Path>>)]
+struct SourceFilePathKey {
+    source_id: GlobalSourceID,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn source_file_path_executor(
+    &SourceFilePathKey { source_id }: &SourceFilePathKey,
+    engine: &TrackedEngine,
+) -> Option<Interned<Path>> {
+    engine.get_table_index(source_id.target_id).await.source_file_path(source_id.id).cloned()
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static SOURCE_FILE_PATH_EXECUTOR: Registration<Config> =
+    Registration::new::<SourceFilePathKey, SourceFilePathExecutor>();
+
+/// Returns the path of the source file `source_id`, or `None` if the file is
+/// not loaded into its target.
+///
+/// It reads the path through a projection of the index, so it must not panic
+/// for a file that has been removed.
+#[extend]
+pub async fn try_get_source_file_path(
+    self: &TrackedEngine,
+    source_id: GlobalSourceID,
+) -> Option<Interned<Path>> {
+    self.query(&SourceFilePathKey { source_id }).await
+}
+
 /// Returns the module whose members the source file `source_id` defines, or
 /// `None` if the file is not loaded into its target.
 #[extend]

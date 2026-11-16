@@ -18,7 +18,7 @@ use rayc_symbol::{
     GlobalSymbolID, SymbolID,
     accessibility::Accessibility,
     core_item::{CoreItem, Key as CoreItemKey},
-    member::{Key as MemberKey, Member},
+    member::{Key as MemberKey, Member, MemberByNameKey},
     name::Key as NameKey,
     symbol_kind::{AllAdtIDs, AllInstanceIDs, Key as SymbolKindKey, SymbolKind},
     syntax::LinearTypeKey,
@@ -444,11 +444,15 @@ async fn concrete_associated_argument_does_not_become_external_requirement() {
     ]))));
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
         NameKey { symbol_id: trait_member },
-        item_name,
+        item_name.clone(),
     )]))));
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
         MemberKey { symbol_id: implementation },
         members,
+    )]))));
+    engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        MemberByNameKey { symbol_id: implementation, name: item_name },
+        Some(implementation_member.id),
     )]))));
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
         (SymbolKindKey { symbol_id: implementation }, SymbolKind::Instance),

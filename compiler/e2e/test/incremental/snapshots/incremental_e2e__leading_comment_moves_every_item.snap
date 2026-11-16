@@ -1,6 +1,5 @@
 ---
 source: compiler/e2e/test/incremental/mod.rs
-assertion_line: 91
 expression: checked.snapshot
 input_file: compiler/e2e/test/incremental/scenarios/leading_comment_moves_every_item.ray.j2
 ---
@@ -24,6 +23,8 @@ along edited_functions [3, 6, 9, 12]:
   adds: functions like `work1` to `m0.ray`, the edited module
   grows:
     projections:
+      rayc_symbol:
+        member::MemberByNameKey linear in recomputed unchanged, dirtied edges
       rayc_symbol_impl:
         accessibility::DeclaredAccessibilityProjection linear in recomputed unchanged, dirtied edges
         parent::ParentProjection                       linear in recomputed unchanged, dirtied edges
