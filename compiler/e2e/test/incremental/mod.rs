@@ -528,7 +528,7 @@ async fn render_diagnostics(
 
     let source_map = session.source_map().await;
     let prefixes = [dunce::canonicalize(directory).unwrap(), directory.to_path_buf()]
-        .map(|directory| format!("{}/", directory.display()));
+        .map(|directory| format!("{}{}", directory.display(), std::path::MAIN_SEPARATOR));
 
     diagnostics
         .iter()
