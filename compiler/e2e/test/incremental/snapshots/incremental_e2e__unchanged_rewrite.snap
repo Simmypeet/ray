@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/incremental/mod.rs
+assertion_line: 91
+expression: checked.snapshot
+input_file: compiler/e2e/test/incremental/scenarios/unchanged_rewrite.ray.j2
+---
+edit: writes every file again, unchanged
+diff at modules = 3, functions = 3: none
+diagnostics before the edit: none
+diagnostics after the edit: none
+
+along modules [3, 6, 9, 12]:
+  adds: file modules like `m1.ray`, which `main.ray` calls
+  grows: nothing
+
+along functions [3, 6, 9, 12]:
+  adds: functions like `work1` to every file module
+  grows: nothing

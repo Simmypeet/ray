@@ -68,6 +68,11 @@ async fn create_engine(
 pub struct Session {
     invocation: Invocation,
     engine: TrackedEngine,
+
+    /// The engine that [`Self::engine`] tracks, which starts the input
+    /// sessions of later timestamps.
+    untracked_engine: Arc<Engine>,
+
     target_id: TargetID,
 }
 
@@ -187,8 +192,46 @@ impl Session {
             input_session.commit().await;
         }
 
-        Some(Self { invocation, engine: engine.tracked().await, target_id: local_target_id })
+        Some(Self {
+            invocation,
+            engine: engine.clone().tracked().await,
+            untracked_engine: engine,
+            target_id: local_target_id,
+        })
     }
+
+    /// Reads the source files of the target again, as after they were
+    /// edited, so that the queries that read a changed file recompute.
+    pub async fn refresh(self) -> Self {
+        let Self { invocation, engine, untracked_engine, target_id } = self;
+
+        // the input session waits for every tracked engine to be dropped
+        drop(engine);
+
+        {
+            let mut input_session = untracked_engine.input_session().await;
+            rayc_source_file_impl::refresh_source_file_executors(&mut input_session).await;
+            input_session.commit().await;
+        }
+
+        Self {
+            invocation,
+            engine: untracked_engine.clone().tracked().await,
+            untracked_engine,
+            target_id,
+        }
+    }
+
+    /// Turns the counters of [`Self::statistics`] on or off. They are off
+    /// by default.
+    pub fn set_statistics_enabled(&self, enabled: bool) {
+        self.untracked_engine.set_statistics_enabled(enabled);
+    }
+
+    /// The work the engine did for the queries of each type since the
+    /// session last read the source files, which [`Self::refresh`] does.
+    #[must_use]
+    pub fn statistics(&self) -> qbice::Statistics { self.untracked_engine.statistics() }
 
     /// Returns the engine the queries of the target run on.
     #[must_use]

@@ -1,0 +1,39 @@
+---
+source: compiler/e2e/test/incremental/mod.rs
+assertion_line: 91
+expression: checked.snapshot
+input_file: compiler/e2e/test/incremental/scenarios/leading_comment_moves_every_item.ray.j2
+---
+edit: adds a comment line at the top of `m0.ray`, which moves every item in it down a line and changes nothing else
+diff at modules = 3, edited_functions = 3:
+  --- m0.ray
+  +++ m0.ray
+  @@ -1,2 +1,4 @@
+  +# moves every item down a line
+  +
+   extern def printf(format: cstr, ...) -> c_int
+
+diagnostics before the edit: none
+diagnostics after the edit: none
+
+along modules [3, 6, 9, 12]:
+  adds: file modules like `m1.ray`, which `main.ray` calls and the edit does not touch
+  grows: nothing
+
+along edited_functions [3, 6, 9, 12]:
+  adds: functions like `work1` to `m0.ray`, the edited module
+  grows:
+    projections:
+      rayc_symbol_impl:
+        accessibility::DeclaredAccessibilityProjection linear in recomputed unchanged, dirtied edges
+        parent::ParentProjection                       linear in recomputed unchanged, dirtied edges
+        span::SpanProjection                           linear in recomputed unchanged, dirtied edges
+        symbol_kind::SymbolKindProjection              linear in recomputed unchanged, dirtied edges
+        syntax::DefBodySyntaxProjection                linear in recomputed unchanged, dirtied edges
+        syntax::EffectRowSyntaxProjection              linear in recomputed unchanged, dirtied edges
+        syntax::GivenParameterListSyntaxProjection     linear in recomputed unchanged, dirtied edges
+        syntax::ParameterListSyntaxProjection          linear in recomputed unchanged, dirtied edges
+        syntax::ReturnTypeSyntaxProjection             linear in recomputed unchanged, dirtied edges
+        syntax::TypeParameterListSyntaxProjection      linear in recomputed unchanged, dirtied edges
+        syntax::VariadicDefProjection                  linear in recomputed unchanged, dirtied edges
+        syntax::WhereClauseSyntaxProjection            linear in recomputed unchanged, dirtied edges

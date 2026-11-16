@@ -1,0 +1,37 @@
+{#
+edit = "changes `value: int32` of `Shape` in `shape.ray` to `value: int64`, which changes the type every user reads but no diagnostic"
+
+[[knobs]]
+name = "modules"
+base = 3
+adds = "file modules like `m0.ray`, which `main.ray` calls and which do not use `Shape`"
+
+[[knobs]]
+name = "users"
+base = 2
+adds = "functions like `use0` to `users.ray`, which read `shape.value`"
+#}
+{#
+Along the file modules, the drop plan projections grow: the drop plans of a
+target are one firewall, so a changed plan reruns the projection of every
+struct and enum of the target to find it. Along the users, the work of each
+user grows.
+#}
+{% import "shared/program.ray.j2" as program %}
+--- file main.ray
+{{ program.main(modules, others=["shape", "users"]) }}
+--- file shape.ray
+pub struct Shape:
+    pub value: {{ "int64" if edit else "int32" }}
+--- file users.ray
+{% for k in range(users) %}
+
+
+pub def use{{ k }}(shape: target.shape.Shape) -> int32:
+    let doubled = shape.value + shape.value
+    return {{ k }}
+{% endfor %}
+{% for m in range(modules) %}
+--- file m{{ m }}.ray
+{{ program.module(m, 3) }}
+{% endfor %}

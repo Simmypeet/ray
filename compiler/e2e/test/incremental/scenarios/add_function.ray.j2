@@ -1,0 +1,45 @@
+{#
+edit = "adds `pub def extra` to `m0.ray`, between its helpers and `work0`, and a call of it to `main` in `main.ray`"
+
+[[knobs]]
+name = "modules"
+base = 3
+adds = "file modules like `m1.ray`, which `main.ray` declares and calls and the edit does not touch"
+
+[[knobs]]
+name = "edited_functions"
+base = 3
+adds = "functions like `work1` to `m0.ray`, the edited module, below the added function"
+#}
+{#
+Only `main` calls the added function, so the work should not grow with the
+modules or functions that do not call it, apart from the projections of the
+tables of the two edited files: each table is a firewall, so a changed table
+reruns the projection of every symbol of its file. `main.ray` declares every
+module, and `m0.ray` holds the edited functions.
+
+Known gaps, which the snapshot shows: every `work<j>` has the parameter list
+`(seed: int32)` and return type `int32` of `extra`, and a branch of the token
+tree whose text another branch has takes its ID from how many come before it,
+so adding or removing `extra` renumbers them and recomputes the signature and
+the typed AST of every function below it. And `FilePathKey` reads the whole
+table index, which a new or removed symbol changes, so it dirties every query
+that reads a source file of the target, which all turn out clean.
+#}
+{% import "shared/program.ray.j2" as program %}
+{% set extra %}
+
+
+pub def extra(seed: int32) -> int32:
+    return seed + 1
+{% endset %}
+--- file main.ray
+{{ program.main(modules, calls=["m0.extra(0)"] if edit else []) }}
+{% for m in range(modules) %}
+--- file m{{ m }}.ray
+{% if m == 0 %}
+{{ program.module(m, edited_functions, items=extra if edit else "") }}
+{% else %}
+{{ program.module(m, 3) }}
+{% endif %}
+{% endfor %}

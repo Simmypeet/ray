@@ -1,0 +1,25 @@
+{#
+edit = "writes every file again, unchanged"
+no_work = true
+
+[[knobs]]
+name = "modules"
+base = 3
+adds = "file modules like `m1.ray`, which `main.ray` calls"
+
+[[knobs]]
+name = "functions"
+base = 3
+adds = "functions like `work1` to every file module"
+#}
+{#
+Nothing changed, so the check after the edit should do no work at all, however
+large the program.
+#}
+{% import "shared/program.ray.j2" as program %}
+--- file main.ray
+{{ program.main(modules) }}
+{% for m in range(modules) %}
+--- file m{{ m }}.ray
+{{ program.module(m, functions) }}
+{% endfor %}
