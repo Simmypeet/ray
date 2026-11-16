@@ -146,7 +146,7 @@ stacker = "0.1.21"
 serde_json = { version = "1.0.96" }
 fuzzy-matcher = { version = "0.3.7" }
 console-subscriber = "0.5.0"
-qbice = { version = "0.7.0", features = ["rocksdb"] }
+qbice = { version = "0.8.0", features = ["rocksdb"] }
 dunce = "1.0.5"
 linkme = { version = "0.3.35" }
 tikv-jemallocator = { version = "0.6.1", features = [
@@ -205,17 +205,3 @@ iter_on_single_items = "deny"
 
 [workspace.metadata.cargo-machete]
 ignored = ["strum"]
-
-# TEMPORARY: qbice 0.7.0 with dirty propagation logs and query statistics,
-# from the `dirty-propagation-logs` branch of a local qbice worktree.
-[patch.crates-io]
-qbice = { path = "/Users/simmypeet/Documents/qbice-dirty-logs/crates/qbice" }
-qbice_derive = { path = "/Users/simmypeet/Documents/qbice-dirty-logs/crates/qbice_derive" }
-qbice_identifiable_derive = { path = "/Users/simmypeet/Documents/qbice-dirty-logs/crates/identifiable_derive" }
-qbice_identifiable_derive_lib = { path = "/Users/simmypeet/Documents/qbice-dirty-logs/crates/identifiable_derive_lib" }
-qbice_serialize = { path = "/Users/simmypeet/Documents/qbice-dirty-logs/crates/serialize" }
-qbice_serialize_derive = { path = "/Users/simmypeet/Documents/qbice-dirty-logs/crates/serialize_derive" }
-qbice_stable_hash = { path = "/Users/simmypeet/Documents/qbice-dirty-logs/crates/stable_hash" }
-qbice_stable_hash_derive = { path = "/Users/simmypeet/Documents/qbice-dirty-logs/crates/stable_hash_derive" }
-qbice_stable_type_id = { path = "/Users/simmypeet/Documents/qbice-dirty-logs/crates/stable_type_id" }
-qbice_storage = { path = "/Users/simmypeet/Documents/qbice-dirty-logs/crates/storage" }

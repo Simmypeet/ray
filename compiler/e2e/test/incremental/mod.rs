@@ -19,9 +19,11 @@
 //! test outright, since no edit should cost that. Why the work in a snapshot
 //! grows, where it is by design, is in a comment of its template.
 
-use std::{fmt::Write as _, path::Path};
+use std::{collections::BTreeMap, fmt::Write as _, path::Path};
 
-use qbice::{ExecutionStyle, QueryStatistics, Statistics};
+use qbice::{
+    ExecutionStyle, Observability, QueryStatistics, Statistics, StatisticsLevel, StatisticsReset,
+};
 use rayc_diagnostic::{ByteIndex, Rendered};
 use rayc_driver::{
     Session,
@@ -405,7 +407,58 @@ struct Measurement {
     after: Vec<String>,
 
     /// The work the engine did for the check after the edit.
-    statistics: Statistics,
+    statistics: Work,
+}
+
+/// The work the engine did, by the name of each query type, which the
+/// snapshots sort and group by.
+#[derive(Debug, Clone)]
+struct Work {
+    by_name: BTreeMap<&'static str, QueryStatistics>,
+
+    /// The execution style of each query type with a registered executor.
+    styles: BTreeMap<&'static str, ExecutionStyle>,
+
+    total: QueryStatistics,
+}
+
+impl Work {
+    /// Names the query types of `statistics` through `session`.
+    ///
+    /// The inputs have no executor to name them and are left out: they are
+    /// never executed and call nothing, so they only count as verified
+    /// clean, which the snapshots do not follow. `total` still counts them.
+    fn new(statistics: &Statistics, session: &Session) -> Self {
+        let named: Vec<_> = statistics
+            .iter()
+            .filter_map(|(query_type, work)| {
+                Some((query_type, session.query_type_name(query_type)?, *work))
+            })
+            .collect();
+
+        let by_name = named.iter().map(|&(_, name, work)| (name, work)).collect();
+        let styles = named
+            .iter()
+            .filter_map(|&(query_type, name, _)| {
+                session.query_execution_style(query_type).map(|style| (name, style))
+            })
+            .collect();
+
+        Self { by_name, styles, total: statistics.total() }
+    }
+
+    fn get(&self, name: &str) -> Option<&QueryStatistics> { self.by_name.get(name) }
+
+    /// How the engine executes the query type `name`, or `None` for an input.
+    fn execution_style(&self, name: &str) -> Option<ExecutionStyle> {
+        self.styles.get(name).copied()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&'static str, &QueryStatistics)> {
+        self.by_name.iter().map(|(name, work)| (*name, work))
+    }
+
+    const fn total(&self) -> QueryStatistics { self.total }
 }
 
 /// Checks the program of `scenario` at `sizes`, applies its edit, checks it
@@ -425,16 +478,23 @@ async fn measure(scenario: &Scenario, sizes: &[usize]) -> Measurement {
         .build();
 
     let mut err_writer = Vec::new();
-    let session =
-        Session::new(&Arguments::new_check(input), &mut ReportTerm::new(&mut err_writer, false))
-            .await
-            .unwrap_or_else(|| panic!("{}", String::from_utf8_lossy(&err_writer)));
+    // the counters start again from zero when `refresh` commits the edit
+    let observability = Observability::builder()
+        .statistics(StatisticsLevel::ByQueryType)
+        .reset(StatisticsReset::OnCommit)
+        .build();
+    let session = Session::new_with_observability(
+        &Arguments::new_check(input),
+        observability,
+        &mut ReportTerm::new(&mut err_writer, false),
+    )
+    .await
+    .unwrap_or_else(|| panic!("{}", String::from_utf8_lossy(&err_writer)));
     let before = render_diagnostics(&session, &session.check().await, directory.path()).await;
 
     // count only the work of the check after the edit, which writes every
     // file of the edited program again, changed or not, and removes the files
     // it no longer has
-    session.set_statistics_enabled(true);
     let after_edit = scenario.render(sizes, true);
     for path in before_edit.keys().filter(|path| !after_edit.contains_key(*path)) {
         std::fs::remove_file(directory.path().join(path)).unwrap();
@@ -446,7 +506,7 @@ async fn measure(scenario: &Scenario, sizes: &[usize]) -> Measurement {
 
     // taken before rendering the diagnostics, whose source map is work of
     // its own
-    let statistics = session.statistics();
+    let statistics = Work::new(&session.statistics(), &session);
     let after = render_diagnostics(&session, &diagnostics, directory.path()).await;
 
     Measurement { before, after, statistics }
@@ -483,7 +543,7 @@ async fn render_diagnostics(
 }
 
 /// The query types that did work at any size of `series`.
-fn queries_of(series: &[Statistics]) -> Vec<&'static str> {
+fn queries_of(series: &[Work]) -> Vec<&'static str> {
     let mut queries: Vec<_> =
         series.iter().flat_map(|statistics| statistics.iter().map(|(name, _)| name)).collect();
     queries.sort_unstable();
@@ -492,7 +552,7 @@ fn queries_of(series: &[Statistics]) -> Vec<&'static str> {
 }
 
 /// The `count` of the query type `query` at each size of `series`.
-fn values_of(series: &[Statistics], query: &str, count: Count) -> Vec<usize> {
+fn values_of(series: &[Work], query: &str, count: Count) -> Vec<usize> {
     series
         .iter()
         .map(|statistics| count.of(&statistics.get(query).copied().unwrap_or_default()))
@@ -512,7 +572,7 @@ fn differences(values: &[usize], order: usize) -> Vec<i128> {
 
 /// Prints the total work at each size `along` something, shown with
 /// `--nocapture`.
-fn report(along: &str, series: &[Statistics]) {
+fn report(along: &str, series: &[Work]) {
     println!("along {along}:");
     for statistics in series {
         let total = statistics.total();
