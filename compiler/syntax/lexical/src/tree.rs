@@ -7,7 +7,7 @@ use std::{
 
 use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
-use fxhash::FxHasher;
+use fxhash::{FxHashMap, FxHashSet, FxHasher};
 use getset::CopyGetters;
 use qbice::{Decode, Encode, Identifiable, StableHash, stable_hash::StableHasher};
 use rayc_arena::{Arena, ID, state};
@@ -294,6 +294,7 @@ impl Tree {
             indentation_stack: Vec::new(),
             current_nodes: Vec::new(),
             tree: Self { source_id, arena: Arena::new() },
+            provisional_branch_id: 0,
         };
 
         while converter.forward() {}
@@ -333,6 +334,11 @@ impl Tree {
                 absolute_end_byte_index: root_end_position.max(source_len),
             })
             .unwrap();
+
+        converter.tree.arena = assign_branch_ids(
+            std::mem::take(&mut converter.tree.arena),
+            converter.tokenizer.source_file(),
+        );
 
         // report all of the enclosed opening delimiters
         for delimiter in converter.delimiter_stack {
@@ -401,13 +407,7 @@ impl Tree {
     /// Calculates the absolute location of the given relative location.
     #[must_use]
     pub fn absolute_location_of(&self, relative_location: &RelativeLocation) -> ByteIndex {
-        let branch = &self.arena[relative_location.relative_to];
-        let base_offset = match relative_location.mode {
-            OffsetMode::Start => branch.absolute_start_byte_index,
-            OffsetMode::End => branch.absolute_end_byte_index,
-        };
-
-        relative_location.offset + base_offset
+        absolute_location_in(&self.arena, relative_location)
     }
 }
 
@@ -440,6 +440,9 @@ struct Converter<'a, I> {
 
     current_nodes: Vec<Node>,
     tree: Tree,
+
+    /// The last provisional ID given to a branch: see [`assign_branch_ids`].
+    provisional_branch_id: u64,
 }
 
 impl<I> std::fmt::Debug for Converter<'_, I> {
@@ -467,41 +470,171 @@ enum GeneralBranchKind {
     Indented,
 }
 
-fn calculate_branch_hash<'a>(
-    tokens: impl Iterator<Item = &'a Kind<RelativeLocation>>,
-    node_kind: GeneralBranchKind,
-    source: &SourceFile,
-    arena: &Arena<Branch, state::Default>,
-) -> ID<Branch> {
-    let mut hasher = FxHasher::default();
-    node_kind.hash(&mut hasher);
-
-    // hash the string content of the tokens
-    for token in tokens {
-        let start_byte = token
-            .prior_insignificant
-            .as_ref()
-            .map_or_else(|| token.span.start.offset, |x| x.start.offset);
-
-        let end_byte = token.span.end.offset;
-
-        source.hashable_view(start_byte..end_byte).hash(&mut hasher);
-    }
-
-    let mut attempt = 0;
-    loop {
-        let mut final_hasher = hasher.clone();
-        attempt.hash(&mut final_hasher);
-
-        let candidate_branch_id = ID::new(final_hasher.finish());
-
-        // avoid hash collision
-        if candidate_branch_id != ROOT_BRANCH_ID && !arena.contains_id(candidate_branch_id) {
-            return candidate_branch_id;
+impl GeneralBranchKind {
+    /// The kind of the fragment `branch`.
+    fn of(branch: &Branch) -> Self {
+        match &branch.kind {
+            BranchKind::Fragment(fragment) => match &fragment.fragment_kind {
+                FragmentKind::Delimiter(delimiter) => Self::Delimited(delimiter.delimiter),
+                FragmentKind::Indentation(_) => Self::Indented,
+            },
+            BranchKind::Root => unreachable!("the root is not the child of a branch"),
         }
-
-        attempt += 1;
     }
+}
+
+/// Calculates the absolute location of `location` in the tree of `arena`.
+fn absolute_location_in(
+    arena: &Arena<Branch, state::Default>,
+    location: &RelativeLocation,
+) -> ByteIndex {
+    let branch = &arena[location.relative_to];
+    let base_offset = match location.mode {
+        OffsetMode::Start => branch.absolute_start_byte_index,
+        OffsetMode::End => branch.absolute_end_byte_index,
+    };
+
+    location.offset + base_offset
+}
+
+/// Replaces the provisional IDs of the branches of `arena`, which number them
+/// in the order they close, with IDs that depend only on where each branch
+/// is: an edit elsewhere in the file keeps them, and with them the locations
+/// of the tokens, which are relative to a branch.
+///
+/// The ID of a branch hashes:
+///
+/// - the ID of its parent, which tells it apart from the branches of other
+///   parents, so that an edit to another function or item leaves it;
+/// - its kind, and the text of the tokens of its parent before it on its line,
+///   which tells apart most branches of a parent, such as the parameter lists
+///   of `def a(...)` and `def b(...)`;
+/// - how many branches of its parent with the same kind and text before them
+///   precede it, which tells apart the rest, such as those of two lines
+///   `print(a)` in a block.
+///
+/// It does not hash the text inside the branch: editing it keeps the IDs of
+/// the branch and the branches inside it, and so the locations of the tokens
+/// inside and after it.
+fn assign_branch_ids(
+    mut arena: Arena<Branch, state::Default>,
+    source: &SourceFile,
+) -> Arena<Branch, state::Default> {
+    let mut final_ids = FxHashMap::default();
+    final_ids.insert(ROOT_BRANCH_ID, ROOT_BRANCH_ID);
+    let mut used_ids = FxHashSet::default();
+    used_ids.insert(ROOT_BRANCH_ID);
+
+    // top-down, since the ID of a branch hashes the ID of its parent
+    let mut stack = vec![ROOT_BRANCH_ID];
+    while let Some(provisional_id) = stack.pop() {
+        let parent_id = final_ids[&provisional_id];
+
+        // the text of the tokens before the next branch on its line, with the
+        // kinds of the branches among them
+        let mut line = FxHasher::default();
+        let mut occurrences = FxHashMap::<(GeneralBranchKind, u64), u64>::default();
+
+        for node in &arena[provisional_id].nodes {
+            match node {
+                Node::Leaf(token) if token.kind.is_new_line() => line = FxHasher::default(),
+
+                // the insignificant text before the token, such as a comment,
+                // is left out
+                Node::Leaf(token) => {
+                    let start = absolute_location_in(&arena, &token.span.start);
+                    let end = absolute_location_in(&arena, &token.span.end);
+                    source.hashable_view(start..end).hash(&mut line);
+                }
+
+                Node::Branch(child) => {
+                    let kind = GeneralBranchKind::of(&arena[*child]);
+                    let context = (kind, line.finish());
+                    let occurrence = occurrences.entry(context).or_default();
+
+                    let mut hasher = FxHasher::default();
+                    parent_id.hash(&mut hasher);
+                    context.hash(&mut hasher);
+                    occurrence.hash(&mut hasher);
+                    *occurrence += 1;
+
+                    // avoid hash collision
+                    let mut attempt = 0u64;
+                    let id = loop {
+                        let mut final_hasher = hasher.clone();
+                        attempt.hash(&mut final_hasher);
+
+                        let candidate = ID::new(final_hasher.finish());
+                        if used_ids.insert(candidate) {
+                            break candidate;
+                        }
+
+                        attempt += 1;
+                    };
+
+                    final_ids.insert(*child, id);
+                    stack.push(*child);
+                    kind.hash(&mut line);
+                }
+            }
+        }
+    }
+
+    for branch in arena.items_mut() {
+        remap_branch(branch, &final_ids);
+    }
+
+    let mut remapped = Arena::new();
+    for (provisional_id, branch) in arena {
+        remapped
+            .insert_with_id(final_ids[&provisional_id], branch)
+            .expect("the final IDs are unique");
+    }
+
+    remapped
+}
+
+/// Replaces every branch ID in `branch` with its final ID in `final_ids`.
+fn remap_branch(branch: &mut Branch, final_ids: &FxHashMap<ID<Branch>, ID<Branch>>) {
+    match &mut branch.kind {
+        BranchKind::Fragment(fragment) => {
+            fragment.parent = final_ids[&fragment.parent];
+            remap_location(&mut fragment.starting_location, final_ids);
+
+            match &mut fragment.fragment_kind {
+                FragmentKind::Delimiter(delimiter) => {
+                    remap_token(&mut delimiter.open, final_ids);
+                    remap_token(&mut delimiter.close, final_ids);
+                }
+                FragmentKind::Indentation(indentation) => {
+                    remap_token(&mut indentation.colon, final_ids);
+                    remap_token(&mut indentation.new_line, final_ids);
+                }
+            }
+        }
+        BranchKind::Root => {}
+    }
+
+    for node in &mut branch.nodes {
+        match node {
+            Node::Leaf(token) => remap_token(token, final_ids),
+            Node::Branch(id) => *id = final_ids[id],
+        }
+    }
+}
+
+fn remap_token<T>(
+    token: &mut Token<T, RelativeLocation>,
+    final_ids: &FxHashMap<ID<Branch>, ID<Branch>>,
+) {
+    for span in std::iter::once(&mut token.span).chain(&mut token.prior_insignificant) {
+        remap_location(&mut span.start, final_ids);
+        remap_location(&mut span.end, final_ids);
+    }
+}
+
+fn remap_location(location: &mut RelativeLocation, final_ids: &FxHashMap<ID<Branch>, ID<Branch>>) {
+    location.relative_to = final_ids[&location.relative_to];
 }
 
 impl<'a, I: Interner> Converter<'a, I> {
@@ -643,6 +776,13 @@ impl<'a, I: Interner> Converter<'a, I> {
     }
 
     const fn source_file(&self) -> &'a SourceFile { self.tokenizer.source_file() }
+
+    /// Gives a branch an ID until [`assign_branch_ids`] replaces it, once
+    /// the tree is complete.
+    const fn provisional_branch_id(&mut self) -> ID<Branch> {
+        self.provisional_branch_id += 1;
+        ID::new(self.provisional_branch_id)
+    }
 
     fn handler(&self) -> &'a dyn Handler<error::Error> { self.tokenizer.handler() }
 
@@ -815,12 +955,7 @@ impl<'a, I: Interner> Converter<'a, I> {
 
             // collect the nodes
             let mut nodes = drain.collect::<Vec<_>>();
-            let branch_id = calculate_branch_hash(
-                nodes.iter().filter_map(Node::as_leaf),
-                GeneralBranchKind::Delimited(expected_delimiter),
-                self.source_file(),
-                &self.tree,
-            );
+            let branch_id = self.provisional_branch_id();
 
             let mut fragment_kind = FragmentKind::Delimiter(Delimiter {
                 open: opening_delimiter,
@@ -918,12 +1053,7 @@ impl<'a, I: Interner> Converter<'a, I> {
                 iter.next().unwrap().into_leaf().unwrap().map_kind(|x| x.into_new_line().unwrap());
 
             let mut nodes = iter.collect::<Vec<_>>();
-            let branch_hash = calculate_branch_hash(
-                nodes.iter().filter_map(Node::as_leaf),
-                GeneralBranchKind::Indented,
-                self.source_file(),
-                &self.tree,
-            );
+            let branch_id = self.provisional_branch_id();
 
             let mut fragment_kind = FragmentKind::Indentation(Indentation {
                 indentation_size: marker.indentation_size.unwrap_or(0),
@@ -932,7 +1062,7 @@ impl<'a, I: Interner> Converter<'a, I> {
             });
             Self::make_branch_relative(
                 &mut self.tree.arena,
-                branch_hash,
+                branch_id,
                 colon.start_location().offset,
                 &mut nodes,
                 Some(&mut fragment_kind),
@@ -956,9 +1086,9 @@ impl<'a, I: Interner> Converter<'a, I> {
             };
 
             // insert the branch
-            self.tree.arena.insert_with_id(branch_hash, branch).unwrap();
+            self.tree.arena.insert_with_id(branch_id, branch).unwrap();
 
-            self.current_nodes.insert(marker.colon_index, Node::Branch(branch_hash));
+            self.current_nodes.insert(marker.colon_index, Node::Branch(branch_id));
 
             // update the end index
             end_index = marker.colon_index + 1;
@@ -1019,12 +1149,7 @@ impl<'a, I: Interner> Converter<'a, I> {
             absolute_end_byte_index: absolute_end,
         };
 
-        let branch_id = calculate_branch_hash(
-            std::iter::empty(),
-            GeneralBranchKind::Indented,
-            self.source_file(),
-            &self.tree,
-        );
+        let branch_id = self.provisional_branch_id();
 
         // create the branch
         self.tree.arena.insert_with_id(branch_id, branch).unwrap();

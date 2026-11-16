@@ -1,0 +1,34 @@
+{#
+edit = "adds a comment line at the top of `m0.ray`, which moves every item in it down a line and changes nothing else"
+
+[[knobs]]
+name = "modules"
+base = 3
+adds = "file modules like `m1.ray`, which `main.ray` calls and the edit does not touch"
+
+[[knobs]]
+name = "edited_functions"
+base = 3
+adds = "functions like `work1` to `m0.ray`, the edited module"
+#}
+{#
+The spans of the items are relative, so no item of the edited module should
+recompute. As for an edit of a function body, the projections of the edited
+module's table grow along its functions: the table is a firewall, so a changed
+table reruns the projection of every symbol of the file.
+#}
+{% import "shared/program.ray.j2" as program %}
+--- file main.ray
+{{ program.main(modules) }}
+{% for m in range(modules) %}
+--- file m{{ m }}.ray
+{% if m == 0 %}
+{% if edit %}
+# moves every item down a line
+
+{% endif %}
+{{ program.module(m, edited_functions) }}
+{% else %}
+{{ program.module(m, 3) }}
+{% endif %}
+{% endfor %}

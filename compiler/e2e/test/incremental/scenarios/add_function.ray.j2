@@ -1,0 +1,44 @@
+{#
+edit = "adds `pub def extra` to `m0.ray`, between its helpers and `work0`, and a call of it to `main` in `main.ray`"
+
+[[knobs]]
+name = "modules"
+base = 3
+adds = "file modules like `m1.ray`, which `main.ray` declares and calls and the edit does not touch"
+
+[[knobs]]
+name = "edited_functions"
+base = 3
+adds = "functions like `work1` to `m0.ray`, the edited module, below the added function"
+#}
+{#
+Only `main` calls the added function, so the work should not grow with the
+modules or functions that do not call it, apart from the projections of the
+tables of the two edited files and of the index of every table: each is a
+firewall, so a changed one reruns its projection of every symbol, file or
+name looked up. `main.ray` declares and looks up every module, and `m0.ray`
+holds the edited functions.
+
+`extra` has the parameter list `(seed: int32)`, the return type `int32` and
+the `()` of every `work<j>`: a branch of the token tree takes its ID from where
+it is, not from how many branches with its text come before it, so that adding
+`extra` leaves the IDs, and so the syntax, of the functions below it.
+#}
+{% import "shared/program.ray.j2" as program %}
+{% set extra %}
+
+
+pub def extra(seed: int32) -> int32:
+    let flag = invoke(() -> identity(seed != 0), ())
+    return if flag: seed + 1 else: 0
+{% endset %}
+--- file main.ray
+{{ program.main(modules, calls=["m0.extra(0)"] if edit else []) }}
+{% for m in range(modules) %}
+--- file m{{ m }}.ray
+{% if m == 0 %}
+{{ program.module(m, edited_functions, items=extra if edit else "") }}
+{% else %}
+{{ program.module(m, 3) }}
+{% endif %}
+{% endfor %}

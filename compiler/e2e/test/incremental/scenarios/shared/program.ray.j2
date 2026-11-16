@@ -1,0 +1,127 @@
+{#
+The pieces that the scenarios share. Import them with
+`{% import "shared/program.ray.j2" as program %}`.
+#}
+{#
+The root file of a program of `modules` file modules `m0.ray`, `m1.ray`, ...
+and the modules `others`, whose `main` sums the functions of each file module
+through its `all`, and the expressions `calls`, such as `m0.extra(0)`.
+#}
+{% macro main(modules, others=[], calls=[]) %}
+{% for other in others %}
+module {{ other }}
+{% endfor %}
+{% for m in range(modules) %}
+module m{{ m }}
+{% endfor %}
+
+
+def main() -> int32:
+    let mut total = 0
+{% for m in range(modules) %}
+    total = total + m{{ m }}.all({{ m }})
+{% endfor %}
+{% for call in calls %}
+    total = total + {{ call }}
+{% endfor %}
+    return total - total
+{% endmacro %}
+{#
+The file module `m`, with structs, a trait with instances, an effect, generic
+helpers, and `functions` functions `work0`, `work1`, ... that loop, call
+generics and closures, drop values and handle the effect, and an `all` that
+sums them. `work0_right` is the literal of `right` in `work0`, which is
+otherwise 0. `items`, such as a function captured with `{% set %}`, go between
+the helpers and `work0`; they start with the blank lines that set them apart.
+#}
+{% macro module(m, functions, work0_right=0, items="") %}
+extern def printf(format: cstr, ...) -> c_int
+
+
+pub struct Pair:
+    pub left: int32
+    pub right: int32
+
+
+struct Resource:
+    id: int32
+
+
+impl !core.Copy for Resource
+
+
+inst ResourceDrop for core.Drop[Resource]:
+    def drop(self: Resource):
+        core.NoDrop { value = move self }
+
+
+struct Holder[t]:
+    value: t
+
+
+pub trait Score[t]:
+    pub def score(value: t) -> int32
+
+
+pub inst PairScore for Score[Pair]:
+    def score(value: Pair) -> int32:
+        return value.left * 3 + value.right
+
+
+pub inst IntScore for Score[int32]:
+    def score(value: int32) -> int32:
+        return value + {{ m }}
+
+
+eff Counter:
+    def tick(value: int32) -> int32
+
+
+def identity(value: a) -> a:
+    return value
+
+
+def invoke(value: f, args: d.Args) given (d: core.Def[f]) -> d.Return \ d.Effect:
+    return d.call(value, args)
+
+
+def scored(value: t) given (s: Score[t]) -> int32:
+    return s.score(identity(value))
+
+
+def wrap(value: t) -> Holder[t]:
+    return Holder { value = value }
+{{ items }}{% for j in range(functions) %}
+
+
+pub def work{{ j }}(seed: int32) -> int32:
+    let mut acc = seed
+    let mut i = 0
+    while i != {{ j % 7 + 3 }}:
+        acc = acc + i * {{ j }}
+        i = i + 1
+
+    let pair = Pair { left = identity(acc), right = {{ work0_right if j == 0 else j }} }
+    let total = scored(pair) + scored(acc)
+    let resource = wrap(Resource { id = {{ j }} })
+    let nested = wrap(wrap((Resource { id = acc }, true)))
+
+    let offset = invoke((x) -> x + total, ({{ j }},))
+    let flag = invoke(() -> identity(offset != 0), ())
+
+    return run:
+        let base = if flag: Counter.tick(offset) else: 0
+        return base + Counter.tick(total)
+    with Counter:
+        def tick(value):
+            return value + acc
+{% endfor %}
+
+
+pub def all(seed: int32) -> int32:
+    let mut total = 0
+{% for j in range(functions) %}
+    total = total + work{{ j }}(seed)
+{% endfor %}
+    return total
+{% endmacro %}

@@ -1,0 +1,42 @@
+---
+source: compiler/e2e/test/incremental/mod.rs
+expression: checked.snapshot
+input_file: compiler/e2e/test/incremental/scenarios/function_body_edit.ray.j2
+---
+edit: changes `right = 0` in the body of `work0` in `m0.ray` to `right = 1000`, which changes no signature and no diagnostic
+diff at modules = 3, edited_functions = 3:
+  --- m0.ray
+  +++ m0.ray
+  @@ -64,5 +64,5 @@
+           i = i + 1
+
+  -    let pair = Pair { left = identity(acc), right = 0 }
+  +    let pair = Pair { left = identity(acc), right = 1000 }
+       let total = scored(pair) + scored(acc)
+       let resource = wrap(Resource { id = 0 })
+diagnostics before the edit: none
+diagnostics after the edit: none
+
+along modules [3, 6, 9, 12]:
+  adds: file modules like `m1.ray`, which `main.ray` calls and the edit does not touch
+  grows: nothing
+
+along edited_functions [3, 6, 9, 12]:
+  adds: functions like `work1` to `m0.ray`, the edited module
+  grows:
+    projections:
+      rayc_symbol:
+        member::MemberByNameKey linear in recomputed unchanged, dirtied edges
+      rayc_symbol_impl:
+        accessibility::DeclaredAccessibilityProjection linear in recomputed unchanged, dirtied edges
+        parent::ParentProjection                       linear in recomputed unchanged, dirtied edges
+        span::SpanProjection                           linear in recomputed unchanged, dirtied edges
+        symbol_kind::SymbolKindProjection              linear in recomputed unchanged, dirtied edges
+        syntax::DefBodySyntaxProjection                linear in recomputed unchanged, dirtied edges
+        syntax::EffectRowSyntaxProjection              linear in recomputed unchanged, dirtied edges
+        syntax::GivenParameterListSyntaxProjection     linear in recomputed unchanged, dirtied edges
+        syntax::ParameterListSyntaxProjection          linear in recomputed unchanged, dirtied edges
+        syntax::ReturnTypeSyntaxProjection             linear in recomputed unchanged, dirtied edges
+        syntax::TypeParameterListSyntaxProjection      linear in recomputed unchanged, dirtied edges
+        syntax::VariadicDefProjection                  linear in recomputed unchanged, dirtied edges
+        syntax::WhereClauseSyntaxProjection            linear in recomputed unchanged, dirtied edges

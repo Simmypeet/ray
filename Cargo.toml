@@ -116,6 +116,8 @@ quote = { version = "1.0.28", features = ["proc-macro"] }
 proc-macro2 = { version = "1.0.28", features = ["proc-macro"] }
 syn = { version = "2.0.101", features = ["full", "visit"] }
 insta = { version = "1.43.0", features = ["ron", "filters"] }
+minijinja = "3.1.0"
+similar = "2.7.0"
 postcard = { version = "1.1.1", features = ["use-std"] }
 termcolor = { version = "1.2.0" }
 extend = { version = "1.2.0" }
@@ -144,7 +146,7 @@ stacker = "0.1.21"
 serde_json = { version = "1.0.96" }
 fuzzy-matcher = { version = "0.3.7" }
 console-subscriber = "0.5.0"
-qbice = { version = "0.7.0", features = ["rocksdb"] }
+qbice = { version = "0.8.0", features = ["rocksdb"] }
 dunce = "1.0.5"
 linkme = { version = "0.3.35" }
 tikv-jemallocator = { version = "0.6.1", features = [
