@@ -181,4 +181,10 @@ pub enum Rvalue {
     ///
     /// [`Instruction::HeapFree`]: crate::instruction::Instruction::HeapFree
     HeapAllocate(Interned<MonoType>),
+
+    /// The index of the variant that the enum at a place holds, as a value of
+    /// the enum's [`EnumLayout::discriminant_type`].
+    ///
+    /// [`EnumLayout::discriminant_type`]: crate::layout::EnumLayout::discriminant_type
+    Discriminant(Place),
 }
