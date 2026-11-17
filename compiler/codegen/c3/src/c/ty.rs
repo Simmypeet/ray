@@ -255,13 +255,15 @@ impl Declaration<'_> {
 impl Declaration<'_> {
     async fn write_to(&self, writer: &mut CWriter<'_>) {
         match self.ty {
-            MonoType::Bool => self.write_base(writer, "bool").await,
             MonoType::Int8 => self.write_base(writer, "int8_t").await,
             MonoType::Int16 => self.write_base(writer, "int16_t").await,
             MonoType::Int32 => self.write_base(writer, "int32_t").await,
             MonoType::Int64 => self.write_base(writer, "int64_t").await,
             MonoType::Isize => self.write_base(writer, "intptr_t").await,
-            MonoType::Uint8 => self.write_base(writer, "uint8_t").await,
+            // a `bool` is a byte rather than a C `bool`, which would turn any
+            // value other than 0 into 1: an enclosing enum may store its
+            // discriminant in the values from 2 on
+            MonoType::Bool | MonoType::Uint8 => self.write_base(writer, "uint8_t").await,
             MonoType::Uint16 => self.write_base(writer, "uint16_t").await,
             MonoType::Uint32 => self.write_base(writer, "uint32_t").await,
             MonoType::Uint64 => self.write_base(writer, "uint64_t").await,
