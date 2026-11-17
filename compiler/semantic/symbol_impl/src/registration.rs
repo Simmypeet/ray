@@ -3,6 +3,7 @@ use std::path::Path;
 use rayc_qbice::TrackedEngine;
 use rayc_source_file::SourceElement;
 use rayc_symbol::{
+    GlobalSymbolID,
     accessibility::{Accessibility, DeclaredAccessibility},
     symbol_kind::SymbolKind,
 };
@@ -121,15 +122,20 @@ impl Table {
             )
             .await;
 
-        // a variant is accessible wherever its enum is
+        // a variant is accessible wherever its enum is; the variants are
+        // recorded in declaration order, which their members do not keep
         let mut variants = member_builder.child(enum_id, name);
+        let mut variant_ids = Vec::new();
         if let Some(body) = r#enum.body() {
             for variant in body.variants().filter_map(Passable::into_option) {
-                self.register_variant(&mut variants, variant, accessibility, engine).await;
+                let variant_id =
+                    self.register_variant(&mut variants, variant, accessibility, engine).await;
+                variant_ids.extend(variant_id.map(|variant_id| variant_id.id));
             }
         }
 
         self.insert_symbol_members(enum_id.id, variants, engine);
+        self.insert_enum_variants(enum_id.id, variant_ids, engine);
     }
 
     async fn register_variant(
@@ -138,24 +144,24 @@ impl Table {
         variant: Variant,
         accessibility: DeclaredAccessibility,
         engine: &TrackedEngine,
-    ) {
-        let Some(ident) = variant.name() else {
-            return;
-        };
+    ) -> Option<GlobalSymbolID> {
+        let ident = variant.name()?;
 
-        self.insert_symbol(
-            member_builder,
-            Infos::builder()
-                .symbol_kind(SymbolKind::Variant)
-                .definition_span(variant.span())
-                .accessibility(accessibility)
-                .name(ident.kind.0.clone())
-                .span(ident.span)
-                .variant_payload(variant.payload().and_then(|payload| payload.r#type()))
-                .build(),
-            engine,
-        )
-        .await;
+        let variant_id = self
+            .insert_symbol(
+                member_builder,
+                Infos::builder()
+                    .symbol_kind(SymbolKind::Variant)
+                    .definition_span(variant.span())
+                    .accessibility(accessibility)
+                    .name(ident.kind.0.clone())
+                    .span(ident.span)
+                    .variant_payload(variant.payload().and_then(|payload| payload.r#type()))
+                    .build(),
+                engine,
+            )
+            .await;
+        Some(variant_id)
     }
 
     /// Interprets the attributes written above a struct or an enum and

@@ -3,7 +3,7 @@ use qbice::{executor, program::Registration, storage::intern::Interned};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{
     SymbolID,
-    member::{Key, Member, MemberByNameKey},
+    member::{EnumVariantsKey, Key, Member, MemberByNameKey},
 };
 
 use crate::{
@@ -35,3 +35,17 @@ async fn member_by_name_executor(
 #[distributed_slice(RAY_PROGRAM)]
 static MEMBER_BY_NAME_EXECUTOR: Registration<Config> =
     Registration::new::<MemberByNameKey, MemberByNameExecutor>();
+
+symbol_projection!(EnumVariantsProjection -> Interned<[SymbolID]> = get_enum_variants);
+
+#[executor(config = Config)]
+async fn enum_variants_executor(
+    &EnumVariantsKey { symbol_id }: &EnumVariantsKey,
+    engine: &TrackedEngine,
+) -> Interned<[SymbolID]> {
+    project(engine, EnumVariantsProjection { symbol_id }).await
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static ENUM_VARIANTS_EXECUTOR: Registration<Config> =
+    Registration::new::<EnumVariantsKey, EnumVariantsExecutor>();
