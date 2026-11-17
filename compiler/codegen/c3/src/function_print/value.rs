@@ -2,7 +2,7 @@
 
 use rayc_mono_ir::{
     MonoFunctionInstance,
-    layout::repr::Repr,
+    layout::repr::TypeRepr,
     operand::{Constant, Operand},
     rvalue::{AddressOf, Reinterpret, Rvalue},
     ty::MonoType,
@@ -46,6 +46,7 @@ impl FunctionPrinter<'_, '_> {
                 self.writer.push("))");
             }
             Rvalue::Reinterpret(reinterpret) => self.write_reinterpret(reinterpret).await,
+            Rvalue::Discriminant(place) => self.write_get_discriminant(place).await,
             // the aggregates are defined before every function, so `sizeof`
             // sees a complete type; a value that holds nothing needs no memory
             Rvalue::HeapAllocate(ty) => {
@@ -70,8 +71,8 @@ impl FunctionPrinter<'_, '_> {
         let (ty, projections) = self.spell_place(address.place()).await;
         let place = PlaceExpr::new(address.place().local(), &projections);
         match self.writer.repr(&ty).await {
-            Repr::ZeroSized => self.writer.push(ZERO_SIZED_ADDRESS),
-            Repr::Transparent(_) => {
+            TypeRepr::ZeroSized => self.writer.push(ZERO_SIZED_ADDRESS),
+            TypeRepr::Transparent { .. } => {
                 let engine = self.writer.engine();
                 let pointer = MonoType::new_pointer(ty, address.mutability(), engine);
                 self.writer.push("((");
@@ -80,7 +81,7 @@ impl FunctionPrinter<'_, '_> {
                 self.writer.write(&place).await;
                 self.writer.push(")");
             }
-            Repr::Direct => {
+            TypeRepr::Direct { .. } => {
                 self.writer.push("&");
                 self.writer.write(&place).await;
             }

@@ -7,7 +7,7 @@ use std::{
 };
 
 use rayc_mono_ir::{
-    layout::repr::{Repr, get_repr},
+    layout::repr::{TypeRepr, get_type_repr},
     ty::{AggregateType, MonoType},
 };
 use rayc_qbice::TrackedEngine;
@@ -55,7 +55,9 @@ impl<'engine> CWriter<'engine> {
     pub(crate) async fn write(&mut self, item: &impl WriteC) { item.write_c(self).await }
 
     /// How a value of `ty` is represented.
-    pub(crate) async fn repr(&self, ty: &MonoType) -> Repr { self.engine.get_repr(ty).await }
+    pub(crate) async fn repr(&self, ty: &MonoType) -> TypeRepr {
+        self.engine.get_type_repr(ty).await
+    }
 
     /// Whether a value of `ty` holds nothing, so it is never stored, passed
     /// or returned.

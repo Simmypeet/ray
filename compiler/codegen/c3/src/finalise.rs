@@ -20,7 +20,7 @@ use rayc_mono_ir::{
         coroutine::{
             FrameState, build_effect_row_layout, build_frame_field_types, build_frame_layout,
         },
-        repr::{Repr, get_aggregate_layout},
+        repr::{TypeRepr, get_aggregate_repr},
         run_with::build_run_with_layout,
     },
     ty::{
@@ -54,7 +54,7 @@ struct FoundAggregate {
     /// How a value of it is represented. Only a direct aggregate is defined;
     /// any other is only declared, and spelled as a struct only behind a
     /// pointer.
-    repr: Repr,
+    repr: TypeRepr,
 }
 
 impl ProgramAggregates {
@@ -87,13 +87,13 @@ impl ProgramAggregates {
             // only the members that hold something are defined
             let mut zero_sized = FxHashSet::default();
             for member in member_aggregates {
-                if engine.get_aggregate_layout(member.clone()).await.repr().is_zero_sized() {
+                if engine.get_aggregate_repr(member.clone()).await.is_zero_sized() {
                     zero_sized.insert(member);
                 }
             }
             members.retain_stored(&|ty| ty.as_aggregate().is_none_or(|a| !zero_sized.contains(a)));
 
-            let repr = engine.get_aggregate_layout(aggregate.clone()).await.repr().clone();
+            let repr = engine.get_aggregate_repr(aggregate.clone()).await;
             let name = AggregateName::of(&aggregate);
             aggregates.insert(name, FoundAggregate { aggregate, members, repr });
         }

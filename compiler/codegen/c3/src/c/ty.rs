@@ -30,7 +30,7 @@ use std::fmt::Display;
 
 use rayc_mono_ir::{
     function::{LocalID, MonoFunction},
-    layout::repr::Repr,
+    layout::repr::TypeRepr,
     ty::{
         AggregateType, EffectHandlerCallback, FunctionSignature, MonoType, PointerMutability,
         ReturnType,
@@ -236,14 +236,16 @@ impl Declaration<'_> {
     async fn write_aggregate(&self, writer: &mut CWriter<'_>, aggregate: &AggregateType) {
         if !self.declarator.is_pointer() {
             match writer.repr(self.ty).await {
-                Repr::ZeroSized => panic!("a zero-sized type is only spelled behind a pointer"),
+                TypeRepr::ZeroSized => {
+                    panic!("a zero-sized type is only spelled behind a pointer")
+                }
                 // the value is the member it stores, declared the same way
-                Repr::Transparent(inner) => {
+                TypeRepr::Transparent { inner, .. } => {
                     let inner = Declaration { ty: &inner, ..*self };
                     Box::pin(inner.write_to(writer)).await;
                     return;
                 }
-                Repr::Direct => {}
+                TypeRepr::Direct { .. } => {}
             }
         }
 

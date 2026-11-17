@@ -13,6 +13,9 @@
 //! A value of a transparent aggregate is the only member it stores, so a
 //! place spells its projections by the representation of the types they go
 //! between; see [`ProjectionExpr`].
+//!
+//! Where an enum stores its discriminant depends on its layout, so setting and
+//! reading one are printed by [`discriminant`].
 
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
@@ -36,6 +39,7 @@ use crate::{
     projection::projected_type,
 };
 
+mod discriminant;
 mod value;
 
 /// Prints the definition of one function.
@@ -118,6 +122,7 @@ impl<'f, 'engine> FunctionPrinter<'f, 'engine> {
                 self.writer.push(";\n");
             }
             Instruction::Call(call) => self.write_call(call).await,
+            Instruction::SetDiscriminant(set) => self.write_set_discriminant(set).await,
 
             // a zero-sized value is never allocated, so it is never freed
             Instruction::HeapFree(pointer) => {
