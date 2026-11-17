@@ -13,14 +13,14 @@ use std::collections::BTreeMap;
 use rayc_coroutine_frame_layout::frame_layout::Placement;
 use rayc_hash::FxHashSet;
 use rayc_mono_ir::{
-    MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance, MonoRunWithInstance,
-    MonoStructInstance,
+    MonoCoroutineInstance, MonoEffectInstance, MonoEnumInstance, MonoEnvironmentInstance,
+    MonoRunWithInstance, MonoStructInstance,
     layout::{
-        build_environment_layout, build_handler_layout, build_struct_layout,
+        build_enum_layout, build_environment_layout, build_handler_layout, build_struct_layout,
         coroutine::{
             FrameState, build_effect_row_layout, build_frame_field_types, build_frame_layout,
         },
-        repr::{Repr, get_aggregate_repr},
+        repr::{Repr, get_aggregate_layout},
         run_with::build_run_with_layout,
     },
     ty::{
@@ -87,13 +87,13 @@ impl ProgramAggregates {
             // only the members that hold something are defined
             let mut zero_sized = FxHashSet::default();
             for member in member_aggregates {
-                if engine.get_aggregate_repr(member.clone()).await.is_zero_sized() {
+                if engine.get_aggregate_layout(member.clone()).await.repr().is_zero_sized() {
                     zero_sized.insert(member);
                 }
             }
             members.retain_stored(&|ty| ty.as_aggregate().is_none_or(|a| !zero_sized.contains(a)));
 
-            let repr = engine.get_aggregate_repr(aggregate.clone()).await;
+            let repr = engine.get_aggregate_layout(aggregate.clone()).await.repr().clone();
             let name = AggregateName::of(&aggregate);
             aggregates.insert(name, FoundAggregate { aggregate, members, repr });
         }
@@ -162,6 +162,7 @@ async fn members_of(engine: &TrackedEngine, aggregate: &AggregateType) -> Member
     match aggregate {
         AggregateType::Tuple(tuple) => tuple_members(tuple),
         AggregateType::Struct(instance) => struct_members(engine, instance).await,
+        AggregateType::Enum(instance) => enum_members(engine, instance).await,
         AggregateType::Environment(instance) => environment_members(engine, instance).await,
         AggregateType::EffectHandlerCallback(handler) => {
             handler_members(engine, handler.mono_effect_instance()).await
@@ -195,6 +196,23 @@ async fn struct_members(engine: &TrackedEngine, instance: &MonoStructInstance) -
         .iter()
         .map(|(field, ty)| Member::field(FieldName::Struct(*field), ty.clone()))
         .collect()
+}
+
+/// `{ tag; union { payload of each variant } }`: the tag tells which variant
+/// the enum holds, and so which payload is defined. An enum of one variant, or
+/// none, has no tag, so it is only the payload, if any.
+async fn enum_members(engine: &TrackedEngine, instance: &MonoEnumInstance) -> Members {
+    let layout = engine.build_enum_layout(instance.clone()).await;
+    let payloads = layout.variants().filter_map(|(index, variant)| {
+        let payload = variant.payload()?.clone();
+        Some(Member::field(FieldName::VariantPayload(index), payload))
+    });
+    if !layout.has_tag() {
+        return payloads.collect();
+    }
+
+    let tag = engine.intern(layout.discriminant_type().mono_type());
+    [Member::field(FieldName::Tag, tag), Member::Union(payloads.collect())].into_iter().collect()
 }
 
 /// A member per capture, then a `const` pointer per handler record: a
@@ -297,7 +315,7 @@ async fn yield_members(engine: &TrackedEngine, row: &EffectRow) -> Members {
             Member::field(FieldName::CoroutineYieldOperation(id), operation.arguments().clone())
         })
         .collect();
-    [Member::field(FieldName::CoroutineTag, tag), Member::Union(operations)].into_iter().collect()
+    [Member::field(FieldName::Tag, tag), Member::Union(operations)].into_iter().collect()
 }
 
 /// `{ tag; union { yield_value; return_value } }`: a resumed coroutine either
@@ -312,7 +330,7 @@ fn progress_members(engine: &TrackedEngine, progress: &CoroutineProgress) -> Mem
         Member::field(FieldName::CoroutineProgressYield, yielded),
         Member::field(FieldName::CoroutineProgressReturn, progress.return_type().clone()),
     ];
-    [Member::field(FieldName::CoroutineTag, tag), Member::Union(outcomes.into_iter().collect())]
+    [Member::field(FieldName::Tag, tag), Member::Union(outcomes.into_iter().collect())]
         .into_iter()
         .collect()
 }
