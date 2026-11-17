@@ -75,8 +75,8 @@ impl Ty {
     ) -> Vec<OutlivesComponent> {
         // TODO: Let's decide do we really want `TyKind::EffectRow` and
         // `TyKind::Instance` to participate in outlives components. To be
-        // conservative, we will include them for now, but we should revisit this
-        // decision later.
+        // conservative, we will include them for now, but we should revisit
+        // this decision later.
         let mut components = Vec::new();
         let mut pending = vec![ty.clone()];
 

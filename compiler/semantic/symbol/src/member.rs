@@ -133,3 +133,16 @@ pub async fn try_get_members(
 
     Some(self.get_members(id).await)
 }
+
+/// The key type used with [`TrackedEngine`] to access the variants of an enum
+/// symbol in declaration order, including any that redefine an earlier
+/// variant's name.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query,
+)]
+#[value(Interned<[SymbolID]>)]
+#[extend(name = get_enum_variants, by_val)]
+pub struct EnumVariantsKey {
+    /// The global ID of the enum symbol to get the variants for.
+    pub symbol_id: Global<SymbolID>,
+}

@@ -168,6 +168,9 @@ impl Describer<'_> {
                 AggregateType::Struct(instance) => {
                     self.application(instance.struct_id(), instance.substitution()).await;
                 }
+                AggregateType::Enum(instance) => {
+                    self.application(instance.enum_id(), instance.substitution()).await;
+                }
                 AggregateType::Environment(instance) => {
                     let capture_map = instance.capture_map().index();
                     self.write(format_args!("captures #{capture_map} in "));

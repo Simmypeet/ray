@@ -184,13 +184,14 @@ impl AggregateType {
             Self::RunWithFrames(run_with) => Some(HeldFrame::RunWith(run_with)),
 
             // No source value can hold a coroutine by value, so neither can a
-            // tuple, a struct or an environment. The aggregates of a resume,
-            // a yield and a progress carry values across a resume, which a
-            // frame never is.
+            // tuple, a struct, an enum or an environment. The aggregates of a
+            // resume, a yield and a progress carry values across a resume,
+            // which a frame never is.
             Self::EffectHandlerCallback(_)
             | Self::Tuple(_)
             | Self::Environment(_)
             | Self::Struct(_)
+            | Self::Enum(_)
             | Self::CoroutineResume(_)
             | Self::CoroutineYield(_)
             | Self::CoroutineProgress(_) => None,

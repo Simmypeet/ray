@@ -3,10 +3,12 @@
 
 use std::fmt::{self, Display, Write as _};
 
+use qbice::storage::intern::Interned;
 use rayc_mono_ir::{
+    function::LocalID,
     operand::Constant,
-    place::Place,
     rvalue::{BinaryOperator, UnaryOperator},
+    ty::MonoType,
 };
 
 use crate::c::{
@@ -20,35 +22,69 @@ use crate::c::{
 /// for any type; since such a place holds nothing, all of them may share it.
 pub(crate) const ZERO_SIZED_ADDRESS: &str = "((void *)&ray_zst_anchor)";
 
-/// The lvalue expression designating a [`Place`], e.g.
-/// `(*ray_local_0).elem1`.
+/// How one projection of a place is spelled, which depends on the
+/// representation of the types it goes between.
+#[derive(Debug, Clone)]
+pub(crate) enum ProjectionExpr {
+    /// `.field`, a member of a direct aggregate.
+    Member(FieldName),
+    /// Nothing: a transparent aggregate is spelled as the only member it
+    /// stores, so selecting that member selects the whole value. Any other
+    /// member holds nothing, and a place that holds nothing is never spelled.
+    Transparent,
+    /// `(*pointer)`.
+    Dereference,
+    /// `(*(inner *)pointer)`, where the pointee is transparent: the pointer
+    /// is spelled as a pointer to the pointee's struct, which is incomplete,
+    /// so it is cast to the given pointer to the stored member first.
+    DereferenceAs(Interned<MonoType>),
+}
+
+/// The lvalue expression designating a place: its local and the spelling of
+/// each of its projections, e.g. `(*ray_local_0).elem1`.
 ///
-/// Member access is postfix and binds tighter than a dereference, so only
-/// dereferences need parentheses; the result is always a postfix or
+/// Member access is postfix and binds tighter than a dereference or a cast,
+/// so only dereferences need parentheses; the result is always a postfix or
 /// parenthesized expression and can be used as an operand anywhere.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PlaceExpr<'a>(pub(crate) &'a Place);
+pub(crate) struct PlaceExpr<'a> {
+    local: LocalID,
+    projections: &'a [ProjectionExpr],
+}
 
-impl Display for PlaceExpr<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<'a> PlaceExpr<'a> {
+    pub(crate) const fn new(local: LocalID, projections: &'a [ProjectionExpr]) -> Self {
+        Self { local, projections }
+    }
+}
+
+impl WriteC for PlaceExpr<'_> {
+    async fn write_c(&self, writer: &mut CWriter<'_>) {
         // the last projection is outermost: open every dereference in
         // reverse, then apply the projections in order around the local
-        let projections = self.0.projections();
-        for projection in projections.iter().rev() {
-            if FieldName::of_projection(*projection).is_none() {
-                formatter.write_str("(*")?;
+        for projection in self.projections.iter().rev() {
+            match projection {
+                ProjectionExpr::Member(_) | ProjectionExpr::Transparent => {}
+                ProjectionExpr::Dereference => writer.push("(*"),
+                ProjectionExpr::DereferenceAs(pointer) => {
+                    writer.push("(*(");
+                    writer.write(&TypeName::new(pointer)).await;
+                    writer.push(")");
+                }
             }
         }
 
-        LocalName(self.0.local()).fmt(formatter)?;
+        writer.push(LocalName(self.local));
 
-        for projection in projections {
-            match FieldName::of_projection(*projection) {
-                Some(field) => write!(formatter, ".{field}")?,
-                None => formatter.write_char(')')?,
+        for projection in self.projections {
+            match projection {
+                ProjectionExpr::Member(field) => writer.push(format_args!(".{field}")),
+                ProjectionExpr::Transparent => {}
+                ProjectionExpr::Dereference | ProjectionExpr::DereferenceAs(_) => {
+                    writer.push(")");
+                }
             }
         }
-        Ok(())
     }
 }
 

@@ -28,7 +28,7 @@ use rayc_solver::Solver;
 use rayc_symbol::{
     GlobalSymbolID, SymbolID,
     core_item::{CoreItem, get_core_item},
-    member::get_members,
+    member::get_enum_variants,
     symbol_kind::{SymbolKind, get_all_adt_ids, get_all_instance_ids, get_symbol_kind},
     syntax::is_linear_type,
 };
@@ -385,17 +385,16 @@ impl Evaluator<'_> {
     }
 
     /// Selects a dictionary for the payload of every variant of the enum
-    /// `enum_id`. Variants are visited by symbol ID so that requirement
-    /// indices do not depend on hash iteration.
+    /// `enum_id`, in declaration order, which is also the order of the
+    /// variants' indices in `MonoIR`.
     async fn enum_body(
         &mut self,
         enum_id: GlobalSymbolID,
     ) -> Result<GeneratedDropBody, DropPlanError> {
-        let mut variant_ids = self.engine.get_members(enum_id).await.all_ids().collect::<Vec<_>>();
-        variant_ids.sort_unstable();
+        let variant_ids = self.engine.get_enum_variants(enum_id).await;
 
         let mut variants = Vec::with_capacity(variant_ids.len());
-        for variant_id in variant_ids {
+        for variant_id in variant_ids.iter().copied() {
             let variant_id = enum_id.target_id.make_global(variant_id);
             let payload = match self.engine.get_variant_payload_ty(variant_id).await {
                 Some(payload) => Some(self.resolve(payload).await?),

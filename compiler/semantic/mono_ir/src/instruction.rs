@@ -1,7 +1,7 @@
 use bon::Builder;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
-use crate::{operand::Operand, place::Place, rvalue::Rvalue};
+use crate::{layout::VariantIndex, operand::Operand, place::Place, rvalue::Rvalue};
 
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct Assign {
@@ -76,6 +76,26 @@ impl Call {
     }
 }
 
+/// Makes the enum at a place hold one of its variants.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
+pub struct SetDiscriminant {
+    place: Place,
+    variant: VariantIndex,
+}
+
+impl SetDiscriminant {
+    #[must_use]
+    pub const fn new(place: Place, variant: VariantIndex) -> Self { Self { place, variant } }
+
+    /// The enum whose variant is set.
+    #[must_use]
+    pub const fn place(&self) -> &Place { &self.place }
+
+    /// The variant the enum holds from now on.
+    #[must_use]
+    pub const fn variant(&self) -> VariantIndex { self.variant }
+}
+
 /// An operation evaluated in sequence within a basic block.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub enum Instruction {
@@ -88,4 +108,11 @@ pub enum Instruction {
     /// Only the memory is released: a value still stored in it is not
     /// dropped.
     HeapFree(Operand),
+
+    /// Makes the enum at a place hold one of its variants, whose payload, if
+    /// any, has been written through [`Projection::VariantPayload`] already:
+    /// a backend may store the discriminant in bytes of the payload.
+    ///
+    /// [`Projection::VariantPayload`]: crate::place::Projection::VariantPayload
+    SetDiscriminant(SetDiscriminant),
 }

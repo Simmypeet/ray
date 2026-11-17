@@ -1,0 +1,64 @@
+extern def printf(format: cstr, ...) -> c_int
+
+
+struct Logged:
+    value: int32
+
+
+impl !core.Copy for Logged
+
+
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        printf("drop %d\n", self.value)
+        core.NoDrop { value = move self }
+
+
+# Every variant holds nothing, so a `Color` is its tag.
+enum Color:
+    Red
+    Green
+    Blue
+
+
+# A unit payload holds nothing either, so a `Signal` is its tag too.
+enum Signal:
+    Stop(())
+    Go(())
+
+
+# One variant needs no tag, so an `Only` is its payload, and so an `int32`.
+enum Only:
+    Value(Logged)
+
+
+# One variant without a payload holds nothing.
+enum Single:
+    Alone
+
+
+# The tag is stored beside the only payload that holds something.
+enum Slot:
+    Filled(Logged)
+    Empty(())
+    Reserved
+
+
+# Values of each are passed and returned.
+def relay(color: Color, signal: Signal, only: Only, single: Single) -> (Color, Signal, Only, Single):
+    return (color, signal, move only, single)
+
+
+def main() -> int32:
+    let colors = (Color.Red, Color.Green, Color.Blue)
+    let relayed = relay(Color.Green, Signal.Go(()), Only.Value(Logged { value = 1 }), Single.Alone)
+
+    # A pointer to an enum that is its tag points to the tag.
+    let color = Color.Blue
+    let pointer = color.&
+    let copied = pointer.*
+
+    let filled = Slot.Filled(Logged { value = 2 })
+    let empty = Slot.Empty(())
+    let reserved = Slot.Reserved
+    return 3

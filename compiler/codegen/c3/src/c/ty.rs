@@ -13,9 +13,15 @@
 //! `int32_t *a, *b` declares two pointers, while `int32_t *a, b` would declare
 //! `b` an `int32_t`.
 //!
-//! Spelling a type asks the engine whether it is zero-sized, since a value
-//! that holds nothing is never declared, passed or returned; so the types
-//! here implement [`WriteC`] rather than [`Display`]. A type nests other types,
+//! Spelling a type asks the engine for its representation, since a value
+//! that holds nothing is never declared, passed or returned, and a value of a
+//! transparent aggregate is spelled as the only member it stores; so the types
+//! here implement [`WriteC`] rather than [`Display`].
+//!
+//! Behind a pointer, an aggregate is always spelled as its own struct, which
+//! need not be complete. A transparent aggregate may store a pointer to
+//! itself, as `struct Link: next: *mut Link` does, and spelling the pointee
+//! as the stored member would never end. A type nests other types,
 //! so the calls that can recurse are boxed. The recursion goes through the
 //! inherent `write_to` methods, never through [`WriteC`]: an `async fn` of a
 //! trait implementation cannot await itself, even boxed.
@@ -24,6 +30,7 @@ use std::fmt::Display;
 
 use rayc_mono_ir::{
     function::{LocalID, MonoFunction},
+    layout::repr::TypeRepr,
     ty::{
         AggregateType, EffectHandlerCallback, FunctionSignature, MonoType, PointerMutability,
         ReturnType,
@@ -219,34 +226,53 @@ impl WriteC for Declaration<'_> {
 }
 
 impl Declaration<'_> {
+    /// Writes the declaration of a value of `aggregate`, the type of the
+    /// declaration, or of a pointer to one.
+    ///
+    /// This is the only place an aggregate is spelled as its struct, so the
+    /// only place it is recorded. Only a direct aggregate is defined; any
+    /// other is spelled as its struct only behind a pointer, which C lets be
+    /// incomplete.
+    async fn write_aggregate(&self, writer: &mut CWriter<'_>, aggregate: &AggregateType) {
+        if !self.declarator.is_pointer() {
+            match writer.repr(self.ty).await {
+                TypeRepr::ZeroSized => {
+                    panic!("a zero-sized type is only spelled behind a pointer")
+                }
+                // the value is the member it stores, declared the same way
+                TypeRepr::Transparent { inner, .. } => {
+                    let inner = Declaration { ty: &inner, ..*self };
+                    Box::pin(inner.write_to(writer)).await;
+                    return;
+                }
+                TypeRepr::Direct { .. } => {}
+            }
+        }
+
+        writer.record_aggregate(aggregate);
+        self.write_base(writer, AggregateName::of(aggregate).typedef()).await;
+    }
+}
+
+impl Declaration<'_> {
     async fn write_to(&self, writer: &mut CWriter<'_>) {
         match self.ty {
-            MonoType::Bool => self.write_base(writer, "bool").await,
             MonoType::Int8 => self.write_base(writer, "int8_t").await,
             MonoType::Int16 => self.write_base(writer, "int16_t").await,
             MonoType::Int32 => self.write_base(writer, "int32_t").await,
             MonoType::Int64 => self.write_base(writer, "int64_t").await,
             MonoType::Isize => self.write_base(writer, "intptr_t").await,
-            MonoType::Uint8 => self.write_base(writer, "uint8_t").await,
+            // a `bool` is a byte rather than a C `bool`, which would turn any
+            // value other than 0 into 1: an enclosing enum may store its
+            // discriminant in the values from 2 on
+            MonoType::Bool | MonoType::Uint8 => self.write_base(writer, "uint8_t").await,
             MonoType::Uint16 => self.write_base(writer, "uint16_t").await,
             MonoType::Uint32 => self.write_base(writer, "uint32_t").await,
             MonoType::Uint64 => self.write_base(writer, "uint64_t").await,
             MonoType::Usize => self.write_base(writer, "uintptr_t").await,
             MonoType::Float32 => self.write_base(writer, "float").await,
             MonoType::CInt => self.write_base(writer, "int").await,
-            // the only place an aggregate is spelled, so the only place it is
-            // recorded; a zero-sized aggregate is never defined, so only a
-            // pointer to it can be spelled
-            MonoType::Aggregate(aggregate) => {
-                if !self.declarator.is_pointer() {
-                    assert!(
-                        !writer.is_zero_sized(self.ty).await,
-                        "a zero-sized type is only spelled behind a pointer"
-                    );
-                }
-                writer.record_aggregate(aggregate);
-                self.write_base(writer, AggregateName::of(aggregate).typedef()).await;
-            }
+            MonoType::Aggregate(aggregate) => self.write_aggregate(writer, aggregate).await,
 
             MonoType::CStr => self.write_pointer_to(writer, "const char").await,
             MonoType::OpaquePointer(PointerMutability::Const) => {

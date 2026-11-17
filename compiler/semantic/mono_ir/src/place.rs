@@ -8,7 +8,7 @@ use rayc_symbol::GlobalSymbolID;
 use crate::{
     function::LocalID,
     layout::{
-        HandlerRecordID,
+        HandlerRecordID, VariantIndex,
         coroutine::{ResumeVariantID, RowOperationID},
     },
 };
@@ -129,6 +129,14 @@ pub enum Projection {
     EnvironmentHandlerRecord(HandlerRecordID),
     TupleFieldIndex(FieldIndex),
     StructFieldIndex(FieldID),
+    /// The payload of a variant of an enum, which is only defined while the
+    /// enum holds that variant: written before
+    /// [`Instruction::SetDiscriminant`] selects it, and read after
+    /// [`Rvalue::Discriminant`] tells it is the one held.
+    ///
+    /// [`Instruction::SetDiscriminant`]: crate::instruction::Instruction::SetDiscriminant
+    /// [`Rvalue::Discriminant`]: crate::rvalue::Rvalue::Discriminant
+    VariantPayload(VariantIndex),
     OperationRecordEnvironmentField(GlobalSymbolID),
     OperationRecordFunctionPointerField(GlobalSymbolID),
     CoroutineFrame(CoroutineFrame),
@@ -215,6 +223,12 @@ impl PlaceProjector<'_> {
     #[must_use]
     pub fn struct_field(self, field: FieldID) -> Place {
         self.with_projection(Projection::StructFieldIndex(field))
+    }
+
+    /// The payload of the variant at `variant`.
+    #[must_use]
+    pub fn variant_payload(self, variant: VariantIndex) -> Place {
+        self.with_projection(Projection::VariantPayload(variant))
     }
 
     #[must_use]

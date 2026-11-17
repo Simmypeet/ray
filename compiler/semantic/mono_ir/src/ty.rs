@@ -11,8 +11,8 @@ use rayc_type::{
 
 use crate::{
     instance::{
-        MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance,
-        MonoRunWithInstance, MonoStructInstance,
+        MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnumInstance,
+        MonoEnvironmentInstance, MonoRunWithInstance, MonoStructInstance,
     },
     layout::TagType,
     operand::Constant,
@@ -135,6 +135,16 @@ impl MonoType {
         }
     }
 
+    #[must_use]
+    pub fn assert_as_enum(&self) -> &MonoEnumInstance {
+        match self {
+            Self::Aggregate(AggregateType::Enum(enum_)) => enum_,
+            _ => {
+                panic!("compiler-internal invariant violation: expected enum type, got {self:?}")
+            }
+        }
+    }
+
     /// Returns the frame type of the coroutine this type is, or panics.
     #[must_use]
     pub fn assert_as_coroutine_frame(&self) -> &MonoCoroutineInstance {
@@ -172,6 +182,18 @@ impl MonoType {
         engine.intern(Self::Pointer(PointerType::new(pointee, mutability)))
     }
 
+    /// A pointer that is never null, such as a reference.
+    #[must_use]
+    pub fn new_non_null_pointer(
+        pointee: Interned<Self>,
+        mutability: PointerMutability,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::Pointer(PointerType::new_non_null(pointee, mutability)))
+    }
+
+    /// A pointer to the handler record of an effect, which always points to
+    /// one.
     #[must_use]
     pub fn new_handler_pointer(
         instance: MonoEffectInstance,
@@ -180,7 +202,7 @@ impl MonoType {
         let handler = engine.intern(Self::Aggregate(AggregateType::EffectHandlerCallback(
             EffectHandlerCallback::new(instance),
         )));
-        Self::new_pointer(handler, PointerMutability::Const, engine)
+        Self::new_non_null_pointer(handler, PointerMutability::Const, engine)
     }
 }
 
@@ -191,19 +213,43 @@ pub enum PointerMutability {
     Mut,
 }
 
+/// Whether a pointer may be null.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum Nullability {
+    /// The pointer may be null, as a raw pointer may: an `extern def` can
+    /// return one.
+    Nullable,
+    /// The pointer always points to a value, as a reference does, so null is
+    /// free to mean something else, such as a variant of an enclosing enum.
+    NonNull,
+}
+
+/// A pointer to a value of the pointee type. Whether it may be null does not
+/// change how it is spelled, only which values it can hold.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub struct PointerType {
     pointee: Interned<MonoType>,
     mutability: PointerMutability,
+    nullability: Nullability,
 }
 
 impl PointerType {
+    /// A pointer that may be null.
     #[must_use]
     pub const fn new(pointee: Interned<MonoType>, mutability: PointerMutability) -> Self {
-        Self { pointee, mutability }
+        Self { pointee, mutability, nullability: Nullability::Nullable }
     }
+
+    /// A pointer that is never null.
+    #[must_use]
+    pub const fn new_non_null(pointee: Interned<MonoType>, mutability: PointerMutability) -> Self {
+        Self { pointee, mutability, nullability: Nullability::NonNull }
+    }
+
+    #[must_use]
+    pub const fn nullability(&self) -> Nullability { self.nullability }
 
     #[must_use]
     pub const fn pointee(&self) -> &Interned<MonoType> { &self.pointee }
@@ -278,6 +324,20 @@ pub enum AggregateType {
     ///
     /// [`StructLayout`]: crate::layout::StructLayout
     Struct(MonoStructInstance),
+    /// A concrete enum. It is nominal, so an enum type is lowered without
+    /// lowering its payloads, which an [`EnumLayout`] tells.
+    ///
+    /// A value is one of the variants: which one is its discriminant, and
+    /// what it carries is the payload of that variant. Neither is a member of
+    /// its own; they are reached through [`Projection::VariantPayload`],
+    /// [`Instruction::SetDiscriminant`] and [`Rvalue::Discriminant`], so a
+    /// backend chooses how to store them.
+    ///
+    /// [`EnumLayout`]: crate::layout::EnumLayout
+    /// [`Projection::VariantPayload`]: crate::place::Projection::VariantPayload
+    /// [`Instruction::SetDiscriminant`]: crate::instruction::Instruction::SetDiscriminant
+    /// [`Rvalue::Discriminant`]: crate::rvalue::Rvalue::Discriminant
+    Enum(MonoEnumInstance),
     /// The `coroutine_frame_t` of a coroutine. It is nominal, so a frame type
     /// is lowered without reading the body of the suspended function; a
     ///
@@ -639,10 +699,10 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
                 let pointee_type = Box::pin(lower_concrete_type(solver, pointer.pointee())).await;
                 MonoType::new_pointer(pointee_type, lower_mutability(pointer.mutability()), engine)
             }
-            // A reference has the same representation as a raw pointer.
+            // A reference is spelled as a raw pointer, but is never null.
             ApplicationView::Reference(reference) => {
                 let pointee_type = Box::pin(lower_concrete_type(solver, reference.pointee())).await;
-                MonoType::new_pointer(
+                MonoType::new_non_null_pointer(
                     pointee_type,
                     lower_mutability(reference.mutability()),
                     engine,
@@ -665,7 +725,11 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
             ApplicationView::TraitDefCoroutine(_) => {
                 panic!("a coroutine without a body to suspend reached MonoIR")
             }
-            ApplicationView::Enum(_) => panic!("enum types are not lowered to MonoIR yet"),
+            ApplicationView::Enum(enum_view) => {
+                let substitution = enum_view.create_subst(engine).await;
+                let instance = MonoEnumInstance::new(enum_view.symbol_id(), substitution);
+                engine.intern(MonoType::Aggregate(AggregateType::Enum(instance)))
+            }
             ApplicationView::NoOpDropInstance(_)
             | ApplicationView::TupleDropInstance(_)
             | ApplicationView::ClosureDropInstance(_)

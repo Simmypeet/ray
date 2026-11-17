@@ -5,6 +5,7 @@ use rayc_ir::ir_expr::{
     literal::Literal,
     struct_initialization::StructInitialization,
     tuple::Tuple,
+    variant::Variant,
 };
 use rayc_mono_ir::{
     operand::{Constant, Operand},
@@ -54,7 +55,9 @@ impl Emitter<'_> {
             }
             IRExprKind::Tuple(tuple) => self.lower_tuple(tuple, expression_id, ctx),
             IRExprKind::StructInitialization(st) => self.lower_struct(st, expression_id, ctx).await,
-            IRExprKind::Variant(_) => unimplemented!("lowering an enum variant to MonoIR"),
+            IRExprKind::Variant(variant) => {
+                self.lower_variant(*variant, expression_id, ctx).await;
+            }
             IRExprKind::Closure(closure) => self.lower_closure(closure, expression_id, ctx).await,
             IRExprKind::Coroutine(coroutine) => {
                 self.lower_coro(coroutine, expression_id, ctx).await;
@@ -95,6 +98,26 @@ impl Emitter<'_> {
                 (Projection::StructFieldIndex(*field_id), ctx.expression_operand(*field))
             }),
         );
+    }
+
+    /// Writes the payload of the variant, if it has one, then selects the
+    /// variant, which may store the discriminant in the payload's bytes.
+    async fn lower_variant(
+        &mut self,
+        variant: Variant,
+        expression_id: IRExprID,
+        ctx: &Context<'_>,
+    ) {
+        let ty = ctx.expression_type(expression_id).assert_as_enum();
+        let layout = self.resolver().enum_layout(ty).await;
+        let index = layout.variant_index(variant.variant_id());
+        let destination = ctx.expression_place(expression_id);
+
+        if let Some(payload) = variant.payload() {
+            let payload_place = self.project(&destination).variant_payload(index);
+            self.store(payload_place, ctx.expression_operand(payload));
+        }
+        self.set_discriminant(destination, index);
     }
 
     fn lower_tuple(&mut self, tuple: &Tuple, expression_id: IRExprID, ctx: &Context<'_>) {

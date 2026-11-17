@@ -13,14 +13,14 @@ use std::collections::BTreeMap;
 use rayc_coroutine_frame_layout::frame_layout::Placement;
 use rayc_hash::FxHashSet;
 use rayc_mono_ir::{
-    MonoCoroutineInstance, MonoEffectInstance, MonoEnvironmentInstance, MonoRunWithInstance,
-    MonoStructInstance,
+    MonoCoroutineInstance, MonoEffectInstance, MonoEnumInstance, MonoEnvironmentInstance,
+    MonoRunWithInstance, MonoStructInstance,
     layout::{
-        build_environment_layout, build_handler_layout, build_struct_layout,
+        build_enum_layout, build_environment_layout, build_handler_layout, build_struct_layout,
         coroutine::{
             FrameState, build_effect_row_layout, build_frame_field_types, build_frame_layout,
         },
-        repr::get_aggregate_repr,
+        repr::{TypeRepr, get_aggregate_repr},
         run_with::build_run_with_layout,
     },
     ty::{
@@ -51,8 +51,10 @@ struct FoundAggregate {
     /// The members that hold something: a member of a zero-sized type is
     /// left out, and so is a union or struct of nothing else.
     members: Members,
-    /// Whether a value of it holds nothing, so it is only declared.
-    is_zero_sized: bool,
+    /// How a value of it is represented. Only a direct aggregate is defined;
+    /// any other is only declared, and spelled as a struct only behind a
+    /// pointer.
+    repr: TypeRepr,
 }
 
 impl ProgramAggregates {
@@ -85,15 +87,15 @@ impl ProgramAggregates {
             // only the members that hold something are defined
             let mut zero_sized = FxHashSet::default();
             for member in member_aggregates {
-                if is_zero_sized(engine, &member).await {
+                if engine.get_aggregate_repr(member.clone()).await.is_zero_sized() {
                     zero_sized.insert(member);
                 }
             }
             members.retain_stored(&|ty| ty.as_aggregate().is_none_or(|a| !zero_sized.contains(a)));
 
-            let is_zero_sized = is_zero_sized(engine, &aggregate).await;
+            let repr = engine.get_aggregate_repr(aggregate.clone()).await;
             let name = AggregateName::of(&aggregate);
-            aggregates.insert(name, FoundAggregate { aggregate, members, is_zero_sized });
+            aggregates.insert(name, FoundAggregate { aggregate, members, repr });
         }
 
         Self { aggregates }
@@ -114,8 +116,10 @@ impl ProgramAggregates {
     /// member. Aggregates that do not depend on each other are ordered by
     /// name.
     ///
-    /// A zero-sized aggregate is only declared: no value of it is ever
-    /// stored, so it is only spelled behind a pointer.
+    /// Only a direct aggregate is defined. Any other is only declared: a
+    /// value of a zero-sized one is never stored, and one of a transparent
+    /// one is stored as its member, so either is spelled as its struct only
+    /// behind a pointer.
     pub(crate) fn definitions(&self) -> impl Iterator<Item = AggregateDefinition<'_>> {
         let mut ordering = TopologicalOrdering::default();
         for name in self.aggregates.keys() {
@@ -124,7 +128,7 @@ impl ProgramAggregates {
 
         ordering.ordered.into_iter().filter_map(|name| {
             let found = &self.aggregates[&name];
-            (!found.is_zero_sized).then(|| AggregateDefinition::new(name, &found.members))
+            found.repr.is_direct().then(|| AggregateDefinition::new(name, &found.members))
         })
     }
 
@@ -134,18 +138,22 @@ impl ProgramAggregates {
     fn by_value_dependencies(&self, name: AggregateName) -> Vec<AggregateName> {
         let mut dependencies = Vec::new();
         self.aggregates[&name].members.for_each_type(&mut |ty| {
-            if let Some(aggregate) = ty.as_aggregate() {
-                dependencies.push(AggregateName::of(aggregate));
+            if let Some(stored) = self.stored_aggregate(ty) {
+                dependencies.push(AggregateName::of(stored));
             }
         });
         dependencies.sort_unstable();
         dependencies
     }
-}
 
-/// Whether a value of `aggregate` holds nothing.
-async fn is_zero_sized(engine: &TrackedEngine, aggregate: &AggregateType) -> bool {
-    engine.get_aggregate_repr(aggregate.clone()).await.is_zero_sized()
+    /// The aggregate whose definition a value of `ty` is spelled with, if
+    /// any: a transparent aggregate is spelled as the member it stores, and a
+    /// member is the innermost such, so it is direct if it is an aggregate.
+    fn stored_aggregate<'a>(&'a self, ty: &'a MonoType) -> Option<&'a AggregateType> {
+        let aggregate = ty.as_aggregate()?;
+        let repr = &self.aggregates[&AggregateName::of(aggregate)].repr;
+        repr.transparent_inner().map_or(Some(aggregate), |inner| inner.as_aggregate())
+    }
 }
 
 /// Every member of `aggregate`, as the layout query of its kind tells,
@@ -154,6 +162,7 @@ async fn members_of(engine: &TrackedEngine, aggregate: &AggregateType) -> Member
     match aggregate {
         AggregateType::Tuple(tuple) => tuple_members(tuple),
         AggregateType::Struct(instance) => struct_members(engine, instance).await,
+        AggregateType::Enum(instance) => enum_members(engine, instance).await,
         AggregateType::Environment(instance) => environment_members(engine, instance).await,
         AggregateType::EffectHandlerCallback(handler) => {
             handler_members(engine, handler.mono_effect_instance()).await
@@ -187,6 +196,23 @@ async fn struct_members(engine: &TrackedEngine, instance: &MonoStructInstance) -
         .iter()
         .map(|(field, ty)| Member::field(FieldName::Struct(*field), ty.clone()))
         .collect()
+}
+
+/// `{ tag; union { payload of each variant } }`: the tag tells which variant
+/// the enum holds, and so which payload is defined. An enum of one variant, or
+/// none, has no tag, so it is only the payload, if any.
+async fn enum_members(engine: &TrackedEngine, instance: &MonoEnumInstance) -> Members {
+    let layout = engine.build_enum_layout(instance.clone()).await;
+    let payloads = layout.variants().filter_map(|(index, variant)| {
+        let payload = variant.payload()?.clone();
+        Some(Member::field(FieldName::VariantPayload(index), payload))
+    });
+    if !layout.has_tag() {
+        return payloads.collect();
+    }
+
+    let tag = engine.intern(layout.discriminant_type().mono_type());
+    [Member::field(FieldName::Tag, tag), Member::Union(payloads.collect())].into_iter().collect()
 }
 
 /// A member per capture, then a `const` pointer per handler record: a
@@ -289,7 +315,7 @@ async fn yield_members(engine: &TrackedEngine, row: &EffectRow) -> Members {
             Member::field(FieldName::CoroutineYieldOperation(id), operation.arguments().clone())
         })
         .collect();
-    [Member::field(FieldName::CoroutineTag, tag), Member::Union(operations)].into_iter().collect()
+    [Member::field(FieldName::Tag, tag), Member::Union(operations)].into_iter().collect()
 }
 
 /// `{ tag; union { yield_value; return_value } }`: a resumed coroutine either
@@ -304,7 +330,7 @@ fn progress_members(engine: &TrackedEngine, progress: &CoroutineProgress) -> Mem
         Member::field(FieldName::CoroutineProgressYield, yielded),
         Member::field(FieldName::CoroutineProgressReturn, progress.return_type().clone()),
     ];
-    [Member::field(FieldName::CoroutineTag, tag), Member::Union(outcomes.into_iter().collect())]
+    [Member::field(FieldName::Tag, tag), Member::Union(outcomes.into_iter().collect())]
         .into_iter()
         .collect()
 }

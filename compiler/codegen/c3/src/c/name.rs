@@ -23,7 +23,7 @@ use rayc_mono_ir::{
     cfg::BlockID,
     function::LocalID,
     layout::{
-        HandlerRecordID,
+        HandlerRecordID, VariantIndex,
         coroutine::{ResumeVariantID, RowOperationID},
     },
     place::{CoroutineFrame, CoroutineProgress, CoroutineYield, Projection, RunWithFrames},
@@ -92,6 +92,7 @@ impl AggregateName {
             AggregateType::Tuple(_) => ("Tuple", "rayc_c3::TupleLayout:v1"),
             AggregateType::Environment(_) => ("Environment", "rayc_c3::EnvironmentLayout:v1"),
             AggregateType::Struct(_) => ("Struct", "rayc_c3::StructLayout:v1"),
+            AggregateType::Enum(_) => ("Enum", "rayc_c3::EnumLayout:v1"),
             AggregateType::CoroutineFrame(_) => {
                 ("CoroutineFrame", "rayc_c3::CoroutineFrameLayout:v1")
             }
@@ -300,6 +301,8 @@ pub(crate) enum FieldName {
     EnvironmentCapture(CaptureID),
     EnvironmentHandlerRecord(HandlerRecordID),
     Struct(FieldID),
+    /// The payload of a variant of an enum, in an anonymous union.
+    VariantPayload(VariantIndex),
     OperationEnvironment(GlobalSymbolID),
     OperationFunction(GlobalSymbolID),
     CoroutineFrameState,
@@ -308,8 +311,9 @@ pub(crate) enum FieldName {
     /// layout places the value, and every member of a frame has a unique name.
     CoroutineFrameSavable(Savable),
     CoroutineResumeValue(ResumeVariantID),
-    /// The tag of a `coroutine_progress_t` or a `coroutine_yield_t`.
-    CoroutineTag,
+    /// The tag of an enum, a `coroutine_progress_t` or a
+    /// `coroutine_yield_t`, which tells the variant the value holds.
+    Tag,
     CoroutineProgressYield,
     CoroutineProgressReturn,
     CoroutineYieldOperation(RowOperationID),
@@ -332,6 +336,7 @@ impl FieldName {
             }
             Projection::TupleFieldIndex(index) => Some(Self::Tuple(index.index())),
             Projection::StructFieldIndex(field) => Some(Self::Struct(field)),
+            Projection::VariantPayload(variant) => Some(Self::VariantPayload(variant)),
             Projection::OperationRecordEnvironmentField(operation) => {
                 Some(Self::OperationEnvironment(operation))
             }
@@ -344,7 +349,7 @@ impl FieldName {
             }
             Projection::CoroutineResumeValue(variant) => Some(Self::CoroutineResumeValue(variant)),
             Projection::CoroutineProgress(CoroutineProgress::Tag)
-            | Projection::CoroutineYield(CoroutineYield::Tag) => Some(Self::CoroutineTag),
+            | Projection::CoroutineYield(CoroutineYield::Tag) => Some(Self::Tag),
             Projection::CoroutineProgress(CoroutineProgress::YieldPayload) => {
                 Some(Self::CoroutineProgressYield)
             }
@@ -375,6 +380,7 @@ impl fmt::Display for FieldName {
                 write!(formatter, "handler{:X}", record.index())
             }
             Self::Struct(field) => write!(formatter, "field_{}", field.index()),
+            Self::VariantPayload(variant) => write!(formatter, "variant{:X}", variant.index()),
             Self::OperationEnvironment(operation) => {
                 write!(formatter, "operation_{}_environment", operation_id(*operation))
             }
@@ -386,7 +392,7 @@ impl fmt::Display for FieldName {
             Self::CoroutineResumeValue(variant) => {
                 write!(formatter, "value{:X}", variant.index())
             }
-            Self::CoroutineTag => formatter.write_str("tag"),
+            Self::Tag => formatter.write_str("tag"),
             Self::CoroutineProgressYield => formatter.write_str("yield_value"),
             Self::CoroutineProgressReturn => formatter.write_str("return_value"),
             Self::CoroutineYieldOperation(operation) => {

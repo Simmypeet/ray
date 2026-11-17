@@ -92,6 +92,8 @@ struct SyntaxTable {
     type_definitions: Map<Option<Type>>,
     kind_ascriptions: Map<Option<KindAscription>>,
     variant_payloads: Map<Option<Type>>,
+    /// The variants of each enum, in declaration order.
+    enum_variants: Map<Interned<[SymbolID]>>,
     imports: Map<Interned<[Import]>>,
 }
 
@@ -327,6 +329,12 @@ impl Table {
     #[must_use]
     pub fn is_linear_type(&self, symbol_id: SymbolID) -> Option<bool> {
         self.syntaxes.linear_types.get(&symbol_id).copied()
+    }
+
+    /// The variants of the enum `symbol_id`, in declaration order.
+    #[must_use]
+    pub fn get_enum_variants(&self, symbol_id: SymbolID) -> Option<Interned<[SymbolID]>> {
+        self.syntaxes.enum_variants.get(&symbol_id).cloned()
     }
 
     #[must_use]
@@ -615,6 +623,16 @@ impl Table {
     ) {
         self.members.insert(symbol_id, engine.intern(member.member));
         self.diagnostics.extend(member.redef_errors.into_iter().map(Diagnostic::ItemRedefinition));
+    }
+
+    /// Stores the variants of the enum `symbol_id`, in declaration order.
+    pub(crate) fn insert_enum_variants(
+        &mut self,
+        symbol_id: SymbolID,
+        variants: Vec<SymbolID>,
+        engine: &TrackedEngine,
+    ) {
+        self.syntaxes.enum_variants.insert(symbol_id, engine.intern_unsized(variants));
     }
 
     /// Stores the imports of the module `symbol_id`.

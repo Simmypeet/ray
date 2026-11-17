@@ -9,6 +9,13 @@
 //! is left out, and a call passes no argument for one. Every rvalue other than
 //! a heap allocation is pure, and none of a zero-sized type allocates, so
 //! leaving an assignment out loses nothing.
+//!
+//! A value of a transparent aggregate is the only member it stores, so a
+//! place spells its projections by the representation of the types they go
+//! between; see [`ProjectionExpr`].
+//!
+//! Where an enum stores its discriminant depends on its layout, so setting and
+//! reading one are printed by [`discriminant`].
 
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
@@ -18,15 +25,21 @@ use rayc_mono_ir::{
     function::{LocalID, LocalKind, MonoFunction},
     instruction::{Call, Instruction},
     operand::{Constant, Operand},
-    place::Place,
+    place::{Place, Projection},
     ty::{AggregateType, MonoType},
 };
 
 use crate::{
-    c::{expr::PlaceExpr, name::BlockName, ty::Declaration, writer::CWriter},
+    c::{
+        expr::{PlaceExpr, ProjectionExpr},
+        name::{BlockName, FieldName},
+        ty::Declaration,
+        writer::CWriter,
+    },
     projection::projected_type,
 };
 
+mod discriminant;
 mod value;
 
 /// Prints the definition of one function.
@@ -102,11 +115,14 @@ impl<'f, 'engine> FunctionPrinter<'f, 'engine> {
                 if self.is_place_zero_sized(assign.destination()).await {
                     return;
                 }
-                self.writer.push(format_args!("    {} = ", PlaceExpr(assign.destination())));
+                self.writer.push("    ");
+                self.write_place(assign.destination()).await;
+                self.writer.push(" = ");
                 self.write_rvalue(assign.value()).await;
                 self.writer.push(";\n");
             }
             Instruction::Call(call) => self.write_call(call).await,
+            Instruction::SetDiscriminant(set) => self.write_set_discriminant(set).await,
 
             // a zero-sized value is never allocated, so it is never freed
             Instruction::HeapFree(pointer) => {
@@ -128,7 +144,8 @@ impl<'f, 'engine> FunctionPrinter<'f, 'engine> {
         if let Some(destination) = call.destination()
             && !self.is_place_zero_sized(destination).await
         {
-            self.writer.push(format_args!("{} = ", PlaceExpr(destination)));
+            self.write_place(destination).await;
+            self.writer.push(" = ");
         }
         self.write_operand(call.callee()).await;
 
@@ -182,6 +199,57 @@ impl<'f, 'engine> FunctionPrinter<'f, 'engine> {
             Terminator::Return(Some(_) | None) => self.writer.push("return;"),
             Terminator::Unreachable => self.writer.push("__builtin_unreachable();"),
         }
+    }
+
+    /// Writes the lvalue expression designating `place`.
+    async fn write_place(&mut self, place: &Place) {
+        let (_, projections) = self.spell_place(place).await;
+        self.writer.write(&PlaceExpr::new(place.local(), &projections)).await;
+    }
+
+    /// The type of `place`, and how each of its projections is spelled.
+    async fn spell_place(&self, place: &Place) -> (Interned<MonoType>, Vec<ProjectionExpr>) {
+        let mut ty = self.function.get_local(place.local()).ty().clone();
+        let mut projections = Vec::with_capacity(place.projections().len());
+        for projection in place.projections() {
+            let projected = projected_type(self.writer.engine(), &ty, *projection).await;
+            projections.push(self.projection_expr(&ty, *projection, &projected).await);
+            ty = projected;
+        }
+        (ty, projections)
+    }
+
+    /// How `projection` is spelled, which selects a place of type `projected`
+    /// from one of type `ty`.
+    async fn projection_expr(
+        &self,
+        ty: &MonoType,
+        projection: Projection,
+        projected: &MonoType,
+    ) -> ProjectionExpr {
+        // a member of a transparent aggregate is the aggregate itself
+        if let Some(field) = FieldName::of_projection(projection) {
+            return if self.writer.repr(ty).await.transparent_inner().is_some() {
+                ProjectionExpr::Transparent
+            } else {
+                ProjectionExpr::Member(field)
+            };
+        }
+
+        // a pointer to a transparent aggregate points to its struct, which is
+        // never defined, so it is read as a pointer to the member stored
+        let mutability = ty.assert_as_pointer().mutability();
+        let engine = self.writer.engine();
+        self.writer.repr(projected).await.transparent_inner().map_or(
+            ProjectionExpr::Dereference,
+            |inner| {
+                ProjectionExpr::DereferenceAs(MonoType::new_pointer(
+                    inner.clone(),
+                    mutability,
+                    engine,
+                ))
+            },
+        )
     }
 
     /// The type of `place`: the type of its local, narrowed by each
