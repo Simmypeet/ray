@@ -18,7 +18,7 @@ use rayc_symbol::{
     GlobalSymbolID, SymbolID,
     accessibility::Accessibility,
     core_item::{CoreItem, Key as CoreItemKey},
-    member::{Key as MemberKey, Member, MemberByNameKey},
+    member::{EnumVariantsKey, Key as MemberKey, Member, MemberByNameKey},
     name::Key as NameKey,
     symbol_kind::{AllAdtIDs, AllInstanceIDs, Key as SymbolKindKey, SymbolKind},
     syntax::LinearTypeKey,
@@ -554,11 +554,7 @@ async fn enum_plan_drops_each_variant_payload() {
     let t = tracked.intern(Ty::PolyVar(GlobalPolyVarID::new(option, param)));
     let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &tracked);
     let pair_ty = Ty::new_tuple(tracked.intern_unsized([t.clone(), int_ty.clone()]), &tracked);
-    let mut members = Member::default();
-    let _ = members.insert(tracked.intern_unsized("Some"), some.id);
-    let _ = members.insert(tracked.intern_unsized("Pair"), pair.id);
-    let _ = members.insert(tracked.intern_unsized("None"), none.id);
-    let members = tracked.intern(members);
+    let variants = tracked.intern_unsized([some.id, pair.id, none.id]);
     let params = tracked.intern(params);
     drop(tracked);
 
@@ -588,8 +584,8 @@ async fn enum_plan_drops_each_variant_payload() {
         params,
     )]))));
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-        MemberKey { symbol_id: option },
-        members,
+        EnumVariantsKey { symbol_id: option },
+        variants,
     )]))));
     engine_mut.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([
         (VariantPayloadTyKey { symbol_id: some }, Some(t.clone())),
