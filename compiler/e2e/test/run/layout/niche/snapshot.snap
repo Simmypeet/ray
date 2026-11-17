@@ -1,0 +1,19 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 7
+
+stdout:
+end
+drop flagged 6
+drop logged 5
+drop logged 4
+drop flagged 3
+drop guard 2
+drop guard 1
+
+
+stderr:

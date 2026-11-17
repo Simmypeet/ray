@@ -1,0 +1,109 @@
+extern def printf(format: cstr, ...) -> c_int
+
+
+# A reference is never null, so null is free.
+struct Guard['a]:
+    referent: &'a int32
+    id: int32
+
+
+impl['a] !core.Copy for Guard['a]
+
+
+inst GuardDrop['a] for core.Drop[Guard['a]]:
+    def drop(self: Guard['a]):
+        printf("drop guard %d\n", self.id)
+        core.NoDrop { value = move self }
+
+
+# A `bool` is 0 or 1, so 2 to 255 are free.
+struct Flagged:
+    flag: bool
+    id: int32
+
+
+impl !core.Copy for Flagged
+
+
+inst FlaggedDrop for core.Drop[Flagged]:
+    def drop(self: Flagged):
+        printf("drop flagged %d\n", self.id)
+        core.NoDrop { value = move self }
+
+
+struct Logged:
+    id: int32
+
+
+impl !core.Copy for Logged
+
+
+inst LoggedDrop for core.Drop[Logged]:
+    def drop(self: Logged):
+        printf("drop logged %d\n", self.id)
+        core.NoDrop { value = move self }
+
+
+enum Maybe[t]:
+    Some(t)
+    Nothing
+
+
+# A tag of two variants is 0 or 1, so 2 to 255 are free.
+enum Shape:
+    Circle(Logged)
+    Square(Logged)
+
+
+# Every variant holds nothing, so a `Color` is its tag, 0 to 2.
+enum Color:
+    Red
+    Green
+    Blue
+
+
+# The data variant takes no free value; the others take one each, in order.
+enum Choice:
+    First
+    Picked(Flagged)
+    Second
+    Third
+
+
+def wrap(value: t) -> Maybe[t]:
+    return Maybe.Some(move value)
+
+
+def main() -> int32:
+    let value = 7
+
+    # Nothing is a null `referent`
+    let guard = wrap(Guard { referent = value.&, id = 1 })
+    let no_guard: Maybe[Guard['_]] = Maybe.Nothing
+
+    # a reference has one free value, which the inner `Maybe` takes, so the
+    # outer one has a tag
+    let nested_guard = wrap(wrap(Guard { referent = value.&, id = 2 }))
+    let inner_nothing: Maybe[Maybe[Guard['_]]] = wrap(Maybe.Nothing)
+    let outer_nothing: Maybe[Maybe[Guard['_]]] = Maybe.Nothing
+
+    # the inner Nothing is a `flag` of 2, the outer one a `flag` of 3
+    let flagged = wrap(wrap(Flagged { flag = true, id = 3 }))
+    let flagged_inner: Maybe[Maybe[Flagged]] = wrap(Maybe.Nothing)
+    let flagged_outer: Maybe[Maybe[Flagged]] = Maybe.Nothing
+
+    # Nothing is a `Shape` tag of 2
+    let shape = wrap(Shape.Square(Logged { id = 4 }))
+    let no_shape: Maybe[Shape] = Maybe.Nothing
+
+    # Nothing is a `Color` of 3, inside the tuple
+    let colored = wrap((Color.Blue, Logged { id = 5 }))
+    let no_color: Maybe[(Color, Logged)] = Maybe.Nothing
+
+    # `First`, `Second` and `Third` are a `flag` of 2, 3 and 4
+    let picked = Choice.Picked(Flagged { flag = false, id = 6 })
+    let first = Choice.First
+    let third = Choice.Third
+
+    printf("end\n")
+    return value

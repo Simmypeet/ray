@@ -1,0 +1,25 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: rendered
+---
+case 1:
+
+exit_code: 2
+
+stdout:
+either
+list
+holder
+coroutine
+drop 40
+end
+drop 31
+drop 30
+drop 22
+drop 21
+drop 20
+drop 2
+drop 1
+
+
+stderr:
