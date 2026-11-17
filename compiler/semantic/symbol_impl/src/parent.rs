@@ -3,11 +3,13 @@ use qbice::{executor, program::Registration};
 use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{SymbolID, parent::Key};
 
-use crate::index::get_symbol_table;
+use crate::projection::{project, symbol_projection};
+
+symbol_projection!(ParentProjection -> Option<SymbolID> = get_parent);
 
 #[executor(config = Config)]
 pub async fn parent_executor(&Key { symbol_id }: &Key, engine: &TrackedEngine) -> Option<SymbolID> {
-    engine.get_symbol_table(symbol_id).await.get_parent(symbol_id.id)
+    project(engine, ParentProjection { symbol_id }).await
 }
 
 #[distributed_slice(RAY_PROGRAM)]

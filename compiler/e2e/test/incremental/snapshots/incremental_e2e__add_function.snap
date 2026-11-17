@@ -1,0 +1,59 @@
+---
+source: compiler/e2e/test/incremental/mod.rs
+expression: checked.snapshot
+input_file: compiler/e2e/test/incremental/scenarios/add_function.ray.j2
+---
+edit: adds `pub def extra` to `m0.ray`, between its helpers and `work0`, and a call of it to `main` in `main.ray`
+diff at modules = 3, edited_functions = 3:
+  --- m0.ray
+  +++ m0.ray
+  @@ -57,4 +57,9 @@
+
+
+  +pub def extra(seed: int32) -> int32:
+  +    let flag = invoke(() -> identity(seed != 0), ())
+  +    return if flag: seed + 1 else: 0
+  +
+  +
+   pub def work0(seed: int32) -> int32:
+       let mut acc = seed
+  --- main.ray
+  +++ main.ray
+  @@ -9,3 +9,4 @@
+       total = total + m1.all(1)
+       total = total + m2.all(2)
+  +    total = total + m0.extra(0)
+       return total - total
+diagnostics before the edit: none
+diagnostics after the edit: none
+
+along modules [3, 6, 9, 12]:
+  adds: file modules like `m1.ray`, which `main.ray` declares and calls and the edit does not touch
+  grows:
+    projections:
+      rayc_symbol:
+        member::MemberByNameKey linear in recomputed unchanged, dirtied edges
+      rayc_symbol_impl:
+        index::SourceFilePathKey linear in recomputed unchanged, dirtied edges
+        index::SymbolTableKey    linear in recomputed unchanged, dirtied edges
+
+along edited_functions [3, 6, 9, 12]:
+  adds: functions like `work1` to `m0.ray`, the edited module, below the added function
+  grows:
+    projections:
+      rayc_symbol:
+        member::MemberByNameKey linear in recomputed unchanged, dirtied edges
+      rayc_symbol_impl:
+        accessibility::DeclaredAccessibilityProjection linear in recomputed unchanged, dirtied edges
+        index::SymbolTableKey                          linear in recomputed unchanged, dirtied edges
+        parent::ParentProjection                       linear in recomputed unchanged, dirtied edges
+        span::SpanProjection                           linear in recomputed unchanged, dirtied edges
+        symbol_kind::SymbolKindProjection              linear in recomputed unchanged, dirtied edges
+        syntax::DefBodySyntaxProjection                linear in recomputed unchanged, dirtied edges
+        syntax::EffectRowSyntaxProjection              linear in recomputed unchanged, dirtied edges
+        syntax::GivenParameterListSyntaxProjection     linear in recomputed unchanged, dirtied edges
+        syntax::ParameterListSyntaxProjection          linear in recomputed unchanged, dirtied edges
+        syntax::ReturnTypeSyntaxProjection             linear in recomputed unchanged, dirtied edges
+        syntax::TypeParameterListSyntaxProjection      linear in recomputed unchanged, dirtied edges
+        syntax::VariadicDefProjection                  linear in recomputed unchanged, dirtied edges
+        syntax::WhereClauseSyntaxProjection            linear in recomputed unchanged, dirtied edges

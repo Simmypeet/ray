@@ -9,7 +9,7 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_source_file::{FilePathKey, GlobalSourceID, SourceFile};
 use rayc_target::TargetID;
 
-use crate::index::get_table_index;
+use crate::index::{get_table_index, try_get_source_file_path};
 
 #[executor(config = Config)]
 async fn file_path_executor(
@@ -17,10 +17,8 @@ async fn file_path_executor(
     engine: &TrackedEngine,
 ) -> Interned<Path> {
     engine
-        .get_table_index(id.target_id)
+        .try_get_source_file_path(id)
         .await
-        .source_file_path(id.id)
-        .cloned()
         .expect("a source ID is only created for a source file loaded into its target")
 }
 

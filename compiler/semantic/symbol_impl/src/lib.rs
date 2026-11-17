@@ -4,6 +4,7 @@ pub mod index;
 pub mod member;
 pub mod name;
 pub mod parent;
+mod projection;
 pub mod registration;
 pub mod source_map;
 pub mod span;

@@ -11,8 +11,11 @@ publish = false
 [dev-dependencies]
 tempfile = { workspace = true }
 insta = { workspace = true }
+minijinja = { workspace = true }
+similar = { workspace = true }
 rayc_driver = { path = "../driver" }
 rayc_target = { path = "../base/target/" }
+rayc_diagnostic = { path = "../base/diagnostic" }
 clap = { workspace = true }
 termcolor = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "time"] }
@@ -23,6 +26,7 @@ toml = { workspace = true }
 tracing-subscriber = { workspace = true }
 stacker = { workspace = true }
 dunce = { workspace = true }
+qbice = { workspace = true }
 
 [[test]]
 name = "check_e2e"
@@ -39,6 +43,10 @@ path = "test/project/mod.rs"
 [[test]]
 name = "new_e2e"
 path = "test/new/mod.rs"
+
+[[test]]
+name = "incremental_e2e"
+path = "test/incremental/mod.rs"
 
 [lints]
 workspace = true

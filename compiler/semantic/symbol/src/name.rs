@@ -6,10 +6,7 @@ use rayc_extend::extend;
 use rayc_qbice::TrackedEngine;
 use rayc_target::{Global, get_target_map};
 
-use crate::{
-    SymbolID, get_target_root_module_id, member::get_members, parent::get_parent,
-    symbol_kind::get_symbol_kind,
-};
+use crate::{SymbolID, get_target_root_module_id, member::get_member_by_name, parent::get_parent};
 
 /// The key type used with [`TrackedEngine`] to access the name of a symbol.
 #[derive(
@@ -59,18 +56,7 @@ pub async fn get_by_qualified_name<'a>(
     for name in qualified_names {
         match current_id {
             Some(searched_in_item_id) => {
-                let has_member = self.get_symbol_kind(searched_in_item_id).await.has_member();
-
-                if !has_member {
-                    return None;
-                }
-
-                current_id = Some(
-                    self.get_members(searched_in_item_id)
-                        .await
-                        .get_by_name(name)
-                        .map(|x| Global::new(searched_in_item_id.target_id, x))?,
-                );
+                current_id = Some(self.get_member_by_name(searched_in_item_id, name).await?);
             }
             None => {
                 current_id = if let Some(target_id) = self.get_target_map().await.get(name).copied()

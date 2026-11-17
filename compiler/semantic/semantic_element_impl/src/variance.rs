@@ -61,7 +61,10 @@ struct VariancesKey {
     target_id: TargetID,
 }
 
-#[executor(config = Config)]
+/// A firewall: its readers are the projections of each owner's variances,
+/// which rerun when it changes, so that a reader of the variances of an owner
+/// recomputes only when those do.
+#[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
 async fn variances_executor(
     &VariancesKey { target_id }: &VariancesKey,
     engine: &TrackedEngine,
@@ -118,13 +121,40 @@ async fn variances_executor(
 static VARIANCES_EXECUTOR: Registration<Config> =
     Registration::new::<VariancesKey, VariancesExecutor>();
 
+/// The variances of one struct, enum or `eff` in the map of its target, or
+/// `None` if the map has none for it.
+///
+/// The map of a target recomputes on an edit to any struct, enum or `eff` of
+/// the target. The engine then reruns every projection of it, so that only the
+/// readers of variances that changed recompute. A projection must not panic,
+/// even for a symbol that the edit removed.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(Option<Interned<VarianceMap>>)]
+struct VarianceProjection {
+    symbol_id: GlobalSymbolID,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn variance_projection_executor(
+    &VarianceProjection { symbol_id }: &VarianceProjection,
+    engine: &TrackedEngine,
+) -> Option<Interned<VarianceMap>> {
+    let variances = engine.query(&VariancesKey { target_id: symbol_id.target_id }).await;
+    variances.get(&symbol_id.id).cloned()
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static VARIANCE_PROJECTION_EXECUTOR: Registration<Config> =
+    Registration::new::<VarianceProjection, VarianceProjectionExecutor>();
+
 #[executor(config = Config)]
 async fn variance_executor(
     &VarianceKey { symbol_id }: &VarianceKey,
     engine: &TrackedEngine,
 ) -> Interned<VarianceMap> {
-    let variances = engine.query(&VariancesKey { target_id: symbol_id.target_id }).await;
-    variances.get(&symbol_id.id).cloned().expect("incorrect key")
+    engine.query(&VarianceProjection { symbol_id }).await.expect("incorrect key")
 }
 
 #[distributed_slice(RAY_PROGRAM)]

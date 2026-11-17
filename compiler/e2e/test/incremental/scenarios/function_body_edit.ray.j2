@@ -1,0 +1,29 @@
+{#
+edit = "changes `right = 0` in the body of `work0` in `m0.ray` to `right = 1000`, which changes no signature and no diagnostic"
+
+[[knobs]]
+name = "modules"
+base = 3
+adds = "file modules like `m1.ray`, which `main.ray` calls and the edit does not touch"
+
+[[knobs]]
+name = "edited_functions"
+base = 3
+adds = "functions like `work1` to `m0.ray`, the edited module"
+#}
+{#
+Along the edited module's functions, the projections of its table grow: the
+table of a file is a firewall, so a changed table reruns the projection of
+every symbol of the file to find the ones that changed.
+#}
+{% import "shared/program.ray.j2" as program %}
+--- file main.ray
+{{ program.main(modules) }}
+{% for m in range(modules) %}
+--- file m{{ m }}.ray
+{% if m == 0 %}
+{{ program.module(m, edited_functions, work0_right=1000 if edit else 0) }}
+{% else %}
+{{ program.module(m, 3) }}
+{% endif %}
+{% endfor %}

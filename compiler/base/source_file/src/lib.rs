@@ -336,9 +336,33 @@ pub struct HashableView<'a> {
 
 impl std::hash::Hash for HashableView<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // A hasher may hash the same bytes differently when they are written
+        // in different pieces, and where the rope splits the slice into
+        // chunks depends on what precedes it in the file. So the bytes are
+        // written in blocks of a fixed size instead, for the same text to
+        // hash the same wherever it is.
+        const BLOCK_SIZE: usize = 64;
+
+        let mut block = [0; BLOCK_SIZE];
+        let mut length = 0;
+
         for chunk in self.slice.chunks() {
-            state.write(chunk.as_bytes());
+            let mut bytes = chunk.as_bytes();
+
+            while !bytes.is_empty() {
+                let taken = (BLOCK_SIZE - length).min(bytes.len());
+                block[length..length + taken].copy_from_slice(&bytes[..taken]);
+                length += taken;
+                bytes = &bytes[taken..];
+
+                if length == BLOCK_SIZE {
+                    state.write(&block);
+                    length = 0;
+                }
+            }
         }
+
+        state.write(&block[..length]);
     }
 }
 

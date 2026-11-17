@@ -2,7 +2,9 @@
 
 use std::{io::Write, path::Path, process::ExitCode, sync::Arc};
 
-use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
+use qbice::{
+    Observability, engine::EngineOptions, serialize::Plugin, stable_hash::SeededStableHasherBuilder,
+};
 use rayc_diagnostic::{ByteIndex, Rendered, Report};
 use rayc_qbice::{Engine, InMemoryFactory, IncrementalStorageEngine, TrackedEngine};
 use rayc_symbol_impl::source_map::{SourceMap, create_source_map};
@@ -24,8 +26,11 @@ pub use new::create_project;
 
 async fn create_engine(
     incremental_path: Option<&Path>,
+    observability: Observability,
     report_term: &mut ReportTerm<'_>,
 ) -> Option<Engine> {
+    let options = EngineOptions::builder().observability(observability).build();
+
     if let Some(inc_path) = incremental_path {
         // the database creates only its own directory, not its parents
         if let Err(err) = std::fs::create_dir_all(inc_path) {
@@ -37,12 +42,13 @@ async fn create_engine(
             return None;
         }
 
-        match Engine::new_with(
-            Plugin::new(),
-            IncrementalStorageEngine(inc_path),
-            SeededStableHasherBuilder::new(0),
-        )
-        .await
+        match Engine::new_with_options()
+            .serialization_plugin(Plugin::new())
+            .storage_engine_factory(IncrementalStorageEngine(inc_path))
+            .stable_hasher(SeededStableHasherBuilder::new(0))
+            .options(options)
+            .build()
+            .await
         {
             Ok(engine) => Some(engine),
             Err(err) => {
@@ -56,7 +62,12 @@ async fn create_engine(
         }
     } else {
         Some(
-            Engine::new_with(Plugin::new(), InMemoryFactory, SeededStableHasherBuilder::new(0))
+            Engine::new_with_options()
+                .serialization_plugin(Plugin::new())
+                .storage_engine_factory(InMemoryFactory)
+                .stable_hasher(SeededStableHasherBuilder::new(0))
+                .options(options)
+                .build()
                 .await
                 .expect("in-memory is infailable"),
         )
@@ -68,6 +79,11 @@ async fn create_engine(
 pub struct Session {
     invocation: Invocation,
     engine: TrackedEngine,
+
+    /// The engine that [`Self::engine`] tracks, which starts the input
+    /// sessions of later timestamps.
+    untracked_engine: Arc<Engine>,
+
     target_id: TargetID,
 }
 
@@ -84,6 +100,17 @@ impl Session {
     /// Resolves what `argument` compiles and sets up the query inputs of its
     /// target, reporting to `report_term` why it cannot.
     pub async fn new(argument: &Arguments, report_term: &mut ReportTerm<'_>) -> Option<Self> {
+        Self::new_with_observability(argument, Observability::default(), report_term).await
+    }
+
+    /// Creates a session as [`Self::new`] does, whose engine records its own
+    /// work as `observability` chooses, such as the counters of
+    /// [`Self::statistics`].
+    pub async fn new_with_observability(
+        argument: &Arguments,
+        observability: Observability,
+        report_term: &mut ReportTerm<'_>,
+    ) -> Option<Self> {
         // resolve what to compile from the arguments and the project manifest
         let invocation = match Invocation::resolve(argument) {
             Ok(invocation) => invocation,
@@ -100,7 +127,8 @@ impl Session {
             return None;
         }
 
-        let mut engine = create_engine(invocation.incremental_path(), report_term).await?;
+        let mut engine =
+            create_engine(invocation.incremental_path(), observability, report_term).await?;
 
         // Due to how rust compiler work, if a crate is linked without having
         // any symbols in it used, the crate will be completely ignored and the
@@ -187,7 +215,61 @@ impl Session {
             input_session.commit().await;
         }
 
-        Some(Self { invocation, engine: engine.tracked().await, target_id: local_target_id })
+        Some(Self {
+            invocation,
+            engine: engine.clone().tracked().await,
+            untracked_engine: engine,
+            target_id: local_target_id,
+        })
+    }
+
+    /// Reads the source files of the target again, as after they were
+    /// edited, so that the queries that read a changed file recompute.
+    pub async fn refresh(self) -> Self {
+        let Self { invocation, engine, untracked_engine, target_id } = self;
+
+        // the input session waits for every tracked engine to be dropped
+        drop(engine);
+
+        {
+            let mut input_session = untracked_engine.input_session().await;
+            rayc_source_file_impl::refresh_source_file_executors(&mut input_session).await;
+            input_session.commit().await;
+        }
+
+        Self {
+            invocation,
+            engine: untracked_engine.clone().tracked().await,
+            untracked_engine,
+            target_id,
+        }
+    }
+
+    /// The work the engine did for the queries of each type, as the
+    /// observability given to [`Self::new_with_observability`] counts it:
+    /// by default, nothing, and with [`qbice::StatisticsReset::OnCommit`],
+    /// since the session last read the source files, which [`Self::refresh`]
+    /// does.
+    #[must_use]
+    pub fn statistics(&self) -> qbice::Statistics { self.untracked_engine.statistics() }
+
+    /// The name of the query type `type_id`, such as one of
+    /// [`Self::statistics`], or `None` if it has no executor, such as an
+    /// input.
+    #[must_use]
+    pub fn query_type_name(&self, type_id: qbice::StableTypeID) -> Option<&'static str> {
+        self.untracked_engine.get_type_name_from_stable_type_id(type_id)
+    }
+
+    /// How the engine executes the query type `type_id`, such as one of
+    /// [`Self::statistics`], or `None` if it has no executor, such as an
+    /// input.
+    #[must_use]
+    pub fn query_execution_style(
+        &self,
+        type_id: qbice::StableTypeID,
+    ) -> Option<qbice::ExecutionStyle> {
+        self.untracked_engine.get_execution_style_from_stable_type_id(type_id)
     }
 
     /// Returns the engine the queries of the target run on.

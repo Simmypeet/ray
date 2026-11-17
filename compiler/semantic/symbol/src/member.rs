@@ -86,8 +86,27 @@ pub async fn get_member_by_name(
     symbol_id: Global<SymbolID>,
     name: &str,
 ) -> Option<Global<SymbolID>> {
-    let members = self.try_get_members(symbol_id).await?;
-    members.get_by_name(name).map(|id| symbol_id.target_id.make_global(id))
+    let name = self.intern_unsized(name.to_owned());
+    let member_id = self.query(&MemberByNameKey { symbol_id, name }).await?;
+
+    Some(symbol_id.target_id.make_global(member_id))
+}
+
+/// The key type used with [`TrackedEngine`] to look up the member of a symbol
+/// by its name, which is `None` if the symbol has no such member or is of a
+/// kind that does not have members.
+///
+/// A lookup of one name reads this rather than [`Key`], every member of the
+/// symbol, so that adding or removing a member of another name, such as a
+/// function of the same module, does not dirty it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, StableHash, Query)]
+#[value(Option<SymbolID>)]
+pub struct MemberByNameKey {
+    /// The global ID of the symbol whose member to look up.
+    pub symbol_id: Global<SymbolID>,
+
+    /// The name of the member.
+    pub name: Interned<str>,
 }
 
 /// The key type used with [`TrackedEngine`] to access the members of a symbol.
