@@ -11,10 +11,10 @@ use qbice::storage::intern::Interned;
 use rayc_coroutine_frame_layout::frame_layout::FrameLayout;
 use rayc_ir::{get_ir, ir_closure::CaptureID};
 use rayc_mono_ir::{
-    MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoFunctionInstance,
-    MonoGeneratedAdtDropInstance, MonoRunWithInstance, MonoStructInstance,
+    MonoBodyInstance, MonoCoroutineInstance, MonoEffectInstance, MonoEnumInstance,
+    MonoFunctionInstance, MonoGeneratedAdtDropInstance, MonoRunWithInstance, MonoStructInstance,
     layout::{
-        StructLayout, build_struct_layout,
+        EnumLayout, StructLayout, build_enum_layout, build_struct_layout,
         coroutine::{
             EffectRowLayout, FrameFieldTypes, build_effect_row_layout, build_frame_field_types,
             build_frame_layout,
@@ -366,6 +366,10 @@ impl Resolver {
         instance: &MonoStructInstance,
     ) -> Interned<StructLayout> {
         self.engine.build_struct_layout(instance.clone()).await
+    }
+
+    pub(crate) async fn enum_layout(&self, instance: &MonoEnumInstance) -> Interned<EnumLayout> {
+        self.engine.build_enum_layout(instance.clone()).await
     }
 
     pub(crate) async fn run_with_layout(

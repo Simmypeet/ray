@@ -5,8 +5,8 @@ use rayc_mono_ir::{
     MonoEffectInstance, MonoFunctionInstance,
     cfg::{BlockID, Switch, Terminator},
     function::{Local, LocalID, LocalKind, MonoFunction},
-    instruction::{Assign, Call, Instruction},
-    layout::HandlerRecordID,
+    instruction::{Assign, Call, Instruction, SetDiscriminant},
+    layout::{HandlerRecordID, VariantIndex},
     operand::{Constant, Operand},
     place::{FieldIndex, Place, PlaceProjector, Projection},
     rvalue::Rvalue,
@@ -181,6 +181,15 @@ impl<'a> Emitter<'a> {
             .into_iter()
             .map(|(record, operand)| (Projection::EnvironmentHandlerRecord(record), operand));
         self.initialize_aggregate(destination, captures.chain(handler_records));
+    }
+
+    /// Makes the enum at `destination` hold `variant`, whose payload must be
+    /// written already.
+    pub(crate) fn set_discriminant(&mut self, destination: Place, variant: VariantIndex) {
+        self.push_instruction(Instruction::SetDiscriminant(SetDiscriminant::new(
+            destination,
+            variant,
+        )));
     }
 
     pub(crate) fn push_call(&mut self, call: Call) {
