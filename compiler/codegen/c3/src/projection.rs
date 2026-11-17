@@ -4,7 +4,7 @@ use qbice::storage::intern::Interned;
 use rayc_mono_ir::{
     MonoCoroutineInstance, MonoRunWithInstance,
     layout::{
-        build_environment_layout, build_handler_layout, build_struct_layout,
+        build_enum_layout, build_environment_layout, build_handler_layout, build_struct_layout,
         coroutine::{
             FrameState, build_effect_row_layout, build_frame_field_types, build_frame_layout,
         },
@@ -37,6 +37,7 @@ pub(crate) async fn projected_type(
         | Projection::EnvironmentHandlerRecord(_)
         | Projection::TupleFieldIndex(_)
         | Projection::StructFieldIndex(_)
+        | Projection::VariantPayload(_)
         | Projection::OperationRecordEnvironmentField(_)
         | Projection::OperationRecordFunctionPointerField(_)
         | Projection::CoroutineFrame(_)
@@ -57,6 +58,14 @@ pub(crate) async fn projected_type(
             .fields()
             .get(&field)
             .expect("a struct should have the field it is projected to")
+            .clone(),
+
+        (Projection::VariantPayload(variant), AggregateType::Enum(instance)) => engine
+            .build_enum_layout(instance.clone())
+            .await
+            .variant(variant)
+            .payload()
+            .expect("only a variant with a payload has one to project")
             .clone(),
 
         (Projection::EnvironmentCapture(capture), AggregateType::Environment(instance)) => {
