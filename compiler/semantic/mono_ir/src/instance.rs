@@ -352,7 +352,7 @@ pub struct MonoStructInstance {
 
 impl MonoStructInstance {
     #[must_use]
-    pub fn new(struct_id: GlobalSymbolID, substitution: Subst) -> Self {
+    pub(super) fn new(struct_id: GlobalSymbolID, substitution: Subst) -> Self {
         for subst in substitution.codomain() {
             debug_assert!(subst.is_concrete());
         }
@@ -362,6 +362,32 @@ impl MonoStructInstance {
 
     #[must_use]
     pub const fn struct_id(&self) -> GlobalSymbolID { self.struct_id }
+
+    #[must_use]
+    pub const fn substitution(&self) -> &Subst { &self.substitution }
+}
+
+/// A concrete instantiation of a source enum definition.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct MonoEnumInstance {
+    enum_id: GlobalSymbolID,
+    substitution: Subst,
+}
+
+impl MonoEnumInstance {
+    #[must_use]
+    pub(super) fn new(enum_id: GlobalSymbolID, substitution: Subst) -> Self {
+        for subst in substitution.codomain() {
+            debug_assert!(subst.is_concrete());
+        }
+
+        Self { enum_id, substitution }
+    }
+
+    #[must_use]
+    pub const fn enum_id(&self) -> GlobalSymbolID { self.enum_id }
 
     #[must_use]
     pub const fn substitution(&self) -> &Subst { &self.substitution }
