@@ -25,13 +25,17 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_semantic_element::{
     parameter::get_parameter_map,
     struct_body::{FieldID, get_struct_body},
+    variant_payload_ty::get_variant_payload_ty,
 };
 use rayc_solver::Solver;
-use rayc_symbol::{GlobalSymbolID, member::get_members};
+use rayc_symbol::{
+    GlobalSymbolID,
+    member::{get_enum_variants, get_members},
+};
 use rayc_type::{signature::get_return_type, subst::Subst};
 
 use crate::{
-    instance::{MonoEffectInstance, MonoEnvironmentInstance, MonoStructInstance},
+    instance::{MonoEffectInstance, MonoEnumInstance, MonoEnvironmentInstance, MonoStructInstance},
     operand::Constant,
     ty::{
         AggregateType, EnvironmentSlot, FunctionSignature, MonoType, ReturnType, lower_effects,
@@ -45,7 +49,7 @@ pub mod repr;
 pub mod run_with;
 
 /// The unsigned integer type of a tag, which tells the variant of a value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum TagType {
     Uint8,
     Uint16,
@@ -78,6 +82,17 @@ impl TagType {
             Self::Uint16 => MonoType::Uint16,
             Self::Uint32 => MonoType::Uint32,
             Self::Uint64 => MonoType::Uint64,
+        }
+    }
+
+    /// The largest value of the type.
+    #[must_use]
+    pub const fn max_value(self) -> u64 {
+        match self {
+            Self::Uint8 => u8::MAX as u64,
+            Self::Uint16 => u16::MAX as u64,
+            Self::Uint32 => u32::MAX as u64,
+            Self::Uint64 => u64::MAX,
         }
     }
 
@@ -114,6 +129,154 @@ impl StructLayout {
     #[must_use]
     pub const fn fields(&self) -> &BTreeMap<FieldID, Interned<MonoType>> { &self.fields }
 }
+
+/// The position of a variant among the variants of its enum, as an
+/// [`EnumLayout`] orders them. The discriminant of a value is the index of its
+/// variant.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct VariantIndex(u32);
+
+impl VariantIndex {
+    /// The variant at a position counted in `usize`, as an iterator gives it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` does not fit in `u32`.
+    #[must_use]
+    pub fn from_usize(index: usize) -> Self {
+        Self(index.try_into().expect("a variant index should fit in u32"))
+    }
+
+    #[must_use]
+    pub const fn index(self) -> u32 { self.0 }
+}
+
+/// One variant of a concrete enum.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct EnumVariant {
+    variant_id: GlobalSymbolID,
+    payload: Option<Interned<MonoType>>,
+}
+
+impl EnumVariant {
+    /// The `SymbolKind::Variant` symbol of the variant.
+    #[must_use]
+    pub const fn variant_id(&self) -> GlobalSymbolID { self.variant_id }
+
+    /// The type of the value the variant carries, or `None` for a variant
+    /// declared without one.
+    #[must_use]
+    pub const fn payload(&self) -> Option<&Interned<MonoType>> { self.payload.as_ref() }
+}
+
+/// The variants of one concrete enum, each with the type of its payload.
+///
+/// The variants are in declaration order, which is also the order the enum's
+/// generated `Drop` plan visits them in.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct EnumLayout {
+    instance: MonoEnumInstance,
+    variants: Vec<EnumVariant>,
+}
+
+impl EnumLayout {
+    #[must_use]
+    pub const fn instance(&self) -> &MonoEnumInstance { &self.instance }
+
+    /// Every variant with its index, in order.
+    #[must_use]
+    pub fn variants(&self) -> impl ExactSizeIterator<Item = (VariantIndex, &EnumVariant)> {
+        self.variants
+            .iter()
+            .enumerate()
+            .map(|(index, variant)| (VariantIndex::from_usize(index), variant))
+    }
+
+    /// The variant at `index`.
+    #[must_use]
+    pub fn variant(&self, index: VariantIndex) -> &EnumVariant {
+        &self.variants[index.index() as usize]
+    }
+
+    /// The index of the variant whose symbol is `variant_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the enum has no such variant.
+    #[must_use]
+    pub fn variant_index(&self, variant_id: GlobalSymbolID) -> VariantIndex {
+        let index = self
+            .variants
+            .iter()
+            .position(|variant| variant.variant_id == variant_id)
+            .expect("the variant should be one of its enum's");
+        VariantIndex::from_usize(index)
+    }
+
+    /// The type of a discriminant: the narrowest that holds the index of
+    /// every variant.
+    #[must_use]
+    pub fn discriminant_type(&self) -> TagType { TagType::for_variant_count(self.variants.len()) }
+
+    /// Whether a value stores which variant it is: only an enum with more than
+    /// one variant needs to.
+    #[must_use]
+    pub const fn has_tag(&self) -> bool { self.variants.len() > 1 }
+}
+
+/// Derives the [`EnumLayout`] of a concrete enum.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query)]
+#[value(Interned<EnumLayout>)]
+#[extend(name = build_enum_layout, by_val)]
+pub struct BuildEnumLayout {
+    /// The concrete enum whose declared variants determine the layout.
+    pub instance: MonoEnumInstance,
+}
+
+#[executor(config = Config)]
+async fn build_enum_layout_executor(
+    key: &BuildEnumLayout,
+    engine: &TrackedEngine,
+) -> Interned<EnumLayout> {
+    let instance = &key.instance;
+    let solver = Solver::without_givens(engine.clone()).await;
+    let enum_id = instance.enum_id();
+
+    // lower each payload's type under the concrete type argument substitution
+    let variant_ids = engine.get_enum_variants(enum_id).await;
+    let mut variants = Vec::with_capacity(variant_ids.len());
+    for variant_id in variant_ids.iter().copied() {
+        let variant_id = enum_id.target_id.make_global(variant_id);
+        let payload = match engine.get_variant_payload_ty(variant_id).await {
+            Some(payload) => Some(lower_type(&solver, &payload, instance.substitution()).await),
+            None => None,
+        };
+        variants.push(EnumVariant { variant_id, payload });
+    }
+
+    engine.intern(EnumLayout { instance: instance.clone(), variants })
+}
+
+#[distributed_slice(RAY_PROGRAM)]
+static BUILD_ENUM_LAYOUT_EXECUTOR: Registration<Config> =
+    Registration::new::<BuildEnumLayout, BuildEnumLayoutExecutor>();
 
 /// One callback slot in a concrete effect-handler record.
 #[derive(
