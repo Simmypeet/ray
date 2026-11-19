@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
 
+use super::effect_row::Matching;
 use crate::{
     constraint::outlives::OutlivesConstraints,
     poly_var::{GlobalPolyVarID, get_poly_var_map},
@@ -288,6 +289,21 @@ impl Ty {
                         (None, None) => {}
                         (Some(left), Some(right)) => pending.push((left.clone(), right.clone())),
                         (None, Some(_)) | (Some(_), None) => return None,
+                    }
+                }
+
+                (Self::EffectRow2(left_row), Self::EffectRow2(right_row)) => {
+                    for m in left_row.matchings(right_row)? {
+                        match m {
+                            Matching::Label(l, r) => pending.extend(
+                                l.structural_match(r)?.map(|(l, r)| (l.clone(), r.clone())),
+                            ),
+
+                            Matching::Atom(effect_atom, effect_atom1) => pending.push((
+                                effect_atom.clone().into_ty(),
+                                effect_atom1.clone().into_ty(),
+                            )),
+                        }
                     }
                 }
 

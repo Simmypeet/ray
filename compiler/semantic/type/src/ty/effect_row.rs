@@ -380,6 +380,11 @@ pub struct EffectAtom(Interned<Ty>);
 
 impl EffectAtom {
     #[must_use]
+    pub fn into_ty(self) -> Interned<Ty> { self.0 }
+}
+
+impl EffectAtom {
+    #[must_use]
     pub fn get_atom_state(&self) -> AtomState {
         match self.0.as_ref() {
             Ty::Inference(_) => AtomState::Flexible,
@@ -441,6 +446,12 @@ impl Entry {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Matching<'x> {
+    Label(&'x EffectLabel, &'x EffectLabel),
+    Atom(&'x EffectAtom, &'x EffectAtom),
+}
+
 // An individual entry of an effect row with a set of "excluded" labels, which
 // are labels that are not allowed to be in the row.
 #[derive(
@@ -448,10 +459,38 @@ impl Entry {
 )]
 pub struct GuardedRowEntry {
     source: Entry,
+    /// The sorted and deduplicated set of "lifetime erased" labels
     excluded: Interned<[EffectLabel]>,
 }
 
 impl GuardedRowEntry {
+    #[must_use]
+    pub fn matchings<'x>(&'x self, other: &'x Self) -> Option<impl Iterator<Item = Matching<'x>>> {
+        if self.excluded.len() != other.excluded.len()
+            || self
+                .excluded
+                .iter()
+                .zip(other.excluded.iter())
+                .any(|(left, right)| left.effect_symbol_id != right.effect_symbol_id)
+        {
+            return None;
+        }
+
+        let (label_matching, atom_matching) = match (&self.source, &other.source) {
+            (Entry::Label(left), Entry::Label(right)) => (Some(Matching::Label(left, right)), None),
+            (Entry::Atom(left), Entry::Atom(right)) => (None, Some(Matching::Atom(left, right))),
+            _ => return None,
+        };
+
+        let excluded_matching = self
+            .excluded
+            .iter()
+            .zip(other.excluded.iter())
+            .map(|(left, right)| Matching::Label(left, right));
+
+        Some(excluded_matching.chain(label_matching).chain(atom_matching))
+    }
+
     pub fn interned_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
         self.source
             .internred_iter()
@@ -468,10 +507,36 @@ impl GuardedRowEntry {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
 pub struct EffectRow2 {
+    /// Sorted and deduplicated by [`GuardedRowEntry::source`] with
+    /// lifetime-erased.
     rows: Interned<[GuardedRowEntry]>,
 }
 
 impl EffectRow2 {
+    #[must_use]
+    pub fn matchings<'x>(&'x self, other: &'x Self) -> Option<impl Iterator<Item = Matching<'x>>> {
+        if self.rows.len() != other.rows.len() {
+            return None;
+        }
+
+        if self
+            .rows
+            .iter()
+            .zip(other.rows.iter())
+            .map(|(left, right)| left.matchings(right))
+            .all(|x| x.is_some())
+        {
+            Some(
+                self.rows
+                    .iter()
+                    .zip(other.rows.iter())
+                    .flat_map(|(left, right)| left.matchings(right).unwrap()),
+            )
+        } else {
+            None
+        }
+    }
+
     #[must_use]
     pub fn guarded_row_entries(&self) -> impl ExactSizeIterator<Item = &GuardedRowEntry> {
         self.rows.iter()
