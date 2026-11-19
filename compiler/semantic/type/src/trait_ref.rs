@@ -114,10 +114,7 @@ pub enum InstanceTraitRefError {
 }
 
 impl Ty {
-    /// Returns the trait reference that this instance implements: the
-    /// declared trait of a dictionary variable, the enclosing trait of
-    /// `this`, the instantiated head of a named instance, or the trait of a
-    /// compiler-provided instance.
+    /// Returns the trait reference that this instance implements.
     pub async fn instance_trait_ref(
         &self,
         engine: &TrackedEngine,

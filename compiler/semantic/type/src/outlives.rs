@@ -1,11 +1,4 @@
-//! The components of an outlives requirement `ty: 'a`.
-//!
-//! Following Rust RFC 1214, `ty: 'a` holds exactly when every component of
-//! `ty` outlives `'a`. A component is a lifetime, a polymorphic variable of any
-//! other kind (a type, an effect row, or a dictionary), or a rigid projection:
-//! an associated type, or the coroutine of a call through an instance. Every
-//! other type constructor is transparent: it outlives `'a` when its arguments
-//! do.
+//! Decomposes outlives requirements `ty: 'a` into components (Rust RFC 1214).
 
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
@@ -20,14 +13,8 @@ use crate::{
     where_clause::OutlivesPredicate,
 };
 
-/// Retrieves the outlives requirements inferred for a struct from its field
-/// types, or for an enum from its variant payload types, as in Rust RFC 2093.
-///
-/// For `struct Ref['a, t]: value: &'a t` this is `t: 'a`. Only references
-/// are a source: the declared outlives predicates of a field's struct or enum
-/// are not inferred. The requirements are stated over the ADT's own
-/// polymorphic variables and hold for every well-formed use of the ADT, next
-/// to its declared where clause.
+/// Retrieves the outlives requirements implied by an ADT's references in its
+/// fields (Rust RFC 2093), so users need not restate them.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]
@@ -45,10 +32,8 @@ pub enum OutlivesComponent {
     /// component, because it outlives every lifetime.
     Region(Interned<Ty>),
 
-    /// A type that cannot be decomposed any further: a polymorphic variable of
-    /// kind `Star`, `EffectRow` or `Instance`, the rigid `this` dictionary, or
-    /// a rigid projection. Whether it outlives a lifetime can only come from
-    /// an assumption.
+    /// A type that cannot be decomposed further, so whether it outlives a
+    /// lifetime can only come from an assumption.
     Opaque(Interned<Ty>),
 }
 
@@ -63,12 +48,8 @@ impl OutlivesComponent {
 }
 
 impl Ty {
-    /// Decomposes the requirement `ty: 'a` into the components of `ty` that
-    /// must each outlive `'a`. The order of the components is unspecified.
-    ///
-    /// Erased lifetimes, errors and inference variables yield no component:
-    /// the first are checked on the IR, and the others either were already
-    /// reported or cannot occur where named lifetimes are checked.
+    /// Decomposes `ty: 'a` into the components of `ty` that must each outlive
+    /// `'a`, in unspecified order.
     pub async fn outlives_components(
         ty: &Interned<Self>,
         engine: &TrackedEngine,

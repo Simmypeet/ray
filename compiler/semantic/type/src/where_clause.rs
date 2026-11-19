@@ -71,16 +71,8 @@ impl Substitutable for MarkerPredicate {
     }
 }
 
-/// A requirement `lesser: greater`: the lifetime `lesser`, or every lifetime
-/// in the type, effect row, or dictionary `lesser`, outlives the lifetime
-/// `greater`.
-///
-/// Both `'a: 'b` and `t: 'a` share this form, because a lifetime is its own
-/// only outlives component (see [`Ty::outlives_components`]).
-///
-/// The names follow [`TyRelate`](crate::constraint::ty_relate::TyRelate): a
-/// lifetime that outlives another is its subtype, so `'lesser: 'greater`
-/// holds exactly when `'lesser <: 'greater`.
+/// A requirement `lesser: greater`, shared by `'a: 'b` and `t: 'a` since a
+/// lifetime is its own only outlives component.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
 )]
@@ -208,11 +200,8 @@ pub enum PredicateOrigin {
     Implied,
 }
 
-/// A resolved requirement, the source span that introduces it, and whether
-/// it was written or implied.
-///
-/// A declared predicate's span is the predicate as written; an implied one's
-/// is the declaration that implies it.
+/// A resolved requirement with the span that introduces it, and whether it
+/// was written or implied.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct Predicate {
     kind: PredicateKind,
@@ -245,19 +234,8 @@ impl Predicate {
     }
 }
 
-/// The predicates that hold for a symbol: those declared in its where clause,
-/// in declaration order, followed by the outlives bounds implied by the
-/// well-formedness of its declaration.
-///
-/// Only plain `def`s, structs, and marker implementations have implied
-/// bounds:
-/// - for a `def`, the bounds implied by the references in its parameter and
-///   return types;
-/// - for a struct, its inferred outlives predicates;
-/// - for a marker implementation, every requirement of naming its head, marker
-///   predicates included.
-///
-/// Every other declaration spells its bounds out in its where clause.
+/// The predicates that hold for a symbol: its declared where clause followed
+/// by the outlives bounds implied by its declaration's well-formedness.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Identifiable)]
 pub struct WhereClause {
     predicates: Interned<[Predicate]>,
@@ -290,12 +268,8 @@ pub struct Key {
     pub symbol_id: GlobalSymbolID,
 }
 
-/// Retrieves only the predicates written in the where clause of a symbol
-/// supporting where clauses, without implied bounds.
-///
-/// Prefer [`get_where_clause`]. This query exists for computing implied bounds
-/// themselves, which read the declared predicates of other symbols, and for
-/// the diagnostics of resolving the clause.
+/// Retrieves only the written predicates of a symbol, for computing implied
+/// bounds without cycles; prefer [`get_where_clause`].
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]

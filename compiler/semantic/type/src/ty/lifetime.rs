@@ -1,9 +1,5 @@
-//! Lifetimes that are not lifetime parameters.
-//!
-//! A lifetime parameter is an ordinary [`Ty::PolyVar`](super::Ty::PolyVar) of
-//! kind [`TyKind::Lifetime`](super::TyKind::Lifetime), and a lifetime that
-//! failed to resolve is an error of that kind. Every other lifetime is a
-//! [`Ty::Lifetime`](super::Ty::Lifetime).
+//! Lifetimes other than lifetime parameters, which are ordinary
+//! [`Ty::PolyVar`](super::Ty::PolyVar)s.
 
 use std::fmt;
 
@@ -32,38 +28,22 @@ pub enum Lifetime {
     /// The `'static` lifetime.
     Static,
 
-    /// A lifetime inside a function body before borrow checking. Type
-    /// inference ignores lifetimes, so every lifetime it creates is erased and
-    /// only the borrow checker gives it a region.
+    /// A lifetime before borrow checking, since type inference ignores
+    /// lifetimes.
     Erased,
 
-    /// A region variable, only created by the IR type check.
-    ///
-    /// Region variables are deliberately not inference variables: type
-    /// inference binds inference variables through substitution, while
-    /// region variables are never bound and only collect outlives
-    /// constraints.
+    /// A region variable from the IR type check, kept apart from inference
+    /// variables because it is never bound and only collects constraints.
     Region(RegionID),
 
-    /// A lifetime in the interface of a nested IR function, such as the
-    /// lifetime of a by-reference capture.
-    ///
-    /// It acts as a lifetime parameter of the nested function and is only
-    /// replaced by substitution: with a universal region when the nested
-    /// function is checked, and with a region of the parent where the parent
-    /// creates it. Its ID is only meaningful within that one function.
+    /// A lifetime in a nested IR function's interface (e.g. a by-reference
+    /// capture), acting as one of its lifetime parameters.
     External(ExternalRegionID),
 }
 
 impl Lifetime {
     /// Returns whether this lifetime is universal: a region the function
     /// mentioning it does not choose, but is given.
-    ///
-    /// `'static` is universal everywhere, and an external lifetime is
-    /// universal to the nested function whose interface mentions it, which
-    /// its creator instantiates. Lifetime parameters are universal as well,
-    /// but they are [`Ty::PolyVar`](super::Ty::PolyVar)s rather than
-    /// lifetimes of this kind.
     #[must_use]
     pub const fn is_universal(&self) -> bool {
         match self {

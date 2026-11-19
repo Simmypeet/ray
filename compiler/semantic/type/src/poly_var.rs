@@ -37,20 +37,8 @@ impl PolyVarKind {
     }
 }
 
-/// Identifies whether a binder comes from source, callable-parameter
-/// elaboration, or lifetime elision.
-///
-/// Each `def(...)` parameter annotation generates a fresh callable type and a
-/// `core.Def` dictionary. Their origins pair those binders without using their
-/// display names: generated binders are excluded from source-name lookup, and
-/// generated dictionaries cannot be supplied as explicit `given` arguments.
-///
-/// Every generated callable variant carries the zero-based value-parameter
-/// index within the owning declaration, counting ordinary parameters too (but
-/// not an ellipsis). This is a declaration-local occurrence key, not a
-/// polymorphic-variable ID or an index among only callable parameters. For `def
-/// apply(x: int32, fn: def())`, the generated binders have origins
-/// `CallableType(1)`, `CallableDictionary(1)` and `CallableDropDictionary(1)`.
+/// Records where a binder came from, so generated binders can be paired
+/// without relying on display names and kept out of source-name lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub enum PolyVarOrigin {
     /// A source-addressable type/effect variable or explicitly declared
@@ -64,10 +52,7 @@ pub enum PolyVarOrigin {
     /// The hidden `core.Drop` dictionary for that parameter's fresh callable
     /// type, used when the callable is dropped instead of called.
     CallableDropDictionary(usize),
-    /// The fresh lifetime parameter introduced for a lifetime elided in a
-    /// parameter type. It is keyed by the span of the elided lifetime: the
-    /// span of `&t` for a reference written without a lifetime, or the span
-    /// of `'_`.
+    /// The fresh lifetime parameter for an elided lifetime, keyed by its span.
     ElidedLifetime(RelativeSpan),
 }
 
@@ -169,11 +154,8 @@ impl PolyVar {
 pub type PolyVarID = ID<PolyVar>;
 pub type GlobalPolyVarID = MemberID<PolyVarID>;
 
-/// The polymorphic variables owned by a symbol, in semantic insertion order.
-///
-/// The order returned by [`Self::iter`] is significant: type/effect binders
-/// precede dictionaries. Arguments and substitutions use this complete order,
-/// including generated binders that cannot be addressed by source names.
+/// The polymorphic variables owned by a symbol, in the order arguments and
+/// substitutions rely on.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Identifiable)]
 pub struct PolyVarMap {
     poly_vars: OrderedArena<PolyVar>,
@@ -215,12 +197,8 @@ impl PolyVarMap {
         self.poly_vars.get(id).and_then(PolyVar::trait_ref)
     }
 
-    /// Returns the arguments that `subst` gives every variable of this map,
-    /// whose variables belong to `symbol_id`, or `None` if `subst` leaves any
-    /// of them out.
-    ///
-    /// The arguments are in declaration order; see
-    /// [`PolyVarStack::args_from_subst`] for a symbol and its enclosing ones.
+    /// Returns the arguments `subst` gives every variable of this map in
+    /// declaration order, or `None` if `subst` leaves any out.
     #[must_use]
     pub fn args_from_subst(
         &self,
@@ -253,10 +231,8 @@ impl PolyVarMap {
         self.type_parameters().nth(index).map(|(_, poly_var)| poly_var.kind())
     }
 
-    /// Inserts a source variable that has no name, such as the anonymous
-    /// given parameter `core.Drop[t]` in `given (core.Drop[t])`. It keeps
-    /// its source position, so it is still supplied positionally, but it
-    /// bypasses the source-name index and can never be found by name.
+    /// Inserts a nameless source variable (e.g. `given (core.Drop[t])`) that is
+    /// still supplied positionally but never found by name.
     pub fn insert_anonymous(&mut self, variable: PolyVar) -> PolyVarID {
         assert!(matches!(variable.origin, PolyVarOrigin::Source));
         self.poly_vars.insert(variable)
@@ -402,22 +378,14 @@ impl PolyVarStack {
         })
     }
 
-    /// Returns the arguments that `subst` gives every variable of the stack,
-    /// or `None` if `subst` leaves any of them out.
-    ///
-    /// The arguments are in argument order: those of the innermost symbol
-    /// first, each in declaration order.
+    /// Returns the arguments `subst` gives every variable of the stack, or
+    /// `None` if `subst` leaves any out.
     #[must_use]
     pub fn create_args_from_subst(&self, subst: &Subst) -> Option<Vec<Interned<Ty>>> {
         self.all_poly_vars().map(|poly_var_id| subst.get(&poly_var_id).cloned()).collect()
     }
 
-    /// Returns the substitution that maps the variables of the stack to
-    /// `args`, which are in the argument order of
-    /// [`Self::create_args_from_subst`].
-    ///
-    /// The inverse of [`Self::create_args_from_subst`]. When the lengths
-    /// differ, the surplus variables or arguments are left out.
+    /// The inverse of [`Self::create_args_from_subst`].
     #[must_use]
     pub fn create_subst_from_args(&self, args: impl IntoIterator<Item = Interned<Ty>>) -> Subst {
         self.all_poly_vars().zip(args).collect()
@@ -432,9 +400,7 @@ impl PolyVarStack {
             .collect()
     }
 
-    /// Returns the variables of the stack as types, in the order of
-    /// [`Self::args_from_subst`]: the arguments that instantiate the stack
-    /// with itself.
+    /// Returns the arguments that instantiate the stack with itself.
     pub fn identity_args(&self, engine: &TrackedEngine) -> impl Iterator<Item = Interned<Ty>> {
         self.all_poly_vars().map(|poly_var_id| Ty::new_poly_var(poly_var_id, engine))
     }

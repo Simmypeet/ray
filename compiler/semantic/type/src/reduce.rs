@@ -21,15 +21,8 @@ use crate::{
 
 /// Performs a single reduction step.
 pub trait Reduce: Sync {
-    /// Returns the value after one reduction step, or `None` if irreducible.
-    /// Given equalities rewrite left operands that are equal to the value
-    /// ignoring lifetimes to their right operands, in slice order, after
-    /// ordinary reduction at each type. Descendants use the same givens.
-    /// Reflexive equalities do not count as progress.
-    ///
-    /// A given equality that matches relates each pair of corresponding
-    /// lifetimes invariantly. The step returns the resulting outlives
-    /// constraints next to the reduced value.
+    /// Returns the value after one reduction step, with the outlives
+    /// constraints from matched given equalities, or `None` if irreducible.
     #[allow(async_fn_in_trait)]
     async fn reduce(
         &self,
@@ -60,19 +53,10 @@ where
     }
 }
 
-/// Expands a projection only when its instance and member correspondence are
-/// known. This performs one definition expansion; further reduction uses the
-/// ordinary [`Reduce`] traversal.
-///
-/// TODO: diagnose recursive associated types during normalization. A future
-/// normalization context could track implementation member IDs on the active
-/// expansion stack, catching direct and mutual recursion even when arguments
-/// grow (for example, `Item[a] = Instance.Item[(a, a)]`). Expand supplied
-/// arguments before entering the definition so finite nesting such as
-/// `Identity.Item[Identity.Item[int32]]` remains valid. Preserve abstract
-/// dictionary projections and report cycles through semantic diagnostics.
-/// Until then, recursive definitions may remain irreducible or fail to
-/// terminate during normalization.
+// TODO: diagnose recursive associated types (e.g. `Item[a] = Instance.Item[(a,
+// a)]`), which may currently stay irreducible or fail to terminate.
+/// Expands a projection by one definition step once its instance and member
+/// correspondence are known.
 pub(crate) async fn reduce_instance_associated(
     associated: crate::ty::application::InstanceAssociatedView<'_>,
     engine: &TrackedEngine,
@@ -149,14 +133,8 @@ pub(crate) async fn reduce_instance_associated(
     Some(definition.apply_subst_or_clone(&substitution, engine))
 }
 
-/// Reduces the coroutine of a call through an instance to the coroutine of
-/// the method that the instance implements, once the instance is a declared
-/// one, or to the coroutine of the closure that a closure's built-in `Def`
-/// dictionary calls.
-///
-/// Any other instance keeps the projection rigid: a dictionary variable or
-/// `this` is not known yet, and the other built-in dictionaries implement no
-/// method with a body to suspend.
+/// Reduces the coroutine of a call through an instance to the implementing
+/// method's or closure's coroutine, once the instance is known.
 pub(crate) async fn reduce_trait_def_coroutine(
     coroutine: crate::ty::application::TraitDefCoroutineView<'_>,
     engine: &TrackedEngine,
@@ -215,10 +193,8 @@ pub(crate) async fn reduce_trait_def_coroutine(
     Some(Ty::new_def_coroutine(member_id, poly_args, engine))
 }
 
-/// Reduces `Return` or `Effect` of the built-in `Coroutine` dictionary of
-/// `coroutine`, which is a coroutine type or a `&mut` to one, by
-/// substituting the arguments of the coroutine type into the signature of the
-/// suspended function.
+/// Reduces `Return` or `Effect` of the built-in `Coroutine` dictionary from
+/// the signature of the suspended function.
 async fn reduce_coroutine_associated(
     associated: crate::ty::application::InstanceAssociatedView<'_>,
     coroutine: &Interned<Ty>,
@@ -247,12 +223,7 @@ async fn reduce_coroutine_associated(
 }
 
 /// Reduces `Args`, `Return` or `Effect` of the built-in `Def` dictionary of a
-/// continuation.
-///
-/// Calling `Continuation[r, c]` takes the one value the coroutine waits for,
-/// runs the coroutine to completion and forwards everything it performs, so
-/// `Args` is `(r,)`, and `Return` and `Effect` are those of the `Coroutine`
-/// dictionary of `c`.
+/// continuation, which forwards those of its coroutine.
 async fn reduce_continuation_def_associated(
     associated: crate::ty::application::InstanceAssociatedView<'_>,
     continuation: crate::ty::application::ContinuationDefInstanceView<'_>,

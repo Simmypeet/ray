@@ -13,11 +13,8 @@ use rayc_symbol::{
 
 use crate::trait_ref::get_instance_trait_ref;
 
-/// Returns the accessibility of the given symbol.
-///
-/// An instance member has the accessibility of the trait member it
-/// implements. An instance member implementing no trait member, which is
-/// already reported, has the accessibility of its instance.
+/// Returns the accessibility of the given symbol, resolving instance members to
+/// the accessibility of the trait member they implement.
 #[extend]
 pub async fn get_accessibility(self: &TrackedEngine, symbol_id: GlobalSymbolID) -> Accessibility {
     match self.get_declared_accessibility(symbol_id).await {

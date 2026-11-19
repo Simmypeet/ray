@@ -79,9 +79,7 @@ impl EffectLabel {
     }
 
     /// Returns the label of the effect `effect_symbol_id` instantiated with
-    /// `substitution`: the effect applied to what `substitution` maps each of
-    /// its parameters to. A parameter that `substitution` leaves out stays as
-    /// it is.
+    /// `substitution`.
     pub async fn instantiated(
         effect_symbol_id: GlobalSymbolID,
         substitution: &Subst,
@@ -110,12 +108,6 @@ impl EffectLabel {
     pub fn has_arguments(&self) -> bool { !self.args.is_empty() }
 
     /// Returns each argument with the variance of its position.
-    ///
-    /// `effect_variances` are the variances of the effect's parameters.
-    ///
-    /// # Panics
-    ///
-    /// If `effect_variances` has fewer variances than there are arguments.
     pub fn arguments_with_variance<'a>(
         &'a self,
         effect_variances: &'a VarianceMap,
@@ -126,12 +118,8 @@ impl EffectLabel {
             .map(move |(index, arg)| (arg, effect_variances.get_by_index(index)))
     }
 
-    /// Returns each argument with the variance of its position, when this
-    /// label is in a position of variance `ambient`.
-    ///
-    /// An invariant or bivariant position absorbs every variance inside it,
-    /// so the variances of the effect are only queried when `ambient` is
-    /// covariant or contravariant.
+    /// Returns each argument's variance within an `ambient` position, querying
+    /// the effect's variances only when they can matter.
     pub async fn arguments_with_ambient_variance(
         &self,
         ambient: Variance,
@@ -189,11 +177,8 @@ impl EffectRow {
     #[must_use]
     pub const fn tail(&self) -> Option<&Interned<Ty>> { self.tail.as_ref() }
 
-    /// Returns whether this row is syntactically empty: it has no label, and
-    /// no tail other than an empty row.
-    ///
-    /// A row variable in the tail is not empty, because it may be
-    /// instantiated with an effect.
+    /// Returns whether this row is syntactically empty; a row variable tail is
+    /// not, since it may be instantiated with an effect.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.labels.is_empty() && self.tail.as_ref().is_none_or(|tail| tail.is_empty_effect_row())
@@ -215,12 +200,8 @@ impl EffectRow {
         self.interned_iter().any(|x| x.has_inference_variable(ty))
     }
 
-    /// Matches the labels of this row with those of `other` as scoped labels,
-    /// as in Koka: labels of different effects commute, while labels of the
-    /// same effect keep their order. Each label of this row, in order, matches
-    /// the first label of `other` of the same effect that no earlier label has
-    /// matched, so `{State[a], State[b]}` matches `{State[x], State[y]}` with
-    /// `a` against `x` and `b` against `y`.
+    /// Matches the labels of this row with those of `other` as Koka-style
+    /// scoped labels, where only labels of different effects commute.
     #[must_use]
     pub fn match_labels<'a>(&'a self, other: &'a Self) -> MatchedLabels<'a> {
         let mut matched = Vec::new();

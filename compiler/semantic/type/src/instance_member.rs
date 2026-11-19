@@ -33,30 +33,13 @@ impl InstanceMember {
     pub const fn instance_member_id(&self) -> GlobalSymbolID { self.implementation_id }
 
     /// Returns the substitution from trait-member polymorphic variables to
-    /// instance-member types. Supports both associated methods and types.
-    /// Each local variable of the trait member maps to exactly one local
-    /// variable of the implementation, paired by declaration order or by
-    /// where it occurs in the signatures, independently of its name.
+    /// instance-member types.
     #[must_use]
     pub const fn poly_var_substitution(&self) -> &Subst { &self.poly_var_substitution }
 }
 
-/// Retrieves structural correspondence for an instance associated method or
-/// type.
-///
-/// Accepts `SymbolKind::InstanceDef` and `SymbolKind::InstanceType`.
-///
-/// Returns `None` when the parent instance's trait reference failed to resolve,
-/// or when that trait has no member with the implementation member's name.
-/// These are error-recovery cases: callers may request correspondence while
-/// resolving projections in an invalid program.
-///
-/// `Some` means the corresponding trait member was found; it does not guarantee
-/// a valid implementation. Incompatible member kinds or polymorphic parameter
-/// counts/kinds produce diagnostics and an empty substitution inside `Some`.
-/// Given requirements and method signatures are checked separately, so
-/// reduction can retrieve correspondence without recursively requesting
-/// conformance checks.
+/// Retrieves the trait-member correspondence of an instance method or type,
+/// without checking conformance so that reduction can use it without cycles.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]

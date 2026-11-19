@@ -120,11 +120,8 @@ pub struct TyDisplay<'x> {
 }
 
 impl TyDisplay<'_> {
-    /// Leaves out every erased lifetime argument, as in `Ref[int32]` for
-    /// `Ref['_, int32]`.
-    ///
-    /// Code generation erases every lifetime, so there they only add noise.
-    /// Diagnostics keep them, since they may tell types apart there.
+    /// Leaves out erased lifetime arguments, which are only noise in code
+    /// generation output.
     #[must_use]
     pub const fn without_erased_lifetimes(mut self) -> Self {
         self.omit_erased_lifetimes = true;
@@ -243,10 +240,8 @@ impl TyDisplay<'_> {
         self.fmt_ty(target, f)
     }
 
-    /// Formats a coroutine type by the function it suspends, as in
-    /// `<coroutine of f[int32]>`. The arguments of the enclosing symbols and
-    /// the given dictionaries are left out: the type arguments decide the
-    /// dictionaries, which only lengthen the name.
+    /// Formats a coroutine type by the function it suspends, leaving out the
+    /// arguments that only lengthen the name.
     fn fmt_def_coroutine(
         &self,
         coroutine: application::DefCoroutineView<'_>,

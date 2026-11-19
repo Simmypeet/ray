@@ -1,8 +1,4 @@
-//! Structural rewriting of types.
-//!
-//! A [`TyRewriter`] decides, type by type, whether to replace a type. A
-//! [`Rewrite`] walks a value depth-first, asks the rewriter about every type
-//! it meets, and rebuilds only the parts that change.
+//! Structural rewriting of types that rebuilds only the parts that change.
 
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
@@ -11,21 +7,15 @@ use crate::ty::Ty;
 
 /// Decides which types a [`Rewrite`] replaces.
 pub trait TyRewriter {
-    /// Returns the replacement for `ty`, or `None` to keep `ty` and rewrite
-    /// the types nested in it instead.
-    ///
-    /// A replacement is used as is: the types nested in it are not rewritten.
+    /// Returns the replacement for `ty`, which is not rewritten further, or
+    /// `None` to rewrite the types nested in `ty` instead.
     fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>>;
 }
 
 /// A value whose nested types can be rewritten by a [`TyRewriter`].
 pub trait Rewrite {
-    /// Rewrites the types in `self` depth-first, visiting a type before the
-    /// types nested in it, and returns the rewritten value, or `None` when
-    /// nothing changes.
-    ///
-    /// The value is rebuilt lazily: only the parts that contain a replaced
-    /// type are reconstructed.
+    /// Rewrites the types in `self` depth-first, pre-order, or returns `None`
+    /// when nothing changes.
     #[must_use]
     fn rewrite(&self, rewriter: &mut impl TyRewriter, engine: &TrackedEngine) -> Option<Self>
     where
@@ -93,14 +83,10 @@ pub trait TyRewriterAsync {
     async fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>>;
 }
 
-/// Like [`Rewrite`], but rewrites with a [`TyRewriterAsync`].
-///
-/// The methods are named apart from those of [`Rewrite`] so that a value
-/// implementing both can be rewritten with either without ambiguity.
+/// Like [`Rewrite`], but with method names apart so a value implementing
+/// both can use either without ambiguity.
 pub trait RewriteAsync {
-    /// Rewrites the types in `self` in the same order as
-    /// [`Rewrite::rewrite`], and returns the rewritten value, or `None` when
-    /// nothing changes.
+    /// The async counterpart of [`Rewrite::rewrite`].
     #[allow(async_fn_in_trait)]
     async fn rewrite_async(
         &self,

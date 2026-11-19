@@ -31,9 +31,8 @@ pub enum Constant {
     /// A nominal enum identified by its `SymbolKind::Enum` symbol.
     Enum(GlobalSymbolID),
     Instance(GlobalSymbolID),
-    /// An associated type identified by its `SymbolKind::TraitType` symbol.
-    /// Arguments are an instance-kind type followed by the trait type's
-    /// polymorphic arguments in declaration order.
+    /// An associated type, applied to an instance followed by the trait type's
+    /// own arguments.
     InstanceAssociated(GlobalSymbolID),
     Closure(Closure),
     /// The built-in `Def` dictionary whose sole argument is a closure type.
@@ -44,72 +43,36 @@ pub enum Constant {
     /// The built-in `Drop` dictionary for a tuple. Its arguments are the tuple
     /// type followed by one `Drop` dictionary for each element in tuple order.
     TupleDropInstance,
-    /// The built-in `Drop` dictionary for a closure. Its arguments are the
-    /// closure type followed by one `Drop` dictionary for each capture in
-    /// environment order.
+    /// The built-in `Drop` dictionary for a closure, applied to the closure
+    /// type and one `Drop` dictionary per capture.
     ClosureDropInstance,
-    /// The generated `Drop` dictionary for a struct or an enum. Its arguments
-    /// are the instantiated nominal type followed by its external dictionaries
-    /// in `GeneratedDropPlan::requirements` order.
+    /// The generated `Drop` dictionary for a struct or an enum, applied to the
+    /// type and its external dictionaries.
     GeneratedAdtDropInstance,
-    /// The anonymous type of a suspended function, identified by the function
-    /// `coro` was applied to. Its arguments are the arguments for the
-    /// polymorphic parameters of that function, followed by those of each
-    /// enclosing symbol, proceeding outwards.
-    ///
-    /// There is one coroutine type per function, not one per `coro`
-    /// expression. Everything else about it is derived by substituting the
-    /// arguments into the signature of the function.
+    /// The anonymous type of a suspended function, one per function rather than
+    /// per `coro` expression so its parts derive from the signature.
     DefCoroutine(GlobalSymbolID),
-    /// The anonymous type of a suspended call through an instance that is not
-    /// known yet, identified by the `SymbolKind::TraitDef` symbol of the
-    /// called method. Its arguments are the instance, followed by the
-    /// arguments for the method's own polymorphic parameters in declaration
-    /// order; those of the trait are told by the instance.
-    ///
-    /// It is a projection, like [`Self::InstanceAssociated`]: once the
-    /// instance is a declared one, it reduces to the [`Self::DefCoroutine`] of
-    /// that instance's implementation of the method, and until then it is
-    /// equal only to itself.
+    /// The coroutine of a call through a not-yet-known instance, kept as a
+    /// projection that reduces to [`Self::DefCoroutine`] once known.
     TraitDefCoroutine(GlobalSymbolID),
-    /// The anonymous type of a suspended call of a closure, whose sole
-    /// argument is the closure type. The closure type tells the closure, the
-    /// arguments of its owner and its captures.
-    ///
-    /// It runs the signature of `core.Def.call`, with the trait's `f` as the
-    /// closure type and `this` as its built-in [`Self::DefInstance`]. That is
-    /// the [`Self::TraitDefCoroutine`] of a call through that dictionary,
-    /// which reduces to this type.
+    /// The anonymous type of a suspended closure call, which a
+    /// [`Self::TraitDefCoroutine`] through a closure's `Def` dictionary reduces
+    /// to.
     ClosureCoroutine,
     /// The built-in `Coroutine` dictionary whose sole argument is a coroutine
     /// type, or a `&mut` to one.
     CoroutineInstance,
-    /// The built-in `Def` dictionary of `core.Continuation[r, c]`, which makes
-    /// a continuation callable. Its arguments are the continuation type
-    /// followed by the `Coroutine` dictionary of `c`, which tells what
-    /// resuming the coroutine returns and performs.
+    /// The built-in `Def` dictionary that makes `core.Continuation[r, c]`
+    /// callable.
     ContinuationDefInstance,
-    /// The built-in `Drop` dictionary for a coroutine type. Its arguments are
-    /// the coroutine type followed by one `Drop` dictionary for each upvar,
-    /// which are the parameters of the suspended function in declaration
-    /// order.
+    /// The built-in `Drop` dictionary for a coroutine type, applied to the
+    /// coroutine type and one `Drop` dictionary per upvar.
     CoroutineDropInstance,
     Error(TyKind),
 }
 
-/// Represents an anonymous type created by the closure expression. It
-/// represents the storage that holds all the captured variables required by the
-/// closure. The type is created by the compiler and is not visible to the user.
-///
-/// The arguments of the closure application type are
-/// - The owner's polymorphic arguments in declaration order, followed by those
-///   of each enclosing symbol, proceeding outwards.
-/// - A list of parameter types, this can be empty if the closure has no
-///   parameters.
-/// - The return type of the closure.
-/// - The effect row of the closure.
-/// - The tuple type of all the captured variables of the closure. This can be
-///   an empty tuple if the closure has no captured variables.
+/// The compiler-generated storage type of a closure's captures, which also
+/// carries its owner's arguments and its signature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct Closure {
     /// The source definition containing this closure, including nested
@@ -366,14 +329,8 @@ impl<'x> TraitDefCoroutineView<'x> {
         engine.build_subst_from_args(self.trait_def_id, self.args.iter()).await
     }
 
-    /// Returns the substitution that instantiates the signature of the trait
-    /// method: its own parameters with [`Self::args`], the parameters of its
-    /// trait with the arguments of the trait reference that the instance
-    /// implements, and the trait's `this` with the instance.
-    ///
-    /// The trait reference is unknown while the instance is an inference
-    /// variable, or after an invalid declaration; the parameters of the trait
-    /// are then left out.
+    /// Returns the substitution that instantiates the trait method's signature
+    /// for this call.
     pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
         let mut subst = self.create_own_subst(engine).await;
         let Ok(trait_ref) = self.instance.instance_trait_ref(engine).await else {
@@ -410,9 +367,7 @@ impl<'x> ClosureCoroutineView<'x> {
     pub const fn closure_view(&self) -> ClosureView<'x> { self.closure_view }
 
     /// Returns the substitution that instantiates the signature of
-    /// `core.Def.call`: the trait's `f` with the closure type, and `this`
-    /// with the closure's built-in `Def` dictionary. The method has no
-    /// parameters of its own.
+    /// `core.Def.call` for this closure.
     pub async fn create_subst(&self, engine: &TrackedEngine) -> Subst {
         let def_trait = engine.get_core_item(CoreItem::DefTrait).await;
         let mut subst = engine.build_subst_from_args(def_trait, [self.closure_ty]).await;
@@ -442,9 +397,7 @@ pub enum CoroutineView<'x> {
 }
 
 impl CoroutineView<'_> {
-    /// Returns the symbol whose signature the coroutine runs: the suspended
-    /// function, the trait method of a call through an instance, or
-    /// `core.Def.call` for a call of a closure.
+    /// Returns the symbol whose signature the coroutine runs.
     pub async fn signature_id(&self, engine: &TrackedEngine) -> GlobalSymbolID {
         match self {
             Self::Def(coroutine) => coroutine.def_id(),
@@ -463,10 +416,8 @@ impl CoroutineView<'_> {
         }
     }
 
-    /// Returns the substitution that instantiates the type parameters that
-    /// the `coro` creating this coroutine chose, as a call of the same callee
-    /// would: those of the suspended function and its enclosing symbols, or
-    /// the trait method's own. `core.Def.call` has none of its own.
+    /// Returns the substitution for the type parameters chosen by the `coro`
+    /// that created this coroutine.
     pub async fn instantiation(&self, engine: &TrackedEngine) -> Subst {
         match self {
             Self::Def(coroutine) => coroutine.create_subst(engine).await,
@@ -797,16 +748,8 @@ impl Application {
         }
     }
 
-    /// Returns each argument with the variance of its position.
-    ///
-    /// `adt_variances` are the variances of the struct's or enum's parameters
-    /// when this application is one (see [`Self::adt_id`]), and are ignored
-    /// otherwise.
-    ///
-    /// # Panics
-    ///
-    /// If this application is a struct or an enum and `adt_variances` is
-    /// `None` or has fewer variances than there are arguments.
+    /// Returns each argument with the variance of its position; `adt_variances`
+    /// is required when this is a struct or an enum.
     pub fn arguments_with_variance<'a>(
         &'a self,
         adt_variances: Option<&'a VarianceMap>,
@@ -817,12 +760,8 @@ impl Application {
             .map(move |(index, arg)| (arg, self.argument_variance(index, adt_variances)))
     }
 
-    /// Returns each argument with the variance of its position, when this
-    /// application itself is in a position of variance `ambient`.
-    ///
-    /// An invariant or bivariant position absorbs every variance inside it,
-    /// so the variances of a struct or an enum are only queried when `ambient`
-    /// is covariant or contravariant.
+    /// Returns each argument's variance within an `ambient` position, querying
+    /// ADT variances only when they can matter.
     pub async fn arguments_with_ambient_variance(
         &self,
         ambient: Variance,
@@ -848,10 +787,6 @@ impl Application {
     }
 
     /// Returns the same type constructor applied to `args`.
-    ///
-    /// # Panics
-    ///
-    /// If `args` does not have as many arguments as this application.
     #[must_use]
     pub fn with_arguments(&self, args: Interned<[Interned<Ty>]>) -> Self {
         assert_eq!(args.len(), self.args.len(), "a type constructor keeps its arity");
@@ -907,9 +842,8 @@ impl Application {
         matches!(self.constant, Constant::InstanceAssociated(_))
     }
 
-    /// Returns whether this application is a projection through an instance,
-    /// which may still reduce once the instance is known: an associated type
-    /// or the coroutine of a call through an instance.
+    /// Returns whether this is a projection through an instance, which may
+    /// still reduce once the instance is known.
     #[must_use]
     pub const fn is_projection(&self) -> bool {
         matches!(self.constant, Constant::InstanceAssociated(_) | Constant::TraitDefCoroutine(_))

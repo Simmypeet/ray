@@ -37,11 +37,8 @@ pub enum CaptureMode {
 }
 
 impl CaptureMode {
-    /// Combines the requirements of two uses, choosing the strongest.
-    ///
-    /// A value requirement moves the binding into the closure, and the
-    /// closure's own copy then also serves every by-reference use. Otherwise
-    /// a mutable reference is needed if either use mutates the binding.
+    /// Combines the requirements of two uses of a binding into the strongest
+    /// capture mode that satisfies both.
     #[must_use]
     pub const fn join(self, other: Self) -> Self {
         match (self, other) {

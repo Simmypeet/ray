@@ -72,10 +72,7 @@ impl Subst {
         })
     }
 
-    /// Iterates over the polymorphic variables this substitution instantiates
-    /// and their instantiated types.
-    ///
-    /// The iteration order is not stable.
+    /// Iterates over the polymorphic-variable mappings, in no stable order.
     pub fn poly_var_mappings(&self) -> impl Iterator<Item = (GlobalPolyVarID, &Interned<Ty>)> {
         self.0.iter().filter_map(|(var, ty)| match var {
             Var::Poly(poly_var) => Some((*poly_var, ty)),
@@ -148,9 +145,7 @@ impl Subst {
         Self(map)
     }
 
-    /// Composes this substitution with another substitution such that the
-    /// updated substitution is equivalent to applying `self` followed by
-    /// `other`.
+    /// Composes `self` with `other`, as if applying `self` and then `other`.
     pub fn compose(&mut self, other: &Self, engine: &TrackedEngine) {
         for (_, ty) in self.0.iter_mut() {
             if let Some(new_ty) = ty.apply_subst(other, engine) {

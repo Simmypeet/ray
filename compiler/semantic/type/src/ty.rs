@@ -81,11 +81,8 @@ impl Integer {
         }
     }
 
-    /// Returns the largest value of this integer type.
-    ///
-    /// `isize` and `usize` are bounded by their 64-bit counterparts, and
-    /// `c_int` by `int32`, matching how their constants are represented after
-    /// monomorphization.
+    /// Returns the largest value of this integer type, matching how its
+    /// constants are represented after monomorphization.
     #[must_use]
     pub const fn max_value(&self) -> u128 {
         match self {
@@ -125,9 +122,7 @@ impl Mutability {
         }
     }
 
-    /// Returns the variance of the pointee of a reference with this
-    /// mutability: a shared pointee is covariant, and a mutable one is
-    /// invariant. Raw pointers are bivariant in their pointee instead.
+    /// Returns the variance of the pointee of a reference with this mutability.
     #[must_use]
     pub const fn pointee_variance(&self) -> Variance {
         match self {

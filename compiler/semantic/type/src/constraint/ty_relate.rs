@@ -9,14 +9,8 @@ use crate::{
     variance::Variance,
 };
 
-/// Relating two types together with a variance.
-///
-/// [`Variance::Covariant`] means `lesser <: greater`,
-/// [`Variance::Contravariant`] means `greater <: lesser`, and
-/// [`Variance::Invariant`] means equality. Ray has no subtyping apart from
-/// lifetimes, so the structure of the two types is always unified exactly,
-/// whatever the variance. The variance only decides which outlives
-/// constraints relating two lifetimes produces.
+/// Relates two types with a variance, which only decides the outlives
+/// constraints between lifetimes since Ray has no other subtyping.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
 pub struct TyRelate {
     lesser: Interned<Ty>,

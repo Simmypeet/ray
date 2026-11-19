@@ -1,8 +1,5 @@
-//! Queries for the declared signature of a function symbol.
-//!
-//! They are declared here, rather than next to the other semantic elements,
-//! because reducing the associated types of a coroutine type reads them; see
-//! [`crate::reduce`].
+//! Function signature queries, declared here because coroutine reduction in
+//! [`crate::reduce`] reads them.
 
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use rayc_symbol::GlobalSymbolID;

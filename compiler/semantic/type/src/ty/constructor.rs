@@ -33,8 +33,6 @@ impl Ty {
     }
 
     /// Creates a nominal closure type, including its capture storage.
-    /// Owner arguments precede the signature, with the owner's arguments first
-    /// and each enclosing symbol's arguments following in declaration order.
     #[must_use]
     pub fn new_closure(
         closure: application::Closure,
@@ -224,9 +222,8 @@ impl Ty {
         )))
     }
 
-    /// Creates a generated `Drop` dictionary for a struct or an enum. The
-    /// selected external dictionaries follow the plan's requirement order,
-    /// not field order.
+    /// Creates a generated `Drop` dictionary for a struct or an enum, with its
+    /// external dictionaries in the plan's requirement order.
     #[must_use]
     pub fn new_generated_adt_drop_instance(
         nominal: Interned<Self>,
@@ -245,9 +242,8 @@ impl Ty {
         )))
     }
 
-    /// Creates the type of a suspended `def_id`. `poly_args` are the arguments
-    /// for the polymorphic parameters of `def_id`, followed by those of each
-    /// enclosing symbol, proceeding outwards.
+    /// Creates the type of a suspended `def_id`, applied to its and its
+    /// enclosing symbols' arguments.
     #[must_use]
     pub fn new_def_coroutine(
         def_id: GlobalSymbolID,
@@ -260,9 +256,8 @@ impl Ty {
         )))
     }
 
-    /// Creates the type of a suspended call of the trait method
-    /// `trait_def_id` through `instance`. `args` are the arguments for the
-    /// method's own polymorphic parameters, in declaration order.
+    /// Creates the type of a suspended call of the trait method `trait_def_id`
+    /// through `instance`.
     #[must_use]
     pub fn new_trait_def_coroutine(
         trait_def_id: GlobalSymbolID,
@@ -291,17 +286,8 @@ impl Ty {
         )))
     }
 
-    /// Returns the type of the coroutine that suspends a direct call of
-    /// `function_id`, where `call_subst` instantiates the type parameters of
-    /// the called symbol, or `None` when the callee cannot be suspended.
-    ///
-    /// Only a `def` or an instance `def` has a body to suspend; an
-    /// `extern def` has none.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `call_subst` does not instantiate every parameter of the
-    /// suspended function and its enclosing symbols.
+    /// Returns the coroutine type suspending a direct call of `function_id`, or
+    /// `None` when the callee has no body to suspend.
     pub async fn new_direct_call_coroutine(
         function_id: GlobalSymbolID,
         call_subst: &Subst,
@@ -325,16 +311,8 @@ impl Ty {
         Some(Self::new_def_coroutine(function_id, poly_args, engine))
     }
 
-    /// Returns the type of the coroutine that suspends a call of the trait
-    /// method `trait_def_id` through `instance`, where `call_subst`
-    /// instantiates the method's own type parameters.
-    ///
-    /// It suspends whichever implementation the instance turns out to have.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `call_subst` does not instantiate every parameter of the
-    /// trait def.
+    /// Returns the coroutine type suspending a call of `trait_def_id` through
+    /// `instance`, whichever implementation it turns out to have.
     pub async fn new_instance_call_coroutine(
         trait_def_id: GlobalSymbolID,
         instance: Interned<Self>,
@@ -370,9 +348,6 @@ impl Ty {
 
     /// Creates the built-in `Def` dictionary of the `core.Continuation[r, c]`
     /// type `continuation`, from the `Coroutine` dictionary selected for `c`.
-    ///
-    /// The caller is responsible for `continuation` being an instantiation
-    /// of `core.Continuation`; only its shape is checked here.
     #[must_use]
     pub fn new_continuation_def_instance(
         continuation: Interned<Self>,
@@ -424,9 +399,6 @@ impl Ty {
     }
 
     /// Creates a projection from an instance to a trait associated type.
-    ///
-    /// `symbol_id` must identify a `SymbolKind::TraitType`, `instance` must
-    /// have kind `Instance`, and `args` must match the trait type's poly vars.
     #[must_use]
     pub fn new_instance_associated(
         symbol_id: GlobalSymbolID,

@@ -1,10 +1,5 @@
-//! The variance of type constructor parameters.
-//!
-//! Variance is the four-point lattice with [`Variance::Bivariant`] at the
-//! bottom, [`Variance::Invariant`] at the top, and the covariant and
-//! contravariant points in between. The variances of built-in constructors are
-//! fixed. Those of struct, enum and `eff` parameters are declared, as in `+t`,
-//! or computed from their declarations; see [`VarianceKey`].
+//! The variance of type constructor parameters, used to relate their
+//! arguments soundly.
 
 use qbice::{Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned};
 use rayc_hash::FxHashMap;
@@ -46,12 +41,8 @@ pub enum Variance {
 }
 
 impl Variance {
-    /// Returns the variance of a position that has variance `inner` inside a
-    /// position of variance `self`.
-    ///
-    /// Covariant keeps the inner variance, contravariant flips it, and an
-    /// invariant or bivariant context absorbs it. This is rustc's `xform`, so
-    /// `Invariant.xform(Bivariant)` is `Invariant`.
+    /// Returns the variance of a position with variance `inner` nested inside a
+    /// position of variance `self` (rustc's `xform`).
     #[must_use]
     pub const fn xform(self, inner: Self) -> Self {
         match self {
@@ -121,10 +112,8 @@ impl Variance {
     }
 }
 
-/// The variance of every polymorphic variable of a struct or `eff`.
-///
-/// The variances are kept in the order of the owner's [`PolyVarMap`], which is
-/// also the order of its arguments, and can be looked up by poly var ID too.
+/// The variance of every polymorphic variable of a struct, enum or `eff`, in
+/// argument order.
 #[derive(Debug, Clone, PartialEq, Eq, Default, StableHash, Encode, Decode, Identifiable)]
 pub struct VarianceMap {
     variances: Vec<Variance>,
@@ -132,9 +121,8 @@ pub struct VarianceMap {
 }
 
 impl VarianceMap {
-    /// Creates a map in which every polymorphic variable of `poly_vars` has
-    /// its declared variance, or is [`Variance::Bivariant`], that is, not
-    /// used yet.
+    /// Creates a map seeded with declared variances, and bivariant (unused)
+    /// elsewhere.
     #[must_use]
     pub fn new(poly_vars: &PolyVarMap) -> Self {
         Self {
@@ -157,29 +145,15 @@ impl VarianceMap {
     }
 
     /// Returns the variance of the polymorphic variable with the given ID.
-    ///
-    /// # Panics
-    ///
-    /// If the ID is not in the poly var map this one was created from.
     #[must_use]
     pub fn get(&self, id: PolyVarID) -> Variance { self.variances[self.index_of(id)] }
 
     /// Returns the variance of the argument at `index`.
-    ///
-    /// # Panics
-    ///
-    /// If `index` is not less than the number of polymorphic variables.
     #[must_use]
     pub fn get_by_index(&self, index: usize) -> Variance { self.variances[index] }
 
-    /// Joins `variance` into the variance of the polymorphic variable with
-    /// the given ID, recording one more use of it. Returns whether its
-    /// variance changed. The variance of a declared variable must not be
-    /// joined into, since it is fixed.
-    ///
-    /// # Panics
-    ///
-    /// If the ID is not in the poly var map this one was created from.
+    /// Joins `variance` into the variable's variance for one more use,
+    /// returning whether it changed.
     pub fn join(&mut self, id: PolyVarID, variance: Variance) -> bool {
         let index = self.index_of(id);
         let joined = self.variances[index].join(variance);
@@ -193,12 +167,8 @@ impl VarianceMap {
         *self.indices_by_id.get(&id).expect("the poly var belongs to this map")
     }
 
-    /// Makes every unused polymorphic variable that is not a lifetime
-    /// invariant, so that no `PhantomData` equivalent is needed. An unused
-    /// lifetime stays bivariant, so its arguments are never related. A
-    /// declared variable is never bivariant, so it is left alone. `poly_vars`
-    /// must be the map this one was created from. Returns whether any
-    /// variance changed.
+    /// Makes unused non-lifetime variables invariant so no `PhantomData`
+    /// equivalent is needed; returns whether any variance changed.
     pub fn default_unused(&mut self, poly_vars: &PolyVarMap) -> bool {
         let mut changed = false;
         for (variance, (_, poly_var)) in self.variances.iter_mut().zip(poly_vars.iter()) {
@@ -211,20 +181,8 @@ impl VarianceMap {
     }
 }
 
-/// Retrieves the variance of every polymorphic variable of a struct, an enum
-/// or an `eff`, in the order of its poly var map, which is also the order of
-/// its arguments.
-///
-/// A parameter declared as `+t`, `-t` or `=t` has that variance. Otherwise, a
-/// struct parameter's variance is the join of its uses in the field types,
-/// and an enum parameter's the join of its uses in the payload types. A
-/// `perform` calls the handler, so an `eff` parameter used in an operation's
-/// parameter types is covariant, one used in its return type is
-/// contravariant, and one used in both is invariant.
-///
-/// An unused lifetime parameter is [`Variance::Bivariant`]. Every other
-/// unused parameter is [`Variance::Invariant`], so no `PhantomData`
-/// equivalent is needed.
+/// Retrieves the declared or inferred variance of every polymorphic variable
+/// of a struct, enum or `eff`, in argument order.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]

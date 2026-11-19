@@ -76,8 +76,7 @@ impl Ty {
     }
 
     /// Returns whether this lifetime takes part in named-lifetime outlives
-    /// checks. Erased lifetimes are checked on the IR instead, and errors
-    /// were already reported.
+    /// checks.
     #[must_use]
     pub fn is_checked_lifetime(&self) -> bool {
         *self != Self::Lifetime(Lifetime::Erased) && !self.contains_error()
@@ -378,11 +377,8 @@ impl Ty {
         Some(view)
     }
 
-    /// Returns the coroutine type of either kind this type is, or is a `&mut`
-    /// to.
-    ///
-    /// Both have a built-in `Coroutine` instance: a continuation of a
-    /// coroutine pinned to the stack only holds a `&mut` to it.
+    /// Returns the coroutine type this type is, or is a `&mut` to, since a
+    /// continuation of a stack-pinned coroutine only holds a `&mut` to it.
     #[must_use]
     pub fn as_coroutine_behind_reference(&self) -> Option<application::CoroutineView<'_>> {
         match self.as_reference_view() {
@@ -429,11 +425,8 @@ impl Ty {
         }
     }
 
-    /// Returns whether this is an effect row that is syntactically empty; see
-    /// [`EffectRow::is_empty`].
-    ///
-    /// Anything that is not a row is not empty: a row variable may be
-    /// instantiated with an effect.
+    /// Returns whether this is a syntactically empty effect row; see
+    /// [`EffectRow::is_empty`](super::effect_row::EffectRow::is_empty).
     #[must_use]
     pub fn is_empty_effect_row(&self) -> bool {
         match self {
@@ -452,7 +445,7 @@ impl Ty {
     }
 
     /// Returns whether this is a projection through an instance; see
-    /// [`Application::is_projection`].
+    /// [`Application::is_projection`](super::application::Application::is_projection).
     #[must_use]
     pub const fn is_projection(&self) -> bool {
         matches!(self, Self::Application(application) if application.is_projection())

@@ -1,9 +1,5 @@
-//! Outlives constraints between two lifetimes, produced as a side output of
-//! relating and reducing types.
-//!
-//! Relating two lifetimes never binds anything. Instead, it emits outlives
-//! predicates `lesser: greater`, which the borrow checker keeps and type
-//! inference drops; see [`OutlivesConstraints`].
+//! Outlives constraints between lifetimes, emitted by relating and reducing
+//! types since relating lifetimes never binds anything.
 
 use qbice::{
     Decode, Encode, StableHash,
@@ -21,17 +17,8 @@ use crate::{
 };
 
 impl OutlivesPredicate {
-    /// Returns the predicates that relating the lifetime `lesser` to the
-    /// lifetime `greater` with `variance` requires.
-    ///
-    /// A lifetime that outlives another is its subtype, so `'lesser <:
-    /// 'greater` holds exactly when `'lesser: 'greater`. Covariant `'a <: 'b`
-    /// requires `'a: 'b`, contravariant requires `'b: 'a`, invariant requires
-    /// both, and bivariant requires nothing. Predicates that always hold are
-    /// left out: those between a lifetime and itself, those whose lesser
-    /// lifetime is `'static`, and those that mention an erased lifetime or
-    /// an error, since erased lifetimes are checked on the IR and errors
-    /// were already reported.
+    /// Returns the predicates that relating `lesser` to `greater` with
+    /// `variance` requires, leaving out those that trivially hold.
     pub fn from_relation(
         lesser: &Interned<Ty>,
         greater: &Interned<Ty>,
@@ -60,10 +47,8 @@ impl OutlivesPredicate {
     }
 }
 
-/// A set of outlives predicates between two lifetimes, `'lesser: 'greater`.
-///
-/// The set is immutable and shares its structure, so combining the
-/// constraints of several steps with [`Self::union`] is cheap.
+/// An immutable, structurally shared set of outlives predicates, so combining
+/// the constraints of several steps is cheap.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct OutlivesConstraints(FxImHashSet<OutlivesPredicate>);
 
@@ -72,8 +57,7 @@ impl OutlivesConstraints {
     #[must_use]
     pub fn new() -> Self { Self::default() }
 
-    /// Returns the constraints that relating the lifetime `lesser` to the
-    /// lifetime `greater` with `variance` requires; see
+    /// Returns the constraints of relating `lesser` to `greater`; see
     /// [`OutlivesPredicate::from_relation`].
     #[must_use]
     pub fn from_relation(

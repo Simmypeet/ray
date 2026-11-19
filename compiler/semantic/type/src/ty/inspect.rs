@@ -15,14 +15,8 @@ use crate::{
 };
 
 impl Ty {
-    /// Returns whether this is a built-in `Drop` dictionary that does nothing.
-    ///
-    /// Tuple and closure dictionaries are no-ops when all their element or
-    /// capture dictionaries are recursively no-ops, including empty ones.
-    ///
-    /// A coroutine dictionary never is, whatever its upvar dictionaries are:
-    /// dropping a suspended coroutine drops its saved locals, which its type
-    /// does not show.
+    /// Returns whether this is a built-in `Drop` dictionary that does nothing,
+    /// so drop glue can skip it.
     #[must_use]
     pub fn is_no_op_drop_instance(&self) -> bool {
         match self {
@@ -141,11 +135,8 @@ impl Ty {
         })
     }
 
-    /// Returns whether this type or a descendant is an inference variable
-    /// that is not a lifetime.
-    ///
-    /// Lifetimes never decide which instance is selected, so a lifetime
-    /// inference variable does not keep a requirement from being resolved.
+    /// Returns whether this type contains a non-lifetime inference variable,
+    /// since lifetimes never decide instance selection.
     #[must_use]
     pub fn contains_non_lifetime_inference(&self) -> bool {
         self.recursive_iter().any(|ty| match ty {
@@ -203,36 +194,19 @@ impl Ty {
         }
     }
 
-    /// Replaces every lifetime, lifetime parameters included, with
-    /// [`Lifetime::Erased`].
-    ///
-    /// Lifetimes never affect code generation, so monomorphization erases
-    /// them before it interns an instantiated type: `f['a]` and `f['b]` must
-    /// share one instance, and `Ref['static, t]` and `Ref['a, t]` must lower
-    /// to one type.
+    /// Erases every lifetime so that instantiations differing only in lifetimes
+    /// share one monomorphized instance.
     pub async fn erase_lifetimes(ty: &Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
         ty.rewrite_async_or_clone(&mut LifetimeEraser { engine }, engine).await
     }
 
-    /// Returns whether this type is of kind [`TyKind::Lifetime`]: a
-    /// lifetime, a lifetime parameter, or an error of that kind.
-    ///
-    /// Lifetime inference variables only come from generalization during type
-    /// inference. The borrow checker's region variables are
-    /// [`Lifetime::Region`]s instead.
+    /// Returns whether this type is of kind [`TyKind::Lifetime`].
     pub async fn is_lifetime(&self, engine: &TrackedEngine) -> bool {
         self.kind_of(engine).await == TyKind::Lifetime
     }
 
-    /// Returns whether this type, which the caller knows to be of kind
-    /// [`TyKind::Lifetime`], is a universal lifetime: `'static`, a lifetime
-    /// parameter or an external lifetime, a region which the function
-    /// mentioning it does not choose, but is given; see
-    /// [`Lifetime::is_universal`].
-    ///
-    /// A parameter of kind lifetime is a lifetime parameter, so its kind is
-    /// not looked up. For a type of another kind, the answer is meaningless:
-    /// check [`Self::is_lifetime`] first when the kind is not known.
+    /// Returns whether this lifetime-kinded type is a universal region (see
+    /// [`Lifetime::is_universal`]); meaningless for other kinds.
     #[must_use]
     pub const fn is_universal_region(&self) -> bool {
         match self {
@@ -245,15 +219,8 @@ impl Ty {
         }
     }
 
-    /// Returns whether `left` and `right` are equal when every lifetime is
-    /// considered equal to every other lifetime.
-    ///
-    /// Effect rows are matched as scoped labels, as by
-    /// [`EffectRow::match_labels`], so labels of different effects commute.
-    ///
-    /// Returns `None` if they are not equal. Otherwise, returns the outlives
-    /// constraints of relating each pair of corresponding lifetimes
-    /// invariantly.
+    /// Returns the outlives constraints that make `left` and `right` equal up
+    /// to lifetimes, or `None` if they differ otherwise.
     pub async fn equal_modulo_lifetimes(
         left: &Interned<Self>,
         right: &Interned<Self>,
@@ -271,14 +238,8 @@ impl Ty {
         )
     }
 
-    /// Pairs each lifetime of `left` with the lifetime at the same position
-    /// in `right`, when the two types are equal up to their lifetimes; see
-    /// [`Self::equal_modulo_lifetimes`].
-    ///
-    /// Returns `None` if they are not equal. Otherwise, returns the pairs
-    /// whose lifetimes differ, in unspecified order, the lifetime of `left`
-    /// first. A position where both types have the same lifetime has no
-    /// pair.
+    /// Pairs the differing lifetimes at the same positions of `left` and
+    /// `right`, or `None` if the types differ up to lifetimes.
     pub async fn corresponding_lifetimes(
         left: &Interned<Self>,
         right: &Interned<Self>,
@@ -348,9 +309,8 @@ impl Ty {
         })
     }
 
-    /// Determines whether the type is concrete, meaning it contains no
-    /// inference variables, no polymorphic, no unreduced projections, and
-    /// lifetimes are all erased.
+    /// Returns whether the type is ready for code generation: no inference or
+    /// polymorphic variables, no unreduced projections, and erased lifetimes.
     #[must_use]
     pub fn is_concrete(&self) -> bool {
         self.recursive_iter().all(|x| match x {
