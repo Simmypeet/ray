@@ -1,9 +1,5 @@
-//! The witness of a marker goal that does not hold: the shortest chain of
-//! premises from the goal to one that fails for a reason of its own.
-//!
-//! Marker entailment records only its answers, so that the many goals that
-//! hold cost nothing more. The witness is searched for after a goal is known
-//! to fail, with the same rules evaluation used.
+//! The shortest failing chain of premises for a marker goal, searched only
+//! after failure so goals that hold cost nothing extra.
 
 use rayc_hash::FxHashSet;
 use rayc_type::where_clause::{MarkerPredicate, PredicateKind};
@@ -26,15 +22,8 @@ struct Visited {
 }
 
 impl Solver {
-    /// Explains why `predicate` does not hold, by finding the shortest chain
-    /// of premises from it to a goal that fails for a reason of its own.
-    ///
-    /// Returns `None` when the predicate holds.
-    ///
-    /// # Panics
-    ///
-    /// If a marker goal is being proved: every premise is evaluated as a
-    /// root goal, so that its answer is its own fixpoint.
+    /// Explains why `predicate` does not hold by the shortest failing chain of
+    /// premises, or `None` when it holds.
     pub async fn explain_marker(&mut self, predicate: MarkerPredicate) -> Option<ProofFailure> {
         assert!(
             !self.marker_entailment.has_active_goal(),

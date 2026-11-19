@@ -11,20 +11,8 @@ use super::Error;
 use crate::solver::Solver;
 
 impl Solver {
-    /// Returns the generalization of `ty` for binding the inference variable
-    /// `var` in a relation of variance `ambient`, following rustc.
-    ///
-    /// The type is walked with an ambient variance composed with each
-    /// constructor's variance:
-    ///
-    /// - every inference variable in a non-invariant position becomes a fresh
-    ///   inference variable of the same kind and constraint, while invariant
-    ///   positions keep the original variable;
-    /// - every lifetime, in any position, becomes a fresh lifetime inference
-    ///   variable. Relating the generalization back to the original type never
-    ///   binds it, and only produces outlives constraints.
-    ///
-    /// Fails the occurs check if `var` occurs in `ty`, in any position.
+    /// Returns the generalization of `ty` for binding `var` under `ambient`
+    /// variance (following rustc), failing the occurs check.
     pub(super) async fn generalize(
         &mut self,
         var: Inference,

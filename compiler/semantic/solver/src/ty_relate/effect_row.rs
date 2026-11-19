@@ -15,19 +15,8 @@ use super::{DerivedConstraint, Error};
 use crate::solver::Solver;
 
 impl Solver {
-    /// Returns the outlives constraints that let something whose effect is
-    /// `introduced`, such as a call, run where the effect is `ambient`,
-    /// without binding any variables.
-    ///
-    /// Type checking opens a closed `introduced` row when it relates it to
-    /// `ambient`, so its labels only have to be a part of those of
-    /// `ambient`: each is related to the label it matches, covariantly, and
-    /// the labels and the tail of `ambient` that are left stand for the tail
-    /// the row was opened with. Any other `introduced` effect is related to
-    /// the whole of `ambient`.
-    ///
-    /// Returns `None` if the relation fails or could only hold by binding a
-    /// variable; see [`Self::solve_without_unify`].
+    /// Returns the outlives constraints that let an `introduced` effect run
+    /// where the effect is `ambient`, without binding any variables.
     pub async fn relate_introduced_effect_without_unify(
         &mut self,
         introduced: &Interned<Ty>,
@@ -139,9 +128,8 @@ impl Solver {
         Ok(constraints)
     }
 
-    /// Matches the labels of two rows by effect symbol. Matched labels must
-    /// agree argument by argument, and each pair of arguments is related by
-    /// the variance of its effect parameter inside `variance`.
+    /// Matches the labels of two rows by effect symbol, relating their
+    /// arguments by each effect parameter's variance.
     async fn match_effect_row_labels(
         &self,
         lesser: &EffectRow,

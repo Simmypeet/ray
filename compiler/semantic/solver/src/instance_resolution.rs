@@ -1,8 +1,5 @@
-//! Implicit-instance resolution.
-//!
-//! The solver orchestrates lexical lookup, global candidate collection,
-//! recursive premise solving, and final specificity ranking. Search state is
-//! shared across every root resolved by one [`Solver`](crate::Solver).
+//! Implicit-instance resolution, with search state shared across every root
+//! resolved by one [`Solver`].
 
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_semantic_element::{
@@ -117,9 +114,8 @@ pub struct ResolvedInstance {
     term: Interned<Ty>,
     obligations: Vec<InstanceResolutionObligation>,
 
-    /// Lifetimes never decide which dictionary is selected. Matching the
-    /// selected heads and lexical dictionaries against their goals relates
-    /// the lifetimes in them instead, which produces these constraints.
+    /// Constraints from relating the lifetimes of selected dictionaries to
+    /// their goals, since lifetimes never decide selection.
     outlives: OutlivesConstraints,
 }
 
@@ -146,9 +142,8 @@ impl ResolvedInstance {
         Self::new(term, Vec::new(), OutlivesConstraints::new())
     }
 
-    /// Returns the dictionary term, the instantiated where-clause predicates
-    /// of the selected proof tree, and the outlives constraints that
-    /// selecting it requires.
+    /// Returns the dictionary term, the instantiated predicates of its proof
+    /// tree, and the outlives constraints selecting it requires.
     #[must_use]
     pub fn into_parts(
         self,
@@ -270,13 +265,8 @@ impl InstanceResolutionError {
         }
     }
 
-    /// Makes the failure of a part, entered through `step`, the failure of
-    /// the compiler-built dictionary for `required`.
-    ///
-    /// Only a failure that can be explained is wrapped. The others pass
-    /// through unchanged, because callers act on them: a goal that is not
-    /// ready is retried, one that contains the error type is not reported,
-    /// and a cycle or a limit stops the whole search.
+    /// Wraps an explainable part failure as the failure of the compiler-built
+    /// dictionary for `required`; other failures pass through for callers.
     #[must_use]
     fn into_component_of(self, required: &TraitRef, step: Step) -> Self {
         match self {
@@ -295,14 +285,8 @@ impl InstanceResolutionError {
 }
 
 impl Solver {
-    /// Resolves a trait requirement to a lexical, built-in, or global
-    /// dictionary term and the instantiated predicates required by its proof
-    /// tree.
-    ///
-    /// Requirements must be ground, with lexical dictionaries taking
-    /// precedence. Compiler-provided dictionaries are selected next, before
-    /// matching global candidates. Global premises are resolved
-    /// recursively, after which the unique most-specific viable head wins.
+    /// Resolves a ground trait requirement to a dictionary term and the
+    /// instantiated predicates required by its proof tree.
     pub async fn resolve_instance(&mut self, required: TraitRef) -> InstanceResolutionResult {
         self.resolve_instance_from(required, None).await
     }
@@ -326,11 +310,8 @@ impl Solver {
         )))
     }
 
-    /// Selects the built-in `Coroutine` dictionary of a coroutine type, or of
-    /// a `&mut` to one.
-    ///
-    /// The dictionary is told by the type constructor alone, so the arguments
-    /// of the coroutine type may still be uninferred.
+    /// Selects the built-in `Coroutine` dictionary of a coroutine type (or
+    /// `&mut` to one), even while its arguments are uninferred.
     pub(crate) async fn resolve_coroutine_instance(
         &self,
         required: &TraitRef,
@@ -351,13 +332,8 @@ impl Solver {
     }
 
     /// Builds the built-in `Def` dictionary of `core.Continuation[r, c]`,
-    /// which makes a continuation callable, from the `Coroutine` dictionary
-    /// of `c`.
-    ///
-    /// Like the built-in `Drop` dictionaries, it is selected before lexical
-    /// lookup, so a given cannot change how a continuation is called.
-    ///
-    /// Returns `None` when `required` is not such a requirement.
+    /// before lexical lookup so a given cannot change how a continuation is
+    /// called.
     pub(crate) async fn resolve_continuation_def_instance(
         &mut self,
         required: &TraitRef,
@@ -518,13 +494,8 @@ impl Solver {
         }))
     }
 
-    /// Builds the intrinsic `Drop` dictionary for a coroutine type by
-    /// resolving one dictionary for each upvar: the parameters of the
-    /// suspended function, which a coroutine that was never resumed still
-    /// holds.
-    ///
-    /// The saved locals of a suspended coroutine need no dictionary here.
-    /// They are dropped by the coroutine's own function.
+    /// Builds the intrinsic `Drop` dictionary for a coroutine type from one
+    /// dictionary per upvar, which an unresumed coroutine still holds.
     pub(crate) async fn resolve_coroutine_drop_instance(
         &mut self,
         required: &TraitRef,
@@ -562,12 +533,8 @@ impl Solver {
         }))
     }
 
-    /// Resolves one `Drop` dictionary per element, in element order, and
-    /// collects the obligations and outlives constraints of every selected
-    /// proof tree.
-    ///
-    /// `component` names the element at an index, so that a failure tells
-    /// which part of the dictionary for `required` could not be resolved.
+    /// Resolves one `Drop` dictionary per element, naming the failing element
+    /// through `component`.
     async fn resolve_element_drop_instances(
         &mut self,
         required: &TraitRef,
@@ -705,23 +672,8 @@ impl Solver {
         }
     }
 
-    /// Resolves a dictionary that the compiler decides for a type with a
-    /// known constructor.
-    ///
-    /// For `Drop`: `NoDrop`, primitives and pointers are no-ops, tuples and
-    /// nominal types follow their structure or plan, closures drop their
-    /// captures, and coroutines drop their upvars. For `Def`: a
-    /// `core.Continuation` is called through the `Coroutine` dictionary of
-    /// its coroutine.
-    ///
-    /// The requirement must be fully inferred: these run only once the
-    /// active goal passed the readiness check, unlike
-    /// [`Self::resolve_early_built_in_instance`]. They also run before
-    /// lexical lookup, so a `given Drop[int32]` cannot replace the built-in
-    /// behavior; lexical evidence is only consulted for opaque types such as
-    /// type variables and unreduced associated types.
-    ///
-    /// Returns `None` when `required` is not such a requirement.
+    /// Resolves a compiler-decided dictionary for a fully inferred type, before
+    /// lexical lookup so a given cannot override the built-in behavior.
     async fn resolve_built_in_instance(
         &mut self,
         required: &TraitRef,
@@ -753,16 +705,8 @@ impl Solver {
         self.resolve_continuation_def_instance(required).await
     }
 
-    /// Resolves a dictionary that its type alone determines, without
-    /// searching: `Def` of a nominal closure, and `Coroutine` of a coroutine
-    /// type.
-    ///
-    /// These do not wait until the requirement is fully inferred, and run
-    /// before the readiness check. A closure's `Def` dictionary is known
-    /// before its signature and captures finish inference, and a coroutine
-    /// type determines its `Coroutine` dictionary the same way.
-    ///
-    /// Returns `None` when `required` is not such a requirement.
+    /// Resolves a dictionary that its type alone determines, before the
+    /// readiness check so it is available while inference is still running.
     pub(crate) async fn resolve_early_built_in_instance(
         &mut self,
         required: &TraitRef,
@@ -888,9 +832,8 @@ impl Solver {
     }
 }
 
-/// The dictionaries selected for several requirements of one intrinsic
-/// `Drop` dictionary, in requirement order, with the obligations and outlives
-/// constraints of their proof trees.
+/// The dictionaries selected for the requirements of one intrinsic `Drop`
+/// dictionary, with their proof trees' obligations and constraints.
 struct ResolvedElementInstances {
     instances: Vec<Interned<Ty>>,
     obligations: Vec<InstanceResolutionObligation>,

@@ -8,9 +8,8 @@ use rayc_qbice::{Config, RAY_PROGRAM, TrackedEngine};
 use rayc_symbol::{GlobalSymbolID, parent::scope_walker, symbol_kind::get_symbol_kind};
 use rayc_type::where_clause::{PredicateKind, get_where_clause};
 
-/// Collects predicates from the site outward, implied bounds included,
-/// preserving declaration order within each clause. Nearer scopes therefore
-/// take precedence during reduction.
+/// Collects predicates from the site outward, so nearer scopes take
+/// precedence during reduction.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Query,
 )]

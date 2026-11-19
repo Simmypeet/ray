@@ -8,11 +8,8 @@ use super::{
 use crate::explain::{CandidateFailure, Goal, Leaf, ProofFailure, Reason, Step};
 
 impl ProofFailure {
-    /// Explains why resolving `required` failed with `error`.
-    ///
-    /// Returns `None` when the failure involves the error type. Such a
-    /// failure is never reported: the error type only exists because another
-    /// diagnostic was already reported where it came from.
+    /// Explains why resolving `required` failed with `error`, or `None` when
+    /// the error type is involved and was already reported.
     #[must_use]
     pub fn from_instance_error(
         required: TraitRef,

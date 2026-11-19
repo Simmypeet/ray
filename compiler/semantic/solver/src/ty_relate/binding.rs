@@ -14,11 +14,8 @@ use super::{
 use crate::solver::{Solver, TyRelatingEnvironment};
 
 impl Solver {
-    /// Binds a polymorphic variable, which only top-level matching allows.
-    ///
-    /// Top-level matching relates instance and marker heads, whose arguments
-    /// are invariant, so the variable is bound to the type itself without
-    /// generalization.
+    /// Binds a polymorphic variable directly, which only (invariant) top-level
+    /// matching allows.
     pub(super) async fn bind_poly_var(
         &mut self,
         poly_var: GlobalPolyVarID,
@@ -44,11 +41,8 @@ impl Solver {
         Ok(Step::Subst(Subst::new_singleton(poly_var, ty.clone())))
     }
 
-    /// Instantiates an external lifetime with the lifetime `ty`, which only
-    /// interface matching allows.
-    ///
-    /// Interface matching is invariant, as top-level matching is, so the
-    /// external lifetime is bound to the lifetime itself.
+    /// Binds an external lifetime directly, which only (invariant) interface
+    /// matching allows.
     pub(super) async fn bind_external_lifetime(
         &self,
         external: ExternalRegionID,
@@ -61,11 +55,8 @@ impl Solver {
         Ok(Step::Subst(Subst::new_singleton(external, ty.clone())))
     }
 
-    /// Binds an inference variable to `ty`.
-    ///
-    /// In a non-invariant relation, the variable is bound to a generalization
-    /// of `ty` instead, which is then related back to `ty`; see
-    /// [`Self::generalize`].
+    /// Binds an inference variable to `ty`, or to a generalization of it in a
+    /// non-invariant relation.
     pub(super) async fn bind_infer_var(
         &mut self,
         var: Inference,
@@ -138,15 +129,8 @@ impl Solver {
         })
     }
 
-    /// Unifies two distinct inference variables, meeting their constraints.
-    ///
-    /// Unifying makes the types the variables stand for identical, lifetimes
-    /// included, which only an invariant relation allows. In any other
-    /// relation, the variables are unified only when one of them can only
-    /// stand for a primitive type, which has no lifetimes: a numeric or
-    /// equality-comparable literal. Otherwise, the relation waits until one
-    /// variable is bound, so the other one can be bound to a generalization of
-    /// it.
+    /// Unifies two inference variables, which outside invariance waits until
+    /// one is bound unless neither can carry lifetimes.
     fn bind_infer_vars(
         &mut self,
         var: Inference,

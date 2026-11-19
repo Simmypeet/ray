@@ -18,10 +18,6 @@ pub const DEFAULT_MAX_DEPTH: usize = 64;
 pub const DEFAULT_MAX_CANDIDATE_VISITS: usize = 4096;
 
 /// Limits that guarantee termination of instance resolution.
-///
-/// These limits are the current general termination policy. Future versions
-/// may replace or supplement them with size-change checks, tabled resolution,
-/// or declaration restrictions such as Paterson conditions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InstanceResolutionLimits {
     max_depth: usize,

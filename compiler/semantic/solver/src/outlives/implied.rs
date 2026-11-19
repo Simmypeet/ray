@@ -1,9 +1,5 @@
-//! Outlives bounds implied by well-formedness.
-//!
-//! A reference `&'a t` is well-formed only when `t: 'a`, so a declaration may
-//! assume that bound wherever such a reference appears in its signature. This
-//! is the only source of implied bounds: unlike Rust, outlives predicates
-//! declared in a where clause are never implied by the types that use them.
+//! Outlives bounds implied by well-formedness, which unlike Rust come only
+//! from references and never from declared predicates.
 
 use std::collections::BTreeSet;
 
@@ -27,15 +23,6 @@ use rayc_type::{
 };
 
 /// Collects the outlives bounds that the references in a type imply.
-///
-/// - `&'a t` implies `t: 'a`;
-/// - a struct or enum `S[args]` implies its inferred outlives predicates,
-///   instantiated with `args`, which come from the references among its fields
-///   or variant payloads.
-///
-/// Declared outlives predicates, such as those of a struct or an effect, are
-/// never collected. Every other constructor only implies the bounds of its
-/// arguments.
 #[derive(Debug)]
 pub struct ImpliedOutlivesCollector<'x> {
     engine: &'x TrackedEngine,
@@ -137,19 +124,9 @@ impl<'x> ImpliedOutlivesCollector<'x> {
     }
 }
 
-/// Returns the outlives bounds implied by the well-formedness of one
-/// declaration, excluding its enclosing declarations:
-///
-/// - a plain `def` assumes the bounds implied by the references in its
-///   parameter and return types;
-/// - a struct or enum assumes its inferred outlives predicates.
-///
-/// These become part of the symbol's
-/// [`WhereClause`](rayc_type::where_clause::WhereClause). A marker
-/// implementation also assumes the requirements of its head, which come from
-/// resolving it and are added to its where clause separately. No other
-/// declaration has implied bounds; its bounds must be written in its where
-/// clause.
+/// Returns the outlives bounds implied by one declaration's well-formedness,
+/// which become part of its
+/// [`WhereClause`](rayc_type::where_clause::WhereClause).
 pub async fn implied_bounds(
     symbol_id: GlobalSymbolID,
     engine: &TrackedEngine,

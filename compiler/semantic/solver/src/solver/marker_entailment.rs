@@ -1,7 +1,5 @@
-//! Coinductive entailment for marker predicates.
-//!
-//! Marker implementations act as constructor rules, while types without an
-//! explicit rule receive the same structural treatment as Rust auto traits.
+//! Coinductive entailment for marker predicates, with structural inference
+//! like Rust auto traits for types without an explicit rule.
 
 use qbice::storage::intern::Interned;
 use rayc_hash::FxHashMap;
@@ -34,11 +32,8 @@ use crate::{
 
 mod explain;
 
-/// The answer to a marker goal.
-///
-/// The answers are ordered from the weakest to the strongest. A goal whose
-/// premises must all hold takes the weakest answer among them, so one premise
-/// that fails makes the goal fail even when another is deferred.
+/// The answer to a marker goal, ordered weakest to strongest so a goal takes
+/// the weakest answer among its premises.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MarkerEntailment {
     /// The goal does not follow.
@@ -249,11 +244,8 @@ impl Solver {
         }
     }
 
-    /// Returns the rule that decides `goal`, with its premises not yet
-    /// evaluated.
-    ///
-    /// Evaluation and the witness search both select the rule here, so they
-    /// cannot disagree about which rule applies.
+    /// Returns the rule that decides `goal`, shared by evaluation and the
+    /// witness search so they cannot disagree.
     async fn marker_rule(&mut self, goal: &MarkerPredicate) -> MarkerRule {
         // The compiler decides these goals itself, before any given is
         // consulted, so a given cannot override them.
@@ -295,11 +287,8 @@ impl Solver {
         self.structural_fields(goal).await
     }
 
-    /// Returns the rule of a `Copy` goal whose answer is fixed by the
-    /// compiler: linear structs and enums, coroutine types and references.
-    ///
-    /// Returns `None` when the goal is not one of them, which leaves it to
-    /// the givens, the explicit marker rules and structural inference.
+    /// Returns the rule of a `Copy` goal whose answer the compiler fixes, or
+    /// `None` to leave it to givens, explicit rules and structural inference.
     async fn built_in_copy_rule(&self, goal: &MarkerPredicate) -> Option<MarkerRule> {
         if goal.marker_id() != self.engine().get_core_item(CoreItem::Copy).await {
             return None;
@@ -522,11 +511,7 @@ impl Solver {
     }
 
     /// Returns the values whose marker properties determine the enclosing type,
-    /// each with where the type stores it. `None` represents an opaque or
-    /// ill-kinded type that cannot be inferred.
-    ///
-    /// A closure stores the tuple of its captures as one value, so that an
-    /// explicit marker implementation of tuples applies to it too.
+    /// or `None` for an opaque or ill-kinded type.
     async fn structural_fields(&self, goal: &MarkerPredicate) -> MarkerRule {
         match &**goal.implementor() {
             Ty::Application(application) => {

@@ -31,11 +31,8 @@ pub enum DerivationRule {
 }
 
 impl DerivationRule {
-    /// Returns whether a constraint this rule derives from a relation of two
-    /// effect rows still relates those rows, rather than a type inside them.
-    ///
-    /// A row in the argument of a label or of a type is a part of that type,
-    /// which has to match exactly.
+    /// Returns whether a constraint derived from relating two effect rows still
+    /// relates rows, rather than a type that has to match exactly.
     #[must_use]
     pub const fn stays_on_effect_row(self) -> bool {
         match self {
@@ -93,9 +90,8 @@ pub enum Step {
     /// A new substitution has been generated
     Subst(Subst),
 
-    /// An inference variable was bound to a generalization of the other
-    /// side. The substitution must be applied first; the derived constraints
-    /// then relate the generalized type to the other side.
+    /// An inference variable was bound to a generalization of the other side;
+    /// apply `subst` before the derived constraints.
     Generalized { subst: Subst, derived: Vec<DerivedConstraint> },
 
     /// The constraint has been simplified to a set of new constraints
@@ -105,12 +101,8 @@ pub enum Step {
     NoProgress,
 }
 
-/// The result of one relation step: what the step did, and the outlives
-/// constraints it requires.
-///
-/// The constraints come from relating two lifetimes, which never binds
-/// anything, and from normalizing the related types through given equalities
-/// that match modulo lifetimes.
+/// The result of one relation step, with the outlives constraints it
+/// requires.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entailment {
     step: Step,
@@ -178,9 +170,8 @@ enum VariableKind {
 }
 
 impl VariableKind {
-    /// Returns the kind of variable that matching binds the lifetime `ty`
-    /// as, if it is one that some matching binds: a lifetime parameter or an
-    /// external lifetime.
+    /// Returns the kind of variable a lifetime is bound as by some matching, if
+    /// any.
     const fn of_matched_lifetime(ty: &Ty) -> Option<Self> {
         match ty {
             Ty::PolyVar(_) => Some(Self::Poly),
@@ -221,11 +212,7 @@ impl Solver {
         self.entail_ty_relate_with(ty_relate, &TyRelatingEnvironment::Normal).await
     }
 
-    /// Takes one step towards solving `relate`.
-    ///
-    /// Both sides are normalized first, so a projection that the step meets
-    /// is irreducible under the current bindings. A relation that makes no
-    /// progress may still make progress once a variable in it is bound.
+    /// Takes one step towards solving `relate`, after normalizing both sides.
     pub async fn entail_ty_relate_with(
         &mut self,
         relate: &TyRelate,
@@ -377,14 +364,8 @@ impl Solver {
         }
     }
 
-    /// Returns whether `relate` relates two lifetimes by outlives
-    /// constraints.
-    ///
-    /// A lifetime that matching may bind is instantiated through substitution
-    /// instead: a lifetime parameter of an instance head, or an external
-    /// lifetime of an interface. That is ordinary instantiation, not
-    /// inference. Lifetime inference variables are never bound, not even
-    /// under invariance.
+    /// Returns whether `relate` relates two lifetimes by outlives constraints
+    /// rather than binding one through matching.
     async fn is_outlives_relation(
         &self,
         relate: &TyRelate,

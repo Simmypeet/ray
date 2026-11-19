@@ -58,10 +58,8 @@ impl ExplainedGoal {
     }
 }
 
-/// A where-clause predicate that does not hold, and whose failure the solver
-/// cannot explain, such as an associated type equality.
-///
-/// It names only the predicate and the symbol whose where clause has it.
+/// A where-clause predicate that does not hold and that the solver cannot
+/// explain, such as an associated type equality.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub struct UnexplainedPredicate {
     span: RelativeSpan,
@@ -82,8 +80,6 @@ impl UnexplainedPredicate {
 
 /// A where-clause predicate that does not hold, explained by its proof
 /// failure when the solver has one.
-///
-/// [`crate::Solver::explain_unsatisfied_predicate`] decides which.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode)]
 pub enum UnsatisfiedPredicate {
     Explained(Box<ExplainedGoal>),
@@ -111,18 +107,12 @@ pub enum RequiredBy {
     /// an implicit given.
     WhereClause { symbol_id: GlobalSymbolID },
 
-    /// A value dropped when its scope ends, or, with a suspension span,
-    /// because its function may be dropped while suspended there. Every
-    /// value held across a suspension point is dropped then, even one that
-    /// the function consumes later on.
+    /// A value dropped when its scope ends, or, with a suspension span, because
+    /// its function may be dropped while suspended there.
     ScopeDrop { suspension: Option<RelativeSpan> },
 
     /// The arguments a `coro` stores, which are dropped if the coroutine is
-    /// never resumed, or, with a suspension span, as for
-    /// [`RequiredBy::ScopeDrop`].
-    ///
-    /// The coroutine type cannot be written in source, so the headline names
-    /// the argument that cannot be dropped instead of the coroutine.
+    /// never resumed or is dropped while suspended.
     CoroutineArguments { suspension: Option<RelativeSpan> },
 }
 
@@ -267,9 +257,7 @@ impl Goal {
         }
     }
 
-    /// Returns the type the goal is about: the only argument of a trait
-    /// reference, such as the type a `Drop` requirement drops, or the type a
-    /// marker goal is about.
+    /// Returns the type the goal is about, which the headline names.
     fn subject_ty(&self) -> Option<&Ty> {
         match self {
             Self::Instance(trait_ref) => {
@@ -447,10 +435,8 @@ impl Explanation {
         self.note(message, highlight);
     }
 
-    /// Explains a goal that failed for a reason of its own.
-    ///
-    /// At the root, the headline already names the goal, so the leaf adds
-    /// only what the headline does not say.
+    /// Explains a goal that failed for a reason of its own, without repeating
+    /// what the root headline already says.
     async fn leaf(&mut self, engine: &TrackedEngine, goal: &Goal, leaf: &Leaf, at_root: bool) {
         match leaf {
             Leaf::NoMatchingInstance => {

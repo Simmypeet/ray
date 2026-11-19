@@ -8,12 +8,8 @@ use super::{ExplainedGoal, ProofFailure, RequiredBy, UnexplainedPredicate, Unsat
 use crate::Solver;
 
 impl Solver {
-    /// Reports that `predicate`, from the where clause of `symbol_id` and
-    /// required at `span`, does not hold.
-    ///
-    /// The report follows the chain of premises that makes the predicate fail
-    /// when the solver can explain it, as [`Self::explain_predicate`]
-    /// describes, and names only the predicate otherwise.
+    /// Reports that `predicate` from the where clause of `symbol_id` does not
+    /// hold at `span`, with its failing premises when they can be explained.
     pub async fn explain_unsatisfied_predicate(
         &mut self,
         predicate: PredicateKind,
@@ -37,13 +33,8 @@ impl Solver {
         )
     }
 
-    /// Explains why `predicate` does not hold at the site.
-    ///
-    /// Returns `None` for a predicate that no proof explains: an equality, an
-    /// outlives predicate, or a marker goal that holds. A marker goal is not
-    /// explained either when it has inference variables, which make it fail
-    /// because it is not known yet, or when it involves the error type, whose
-    /// diagnostic was already reported.
+    /// Explains why `predicate` does not hold, or `None` when no proof can
+    /// explain it or the failure is already reported.
     async fn explain_predicate(&mut self, predicate: &PredicateKind) -> Option<ProofFailure> {
         match predicate {
             PredicateKind::Marker(marker) => {

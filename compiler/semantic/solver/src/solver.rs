@@ -33,26 +33,12 @@ pub enum TyRelatingEnvironment {
     /// bound to types of the same kind.
     Normal,
 
-    /// One-way matching where only polymorphic variables on the lesser side
-    /// may be bound. Used for matching instance heads.
-    ///
-    /// Relations in this environment must be [`Variance::Invariant`], since
-    /// head arguments are invariant.
-    ///
-    /// [`Variance::Invariant`]: rayc_type::variance::Variance::Invariant
+    /// One-way, invariant matching that may bind only polymorphic variables on
+    /// the lesser side, for matching instance heads.
     TopLevelMatching,
 
-    /// One-way matching where only external lifetimes on the lesser side may
-    /// be bound. Used for matching the interface of a nested IR function
-    /// against the types its creator gives it.
-    ///
-    /// Every other lifetime is related by outlives constraints, and a
-    /// polymorphic variable stays rigid: it stands for the same thing in the
-    /// nested function and in its creator. Relations in this environment
-    /// must be [`Variance::Invariant`] as well, since an external lifetime is
-    /// instantiated with the very lifetime the creator has in its place.
-    ///
-    /// [`Variance::Invariant`]: rayc_type::variance::Variance::Invariant
+    /// One-way, invariant matching that may bind only external lifetimes on the
+    /// lesser side, for matching a nested IR function's interface.
     InterfaceMatching,
 }
 
@@ -103,22 +89,14 @@ pub struct Solver {
 }
 
 impl Solver {
-    /// Returns whether two types are equal without binding any variables.
-    ///
-    /// This is intended for declaration checking and monomorphized types,
-    /// where inference has already finished. A relation that can only be
-    /// solved by producing a substitution is therefore not equality here.
-    /// Lifetimes never decide equality; see [`Self::relate_without_unify`].
+    /// Returns whether two types are equal without binding any variables, for
+    /// use once inference has finished.
     pub async fn eq_without_unify(&mut self, left: &Interned<Ty>, right: &Interned<Ty>) -> bool {
         self.relate_without_unify(left, right).await.is_some()
     }
 
-    /// Returns the outlives constraints that make two types equal, if they
-    /// are equal without binding any variables; see
-    /// [`Self::eq_without_unify`].
-    ///
-    /// Lifetimes never decide whether two types are equal. Each pair of
-    /// corresponding lifetimes is related invariantly instead.
+    /// Returns the outlives constraints that make two types equal without
+    /// binding any variables, or `None` if they differ.
     pub async fn relate_without_unify(
         &mut self,
         left: &Interned<Ty>,
@@ -134,9 +112,7 @@ impl Solver {
         self.relate_trait_refs_without_unify(left, right).await.is_some()
     }
 
-    /// Returns the outlives constraints that make two trait references equal,
-    /// if they are equal without binding any variables; see
-    /// [`Self::relate_without_unify`].
+    /// Like [`Self::relate_without_unify`], but for trait references.
     pub async fn relate_trait_refs_without_unify(
         &mut self,
         left: &TraitRef,
@@ -155,11 +131,8 @@ impl Solver {
         self.solve_without_unify(constraints).await
     }
 
-    /// Solves relations that must hold without binding any variables, and
-    /// returns the outlives constraints they require.
-    ///
-    /// Returns `None` if any relation fails or could only hold by binding a
-    /// variable.
+    /// Solves relations without binding any variables, returning the outlives
+    /// constraints they require, or `None` if any fails.
     pub async fn solve_without_unify(
         &mut self,
         constraints: Vec<TyRelate>,
@@ -184,12 +157,7 @@ impl Solver {
     }
 
     /// Matches an instance head against an expected trait reference, binding
-    /// polymorphic variables on the head side using top-level matching.
-    ///
-    /// Returns `None` if the trait identities, argument counts, or types do not
-    /// match. Lifetimes never decide whether a head matches: trait arguments
-    /// are invariant, so each pair of corresponding lifetimes produces
-    /// outlives constraints in both directions instead.
+    /// only the head's polymorphic variables.
     pub async fn type_head_match(
         &mut self,
         head: &TraitRef,
@@ -208,12 +176,8 @@ impl Solver {
         self.exhaustive_solve(constrs, &TyRelatingEnvironment::TopLevelMatching).await
     }
 
-    /// Matches one type-constructor head against a concrete type without
-    /// binding variables in the concrete type.
-    ///
-    /// Only marker implementations are matched this way. They never depend
-    /// on lifetimes, since a valid head is one constructor applied to
-    /// distinct variables, so the match needs no outlives constraints.
+    /// Matches a marker implementation head against a concrete type, which
+    /// needs no outlives constraints since such heads ignore lifetimes.
     pub(crate) async fn simple_head_match(
         &mut self,
         head: Interned<Ty>,
@@ -227,17 +191,8 @@ impl Solver {
         .map(|solution| solution.into_parts().0)
     }
 
-    /// Matches each type in the interface of a nested IR function against the
-    /// type its creator gives it, binding the external lifetimes of the
-    /// interface.
-    ///
-    /// `interface` pairs each interface type with the type of the creator.
-    /// Returns the creator's lifetime for each external lifetime, and the
-    /// outlives constraints the match requires: those that make the
-    /// lifetimes of the two types equal wherever the interface has a
-    /// lifetime that is not external.
-    ///
-    /// Returns `None` if a pair of types differs in more than lifetimes.
+    /// Matches a nested IR function's interface types against its creator's,
+    /// returning the creator's lifetime for each external lifetime.
     pub async fn interface_match(
         &mut self,
         interface: impl IntoIterator<Item = (Interned<Ty>, Interned<Ty>)>,
@@ -250,11 +205,9 @@ impl Solver {
         self.exhaustive_solve(constrs, &TyRelatingEnvironment::InterfaceMatching).await
     }
 
-    /// Solves all constraints, returning the composed substitution and the
-    /// outlives constraints they require.
-    ///
-    /// Returns `None` if entailment fails or constraints remain after no
-    /// further progress can be made.
+    /// Solves all constraints to a fixpoint, returning the composed
+    /// substitution and required outlives constraints, or `None` on
+    /// failure.
     async fn exhaustive_solve(
         &mut self,
         mut constrs: Vec<TyRelate>,
@@ -295,9 +248,8 @@ impl Solver {
         Some(Solution { subst, outlives })
     }
 
-    /// Composes a new substitution into the solved one and applies it to the
-    /// pending constraints, moving residual constraints it changes back to
-    /// the pending ones.
+    /// Composes `subst` into the solved substitution, requeueing residual
+    /// constraints it changes.
     fn compose_solved_subst(
         &self,
         subst: &mut Subst,
@@ -317,20 +269,14 @@ impl Solver {
         });
     }
 
-    /// Creates a solver without a declaration site or visible predicates.
-    ///
-    /// This is only appropriate after monomorphization, where every type is
-    /// concrete, and in focused unit-test fixtures.
+    /// Creates a solver without a site or predicates, for monomorphized code
+    /// and unit tests.
     pub async fn without_givens(engine: TrackedEngine) -> Self {
         Self::with_givens(engine, GlobalSymbolID::default(), []).await
     }
 
-    /// Creates a solver with exactly the supplied visible predicates.
-    ///
-    /// Unlike [`Self::new`], this does not collect predicates from `site` and
-    /// is suitable for entailment checks that must exclude the site's own
-    /// where clause. The outlives facts are likewise exactly the supplied
-    /// outlives predicates; the site's implied bounds are not included.
+    /// Creates a solver with exactly the supplied predicates, for entailment
+    /// checks that must exclude the site's own where clause.
     pub async fn with_givens(
         engine: TrackedEngine,
         site: GlobalSymbolID,
@@ -369,10 +315,7 @@ impl Solver {
         &self.outlives_environment
     }
 
-    /// Reduces a value and its descendants until no further step is available.
-    ///
-    /// Reduction implementations must make progress toward termination. The
-    /// outlives constraints that reduction produces are dropped; see
+    /// Reduces a value to normal form, dropping the outlives constraints; see
     /// [`Self::normalize_with_outlives`] to keep them.
     pub async fn normalize<T>(&self, value: &T) -> T
     where
@@ -382,8 +325,7 @@ impl Solver {
     }
 
     /// Like [`Self::normalize`], but also returns the outlives constraints
-    /// that reduction produces, from given equalities that match modulo
-    /// lifetimes.
+    /// that reduction produces.
     pub async fn normalize_with_outlives<T>(&self, value: &T) -> (T, OutlivesConstraints)
     where
         T: Reduce + Clone + PartialEq + Send,
@@ -400,9 +342,8 @@ impl Solver {
         (normalized, outlives)
     }
 
-    /// The generator of this solver's inference variables. Callers that
-    /// installed their own generator can downcast it through
-    /// [`InferenceGenerator::as_any`].
+    /// The generator of this solver's inference variables, which callers can
+    /// downcast through [`InferenceGenerator::as_any`].
     #[must_use]
     pub fn inference_generator(&self) -> &dyn InferenceGenerator { &*self.inference_generator }
 
@@ -430,12 +371,8 @@ impl Solver {
 
 #[bon]
 impl Solver {
-    /// Creates a solver through a builder interface.
-    ///
-    /// Without `givens`, the solver sees every predicate visible at `site`,
-    /// with the site's implied bounds. With `givens`, it sees exactly those
-    /// predicates, and its outlives facts are exactly their outlives
-    /// predicates.
+    /// Creates a solver that sees every predicate visible at `site`, or exactly
+    /// `givens` when supplied.
     #[builder]
     pub async fn builder(
         engine: TrackedEngine,

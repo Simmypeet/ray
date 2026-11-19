@@ -41,10 +41,7 @@ impl ProofFailure {
     pub const fn reason(&self) -> &Reason { &self.reason }
 
     /// Returns the failure of the innermost part of a compiler-built
-    /// dictionary, or `self` when the goal is not one.
-    ///
-    /// A compiler-built dictionary fails because one of its parts does, so
-    /// the innermost part is the goal the failure is about.
+    /// dictionary, which is what actually failed, or `self` otherwise.
     #[must_use]
     pub fn innermost_part(&self) -> &Self {
         match &self.reason {
@@ -290,9 +287,6 @@ pub enum Leaf {
     /// the type is a type variable, a reference or a pointer.
     Opaque,
 
-    /// The marker goal fails, but its failing premise is not known: the
-    /// search for it stopped at its budget, or the explicit implementation
-    /// that applies has an equality premise, which is rejected where the
-    /// implementation is declared.
+    /// The marker goal fails, but its failing premise is not known.
     Unexplained,
 }

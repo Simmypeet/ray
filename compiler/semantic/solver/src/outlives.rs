@@ -1,9 +1,5 @@
-//! Outlives requirements between named lifetimes.
-//!
-//! This module answers questions such as `'a: 'b` or `t: 'a` against a fixed
-//! set of known facts, without any region inference. The facts are the
-//! outlives predicates declared in where clauses and the bounds implied by the
-//! well-formedness of a declaration's signature.
+//! Outlives entailment between named lifetimes against declared and implied
+//! facts, without region inference.
 
 use linkme::distributed_slice;
 use qbice::{
@@ -115,9 +111,6 @@ impl OutlivesEnvironment {
     pub fn lifetimes(&self) -> impl Iterator<Item = &Interned<Ty>> { self.lifetimes.keys() }
 
     /// Returns whether `less: greater` follows from the region facts.
-    ///
-    /// Erased lifetimes and errors always satisfy the relation: the former
-    /// are checked on the IR, and the latter were already reported.
     #[must_use]
     pub fn region_outlives(&self, less: &Interned<Ty>, greater: &Interned<Ty>) -> bool {
         if less == greater || !less.is_checked_lifetime() || !greater.is_checked_lifetime() {
@@ -135,12 +128,8 @@ impl OutlivesEnvironment {
     }
 }
 
-/// The outlives relations between lifetimes that an entailment may rely on.
-///
-/// The facts of an [`OutlivesEnvironment`] are stated over the lifetimes a
-/// declaration names. A caller that knows more, such as the borrow checker,
-/// which relates the regions of a function body, tells what holds between
-/// two lifetimes through this trait.
+/// Supplies lifetime relations the declaration's facts do not know, such as
+/// those between the regions of a function body.
 pub trait RegionRelation {
     /// Returns whether `'lesser: 'greater` holds.
     fn outlives(&self, lesser: &Interned<Ty>, greater: &Interned<Ty>) -> bool;
@@ -167,15 +156,8 @@ impl crate::Solver {
         self.entails_outlives_with(predicate, &*environment).await
     }
 
-    /// Returns whether an outlives predicate follows from the facts visible
-    /// at this solver's site, when the lifetimes are related as `regions`
-    /// tells rather than by the region facts alone.
-    ///
-    /// This is for a predicate that mentions lifetimes the facts do not: the
-    /// regions of a function body. A type fact still comes from the site,
-    /// and applies to a parameter or a projection of the subject when the
-    /// two are equal, and `regions` holds of every outlives constraint that
-    /// making them equal requires.
+    /// Returns whether an outlives predicate follows from this site's facts,
+    /// with lifetimes related through `regions`.
     pub async fn entails_outlives_with(
         &mut self,
         predicate: &OutlivesPredicate,
@@ -220,15 +202,8 @@ impl crate::Solver {
         true
     }
 
-    /// Returns whether `subject: bound` follows from a type fact of this
-    /// solver's site, directly or through `regions`.
-    ///
-    /// A fact applies when its subject and `subject` are related invariantly
-    /// without binding any variable, which sees through normalization, and
-    /// `regions` holds of every outlives constraint the relation requires.
-    /// The arguments of a projection are invariant, so a fact about
-    /// `i.Assoc['x]` says nothing about `i.Assoc['r]` unless `'r` and `'x`
-    /// outlive each other.
+    /// Returns whether `subject: bound` follows from a type fact of this site,
+    /// matched invariantly so it sees through normalization.
     async fn has_type_fact(
         &mut self,
         subject: &Interned<Ty>,
@@ -262,9 +237,7 @@ impl crate::Solver {
     }
 
     /// Returns whether a rigid projection outlives `bound` because everything
-    /// it projects from does: the instance it projects from, the arguments of
-    /// that instance's trait reference, and the projection's own arguments
-    /// (Rust RFC 1214).
+    /// it projects from does (Rust RFC 1214).
     #[allow(dead_code)]
     async fn entails_projection_outlives(
         &mut self,
