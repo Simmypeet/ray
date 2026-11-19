@@ -2,6 +2,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 
+use super::application::View;
 use crate::{
     constraint::outlives::OutlivesConstraints,
     poly_var::{GlobalPolyVarID, get_poly_var_map},
@@ -377,6 +378,33 @@ impl EffectRow {
 )]
 pub struct EffectAtom(Interned<Ty>);
 
+impl EffectAtom {
+    #[must_use]
+    pub fn get_atom_state(&self) -> AtomState {
+        match self.0.as_ref() {
+            Ty::Inference(_) => AtomState::Flexible,
+            Ty::PolyVar(_) => AtomState::Rigid,
+            Ty::Application(app) => match app.view() {
+                View::InstanceAssociated(_) => {
+                    if self.0.contains_non_lifetime_inference() {
+                        AtomState::Stuck
+                    } else {
+                        AtomState::Rigid
+                    }
+                }
+                _ => panic!(
+                    "must be either polyvar, inference, or instance application, found {:?}",
+                    self.0
+                ),
+            },
+            _ => panic!(
+                "must be either polyvar, inference, or instance application, found {:?}",
+                self.0
+            ),
+        }
+    }
+}
+
 /// Either a known concrete label or an opaque effect row atom, which can have
 /// several labels or none at all.
 #[derive(
@@ -464,6 +492,13 @@ impl EffectRow2 {
 
     #[must_use]
     pub fn is_empty(&self) -> bool { self.rows.is_empty() }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]
+pub enum AtomState {
+    Flexible,
+    Rigid,
+    Stuck,
 }
 
 impl Substitutable for EffectRow2 {
