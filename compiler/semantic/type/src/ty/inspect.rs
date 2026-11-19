@@ -248,6 +248,12 @@ impl Ty {
         )
     }
 
+    #[must_use]
+    pub const fn is_poly_var(&self) -> bool { matches!(self, Self::PolyVar(_)) }
+
+    #[must_use]
+    pub const fn is_inference_variable(&self) -> bool { matches!(self, Self::Inference(_)) }
+
     /// Pairs the differing lifetimes at the same positions of `left` and
     /// `right`, or `None` if the types differ up to lifetimes.
     pub async fn corresponding_lifetimes(
