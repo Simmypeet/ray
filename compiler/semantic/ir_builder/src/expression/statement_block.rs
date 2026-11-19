@@ -20,6 +20,11 @@ impl<'a> Lower<TypedExprWithID<&'a StatementBlock>> for Builder {
         self.lower_statement_list(context, expression.node().statements()).await;
         self.exit_scope();
 
+        if self.is_terminated() {
+            let unreachable = self.create_block();
+            self.select_block(unreachable);
+        }
+
         LoweredExpression::RValue(self.emit_expression(IRExpr::new(
             IRExprKind::Tuple(Tuple::new(Vec::new())),
             typed_expression.span(),

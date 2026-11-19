@@ -1,0 +1,12 @@
+# Each level of a pointer or reference type used to double the time to
+# compute the span of the type; these take seconds at 24 levels without the fix.
+def pointers(x: ****************************************************************int32) -> int32:
+    return 0
+
+
+def references(x: &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&int32) -> int32:
+    return 0
+
+
+def main() -> int32:
+    return 0

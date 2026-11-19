@@ -332,18 +332,19 @@ impl TAstBuilder {
             Ty::Lifetime(_) => unreachable!("an expression cannot have a lifetime as its type"),
         };
 
-        let index = index.kind.parse::<usize>().expect("TODO: handle over flow error");
+        // an index too large for `usize` is out of bounds for every tuple
+        let index = index.kind.parse::<usize>().ok();
 
-        if index >= tuple.args().len() {
+        let Some(index) = index.filter(|index| *index < tuple.args().len()) else {
             self.push_diagnostic(Diagnostic::OutOfBoundsTupleIndex(
                 OutOfBoundsTupleIndex::builder()
                     .span(span)
-                    .index(index)
+                    .maybe_index(index)
                     .tuple_len(tuple.args().len())
                     .build(),
             ));
             return None;
-        }
+        };
 
         Some(
             self.insert_expression(

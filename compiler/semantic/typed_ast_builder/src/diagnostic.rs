@@ -1010,18 +1010,21 @@ impl Report for ExpectedStructType {
 )]
 pub struct OutOfBoundsTupleIndex {
     span: RelativeSpan,
-    index: usize,
+
+    /// The index, or `None` if it is too large to fit in a `usize`.
+    index: Option<usize>,
     tuple_len: usize,
 }
 
 impl Report for OutOfBoundsTupleIndex {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let abs_span = engine.to_absolute_span(&self.span).await;
+        let index = self.index.map_or_else(String::new, |index| format!(" {index}"));
 
         Rendered::builder()
             .message(format!(
-                "tuple index {} is out of bounds for tuple of length {}",
-                self.index, self.tuple_len
+                "tuple index{index} is out of bounds for tuple of length {}",
+                self.tuple_len
             ))
             .primary_highlight(Highlight::builder().span(abs_span).build())
             .build()

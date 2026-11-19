@@ -1,0 +1,7 @@
+def main() -> int32:
+    let pair = (1, 2)
+    let first = pair.2
+
+    # too large for `usize`
+    let second = pair.18446744073709551616
+    return 0

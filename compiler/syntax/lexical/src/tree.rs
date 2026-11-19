@@ -851,21 +851,24 @@ impl<'a, I: Interner> Converter<'a, I> {
         // Recalculate indentation_range after potential stack modifications
         let indentation_range = self.current_indentation_range();
 
+        // the block whose size is closest to the line's; a `:` whose block
+        // has not started yet has no size to match, as after an unbalanced
+        // delimiter
+        let closest = self.indentation_stack[indentation_range.clone()]
+            .iter()
+            .zip(indentation_range.clone())
+            .rev()
+            .filter_map(|(indent, index)| indent.indentation_size.map(|size| (size, index)))
+            .min_by_key(|(size, _)| size.abs_diff(indentation_size));
+
         // check if the indentation size is valid
         let pop_count = if indentation_size == 0 {
             // pop all indentation markers
             self.indentation_stack.len() - indentation_range.start
-        } else if let Some((indentation, index)) = self.indentation_stack[indentation_range.clone()]
-            .iter()
-            .zip(indentation_range.clone())
-            .rev()
-            .min_by_key(|(indent, _)| {
-                indent.indentation_size.map_or(0, |x| x.abs_diff(indentation_size))
-            })
-        {
+        } else if let Some((closest_size, index)) = closest {
             // mismatched indentation size
             let mut minus_one = true;
-            if indentation.indentation_size.unwrap().abs_diff(indentation_size) > 0 {
+            if closest_size.abs_diff(indentation_size) > 0 {
                 // if in the delimiter, then the indentation size must be
                 // smaller than the outer-most indentation
                 // captured in the delimiter
@@ -874,8 +877,9 @@ impl<'a, I: Interner> Converter<'a, I> {
                         return true;
                     }
 
-                    self.indentation_stack[x.starting_indentation_level].indentation_size.unwrap()
-                        < indentation_size
+                    self.indentation_stack[x.starting_indentation_level]
+                        .indentation_size
+                        .is_none_or(|size| size < indentation_size)
                 });
 
                 if error {
@@ -884,9 +888,11 @@ impl<'a, I: Interner> Converter<'a, I> {
                         found_indentation: indentation_size,
                         available_indentations: self.indentation_stack[indentation_range.clone()]
                             .iter()
-                            .map(|x| AvailableIndentation {
-                                colon_span: x.colon_span,
-                                indentation_size: x.indentation_size.unwrap(),
+                            .filter_map(|x| {
+                                Some(AvailableIndentation {
+                                    colon_span: x.colon_span,
+                                    indentation_size: x.indentation_size?,
+                                })
                             })
                             .collect(),
                     }));
@@ -897,7 +903,9 @@ impl<'a, I: Interner> Converter<'a, I> {
 
             indentation_range.end - index - usize::from(minus_one)
         } else {
-            unreachable!()
+            // no block in the range has a size yet, so there is nothing to
+            // match the line against
+            0
         };
 
         // pop the indentation markers
