@@ -52,7 +52,7 @@ async fn all_instance_implements_trait_executor(
         // premises can be resolved. Occurrences in those premises do not count.
         let eligible = parameters.iter().all(|(id, parameter)| match parameter.kind() {
             TyKind::Instance => true,
-            TyKind::Star | TyKind::EffectRow | TyKind::Lifetime => {
+            TyKind::EffectRow2 | TyKind::Star | TyKind::EffectRow | TyKind::Lifetime => {
                 head_poly_vars.contains(&GlobalPolyVarID::new(symbol_id, id))
             }
         });

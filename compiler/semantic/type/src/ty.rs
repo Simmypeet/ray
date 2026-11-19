@@ -138,6 +138,39 @@ pub enum TyKind {
     EffectRow,
     Instance,
     Lifetime,
+    EffectRow2,
+}
+
+impl TyKind {
+    #[must_use]
+    pub const fn kind_name_with_article(&self) -> &'static str {
+        match self {
+            Self::Star => "a value type",
+            Self::EffectRow | Self::EffectRow2 => "an effect row",
+            Self::Instance => "an instance",
+            Self::Lifetime => "a lifetime",
+        }
+    }
+
+    #[must_use]
+    pub const fn kind_name_without_article(&self) -> &'static str {
+        match self {
+            Self::Star => "value type",
+            Self::EffectRow | Self::EffectRow2 => "effect row",
+            Self::Instance => "instance",
+            Self::Lifetime => "lifetime",
+        }
+    }
+
+    #[must_use]
+    pub const fn poly_var_kind_name(&self) -> &'static str {
+        match self {
+            Self::Star => "type parameter",
+            Self::EffectRow | Self::EffectRow2 => "effect parameter",
+            Self::Instance => "instance parameter",
+            Self::Lifetime => "lifetime parameter",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode)]

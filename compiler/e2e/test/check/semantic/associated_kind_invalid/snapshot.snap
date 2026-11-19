@@ -38,7 +38,7 @@ expression: snapshot
    ┆    │          ───── the corresponding trait declaration is here
    ┆    ‡
    ┆ 14 │     type Value: Effect = int32
-   ┆    ╰╴              ━━━━━━━━ expected type, found effect row
+   ┆    ╰╴              ━━━━━━━━ expected a value type, found an effect row
    ┆
 15 │     type Effects: Star = {}
    │                 ^^^^^^
@@ -49,7 +49,7 @@ expression: snapshot
    ┆    │          ─────── the corresponding trait declaration is here
    ┆    ‡
    ┆ 15 │     type Effects: Star = {}
-   ┆    ╰╴                ━━━━━━ expected effect row, found type
+   ┆    ╰╴                ━━━━━━ expected an effect row, found a value type
    ┆
 16 │
 17 │ inst Valid for Contract:

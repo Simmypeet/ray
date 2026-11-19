@@ -80,6 +80,17 @@ impl PolyVar {
     }
 
     #[must_use]
+    pub const fn new_effect2(name: Interned<str>, span: RelativeSpan) -> Self {
+        Self {
+            name,
+            origin: PolyVarOrigin::Source,
+            kind: PolyVarKind::Type(TyKind::EffectRow2),
+            span,
+            declared_variance: None,
+        }
+    }
+
+    #[must_use]
     pub const fn new_effect(name: Interned<str>, span: RelativeSpan) -> Self {
         Self {
             name,

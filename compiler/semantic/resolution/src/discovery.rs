@@ -342,6 +342,7 @@ impl Discovery<'_> {
         match expected {
             TyKind::Star => Some(PolyVar::new_type(name.clone(), identifier.span())),
             TyKind::EffectRow => Some(PolyVar::new_effect(name.clone(), identifier.span())),
+            TyKind::EffectRow2 => Some(PolyVar::new_effect2(name.clone(), identifier.span())),
             TyKind::Instance | TyKind::Lifetime => None,
         }
     }

@@ -110,10 +110,11 @@ impl Describer<'_> {
         for (poly_var_id, poly_var) in poly_vars.iter() {
             let argument =
                 substitution.get(&poly_var_id).expect("a mono instance gives every variable");
+
             match poly_var.kind() {
                 TyKind::Lifetime => {}
                 TyKind::Instance => instances.push(argument),
-                TyKind::Star | TyKind::EffectRow => types.push(argument),
+                TyKind::Star | TyKind::EffectRow2 | TyKind::EffectRow => types.push(argument),
             }
         }
         if types.is_empty() && instances.is_empty() {

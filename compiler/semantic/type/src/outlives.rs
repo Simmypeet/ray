@@ -70,7 +70,7 @@ impl Ty {
                 }
                 Self::PolyVar(_) => match ty.kind_of(engine).await {
                     TyKind::Lifetime => components.push(OutlivesComponent::Region(ty.clone())),
-                    TyKind::Instance | TyKind::Star | TyKind::EffectRow => {
+                    TyKind::Instance | TyKind::Star | TyKind::EffectRow | TyKind::EffectRow2 => {
                         components.push(OutlivesComponent::Opaque(ty.clone()));
                     }
                 },

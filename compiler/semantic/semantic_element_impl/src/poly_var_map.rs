@@ -367,6 +367,9 @@ async fn declare_type_parameters(
                             rayc_type::ty::TyKind::EffectRow => {
                                 PolyVar::new_effect(identifier.kind.0.clone(), identifier.span())
                             }
+                            rayc_type::ty::TyKind::EffectRow2 => {
+                                PolyVar::new_effect2(identifier.kind.0.clone(), identifier.span())
+                            }
                             rayc_type::ty::TyKind::Instance | rayc_type::ty::TyKind::Lifetime => {
                                 unreachable!(
                                     "kind ascriptions cannot declare dictionaries or lifetimes"
@@ -498,9 +501,10 @@ impl Build for rayc_type::poly_var::Key {
 
         // Symbols with an explicit type-parameter list order its variables by
         // declaration; other function-like symbols order them by first
-        // occurrence in parameter types. Generated types follow source types, then
-        // explicit dictionaries precede generated dictionaries. Source given
-        // arguments therefore retain their original positional order.
+        // occurrence in parameter types. Generated types follow source types,
+        // then explicit dictionaries precede generated dictionaries.
+        // Source given arguments therefore retain their original
+        // positional order.
         let callables = engine.get_callable_parameters(symbol_id).await;
         for entry in callables.iter() {
             poly_vars.insert_generated(

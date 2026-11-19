@@ -181,7 +181,7 @@ pub(super) async fn first_segments(
                         sort_text: Some(format!("{}{label}", Rank::Start.prefix())),
                         label,
                         kind: Some(CompletionItemKind::TYPE_PARAMETER),
-                        detail: Some(poly_var_detail(kind).to_owned()),
+                        detail: Some(kind.poly_var_kind_name().to_owned()),
                         ..CompletionItem::default()
                     });
                 }
@@ -401,7 +401,9 @@ impl Position {
     const fn offers_poly_var(self, kind: TyKind) -> bool {
         match kind {
             TyKind::Star => matches!(self, Self::Type | Self::Unknown),
-            TyKind::EffectRow => matches!(self, Self::EffectRow | Self::Unknown),
+            TyKind::EffectRow | TyKind::EffectRow2 => {
+                matches!(self, Self::EffectRow | Self::Unknown)
+            }
             TyKind::Instance => matches!(
                 self,
                 Self::Type | Self::Call | Self::Expression | Self::Dictionary | Self::Unknown
@@ -458,15 +460,5 @@ const fn item_kind(kind: SymbolKind) -> CompletionItemKind {
         }
         SymbolKind::TraitType | SymbolKind::InstanceType => CompletionItemKind::TYPE_PARAMETER,
         SymbolKind::Instance | SymbolKind::MarkerImplementation => CompletionItemKind::CLASS,
-    }
-}
-
-/// Returns what a type parameter of `kind` is called in an item.
-const fn poly_var_detail(kind: TyKind) -> &'static str {
-    match kind {
-        TyKind::Star => "type parameter",
-        TyKind::EffectRow => "effect parameter",
-        TyKind::Instance => "instance parameter",
-        TyKind::Lifetime => "lifetime parameter",
     }
 }

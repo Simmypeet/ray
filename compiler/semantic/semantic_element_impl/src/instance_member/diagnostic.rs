@@ -96,15 +96,6 @@ pub struct Diagnostic {
     mismatch: Mismatch,
 }
 
-const fn kind_name(kind: TyKind) -> &'static str {
-    match kind {
-        TyKind::Star => "type",
-        TyKind::EffectRow => "effect row",
-        TyKind::Instance => "instance",
-        TyKind::Lifetime => "lifetime",
-    }
-}
-
 /// Describes a type that differs from the expected one.
 async fn expected_found(
     expected: &Interned<Ty>,
@@ -209,7 +200,11 @@ impl Mismatch {
             ),
             Self::PolyVarKind { index, expected, actual } => (
                 format!("polymorphic variable {} kind mismatch", index + 1),
-                format!("expected {}, found {}", kind_name(*expected), kind_name(*actual)),
+                format!(
+                    "expected {}, found {}",
+                    expected.kind_name_with_article(),
+                    actual.kind_name_with_article()
+                ),
             ),
             Self::InstanceParameterTraitRef { index, expected, actual } => (
                 format!(
@@ -232,7 +227,11 @@ impl Mismatch {
             ),
             Self::AssociatedTypeKind { expected, actual } => (
                 "associated type kind mismatch".to_owned(),
-                format!("expected {}, found {}", kind_name(*expected), kind_name(*actual)),
+                format!(
+                    "expected {}, found {}",
+                    expected.kind_name_with_article(),
+                    actual.kind_name_with_article()
+                ),
             ),
             Self::MemberKind { expected, actual } => (
                 "member kind mismatch".to_owned(),

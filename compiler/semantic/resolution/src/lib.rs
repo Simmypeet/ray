@@ -348,15 +348,6 @@ impl TypeKindMismatch {
     }
 }
 
-const fn kind_name(kind: TyKind) -> &'static str {
-    match kind {
-        TyKind::Star => "a value type",
-        TyKind::EffectRow => "an effect row",
-        TyKind::Instance => "an instance",
-        TyKind::Lifetime => "a lifetime",
-    }
-}
-
 impl Report for TypeKindMismatch {
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         Rendered::builder()
@@ -364,8 +355,8 @@ impl Report for TypeKindMismatch {
                 engine.to_absolute_span(&self.span).await,
                 Some(format!(
                     "expected {}, found {}",
-                    kind_name(self.expected),
-                    kind_name(self.actual)
+                    self.expected.kind_name_with_article(),
+                    self.actual.kind_name_with_article()
                 )),
             ))
             .message("type kind mismatch")
