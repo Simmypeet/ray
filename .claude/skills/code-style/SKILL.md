@@ -141,3 +141,15 @@ order, which is always the case in our codebase, the iteration order is
 guaranteed to be the same. And of course, `FxHashMap` and `FxHashSet` don't use
 RandomState hasher, so its internal state and the iteration order is not
 affected by the process's random seed.
+
+# Don't Include Overly Long Doc Comments in the Codebase
+
+Don't include overly long doc comments in the codebase (the `/// comments` on
+items). Ideally, it should be one line summary or 2 lines at most. This adds
+a burden to keep the doc comments up to date and makes it harder to read the
+code. Focus on **why** it exists and not **what** or **how** it works. If
+the comments doesn't answer the question of "why" it exists, then it's most
+likely not needed.
+
+This rule includes the module level doc comments
+(the `//! comments` at the top of the file).
