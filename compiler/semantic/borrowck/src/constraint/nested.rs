@@ -201,14 +201,15 @@ impl ConstraintCollector<'_> {
         }
 
         // The handlers share one capture layout, and so its external
-        // regions.
-        let handlers_shared_capture_map_id =
-            self.ir.get_capture_map_id(run_with.handlers()[0].function_id());
-        self.pair_captures(
-            &mut interface,
-            handlers_shared_capture_map_id,
-            run_with.handler_captures(),
-        );
+        // regions. An effect without operations has no handlers to share it.
+        if let Some(handler) = run_with.handlers().first() {
+            let handlers_shared_capture_map_id = self.ir.get_capture_map_id(handler.function_id());
+            self.pair_captures(
+                &mut interface,
+                handlers_shared_capture_map_id,
+                run_with.handler_captures(),
+            );
+        }
 
         interface
     }

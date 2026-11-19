@@ -276,12 +276,32 @@ impl SourceElement for Tree {
             };
         }
 
-        let first = self.nodes.first().unwrap();
-        let last = self.nodes.last().unwrap();
-
-        let first_span = first.span();
-        let last_span = last.span();
+        let first_span = edge_span(self.nodes.first().unwrap(), Edge::First);
+        let last_span = edge_span(self.nodes.last().unwrap(), Edge::Last);
 
         Span { start: first_span.start, end: last_span.end, source_id: first_span.source_id }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Edge {
+    First,
+    Last,
+}
+
+fn edge_span(mut node: &Node, edge: Edge) -> RelativeSpan {
+    loop {
+        let Node::Branch(tree) = node else { return node.span() };
+
+        // a tree that steps into a fragment spans the whole fragment
+        if tree.ast_info.as_ref().is_some_and(|info| info.step_into_fragment.is_some()) {
+            return tree.span();
+        }
+
+        let child = match edge {
+            Edge::First => tree.nodes.first(),
+            Edge::Last => tree.nodes.last(),
+        };
+        node = child.unwrap();
     }
 }

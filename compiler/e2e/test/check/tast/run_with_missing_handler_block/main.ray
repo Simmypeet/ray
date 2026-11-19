@@ -1,0 +1,9 @@
+eff Operations:
+    def operation() -> int32
+
+def test() -> ():
+    let handled = run:
+        return 1
+    with Operations
+
+    return ()

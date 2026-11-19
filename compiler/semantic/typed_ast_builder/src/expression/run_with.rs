@@ -128,9 +128,13 @@ impl TAstBuilder {
         let mut functions = FxHashMap::default();
         let operations = self.engine().get_members(effect).await;
 
-        let Some(handler_body) = syntax.handler_body() else { return FxHashMap::default() };
+        // A `run ... with` without a handler block still misses every
+        // operation, so it falls through to the report below.
+        let handler_body = syntax.handler_body();
+        let handlers =
+            handler_body.iter().flat_map(rayc_syntax::expression::HandlerBody::operations);
 
-        for handler in handler_body.operations() {
+        for handler in handlers {
             let Some(name) = handler.name() else { continue };
 
             // first retrieve the operation symbol ID from the name.

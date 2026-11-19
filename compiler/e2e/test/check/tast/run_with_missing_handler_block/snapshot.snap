@@ -1,0 +1,29 @@
+---
+source: compiler/e2e/test/check/mod.rs
+expression: snapshot
+---
+1 │ eff Operations:
+2 │     def operation() -> int32
+3 │
+4 │ def test() -> ():
+5 │     let handled = run:
+6 │         return 1
+7 │     with Operations
+  │          ^^^^^^^^^^
+  │                    ^
+  ┆ [error]: missing handler for effect operation `main.Operations.operation`
+  ┆   ╭▸ compiler/e2e/test/check/tast/run_with_missing_handler_block/main.ray:7:10
+  ┆   │
+  ┆ 7 │     with Operations
+  ┆   ╰╴         ━━━━━━━━━━ add a handler for `main.Operations.operation`
+  ┆
+  ┆ [error]: unexpected new line, expected `.` punctuation, indentation block, or `[ ... ]` block
+  ┆   ╭▸ compiler/e2e/test/check/tast/run_with_missing_handler_block/main.ray:7:20
+  ┆   │
+  ┆ 7 │       with Operations
+  ┆   │ ┏━━━━━━━━━━━━━━━━━━━━┛
+  ┆ 8 │ ┃
+  ┆   ╰╴┗━┛
+  ┆
+8 │
+9 │     return ()

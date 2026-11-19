@@ -528,6 +528,54 @@ fn invalid_inner_indentation() {
     assert_eq!(&source_map.get(source_id).unwrap().content()[err.span.range()], "b");
 }
 
+// After the unbalanced `)`, the indentation of the last line is matched
+// against a `:` whose block has no size, which used to be unwrapped.
+const UNBALANCED_DELIMITER_INDENTATION: &str = ":
+    ) :
+        ()
+    (
+";
+
+#[test]
+fn unbalanced_delimiter_indentation() {
+    let source_map = SimpleSourceMap::default();
+    let source_id = TargetID::TEST.make_global(source_map.register(
+        TargetID::TEST,
+        SourceFile::from_str(
+            UNBALANCED_DELIMITER_INDENTATION,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
+        ),
+    ));
+
+    let source_content = source_map.get(source_id).unwrap();
+
+    let storage = Storage::<Error>::new();
+    let interner = DuplicatingInterner;
+
+    let _ = Tree::from_source(&source_content, source_id, &interner, &storage);
+
+    let content = source_map.get(source_id).unwrap().content();
+    let errs = storage.into_vec();
+    assert_eq!(errs.len(), 3);
+
+    let closing = errs[0].as_unexpected_closing_delimiter().unwrap();
+    assert_eq!(&content[closing.span.range()], ")");
+    assert_eq!(closing.closing_delimiter, DelimiterKind::Parenthesis);
+
+    // only the block that has a size is offered as a level to indent to
+    let indentation = errs[1].as_invalid_indentation().unwrap();
+    assert_eq!(&content[indentation.span.range()], "(");
+    assert_eq!(indentation.found_indentation, 4);
+    assert_eq!(
+        indentation.available_indentations.iter().map(|x| x.indentation_size).collect::<Vec<_>>(),
+        [8]
+    );
+
+    let undelimited = errs[2].as_undelimited_delimiter().unwrap();
+    assert_eq!(&content[undelimited.opening_span.range()], "(");
+    assert_eq!(undelimited.delimiter, DelimiterKind::Parenthesis);
+}
+
 proptest! {
    #[test]
     fn tree(

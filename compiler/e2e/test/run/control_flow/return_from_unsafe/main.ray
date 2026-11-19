@@ -1,0 +1,18 @@
+# Returning from inside an `unsafe:` block ends the block, which then has no
+# value of its own.
+def early(flag: bool) -> int32:
+    if flag:
+        unsafe:
+            return 40
+    return 1
+
+
+def afterBlock() -> int32:
+    unsafe:
+        return 0
+    return 100
+
+
+def main() -> int32:
+    unsafe:
+        return early(true) + early(false) + afterBlock() + 1
