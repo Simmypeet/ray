@@ -84,6 +84,9 @@ impl Ty {
                 Self::EffectRow(row) => {
                     pending.extend(row.interned_iter().cloned());
                 }
+                Self::EffectRow2(row) => {
+                    pending.extend(row.interned_iter().cloned());
+                }
                 Self::SelfInstance(_) => components.push(OutlivesComponent::Opaque(ty.clone())),
                 Self::Inference(_) => {}
             }

@@ -70,6 +70,7 @@ impl Ty {
             | Self::PolyVar(_)
             | Self::SelfInstance(_)
             | Self::EffectRow(_)
+            | Self::EffectRow2(_)
             | Self::Lifetime(_) => None,
         };
         arguments.into_iter().flatten()
@@ -277,6 +278,7 @@ impl Ty {
             | Self::PolyVar(_)
             | Self::SelfInstance(_)
             | Self::EffectRow(_)
+            | Self::EffectRow2(_)
             | Self::Lifetime(_) => Some(false),
         }
     }
@@ -421,6 +423,7 @@ impl Ty {
             | Self::Inference(_)
             | Self::PolyVar(_)
             | Self::SelfInstance(_)
+            | Self::EffectRow2(_)
             | Self::Lifetime(_) => false,
         }
     }
@@ -431,6 +434,7 @@ impl Ty {
     pub fn is_empty_effect_row(&self) -> bool {
         match self {
             Self::EffectRow(row) => row.is_empty(),
+            Self::EffectRow2(row) => row.is_empty(),
             Self::Application(_)
             | Self::Inference(_)
             | Self::PolyVar(_)
@@ -481,6 +485,7 @@ impl Ty {
             | Self::PolyVar(_)
             | Self::SelfInstance(_)
             | Self::EffectRow(_)
+            | Self::EffectRow2(_)
             | Self::Lifetime(_) => false,
         }
     }

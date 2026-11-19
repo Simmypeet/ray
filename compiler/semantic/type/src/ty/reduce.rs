@@ -61,8 +61,14 @@ async fn reduce_type(
             })
             .await
         }
+
         // A lifetime never reduces.
-        Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::Lifetime(_) => None,
+        Ty::EffectRow2(_)
+        | Ty::Inference(_)
+        | Ty::PolyVar(_)
+        | Ty::SelfInstance(_)
+        | Ty::Lifetime(_) => None,
+
         Ty::EffectRow(row) => {
             if row.labels().len() == 0
                 && let Some(tail) = row.tail()

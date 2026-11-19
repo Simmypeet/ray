@@ -22,6 +22,9 @@ impl Substitutable for Interned<Ty> {
             Ty::EffectRow(row) => {
                 row.apply_subst(subst, engine).map(|new_row| engine.intern(Ty::EffectRow(new_row)))
             }
+            Ty::EffectRow2(row) => {
+                row.apply_subst(subst, engine).map(|new_row| engine.intern(Ty::EffectRow2(new_row)))
+            }
             Ty::Lifetime(Lifetime::External(external)) => subst.get(external).cloned(),
             Ty::Lifetime(Lifetime::Static | Lifetime::Erased | Lifetime::Region(_)) => None,
         }

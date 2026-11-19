@@ -179,7 +179,9 @@ impl Ty {
                 | ApplicationView::Closure(_)
                 | ApplicationView::Error => Err(InstanceTraitRefError::NotInstance),
             },
-            Self::EffectRow(_) | Self::Lifetime(_) => Err(InstanceTraitRefError::NotInstance),
+            Self::EffectRow2(_) | Self::EffectRow(_) | Self::Lifetime(_) => {
+                Err(InstanceTraitRefError::NotInstance)
+            }
         }
     }
 }

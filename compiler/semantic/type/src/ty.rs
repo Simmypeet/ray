@@ -3,7 +3,10 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use crate::{
     poly_var::GlobalPolyVarID,
     ty::{
-        application::Application, effect_row::EffectRow, inference::Inference, lifetime::Lifetime,
+        application::Application,
+        effect_row::{EffectRow, EffectRow2},
+        inference::Inference,
+        lifetime::Lifetime,
     },
     variance::Variance,
 };
@@ -208,6 +211,7 @@ pub enum Ty {
     /// The enclosing trait’s rigid self dictionary; see [`SelfInstance`].
     SelfInstance(SelfInstance),
     EffectRow(EffectRow),
+    EffectRow2(EffectRow2),
     /// A lifetime that is not a lifetime parameter; see [`Lifetime`].
     Lifetime(Lifetime),
 }

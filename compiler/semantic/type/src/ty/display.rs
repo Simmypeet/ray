@@ -90,6 +90,8 @@ impl Ty {
                         .await;
                     }
                 }
+
+                Self::EffectRow2(_row) => todo!("EffectRow2: implement display context"),
             }
         }
     }
@@ -446,6 +448,8 @@ impl TyDisplay<'_> {
 
                 f.write_char('}')
             }
+
+            Ty::EffectRow2(_row) => todo!("EffectRow2: implement display"),
         }
     }
 }

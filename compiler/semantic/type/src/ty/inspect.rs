@@ -53,6 +53,7 @@ impl Ty {
             | Self::PolyVar(_)
             | Self::SelfInstance(_)
             | Self::EffectRow(_)
+            | Self::EffectRow2(_)
             | Self::Lifetime(_) => false,
         }
     }
@@ -76,6 +77,7 @@ impl Ty {
                 let poly_var_map = engine.get_poly_var_map(poly_var.parent_id()).await;
                 poly_var_map.kind_of(poly_var.id())
             }
+            Self::EffectRow2(_) => TyKind::EffectRow2,
             Self::EffectRow(_) => TyKind::EffectRow,
             Self::SelfInstance(_) => TyKind::Instance,
             Self::Lifetime(_) => TyKind::Lifetime,
@@ -94,6 +96,7 @@ impl Ty {
             match &**ty {
                 Self::Application(application) => pending.extend(application.interned_iter()),
                 Self::EffectRow(row) => pending.extend(row.interned_iter()),
+                Self::EffectRow2(row) => pending.extend(row.interned_iter()),
                 Self::Inference(_)
                 | Self::PolyVar(_)
                 | Self::SelfInstance(_)
@@ -113,6 +116,7 @@ impl Ty {
                     pending.extend(application.iter());
                 }
                 Self::EffectRow(row) => pending.extend(row.iter()),
+                Self::EffectRow2(row) => pending.extend(row.iter()),
                 Self::Inference(_)
                 | Self::PolyVar(_)
                 | Self::SelfInstance(_)
@@ -131,6 +135,7 @@ impl Ty {
             | Self::EffectRow(_)
             | Self::PolyVar(_)
             | Self::SelfInstance(_)
+            | Self::EffectRow2(_)
             | Self::Lifetime(_) => false,
         })
     }
@@ -143,6 +148,7 @@ impl Ty {
             Self::Inference(inference) => inference.kind() != TyKind::Lifetime,
             Self::Application(_)
             | Self::EffectRow(_)
+            | Self::EffectRow2(_)
             | Self::PolyVar(_)
             | Self::SelfInstance(_)
             | Self::Lifetime(_) => false,
@@ -178,6 +184,7 @@ impl Ty {
             },
             Self::Inference(_)
             | Self::EffectRow(_)
+            | Self::EffectRow2(_)
             | Self::PolyVar(_)
             | Self::SelfInstance(_)
             | Self::Lifetime(_) => false,
@@ -190,6 +197,7 @@ impl Ty {
             Self::Application(application) => application.has_inference_variable(ty),
             Self::Inference(ty_inference) => ty_inference == ty,
             Self::EffectRow(row) => row.has_inference_variable(ty),
+            Self::EffectRow2(row) => row.has_inference_variable(ty),
             Self::PolyVar(_) | Self::SelfInstance(_) | Self::Lifetime(_) => false,
         }
     }
@@ -215,6 +223,7 @@ impl Ty {
             Self::Application(_)
             | Self::Inference(_)
             | Self::SelfInstance(_)
+            | Self::EffectRow2(_)
             | Self::EffectRow(_) => false,
         }
     }
@@ -304,6 +313,7 @@ impl Ty {
             Self::Application(_)
             | Self::Inference(_)
             | Self::EffectRow(_)
+            | Self::EffectRow2(_)
             | Self::SelfInstance(_)
             | Self::Lifetime(_) => false,
         })
@@ -315,7 +325,7 @@ impl Ty {
     pub fn is_concrete(&self) -> bool {
         self.recursive_iter().all(|x| match x {
             Self::Application(application) => !application.is_projection(),
-            Self::EffectRow(_) => true,
+            Self::EffectRow(_) | Self::EffectRow2(_) => true,
             Self::Lifetime(lifetime) => lifetime.is_erased(),
 
             Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) => false,
@@ -330,6 +340,7 @@ impl Ty {
             | Self::Inference(_)
             | Self::EffectRow(_)
             | Self::SelfInstance(_)
+            | Self::EffectRow2(_)
             | Self::Lifetime(_) => false,
         })
     }

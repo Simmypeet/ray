@@ -27,7 +27,7 @@ pub struct EffectLabel {
 impl Reduce for Interned<EffectLabel> {
     async fn reduce(
         &self,
-        engine: &rayc_qbice::TrackedEngine,
+        engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
     ) -> Option<(Self, OutlivesConstraints)> {
         self.args.reduce(engine, givens).await.map(|(args, outlives)| {
@@ -38,11 +38,7 @@ impl Reduce for Interned<EffectLabel> {
 }
 
 impl Substitutable for Interned<EffectLabel> {
-    fn apply_subst(
-        &self,
-        subst: &crate::subst::Subst,
-        engine: &rayc_qbice::TrackedEngine,
-    ) -> Option<Self>
+    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self>
     where
         Self: Sized,
     {
@@ -164,7 +160,7 @@ impl EffectRow {
     pub fn new(
         labels: impl IntoIterator<Item = Interned<EffectLabel>>,
         tail: Option<Interned<Ty>>,
-        engine: &rayc_qbice::TrackedEngine,
+        engine: &TrackedEngine,
     ) -> Self {
         Self { labels: engine.intern_unsized(labels.into_iter().collect::<Vec<_>>()), tail }
     }
@@ -265,7 +261,7 @@ impl<'a> MatchedLabels<'a> {
 impl Reduce for EffectRow {
     async fn reduce(
         &self,
-        engine: &rayc_qbice::TrackedEngine,
+        engine: &TrackedEngine,
         givens: &[crate::where_clause::PredicateKind],
     ) -> Option<(Self, OutlivesConstraints)> {
         if let Some(Ty::EffectRow(tail_row)) = self.tail.as_deref() {
@@ -297,11 +293,7 @@ impl Reduce for EffectRow {
 }
 
 impl Substitutable for EffectRow {
-    fn apply_subst(
-        &self,
-        subst: &crate::subst::Subst,
-        engine: &rayc_qbice::TrackedEngine,
-    ) -> Option<Self>
+    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self>
     where
         Self: Sized,
     {
@@ -375,5 +367,126 @@ impl EffectRow {
             let new_tail = engine.intern(Ty::Inference(infer_gen.gen_effect_row_infer()));
             Some(Self { labels: self.labels.clone(), tail: Some(new_tail) })
         }
+    }
+}
+
+/// An opaque effect row atom, which we can't look inside what's in it
+/// currently.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct EffectAtom(Interned<Ty>);
+
+/// Either a known concrete label or an opaque effect row atom, which can have
+/// several labels or none at all.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub enum Entry {
+    Label(EffectLabel),
+    Atom(EffectAtom),
+}
+
+impl Entry {
+    pub fn internred_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
+        let (label, atom) = match self {
+            Self::Label(label) => (Some(label), None),
+            Self::Atom(atom) => (None, Some(atom)),
+        };
+
+        label
+            .into_iter()
+            .flat_map(|label| label.arguments().interned_iter())
+            .chain(atom.into_iter().map(|x| &x.0))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Ty> {
+        let (label, atom) = match self {
+            Self::Label(label) => (Some(label), None),
+            Self::Atom(atom) => (None, Some(atom)),
+        };
+
+        label
+            .into_iter()
+            .flat_map(|label| label.arguments().iter())
+            .chain(atom.into_iter().map(|x| &*x.0))
+    }
+}
+
+// An individual entry of an effect row with a set of "excluded" labels, which
+// are labels that are not allowed to be in the row.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct GuardedRowEntry {
+    source: Entry,
+    excluded: Interned<[EffectLabel]>,
+}
+
+impl GuardedRowEntry {
+    pub fn interned_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
+        self.source
+            .internred_iter()
+            .chain(self.excluded.iter().flat_map(|x| x.arguments().interned_iter()))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Ty> {
+        self.source.iter().chain(self.excluded.iter().flat_map(|x| x.arguments().iter()))
+    }
+}
+
+/// A row of [`GuardedRowEntry`]s.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub struct EffectRow2 {
+    rows: Interned<[GuardedRowEntry]>,
+}
+
+impl EffectRow2 {
+    #[must_use]
+    pub fn guarded_row_entries(&self) -> impl ExactSizeIterator<Item = &GuardedRowEntry> {
+        self.rows.iter()
+    }
+
+    pub fn interned_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
+        self.rows.iter().flat_map(GuardedRowEntry::interned_iter)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Ty> {
+        self.rows.iter().flat_map(GuardedRowEntry::iter)
+    }
+
+    #[must_use]
+    pub fn has_inference_variable(&self, ty: &Inference) -> bool {
+        self.interned_iter().any(|x| x.has_inference_variable(ty))
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.rows.is_empty() }
+}
+
+impl Substitutable for EffectRow2 {
+    fn apply_subst(&self, _subst: &Subst, _engine: &TrackedEngine) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        todo!("EffectRow2: implement apply_subst")
+    }
+}
+
+impl Rewrite for EffectRow2 {
+    fn rewrite(&self, _rewriter: &mut impl TyRewriter, _engine: &TrackedEngine) -> Option<Self> {
+        todo!("EffectRow2: implement rewrite")
+    }
+}
+
+impl RewriteAsync for EffectRow2 {
+    async fn rewrite_async(
+        &self,
+        _rewriter: &mut impl TyRewriterAsync,
+        _engine: &TrackedEngine,
+    ) -> Option<Self> {
+        todo!("EffectRow2: implement rewrite_async")
     }
 }

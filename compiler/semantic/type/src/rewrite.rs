@@ -46,6 +46,9 @@ impl Rewrite for Interned<Ty> {
             Ty::EffectRow(row) => {
                 row.rewrite(rewriter, engine).map(|row| engine.intern(Ty::EffectRow(row)))
             }
+            Ty::EffectRow2(row) => {
+                row.rewrite(rewriter, engine).map(|row| engine.intern(Ty::EffectRow2(row)))
+            }
             Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::Lifetime(_) => None,
         }
     }
@@ -131,6 +134,10 @@ impl RewriteAsync for Interned<Ty> {
             Ty::EffectRow(row) => Box::pin(row.rewrite_async(rewriter, engine))
                 .await
                 .map(|row| engine.intern(Ty::EffectRow(row))),
+            Ty::EffectRow2(row) => Box::pin(row.rewrite_async(rewriter, engine))
+                .await
+                .map(|row| engine.intern(Ty::EffectRow2(row))),
+
             Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::Lifetime(_) => None,
         }
     }
