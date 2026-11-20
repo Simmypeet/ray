@@ -4,9 +4,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_qbice::TrackedEngine;
 
 use crate::{
-    constraint::outlives::OutlivesConstraints,
-    reduce::Reduce,
-    subst::{Subst, Substitutable},
+    fold::{TyFoldable, TyFolder, fold_pair},
     trait_ref::TraitRef,
     ty::Ty,
 };
@@ -37,34 +35,10 @@ impl InstanceTraitRef {
     }
 }
 
-impl Reduce for InstanceTraitRef {
-    async fn reduce(
-        &self,
-        engine: &TrackedEngine,
-        givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<(Self, OutlivesConstraints)> {
-        let instance = self.instance.reduce(engine, givens).await;
-        let expected = self.expected.reduce(engine, givens).await;
-        if instance.is_none() && expected.is_none() {
-            return None;
-        }
-
-        let (instance, instance_outlives) =
-            instance.unwrap_or_else(|| (self.instance.clone(), OutlivesConstraints::new()));
-        let (expected, expected_outlives) =
-            expected.unwrap_or_else(|| (self.expected.clone(), OutlivesConstraints::new()));
-        Some((Self::new(instance, expected), instance_outlives.union(expected_outlives)))
-    }
-}
-
-impl Substitutable for InstanceTraitRef {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
-        match (self.instance.apply_subst(subst, engine), self.expected.apply_subst(subst, engine)) {
-            (None, None) => None,
-            (instance, expected) => Some(Self::new(
-                instance.unwrap_or_else(|| self.instance.clone()),
-                expected.unwrap_or_else(|| self.expected.clone()),
-            )),
-        }
+impl TyFoldable for InstanceTraitRef {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
+        fold_pair(&self.instance, &self.expected, folder, engine)
+            .await
+            .map(|(instance, expected)| Self::new(instance, expected))
     }
 }

@@ -6,7 +6,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_qualified_name};
 
 use crate::{
-    subst::{Subst, Substitutable},
+    fold::{TyFoldable, TyFolder, fold_pair},
     ty::Ty,
 };
 
@@ -30,14 +30,11 @@ impl AssociatedTypeEquality {
     pub const fn right(&self) -> &Interned<Ty> { &self.right }
 }
 
-impl Substitutable for AssociatedTypeEquality {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
-        match (self.left.apply_subst(subst, engine), self.right.apply_subst(subst, engine)) {
-            (Some(left), Some(right)) => Some(Self::new(left, right)),
-            (Some(left), None) => Some(Self::new(left, self.right.clone())),
-            (None, Some(right)) => Some(Self::new(self.left.clone(), right)),
-            (None, None) => None,
-        }
+impl TyFoldable for AssociatedTypeEquality {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
+        fold_pair(&self.left, &self.right, folder, engine)
+            .await
+            .map(|(left, right)| Self::new(left, right))
     }
 }
 
@@ -63,10 +60,11 @@ impl MarkerPredicate {
     pub const fn implementor(&self) -> &Interned<Ty> { &self.implementor }
 }
 
-impl Substitutable for MarkerPredicate {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+impl TyFoldable for MarkerPredicate {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
         self.implementor
-            .apply_subst(subst, engine)
+            .fold_with(folder, engine)
+            .await
             .map(|implementor| Self::new(self.marker_id, implementor))
     }
 }
@@ -102,15 +100,11 @@ impl OutlivesPredicate {
     }
 }
 
-impl Substitutable for OutlivesPredicate {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
-        match (self.lesser.apply_subst(subst, engine), self.greater.apply_subst(subst, engine)) {
-            (None, None) => None,
-            (lesser, greater) => Some(Self::new(
-                lesser.unwrap_or_else(|| self.lesser.clone()),
-                greater.unwrap_or_else(|| self.greater.clone()),
-            )),
-        }
+impl TyFoldable for OutlivesPredicate {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
+        fold_pair(&self.lesser, &self.greater, folder, engine)
+            .await
+            .map(|(lesser, greater)| Self::new(lesser, greater))
     }
 }
 
@@ -165,14 +159,16 @@ impl PredicateKind {
     }
 }
 
-impl Substitutable for PredicateKind {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+impl TyFoldable for PredicateKind {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
         match self {
             Self::AssociatedTypeEquality(equality) => {
-                equality.apply_subst(subst, engine).map(Self::AssociatedTypeEquality)
+                equality.fold_with(folder, engine).await.map(Self::AssociatedTypeEquality)
             }
-            Self::Marker(predicate) => predicate.apply_subst(subst, engine).map(Self::Marker),
-            Self::Outlives(predicate) => predicate.apply_subst(subst, engine).map(Self::Outlives),
+            Self::Marker(predicate) => predicate.fold_with(folder, engine).await.map(Self::Marker),
+            Self::Outlives(predicate) => {
+                predicate.fold_with(folder, engine).await.map(Self::Outlives)
+            }
         }
     }
 }

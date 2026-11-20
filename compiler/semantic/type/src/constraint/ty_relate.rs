@@ -2,9 +2,7 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rayc_qbice::TrackedEngine;
 
 use crate::{
-    constraint::outlives::OutlivesConstraints,
-    reduce::Reduce,
-    subst::{Subst, Substitutable},
+    fold::{TyFoldable, TyFolder, fold_pair},
     ty::Ty,
     variance::Variance,
 };
@@ -44,42 +42,12 @@ impl TyRelate {
     }
 }
 
-impl Reduce for TyRelate {
-    async fn reduce(
-        &self,
-        engine: &TrackedEngine,
-        givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<(Self, OutlivesConstraints)>
-    where
-        Self: Sized,
-    {
-        let lesser = self.lesser.reduce(engine, givens).await;
-        let greater = self.greater.reduce(engine, givens).await;
-        if lesser.is_none() && greater.is_none() {
-            return None;
-        }
-
-        let (lesser, lesser_outlives) =
-            lesser.unwrap_or_else(|| (self.lesser.clone(), OutlivesConstraints::new()));
-        let (greater, greater_outlives) =
-            greater.unwrap_or_else(|| (self.greater.clone(), OutlivesConstraints::new()));
-        let relate = Self { lesser, greater, variance: self.variance };
-        Some((relate, lesser_outlives.union(greater_outlives)))
-    }
-}
-
-impl Substitutable for TyRelate {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match (self.lesser.apply_subst(subst, engine), self.greater.apply_subst(subst, engine)) {
-            (None, None) => None,
-            (lesser, greater) => Some(Self {
-                lesser: lesser.unwrap_or_else(|| self.lesser.clone()),
-                greater: greater.unwrap_or_else(|| self.greater.clone()),
-                variance: self.variance,
-            }),
-        }
+impl TyFoldable for TyRelate {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
+        fold_pair(&self.lesser, &self.greater, folder, engine).await.map(|(lesser, greater)| Self {
+            lesser,
+            greater,
+            variance: self.variance,
+        })
     }
 }

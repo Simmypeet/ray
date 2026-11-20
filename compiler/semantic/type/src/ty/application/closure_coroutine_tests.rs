@@ -9,7 +9,6 @@ use rayc_symbol::{
 };
 use rayc_target::TargetID;
 
-use super::Reduce;
 use crate::{
     poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap},
     subst::Subst,
@@ -87,42 +86,34 @@ fn closure(engine: &TrackedEngine) -> Interned<Ty> {
 
 // input: TraitDefCoroutine(Def.call, DefInstance(C))
 // premise: C is a closure type
-// output: ClosureCoroutine(C)
+// output: ClosureCoroutine(C), already at construction
 #[tokio::test]
 async fn reduces_closure_call_to_closure_coroutine() {
     let (engine, def) = fixture().await;
     let closure = closure(&engine);
     let instance = Ty::new_def_instance(closure.clone(), &engine);
-    let coroutine = Ty::new_trait_def_coroutine(def.call_id, instance, [], &engine);
+    let coroutine = Ty::new_trait_def_coroutine(def.call_id, instance, [], &engine).await;
 
-    assert_eq!(
-        Box::pin(coroutine.reduce(&engine, &[])).await.map(|(reduced, _)| reduced),
-        Some(Ty::new_closure_coroutine(closure, &engine))
-    );
+    assert_eq!(coroutine, Ty::new_closure_coroutine(closure, &engine));
 }
 
-// input: CoroutineView of ClosureCoroutine(C) and of
-//        TraitDefCoroutine(Def.call, DefInstance(C))
+// input: CoroutineView of ClosureCoroutine(C)
 // premise: trait Def[f] declares call, which has no parameters of its own
-// output: both run Def.call under {f := C, this := DefInstance(C)}, and
-//         instantiate no parameters of their own
+// output: it runs Def.call under {f := C, this := DefInstance(C)}, and
+//         instantiates no parameters of its own
 #[tokio::test]
 async fn closure_coroutine_keeps_signature_of_closure_call() {
     let (engine, def) = fixture().await;
     let closure = closure(&engine);
     let instance = Ty::new_def_instance(closure.clone(), &engine);
-    let trait_def_coroutine =
-        Ty::new_trait_def_coroutine(def.call_id, instance.clone(), [], &engine);
-    let closure_coroutine = Ty::new_closure_coroutine(closure.clone(), &engine);
+    let coroutine = Ty::new_closure_coroutine(closure.clone(), &engine);
 
     let mut expected = Subst::new_empty();
     expected.insert(def.f, closure);
     expected.insert(SelfInstance::new(def.trait_id), instance);
 
-    for coroutine in [&trait_def_coroutine, &closure_coroutine] {
-        let view: CoroutineView<'_> = coroutine.as_coroutine_view().unwrap();
-        assert_eq!(view.signature_id(&engine).await, def.call_id);
-        assert_eq!(view.create_subst(&engine).await, expected);
-        assert_eq!(view.instantiation(&engine).await, Subst::new_empty());
-    }
+    let view: CoroutineView<'_> = coroutine.as_coroutine_view().unwrap();
+    assert_eq!(view.signature_id(&engine).await, def.call_id);
+    assert_eq!(view.create_subst(&engine).await, expected);
+    assert_eq!(view.instantiation(&engine).await, Subst::new_empty());
 }

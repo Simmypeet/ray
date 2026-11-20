@@ -1,6 +1,6 @@
 use im::hashmap::Entry;
 use qbice::{
-    Decode, Encode, Identifiable, StableHash,
+    Decode, Encode, StableHash,
     stable_hash::{StableHasher, Value},
     storage::intern::Interned,
 };
@@ -8,6 +8,7 @@ use rayc_hash::FxImHashMap;
 use rayc_qbice::TrackedEngine;
 
 use crate::{
+    fold::{TyFoldable, TyFolder},
     poly_var::GlobalPolyVarID,
     ty::{Ty, inference::Inference, lifetime::ExternalRegionID, self_instance::SelfInstance},
 };
@@ -146,9 +147,9 @@ impl Subst {
     }
 
     /// Composes `self` with `other`, as if applying `self` and then `other`.
-    pub fn compose(&mut self, other: &Self, engine: &TrackedEngine) {
+    pub async fn compose(&mut self, other: &Self, engine: &TrackedEngine) {
         for (_, ty) in self.0.iter_mut() {
-            if let Some(new_ty) = ty.apply_subst(other, engine) {
+            if let Some(new_ty) = ty.apply_subst(other, engine).await {
                 *ty = new_ty;
             }
         }
@@ -174,65 +175,60 @@ impl Subst {
     }
 }
 
-pub trait Substitutable {
+/// Instantiates the types in a value by a [`Subst`].
+///
+/// Every [`TyFoldable`] value is substitutable; rebuilding goes through the
+/// smart constructors, so a substitution may reduce what it made reducible.
+pub trait Substitutable: TyFoldable {
     #[must_use]
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized;
-
-    #[must_use]
-    fn apply_subst_or_clone(&self, subst: &Subst, engine: &TrackedEngine) -> Self
-    where
-        Self: Sized + Clone,
-    {
-        self.apply_subst(subst, engine).unwrap_or_else(|| self.clone())
+    #[allow(async_fn_in_trait)]
+    async fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+        self.fold_with(&mut SubstFolder { subst }, engine).await
     }
 
-    fn apply_in_place(&mut self, subst: &Subst, engine: &TrackedEngine)
+    #[must_use]
+    #[allow(async_fn_in_trait)]
+    async fn apply_subst_or_clone(&self, subst: &Subst, engine: &TrackedEngine) -> Self
     where
-        Self: Sized,
+        Self: Clone,
     {
-        if let Some(new_self) = self.apply_subst(subst, engine) {
+        self.apply_subst(subst, engine).await.unwrap_or_else(|| self.clone())
+    }
+
+    #[allow(async_fn_in_trait)]
+    async fn apply_in_place(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        if let Some(new_self) = self.apply_subst(subst, engine).await {
             *self = new_self;
         }
     }
 }
 
-impl<T: Substitutable + Clone + StableHash + Identifiable + Send + Sync + 'static> Substitutable
-    for Interned<[T]>
-{
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        let mut new_vec = None;
+impl<T: TyFoldable> Substitutable for T {}
 
-        for (i, ty_arg) in self.as_ref().iter().enumerate() {
-            match (new_vec.as_mut(), ty_arg.apply_subst(subst, engine)) {
-                (None, Some(new_ty_arg)) => {
-                    let mut vec = self.as_ref().to_vec();
-                    vec[i] = new_ty_arg;
-                    new_vec = Some(vec);
-                }
-                (Some(vec), Some(new_ty_arg)) => {
-                    vec[i] = new_ty_arg;
-                }
-                _ => {}
-            }
+/// The [`TyFolder`] behind [`Substitutable`], which replaces the variables
+/// that `subst` maps.
+struct SubstFolder<'a> {
+    subst: &'a Subst,
+}
+
+impl TyFolder for SubstFolder<'_> {
+    async fn fold_ty(&mut self, ty: &Interned<Ty>, engine: &TrackedEngine) -> Option<Interned<Ty>> {
+        match ty.as_var() {
+            Some(var) => self.subst.0.get(&var).cloned(),
+            None => Ty::super_fold_with(ty, self, engine).await,
         }
-
-        new_vec.map(|vec| engine.intern_unsized(vec))
     }
 }
 
 pub trait MutSubstitutable {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine);
+    #[allow(async_fn_in_trait)]
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine);
 }
 
 impl MutSubstitutable for Subst {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for (_, ty) in self.0.iter_mut() {
-            ty.apply_in_place(subst, engine);
+            ty.apply_in_place(subst, engine).await;
         }
     }
 }

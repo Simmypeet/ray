@@ -257,19 +257,22 @@ impl Ty {
     }
 
     /// Creates the type of a suspended call of the trait method `trait_def_id`
-    /// through `instance`.
-    #[must_use]
-    pub fn new_trait_def_coroutine(
+    /// through `instance`, reduced once the instance is known.
+    pub async fn new_trait_def_coroutine(
         trait_def_id: GlobalSymbolID,
         instance: Interned<Self>,
         args: impl IntoIterator<Item = Interned<Self>>,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
         let args = std::iter::once(instance).chain(args).collect::<Vec<_>>();
-        engine.intern(Self::Application(Application::new(
-            Constant::TraitDefCoroutine(trait_def_id),
-            engine.intern_unsized(args),
-        )))
+        Self::new_application(
+            Application::new(
+                Constant::TraitDefCoroutine(trait_def_id),
+                engine.intern_unsized(args),
+            ),
+            engine,
+        )
+        .await
     }
 
     /// Creates the type of a suspended call of `closure`; see
@@ -326,7 +329,7 @@ impl Ty {
             .args_from_subst(trait_def_id, call_subst)
             .expect("the call should instantiate every parameter of its trait def");
 
-        Self::new_trait_def_coroutine(trait_def_id, instance, args, engine)
+        Self::new_trait_def_coroutine(trait_def_id, instance, args, engine).await
     }
 
     /// Creates the built-in `Coroutine` dictionary for a coroutine type, or
@@ -398,19 +401,39 @@ impl Ty {
         )))
     }
 
-    /// Creates a projection from an instance to a trait associated type.
-    #[must_use]
-    pub fn new_instance_associated(
+    /// Creates a projection from an instance to a trait associated type,
+    /// reduced once the instance tells its definition.
+    pub async fn new_instance_associated(
         symbol_id: GlobalSymbolID,
         instance: Interned<Self>,
         args: impl IntoIterator<Item = Interned<Self>>,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
         let args = std::iter::once(instance).chain(args).collect::<Vec<_>>();
-        engine.intern(Self::Application(Application::new(
-            Constant::InstanceAssociated(symbol_id),
-            engine.intern_unsized(args),
-        )))
+        Self::new_application(
+            Application::new(Constant::InstanceAssociated(symbol_id), engine.intern_unsized(args)),
+            engine,
+        )
+        .await
+    }
+
+    /// Interns `application`, reducing it if it is a projection whose instance
+    /// is known; its arguments must already be reduced.
+    pub(crate) async fn new_application(
+        application: Application,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        // Expanding a projection substitutes into its definition, which
+        // constructs projections again, so the future is boxed. A definition
+        // may name the projection itself, which is no step.
+        if application.is_projection()
+            && let Some(reduced) = Box::pin(application.reduce_projection(engine)).await
+            && !matches!(&*reduced, Self::Application(reduced) if *reduced == application)
+        {
+            return reduced;
+        }
+
+        engine.intern(Self::Application(application))
     }
 
     /// Creates an error of the given kind.
@@ -438,12 +461,29 @@ impl Ty {
         engine.intern(Self::PolyVar(id))
     }
 
+    /// Creates the effect row `{labels | tail}`, flattened so that its tail is
+    /// never another effect row and a row of only a tail is that tail.
     #[must_use]
     pub fn new_effect_row(
         labels: impl IntoIterator<Item = Interned<effect_row::EffectLabel>>,
         tail: Option<Interned<Self>>,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
-        engine.intern(Self::EffectRow(EffectRow::new(labels, tail, engine)))
+        let mut labels = labels.into_iter().collect::<Vec<_>>();
+
+        // A row tail contributes its labels and its own tail, which is never a
+        // row since that row was flattened when it was constructed.
+        let tail = match tail.as_deref() {
+            Some(Self::EffectRow(tail_row)) => {
+                labels.extend(tail_row.labels().cloned());
+                tail_row.tail().cloned()
+            }
+            Some(_) | None => tail,
+        };
+
+        match (labels.is_empty(), tail) {
+            (true, Some(tail)) => tail,
+            (_, tail) => engine.intern(Self::EffectRow(EffectRow::new(labels, tail, engine))),
+        }
     }
 }

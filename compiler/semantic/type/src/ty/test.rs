@@ -1,5 +1,39 @@
 use super::{Integer, Mutability, Primitive, Ty};
 
+/// Creates an engine where `member_id` is an associated type of kind `Star`
+/// that the instance `instance_id` does not define, so a projection of it
+/// through the instance stays a projection.
+async fn engine_with_memberless_instance(
+    member_id: rayc_symbol::GlobalSymbolID,
+    instance_id: rayc_symbol::GlobalSymbolID,
+) -> rayc_qbice::TrackedEngine {
+    use std::{collections::HashMap, sync::Arc};
+
+    use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor};
+
+    let mut engine = Engine::new_with(
+        qbice::serialize::Plugin::default(),
+        InMemoryFactory,
+        qbice::stable_hash::SeededStableHasherBuilder::new(0),
+    )
+    .await
+    .unwrap();
+    let name: qbice::storage::intern::Interned<str> = engine.intern_unsized("Item");
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        crate::associated_type_kind::Key { symbol_id: member_id },
+        super::TyKind::Star,
+    )]))));
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        rayc_symbol::name::Key { symbol_id: member_id },
+        name.clone(),
+    )]))));
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
+        rayc_symbol::member::MemberByNameKey { symbol_id: instance_id, name },
+        None,
+    )]))));
+    Arc::new(engine).tracked().await
+}
+
 // input: tuple -> closure -> tuple dictionaries with a selected leaf dictionary
 // premise: the other elements and captures have no-op Drop dictionaries
 // output: the nested dictionaries are no-ops exactly when the leaf is a no-op
@@ -114,8 +148,9 @@ async fn struct_application_preserves_nominal_identity_and_substitutes_arguments
         &engine,
     );
 
-    let instantiated =
-        generic.apply_subst_or_clone(&Subst::new_singleton(poly_var, int_ty.clone()), &engine);
+    let instantiated = generic
+        .apply_subst_or_clone(&Subst::new_singleton(poly_var, int_ty.clone()), &engine)
+        .await;
     let other = Ty::new_struct(other_struct_id, Args::new([int_ty.clone()], &engine), &engine);
 
     let View::Struct(struct_) = instantiated.unwrap_as_application_view() else {
@@ -165,7 +200,7 @@ async fn closure_substitution_preserves_unused_owner_arguments_separately_from_s
     let mut subst = Subst::new_singleton(b, bool_ty.clone());
     subst.insert(a, float_ty.clone());
 
-    let instantiated = ty.apply_subst_or_clone(&subst, &engine);
+    let instantiated = ty.apply_subst_or_clone(&subst, &engine).await;
 
     let View::Closure(view) = instantiated.unwrap_as_application_view() else {
         panic!("expected a closure");
@@ -268,9 +303,6 @@ async fn recursive_iter_yields_root_and_descendants_in_breadth_first_order() {
 // variables
 #[tokio::test]
 async fn associated_type_substitution_replaces_instance_and_member_arguments() {
-    use std::{collections::HashMap, sync::Arc};
-
-    use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor};
     use rayc_symbol::SymbolID;
     use rayc_target::TargetID;
 
@@ -283,20 +315,8 @@ async fn associated_type_substitution_replaces_instance_and_member_arguments() {
     use crate::subst::{Subst, Substitutable};
 
     let member_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
-    // Supply the declaration kind queried by the substituted projection.
-    let mut engine = Engine::new_with(
-        qbice::serialize::Plugin::default(),
-        InMemoryFactory,
-        qbice::stable_hash::SeededStableHasherBuilder::new(0),
-    )
-    .await
-    .unwrap();
-    engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
-        crate::associated_type_kind::Key { symbol_id: member_id },
-        TyKind::Star,
-    )]))));
-    let engine = Arc::new(engine).tracked().await;
     let instance_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
+    let engine = engine_with_memberless_instance(member_id, instance_id).await;
     let instance_var = Inference::new(TyKind::Instance, 0);
     let arg_var = Inference::new(TyKind::Star, 1);
     let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
@@ -306,12 +326,13 @@ async fn associated_type_substitution_replaces_instance_and_member_arguments() {
         engine.intern(Ty::Inference(instance_var)),
         [engine.intern(Ty::Inference(arg_var)), bool_ty.clone()],
         &engine,
-    );
+    )
+    .await;
     let instance = Ty::new_instance(instance_id, Args::new([], &engine), &engine);
     let mut substitution = Subst::new_singleton(instance_var, instance.clone());
     substitution.insert(arg_var, int_ty.clone());
 
-    let result = projection.apply_subst_or_clone(&substitution, &engine);
+    let result = projection.apply_subst_or_clone(&substitution, &engine).await;
 
     let expected = engine.intern(Ty::Application(Application::new(
         Constant::InstanceAssociated(member_id),
@@ -343,23 +364,27 @@ async fn self_instance_substitution_composes_without_capturing_other_traits() {
         ty::{TyKind, args::Args, inference::Inference, self_instance::SelfInstance},
     };
 
-    let engine = rayc_qbice::create_minimal_engine().await;
     let id = |n| TargetID::TEST.make_global(SymbolID::from_u128(n));
+    let engine = engine_with_memberless_instance(id(3), id(4)).await;
     let this = SelfInstance::new(id(1));
-    let projection = |binder| {
+    let projection = async |binder| {
         Ty::new_instance_associated(id(3), engine.intern(Ty::SelfInstance(binder)), [], &engine)
+            .await
     };
-    let original = projection(this);
+    let original = projection(this).await;
     assert_eq!(original.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), None);
-    let other = projection(SelfInstance::new(id(2)));
+    let other = projection(SelfInstance::new(id(2))).await;
     let tuple = Ty::new_tuple(engine.intern_unsized([original, other.clone()]), &engine);
     let inference = Inference::new(TyKind::Instance, 0);
     let mut subst = Subst::new_singleton(this, engine.intern(Ty::Inference(inference)));
     let instance = Ty::new_instance(id(4), Args::new([], &engine), &engine);
-    subst.compose(&Subst::new_singleton(inference, instance.clone()), &engine);
+    subst.compose(&Subst::new_singleton(inference, instance.clone()), &engine).await;
     let expected = Ty::new_tuple(
-        engine.intern_unsized([Ty::new_instance_associated(id(3), instance, [], &engine), other]),
+        engine.intern_unsized([
+            Ty::new_instance_associated(id(3), instance, [], &engine).await,
+            other,
+        ]),
         &engine,
     );
-    assert_eq!(tuple.apply_subst_or_clone(&subst, &engine), expected);
+    assert_eq!(tuple.apply_subst_or_clone(&subst, &engine).await, expected);
 }

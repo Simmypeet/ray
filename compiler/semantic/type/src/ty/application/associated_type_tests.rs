@@ -6,15 +6,15 @@ use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor, TrackedEngine};
 use rayc_symbol::{SymbolID, member::Member, symbol_kind::SymbolKind};
 use rayc_target::TargetID;
 
-use super::Reduce;
 use crate::{
     instance_member::InstanceMember,
     poly_var::{GlobalPolyVarID, PolyVar, PolyVarMap},
-    subst::Subst,
+    reduce::Reduce,
+    subst::{Subst, Substitutable},
     ty::{Integer, Primitive, Ty, TyKind, args::Args, inference::Inference},
 };
 
-async fn fixture(local_argument: bool) -> (TrackedEngine, Interned<Ty>, Interned<Ty>) {
+async fn fixture(local_argument: bool) -> (TrackedEngine, Fixture) {
     let mut engine = Engine::new_with(
         qbice::serialize::Plugin::default(),
         InMemoryFactory,
@@ -98,54 +98,79 @@ async fn fixture(local_argument: bool) -> (TrackedEngine, Interned<Ty>, Interned
     let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
     let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
     let instance = Ty::new_instance(instance_id, Args::new([int_ty.clone()], &engine), &engine);
-    let projection = Ty::new_instance_associated(
+    let expected = Ty::new_tuple(
+        engine.intern_unsized([
+            int_ty.clone(),
+            if local_argument { bool_ty.clone() } else { int_ty },
+        ]),
+        &engine,
+    );
+    let fixture = Fixture {
         trait_member,
         instance,
-        local_argument.then_some(bool_ty.clone()),
-        &engine,
-    );
-    let expected = Ty::new_tuple(
-        engine.intern_unsized([int_ty.clone(), if local_argument { bool_ty } else { int_ty }]),
-        &engine,
-    );
-    (engine, projection, expected)
+        member_args: local_argument.then_some(bool_ty).into_iter().collect(),
+        expected,
+    };
+    (engine, fixture)
+}
+
+/// The projection `instance.trait_member[member_args]` and the type its
+/// definition gives it.
+struct Fixture {
+    trait_member: rayc_symbol::GlobalSymbolID,
+    instance: Interned<Ty>,
+    member_args: Vec<Interned<Ty>>,
+    expected: Interned<Ty>,
+}
+
+impl Fixture {
+    async fn projection_through(
+        &self,
+        instance: Interned<Ty>,
+        engine: &TrackedEngine,
+    ) -> Interned<Ty> {
+        Ty::new_instance_associated(self.trait_member, instance, self.member_args.clone(), engine)
+            .await
+    }
 }
 
 // input: Test[int32].Inner
 // premise: Test[a].Inner = (a, a)
-// output: (int32, int32)
+// output: (int32, int32), already at construction
 #[tokio::test]
 async fn substitutes_enclosing_instance_arguments() {
-    let (engine, projection, expected) = fixture(false).await;
-    assert_eq!(
-        Box::pin(projection.reduce(&engine, &[])).await.map(|(reduced, _)| reduced),
-        Some(expected)
-    );
+    let (engine, fixture) = fixture(false).await;
+    let projection = fixture.projection_through(fixture.instance.clone(), &engine).await;
+
+    assert_eq!(projection, fixture.expected);
 }
 
 // input: Test[int32].Inner[bool]
 // premise: trait Inner[x] maps x to b in Test[a].Inner[b] = (a, b)
-// output: (int32, bool)
+// output: (int32, bool), already at construction
 #[tokio::test]
 async fn substitutes_checked_member_mapping_and_instance_arguments() {
-    let (engine, projection, expected) = fixture(true).await;
-    assert_eq!(
-        Box::pin(projection.reduce(&engine, &[])).await.map(|(reduced, _)| reduced),
-        Some(expected)
-    );
+    let (engine, fixture) = fixture(true).await;
+    let projection = fixture.projection_through(fixture.instance.clone(), &engine).await;
+
+    assert_eq!(projection, fixture.expected);
 }
 
-// input: (Test[int32].Inner,)
+// input: (?instance.Inner,), followed by ?instance := Test[int32]
 // premise: Test[a].Inner = (a, a)
-// output: ((int32, int32),)
+// output: ((int32, int32),), since the substitution rebuilds the projection
 #[tokio::test]
-async fn reduces_associated_types_in_descendants() {
-    let (engine, projection, expected) = fixture(false).await;
+async fn substitution_reduces_projections_in_descendants() {
+    let (engine, fixture) = fixture(false).await;
+    let instance_var = Inference::new(TyKind::Instance, 0);
+    let projection =
+        fixture.projection_through(engine.intern(Ty::Inference(instance_var)), &engine).await;
     let tuple = Ty::new_tuple(engine.intern_unsized([projection]), &engine);
-    let expected = Ty::new_tuple(engine.intern_unsized([expected]), &engine);
+    let substitution = Subst::new_singleton(instance_var, fixture.instance.clone());
+
     assert_eq!(
-        Box::pin(tuple.reduce(&engine, &[])).await.map(|(reduced, _)| reduced),
-        Some(expected)
+        Box::pin(tuple.apply_subst_or_clone(&substitution, &engine)).await,
+        Ty::new_tuple(engine.intern_unsized([fixture.expected]), &engine)
     );
 }
 
@@ -160,6 +185,7 @@ async fn leaves_unknown_instances_unreduced() {
         engine.intern(Ty::Inference(Inference::new(TyKind::Instance, 0))),
         [Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine)],
         &engine,
-    );
+    )
+    .await;
     assert_eq!(projection.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), None);
 }

@@ -163,7 +163,7 @@ impl Ty {
         engine: &TrackedEngine,
     ) -> Option<Interned<Self>> {
         if let Self::EffectRow(row) = ty.as_ref() {
-            row.open_closed_row(infer_gen, engine).map(|x| engine.intern(Self::EffectRow(x)))
+            row.open_closed_row(infer_gen, engine)
         } else {
             None
         }

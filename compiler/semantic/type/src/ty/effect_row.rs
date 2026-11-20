@@ -3,10 +3,8 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::GlobalSymbolID;
 
 use crate::{
-    constraint::outlives::OutlivesConstraints,
+    fold::{TyFoldable, TyFolder},
     poly_var::{GlobalPolyVarID, get_poly_var_map},
-    reduce::Reduce,
-    rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
     subst::{Subst, Substitutable},
     ty::{
         Ty,
@@ -28,45 +26,9 @@ pub struct EffectLabel {
     args: Args,
 }
 
-impl Reduce for Interned<EffectLabel> {
-    async fn reduce(
-        &self,
-        engine: &TrackedEngine,
-        givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<(Self, OutlivesConstraints)> {
-        self.args.reduce(engine, givens).await.map(|(args, outlives)| {
-            let label = EffectLabel { effect_symbol_id: self.effect_symbol_id, args };
-            (engine.intern(label), outlives)
-        })
-    }
-}
-
-impl Substitutable for Interned<EffectLabel> {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        self.args.apply_subst(subst, engine).map(|args| {
-            engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
-        })
-    }
-}
-
-impl Rewrite for Interned<EffectLabel> {
-    fn rewrite(&self, rewriter: &mut impl TyRewriter, engine: &TrackedEngine) -> Option<Self> {
-        self.args.rewrite(rewriter, engine).map(|args| {
-            engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
-        })
-    }
-}
-
-impl RewriteAsync for Interned<EffectLabel> {
-    async fn rewrite_async(
-        &self,
-        rewriter: &mut impl TyRewriterAsync,
-        engine: &TrackedEngine,
-    ) -> Option<Self> {
-        self.args.rewrite_async(rewriter, engine).await.map(|args| {
+impl TyFoldable for Interned<EffectLabel> {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
+        self.args.fold_with(folder, engine).await.map(|args| {
             engine.intern(EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
         })
     }
@@ -95,7 +57,7 @@ impl EffectLabel {
         );
         let label = engine.intern(Self::new(effect_symbol_id, arguments));
 
-        label.apply_subst_or_clone(substitution, engine)
+        label.apply_subst_or_clone(substitution, engine).await
     }
 
     #[must_use]
@@ -160,8 +122,10 @@ pub struct EffectRow {
 }
 
 impl EffectRow {
+    /// Creates the row as given; [`Ty::new_effect_row`] is the constructor
+    /// that keeps rows flattened.
     #[must_use]
-    pub fn new(
+    pub(super) fn new(
         labels: impl IntoIterator<Item = Interned<EffectLabel>>,
         tail: Option<Interned<Ty>>,
         engine: &TrackedEngine,
@@ -262,114 +226,52 @@ impl<'a> MatchedLabels<'a> {
     }
 }
 
-impl Reduce for EffectRow {
-    async fn reduce(
+impl EffectRow {
+    /// Folds the labels before the tail, flattening a tail that became a row;
+    /// see [`Ty::super_fold_with`].
+    pub(crate) async fn fold_with(
         &self,
+        folder: &mut impl TyFolder,
         engine: &TrackedEngine,
-        givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<(Self, OutlivesConstraints)> {
-        if let Some(Ty::EffectRow(tail_row)) = self.tail.as_deref() {
-            // reduce the case like `{A, B | {}}` to `{A, B}`.
-            if tail_row.labels.is_empty() && tail_row.tail.is_none() {
-                let row = Self { labels: self.labels.clone(), tail: None };
-                return Some((row, OutlivesConstraints::new()));
-            }
-
-            let row = Self::new(
-                self.labels.iter().cloned().chain(tail_row.labels.iter().cloned()),
-                tail_row.tail.clone(),
-                engine,
-            );
-            return Some((row, OutlivesConstraints::new()));
-        }
-
-        if let Some((labels, outlives)) = self.labels.reduce(engine, givens).await {
-            return Some((Self { labels, tail: self.tail.clone() }, outlives));
-        }
-
-        if let Some(tail) = &self.tail
-            && let Some((tail, outlives)) = tail.reduce(engine, givens).await
-        {
-            return Some((Self { labels: self.labels.clone(), tail: Some(tail) }, outlives));
-        }
-        None
-    }
-}
-
-impl Substitutable for EffectRow {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        let new_labels = self.labels.apply_subst(subst, engine);
-        let new_tail = self.tail.as_ref().and_then(|x| x.apply_subst(subst, engine));
-
-        match (new_labels, new_tail) {
-            (None, None) => None,
-            (None, Some(new_tail)) => {
-                Some(Self { labels: self.labels.clone(), tail: Some(new_tail) })
-            }
-            (Some(new_labels), None) => Some(Self { labels: new_labels, tail: self.tail.clone() }),
-            (Some(new_labels), Some(new_tail)) => {
-                Some(Self { labels: new_labels, tail: Some(new_tail) })
-            }
-        }
-    }
-}
-
-impl Rewrite for EffectRow {
-    fn rewrite(&self, rewriter: &mut impl TyRewriter, engine: &TrackedEngine) -> Option<Self> {
-        // The labels are visited before the tail.
-        let new_labels = self.labels.rewrite(rewriter, engine);
-        let new_tail = self.tail.as_ref().and_then(|tail| tail.rewrite(rewriter, engine));
-
-        if new_labels.is_none() && new_tail.is_none() {
-            return None;
-        }
-
-        Some(Self {
-            labels: new_labels.unwrap_or_else(|| self.labels.clone()),
-            tail: new_tail.or_else(|| self.tail.clone()),
-        })
-    }
-}
-
-impl RewriteAsync for EffectRow {
-    async fn rewrite_async(
-        &self,
-        rewriter: &mut impl TyRewriterAsync,
-        engine: &TrackedEngine,
-    ) -> Option<Self> {
-        // The labels are visited before the tail.
-        let new_labels = self.labels.rewrite_async(rewriter, engine).await;
+    ) -> Option<Interned<Ty>> {
+        let new_labels = self.labels.fold_with(folder, engine).await;
         let new_tail = match &self.tail {
-            Some(tail) => tail.rewrite_async(rewriter, engine).await,
+            Some(tail) => tail.fold_with(folder, engine).await,
             None => None,
         };
 
+        self.rebuild(new_labels, new_tail, engine)
+    }
+
+    /// Rebuilds the row with whichever parts changed, or returns `None` when
+    /// neither did.
+    fn rebuild(
+        &self,
+        new_labels: Option<Interned<[Interned<EffectLabel>]>>,
+        new_tail: Option<Interned<Ty>>,
+        engine: &TrackedEngine,
+    ) -> Option<Interned<Ty>> {
         if new_labels.is_none() && new_tail.is_none() {
             return None;
         }
 
-        Some(Self {
-            labels: new_labels.unwrap_or_else(|| self.labels.clone()),
-            tail: new_tail.or_else(|| self.tail.clone()),
-        })
+        let labels = new_labels.unwrap_or_else(|| self.labels.clone());
+        let tail = new_tail.or_else(|| self.tail.clone());
+        Some(Ty::new_effect_row(labels.iter().cloned(), tail, engine))
     }
-}
 
-impl EffectRow {
+    /// Returns the row with a fresh row variable as its tail if it is closed.
     pub(super) fn open_closed_row(
         &self,
         infer_gen: &mut impl GenInfer,
         engine: &TrackedEngine,
-    ) -> Option<Self> {
-        if let Some(eng) = self.tail.as_ref() {
-            let new_tail = Ty::open_closed_row(eng, infer_gen, engine);
-            new_tail.map(|new_tail| Self { labels: self.labels.clone(), tail: Some(new_tail) })
-        } else {
-            let new_tail = engine.intern(Ty::Inference(infer_gen.gen_effect_row_infer()));
-            Some(Self { labels: self.labels.clone(), tail: Some(new_tail) })
+    ) -> Option<Interned<Ty>> {
+        // A flattened row's tail is never a row, so an open row stays open.
+        if self.tail.is_some() {
+            return None;
         }
+
+        let new_tail = engine.intern(Ty::Inference(infer_gen.gen_effect_row_infer()));
+        Some(Ty::new_effect_row(self.labels.iter().cloned(), Some(new_tail), engine))
     }
 }

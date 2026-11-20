@@ -1,9 +1,7 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
 
 use crate::{
-    reduce::Reduce,
-    rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
-    subst::Substitutable,
+    fold::{TyFoldable, TyFolder},
     ty::{Ty, inference::Inference},
 };
 
@@ -61,46 +59,13 @@ impl Args {
     pub fn contains_error(&self) -> bool { self.iter().any(Ty::contains_error) }
 }
 
-impl Reduce for Args {
-    async fn reduce(
+impl TyFoldable for Args {
+    async fn fold_with(
         &self,
-        engine: &rayc_qbice::TrackedEngine,
-        givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<(Self, crate::constraint::outlives::OutlivesConstraints)> {
-        self.args.reduce(engine, givens).await.map(|(args, outlives)| (Self { args }, outlives))
-    }
-}
-
-impl Substitutable for Args {
-    fn apply_subst(
-        &self,
-        subst: &crate::subst::Subst,
-        engine: &rayc_qbice::TrackedEngine,
-    ) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        self.args.apply_subst(subst, engine).map(|args| Self { args })
-    }
-}
-
-impl Rewrite for Args {
-    fn rewrite(
-        &self,
-        rewriter: &mut impl TyRewriter,
+        folder: &mut impl TyFolder,
         engine: &rayc_qbice::TrackedEngine,
     ) -> Option<Self> {
-        self.args.rewrite(rewriter, engine).map(|args| Self { args })
-    }
-}
-
-impl RewriteAsync for Args {
-    async fn rewrite_async(
-        &self,
-        rewriter: &mut impl TyRewriterAsync,
-        engine: &rayc_qbice::TrackedEngine,
-    ) -> Option<Self> {
-        self.args.rewrite_async(rewriter, engine).await.map(|args| Self { args })
+        self.args.fold_with(folder, engine).await.map(|args| Self { args })
     }
 }
 

@@ -1,32 +1,21 @@
-use qbice::storage::intern::Interned;
-use rayc_qbice::TrackedEngine;
-
 use crate::{
-    subst::{Subst, Substitutable},
+    subst::Var,
     ty::{Ty, lifetime::Lifetime},
 };
 
-impl Substitutable for Interned<Ty> {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match &**self {
-            Ty::Application(application) => application
-                .apply_subst(subst, engine)
-                .map(|application| engine.intern(Ty::Application(application))),
+impl Ty {
+    /// Returns the variable this type is, which a substitution may replace.
+    pub(crate) const fn as_var(&self) -> Option<Var> {
+        match self {
+            Self::Inference(inference) => Some(Var::Inference(*inference)),
+            Self::PolyVar(poly) => Some(Var::Poly(*poly)),
+            Self::SelfInstance(instance) => Some(Var::SelfInstance(*instance)),
+            Self::Lifetime(Lifetime::External(external)) => Some(Var::External(*external)),
 
-            Ty::Inference(ty_inference) => subst.get(ty_inference).cloned(),
-            Ty::PolyVar(poly) => subst.get(poly).cloned(),
-            Ty::SelfInstance(instance) => subst.get(instance).cloned(),
-            Ty::EffectRow(row) => {
-                row.apply_subst(subst, engine).map(|new_row| engine.intern(Ty::EffectRow(new_row)))
-            }
-            Ty::EffectRow2(row) => {
-                row.apply_subst(subst, engine).map(|new_row| engine.intern(Ty::EffectRow2(new_row)))
-            }
-            Ty::Lifetime(Lifetime::External(external)) => subst.get(external).cloned(),
-            Ty::Lifetime(Lifetime::Static | Lifetime::Erased | Lifetime::Region(_)) => None,
+            Self::Lifetime(Lifetime::Static | Lifetime::Erased | Lifetime::Region(_))
+            | Self::Application(_)
+            | Self::EffectRow(_)
+            | Self::EffectRow2(_) => None,
         }
     }
 }

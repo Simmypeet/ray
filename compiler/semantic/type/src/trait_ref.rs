@@ -9,9 +9,9 @@ use rayc_symbol::{
 };
 
 use crate::{
+    fold::{TyFoldable, TyFolder},
     poly_var::{build_subst_from_args, get_poly_var_map},
-    reduce::Reduce,
-    subst::{Subst, Substitutable},
+    subst::Substitutable,
     ty::{Ty, TyDisplay, application::View as ApplicationView, args::Args},
 };
 
@@ -143,7 +143,7 @@ impl Ty {
                         .ok_or(InstanceTraitRefError::Unresolved)?;
                     let subst =
                         engine.build_subst_from_args(instance.symbol_id(), instance.args()).await;
-                    Ok(head.apply_subst_or_clone(&subst, engine))
+                    Ok(head.apply_subst_or_clone(&subst, engine).await)
                 }
                 ApplicationView::NoOpDropInstance(no_op) => {
                     Ok(core_trait_ref(CoreItem::DropTrait, no_op).await)
@@ -186,21 +186,12 @@ impl Ty {
     }
 }
 
-impl Reduce for TraitRef {
-    async fn reduce(
+impl TyFoldable for TraitRef {
+    async fn fold_with(
         &self,
+        folder: &mut impl TyFolder,
         engine: &rayc_qbice::TrackedEngine,
-        givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<(Self, crate::constraint::outlives::OutlivesConstraints)> {
-        self.args
-            .reduce(engine, givens)
-            .await
-            .map(|(args, outlives)| (Self::new(self.trait_id, args), outlives))
-    }
-}
-
-impl Substitutable for TraitRef {
-    fn apply_subst(&self, subst: &Subst, engine: &rayc_qbice::TrackedEngine) -> Option<Self> {
-        self.args.apply_subst(subst, engine).map(|args| Self::new(self.trait_id, args))
+    ) -> Option<Self> {
+        self.args.fold_with(folder, engine).await.map(|args| Self::new(self.trait_id, args))
     }
 }

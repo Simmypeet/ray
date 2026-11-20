@@ -19,7 +19,6 @@ pub mod effect_row;
 pub mod inference;
 mod inspect;
 pub mod lifetime;
-mod reduce;
 pub mod self_instance;
 mod subst;
 mod view;

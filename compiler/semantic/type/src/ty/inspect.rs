@@ -6,8 +6,8 @@ use rayc_qbice::TrackedEngine;
 use super::effect_row::Matching;
 use crate::{
     constraint::outlives::OutlivesConstraints,
+    fold::{TyFoldable, TyFolder},
     poly_var::{GlobalPolyVarID, get_poly_var_map},
-    rewrite::{RewriteAsync, TyRewriterAsync},
     ty::{
         Ty, TyKind, application::View as ApplicationView, inference::Inference, lifetime::Lifetime,
     },
@@ -221,7 +221,7 @@ impl Ty {
     /// Erases every lifetime so that instantiations differing only in lifetimes
     /// share one monomorphized instance.
     pub async fn erase_lifetimes(ty: &Interned<Self>, engine: &TrackedEngine) -> Interned<Self> {
-        ty.rewrite_async_or_clone(&mut LifetimeEraser { engine }, engine).await
+        ty.fold_or_clone(&mut LifetimeEraser, engine).await
     }
 
     /// Returns whether this type is of kind [`TyKind::Lifetime`].
@@ -383,20 +383,16 @@ impl Ty {
     }
 }
 
-/// The [`TyRewriterAsync`] behind [`Ty::erase_lifetimes`]. It is async
-/// because the kind of a type is queried from the engine.
-struct LifetimeEraser<'e> {
-    engine: &'e TrackedEngine,
-}
+/// The [`TyFolder`] behind [`Ty::erase_lifetimes`].
+struct LifetimeEraser;
 
-impl TyRewriterAsync for LifetimeEraser<'_> {
-    async fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
+impl TyFolder for LifetimeEraser {
+    async fn fold_ty(&mut self, ty: &Interned<Ty>, engine: &TrackedEngine) -> Option<Interned<Ty>> {
         // An erased lifetime is kept as it is, so that a type with nothing
         // left to erase is not rebuilt.
-        if ty.is_lifetime(self.engine).await && **ty != Ty::Lifetime(Lifetime::Erased) {
-            Some(Ty::new_lifetime(Lifetime::Erased, self.engine))
-        } else {
-            None
+        if !ty.is_lifetime(engine).await {
+            return Ty::super_fold_with(ty, self, engine).await;
         }
+        (**ty != Ty::Lifetime(Lifetime::Erased)).then(|| Ty::new_lifetime(Lifetime::Erased, engine))
     }
 }

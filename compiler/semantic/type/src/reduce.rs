@@ -1,260 +1,68 @@
-use qbice::{Identifiable, StableHash, storage::intern::Interned};
+use qbice::storage::intern::Interned;
 use rayc_qbice::TrackedEngine;
-use rayc_symbol::{
-    core_item::{CoreItem, get_core_item},
-    member::get_member_by_name,
-    name::get_name,
-    symbol_kind::{SymbolKind, get_symbol_kind},
-};
 
 use crate::{
     constraint::outlives::OutlivesConstraints,
-    instance_member::get_instance_member,
-    poly_var::{
-        GlobalPolyVarID, build_subst_from_args, get_enclosing_poly_var_maps, get_poly_var_map,
-    },
-    signature::{get_effect_row, get_return_type},
-    subst::Substitutable,
-    ty::{Ty, application::View},
-    type_definition::get_type_definition,
+    fold::{TyFoldable, TyFolder},
+    ty::Ty,
+    where_clause::PredicateKind,
 };
 
-/// Performs a single reduction step.
-pub trait Reduce: Sync {
-    /// Returns the value after one reduction step, with the outlives
-    /// constraints from matched given equalities, or `None` if irreducible.
+/// Rewrites the types in a value that the given equalities reduce.
+///
+/// The smart constructors already take every structural step, so only a
+/// given can rewrite a nested type; rebuilding then takes the structural
+/// steps the rewrite enabled.
+pub trait Reduce: TyFoldable + Sync {
+    /// Rewrites, in one pass, every nested type that matches a given, with the
+    /// outlives constraints of the matches, or returns `None` if none does.
     #[allow(async_fn_in_trait)]
     async fn reduce(
         &self,
         engine: &TrackedEngine,
-        givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<(Self, OutlivesConstraints)>
-    where
-        Self: Sized;
+        givens: &[PredicateKind],
+    ) -> Option<(Self, OutlivesConstraints)> {
+        let mut folder = GivensFolder { givens, outlives: OutlivesConstraints::new() };
+        let reduced = self.fold_with(&mut folder, engine).await?;
+        Some((reduced, folder.outlives))
+    }
 }
 
-impl<T> Reduce for Interned<[T]>
-where
-    T: Reduce + Clone + StableHash + Identifiable + Send + Sync + 'static,
-{
-    async fn reduce(
-        &self,
-        engine: &TrackedEngine,
-        givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<(Self, OutlivesConstraints)> {
-        for (index, value) in self.iter().enumerate() {
-            if let Some((reduced, outlives)) = value.reduce(engine, givens).await {
-                let mut values = self.to_vec();
-                values[index] = reduced;
-                return Some((engine.intern_unsized(values), outlives));
+impl<T: TyFoldable + Sync> Reduce for T {}
+
+/// The [`TyFolder`] behind [`Reduce`], which rewrites a type by the first
+/// given equality whose left side it matches.
+struct GivensFolder<'a> {
+    givens: &'a [PredicateKind],
+    outlives: OutlivesConstraints,
+}
+
+impl TyFolder for GivensFolder<'_> {
+    async fn fold_ty(&mut self, ty: &Interned<Ty>, engine: &TrackedEngine) -> Option<Interned<Ty>> {
+        // A type is matched once its nested types are rewritten, since that
+        // may make it the left side of a given. The replacement is not folded
+        // again in the same pass.
+        let folded = Ty::super_fold_with(ty, self, engine).await;
+        let current = folded.as_ref().unwrap_or(ty);
+
+        for equality in self.givens.iter().filter_map(PredicateKind::as_equality) {
+            // Lifetimes never decide whether a given applies, just as they
+            // never decide which instance is selected. Projection arguments
+            // are invariant, so the lifetimes of a matching given are related
+            // by equality.
+            if equality.right() == current {
+                continue;
+            }
+            if let Some(outlives) =
+                Ty::equal_modulo_lifetimes(equality.left(), current, engine).await
+            {
+                self.outlives = std::mem::take(&mut self.outlives).union(outlives);
+                return Some(equality.right().clone());
             }
         }
-        None
+
+        folded
     }
-}
-
-// TODO: diagnose recursive associated types (e.g. `Item[a] = Instance.Item[(a,
-// a)]`), which may currently stay irreducible or fail to terminate.
-/// Expands a projection by one definition step once its instance and member
-/// correspondence are known.
-pub(crate) async fn reduce_instance_associated(
-    associated: crate::ty::application::InstanceAssociatedView<'_>,
-    engine: &TrackedEngine,
-) -> Option<Interned<crate::ty::Ty>> {
-    // Closure dictionaries carry their signature directly, even during
-    // inference.
-    if let Ty::Application(application) = &**associated.instance()
-        && let View::DefInstance(closure) = application.view()
-    {
-        if !associated.args().is_empty() {
-            return None;
-        }
-        let closure = closure.unwrap_as_closure_view();
-        let member = associated.symbol_id();
-        return if member == engine.get_core_item(CoreItem::DefArgs).await {
-            Some(Ty::new_tuple(engine.intern_unsized(closure.params().to_vec()), engine))
-        } else if member == engine.get_core_item(CoreItem::DefReturn).await {
-            Some(closure.return_type().clone())
-        } else if member == engine.get_core_item(CoreItem::DefEffect).await {
-            Some(closure.effect_row().clone())
-        } else {
-            None
-        };
-    }
-
-    // Coroutine dictionaries are told by the signature of the function that
-    // the coroutine suspends.
-    if let Ty::Application(application) = &**associated.instance()
-        && let View::CoroutineInstance(coroutine) = application.view()
-    {
-        return reduce_coroutine_associated(associated, coroutine, engine).await;
-    }
-
-    // The dictionary that makes a continuation callable is told by the
-    // continuation type and the dictionary of the coroutine it resumes.
-    if let Ty::Application(application) = &**associated.instance()
-        && let View::ContinuationDefInstance(continuation) = application.view()
-    {
-        return reduce_continuation_def_associated(associated, continuation, engine).await;
-    }
-
-    let instance = associated.instance().as_instance_view()?;
-
-    // The projection names a trait member, while the definition belongs to its
-    // same-named implementation in the concrete instance.
-    let name = engine.get_name(associated.symbol_id()).await;
-    let member_id = engine.get_member_by_name(instance.symbol_id(), &name).await?;
-    if engine.get_symbol_kind(member_id).await != SymbolKind::InstanceType {
-        return None;
-    }
-    let member = engine.get_instance_member(member_id).await?;
-    if member.trait_member_id() != associated.symbol_id() {
-        return None;
-    }
-
-    let trait_poly_vars = engine.get_poly_var_map(associated.symbol_id()).await;
-    if trait_poly_vars.len() != associated.args().len() {
-        return None;
-    }
-
-    // Enclosing variables are supplied by the instance application. Translate
-    // member arguments through the checked trait-to-implementation mapping.
-    let mut substitution =
-        engine.build_subst_from_args(instance.symbol_id(), instance.args()).await;
-
-    for ((id, _), argument) in trait_poly_vars.iter().zip(associated.args()) {
-        let trait_var = GlobalPolyVarID::new(associated.symbol_id(), id);
-        let implementation_var = member.poly_var_substitution().get(&trait_var)?.as_poly_var()?;
-
-        substitution.insert(*implementation_var, argument.clone());
-    }
-
-    let definition = engine.get_type_definition(member_id).await;
-    Some(definition.apply_subst_or_clone(&substitution, engine))
-}
-
-/// Reduces the coroutine of a call through an instance to the implementing
-/// method's or closure's coroutine, once the instance is known.
-pub(crate) async fn reduce_trait_def_coroutine(
-    coroutine: crate::ty::application::TraitDefCoroutineView<'_>,
-    engine: &TrackedEngine,
-) -> Option<Interned<Ty>> {
-    // `Def.call` through `DefInstance(C)` runs the body of the closure `C`.
-    // Both coroutine types have the signature of `Def.call` under the same
-    // substitution, so nothing read from the coroutine changes.
-    if let Ty::Application(application) = &**coroutine.instance()
-        && let View::DefInstance(closure_def_instance) = application.view()
-    {
-        if coroutine.trait_def_id() != engine.get_core_item(CoreItem::DefCall).await
-            || !coroutine.args().is_empty()
-        {
-            return None;
-        }
-
-        return Some(Ty::new_closure_coroutine(closure_def_instance.clone(), engine));
-    }
-
-    let instance = coroutine.instance().as_instance_view()?;
-
-    // The trait method and its implementation correspond by name, as for an
-    // associated type.
-    let name = engine.get_name(coroutine.trait_def_id()).await;
-    let member_id = engine.get_member_by_name(instance.symbol_id(), &name).await?;
-    if engine.get_symbol_kind(member_id).await != SymbolKind::InstanceDef {
-        return None;
-    }
-    let member = engine.get_instance_member(member_id).await?;
-    if member.trait_member_id() != coroutine.trait_def_id() {
-        return None;
-    }
-
-    let trait_poly_vars = engine.get_poly_var_map(coroutine.trait_def_id()).await;
-    if trait_poly_vars.len() != coroutine.args().len() {
-        return None;
-    }
-
-    // The instance application supplies the parameters of the instance. The
-    // method's own arguments move to the corresponding parameters of its
-    // implementation.
-    let mut substitution =
-        engine.build_subst_from_args(instance.symbol_id(), instance.args()).await;
-    for ((id, _), argument) in trait_poly_vars.iter().zip(coroutine.args()) {
-        let trait_var = GlobalPolyVarID::new(coroutine.trait_def_id(), id);
-        let implementation_var = member.poly_var_substitution().get(&trait_var)?.as_poly_var()?;
-
-        substitution.insert(*implementation_var, argument.clone());
-    }
-
-    // A coroutine type lists the arguments of the implementation first, then
-    // those of its instance.
-    let poly_vars = engine.get_enclosing_poly_var_maps(member_id).await;
-    let poly_args = poly_vars.create_args_from_subst(&substitution)?;
-
-    Some(Ty::new_def_coroutine(member_id, poly_args, engine))
-}
-
-/// Reduces `Return` or `Effect` of the built-in `Coroutine` dictionary from
-/// the signature of the suspended function.
-async fn reduce_coroutine_associated(
-    associated: crate::ty::application::InstanceAssociatedView<'_>,
-    coroutine: &Interned<Ty>,
-    engine: &TrackedEngine,
-) -> Option<Interned<Ty>> {
-    if !associated.args().is_empty() {
-        return None;
-    }
-    let coroutine = coroutine.as_coroutine_behind_reference()?;
-
-    // Neither associated type depends on where the coroutine is suspended. A
-    // call through an instance that is not known yet is told by the
-    // signature of the trait method.
-    let member = associated.symbol_id();
-    let signature_id = coroutine.signature_id(engine).await;
-    let signature = if member == engine.get_core_item(CoreItem::CoroutineReturn).await {
-        engine.get_return_type(signature_id).await
-    } else if member == engine.get_core_item(CoreItem::CoroutineEffect).await {
-        engine.get_effect_row(signature_id).await
-    } else {
-        return None;
-    };
-
-    let substitution = coroutine.create_subst(engine).await;
-    Some(signature.apply_subst_or_clone(&substitution, engine))
-}
-
-/// Reduces `Args`, `Return` or `Effect` of the built-in `Def` dictionary of a
-/// continuation, which forwards those of its coroutine.
-async fn reduce_continuation_def_associated(
-    associated: crate::ty::application::InstanceAssociatedView<'_>,
-    continuation: crate::ty::application::ContinuationDefInstanceView<'_>,
-    engine: &TrackedEngine,
-) -> Option<Interned<Ty>> {
-    if !associated.args().is_empty() {
-        return None;
-    }
-
-    // `Return` and `Effect` stay projections of the coroutine dictionary,
-    // which may be a given that only a where clause tells more about.
-    let member = associated.symbol_id();
-    let coroutine_member = if member == engine.get_core_item(CoreItem::DefArgs).await {
-        return Some(Ty::new_tuple(
-            engine.intern_unsized([continuation.resume_ty().clone()]),
-            engine,
-        ));
-    } else if member == engine.get_core_item(CoreItem::DefReturn).await {
-        engine.get_core_item(CoreItem::CoroutineReturn).await
-    } else if member == engine.get_core_item(CoreItem::DefEffect).await {
-        engine.get_core_item(CoreItem::CoroutineEffect).await
-    } else {
-        return None;
-    };
-
-    Some(Ty::new_instance_associated(
-        coroutine_member,
-        continuation.coroutine_instance().clone(),
-        [],
-        engine,
-    ))
 }
 
 #[cfg(test)]
@@ -266,10 +74,7 @@ mod tests {
 
     use super::Reduce;
     use crate::ty::{
-        Integer, Primitive, Ty, TyKind,
-        args::Args,
-        effect_row::{EffectLabel, EffectRow},
-        inference::Inference,
+        Integer, Primitive, Ty, TyKind, args::Args, effect_row::EffectLabel, inference::Inference,
     };
 
     fn effect_label(id: u128, engine: &TrackedEngine) -> Interned<EffectLabel> {
@@ -278,8 +83,11 @@ mod tests {
     }
 
     /// Creates an engine that knows `member_id` as an associated type of
-    /// kind `Star`.
-    async fn engine_with_associated_type(member_id: rayc_symbol::GlobalSymbolID) -> TrackedEngine {
+    /// kind `kind`.
+    async fn engine_with_associated_type(
+        member_id: rayc_symbol::GlobalSymbolID,
+        kind: TyKind,
+    ) -> TrackedEngine {
         use std::{collections::HashMap, sync::Arc};
 
         use rayc_qbice::{Engine, InMemoryFactory, PrecomputedExecutor};
@@ -293,71 +101,86 @@ mod tests {
         .unwrap();
         engine.register_executor(Arc::new(PrecomputedExecutor::new(HashMap::from([(
             crate::associated_type_kind::Key { symbol_id: member_id },
-            TyKind::Star,
+            kind,
         )]))));
         Arc::new(engine).tracked().await
     }
 
     // input: {| int32}
     // premise: an effect row with no labels is represented only by its tail
-    // output: int32
+    // output: int32, already at construction
     #[tokio::test]
-    async fn empty_effect_row_reduces_to_its_tail() {
+    async fn effect_row_of_only_a_tail_is_its_tail() {
         let engine = rayc_qbice::create_minimal_engine().await;
         let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
-        let row = Ty::new_effect_row([], Some(int_ty.clone()), &engine);
 
-        assert_eq!(row.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(int_ty));
+        assert_eq!(Ty::new_effect_row([], Some(int_ty.clone()), &engine), int_ty);
     }
 
     // input: {IO | {State | e}}
     // premise: the tail is a concrete effect row
-    // output: {IO, State | e}
+    // output: {IO, State | e}, already at construction
     #[tokio::test]
-    async fn nested_effect_rows_reduce_by_concatenating_labels() {
+    async fn nested_effect_rows_are_flattened() {
         let engine = rayc_qbice::create_minimal_engine().await;
         let io = effect_label(1, &engine);
         let state = effect_label(2, &engine);
         let tail = engine.intern(Ty::Inference(Inference::new(TyKind::EffectRow, 0)));
         let inner = Ty::new_effect_row([state.clone()], Some(tail.clone()), &engine);
-        let outer = EffectRow::new([io.clone()], Some(inner), &engine);
-        let expected = EffectRow::new([io, state], Some(tail), &engine);
+        let outer = Ty::new_effect_row([io.clone()], Some(inner), &engine);
 
-        assert_eq!(outer.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(expected));
+        let Ty::EffectRow(row) = &*outer else { panic!("expected an effect row") };
+        assert_eq!(row.labels().cloned().collect::<Vec<_>>(), [io, state]);
+        assert_eq!(row.tail(), Some(&tail));
     }
 
     // input: {IO | {}}
     // premise: the tail is an empty effect row
-    // output: {IO}
+    // output: {IO}, already at construction
     #[tokio::test]
     async fn empty_effect_row_tail_is_removed() {
         let engine = rayc_qbice::create_minimal_engine().await;
         let io = effect_label(1, &engine);
         let empty = Ty::new_effect_row([], None, &engine);
-        let row = EffectRow::new([io.clone()], Some(empty), &engine);
-        let expected = EffectRow::new([io], None, &engine);
+        let row = Ty::new_effect_row([io.clone()], Some(empty), &engine);
 
-        assert_eq!(row.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(expected));
+        let Ty::EffectRow(row) = &*row else { panic!("expected an effect row") };
+        assert_eq!(row.labels().cloned().collect::<Vec<_>>(), [io]);
+        assert_eq!(row.tail(), None);
     }
 
-    // input: ({| int32}, {| bool})
-    // premise: reduction is a single, left-to-right step
-    // output: (int32, {| bool})
+    // input: (c.Item, c.Item)
+    // premise: c.Item = int32 is given
+    // output: (int32, int32), since one pass rewrites every match
     #[tokio::test]
-    async fn reduction_descends_to_only_the_first_reducible_child() {
-        let engine = rayc_qbice::create_minimal_engine().await;
-        let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
-        let bool_ty = Ty::new_primitive(Primitive::Bool, &engine);
-        let first = Ty::new_effect_row([], Some(int_ty.clone()), &engine);
-        let second = Ty::new_effect_row([], Some(bool_ty), &engine);
-        let tuple = Ty::new_tuple(engine.intern_unsized([first, second.clone()]), &engine);
-        let expected = Ty::new_tuple(engine.intern_unsized([int_ty, second]), &engine);
+    async fn reduction_rewrites_every_match_in_one_pass() {
+        use crate::{
+            ty::self_instance::SelfInstance,
+            where_clause::{AssociatedTypeEquality, PredicateKind},
+        };
 
-        assert_eq!(tuple.reduce(&engine, &[]).await.map(|(reduced, _)| reduced), Some(expected));
+        let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
+        let member_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
+        let engine = engine_with_associated_type(member_id, TyKind::Star).await;
+        let dictionary = engine.intern(Ty::SelfInstance(SelfInstance::new(trait_id)));
+        let projection = Ty::new_instance_associated(member_id, dictionary, [], &engine).await;
+        let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
+        let givens = [PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
+            projection.clone(),
+            int_ty.clone(),
+        ))];
+        let tuple =
+            Ty::new_tuple(engine.intern_unsized([projection.clone(), projection.clone()]), &engine);
+        let expected = Ty::new_tuple(engine.intern_unsized([int_ty.clone(), int_ty]), &engine);
+
+        assert_eq!(
+            tuple.reduce(&engine, &givens).await.map(|(reduced, _)| reduced),
+            Some(expected)
+        );
     }
 
     // input: {IO}
-    // premise: the row has neither a tail nor a reducible descendant
+    // premise: the row has no type that a given rewrites
     // output: no reduction
     #[tokio::test]
     async fn irreducible_effect_row_returns_none() {
@@ -379,9 +202,9 @@ mod tests {
 
         let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
         let member_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
-        let engine = engine_with_associated_type(member_id).await;
+        let engine = engine_with_associated_type(member_id, TyKind::Star).await;
         let dictionary = engine.intern(Ty::SelfInstance(SelfInstance::new(trait_id)));
-        let projection = Ty::new_instance_associated(member_id, dictionary, [], &engine);
+        let projection = Ty::new_instance_associated(member_id, dictionary, [], &engine).await;
         let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
         let givens = [PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
             projection.clone(),
@@ -399,26 +222,33 @@ mod tests {
         );
     }
 
-    // input: an empty effect row with a tail variable
-    // premise: a given maps the row to a different row
-    // output: ordinary reduction returns the tail before consulting givens
+    // input: {IO | c.Effect}
+    // premise: c.Effect = {State} is given
+    // output: {IO, State}, since rebuilding the row flattens its new tail
     #[tokio::test]
-    async fn reduction_prefers_structural_steps() {
+    async fn rewriting_a_row_tail_flattens_the_row() {
         use crate::{
-            ty::{effect_row::EffectRow, inference::Inference},
+            ty::self_instance::SelfInstance,
             where_clause::{AssociatedTypeEquality, PredicateKind},
         };
 
-        let engine = rayc_qbice::create_minimal_engine().await;
-        let tail = engine.intern(Ty::Inference(Inference::new(TyKind::EffectRow, 0)));
-        let row = engine.intern(Ty::EffectRow(EffectRow::new([], Some(tail.clone()), &engine)));
-        let other = engine.intern(Ty::EffectRow(EffectRow::new([], None, &engine)));
+        let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
+        let member_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
+        let engine = engine_with_associated_type(member_id, TyKind::EffectRow).await;
+        let io = effect_label(3, &engine);
+        let state = effect_label(4, &engine);
+        let dictionary = engine.intern(Ty::SelfInstance(SelfInstance::new(trait_id)));
+        let projection = Ty::new_instance_associated(member_id, dictionary, [], &engine).await;
         let givens = [PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
-            row.clone(),
-            other,
+            projection.clone(),
+            Ty::new_effect_row([state.clone()], None, &engine),
         ))];
+        let row = Ty::new_effect_row([io.clone()], Some(projection), &engine);
 
-        assert_eq!(row.reduce(&engine, &givens).await.map(|(reduced, _)| reduced), Some(tail));
+        let (reduced, _) = row.reduce(&engine, &givens).await.expect("the tail is given");
+        let Ty::EffectRow(reduced) = &*reduced else { panic!("expected an effect row") };
+        assert_eq!(reduced.labels().cloned().collect::<Vec<_>>(), [io, state]);
+        assert_eq!(reduced.tail(), None);
     }
 
     // input: this.Out['?1]
@@ -433,21 +263,21 @@ mod tests {
 
         let trait_id = TargetID::TEST.make_global(SymbolID::from_u128(1));
         let member_id = TargetID::TEST.make_global(SymbolID::from_u128(2));
-        let engine = engine_with_associated_type(member_id).await;
+        let engine = engine_with_associated_type(member_id, TyKind::Star).await;
         let this = engine.intern(Ty::SelfInstance(SelfInstance::new(trait_id)));
         let region =
             |index| Ty::new_lifetime(Lifetime::Region(rayc_arena::ID::new(index)), &engine);
         let (given, used) = (region(0), region(1));
-        let out = |lifetime: &Interned<Ty>| {
-            Ty::new_instance_associated(member_id, this.clone(), [lifetime.clone()], &engine)
+        let out = async |lifetime: &Interned<Ty>| {
+            Ty::new_instance_associated(member_id, this.clone(), [lifetime.clone()], &engine).await
         };
         let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
         let reference = Ty::new_reference(given.clone(), int_ty, Mutability::Immutable, &engine);
         let givens = [PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(
-            out(&given),
+            out(&given).await,
             reference.clone(),
         ))];
-        let reduced = out(&used).reduce(&engine, &givens).await;
+        let reduced = out(&used).await.reduce(&engine, &givens).await;
 
         let outlives = [
             OutlivesPredicate::new(given.clone(), used.clone()),
@@ -456,9 +286,3 @@ mod tests {
         assert_eq!(reduced, Some((reference, outlives.into_iter().collect())));
     }
 }
-
-#[cfg(test)]
-mod associated_type_tests;
-
-#[cfg(test)]
-mod closure_coroutine_tests;

@@ -2,8 +2,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned}
 use rayc_qbice::TrackedEngine;
 
 use crate::{
-    rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
-    subst::{Subst, Substitutable},
+    fold::{TyFoldable, TyFolder},
     ty::{Ty, TyKind, application::View, effect_row::EffectLabel, inference::Inference},
 };
 
@@ -202,28 +201,13 @@ pub enum AtomState {
     Stuck,
 }
 
-impl Substitutable for EffectRow2 {
-    fn apply_subst(&self, _subst: &Subst, _engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        todo!("EffectRow2: implement apply_subst")
-    }
-}
-
-impl Rewrite for EffectRow2 {
-    fn rewrite(&self, _rewriter: &mut impl TyRewriter, _engine: &TrackedEngine) -> Option<Self> {
-        todo!("EffectRow2: implement rewrite")
-    }
-}
-
-impl RewriteAsync for EffectRow2 {
-    async fn rewrite_async(
+impl TyFoldable for EffectRow2 {
+    async fn fold_with(
         &self,
-        _rewriter: &mut impl TyRewriterAsync,
+        _folder: &mut impl TyFolder,
         _engine: &TrackedEngine,
     ) -> Option<Self> {
-        todo!("EffectRow2: implement rewrite_async")
+        todo!("EffectSystem2: fold the atoms and rebuild through a smart constructor")
     }
 }
 

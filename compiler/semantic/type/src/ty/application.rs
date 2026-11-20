@@ -4,6 +4,9 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::{
     GlobalSymbolID,
     core_item::{CoreItem, get_core_item},
+    member::get_member_by_name,
+    name::get_name,
+    symbol_kind::{SymbolKind, get_symbol_kind},
 };
 
 use super::{
@@ -11,10 +14,14 @@ use super::{
     self_instance::SelfInstance,
 };
 use crate::{
-    poly_var::{build_subst_from_args, get_enclosing_poly_var_maps},
-    reduce::Reduce,
-    rewrite::{Rewrite, RewriteAsync, TyRewriter, TyRewriterAsync},
+    fold::{TyFoldable, TyFolder},
+    instance_member::get_instance_member,
+    poly_var::{
+        GlobalPolyVarID, build_subst_from_args, get_enclosing_poly_var_maps, get_poly_var_map,
+    },
+    signature::{get_effect_row, get_return_type},
     subst::{Subst, Substitutable},
+    type_definition::get_type_definition,
     variance::{Variance, VarianceMap, get_variance},
 };
 
@@ -786,11 +793,15 @@ impl Application {
         })
     }
 
-    /// Returns the same type constructor applied to `args`.
-    #[must_use]
-    pub fn with_arguments(&self, args: Interned<[Interned<Ty>]>) -> Self {
+    /// Returns the same type constructor applied to `args`, reduced if that
+    /// makes a projection's instance known.
+    pub async fn with_arguments(
+        &self,
+        args: Interned<[Interned<Ty>]>,
+        engine: &TrackedEngine,
+    ) -> Interned<Ty> {
         assert_eq!(args.len(), self.args.len(), "a type constructor keeps its arity");
-        Self { constant: self.constant, args }
+        Ty::new_application(Self { constant: self.constant, args }, engine).await
     }
 
     /// Returns the variance of the argument position `index`; see
@@ -966,43 +977,256 @@ impl Application {
     }
 }
 
-impl Reduce for Application {
-    async fn reduce(
-        &self,
+impl Application {
+    /// Expands this projection once its instance is known, or returns `None`
+    /// if it stays a projection; see [`Ty::new_application`].
+    pub(super) async fn reduce_projection(&self, engine: &TrackedEngine) -> Option<Interned<Ty>> {
+        match self.view() {
+            View::InstanceAssociated(associated) => associated.reduce(engine).await,
+            View::TraitDefCoroutine(coroutine) => coroutine.reduce(engine).await,
+
+            View::Primitive(_)
+            | View::Tuple(_)
+            | View::Pointer(_)
+            | View::Reference(_)
+            | View::Struct(_)
+            | View::Enum(_)
+            | View::Instance(_)
+            | View::Closure(_)
+            | View::DefInstance(_)
+            | View::NoOpDropInstance(_)
+            | View::TupleDropInstance(_)
+            | View::ClosureDropInstance(_)
+            | View::GeneratedAdtDropInstance(_)
+            | View::DefCoroutine(_)
+            | View::ClosureCoroutine(_)
+            | View::CoroutineInstance(_)
+            | View::ContinuationDefInstance(_)
+            | View::CoroutineDropInstance(_)
+            | View::Error => None,
+        }
+    }
+}
+
+impl InstanceAssociatedView<'_> {
+    // TODO: diagnose recursive associated types (e.g. `Item[a] =
+    // Instance.Item[(a, a)]`), which may currently fail to terminate.
+    /// Expands the projection by one definition step once its instance and
+    /// member correspondence are known.
+    async fn reduce(self, engine: &TrackedEngine) -> Option<Interned<Ty>> {
+        // Closure dictionaries carry their signature directly, even during
+        // inference.
+        if let Ty::Application(application) = &**self.instance
+            && let View::DefInstance(closure) = application.view()
+        {
+            if !self.args.is_empty() {
+                return None;
+            }
+            let closure = closure.unwrap_as_closure_view();
+            return if self.symbol_id == engine.get_core_item(CoreItem::DefArgs).await {
+                Some(Ty::new_tuple(engine.intern_unsized(closure.params().to_vec()), engine))
+            } else if self.symbol_id == engine.get_core_item(CoreItem::DefReturn).await {
+                Some(closure.return_type().clone())
+            } else if self.symbol_id == engine.get_core_item(CoreItem::DefEffect).await {
+                Some(closure.effect_row().clone())
+            } else {
+                None
+            };
+        }
+
+        // Coroutine dictionaries are told by the signature of the function
+        // that the coroutine suspends.
+        if let Ty::Application(application) = &**self.instance
+            && let View::CoroutineInstance(coroutine) = application.view()
+        {
+            return self.reduce_through_coroutine(coroutine, engine).await;
+        }
+
+        // The dictionary that makes a continuation callable is told by the
+        // continuation type and the dictionary of the coroutine it resumes.
+        if let Ty::Application(application) = &**self.instance
+            && let View::ContinuationDefInstance(continuation) = application.view()
+        {
+            return self.reduce_through_continuation(continuation, engine).await;
+        }
+
+        let instance = self.instance.as_instance_view()?;
+
+        // The projection names a trait member, while the definition belongs to
+        // its same-named implementation in the concrete instance.
+        let name = engine.get_name(self.symbol_id).await;
+        let member_id = engine.get_member_by_name(instance.symbol_id(), &name).await?;
+        if engine.get_symbol_kind(member_id).await != SymbolKind::InstanceType {
+            return None;
+        }
+        let member = engine.get_instance_member(member_id).await?;
+        if member.trait_member_id() != self.symbol_id {
+            return None;
+        }
+
+        let trait_poly_vars = engine.get_poly_var_map(self.symbol_id).await;
+        if trait_poly_vars.len() != self.args.len() {
+            return None;
+        }
+
+        // Enclosing variables are supplied by the instance application.
+        // Translate member arguments through the checked trait-to-implementation
+        // mapping.
+        let mut substitution =
+            engine.build_subst_from_args(instance.symbol_id(), instance.args()).await;
+        for ((id, _), argument) in trait_poly_vars.iter().zip(self.args) {
+            let trait_var = GlobalPolyVarID::new(self.symbol_id, id);
+            let implementation_var =
+                member.poly_var_substitution().get(&trait_var)?.as_poly_var()?;
+
+            substitution.insert(*implementation_var, argument.clone());
+        }
+
+        let definition = engine.get_type_definition(member_id).await;
+        Some(definition.apply_subst_or_clone(&substitution, engine).await)
+    }
+
+    /// Reduces `Return` or `Effect` of the built-in `Coroutine` dictionary
+    /// from the signature of the suspended function.
+    async fn reduce_through_coroutine(
+        self,
+        coroutine: &Interned<Ty>,
         engine: &TrackedEngine,
-        givens: &[crate::where_clause::PredicateKind],
-    ) -> Option<(Self, crate::constraint::outlives::OutlivesConstraints)> {
-        self.args
-            .reduce(engine, givens)
-            .await
-            .map(|(args, outlives)| (Self { constant: self.constant, args }, outlives))
-    }
-}
+    ) -> Option<Interned<Ty>> {
+        if !self.args.is_empty() {
+            return None;
+        }
+        let coroutine = coroutine.as_coroutine_behind_reference()?;
 
-impl Rewrite for Application {
-    fn rewrite(&self, rewriter: &mut impl TyRewriter, engine: &TrackedEngine) -> Option<Self> {
-        self.args.rewrite(rewriter, engine).map(|args| Self { constant: self.constant, args })
-    }
-}
+        // Neither associated type depends on where the coroutine is
+        // suspended. A call through an instance that is not known yet is told
+        // by the signature of the trait method.
+        let signature_id = coroutine.signature_id(engine).await;
+        let signature = if self.symbol_id == engine.get_core_item(CoreItem::CoroutineReturn).await {
+            engine.get_return_type(signature_id).await
+        } else if self.symbol_id == engine.get_core_item(CoreItem::CoroutineEffect).await {
+            engine.get_effect_row(signature_id).await
+        } else {
+            return None;
+        };
 
-impl RewriteAsync for Application {
-    async fn rewrite_async(
-        &self,
-        rewriter: &mut impl TyRewriterAsync,
+        let substitution = coroutine.create_subst(engine).await;
+        Some(signature.apply_subst_or_clone(&substitution, engine).await)
+    }
+
+    /// Reduces `Args`, `Return` or `Effect` of the built-in `Def` dictionary
+    /// of a continuation, which forwards those of its coroutine.
+    async fn reduce_through_continuation(
+        self,
+        continuation: ContinuationDefInstanceView<'_>,
         engine: &TrackedEngine,
-    ) -> Option<Self> {
-        self.args
-            .rewrite_async(rewriter, engine)
-            .await
-            .map(|args| Self { constant: self.constant, args })
+    ) -> Option<Interned<Ty>> {
+        if !self.args.is_empty() {
+            return None;
+        }
+
+        // `Return` and `Effect` stay projections of the coroutine dictionary,
+        // which may be a given that only a where clause tells more about.
+        let coroutine_member = if self.symbol_id == engine.get_core_item(CoreItem::DefArgs).await {
+            return Some(Ty::new_tuple(
+                engine.intern_unsized([continuation.resume_ty().clone()]),
+                engine,
+            ));
+        } else if self.symbol_id == engine.get_core_item(CoreItem::DefReturn).await {
+            engine.get_core_item(CoreItem::CoroutineReturn).await
+        } else if self.symbol_id == engine.get_core_item(CoreItem::DefEffect).await {
+            engine.get_core_item(CoreItem::CoroutineEffect).await
+        } else {
+            return None;
+        };
+
+        Some(
+            Ty::new_instance_associated(
+                coroutine_member,
+                continuation.coroutine_instance().clone(),
+                [],
+                engine,
+            )
+            .await,
+        )
     }
 }
 
-impl Substitutable for Application {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        self.args.apply_subst(subst, engine).map(|args| Self { constant: self.constant, args })
+impl TraitDefCoroutineView<'_> {
+    /// Reduces the coroutine of a call through an instance to the implementing
+    /// method's or closure's coroutine, once the instance is known.
+    async fn reduce(self, engine: &TrackedEngine) -> Option<Interned<Ty>> {
+        // `Def.call` through `DefInstance(C)` runs the body of the closure
+        // `C`. Both coroutine types have the signature of `Def.call` under the
+        // same substitution, so nothing read from the coroutine changes.
+        if let Ty::Application(application) = &**self.instance
+            && let View::DefInstance(closure_def_instance) = application.view()
+        {
+            if self.trait_def_id != engine.get_core_item(CoreItem::DefCall).await
+                || !self.args.is_empty()
+            {
+                return None;
+            }
+
+            return Some(Ty::new_closure_coroutine(closure_def_instance.clone(), engine));
+        }
+
+        let instance = self.instance.as_instance_view()?;
+
+        // The trait method and its implementation correspond by name, as for
+        // an associated type.
+        let name = engine.get_name(self.trait_def_id).await;
+        let member_id = engine.get_member_by_name(instance.symbol_id(), &name).await?;
+        if engine.get_symbol_kind(member_id).await != SymbolKind::InstanceDef {
+            return None;
+        }
+        let member = engine.get_instance_member(member_id).await?;
+        if member.trait_member_id() != self.trait_def_id {
+            return None;
+        }
+
+        let trait_poly_vars = engine.get_poly_var_map(self.trait_def_id).await;
+        if trait_poly_vars.len() != self.args.len() {
+            return None;
+        }
+
+        // The instance application supplies the parameters of the instance.
+        // The method's own arguments move to the corresponding parameters of
+        // its implementation.
+        let mut substitution =
+            engine.build_subst_from_args(instance.symbol_id(), instance.args()).await;
+        for ((id, _), argument) in trait_poly_vars.iter().zip(self.args) {
+            let trait_var = GlobalPolyVarID::new(self.trait_def_id, id);
+            let implementation_var =
+                member.poly_var_substitution().get(&trait_var)?.as_poly_var()?;
+
+            substitution.insert(*implementation_var, argument.clone());
+        }
+
+        // A coroutine type lists the arguments of the implementation first,
+        // then those of its instance.
+        let poly_vars = engine.get_enclosing_poly_var_maps(member_id).await;
+        let poly_args = poly_vars.create_args_from_subst(&substitution)?;
+
+        Some(Ty::new_def_coroutine(member_id, poly_args, engine))
     }
 }
+
+impl Application {
+    /// Folds the arguments, reducing the application if it is a projection
+    /// whose instance the fold made known; see [`Ty::super_fold_with`].
+    pub(crate) async fn fold_args(
+        &self,
+        folder: &mut impl TyFolder,
+        engine: &TrackedEngine,
+    ) -> Option<Interned<Ty>> {
+        let args = self.args.fold_with(folder, engine).await?;
+        Some(self.with_arguments(args, engine).await)
+    }
+}
+
+#[cfg(test)]
+mod associated_type_tests;
+
+#[cfg(test)]
+mod closure_coroutine_tests;

@@ -10,7 +10,7 @@ use rayc_hash::FxImHashSet;
 use rayc_qbice::TrackedEngine;
 
 use crate::{
-    subst::{Subst, Substitutable},
+    fold::{TyFoldable, TyFolder},
     ty::{Ty, lifetime::Lifetime},
     variance::Variance,
     where_clause::OutlivesPredicate,
@@ -89,22 +89,21 @@ impl FromIterator<OutlivesPredicate> for OutlivesConstraints {
     }
 }
 
-impl Substitutable for OutlivesConstraints {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+impl TyFoldable for OutlivesConstraints {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
         let mut changed = false;
-        let constraints = self
-            .0
-            .iter()
-            .map(|constraint| {
-                constraint.apply_subst(subst, engine).map_or_else(
-                    || constraint.clone(),
-                    |substituted| {
-                        changed = true;
-                        substituted
-                    },
-                )
-            })
-            .collect();
+        let mut constraints = FxImHashSet::default();
+        for constraint in &self.0 {
+            match constraint.fold_with(folder, engine).await {
+                Some(constraint) => {
+                    changed = true;
+                    constraints.insert(constraint);
+                }
+                None => {
+                    constraints.insert(constraint.clone());
+                }
+            }
+        }
         changed.then_some(Self(constraints))
     }
 }
