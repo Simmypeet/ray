@@ -12,7 +12,7 @@ use rayc_ir::{
 };
 use rayc_qbice::TrackedEngine;
 use rayc_type::{
-    rewrite::{RewriteAsync, TyRewriterAsync},
+    fold::{TyFoldable, TyFolder},
     ty::{
         Ty,
         lifetime::{ExternalRegionID, Lifetime},
@@ -128,18 +128,16 @@ const fn next_id<T>(counter: &mut u64) -> ID<T> {
 
 /// Replaces every lifetime in a type that is not universal with a lifetime
 /// from `fresh`.
-struct LifetimeRenumberer<'e, F> {
+struct LifetimeRenumberer<F> {
     fresh: F,
-    engine: &'e TrackedEngine,
 }
 
-impl<F: FnMut() -> Lifetime> TyRewriterAsync for LifetimeRenumberer<'_, F> {
-    async fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
-        if ty.is_lifetime(self.engine).await && !ty.is_universal_region() {
-            Some(Ty::new_lifetime((self.fresh)(), self.engine))
-        } else {
-            None
+impl<F: FnMut() -> Lifetime> TyFolder for LifetimeRenumberer<F> {
+    async fn fold_ty(&mut self, ty: &Interned<Ty>, engine: &TrackedEngine) -> Option<Interned<Ty>> {
+        if !ty.is_lifetime(engine).await {
+            return Ty::super_fold_with(ty, self, engine).await;
         }
+        (!ty.is_universal_region()).then(|| Ty::new_lifetime((self.fresh)(), engine))
     }
 }
 
@@ -150,8 +148,8 @@ async fn renumber_lifetimes(
     fresh: impl FnMut() -> Lifetime,
     engine: &TrackedEngine,
 ) {
-    let mut renumberer = LifetimeRenumberer { fresh, engine };
-    if let Some(renumbered) = ty.rewrite_async(&mut renumberer, engine).await {
+    let mut renumberer = LifetimeRenumberer { fresh };
+    if let Some(renumbered) = ty.fold_with(&mut renumberer, engine).await {
         *ty = renumbered;
     }
 }

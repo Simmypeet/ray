@@ -110,15 +110,15 @@ impl Call {
 }
 
 impl MutSubstitutable for Call {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         match &mut self.target {
             CallTarget::Direct { subst: call_subst, .. }
             | CallTarget::EffectOperation { subst: call_subst, .. } => {
-                call_subst.apply_mut_subst(subst, engine);
+                call_subst.apply_mut_subst(subst, engine).await;
             }
             CallTarget::UnresolvedInstanceAssociated { instance, trait_def_subst, .. } => {
-                instance.apply_in_place(subst, engine);
-                trait_def_subst.apply_mut_subst(subst, engine);
+                instance.apply_in_place(subst, engine).await;
+                trait_def_subst.apply_mut_subst(subst, engine).await;
             }
         }
     }

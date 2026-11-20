@@ -46,8 +46,8 @@ impl TypedClosureContext {
 }
 
 impl MutSubstitutable for TypedClosureContext {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.parameters.apply_mut_subst(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.parameters.apply_mut_subst(subst, engine).await;
     }
 }
 
@@ -71,8 +71,8 @@ impl TypedClosureParameter {
 }
 
 impl MutSubstitutable for TypedClosureParameter {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.ty.apply_in_place(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.ty.apply_in_place(subst, engine).await;
     }
 }
 
@@ -105,9 +105,9 @@ impl TypedClosureParameterMap {
 }
 
 impl MutSubstitutable for TypedClosureParameterMap {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for (_, parameter) in self.parameters.iter_mut_unordered() {
-            parameter.apply_mut_subst(subst, engine);
+            parameter.apply_mut_subst(subst, engine).await;
         }
     }
 }

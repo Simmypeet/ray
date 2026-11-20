@@ -72,7 +72,7 @@ impl ConstraintCollector<'_> {
                 continue;
             };
 
-            let expected = trait_ref.apply_subst_or_clone(substitution, self.solver.engine());
+            let expected = trait_ref.apply_subst_or_clone(substitution, self.solver.engine()).await;
             self.collect_instance(point, instance, &expected).await;
         }
     }
@@ -170,11 +170,11 @@ impl ConstraintCollector<'_> {
                         let substitution = nominal.create_subst(self.solver.engine()).await;
                         let engine = self.solver.engine().clone();
 
-                        let droppeds = plan.requirements().iter().map(|requirement| {
-                            requirement.apply_subst_or_clone(&substitution, &engine)
-                        });
-
-                        for (dropped, dictionary) in droppeds.zip(view.external_instances()) {
+                        for (requirement, dictionary) in
+                            plan.requirements().iter().zip(view.external_instances())
+                        {
+                            let dropped =
+                                requirement.apply_subst_or_clone(&substitution, &engine).await;
                             self.collect_drop_dictionary(point, &dropped, dictionary).await;
                         }
                     }
@@ -247,11 +247,8 @@ impl ConstraintCollector<'_> {
         let substitution = coroutine.create_subst(&engine).await;
         let parameters = engine.get_parameter_map(coroutine.signature_id(&engine).await).await;
 
-        let upvars = parameters
-            .iter()
-            .map(|(_, parameter)| parameter.ty().apply_subst_or_clone(&substitution, &engine));
-
-        for (upvar, dictionary) in upvars.zip(view.upvar_instances()) {
+        for ((_, parameter), dictionary) in parameters.iter().zip(view.upvar_instances()) {
+            let upvar = parameter.ty().apply_subst_or_clone(&substitution, &engine).await;
             self.collect_drop_dictionary(point, &upvar, dictionary).await;
         }
     }

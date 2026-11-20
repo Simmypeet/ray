@@ -78,10 +78,10 @@ impl CapturePlan {
 }
 
 impl MutSubstitutable for CapturePlan {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for plan in self.plans.items_mut() {
             for requirement in &mut plan.captures {
-                requirement.binding_ty.apply_in_place(subst, engine);
+                requirement.binding_ty.apply_in_place(subst, engine).await;
             }
         }
     }

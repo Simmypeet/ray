@@ -513,10 +513,10 @@ impl Solver {
         let engine = self.engine().clone();
         let substitution = view.create_subst(&engine).await;
         let parameters = engine.get_parameter_map(view.signature_id(&engine).await).await;
-        let upvars = parameters
-            .iter()
-            .map(|(_, parameter)| parameter.ty().apply_subst_or_clone(&substitution, &engine))
-            .collect::<Vec<_>>();
+        let mut upvars = Vec::new();
+        for (_, parameter) in parameters.iter() {
+            upvars.push(parameter.ty().apply_subst_or_clone(&substitution, &engine).await);
+        }
 
         let resolution = self
             .resolve_element_drop_instances(
@@ -618,12 +618,8 @@ impl Solver {
             let mut external =
                 ResolvedElementInstances::with_capacity(generated.requirements().len());
 
-            for (index, ty) in generated
-                .requirements()
-                .iter()
-                .map(|ty| ty.apply_subst_or_clone(&substitution, &engine))
-                .enumerate()
-            {
+            for (index, ty) in generated.requirements().iter().enumerate() {
+                let ty = ty.apply_subst_or_clone(&substitution, &engine).await;
                 let requirement = TraitRef::new(drop_trait, Args::new([ty], &engine));
                 let step = Step::DropComponent(DropComponent::DropPlanRequirement(index));
                 external.push(
@@ -781,7 +777,8 @@ impl Solver {
                 let required = parameters
                     .trait_ref_of(parameter_id)
                     .expect("a pending given parameter must have an instance requirement")
-                    .apply_subst_or_clone(&subst, self.engine());
+                    .apply_subst_or_clone(&subst, self.engine())
+                    .await;
 
                 let step =
                     Step::NestedInstanceGiven { instance_id, parameter: global_parameter_id };
@@ -795,7 +792,9 @@ impl Solver {
                     })?;
                 let (argument, nested_obligations, nested_outlives) = resolved.into_parts();
 
-                subst.compose(&Subst::new_singleton(global_parameter_id, argument), self.engine());
+                subst
+                    .compose(&Subst::new_singleton(global_parameter_id, argument), self.engine())
+                    .await;
                 extend_unique_obligations(&mut obligations, nested_obligations);
                 outlives = std::mem::take(&mut outlives).union(nested_outlives);
             }
@@ -816,15 +815,14 @@ impl Solver {
         // Instantiate this candidate's predicates only after every ordinary and
         // given parameter has a selected argument.
         let where_clause = self.engine().get_where_clause(instance_id).await;
-        extend_unique_obligations(
-            &mut obligations,
-            where_clause.predicates().map(|predicate| {
-                InstanceResolutionObligation::new(
-                    instance_id,
-                    predicate.kind().apply_subst_or_clone(&subst, self.engine()),
-                )
-            }),
-        );
+        let mut instantiated = Vec::new();
+        for predicate in where_clause.predicates() {
+            instantiated.push(InstanceResolutionObligation::new(
+                instance_id,
+                predicate.kind().apply_subst_or_clone(&subst, self.engine()).await,
+            ));
+        }
+        extend_unique_obligations(&mut obligations, instantiated);
 
         let term =
             Ty::new_instance(instance_id, Args::new(arguments, self.engine()), self.engine());

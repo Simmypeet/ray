@@ -238,7 +238,7 @@ impl TAstBuilder {
         self.check_field_accessibility(st.symbol_id(), field, name.span).await;
 
         let subst = st.create_subst(self.engine()).await;
-        let field_ty = field.ty().apply_subst_or_clone(&subst, self.engine());
+        let field_ty = field.ty().apply_subst_or_clone(&subst, self.engine()).await;
 
         Some(
             self.insert_expression(

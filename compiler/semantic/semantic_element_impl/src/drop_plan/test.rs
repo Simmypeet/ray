@@ -377,9 +377,9 @@ async fn recursive_field_applies_generated_dictionary_to_explicit_wrapper() {
 }
 
 // input: an explicit Drop[Option[a]] given Drop[a], applied to
-// Option[Impl.Item] premise: Impl.Item definitionally reduces to int32 after
-// head substitution output: the given is a no-op Drop[int32], with no external
-// requirement
+// Option[Impl.Item]
+// premise: Impl.Item definitionally reduces to int32
+// output: the given is a no-op Drop[int32], with no external requirement
 #[tokio::test]
 async fn concrete_associated_argument_does_not_become_external_requirement() {
     let engine = Engine::new_with(
@@ -401,10 +401,6 @@ async fn concrete_associated_argument_does_not_become_external_requirement() {
     let mut engine = Arc::new(engine);
     let tracked = engine.clone().tracked().await;
     let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &tracked);
-    let instance = Ty::new_instance(implementation, Args::new([], &tracked), &tracked);
-    let projection = Ty::new_instance_associated(trait_member, instance, [], &tracked);
-    let option_of_projection = Ty::new_struct(option, Args::new([projection], &tracked), &tracked);
-
     let mut params = PolyVarMap::new();
     let a = params.insert(PolyVar::new_type(tracked.intern_unsized("a"), span())).unwrap();
     let a_ty = tracked.intern(Ty::PolyVar(GlobalPolyVarID::new(option_drop, a)));
@@ -467,7 +463,12 @@ async fn concrete_associated_argument_does_not_become_external_requirement() {
         int_ty.clone(),
     )]))));
 
+    // The projection is built once the engine knows its definition, which
+    // its constructor reduces it by.
     let tracked = engine.tracked().await;
+    let instance = Ty::new_instance(implementation, Args::new([], &tracked), &tracked);
+    let projection = Ty::new_instance_associated(trait_member, instance, [], &tracked).await;
+    let option_of_projection = Ty::new_struct(option, Args::new([projection], &tracked), &tracked);
     let plans =
         FxHashMap::from_iter([(option.id, tracked.intern(DropPlan::Explicit(option_drop)))]);
     let mut evaluator = Evaluator {

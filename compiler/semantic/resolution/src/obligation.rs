@@ -7,6 +7,7 @@ use rayc_qbice::TrackedEngine;
 use rayc_symbol::{GlobalSymbolID, name::get_qualified_name, source_map::to_absolute_span};
 use rayc_type::{
     constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
+    fold::{TyFoldable, TyFolder},
     subst::{Subst, Substitutable},
     ty::Ty,
     where_clause::{MarkerPredicate, OutlivesPredicate, PredicateKind, get_where_clause},
@@ -48,13 +49,12 @@ impl WfCheck {
     /// requires its inferred outlives predicates.
     pub async fn predicate_obligations(&self, engine: &TrackedEngine) -> Vec<PredicateObligation> {
         let where_clause = engine.get_where_clause(self.symbol_id).await;
-        where_clause
-            .predicates()
-            .map(|predicate| {
-                let kind = predicate.kind().apply_subst_or_clone(&self.subst, engine);
-                PredicateObligation::new(kind, self.symbol_id, self.span)
-            })
-            .collect()
+        let mut obligations = Vec::new();
+        for predicate in where_clause.predicates() {
+            let kind = predicate.kind().apply_subst_or_clone(&self.subst, engine).await;
+            obligations.push(PredicateObligation::new(kind, self.symbol_id, self.span));
+        }
+        obligations
     }
 }
 
@@ -86,9 +86,12 @@ impl ReferenceWf {
     pub const fn span(&self) -> RelativeSpan { self.span }
 }
 
-impl Substitutable for ReferenceWf {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
-        match (self.pointee.apply_subst(subst, engine), self.lifetime.apply_subst(subst, engine)) {
+impl TyFoldable for ReferenceWf {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
+        match (
+            self.pointee.fold_with(folder, engine).await,
+            self.lifetime.fold_with(folder, engine).await,
+        ) {
             (None, None) => None,
             (pointee, lifetime) => Some(Self::new(
                 pointee.unwrap_or_else(|| self.pointee.clone()),
@@ -173,10 +176,11 @@ impl PredicateObligation {
     }
 }
 
-impl Substitutable for PredicateObligation {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+impl TyFoldable for PredicateObligation {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
         self.predicate
-            .apply_subst(subst, engine)
+            .fold_with(folder, engine)
+            .await
             .map(|predicate| Self::new(predicate, self.symbol_id, self.span))
     }
 }
@@ -202,10 +206,11 @@ impl TraitRefCheck {
     pub fn into_constraint(self) -> InstanceTraitRef { self.constraint }
 }
 
-impl Substitutable for TraitRefCheck {
-    fn apply_subst(&self, subst: &Subst, engine: &TrackedEngine) -> Option<Self> {
+impl TyFoldable for TraitRefCheck {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
         self.constraint
-            .apply_subst(subst, engine)
+            .fold_with(folder, engine)
+            .await
             .map(|constraint| Self::new(constraint, self.span))
     }
 }

@@ -115,13 +115,13 @@ impl<'x> ImpliedOutlivesCollector<'x> {
             None => (None, Some(self.engine.get_inferred_outlives(view.symbol_id()).await)),
         };
 
-        self.requirements.extend(
-            inferred_in_progress
-                .into_iter()
-                .flatten()
-                .chain(inferred_engine.as_ref().into_iter().flat_map(|x| x.iter().cloned()))
-                .map(|outlives| outlives.apply_subst_or_clone(&subst, self.engine)),
-        );
+        let declared = inferred_in_progress
+            .into_iter()
+            .flatten()
+            .chain(inferred_engine.as_ref().into_iter().flat_map(|x| x.iter().cloned()));
+        for outlives in declared {
+            self.requirements.push(outlives.apply_subst_or_clone(&subst, self.engine).await);
+        }
     }
 }
 

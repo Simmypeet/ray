@@ -87,8 +87,8 @@ impl Fixture {
     fn static_lifetime(&self) -> Interned<Ty> { Ty::new_lifetime(Lifetime::Static, &self.engine) }
 
     /// `Project.Out` projected from the dictionary `d`.
-    fn projection(&self) -> Interned<Ty> {
-        Ty::new_instance_associated(Self::out(), self.dict_d.clone(), [], &self.engine)
+    async fn projection(&self) -> Interned<Ty> {
+        Ty::new_instance_associated(Self::out(), self.dict_d.clone(), [], &self.engine).await
     }
 
     /// The `Project.Out` trait type.
@@ -224,7 +224,9 @@ async fn projection_outlives_when_its_dictionary_and_trait_arguments_do() {
         ])
         .await;
 
-    assert!(solver.entails_outlives(&type_outlives(&fixture.projection(), &fixture.lt_a)).await);
+    assert!(
+        solver.entails_outlives(&type_outlives(&fixture.projection().await, &fixture.lt_a)).await
+    );
 }
 
 // input: d.Out: 'a
@@ -235,7 +237,9 @@ async fn projection_needs_its_dictionary_to_outlive() {
     let fixture = Fixture::new().await;
     let mut solver = fixture.solver([type_outlives(&fixture.ty_t, &fixture.lt_a)]).await;
 
-    assert!(!solver.entails_outlives(&type_outlives(&fixture.projection(), &fixture.lt_a)).await);
+    assert!(
+        !solver.entails_outlives(&type_outlives(&fixture.projection().await, &fixture.lt_a)).await
+    );
 }
 
 // input: d.Out: 'a
@@ -246,12 +250,14 @@ async fn projection_outlives_from_a_fact() {
     let fixture = Fixture::new().await;
     let mut solver = fixture
         .solver([
-            type_outlives(&fixture.projection(), &fixture.lt_b),
+            type_outlives(&fixture.projection().await, &fixture.lt_b),
             region(&fixture.lt_b, &fixture.lt_a),
         ])
         .await;
 
-    assert!(solver.entails_outlives(&type_outlives(&fixture.projection(), &fixture.lt_a)).await);
+    assert!(
+        solver.entails_outlives(&type_outlives(&fixture.projection().await, &fixture.lt_a)).await
+    );
 }
 
 // input: t: '_

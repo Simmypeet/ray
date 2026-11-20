@@ -9,7 +9,7 @@ use rayc_lexical::tree::RelativeSpan;
 use rayc_qbice::TrackedEngine;
 use rayc_solver::Solver;
 use rayc_type::{
-    rewrite::{RewriteAsync, TyRewriterAsync},
+    fold::{TyFoldable, TyFolder},
     ty::{Ty, lifetime::Lifetime},
     where_clause::OutlivesPredicate,
 };
@@ -120,8 +120,8 @@ impl TypeTestChecker<'_> {
         // State the subject over universal regions, which the creator of
         // the function knows, and the programmer wrote.
         let engine = self.solver.engine();
-        let mut promoter = RegionPromoter { graph: self.graph, engine, is_promoted: true };
-        let subject = test.subject().rewrite_async_or_clone(&mut promoter, engine).await;
+        let mut promoter = RegionPromoter { graph: self.graph, is_promoted: true };
+        let subject = test.subject().fold_or_clone(&mut promoter, engine).await;
 
         // The creator of a nested function chooses its external lifetimes,
         // so only the creator can tell what outlives them.
@@ -153,22 +153,24 @@ impl TypeTestChecker<'_> {
 /// constraints make the same lifetime, or with the erased lifetime if none.
 struct RegionPromoter<'a> {
     graph: &'a SubsetGraph,
-    engine: &'a TrackedEngine,
 
     /// Whether every region of the body met so far was replaced with a
     /// universal region.
     is_promoted: bool,
 }
 
-impl TyRewriterAsync for RegionPromoter<'_> {
-    async fn rewrite(&mut self, ty: &Interned<Ty>) -> Option<Interned<Ty>> {
-        if !ty.is_lifetime(self.engine).await || ty.is_universal_region() {
+impl TyFolder for RegionPromoter<'_> {
+    async fn fold_ty(&mut self, ty: &Interned<Ty>, engine: &TrackedEngine) -> Option<Interned<Ty>> {
+        if !ty.is_lifetime(engine).await {
+            return Ty::super_fold_with(ty, self, engine).await;
+        }
+        if ty.is_universal_region() {
             return None;
         }
 
         let promoted = self.graph.equal_universal(ty).cloned();
         self.is_promoted &= promoted.is_some();
 
-        Some(promoted.unwrap_or_else(|| Ty::new_lifetime(Lifetime::Erased, self.engine)))
+        Some(promoted.unwrap_or_else(|| Ty::new_lifetime(Lifetime::Erased, engine)))
     }
 }

@@ -188,14 +188,15 @@ impl ConstraintCollector<'_> {
             let declared = engine.get_parameter_map(handler.operation_id()).await;
             for ((_, parameter), (_, declared)) in context.parameters().zip(declared.iter()) {
                 let declared_ty =
-                    declared.ty().apply_subst_or_clone(run_with.substitution(), engine);
+                    declared.ty().apply_subst_or_clone(run_with.substitution(), engine).await;
                 interface.pair(parameter.ty(), &declared_ty);
             }
 
             let return_ty = engine
                 .get_return_type(handler.operation_id())
                 .await
-                .apply_subst_or_clone(run_with.substitution(), engine);
+                .apply_subst_or_clone(run_with.substitution(), engine)
+                .await;
             interface.pair(context.return_ty(), &return_ty);
             interface.pair(context.effect(), run_with.residual_effect());
         }
@@ -264,7 +265,7 @@ impl ConstraintCollector<'_> {
         let nested = self.nested;
 
         for requirement in nested.of(function_id) {
-            let predicate = requirement.instantiate(instantiation, self.solver.engine());
+            let predicate = requirement.instantiate(instantiation, self.solver.engine()).await;
 
             // Blame the source in the nested function, not the expression
             // creating it.

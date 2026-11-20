@@ -153,7 +153,8 @@ impl PayloadDrops<'_> {
     /// Drops the value at `place` with the plan's recipe `dictionary`.
     async fn drop_owned(&self, emit: &mut Emitter<'_>, place: Place, dictionary: &DictionaryExpr) {
         let engine = emit.engine();
-        let dictionary = dictionary.instantiate(self.substitution, self.external_instances, engine);
+        let dictionary =
+            dictionary.instantiate(self.substitution, self.external_instances, engine).await;
         emit.lower_drop(place, &dictionary, self.destination.clone()).await;
     }
 }

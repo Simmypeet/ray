@@ -182,7 +182,7 @@ impl TraitMember {
             TraitMemberParent::This(instance) => instance.trait_ref(engine).await,
         };
         let mut subst = substitution(trait_ref.trait_id(), trait_ref.args(), engine).await;
-        subst.compose(&substitution(self.symbol_id, &self.args, engine).await, engine);
+        subst.compose(&substitution(self.symbol_id, &self.args, engine).await, engine).await;
         subst
     }
 }
@@ -228,7 +228,7 @@ impl ResolvedInstanceMember {
         };
         let args = Args::new(instance.args().iter().cloned(), engine);
         let mut subst = substitution(instance.symbol_id(), &args, engine).await;
-        subst.compose(&substitution(self.symbol_id, &self.args, engine).await, engine);
+        subst.compose(&substitution(self.symbol_id, &self.args, engine).await, engine).await;
         subst
     }
 }
@@ -283,7 +283,7 @@ impl UnresolvedInstanceMember {
             SelfInstance::new(trait_ref.trait_id()),
             Ty::new_poly_var(self.instance, engine),
         );
-        subst.compose(&substitution(self.trait_member_id, &self.args, engine).await, engine);
+        subst.compose(&substitution(self.trait_member_id, &self.args, engine).await, engine).await;
         subst
     }
 }

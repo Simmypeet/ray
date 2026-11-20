@@ -90,7 +90,8 @@ impl ConstraintCollector<'_> {
                 .get_variant_payload_ty(variant.variant_id())
                 .await
                 .expect("a variant constructed with a payload declares one")
-                .apply_subst_or_clone(&substitution, self.solver.engine());
+                .apply_subst_or_clone(&substitution, self.solver.engine())
+                .await;
             let value_ty = self.function.get_expression(payload).ty();
             self.relate(point, value_ty, &payload_ty, Variance::Covariant).await;
         }

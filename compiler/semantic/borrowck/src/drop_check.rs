@@ -131,7 +131,7 @@ impl DropRegionCollector<'_> {
                     let struct_ = ty.as_struct_view()?;
                     let substitution = struct_.create_subst(self.engine).await;
                     let body = self.engine.get_struct_body(struct_.symbol_id()).await;
-                    body[*field_id].ty().apply_subst_or_clone(&substitution, self.engine)
+                    body[*field_id].ty().apply_subst_or_clone(&substitution, self.engine).await
                 }
 
                 Projection::Deref | Projection::RawDeref => return None,
@@ -246,9 +246,6 @@ impl DropRegionCollector<'_> {
         // payload types keeps its regions, so their regions are the ones
         // collected.
         let substitution = adt.create_subst(self.engine).await;
-        let instantiate = |dictionary: &rayc_semantic_element::drop_plan::DictionaryExpr| {
-            dictionary.instantiate(&substitution, external_instances, self.engine)
-        };
 
         match plan.body() {
             GeneratedDropBody::Struct(fields) => {
@@ -257,8 +254,16 @@ impl DropRegionCollector<'_> {
                 for field in fields {
                     let field_ty = body[field.field_id()]
                         .ty()
-                        .apply_subst_or_clone(&substitution, self.engine);
-                    self.record_drop(&field_ty, &instantiate(field.dictionary())).await;
+                        .apply_subst_or_clone(&substitution, self.engine)
+                        .await;
+                    self.record_drop(
+                        &field_ty,
+                        &field
+                            .dictionary()
+                            .instantiate(&substitution, external_instances, self.engine)
+                            .await,
+                    )
+                    .await;
                 }
             }
 
@@ -271,8 +276,15 @@ impl DropRegionCollector<'_> {
                         .get_variant_payload_ty(variant.variant_id())
                         .await
                         .expect("a variant with a payload dictionary has a payload type")
-                        .apply_subst_or_clone(&substitution, self.engine);
-                    self.record_drop(&payload, &instantiate(dictionary)).await;
+                        .apply_subst_or_clone(&substitution, self.engine)
+                        .await;
+                    self.record_drop(
+                        &payload,
+                        &dictionary
+                            .instantiate(&substitution, external_instances, self.engine)
+                            .await,
+                    )
+                    .await;
                 }
             }
         }

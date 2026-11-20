@@ -251,19 +251,19 @@ impl TypedExpr {
 }
 
 impl MutSubstitutable for TypedExpr {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.ty.apply_in_place(subst, engine);
-        self.effect.apply_in_place(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.ty.apply_in_place(subst, engine).await;
+        self.effect.apply_in_place(subst, engine).await;
 
         match &mut self.kind {
-            TypedExprKind::Call(call) => call.apply_mut_subst(subst, engine),
-            TypedExprKind::Coro(coro) => coro.apply_mut_subst(subst, engine),
-            TypedExprKind::RunWith(run_with) => run_with.apply_mut_subst(subst, engine),
-            TypedExprKind::Handle(handle) => handle.apply_mut_subst(subst, engine),
-            TypedExprKind::IfElse(if_else) => if_else.apply_mut_subst(subst, engine),
-            TypedExprKind::While(while_loop) => while_loop.apply_mut_subst(subst, engine),
-            TypedExprKind::StatementBlock(block) => block.apply_mut_subst(subst, engine),
-            TypedExprKind::Errored(errored) => errored.apply_mut_subst(subst, engine),
+            TypedExprKind::Call(call) => call.apply_mut_subst(subst, engine).await,
+            TypedExprKind::Coro(coro) => coro.apply_mut_subst(subst, engine).await,
+            TypedExprKind::RunWith(run_with) => run_with.apply_mut_subst(subst, engine).await,
+            TypedExprKind::Handle(handle) => handle.apply_mut_subst(subst, engine).await,
+            TypedExprKind::IfElse(if_else) => if_else.apply_mut_subst(subst, engine).await,
+            TypedExprKind::While(while_loop) => while_loop.apply_mut_subst(subst, engine).await,
+            TypedExprKind::StatementBlock(block) => block.apply_mut_subst(subst, engine).await,
+            TypedExprKind::Errored(errored) => errored.apply_mut_subst(subst, engine).await,
             TypedExprKind::Identifier(_)
             | TypedExprKind::Literal(_)
             | TypedExprKind::TupleIndex(_)
@@ -353,9 +353,9 @@ impl TypedExprMap {
 }
 
 impl MutSubstitutable for TypedExprMap {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for expression in self.typed_exprs.items_mut() {
-            expression.apply_mut_subst(subst, engine);
+            expression.apply_mut_subst(subst, engine).await;
         }
     }
 }

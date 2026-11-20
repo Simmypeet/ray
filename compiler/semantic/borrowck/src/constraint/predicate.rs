@@ -27,7 +27,8 @@ impl ConstraintCollector<'_> {
         let predicates = self.solver.engine().get_givens(symbol_id).await;
 
         for predicate in predicates.iter() {
-            let predicate = predicate.apply_subst_or_clone(substitution, self.solver.engine());
+            let predicate =
+                predicate.apply_subst_or_clone(substitution, self.solver.engine()).await;
             self.collect_predicate(point, &predicate).await;
         }
     }

@@ -335,7 +335,8 @@ impl<'a> StackStateProblem<'a> {
                 let engine = self.solver.engine();
                 let substitution = struct_ty.create_subst(engine).await;
                 let body = engine.get_struct_body(struct_ty.symbol_id()).await;
-                let projected = body[field_id].ty().apply_subst_or_clone(&substitution, engine);
+                let projected =
+                    body[field_id].ty().apply_subst_or_clone(&substitution, engine).await;
                 let components = uniform.map(|state| {
                     body.iter()
                         .map(|(id, _)| (Projection::Field(id), PlaceState::Uniform(state.clone())))

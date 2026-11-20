@@ -62,7 +62,7 @@ impl<'a> LayoutContext<'a> {
 
     #[must_use]
     pub(crate) async fn latest_type(&self, ty: &Interned<Ty>, solver: &mut Solver) -> Interned<Ty> {
-        let substed = ty.apply_subst_or_clone(&self.subst, &self.engine);
+        let substed = ty.apply_subst_or_clone(&self.subst, &self.engine).await;
         solver.normalize(&substed).await
     }
 

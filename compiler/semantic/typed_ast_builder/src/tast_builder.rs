@@ -498,7 +498,7 @@ impl TAstBuilder {
 
         self.diagnostics.extend(constr_diags);
         let mut ast = TypedAst::builder().functions(self.function_map).captures(captures).build();
-        ast.apply_mut_subst(&subst, &self.engine);
+        ast.apply_mut_subst(&subst, &self.engine).await;
 
         // An undetermined type is often a consequence of another error, e.g. an
         // errored expression has a fresh type that nothing constrains. As rustc

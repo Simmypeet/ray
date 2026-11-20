@@ -120,9 +120,11 @@ impl Statement {
 }
 
 impl MutSubstitutable for Statement {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         match self {
-            Self::Expression(statement) => statement.drop_instance.apply_in_place(subst, engine),
+            Self::Expression(statement) => {
+                statement.drop_instance.apply_in_place(subst, engine).await;
+            }
             Self::Let(_) | Self::Break(_) | Self::Continue(_) | Self::Return(_) => {}
         }
     }

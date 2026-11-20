@@ -70,8 +70,8 @@ impl NameBinding {
 }
 
 impl MutSubstitutable for NameBinding {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.ty.apply_in_place(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.ty.apply_in_place(subst, engine).await;
     }
 }
 
@@ -190,9 +190,9 @@ impl NameBindingMap {
 }
 
 impl MutSubstitutable for NameBindingMap {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for name_binding in self.name_bindings.items_mut() {
-            name_binding.apply_mut_subst(subst, engine);
+            name_binding.apply_mut_subst(subst, engine).await;
         }
     }
 }

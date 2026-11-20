@@ -129,7 +129,7 @@ impl ResolvedCallTarget<'_> {
                 // Associated types in the signature must use the selected
                 // dictionary.
                 subst.insert(SelfInstance::new(trait_id), instance.clone());
-                subst.compose(call_subst, engine);
+                subst.compose(call_subst, engine).await;
                 subst
             }
         }
@@ -431,7 +431,8 @@ impl TAstBuilder {
         // Def.call's second parameter packages the source value-call arguments.
         // Keep their individual locations available for argument diagnostics.
         for (index, ((_, parameter), argument)) in parameters.iter().zip(arguments).enumerate() {
-            let parameter_ty = parameter.ty().apply_subst_or_clone(signature_subst, self.engine());
+            let parameter_ty =
+                parameter.ty().apply_subst_or_clone(signature_subst, self.engine()).await;
             if index == 1
                 && let Some(value_arguments) = value_arguments
             {
@@ -508,7 +509,7 @@ impl TAstBuilder {
         signature_subst: &Subst,
     ) -> (Interned<Ty>, Interned<Ty>) {
         let return_type = self.engine().get_return_type(target.function_id()).await;
-        let return_type = return_type.apply_subst_or_clone(signature_subst, self.engine());
+        let return_type = return_type.apply_subst_or_clone(signature_subst, self.engine()).await;
 
         // Operations introduce their enclosing effect; other calls use the
         // declaration's effect row instantiated with the selected arguments.
@@ -520,11 +521,13 @@ impl TAstBuilder {
                 Ty::new_effect_row([label], None, self.engine())
             }
             ResolvedCallTarget::Direct { .. }
-            | ResolvedCallTarget::UnresolvedInstanceAssociated { .. } => self
-                .engine()
-                .get_effect_row(target.function_id())
-                .await
-                .apply_subst_or_clone(signature_subst, self.engine()),
+            | ResolvedCallTarget::UnresolvedInstanceAssociated { .. } => {
+                self.engine()
+                    .get_effect_row(target.function_id())
+                    .await
+                    .apply_subst_or_clone(signature_subst, self.engine())
+                    .await
+            }
         };
         (return_type, effect_row)
     }

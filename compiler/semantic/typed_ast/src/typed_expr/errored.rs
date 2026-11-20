@@ -53,11 +53,13 @@ impl Errored {
 }
 
 impl MutSubstitutable for Errored {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for child in &mut self.children {
             match child {
                 ErroredChild::Expression(_) => {}
-                ErroredChild::Statement(statement) => statement.apply_mut_subst(subst, engine),
+                ErroredChild::Statement(statement) => {
+                    statement.apply_mut_subst(subst, engine).await;
+                }
             }
         }
     }

@@ -28,12 +28,12 @@ pub struct ExternalRequirement {
 impl ExternalRequirement {
     /// Returns the predicate with each external region replaced by the region
     /// of the creator that `instantiation` gives it.
-    pub(crate) fn instantiate(
+    pub(crate) async fn instantiate(
         &self,
         instantiation: &Subst,
         engine: &TrackedEngine,
     ) -> OutlivesPredicate {
-        let predicate = self.predicate.apply_subst_or_clone(instantiation, engine);
+        let predicate = self.predicate.apply_subst_or_clone(instantiation, engine).await;
 
         // The creator would take a leftover external region for one of its
         // own, and lose what is required of it.

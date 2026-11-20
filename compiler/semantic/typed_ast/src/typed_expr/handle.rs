@@ -204,7 +204,7 @@ impl Handle {
     /// `Return` of [`Self::coroutine_instance`].
     pub async fn coro_return_ty(&self, engine: &TrackedEngine) -> Interned<Ty> {
         let member = engine.get_core_item(CoreItem::CoroutineReturn).await;
-        Ty::new_instance_associated(member, self.coroutine_instance.clone(), [], engine)
+        Ty::new_instance_associated(member, self.coroutine_instance.clone(), [], engine).await
     }
 
     /// Iterates over every handled effect with its clauses, in no particular
@@ -234,18 +234,18 @@ impl Handle {
 }
 
 impl MutSubstitutable for Handle {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.coroutine_instance.apply_in_place(subst, engine);
-        self.forwarded_effect.apply_in_place(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.coroutine_instance.apply_in_place(subst, engine).await;
+        self.forwarded_effect.apply_in_place(subst, engine).await;
         for effect in self.handled_effects.values_mut() {
-            effect.effect_substitution.apply_mut_subst(subst, engine);
+            effect.effect_substitution.apply_mut_subst(subst, engine).await;
             for clause in &mut effect.clauses {
-                clause.continuation_ty.apply_in_place(subst, engine);
-                clause.arm.apply_mut_subst(subst, engine);
+                clause.continuation_ty.apply_in_place(subst, engine).await;
+                clause.arm.apply_mut_subst(subst, engine).await;
             }
         }
         if let Some(clause) = &mut self.return_clause {
-            clause.arm.apply_mut_subst(subst, engine);
+            clause.arm.apply_mut_subst(subst, engine).await;
         }
     }
 }

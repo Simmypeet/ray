@@ -91,7 +91,7 @@ impl Bind<StructInitializationSyntax> for TAstBuilder {
 
             self.check_field_accessibility(struct_.symbol_id(), field, name.span).await;
 
-            let field_ty = field.ty().apply_subst_or_clone(&subst, self.engine());
+            let field_ty = field.ty().apply_subst_or_clone(&subst, self.engine()).await;
             let expression = self.coerce(*expression, &field_ty).await;
             self.push_struct_field_initialization_constraint(&field_ty, expression).await;
             initializers.push(FieldInitializer::new(field_id, expression));

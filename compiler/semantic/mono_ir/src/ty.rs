@@ -655,7 +655,7 @@ pub async fn lower_type(
     ty: &Interned<Ty>,
     substitution: &Subst,
 ) -> Interned<MonoType> {
-    let ty = ty.apply_subst_or_clone(substitution, solver.engine());
+    let ty = ty.apply_subst_or_clone(substitution, solver.engine()).await;
     let ty = solver.normalize(&ty).await;
 
     // Lifetimes never affect code generation. Erasing them makes nominal
@@ -765,7 +765,7 @@ pub async fn monomorphize_type(
     ty: &Interned<Ty>,
     substitution: &Subst,
 ) -> Interned<Ty> {
-    let ty = ty.apply_subst_or_clone(substitution, self.engine());
+    let ty = ty.apply_subst_or_clone(substitution, self.engine()).await;
     let ty = self.normalize(&ty).await;
 
     Ty::erase_lifetimes(&ty, self.engine()).await
@@ -812,7 +812,7 @@ pub async fn instantiate_effect(
     owner_substitution: &Subst,
 ) -> MonoEffectInstance {
     let mut substitution = substitution.clone();
-    substitution.apply_mut_subst(owner_substitution, self.engine());
+    substitution.apply_mut_subst(owner_substitution, self.engine()).await;
     substitution.erase_lifetimes(self.engine()).await;
     MonoEffectInstance::new(effect_id, substitution, self).await
 }

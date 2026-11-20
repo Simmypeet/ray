@@ -322,10 +322,13 @@ async fn valid_explicit(
     // entailment belongs to a later milestone.
     let original = engine.get_where_clause(nominal_id).await;
     let implementation = engine.get_where_clause(instance_id).await;
-    implementation.predicates().all(|predicate| {
-        let renamed = predicate.kind().apply_subst_or_clone(&rename, engine);
-        original.predicates().any(|nominal_predicate| nominal_predicate.kind() == &renamed)
-    })
+    for predicate in implementation.predicates() {
+        let renamed = predicate.kind().apply_subst_or_clone(&rename, engine).await;
+        if !original.predicates().any(|nominal_predicate| nominal_predicate.kind() == &renamed) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Rechecks every field or payload using the latest available plans.
@@ -507,11 +510,8 @@ impl Evaluator<'_> {
 
                 let mut external = Vec::with_capacity(generated.requirements().len());
 
-                for required in generated
-                    .requirements()
-                    .iter()
-                    .map(|x| x.apply_subst_or_clone(&subst, self.engine))
-                {
+                for required in generated.requirements() {
+                    let required = required.apply_subst_or_clone(&subst, self.engine).await;
                     external.push(self.resolve(required).await?);
                 }
                 Ok(DictionaryExpr::Generated { nominal: ty.clone(), external })
@@ -572,7 +572,7 @@ impl Evaluator<'_> {
         for (id, parameter) in params.iter() {
             if let Some(given) = parameter.trait_ref() {
                 let required = given.args().interned_iter().next().expect("Drop has one argument");
-                let required = required.apply_subst_or_clone(&subst, self.engine);
+                let required = required.apply_subst_or_clone(&subst, self.engine).await;
                 let dictionary = self.resolve(required).await?;
                 arguments.push(DictionaryArgument::Dictionary(Box::new(dictionary)));
             } else {

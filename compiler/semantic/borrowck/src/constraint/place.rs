@@ -229,7 +229,7 @@ impl ConstraintCollector<'_> {
                 let engine = self.solver.engine();
                 let substitution = struct_ty.create_subst(engine).await;
                 let body = engine.get_struct_body(struct_ty.symbol_id()).await;
-                body[field_id].ty().apply_subst_or_clone(&substitution, engine)
+                body[field_id].ty().apply_subst_or_clone(&substitution, engine).await
             }
         }
     }

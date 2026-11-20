@@ -305,8 +305,8 @@ async fn site_givens_include_parents_and_prefer_the_nearest_scope() {
     let owner = TargetID::TEST.make_global(SymbolID::from_u128(11));
     let site = TargetID::TEST.make_global(SymbolID::from_u128(12));
     let dictionary = types.intern(Ty::SelfInstance(SelfInstance::new(owner)));
-    let item = Ty::new_instance_associated(site, dictionary.clone(), [], &types);
-    let other = Ty::new_instance_associated(module, dictionary, [], &types);
+    let item = Ty::new_instance_associated(site, dictionary.clone(), [], &types).await;
+    let other = Ty::new_instance_associated(module, dictionary, [], &types).await;
     let int_ty = Ty::new_primitive(Primitive::Integer(Integer::Int32), &types);
     let bool_ty = Ty::new_primitive(Primitive::Bool, &types);
     let location = RelativeLocation {

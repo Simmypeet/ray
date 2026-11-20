@@ -27,8 +27,8 @@ impl TypedVariable {
 }
 
 impl MutSubstitutable for TypedVariable {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.ty.apply_in_place(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.ty.apply_in_place(subst, engine).await;
     }
 }
 
@@ -50,9 +50,9 @@ impl TypedVariableMap {
 }
 
 impl MutSubstitutable for TypedVariableMap {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for variable in self.variables.items_mut() {
-            variable.apply_mut_subst(subst, engine);
+            variable.apply_mut_subst(subst, engine).await;
         }
     }
 }

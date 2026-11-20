@@ -45,12 +45,12 @@ impl IfElse {
 }
 
 impl MutSubstitutable for IfElse {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for conditional_arm in &mut self.conditional_arms {
-            conditional_arm.arm.apply_mut_subst(subst, engine);
+            conditional_arm.arm.apply_mut_subst(subst, engine).await;
         }
         if let Some(else_arm) = &mut self.else_arm {
-            else_arm.apply_mut_subst(subst, engine);
+            else_arm.apply_mut_subst(subst, engine).await;
         }
     }
 }

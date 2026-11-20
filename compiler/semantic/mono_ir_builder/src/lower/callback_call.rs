@@ -95,7 +95,7 @@ impl Emitter<'_> {
         match call.target() {
             CallTarget::Direct { function_id, subst } => {
                 let mut substitution = subst.clone();
-                ctx.apply_owner_substitution(&mut substitution);
+                ctx.apply_owner_substitution(&mut substitution).await;
                 let callee = resolver.direct_callee(*function_id, substitution).await;
                 self.lower_direct_call_in_callback_style(callee, arguments, destination, ctx).await;
             }

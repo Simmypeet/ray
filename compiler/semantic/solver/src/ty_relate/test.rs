@@ -152,11 +152,11 @@ async fn solve(
     let mut subst = Subst::new_empty();
 
     while let Some(constraint) = pending.pop() {
-        let constraint = constraint.apply_subst_or_clone(&subst, engine);
+        let constraint = constraint.apply_subst_or_clone(&subst, engine).await;
         match entail_step(solver, &constraint).await? {
-            Step::Subst(new_subst) => subst.compose(&new_subst, engine),
+            Step::Subst(new_subst) => subst.compose(&new_subst, engine).await,
             Step::Generalized { subst: new_subst, derived } => {
-                subst.compose(&new_subst, engine);
+                subst.compose(&new_subst, engine).await;
                 pending.extend(derived.into_iter().map(|x| x.ty_relate));
             }
             Step::Derived(constraints) => {
@@ -462,9 +462,11 @@ async fn associated_types_are_not_structurally_decomposed() {
     let id = |n| TargetID::TEST.make_global(SymbolID::from_u128(n));
     let engine = engine_with_associated_types([id(2)]).await;
     let this = engine.intern(Ty::SelfInstance(SelfInstance::new(id(1))));
-    let item = |argument| Ty::new_instance_associated(id(2), this.clone(), [argument], &engine);
-    let int_item = item(Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine));
-    let bool_item = item(Ty::new_primitive(Primitive::Bool, &engine));
+    let item = async |argument| {
+        Ty::new_instance_associated(id(2), this.clone(), [argument], &engine).await
+    };
+    let int_item = item(Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine)).await;
+    let bool_item = item(Ty::new_primitive(Primitive::Bool, &engine)).await;
     let mut solver = Solver::without_givens(engine.clone()).await;
 
     let step = entail_step(&mut solver, &TyRelate::new_invariant(int_item, bool_item)).await;
@@ -483,7 +485,7 @@ async fn syntactically_identical_associated_types_are_discharged() {
     let engine = engine_with_associated_types([id(2)]).await;
     let this = engine.intern(Ty::SelfInstance(SelfInstance::new(id(1))));
     let int32 = Ty::new_primitive(Primitive::Integer(Integer::Int32), &engine);
-    let element = Ty::new_instance_associated(id(2), this, [int32], &engine);
+    let element = Ty::new_instance_associated(id(2), this, [int32], &engine).await;
     let mut solver = Solver::without_givens(engine.clone()).await;
 
     let step = entail_step(&mut solver, &TyRelate::new_invariant(element.clone(), element)).await;
@@ -515,13 +517,13 @@ async fn solve_with_outlives(
     let mut outlives = OutlivesConstraints::new();
 
     while let Some(constraint) = pending.pop() {
-        let constraint = constraint.apply_subst_or_clone(&subst, engine);
+        let constraint = constraint.apply_subst_or_clone(&subst, engine).await;
         let (step, new_outlives) = entail(solver, &constraint).await?;
         outlives = outlives.union(new_outlives);
         match step {
-            Step::Subst(new_subst) => subst.compose(&new_subst, engine),
+            Step::Subst(new_subst) => subst.compose(&new_subst, engine).await,
             Step::Generalized { subst: new_subst, derived } => {
-                subst.compose(&new_subst, engine);
+                subst.compose(&new_subst, engine).await;
                 pending.extend(derived.into_iter().map(|x| x.ty_relate));
             }
             Step::Derived(derived) => pending.extend(derived.into_iter().map(|x| x.ty_relate)),
@@ -760,13 +762,14 @@ async fn rigid_projections_differing_in_lifetimes_relate_them_invariantly() {
     let engine = engine_with_associated_types([id(2)]).await;
     let this = engine.intern(Ty::SelfInstance(SelfInstance::new(id(1))));
     let (a, b) = (region(0, &engine), region(1, &engine));
-    let out = |lifetime: &Interned<Ty>| {
-        Ty::new_instance_associated(id(2), this.clone(), [lifetime.clone()], &engine)
+    let out = async |lifetime: &Interned<Ty>| {
+        Ty::new_instance_associated(id(2), this.clone(), [lifetime.clone()], &engine).await
     };
     let mut solver = Solver::without_givens(engine.clone()).await;
 
     let step =
-        entail_step(&mut solver, &TyRelate::new(out(&a), out(&b), Variance::Covariant)).await;
+        entail_step(&mut solver, &TyRelate::new(out(&a).await, out(&b).await, Variance::Covariant))
+            .await;
 
     assert_eq!(
         step,

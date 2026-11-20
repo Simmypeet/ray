@@ -43,46 +43,76 @@ impl DictionaryExpr {
     /// `substitution` maps the nominal declaration's polymorphic variables to
     /// the nominal's type arguments, and `external_instances` are the
     /// dictionaries chosen for the plan's requirements, in order.
-    #[must_use]
-    pub fn instantiate(
+    pub async fn instantiate(
         &self,
         substitution: &Subst,
         external_instances: &[Interned<Ty>],
         engine: &TrackedEngine,
     ) -> Interned<Ty> {
-        let ty = |ty: &Interned<Ty>| ty.apply_subst_or_clone(substitution, engine);
-        let instantiate =
-            |expression: &Self| expression.instantiate(substitution, external_instances, engine);
-
         match self {
             Self::External(index) => external_instances[*index].clone(),
-            Self::NoOp(no_op) => Ty::new_no_op_drop_instance(ty(no_op), engine),
-            Self::Tuple { tuple, elements } => {
-                Ty::new_tuple_drop_instance(ty(tuple), elements.iter().map(instantiate), engine)
-            }
-            Self::Closure { closure, captures } => {
-                Ty::new_closure_drop_instance(ty(closure), captures.iter().map(instantiate), engine)
-            }
+            Self::NoOp(no_op) => Ty::new_no_op_drop_instance(
+                no_op.apply_subst_or_clone(substitution, engine).await,
+                engine,
+            ),
+            Self::Tuple { tuple, elements } => Ty::new_tuple_drop_instance(
+                tuple.apply_subst_or_clone(substitution, engine).await,
+                Self::instantiate_all(elements, substitution, external_instances, engine).await,
+                engine,
+            ),
+            Self::Closure { closure, captures } => Ty::new_closure_drop_instance(
+                closure.apply_subst_or_clone(substitution, engine).await,
+                Self::instantiate_all(captures, substitution, external_instances, engine).await,
+                engine,
+            ),
 
             // Explicit instance arguments are already in the instance's
             // polymorphic-variable order, which is how instance applications
             // store their arguments.
             Self::Explicit { instance_id, arguments } => {
-                let arguments = arguments.iter().map(|argument| match argument {
-                    DictionaryArgument::Type(argument) => ty(argument),
-                    DictionaryArgument::Dictionary(dictionary) => instantiate(dictionary.as_ref()),
-                });
-                Ty::new_instance(*instance_id, Args::new(arguments, engine), engine)
+                let mut instantiated = Vec::with_capacity(arguments.len());
+                for argument in arguments {
+                    instantiated.push(match argument {
+                        DictionaryArgument::Type(argument) => {
+                            argument.apply_subst_or_clone(substitution, engine).await
+                        }
+                        DictionaryArgument::Dictionary(dictionary) => {
+                            Box::pin(dictionary.instantiate(
+                                substitution,
+                                external_instances,
+                                engine,
+                            ))
+                            .await
+                        }
+                    });
+                }
+                Ty::new_instance(*instance_id, Args::new(instantiated, engine), engine)
             }
 
             // Recursive nominal references stay as dictionaries rather than
             // expanding their recipes.
             Self::Generated { nominal, external } => Ty::new_generated_adt_drop_instance(
-                ty(nominal),
-                external.iter().map(instantiate),
+                nominal.apply_subst_or_clone(substitution, engine).await,
+                Self::instantiate_all(external, substitution, external_instances, engine).await,
                 engine,
             ),
         }
+    }
+
+    /// Instantiates each of `expressions`; see [`Self::instantiate`].
+    async fn instantiate_all(
+        expressions: &[Self],
+        substitution: &Subst,
+        external_instances: &[Interned<Ty>],
+        engine: &TrackedEngine,
+    ) -> Vec<Interned<Ty>> {
+        let mut instantiated = Vec::with_capacity(expressions.len());
+        for expression in expressions {
+            instantiated.push(
+                Box::pin(expression.instantiate(substitution, external_instances, engine)).await,
+            );
+        }
+        instantiated
     }
 }
 

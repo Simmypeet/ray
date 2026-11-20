@@ -212,7 +212,8 @@ impl TAstBuilder {
             .engine()
             .get_return_type(operation)
             .await
-            .apply_subst_or_clone(substitution, self.engine());
+            .apply_subst_or_clone(substitution, self.engine())
+            .await;
         let function_id = self.start_operation_handler(
             operation,
             return_type,
@@ -223,7 +224,8 @@ impl TAstBuilder {
             parameters.iter().map(|(_, parameter)| parameter.ty()),
             parameter_patterns,
             substitution,
-        );
+        )
+        .await;
         if let Some(body) = handler.block() {
             for statement in body.statements().filter_map(rayc_syntax::Passable::into_option) {
                 Box::pin(self.bind_statement(&statement)).await;
@@ -234,7 +236,7 @@ impl TAstBuilder {
         Some(function_id)
     }
 
-    fn bind_operation_handler_parameters<'a>(
+    async fn bind_operation_handler_parameters<'a>(
         &mut self,
         function_id: TypedFunctionID,
         parameter_types: impl Iterator<Item = &'a qbice::storage::intern::Interned<Ty>>,
@@ -243,7 +245,8 @@ impl TAstBuilder {
     ) {
         let parameter_name_binding_group = self.parameter_name_binding_group();
         for (parameter_type, parameter_pattern) in parameter_types.zip(parameter_patterns) {
-            let parameter_type = parameter_type.apply_subst_or_clone(substitution, self.engine());
+            let parameter_type =
+                parameter_type.apply_subst_or_clone(substitution, self.engine()).await;
             let parameter_id =
                 self.insert_operation_handler_parameter(TypedOperationHandlerParameter::new(
                     parameter_type.clone(),

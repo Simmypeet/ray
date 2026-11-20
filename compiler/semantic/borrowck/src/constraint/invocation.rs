@@ -32,7 +32,8 @@ impl ConstraintCollector<'_> {
             .engine()
             .get_effect_row(signature_id)
             .await
-            .apply_subst_or_clone(&substitution, self.solver.engine());
+            .apply_subst_or_clone(&substitution, self.solver.engine())
+            .await;
         self.collect_introduced_effect(point, &effect).await;
 
         // The dispatched dictionary already matches the signature instantiated
@@ -132,7 +133,7 @@ impl ConstraintCollector<'_> {
         let parameters = self.solver.engine().get_parameter_map(signature_id).await;
         for ((_, parameter), argument) in parameters.iter().zip(arguments) {
             let parameter_ty =
-                parameter.ty().apply_subst_or_clone(substitution, self.solver.engine());
+                parameter.ty().apply_subst_or_clone(substitution, self.solver.engine()).await;
             let argument_ty = self.function.get_expression(*argument).ty();
 
             self.relate(point, argument_ty, &parameter_ty, Variance::Covariant).await;
@@ -158,7 +159,8 @@ impl ConstraintCollector<'_> {
             .engine()
             .get_return_type(signature_id)
             .await
-            .apply_subst_or_clone(substitution, self.solver.engine());
+            .apply_subst_or_clone(substitution, self.solver.engine())
+            .await;
         self.relate(point, &return_ty, ty, Variance::Covariant).await;
 
         // The callee assumes its where clause and the trait references of

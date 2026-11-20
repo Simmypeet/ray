@@ -216,7 +216,7 @@ async fn complete_members(
                 continue;
             }
 
-            let field_ty = field.ty().apply_subst_or_clone(&subst, engine);
+            let field_ty = field.ty().apply_subst_or_clone(&subst, engine).await;
             items.push(member_item(engine, field.name().to_string(), &field_ty).await);
         }
     }

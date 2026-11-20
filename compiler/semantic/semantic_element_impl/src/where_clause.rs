@@ -492,7 +492,8 @@ async fn elaborate_callable(
             dictionary.clone(),
             [],
             engine,
-        );
+        )
+        .await;
         predicates.push(Predicate::new(
             PredicateKind::AssociatedTypeEquality(AssociatedTypeEquality::new(left, right)),
             span,

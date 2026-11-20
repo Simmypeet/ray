@@ -267,12 +267,16 @@ impl Resolver<'_> {
         )
     }
 
-    pub(crate) fn apply_subst_to_trait_ref(&self, trait_ref: &TraitRef, subst: &Subst) -> TraitRef {
-        trait_ref.apply_subst_or_clone(subst, self.engine)
+    pub(crate) async fn apply_subst_to_trait_ref(
+        &self,
+        trait_ref: &TraitRef,
+        subst: &Subst,
+    ) -> TraitRef {
+        trait_ref.apply_subst_or_clone(subst, self.engine).await
     }
 
-    pub(crate) fn compose_subst(&self, subst: &mut Subst, new_subst: &Subst) {
-        subst.compose(new_subst, self.engine);
+    pub(crate) async fn compose_subst(&self, subst: &mut Subst, new_subst: &Subst) {
+        subst.compose(new_subst, self.engine).await;
     }
 
     pub(crate) async fn type_kind(&self, ty: &Interned<Ty>) -> TyKind {

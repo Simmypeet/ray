@@ -201,10 +201,14 @@ impl Resolver<'_> {
             .into_iter()
             .zip(parameters.into_iter().flat_map(PolyVarMap::iter).skip(type_parameter_count))
         {
-            let expected_trait_ref = self.apply_subst_to_trait_ref(
-                parameter.trait_ref().expect("a given parameter must have an instance requirement"),
-                subst,
-            );
+            let expected_trait_ref = self
+                .apply_subst_to_trait_ref(
+                    parameter
+                        .trait_ref()
+                        .expect("a given parameter must have an instance requirement"),
+                    subst,
+                )
+                .await;
             let value = if let Some((dictionary, _)) = supplied {
                 let instance = Box::pin(self.resolve_given_dictionary(&dictionary)).await;
                 self.require_instance_trait_ref(
@@ -225,7 +229,8 @@ impl Resolver<'_> {
             self.compose_subst(
                 subst,
                 &Subst::new_singleton(GlobalPolyVarID::new(symbol_id, parameter_id), value.clone()),
-            );
+            )
+            .await;
             arguments.push(value);
         }
         arguments
@@ -316,7 +321,7 @@ impl Resolver<'_> {
                 (GlobalPolyVarID::new(symbol_id, parameter_id), argument.clone())
             })
             .collect();
-        self.compose_subst(&mut subst, &own_subst);
+        self.compose_subst(&mut subst, &own_subst).await;
         resolved.extend(
             self.resolve_given_arguments(
                 path,
@@ -574,6 +579,7 @@ impl Resolver<'_> {
                 args.interned_iter().cloned(),
                 self.engine(),
             )
+            .await
         } else {
             self.report_expected_value_type(path.span());
             self.new_error_type(recovery_kind)

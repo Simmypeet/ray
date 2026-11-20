@@ -69,9 +69,9 @@ impl TypedAst {
 }
 
 impl MutSubstitutable for TypedAst {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.functions.apply_mut_subst(subst, engine);
-        self.captures.apply_mut_subst(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.functions.apply_mut_subst(subst, engine).await;
+        self.captures.apply_mut_subst(subst, engine).await;
     }
 }
 

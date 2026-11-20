@@ -63,12 +63,12 @@ async fn check_where_clause(
 
     let trait_clause = engine.get_where_clause(trait_member_id).await;
     let instance_clause = engine.get_where_clause(instance_member_id).await;
-    let substed_trait_predicates = trait_clause
-        .declared()
-        .map(|predicate| {
-            predicate.kind().apply_subst_or_clone(member.poly_var_substitution(), engine)
-        })
-        .collect::<Vec<_>>();
+    let mut substed_trait_predicates = Vec::new();
+    for predicate in trait_clause.declared() {
+        substed_trait_predicates.push(
+            predicate.kind().apply_subst_or_clone(member.poly_var_substitution(), engine).await,
+        );
+    }
 
     // Both directions receive the same ambient contract: the enclosing
     // instance assumptions and the enclosing trait assumptions translated to
@@ -82,18 +82,18 @@ async fn check_where_clause(
     // trait's where clause, in other words, the trait's givens are already covered
     // by the instance's givens. However, we do this since users might write
     // malformed instances that don't entail the trait's where clause.
-    ambient.extend(
-        engine.get_givens(trait_id).await.iter().map(|predicate| {
-            predicate.apply_subst_or_clone(member.poly_var_substitution(), engine)
-        }),
-    );
+    for predicate in engine.get_givens(trait_id).await.iter() {
+        ambient.push(predicate.apply_subst_or_clone(member.poly_var_substitution(), engine).await);
+    }
 
     // Each direction assumes its member's whole where clause, implied bounds
     // included, while only the declared predicates are compared.
     let mut trait_givens = ambient.clone();
-    trait_givens.extend(trait_clause.predicates().map(|predicate| {
-        predicate.kind().apply_subst_or_clone(member.poly_var_substitution(), engine)
-    }));
+    for predicate in trait_clause.predicates() {
+        trait_givens.push(
+            predicate.kind().apply_subst_or_clone(member.poly_var_substitution(), engine).await,
+        );
+    }
     let mut trait_solver =
         Solver::with_givens(engine.clone(), instance_member_id, trait_givens).await;
 
@@ -190,7 +190,7 @@ async fn check_given_requirements(
         let instance_poly_var = &instance_poly_vars[instance_id.id()];
         let Some(actual) = instance_poly_var.trait_ref() else { continue };
 
-        let expected = expected.apply_subst_or_clone(member.poly_var_substitution(), engine);
+        let expected = expected.apply_subst_or_clone(member.poly_var_substitution(), engine).await;
         let expected = solver.normalize(&expected).await;
         let actual = solver.normalize(actual).await;
         if trait_refs_are_incompatible(solver, &expected, &actual).await {
@@ -229,7 +229,7 @@ async fn check_method_parameters(
             continue;
         }
 
-        let expected = trait_parameter.ty().apply_subst_or_clone(substitution, engine);
+        let expected = trait_parameter.ty().apply_subst_or_clone(substitution, engine).await;
         let expected = solver.normalize(&expected).await;
         let actual = solver.normalize(instance_parameter.ty()).await;
         if types_are_incompatible(solver, &expected, &actual).await {
@@ -250,8 +250,11 @@ async fn check_method_return_type(
     substitution: &Subst,
     compatibility: &Compatibility<'_>,
 ) {
-    let trait_return =
-        engine.get_return_type(trait_member_id).await.apply_subst_or_clone(substitution, engine);
+    let trait_return = engine
+        .get_return_type(trait_member_id)
+        .await
+        .apply_subst_or_clone(substitution, engine)
+        .await;
     let trait_return = solver.normalize(&trait_return).await;
     let instance_return = engine.get_return_type(instance_member_id).await;
     let instance_return = solver.normalize(&instance_return).await;
@@ -279,8 +282,11 @@ async fn check_method_effect_row(
     substitution: &Subst,
     compatibility: &Compatibility<'_>,
 ) {
-    let trait_effect =
-        engine.get_effect_row(trait_member_id).await.apply_subst_or_clone(substitution, engine);
+    let trait_effect = engine
+        .get_effect_row(trait_member_id)
+        .await
+        .apply_subst_or_clone(substitution, engine)
+        .await;
     let trait_effect = solver.normalize(&trait_effect).await;
     let instance_effect = engine.get_effect_row(instance_member_id).await;
     let instance_effect = solver.normalize(&instance_effect).await;

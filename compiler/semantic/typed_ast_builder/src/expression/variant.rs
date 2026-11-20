@@ -27,11 +27,10 @@ impl TAstBuilder {
     ) -> TypedExprID {
         let enum_ = variant.parent();
         let subst = variant.substitution(self.engine()).await;
-        let payload_ty = self
-            .engine()
-            .get_variant_payload_ty(variant.symbol_id())
-            .await
-            .map(|payload_ty| payload_ty.apply_subst_or_clone(&subst, self.engine()));
+        let payload_ty = match self.engine().get_variant_payload_ty(variant.symbol_id()).await {
+            Some(payload_ty) => Some(payload_ty.apply_subst_or_clone(&subst, self.engine()).await),
+            None => None,
+        };
 
         // Check the arguments against the payload the variant declares.
         let payload = match (payload_ty, arguments) {

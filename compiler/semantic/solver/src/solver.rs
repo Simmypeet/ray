@@ -227,10 +227,12 @@ impl Solver {
                     constrs.extend(derived.into_iter().map(|derived| derived.ty_relate));
                 }
                 Step::Subst(new_subst) => {
-                    self.compose_solved_subst(&mut subst, &new_subst, &mut constrs, &mut residual);
+                    self.compose_solved_subst(&mut subst, &new_subst, &mut constrs, &mut residual)
+                        .await;
                 }
                 Step::Generalized { subst: new_subst, derived } => {
-                    self.compose_solved_subst(&mut subst, &new_subst, &mut constrs, &mut residual);
+                    self.compose_solved_subst(&mut subst, &new_subst, &mut constrs, &mut residual)
+                        .await;
                     constrs.extend(derived.into_iter().map(|derived| derived.ty_relate));
                 }
                 // The relation was normalized, so it waits for a binding.
@@ -244,29 +246,29 @@ impl Solver {
 
         // A variable bound after a constraint was produced is still replaced
         // in it.
-        let outlives = outlives.apply_subst_or_clone(&subst, &self.engine);
+        let outlives = outlives.apply_subst_or_clone(&subst, &self.engine).await;
         Some(Solution { subst, outlives })
     }
 
     /// Composes `subst` into the solved substitution, requeueing residual
     /// constraints it changes.
-    fn compose_solved_subst(
+    async fn compose_solved_subst(
         &self,
         subst: &mut Subst,
         new_subst: &Subst,
         constrs: &mut Vec<TyRelate>,
         residual: &mut Vec<TyRelate>,
     ) {
-        subst.compose(new_subst, &self.engine);
+        subst.compose(new_subst, &self.engine).await;
         for constraint in constrs.iter_mut() {
-            constraint.apply_in_place(new_subst, &self.engine);
+            constraint.apply_in_place(new_subst, &self.engine).await;
         }
-        residual.retain(|constraint| {
-            constraint.apply_subst(new_subst, &self.engine).is_none_or(|updated| {
-                constrs.push(updated);
-                false
-            })
-        });
+        for constraint in std::mem::take(residual) {
+            match constraint.apply_subst(new_subst, &self.engine).await {
+                Some(updated) => constrs.push(updated),
+                None => residual.push(constraint),
+            }
+        }
     }
 
     /// Creates a solver without a site or predicates, for monomorphized code

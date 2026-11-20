@@ -173,7 +173,7 @@ impl<'a> Correspondence<'a> {
     /// method signatures. `substitution` moves the trait's own variables and
     /// the paired dictionaries into the instance, so only the members' local
     /// type parameters remain to be paired.
-    fn pair_signatures(
+    async fn pair_signatures(
         &mut self,
         engine: &TrackedEngine,
         expected: &MethodSignature,
@@ -186,16 +186,13 @@ impl<'a> Correspondence<'a> {
         // types may be further reduced and may affect the pairing.
         for ((_, expected), (_, actual)) in expected.parameters.iter().zip(actual.parameters.iter())
         {
-            self.pair_types(&expected.ty().apply_subst_or_clone(substitution, engine), actual.ty());
+            let expected = expected.ty().apply_subst_or_clone(substitution, engine).await;
+            self.pair_types(&expected, actual.ty());
         }
-        self.pair_types(
-            &expected.return_type.apply_subst_or_clone(substitution, engine),
-            &actual.return_type,
-        );
-        self.pair_types(
-            &expected.effect_row.apply_subst_or_clone(substitution, engine),
-            &actual.effect_row,
-        );
+        let expected_return = expected.return_type.apply_subst_or_clone(substitution, engine).await;
+        self.pair_types(&expected_return, &actual.return_type);
+        let expected_effect = expected.effect_row.apply_subst_or_clone(substitution, engine).await;
+        self.pair_types(&expected_effect, &actual.effect_row);
     }
 
     /// Pairs the variables at the same positions of `expected` and `actual`,
@@ -303,7 +300,7 @@ impl<'a> Correspondence<'a> {
 
     /// Composes the mapping from each trait variable to its counterpart into
     /// `substitution`.
-    fn compose_into(&self, substitution: &mut Subst, engine: &TrackedEngine) {
+    async fn compose_into(&self, substitution: &mut Subst, engine: &TrackedEngine) {
         let local_substitution = self
             .pairs()
             .map(|(trait_id, instance_id)| {
@@ -316,7 +313,7 @@ impl<'a> Correspondence<'a> {
                 )
             })
             .collect();
-        substitution.compose(&local_substitution, engine);
+        substitution.compose(&local_substitution, engine).await;
     }
 
     /// Returns every paired trait variable, in declaration order, with its
@@ -379,14 +376,14 @@ pub(super) async fn poly_var_substitution(
             // The dictionaries are paired first, so that the signatures'
             // projections through them, such as `d.Item`, match.
             let mut known = substitution.clone();
-            correspondence.compose_into(&mut known, engine);
-            correspondence.pair_signatures(engine, expected, actual, &known);
+            correspondence.compose_into(&mut known, engine).await;
+            correspondence.pair_signatures(engine, expected, actual, &known).await;
         }
     }
     if !correspondence.check(compatibility) {
         return None;
     }
-    correspondence.compose_into(&mut substitution, engine);
+    correspondence.compose_into(&mut substitution, engine).await;
 
     Some(substitution)
 }

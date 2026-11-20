@@ -47,8 +47,8 @@ impl Coro {
 }
 
 impl MutSubstitutable for Coro {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.coroutine_ty.apply_in_place(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.coroutine_ty.apply_in_place(subst, engine).await;
     }
 }
 

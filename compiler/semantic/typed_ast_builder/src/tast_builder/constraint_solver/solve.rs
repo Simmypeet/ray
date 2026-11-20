@@ -114,8 +114,11 @@ impl TAstBuilder {
         // make sure the new constraints are updated with the latest
         // substitution before we start processing them
         for queued in &mut queued {
-            if let Some(new) =
-                self.constraint_solver.provenance.apply_subst_with_causes(queued, &self.engine)
+            if let Some(new) = self
+                .constraint_solver
+                .provenance
+                .apply_subst_with_causes(queued, &self.engine)
+                .await
             {
                 *queued = new;
             }
@@ -298,7 +301,7 @@ impl TAstBuilder {
         queued: &mut Vec<PendingConstraint>,
     ) {
         let step = self.constraint_solver.solver.entail_ty_relate(&ty_relate).await;
-        self.apply_relate_step(step, Constraint::TyRelate(ty_relate), cause_id, queued);
+        self.apply_relate_step(step, Constraint::TyRelate(ty_relate), cause_id, queued).await;
     }
 
     /// Takes one step towards a function-level relation of effect rows, whose
@@ -329,11 +332,12 @@ impl TAstBuilder {
             step = Ok(retried);
         }
 
-        self.apply_relate_step(step, Constraint::FunctionRowRelate(ty_relate), cause_id, queued);
+        self.apply_relate_step(step, Constraint::FunctionRowRelate(ty_relate), cause_id, queued)
+            .await;
     }
 
     /// Carries out the `step` taken towards the relation `constraint`.
-    fn apply_relate_step(
+    async fn apply_relate_step(
         &mut self,
         step: Result<ty_relate::Entailment, ty_relate::Error>,
         constraint: Constraint,
@@ -351,10 +355,10 @@ impl TAstBuilder {
                 );
             }
 
-            Ok(Step::Subst(subst)) => self.apply_step_subst(&subst, cause_id, queued),
+            Ok(Step::Subst(subst)) => self.apply_step_subst(&subst, cause_id, queued).await,
 
             Ok(Step::Generalized { subst, derived }) => {
-                self.apply_step_subst(&subst, cause_id, queued);
+                self.apply_step_subst(&subst, cause_id, queued).await;
                 queued.extend(
                     derived
                         .into_iter()
@@ -424,34 +428,39 @@ impl TAstBuilder {
 
     /// Composes a substitution produced for the constraint with `cause_id`
     /// and applies it to every pending constraint.
-    fn apply_step_subst(
+    async fn apply_step_subst(
         &mut self,
         subst: &Subst,
         cause_id: CauseID,
         queued: &mut Vec<PendingConstraint>,
     ) {
-        self.constraint_solver.provenance.compose_subst(subst, cause_id, &self.engine);
-        self.move_constraints_from_residual(queued);
+        self.constraint_solver.provenance.compose_subst(subst, cause_id, &self.engine).await;
+        self.move_constraints_from_residual(queued).await;
 
         for queued_constraint in queued {
             if let Some(new_constraint) = self
                 .constraint_solver
                 .provenance
                 .apply_subst_with_causes(queued_constraint, &self.engine)
+                .await
             {
                 *queued_constraint = new_constraint;
             }
         }
     }
 
-    fn move_constraints_from_residual(&mut self, queued: &mut Vec<PendingConstraint>) {
+    async fn move_constraints_from_residual(&mut self, queued: &mut Vec<PendingConstraint>) {
         let mut i = 0;
 
         while i < self.constraint_solver.constraint_set.residual_constraints.len() {
-            let new_constraint = self.constraint_solver.provenance.apply_subst_with_causes(
-                &self.constraint_solver.constraint_set.residual_constraints[i],
-                &self.engine,
-            );
+            let new_constraint = self
+                .constraint_solver
+                .provenance
+                .apply_subst_with_causes(
+                    &self.constraint_solver.constraint_set.residual_constraints[i],
+                    &self.engine,
+                )
+                .await;
 
             match new_constraint {
                 Some(new_constraint) => {
@@ -532,7 +541,10 @@ impl TAstBuilder {
             match step.map(|entailment| entailment.into_parts().0) {
                 Ok(Step::Subst(subst)) => {
                     let cause_id = pending.cause_id;
-                    self.constraint_solver.provenance.compose_subst(&subst, cause_id, &self.engine);
+                    self.constraint_solver
+                        .provenance
+                        .compose_subst(&subst, cause_id, &self.engine)
+                        .await;
                 }
 
                 // An earlier binding already made the variables the same.
@@ -583,7 +595,7 @@ impl TAstBuilder {
             .await;
 
         let mut queued = Vec::new();
-        self.move_constraints_from_residual(&mut queued);
+        self.move_constraints_from_residual(&mut queued).await;
         self.push_constraints(queued).await;
     }
 
@@ -601,22 +613,26 @@ impl TAstBuilder {
         self.constraint_solver.effect_rows_settled = true;
 
         let effect_rows = self.constraint_solver.take_recorded_effect_row_inferences();
-        let excluded = self.constraint_solver.provenance.inferences_in(
-            self.constraint_solver.constraint_set.failed_pending_constraints(),
-            &self.engine,
-        );
+        let excluded = self
+            .constraint_solver
+            .provenance
+            .inferences_in(
+                self.constraint_solver.constraint_set.failed_pending_constraints(),
+                &self.engine,
+            )
+            .await;
 
-        let defaulted = self.constraint_solver.provenance.default_unbound_effect_rows(
-            effect_rows,
-            &excluded,
-            &self.engine,
-        );
+        let defaulted = self
+            .constraint_solver
+            .provenance
+            .default_unbound_effect_rows(effect_rows, &excluded, &self.engine)
+            .await;
         if !defaulted {
             return;
         }
 
         let mut queued = Vec::new();
-        self.move_constraints_from_residual(&mut queued);
+        self.move_constraints_from_residual(&mut queued).await;
         self.push_constraints(queued).await;
     }
 

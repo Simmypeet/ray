@@ -225,6 +225,7 @@ impl Call {
             .get_effect_row(self.target.signature_id())
             .await
             .apply_subst_or_clone(&substitution, engine)
+            .await
     }
 
     /// Returns the type of the coroutine that a `coro` of this call would

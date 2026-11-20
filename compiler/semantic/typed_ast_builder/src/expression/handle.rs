@@ -356,7 +356,7 @@ impl TAstBuilder {
         coroutine_instance: &Interned<Ty>,
     ) -> Interned<Ty> {
         let member = self.engine().get_core_item(member).await;
-        Ty::new_instance_associated(member, coroutine_instance.clone(), [], self.engine())
+        Ty::new_instance_associated(member, coroutine_instance.clone(), [], self.engine()).await
     }
 
     /// Binds the operand of a `handle` as the call it resumes: the callee as
@@ -550,7 +550,7 @@ impl TAstBuilder {
         // The arguments of the operation, as it was performed.
         let mut parameter_variables = Vec::with_capacity(parameters.len());
         for ((_, parameter), pattern) in parameters.iter().zip(&patterns) {
-            let ty = parameter.ty().apply_subst_or_clone(substitution, self.engine());
+            let ty = parameter.ty().apply_subst_or_clone(substitution, self.engine()).await;
             parameter_variables.push(self.bind_clause_variable(group, pattern, &ty));
         }
 
@@ -561,7 +561,8 @@ impl TAstBuilder {
             .engine()
             .get_return_type(operation)
             .await
-            .apply_subst_or_clone(substitution, self.engine());
+            .apply_subst_or_clone(substitution, self.engine())
+            .await;
         let continuation_ty = self.continuation_type(&result_ty, &context.coroutine_ty).await;
         let continuation = syn
             .resume()

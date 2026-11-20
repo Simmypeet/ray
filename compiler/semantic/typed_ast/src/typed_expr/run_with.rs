@@ -58,7 +58,7 @@ impl SubExprs for RunWith {
 }
 
 impl MutSubstitutable for RunWith {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.effect_substitution.apply_mut_subst(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.effect_substitution.apply_mut_subst(subst, engine).await;
     }
 }

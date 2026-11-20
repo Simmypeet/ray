@@ -6,7 +6,7 @@ use rayc_resolution::{Obligation, PredicateConstraint};
 use rayc_solver::ty_relate::DerivedConstraint;
 use rayc_type::{
     constraint::{instance_trait_ref::InstanceTraitRef, ty_relate::TyRelate},
-    subst::Substitutable,
+    fold::{TyFoldable, TyFolder},
     trait_ref::TraitRef,
     ty::{Ty, TyKind, effect_row::EffectLabel},
     variance::Variance,
@@ -82,14 +82,14 @@ impl Constraint {
     }
 }
 
-impl Substitutable for Constraint {
-    fn apply_subst(&self, subst: &rayc_type::subst::Subst, engine: &TrackedEngine) -> Option<Self>
-    where
-        Self: Sized,
-    {
+impl TyFoldable for Constraint {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
         match self {
             Self::InstanceResolve { instance, trait_ref } => {
-                match (instance.apply_subst(subst, engine), trait_ref.apply_subst(subst, engine)) {
+                match (
+                    instance.fold_with(folder, engine).await,
+                    trait_ref.fold_with(folder, engine).await,
+                ) {
                     (None, None) => None,
                     (new_instance, new_trait_ref) => Some(Self::InstanceResolve {
                         instance: new_instance.unwrap_or_else(|| instance.clone()),
@@ -98,16 +98,16 @@ impl Substitutable for Constraint {
                 }
             }
             Self::InstanceTraitRef(check) => {
-                check.apply_subst(subst, engine).map(Self::InstanceTraitRef)
+                check.fold_with(folder, engine).await.map(Self::InstanceTraitRef)
             }
             Self::TyRelate(ty_relate) => {
-                ty_relate.apply_subst(subst, engine).map(Constraint::TyRelate)
+                ty_relate.fold_with(folder, engine).await.map(Constraint::TyRelate)
             }
             Self::FunctionRowRelate(ty_relate) => {
-                ty_relate.apply_subst(subst, engine).map(Constraint::FunctionRowRelate)
+                ty_relate.fold_with(folder, engine).await.map(Constraint::FunctionRowRelate)
             }
             Self::MarkerPredicate(predicate) => {
-                predicate.apply_subst(subst, engine).map(Self::MarkerPredicate)
+                predicate.fold_with(folder, engine).await.map(Self::MarkerPredicate)
             }
         }
     }

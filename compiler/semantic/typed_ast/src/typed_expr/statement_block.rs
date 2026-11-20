@@ -22,9 +22,9 @@ impl StatementBlock {
 }
 
 impl MutSubstitutable for StatementBlock {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for statement in &mut self.statements {
-            statement.apply_mut_subst(subst, engine);
+            statement.apply_mut_subst(subst, engine).await;
         }
     }
 }

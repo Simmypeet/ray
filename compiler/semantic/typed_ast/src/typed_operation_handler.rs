@@ -60,9 +60,9 @@ impl TypedOperationHandlerContext {
 }
 
 impl MutSubstitutable for TypedOperationHandlerContext {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.parameters.apply_mut_subst(subst, engine);
-        self.return_type.apply_in_place(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.parameters.apply_mut_subst(subst, engine).await;
+        self.return_type.apply_in_place(subst, engine).await;
     }
 }
 
@@ -84,8 +84,8 @@ impl TypedOperationHandlerParameter {
 }
 
 impl MutSubstitutable for TypedOperationHandlerParameter {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.ty.apply_in_place(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.ty.apply_in_place(subst, engine).await;
     }
 }
 
@@ -115,9 +115,9 @@ impl TypedOperationHandlerParameterMap {
 }
 
 impl MutSubstitutable for TypedOperationHandlerParameterMap {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         for (_, parameter) in self.parameters.iter_mut_unordered() {
-            parameter.apply_mut_subst(subst, engine);
+            parameter.apply_mut_subst(subst, engine).await;
         }
     }
 }

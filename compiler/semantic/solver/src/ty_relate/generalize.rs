@@ -60,7 +60,7 @@ impl Solver {
                     }
 
                     let arguments = self.engine().intern_unsized(arguments);
-                    Ok(self.engine().intern(Ty::Application(application.with_arguments(arguments))))
+                    Ok(application.with_arguments(arguments, &engine).await)
                 }
 
                 Ty::EffectRow(row) => {

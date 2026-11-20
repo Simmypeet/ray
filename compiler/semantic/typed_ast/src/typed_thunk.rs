@@ -18,7 +18,7 @@ impl TypedThunkContext {
 }
 
 impl MutSubstitutable for TypedThunkContext {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.return_type.apply_in_place(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.return_type.apply_in_place(subst, engine).await;
     }
 }

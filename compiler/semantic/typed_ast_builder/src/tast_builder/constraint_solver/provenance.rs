@@ -225,12 +225,12 @@ impl Provenance {
         }))
     }
 
-    pub fn apply_subst_with_causes(
+    pub async fn apply_subst_with_causes(
         &mut self,
         pending_constraint: &PendingConstraint,
         engine: &TrackedEngine,
     ) -> Option<PendingConstraint> {
-        let constraint = pending_constraint.constraint().apply_subst(&self.subst, engine)?;
+        let constraint = pending_constraint.constraint().apply_subst(&self.subst, engine).await?;
 
         let mut binding_cause_ids = pending_constraint
             .interned_recursive_iter()
@@ -256,7 +256,12 @@ impl Provenance {
         self.causes.insert(Cause::Derived(DerivedCause { rule }))
     }
 
-    pub fn compose_subst(&mut self, subst: &Subst, binding_cause: CauseID, engine: &TrackedEngine) {
+    pub async fn compose_subst(
+        &mut self,
+        subst: &Subst,
+        binding_cause: CauseID,
+        engine: &TrackedEngine,
+    ) {
         for (existing_inference, existing_codo) in self.subst.inference_mappings() {
             // if the codomain of the existing inference will be mapped by the
             // new substitution, then the cause of the existing
@@ -289,7 +294,7 @@ impl Provenance {
         }
 
         // compose the substitutions, as usual
-        self.subst.compose(subst, engine);
+        self.subst.compose(subst, engine).await;
     }
 
     pub(super) fn primary_root_cause_id(&self, mut cause_id: CauseID) -> CauseID {
@@ -414,7 +419,7 @@ impl Provenance {
     }
 
     async fn latest_type(&self, ty: &Interned<Ty>, solver: &Solver) -> Interned<Ty> {
-        let ty = ty.apply_subst_or_clone(&self.subst, solver.engine());
+        let ty = ty.apply_subst_or_clone(&self.subst, solver.engine()).await;
         solver.normalize(&ty).await
     }
 
@@ -453,18 +458,18 @@ impl Provenance {
         };
 
         match &root.origin {
-            RootCauseOrigin::TraitRefCheck(check) => {
-                ResolvedRootCause::TraitRefCheck(check.apply_subst_or_clone(&self.subst, engine))
-            }
+            RootCauseOrigin::TraitRefCheck(check) => ResolvedRootCause::TraitRefCheck(
+                check.apply_subst_or_clone(&self.subst, engine).await,
+            ),
             RootCauseOrigin::PredicateObligation(predicate) => {
                 ResolvedRootCause::PredicateObligation(
-                    predicate.apply_subst_or_clone(&self.subst, engine),
+                    predicate.apply_subst_or_clone(&self.subst, engine).await,
                 )
             }
             RootCauseOrigin::InstanceResolve { trait_ref, span } => {
                 ResolvedRootCause::InstanceResolve {
                     trait_ref: solver
-                        .normalize(&trait_ref.apply_subst_or_clone(&self.subst, engine))
+                        .normalize(&trait_ref.apply_subst_or_clone(&self.subst, engine).await)
                         .await,
                     span: *span,
                 }
@@ -516,7 +521,7 @@ impl Provenance {
             }
         }
 
-        self.insert_defaults(&defaults, engine);
+        self.insert_defaults(&defaults, engine).await;
     }
 
     /// Binds every effect row in `effect_rows` that is still unbound, other
@@ -526,7 +531,7 @@ impl Provenance {
     /// `effect_rows` must contain every effect row of the definition, so that
     /// open tails such as the `?t` of an effect bound to `{Identity | ?t}` are
     /// defaulted directly rather than found through other bindings.
-    pub(super) fn default_unbound_effect_rows(
+    pub(super) async fn default_unbound_effect_rows(
         &mut self,
         effect_rows: impl IntoIterator<Item = Inference>,
         excluded: &FxHashSet<Inference>,
@@ -545,20 +550,20 @@ impl Provenance {
         }
 
         let defaulted = defaults.inference_mappings().next().is_some();
-        self.insert_defaults(&defaults, engine);
+        self.insert_defaults(&defaults, engine).await;
         defaulted
     }
 
     /// Collects the inferences that `constraints` still mention after the
     /// current substitution.
-    pub(super) fn inferences_in<'a>(
+    pub(super) async fn inferences_in<'a>(
         &self,
         constraints: impl IntoIterator<Item = &'a PendingConstraint>,
         engine: &TrackedEngine,
     ) -> FxHashSet<Inference> {
         let mut inferences = FxHashSet::default();
         for pending in constraints {
-            let latest = pending.constraint().apply_subst(&self.subst, engine);
+            let latest = pending.constraint().apply_subst(&self.subst, engine).await;
             let constraint = latest.as_ref().unwrap_or_else(|| pending.constraint());
 
             // if it's a pair of inference variables waiting to be unified but
@@ -575,7 +580,7 @@ impl Provenance {
         inferences
     }
 
-    fn insert_defaults(&mut self, defaults: &Subst, engine: &TrackedEngine) {
+    async fn insert_defaults(&mut self, defaults: &Subst, engine: &TrackedEngine) {
         // Defaults are not attributable to a source constraint, but provenance
         // still needs an entry for every substituted inference when
         // retrying residuals.
@@ -585,7 +590,7 @@ impl Provenance {
                 self.subst_causes.entry(inference).or_insert(default_cause);
             }
         }
-        self.subst.compose(defaults, engine);
+        self.subst.compose(defaults, engine).await;
     }
 
     pub(super) fn into_subst(self) -> Subst { self.subst }

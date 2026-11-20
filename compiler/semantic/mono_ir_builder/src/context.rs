@@ -204,8 +204,8 @@ impl<'a> Context<'a> {
         );
     }
 
-    pub(crate) fn apply_owner_substitution(&self, substitution: &mut Subst) {
-        substitution.compose(self.body.substitution(), self.engine());
+    pub(crate) async fn apply_owner_substitution(&self, substitution: &mut Subst) {
+        substitution.compose(self.body.substitution(), self.engine()).await;
     }
 
     pub(crate) async fn instantiate_effect(

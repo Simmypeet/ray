@@ -60,7 +60,8 @@ impl ConstraintCollector<'_> {
             instance.clone(),
             [],
             &engine,
-        );
+        )
+        .await;
         self.relate(point, &return_ty, ty, Variance::Covariant).await;
 
         // Every effect of the coroutine is either handled by a clause or
@@ -79,7 +80,8 @@ impl ConstraintCollector<'_> {
             instance.clone(),
             [],
             &engine,
-        );
+        )
+        .await;
         let split_effect =
             Ty::new_effect_row(labels, Some(handle.forwarded_effect().clone()), &engine);
         self.relate(point, &coroutine_effect, &split_effect, Variance::Invariant).await;
@@ -122,7 +124,7 @@ impl ConstraintCollector<'_> {
                     .nth(index)
                     .expect("a yielded argument has a parameter of its operation");
 
-                parameter.ty().apply_subst_or_clone(substitution, &engine)
+                parameter.ty().apply_subst_or_clone(substitution, &engine).await
             }
 
             // The rest of the coroutine waits for the result of the
@@ -133,7 +135,8 @@ impl ConstraintCollector<'_> {
                 let result_ty = engine
                     .get_return_type(yielded.operation_id())
                     .await
-                    .apply_subst_or_clone(substitution, &engine);
+                    .apply_subst_or_clone(substitution, &engine)
+                    .await;
 
                 Ty::new_struct(
                     engine.get_core_item(CoreItem::ContinuationStruct).await,

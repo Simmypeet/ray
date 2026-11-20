@@ -124,7 +124,8 @@ impl Resolver {
         // The dictionary may still be a polymorphic variable owned by the
         // function being monomorphized. Applying the owner's substitution turns
         // it into the concrete instance chosen at the caller, such as `EqInt`.
-        let dictionary_ty = dictionary_ty.apply_subst_or_clone(&self.substitution, &self.engine);
+        let dictionary_ty =
+            dictionary_ty.apply_subst_or_clone(&self.substitution, &self.engine).await;
         let dictionary_ty = self.solver.normalize(&dictionary_ty).await;
         let Ty::Application(application) = &*dictionary_ty else {
             panic!("an instance call should resolve to a concrete instance application")
@@ -288,7 +289,7 @@ impl Resolver {
         // move each value into the corresponding instance-method
         // variable.
         let mut trait_call_substitution = trait_call_substitution.clone();
-        trait_call_substitution.compose(&self.substitution, &self.engine);
+        trait_call_substitution.compose(&self.substitution, &self.engine).await;
         let trait_def_poly_vars = self.engine.get_poly_var_map(trait_def_id).await;
         let local_substitution = trait_def_poly_vars
             .iter()
@@ -305,7 +306,7 @@ impl Resolver {
                 Some((*instance_poly_var_id, concrete_ty.clone()))
             })
             .collect();
-        substitution.compose(&local_substitution, &self.engine);
+        substitution.compose(&local_substitution, &self.engine).await;
 
         // From this point on, the call is indistinguishable from any other
         // call of a definition: a concrete definition ID plus its substitution.
@@ -318,7 +319,7 @@ impl Resolver {
         &self,
         dictionary: &Interned<Ty>,
     ) -> Option<MonoCoroutineInstance> {
-        let dictionary = dictionary.apply_subst_or_clone(&self.substitution, &self.engine);
+        let dictionary = dictionary.apply_subst_or_clone(&self.substitution, &self.engine).await;
         let dictionary = self.solver.normalize(&dictionary).await;
         let Ty::Application(application) = &*dictionary else {
             return None;
@@ -336,7 +337,7 @@ impl Resolver {
         &self,
         dictionary: &Interned<Ty>,
     ) -> MonoCoroutineInstance {
-        let dictionary = dictionary.apply_subst_or_clone(&self.substitution, &self.engine);
+        let dictionary = dictionary.apply_subst_or_clone(&self.substitution, &self.engine).await;
         let dictionary = self.solver.normalize(&dictionary).await;
         let Ty::Application(application) = &*dictionary else {
             panic!("a `Coroutine` dictionary should be a concrete application")

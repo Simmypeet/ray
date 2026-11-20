@@ -386,14 +386,12 @@ impl Solver {
             }
 
             let clause = engine.get_where_clause(symbol_id).await;
+            let mut premises = Vec::new();
+            for predicate in clause.predicates() {
+                premises.push(predicate.kind().apply_subst_or_clone(&subst, self.engine()).await);
+            }
 
-            return Some(MarkerRule::Explicit {
-                implementation_id: symbol_id,
-                premises: clause
-                    .predicates()
-                    .map(|predicate| predicate.kind().apply_subst_or_clone(&subst, self.engine()))
-                    .collect(),
-            });
+            return Some(MarkerRule::Explicit { implementation_id: symbol_id, premises });
         }
 
         None
@@ -447,12 +445,12 @@ impl Solver {
             CoroutineBody::Def(def_id) => {
                 let params = self.engine().get_parameter_map(def_id).await;
 
-                components.extend(params.iter().map(|(_, param)| {
-                    (
+                for (_, param) in params.iter() {
+                    components.push((
                         StructuralComponent::CoroutineUpvar(param.span()),
-                        param.ty().apply_subst_or_clone(&subst, self.engine()),
-                    )
-                }));
+                        param.ty().apply_subst_or_clone(&subst, self.engine()).await,
+                    ));
+                }
             }
 
             CoroutineBody::Closure(closure_coroutine_body_id) => {
@@ -462,30 +460,26 @@ impl Solver {
                 let function = ir.get_function(function_id);
                 let closure_context = function.context().assert_as_closure_context();
 
-                components.extend(
-                    closure_context
-                        .parameters()
-                        .map(|(_, param)| {
-                            (
-                                StructuralComponent::CoroutineUpvar(Some(param.span())),
-                                param.ty().apply_subst_or_clone(&subst, self.engine()),
-                            )
-                        })
-                        .collect::<Vec<_>>(),
-                );
+                for (_, param) in closure_context.parameters() {
+                    components.push((
+                        StructuralComponent::CoroutineUpvar(Some(param.span())),
+                        param.ty().apply_subst_or_clone(&subst, self.engine()).await,
+                    ));
+                }
 
                 let capture_map = ir
                     .captures_for_function(function_id)
                     .expect("should have a capture map for it");
 
-                components.extend(capture_map.ordered_captures().map(|(_, capture)| {
-                    (
+                for (_, capture) in capture_map.ordered_captures() {
+                    components.push((
                         StructuralComponent::CoroutineClosureCapture(capture.span()),
                         capture
                             .storage_ty(self.engine())
-                            .apply_subst_or_clone(&subst, self.engine()),
-                    )
-                }));
+                            .apply_subst_or_clone(&subst, self.engine())
+                            .await,
+                    ));
+                }
             }
         }
 
@@ -500,7 +494,7 @@ impl Solver {
                     origin.suspension_span(),
                 )),
                 Ty::erase_lifetimes(
-                    &saved_local.ty().apply_subst_or_clone(&subst, self.engine()),
+                    &saved_local.ty().apply_subst_or_clone(&subst, self.engine()).await,
                     self.engine(),
                 )
                 .await,
@@ -543,15 +537,15 @@ impl Solver {
                             .build_subst_from_args(struct_.symbol_id(), struct_.args())
                             .await;
 
-                        Self::create_structural_from_components(
-                            goal.marker_id(),
-                            body.iter().map(|(field_id, field)| {
-                                (
-                                    StructuralComponent::StructField(field_id),
-                                    field.ty().apply_subst_or_clone(&subst, self.engine()),
-                                )
-                            }),
-                        )
+                        let mut fields = Vec::new();
+                        for (field_id, field) in body.iter() {
+                            fields.push((
+                                StructuralComponent::StructField(field_id),
+                                field.ty().apply_subst_or_clone(&subst, self.engine()).await,
+                            ));
+                        }
+
+                        Self::create_structural_from_components(goal.marker_id(), fields)
                     }
 
                     // An enum holds the payload of whichever variant it is, so each
@@ -569,7 +563,7 @@ impl Solver {
                             {
                                 fields.push((
                                     StructuralComponent::VariantPayload(variant_id),
-                                    payload.apply_subst_or_clone(&subst, self.engine()),
+                                    payload.apply_subst_or_clone(&subst, self.engine()).await,
                                 ));
                             }
                         }

@@ -378,11 +378,11 @@ impl TypedFunctionMap {
 }
 
 impl MutSubstitutable for TypedFunctionMap {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.name_binding_map.apply_mut_subst(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.name_binding_map.apply_mut_subst(subst, engine).await;
 
         for function in self.functions.items_mut() {
-            function.apply_mut_subst(subst, engine);
+            function.apply_mut_subst(subst, engine).await;
         }
     }
 }
@@ -455,16 +455,16 @@ impl TypedFunction {
 }
 
 impl MutSubstitutable for TypedFunction {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
-        self.variable_map.apply_mut_subst(subst, engine);
-        self.typed_expr_map.apply_mut_subst(subst, engine);
-        self.block.apply_mut_subst(subst, engine);
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+        self.variable_map.apply_mut_subst(subst, engine).await;
+        self.typed_expr_map.apply_mut_subst(subst, engine).await;
+        self.block.apply_mut_subst(subst, engine).await;
 
         match &mut self.context {
             TypedContext::Def(_) => {}
-            TypedContext::Closure(context) => context.apply_mut_subst(subst, engine),
-            TypedContext::OperationHandler(context) => context.apply_mut_subst(subst, engine),
-            TypedContext::Thunk(context) => context.apply_mut_subst(subst, engine),
+            TypedContext::Closure(context) => context.apply_mut_subst(subst, engine).await,
+            TypedContext::OperationHandler(context) => context.apply_mut_subst(subst, engine).await,
+            TypedContext::Thunk(context) => context.apply_mut_subst(subst, engine).await,
         }
     }
 }

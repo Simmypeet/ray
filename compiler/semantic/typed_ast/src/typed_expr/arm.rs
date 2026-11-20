@@ -67,12 +67,12 @@ impl Arm {
 }
 
 impl MutSubstitutable for Arm {
-    fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
+    async fn apply_mut_subst(&mut self, subst: &Subst, engine: &TrackedEngine) {
         match self {
             Self::Expression(_) => {}
             Self::Block(statements) => {
                 for statement in statements {
-                    statement.apply_mut_subst(subst, engine);
+                    statement.apply_mut_subst(subst, engine).await;
                 }
             }
         }
