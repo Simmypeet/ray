@@ -34,6 +34,15 @@ impl TyFoldable for Interned<EffectLabel> {
     }
 }
 
+impl TyFoldable for EffectLabel {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
+        self.args
+            .fold_with(folder, engine)
+            .await
+            .map(|args| EffectLabel { effect_symbol_id: self.effect_symbol_id, args })
+    }
+}
+
 impl EffectLabel {
     #[must_use]
     pub const fn new(effect_symbol_id: GlobalSymbolID, args: Args) -> Self {

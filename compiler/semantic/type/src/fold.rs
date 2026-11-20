@@ -60,9 +60,7 @@ impl Ty {
         match &**ty {
             Self::Application(application) => Box::pin(application.fold_args(folder, engine)).await,
             Self::EffectRow(row) => Box::pin(row.fold_with(folder, engine)).await,
-            Self::EffectRow2(row) => Box::pin(row.fold_with(folder, engine))
-                .await
-                .map(|row| engine.intern(Self::EffectRow2(row))),
+            Self::EffectRow2(row) => Box::pin(row.fold_with(folder, engine)).await,
 
             Self::Inference(_) | Self::PolyVar(_) | Self::SelfInstance(_) | Self::Lifetime(_) => {
                 None

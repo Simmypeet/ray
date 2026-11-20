@@ -1,9 +1,13 @@
 use qbice::{Decode, Encode, Identifiable, StableHash, storage::intern::Interned};
+use rayc_hash::FxHashMap;
 use rayc_qbice::TrackedEngine;
 
 use crate::{
-    fold::{TyFoldable, TyFolder},
-    ty::{Ty, TyKind, application::View, effect_row::EffectLabel, inference::Inference},
+    fold::{TyFoldable, TyFolder, fold_pair},
+    ty::{
+        Ty, TyKind, application::View, effect_row::EffectLabel, inference::Inference,
+        inspect::LifetimeErasable,
+    },
 };
 
 /// An opaque effect row atom, which we can't look inside what's in it
@@ -55,6 +59,17 @@ pub enum Entry {
     Atom(EffectAtom),
 }
 
+impl TyFoldable for Entry {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
+        match self {
+            Self::Label(label) => label.fold_with(folder, engine).await.map(Self::Label),
+            Self::Atom(atom) => {
+                atom.0.fold_with(folder, engine).await.map(EffectAtom).map(Self::Atom)
+            }
+        }
+    }
+}
+
 impl Entry {
     pub fn internred_iter(&self) -> impl Iterator<Item = &Interned<Ty>> {
         let (label, atom) = match self {
@@ -98,7 +113,46 @@ pub struct GuardedRowEntry {
     excluded: Interned<[EffectLabel]>,
 }
 
+impl TyFoldable for GuardedRowEntry {
+    async fn fold_with(&self, folder: &mut impl TyFolder, engine: &TrackedEngine) -> Option<Self> {
+        let (source, excluded) = fold_pair(&self.source, &self.excluded, folder, engine).await?;
+        Some(Self { source, excluded })
+    }
+}
+
 impl GuardedRowEntry {
+    pub async fn subsumes(&self, other: &Self, engine: &TrackedEngine) -> bool {
+        match (&self.source, &other.source) {
+            (Entry::Label(l), Entry::Label(r)) => {
+                if l.effect_symbol_id != r.effect_symbol_id
+                    || l.arguments().len() != r.arguments().len()
+                {
+                    return false;
+                }
+
+                for (l_arg, r_arg) in
+                    l.arguments().interned_iter().zip(r.arguments().interned_iter())
+                {
+                    if Ty::corresponding_lifetimes(l_arg, r_arg, engine).await.is_none() {
+                        return false;
+                    }
+                }
+            }
+
+            (Entry::Atom(l), Entry::Atom(r)) => {
+                if Ty::corresponding_lifetimes(&l.0, &r.0, engine).await.is_none() {
+                    return false;
+                }
+            }
+
+            _ => return false,
+        }
+
+        self.excluded.len() <= other.excluded.len()
+            // every excluded label in here must be in the other excluded labels
+            && self.excluded.iter().all(|x| other.excluded.contains(x))
+    }
+
     #[must_use]
     pub fn matchings<'x>(&'x self, other: &'x Self) -> Option<impl Iterator<Item = Matching<'x>>> {
         if self.excluded.len() != other.excluded.len()
@@ -137,6 +191,24 @@ impl GuardedRowEntry {
     }
 }
 
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
+)]
+pub enum LabelOrType {
+    Label(EffectLabel),
+    Type(Interned<Ty>),
+}
+
+impl LabelOrType {
+    #[must_use]
+    pub const fn as_label(&self) -> Option<&EffectLabel> {
+        match self {
+            Self::Label(label) => Some(label),
+            Self::Type(_) => None,
+        }
+    }
+}
+
 /// A row of [`GuardedRowEntry`]s.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Encode, Decode, Identifiable,
@@ -148,6 +220,225 @@ pub struct EffectRow2 {
 }
 
 impl EffectRow2 {
+    /// A smart constructor.
+    ///
+    /// In the [`LabelOrType::Type`] case, the type must be either a polyvar,
+    /// inference variable, instance associated type, or an [`EffectRow2`].
+    pub async fn new_effect_row(
+        entries: impl IntoIterator<Item = (LabelOrType, Vec<EffectLabel>)>,
+        engine: &TrackedEngine,
+    ) -> Interned<Ty> {
+        let mut decideds = Self::flatten_and_decide(entries, engine).await;
+
+        let mut erased_entry_keys = FxHashMap::default();
+
+        for entry in &decideds {
+            let erased_entry_key = entry.source.erase_lifetime(engine).await;
+            erased_entry_keys.insert(entry.source.clone(), erased_entry_key);
+        }
+
+        // sort and dedup the entries by their source (with
+        // lifetime-erased) to make sure the row is canonicalized.
+        decideds.sort_unstable_by(|l, r| {
+            let l_key = (erased_entry_keys.get(&l.source), &l.excluded);
+            let r_key = (erased_entry_keys.get(&r.source), &r.excluded);
+            l_key.cmp(&r_key)
+        });
+        decideds.dedup_by(|l, r| {
+            let l_key = (erased_entry_keys.get(&l.source), &l.excluded);
+            let r_key = (erased_entry_keys.get(&r.source), &r.excluded);
+            l_key == r_key
+        });
+
+        // if one entry is subsumed by another, remove it (this is O(n^2), :P)
+        let mut i = 0;
+        while i < decideds.len() {
+            let mut j = 0;
+            while j < decideds.len() {
+                if i != j && decideds[i].subsumes(&decideds[j], engine).await {
+                    decideds.swap_remove(j);
+                    if j < i {
+                        i -= 1;
+                    }
+                } else {
+                    j += 1;
+                }
+            }
+            i += 1;
+        }
+
+        // sort one last time
+        decideds.sort_unstable_by(|l, r| {
+            let l_key = (erased_entry_keys.get(&l.source), &l.excluded);
+            let r_key = (erased_entry_keys.get(&r.source), &r.excluded);
+            l_key.cmp(&r_key)
+        });
+
+        // TODO: we probably can do a better job than this :-P
+        match decideds.len() {
+            0 => engine.intern(Ty::EffectRow2(Self { rows: engine.intern_unsized([]) })),
+
+            // if it's a single EffectAtom with no excluded labels, we simply
+            // unwrap it and return the atom directly
+            1 => {
+                if let Entry::Atom(atom) = &decideds[0].source
+                    && decideds[0].excluded.is_empty()
+                {
+                    atom.0.clone()
+                } else {
+                    engine.intern(Ty::EffectRow2(Self { rows: engine.intern_unsized(decideds) }))
+                }
+            }
+
+            _ => engine.intern(Ty::EffectRow2(Self { rows: engine.intern_unsized(decideds) })),
+        }
+    }
+
+    async fn flatten_and_decide(
+        entries: impl IntoIterator<Item = (LabelOrType, Vec<EffectLabel>)>,
+        engine: &TrackedEngine,
+    ) -> Vec<GuardedRowEntry> {
+        let mut rows = Vec::new();
+
+        for (entry, excludeds) in entries {
+            match entry {
+                LabelOrType::Type(interned) => match &*interned {
+                    // flatten the effect row into individual entries
+                    Ty::EffectRow2(effect_row2) => {
+                        for row in effect_row2.rows.iter() {
+                            let excludeds = excludeds
+                                .iter()
+                                .cloned()
+                                .chain(row.excluded.iter().cloned())
+                                .collect::<Vec<_>>();
+
+                            if let Some(guarded_row_entry) =
+                                Self::decide_entry(row.source.clone(), excludeds, engine).await
+                            {
+                                rows.push(guarded_row_entry);
+                            }
+                        }
+                    }
+
+                    Ty::Application(ap) if ap.is_instance_associated() => {
+                        rows.push(
+                            Self::decide_entry(
+                                Entry::Atom(EffectAtom(interned)),
+                                excludeds,
+                                engine,
+                            )
+                            .await
+                            .unwrap(),
+                        );
+                    }
+                    Ty::PolyVar(_) | Ty::Inference(_) => {
+                        rows.push(
+                            Self::decide_entry(
+                                Entry::Atom(EffectAtom(interned)),
+                                excludeds,
+                                engine,
+                            )
+                            .await
+                            .unwrap(),
+                        );
+                    }
+
+                    _ => panic!(
+                        "must be either polyvar, inference, or instance application, found \
+                         {interned:?}"
+                    ),
+                },
+
+                LabelOrType::Label(label) => {
+                    rows.push(
+                        Self::decide_entry(Entry::Label(label), excludeds, engine).await.unwrap(),
+                    );
+                }
+            }
+        }
+
+        rows
+    }
+
+    async fn decide_entry(
+        entry: Entry,
+        mut excludeds: Vec<EffectLabel>,
+        engine: &TrackedEngine,
+    ) -> Option<GuardedRowEntry> {
+        match entry {
+            Entry::Label(effect_label) => {
+                let mut i = 0;
+
+                while i < excludeds.len() {
+                    match effect_label.compare_labels(&excludeds[i], engine).await {
+                        // this guard doesn't do anything any more
+                        LabelComparison::Apart => {
+                            excludeds.swap_remove(i);
+                        }
+
+                        // have to keep the excluded label
+                        LabelComparison::Blocked | LabelComparison::WaitForInference => {
+                            excludeds[i] = excludeds[i].erase_lifetime(engine).await;
+                            i += 1;
+                        }
+
+                        // this entry got deleted
+                        LabelComparison::Same => {
+                            // this label is erased from the list, don't add
+                            // this to the row
+                            return None;
+                        }
+                    }
+                }
+
+                excludeds.sort_unstable();
+                excludeds.dedup();
+
+                Some(GuardedRowEntry {
+                    source: Entry::Label(effect_label),
+                    excluded: engine.intern_unsized(excludeds),
+                })
+            }
+
+            Entry::Atom(effect_atom) => {
+                for excluded in &mut excludeds {
+                    *excluded = excluded.erase_lifetime(engine).await;
+                }
+
+                excludeds.sort_unstable();
+                excludeds.dedup();
+
+                Some(GuardedRowEntry {
+                    source: Entry::Atom(effect_atom),
+                    excluded: engine.intern_unsized(excludeds),
+                })
+            }
+        }
+    }
+
+    pub(crate) async fn fold_with(
+        &self,
+        folder: &mut impl TyFolder,
+        engine: &TrackedEngine,
+    ) -> Option<Interned<Ty>> {
+        let new_rows = self.rows.fold_with(folder, engine).await?;
+        Some(
+            Self::new_effect_row(
+                new_rows.iter().map(|x| {
+                    (
+                        match &x.source {
+                            Entry::Atom(x) => LabelOrType::Type(x.0.clone()),
+                            Entry::Label(x) => LabelOrType::Label(x.clone()),
+                        },
+                        x.excluded.to_vec(),
+                    )
+                }),
+                engine,
+            )
+            .await,
+        )
+    }
+
     #[must_use]
     pub fn matchings<'x>(&'x self, other: &'x Self) -> Option<impl Iterator<Item = Matching<'x>>> {
         if self.rows.len() != other.rows.len() {
@@ -199,16 +490,6 @@ pub enum AtomState {
     Flexible,
     Rigid,
     Stuck,
-}
-
-impl TyFoldable for EffectRow2 {
-    async fn fold_with(
-        &self,
-        _folder: &mut impl TyFolder,
-        _engine: &TrackedEngine,
-    ) -> Option<Self> {
-        todo!("EffectSystem2: fold the atoms and rebuild through a smart constructor")
-    }
 }
 
 impl EffectLabel {

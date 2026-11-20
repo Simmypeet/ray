@@ -396,3 +396,16 @@ impl TyFolder for LifetimeEraser {
         (**ty != Ty::Lifetime(Lifetime::Erased)).then(|| Ty::new_lifetime(Lifetime::Erased, engine))
     }
 }
+
+pub trait LifetimeErasable: TyFoldable {
+    #[must_use]
+    #[allow(async_fn_in_trait)]
+    async fn erase_lifetime(&self, engine: &TrackedEngine) -> Self
+    where
+        Self: Clone,
+    {
+        self.fold_or_clone(&mut LifetimeEraser, engine).await
+    }
+}
+
+impl<T: TyFoldable> LifetimeErasable for T {}
