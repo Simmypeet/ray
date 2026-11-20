@@ -350,9 +350,8 @@ impl EffectRow2 {
                 },
 
                 LabelOrType::Label(label) => {
-                    rows.push(
-                        Self::decide_entry(Entry::Label(label), excludeds, engine).await.unwrap(),
-                    );
+                    // the label may be excluded by one of its own guards
+                    rows.extend(Self::decide_entry(Entry::Label(label), excludeds, engine).await);
                 }
             }
         }
@@ -624,3 +623,6 @@ pub enum LabelComparison {
     /// Two labels have the same shape (up to lifetime erasure).
     Same = 3,
 }
+
+#[cfg(test)]
+mod test;

@@ -1070,8 +1070,8 @@ impl InstanceAssociatedView<'_> {
         }
 
         // Enclosing variables are supplied by the instance application.
-        // Translate member arguments through the checked trait-to-implementation
-        // mapping.
+        // Translate member arguments through the checked
+        // trait-to-implementation mapping.
         let mut substitution =
             engine.build_subst_from_args(instance.symbol_id(), instance.args()).await;
         for ((id, _), argument) in trait_poly_vars.iter().zip(self.args) {
