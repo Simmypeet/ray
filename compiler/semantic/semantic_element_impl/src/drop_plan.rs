@@ -305,6 +305,7 @@ async fn valid_explicit(
             | Ty::PolyVar(_)
             | Ty::SelfInstance(_)
             | Ty::EffectRow(_)
+            | Ty::EffectRow2(_)
             | Ty::Lifetime(_) => return false,
         }
     }
@@ -463,9 +464,12 @@ impl Evaluator<'_> {
                     | ApplicationView::GeneratedAdtDropInstance(_)
                     | ApplicationView::Error => Err(DropPlanError::MissingFieldDictionary(ty)),
                 },
-                Ty::Inference(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {
-                    Err(DropPlanError::MissingFieldDictionary(ty))
-                }
+
+                Ty::EffectRow2(_)
+                | Ty::Inference(_)
+                | Ty::SelfInstance(_)
+                | Ty::EffectRow(_)
+                | Ty::Lifetime(_) => Err(DropPlanError::MissingFieldDictionary(ty)),
             }
         })
         .await

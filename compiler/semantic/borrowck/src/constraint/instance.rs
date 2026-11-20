@@ -227,7 +227,7 @@ impl ConstraintCollector<'_> {
             Ty::PolyVar(_) | Ty::SelfInstance(_) => {}
 
             // Not dictionaries.
-            Ty::Inference(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {}
+            Ty::EffectRow2(_) | Ty::Inference(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {}
         }
     }
 

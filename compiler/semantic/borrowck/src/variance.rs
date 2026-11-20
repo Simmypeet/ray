@@ -99,6 +99,8 @@ impl VarianceCollector<'_> {
                     pending.extend(row.tail().map(|tail| (tail.clone(), variance)));
                 }
 
+                Ty::EffectRow2(_) => todo!("EffectRow2: variance not yet implemented"),
+
                 // Neither holds a lifetime: there are no inference variables
                 // on the IR, and a self instance has no arguments of its own.
                 Ty::Inference(_) | Ty::SelfInstance(_) => {}

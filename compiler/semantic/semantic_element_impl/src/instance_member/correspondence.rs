@@ -240,6 +240,7 @@ impl<'a> Correspondence<'a> {
                     self.pair_types(expected, actual);
                 }
             }
+            Ty::EffectRow2(_) => todo!("EffectRow2: correspondence not yet implemented"),
             Ty::Inference(_) | Ty::SelfInstance(_) | Ty::Lifetime(_) => {}
         }
     }

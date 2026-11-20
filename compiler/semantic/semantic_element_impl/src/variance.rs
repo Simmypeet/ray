@@ -346,6 +346,8 @@ impl<'a> UseCollector<'a> {
                     pending.extend(row.tail().map(|tail| (tail.clone(), variance)));
                 }
 
+                Ty::EffectRow2(_) => todo!("EffectRow2: variance not yet implemented"),
+
                 Ty::Lifetime(_) | Ty::Inference(_) | Ty::SelfInstance(_) => {}
             }
         }

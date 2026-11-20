@@ -362,9 +362,12 @@ fn classify_drop_head(ty: &Ty) -> DropHead {
             ApplicationView::Error => DropHead::Error,
         },
         Ty::PolyVar(_) => DropHead::NonNominal(NonNominalDropHeadKind::TypeVariable),
-        Ty::Inference(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {
-            DropHead::NonNominal(NonNominalDropHeadKind::Other)
-        }
+
+        Ty::Inference(_)
+        | Ty::SelfInstance(_)
+        | Ty::EffectRow(_)
+        | Ty::EffectRow2(_)
+        | Ty::Lifetime(_) => DropHead::NonNominal(NonNominalDropHeadKind::Other),
     }
 }
 

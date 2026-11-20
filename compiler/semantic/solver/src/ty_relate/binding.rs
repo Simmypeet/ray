@@ -66,9 +66,9 @@ impl Solver {
         variance: Variance,
     ) -> Result<Step, Error> {
         if !can_bind(relate_env, relating_side, VariableKind::Inference) {
-            // technically, the instance associated can be reduced into something that can
-            // be equal to this inference variable and thus discharging the
-            // constraint
+            // technically, the instance associated can be reduced into
+            // something that can be equal to this inference
+            // variable and thus discharging the constraint
             return if ty.is_projection() { Ok(Step::NoProgress) } else { Err(Error::Conflicted) };
         }
 
@@ -83,8 +83,9 @@ impl Solver {
                 if var.kind() == TyKind::Star
                     && !ty_application.satisfies_constraint(var.constraint())
                 {
-                    // associated type could reduce to a type that satisfies the constraint in the
-                    // future, don't make it a conflict yet
+                    // associated type could reduce to a type that satisfies the
+                    // constraint in the future, don't make
+                    // it a conflict yet
                     return if ty_application.is_projection() {
                         Ok(Step::NoProgress)
                     } else {
@@ -97,7 +98,11 @@ impl Solver {
                 return self.bind_infer_vars(var, *ty_inference, ty, variance);
             }
 
-            Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::EffectRow(_) | Ty::Lifetime(_) => {
+            Ty::PolyVar(_)
+            | Ty::SelfInstance(_)
+            | Ty::EffectRow(_)
+            | Ty::EffectRow2(_)
+            | Ty::Lifetime(_) => {
                 if var.constraint() != InferenceConstraint::Any {
                     return Err(Error::Conflicted);
                 }

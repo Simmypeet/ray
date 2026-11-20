@@ -328,7 +328,11 @@ impl TAstBuilder {
 
                 return None;
             }
-            Ty::EffectRow(_) => todo!("type-check tuple indexing on an effect-row type"),
+
+            Ty::EffectRow2(_) | Ty::EffectRow(_) => {
+                unreachable!("type-check tuple indexing on an effect-row type")
+            }
+
             Ty::Lifetime(_) => unreachable!("an expression cannot have a lifetime as its type"),
         };
 

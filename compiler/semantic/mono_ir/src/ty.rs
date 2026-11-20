@@ -750,7 +750,7 @@ async fn lower_concrete_type(solver: &Solver, ty: &Interned<Ty>) -> Interned<Mon
                 "compiler-internal invariant violation: non-concrete type reached MonoIR: {ty:?}"
             )
         }
-        Ty::EffectRow(_) => {
+        Ty::EffectRow2(_) | Ty::EffectRow(_) => {
             panic!("compiler-internal invariant violation: effect row used as a value type")
         }
         Ty::Lifetime(_) => {

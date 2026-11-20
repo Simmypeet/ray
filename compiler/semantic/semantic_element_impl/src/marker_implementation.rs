@@ -220,19 +220,6 @@ impl Report for Diagnostic {
     }
 }
 
-fn contains_associated_type(ty: &Ty) -> bool {
-    ty.recursive_iter().any(|ty| match ty {
-        Ty::Application(application) => {
-            matches!(application.view(), ApplicationView::InstanceAssociated(_))
-        }
-        Ty::Inference(_)
-        | Ty::PolyVar(_)
-        | Ty::SelfInstance(_)
-        | Ty::EffectRow(_)
-        | Ty::Lifetime(_) => false,
-    })
-}
-
 fn head_arguments(ty: &Ty) -> Result<Vec<&Interned<Ty>>, InvalidHeadKind> {
     let Ty::Application(application) = ty else {
         return Err(InvalidHeadKind::MissingTypeConstructor);
@@ -278,7 +265,7 @@ async fn validate_head(
         return false;
     }
 
-    if contains_associated_type(implementor) {
+    if implementor.contains_instance_associated_type() {
         diagnostics.receive(Diagnostic::InvalidHead(InvalidHead {
             span,
             kind: InvalidHeadKind::AssociatedType,

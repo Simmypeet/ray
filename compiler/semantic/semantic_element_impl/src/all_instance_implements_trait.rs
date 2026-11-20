@@ -44,6 +44,7 @@ async fn all_instance_implements_trait_executor(
                 | Ty::Inference(_)
                 | Ty::EffectRow(_)
                 | Ty::SelfInstance(_)
+                | Ty::EffectRow2(_)
                 | Ty::Lifetime(_) => None,
             })
             .collect();

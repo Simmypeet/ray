@@ -75,6 +75,8 @@ impl Solver {
 
                     Ok(Ty::new_effect_row(labels, tail, self.engine()))
                 }
+
+                Ty::EffectRow2(_) => todo!("EffectRow2: generalization not yet implemented"),
             }
         })
         .await

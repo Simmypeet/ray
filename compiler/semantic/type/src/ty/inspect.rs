@@ -141,6 +141,21 @@ impl Ty {
         })
     }
 
+    #[must_use]
+    pub fn contains_instance_associated_type(&self) -> bool {
+        self.recursive_iter().any(|ty| match ty {
+            Self::Application(application) => {
+                matches!(application.view(), ApplicationView::InstanceAssociated(_))
+            }
+            Self::Inference(_)
+            | Self::PolyVar(_)
+            | Self::SelfInstance(_)
+            | Self::EffectRow(_)
+            | Self::EffectRow2(_)
+            | Self::Lifetime(_) => false,
+        })
+    }
+
     /// Returns whether this type contains a non-lifetime inference variable,
     /// since lifetimes never decide instance selection.
     #[must_use]

@@ -180,6 +180,7 @@ impl VariableKind {
             | Ty::Application(_)
             | Ty::Inference(_)
             | Ty::SelfInstance(_)
+            | Ty::EffectRow2(_)
             | Ty::EffectRow(_) => None,
         }
     }

@@ -63,6 +63,7 @@ impl<'x> ImpliedOutlivesCollector<'x> {
                     pending.extend(Ty::interned_arguments(&ty).cloned());
                 }
                 Ty::EffectRow(row) => pending.extend(row.interned_iter().cloned()),
+                Ty::EffectRow2(row) => pending.extend(row.interned_iter().cloned()),
                 Ty::Inference(_) | Ty::PolyVar(_) | Ty::SelfInstance(_) | Ty::Lifetime(_) => {}
             }
         }

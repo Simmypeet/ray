@@ -601,6 +601,7 @@ impl Solver {
             | Ty::PolyVar(_)
             | Ty::SelfInstance(_)
             | Ty::EffectRow(_)
+            | Ty::EffectRow2(_)
             | Ty::Lifetime(_) => MarkerRule::Opaque,
         }
     }
