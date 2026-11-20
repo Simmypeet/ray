@@ -56,7 +56,7 @@ expression: snapshot
    ┆    ╭▸ compiler/e2e/test/check/coroutine/coro_instance_method/main.ray:49:5
    ┆    │
    ┆ 49 │     generator(coro s.put(source))
-   ┆    ╰╴    ━━━━━━━━━ `CoroutineInstance[&mut <coroutine of s.put>].Return` must equal `int32`
+   ┆    ╰╴    ━━━━━━━━━ `()` must equal `int32`
    ┆
 50 │
 51 │

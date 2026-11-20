@@ -46,6 +46,6 @@ expression: snapshot
    ┆    ╭▸ compiler/e2e/test/check/semantic/resolution_where_clause_obligations/main.ray:32:19
    ┆    │
    ┆ 32 │     let invalid = accepts[given BoolBox](42)
-   ┆    ╰╴                  ━━━━━━━━━━━━━━━━━━━━━━ `BoolBox.Item` must equal `int32`
+   ┆    ╰╴                  ━━━━━━━━━━━━━━━━━━━━━━ `bool` must equal `int32`
    ┆
 33 │     return valid

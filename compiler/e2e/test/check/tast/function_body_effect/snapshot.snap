@@ -40,7 +40,7 @@ expression: snapshot
    ┆    ╭▸ compiler/e2e/test/check/tast/function_body_effect/main.ray:24:5
    ┆    │
    ┆ 24 │     requirePure(() -> withIntState())
-   ┆    ╰╴    ━━━━━━━━━━━ `DefInstance[<closure>() -> () \ {State[int32] | {}}].Effect` must equal `{}`
+   ┆    ╰╴    ━━━━━━━━━━━ `{State[int32]}` must equal `{}`
    ┆
 25 │     return ()
 26 │

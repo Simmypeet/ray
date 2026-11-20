@@ -33,7 +33,7 @@ expression: snapshot
    ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_where_clause/main.ray:26:12
    ┆    │
    ┆ 26 │     return acceptsLeaf(0)
-   ┆    ╰╴           ━━━━━━━━━━━ `BoolBox.Item` must equal `int32`
+   ┆    ╰╴           ━━━━━━━━━━━ `bool` must equal `int32`
    ┆
 27 │
 28 │ def nested() -> int32:
@@ -43,5 +43,5 @@ expression: snapshot
    ┆    ╭▸ compiler/e2e/test/check/tast/implicit_instance_where_clause/main.ray:29:12
    ┆    │
    ┆ 29 │     return acceptsRoot(0)
-   ┆    ╰╴           ━━━━━━━━━━━ `BoolBox.Item` must equal `int32`
+   ┆    ╰╴           ━━━━━━━━━━━ `bool` must equal `int32`
    ┆

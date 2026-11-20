@@ -32,7 +32,7 @@ expression: snapshot
    ┆    ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:11:12
    ┆    │
    ┆ 11 │     return recursive((x) -> x + 1, depth - 1)
-   ┆    ╰╴           ━━━━━━━━━ `DefInstance[<closure>(int32) -> int32 \ {}].Return` must equal `bool`
+   ┆    ╰╴           ━━━━━━━━━ `int32` must equal `bool`
    ┆
 12 │
 13 │ def main() -> int32:
@@ -42,7 +42,7 @@ expression: snapshot
    ┆    ╭▸ compiler/e2e/test/check/typed/callable_invalid/main.ray:14:19
    ┆    │
    ┆ 14 │     let ignored = unused((x) -> x + 1)
-   ┆    ╰╴                  ━━━━━━ `DefInstance[<closure>(int32) -> int32 \ {}].Return` must equal `bool`
+   ┆    ╰╴                  ━━━━━━ `int32` must equal `bool`
    ┆
 15 │     let value = 1
 16 │     return value()

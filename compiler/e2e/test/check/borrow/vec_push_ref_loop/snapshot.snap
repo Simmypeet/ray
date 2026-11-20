@@ -33,9 +33,9 @@ expression: snapshot
    ┆    ╭▸ compiler/e2e/test/check/borrow/vec_push_ref_loop/main.ray:26:22
    ┆    │
    ┆ 26 │         push(v.&mut, a.&mut)
-   ┆    │         ┬────────────┯━━━━━─
-   ┆    │         │            │
-   ┆    │         │            second mutable borrow occurs here
-   ┆    │         │            first mutable borrow occurs here
-   ┆    ╰╴        borrow later used here
+   ┆    │              ┬─────  ┯━━━━━
+   ┆    │              │       │
+   ┆    │              │       second mutable borrow occurs here
+   ┆    │              │       first mutable borrow occurs here
+   ┆    ╰╴             borrow later used here
    ┆

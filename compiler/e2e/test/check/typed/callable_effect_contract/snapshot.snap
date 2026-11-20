@@ -18,7 +18,7 @@ expression: snapshot
    ┆    ╭▸ compiler/e2e/test/check/typed/callable_effect_contract/main.ray:11:13
    ┆    │
    ┆ 11 │     let a = pure(() -> E.value())
-   ┆    ╰╴            ━━━━ `DefInstance[<closure>() -> int32 \ {E | {}}].Effect` must equal `{}`
+   ┆    ╰╴            ━━━━ `{E}` must equal `{}`
    ┆
 12 │     let closure = () -> 42
 13 │     let checked = pure(closure)
@@ -28,6 +28,6 @@ expression: snapshot
    ┆    ╭▸ compiler/e2e/test/check/typed/callable_effect_contract/main.ray:14:13
    ┆    │
    ┆ 14 │     let b = effectful(closure)
-   ┆    ╰╴            ━━━━━━━━━ `DefInstance[<closure>() -> int32 \ {}].Effect` must equal `{E}`
+   ┆    ╰╴            ━━━━━━━━━ `{}` must equal `{E}`
    ┆
 15 │     return a + b

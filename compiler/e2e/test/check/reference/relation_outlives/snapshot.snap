@@ -62,7 +62,7 @@ expression: snapshot
    ┆    │                                    ━━━━━━━━━━━━━━━━━━━━━━ requires `'a: 'static`
    ┆    │
    ┆    ╰ help: consider adding `where ('a: 'static)`
-   ┆ [note]: this is required by the where clause of `main.HasValue.Value`: `StaticBox.Item` must equal `&'a int32`
+   ┆ [note]: this is required by the where clause of `main.HasValue.Value`: `&'static int32` must equal `&'a int32`
    ┆
 43 │     core.NoDrop { value = move value }
 44 │     return ()
